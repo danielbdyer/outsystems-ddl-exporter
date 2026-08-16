@@ -325,11 +325,11 @@ module LifecycleStore =
                     // never a fabricated `MinValue` coordinate dated
                     // year 1 — the retired lie a5-F7 named.
                     match optStr el "at" with
-                    | None -> Error "coordinate missing required 'at' instant"
+                    | None -> Error "the coordinate is missing its 'at' instant"
                     | Some s ->
                         match DateTimeOffset.TryParse(s, inv, System.Globalization.DateTimeStyles.RoundtripKind) with
                         | true, dto -> Ok (EpisodeCoordinate.create version environment dto)
-                        | _ -> Error (sprintf "coordinate carries a malformed 'at' instant '%s'" s)
+                        | _ -> Error (sprintf "the coordinate carries a malformed 'at' instant '%s'" s)
         | Error m, _ -> Error m
         | _, Error m -> Error m
 
@@ -469,7 +469,7 @@ module LifecycleStore =
                                     | Some s ->
                                         match DateTimeOffset.TryParse(s, inv, System.Globalization.DateTimeStyles.AssumeUniversal) with
                                         | true, dto -> Ok (Some dto)
-                                        | _ -> Error (sprintf "receipt '%s' carries a malformed 'approvedAt' instant '%s'" correctionId s)
+                                        | _ -> Error (sprintf "the receipt '%s' carries a malformed 'approvedAt' instant '%s'" correctionId s)
                                 match approvedAt with
                                 | Error msg -> Error msg
                                 | Ok approvedAt ->

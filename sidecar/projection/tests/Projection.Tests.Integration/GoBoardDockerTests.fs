@@ -376,7 +376,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         Assert.Contains("foreign refs", greenOut)
                         Assert.Contains("declared environment-stable", greenOut)
                         // The verdict names the unverified finding rather than "every gate passes" alone.
-                        Assert.Contains("remain unverified", greenOut)
+                        Assert.Contains("unverified against the live environments", greenOut)
                         return ()
                     }))
 
@@ -409,10 +409,10 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         let consequenceLinesOut =
                             out.Split('\n') |> Array.filter (fun l -> l.Contains "consequence:" || l.Contains "evidence:") |> String.concat "\n"
                         Assert.True(
-                            out.Contains "consequence: if AppCore.City is reconciled by Name, 2 row(s) that point at it re-key onto the AppCore.City rows the target already holds, and none drop.",
+                            out.Contains "consequence: if AppCore.City is reconciled by Name, 2 rows that point at it re-key onto the AppCore.City rows the target already holds, and none drop.",
                             "the exact reconcile consequence is absent; the consequence lines rendered were:\n" + consequenceLinesOut)
                         Assert.Contains("Each Name value names exactly one target row.", out)
-                        Assert.Contains("consequence: if AppCore.City is added to the transfer, its 2 row(s) transfer too", out)
+                        Assert.Contains("consequence: if AppCore.City is added to the transfer, its 2 rows transfer too", out)
                         // the JSON machine lens carries the same sentences
                         let exitJ, outJ = GoBoardFixtures.captureBoard (fun () -> runCheckGo MetadataSnapshotRunner.defaultParameters (argsWith true))
                         Assert.Equal(5, exitJ)

@@ -89,6 +89,18 @@ module Voice =
         | true, n  -> n.ToString("#,0", System.Globalization.CultureInfo.InvariantCulture)
         | false, _ -> s
 
+    /// The register's plural discipline (align-III.1v; `THE_VOICE.md` §1
+    /// rule 3 + §12): a count reads aloud — `1 row` · `4,210 rows` — never
+    /// the lazy parenthesized-suffix plural (banned, §2.2). Both forms are
+    /// spelled at the site (no suffix guessing), so verb agreement can ride
+    /// the phrase when it must.
+    let private counted (n: string) (one: string) (many: string) : string =
+        sprintf "%s %s" (humane n) (if n = "1" then one else many)
+
+    /// `counted` over an already-int count.
+    let private countedInt (n: int) (one: string) (many: string) : string =
+        counted (string n) one many
+
     /// The map a stage's internal name takes to its operator-facing name
     /// (`THE_VOICE.md` §13 — "Stage names are what they do for the operator …
     /// never the internal verb (`Snapshot`, `Profile`, `emit`, `canary`)").
@@ -396,7 +408,7 @@ module Voice =
             fun p ->
                 match text "sources" p, text "syncs" p, text "journalEntries" p with
                 | Some s, Some y, Some j ->
-                    View.Note(sprintf "The sink rides the package — %s witnessed source(s), %s edition(s), %s journal entries: the metadata plane survives the eject." (humane s) (humane y) (humane j))
+                    View.Note(sprintf "The sink rides the package — %s, %s, %s: the metadata plane survives the eject." (counted s "witnessed source" "witnessed sources") (counted y "edition" "editions") (counted j "journal entry" "journal entries"))
                 | _ -> View.Note "The sink rides the package — the witnessed metadata editions survive the eject."
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
@@ -712,7 +724,7 @@ module Voice =
           Statement      =
             fun p ->
                 match text "entryCount" p with
-                | Some n -> View.Hero(View.Bad, sprintf "%s change(s) cannot be expressed as a single ALTER. The database is unchanged." (humane n))
+                | Some n -> View.Hero(View.Bad, sprintf "%s cannot be expressed as a single ALTER. The database is unchanged." (counted n "change" "changes"))
                 | None   -> View.Hero(View.Bad, "A change cannot be expressed as a single ALTER. The database is unchanged.")
           Substantiation =
             fun p ->
@@ -801,7 +813,7 @@ module Voice =
             fun p ->
                 match text "rowCount" p, text "tableCount" p with
                 | Some rows, Some tables ->
-                    View.Hero(View.Ok, sprintf "Preview — %s row(s) would move across %s table(s), in dependency order. No rows written." (humane rows) (humane tables))
+                    View.Hero(View.Ok, sprintf "Preview — %s would move across %s, in dependency order. No rows written." (counted rows "row" "rows") (counted tables "table" "tables"))
                 | _ -> View.Hero(View.Ok, "Preview — rows would move in dependency order. No rows written.")
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
@@ -815,7 +827,7 @@ module Voice =
             fun p ->
                 match text "rowCount" p, text "tableCount" p with
                 | Some rows, Some tables ->
-                    View.Hero(View.Ok, sprintf "%s row(s) moved across %s table(s), in dependency order." (humane rows) (humane tables))
+                    View.Hero(View.Ok, sprintf "%s moved across %s, in dependency order." (counted rows "row" "rows") (counted tables "table" "tables"))
                 | _ -> View.Hero(View.Ok, "Rows moved in dependency order.")
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
@@ -831,7 +843,7 @@ module Voice =
           Statement      =
             fun p ->
                 match text "droppedCount" p with
-                | Some n -> View.Hero(View.Bad, sprintf "%s row(s) would be dropped — a relationship points to an unmatched record." (humane n))
+                | Some n -> View.Hero(View.Bad, sprintf "%s would be dropped — a relationship points to an unmatched record." (counted n "row" "rows"))
                 | None   -> View.Hero(View.Bad, "Rows would be dropped — a relationship points to an unmatched record.")
           Substantiation = fun _ -> []
           Action         = fun _ -> Some(View.Action "Pass --allow-drops to accept the loss, or resolve the records.") }
@@ -848,7 +860,7 @@ module Voice =
             fun p ->
                 match text "skippedCount" p, text "tableCount" p with
                 | Some n, Some t ->
-                    View.Note (sprintf "%s seed row(s) across %s table(s) were already on the target and were left untouched — the seed inserts only what is missing." (humane n) (humane t))
+                    View.Note (sprintf "Already on the target and left untouched: %s across %s — the seed inserts only what is missing." (counted n "seed row" "seed rows") (counted t "table" "tables"))
                 | _ -> View.Note "Seed rows already on the target were left untouched — the seed inserts only what is missing."
           Substantiation =
             fun p ->
@@ -900,7 +912,7 @@ module Voice =
           Statement      =
             fun p ->
                 match text "count" p with
-                | Some n -> View.Note(sprintf "%s optional configuration recommendation(s) gathered so far. Each is advisory and needs no action to complete this run; a summary follows at the end." (humane n))
+                | Some n -> View.Note(sprintf "%s gathered so far. Each is advisory and needs no action to complete this run; a summary follows at the end." (counted n "optional configuration recommendation" "optional configuration recommendations"))
                 | None   -> View.Note "Optional configuration recommendations gathered. Each is advisory and needs no action to complete this run; a summary follows at the end."
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
@@ -961,16 +973,16 @@ module Voice =
           Statement      =
             fun p ->
                 let families =
-                    [ "nullability", "nullability difference(s)"
-                      "identity",    "identity-flag difference(s)"
-                      "primaryKey",  "primary-key difference(s)"
-                      "other",       "other difference(s)" ]
-                    |> List.choose (fun (key, label) ->
-                        text key p |> Option.map (fun n -> sprintf "%s %s" (humane n) label))
-                let total = humane (textOr "total" "0" p)
+                    [ "nullability", ("nullability difference", "nullability differences")
+                      "identity",    ("identity-flag difference", "identity-flag differences")
+                      "primaryKey",  ("primary-key difference", "primary-key differences")
+                      "other",       ("other difference", "other differences") ]
+                    |> List.choose (fun (key, (one, many)) ->
+                        text key p |> Option.map (fun n -> counted n one many))
+                let total = counted (textOr "total" "0" p) "place" "places"
                 match families with
-                | [] -> View.Note(sprintf "The deployed database's column shapes differ from the model's declarations in %s place(s). The model's declared values were kept and the run continues; no action is required." total)
-                | fs -> View.Note(sprintf "The deployed database's column shapes differ from the model's declarations in %s place(s) — %s. The model's declared values were kept and the run continues; no action is required." total (String.concat ", " fs)) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the family list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined notice narration
+                | [] -> View.Note(sprintf "The deployed database's column shapes differ from the model's declarations in %s. The model's declared values were kept and the run continues; no action is required." total)
+                | fs -> View.Note(sprintf "The deployed database's column shapes differ from the model's declarations in %s — %s. The model's declared values were kept and the run continues; no action is required." total (String.concat ", " fs)) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the family list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined notice narration
           Substantiation =
             fun p ->
                 match text "samples" p with
@@ -994,21 +1006,21 @@ module Voice =
           Statement      =
             fun p ->
                 let families =
-                    [ "notNull",  "required column(s) with nulls"
-                      "unique",   "unique column(s) with duplicates"
-                      "orphans",  "relationship(s) with unmatched records"
-                      "overflow", "column(s) with values past the declared length" ]
-                    |> List.choose (fun (key, label) ->
+                    [ "notNull",  ("required column with nulls", "required columns with nulls")
+                      "unique",   ("unique column with duplicates", "unique columns with duplicates")
+                      "orphans",  ("relationship with unmatched records", "relationships with unmatched records")
+                      "overflow", ("column with values past the declared length", "columns with values past the declared length") ]
+                    |> List.choose (fun (key, (one, many)) ->
                         text key p
                         |> Option.filter (fun n -> n <> "0")
-                        |> Option.map (fun n -> sprintf "%s %s" (humane n) label))
-                let total  = humane (textOr "total" "0" p)
-                let tables = humane (textOr "entities" "0" p)
+                        |> Option.map (fun n -> counted n one many))
+                let total  = counted (textOr "total" "0" p) "place" "places"
+                let tables = counted (textOr "entities" "0" p) "table" "tables"
                 match families with
                 | [] ->
-                    View.Note(sprintf "The source data contradicts the declared model in %s place(s) across %s table(s). A data load can fail until the rows are repaired." total tables)
+                    View.Note(sprintf "The source data contradicts the declared model in %s across %s. A data load can fail until the rows are repaired." total tables)
                 | fs ->
-                    View.Note(sprintf "The source data contradicts the declared model in %s place(s) across %s table(s) — %s. A data load can fail until the rows are repaired." total tables (String.concat ", " fs)) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the family list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined rollup narration
+                    View.Note(sprintf "The source data contradicts the declared model in %s across %s — %s. A data load can fail until the rows are repaired." total tables (String.concat ", " fs)) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the family list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined rollup narration
           Substantiation = fun _ -> []
           Action         =
             fun p ->
@@ -1027,8 +1039,8 @@ module Voice =
           Statement      =
             fun p ->
                 View.Hero(View.Ok,
-                    sprintf "The environments are one shape. %s environment(s) match the target schema and the data fits every declared constraint."
-                        (humane (textOr "envs" "0" p)))
+                    sprintf "The environments are one shape. %s, and the data fits every declared constraint."
+                        (counted (textOr "envs" "0" p) "environment matches the target schema" "environments match the target schema"))
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
@@ -1050,8 +1062,8 @@ module Voice =
                         text key p
                         |> Option.filter (fun n -> n <> "0")
                         |> Option.map (fun n -> sprintf "%s %s" (humane n) label))
-                let total = humane (textOr "total" "0" p)
-                let envs  = humane (textOr "envs" "0" p)
+                let total = counted (textOr "total" "0" p) "finding remains" "findings remain"
+                let envs  = counted (textOr "envs" "0" p) "environment" "environments"
                 let queueClause =
                     match text "decide" p with
                     | Some n when n <> "0" -> " The ruling queue is first below."
@@ -1059,10 +1071,10 @@ module Voice =
                 match lanes with
                 | [] ->
                     View.Hero(View.Warn,
-                        sprintf "The environments are converging: %s finding(s) remain across %s environment(s).%s" total envs queueClause)
+                        sprintf "The environments are converging: %s across %s.%s" total envs queueClause)
                 | ls ->
                     View.Hero(View.Warn,
-                        sprintf "The environments are converging: %s finding(s) remain across %s environment(s) — %s.%s" total envs (String.concat ", " ls) queueClause) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the lane list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined verdict narration
+                        sprintf "The environments are converging: %s across %s — %s.%s" total envs (String.concat ", " ls) queueClause) // LINT-ALLOW: terminal operator-facing copy at the Voice boundary; the lane list is a free-text enumeration, String.concat is the irreducible primitive for this comma-joined verdict narration
           Substantiation = fun _ -> []
           Action         =
             fun p ->
@@ -1081,8 +1093,8 @@ module Voice =
           Statement      =
             fun p ->
                 View.Hero(View.Bad,
-                    sprintf "The environments are forked in %s place(s): the environments disagree in ways no promotion order explains. Each fork names the environments that disagree, and the ruling queue is first below."
-                        (humane (textOr "forks" "0" p)))
+                    sprintf "The environments are forked in %s: the environments disagree in ways no promotion order explains. Each fork names the environments that disagree, and the ruling queue is first below."
+                        (counted (textOr "forks" "0" p) "place" "places"))
           Substantiation = fun _ -> []
           Action         =
             fun p ->
@@ -1100,8 +1112,8 @@ module Voice =
           Statement      =
             fun p ->
                 View.Hero(View.Warn,
-                    sprintf "%s interim change(s) in environments.overlay.json — each carries the probe that clears it."
-                        (humane (textOr "relaxations" "0" p)))
+                    sprintf "%s in environments.overlay.json — each carries the probe that clears it."
+                        (counted (textOr "relaxations" "0" p) "interim change" "interim changes"))
           Substantiation =
             fun _ -> [ View.Note "The merge is an operator edit; the engine never applies it. environments.probes.sql carries every reopen probe as one runnable batch." ]
           Action         = fun _ -> None }
@@ -1131,18 +1143,18 @@ module Voice =
           Statement      =
             fun p ->
                 View.Hero(View.Ok,
-                    sprintf "Every compared row is byte-identical across the physical-to-logical gap: %s row(s) across %s kind(s)."
-                        (humane (textOr "rows" "0" p)) (humane (textOr "kinds" "0" p)))
+                    sprintf "Every compared row is byte-identical between the source and the target: %s across %s."
+                        (counted (textOr "rows" "0" p) "row" "rows") (counted (textOr "kinds" "0" p) "table" "tables"))
           Substantiation =
             fun p ->
                 let ledger =
                     match text "ledger" p |> Option.filter (fun s -> s <> "") with
                     | Some path -> View.Note(sprintf "The proof holds modulo the named ledger: %s — every replayed key remap is that journal's record." path)
-                    | None -> View.Note "No intervention ledger was supplied — this proof claims strict byte-identity."
+                    | None -> View.Note "No intervention ledger was supplied; the proof is strict byte-identity."
                 let tolerances =
                     text "tolerances" p
                     |> Option.filter (fun s -> s <> "")
-                    |> Option.map (fun t -> View.Note(sprintf "Tolerances in force: %s — the canonical row form's named erasures." t))
+                    |> Option.map (fun t -> View.Note(sprintf "Tolerances in force: %s — differences of these named forms are excluded from the comparison." t))
                 ledger :: (tolerances |> Option.toList)
           Action         =
             fun p ->
@@ -1158,8 +1170,8 @@ module Voice =
           Statement      =
             fun p ->
                 View.Hero(View.Bad,
-                    sprintf "The rows differ across the gap: %s difference(s) over %s compared row(s) across %s kind(s). The first differing rows are named below, each by its key."
-                        (humane (textOr "diffs" "0" p)) (humane (textOr "rows" "0" p)) (humane (textOr "kinds" "0" p)))
+                    sprintf "The rows differ between the source and the target: %s over %s across %s. The first differing rows are named below, each by its key."
+                        (counted (textOr "diffs" "0" p) "difference" "differences") (counted (textOr "rows" "0" p) "compared row" "compared rows") (counted (textOr "kinds" "0" p) "table" "tables"))
           Substantiation =
             fun p ->
                 match text "ledger" p |> Option.filter (fun s -> s <> "") with
@@ -1172,10 +1184,10 @@ module Voice =
                 |> Option.map (fun path -> View.Action(sprintf "Review %s — every kind's totals and every named difference, machine-readable." path)) }
 
     /// The humane capture-age clause the three evidence notices share
-    /// ("today" / "N day(s) ago") — mirrors the board masthead's wording so
+    /// ("today" / "N days ago") — mirrors the board masthead's wording so
     /// the notice and the masthead read as one fact.
     let private ageClause (age: string) : string =
-        if age = "0" then "today" else sprintf "%s day(s) ago" (humane age)
+        if age = "0" then "today" else sprintf "%s ago" (counted age "day" "days")
 
     /// `estate.evidence.cached` — §5: the run's evidence basis, stated up
     /// front (RT-7 — pay-once evidence says so when it rides; the second
@@ -1186,10 +1198,10 @@ module Voice =
           Statement      =
             fun p ->
                 View.Note(
-                    sprintf "Evidence for %s rides the store: captured %s, fingerprints clean across %s kind(s)."
+                    sprintf "Evidence for %s rides the store: captured %s, fingerprints clean across %s."
                         (textOr "env" "an environment" p)
                         (ageClause (textOr "age" "0" p))
-                        (humane (textOr "kinds" "0" p)))
+                        (counted (textOr "kinds" "0" p) "table" "tables"))
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
@@ -1201,7 +1213,7 @@ module Voice =
           Statement      =
             fun p ->
                 View.Note(
-                    sprintf "For %s, %s kind(s) moved since capture — re-profiled this run; the store now carries the fresh evidence."
+                    sprintf "For %s, %s moved since capture — re-profiled this run; the store now carries the fresh evidence."
                         (textOr "env" "an environment" p)
                         (humane (textOr "moved" "0" p)))
           Substantiation = fun _ -> []
@@ -1231,7 +1243,7 @@ module Voice =
           Statement      =
             fun p ->
                 View.Note(
-                    sprintf "The recorded rulings could not be read this run — %s. The board renders without them; the ruling files are intact on disk."
+                    sprintf "The recorded rulings could not be read this run — %s. The board is rendered without them; the ruling files are intact on disk."
                         (textOr "cause" "the ruling store did not parse" p))
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
@@ -1263,10 +1275,10 @@ module Voice =
           Statement      =
             fun p ->
                 View.Hero(View.Ok,
-                    sprintf "Sync %s witnessed for %s — %s displacement(s) journaled since the prior witness."
+                    sprintf "Sync %s witnessed for %s — %s journaled since the prior witness."
                         (textOr "syncId" "?" p)
                         (textOr "env" "the environment" p)
-                        (humane (textOr "displacements" "0" p)))
+                        (counted (textOr "displacements" "0" p) "displacement" "displacements"))
           Substantiation = fun _ -> []
           Action         =
             fun p ->
@@ -1307,9 +1319,9 @@ module Voice =
           Statement      =
             fun p ->
                 View.Note(
-                    sprintf "%s carries %s contested table(s) — two live claims on one physical table; each ruling is on the DECIDE lane."
+                    sprintf "%s carries %s — two live claims on one physical table; each ruling is on the DECIDE lane."
                         (textOr "env" "an environment" p)
-                        (humane (textOr "tables" "0" p)))
+                        (counted (textOr "tables" "0" p) "contested table" "contested tables"))
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
@@ -1322,9 +1334,9 @@ module Voice =
           Statement      =
             fun p ->
                 View.Note(
-                    sprintf "%s carries %s tombstone-only table(s) — deleted entities whose physical tables survive; each shape stays addressable through the sink's witnessed editions."
+                    sprintf "%s carries %s — deleted entities whose physical tables survive; each shape stays addressable through the sink's witnessed editions."
                         (textOr "env" "an environment" p)
-                        (humane (textOr "tables" "0" p)))
+                        (counted (textOr "tables" "0" p) "tombstone-only table" "tombstone-only tables"))
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
@@ -1336,9 +1348,9 @@ module Voice =
           Statement      =
             fun p ->
                 View.Note(
-                    sprintf "%s carries %s unclaimed table(s) — on disk with no metadata claim, outside the modeled estate; each ruling is on the DECIDE lane."
+                    sprintf "%s carries %s — on disk with no metadata claim, outside the modeled estate; each ruling is on the DECIDE lane."
                         (textOr "env" "an environment" p)
-                        (humane (textOr "tables" "0" p)))
+                        (counted (textOr "tables" "0" p) "unclaimed table" "unclaimed tables"))
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
@@ -1352,9 +1364,9 @@ module Voice =
           Statement      =
             fun p ->
                 View.Note(
-                    sprintf "%s carries %s identity correspondence proposal(s) — a live registration continuing a tombstoned entity's table; confirm or reject each on the DECIDE lane (nothing is adopted without the ruling)."
+                    sprintf "%s carries %s — a live registration continuing a tombstoned entity's table; confirm or reject each on the DECIDE lane (nothing is adopted without the ruling)."
                         (textOr "env" "an environment" p)
-                        (humane (textOr "tables" "0" p)))
+                        (counted (textOr "tables" "0" p) "identity correspondence proposal" "identity correspondence proposals"))
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
@@ -1778,16 +1790,16 @@ module Voice =
     let migrationStopDetail (e: MigrationError) : string =
         match e with
         | DiffFailed _              -> "the changes could not be computed"
-        | RefusedByViolations v     -> sprintf "%d removal(s) are not yet approved" (List.length v)
-        | RefusedBySchemaErrors es  -> sprintf "%d change(s) cannot be expressed as a single ALTER" (List.length es)
+        | RefusedByViolations v     -> sprintf "%s not yet approved" (countedInt (List.length v) "removal is" "removals are")
+        | RefusedBySchemaErrors es  -> sprintf "%s cannot be expressed as a single ALTER" (countedInt (List.length es) "change" "changes")
         | EmitFailed _              -> "the changes could not be built"
         | SchemaReadFailed _        -> "the deployed schema could not be read"
         | ExecutionFailed msg       -> sprintf "the migration could not be applied — %s" msg
         | RefusedByTightening msg   -> sprintf "a column tightening would fail against existing data — %s" msg
         | VerificationFailed _      -> "the round-trip did not match the model"
         | DataTransferFailed _      -> "the data load did not complete"
-        | RefusedByCdc t            -> sprintf "the schema change would run against a CDC-tracked database (%d table(s))" (List.length t)
+        | RefusedByCdc t            -> sprintf "the schema change would run against a CDC-tracked database (%s)" (countedInt (List.length t) "table" "tables")
         | RefusedByCdcUnverifiable msg -> sprintf "the CDC state could not be verified, so the schema change did not run — %s" msg
         | StoreReadFailed msg       -> sprintf "the run history could not be read — %s" msg
-        | ExecutionRolledBack (msg, n) -> sprintf "the migration could not be applied and was rolled back to its original state (%d rename(s) reverted) — %s" n msg
+        | ExecutionRolledBack (msg, n) -> sprintf "the migration could not be applied and was rolled back to its original state (%s reverted) — %s" (countedInt n "rename" "renames") msg
         | PartialWriteUnrecovered (msg, _) -> sprintf "the migration failed part-way and could not be fully rolled back, so some changes remain — %s" msg

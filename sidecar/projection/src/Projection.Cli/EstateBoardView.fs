@@ -1,4 +1,11 @@
 module Projection.Cli.EstateBoardView
+
+/// The register's plural discipline (align-III.1v; THE_VOICE §1 rule 3 + §12).
+let private counted (n: int) (one: string) (many: string) : string =
+    sprintf "%s %s" ((int64 n).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)) (if n = 1 then one else many)
+
+let private counted64 (n: int64) (one: string) (many: string) : string =
+    sprintf "%s %s" (n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)) (if n = 1L then one else many)
 // LINT-ALLOW-FILE: the estate-board terminal view — `String.concat` composes the
 //   operator-facing board rows at the console text boundary (the rendered string
 //   IS the output); no typed AST applies to free-text terminal narration, and
@@ -72,13 +79,13 @@ let private fidelityLine : Estate.FidelityClause -> string =
         "not configured — the verdict stands on the schema and data evidence"
     | Estate.FidelityClause.Green (flow, ageDays) ->
         if ageDays <= 0 then sprintf "green — flow '%s', every row byte-identical (captured today)" flow
-        else sprintf "green — flow '%s', every row byte-identical (%d day(s) old)" flow ageDays
+        else sprintf "green — flow '%s', every row byte-identical (%s old)" flow (counted ageDays "day" "days")
     | Estate.FidelityClause.Missing flow ->
         sprintf "flow '%s' has not run — it stands as a ruling below" flow
     | Estate.FidelityClause.Stale (flow, ageDays) ->
-        sprintf "flow '%s' is %d day(s) old and predates this run's evidence — a ruling below" flow ageDays
+        sprintf "flow '%s' is %s old and predates this run's evidence — a ruling below" flow (counted ageDays "day" "days")
     | Estate.FidelityClause.Diverged (flow, diffs) ->
-        sprintf "flow '%s' reports %d differing row(s) — a ruling below" flow diffs
+        sprintf "flow '%s' reports %s — a ruling below" flow (counted64 diffs "differing row" "differing rows")
 
 /// The evidence-store basis line.
 let private storeLine : Estate.EvidenceStoreBasis -> string =
@@ -136,10 +143,10 @@ let private burndownBlocks (report: Estate.EstateReport) : View list =
     let movement =
         match report.Burndown, report.Evidence with
         | Some b, _ ->
-            let since = if b.SinceAgeDays <= 0 then "earlier today" else sprintf "%d day(s) ago" b.SinceAgeDays
+            let since = if b.SinceAgeDays <= 0 then "earlier today" else sprintf "%s ago" (counted b.SinceAgeDays "day" "days")
             let oldest =
                 match b.OldestDays with
-                | Some days when b.Remaining + b.Opened > 0 -> sprintf " · oldest open %d day(s)" days
+                | Some days when b.Remaining + b.Opened > 0 -> sprintf " · oldest open %s" (counted days "day" "days")
                 | _ -> ""
             let st = if b.Remaining + b.Opened = 0 then Ok else Warn
             Field (sprintf "since %s (%s)" b.SinceRunId since,
@@ -150,17 +157,17 @@ let private burndownBlocks (report: Estate.EstateReport) : View list =
             Note "the estate keeps no memory without a store; PROJECTION_ESTATE_DIR enables the burndown."
     [ yield movement
       if report.Streak > 0 then
-          yield Field ("streak", sprintf "%d consecutive unified run(s)" report.Streak, Ok) ]
+          yield Field ("streak", counted report.Streak "consecutive unified run" "consecutive unified runs", Ok) ]
 
 // -- the artifacts index -----------------------------------------------------
 
 let private artifactBlocks (report: Estate.EstateReport) : View list =
     [ yield Note "environments.json — the full findings record: every board element, machine-readable."
       for file, blocks in report.Remediation do
-          yield Note (sprintf "%s — %d prepared repair block(s); the locating SELECT is active, every repair commented." file blocks)
+          yield Note (sprintf "%s — %s; the locating SELECT is active, every repair commented." file (counted blocks "prepared repair block" "prepared repair blocks"))
       match report.OverlayEntries with
       | Some entries when entries > 0 ->
-          yield Note (sprintf "environments.overlay.json — %d interim change(s) as config edits; each carries its reopen probe." entries)
+          yield Note (sprintf "environments.overlay.json — %s as config edits; each carries its reopen probe." (counted entries "interim change" "interim changes"))
           yield Note "environments.probes.sql — every reopen probe, runnable as one batch."
       | _ -> () ]
 
@@ -178,7 +185,7 @@ let private actionOf (report: Estate.EstateReport) : Status * string =
         match Estate.laneFindings EstateLane.Repair report with
         | f :: _ -> Warn, sprintf "Review the first REPAIR finding — %s" (FindingKey.readableLabel f.Key)
         | [] when report.Streak > 1 ->
-            Ok, sprintf "The estate holds — %d consecutive unified run(s); re-run on the publish cadence." report.Streak
+            Ok, sprintf "The estate holds — %s; re-run on the publish cadence." (counted report.Streak "consecutive unified run" "consecutive unified runs")
         | [] -> Ok, "The estate holds; re-run on the publish cadence."
 
 // -- the whole board ---------------------------------------------------------

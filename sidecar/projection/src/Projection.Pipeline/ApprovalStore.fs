@@ -98,7 +98,7 @@ module ApprovalStore =
                 // never a fabricated `MinValue` approval dated year 1 (the
                 // a5-F7 lie, retired here as the named same-lie rider).
                 match tryStr "at" with
-                | None -> Error "record missing required 'at' instant"
+                | None -> Error "the record is missing its 'at' instant"
                 | Some s ->
                     match DateTimeOffset.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind) with
                     | true, dto ->
@@ -106,7 +106,7 @@ module ApprovalStore =
                             { PolicyVersion = pv
                               State         = state
                               At            = dto }
-                    | _ -> Error (sprintf "record carries a malformed 'at' instant '%s'" s)
+                    | _ -> Error (sprintf "the record carries a malformed 'at' instant '%s'" s)
         | _ -> Error "record missing required 'policyVersion' / 'decision' string fields"
 
     /// Load the registry from `path`. A **missing file is `Ok empty`** — a

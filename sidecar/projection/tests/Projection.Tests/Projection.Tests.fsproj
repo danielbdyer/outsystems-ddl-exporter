@@ -363,6 +363,7 @@
     <Compile Include="MetadataSnapshotCodecTests.fs" />
     <Compile Include="SinkDisplacementTests.fs" />
     <Compile Include="SyncOrdinalTests.fs" />
+    <Compile Include="VoiceRegisterTests.fs" />
     <Compile Include="SinkStoreTests.fs" />
     <Compile Include="SinkReadTests.fs" />
     <Compile Include="SinkDiffViewTests.fs" />

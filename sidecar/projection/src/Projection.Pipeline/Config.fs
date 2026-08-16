@@ -1844,7 +1844,7 @@ module Config =
                         | _ ->
                             Result.failureOf
                                 (configError "emission.dataCorrections.approvedAt"
-                                    (sprintf "correction '%s' carries a malformed 'approvedAt' instant '%s' (ISO-8601 form required)." id raw))
+                                    (sprintf "correction '%s' carries a malformed 'approvedAt' instant '%s' — supply an ISO-8601 instant." id raw))
                 return
                     { Id = id
                       SourceRemediationId = dcStr el "sourceRemediationId"

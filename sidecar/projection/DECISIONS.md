@@ -32301,3 +32301,47 @@ Laws: SyncOrdinalTests (create/next/order/edition-text) + fail-closed instant la
 beside each store's existing decode laws (LifecycleStore ×3, ApprovalStore, RunLedger,
 Run, Config, TighteningBinding, SinkStore corrupt-line + manifest-absent, Ref grammar
 non-positive-pin).
+
+## 2026-08-16 — align-III.1v: the Voice register audit + stage-1 repair (operator directive)
+
+Mid-Chapter-III operator directive: *"audit the new Voice entries we are publishing …
+and are seeing in these Inspect FidelityRows outcomes … we most certainly are not
+aligned with THE_VOICE.md right now."* The audit (workpaper
+`audits/alignment-2026-08-16/a11-voice-register.md`) CONFIRMED five violation classes;
+the largest — the lazy plural `row(s)`/`kind(s)`/`difference(s)` — stood at 282 sites
+across ~40 files, unbanned by §2.2 and therefore unenforced, even though the house had
+already refused the form once (`EstateTests` pins `DoesNotContain("difference(s)")`).
+
+**The ratchet (this slice).** THE_VOICE.md §2.2 gains the lazy-plural ban + two §11
+calibration rows; a `counted n one many` helper (the `humane` sibling — both forms
+spelled at the site, verb agreement riding the phrase) lands beside each surface's
+`humane`; the register's HEART is repaired to zero occurrences — Voice.fs (every copy),
+EstateFinding.fs (the finding exemplars), Estate.fs (the finding grammar, mastheads,
+burndown, runbook), EstateBoardView.fs, TtyRenderer.fs, GoBoardView.fs,
+ReviewNavigator.fs, Faces/Fidelity.fs, Program.fs — and `VoiceRegisterTests` freezes
+those nine files at zero (the executable ratchet; the source-scan idiom).
+
+**The named-surface repairs.** `fidelity.rows.matched/diverged` lead with the exact
+referent ("between the source and the target" — the coined "physical-to-logical gap"
+figure retired from the statement); "this proof claims strict byte-identity" now
+ASSERTS ("the proof is strict byte-identity"); the tolerance note keeps the config's
+own tokens but frames them plainly; the reconcile lead is stative ("The target 'x' is
+reconciled against the manifest…"), the `NO` caps-shout and the `per-kind pass/fail`
+fragment retired, the escalation now an object-naming imperative. `kind(s)` on
+operator surfaces became **tables** (§2.1: the boundary translates, always).
+align-III.1's own decode messages gained their articles ("the coordinate is missing
+its 'at' instant") and the config refusal its provision imperative ("supply an
+ISO-8601 instant"); `estate.rulings.unreadable` went stative. Inspect's `at` field,
+the board mastheads (`ROWS —`, lane labels), and `@sync` payload fields were audited
+and HELD with citations (substantiation-layer placement, rule 3).
+
+**BEHAVIORAL: operator-facing copy bytes only** — no decision, wire format, or
+artifact changes; every moved test pin moved with this entry as its why. **Stage 2
+(named deferral, trigger = the next voice slice or III.23, whichever first):** the
+long tail — Faces/Transfer.fs (~60 sites), TransferRun.fs, the emitters
+(Remediation/Summary/DecisionLog/ApplyRunbook/BatchSplitter), TransferImpactView,
+Compare/Readiness/PeerTransfer/ModelFidelity/GoBoard, ModuleFilter, the Core passes —
+after which `VoiceRegisterTests`' frozen list widens to the full src tree. The
+exemplary consent surfaces (WriteSignoff/ActConsent) carry the same class; they stay
+untouched pending an explicit operator ruling (the standing anti-finding rule holds
+until then).

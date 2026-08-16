@@ -271,6 +271,15 @@ module Estate =
     let private humane64 (n: int64) : string =
         n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
 
+    /// The register's plural discipline (align-III.1v; THE_VOICE §1 rule 3 +
+    /// §12): a count reads aloud — "1 row" / "4,210 rows" — with both forms
+    /// spelled at the site so verb agreement can ride the phrase.
+    let private counted (n: int) (one: string) (many: string) : string =
+        sprintf "%s %s" (humane n) (if n = 1 then one else many)
+
+    let private counted64 (n: int64) (one: string) (many: string) : string =
+        sprintf "%s %s" (humane64 n) (if n = 1L then one else many)
+
     /// The operator-facing name of a kind key, resolved against the catalog
     /// that carries it; the identity's display root when the catalog does not
     /// (an impossible state on the constructing side, kept total).
@@ -655,15 +664,15 @@ module Estate =
         | ModelFidelity.NotNullButNullsPresent _ when relaxedAttr () -> None
         | ModelFidelity.NotNullButNullsPresent n when n > bandFor posture subject ->
             contribution EstateFindingKind.DataNotNullPastBand
-                (sprintf "%s is required (NOT NULL); %s NULL row(s) in %s exceed the repair band — leave the column nullable until they are backfilled"
-                    subject (humane64 n) env) n
+                (sprintf "%s is required (NOT NULL); %s in %s %s the repair band — leave the column nullable until they are backfilled"
+                    subject (counted64 n "NULL row" "NULL rows") env (if n = 1L then "exceeds" else "exceed")) n
         | ModelFidelity.NotNullButNullsPresent n ->
             // Post-WP-3 (DECISIONS 2026-07-16): the empty string survives
             // distinct from NULL on every write path — it no longer folds into
             // the NULL count at ingestion, nor normalizes to NULL on publish.
             // The count is genuine NULLs only; the pre-WP-3 "includes empty
             // text" clause is retired with the erasure it described.
-            let count = if n > 0L then sprintf "%s NULL row(s)" (humane64 n) else "NULL rows"
+            let count = if n > 0L then counted64 n "NULL row" "NULL rows" else "NULL rows"
             contribution EstateFindingKind.DataNotNull
                 (sprintf "%s is required (NOT NULL); %s holds %s" subject env count) (max n 1L)
         | ModelFidelity.UniqueButDuplicatesPresent ->
@@ -680,15 +689,15 @@ module Estate =
             let trueOrphans = n - zeros
             if trueOrphans > bandFor posture subject then
                 contribution EstateFindingKind.DataOrphansPastBand
-                    (sprintf "%s has %s reference(s) to missing rows in %s, past the repair band — leave the relationship unenforced until they clear"
-                        subject (humane64 trueOrphans) env) trueOrphans
+                    (sprintf "%s has %s to missing rows in %s, past the repair band — leave the relationship unenforced until they clear"
+                        subject (counted64 trueOrphans "reference" "references") env) trueOrphans
             else
                 let sentinelClause =
                     if zeros > 0L then sprintf ", of which %s reference the unset value 0" (humane64 zeros)
                     else ""
                 contribution EstateFindingKind.DataOrphans
-                    (sprintf "%s has %s reference(s) to rows that do not exist in %s%s"
-                        subject (humane64 n) env sentinelClause) (max n 1L)
+                    (sprintf "%s has %s to rows that do not exist in %s%s"
+                        subject (counted64 n "reference" "references") env sentinelClause) (max n 1L)
         | ModelFidelity.LengthOrTypeOverflow (observed, declared) ->
             contribution EstateFindingKind.DataOverflow
                 (sprintf "%s holds values that exceed its column length setting — %s against a setting of %s — in %s"
@@ -746,7 +755,7 @@ module Estate =
                     |> Option.bind (kindRowCountIn profile)
                 let costClause =
                     match rows with
-                    | Some n when n > 0L -> sprintf " — re-trusting scans %s row(s)" (humane64 n)
+                    | Some n when n > 0L -> sprintf " — re-trusting scans %s" (counted64 n "row" "rows")
                     | _ -> ""
                 { Kind = EstateFindingKind.SchemaTrust
                   Subject = subject
@@ -783,7 +792,7 @@ module Estate =
                         Subject = name
                         Reference = None
                         Env = maxEnv
-                        Fragment = sprintf "%s holds %s row(s) in %s" name (humane64 maxCount) maxEnv
+                        Fragment = sprintf "%s holds %s in %s" name (counted64 maxCount "row" "rows") maxEnv
                         Weight = maxCount
                         Signature = None; Attribution = None }
                       { Kind = EstateFindingKind.DataAsymmetry
@@ -791,8 +800,8 @@ module Estate =
                         Reference = None
                         Env = minEnv
                         Fragment =
-                          sprintf "%s holds %s row(s) in %s — findings drawn from the smaller sample are advisory"
-                              name (humane64 minCount) minEnv
+                          sprintf "%s holds %s in %s — findings drawn from the smaller sample are advisory"
+                              name (counted64 minCount "row" "rows") minEnv
                         Weight = minCount
                         Signature = None; Attribution = None } ]
                 else [])
@@ -840,8 +849,8 @@ module Estate =
                           Reference = None
                           Env = env
                           Fragment =
-                            sprintf "%s has no duplicate in %s — %s of %s row(s) are distinct, so it could serve as a business key for matching"
-                                subject env (humane64 c.DistinctCount) (humane64 total)
+                            sprintf "%s has no duplicate in %s — %s of %s %s distinct, so it could serve as a business key for matching"
+                                subject env (humane64 c.DistinctCount) (counted64 total "row" "rows") (if total = 1L then "is" else "are")
                           Weight = total
                           Signature = None; Attribution = None })
                 else []))
@@ -933,8 +942,8 @@ module Estate =
                                   Reference = None
                                   Env = env
                                   Fragment =
-                                    sprintf "%s holds %s row(s) set to %s in %s — a stand-in for an empty date; a required-column reading is satisfied, but the dates carry no real value"
-                                        subject (humane64 sentinelCount) leadSentinel env
+                                    sprintf "%s holds %s set to %s in %s — a stand-in for an empty date; a required-column reading is satisfied, but the dates carry no real value"
+                                        subject (counted64 sentinelCount "row" "rows") leadSentinel env
                                   Weight = sentinelCount
                                   Signature = None; Attribution = None }
                         else None))))
@@ -976,8 +985,8 @@ module Estate =
                               Reference = None
                               Env = env
                               Fragment =
-                                sprintf "under a case-insensitive collation, %s collapses %s case-distinct value(s) into duplicates in %s — the unique declaration fails on unification"
-                                    subject (humane collapsedPairs) env
+                                sprintf "under a case-insensitive collation, %s collapses %s into duplicates in %s — the unique declaration fails on unification"
+                                    subject (counted collapsedPairs "case-distinct value" "case-distinct values") env
                               Weight = int64 collapsedPairs
                               Signature = None; Attribution = None }
                     else None)))
@@ -1015,8 +1024,8 @@ module Estate =
                       Reference = None
                       Env = env
                       Fragment =
-                        sprintf "%s kind(s) in %s number their rows differently than the target — the key is generated by the database in one and a fixed value in the other, so renames stay unstable until the identity is anchored"
-                            (humane mismatched) env
+                        sprintf "%s in %s %s rows differently than the target — the key is generated by the database in one and a fixed value in the other, so renames stay unstable until the identity is anchored"
+                            (counted mismatched "table" "tables") env (if mismatched = 1 then "numbers its" else "number their")
                       Weight = int64 mismatched
                       Signature = None; Attribution = None }
             else None)
@@ -1182,8 +1191,8 @@ module Estate =
                     let subject = sprintf "%s.%s" kindName attrName
                     meterLines EstateFindingKind.PostureActive subject (attributionOf refKey)
                         (fun env count ->
-                            sprintf "%s → %s is left unenforced for now; %s reference(s) still point to missing rows in %s"
-                                subject targetName count env)
+                            sprintf "%s → %s is left unenforced for now; %s %s still point to missing rows in %s"
+                                subject targetName count (if count = "1" then "reference" else "references") env)
                         (fun env ->
                             sprintf "%s → %s is left unenforced for now; the count is unobserved in %s"
                                 subject targetName env)
@@ -1206,13 +1215,13 @@ module Estate =
                 | Some subject ->
                     meterLines EstateFindingKind.PostureActive subject (attributionOf attrKey)
                         (fun env count ->
-                            sprintf "%s is left nullable for now; %s row(s) are still NULL in %s"
-                                subject count env)
+                            sprintf "%s is left nullable for now; %s %s still NULL in %s"
+                                subject count (if count = "1" then "row is" else "rows are") env)
                         (fun env ->
                             sprintf "%s is left nullable for now; the count is unobserved in %s"
                                 subject env)
                         (fun env ->
-                            sprintf "%s has zero NULL row(s) in %s now — the column can be required (NOT NULL) again"
+                            sprintf "%s has zero NULL rows in %s now — the column can be required (NOT NULL) again"
                                 subject env)
                         (fun p -> Profile.tryFindColumn attrKey p |> Option.map (fun c -> c.NullCount)))
         referenceLines @ attributeLines
@@ -1558,8 +1567,8 @@ module Estate =
                               Plane     = EstateFindingKind.planeOf kind
                               Envs      = envs |> List.map (fun e -> e, 1L)
                               Statement =
-                                sprintf "%s is NOT NULL in the deployed database(s) %s and nullable in the model — publishing the model's shape drops the constraint there."
-                                    subject (envListText envs)
+                                sprintf "%s is NOT NULL in the deployed %s %s and nullable in the model — publishing the model's shape drops the constraint there."
+                                    subject (if List.length envs = 1 then "database" else "databases") (envListText envs)
                               Lever     =
                                 match EstateFindingKind.leverFormOf kind with
                                 | EstateLeverForm.Ruling imperative -> Some imperative
@@ -1624,8 +1633,8 @@ module Estate =
                                   Reference = None
                                   Env = env
                                   Fragment =
-                                    sprintf "%s in %s differs from the seed — %s row(s) missing, %s extra, %s value difference(s)"
-                                        name env (humane missing) (humane extra) (humane drift)
+                                    sprintf "%s in %s differs from the seed — %s missing, %s extra, %s"
+                                        name env (counted missing "row" "rows") (humane extra) (counted drift "value difference" "value differences")
                                   Weight = int64 (missing + extra + drift)
                                   Signature = None; Attribution = None })
             | _ -> [])
@@ -1778,7 +1787,7 @@ module Estate =
                     sprintf " The relationship targets %s, which sits in a reference cycle — each reconciliation choice ripples, so this one needs a plan." targetName
                 elif inDeg >= ctx.HubInDegree then
                     ReconciliationDifficulty.High,
-                    sprintf " The relationship targets %s, referenced by %d relationship(s) across the model — each reconciliation choice ripples, so this one needs a plan." targetName inDeg
+                    sprintf " The relationship targets %s, referenced by %s across the model — each reconciliation choice ripples, so this one needs a plan." targetName (counted inDeg "relationship" "relationships")
                 else
                     ReconciliationDifficulty.Moderate,
                     sprintf " The relationship targets %s — reconcile each row against it." targetName
@@ -1932,7 +1941,7 @@ module Estate =
                             // sample-confidence caveat lives on the cross-environment
                             // conclusions (asymmetry / uniqueness), not here.
                             |> Option.map (fun c ->
-                                sprintf "satisfied in %s (%s row(s) observed)" env (humane64 c.RowCount))
+                                sprintf "satisfied in %s (%s observed)" env (counted64 c.RowCount "row" "rows"))
                 let clauses =
                     perEnv
                     |> List.choose (fun (env, _, _) ->
@@ -2203,10 +2212,10 @@ module Estate =
                     (sprintf "The fidelity proof for flow '%s' has not run against the current estate." flow) ]
             | FidelityClause.Stale (flow, ageDays) ->
                 [ proofFinding EstateFindingKind.ProofStale flow
-                    (sprintf "The fidelity proof for flow '%s' is %s day(s) old and the estate's evidence has moved since — the proof predates what this run can see." flow (humane ageDays)) ]
+                    (sprintf "The fidelity proof for flow '%s' is %s old and the estate's evidence has moved since — the proof predates what this run can see." flow (counted ageDays "day" "days")) ]
             | FidelityClause.Diverged (flow, diffs) ->
                 [ proofFinding EstateFindingKind.ProofDiverged flow
-                    (sprintf "The fidelity proof for flow '%s' reports %s differing row(s) — the load is not yet byte-faithful." flow (humane64 diffs)) ]
+                    (sprintf "The fidelity proof for flow '%s' reports %s — the load is not yet byte-faithful." flow (counted64 diffs "differing row" "differing rows")) ]
         let findings = report.Findings @ extra
         let verdict =
             if List.isEmpty findings then Verdict.Unified
@@ -2473,9 +2482,9 @@ module Estate =
     /// list is `environments.json`'s, searchable, never scrollable).
     let laneCap : int = 8
 
-    /// The humane capture-age clause ("today" / "N day(s) ago").
+    /// The humane capture-age clause ("today" / "N days ago").
     let private ageText (ageDays: int) : string =
-        if ageDays <= 0 then "today" else sprintf "%s day(s) ago" (humane ageDays)
+        if ageDays <= 0 then "today" else sprintf "%s ago" (counted ageDays "day" "days")
 
     /// The capped moved-kind enumeration — the first three named, the
     /// remainder counted (§12: cap the breadth, name the remainder).
@@ -2493,10 +2502,10 @@ module Estate =
         | EvidenceProvenance.Live ->
             "live data evidence, profiled this run"
         | EvidenceProvenance.Cached (_, age, kinds) ->
-            sprintf "evidence captured %s; fingerprints (row count, max key, and content hash) clean across %s kind(s) — the cache is content-verified fresh" (ageText age) (humane kinds)
+            sprintf "evidence captured %s; fingerprints (row count, max key, and content hash) clean across %s — the cache is content-verified fresh" (ageText age) (counted kinds "table" "tables")
         | EvidenceProvenance.Refreshed moved ->
-            sprintf "%s kind(s) moved since capture (%s) — re-profiled this run"
-                (humane (List.length moved)) (movedKindsText moved)
+            sprintf "%s moved since capture (%s) — re-profiled this run"
+                (counted (List.length moved) "table" "tables") (movedKindsText moved)
         | EvidenceProvenance.Offline (_, age) ->
             sprintf "offline evidence, captured %s and unprobed — every verdict standing on it is advisory" (ageText age)
         | EvidenceProvenance.Absent ->
@@ -2520,11 +2529,11 @@ module Estate =
                 | EvidenceProvenance.Absent -> false)
         match advisory with
         | [] ->
-            sprintf "Evidence confidence: all %s environment(s) stand on firm evidence (live, re-profiled, or content-verified cache)."
-                (humane (List.length firm))
+            sprintf "Evidence confidence: %s on firm evidence (live, re-profiled, or content-verified cache)."
+                (counted (List.length firm) "environment stands" "environments stand")
         | _ ->
-            sprintf "Evidence confidence: %s on firm evidence, %s advisory (%s) — verdicts leaning on the advisory environment(s) are advisory too."
-                (humane (List.length firm)) (humane (List.length advisory))
+            sprintf "Evidence confidence: %s on firm evidence, %s advisory (%s) — verdicts leaning on advisory evidence are advisory too."
+                (counted (List.length firm) "environment" "environments") (humane (List.length advisory))
                 (advisory |> List.map (fun b -> b.Env) |> String.concat ", ")
 
     /// The coverage-honesty line (THE_VOICE §14): the classes this run does not
@@ -2549,8 +2558,8 @@ module Estate =
     /// through the Voice catalog first, then these lines.
     let render (report: EstateReport) : string list =
         [ // MASTHEAD — the estate and its basis.
-          yield sprintf "ENVIRONMENTS — %s environment(s) against %s"
-                    (humane (List.length report.Bases)) (TargetOperand.basisText report.Target)
+          yield sprintf "ENVIRONMENTS — %s against %s"
+                    (counted (List.length report.Bases) "environment" "environments") (TargetOperand.basisText report.Target)
           for basis in report.Bases do
               yield sprintf "  %-14s %s" basis.Env (provenanceText basis)
           yield sprintf "  %s" (evidenceConfidenceLine report)
@@ -2570,14 +2579,14 @@ module Estate =
                | FidelityClause.NotConfigured ->
                    "  The fidelity clause is not configured; the verdict stands on the schema and data evidence."
                | FidelityClause.Green (flow, ageDays) ->
-                   let age = if ageDays <= 0 then "captured today" else sprintf "%s day(s) old" (humane ageDays)
+                   let age = if ageDays <= 0 then "captured today" else sprintf "%s old" (counted ageDays "day" "days")
                    sprintf "  The fidelity proof for flow '%s' is green — every row byte-identical (%s)." flow age
                | FidelityClause.Missing flow ->
                    sprintf "  The fidelity proof for flow '%s' has not run — it stands as a ruling below." flow
                | FidelityClause.Stale (flow, ageDays) ->
-                   sprintf "  The fidelity proof for flow '%s' is %s day(s) old and predates this run's evidence — it stands as a ruling below." flow (humane ageDays)
+                   sprintf "  The fidelity proof for flow '%s' is %s old and predates this run's evidence — it stands as a ruling below." flow (counted ageDays "day" "days")
                | FidelityClause.Diverged (flow, diffs) ->
-                   sprintf "  The fidelity proof for flow '%s' reports %s differing row(s) — it stands as a ruling below." flow (humane64 diffs))
+                   sprintf "  The fidelity proof for flow '%s' reports %s — it stands as a ruling below." flow (counted64 diffs "differing row" "differing rows"))
           // Coverage honesty (THE_VOICE §14 — a clean verdict never overstates
           // what it inspected), the one source `coverageLine` (the rich board
           // lens reads the same sentence).
@@ -2664,11 +2673,11 @@ module Estate =
           | Some b, _ ->
               let sinceClause =
                   if b.SinceAgeDays <= 0 then "earlier today"
-                  else sprintf "%s day(s) ago" (humane b.SinceAgeDays)
+                  else sprintf "%s ago" (counted b.SinceAgeDays "day" "days")
               let oldestClause =
                   match b.OldestDays with
                   | Some days when b.Remaining + b.Opened > 0 ->
-                      sprintf " — the oldest open finding is %s day(s) old" (humane days)
+                      sprintf " — the oldest open finding is %s old" (counted days "day" "days")
                   | _ -> ""
               yield sprintf "BURNDOWN — since run %s (%s): %s closed, %s opened, %s remain%s."
                         b.SinceRunId sinceClause (humane b.Closed) (humane b.Opened) (humane b.Remaining) oldestClause
@@ -2677,17 +2686,17 @@ module Estate =
           | None, EvidenceStoreBasis.Disabled ->
               yield "BURNDOWN — the estate keeps no memory without a store; PROJECTION_ESTATE_DIR (or the ledger directory's estate child) enables the burndown."
           if report.Streak > 0 then
-              yield sprintf "  The estate has read unified for %s consecutive run(s)." (humane report.Streak)
+              yield sprintf "  The estate has read unified for %s." (counted report.Streak "consecutive run" "consecutive runs")
           yield ""
 
           // ARTIFACTS — the index: one line per artifact naming its role.
           yield "ARTIFACTS"
           yield "  environments.json — the full findings record: every board element, machine-readable."
           for file, blocks in report.Remediation do
-              yield sprintf "  %s — %s prepared repair block(s); the locating SELECT is active, every repair is commented." file (humane blocks)
+              yield sprintf "  %s — %s; the locating SELECT is active, every repair is commented." file (counted blocks "prepared repair block" "prepared repair blocks")
           match report.OverlayEntries with
           | Some entries when entries > 0 ->
-              yield sprintf "  environments.overlay.json — %s interim change(s) as config edits; each carries the probe that clears it. The merge is an operator edit; the engine never applies it." (humane entries)
+              yield sprintf "  environments.overlay.json — %s as config edits; each carries the probe that clears it. The merge is an operator edit; the engine never applies it." (counted entries "interim change" "interim changes")
               yield "  environments.probes.sql — every reopen probe, runnable as one batch; the posture's retirement meter."
           | _ -> ()
           yield ""
@@ -2716,7 +2725,7 @@ module Estate =
                   match laneFindings EstateLane.Repair report with
                   | f :: _ -> sprintf "Next: review the first REPAIR finding — %s" (FindingKey.readableLabel f.Key)
                   | [] when report.Streak > 1 ->
-                      sprintf "Next: the estate holds — %s consecutive unified run(s); re-run on the publish cadence." (humane report.Streak)
+                      sprintf "Next: the estate holds — %s; re-run on the publish cadence." (counted report.Streak "consecutive unified run" "consecutive unified runs")
                   | [] -> "Next: the estate holds; re-run on the publish cadence."
           yield action ]
 

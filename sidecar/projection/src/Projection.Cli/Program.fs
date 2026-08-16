@@ -389,7 +389,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
                 | StageBinding.OrderingPolicy -> "ordering"
                 | StageBinding.Emitter        -> "emitter"
                 | StageBinding.Pipeline       -> "pipeline"
-            printfn "projection: %d registered transform(s)" (List.length all)
+            printfn "projection: %d registered transforms" (List.length all)
             for rt in all |> List.sortBy (fun r -> stageBindingText r.StageBinding, r.Name) do
                 printfn "  %-12s %s" (stageBindingText rt.StageBinding) rt.Name
             0)

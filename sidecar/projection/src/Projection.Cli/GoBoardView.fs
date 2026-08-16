@@ -1,4 +1,8 @@
 module Projection.Cli.GoBoardView
+
+/// The register's plural discipline (align-III.1v; THE_VOICE §1 rule 3 + §12).
+let private counted (n: int) (one: string) (many: string) : string =
+    sprintf "%s %s" ((int64 n).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)) (if n = 1 then one else many)
 // LINT-ALLOW-FILE: the go/no-go board terminal view — `String.concat` / `+`
 //   compose the operator-facing board rows at the console text boundary; the one
 //   mutable local is the render-line accumulator. Terminal-render boundary, no
@@ -187,7 +191,7 @@ let ofBoard (board: GoBoard.Board) : View =
         if GoBoard.isGreen board then
             if GoBoard.hasUnverified board then
                 Panel ("verdict",
-                    [ PanelRow.Labeled ("verdict", sprintf "GREEN — every gate passes; %d finding(s) remain unverified against the live environments (the lines marked above). Read them before authorizing the run." (GoBoard.unverifiedCount board), Warn)
+                    [ PanelRow.Labeled ("verdict", sprintf "GREEN — every gate passes; %s unverified against the live environments (the lines marked above). Read them before authorizing the run." (counted (GoBoard.unverifiedCount board) "finding remains" "findings remain"), Warn)
                       PanelRow.Next (sprintf "PROJECTION_ALLOW_EXECUTE=1 projection %s --go" board.Flow) ])
             else
                 Panel ("verdict",
@@ -195,7 +199,7 @@ let ofBoard (board: GoBoard.Board) : View =
                       PanelRow.Next (sprintf "PROJECTION_ALLOW_EXECUTE=1 projection %s --go" board.Flow) ])
         else
             Panel ("verdict",
-                [ PanelRow.Labeled ("verdict", sprintf "RED — %d open decision(s) / blocking fault(s)." (GoBoard.redCount board), Bad)
+                [ PanelRow.Labeled ("verdict", sprintf "RED — %s." (counted (GoBoard.redCount board) "open decision or blocking fault" "open decisions and blocking faults"), Bad)
                   PanelRow.Next (sprintf "resolve each [STOP] line above, then re-run projection check go %s" board.Flow) ])
     // A titleless Rule underlines the masthead; a `verdict`-titled Rule (tinted by
     // the outcome) opens the closing panel — the section breaks the raw board never

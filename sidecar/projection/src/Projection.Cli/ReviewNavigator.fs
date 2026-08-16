@@ -30,6 +30,12 @@ open Projection.Pipeline
 /// selection — an escape, by definition, is undecided) and the workbench
 /// (live selection). One builder, two consumers: the two surfaces cannot
 /// disagree on a count or a sentence.
+/// The register's plural discipline (align-III.1v; THE_VOICE §1 rule 3 + §12).
+[<AutoOpen>]
+module internal ReviewProse =
+    let counted (n: int) (one: string) (many: string) : string =
+        sprintf "%s %s" ((int64 n).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)) (if n = 1 then one else many)
+
 [<RequireQualifiedAccess>]
 module DecisionRows =
 
@@ -77,24 +83,24 @@ module DecisionRows =
             match answer with
             | EvidenceCache.Answer.Reconcile col ->
                 sprintf "reconciled by %s" (Name.value col),
-                sprintf "consequence: if %s is reconciled by %s, %d row(s) that point at it re-key onto the %s rows the target already holds, and %s.%s"
-                    label (Name.value col) d.RowsRekeyed label (dropped col) (uniqueness col)
+                sprintf "consequence: if %s is reconciled by %s, %s onto the %s rows the target already holds, and %s.%s"
+                    label (Name.value col) (counted d.RowsRekeyed "row that points at it re-keys" "rows that point at it re-key") label (dropped col) (uniqueness col)
             | EvidenceCache.Answer.StaticLookup col ->
                 sprintf "declared identical, matched by %s" (Name.value col),
-                sprintf "consequence: if %s is declared identical in both environments and matched by %s, the same %d row(s) re-key and %s; a live run refuses if any %s row differs between the environments, is missing, or is extra.%s"
-                    label (Name.value col) d.RowsRekeyed (dropped col) label (uniqueness col)
+                sprintf "consequence: if %s is declared identical in both environments and matched by %s, the same %s and %s; a live run refuses if any %s row differs between the environments, is missing, or is extra.%s"
+                    label (Name.value col) (counted d.RowsRekeyed "row re-keys" "rows re-key") (dropped col) label (uniqueness col)
             | EvidenceCache.Answer.Pin _ ->
                 "re-keyed onto one chosen row",
-                sprintf "consequence: if every reference to %s is re-keyed onto one chosen %s row in the target, all %d row(s) that point at it re-key and none drop; the row must be chosen, and must exist in the target."
-                    label label d.RowsRekeyed
+                sprintf "consequence: if every reference to %s is re-keyed onto one chosen %s row in the target, %s and none drop; the row must be chosen, and must exist in the target."
+                    label label (counted d.RowsRekeyed "row that points at it re-keys" "rows that point at it re-key")
             | EvidenceCache.Answer.Widen ->
                 "added to the transfer",
                 (let spawned =
                     match spawnedNames with
                     | [] -> sprintf "%s points at no table outside the transfer, so nothing further needs deciding" label
-                    | names -> sprintf "%s itself points at %d table(s) outside the transfer (%s), and each of those will then need this same decision" label names.Length (String.concat ", " names)
-                 sprintf "consequence: if %s is added to the transfer, its %d row(s) transfer too — and %s."
-                    label d.RowsEnteringScope spawned)
+                    | names -> sprintf "%s itself points at %s outside the transfer (%s), and each of those will then need this same decision" label (counted names.Length "table" "tables") (String.concat ", " names)
+                 sprintf "consequence: if %s is added to the transfer, its %s too — and %s."
+                    label (counted d.RowsEnteringScope "row transfers" "rows transfer") spawned)
         { Label = rowLabel
           Selected = selected
           Rekeyed = d.RowsRekeyed
@@ -206,7 +212,7 @@ module ReviewNavigator =
         let blessedCount = bench.Acts |> List.filter isBlessed |> List.length
         let blocks = System.Collections.Generic.List<View.View>()
         let index = System.Collections.Generic.Dictionary<int list, ReviewTarget>()
-        blocks.Add (View.Hero (View.Warn, sprintf "THE DECISION WORKBENCH — flow '%s'   %d open decision(s), %d decided" bench.Flow (List.length targets) decided))
+        blocks.Add (View.Hero (View.Warn, sprintf "THE DECISION WORKBENCH — flow '%s'   %s, %d decided" bench.Flow (counted (List.length targets) "open decision" "open decisions") decided))
         blocks.Add (View.Rule (None, View.Neutral))
         // per-component evidence, computed once per render (pure cache lookups)
         let perByComponent =
@@ -256,7 +262,7 @@ module ReviewNavigator =
         blocks.Add (View.Panel ("standing",
                         [ yield View.PanelRow.Labeled ("decided", sprintf "%d of %d" decided (List.length targets), (if decided = List.length targets then View.Ok else View.Warn))
                           if not (List.isEmpty bench.Acts) then
-                              yield View.PanelRow.Labeled ("blessed", sprintf "%d of %d act(s)" blessedCount bench.Acts.Length, (if blessedCount = bench.Acts.Length then View.Ok else View.Warn))
+                              yield View.PanelRow.Labeled ("blessed", sprintf "%d of %s" blessedCount (counted bench.Acts.Length "act" "acts"), (if blessedCount = bench.Acts.Length then View.Ok else View.Warn))
                           yield View.PanelRow.Next
                                   (if List.isEmpty bench.Acts
                                    then sprintf "Space selects the next answer for the decision under the cursor; w writes the selections to %s; re-run `projection check go %s` to re-verdict." bench.ConfigPath bench.Flow

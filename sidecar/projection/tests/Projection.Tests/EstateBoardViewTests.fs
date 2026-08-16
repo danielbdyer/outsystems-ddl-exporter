@@ -76,7 +76,7 @@ let ``ofReport: the masthead names each environment and its evidence provenance`
     Assert.Contains("cloud-dev", out)
     Assert.Contains("live data evidence, profiled this run", out)
     Assert.Contains("cloud-uat", out)
-    Assert.Contains("fingerprints (row count, max key, and content hash) clean across 214 kind(s)", out)
+    Assert.Contains("fingerprints (row count, max key, and content hash) clean across 214 tables", out)
 
 [<Fact>]
 let ``ofReport: the DECIDE fork's statement and the REPAIR finding's lever both render`` () =
@@ -127,7 +127,7 @@ let ``ofReport: the fidelity clause and a remediation artifact ride the board`` 
 let ``ofReport: a unified estate renders a full surface — empty lanes named, the streak stated`` () =
     let out = render unifiedReport
     Assert.Contains("Nothing awaits a ruling.", out)   // the empty DECIDE lane, named
-    Assert.Contains("4 consecutive unified run(s)", out)
+    Assert.Contains("4 consecutive unified runs", out)
     // The one next move, for a holding estate.
     Assert.Contains("The estate holds", out)
 

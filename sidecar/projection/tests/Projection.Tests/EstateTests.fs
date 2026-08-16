@@ -547,8 +547,8 @@ let ``consensus: the clean environments are named beside the divergence with the
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty }
               "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some clean } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull)
-    Assert.Contains("cloud-uat holds 4,120 NULL row(s)", finding.Statement)
-    Assert.Contains("satisfied in cloud-dev (1,240 row(s) observed)", finding.Statement)
+    Assert.Contains("cloud-uat holds 4,120 NULL rows", finding.Statement)
+    Assert.Contains("satisfied in cloud-dev (1,240 rows observed)", finding.Statement)
     Assert.DoesNotContain("advisory", finding.Statement)
     Assert.DoesNotContain("clean", finding.Statement)
     // The data-repair finding carries the reconciliation-difficulty signal.
@@ -563,7 +563,7 @@ let ``consensus: a satisfied reading is a plain statement — rows observed, no 
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty }
               "cloud-dev", { operand "cloud-dev" sampleCatalog with Profile = Some tiny } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull)
-    Assert.Contains("satisfied in cloud-dev (12 row(s) observed)", finding.Statement)
+    Assert.Contains("satisfied in cloud-dev (12 rows observed)", finding.Statement)
     Assert.DoesNotContain("too few", finding.Statement)
     Assert.DoesNotContain("clean", finding.Statement)
 
@@ -624,7 +624,7 @@ let ``WP-3: a NOT-NULL finding counts genuine NULLs only — empty text survives
     let name =
         report.Findings
         |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNull && f.Statement.Contains "Customer.Name")
-    Assert.Contains("NULL row(s)", name.Statement)
+    Assert.Contains("NULL rows", name.Statement)
     Assert.DoesNotContain("empty text", name.Statement)
     let tenant =
         report.Findings
@@ -649,7 +649,7 @@ let ``S7/O3: a WITH NOCHECK relationship reads as a preparable repair naming its
     Assert.Equal(EstateLane.Repair, finding.Lane)
     Assert.Equal(EstatePlane.Schema, finding.Plane)
     Assert.Contains("Order.CustomerId → Customer is enforced WITH NOCHECK in cloud-qa (untrusted)", finding.Statement)
-    Assert.Contains("re-trusting scans 12,400 row(s)", finding.Statement)
+    Assert.Contains("re-trusting scans 12,400 rows", finding.Statement)
 
 [<Fact>]
 let ``D12: rowcount asymmetry past the factor reads as a WATCH advisory naming both ends; near-parity stays silent`` () =
@@ -662,8 +662,8 @@ let ``D12: rowcount asymmetry past the factor reads as a WATCH advisory naming b
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataAsymmetry)
     Assert.Equal(EstateLane.Watch, finding.Lane)
     Assert.Equal<string list>([ "cloud-dev"; "cloud-uat" ], finding.Envs |> List.map fst |> List.sort)
-    Assert.Contains("Customer holds 10,400 row(s) in cloud-uat", finding.Statement)
-    Assert.Contains("Customer holds 12 row(s) in cloud-dev — findings drawn from the smaller sample are advisory", finding.Statement)
+    Assert.Contains("Customer holds 10,400 rows in cloud-uat", finding.Statement)
+    Assert.Contains("Customer holds 12 rows in cloud-dev — findings drawn from the smaller sample are advisory", finding.Statement)
     let nearA = { Profile.empty with Columns = [ nullEvidence customerNameKey 1000L 0L ] }
     let nearB = { Profile.empty with Columns = [ nullEvidence customerNameKey 900L 0L ] }
     let quiet =
@@ -683,7 +683,7 @@ let ``D15: a column distinct in every observed row of every evidenced environmen
               "cloud-qa",  { operand "cloud-qa" sampleCatalog with Profile = Some qaP } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataUniquenessCandidate)
     Assert.Equal(EstateLane.Watch, finding.Lane)
-    Assert.Contains("Customer.TenantId has no duplicate in cloud-dev — 60 of 60 row(s) are distinct", finding.Statement)
+    Assert.Contains("Customer.TenantId has no duplicate in cloud-dev — 60 of 60 rows are distinct", finding.Statement)
     Assert.Contains("cloud-qa", finding.Statement)
     let dupFreqs = ("1", 2L) :: [ for i in 2 .. 60 -> string i, 1L ]
     let dupP = { Profile.empty with Distributions = [ categoricalOn customerTenantKey dupFreqs ] }
@@ -755,7 +755,7 @@ let ``D8: the 1900-01-01 empty-date convention reads as a WATCH sentinel advisor
         Estate.compute agreed catalog [ "cloud-uat", { operand "cloud-uat" catalog with Profile = Some p } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataDateSentinel)
     Assert.Equal(EstateLane.Watch, finding.Lane)
-    Assert.Contains("Customer.TenantId holds 812 row(s) set to 1900-01-01 in cloud-uat", finding.Statement)
+    Assert.Contains("Customer.TenantId holds 812 rows set to 1900-01-01 in cloud-uat", finding.Statement)
     Assert.Contains("carry no real value", finding.Statement)
 
 [<Fact>]
@@ -769,7 +769,7 @@ let ``D6: case-distinct values under a unique declaration read as a REPAIR colla
         Estate.compute agreed catalog [ "cloud-qa", { operand "cloud-qa" catalog with Profile = Some p } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataCollationCollision)
     Assert.Equal(EstateLane.Repair, finding.Lane)
-    Assert.Contains("Customer.Name collapses 1 case-distinct value(s) into duplicates in cloud-qa", finding.Statement)
+    Assert.Contains("Customer.Name collapses 1 case-distinct value into duplicates in cloud-qa", finding.Statement)
 
 [<Fact>]
 let ``I3: mixed identity provenance for one name reads as a WATCH advisory on the identity plane; a uniformly synthesized estate stays silent`` () =
@@ -780,7 +780,7 @@ let ``I3: mixed identity provenance for one name reads as a WATCH advisory on th
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.IdentitySynthesized)
     Assert.Equal(EstateLane.Watch, finding.Lane)
     Assert.Equal(EstatePlane.Identity, finding.Plane)
-    Assert.Contains("1 kind(s) in cloud-qa number their rows differently than the target", finding.Statement)
+    Assert.Contains("1 table in cloud-qa numbers its rows differently than the target", finding.Statement)
     let uniform = Estate.compute agreed sampleCatalog [ "cloud-qa", operand "cloud-qa" sampleCatalog ]
     Assert.DoesNotContain(uniform.Findings, fun f -> f.Kind = EstateFindingKind.IdentitySynthesized)
 
@@ -798,10 +798,10 @@ let private singleEnvReport (provenance: Estate.EvidenceProvenance) : Estate.Est
 let ``provenance: cached evidence renders its capture age and content-verified clean-fingerprint count on the masthead (RT-7)`` () =
     let lines = Estate.render (singleEnvReport (Estate.EvidenceProvenance.Cached (capturedTwoDaysBack, 2, 214)))
     Assert.Contains(lines, fun (l: string) ->
-        l.Contains "cloud-uat" && l.Contains "fingerprints (row count, max key, and content hash) clean across 214 kind(s)")
+        l.Contains "cloud-uat" && l.Contains "fingerprints (row count, max key, and content hash) clean across 214 tables")
     Assert.Contains(lines, fun (l: string) -> l.Contains "Evidence store: /var/projection/estate.")
     // The rolled-up confidence footing: a content-verified cache is firm evidence.
-    Assert.Contains(lines, fun (l: string) -> l.Contains "Evidence confidence: all 1 environment(s) stand on firm evidence")
+    Assert.Contains(lines, fun (l: string) -> l.Contains "Evidence confidence: 1 environment stands on firm evidence")
 
 [<Fact>]
 let ``evidence confidence: an offline environment lands in the advisory rollup on the masthead`` () =
@@ -814,13 +814,13 @@ let ``provenance: a refreshed environment names its moved kinds, capped at three
     let lines =
         Estate.render (singleEnvReport (Estate.EvidenceProvenance.Refreshed [ "Orders"; "OrderLine"; "Customer"; "Invoice"; "Payment" ]))
     Assert.Contains(lines, fun (l: string) ->
-        l.Contains "5 kind(s) moved since capture (Orders, OrderLine, Customer, and 2 more) — re-profiled this run")
+        l.Contains "5 tables moved since capture (Orders, OrderLine, Customer, and 2 more) — re-profiled this run")
 
 [<Fact>]
 let ``provenance: offline evidence renders its age and the advisory downgrade — named, never silent`` () =
     let lines = Estate.render (singleEnvReport (Estate.EvidenceProvenance.Offline (capturedTwoDaysBack, 9)))
     Assert.Contains(lines, fun (l: string) ->
-        l.Contains "offline evidence, captured 9 day(s) ago and unprobed — every verdict standing on it is advisory")
+        l.Contains "offline evidence, captured 9 days ago and unprobed — every verdict standing on it is advisory")
 
 [<Fact>]
 let ``provenance: a same-day capture reads as today`` () =
@@ -1029,7 +1029,7 @@ let ``D3′: true orphans past the repair band land on the RELAX lane with the o
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataOrphansPastBand)
     Assert.Equal(EstateLane.Relax, finding.Lane)
-    Assert.Contains("110,000 reference(s) to missing rows in cloud-uat, past the repair band", finding.Statement)
+    Assert.Contains("110,000 references to missing rows in cloud-uat, past the repair band", finding.Statement)
     Assert.Equal(
         Some "Merge the config edit for Order.CustomerId (leave the relationship unenforced for now) in environments.overlay.json.",
         finding.Lever)
@@ -1057,7 +1057,7 @@ let ``D1 relax arm: NOT-NULL contradictions past the band propose the keep-nulla
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     let finding = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.DataNotNullPastBand)
     Assert.Equal(EstateLane.Relax, finding.Lane)
-    Assert.Contains("200,000 NULL row(s) in cloud-uat exceed the repair band", finding.Statement)
+    Assert.Contains("200,000 NULL rows in cloud-uat exceed the repair band", finding.Statement)
     Assert.Equal(
         Some "Merge the config edit for Customer.Name (leave the column nullable for now) in environments.overlay.json.",
         finding.Lever)
@@ -1571,7 +1571,7 @@ let ``the active posture: a relaxed relationship renders its meter and absorbs t
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
     Assert.Equal(EstateLane.Relax, active.Lane)
-    Assert.Contains("Order.CustomerId → Customer is left unenforced for now; 113 reference(s) still point to missing rows in cloud-uat", active.Statement)
+    Assert.Contains("Order.CustomerId → Customer is left unenforced for now; 113 references still point to missing rows in cloud-uat", active.Statement)
     Assert.Equal(None, active.Lever)
     Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.DataOrphans))
 
@@ -1614,8 +1614,8 @@ let ``the retirement notice: one dirty environment keeps the relaxation active e
               "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.PostureRetirable))
     let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
-    Assert.Contains("40 reference(s) still point to missing rows in cloud-uat", active.Statement)
-    Assert.Contains("0 reference(s) still point to missing rows in cloud-dev", active.Statement)
+    Assert.Contains("40 references still point to missing rows in cloud-uat", active.Statement)
+    Assert.Contains("0 references still point to missing rows in cloud-dev", active.Statement)
 
 [<Fact>]
 let ``the active posture: a kept-nullable column renders its meter and absorbs the NOT-NULL finding`` () =
@@ -1626,7 +1626,7 @@ let ``the active posture: a kept-nullable column renders its meter and absorbs t
         Estate.computeWith posture Estate.StaticContent.empty agreed sampleCatalog
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     let active = report.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
-    Assert.Contains("Customer.Name is left nullable for now; 4,120 row(s) are still NULL in cloud-uat", active.Statement)
+    Assert.Contains("Customer.Name is left nullable for now; 4,120 rows are still NULL in cloud-uat", active.Statement)
     Assert.True(report.Findings |> List.forall (fun f -> f.Kind <> EstateFindingKind.DataNotNull))
 
 // -- the fork witness + the Forked verdict (A6) --------------------------------
@@ -1695,7 +1695,7 @@ let ``the ARTIFACTS index carries the overlay and probes lines once stamped`` ()
         Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
         |> Estate.withOverlay 3
     let lines = Estate.render report
-    Assert.Contains(lines, fun (l: string) -> l.Contains "environments.overlay.json — 3 interim change(s)")
+    Assert.Contains(lines, fun (l: string) -> l.Contains "environments.overlay.json — 3 interim changes")
     Assert.Contains(lines, fun (l: string) -> l.Contains "environments.probes.sql — every reopen probe, runnable as one batch")
     Assert.Contains("\"entries\": 3", Estate.toJsonString report)
 
@@ -1825,7 +1825,7 @@ let ``the burndown renders the movement line from the stamped baseline — close
             0
     Assert.Contains(
         Estate.render report,
-        fun (l: string) -> l = "BURNDOWN — since run 01ABC (5 day(s) ago): 8 closed, 1 opened, 4 remain — the oldest open finding is 12 day(s) old.")
+        fun (l: string) -> l = "BURNDOWN — since run 01ABC (5 days ago): 8 closed, 1 opened, 4 remain — the oldest open finding is 12 days old.")
     let json = Estate.toJsonString report
     Assert.Contains("\"sinceRunId\": \"01ABC\"", json)
     Assert.Contains("\"closed\": 8", json)
@@ -1848,8 +1848,8 @@ let ``the streak rides the board and the action line once the estate holds`` () 
         Estate.compute agreed sampleCatalog [ "cloud-dev", operand "cloud-dev" sampleCatalog ]
         |> Estate.withHistory None 3
     let lines = Estate.render report
-    Assert.Contains(lines, fun (l: string) -> l.Contains "The estate has read unified for 3 consecutive run(s).")
-    Assert.Contains(lines, fun (l: string) -> l.StartsWith "Next: the estate holds — 3 consecutive unified run(s)")
+    Assert.Contains(lines, fun (l: string) -> l.Contains "The estate has read unified for 3 consecutive runs.")
+    Assert.Contains(lines, fun (l: string) -> l.StartsWith "Next: the estate holds — 3 consecutive unified runs")
     Assert.Contains("\"streak\": 3", Estate.toJsonString report)
 
 [<Fact>]
@@ -1895,7 +1895,7 @@ let ``withFidelity: NotConfigured and Green add no finding — a unified estate 
     // The masthead names the green proof and its age.
     Assert.Contains(
         Estate.render green,
-        fun (l: string) -> l.Contains "flow 'uat-load' is green" && l.Contains "2 day(s) old")
+        fun (l: string) -> l.Contains "flow 'uat-load' is green" && l.Contains "2 days old")
 
 [<Fact>]
 let ``withFidelity: Missing turns a unified estate to converging with one ProofMissing DECIDE finding, keyed on the flow, levered to the run`` () =
@@ -1918,11 +1918,11 @@ let ``withFidelity: Stale and Diverged each mint their DECIDE finding and turn t
     let stale = baseR |> Estate.withFidelity (Estate.FidelityClause.Stale ("uat-load", 9))
     Assert.Equal(Estate.Verdict.Converging, stale.Verdict)
     Assert.Contains(stale.Findings, fun f -> f.Kind = EstateFindingKind.ProofStale)
-    Assert.Contains(Estate.render stale, fun (l: string) -> l.Contains "9 day(s) old and predates")
+    Assert.Contains(Estate.render stale, fun (l: string) -> l.Contains "9 days old and predates")
     let diverged = baseR |> Estate.withFidelity (Estate.FidelityClause.Diverged ("uat-load", 3L))
     Assert.Equal(Estate.Verdict.Converging, diverged.Verdict)
     Assert.Contains(diverged.Findings, fun f -> f.Kind = EstateFindingKind.ProofDiverged)
-    Assert.Contains(Estate.render diverged, fun (l: string) -> l.Contains "3 differing row(s)")
+    Assert.Contains(Estate.render diverged, fun (l: string) -> l.Contains "3 differing rows")
 
 [<Fact>]
 let ``withFidelity: the JSON carries the clause state and its coordinates (the one-substrate law)`` () =

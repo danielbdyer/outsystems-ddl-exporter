@@ -92,7 +92,7 @@ let ``Tier-3: the data-reality finding rides the panel with the remediation next
         renderToString "projection publish" 0 (fun () ->
             LogSink.emit (LogSink.envelope LogSink.Warn LogSink.Emit ModelFidelity.dataViolationsCode payload))
     Assert.Contains("data reality", text)
-    Assert.Contains("7 violation(s) across 4 table(s)", text)
+    Assert.Contains("7 violations across 4 tables", text)
     Assert.Contains("review ./dist/full-export/manifest.remediation.sql", text)
 
 [<Fact>]
@@ -160,7 +160,7 @@ let ``Tier-4 board: the timeline reads the recent checks in words and names the 
         { TotalRuns = 11; CanaryRuns = 11; ConsecutiveGreen = 6
           LastCanary = Some "green"; Threshold = 10; Eligible = false }
     let text = renderBoard r [ "green"; "green"; "red"; "green"; "green"; "green" ]
-    Assert.Contains("the last 6 check(s)", text)
+    Assert.Contains("the last 6 checks", text)
     Assert.Contains("1 diverged", text)
     Assert.Contains("run 11, the present one", text)
 

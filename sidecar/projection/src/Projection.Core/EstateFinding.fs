@@ -676,7 +676,7 @@ module EstateFindingKind =
         | EstateFindingKind.SchemaRename ->
             "Customer is named CustomerAccount in cloud-uat."
         | EstateFindingKind.SchemaAttributes ->
-            "cloud-uat's Customer has 2 column(s) that differ from cloud-dev."
+            "cloud-uat's Customer has 2 columns that differ from cloud-dev."
         | EstateFindingKind.SchemaReferences ->
             "cloud-qa's Order has 1 relationship that differs from cloud-dev."
         | EstateFindingKind.SchemaIndexes ->
@@ -690,33 +690,33 @@ module EstateFindingKind =
         | EstateFindingKind.SchemaActivity ->
             "Customer is active in cloud-dev and inactive in cloud-uat — the two shapes disagree about its life."
         | EstateFindingKind.SchemaTrust ->
-            "The relationship Order.CustomerId → Customer is enforced WITH NOCHECK in cloud-qa (untrusted) — re-trusting scans 12,400,000 row(s)."
+            "The relationship Order.CustomerId → Customer is enforced WITH NOCHECK in cloud-qa (untrusted) — re-trusting scans 12,400,000 rows."
         | EstateFindingKind.DataNotNull ->
-            "Customer.Email is required (NOT NULL); cloud-uat holds 4,120 row(s) that are NULL."
+            "Customer.Email is required (NOT NULL); cloud-uat holds 4,120 rows that are NULL."
         | EstateFindingKind.DataUnique ->
             "Customer.Code must be unique; cloud-dev holds duplicate values."
         | EstateFindingKind.DataOrphans ->
-            "Order.CustomerId in cloud-uat has 3,214,000 row(s) that reference a Customer that does not exist, of which 3,101,000 use the unset value 0."
+            "Order.CustomerId in cloud-uat has 3,214,000 rows that reference a Customer that does not exist, of which 3,101,000 use the unset value 0."
         | EstateFindingKind.DataOverflow ->
             "Customer.Notes holds values up to 4,812 characters in cloud-uat, but its column length setting is 2,000."
         | EstateFindingKind.DataAsymmetry ->
-            "cloud-uat's OrderLine holds 10,400,000 row(s) and cloud-dev's holds 12,000 — findings drawn from cloud-dev's smaller sample are advisory."
+            "cloud-uat's OrderLine holds 10,400,000 rows and cloud-dev's holds 12,000 — findings drawn from cloud-dev's smaller sample are advisory."
         | EstateFindingKind.DataUniquenessCandidate ->
-            "Customer.LegacyCode has no duplicate in any environment — every one of 214,000 row(s) is distinct, so it could serve as a business key for matching."
+            "Customer.LegacyCode has no duplicate in any environment — every one of 214,000 rows is distinct, so it could serve as a business key for matching."
         | EstateFindingKind.DataHeadroom ->
             "Order.Id has reached 1,340,000,000 of the 2,147,483,647 its INT column allows in cloud-uat — 62% of the limit is used."
         | EstateFindingKind.DataDateSentinel ->
-            "Order.ShippedOn holds 812,000 row(s) set to 1900-01-01 in cloud-uat — the platform's stand-in for an empty date; a required-column reading is satisfied, but the dates carry no real value."
+            "Order.ShippedOn holds 812,000 rows set to 1900-01-01 in cloud-uat — the platform's stand-in for an empty date; a required-column reading is satisfied, but the dates carry no real value."
         | EstateFindingKind.DataCollationCollision ->
-            "Under cloud-dev's text sorting, Customer.Code has 240 value(s) that differ only by letter case and would become duplicates — the unique index fails on unification."
+            "Under cloud-dev's text sorting, Customer.Code has 240 values that differ only by letter case and would become duplicates — the unique index fails on unification."
         | EstateFindingKind.DataOrphansPastBand ->
-            "Order.CustomerId has 113,000 reference(s) to missing Customer rows in cloud-uat — too many to clear before cutover; leave the relationship unenforced until they clear."
+            "Order.CustomerId has 113,000 references to missing Customer rows in cloud-uat — too many to clear before cutover; leave the relationship unenforced until they clear."
         | EstateFindingKind.DataNotNullPastBand ->
-            "Customer.Email has 4,200,000 NULL row(s) in cloud-uat — too many to fill before cutover; leave the column nullable until they are backfilled."
+            "Customer.Email has 4,200,000 NULL rows in cloud-uat — too many to fill before cutover; leave the column nullable until they are backfilled."
         | EstateFindingKind.PostureActive ->
-            "Order.CustomerId → Customer is left unenforced for now; 113,000 reference(s) still point to missing rows in cloud-uat."
+            "Order.CustomerId → Customer is left unenforced for now; 113,000 references still point to missing rows in cloud-uat."
         | EstateFindingKind.PostureRetirable ->
-            "Order.CustomerId → Customer has zero missing reference(s) in cloud-uat — the relationship can be enforced again."
+            "Order.CustomerId → Customer has zero missing references in cloud-uat — the relationship can be enforced again."
         | EstateFindingKind.IdentitySynthesized ->
             "Status.Id is generated by the database in cloud-qa and carried as a fixed value in cloud-dev — the same table numbers its rows differently, so renames stay unstable until the identity is anchored."
         | EstateFindingKind.OperationalCdc ->
@@ -746,15 +746,15 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionTemporalDropped ->
             "Order is system-versioned at the source, with history in Order_History — the emitted table carries no system-versioning, so version history stops at cutover."
         | EstateFindingKind.DataStaticContent ->
-            "Country's rows in cloud-uat differ from the model's seed: 2 row(s) missing, 1 extra, 3 value difference(s) — matched by business key."
+            "Country's rows in cloud-uat differ from the model's seed: 2 rows missing, 1 extra, 3 value differences — matched by business key."
         | EstateFindingKind.DataStaticIdentity ->
             "Status assigns different key numbers to the same rows per environment — 'Approved' is 3 in cloud-dev and 7 in cloud-qa — so every reference to it means something different per environment."
         | EstateFindingKind.ProofMissing ->
             "The fidelity proof for flow 'uat-load' has not run against the current estate."
         | EstateFindingKind.ProofStale ->
-            "The fidelity proof for flow 'uat-load' is 9 day(s) old and the estate's evidence has moved since — the proof predates what this run can see."
+            "The fidelity proof for flow 'uat-load' is 9 days old and the estate's evidence has moved since — the proof predates what this run can see."
         | EstateFindingKind.ProofDiverged ->
-            "The fidelity proof for flow 'uat-load' reports 3 differing row(s) — the load is not yet byte-faithful."
+            "The fidelity proof for flow 'uat-load' reports 3 differing rows — the load is not yet byte-faithful."
         | EstateFindingKind.PhysicalClaimContested ->
             "OSUSR_FUL_CARRIER carries two live claims — Fulfillment.Carrier and FulfillmentExtension.Carrier — and a live writer is never silently outranked."
         | EstateFindingKind.PhysicalTombstoneOnly ->

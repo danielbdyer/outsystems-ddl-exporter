@@ -1,5 +1,9 @@
 module Projection.Cli.TtyRenderer
 
+/// The register's plural discipline (align-III.1v; THE_VOICE §1 rule 3 + §12).
+let private counted (n: int) (one: string) (many: string) : string =
+    sprintf "%s %s" (Theme.humane n) (if n = 1 then one else many)
+
 open System
 open Spectre.Console
 open Projection.Core
@@ -76,7 +80,7 @@ let buildSummaryView (command: string) (code: int) : View.View =
         | Some p ->
             [ View.PanelRow.Labeled(
                 "data reality",
-                sprintf "%s violation(s) across %s table(s) %s the source data contradicts the declared model" (Theme.humane (intOf "total" p)) (Theme.humane (intOf "entities" p)) Theme.dot,
+                sprintf "%s across %s %s the source data contradicts the declared model" (counted (intOf "total" p) "violation" "violations") (counted (intOf "entities" p) "table" "tables") Theme.dot,
                 View.Warn) ]
         | None -> []
     let dataRealityNext =
@@ -129,7 +133,7 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (series: i
         if r.Eligible then
             View.Hero(View.Ok, sprintf "ELIGIBLE %s %d consecutive green round-trip verifications" Theme.dot r.ConsecutiveGreen)
         else
-            View.Hero(View.Pending, sprintf "NOT YET %s %d green run(s) to cutover-ready" Theme.dot toGo)
+            View.Hero(View.Pending, sprintf "NOT YET %s %s to cutover-ready" Theme.dot (counted toGo "green run" "green runs"))
     // The one lever (§8 / Appendix A.5: "One lever, named, with the next move" —
     // never a list of problems). Derived from the data already in the readiness
     // model: when the streak is broken (the most recent round-trip verification
@@ -141,7 +145,7 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (series: i
         else
             match r.LastCanary with
             | Some "green" ->
-                [ View.Note(sprintf "The lever %s %d more green round-trip verification(s) before cutover." Theme.dot toGo) ]
+                [ View.Note(sprintf "The lever %s %s before cutover." Theme.dot (counted toGo "more green round-trip verification" "more green round-trip verifications")) ]
             | Some _ ->
                 [ View.Note(sprintf "The lever %s the most recent round-trip verification diverged; a green check restores the streak." Theme.dot) ]
             | None ->
@@ -159,8 +163,8 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (series: i
             let n = List.length recent
             let diverged = recent |> List.filter (fun v -> v <> "green") |> List.length
             let shape =
-                if diverged = 0 then sprintf "the last %d check(s) all passed" n
-                else sprintf "the last %d check(s) %s %d passed %s %d diverged" n Theme.dot (n - diverged) Theme.dot diverged
+                if diverged = 0 then (if n = 1 then "the last check passed" else sprintf "the last %d checks all passed" n)
+                else sprintf "the last %s %s %d passed %s %d diverged" (counted n "check" "checks") Theme.dot (n - diverged) Theme.dot diverged
             let here = if r.TotalRuns > 0 then sprintf " %s run %d, the present one" Theme.dot r.TotalRuns else ""
             [ View.Note(shape + here) ]
     let lastCanary = match r.LastCanary with Some c -> c | None -> "—"
@@ -312,7 +316,7 @@ let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.Vi
         if needAttention = 0 then
             View.Hero(View.Ok, "Every connected environment can do what the pipeline asks of it.")
         else
-            View.Hero(View.Warn, sprintf "%d environment(s) need attention before a live run." needAttention)
+            View.Hero(View.Warn, sprintf "%s attention before a live run." (counted needAttention "environment needs" "environments need"))
     View.Doc([ View.Blank; verdict; View.Blank ] @ (reports |> List.map field))
 
 /// The perf bench table as a `View` (#13) — the perf surface joins the one lens:
