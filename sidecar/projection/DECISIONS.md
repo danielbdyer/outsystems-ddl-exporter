@@ -31400,3 +31400,28 @@ witnessed editions, adjudicates physical claims with the temporal dimension only
 can supply, and rides the eject; A49 and T19 are live law; the operator's original
 incident (the tombstoned entity whose table survived) is a proven, recoverable,
 named state instead of a mystery.
+
+## 2026-08-16 — The geometric-alignment audit (ten planes; findings are CANDIDATES, nothing ruled)
+
+Operator-commissioned, same day as the sink close: ten parallel read-only auditors
+mapped each stage's core vocabulary against its domain space (relational / semantic /
+state / hierarchical dimensions; ontic / epistemic / teleological reification axes;
+the M1–M7 misalignment taxonomy, with anti-findings mandatory). **Workpapers:**
+`audits/alignment-2026-08-16/a1–a10` (independent committed artifacts). **Synthesis:**
+`AUDIT_2026_08_16_GEOMETRIC_ALIGNMENT.md` — the convergence map, the candidate
+reified-primitive arcs (0/R/E/T/S/L/H/X), and the certified anti-findings.
+
+- **The one-paragraph verdict:** ontic/outcome vocabularies strong; foreclosure surface
+  small and mostly conscious; the systematic debt is EPISTEMIC (M6 in every workpaper —
+  knowledge held in prose/strings/convention where house precedent types it); the
+  teleological debt concentrates in the missing `OperatorRuling` carrier (found
+  independently by two auditors at 5–6 re-inventions) and the frozen `OverlayAxis`
+  vocabulary (its documented collapse trigger already fired unnoticed).
+- **Correctness-adjacent, flagged for earliest attention:** mislabeled identity-plane
+  interventions blinding `ConflictDetector`; three-per-lane synthesized sequence
+  identities making sink↔live diffs misreport every sequence; skeleton dependents
+  computing over `TopologicalOrder.empty`.
+- **Ruling posture:** this entry records that the audit occurred and rules NOTHING.
+  Findings become work only through operator adjudication; each adopted arc opens in
+  the house rhythm (charter frame, same-commit laws, per-slice gates, close ritual).
+  No code changed under the audit; no trigger fires from it.
