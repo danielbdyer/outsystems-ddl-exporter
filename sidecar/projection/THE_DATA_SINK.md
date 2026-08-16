@@ -1,11 +1,13 @@
-# THE_DATA_SINK — the acquisition-grain ledger (charter proposal)
+# THE_DATA_SINK — the acquisition-grain ledger (charter, delivered)
 
-> **Epistemic status: ADOPTED 2026-08-15** (operator approval of the execution master plan;
-> `DECISIONS.md` "The data sink chapter opens"; `CHAPTER_SINK_OPEN.md` is the chapter frame
-> and carries the wave map). Originally authored 2026-08-15 as a first-draft charter from the
-> operator's architectural prompt plus a four-agent code-and-document audit; the proposal
-> grade is superseded. Three adoption amendments are marked inline `[amended at adoption —
-> see DECISIONS]`: the persisted grain (§4.1), the store keying (§4.1), and the read seam
+> **Epistemic status: DELIVERED 2026-08-16** (`CHAPTER_SINK_CLOSE.md` carries the K1–K10
+> witness map and the ritual walk; this charter is provenance for the shipped chapter).
+> ADOPTED 2026-08-15 (operator approval of the execution master plan; `DECISIONS.md` "The
+> data sink chapter opens"; `CHAPTER_SINK_OPEN.md` is the chapter frame and carries the wave
+> map). Originally authored 2026-08-15 as a first-draft charter from the operator's
+> architectural prompt plus a four-agent code-and-document audit; the proposal grade is
+> superseded. Three adoption amendments are marked inline `[amended at adoption — see
+> DECISIONS]`: the persisted grain (§4.1), the store keying (§4.1), and the read seam
 > (§4.2). Every code claim below is cited; every platform claim is labeled as such.
 
 ---

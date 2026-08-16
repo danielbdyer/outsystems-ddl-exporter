@@ -47,6 +47,51 @@ module SinkSyncRun =
             Outcome    : SyncOutcome
         }
 
+    /// The post-read report: read the store back, stamp the environment
+    /// label, and classify the sync (everything after the funnel read is
+    /// synchronous store I/O, so this is a plain function — hoisted out of
+    /// the task per survival rule 5: the flat CE below is what Release
+    /// builds can statically compile, and the report logic needs no await).
+    let private reportOf (root: string) (envLabel: string) (digest: string) (before: SinkStore.Manifest option) : Result<SyncReport> =
+        match SinkStore.loadManifest root digest with
+        | None ->
+            Result.failureOf
+                (ValidationError.create "sink.writeFailed"
+                    "projection sync: the witness persisted nothing (the store was reachable at plan time; the read's notice rollup names the write failure).")
+        | Some after ->
+            SinkStore.nameEnvironment root digest envLabel |> ignore
+            let beforeSync = before |> Option.map (fun m -> m.LatestSyncId) |> Option.defaultValue 0
+            if after.LatestSyncId > beforeSync then
+                let displacements =
+                    match SinkJournal.load (SinkStore.journalPath root digest) with
+                    | Ok lines ->
+                        lines
+                        |> List.filter (fun l -> l.SyncId = after.LatestSyncId)
+                        |> List.length
+                    | Error _ -> 0
+                Result.success
+                    { EnvLabel = envLabel
+                      ConnDigest = digest
+                      Outcome = SyncOutcome.Witnessed (after.LatestSyncId, displacements) }
+            else
+                Result.success
+                    { EnvLabel = envLabel
+                      ConnDigest = digest
+                      Outcome = SyncOutcome.Silent after.LatestSyncId }
+
+    /// The sync body over an OPEN connection — hoisted to module level (the
+    /// `LiveModelRead.fromConnSpecWith` shape): `use` + `let!` nested inside
+    /// a `match!` arm is an FS3511 state machine Release builds refuse
+    /// (survival rule 5's family), so `run` owns the open/dispose, this
+    /// helper owns the one awaited read, and `reportOf` owns the rest.
+    let private syncOpened (root: string) (envLabel: string) (cnn: Microsoft.Data.SqlClient.SqlConnection) : Task<Result<SyncReport>> =
+        task {
+            let digest = SinkStore.connDigest16 cnn.DataSource cnn.Database
+            let before = SinkStore.loadManifest root digest
+            let! liveRead = LiveModelRead.fromConnectionWith acquisitionParameters cnn
+            return liveRead |> Result.bind (fun _ -> reportOf root envLabel digest before)
+        }
+
     /// Run one sync: open the source (the one `ConnectionSpec.openSpec`
     /// opener, `Source` role), read totally through the funnel (the
     /// witness persists inside it), then read the store back for the
@@ -64,37 +109,5 @@ module SinkSyncRun =
                 | Error es -> return Result.failure es
                 | Ok cnn ->
                     use cnn = cnn
-                    let digest = SinkStore.connDigest16 cnn.DataSource cnn.Database
-                    let before = SinkStore.loadManifest root digest
-                    match! LiveModelRead.fromConnectionWith acquisitionParameters cnn with
-                    | Error es -> return Result.failure es
-                    | Ok _catalog ->
-                        match SinkStore.loadManifest root digest with
-                        | None ->
-                            return
-                                Result.failureOf
-                                    (ValidationError.create "sink.writeFailed"
-                                        "projection sync: the witness persisted nothing (the store was reachable at plan time; the read's notice rollup names the write failure).")
-                        | Some after ->
-                            SinkStore.nameEnvironment root digest envLabel |> ignore
-                            let beforeSync = before |> Option.map (fun m -> m.LatestSyncId) |> Option.defaultValue 0
-                            if after.LatestSyncId > beforeSync then
-                                let displacements =
-                                    match SinkJournal.load (SinkStore.journalPath root digest) with
-                                    | Ok lines ->
-                                        lines
-                                        |> List.filter (fun l -> l.SyncId = after.LatestSyncId)
-                                        |> List.length
-                                    | Error _ -> 0
-                                return
-                                    Result.success
-                                        { EnvLabel = envLabel
-                                          ConnDigest = digest
-                                          Outcome = SyncOutcome.Witnessed (after.LatestSyncId, displacements) }
-                            else
-                                return
-                                    Result.success
-                                        { EnvLabel = envLabel
-                                          ConnDigest = digest
-                                          Outcome = SyncOutcome.Silent after.LatestSyncId }
+                    return! syncOpened root envLabel cnn
         }

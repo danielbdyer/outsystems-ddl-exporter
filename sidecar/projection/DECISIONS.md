@@ -31333,3 +31333,70 @@ that renders them, never as phantom copy).
   under the store the package names — carrying the states (not copying the files) is
   the honest grain. A future bundle-writer slice would serialize `SinkStates`
   alongside the episodes; named residual, no trigger armed.
+
+## 2026-08-16 — The data-sink chapter CLOSES (the eight-item ritual walked; K1–K10 witnessed)
+
+**The ritual walk and the witness map live in `CHAPTER_SINK_CLOSE.md`** — this entry
+codifies what the close makes standing law, and names what is owed.
+
+**Codifications (the chapter's disciplines, now precedent):**
+
+1. **Raw-at-rest** (the K2-parity discipline, ruled at S7): a persisted acquisition is
+   stored EXACTLY as acquired (wire order); canonical form exists only inside the diff
+   algebra. A store that normalizes at rest cannot replay THE acquisition, and total
+   parity laws (K2) become unprovable. The pattern generalizes to any future
+   acquisition-grain ledger.
+2. **The policy is the lever — one lever, one meaning** (R2 ruled at open, consumed at
+   S8/S13): a freshness policy governs the probe/reuse axis ONLY; capability gates
+   (store presence, acquisition totality) are their own levers. The offline story
+   needed no new flag because the vocabulary already meant the right thing.
+3. **The inherited-red-gate delta gate**: when a repo gate is red on inherited debt,
+   the chapter self-enforces the gate's SUBSTANCE as a per-commit substance-normalized
+   diff against a recorded baseline (zero new violations), with the deviance hatch
+   named in every commit message. Performance-of-compliance (rushing markers onto 82
+   sites) was refused at open; the delta gate held across all seventeen commits.
+4. **Evidence-carriage passes are DataIntent and skeleton-resident**: annotating
+   witnessed adjudications (`PhysicalClaimPass`) is data-intention with an identity
+   chain-default — the skeleton grows without byte-shift, and the purity property
+   keeps proving the boundary (S13's ruling; the A.4.7' pin moved 10 → 11 with it).
+5. **FS3511's family gains a member** (found by the close's Release sweep, fixed this
+   commit): `use` + a subsequent await (`match!`/`let!`) nested inside an outer
+   `match!` arm — and even a flat `let!` whose CONTINUATION carries heavy match/if
+   trees or later awaits — can defeat static compilation. The reliable shape: the
+   task CE holds the awaits and `use`s only; every decision tree hoists to a plain
+   function. Two chapter-owned machines fixed (`SinkSyncRun.run` → `reportOf` +
+   `syncOpened`; `SinkLifecycleSeedTests` → `assertCatalogShapes`), both re-proven
+   live in the Debug pool. Survival rule 5 already pointed here; the sweep is why
+   the close runs Release. **Standing follow-on (the third from the July arcs)**:
+   eleven pre-existing FS3511s in the Twin's `SamplePr*` Integration files
+   (`2a84ae0`/`1078209` et al.) block the solution-wide Release build; the pure
+   pool's Release run goes through its own dependency closure until they are
+   dispositioned.
+
+**Named audit candidates and residuals (owed, with owners):**
+
+- **`JsonCodecKernel` extraction to Core** — the second consumer exists
+  (`MetadataSnapshotCodec`'s local decode helpers carbon-copy the kernel's shape with
+  its LINT-ALLOW rationale); extraction fires at the third consumer or the next codec
+  slice, whichever lands first.
+- **ADMIRE: no entry for this chapter, by ruling** — new construction end to end: the
+  lifecycle seed was authored fresh, the snapshot builders promoted from this repo's
+  own test idiom, the capability probes ride V2's own rowsets script. Nothing was
+  carbon-copied from V1, so the editorial-inheritance ledger correctly stays silent.
+- **The 82-site lint disposition** (open §3) and **the two transfer-leg Docker reds**
+  (`StagedMergeDeployE2ETests`, `T18CycleBreakCanaryTests` — both reproduced at the
+  pre-chapter commit) remain the standing follow-ons from the 2026-07-21..25
+  direct-push arc. Neither moved this chapter (delta-gate-proven); both need their own
+  owner and arc.
+- **Per-slice residuals**, each named in its slice's entry: estate-offline env
+  catalogs from the sink (S13); the attribute-axis suppression pass (S9/S13); finer
+  residue grains (S12); the eject bundle-writer (S15); the EstateHistory
+  double-nesting and the ConfigSchema regen verb (open non-goals, unchanged).
+
+**The chapter in one line:** the OSSYS metadata plane — the one plane with no durable
+form and no ledger — now witnesses every total read, journals every displacement as
+the fourth `LedgerSpec` instance, serves offline reads and temporal diffs from its
+witnessed editions, adjudicates physical claims with the temporal dimension only it
+can supply, and rides the eject; A49 and T19 are live law; the operator's original
+incident (the tombstoned entity whose table survived) is a proven, recoverable,
+named state instead of a mystery.

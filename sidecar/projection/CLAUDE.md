@@ -70,6 +70,7 @@ bottleneck sweep on the measurement substrate `PERF_HARNESS.md` designs.
 | the Twin (`Twin.*` — the post-eject SSDT synthetic-data sidecar) | `THE_TWIN.md` (the charter: mission, laws, kernel manifest, ejection) |
 | architecture beyond the current program | `CONSTELLATION.md` — the architectural-future thesis: the eight stars, the holonic grain tower, the calculus and thermodynamics of the change-accounting, the adjudicated streaming question, R1–R5 with their reification in F#, and the pattern corpus. Read §10 (migration path) before §§1–9 if you only want the build order. |
 | opening or closing a chapter | `V2_DRIVER.md` (the destination KPI; per-axis stakes) + `BACKLOG.md` (the operational ledger) + the chapter-rhythm entries in `DECISIONS.md` (strategic-frame axis-naming at open; chapter-mid-audit; the eight-item close ritual) |
+| the sink / the OSSYS metadata plane's ledger (`Sink*`, `sink:` refs, `projection sync`, physical claims) | `THE_DATA_SINK.md` (the charter) + `CHAPTER_SINK_OPEN.md` (the frame + store contract) + `CHAPTER_SINK_CLOSE.md` (the K1–K10 witness map) |
 | reaching for a name or a string/text primitive | `PLAYBOOK.md` decision trees — the executable form of pillars 7/8 |
 | what V1 donated | `ADMIRE.md` (the editorial-inheritance ledger) |
 
@@ -156,7 +157,13 @@ within their first session. Everything not on this list, this file only points t
     9830 ms across three captures as concurrent load grew; the quiet re-run was clean on
     the same tree). Re-run solo before believing a regression — and especially before
     reaching for `PERF_GATE_RECORD=1`.
-14. **The estate evidence fingerprint carries a content hash — residual caveats only.** The
+14. **`scripts/test.sh focus <name>` runs the INTEGRATION assembly only** — a focus
+    pattern naming a pure-pool class matches nothing and PASSES VACUOUSLY (zero tests is
+    a green run). After touching a pure test class, re-run `fast`, not a focus of its
+    name. Same trap in `twin-test.sh focus`: its pure-then-integration fallback is `||`-
+    chained, so a no-match pure run short-circuits it — filter the intended assembly's
+    fsproj directly when the verdict matters. (The data-sink chapter, 2026-08-15.)
+15. **The estate evidence fingerprint carries a content hash — residual caveats only.** The
     `(RowCount, MaxPk)` pair catches inserts/deletes; a `CHECKSUM_AGG(BINARY_CHECKSUM(...))`
     content term (added 2026-07-18) catches the in-place UPDATEs a row-count-and-MAX(pk) reading
     misses, so cached evidence is no longer reused over an update. The residual blind spots stay

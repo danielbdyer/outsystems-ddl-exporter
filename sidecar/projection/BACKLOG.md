@@ -1230,6 +1230,14 @@ visibility holds.
 | A.4.7' (CLOSED 2026-05-17) | `ComposeState` + `PassChainAdapter` + `RegisteredTransforms.all` / `allChainSteps` / `skeletonChainSteps` + `Compose.project` registry-driven + `Compose.runSkeleton` + skeleton-purity true-execution + `TransformRegistry.digest` + `ManifestEmitter.registry.digest` + `osm emit --skeleton-only` CLI + `let run` private across 12 passes + 5th bidirectional property test (registry-digest round-trip) + A41 amended (execution totality). | shipped |
 | forward-signal cash-outs | `applied-transforms` per-artifact manifest field; per-OverlayAxis CLI flags; `Policy.fs` ↔ `OverlayAxis` collapse; emitter-as-chain-step; adapter-as-chain-step; async-streaming compose. | deferred-with-trigger (per `CHAPTER_A_4_7_PRIME_CLOSE.md` forward signals) |
 
+**The data-sink arc (the acquisition-grain ledger; chapter opened + closed 2026-08-15..16):**
+
+| Chapter | Cash-out | Status |
+|---|---|---|
+| THE_DATA_SINK (CLOSED 2026-08-16) | The OSSYS metadata plane's durable form + ledger: `MetadataSnapshot` witnessed raw-at-rest on every total live read (`<store>/sink/<connDigest16>/`); `SinkJournal` as the 4th `LedgerSpec` instance (T19 FTC + erasure-witness inequality LIVE); rowset 26 capability vector (contract 25→26); `projection sync <env>` (the naming verb); `sink:<env>[@syncId]` refs + K2 total parity; freshness decision table (`sink.policy` off/auto/pinned — R2: reuse axis only); `SelectionSuppression` pass + A49 three-way law LIVE; `PhysicalClaimRules` (contested-always ladder) + 4 estate finding kinds with live detectors; residue sweep; offline model reads (the policy is the lever; the pay-once path); cutover identity correspondence (proposed, never adopted); eject carries `SinkStates`; Twin `catalogRef` sink import. Nine Voice codes; `CHAPTER_SINK_CLOSE.md` carries the K1–K10 witness map. | shipped |
+| standing follow-ons (inherited, named at open/close) | The 82-site lint disposition; the two transfer-leg Docker reds (`StagedMergeDeployE2E`, `T18CycleBreak`); the eleven `SamplePr*` FS3511s blocking solution-wide Release builds — all July-arc debt, none moved by this chapter. | owed (each needs its own owner + arc) |
+| chapter residuals (deferred-with-trigger) | Estate-offline env catalogs from the sink; attribute-axis suppression pass (widens sink-servability to the config default); finer residue grains (columns/triggers/computed); eject bundle-writer serialization of `SinkStates`; `JsonCodecKernel` extraction at the third consumer. | deferred-with-trigger (per-slice DECISIONS entries) |
+
 **Test infrastructure growth:**
 
 | Test | Scope | Status |

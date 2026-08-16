@@ -1,4 +1,56 @@
-# Handoff addendum — 2026-07-18 (latest): the v7 cycle-resolution arc shipped whole — measured-minimal breaks, the unforgeable certificate, per-component precision, the evidence-weighted render binding, the exact repair set, T18 + A46 as law, the condensation, and the one-Voice certificate. Branch `claude/topological-v7-cycle-algebra`, PR #674
+# Handoff addendum — 2026-08-16 (latest): the data-sink chapter closed whole — the OSSYS metadata plane has its ledger. Branch `claude/f-sharp-projection-data-sink-8lof4q`, PR #695
+
+To the next agent.
+
+**Where you stand.** The data-sink chapter opened 2026-08-15 and closed 2026-08-16 —
+seventeen commits, S0 → S16, every slice green on the full gate ladder at its own
+commit. The acquisition-grain gap named in `THE_DATA_SINK.md` is closed: every total
+live OSSYS read witnesses a `MetadataSnapshot` into `<store>/sink/<connDigest16>/`
+(raw-at-rest — the K2 ruling), the journal is the fourth `LedgerSpec` instance with
+T19's FTC and the erasure-witness inequality live, `projection sync <env>` is the
+naming act, `sink:<env>[@syncId]` refs serve reads at TOTAL catalog parity, physical
+claims adjudicate contested-always with the temporal dimension only the journal
+supplies, the residue sweep finds present-but-unclaimed tables, offline operation is
+the config policy itself (`sink.policy` — pinned is offline-true; the pay-once auto
+path probes three bellwethers), the cutover identity correspondence is PROPOSED and
+never adopted, and the eject carries the terminal sink states while the Twin imports
+through a `catalogRef` sink ref. A49 and T19 are live law. Read
+`CHAPTER_SINK_CLOSE.md` first — its §2 is the K1–K10 witness map, its §3 the ritual
+walk, its §5 what remains.
+
+**What to pick up, in order of leverage:**
+
+1. **The July-arc debt now has three named members and deserves its own arc**: the
+   82-site lint disposition (open §3; per-site pillar-7 judgment, never bulk markers),
+   the two transfer-leg Docker reds (`StagedMergeDeployE2ETests`,
+   `T18CycleBreakCanaryTests` — the >threshold FK-deferral path through the staged
+   merge, reproduced at the pre-chapter commit), and the eleven `SamplePr*` FS3511s
+   that block a solution-wide Release build (this chapter's close found them; the
+   hoist pattern in `SinkSyncRun.reportOf`/`syncOpened` is the worked fix). Restoring
+   those three gates to green is one coherent restoration arc — take it whole rather
+   than nibbling.
+2. **The chapter's own residuals fire on their triggers** (each in its slice's
+   DECISIONS entry): estate-offline env catalogs served from the sink (the fast path
+   at the env grain — `SinkSection.effective (Some env)` already binds); the
+   attribute-axis suppression pass (widens sink-servability to the config default —
+   the one axis A49's law still holds equal); finer residue grains; the eject
+   bundle-writer; `JsonCodecKernel` extraction at the third consumer.
+3. **The standing program before this chapter** — the before/after bottleneck sweep
+   on `PERF_HARNESS.md`'s substrate — is unchanged by the sink work and still the
+   destination program (`CONSTELLATION_BACKLOG.md` sequences it).
+
+**What will bite you if you skip the close docs**: the sink fast path serves
+TOTAL-shaped model reads only (`model.onlyActiveAttributes = false`; the default
+`true` pays the wire — CONFIG_REFERENCE's sink row says why); `test.sh focus` runs
+the Integration assembly ONLY (survival rule 14, new); a heavy decision tree inside
+a `task { }` is an FS3511 in Release — hoist it (survival rule 5's family, worked
+examples in this chapter's close commit).
+
+Hold the spine. The books balance; the sink counts what the estate says.
+
+---
+
+# Handoff addendum — 2026-07-18: the v7 cycle-resolution arc shipped whole — measured-minimal breaks, the unforgeable certificate, per-component precision, the evidence-weighted render binding, the exact repair set, T18 + A46 as law, the condensation, and the one-Voice certificate. Branch `claude/topological-v7-cycle-algebra`, PR #674
 
 To the next agent.
 
