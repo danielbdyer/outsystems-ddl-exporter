@@ -139,3 +139,45 @@ let ``ofRegistry projects exactly one event per registered transform`` () =
     let envs = EventProjection.ofRegistry registry
     Assert.Equal(2, List.length envs)
     Assert.All(envs, fun e -> Assert.Equal("transform.registered", e.Code))
+
+// ---------------------------------------------------------------------------
+// align-I.7 — the identity plane's decisions reach the applied/declined
+// taxonomy (previously they rode the Label escape hatch and fell to the
+// debug-level transform.lineage trail; a3-F4).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``align-I.7: a user-match decision projects to transform.applied with the strategy leg`` () =
+    LogSink.beginRunWith "TEST"
+    let ev =
+        lineageEvent "Users.alice"
+            (Annotated (UserMatchDecision UserMatchLeg.ByEmail))
+    let env = EventProjection.ofLineageEvent ev
+    Assert.Equal("transform.applied", env.Code)
+    Assert.Equal(LogSink.Info, env.Level)
+    Assert.Equal("ByEmail", payloadStr env "interventionId")
+    Assert.Equal("matched-by-ByEmail", payloadStr env "decision")
+
+[<Fact>]
+let ``align-I.7: a cleared bridge retarget projects to transform.applied; a blocked one to transform.declined`` () =
+    LogSink.beginRunWith "TEST"
+    let cleared : BridgeRetargetDecision =
+        { RetargetId  = "br-clear"
+          Checks      = []
+          Retargeting = BridgeReadiness.Ready
+          BridgeRows  = BridgeReadiness.Ready
+          PayloadSync = BridgeReadiness.Ready }
+    let blocked : BridgeRetargetDecision =
+        { cleared with
+            RetargetId  = "br-block"
+            Retargeting = BridgeReadiness.Blocked [] }
+    let clearedEnv =
+        EventProjection.ofLineageEvent
+            (lineageEvent "Refs.fk1" (Annotated (BridgeRetargetTrailDecision cleared)))
+    Assert.Equal("transform.applied", clearedEnv.Code)
+    Assert.Equal("br-clear", payloadStr clearedEnv "interventionId")
+    let blockedEnv =
+        EventProjection.ofLineageEvent
+            (lineageEvent "Refs.fk2" (Annotated (BridgeRetargetTrailDecision blocked)))
+    Assert.Equal("transform.declined", blockedEnv.Code)
+    Assert.True(blockedEnv.Payload.ContainsKey "rationale")

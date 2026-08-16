@@ -33,32 +33,32 @@ module BridgeRetargetPass =
 
     let private classification : Classification = OperatorIntent OverlayAxis.Identity
 
-    /// One `Annotated` lineage event per declared retarget — `bridgeRetarget.cleared`
-    /// when its readiness let it land, `bridgeRetarget.blocked` otherwise — keyed by
-    /// the reference SsKey. The label carries the FULL evidence narration
-    /// (`BridgeRetarget.evidenceNarration`): the landing outcome plus the exact set
-    /// of quality-control checks that did not hold (each tagged block/warn with its
-    /// factual detail). So the audit trail records precisely which supplemental
-    /// evidence each retarget cleared on, and precisely which data facts a
-    /// still-blocked retarget is missing — no more, no less (annotate-don't-suppress).
-    /// The `bridgeRetarget.cleared` / `bridgeRetarget.blocked` prefix stays stable
-    /// (greppable) with the enumeration appended.
+    /// One `Annotated` lineage event per declared retarget, keyed by the
+    /// reference SsKey — the FULL typed decision rides the trail
+    /// (align-I.7: `AnnotationDetail.BridgeRetargetTrailDecision`
+    /// replaced the flattened `Label` narration; the rendered diagnostic
+    /// string is byte-identical, and applied/declined egress now sees
+    /// the verdict). The trail records precisely which supplemental
+    /// evidence each retarget cleared on, and precisely which data facts
+    /// a still-blocked retarget is missing (annotate-don't-suppress).
     let private outcomeEvent (plan: BridgeRetargetPlan) (decision: BridgeRetargetDecision) : LineageEvent =
-        let label = String.concat "" [ "bridgeRetarget."; BridgeRetarget.evidenceNarration decision ]  // LINT-ALLOW: terminal lineage-label composition; typed BridgeRetargetDecision rendered at the annotation boundary
-        LineageEvent.forPass passName version classification plan.ReferenceKey (Annotated (Label label))
+        LineageEvent.forPass passName version classification plan.ReferenceKey (Annotated (BridgeRetargetTrailDecision decision))
 
-    let private run (_catalog: Catalog) (policy: Policy) (_profile: Profile) : Lineage<Diagnostics<Map<SsKey, SsKey>>> =
+    let private run (_catalog: Catalog) (policy: Policy) (_profile: Profile) : Lineage<Diagnostics<Map<SsKey, SsKey> * BridgeRetargetDecision list>> =
         use _ = Bench.scope "passes.bridgeRetarget"
         let retargetMap, decisions = BridgeRetarget.decide policy.BridgeRetarget
         let events = List.map2 outcomeEvent policy.BridgeRetarget.Plans decisions
-        LineageDiagnostics.ofValue retargetMap
+        // align-I.7: the decision SET rides the pass output beside the
+        // cleared-only map, landing on ComposeState.BridgeRetargetDecisions
+        // so downstream consumers read verdicts without re-parsing the trail.
+        LineageDiagnostics.ofValue (retargetMap, decisions)
         |> Lineage.tellMany events
 
     /// The registered transform — captures `policy`/`profile` (the `Build` closure
     /// threads them in) and curries them into `run`, leaving `Catalog` as the
     /// runtime arrow input. The `ChainStep` supplies `ComposeState.withBridgeRetargets`
     /// as the write-back.
-    let registered (policy: Policy) (profile: Profile) : RegisteredTransform<Catalog, Map<SsKey, SsKey>> =
+    let registered (policy: Policy) (profile: Profile) : RegisteredTransform<Catalog, Map<SsKey, SsKey> * BridgeRetargetDecision list> =
         { Name = passName
           Domain = Schema
           StageBinding = Pass

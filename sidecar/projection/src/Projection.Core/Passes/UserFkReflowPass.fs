@@ -4,11 +4,9 @@ namespace Projection.Core.Passes
 // `sprintf "%d"` to interpolate typed user-id integers into operator-
 // facing Diagnostic.Message text. Same allowed-exception class as
 // `Catalog.create` / `Module.create` smart-constructor validation
-// errors (per `Catalog.fs` LINT-ALLOW-FILE block). Strategy-label
-// composition uses `String.concat ""` at the terminal diagnostic
-// projection boundary — the typed `UserMatchingStrategy` DU IS the
-// structure being projected; the label string surfaces only in the
-// `AnnotationDetail.Label` payload (free-form audit narration).
+// errors (per `Catalog.fs` LINT-ALLOW-FILE block). (The former
+// strategy-label composition retired at align-I.7 — the trail now
+// carries the typed `AnnotationDetail.UserMatchDecision` payload.)
 
 open Projection.Core
 
@@ -46,16 +44,13 @@ module UserFkReflowPass =
     // Lineage + Diagnostics primitives.
     // -----------------------------------------------------------------------
 
-    /// One `Annotated` event per matched source user. Per pre-scope
-    /// §6: `TransformKind = Annotated "matched-by-<strategy>"`. The
-    /// strategy label is a stable diagnostic narration (`"ByEmail"` /
-    /// `"BySsKey"` / `"ManualOverride"` / `"FallbackToSystemUser.primary"`
-    /// / `"FallbackToSystemUser.fallback"`) — `AnnotationDetail.Label`
-    /// is the typed-payload variant designated for production passes
-    /// whose typed shape hasn't yet been earned (per the discipline
-    /// in `Lineage.fs:130`). Slice η consumers reading the trail can
-    /// answer "which strategy resolved this user's identity?" via
-    /// the label.
+    /// One `Annotated` event per matched source user (align-I.7: the
+    /// typed `AnnotationDetail.UserMatchDecision` replaced the prior
+    /// `"matched-by-<strategy>"` Label — the promotion trigger fired:
+    /// applied/declined egress needed the decision. The rendered
+    /// diagnostic string is byte-identical). Trail consumers answer
+    /// "which strategy leg resolved this user's identity?" by
+    /// pattern-matching the typed leg.
     /// Pillar 9 (chapter A.4.7 slice α; reclassified align-I.3): User
     /// FK reflow consumes operator-supplied User-table replacement
     /// specs and reroutes references to point at the canonical User
@@ -68,9 +63,8 @@ module UserFkReflowPass =
     /// designation map carries `Policy.UserMatching → Identity`.)
     let private classification : Classification = OperatorIntent OverlayAxis.Identity
 
-    let private matchedEvent (sourceKey: SsKey) (strategyLabel: string) : LineageEvent =
-        // LINT-ALLOW: terminal diagnostic-label composition at the AnnotationDetail.Label boundary; BCL `String.Concat` is the right primitive for the two-segment audit-narration label
-        LineageEvent.forPass passName version classification sourceKey (Annotated (Label (System.String.Concat ("userFkReflow.matched-by-", strategyLabel))))
+    let private matchedEvent (sourceKey: SsKey) (leg: UserMatchLeg) : LineageEvent =
+        LineageEvent.forPass passName version classification sourceKey (Annotated (UserMatchDecision leg))
 
     /// One `Warning` diagnostic per unmatched source user. Per
     /// pre-scope §6: `Source = "userFkReflow"`, `Code = "userFkReflow.
@@ -162,7 +156,7 @@ module UserFkReflowPass =
     /// the recursive `applyStrategy` walker so `FallbackToSystemUser`
     /// can compose primary-then-fallback decisions structurally.
     type private MatchOutcome =
-        | Matched of target: TargetUserId * strategyLabel: string
+        | Matched of target: TargetUserId * leg: UserMatchLeg
         | UnmatchedWith of diagnostic: RemapDiagnostic
 
     /// Apply one matching strategy to one source user. Per pre-
@@ -204,20 +198,20 @@ module UserFkReflowPass =
             | Some e ->
                 let key = emailKey e
                 match Map.tryFind key emailIndex.Value with
-                | Some target -> Matched (target, "ByEmail")
+                | Some target -> Matched (target, UserMatchLeg.ByEmail)
                 | None        -> UnmatchedWith (EmailDidNotMatch (source.Id, e))
         | BySsKey ->
             match Map.tryFind source.SsKey ssKeyIndex.Value with
-            | Some target -> Matched (target, "BySsKey")
+            | Some target -> Matched (target, UserMatchLeg.BySsKey)
             | None        -> UnmatchedWith (SsKeyDidNotMatch (source.Id, source.SsKey))
         | ManualOverride overrideMap ->
             match Map.tryFind source.Id overrideMap with
-            | Some target -> Matched (target, "ManualOverride")
+            | Some target -> Matched (target, UserMatchLeg.ManualOverride)
             | None        -> UnmatchedWith (OverrideMissing source.Id)
         | FallbackToSystemUser (fallback, primary) ->
             match applyStrategy emailIndex ssKeyIndex primary source with
-            | Matched (target, _)  -> Matched (target, "FallbackToSystemUser.primary")
-            | UnmatchedWith _      -> Matched (fallback, "FallbackToSystemUser.fallback")
+            | Matched (target, _)  -> Matched (target, UserMatchLeg.FallbackPrimary)
+            | UnmatchedWith _      -> Matched (fallback, UserMatchLeg.FallbackFallback)
 
     // -----------------------------------------------------------------------
     // Pass entry points.
@@ -312,10 +306,10 @@ module UserFkReflowPass =
         |> List.fold (fun (state: State) source ->
             use _ = Bench.scope "pass.userFkReflow.candidate"
             match applyStrategy emailIndex ssKeyIndex strategy source with
-            | Matched (target, label) ->
+            | Matched (target, leg) ->
                 { state with
                     Mapping = Map.add source.Id target state.Mapping
-                    Events  = matchedEvent source.SsKey label :: state.Events }
+                    Events  = matchedEvent source.SsKey leg :: state.Events }
             | UnmatchedWith diagnostic ->
                 { state with
                     Unmatched        = Set.add source.Id state.Unmatched

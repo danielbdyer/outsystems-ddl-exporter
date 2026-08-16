@@ -31630,3 +31630,35 @@ step computes over a defaulted product. Consumers enumerated: `--skeleton-only` 
 (sections), SkeletonPurityTests (pin), `chainStepsSplitWithPins` (derived split), the
 acquisition-overlapped runner (semantics unchanged; prefix profile-invariance property
 still pinned).
+
+## 2026-08-16 — align-I.7: the identity plane's decisions become typed lineage citizens (the Label escape hatch gains its trigger)
+
+**Ruling (a3-F4).** The two youngest operator-intent passes shipped production decisions
+through `AnnotationDetail.Label` — `"userFkReflow.matched-by-<strategy>"` and
+`"bridgeRetarget.<narration>"` (a rich typed `BridgeRetargetDecision` flattened to one
+string at the trail grain) — so `EventProjection.decisionOf` returned `None` and the
+applied/declined egress taxonomy structurally could not see the two riskiest intervention
+families. Both promote to typed variants: `UserMatchDecision of UserMatchLeg` (the five
+strategy legs, closed) and `BridgeRetargetTrailDecision of BridgeRetargetDecision` (the
+FULL verdict — per-check block/warn facts + three readiness verdicts — rides the trail).
+
+**Byte discipline.** `AnnotationDetail.toDiagnosticString` renders both variants
+byte-identically to the prior labels, so trail-diff consumers are unmoved. The egress
+CHANGES (the point): matched users project `transform.applied` (a match IS an applied
+identity resolution; unmatched users ride the diagnostics channel); cleared retargets
+project `transform.applied`, blocked ones `transform.declined` with the evidence
+narration as rationale. Log-stream consumers see these at Info where they previously fell
+to the debug `transform.lineage` tier.
+
+**The decision SET lands on ComposeState.** `BridgeRetargetPass` now outputs
+`(clearedMap, decisions)`; `ComposeState.BridgeRetargetDecisions` carries every declared
+retarget's verdict (cleared AND blocked) beside the cleared-only map, so downstream
+consumers read verdicts without re-parsing the trail. Field-count protocol walked:
+`ComposeState.initial` is the sole full construction; `with`-helpers safe.
+
+**`Label` gains its promotion trigger.** The docstring's self-contradiction ("production
+MUST use typed variants" AND "designated for passes whose shape hasn't been earned")
+resolves: a production pass may ride `Label` ONLY with a DECISIONS deferral naming its
+typed-shape promotion trigger — and the trigger is AN EGRESS CONSUMER THAT NEEDS THE
+DECISION (the taxonomy, trail diffing, or the explain drill-down). This slice is the
+worked example: both riders promoted at exactly that trigger.

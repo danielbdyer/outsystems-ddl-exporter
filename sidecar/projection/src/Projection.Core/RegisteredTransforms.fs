@@ -191,7 +191,11 @@ module RegisteredTransforms =
           tighteningStep ForeignKeyPass.registered ComposeState.withForeignKeyDecisions
           tighteningStep CategoricalUniquenessPass.registered ComposeState.withCategoricalUniquenessDecisions
           tighteningStep UserFkReflowPass.registered ComposeState.withUserRemap
-          tighteningStep BridgeRetargetPass.registered ComposeState.withBridgeRetargets ]
+          tighteningStep BridgeRetargetPass.registered
+              (fun (retargetMap, decisions) state ->
+                  state
+                  |> ComposeState.withBridgeRetargets retargetMap
+                  |> ComposeState.withBridgeRetargetDecisions decisions) ]
 
     /// The canonical chain — no physical-rename pins (byte-identical default).
     let chainSteps : ChainStep list = chainStepsWithPins Set.empty
