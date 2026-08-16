@@ -2183,3 +2183,75 @@ let ``reception: the posture meter renders the bound override's approval attribu
             [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
     let bareActive = bare.Findings |> List.find (fun f -> f.Kind = EstateFindingKind.PostureActive)
     Assert.DoesNotContain("Approved by", bareActive.Statement)
+
+// ---------------------------------------------------------------------------
+// The finding pedigree (align-II.12; E4). Additive: the typed record behind
+// the statement's prose — per contributing environment, the evidence
+// standing (the masthead confidence partition, on the finding), the
+// magnitude, and the capture instant. The Statement bytes, the lanes, and
+// the verdict NEVER move with the stamp.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``pedigree: the evidence stamp re-derives standing and capture instants; statements, lanes, and the verdict are byte-identical`` () =
+    let captured = System.DateTimeOffset(2026, 7, 13, 8, 0, 0, System.TimeSpan.Zero)
+    let unstamped = decideReport ()
+    let stamped =
+        unstamped
+        |> Estate.withEvidence
+            (Estate.EvidenceStoreBasis.Enabled "/var/projection/estate")
+            (Map.ofList [ "cloud-uat", Estate.EvidenceProvenance.Offline (captured, 9) ])
+    // The stamp is pedigree-only: prose, lanes, verdict identical.
+    Assert.Equal<string list>(
+        unstamped.Findings |> List.map (fun f -> f.Statement),
+        stamped.Findings |> List.map (fun f -> f.Statement))
+    Assert.Equal<(EstateLane * int) list>(Estate.laneCounts unstamped, Estate.laneCounts stamped)
+    Assert.Equal(unstamped.Verdict, stamped.Verdict)
+    // Every contribution from the offline environment reads ADVISORY with
+    // its capture instant; compute's default was firm/this-run.
+    for f in stamped.Findings do
+        for entry in f.Pedigree do
+            if entry.Env = "cloud-uat" then
+                Assert.Equal(EvidenceStanding.Advisory, entry.Standing)
+                Assert.Equal(Some captured, entry.CapturedAtUtc)
+    for f in unstamped.Findings do
+        for entry in f.Pedigree do
+            Assert.Equal(EvidenceStanding.Firm, entry.Standing)
+            Assert.Equal(None, entry.CapturedAtUtc)
+
+[<Fact>]
+let ``pedigree: environments.json carries the typed record behind the prose — standing, magnitude, and instant per contributing environment`` () =
+    let captured = System.DateTimeOffset(2026, 7, 13, 8, 0, 0, System.TimeSpan.Zero)
+    let report =
+        decideReport ()
+        |> Estate.withEvidence
+            (Estate.EvidenceStoreBasis.Enabled "/x")
+            (Map.ofList [ "cloud-uat", Estate.EvidenceProvenance.Offline (captured, 9) ])
+    let json = Estate.toJsonString report
+    Assert.Contains("\"pedigree\":", json)
+    Assert.Contains("\"standing\": \"advisory\"", json)
+    Assert.Contains("\"magnitude\":", json)
+    Assert.Contains("\"capturedAtUtc\":", json)
+
+[<Fact>]
+let ``pedigree: the relaxation's evidence is the finding's pedigree, and the overlay note renders the same bytes the bare pairs did`` () =
+    // The past-band fixture from the posture section: both proposed
+    // relaxations now carry pedigreed evidence; the overlay's note text is
+    // byte-identical to the pre-II.12 (env, count) rendering.
+    let dirty =
+        { Profile.empty with
+            Columns = [ nullEvidence customerNameKey 500_000L 200_000L ]
+            ForeignKeys = [ orphanEvidence orderRefToCustomer 150_000L ] }
+    let report =
+        Estate.compute agreed sampleCatalog
+            [ "cloud-uat", { operand "cloud-uat" sampleCatalog with Profile = Some dirty } ]
+    let relaxations = EstatePosture.relaxationsFor (Readiness.toLogicalShape sampleCatalog) report
+    Assert.Equal(2, List.length relaxations)
+    for r in relaxations do
+        Assert.NotEmpty r.Evidence
+        for e in r.Evidence do
+            Assert.Equal("cloud-uat", e.Env)
+            Assert.Equal(EvidenceStanding.Firm, e.Standing)
+    let overlay = EstateOverlayEmitter.emitOverlay "test overlay" relaxations
+    Assert.Contains("150,000 in cloud-uat", overlay)
+    Assert.Contains("200,000 in cloud-uat", overlay)

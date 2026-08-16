@@ -32175,3 +32175,32 @@ into typed readings; an entry neither wire explains is skipped (the safe directi
 Consumers: the decision table (field-wise now), the witness recording (typed through
 `witnessWith`), the Integration witness canary (pins the UPDATE-moves-Content-only axis
 live), `SinkFreshness.render` (= packed ∘ readingOf — byte-identical display).
+
+## 2026-08-16 — align-II.12: the finding pedigree — the typed record behind the prose (the E-track closes)
+
+**a7's charge.** A finding's evidentiary basis lived only in its composed `Statement`
+prose: which environments contributed, at what magnitude, under what evidence standing,
+captured when — all interned in a sentence. Now `Finding.Pedigree : PedigreeEntry list`
+(Core: `{Env; Standing: EvidenceStanding (Firm | Advisory); Magnitude; CapturedAtUtc
+option}`) carries the typed record ADDITIVELY: `compute` fills firm/this-run (store-blind
+as ever); the face's evidence stamp (`withEvidence`) re-derives standing and capture
+instants from the SAME provenance partition the masthead confidence line draws (live/
+re-profiled/content-verified = Firm; offline/absent = Advisory). Law-pinned: the stamp
+moves NO statement byte, no lane count, no verdict — the pedigree is the record BEHIND
+the prose, never a second prose. `environments.json` projects it per finding
+(`pedigree: [{env, standing, magnitude, capturedAtUtc?}]`).
+
+**`Relaxation.Evidence` typed.** The overlay's evidence was a bare `(env, count)` pair
+list; it is now the finding's own `PedigreeEntry list` — the overlay note renders
+byte-identical text (law-pinned), and the standing/instant ride wherever the relaxation
+travels.
+
+**Statement stays composed (named deferral).** The full Statement-as-projection (prose
+derived from the pedigree instead of composed beside it) is deferred with its trigger:
+the first consumer needing statement re-rendering from stored pedigree (the III-era
+environments.json reader). The `TargetErasure` rider (A37 promotion) also stays deferred
+— it belongs with the III-era law work, not this chapter's tail.
+
+The E-track (II.7–II.12) closes: the wire contract, the erasure record, the scope value,
+the journal's full inverse + reading + first-witness trichotomy, the axis-bearing
+fingerprint readings, and the pedigree — six epistemic seams, each now a value.

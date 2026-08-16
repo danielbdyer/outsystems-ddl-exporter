@@ -902,6 +902,40 @@ type RelaxationAction =
     /// budget-less nullability intervention).
     | KeepNullable of attributeRef: string
 
+/// align-II.12 (E4; audit a7) — the standing one environment's evidence
+/// arrived under: FIRM (live, re-profiled, or a content-verified cache)
+/// or ADVISORY (offline reuse, or no evidence at all). The same partition
+/// the estate masthead's confidence line draws, as a value on the finding.
+[<RequireQualifiedAccess>]
+type EvidenceStanding =
+    | Firm
+    | Advisory
+
+/// One environment's contribution to a finding, PEDIGREED (align-II.12):
+/// the standing its evidence arrived under, the magnitude it contributed
+/// (the same count the statement renders), and when that evidence was
+/// captured (`None` = this run, live). Additive — the `Statement` is
+/// untouched; the pedigree is the typed record BEHIND the prose.
+type PedigreeEntry =
+    {
+        Env           : string
+        Standing      : EvidenceStanding
+        Magnitude     : int64
+        CapturedAtUtc : System.DateTimeOffset option
+    }
+
+[<RequireQualifiedAccess>]
+module PedigreeEntry =
+
+    /// The compute-time default: every contribution enters FIRM and
+    /// this-run (`compute` is store-blind; the face's evidence stamp
+    /// re-derives standing and capture instants from the resolved
+    /// provenance).
+    let ofEnvs (envs: (string * int64) list) : PedigreeEntry list =
+        envs
+        |> List.map (fun (env, magnitude) ->
+            { Env = env; Standing = EvidenceStanding.Firm; Magnitude = magnitude; CapturedAtUtc = None })
+
 /// One interim relaxation — the typed value behind an
 /// `estate.overlay.json` entry and its `estate.probes.sql` probe (wave
 /// A6). Core-resident so the OperationalDiagnostics emitter can consume
@@ -915,9 +949,11 @@ type Relaxation =
         Scope       : FindingKey
         /// The config edit the overlay suggests (never applies).
         Action      : RelaxationAction
-        /// The per-environment counts that forced it (the finding's
-        /// evidence, carried onto the overlay entry's note).
-        Evidence    : (string * int64) list
+        /// The pedigreed per-environment evidence that forced it (the
+        /// finding's own pedigree — standing, magnitude, capture instant —
+        /// carried onto the overlay entry's note; align-II.12 typed what
+        /// was a bare (env, count) pair).
+        Evidence    : PedigreeEntry list
         /// The reopen probe — one runnable SELECT whose zero retires the
         /// relaxation (the Active-deferrals discipline applied to data:
         /// every relaxation carries its re-tighten trigger, executably).

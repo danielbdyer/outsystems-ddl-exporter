@@ -21,10 +21,12 @@ open Projection.Core
 [<RequireQualifiedAccess>]
 module EstateOverlayEmitter =
 
-    let private evidenceText (evidence: (string * int64) list) : string =
+    let private evidenceText (evidence: PedigreeEntry list) : string =
+        // align-II.12 — the typed pedigree renders the SAME bytes the bare
+        // (env, count) pairs did; standing/instant ride the JSON pedigree.
         evidence
-        |> List.map (fun (env, n) ->
-            sprintf "%s in %s" (n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)) env)
+        |> List.map (fun e ->
+            sprintf "%s in %s" (e.Magnitude.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)) e.Env)
         |> String.concat "; "
 
     let private entryOf (relaxation: Relaxation) : JsonObject =

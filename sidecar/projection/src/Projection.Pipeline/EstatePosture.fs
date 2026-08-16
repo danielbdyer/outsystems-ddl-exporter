@@ -72,7 +72,7 @@ module EstatePosture =
                         |> Option.map (fun refToken ->
                             { Scope = finding.Key
                               Action = RelaxationAction.KeepUntracked refToken
-                              Evidence = finding.Envs
+                              Evidence = finding.Pedigree
                               // The probe counts EVERY orphan, sentinel
                               // zeros included — the band split measured
                               // repair effort, but the relationship cannot
@@ -89,7 +89,7 @@ module EstatePosture =
                 |> Option.map (fun refToken ->
                     { Scope = finding.Key
                       Action = RelaxationAction.KeepNullable refToken
-                      Evidence = finding.Envs
+                      Evidence = finding.Pedigree
                       ReopenProbe =
                         sprintf "SELECT COUNT_BIG(*) AS [reopen] FROM %s WHERE %s IS NULL; -- %s retires at zero"
                             (tableOf k) (columnOf a) keyText }))

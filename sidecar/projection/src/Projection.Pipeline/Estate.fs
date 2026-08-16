@@ -104,6 +104,14 @@ module Estate =
             /// elsewhere) — the sortable/filterable signal carried to
             /// `environments.json`, from the centrality-dominant read.
             Difficulty : ReconciliationDifficulty option
+            /// align-II.12 (E4) — the typed record BEHIND the statement's
+            /// prose: per contributing environment, the evidence standing
+            /// (firm/advisory), the magnitude, and the capture instant.
+            /// `compute` fills it firm/this-run; the face's evidence stamp
+            /// (`withEvidence`) re-derives standing + instants from the
+            /// resolved provenance. Additive: the `Statement` bytes, the
+            /// lanes, and the verdict never move with it.
+            Pedigree : PedigreeEntry list
         }
 
     /// The impact rank — the largest consequence anywhere in the estate.
@@ -1229,7 +1237,8 @@ module Estate =
             | EstateLeverForm.Ruling imperative -> Some imperative
             | _ -> None
           Fork      = false
-          Difficulty = None }
+          Difficulty = None
+          Pedigree  = [] }
 
     /// WP-12: a relationship whose target entity has a COMPOSITE primary key.
     /// The emitter renders a single-column foreign key that references only
@@ -1556,7 +1565,8 @@ module Estate =
                                 | EstateLeverForm.Ruling imperative -> Some imperative
                                 | _ -> None
                               Fork      = false
-                              Difficulty = None }))
+                              Difficulty = None
+                              Pedigree  = PedigreeEntry.ofEnvs (envs |> List.map (fun e -> e, 1L)) }))
         |> List.sortBy (fun f -> FindingKey.text f.Key)
 
     // -- D10 / D11: static-entity content + identity (wave A4β) ---------------
@@ -2036,7 +2046,8 @@ module Estate =
                       Statement = (sprintf "%s%s.%s%s%s%s" body clean majorityNote difficultyClause attributionNote forkNote).TrimEnd()
                       Lever = lever
                       Fork = fork
-                      Difficulty = (difficulty |> Option.map fst) }
+                      Difficulty = (difficulty |> Option.map fst)
+                      Pedigree = PedigreeEntry.ofEnvs (perEnvRows |> List.map (fun c -> c.Env, c.Weight)) }
                 finding, (difficulty |> Option.map fst))
             // Impact-ranked, but reconciliation difficulty leads: the hardest
             // reconciliations surface first, ties broken by the largest count.
@@ -2181,7 +2192,8 @@ module Estate =
               // (the registry's generic Ruling is the form; the flow rides here).
               Lever = Some (sprintf "Run: projection check fidelity %s." flow)
               Fork = false
-              Difficulty = None }
+              Difficulty = None
+              Pedigree = [] }
         let extra =
             match clause with
             | FidelityClause.NotConfigured
@@ -2212,6 +2224,22 @@ module Estate =
         (provenance: Map<string, EvidenceProvenance>)
         (report: EstateReport)
         : EstateReport =
+        // align-II.12 — the pedigree's standing and capture instant derive
+        // from the SAME provenance partition the masthead confidence line
+        // draws (firm = live/re-profiled/content-verified cache; advisory
+        // = offline/absent). Statement bytes, lanes, and the verdict never
+        // move here — the pedigree is the typed record behind the prose.
+        let restamp (entry: PedigreeEntry) : PedigreeEntry =
+            match Map.tryFind entry.Env provenance with
+            | Some EvidenceProvenance.Live
+            | Some (EvidenceProvenance.Refreshed _)
+            | None -> entry
+            | Some (EvidenceProvenance.Cached (captured, _, _)) ->
+                { entry with CapturedAtUtc = Some captured }
+            | Some (EvidenceProvenance.Offline (captured, _)) ->
+                { entry with Standing = EvidenceStanding.Advisory; CapturedAtUtc = Some captured }
+            | Some EvidenceProvenance.Absent ->
+                { entry with Standing = EvidenceStanding.Advisory }
         { report with
             Evidence = store
             Bases =
@@ -2219,7 +2247,10 @@ module Estate =
                 |> List.map (fun b ->
                     match Map.tryFind b.Env provenance with
                     | Some p -> { b with Provenance = p }
-                    | None -> b) }
+                    | None -> b)
+            Findings =
+                report.Findings
+                |> List.map (fun f -> { f with Pedigree = f.Pedigree |> List.map restamp }) }
 
     /// The sink's claim findings for one environment (the data-sink chapter,
     /// S11b): the journal-assembled adjudication becomes DECIDE-lane board
@@ -2260,7 +2291,8 @@ module Estate =
                             subject (List.length rivals) (clauseOf "rivals" set outcome)
                       Lever = leverOf EstateFindingKind.PhysicalClaimContested
                       Fork = true
-                      Difficulty = None }
+                      Difficulty = None
+                      Pedigree = PedigreeEntry.ofEnvs [ env, int64 (List.length rivals) ] }
             | PhysicalClaimRules.PhysicalClaimOutcome.TombstoneOnly tombstones ->
                 Some
                     { Key = FindingKey.create EstateFindingKind.PhysicalTombstoneOnly subject
@@ -2273,7 +2305,8 @@ module Estate =
                             subject (clauseOf "tombstones" set outcome)
                       Lever = leverOf EstateFindingKind.PhysicalTombstoneOnly
                       Fork = false
-                      Difficulty = None }
+                      Difficulty = None
+                      Pedigree = PedigreeEntry.ofEnvs [ env, int64 (List.length tombstones) ] }
             | PhysicalClaimRules.PhysicalClaimOutcome.Unclaimed ->
                 // S12 — the residue sweep's outcome: on disk with no
                 // metadata claim at all, outside the modeled estate.
@@ -2288,7 +2321,8 @@ module Estate =
                             subject
                       Lever = leverOf EstateFindingKind.PhysicalUnclaimed
                       Fork = false
-                      Difficulty = None }
+                      Difficulty = None
+                      Pedigree = PedigreeEntry.ofEnvs [ env, 1L ] }
             | PhysicalClaimRules.PhysicalClaimOutcome.Adopted _ ->
                 // S14 — the cross-cutover identity correspondence: a sole
                 // live claim over tombstoned lineage PROPOSES continuity
@@ -2315,7 +2349,8 @@ module Estate =
                             fromText toText (if p.SameName then "" else " (renamed)") subject
                       Lever = leverOf EstateFindingKind.IdentityCutoverCorrespondence
                       Fork = false
-                      Difficulty = None }))
+                      Difficulty = None
+                      Pedigree = PedigreeEntry.ofEnvs [ env, 1L ] }))
 
     /// Stamp the sink's claim findings onto a computed report and re-derive
     /// the verdict under the SAME formula (unified ⇔ nothing diverges;
@@ -2841,6 +2876,19 @@ module Estate =
                 e.["weight"] <- JsonValue.Create weight
                 perEnv.Add e
             o.["environments"] <- perEnv
+            // align-II.12 — the typed record behind the statement.
+            if not (List.isEmpty f.Pedigree) then
+                let pedigree = JsonArray()
+                for entry in f.Pedigree do
+                    let e = JsonObject()
+                    e.["env"] <- JsonValue.Create entry.Env
+                    e.["standing"] <- JsonValue.Create(match entry.Standing with EvidenceStanding.Firm -> "firm" | EvidenceStanding.Advisory -> "advisory")
+                    e.["magnitude"] <- JsonValue.Create entry.Magnitude
+                    (match entry.CapturedAtUtc with
+                     | Some at -> e.["capturedAtUtc"] <- JsonValue.Create(at.ToString("O", Globalization.CultureInfo.InvariantCulture))
+                     | None -> ())
+                    pedigree.Add e
+                o.["pedigree"] <- pedigree
             findings.Add o
         root.["findings"] <- findings
         // The emission-audit dimension (Phase 1): target-shape fidelity, its
