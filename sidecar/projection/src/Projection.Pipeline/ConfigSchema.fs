@@ -216,6 +216,11 @@ module ConfigSchema =
                                            "enforceSingleColumnUnique", boolean "uniqueIndex"
                                            "enforceMultiColumnUnique", boolean "uniqueIndex"
                                            "applyUniquePromotions", boolean "uniqueIndex: apply (true) vs advise-only (default)"
+                                           "indexOverrides",
+                                               arrayOf "uniqueIndex per-index promotion rulings (consulted before the blanket flag; align-II.3)"
+                                                   (objectOf "" [ "indexRef"; "action" ]
+                                                       ([ "indexRef", str "Module.Entity.IndexName"
+                                                          "action", enumOf "" [ "adoptPromotion"; "refusePromotion" ] ] @ provenanceFields ()))
                                            "enableCreation", boolean "foreignKey"
                                            "allowCrossSchema", boolean "foreignKey"
                                            "allowNoCheckCreation", boolean "foreignKey"

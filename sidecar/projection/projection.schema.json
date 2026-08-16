@@ -699,6 +699,47 @@
                     "type": "boolean",
                     "description": "uniqueIndex: apply (true) vs advise-only (default)"
                   },
+                  "indexOverrides": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "indexRef": {
+                          "type": "string",
+                          "description": "Module.Entity.IndexName"
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "adoptPromotion",
+                            "refusePromotion"
+                          ]
+                        },
+                        "approvedBy": {
+                          "type": "string",
+                          "description": "who approved this override (the attribution anchor)"
+                        },
+                        "approvedAt": {
+                          "type": "string",
+                          "description": "when (ISO-8601 round-trip form; parsed fail-closed)"
+                        },
+                        "rationale": {
+                          "type": "string",
+                          "description": "why \u2014 carried onto the estate posture un-severed"
+                        },
+                        "finding": {
+                          "type": "string",
+                          "description": "the finding key this override answers (\u003Ckind-token\u003E:\u003Csubject\u003E)"
+                        }
+                      },
+                      "required": [
+                        "indexRef",
+                        "action"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "description": "uniqueIndex per-index promotion rulings (consulted before the blanket flag; align-II.3)"
+                  },
                   "enableCreation": {
                     "type": "boolean",
                     "description": "foreignKey"

@@ -456,6 +456,25 @@ type NullabilityTighteningConfig = {
 /// `TighteningOptions.Uniqueness` shape verbatim (two boolean toggles —
 /// no NullBudget, no Overrides — V1's UniqueIndex configuration is
 /// minimal; the V1↔V2 admire (ADMIRE.md 2026-05-10) confirms this).
+/// align-II.3 — one per-index promotion ruling: adopt or refuse a
+/// profile-driven uniqueness promotion for ONE index, consulted before
+/// the blanket `ApplyProfilePromotions` flag (the nullability override
+/// hierarchy's step-1 shape). Carries the same optional ruling
+/// attribution the tightening override rows carry (align-II.2).
+type UniqueIndexOverride = {
+    IndexKey   : SsKey
+    Action     : UniqueIndexOverrideAction
+    Provenance : OverrideProvenance option
+}
+
+and [<RequireQualifiedAccess>] UniqueIndexOverrideAction =
+    /// Apply this one promotion even when the blanket flag is off.
+    | AdoptPromotion
+    /// Refuse this one promotion even when the blanket flag is on —
+    /// the recorded per-subject rejection (distinct from un-adjudicated
+    /// advice).
+    | RefusePromotion
+
 type UniqueIndexTighteningConfig = {
     /// Should single-column unique constraints be enforced?
     /// V1's `UniquenessOptions.EnforceSingleColumnUnique`.
@@ -475,6 +494,10 @@ type UniqueIndexTighteningConfig = {
     /// directive 2026-07-18). `AlreadyUnique` (carried) is unaffected — a
     /// declared unique always enforces regardless of this flag.
     ApplyProfilePromotions : bool
+    /// align-II.3 — per-index promotion rulings, consulted BEFORE the
+    /// blanket flag. Empty = every candidate follows the flag (the
+    /// pre-override shape, byte-identical).
+    Overrides : UniqueIndexOverride list
 }
 
 
@@ -1027,7 +1050,8 @@ module UniqueIndexTighteningConfig =
     let empty : UniqueIndexTighteningConfig =
         { EnforceSingleColumnUnique = false
           EnforceMultiColumnUnique  = false
-          ApplyProfilePromotions    = false }
+          ApplyProfilePromotions    = false
+          Overrides                 = [] }
 
     /// Construct a `UniqueIndexTighteningConfig`. No validation
     /// required — the fields are booleans with no out-of-range
@@ -1042,7 +1066,8 @@ module UniqueIndexTighteningConfig =
         use _ = Bench.scope "ir.policy.uniqueIndex.create"
         { EnforceSingleColumnUnique = enforceSingleColumnUnique
           EnforceMultiColumnUnique  = enforceMultiColumnUnique
-          ApplyProfilePromotions    = true }
+          ApplyProfilePromotions    = true
+          Overrides                 = [] }
 
     /// Construct with an explicit `ApplyProfilePromotions` — the form the
     /// operator binder uses (advise-only by default; apply on opt-in).
@@ -1053,7 +1078,21 @@ module UniqueIndexTighteningConfig =
         : UniqueIndexTighteningConfig =
         { EnforceSingleColumnUnique = enforceSingleColumnUnique
           EnforceMultiColumnUnique  = enforceMultiColumnUnique
-          ApplyProfilePromotions    = applyProfilePromotions }
+          ApplyProfilePromotions    = applyProfilePromotions
+          Overrides                 = [] }
+
+    /// align-II.3 — the override-carrying form: per-index promotion
+    /// rulings consulted before the blanket flag.
+    let createWithOverrides
+        (enforceSingleColumnUnique: bool)
+        (enforceMultiColumnUnique: bool)
+        (applyProfilePromotions: bool)
+        (overrides: UniqueIndexOverride list)
+        : UniqueIndexTighteningConfig =
+        { EnforceSingleColumnUnique = enforceSingleColumnUnique
+          EnforceMultiColumnUnique  = enforceMultiColumnUnique
+          ApplyProfilePromotions    = applyProfilePromotions
+          Overrides                 = overrides }
 
 
 [<RequireQualifiedAccess>]

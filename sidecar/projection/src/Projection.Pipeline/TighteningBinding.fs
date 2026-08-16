@@ -169,19 +169,74 @@ module TighteningBinding =
             return TighteningIntervention.Nullability (entry.Id, config)
         }
 
+    /// align-II.3 — resolve one per-index promotion ruling: the
+    /// `Module.Entity.IndexName` ref against the catalog (refusing by
+    /// name when no such index exists), the closed action vocabulary,
+    /// and the optional ruling attribution (align-II.2's binder).
+    let private bindIndexOverride
+        (catalog: Catalog)
+        (entry: Config.TighteningIndexOverride)
+        : Result<UniqueIndexOverride> =
+        result {
+            let! action =
+                match entry.Action with
+                | "adoptPromotion" -> Result.success UniqueIndexOverrideAction.AdoptPromotion
+                | "refusePromotion" -> Result.success UniqueIndexOverrideAction.RefusePromotion
+                | other ->
+                    Result.failureOf (
+                        bindError
+                            "indexOverrideAction.unknown"
+                            (sprintf "Index-override action '%s' is unknown. Valid: 'adoptPromotion', 'refusePromotion'." other))
+            let! indexKey =
+                let parts = entry.IndexRef.Split('.')
+                if parts.Length <> 3 then
+                    Result.failureOf (
+                        bindError
+                            "indexRef.malformed"
+                            (sprintf "Index ref '%s' must be Module.Entity.IndexName." entry.IndexRef))
+                else
+                    let found =
+                        Catalog.allKinds catalog
+                        |> List.tryPick (fun k ->
+                            k.Indexes
+                            |> List.tryFind (fun ix -> Name.value ix.Name = parts.[2])
+                            |> Option.filter (fun _ ->
+                                match CatalogResolution.tryKindByLogical catalog parts.[0] parts.[1] with
+                                | Some ownerKey -> ownerKey = k.SsKey
+                                | None -> false)
+                            |> Option.map (fun ix -> ix.SsKey))
+                    match found with
+                    | Some key -> Result.success key
+                    | None ->
+                        Result.failureOf (
+                            bindError
+                                "indexRef.noIndex"
+                                (sprintf "Index ref '%s' resolves to no index on the loaded catalog." entry.IndexRef))
+            let! provenance = bindProvenance entry.IndexRef entry.ApprovedBy entry.ApprovedAt entry.Rationale entry.Finding
+            return { IndexKey = indexKey; Action = action; Provenance = provenance }
+        }
+
     let private bindUniqueIndex
+        (catalog: Catalog)
         (entry: Config.TighteningInterventionEntry)
         : Result<TighteningIntervention> =
         // Advise-only by default (operator directive 2026-07-18): a
         // profile-driven promotion is APPLIED only on an explicit
         // `applyUniquePromotions: true`; otherwise the candidate is surfaced
         // as advice and the dev team's declared indexes stay authoritative.
-        let config : UniqueIndexTighteningConfig =
-            UniqueIndexTighteningConfig.createWith
-                (defaultArg entry.EnforceSingleColumnUnique true)
-                (defaultArg entry.EnforceMultiColumnUnique true)
-                (defaultArg entry.ApplyUniquePromotions false)
-        Result.success (TighteningIntervention.UniqueIndex (entry.Id, config))
+        result {
+            let! overrides =
+                entry.IndexOverrides
+                |> List.map (bindIndexOverride catalog)
+                |> Result.aggregate
+            let config : UniqueIndexTighteningConfig =
+                UniqueIndexTighteningConfig.createWithOverrides
+                    (defaultArg entry.EnforceSingleColumnUnique true)
+                    (defaultArg entry.EnforceMultiColumnUnique true)
+                    (defaultArg entry.ApplyUniquePromotions false)
+                    overrides
+            return TighteningIntervention.UniqueIndex (entry.Id, config)
+        }
 
     let private parseReferenceOverrideAction
         (raw: string)
@@ -281,7 +336,7 @@ module TighteningBinding =
         : Result<TighteningIntervention> =
         match entry.Kind with
         | "nullability"           -> bindNullability catalog entry
-        | "uniqueIndex"           -> bindUniqueIndex entry
+        | "uniqueIndex"           -> bindUniqueIndex catalog entry
         | "foreignKey"            -> bindForeignKey catalog entry
         | "categoricalUniqueness" -> bindCategoricalUniqueness entry
         | other ->

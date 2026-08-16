@@ -42,8 +42,16 @@ type UniqueIndexKeepReason =
     /// operator default): the dev team's declared indexes are authoritative,
     /// so a profile-driven tightening is surfaced as advice and NOT applied
     /// unless the operator opts in with `applyUniquePromotions: true`
-    /// (operator directive 2026-07-18).
-    | PromotionAdvisedNotApplied
+    /// (operator directive 2026-07-18). align-II.3 (a4-4): the advisory
+    /// CARRIES the evidence that fed it — the adoption lever anchors to
+    /// what the operator actually reviewed, and a later adoption against
+    /// different data is detectable rather than silent.
+    | PromotionAdvisedNotApplied of evidence: UniqueIndexEvidence
+    /// The index was a valid promotion candidate and the OPERATOR REFUSED
+    /// it by name (align-II.3: a per-index `RefusePromotion` override) —
+    /// distinct from advise-pending: this is a recorded per-subject
+    /// ruling, not an un-adjudicated advisory.
+    | PromotionRefusedByOperator of evidence: UniqueIndexEvidence
 
 
 /// The outcome of a single (index, intervention) decision.
@@ -123,7 +131,12 @@ module UniqueIndexKeepReason =
         | DataHasDuplicates -> StructuredString.tag "DataHasDuplicates"
         | EvidenceMissing -> StructuredString.tag "EvidenceMissing"
         | NoCandidateProfiled -> StructuredString.tag "NoCandidateProfiled"
-        | PromotionAdvisedNotApplied -> StructuredString.tag "PromotionAdvisedNotApplied"
+        | PromotionAdvisedNotApplied evidence ->
+            StructuredString.create "PromotionAdvisedNotApplied"
+                [ "evidence", UniqueIndexEvidence.toDiagnosticString evidence ]
+        | PromotionRefusedByOperator evidence ->
+            StructuredString.create "PromotionRefusedByOperator"
+                [ "evidence", UniqueIndexEvidence.toDiagnosticString evidence ]
 
     let toDiagnosticString (r: UniqueIndexKeepReason) : string =
         toStructured r |> StructuredString.render
@@ -237,9 +250,21 @@ module UniqueIndexRules =
                 // (EnforceUnique) only when `ApplyProfilePromotions` is set,
                 // else surfaced ADVISE-ONLY (`PromotionAdvisedNotApplied`) so
                 // the dev team's declared indexes stay authoritative.
+                // align-II.3: the per-index override is consulted FIRST
+                // (the nullability hierarchy's step-1 shape) — adopting ONE
+                // promotion while refusing another is expressible; the
+                // blanket ApplyProfilePromotions flag is the fallback.
                 let promoteOrAdvise (evidence: UniqueIndexEvidence) : UniqueIndexOutcome =
-                    if config.ApplyProfilePromotions then UniqueIndexOutcome.EnforceUnique evidence
-                    else UniqueIndexOutcome.DoNotEnforce PromotionAdvisedNotApplied
+                    let overrideFor =
+                        config.Overrides
+                        |> List.tryFind (fun o -> o.IndexKey = index.SsKey)
+                        |> Option.map (fun o -> o.Action)
+                    match overrideFor with
+                    | Some UniqueIndexOverrideAction.AdoptPromotion -> UniqueIndexOutcome.EnforceUnique evidence
+                    | Some UniqueIndexOverrideAction.RefusePromotion -> UniqueIndexOutcome.DoNotEnforce (PromotionRefusedByOperator evidence)
+                    | None ->
+                        if config.ApplyProfilePromotions then UniqueIndexOutcome.EnforceUnique evidence
+                        else UniqueIndexOutcome.DoNotEnforce (PromotionAdvisedNotApplied evidence)
                 let columnKeys = index.Columns |> List.map (fun c -> c.Attribute)
                 if isComposite index then
                     match compositeProbe kind.SsKey columnKeys profile with

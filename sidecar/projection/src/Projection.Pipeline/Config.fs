@@ -558,6 +558,21 @@ module Config =
         Finding      : string option
     }
 
+    /// One row of the per-index override table inside a `uniqueIndex`
+    /// intervention (align-II.3). `IndexRef` names the index by its
+    /// logical owner + index name (`Module.Entity.IndexName`); the
+    /// binder resolves it against the loaded catalog and refuses by
+    /// name when no such index exists. Carries the same optional ruling
+    /// attribution as the other override grains (align-II.2).
+    type TighteningIndexOverride = {
+        IndexRef   : string
+        Action     : string
+        ApprovedBy : string option
+        ApprovedAt : string option
+        Rationale  : string option
+        Finding    : string option
+    }
+
     /// One operator-supplied tightening intervention. The `Kind` field
     /// names the DU variant (`"nullability"` / `"uniqueIndex"` /
     /// `"foreignKey"` / `"categoricalUniqueness"`); the per-variant
@@ -580,6 +595,9 @@ module Config =
         /// surfaces the candidate as advice; `true` applies the tightening.
         /// (operator directive 2026-07-18 — no silent promotion beyond source.)
         ApplyUniquePromotions        : bool option
+        /// align-II.3 — per-index promotion rulings (adopt/refuse ONE
+        /// candidate), consulted before the blanket flag.
+        IndexOverrides               : TighteningIndexOverride list
         // ForeignKey fields (WP-1d: `allowCrossCatalog` /
         // `treatMissingDeleteRuleAsIgnore` retired — inert knobs)
         EnableCreation               : bool option
@@ -2038,6 +2056,39 @@ module Config =
             Result.failureOf (
                 configError "typeMismatch" "tightening intervention 'overrides' must be an array.")
 
+    let private parseTighteningIndexOverride (element: JsonElement) : Result<TighteningIndexOverride> =
+        result {
+            let! ref = getString element "indexRef"
+            let! action = getString element "action"
+            let! approvedBy = getOptionalString element "approvedBy"
+            let! approvedAt = getOptionalString element "approvedAt"
+            let! rationale = getOptionalString element "rationale"
+            let! finding = getOptionalString element "finding"
+            return
+                { IndexRef = ref
+                  Action = action
+                  ApprovedBy = approvedBy
+                  ApprovedAt = approvedAt
+                  Rationale = rationale
+                  Finding = finding }
+        }
+
+    /// The `indexOverrides` array on a `uniqueIndex` intervention
+    /// (align-II.3) — a third override grain with its own key, so the
+    /// attribute / reference / index grains never share a shape
+    /// ambiguously.
+    let private parseTighteningIndexOverrides (element: JsonElement) : Result<TighteningIndexOverride list> =
+        match element.TryGetProperty("indexOverrides") with
+        | false, _ -> Result.success []
+        | true, v when v.ValueKind = JsonValueKind.Array ->
+            v.EnumerateArray()
+            |> Seq.toList
+            |> List.map parseTighteningIndexOverride
+            |> Result.aggregate
+        | _ ->
+            Result.failureOf (
+                configError "typeMismatch" "tightening intervention 'indexOverrides' must be an array.")
+
     let private parseTighteningReferenceOverride (element: JsonElement) : Result<TighteningReferenceOverride> =
         result {
             let! ref = getString element "referenceRef"
@@ -2081,6 +2132,7 @@ module Config =
             let! ensSc = getOptionalBool element "enforceSingleColumnUnique"
             let! ensMc = getOptionalBool element "enforceMultiColumnUnique"
             let! applyUniquePromotions = getOptionalBool element "applyUniquePromotions"
+            let! indexOverrides = parseTighteningIndexOverrides element
             let! enable = getOptionalBool element "enableCreation"
             let! crossSchema = getOptionalBool element "allowCrossSchema"
             // WP-1d: `allowCrossCatalog` / `treatMissingDeleteRuleAsIgnore`
@@ -2097,6 +2149,7 @@ module Config =
                 EnforceSingleColumnUnique = ensSc
                 EnforceMultiColumnUnique = ensMc
                 ApplyUniquePromotions = applyUniquePromotions
+                IndexOverrides = indexOverrides
                 EnableCreation = enable
                 AllowCrossSchema = crossSchema
                 AllowNoCheckCreation = nocheck

@@ -125,12 +125,18 @@ module UniqueIndexPass =
                 | UniqueIndexKeepReason.NoCandidateProfiled ->
                     "tightening.uniqueIndex.noCandidate", DiagnosticSeverity.Warning,
                     "Unique index was not enforced. No profile candidate exists; collect profiling evidence before enforcement can proceed."
-                | UniqueIndexKeepReason.PromotionAdvisedNotApplied ->
+                | UniqueIndexKeepReason.PromotionAdvisedNotApplied _ ->
                     // Advisory, not a problem: the index is a valid promotion
                     // candidate (no duplicates) but the dev team did not declare
                     // it unique, so it is surfaced, not applied (Info, not Warning).
                     "tightening.uniqueIndex.promotionAdvised", DiagnosticSeverity.Info,
                     "Unique-index promotion candidate: the data shows no duplicates, but the index is not declared UNIQUE in the model. Enforcement is advised, not applied — set applyUniquePromotions to apply it, or declare it unique in the model."
+                | UniqueIndexKeepReason.PromotionRefusedByOperator _ ->
+                    // align-II.3 — the recorded per-index rejection: a valid
+                    // candidate the operator refused BY NAME (an adjudicated
+                    // state, not a problem to fix).
+                    "tightening.uniqueIndex.promotionRefused", DiagnosticSeverity.Info,
+                    "Unique-index promotion candidate refused by operator ruling: the data shows no duplicates, but a per-index override refuses this promotion. The declared shape carries; remove the override to reconsider."
             // The advise-only candidate carries the ONE config edit that applies
             // it (and every sibling candidate on the same intervention) —
             // `applyUniquePromotions: true`. Sibling candidates share this Path,
@@ -140,7 +146,7 @@ module UniqueIndexPass =
             // policy-disabled is the operator's own toggle).
             let suggestedConfig =
                 match reason with
-                | UniqueIndexKeepReason.PromotionAdvisedNotApplied ->
+                | UniqueIndexKeepReason.PromotionAdvisedNotApplied _ ->
                     Some {
                         Path  = sprintf "$.tightening.interventions[?(@.id==\"%s\")].applyUniquePromotions" decision.InterventionId
                         Value = "true"

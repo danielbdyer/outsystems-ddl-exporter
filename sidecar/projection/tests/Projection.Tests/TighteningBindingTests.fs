@@ -107,6 +107,7 @@ let private emptyEntry (kind: string) (id: string) : Config.TighteningInterventi
         EnforceSingleColumnUnique       = None
         EnforceMultiColumnUnique        = None
         ApplyUniquePromotions           = None
+        IndexOverrides                  = []
         EnableCreation                  = None
         AllowCrossSchema                = None
         AllowNoCheckCreation            = None
@@ -571,3 +572,29 @@ let ``align-II.2: an unknown finding key refuses by name`` () =
     match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
     | Error es -> Assert.Contains(es, fun e -> e.Code.Contains "provenance.finding.unknown")
     | Ok _ -> Assert.Fail "expected the unknown finding to refuse"
+
+[<Fact>]
+let ``align-II.3: an unknown index-override action refuses by name`` () =
+    let catalog = loadCatalog ()
+    let entry =
+        { emptyEntry "uniqueIndex" "ui-ruled" with
+            IndexOverrides =
+                [ { IndexRef = "AppCore.User.IX_Whatever"
+                    Action = "bogus"
+                    ApprovedBy = None; ApprovedAt = None; Rationale = None; Finding = None } ] }
+    match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
+    | Error es -> Assert.Contains(es, fun e -> e.Code.Contains "indexOverrideAction.unknown")
+    | Ok _ -> Assert.Fail "expected the unknown action to refuse"
+
+[<Fact>]
+let ``align-II.3: a malformed index ref refuses by name`` () =
+    let catalog = loadCatalog ()
+    let entry =
+        { emptyEntry "uniqueIndex" "ui-ruled" with
+            IndexOverrides =
+                [ { IndexRef = "not-three-parts"
+                    Action = "adoptPromotion"
+                    ApprovedBy = None; ApprovedAt = None; Rationale = None; Finding = None } ] }
+    match TighteningBinding.fromConfig catalog (Some { Interventions = [ entry ] }) with
+    | Error es -> Assert.Contains(es, fun e -> e.Code.Contains "indexRef.malformed")
+    | Ok _ -> Assert.Fail "expected the malformed ref to refuse"

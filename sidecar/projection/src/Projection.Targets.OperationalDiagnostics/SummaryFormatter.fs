@@ -184,8 +184,13 @@ module SummaryFormatter =
             | UniqueIndexOutcome.EnforceUnique (UniqueIndexEvidence.SingleColumnNoDuplicates _)
             | UniqueIndexOutcome.EnforceUnique UniqueIndexEvidence.CompositeNoDuplicates ->
                 { acc with Promoted = acc.Promoted + 1 }
-            | UniqueIndexOutcome.DoNotEnforce UniqueIndexKeepReason.PromotionAdvisedNotApplied ->
+            | UniqueIndexOutcome.DoNotEnforce (UniqueIndexKeepReason.PromotionAdvisedNotApplied _) ->
                 { acc with AdvisedNotApplied = acc.AdvisedNotApplied + 1 }
+            // align-II.3 — a refused promotion is an ADJUDICATED carried
+            // shape: the declared form holds by ruling, counted with the
+            // carried lane (not the advisory backlog).
+            | UniqueIndexOutcome.DoNotEnforce (UniqueIndexKeepReason.PromotionRefusedByOperator _) ->
+                { acc with Carried = acc.Carried + 1 }
             | UniqueIndexOutcome.DoNotEnforce UniqueIndexKeepReason.DataHasDuplicates ->
                 { acc with WithheldDuplicates = acc.WithheldDuplicates + 1 }
             | UniqueIndexOutcome.DoNotEnforce UniqueIndexKeepReason.EvidenceMissing

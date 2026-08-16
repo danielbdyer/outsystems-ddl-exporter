@@ -219,8 +219,8 @@ let ``unique-split: an advise-only candidate is 'advised — could be promoted',
     // stays zero and the operator sees the opportunity without a silent tightening.
     let ui : UniqueIndexDecisionSet = {
         Decisions =
-            [ uiDecision customerIdAttrKey (UniqueIndexOutcome.DoNotEnforce PromotionAdvisedNotApplied)
-              uiDecision customerNameKey   (UniqueIndexOutcome.DoNotEnforce PromotionAdvisedNotApplied) ]
+            [ uiDecision customerIdAttrKey (UniqueIndexOutcome.DoNotEnforce (PromotionAdvisedNotApplied UniqueIndexEvidence.CompositeNoDuplicates))
+              uiDecision customerNameKey   (UniqueIndexOutcome.DoNotEnforce (PromotionAdvisedNotApplied UniqueIndexEvidence.CompositeNoDuplicates)) ]
     }
     let lines = SummaryFormatter.format emptyNullability ui emptyForeignKey
     Assert.Equal(2, splitCount "advised — could be promoted" lines)

@@ -31824,3 +31824,40 @@ The II.5 reception is the sibling's named consumer.
 fields; enums closed). Regenerated via the generator (+150 lines; the byte-drift test
 holds); one generator lesson banked — JsonNode values are single-parent, so shared
 field lists must be functions minting fresh nodes.
+
+## 2026-08-16 — align-II.3: per-subject index rulings; the advisory keeps its evidence; proposals gain identity
+
+**The grain (a4-4 + a4-7 + the plan's own line).** Three moves, one theme — rulings
+attach at the SUBJECT's grain, not the policy's:
+
+1. **Per-index promotion rulings.** `UniqueIndexOverride {IndexKey; Action
+   (AdoptPromotion | RefusePromotion); Provenance}` on `UniqueIndexTighteningConfig`,
+   consulted BEFORE the blanket `ApplyProfilePromotions` flag (the nullability
+   hierarchy's step-1 shape) — adopting ONE promotion while refusing another is
+   expressible in one config. A refusal is the NEW `PromotionRefusedByOperator`
+   keep-reason (an adjudicated state, Info; the SummaryFormatter counts it with the
+   CARRIED lane, not the advisory backlog). Config: `indexOverrides` on the uniqueIndex
+   intervention (`Module.Entity.IndexName` refs; adopt/refuse enum; the align-II.2
+   provenance fields ride along); binding refuses unknown actions, malformed refs, and
+   unresolvable indexes by name; schema regenerated.
+
+2. **The advisory keeps its evidence (a4-4).** `PromotionAdvisedNotApplied` carries
+   `UniqueIndexEvidence` — the recommendation's basis is no longer dropped at exactly
+   the recommendation boundary; a later adoption anchors to what the operator actually
+   reviewed. (FS0025 fan-out walked: rules renderer, pass diagnostic arms, summary
+   split, three test pins.)
+
+3. **Proposals have identity (a4-7).** `SuggestedConfig.proposalKey` — sha256-16 over
+   length-prefixed (Path, Value), NM-60-injective, DERIVED (the record is the identity
+   basis; notes are not identity). `ApprovalRegistry.ByProposal` keys records by
+   `(policyDigest, proposalKey)`; `isProposalSuppressed` = this proposal rejected ∨
+   whole policy rejected (the coarse grain subsumes). `SuggestConfigEmitter` filters
+   per-proposal — HORIZON's "suppressed for this key" is now the sentence the code
+   implements. The ApprovalStore wire is UNCHANGED this slice (ByProposal is in-memory
+   registry algebra; its durable home rides the II.5/II.6 wiring where the verb writes
+   — a named same-chapter deferral, not a silent one).
+
+Seven-plus-two laws live: adopt-one/refuse-one/sibling-follows-flag, the
+evidence-carrying advisory, proposalKey determinism + distinctness, per-proposal
+suppression beside a surviving sibling, whole-policy subsumption, and the two binding
+refusals.

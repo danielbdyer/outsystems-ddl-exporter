@@ -147,18 +147,34 @@ type ApprovalRegistry = {
     /// per policy version observed; later decisions for the same digest
     /// supersede earlier ones (last-write-wins).
     ByDigest : Map<string, ApprovalRecord>
+    /// align-II.3 (a4-7) — PER-PROPOSAL records, keyed by
+    /// `(policyDigest, SuggestedConfig.proposalKey)`. Rejecting one
+    /// nudge while accepting another is now expressible; the
+    /// whole-policy grain above still subsumes (a rejected policy
+    /// suppresses every proposal). Last-write-wins per key.
+    ByProposal : Map<string * string, ApprovalRecord>
 }
 
 [<RequireQualifiedAccess>]
 module ApprovalRegistry =
 
     /// An empty registry (no approval records recorded).
-    let empty : ApprovalRegistry = { ByDigest = Map.empty }
+    let empty : ApprovalRegistry = { ByDigest = Map.empty; ByProposal = Map.empty }
 
     /// Insert or update an approval record. Keyed by the record's
     /// `PolicyVersion` (the VersionedPolicy digest). Last write wins.
     let record (rec_: ApprovalRecord) (registry: ApprovalRegistry) : ApprovalRegistry =
-        { ByDigest = Map.add rec_.PolicyVersion rec_ registry.ByDigest }
+        { registry with ByDigest = Map.add rec_.PolicyVersion rec_ registry.ByDigest }
+
+    /// align-II.3 — insert or update a PER-PROPOSAL record. The record's
+    /// `PolicyVersion` carries the policy digest; `proposalKey` is the
+    /// suggestion's derived identity (`SuggestedConfig.proposalKey`).
+    let recordProposal (proposalKey: string) (rec_: ApprovalRecord) (registry: ApprovalRegistry) : ApprovalRegistry =
+        { registry with ByProposal = Map.add (rec_.PolicyVersion, proposalKey) rec_ registry.ByProposal }
+
+    /// The per-proposal record (if any) for (policy digest, proposal key).
+    let tryFindProposal (policyDigest: string) (proposalKey: string) (registry: ApprovalRegistry) : ApprovalRecord option =
+        Map.tryFind (policyDigest, proposalKey) registry.ByProposal
 
     /// Look up the approval record (if any) for the given policy digest.
     let tryFind (policyDigest: string) (registry: ApprovalRegistry) : ApprovalRecord option =
@@ -188,6 +204,17 @@ module ApprovalRegistry =
     /// `Approved` for the same digest (last-write-wins).
     let isSuppressed (policyDigest: string) (registry: ApprovalRegistry) : bool =
         isRejectedFor policyDigest registry
+
+    /// align-II.3 — the PER-PROPOSAL `Skip`-equivalent gate: suppressed
+    /// when THIS proposal was rejected for THIS policy, OR when the
+    /// whole policy version was rejected (the coarse grain subsumes).
+    /// HORIZON's "SuggestedConfig is suppressed for this key" is now
+    /// the sentence the code implements, not an overstatement.
+    let isProposalSuppressed (policyDigest: string) (proposalKey: string) (registry: ApprovalRegistry) : bool =
+        (match tryFindProposal policyDigest proposalKey registry with
+         | Some r -> ApprovalWorkflow.isRejected r
+         | None -> false)
+        || isSuppressed policyDigest registry
 
     /// All `Approved` records in the registry, sorted by their decision
     /// timestamp ascending (chronological order). For audit / display.
