@@ -186,6 +186,25 @@ module PolicyAxis =
 /// operator-intent pass as `DataIntent` leaks operator intent into the
 /// skeleton and the property fails. Slice α's per-pass classifications
 /// are the first opportunity to get the classification right.
+///
+/// **THE CONFIG-PROVENANCE RULE (align-I.9; audit a3-F5).** For a
+/// config-taking pass whose output lands in ARTIFACTS: if the config
+/// can carry operator OPINION (a selection, a rename, a toggle, a
+/// threshold the operator chooses), the pass classifies
+/// `OperatorIntent` on the opinion's axis — a default value the
+/// operator could have changed IS the operator's intent (the
+/// LogicalTableEmission precedent: default-on is a choice). A pass
+/// classifies `DataIntent` only when its config is SOURCE-DERIVED
+/// (a name correspondence read from the estate, witnessed
+/// adjudications, profiling evidence) — data about the data, not a
+/// choice about the outcome. ADVISORY analytics (Diagnostics-domain
+/// outputs that mutate no artifact) sit outside the rule's blast
+/// radius: their tuning thresholds shift commentary, never artifacts.
+/// The rule is PINNED per-factory by `ConfigProvenanceTests` (every
+/// chain pass has a stance row; a new pass cannot land without one);
+/// the `Supplied<'T> = SourceDerived | OperatorDeclared` provenance
+/// wrapper stays a NAMED DEFERRAL whose trigger is the first
+/// mis-wiring the rule table catches.
 type Classification =
     | DataIntent
     | OperatorIntent of OverlayAxis

@@ -31689,3 +31689,28 @@ a Firing-perturbation sensitivity check).
 
 Fan-out walked compiler-driven (FS0764): 24 production metadata literals + toMetadata +
 the two metadata smart constructors default `AtBinding`; five test fixtures patched.
+
+## 2026-08-16 — align-I.9: the config-provenance rule is stated once and pinned per factory
+
+**The rule (a3-F5; canonical text lives on the `Classification` DU docstring).** For a
+config-taking pass whose output lands in ARTIFACTS: config that can carry operator
+OPINION ⇒ `OperatorIntent` on the opinion's axis — a default the operator could have
+changed IS the operator's intent (the LogicalTableEmission default-on precedent
+generalizes). `DataIntent` only for SOURCE-DERIVED config (a name correspondence read
+from the estate, witnessed adjudications, profiling evidence — data about the data).
+ADVISORY analytics (Diagnostics-domain outputs that mutate no artifact) sit OUTSIDE the
+rule's blast radius: their tuning thresholds (AdvisoryTuning — the audit's fourth
+inconsistent stance) shift commentary, never artifacts, so the analytics stay DataIntent.
+The four previously-inconsistent prose answers collapse to this one rule.
+
+**Enforcement.** `ConfigProvenanceTests` pins a stance row per chain pass (name + ruled
+classifications + why): the completeness test asserts table names = chain names EXACTLY
+(a new pass cannot land without a ruling), and the drift test asserts each factory's
+registered site classifications equal its ruled stance, failing by name with the ruling's
+why-text.
+
+**Named deferral.** `Supplied<'T> = SourceDerived of 'T | OperatorDeclared of 'T` — the
+provenance wrapper that would let `registered` DERIVE classification and make
+skeleton-purity sound against mis-wiring instead of sound-by-convention — stays deferred.
+TRIGGER: the first mis-wiring the rule table catches (equivalently: the first
+operator-authored NamingMorphism, the seam the table's namingMorphism row names).

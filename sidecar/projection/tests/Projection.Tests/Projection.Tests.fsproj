@@ -292,6 +292,7 @@
     <Compile Include="RegisteredTransformsTests.fs" />
     <Compile Include="PassChainAdapterComposeTests.fs" />
     <Compile Include="SkeletonPurityTests.fs" />
+    <Compile Include="ConfigProvenanceTests.fs" />
     <Compile Include="PillarNineTests.fs" />
     <Compile Include="RegisteredAllTransformsBidirectionalTests.fs" />
     <Compile Include="ArchitectureFitnessTests.fs" />
