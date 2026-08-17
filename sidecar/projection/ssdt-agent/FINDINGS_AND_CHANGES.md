@@ -107,8 +107,10 @@ Does DacFx's declarative difference contain a data-loss step?
 releases and why they are split; *Before promoting* tells the reviewer to confirm Release 1 landed
 in each environment before Release 2 goes up. No mention of relaxing a gate we cannot relax.
 
-**Where it folds in when approved:** rewrite Node 5 of `THE_DECISION_TREE.md`; replace the
-provisional note in `THE_RECORD_FORMS.md`; both currently carry a placeholder pointing here.
+**Folded in (2026-08-16):** `THE_DECISION_TREE.md` now carries this as the **S5 SHIP sub-machine** —
+a state machine an agent cannot deviate from (operator direction: assert the choices as a state
+machine so the outcome is protected, not left to judgement). `THE_RECORD_FORMS.md`'s note points to
+it. That sub-machine is the authoritative source; this section is its proof.
 
 ---
 
@@ -117,7 +119,7 @@ provisional note in `THE_RECORD_FORMS.md`; both currently carry a placeholder po
 | Op | Data-loss step? | The pattern under the locked gate | Status |
 |---|---|---|---|
 | **narrow** (`skills/op/narrow`) | yes — shrink | Two-release (F4). Pre-deploy shortens + `ALTER` narrower with model lagging; model catches up next release. Also offer the **CHECK-constraint alternative** below. | **PROVEN** |
-| **make-mandatory**, populated (`skills/op/add-mandatory` / `make-mandatory`) | yes — `NOT NULL` on rows | Same class as narrow (row-presence guard). Two-release: backfill + pre-deploy `ALTER … NOT NULL` with model lagging; model catches up. | TO PROVE |
+| **make-mandatory**, populated (`skills/op/add-mandatory` / `make-mandatory`) | yes — `NOT NULL` on rows | Same class as narrow — the **identical** row-presence guard (`Modules/Customer.sql`, Twin-documented). Two-release: R1 backfill the NULLs + pre-deploy `ALTER … NOT NULL` with the model lagging; R2 the model catches up. | CLASS-PROVEN (narrow F1–F4); live single-op confirm pending a stable server |
 | **delete-attribute** (`skills/op/delete-attribute`) | yes — drop column | A drop cannot pre-run with the model still holding the column (DacFx re-adds it). Needs its own proof; likely deprecate-then-drop across releases. | TO PROVE |
 | **delete-entity** (`skills/op/delete-entity`) | yes — drop table | As above, for a whole table. Needs its own proof. | TO PROVE |
 | **retype-explicit**, lossy (`skills/op/retype-explicit`) | yes — lossy cast | Already multi-phase; confirm each phase is gate-clean under the axiom. | TO PROVE |
@@ -138,15 +140,23 @@ provisional note in `THE_RECORD_FORMS.md`; both currently carry a placeholder po
 
 ---
 
-## Part 5 — Open, to decide together
+## Part 5 — Decisions and what is still open
 
-- **Choose-your-adventure graph vs one generic template.** The Part 3 graph is the first cut. Do we
-  render it as a visual the developer walks, or specialise one generic PR template per op that
-  bakes the right release-shape in? (Leaning: the graph decides the shape; the template carries it.)
-- **The CHECK-constraint alternative for a max-length rule.** If the intent is "no value over 10"
-  and not "the physical type must be `NVARCHAR(10)`", a single gate-clean release can keep the
-  column `NVARCHAR(50)` and add `CHECK (LEN(Code) <= 10)` after a pre-deploy cleans the data — no
-  narrowing, no two-release. TO PROVE, and to route by asking the developer which they need.
-- **Drops (delete-attribute, delete-entity).** The two-release trick does not transfer directly —
-  a drop with the model still holding the object gets re-added. These need their own proof before
-  we write their guidance. Do not ship drop guidance until then.
+- **The rigor mechanism — RESOLVED (operator, 2026-08-16): a state machine.** The deployment graph
+  is expressed as the **S5 SHIP sub-machine** in `THE_DECISION_TREE.md`, which an agent follows
+  firmly — it asserts our choices as states and guards so the outcome is protected, not left to
+  judgement. A per-op template carries the shape the machine decides; the machine, not the author,
+  chooses it.
+- **The CHECK-constraint alternative — DEFERRED (operator, 2026-08-16).** A `CHECK (LEN(Code) <= 10)`
+  that keeps the column wide would sidestep the two-release, but it clutters the schema, and the
+  schema is kept clean. Parked, not built. Revisit only if a concrete case needs a max-length rule
+  without the physical narrowing and the clutter is judged worth it then.
+- **Drops (delete-attribute, delete-entity) — still TO PROVE.** The two-release trick does not
+  transfer directly — a drop with the model still holding the object gets re-added. SHIP routes
+  these to REFUSED until their own pattern is proven. Do not write drop guidance until then.
+- **Infra — a stable SQL target is needed for proving.** F1–F5 were proven on a SQL Server 2022
+  container this session, but the Docker daemon degraded twice and cut the make-mandatory re-proof
+  short. `sqlpackage` is now on the box (installed this session); the missing half is a **stable
+  server** to publish against. Provision both in the environment setup so PROVE (the state
+  machine's un-skippable guard) can always run — otherwise agents are pushed back toward guessing,
+  which the whole machine exists to prevent.
