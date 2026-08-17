@@ -72,6 +72,9 @@
          EstateFinding.fs because BasisAnchor carries the typed FindingKey. -->
     <Compile Include="OperatorRuling.fs" />
     <Compile Include="CanaryResidual.fs" />
+    <!-- CanaryVerdict.fs: the R6 gate's typed verdict (align-III.3) —
+         retires the "green"/"red" string pair the run + ledger carried. -->
+    <Compile Include="CanaryVerdict.fs" />
     <Compile Include="UserIdentity.fs" />
     <Compile Include="Profile.fs" />
     <!-- SamplingPolicy.fs: the operator's evidence-tiering policy (per-kind

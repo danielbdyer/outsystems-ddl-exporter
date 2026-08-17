@@ -38,7 +38,7 @@ module private RunTestCatalogs =
 
 let private sample : Run.Run =
     { RunId = "01ABCDEF"; Ts = System.DateTimeOffset(2026, 6, 5, 0, 0, 0, System.TimeSpan.Zero); Command = "projection canary"
-      InputDigest = "deadbeef"; Outcome = "succeeded"; Canary = Some "green"
+      InputDigest = "deadbeef"; Outcome = "succeeded"; Canary = CanaryVerdict.Green
       Registered = 42; Applied = 3; Declined = 1
       Events = [ """{"code":"config.runStart"}"""; """{"code":"summary.runComplete"}""" ]
       Artifacts = Map.ofList [ "catalog.json", """{"modules":[]}"""; "summary.txt", "all green" ]
@@ -149,11 +149,11 @@ let ``Run: list enumerates every persisted run`` () =
     let dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
     try
         Run.save dir sample
-        Run.save dir { sample with RunId = "01ZZZZ"; Canary = Some "red" }
+        Run.save dir { sample with RunId = "01ZZZZ"; Canary = CanaryVerdict.Red }
         let runs = Run.list dir
         Assert.Equal(2, List.length runs)
         Assert.Contains(runs, fun r -> r.RunId = "01ABCDEF")
-        Assert.Contains(runs, fun r -> r.RunId = "01ZZZZ" && r.Canary = Some "red")
+        Assert.Contains(runs, fun r -> r.RunId = "01ZZZZ" && r.Canary = CanaryVerdict.Red)
     finally
         try Directory.Delete(dir, true) with _ -> ()
 

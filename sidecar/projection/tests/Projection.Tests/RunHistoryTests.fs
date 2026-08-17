@@ -13,7 +13,7 @@ let private tsOf (label: string) : System.DateTimeOffset =
 
 let private run (label: string) (canary: string option) (declined: int) : Run.Run =
     { RunId = label; Ts = tsOf label; Command = "projection canary"; InputDigest = "d"
-      Outcome = "succeeded"; Canary = canary; Registered = 42; Applied = 0; Declined = declined
+      Outcome = "succeeded"; Canary = Projection.Core.CanaryVerdict.ofTokenOpt canary; Registered = 42; Applied = 0; Declined = declined
       Events = []; Artifacts = Map.empty
       Ledgers = []; Bench = None }
 
@@ -30,7 +30,7 @@ let ``RunHistory: trend maps a metric over the timeline`` () =
 [<Fact>]
 let ``RunHistory: canaryHistory is the green/red series, oldest first`` () =
     let h = RunHistory.ofRuns [ run "2026-01" (Some "green") 0; run "2026-02" None 0; run "2026-03" (Some "red") 0 ]
-    Assert.Equal<string list>([ "green"; "red" ], RunHistory.canaryHistory h)   // None skipped
+    Assert.Equal<Projection.Core.CanaryVerdict list>([ Projection.Core.CanaryVerdict.Green; Projection.Core.CanaryVerdict.Red ], RunHistory.canaryHistory h)   // NotRun skipped
 
 [<Fact>]
 let ``RunHistory: readiness over the history reuses the R6 gauge (subsumes the ledger)`` () =

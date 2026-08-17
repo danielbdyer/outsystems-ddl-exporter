@@ -37,7 +37,7 @@ let buildInspectView (r: Run.Run) : View.View =
           View.Field ("at", r.Ts.UtcDateTime.ToString("o", System.Globalization.CultureInfo.InvariantCulture), View.Neutral)
           View.Field (
               "outcome",
-              r.Outcome + (match r.Canary with Some c -> sprintf "   ·   canary %s" c | None -> ""),
+              r.Outcome + (if CanaryVerdict.ran r.Canary then sprintf "   ·   canary %s" (CanaryVerdict.display r.Canary) else ""),
               outcomeStatus)
           View.Field ("events", string (List.length r.Events), View.Neutral) ]
     let transforms =
@@ -139,9 +139,10 @@ let runInspect (idA: string) (idB: string option) (asJson: bool) : int =
                 printfn "Runs %s → %s" (fst d.RunIds) (snd d.RunIds)
                 printfn "  commands: %s → %s" (fst d.Commands) (snd d.Commands)
                 printfn "  outcomes: %s → %s%s" (fst d.Outcomes) (snd d.Outcomes)
-                    (match d.Canaries with
-                     | Some ca, Some cb -> sprintf " (canary %s → %s)" ca cb
-                     | _ -> "")
+                    (let ca, cb = d.Canaries
+                     if CanaryVerdict.ran ca && CanaryVerdict.ran cb
+                     then sprintf " (canary %s → %s)" (CanaryVerdict.display ca) (CanaryVerdict.display cb)
+                     else "")
                 printfn "  transform deltas: %+d registered, %+d applied, %+d declined   events: %+d"
                     d.Registered d.Applied d.Declined d.Events
                 let moved = d.BenchDeltas |> List.filter (fun bd -> bd.DeltaMs <> 0L<Run.ms>) |> List.truncate 10

@@ -63,7 +63,7 @@ let ``Ref: a runId ref resolves to the run's catalog (the Run-Ref connection)`` 
         Environment.SetEnvironmentVariable("PROJECTION_RUNS_DIR", dir)
         let run : Run.Run =
             { RunId = "01HUB"; Ts = DateTimeOffset(2026, 6, 5, 0, 0, 0, TimeSpan.Zero); Command = "x"; InputDigest = "d"; Outcome = "succeeded"
-              Canary = None; Registered = 0; Applied = 0; Declined = 0; Events = []
+              Canary = CanaryVerdict.NotRun; Registered = 0; Applied = 0; Declined = 0; Events = []
               Artifacts = Map.ofList [ "model.json", minimalModel ]
               Ledgers = []; Bench = None }
         Run.save dir run

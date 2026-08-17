@@ -37,9 +37,11 @@ module RunHistory =
     let trend (metric: Run.Run -> int) (h: RunHistory) : int list =
         h.Runs |> List.map metric
 
-    /// The canary verdict history (green / red), oldest first — the dots.
-    let canaryHistory (h: RunHistory) : string list =
-        h.Runs |> List.choose (fun r -> r.Canary)
+    /// The canary verdict history (the runs that ran a canary — Green / Red),
+    /// oldest first — the dots. Typed at align-III.3; `NotRun` runs are
+    /// dropped (they carry no dot).
+    let canaryHistory (h: RunHistory) : Projection.Core.CanaryVerdict list =
+        h.Runs |> List.map (fun r -> r.Canary) |> List.filter Projection.Core.CanaryVerdict.ran
 
     /// R6 readiness over the whole history (reuses the gauge; the history is
     /// the source the ledger was a thin view of).

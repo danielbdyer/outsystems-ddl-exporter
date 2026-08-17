@@ -36,9 +36,9 @@ let buildSummaryView (command: string) (code: int) : View.View =
     let verdict =
         let codeForVerdict, payload : string * Voice.Payload =
             match LogSink.canaryVerdict () with
-            | Some "green" -> "canary.diffEmpty", Map.empty
-            | Some "red"   -> "canary.divergence", Map.empty
-            | _ ->
+            | CanaryVerdict.Green -> "canary.diffEmpty", Map.empty
+            | CanaryVerdict.Red   -> "canary.divergence", Map.empty
+            | CanaryVerdict.NotRun ->
                 "summary.runComplete",
                 Map.ofList [ "outcome", box (if code = 0 then "succeeded" else "failed") ]  // LINT-ALLOW: terminal TtyRenderer payload box into the Map<string,objnull> LogSink boundary
         match Voice.verdict codeForVerdict payload with
@@ -127,7 +127,7 @@ let renderSummary (command: string) (code: int) : unit =
 
 /// Build the cutover-readiness board `View` — hero answer first, then the R6
 /// meter, the canary-history dots, the run totals, the ledger note.
-let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (series: int list) (ledgerPath: string) : View.View =
+let buildReadinessView (r: RunLedger.Readiness) (recent: CanaryVerdict list) (series: int list) (ledgerPath: string) : View.View =
     let toGo = max 0 (r.Threshold - r.ConsecutiveGreen)
     let hero =
         if r.Eligible then
@@ -144,13 +144,13 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (series: i
         if r.Eligible then []
         else
             match r.LastCanary with
-            | Some "green" ->
+            | Some CanaryVerdict.Green ->
                 [ View.Note(sprintf "The lever %s %s before cutover." Theme.dot (counted toGo "more green round-trip verification" "more green round-trip verifications")) ]
             | Some _ ->
                 [ View.Note(sprintf "The lever %s the most recent round-trip verification diverged; a green check restores the streak." Theme.dot) ]
             | None ->
                 [ View.Note(sprintf "The lever %s a round-trip verification has not yet run; the first green check opens the streak." Theme.dot) ]
-    let history = if List.isEmpty recent then [] else [ View.Dots("history", recent) ]
+    let history = if List.isEmpty recent then [] else [ View.Dots("history", recent |> List.map CanaryVerdict.display) ]
     // #14 — the changeset trend beside the dots: how much the model is still moving
     // per run, as a sparkline. A settling model (fewer changes toward cutover) reads
     // as a falling line. Needs ≥ 2 points to be a trend; otherwise it stays silent.
@@ -161,13 +161,13 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (series: i
         if List.isEmpty recent then []
         else
             let n = List.length recent
-            let diverged = recent |> List.filter (fun v -> v <> "green") |> List.length
+            let diverged = recent |> List.filter (fun v -> not (CanaryVerdict.isGreen v)) |> List.length
             let shape =
                 if diverged = 0 then (if n = 1 then "the last check passed" else sprintf "the last %d checks all passed" n)
                 else sprintf "the last %s %s %d passed %s %d diverged" (counted n "check" "checks") Theme.dot (n - diverged) Theme.dot diverged
             let here = if r.TotalRuns > 0 then sprintf " %s run %d, the present one" Theme.dot r.TotalRuns else ""
             [ View.Note(shape + here) ]
-    let lastCanary = match r.LastCanary with Some c -> c | None -> "—"
+    let lastCanary = match r.LastCanary with Some c -> CanaryVerdict.display c | None -> "—"
     View.Doc(
         [ View.Rule(Some "cutover readiness", View.Neutral)
           hero
@@ -182,12 +182,17 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (series: i
               sprintf "%d total %s %d with a round-trip verification %s last %s" r.TotalRuns Theme.dot r.CanaryRuns Theme.dot lastCanary,
               View.Neutral)
             View.Rule(Some "ledger", View.Neutral)
-            View.Note ledgerPath ])
+            View.Note ledgerPath ]
+        // align-III.3 — the fail-closed reading names its interior skips
+        // (a trailing torn line stays silent; interior corruption does not).
+        @ (if r.SkippedLines > 0
+           then [ View.Note(sprintf "%s and skipped — the run history read here may be incomplete." (counted r.SkippedLines "interior ledger line was unreadable" "interior ledger lines were unreadable")) ]
+           else []))
 
 let renderReadinessBoardTo
     (console: IAnsiConsole)
     (r: RunLedger.Readiness)
-    (recent: string list)
+    (recent: CanaryVerdict list)
     (series: int list)
     (ledgerPath: string)
     : unit =
@@ -371,7 +376,7 @@ let buildFlowMenuView (flows: (string * string * string * string) list) : View.V
           View.Note "the daily act is `projection <flow>` (preview by default; --go applies)."
           View.Table(headers, flows |> List.map row) ]
 
-let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (series: int list) (ledgerPath: string) : unit =
+let renderReadinessBoard (r: RunLedger.Readiness) (recent: CanaryVerdict list) (series: int list) (ledgerPath: string) : unit =
     // The board renders on every `readiness` (not just on a TTY). The factory
     // pins a width when piped (Spectre's auto-width collapses lines on a non-TTY)
     // and still strips color for the non-terminal sink.

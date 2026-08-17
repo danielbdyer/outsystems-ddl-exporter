@@ -313,7 +313,7 @@ let private withRunStore (f: string -> unit) : unit =
 
 let private storedRun (runId: string) (ledgers: Run.LedgerRef list) : Run.Run =
     { RunId = runId; Ts = System.DateTimeOffset(2026, 7, 17, 8, 0, 0, System.TimeSpan.Zero); Command = "projection move"
-      InputDigest = ""; Outcome = "succeeded"; Canary = None
+      InputDigest = ""; Outcome = "succeeded"; Canary = CanaryVerdict.NotRun
       Registered = 0; Applied = 0; Declined = 0
       Events = []; Artifacts = Map.empty; Ledgers = ledgers; Bench = None }
 

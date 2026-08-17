@@ -51,7 +51,10 @@ module Run =
         /// stable across wall-clock; same inputs → same digest.
         InputDigest : string
         Outcome     : string
-        Canary      : string option
+        /// The round-trip canary's verdict — typed at align-III.3
+        /// (`CanaryVerdict`). The wire keeps the `"green"`/`"red"` token
+        /// (absent for `NotRun`), byte-identical to the prior `string option`.
+        Canary      : Projection.Core.CanaryVerdict
         Registered  : int
         Applied     : int
         Declined    : int
@@ -91,7 +94,7 @@ module Run =
         o.["command"]     <- JsonValue.Create r.Command
         o.["inputDigest"] <- JsonValue.Create r.InputDigest
         o.["outcome"]     <- JsonValue.Create r.Outcome
-        (match r.Canary with Some c -> o.["canary"] <- JsonValue.Create c | None -> ())
+        (match Projection.Core.CanaryVerdict.tokenOpt r.Canary with Some c -> o.["canary"] <- JsonValue.Create c | None -> ())
         o.["registered"]  <- JsonValue.Create r.Registered
         o.["applied"]     <- JsonValue.Create r.Applied
         o.["declined"]    <- JsonValue.Create r.Declined
@@ -153,7 +156,8 @@ module Run =
                 if root.TryGetProperty(name, &v) && v.ValueKind = JsonValueKind.Number then v.GetInt32() else 0
             let canary =
                 let mutable v = Unchecked.defaultof<JsonElement>
-                if root.TryGetProperty("canary", &v) && v.ValueKind = JsonValueKind.String then Some (nz (v.GetString())) else None
+                let token = if root.TryGetProperty("canary", &v) && v.ValueKind = JsonValueKind.String then Some (nz (v.GetString())) else None
+                Projection.Core.CanaryVerdict.ofTokenOpt token
             let events =
                 let mutable v = Unchecked.defaultof<JsonElement>
                 if root.TryGetProperty("events", &v) && v.ValueKind = JsonValueKind.Array
@@ -287,7 +291,7 @@ module Run =
             RunIds      : string * string
             Commands    : string * string
             Outcomes    : string * string
-            Canaries    : string option * string option
+            Canaries    : Projection.Core.CanaryVerdict * Projection.Core.CanaryVerdict
             Registered  : int
             Applied     : int
             Declined    : int

@@ -32,9 +32,11 @@ module RunLedger =
         Ts         : DateTimeOffset
         Command    : string
         Outcome    : string
-        /// "green" (canary.diffEmpty) / "red" (canary.divergence) / None (no
-        /// canary leg in this run).
-        Canary     : string option
+        /// The round-trip canary's verdict — typed at align-III.3
+        /// (`CanaryVerdict`): `Green` / `Red` / `NotRun`. The wire keeps the
+        /// `"green"` / `"red"` token (absent for `NotRun`), so pre-III.3
+        /// ledgers round-trip byte-identical.
+        Canary     : Projection.Core.CanaryVerdict
         Registered : int
         Applied    : int
         Declined   : int
@@ -53,7 +55,7 @@ module RunLedger =
          jw.WriteString("ts", r.Ts.UtcDateTime.ToString("o", Globalization.CultureInfo.InvariantCulture))
          jw.WriteString("command", r.Command)
          jw.WriteString("outcome", r.Outcome)
-         (match r.Canary with
+         (match Projection.Core.CanaryVerdict.tokenOpt r.Canary with
           | Some c -> jw.WriteString("canary", c)
           | None   -> jw.WriteNull("canary"))
          jw.WriteNumber("registered", r.Registered)
@@ -72,7 +74,7 @@ module RunLedger =
             let getInt (name: string) =
                 let mutable v = Unchecked.defaultof<JsonElement>
                 if root.TryGetProperty(name, &v) && v.ValueKind = JsonValueKind.Number then v.GetInt32() else 0
-            let canary =
+            let canaryToken =
                 let mutable v = Unchecked.defaultof<JsonElement>
                 if root.TryGetProperty("canary", &v) && v.ValueKind = JsonValueKind.String
                 then Some (str v) else None
@@ -85,7 +87,10 @@ module RunLedger =
             | true, ts ->
                 Some {
                     RunId = getStr "runId"; Ts = ts; Command = getStr "command"
-                    Outcome = getStr "outcome"; Canary = canary
+                    // align-III.3 — the token reads back to the typed verdict
+                    // (absent/unknown ⇒ NotRun, the forward-compatible safe
+                    // direction).
+                    Outcome = getStr "outcome"; Canary = Projection.Core.CanaryVerdict.ofTokenOpt canaryToken
                     Registered = getInt "registered"; Applied = getInt "applied"; Declined = getInt "declined"
                 }
         with :? System.Text.Json.JsonException -> None   // malformed ledger JSON → None; a fatal propagates
@@ -104,21 +109,54 @@ module RunLedger =
         Directory.CreateDirectory dir |> ignore
         File.AppendAllText(ledgerPath dir, toJsonLine record + "\n")
 
-    /// Read the full run history (chronological — append order). Malformed
-    /// lines are skipped (forward-compatibility: a future schema addition
-    /// doesn't break an older reader).
-    let read (dir: string) : LedgerRecord list =
+    /// A fail-closed read of the JSONL ledger (align-III.3). A malformed
+    /// TRAILING line is tolerated silently (a crash mid-append is normal —
+    /// the append is not atomic at the line grain); an INTERIOR malformed
+    /// line is COUNTED (`SkippedLines`) and surfaced on the readiness board,
+    /// never silently dropped as before. Not a hard refuse — the ledger is
+    /// opt-in and forward-compatible, so one corrupt interior line names
+    /// itself rather than breaking the whole gauge.
+    type LedgerReading = { Records: LedgerRecord list; SkippedLines: int }
+
+    let private readLines (dir: string) : LedgerReading =
         let p = ledgerPath dir
-        if File.Exists p then File.ReadAllLines p |> Array.toList |> List.choose parseLine
-        else []
+        if not (File.Exists p) then { Records = []; SkippedLines = 0 }
+        else
+            let raw = File.ReadAllLines p
+            let lastIndex = raw.Length - 1
+            let records, skipped =
+                raw
+                |> Array.toList
+                |> List.mapi (fun i line -> (i, parseLine line))
+                |> List.fold
+                    (fun (recs, sk) (i, parsed) ->
+                        match parsed with
+                        | Some r -> (r :: recs, sk)
+                        // trailing-torn tolerated; interior corruption counted.
+                        | None -> (recs, (if i = lastIndex then sk else sk + 1)))
+                    ([], 0)
+            { Records = List.rev records; SkippedLines = skipped }
+
+    /// Read the full run history (chronological — append order). Malformed
+    /// interior lines are counted (see `readReading`); the trailing torn line
+    /// is tolerated.
+    let read (dir: string) : LedgerRecord list = (readLines dir).Records
+
+    /// Read the ledger WITH its skipped-interior-line count (the fail-closed
+    /// reading the readiness board surfaces).
+    let readReading (dir: string) : LedgerReading = readLines dir
 
     /// The R6 cutover-readiness gauge.
     type Readiness = {
         TotalRuns        : int
         CanaryRuns       : int
         ConsecutiveGreen : int
-        LastCanary       : string option
+        LastCanary       : Projection.Core.CanaryVerdict option
         Threshold        : int
+        /// Interior ledger lines that could not be parsed and were skipped
+        /// (align-III.3) — 0 for a clean or trailing-torn-only ledger, and
+        /// for the pure `readiness` gauge over already-parsed records.
+        SkippedLines     : int
         Eligible         : bool
     }
 
@@ -126,20 +164,28 @@ module RunLedger =
     /// from the most recent canary-bearing run until the first non-green.
     /// Eligible when that streak reaches the R6 threshold AND the last canary
     /// was green (a red after a long green streak resets eligibility — the
-    /// gate measures the *current* streak, not the historical best).
+    /// gate measures the *current* streak, not the historical best). Pure
+    /// over already-parsed records, so `SkippedLines = 0`; `readinessOf`
+    /// carries the reading's skip count through.
     let readiness (records: LedgerRecord list) : Readiness =
-        let canaryVerdicts = records |> List.choose (fun r -> r.Canary)
+        let canaryRuns = records |> List.map (fun r -> r.Canary) |> List.filter Projection.Core.CanaryVerdict.ran
         let consecutiveGreen =
-            canaryVerdicts
+            canaryRuns
             |> List.rev
-            |> List.takeWhile (fun c -> c = "green")
+            |> List.takeWhile Projection.Core.CanaryVerdict.isGreen
             |> List.length
-        let last = canaryVerdicts |> List.tryLast
+        let last = canaryRuns |> List.tryLast
         {
             TotalRuns        = List.length records
-            CanaryRuns       = List.length canaryVerdicts
+            CanaryRuns       = List.length canaryRuns
             ConsecutiveGreen = consecutiveGreen
             LastCanary       = last
             Threshold        = R6Threshold
-            Eligible         = consecutiveGreen >= R6Threshold && last = Some "green"
+            SkippedLines     = 0
+            Eligible         = consecutiveGreen >= R6Threshold && last = Some Projection.Core.CanaryVerdict.Green
         }
+
+    /// The gauge over a fail-closed reading — surfaces the reading's
+    /// interior-skip count on `Readiness.SkippedLines`.
+    let readinessOf (reading: LedgerReading) : Readiness =
+        { readiness reading.Records with SkippedLines = reading.SkippedLines }

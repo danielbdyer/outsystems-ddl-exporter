@@ -55,7 +55,7 @@ let ``renderWatchOn shows the cutover timeline header from the ledger's canary h
                   Ts = DateTimeOffset(2026, 6, 17, 0, 0, idx, TimeSpan.Zero)
                   Command = "projection canary"
                   Outcome = "succeeded"
-                  Canary = Some "green"
+                  Canary = Projection.Core.CanaryVerdict.Green
                   Registered = 0
                   Applied = 0
                   Declined = 0 }

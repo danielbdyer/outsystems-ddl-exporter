@@ -32404,3 +32404,57 @@ No matrix motion (T19 was already live; a citation added to a live axiom leaves 
 counts). Laws: `LedgerTests` ChainAdmission suite (Monotone/Linkage/WitnessRecompute-
 offline); `SinkStoreTests` brokenChain; `EpisodeTests` episode-grain admitChain;
 `RulingStoreTests` SinkEdition round-trip; `CliExitTests` brokenChain → 9.
+
+## 2026-08-16 — align-III.3: the R6 gate reads a value — CanaryVerdict retires the "green"/"red" literals; the ledger loads fail-closed
+
+**Amendment to the §5 R6 + cutover-ladder commitment (written FIRST, per the
+break-a-load-bearing-commitment discipline).** R6's POLICY is unchanged: V2's per-pair
+cutover still gates on N=10 consecutive GREEN canaries + operator sign-off. What changes
+is the ENCODING of a canary's verdict, not the gate. The audit (a5) found the verdict
+lived as the bare string `"green"` / `"red"` in TWO independent sites — `Run.Canary` and
+`RunLedger.LedgerRecord.Canary`, both `string option` — and the eligibility test
+(`last = Some "green"`) plus the streak count (`takeWhile (= "green")`) compared literals
+a typo in either site could silently break. align-III.3 lifts the verdict to a Core
+value.
+
+**CanaryVerdict (Core).** `Green | Red | NotRun`. `NotRun` replaces the prior `None` (no
+canary leg — pending by absence, distinct from a recorded `Red`; the gauge skips it,
+never resets the streak on it). The wire is byte-identical: `tokenOpt` writes `"green"` /
+`"red"` and NO token for `NotRun` (absent/null, exactly as `None`), and `ofTokenOpt` reads
+them back, an unknown token reading `NotRun` (the ledger's forward-compatible safe
+direction — a future verdict never reads as a false green/red). The gauge's logic is
+unchanged (`filter ran`, `takeWhile isGreen`, `last = Some Green`), so readiness over any
+existing store is identical.
+
+**Aborted DEFERRED (a plan-sketch trim, discipline-governed).** The III-open sketch named
+a fourth variant `Aborted` (a canary that began but reached no verdict). It has NO
+producer today: `canary.started` is Voice copy only — it is never accumulated into the
+`LogSink` envelope stream `canaryVerdict()` reads, so nothing can distinguish
+started-but-unconcluded from `NotRun`. Per "IR grows under evidence / zero-consumer
+symmetry-builds get deleted", `Aborted` is a NAMED DEFERRAL. **Re-open trigger:** the
+first run to journal a started-but-unconcluded canary signal into the sink envelope
+stream. The three shipped variants fully deliver the slice's value — the gate reads a
+value, not a literal.
+
+**RunLedger fail-closed loader.** The JSONL ledger `read` was `List.choose parseLine` —
+it silently dropped EVERY malformed line, interior corruption and trailing-torn alike. Now
+`readLines` distinguishes: a malformed TRAILING line is tolerated silently (a crash
+mid-append is normal), an INTERIOR malformed line is COUNTED as `SkippedLines` and surfaced
+on `Readiness` (a new field) and on the readiness board when > 0. Not a hard refuse — the
+ledger is opt-in and forward-compatible, so one bad interior line names itself rather than
+either vanishing silently or breaking the whole gauge.
+
+**RunHistory subsumption (micro-ruling, already structural).** `RunHistory` already reads
+the richer per-run `Run` store and delegates readiness to the ONE gauge
+(`RunLedger.readiness` over `Run.toLedgerEntry` projections); its module doc already
+states it "subsumes RunLedger". The ruling names it explicit: `RunLedger.read`/`append` is
+the thin durable JSONL INDEX (the residue), `RunHistory` is the source, and the readiness
+GAUGE is the single shared definition both reach. The X-arc's X5 (RunLedger residue rename)
+shrinks to a rename — no logic moves.
+
+**BEHAVIORAL:** an interior-corrupt ledger line is now counted + surfaced (was silently
+dropped); a healthy ledger and a trailing-torn ledger are byte-identical in behavior.
+Every "green"/"red" render is byte-identical (the display token is the same string).
+Laws: `CanaryVerdictTests` (token round-trip incl. NotRun-absent + unknown-token-safe);
+`RunLedgerTests` interior-vs-trailing SkippedLines; the existing readiness/RunHistory laws
+re-pinned onto the typed verdict.

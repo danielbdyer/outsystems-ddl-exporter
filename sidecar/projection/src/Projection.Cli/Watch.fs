@@ -625,7 +625,7 @@ module Watch =
         match RunLedger.configuredDir () with
         | Some dir ->
             let records = RunLedger.read dir
-            let cells = records |> List.choose (fun r -> r.Canary)
+            let cells = records |> List.map (fun r -> r.Canary) |> List.filter Projection.Core.CanaryVerdict.ran |> List.map Projection.Core.CanaryVerdict.display
             if List.isEmpty cells then []
             else
                 let r = RunLedger.readiness records

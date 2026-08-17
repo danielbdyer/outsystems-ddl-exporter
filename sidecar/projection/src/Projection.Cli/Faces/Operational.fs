@@ -234,10 +234,11 @@ let runReadiness () : int =
         // and touches no ledger (the documented no-append contract above), so it
         // declares the empty digest + no `LedgerRef`.
         RunEnvelope.bracket "projection check ready" ignore Map.empty (fun () -> "", []) (fun () ->
-            let records = RunLedger.read dir
-            let r = RunLedger.readiness records
+            let reading = RunLedger.readReading dir
+            let records = reading.Records
+            let r = RunLedger.readinessOf reading
             let recent =
-                records |> List.choose (fun e -> e.Canary) |> List.rev |> List.truncate 16 |> List.rev
+                records |> List.map (fun e -> e.Canary) |> List.filter CanaryVerdict.ran |> List.rev |> List.truncate 16 |> List.rev
             // #14 — the changeset trend: registered transforms per run over the last 16
             // runs, as a sparkline beside the dots (a settling model trends down toward
             // cutover). Same window as `recent`.
@@ -254,8 +255,8 @@ let runReadiness () : int =
                         "canaryRuns",       box r.CanaryRuns
                         "consecutiveGreen", box r.ConsecutiveGreen
                         "threshold",        box r.Threshold
-                        "lastCanary",       (match r.LastCanary with Some c -> box c | None -> null)
-                        "recentCanaries",   box recent
+                        "lastCanary",       (match r.LastCanary with Some c -> box (CanaryVerdict.display c) | None -> null)
+                        "recentCanaries",   box (recent |> List.map CanaryVerdict.display)
                         "eligible",         box r.Eligible ]) with
                     Phase = LogSink.End }
             0, LogSink.Succeeded)
