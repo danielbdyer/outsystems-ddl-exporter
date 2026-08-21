@@ -19,11 +19,12 @@ exist, so a wrong or missing StatusId becomes impossible. No work item supplied 
 - The key is trusted, so SQL Server has validated every existing row and the query planner can rely on it.
 
 ## How it ships
-- One release, applied in place. No pre-deploy is needed because the child data is already clean.
-  DacFx adds the key `WITH CHECK`, which validates the existing rows and marks it trusted — proven below.
-- This is the clean counterpart to `create-fk-orphan`: there, an orphan forces a pre-deploy reconcile,
-  and because a pre-deploy is present DacFx adds the key `WITH NOCHECK` (untrusted), so a post-deploy
-  `WITH CHECK CHECK` is required. Here, with no pre-deploy, the key is trusted in one step.
+- One release, applied in place. No pre-deploy is needed because every child row already has a parent.
+  The generated script adds the key `WITH NOCHECK` and then re-validates it `WITH CHECK CHECK` in the
+  same publish, so it lands trusted (`is_not_trusted = 0`) — proven below.
+- This is the clean counterpart to `create-fk-orphan`: there, an orphan must be reconciled in a
+  pre-deploy first, or the publish blocks with `Msg 547`. Either way the key ends trusted
+  automatically — the reconcile is the only extra work, not a separate trust step.
 
 ## The data
 - 4 orders. Every StatusId (1, 2, 3) matches a seeded Status row. No order points at a missing Status.
@@ -31,9 +32,10 @@ exist, so a wrong or missing StatusId becomes impossible. No work item supplied 
 ## What proving showed
 Published to a throwaway copy on this branch.
 - **Tried:** add the key, publish under the data-loss guard → `Successfully published database.` No
-  block: the child data is clean.
-- **Realized:** with clean data and no pre-deploy, DacFx adds the key `WITH CHECK` and it lands
-  trusted — `is_not_trusted = 0`. A re-publish changed nothing.
+  block: every child row has a parent.
+- **Realized:** the generated script adds the key `WITH NOCHECK` and then re-validates it
+  `WITH CHECK CHECK` in the same publish; it lands trusted — `is_not_trusted = 0`. A re-publish
+  changed nothing.
 
 ## After deploy — check
 ```sql

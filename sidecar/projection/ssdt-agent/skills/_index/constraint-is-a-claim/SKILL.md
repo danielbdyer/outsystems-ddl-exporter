@@ -1,6 +1,6 @@
 ---
 name: constraint-is-a-claim
-description: "Cross-cutting KNOWLEDGE shared by define-PK, create-fk-clean, create-fk-orphan, add-unique, add-check, toggle-trust, and modify-index->unique. Owns the truth that a PK/FK/unique/check is a CLAIM about existing data, proven at APPLY time — the probe PREDICTS (orphan LEFT JOIN, duplicate GROUP BY HAVING, violation WHERE NOT(pred), NULL count) while the Strict publish PROVES. Owns the reconcile-first pattern, the NOCHECK -> reconcile -> WITH CHECK CHECK trust ladder + the is_not_trusted=0 end-state, UNIQUE-allows-one-NULL + the filtered-index remedy, and the discriminator: clean data lands as a single in-place schema change, dirty data ships as a scripted reconcile. Per-op skills POINT here. DISTINCT from tightening-class: this blocks on data-VIOLATION (a value); tightening-class blocks data-BLIND on row-PRESENCE."
+description: "Cross-cutting KNOWLEDGE shared by define-PK, create-fk-clean, create-fk-orphan, add-unique, add-check, toggle-trust, and modify-index->unique. Owns the truth that a PK/FK/unique/check is a CLAIM about existing data, proven at APPLY time — the probe PREDICTS (orphan LEFT JOIN, duplicate GROUP BY HAVING, violation WHERE NOT(pred), NULL count) while the Strict publish PROVES. Owns the reconcile-first pattern (DacFx's declarative FK add auto-emits WITH NOCHECK ADD + WITH CHECK CHECK, so a reconciled foreign key ends trusted, is_not_trusted=0, automatically; an unreconciled orphan blocks with Msg 547; the anti-pattern is a hand-written WITH NOCHECK that skips re-validation), UNIQUE-allows-one-NULL + the filtered-index remedy, and the discriminator: clean data lands as a single in-place schema change, dirty data ships as a scripted reconcile. Per-op skills POINT here. DISTINCT from tightening-class: this blocks on data-VIOLATION (a value); tightening-class blocks data-BLIND on row-PRESENCE."
 ---
 
 # A constraint is a claim about existing data — proven at APPLY time
@@ -8,7 +8,7 @@ description: "Cross-cutting KNOWLEDGE shared by define-PK, create-fk-clean, crea
 > A PK, FK, UNIQUE, or CHECK is not a passive decoration you *add* — it is a **claim** SQL Server
 > **validates against every existing row** the moment you apply it. If the data already breaks the
 > claim, the apply **is blocked.** Every constraint op points here so the probe-first reflex and the
-> trust ladder are the same, every time.
+> reconcile-first pattern are the same, every time.
 
 You are helping an **OutSystems-native developer** who is declaring a key, drawing a reference, or
 requiring a value to be unique or within a range. In OutSystems the Identifier was automatic and
@@ -45,27 +45,32 @@ publish, because the publish delta is the honest proof.
   it: inserts and updates are now validated, so the running application must produce conforming data
   — and for a foreign key, a cross-table relationship is added.
 - **Data violates the claim** → the apply is **blocked** → **reconcile first**, which changes how it
-  ships: a pre-deployment reconcile ships as one release (the pre-deployment script prepares the
-  data, then the schema change lands validated); a NOCHECK→reconcile→re-validate orchestration ships
-  as a scripted change — it cannot be expressed as a table definition — or ships across multiple
-  releases if the reconcile must be staged while the app keeps producing violations. A dev lead must
-  review it: existing data is modified.
+  ships: the reconcile ships as a pre-deploy script in one release (the pre-deploy prepares the data,
+  then the declarative add lands and re-validates the rows itself), or across multiple releases if
+  the reconcile must be staged while the app keeps producing violations. A dev lead reviews it:
+  existing data is modified.
 
-## The reconcile-first pattern and the trust ladder (FK)
+## The reconcile-first pattern (FK): reconcile the data, the declarative add trusts itself
 
 When the data is dirty, the honest path is **reconcile before you claim** — delete the offending
-rows, point them at a real parent, insert the missing parents, or fix the failing values. For an FK
-whose validation would be blocked, the ladder is:
+rows, point them at a real parent, insert the missing parents, or fix the failing values. For a
+foreign key, edit the CREATE to add the key and put the reconcile in a **pre-deploy** script. On
+publish, DacFx's generated script adds the key `WITH NOCHECK` and then re-validates it
+`WITH CHECK CHECK` in the **same** publish (proven, `FINDINGS_AND_CHANGES.md` F9):
 
-1. `ALTER TABLE ... WITH NOCHECK ADD CONSTRAINT [FK_...]` — adds the constraint but **untrusted**
-   (skips validation). `sys.foreign_keys.is_not_trusted = 1`.
-2. Reconcile the orphans.
-3. `ALTER TABLE ... WITH CHECK CHECK CONSTRAINT [FK_...]` — re-validates and **restores trust**.
+1. the pre-deploy reconcile clears the orphans;
+2. `ALTER TABLE ... WITH NOCHECK ADD CONSTRAINT [FK_...]` — DacFx adds the key;
+3. `ALTER TABLE ... WITH CHECK CHECK CONSTRAINT [FK_...]` — DacFx re-validates it → **trusted**.
 
-**The trap:** stopping at `WITH NOCHECK`. An **untrusted** constraint protects nothing reliably
-*and* the optimizer **ignores it** — a guarantee you can't trust is worse than none, because
-everyone believes it's there. The `WITH CHECK CHECK` re-validation is **mandatory, not optional
-polish.** **The end-state proof is `is_not_trusted = 0`** — prove it, or you have not finished.
+Steps 2 and 3 are **DacFx's own output**, not something you write. So a reconciled foreign key ends
+`is_not_trusted = 0` **automatically** — there is no manual trust step. If the orphans are *not*
+reconciled, step 3 fails and the whole publish **blocks with `Msg 547`**; there is no
+silent-untrusted middle state on the declarative path.
+
+**The anti-pattern:** hand-writing `WITH NOCHECK ADD` in a script and skipping the re-validation.
+*That* leaves the key **untrusted** (`is_not_trusted = 1`) — protecting nothing reliably and ignored
+by the optimizer, a guarantee no one can trust. Never do this; let the declarative add generate both
+steps. **The end-state proof is `is_not_trusted = 0`** — verify it after deploy.
 
 ## UNIQUE allows exactly one NULL (the filtered-index edge)
 
@@ -97,7 +102,8 @@ violation. Different cause, different remedy.
   keys (dups/NULLs) block the apply → dedupe first.
 - **create-fk-clean** — prove zero orphans → lands clean as a single in-place schema change; the
   most generalizable discriminator in the family.
-- **create-fk-orphan** — the NOCHECK→reconcile→WITH CHECK CHECK path; prove `is_not_trusted = 0`.
+- **create-fk-orphan** — reconcile the orphan in a pre-deploy (or the add blocks `Msg 547`); the
+  declarative add re-validates and trusts the key itself. Verify `is_not_trusted = 0`.
 - **add-unique** — duplicates block the apply; UNIQUE-allows-one-NULL + the filtered-index remedy.
 - **add-check** — `WHERE NOT(pred)` violations block the apply; the predicate is the claim.
 - **toggle-trust** — OPERATIONAL: `WITH CHECK CHECK` to restore trust, or `NOCHECK` to suspend it;

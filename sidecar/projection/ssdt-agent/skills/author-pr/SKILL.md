@@ -52,7 +52,9 @@ constraint: "<the developer's words>". <Name the work item, or: No work item sup
   the change. TWO RELEASES (a data-loss change on this locked-gate pipeline) → name R1 (a pre-deploy
   physical change with the model unchanged) and R2 (the model catches up), and that the gate is not
   relaxed because it cannot be. A relaxed gate is a per-publish setting, not a database state — if
-  ever used, say so. A constraint left untrusted by DacFx → name the post-deploy WITH CHECK CHECK.>
+  ever used, say so. A declarative FK/constraint add re-validates and trusts itself (WITH NOCHECK ADD
+  + WITH CHECK CHECK in one publish); dirty child data blocks it (Msg 547) until reconciled — never
+  invent a manual trust step (FINDINGS F9).>
 
 ## The data
 - <The counts and the bad rows that decide the risk, named. Headline: detail. "No existing data is touched." if additive.>
@@ -97,13 +99,13 @@ constraint: "<the developer's words>". <Name the work item, or: No work item sup
   shape; it is silent on the running app, other environments, production scale, and the backout.
   Name the specific unverified thing for *this* change and who owns it.
 
-## Worked example — a foreign key with an orphan (proven live, 2026-08-16)
+## Worked example — a foreign key with an orphan (proven live, 2026-08-21)
 
 Real messages from a publish to SQL Server 2022 on this branch. `Order 4` points to `CustomerId 999`,
 which does not exist.
 
 ```
-# Order → Customer: add a foreign key (one orphan order removed so the key can be trusted)
+# Order → Customer: add a foreign key (one orphan order removed so the add does not block)
 
 ## Verdict
 This PR adds a rule that every Order must point to a real Customer, and removes 1 order that points
@@ -126,9 +128,10 @@ attach one before merge.
 ## How it ships
 - One release. The row removal is a plain pre-deploy `DELETE`, which the data-loss gate does not govern,
   so no gate change is needed.
-- DacFx adds the key `WITH NOCHECK` when a pre-deploy script is present, which leaves it untrusted. A
-  post-deploy `ALTER TABLE dbo.[Order] WITH CHECK CHECK CONSTRAINT FK_Order_Customer_CustomerId`
-  validates and trusts it. Without that step the key exists but SQL Server does not trust it.
+- The orphan must be removed before the key is added, or the publish blocks: the generated script adds
+  the key `WITH NOCHECK` and then re-validates it `WITH CHECK CHECK` in the same publish, and that
+  re-validation fails on the orphan with `Msg 547`. With the orphan gone it passes and the key lands
+  trusted (`is_not_trusted = 0`) — no separate trust step.
 
 ## The data
 - 4 orders. 1 is an orphan: `Order 4 → CustomerId 999`, and no Customer 999 exists. It has 2 order lines.
@@ -139,10 +142,11 @@ Published to a throwaway copy on this branch.
 - **Tried:** add the key, publish → refused. `Msg 547`: the ALTER conflicted with
   `FK_Order_Customer_CustomerId` on `dbo.Customer.Id`. The orphan has no parent.
 - **Did:** remove the orphan and its lines in a pre-deploy step; fix the seed; publish → succeeds.
-- **Realized:** the key landed untrusted — `is_not_trusted = 1`; the generated script shows
-  `ALTER TABLE [dbo].[Order] WITH NOCHECK ADD CONSTRAINT …`.
-- **Did:** post-deploy `WITH CHECK CHECK` → `is_not_trusted = 0`. Full change set on a fresh copy →
-  trusted automatically, 3 orders remain; re-publish → nothing changes, still trusted.
+- **Realized:** the generated script adds the key `WITH NOCHECK` and re-validates it
+  `WITH CHECK CHECK` in the same publish; with the orphan gone the key lands trusted —
+  `is_not_trusted = 0`. A manual post-deploy `WITH CHECK CHECK` is redundant.
+- **Did:** re-publish the full change set on a fresh copy → 3 orders remain, key trusted; re-publish
+  again → nothing changes.
 
 ## After deploy — check
 ```sql

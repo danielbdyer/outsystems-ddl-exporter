@@ -1,6 +1,6 @@
 ---
 name: create-fk-clean
-description: Use when the developer says "add a reference to Customer", "draw the relationship from Order to Customer", "Order belongs to a Customer" AND the child data is clean (every child points at a real parent) — a FOREIGN KEY that SQL Server validates against every existing child row and lands as one clean ADD CONSTRAINT.
+description: Use when the developer says "add a reference to Customer", "draw the relationship from Order to Customer", "Order belongs to a Customer" AND the child data is clean (every child points at a real parent) — a FOREIGN KEY that SQL Server validates against every existing child row and lands trusted in one release.
 ---
 
 The canonical skill body lives in the tree, where its relative citations resolve:

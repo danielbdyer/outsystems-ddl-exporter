@@ -1,6 +1,6 @@
 ---
 name: create-fk-orphan
-description: Use when the developer says "add a reference to Customer" but the data is dirty — some child rows point at parents that do not exist (orphans). The NOCHECK → reconcile → WITH CHECK CHECK script path that ends with a TRUSTED foreign key.
+description: Use when the developer says "add a reference to Customer" but the data is dirty — some child rows point at parents that do not exist (orphans). The orphan must be reconciled in a pre-deploy or the add blocks with Msg 547; the declarative add then lands trusted on its own.
 ---
 
 The canonical skill body lives in the tree, where its relative citations resolve:

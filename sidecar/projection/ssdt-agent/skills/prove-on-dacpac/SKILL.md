@@ -260,8 +260,10 @@ to miss:
   -- is_not_trusted = 1 means the constraint exists but was never validated.
   ```
 
-  The trust ladder is the fix, in order: add `WITH NOCHECK`, reconcile the orphan rows, run
-  `ALTER TABLE ... WITH CHECK CHECK CONSTRAINT`, then confirm `is_not_trusted = 0`.
+  The fix is to reconcile the orphan rows and re-publish: the declarative add re-runs `WITH NOCHECK
+  ADD` + `WITH CHECK CHECK` itself and ends trusted, so no manual trust step is needed (FINDINGS F9).
+  Confirm `is_not_trusted = 0` afterward — the partial state a blocked publish left behind is why you
+  re-probe.
 - **A post-deployment seed re-plants a manually reconciled row.** Reassigning an orphan row on the
   copy by hand (Order 4, CustomerId 999 -> 1) clears the block once, but the post-deployment seed is
   an idempotent MERGE that re-inserts the original seeded rows on the next publish — re-planting

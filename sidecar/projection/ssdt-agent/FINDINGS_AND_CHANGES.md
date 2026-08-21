@@ -60,13 +60,17 @@ Each was published to a throwaway database on the live server; the database name
   physically while the model lags so no data-loss step is generated; Release 2 lets the model catch
   up as a no-op. **The model change and the pre-deploy ALTER must never share a release (F2).**
 
-- **F5 — DacFx adds a foreign key `WITH NOCHECK` when a pre-deploy script is present, leaving it untrusted. (PROVEN)**
-  Adding `FK_Order_Customer_CustomerId` with the orphan reconciled in a pre-deploy → the generated
-  script is `ALTER TABLE [dbo].[Order] WITH NOCHECK ADD CONSTRAINT …`, and the key landed
-  `is_not_trusted = 1`. A post-deploy `ALTER TABLE … WITH CHECK CHECK CONSTRAINT …` set
-  `is_not_trusted = 0`. (DBs `prove_key03`, `prove_key03b`.) An untrusted key is not enforced for
-  the query planner and does not guarantee the existing rows — the trust step is required, not
-  optional.
+- **F5 — [OVERTURNED 2026-08-21] A declarative foreign-key add ends TRUSTED automatically; there is no manual trust step. (PROVEN)**
+  The earlier reading — a pre-deploy leaves the key `is_not_trusted = 1`, requiring a hand-written
+  post-deploy `WITH CHECK CHECK` — was a measurement artifact. Script capture on this branch shows
+  DacFx generates the **same two statements for every declarative FK add**, whether or not a
+  pre-deploy script is present: `ALTER TABLE [dbo].[Order] WITH NOCHECK ADD CONSTRAINT …`, then,
+  later in the same publish, `ALTER TABLE [dbo].[Order] WITH CHECK CHECK CONSTRAINT …`. The key ends
+  `is_not_trusted = 0`. Proven: clean add, no pre-deploy (DB `db_fkc2`); orphan reconciled in a
+  pre-deploy, no manual re-trust (DB `db_orphB`) → trusted; a redundant manual `WITH CHECK CHECK` on
+  top (DB `db_orphC`) → identical. An untrusted key (`is_not_trusted = 1`) comes only from a
+  hand-written `WITH NOCHECK` add that skips the re-validation — the anti-pattern, not the
+  declarative path. See F9.
 
 - **F6 — A pre-deploy side effect is not rolled back when the main script fails. (PROVEN, from F2)**
   In F2 the pre-deploy's committed ALTER survived the deploy's failure. **Every pre-deploy step
@@ -80,13 +84,40 @@ Each was published to a throwaway database on the live server; the database name
   re-publish → stable. (DBs `mm_ax`, `mm_2r`.) The tightening class — narrow and make-mandatory —
   is one pattern.
 
-- **F8 — a clean foreign key lands trusted in one release; only the orphan case is untrusted. (PROVEN)**
+- **F8 — [mechanism corrected 2026-08-21] a clean foreign key lands trusted in one release. (PROVEN)**
   Adding `FK_Order_Status` (`Order.StatusId → Status.Id`) with every child row already valid and **no
-  pre-deploy** → published clean, `is_not_trusted = 0`. The untrusted result in F5 came from the
-  pre-deploy reconcile the orphan required — DacFx adds the key `WITH NOCHECK` only when a pre-deploy
-  is present. So `create-fk-clean` is one release, trusted; `create-fk-orphan` is one release + a fork
-  + the post-deploy `WITH CHECK CHECK`. A CHECK on clean data with no pre-deploy is trusted the same
-  way. (DBs `pb_fkc`, `pb_chk`, 2026-08-21.)
+  pre-deploy** → published clean, `is_not_trusted = 0` (DBs `pb_fkc`, `db_fkc2`). The mechanism is
+  **not** `WITH CHECK ADD` (the earlier wording); the generated script is `WITH NOCHECK ADD` +
+  `WITH CHECK CHECK`, the same two statements DacFx emits for every declarative FK add (F9). The
+  outcome — one release, trusted, no manual step — stands. `create-fk-orphan` differs only by the
+  fork the orphan forces (reconcile it, or the publish blocks `Msg 547`), not by a trust step. A
+  CHECK on clean data with no pre-deploy is trusted the same way. (DB `pb_chk`.)
+
+- **F9 — The four key-operation script shapes, script-captured. (PROVEN 2026-08-21)** Each op run as
+  the ONLY change on an isolated database, no unrelated pre-deploy:
+  - **create-fk-clean** (DB `db_fkc2`): `ALTER TABLE [dbo].[Order] WITH NOCHECK ADD CONSTRAINT
+    [FK_Order_Status] FOREIGN KEY ([StatusId]) REFERENCES [dbo].[Status] ([Id]);` then
+    `ALTER TABLE [dbo].[Order] WITH CHECK CHECK CONSTRAINT [FK_Order_Status];` → LAND,
+    `is_not_trusted = 0`.
+  - **create-fk-orphan** (DBs `db_orphB`/`db_orphC`/`db_orphD`): orphan present, no reconcile →
+    **BLOCK `Msg 547`** ("the ALTER TABLE statement conflicted with the FOREIGN KEY constraint …");
+    the failed publish leaves the key present-but-untrusted (half-applied, like F2/F6). Orphan
+    reconciled in a pre-deploy and the seed fixed → LAND, `is_not_trusted = 0`, no manual trust step;
+    a manual post-deploy `WITH CHECK CHECK` is redundant.
+  - **change-delete-rule** (DB `db_cdr2`): `DROP CONSTRAINT [FK_Order_Status]` then
+    `WITH NOCHECK ADD CONSTRAINT … ON DELETE CASCADE` then `WITH CHECK CHECK CONSTRAINT …` → LAND,
+    `delete_referential_action_desc = CASCADE`, `is_not_trusted = 0`. No row is written; the
+    `WITH CHECK CHECK` re-scans the child rows. **Cascade reach (DB `db_cascbehav`):** deleting one
+    Status removed its 2 child Orders but left their 4 OrderLines orphaned — CASCADE goes one level,
+    to the child whose key declares it, and does not chain to grandchildren without their own
+    cascading key.
+  - **drop-fk** (DB `db_dropfk`): a single `ALTER TABLE [dbo].[Order] DROP CONSTRAINT
+    [FK_Order_Status];` → LAND, key gone. No data touched.
+
+  **The law:** a declarative FK add or re-add is always `WITH NOCHECK ADD` + `WITH CHECK CHECK`. It
+  ends trusted when the child data is valid and **blocks `Msg 547`** when it is not. There is no
+  silent-untrusted outcome on the declarative path — that comes only from a hand-written
+  `WITH NOCHECK` add with no re-validation.
 
 ---
 
@@ -138,7 +169,7 @@ it. That sub-machine is the authoritative source; this section is its proof.
 | **delete-attribute** (`skills/op/delete-attribute`) | yes — drop column | A drop cannot pre-run with the model still holding the column (DacFx re-adds it). Needs its own proof; likely deprecate-then-drop across releases. | TO PROVE |
 | **delete-entity** (`skills/op/delete-entity`) | yes — drop table | As above, for a whole table. Needs its own proof. | TO PROVE |
 | **retype-explicit**, lossy (`skills/op/retype-explicit`) | yes — lossy cast | Already multi-phase; confirm each phase is gate-clean under the axiom. | TO PROVE |
-| **create-fk-orphan** (`skills/op/create-fk-orphan`) | no (the reconcile is manual pre-deploy DML) | Ships in one release. **But** add the required post-deploy `WITH CHECK CHECK` trust step (F5), and teach that DacFx adds the FK `WITH NOCHECK` here. | **PROVEN** |
+| **create-fk-orphan** (`skills/op/create-fk-orphan`) | no (the reconcile is manual pre-deploy DML) | Ships in one release. Reconcile the orphan in a pre-deploy, or the publish blocks `Msg 547` (F9). The declarative add ends trusted automatically — no manual trust step (F5 overturned, F9). | **PROVEN** |
 | widen · add-optional · add-index · create-entity · add-default · edit-seed · … | no | Unaffected by the axiom — one declarative release. | n/a |
 
 **The narrow op, concretely (ready to apply):** its *How it ships* becomes —
@@ -175,3 +206,82 @@ it. That sub-machine is the authoritative source; this section is its proof.
   server** to publish against. Provision both in the environment setup so PROVE (the state
   machine's un-skippable guard) can always run — otherwise agents are pushed back toward guessing,
   which the whole machine exists to prevent.
+
+---
+
+## Part 6 — The keys-family convergence (2026-08-21): what we have arrived at
+
+This part is the baseline: the settled truths, the register rule, the per-op terminals, and the shape
+a converged skill has — captured whole so a future agent inherits the standard, not a pile of edits.
+The keys family (five ops) was hand-treated to this standard; the remaining families follow it.
+
+### 6.1 — The register rule (from the diction file)
+
+"the data decides" is retired tree-wide. It personifies an abstraction and points at nothing a
+reviewer can check — it fails `THE_RECORD_FORMS.md`'s test ("point at a referent, or cut it"). The
+denotative forms replace it, and both already exist in the tree:
+
+- **"prove before you classify"** — the imperative; the provisional-default gloss in every op skill.
+- **"the existing rows determine how it ships"** — names the referent (the rows), for in-body use.
+
+Recorded as a worked example under the one-test section of `THE_RECORD_FORMS.md`. This governs the
+skills too, not only the PR record: a skill body carries trap-names and a teaching stance (licensed),
+but no flourish and no invented counts.
+
+### 6.2 — The FK-trust law (settled, script-captured; F9, overturning F5, correcting F8)
+
+> A declarative foreign-key add or re-add is **always** `WITH NOCHECK ADD` + `WITH CHECK CHECK`. It
+> ends **trusted** (`is_not_trusted = 0`) when the child data is valid, and **blocks `Msg 547`** when
+> it is not. There is no silent-untrusted middle state on the declarative path. An untrusted key
+> (`is_not_trusted = 1`) comes **only** from a hand-written `WITH NOCHECK` add that skips the
+> re-validation — the anti-pattern.
+
+Consequences that corrected earlier surfaces:
+- **No manual trust step.** A reconciled orphan FK ends trusted on its own — DacFx emits the
+  `WITH CHECK CHECK`. F5's "pre-deploy ⇒ untrusted, add a post-deploy `WITH CHECK CHECK`" was a
+  measurement artifact; the manual step is redundant (proven `db_orphB` vs `db_orphC`).
+- **The block is the constraint working.** An unreconciled orphan blocks `Msg 547` (`db_orphD`); a
+  *blocked* publish is non-atomic and can leave the key half-applied and untrusted — re-probe after a
+  block (`prove-on-dacpac`).
+
+### 6.3 — The five keys terminals (each proven this branch, 2026-08-21)
+
+| Op | SHIP terminal | Proven receipt |
+|---|---|---|
+| **create-fk-clean** | ONE RELEASE, trusted | `db_fkc2`: `WITH NOCHECK ADD` + `WITH CHECK CHECK` → LAND, `is_not_trusted = 0` |
+| **create-fk-orphan** | ONE RELEASE (pre-deploy reconcile), trusted | `db_orphD` blocks `Msg 547` unreconciled; `db_orphB` reconciled → LAND, trusted, no manual step |
+| **change-delete-rule** | ONE RELEASE, in place, trusted | `db_cdr2`: `DROP` + `WITH NOCHECK ADD … ON DELETE CASCADE` + `WITH CHECK CHECK` → LAND, `CASCADE`, trusted |
+| **drop-fk** | ONE RELEASE, in place, clean | `db_dropfk`: single `DROP CONSTRAINT` → LAND, key gone, no data touched |
+| **define-pk** | ONE RELEASE | dup → `Msg 1505` + `1750`; nullable → `Msg 8111` + `1750`; clean composite builds |
+
+**Cascade reach (F9, `db_cascbehav`):** deleting one parent removed its direct children (2 Orders) and
+left their grandchildren (4 OrderLines) orphaned — `ON DELETE CASCADE` goes exactly one level, to the
+child whose key declares it, and does not chain without each level's own cascading key.
+
+### 6.4 — Surfaces corrected to the new law
+
+The FK-trust correction was propagated so no surface still teaches the manual trust step:
+`skills/author-pr` (the worked example), `skills/_index/constraint-is-a-claim` (the reconcile-first
+pattern), `skills/prove-on-dacpac` (the blocked-publish fix), `skills/operations/keys-and-refs` (the
+TOC), the five keys `skills/op/*`, and the five `sample-prs/*`. (Deferred to the constraints-family
+pass, same law: `add-check`, `add-unique`, `toggle-trust`, `skills/operations/constraints.md` —
+CHECK/UNIQUE validate the same `WITH NOCHECK ADD` + `WITH CHECK CHECK` way; confirm by capture there.)
+
+### 6.5 — The converged skill form (the high-water mark to replicate)
+
+`skills/op/widen` and the keys five are the exemplars. A converged op skill has, in order:
+
+1. **Frontmatter** — `name` + a `description` that is the routing trigger (OutSystems phrasing → the op).
+2. **`> Default (provisional — prove before you classify).`** — the provisional call, risk paired with
+   its reason (never a bare "a dev lead must review").
+3. **`> SHIP terminal: <X>.`** — the terminal from `THE_DECISION_TREE.md` S5, with the **live receipt**
+   (server, DB name, generated statements, end-state) and the `FINDINGS_AND_CHANGES.md` finding.
+4. **`> Proven precedent:`** — the `sample-prs/<op>.md` worked instance of the ten-section template.
+5. **OutSystems phrasing · SSDT meaning · The named trap · How it flips · Prove it** — the curriculum.
+6. **The verdict (to the developer)** — addresses "you", states what the copy showed, no first-person
+   agent voice, no invented counts (placeholders where a real run supplies the number).
+7. **The reasoning (in conversation)** — why the rows set the shape; the failure the op avoids.
+8. **On the record** — the `author-pr` pointer + the fragment (Review & release / Verification /
+   Rollback / Not verified), each review line naming who **and** the risk.
+
+Every classification in the skill traces to a real publish named in §6.3 — proving is classifying.

@@ -1,6 +1,6 @@
 ---
 name: change-delete-rule
-description: Use when the developer changes the Delete Rule on a reference — "change the Delete Rule to Protect/Ignore/Delete", "turn on cascade delete", "deleting a Customer should delete its Orders". A DROP+ADD of the FK to set its ON DELETE action; the risk is behavioural, not in the publish — especially CASCADE.
+description: Use when the developer changes the Delete Rule on a reference — "change the Delete Rule to Protect/Ignore/Delete", "turn on cascade delete", "deleting a Customer should delete its Orders". A DROP and re-add of the FK to set its ON DELETE action; the risk is behavioural, not in the publish — especially CASCADE.
 ---
 
 The canonical skill body lives in the tree, where its relative citations resolve:

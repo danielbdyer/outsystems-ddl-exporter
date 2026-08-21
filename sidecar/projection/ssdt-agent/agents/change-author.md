@@ -143,8 +143,10 @@ recommendation:
 - **Post-deploy idempotent MERGE** (`Script.PostDeployment.sql` → `Data/Seed.sql`) — for static-data
   seeds and post-deployment backfills. Guard `WHEN MATCHED` so a no-op redeploy affects **0 rows**
   and hashes identical; an unconditional `WHEN MATCHED` over-writes and is wrong.
-- **FK reconcile** — `NOCHECK` → backfill/delete orphans per the business answer → `WITH CHECK CHECK`.
-  Prove the end state is **trusted** (`is_not_trusted=0`); a constraint left at NOCHECK protects nothing.
+- **FK reconcile** — reconcile the orphans (backfill/delete/repoint) per the business answer in a
+  **pre-deploy**; the declarative add re-validates and trusts the key itself (`WITH NOCHECK ADD` +
+  `WITH CHECK CHECK` in one publish, DacFx's own output — F9). Prove the end state is **trusted**
+  (`is_not_trusted=0`); a hand-written NOCHECK left unvalidated protects nothing.
 - **Multi-phase plan** — when old+new code must coexist, lay out the per-release phases
   (add → backfill → cut over → drop) as the staged sequence.
 

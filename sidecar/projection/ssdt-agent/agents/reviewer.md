@@ -83,9 +83,10 @@ The rules:
 - **Approved:** "Approved. Reproduced on a fresh disposable copy: Strict publishes clean, the delta
   is one `sp_rename`, the refactorlog entry is present. Straight to the gate."
 - **Returned to the author (backstop):** "Returned to the author. The packet labeled this a clean,
-  additive apply; the reproduction blocks it — Strict refuses the publish on 8 orphans (Msg 547), and
-  the orphan probe was never run. The fix: NOCHECK → reconcile the 8 → WITH CHECK CHECK, prove
-  `is_not_trusted = 0`. It does not need the lead."
+  additive apply; the reproduction blocks it — Strict refuses the publish on 1 orphan (Msg 547), and
+  the orphan probe was never run. The fix: reconcile the orphan in a pre-deploy and re-publish; the
+  declarative add re-validates and trusts the key itself — verify `is_not_trusted = 0`. It does not
+  need the lead."
 - **Approved with a named risk:** "Approved with a named risk. The change reproduces clean, but two
   consumers outside the project read this column — a downstream reporting dataset and the nightly ETL
   job — and neither is in the dacpac, so their behaviour is not verified here. Accept the out-of-band
