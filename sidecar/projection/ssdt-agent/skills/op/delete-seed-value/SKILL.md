@@ -5,7 +5,7 @@ description: Use when the developer says "delete the Cancelled status value", "r
 
 # Retire a static lookup value (hard-DELETE-orphans trap — deactivate, don't delete)
 
-> **Default (provisional — the data decides).** Deactivate via `IsActive = 0`, carried by the seed
+> **Default (provisional — prove before you classify).** Deactivate via `IsActive = 0`, carried by the seed
 > MERGE in the post-deployment script and shipped as one release. A dev lead or an experienced
 > developer should review it while the value is still referenced; any team member can review the
 > retirement of a value nothing points at. Prove the reference before classifying: a hard DELETE is

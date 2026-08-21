@@ -5,7 +5,7 @@ description: Use when the developer says "add a new Entity", "create a new table
 
 # Create entity
 
-> **Default (provisional — the data decides).** Any team member can review this: the change is
+> **Default (provisional — prove before you classify).** Any team member can review this: the change is
 > additive and self-contained — a brand-new table nothing yet depends on, and the running
 > application is unaffected. Ships as a single schema change, applied in place: the `CREATE TABLE`
 > is emitted verbatim, and no existing data is read or written. Prove the clean publish on a

@@ -5,7 +5,7 @@ description: Use when the developer says "make this attribute optional", "unchec
 
 # Make optional (NOT NULL → NULL)
 
-> **Default (provisional — the data decides).** Ships as a single schema change, applied in
+> **Default (provisional — prove before you classify).** Ships as a single schema change, applied in
 > place — no data is read or written. Any team member can review it when nothing downstream
 > assumes the column is always populated; a dev lead or an experienced developer should review it
 > when consumers must change to tolerate a NULL. A loosening never blocks the deployment.

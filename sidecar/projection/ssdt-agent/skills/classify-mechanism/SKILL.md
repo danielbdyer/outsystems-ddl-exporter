@@ -21,7 +21,7 @@ named operation + its data-state into two independent findings — **how** the c
 **who must review it, and why** — and, just as importantly, decides whether the answer can be given
 on sight or must be proven on a disposable copy of Dev.
 
-**Classification from the `.sql` text alone is a guess. The data decides how the change ships.**
+**Classification from the `.sql` text alone is a guess. The existing rows determine how the change ships.**
 This skill produces *provisional* findings; `prove-on-dacpac` is what confirms them. Never deliver a
 provisional finding to the developer as if it were proven.
 

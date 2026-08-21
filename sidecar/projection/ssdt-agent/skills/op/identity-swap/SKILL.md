@@ -5,7 +5,7 @@ description: Use when the developer says "turn on Auto Number for the Id", "make
 
 # Add / remove IDENTITY (Auto Number) (silent-table-rebuild trap)
 
-> **Default (provisional — the data decides).** On a populated table with incoming foreign keys,
+> **Default (provisional — prove before you classify).** On a populated table with incoming foreign keys,
 > ships across multiple releases: adding or removing IDENTITY cannot be a simple `ALTER` — it is a
 > table property fixed at column creation, so SSDT rebuilds the whole table (a shadow table, a
 > `SET IDENTITY_INSERT` copy that preserves every key, a reseed, and every incoming foreign key

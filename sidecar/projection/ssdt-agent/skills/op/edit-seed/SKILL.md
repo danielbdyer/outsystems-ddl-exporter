@@ -5,7 +5,7 @@ description: Use when the developer says "add 'Refunded' to the Status list", "c
 
 # Edit static seed records (unconditional-WHEN-MATCHED trap)
 
-> **Default (provisional — the data decides).** Ships as one release: the seed MERGE in the
+> **Default (provisional — prove before you classify).** Ships as one release: the seed MERGE in the
 > post-deployment script re-runs, inserting the new row or amending the one changed row. The table
 > definition is unchanged. Any team member can review this: the change is additive and the running
 > application is unaffected. Prove the redeploy is silent and the label change touches exactly one row

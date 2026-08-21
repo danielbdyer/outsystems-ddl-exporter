@@ -5,7 +5,7 @@ description: Use when the developer says "change the text field to a date", "sto
 
 # Retype explicit (value-reshaping conversion)
 
-> **Default (provisional — the data decides; prove before you classify).** Ships across multiple
+> **Default (provisional — prove before you classify).** Ships across multiple
 > releases (multiple pull requests): add a new column of the target type, convert the values that
 > convert with `TRY_CONVERT`, handle the rows that do not, then drop the old column and rename the
 > new one in — the old and new types coexist while the application migrates. A dev lead must review

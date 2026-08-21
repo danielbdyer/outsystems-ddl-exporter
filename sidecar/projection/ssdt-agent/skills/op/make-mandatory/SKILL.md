@@ -5,7 +5,7 @@ description: Use when the developer says "make Email required", "tick the Mandat
 
 # Make mandatory (NULL → NOT NULL) — the tightening-class change
 
-> **Default (provisional — the data decides).** On an EMPTY table this ships as a single schema
+> **Default (provisional — prove before you classify).** On an EMPTY table this ships as a single schema
 > change applied in place, and any team member can review it. On a POPULATED table — NULLs
 > present or already zero, it does not matter — it does not ship in place and it does not land by
 > a pre-deployment backfill in one release either; the tightening cannot ride the same release as

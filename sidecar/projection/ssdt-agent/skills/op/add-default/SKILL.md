@@ -5,7 +5,7 @@ description: Use when the developer says "give this attribute a default value", 
 
 # Add a default
 
-> **Default (provisional — the data decides).** Any team member can review this: the change is
+> **Default (provisional — prove before you classify).** Any team member can review this: the change is
 > additive and the running application is unaffected. Ships as a single schema change, applied in
 > place — adding a default never touches existing row values. Prove it on a disposable copy before
 > classifying.

@@ -5,7 +5,7 @@ description: Use when the developer says "make the field longer", "increase Emai
 
 # Widen length/type
 
-> **Default (provisional — the data decides).** Ships as a single schema change, applied in place —
+> **Default (provisional — prove before you classify).** Ships as a single schema change, applied in place —
 > no data is read or written. Any team member can review it: the change is additive and the running
 > application is unaffected. Prove before you classify — the couplings below can move both findings.
 

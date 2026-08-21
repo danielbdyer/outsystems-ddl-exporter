@@ -50,6 +50,11 @@ could check against a real source — the database, the generated difference, th
 A sentence that only characterises, teaches, or reassures points at nothing and is cut. Test:
 *name the value a reviewer could check, and where.* If you cannot, the sentence is a story.
 
+*Worked example.* "the data decides how it ships" points at nothing a reviewer can open, and
+personifies an abstraction — cut it. The fact underneath is checkable, so state that: **"the
+existing rows determine how it ships"** (the rows are the referent), or the imperative **"prove
+before you classify"** (the action that settles it). The same test retires any "X decides" phrasing.
+
 ---
 
 ## The verdict

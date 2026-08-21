@@ -5,7 +5,7 @@ description: Use when the developer says "move the Region attribute from Custome
 
 # Move an attribute between entities (relationship-ambiguity / cross-table-rename trap)
 
-> **Default (provisional — the data decides; prove before you classify).** Ships across multiple
+> **Default (provisional — prove before you classify).** Ships across multiple
 > releases (multiple pull requests): add the column to the destination and copy the values, repoint
 > readers, then drop the column from the source — the two tables coexist while readers migrate. A dev
 > lead must review this: existing data is moved between tables and the source column is dropped. Prove

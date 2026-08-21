@@ -5,7 +5,7 @@ description: Use when the developer says "add full history to our existing popul
 
 # Convert an existing populated table to temporal (backfilled-ROW-START trap)
 
-> **Default (provisional — the data decides).** A dev lead must review this: existing data is
+> **Default (provisional — prove before you classify).** A dev lead must review this: existing data is
 > modified — the period columns are backfilled into every existing row, and left without sensible
 > historical defaults every row falsely claims to have begun at conversion time. Ships across several
 > releases so the running application keeps working while the period columns are added, backfilled,

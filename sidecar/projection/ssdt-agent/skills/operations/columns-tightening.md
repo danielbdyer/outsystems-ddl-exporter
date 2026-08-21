@@ -8,7 +8,7 @@
 
 **Family framing.** These are the attribute changes that **remove capacity** from a populated column —
 require a value, shrink it, retype it, or drop it. In SSDT each is one `CREATE` edit whose outcome the
-data decides, and on this pipeline (Azure DevOps → Octopus) the publish always runs with the data-loss
+existing rows determine, and on this pipeline (Azure DevOps → Octopus) the publish always runs with the data-loss
 guard `BlockOnPossibleDataLoss` on and **cannot** relax it for one deploy. So the governing question is
 never the `.sql` text — it is *is the table empty?* On an empty table the guard is inert and the change
 lands in one release; on a populated table the same edit is refused by a data-blind guard

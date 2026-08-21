@@ -5,7 +5,7 @@ description: Use when the developer says "rename the Entity", "change the table 
 
 # Rename entity
 
-> **Default (provisional — the data decides).** With the refactorlog entry: ships as a single
+> **Default (provisional — prove before you classify).** With the refactorlog entry: ships as a single
 > schema change applied in place, the delta a metadata `sp_rename`, no data read or written; a dev
 > lead or an experienced developer should review it, because the running application must change to
 > keep working — every caller referencing the old name breaks. Without the refactorlog entry the

@@ -5,7 +5,7 @@ description: Use when the developer says "add a required attribute", "add a Stat
 
 # Add mandatory attribute (Optimistic NOT NULL)
 
-> **Default (provisional — the data decides).** A dev lead or an experienced developer should
+> **Default (provisional — prove before you classify).** A dev lead or an experienced developer should
 > review this: adding a required attribute means the running application must change to keep
 > working. With an explicit default it ships as a single schema change, applied in place — SQL
 > Server fills every existing row from the default as the column is added. Populated with no

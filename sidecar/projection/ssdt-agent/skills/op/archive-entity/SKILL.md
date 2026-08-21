@@ -5,7 +5,7 @@ description: Use when the developer says "archive old orders", "move the histori
 
 # Archive entity
 
-> **Default (provisional — the data decides).** Ships across releases: the archive table is added,
+> **Default (provisional — prove before you classify).** Ships across releases: the archive table is added,
 > then a batched post-deployment script moves the rows and the counts are reconciled, so the
 > running application keeps reading live data while the move is in flight. A dev lead must review
 > this: existing rows are moved out of the live table — a principal if the move cannot be undone or

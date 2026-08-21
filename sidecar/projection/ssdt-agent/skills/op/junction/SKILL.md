@@ -5,7 +5,7 @@ description: Use when the developer says "make this a many-to-many", "a Student 
 
 # Junction (M:N bridge table)
 
-> **Default (provisional — the data decides).** Ships as a single schema change, applied in
+> **Default (provisional — prove before you classify).** Ships as a single schema change, applied in
 > place: a new `CREATE TABLE` whose composite primary key spans two foreign key columns; no
 > existing data is read or written. A dev lead must review this: it adds two cross-table
 > relationships. Prove both sides carry no orphan pairs before classifying — if the bridge is

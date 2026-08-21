@@ -5,7 +5,7 @@ description: Use when the developer says "rename the attribute", "change FirstNa
 
 # Rename attribute (a rename with no refactorlog entry)
 
-> **Default (provisional — the data decides; prove before you classify).** With a refactorlog entry
+> **Default (provisional — prove before you classify).** With a refactorlog entry
 > this ships as a single schema change, applied in place: a metadata `sp_rename` renames the column
 > and preserves its data. A dev lead or an experienced developer should review it — every caller of
 > the old name (views, procedures, ORM mappings, reports, ETL) must change to keep working. Without

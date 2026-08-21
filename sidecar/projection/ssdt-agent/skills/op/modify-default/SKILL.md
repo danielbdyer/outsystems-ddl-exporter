@@ -5,7 +5,7 @@ description: Use when the developer says "change the default value", "new orders
 
 # Modify or remove a default
 
-> **Default (provisional — the data decides).** Any team member can review this: no existing row
+> **Default (provisional — prove before you classify).** Any team member can review this: no existing row
 > values change — a default governs only future inserts. Ships as a single schema change, applied
 > in place: SSDT does a DROP-then-ADD for a change, or a plain DROP to remove it. Prove it on a
 > disposable copy before classifying.

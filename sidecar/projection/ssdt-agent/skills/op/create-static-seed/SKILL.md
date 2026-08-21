@@ -5,7 +5,7 @@ description: Use when the developer says "add a Status lookup", "create a static
 
 # Create static / lookup entity (non-idempotent-seed + IDENTITY-lookup traps)
 
-> **Default (provisional — the data decides).** Ships as one release: the schema change, then a
+> **Default (provisional — prove before you classify).** Ships as one release: the schema change, then a
 > post-deployment script that runs the idempotent seed after it lands. Any team member can review
 > this — the change is additive and the running application is unaffected. Prove the redeploy is
 > silent before the classification holds.

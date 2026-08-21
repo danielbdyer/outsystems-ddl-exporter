@@ -1,7 +1,7 @@
 # Order / Customer: require a value to be unique (duplicates block the build; a unique column lands clean)
 
 **In OutSystems** — You mark an Attribute as unique — "no two Orders can share a Channel", "no two Customers can share an Email" — the kind of rule you'd enforce with a unique index or a validation.
-**In SSDT** — a `CREATE UNIQUE INDEX [UIX_<Table>_<Col>]` object is added for that column (the v2 emitter renders uniqueness as a unique index after the table, not an inline constraint). The publish engine builds that uniqueness over **every existing row** at deploy — and the data decides whether it can.
+**In SSDT** — a `CREATE UNIQUE INDEX [UIX_<Table>_<Col>]` object is added for that column (the v2 emitter renders uniqueness as a unique index after the table, not an inline constraint). The publish engine builds that uniqueness over **every existing row** at deploy; a duplicate blocks the build.
 
 ## Summary
 

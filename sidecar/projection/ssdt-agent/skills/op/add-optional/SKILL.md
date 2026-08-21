@@ -5,7 +5,7 @@ description: Use when the developer says "add an optional attribute", "add a Mid
 
 # Add optional attribute
 
-> **Default (provisional — the data decides).** Any team member can review this: the change is
+> **Default (provisional — prove before you classify).** Any team member can review this: the change is
 > additive and the running application is unaffected. Ships as a single schema change, applied in
 > place — existing rows just get NULL, no data is read or written. Prove it on a disposable copy
 > before classifying.

@@ -5,7 +5,7 @@ description: Use when the developer says "remove the attribute", "delete the Leg
 
 # Delete attribute (4-phase deprecation)
 
-> **Default (provisional — the data decides; prove before you classify).** An empty column source
+> **Default (provisional — prove before you classify).** An empty column source
 > drops in place — it ships as a single schema change, no data read or written. A populated column
 > is blocked: SSDT refuses the drop on `BlockOnPossibleDataLoss` because the table holds rows whose
 > values would be lost (the row-presence gate; see `../../_index/tightening-class/SKILL.md`). The

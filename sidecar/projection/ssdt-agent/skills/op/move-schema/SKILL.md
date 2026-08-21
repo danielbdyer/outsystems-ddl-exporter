@@ -5,7 +5,7 @@ description: "Use when the developer says \"move the entity to the archive schem
 
 # Move schema (between schemas)
 
-> **Default (provisional — the data decides; prove before you classify).** Ships as a single schema
+> **Default (provisional — prove before you classify).** Ships as a single schema
 > change applied in place when the refactorlog carries the move, or as a scripted change
 > (`ALTER SCHEMA TRANSFER`) when `object_id` preservation is preferred or the table is large — either
 > way the data, `object_id`, and row counts are preserved. Without a refactorlog entry SSDT reads it

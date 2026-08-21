@@ -5,7 +5,7 @@ description: Use when the developer says "this attribute should be unique", "no 
 
 # Add a unique constraint
 
-> **Default (provisional — the data decides).** A dev lead or an experienced developer should
+> **Default (provisional — prove before you classify).** A dev lead or an experienced developer should
 > review this: adding a uniqueness rule means the running application must change to keep working.
 > Ships as a single schema change, applied in place, when the data already satisfies uniqueness.
 > Prove no duplicates — and no multi-NULL on a nullable column — before classifying.
@@ -60,7 +60,7 @@ safe to merge or delete, or is a repeated blank email legitimate here?
 
 ## The reasoning (in conversation)
 Run the duplicate probe (`GROUP BY … HAVING COUNT(*) > 1`) and a NULL count before anything else —
-the data decides how this ships, the SQL statement never can. The failure this avoids is "just add
+the existing rows determine how this ships; the SQL statement never can. The failure this avoids is "just add
 the rule" over data that already holds duplicates: the deploy blocks. On a nullable column, remember
 UNIQUE permits exactly one NULL — several NULLs block it the same way, and a filtered unique index is
 the fix when repeated blanks are legitimate. See `../../_index/constraint-is-a-claim/SKILL.md`.

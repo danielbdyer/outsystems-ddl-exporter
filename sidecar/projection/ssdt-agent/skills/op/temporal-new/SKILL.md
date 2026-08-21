@@ -5,7 +5,7 @@ description: Use when the developer says "I want full history on this new entity
 
 # Add temporal versioning — new entity
 
-> **Default (provisional — the data decides).** A dev lead or an experienced developer should
+> **Default (provisional — prove before you classify).** A dev lead or an experienced developer should
 > review this: turning on system versioning is a design commitment — a paired history table that
 > grows with every update — even though the table is new and no existing data is touched. Ships as a
 > single schema change, applied in place: temporal versioning IS expressible declaratively for a new

@@ -151,7 +151,7 @@ sqlpackage /Action:Publish \
 - **Succeeds clean, no script** → ships as a single schema change, applied in place; no data is
   read or written.
 - **Blocked** (`BlockOnPossibleDataLoss` / NOT NULL on a populated table / truncation / orphan
-  FK / duplicate key) → the data decides how it ships and who must review it. The block text and
+  FK / duplicate key) → the existing rows determine how it ships and who must review it. The block text and
   row counts are the proof.
 
 > **Read the outcome from the TEXT, not `$?`.** A blocked publish does not reliably exit

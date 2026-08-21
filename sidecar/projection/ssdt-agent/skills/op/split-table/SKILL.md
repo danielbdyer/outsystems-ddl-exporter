@@ -5,7 +5,7 @@ description: Use when the developer says "split Customer into Customer and Custo
 
 # Split one entity into two (the one-release trap; per-column renames with no refactorlog entry)
 
-> **Default (provisional — the data decides; prove before you classify).** Ships across three
+> **Default (provisional — prove before you classify).** Ships across three
 > releases (three pull requests): CREATE the new table and copy the moving columns, cut the
 > application over, then drop the old columns from the source — the old and new shapes coexist while
 > readers migrate. A dev lead must review this: existing data is moved into a new table and a

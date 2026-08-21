@@ -5,7 +5,7 @@ description: Use when the developer says "delete the Entity", "drop the table, w
 
 # Delete entity
 
-> **Default (provisional — the data decides).** Ships as a scripted change in a single release — in
+> **Default (provisional — prove before you classify).** Ships as a scripted change in a single release — in
 > production the drop is an explicit pre-deployment `DROP`, not the mere absence of the file,
 > sequenced after any inbound foreign keys are dropped. A principal must review
 > this: data is removed and the removal cannot be undone. The risk is the irreversible loss, not the

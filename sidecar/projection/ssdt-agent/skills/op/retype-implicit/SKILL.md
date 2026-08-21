@@ -5,7 +5,7 @@ description: Use when the developer says "change to a bigger number", "INT to BI
 
 # Retype implicit (widening conversion)
 
-> **Default (provisional — the data decides).** A true widening is data-preserving — every value
+> **Default (provisional — prove before you classify).** A true widening is data-preserving — every value
 > already fits the bigger type, so there is nothing for the engine to refuse. Ships as a single
 > schema change, applied in place: no data is read or written, and any team member can review it,
 > since the running application is unaffected. Prove the direction is widening — not

@@ -5,7 +5,7 @@ description: Use when the developer says "change the index to cover these column
 
 # Modify an index (change key columns / non-unique → unique / change include list)
 
-> **Default (provisional — the data decides).** A key or include change ships as a single
+> **Default (provisional — prove before you classify).** A key or include change ships as a single
 > declarative schema change, applied in place, and any team member can review it. Adding UNIQUE is a
 > claim over the data — prove no duplicates before classifying; with duplicates present it flips to a
 > pre-deployment de-dupe plus the declarative change.

@@ -5,7 +5,7 @@ description: Use when the developer says "shorten Code to 10 chars", "tighten th
 
 # Narrow (Ambitious Narrowing) — tightening class
 
-> **Default (provisional — the data decides).** On an empty table, narrowing ships as a single
+> **Default (provisional — prove before you classify).** On an empty table, narrowing ships as a single
 > schema change applied in place — no data is read or written, and any team member can review it.
 > On a populated table it is not a clean in-place change: the data-blind guard blocks it regardless
 > of whether every value fits, so it ships as **two releases**. Prove first.
@@ -61,7 +61,7 @@ the count. Run Permissive (`BlockOnPossibleDataLoss=False`) and the before/after
 publish loop, see `../../prove-on-dacpac/SKILL.md`; probes, `../../talk-to-local-sql/SKILL.md`.
 
 ## The verdict (to the developer)
-"You asked to shorten Code to 10 — it looks like a one-liner, but the data decides. On a copy of
+"You asked to shorten Code to 10 — it looks like a one-liner. On a copy of
 Dev, SSDT refused it: the guard fires because the table has rows, not because a value is too long.
 `<N>` codes are longer than 10 and would be cut; a permissive run shows exactly which characters
 go. So the real question is those over-length codes: cut them to 10 on purpose, or is the extra

@@ -5,7 +5,7 @@ description: Use when the developer says "Total must be positive", "Status has t
 
 # Add a check constraint
 
-> **Default (provisional — the data decides).** A dev lead or an experienced developer should
+> **Default (provisional — prove before you classify).** A dev lead or an experienced developer should
 > review this: adding the check means the running application must change to keep working. Ships as
 > a single schema change, applied in place, when every existing row already satisfies the predicate.
 > Prove zero violations on a disposable copy before classifying.

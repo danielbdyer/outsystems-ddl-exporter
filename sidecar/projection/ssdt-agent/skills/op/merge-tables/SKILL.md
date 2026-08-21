@@ -7,7 +7,7 @@ description: Use when the developer says "merge CustomerAddress back into Custom
 
 > **CANONICAL-HOME NOTICE.** The curriculum's §17.7 Table-Merge pattern lives in the playbook at `ssdt-playbook/Operations/Multi-Phase-Patterns/Table-Merge.md` (the final curriculum edition; the numbered handbook file 14 never carried a §17.7 body). The recipe below is this tree's working contract for the op — keep it and the playbook pattern reconciled; when they disagree, the proven recipe here wins and the playbook is corrected.
 
-> **Default (provisional — the data decides; prove before you classify).** Ships across three
+> **Default (provisional — prove before you classify).** Ships across three
 > releases (three pull requests): add the absorbing columns to the survivor and copy the data, cut
 > the application over, then drop the absorbed table — the two tables coexist while readers migrate.
 > A dev lead must review this: existing data is moved into the survivor and the absorbed table is

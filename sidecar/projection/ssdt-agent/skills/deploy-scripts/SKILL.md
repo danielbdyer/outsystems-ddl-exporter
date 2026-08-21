@@ -162,7 +162,7 @@ is only the script-lifecycle limb of it.
 
 For any change that might need a deployment script, walk these in order. Each gate is provisional
 until `../prove-on-dacpac/SKILL.md` confirms it — classification from the `.sql` text alone is a guess;
-the data decides.
+the existing rows determine how it ships.
 
 - **Gate 0 — Does this need a script at all?** Default to **pure declarative**. If SSDT's own delta
   does the work (add-column, widen, add-nullable, add-index, rename-with-refactorlog), write **no

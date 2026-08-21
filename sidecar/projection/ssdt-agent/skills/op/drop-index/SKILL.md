@@ -5,7 +5,7 @@ description: Use when the developer says "we don't need that index anymore", "re
 
 # Drop an index
 
-> **Default (provisional — the data decides).** Ships as a single schema change, applied in place
+> **Default (provisional — prove before you classify).** Ships as a single schema change, applied in place
 > — no data is read or written, and the drop reverses by re-creating the index. Any team member
 > can review it when the index is genuinely unused. But the risk here is behavioral (a slower
 > query), not structural (lost rows), so the honest proof lives outside the dacpac: usage

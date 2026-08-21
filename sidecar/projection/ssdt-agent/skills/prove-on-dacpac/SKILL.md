@@ -16,9 +16,9 @@ description: Use when a data-model change has a provisional classification from 
 > than on a reading of the SQL.
 
 This skill helps an **OutSystems-native developer** land a safe schema change. The classification
-handed over is **provisional** — a reading of intent. **Proving is classifying:** the data decides
-how the change must ship, and the only way to know the data is to publish the change to a disposable
-copy of it and read what SSDT's publish engine actually does.
+handed over is **provisional** — a reading of intent. **Proving is classifying:** the existing rows
+determine how the change must ship, and the only way to know the rows is to publish the change to a
+disposable copy of them and read what SSDT's publish engine actually does.
 
 This is the capability the team's decks never taught: a disposable copy of the Dev database —
 real-shaped data — with `sqlpackage` driving the real dacpac delta against it. Introduce this

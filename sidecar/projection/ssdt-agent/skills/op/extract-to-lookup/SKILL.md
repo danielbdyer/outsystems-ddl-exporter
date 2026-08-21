@@ -5,7 +5,7 @@ description: Use when the developer says "turn this text Status column into a pr
 
 # Extract free-text column to a lookup entity (Forgotten-FK-Check / lost-unmapped-values trap)
 
-> **Default (provisional — the data decides; prove before you classify).** Ships across releases
+> **Default (provisional — prove before you classify).** Ships across releases
 > (multiple pull requests): create the lookup, seed it with the distinct existing values, add the FK
 > column, backfill, then drop the old free-text column — the old and new representations coexist
 > while readers migrate. A dev lead must review this: existing data is moved into a new shape and a

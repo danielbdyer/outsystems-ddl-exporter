@@ -5,7 +5,7 @@ description: Use when the developer says "add CreatedBy/CreatedOn/ModifiedBy/Mod
 
 # Add manual audit columns (Optimistic-NOT-NULL trap)
 
-> **Default (provisional — the data decides).** Nullable audit columns ship as a single schema
+> **Default (provisional — prove before you classify).** Nullable audit columns ship as a single schema
 > change, applied in place; any team member can review, since the change is additive and the running
 > application is unaffected. NOT NULL on a populated table ships as one release with a pre-deployment
 > backfill, and a dev lead must review because existing data is modified — prove the backfill clears

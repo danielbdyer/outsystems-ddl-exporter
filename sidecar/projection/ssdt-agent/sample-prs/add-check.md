@@ -1,7 +1,7 @@
 # OrderLine: enforce Quantity > 0 (a violating row blocks validation and leaves the check untrusted; conforming data lands trusted)
 
 **In OutSystems** — You add a business rule that a data value must satisfy — "Quantity must be positive", "Total can't be negative" — the kind of rule you'd want enforced at the database, not just in a screen validation.
-**In SSDT** — a `CONSTRAINT [CK_OrderLine_Quantity] CHECK ([Quantity] > 0)` is added to `Tables/dbo.OrderLine.sql`. The publish engine validates that rule against **every existing row** as it lands — and the data decides whether it can.
+**In SSDT** — a `CONSTRAINT [CK_OrderLine_Quantity] CHECK ([Quantity] > 0)` is added to `Tables/dbo.OrderLine.sql`. The publish engine validates that rule against **every existing row** as it lands; a single row that violates it blocks the publish.
 
 ## Summary
 
