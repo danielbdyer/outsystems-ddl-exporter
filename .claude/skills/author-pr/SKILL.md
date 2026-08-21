@@ -1,6 +1,6 @@
 ---
 name: author-pr
-description: Use to turn a proven schema change into the pull request a reviewer approves by reading. THE terminal artifact of the tree — every operation skill feeds it. Produces the canonical Azure DevOps PR body (Summary · Review & release · Changes · Data remediation · Deployment evidence · Verification · Rollback · Not verified) in the record register of THE_RECORD.md. Evidence is summarized in the body; scripts ship inside the sqlproj; nothing is attached for the reviewer to run by hand. Use after prove-on-dacpac has confirmed the change and any remediation is durable at source.
+description: Use to turn a proven schema change into the pull request a reviewer approves by reading — THE terminal artifact of the tree, the hyper-clear PR template every op produces. Ten fixed sections (Verdict · Intent · What changes · Before promoting · How it ships · The data · What proving showed · After deploy — check · How to roll this back · Not checked), written in the plain record register of THE_RECORD_FORMS.md, following the S-state machine of THE_DECISION_TREE.md. Use after the change is proven on a copy.
 ---
 
 The canonical skill body lives in the tree, where its relative citations resolve:
