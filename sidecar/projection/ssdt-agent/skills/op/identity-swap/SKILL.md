@@ -16,10 +16,13 @@ description: Use when the developer says "turn on Auto Number for the Id", "make
 > `SET IDENTITY_INSERT` before promising anything — the danger drives the review need, not the
 > release count. Prove before you classify.
 
-> **SHIP terminal: ACROSS MULTIPLE RELEASES (a table rebuild).** IDENTITY is a table property fixed at
-> column creation, so SSDT rebuilds the whole table (shadow table + `SET IDENTITY_INSERT` copy + reseed
-> + drop/recreate every incoming FK). On a populated table with incoming FKs it stages across releases;
-> with no incoming FKs, one release; empty, a single schema change. `../../_index/identity-and-refactorlog/SKILL.md`.
+> **SHIP terminal: a table rebuild — ONE RELEASE with no incoming FKs, ACROSS MULTIPLE RELEASES with
+> them.** IDENTITY is a table property fixed at column creation, so SSDT rebuilds the whole table
+> (shadow table + `SET IDENTITY_INSERT` copy + reseed; plus drop/recreate of every incoming FK when the
+> table has them). The data-loss gate **allows** the rebuild — rows are moved, not dropped. Proven on
+> `dbo.Category` (`pg_idsw_before`): no incoming FKs → **one release**, ids 1,2,3 preserved,
+> `is_identity = 1`, `IDENT_CURRENT = 3`; the seed's explicit-id insert failed `Msg 544` until bracketed
+> with `SET IDENTITY_INSERT`. `../../_index/identity-and-refactorlog/SKILL.md`.
 >
 > **Proven precedent:** `../../../sample-prs/identity-swap.md` — the worked instance of the ten-section
 > pull-request template (`../../author-pr/SKILL.md`) for this op.
@@ -65,23 +68,31 @@ the key mapping re-mints keys the way a rename with no refactorlog entry loses a
 
 ## Prove it
 Preview the Strict delta and CONFIRM it is a **shadow-table rebuild with `SET IDENTITY_INSERT`**, not
-a no-op — if SSDT does not show the rebuild, the IDENTITY edit did not register. After a permissive
-publish, hash every Id before/after and prove they are **unchanged** (reseed preserved them) and that
-every FK still resolves (zero orphans introduced). See `prove-on-dacpac` / `talk-to-local-sql`. On the
-sample, add IDENTITY to `dbo.Category` (explicit-id, NO IDENTITY — the source) with `dbo.Order` /
-`dbo.OrderLine` as the incoming-FK shape (STR-04).
+a no-op — if SSDT does not show `Starting rebuilding table`, the IDENTITY edit did not register. Publish
+onto a populated copy and prove every Id is **unchanged** (the `SET IDENTITY_INSERT` copy preserved
+them), `IDENT_CURRENT` sits at or past `MAX(Id)`, and every reference still resolves. See
+`prove-on-dacpac` / `talk-to-local-sql`. On the sample, add IDENTITY to `dbo.Category` (explicit-id, NO
+IDENTITY — the source; proven `pg_idsw_before`). `Category` has **no incoming foreign keys**, so no FK
+drop/recreate brackets the rebuild and it ships **one release**; the data-loss gate **allows** the
+rebuild (rows are moved under `SET IDENTITY_INSERT`, not dropped). The trap the sample proves is
+**`Msg 544`**: the seed inserts explicit `Category` ids, which fails once the column is IDENTITY —
+`Cannot insert explicit value for identity column … when IDENTITY_INSERT is set to OFF` — until the
+MERGE is bracketed with `SET IDENTITY_INSERT dbo.Category ON … OFF`; that seed fix ships in the same
+change set. To exercise the *incoming-FK* leg (drop/recreate FKs around the rebuild), use a table that
+another table references by a **declared** foreign key.
 
 ## The verdict (to the developer)
 You asked to turn on Auto Number for the Id. That can't be a simple change — SSDT can't alter a column
 into IDENTITY, so it rebuilds the whole table behind the scenes: it builds a copy with the new IDENTITY
-property, moves every row across with `SET IDENTITY_INSERT` so the keys are preserved, reseeds the
-counter past the highest existing Id, and drops and recreates every foreign key that points at this
-table. On a disposable copy of Dev I proved the rebuild keeps every existing Id and leaves every
-foreign key resolving — without that IDENTITY_INSERT step the keys would be re-minted and the
-references would point at the wrong rows. Because the foreign keys have to come off and go back on
-around the rebuild, it's sequenced across a few releases so the running application keeps working the
-whole time. One thing to confirm: does any code insert into this table with an Id it sets itself? From
-now on the database owns the Id, so that code has to change or wrap its insert in SET IDENTITY_INSERT.
+property, moves every row across with `SET IDENTITY_INSERT` so the keys are preserved, and reseeds the
+counter past the highest existing Id. The disposable copy showed the rebuild keeps every existing Id
+and leaves every reference resolving — without that `IDENT_INSERT` copy the keys would be re-minted and
+references would point at the wrong rows. If other tables reference this one by a declared foreign key,
+those come off and go back on around the rebuild and it stages across releases so the running
+application keeps working; where nothing references it, it is one release. Two things to confirm: any
+code (the seed included) that inserts an explicit Id now fails with `Msg 544` until it is bracketed with
+`SET IDENTITY_INSERT` — from now on the database owns the Id — and the delta really is a rebuild, not a
+no-op.
 
 ## The reasoning (in conversation)
 The size of a .sql edit tells you nothing about the size of the deploy. The most dangerous change in
@@ -121,9 +132,10 @@ WHERE object_id = OBJECT_ID('dbo.Category') AND name = 'Id';
 -- so the next generated Id cannot collide with an existing row
 SELECT IDENT_CURRENT('dbo.Category') AS current_seed, MAX(Id) AS max_id FROM dbo.Category;
 
--- expect 0 rows for each incoming foreign key: every child still points at a real parent
--- (dbo.Order and dbo.OrderLine into dbo.Category on the sample)
-SELECT c.Id FROM dbo.[Order] c LEFT JOIN dbo.Category p ON c.<fk> = p.Id WHERE p.Id IS NULL;
+-- expect 0 rows: every reference still resolves after the rebuild preserved the ids
+-- (dbo.Product.CategoryId into dbo.Category on the sample; for a table WITH a declared
+--  incoming FK, run the same left-join for each child)
+SELECT p.Id FROM dbo.Product p LEFT JOIN dbo.Category c ON p.CategoryId = c.Id WHERE c.Id IS NULL;
 ```
 
 **Rollback**
