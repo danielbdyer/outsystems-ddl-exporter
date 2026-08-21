@@ -49,16 +49,26 @@ A one-column split. ADD the column to the destination CREATE, copy the values ke
   performed here before.
 
 ## Prove it
-Prove the join is 1:1 (a row-count check) BEFORE copying anything, then hash the moving values source-vs-destination and prove them **equal** before the source-column drop. Strict blocks the drop until the hashes match. See `prove-on-dacpac` / `talk-to-local-sql`. On the sample, move `Customer.Region` to `Account` via the seeded 1:1 `Customer.AccountId` (STR-03).
+Prove the join is 1:1 (a row-count check, **excluding NULL foreign keys** — else the unmapped rows
+group together and false-read as a 1:many violation) BEFORE copying anything; name any row whose
+foreign key is NULL (its value has no destination). Then hash the moving values source-vs-destination
+and prove them **equal** — **alias both sides to the same names** (`FOR XML RAW` encodes column names,
+so mismatched names hash unequal over identical data). The source-column drop is gated on row-presence;
+the hash licenses the reviewer's decision, not the gate. See `prove-on-dacpac` / `talk-to-local-sql`.
+On the sample, move `Customer.Region` to `Account` via the `Customer.AccountId` link (STR-03; proven
+`pg_move`: 1:1 holds, hash-equal when aliased, and 2 of 5 customers have a NULL `AccountId` so their
+Region strands — a fork).
 
 ## The verdict (to the developer)
 You asked to move Region from Customer to Account. That's a column moving between two tables, not a
 rename — the values are copied across and the old column dropped, never renamed (a cross-table rename
-has no refactorlog entry and would lose the data). On a disposable copy of Dev I proved the
-relationship is 1:1 — each Customer maps to one Account — so no Region value is ambiguous; the copy
-landed with the source and destination hashes matching, and SSDT keeps the source-column drop blocked
-until that match is proven. It ships across more than one release (multiple PRs) so the running app
-keeps working while the column moves.
+has no refactorlog entry and would lose the data). On a disposable copy of Dev the relationship proved
+1:1 — each Account maps to one Customer — so no Region value is ambiguous, and the copy landed with the
+source and destination hashes matching. Two things the copy surfaced: the source-column drop stays
+blocked while the table holds rows (the copy-proof is what tells the reviewer the values arrived), and
+any Customer with no Account has a Region that can't move — those rows are a fork for you, not something
+the copy settles. It ships across more than one release so the running app keeps working while the
+column moves.
 
 ## The reasoning (in conversation)
 The word you use — "move" — doesn't decide how this ships; the relationship between the two tables
@@ -86,20 +96,27 @@ RELEASES.** The fragment this operation contributes:
 **Verification** — run in each environment after deployment
 ```sql
 -- expect 0 rows: the relationship is 1:1, so no moved value is ambiguous (a returned row is a parent
--- with more than one child — stop, the move is unsafe as stated)
-SELECT <parentkey>, COUNT(*) AS children
+-- with more than one child — stop, the move is unsafe as stated). EXCLUDE NULL keys, or the unmapped
+-- rows group together and false-positive as 1:many.
+SELECT <fk to parent>, COUNT(*) AS children
 FROM <source>
-GROUP BY <parentkey>
+WHERE <fk to parent> IS NOT NULL
+GROUP BY <fk to parent>
 HAVING COUNT(*) > 1;
 
+-- coverage: a returned row is a source row whose foreign key is NULL — its value has no destination
+-- to move into (settle these as a fork before the source-column drop)
+SELECT <sourcepk>, <moving column> FROM <source> WHERE <fk to parent> IS NULL;
+
 -- expect equal hashes: the moving values are the same content on source and destination
--- (run after the copy, before the source-column drop — the gate Strict enforces)
+-- (run after the copy, before the source-column drop). ALIAS both sides to the SAME names (k, v) —
+-- FOR XML RAW encodes column names, so different names hash unequal over identical data.
 SELECT
   CONVERT(CHAR(64), HASHBYTES('SHA2_256',
-    CAST((SELECT <parentkey>, <moving column> FROM <source>
-          ORDER BY <parentkey> FOR XML RAW) AS VARBINARY(MAX))), 2) AS source_hash,
+    CAST((SELECT <fk to parent> AS k, <moving column> AS v FROM <source>
+          WHERE <fk to parent> IS NOT NULL ORDER BY <fk to parent> FOR XML RAW) AS VARBINARY(MAX))), 2) AS source_hash,
   CONVERT(CHAR(64), HASHBYTES('SHA2_256',
-    CAST((SELECT <parentkey>, <the same column, now on the destination> FROM <destination>
+    CAST((SELECT <parentkey> AS k, <the same column, now on the destination> AS v FROM <destination>
           WHERE <moving column> IS NOT NULL ORDER BY <parentkey> FOR XML RAW)
          AS VARBINARY(MAX))), 2) AS destination_hash;
 ```

@@ -63,15 +63,22 @@ The inverse of a split. ADD the absorbing columns to the surviving table's CREAT
   `BlockOnPossibleDataLoss` until the Phase-1 hashes prove every value is now in the survivor.
 
 ## Prove it
-Phase 1 — the **row-count cardinality check** (absorbed rows == distinct parent keys) BEFORE anything else; then hash the absorbed columns vs. the new survivor columns and prove equal. Phase 3 — Strict blocks the `DROP TABLE` until the hashes match. See `prove-on-dacpac` / `talk-to-local-sql`. On the sample, merge `CustomerAddress` (seeded 1:1) into `Customer` (STR-02); a scratch seed adding a 2nd CustomerAddress row for one Customer fires the 1:many refusal (STR-02N).
+Phase 1 — the **row-count cardinality check** (absorbed rows == distinct parent keys) BEFORE anything
+else; then hash the absorbed columns vs. the new survivor columns and prove equal — **alias both
+projections to the same names** (`FOR XML RAW` encodes column names, so a perfect copy hashes unequal
+otherwise). Phase 3 — Strict blocks the `DROP TABLE` on row-presence; the hash licenses the reviewer's
+decision to drop, not the gate. See `prove-on-dacpac` / `talk-to-local-sql`. On the sample, merge
+`CustomerAddress` (seeded 1:1) into `Customer` (STR-02; proven `pg_merge`: cardinality 5 == 5,
+hash-equal when aliased); a scratch 2nd CustomerAddress row for one Customer fires the 1:many refusal
+(absorbed 6 != parents 5, STR-02N).
 
 ## The verdict (to the developer)
-You asked to merge CustomerAddress into Customer. On a disposable copy of your data I proved it's
-1:1 — the row counts match — so the copy carries every row and loses nothing. If it had been
-one-to-many, a straight copy would have kept one row per customer and silently dropped the rest;
-that's why the count comes first, before anything is copied. The data copy publishes cleanly, and
-SSDT refuses the final drop of the old table until the copy is proven complete. It ships as three
-PRs: add the columns and copy, cut the app over, then drop the old table.
+You asked to merge CustomerAddress into Customer. On a disposable copy of your data the row counts
+matched — 1:1 — so the copy carries every row and loses nothing. If it had been one-to-many, a straight
+copy would have kept one row per customer and silently dropped the rest; that's why the count comes
+first, before anything is copied. The data copy publishes cleanly, and the final drop of the old table
+stays blocked while it holds rows — the copy-proof is what tells the reviewer every value already
+arrived. It ships as three PRs: add the columns and copy, cut the app over, then drop the old table.
 
 ## The reasoning (in conversation)
 A row-count proof and a value-hash are two different proofs, and the count has to come first.
@@ -106,13 +113,14 @@ SELECT
   (SELECT COUNT(DISTINCT <parentkey>) FROM <absorbed>) AS distinct_parents;
 
 -- expect equal hashes: the absorbed columns now hold the same content on the survivor
--- (run after the copy, before the Phase-3 drop — the gate Strict enforces on DROP TABLE)
+-- (run after the copy, before the Phase-3 drop). ALIAS both projections to the SAME names
+-- (k, a, b ...) — FOR XML RAW encodes column names, so different names hash unequal over identical data.
 SELECT
   CONVERT(CHAR(64), HASHBYTES('SHA2_256',
-    CAST((SELECT <parentkey>, <absorbed columns> FROM <absorbed>
+    CAST((SELECT <parentkey> AS k, <absorbed columns aliased a, b, ...> FROM <absorbed>
           ORDER BY <parentkey> FOR XML RAW) AS VARBINARY(MAX))), 2) AS absorbed_hash,
   CONVERT(CHAR(64), HASHBYTES('SHA2_256',
-    CAST((SELECT <parentkey>, <the same columns, now on the survivor> FROM <survivor>
+    CAST((SELECT <parentkey> AS k, <the same columns, now on the survivor, aliased a, b, ...> FROM <survivor>
           WHERE <absorbing_col> IS NOT NULL ORDER BY <parentkey> FOR XML RAW)
          AS VARBINARY(MAX))), 2) AS survivor_hash;
 ```
