@@ -21,15 +21,15 @@ before merge.
   parent present, or the build fails before deploy.
 - Confirm the new `.sql` file is included by the project glob, so the table actually deploys.
 
+## The data
+- No existing data is touched. The table is created empty; there are no rows for the deploy to be
+  conservative about.
+
 ## How it ships
 - One release, applied in place. DacFx emits `CREATE TABLE [dbo].[CustomerPreference]` and nothing
   else touching an existing table. The table is created empty, so the foreign key is validated with
   no rows to check and lands trusted (`is_not_trusted = 0`) — SQL Server can rely on it and the query
   planner can use it.
-
-## The data
-- No existing data is touched. The table is created empty; there are no rows for the deploy to be
-  conservative about.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

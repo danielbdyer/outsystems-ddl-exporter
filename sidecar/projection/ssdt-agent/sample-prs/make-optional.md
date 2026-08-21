@@ -21,15 +21,15 @@ attach one before merge.
   how it ships.
 - Check with the owners of any consumer that reads `Line1` and confirm a NULL is safe there.
 
+## The data
+- No existing data is touched. `dbo.CustomerAddress` holds 5 rows and every one already carries a
+  `Line1` value; the loosening changes the rule, not the values.
+
 ## How it ships
 - One release, applied in place. The declarative difference is a single
   `ALTER TABLE dbo.CustomerAddress ALTER COLUMN [Line1] NVARCHAR(120) NULL`, which contains no
   data-loss step. A loosening removes a rule; no existing row can violate "allows NULL", so the
   data-loss guard never fires and no script is needed.
-
-## The data
-- No existing data is touched. `dbo.CustomerAddress` holds 5 rows and every one already carries a
-  `Line1` value; the loosening changes the rule, not the values.
 
 ## What proving showed
 Published to a throwaway copy of the database on this branch (SQL Server 2022, `sqlpackage 170.4.83.3`).

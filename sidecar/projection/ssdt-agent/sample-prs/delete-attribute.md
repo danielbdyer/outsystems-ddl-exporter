@@ -26,6 +26,11 @@ used — "drop this field, it is not needed anymore". No work item supplied — 
 - Confirm Release 1 has landed in an environment — the column is already gone there — before sending
   Release 2 up to it.
 
+## The data
+- 5 products. `LegacyCode` is populated on all 5.
+- The guard blocks on row presence, not on the column's content: the drop is refused while the
+  table holds any row.
+
 ## How it ships
 - Two releases, because this pipeline (Azure DevOps → Octopus) always publishes with the data-loss
   guard `BlockOnPossibleDataLoss` on and cannot turn it off for one deploy. A declarative drop of a
@@ -44,11 +49,6 @@ used — "drop this field, it is not needed anymore". No work item supplied — 
   re-published before Release 2, Release 2 then blocks on the re-added populated column.
 - **Release 2** — the model drops `LegacyCode` and carries no pre-deploy. The database no longer has
   the column, so DacFx generates nothing. This closes the gap between the model and the database.
-
-## The data
-- 5 products. `LegacyCode` is populated on all 5.
-- The guard blocks on row presence, not on the column's content: the drop is refused while the
-  table holds any row.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

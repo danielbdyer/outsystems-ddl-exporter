@@ -18,13 +18,13 @@ No work item supplied — attach one before merge (against the maintenance plan,
 - This is not a schema change, so there is nothing to promote through the dacpac. Confirm a maintenance
   plan exists for this database to key the rebuild to (or route it to the DBA to set one up).
 
-## How it ships
-- It does not ship in the dacpac. A rebuild or reorganize belongs in a scheduled maintenance job that
-  runs when fragmentation crosses a threshold — not a deploy step.
-
 ## The data
 - No data changes. A rebuild rewrites the index's physical layout; the rows and the index definition
   are untouched.
+
+## How it ships
+- It does not ship in the dacpac. A rebuild or reorganize belongs in a scheduled maintenance job that
+  runs when fragmentation crosses a threshold — not a deploy step.
 
 ## What proving showed
 - **Realized:** the dacpac carries **no delta** for this — a publish issues no `ALTER INDEX` statement,

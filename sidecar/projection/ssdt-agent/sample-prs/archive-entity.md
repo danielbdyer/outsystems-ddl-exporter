@@ -27,6 +27,12 @@ merge.
 - Confirm Release 1 (the archive table added) has landed in an environment before running the move
   there, so the application can read both tables while the move is in flight.
 
+## The data
+- 4 rows in `dbo.[Order]` before the move. 1 is Cancelled (`StatusId = 3`) and is moved to the archive;
+  3 remain live.
+- After the move: 3 live + 1 archived = 4, the pre-move total. The moved row is byte-identical in the
+  archive — its content hash before the delete equals its content hash in the archive.
+
 ## How it ships
 - Across more than one release, because a running application cannot switch which table it reads in
   the same instant the rows move. Release 1 adds `archive.OrderArchive` (additive, one declarative
@@ -35,12 +41,6 @@ merge.
   INTO …` that the data-loss gate does not govern, run in batches so the transaction log stays bounded.
 - The archive table's creation and the row move are separate steps for a reason: the additive create
   is safe on its own, and the move is the reviewed, reversible-with-effort data motion.
-
-## The data
-- 4 rows in `dbo.[Order]` before the move. 1 is Cancelled (`StatusId = 3`) and is moved to the archive;
-  3 remain live.
-- After the move: 3 live + 1 archived = 4, the pre-move total. The moved row is byte-identical in the
-  archive — its content hash before the delete equals its content hash in the archive.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

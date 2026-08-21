@@ -24,6 +24,11 @@ each Customer and when — "basic audit fields", `CreatedBy` / `CreatedOn` / `Mo
 - Confirm the application (or a trigger) writes these columns on new inserts and on updates. A `NOT
   NULL` column with only the add-time default rejects the next insert that does not supply a value.
 
+## The data
+- `dbo.Customer` holds 5 rows and none had audit columns before this change. Each default fills all
+  5 rows as its column lands: `CreatedBy` and `ModifiedBy` take the deploying login, `CreatedOn` and
+  `ModifiedOn` take the deploy time.
+
 ## How it ships
 - One release, applied in place. The declarative difference adds the four columns with their default
   constraints in one `ALTER TABLE dbo.Customer ADD ...`. Each default stamps every existing row as
@@ -33,11 +38,6 @@ each Customer and when — "basic audit fields", `CreatedBy` / `CreatedOn` / `Mo
   stay NULL and the add is purely additive. `NOT NULL` with no default is the shape to avoid on a
   populated table — it is refused because the existing rows have no value, and would need a pre-deploy
   backfill first.
-
-## The data
-- `dbo.Customer` holds 5 rows and none had audit columns before this change. Each default fills all
-  5 rows as its column lands: `CreatedBy` and `ModifiedBy` take the deploying login, `CreatedOn` and
-  `ModifiedOn` take the deploy time.
 
 ## What proving showed
 Published to a throwaway copy of the database on this branch (SQL Server 2022, `sqlpackage 170.4.83.3`).

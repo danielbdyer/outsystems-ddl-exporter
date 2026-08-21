@@ -47,17 +47,17 @@ constraint: "<the developer's words>". <Name the work item, or: No work item sup
   ask, before this moves up a level. This is "who reviews" made concrete and true to how the change
   moves dev → test → UAT → prod.>
 
+## The data
+- <The counts and the bad rows that decide the risk, named. Headline: detail. "No existing data is touched." if additive.>
+
 ## How it ships
 - <The SHIP terminal from THE_DECISION_TREE.md S5, stated plainly. ONE RELEASE → say nothing beyond
   the change. TWO RELEASES (a data-loss change on this locked-gate pipeline) → name R1 (a pre-deploy
   physical change with the model unchanged) and R2 (the model catches up), and that the gate is not
-  relaxed because it cannot be. A relaxed gate is a per-publish setting, not a database state — if
-  ever used, say so. A declarative FK/constraint add re-validates and trusts itself (WITH NOCHECK ADD
+  relaxed because it cannot be. This estate cannot relax the gate; a two-release is the shape, never a
+  relaxation. A declarative FK/constraint add re-validates and trusts itself (WITH NOCHECK ADD
   + WITH CHECK CHECK in one publish); dirty child data blocks it (Msg 547) until reconciled — never
   invent a manual trust step (FINDINGS F9).>
-
-## The data
-- <The counts and the bad rows that decide the risk, named. Headline: detail. "No existing data is touched." if additive.>
 
 ## What proving showed
 <Published to a throwaway copy on this branch. Never a prior run.>
@@ -125,6 +125,10 @@ attach one before merge.
   differs per environment. If one is real, stop and reassign it to the right customer instead.
 - The key is made trusted, so SQL Server validates every existing row and the query planner can rely on it.
 
+## The data
+- 4 orders. 1 is an orphan: `Order 4 → CustomerId 999`, and no Customer 999 exists. It has 2 order lines.
+- Orders 1–3 point to real customers.
+
 ## How it ships
 - A pre-deploy step removes orders with no matching customer (their order lines first, then the
   orders). Idempotent — re-running removes nothing more.
@@ -133,10 +137,6 @@ attach one before merge.
   no gate change is needed.
 - The orphan must be reconciled before the key is added — otherwise the publish is refused
   (`Msg 547`). Reconciled, the key validates and trusts itself (`is_not_trusted = 0`); nothing to add.
-
-## The data
-- 4 orders. 1 is an orphan: `Order 4 → CustomerId 999`, and no Customer 999 exists. It has 2 order lines.
-- Orders 1–3 point to real customers.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

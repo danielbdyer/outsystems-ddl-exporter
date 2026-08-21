@@ -19,13 +19,13 @@ supplied — attach one before merge.
 - Run the orphan query (below) in each environment and confirm 0 rows. If any orphan exists, the
   `WITH CHECK CHECK` blocks (`Msg 547`) — reconcile the orphan first, then re-trust.
 
+## The data
+- No row is written. The `WITH CHECK CHECK` reads every child row to re-validate the key.
+
 ## How it ships
 - An operational script step, not part of the dacpac model. A *fresh* declarative FK or CHECK add
   already re-validates and trusts itself (F9/F10), so this op is not that — it re-trusts a constraint
   left untrusted **another way**: a legacy hand-written `WITH NOCHECK`, or one disabled for a bulk load.
-
-## The data
-- No row is written. The `WITH CHECK CHECK` reads every child row to re-validate the key.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

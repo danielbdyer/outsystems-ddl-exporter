@@ -18,12 +18,12 @@ no value is supplied. No work item supplied — attach one before merge.
 - Name the constraint `DF_Order_StatusText`; an auto-named default differs per environment and makes
   diffing fragile.
 
+## The data
+- Existing `StatusText` values are unchanged. The default applies only to rows inserted from here on.
+
 ## How it ships
 - One release, applied in place. SSDT emits `ALTER TABLE … ADD CONSTRAINT DF_Order_StatusText DEFAULT …`;
   it affects future inserts only and touches no existing row.
-
-## The data
-- Existing `StatusText` values are unchanged. The default applies only to rows inserted from here on.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

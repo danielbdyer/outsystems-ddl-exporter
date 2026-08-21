@@ -20,14 +20,14 @@ supplied — attach one before merge.
 - If it finds duplicates, reconcile them in a pre-deploy first (merge the records, or correct the
   email) — a data-owner decision; do not guess it.
 
+## The data
+- 5 customers. 3 have distinct emails; 2 have none (`NULL`). No two filled emails match.
+
 ## How it ships
 - One release, applied in place — the index builds over the existing rows. Nothing is written.
 - The index is filtered (`WHERE Email IS NOT NULL`) because Email is optional: a plain unique index
   would be refused, because two customers have no email and a unique index allows only one blank.
 - A duplicate among the filled emails would block the build the same way, until it is reconciled.
-
-## The data
-- 5 customers. 3 have distinct emails; 2 have none (`NULL`). No two filled emails match.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

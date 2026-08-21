@@ -20,16 +20,16 @@ The developer's stated intent for this PBI: make the `Email` field longer so lon
   the ~1700-byte limit (`NVARCHAR` storage doubles). `Email` is in no index here, and `NVARCHAR(400)`
   is 800 bytes, so that limit is not approached.
 
+## The data
+- No existing data is touched. `dbo.Customer` holds 5 rows; 3 carry a non-NULL `Email`, the longest
+  24 characters — well inside both the old and the new width — and 2 are NULL. Every value already
+  fits `NVARCHAR(400)`.
+
 ## How it ships
 - One release, applied in place. The declarative difference is a single
   `ALTER TABLE dbo.Customer ALTER COLUMN [Email] NVARCHAR(400) NULL`, which contains no data-loss
   step — a wider type cannot lose a value — so the data-loss guard never fires and no script is
   needed.
-
-## The data
-- No existing data is touched. `dbo.Customer` holds 5 rows; 3 carry a non-NULL `Email`, the longest
-  24 characters — well inside both the old and the new width — and 2 are NULL. Every value already
-  fits `NVARCHAR(400)`.
 
 ## What proving showed
 Published to a throwaway copy of the database on this branch (SQL Server 2022, `sqlpackage 170.4.83.3`).

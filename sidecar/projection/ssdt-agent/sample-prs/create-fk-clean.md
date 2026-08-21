@@ -18,15 +18,15 @@ exist, so a wrong or missing StatusId becomes impossible. No work item supplied 
   create-fk-orphan case instead (a pre-deploy reconcile first); see `create-fk-orphan.md`.
 - The key is trusted, so SQL Server has validated every existing row and the query planner can rely on it.
 
+## The data
+- 4 orders. Every StatusId (1, 2, 3) matches a seeded Status row. No order points at a missing Status.
+
 ## How it ships
 - One release, applied in place. No pre-deploy is needed because every child row already has a parent;
   the key validates and trusts itself on publish (`is_not_trusted = 0`) — proven below.
 - This is the clean counterpart to `create-fk-orphan`: there, an orphan must be reconciled in a
   pre-deploy first, or the publish is refused (`Msg 547`). Either way the key trusts itself — the
   reconcile is the only extra work.
-
-## The data
-- 4 orders. Every StatusId (1, 2, 3) matches a seeded Status row. No order points at a missing Status.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

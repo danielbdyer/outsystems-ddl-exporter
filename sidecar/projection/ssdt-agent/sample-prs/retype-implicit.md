@@ -21,15 +21,15 @@ before merge.
   TINYINT`) or a value-reshaping cast (Text → Date) is refused on a populated table and is a
   different change — retype-explicit — not this one.
 
+## The data
+- No existing data is touched. `dbo.OrderLine` holds 8 rows; `LineNumber` values are small line
+  positions (maximum 3). Every one already fits `BIGINT`.
+
 ## How it ships
 - One release, applied in place. The declarative difference is a single
   `ALTER TABLE dbo.OrderLine ALTER COLUMN [LineNumber] BIGINT NOT NULL`, which contains no data-loss
   step — every `INT` value fits `BIGINT` — so the data-loss guard never fires and no script is
   needed.
-
-## The data
-- No existing data is touched. `dbo.OrderLine` holds 8 rows; `LineNumber` values are small line
-  positions (maximum 3). Every one already fits `BIGINT`.
 
 ## What proving showed
 Published to a throwaway copy of the database on this branch (SQL Server 2022, `sqlpackage 170.4.83.3`).

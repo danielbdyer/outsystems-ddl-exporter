@@ -80,6 +80,7 @@ The fixed spine is in `THE_DECISION_TREE.md`. Each section, in words:
 - **What changes** — `<object>: <from> → <to>`. One line per real change.
 - **Before promoting** — the confirmations, per environment, as imperatives. This is the risk
   made concrete: what to run, what to check, who to ask, before it moves up a level.
+- **The data** — the counts and the bad rows, named, headline-colon-detail. Nothing else.
 - **How it ships** — the non-routine mechanics at the **developer's** level: what happens and what
   to do. Keep it simple — the deploy engine's internals (the generated `WITH NOCHECK ADD` /
   `WITH CHECK CHECK`, the exact statements) are *evidence* and belong in *What proving showed*, not
@@ -89,7 +90,6 @@ The fixed spine is in `THE_DECISION_TREE.md`. Each section, in words:
   This estate cannot toggle the gate, so a data-loss change ships as a **two-release** pattern, not a
   gate relaxation. The **S5 SHIP sub-machine** in `THE_DECISION_TREE.md` decides the shape; the
   proofs are in `FINDINGS_AND_CHANGES.md`.
-- **The data** — the counts and the bad rows, named, headline-colon-detail. Nothing else.
 - **What proving showed** — the `Tried / Did / Realized` sequence, on this branch, with the
   real messages. Never a prior run. This is the heart: it shows the reviewer the change was
   published to a copy and what the database actually did.

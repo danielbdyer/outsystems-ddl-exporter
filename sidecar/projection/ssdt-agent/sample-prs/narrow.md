@@ -27,6 +27,12 @@ The developer's stated intent for this PBI: shorten the product code to a 10-cha
 - Check with the application owner that no code path writes a code longer than 10; after the
   narrowing those writes are rejected.
 
+## The data
+- 5 products. 1 code is longer than 10 characters: Product 3, `STANDARD-SKU-001`, 16 characters.
+  The longest code is 16.
+- The guard blocks on row presence, not on the lengths: a table where every code already fits 10 is
+  still refused while it holds any row.
+
 ## How it ships
 - Two releases, because this pipeline (Azure DevOps → Octopus) always publishes with the data-loss
   guard `BlockOnPossibleDataLoss` on and cannot turn it off for one deploy.
@@ -41,12 +47,6 @@ The developer's stated intent for this PBI: shorten the product code to a 10-cha
   `ALTER COLUMN Code NVARCHAR(50)`. Send Release 2 up promptly.
 - **Release 2** — the model declares `NVARCHAR(10)` and carries no pre-deploy. The database is
   already 10, so DacFx generates nothing. This closes the gap between the model and the database.
-
-## The data
-- 5 products. 1 code is longer than 10 characters: Product 3, `STANDARD-SKU-001`, 16 characters.
-  The longest code is 16.
-- The guard blocks on row presence, not on the lengths: a table where every code already fits 10 is
-  still refused while it holds any row.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

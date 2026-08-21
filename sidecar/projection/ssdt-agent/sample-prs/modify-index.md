@@ -17,14 +17,14 @@ Code becomes impossible. No work item supplied — attach one before merge.
 - Run the duplicate query (below) in each environment and confirm it returns 0 rows. If any two
   products share a Code, reconcile them in a pre-deploy first (merge or correct) — a data-owner decision.
 
+## The data
+- The Product Codes are distinct (a duplicate would block the build). No row is modified; an index is a
+  derived structure.
+
 ## How it ships
 - One release, applied in place. The change is a full rebuild (`DROP INDEX` + `CREATE UNIQUE INDEX`)
   over every row, which takes a write-blocking lock scaled to row count. Clean data → the unique index
   builds; a duplicate → the build is refused (`Msg 1505`).
-
-## The data
-- The Product Codes are distinct (a duplicate would block the build). No row is modified; an index is a
-  derived structure.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

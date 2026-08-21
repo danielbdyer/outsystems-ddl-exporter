@@ -21,6 +21,11 @@ merge.
 - Check with the application owner that new inserts supply a real `Segment` rather than leaning on
   the default, and that no insert path breaks now that the column exists and is required.
 
+## The data
+- 5 customers, none of which has a `Segment` today (the column is new). The default `Standard`
+  stamps all 5 as the column is added.
+- No existing column is touched.
+
 ## How it ships
 - One release. With the default in the column definition, DacFx generates a single
   `ALTER TABLE [dbo].[Customer] ADD [Segment] NVARCHAR (20) CONSTRAINT [DF_Customer_Segment]
@@ -32,11 +37,6 @@ merge.
 - Without a default on this populated table, the publish is refused: SQL Server has no value for the
   existing rows. A default, or a value for every existing row, is required — do not enable
   `GenerateSmartDefaults`, which invents a value silently.
-
-## The data
-- 5 customers, none of which has a `Segment` today (the column is new). The default `Standard`
-  stamps all 5 as the column is added.
-- No existing column is touched.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

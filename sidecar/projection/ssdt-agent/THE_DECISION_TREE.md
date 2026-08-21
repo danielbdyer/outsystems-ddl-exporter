@@ -155,8 +155,8 @@ Fixed order, variable depth, collapse-don't-drop:
 2. **Intent** — the developer's stated intent for the PBI.
 3. **What changes** — the schema edit.
 4. **Before promoting** — the risk-driven confirmations, per environment.
-5. **How it ships** — the SHIP terminal, stated plainly (one release, or the two releases and why).
-6. **The data** — the counts and bad rows.
+5. **The data** — the counts and bad rows.
+6. **How it ships** — the SHIP terminal, stated plainly (one release, or the two releases and why).
 7. **What proving showed** — tried / did / realized, on this branch.
 8. **After deploy — check** — the per-environment queries.
 9. **How to roll this back** — the reverse, and what is not auto-undone.

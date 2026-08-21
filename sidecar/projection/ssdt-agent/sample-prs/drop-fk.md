@@ -21,13 +21,13 @@ replaced, or Status is being retired).
 - Re-check the plans of queries that join Order to Status. A trusted foreign key lets the optimizer
   drop the join or sharpen its row estimates; removing it can change those plans and slow the query.
 
+## The data
+- No data is touched. Dropping a foreign key is a metadata change only; every row stays as it is.
+
 ## How it ships
 - One release, applied in place. The generated script is a single
   `ALTER TABLE [dbo].[Order] DROP CONSTRAINT [FK_Order_Status];` — proven below. No row is read or
   written, and the publish never blocks: a drop has nothing to validate.
-
-## The data
-- No data is touched. Dropping a foreign key is a metadata change only; every row stays as it is.
 
 ## What proving showed
 Published to a throwaway copy on this branch, starting from a state where `FK_Order_Status` existed

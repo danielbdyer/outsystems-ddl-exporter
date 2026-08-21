@@ -21,16 +21,16 @@ so the pair is the entity's key. No work item supplied — attach one before mer
 - A primary key is a claim about the existing data: it is checked when the index is built, so the
   data must satisfy it before the key can land.
 
+## The data
+- 8 order lines. Every (`OrderId`, `LineNumber`) pair is distinct, and both columns are `NOT NULL`.
+  Nothing blocks the key.
+
 ## How it ships
 - One release, applied in place. The key builds over the existing rows because they are already
   unique and not null.
 - If a duplicate or a null were present, this would ship as a scripted change instead: a pre-deploy
   step reconciles the data (dedupe, or fill the null), then the key builds — the same
   reconcile-then-constraint shape as a foreign key or a unique constraint.
-
-## The data
-- 8 order lines. Every (`OrderId`, `LineNumber`) pair is distinct, and both columns are `NOT NULL`.
-  Nothing blocks the key.
 
 ## What proving showed
 The block behaviour was proven on a throwaway copy on this branch, on a small table shaped like the

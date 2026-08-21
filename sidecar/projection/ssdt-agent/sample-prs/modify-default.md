@@ -17,12 +17,12 @@ than `'Pending'`. No work item supplied — attach one before merge.
 - Confirm no retro re-stamp is wanted: existing rows keep their current `StatusText`. If the new value
   must apply to old rows too, that is a separate, proven backfill.
 
+## The data
+- No row changes. Old rows keep the value they were written with under the previous default.
+
 ## How it ships
 - One release, applied in place. SSDT does a `DROP`-then-`ADD` of the named constraint (a brief
   no-default window inside the deploy transaction). No existing row value changes; no table rebuild.
-
-## The data
-- No row changes. Old rows keep the value they were written with under the previous default.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

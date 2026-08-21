@@ -19,12 +19,12 @@ attach one before merge.
   in an environment, schedule a window, or use `WITH (ONLINE = ON)` where the edition is
   Enterprise/Developer (it fails on Standard). Confirm the target edition.
 
+## The data
+- 4 orders. No data changes; an index is a derived structure built from the rows already present.
+
 ## How it ships
 - One release, applied in place. SSDT emits `CREATE NONCLUSTERED INDEX` and builds it over every
   existing row — a real build, not a metadata flip. No row is read or written.
-
-## The data
-- 4 orders. No data changes; an index is a derived structure built from the rows already present.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

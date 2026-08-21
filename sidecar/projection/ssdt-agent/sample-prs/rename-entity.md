@@ -26,6 +26,12 @@ Studio and have the data follow the new name, exactly as the platform does it. N
   it, views, procedures, synonyms, reports, ETL, and application code. The old name stops resolving
   the moment the rename lands.
 
+## The data
+- 8 rows in `dbo.OrderLine`, object_id `1061578820`. The rename keeps every row and keeps the
+  object_id, so the table that carried the rows is the same table under the new name.
+- No table has a foreign key pointing at `OrderLine`, so no child relationship breaks; the table's own
+  foreign key and primary key keep their old names after the rename.
+
 ## How it ships
 - One release, applied in place. With the refactorlog entry present, the delta is a single
   `EXEC sp_rename`, which is a metadata operation: the rows and the object's identity are preserved,
@@ -34,12 +40,6 @@ Studio and have the data follow the new name, exactly as the platform does it. N
   vanish and a new one appear, and the delta becomes `DROP TABLE dbo.OrderLine` + `CREATE TABLE
   dbo.OrderItem`. On a populated table the data-loss gate blocks that drop; under a relaxed gate it
   would drop the 8 rows outright. Ship the refactorlog entry, or do not ship the rename.
-
-## The data
-- 8 rows in `dbo.OrderLine`, object_id `1061578820`. The rename keeps every row and keeps the
-  object_id, so the table that carried the rows is the same table under the new name.
-- No table has a foreign key pointing at `OrderLine`, so no child relationship breaks; the table's own
-  foreign key and primary key keep their old names after the rename.
 
 ## What proving showed
 Published to a throwaway copy on this branch.
