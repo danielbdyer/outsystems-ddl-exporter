@@ -61,14 +61,13 @@ the count. Run Permissive (`BlockOnPossibleDataLoss=False`) and the before/after
 publish loop, see `../../prove-on-dacpac/SKILL.md`; probes, `../../talk-to-local-sql/SKILL.md`.
 
 ## The verdict (to the developer)
-"You asked to shorten Code to 10 — it looks like a one-liner. I checked your data first: the
-longest Code is 14 characters, and 37 rows are longer than 10. On a disposable copy of Dev, SSDT
-refused the change to protect those 37 rows, and a permissive run showed exactly which characters
-would have been truncated. So the real question is those 37 rows: do you want them deliberately
-truncated to 10, or is the extra length real data that must be kept? Either way, with data in the
-table it ships as two releases: R1 reconciles the over-length values and narrows the column in a
-pre-deploy while the model still says wide, then R2 lets the model catch up. (On an empty table it
-would have been a clean one-liner.)"
+"You asked to shorten Code to 10 — it looks like a one-liner, but the data decides. On a copy of
+Dev, SSDT refused it: the guard fires because the table has rows, not because a value is too long.
+`<N>` codes are longer than 10 and would be cut; a permissive run shows exactly which characters
+go. So the real question is those over-length codes: cut them to 10 on purpose, or is the extra
+length real data to keep? Either way, with rows in the table it ships as two releases — R1
+reconciles the values and narrows the column in a pre-deploy while the model still says wide, then
+R2 lets the model catch up. On an empty table it would have been a clean one-liner."
 
 ## The reasoning (in conversation)
 Narrowing shares one guard behaviour and one remedy shape with make-mandatory and delete-attribute
