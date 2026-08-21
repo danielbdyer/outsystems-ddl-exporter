@@ -11,8 +11,17 @@ description: Use when the developer says "add a required attribute", "add a Stat
 > Server fills every existing row from the default as the column is added. Populated with no
 > default: the deployment is blocked. Prove it on a disposable copy before classifying.
 
-> **Proven precedent:** `../../../sample-prs/add-mandatory.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ONE-RELEASE with a default.** With an explicit `DEFAULT`, DacFx generates a
+> single `ALTER TABLE … ADD … NOT NULL CONSTRAINT DEFAULT` that stamps every existing row — no
+> data-loss step, so it ships in one release. Without a default on a populated table the publish is
+> refused (no value for the existing rows). If no default is acceptable for new rows, the fallback
+> is the make-mandatory **TWO-RELEASE** (add nullable, pre-deploy backfill, tighten with the model
+> lagging, then the model catches up). Proven live 2026-08-21.
+
+> **Proven precedent:** `../../../sample-prs/add-mandatory.md` — the worked instance of the
+> `../../author-pr/SKILL.md` template for this op. Its *What proving showed* carries the real
+> Warning SQL72015 + `Msg 50000` block with no default, and the clean one-release `ALTER TABLE …
+> ADD` with the default that stamps every existing row.
 
 ## OutSystems phrasing
 "add a required attribute", "add a Status field, everyone must have one".
@@ -70,7 +79,9 @@ the question to settle before this ships is a plain one — who supplies the val
 already exist: you, explicitly, or the engine, silently? It should never be silently.
 
 ## On the record
-Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+Assemble the pull request from the `../../author-pr/SKILL.md` template; the worked instance for
+this op is `../../../sample-prs/add-mandatory.md`. **SHIP terminal: ONE-RELEASE with a default**
+(TWO-RELEASE fallback if no default is acceptable). Record register.
 
 **Review & release**
 - A dev lead or an experienced developer should review this: adding a required attribute means the

@@ -12,8 +12,12 @@ description: Use when the developer says "make this a many-to-many", "a Student 
 > seeded with pairs referencing missing parents, the publish is blocked and it routes to
 > `../create-fk-orphan/SKILL.md`.
 
-> **Proven precedent:** `../../../sample-prs/junction.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **The pull request.** `../../author-pr/SKILL.md` is the ten-section template every change fills;
+> the worked instance for this op is `../../../sample-prs/junction.md` — a complete PR proven live on
+> this branch. **Ships as ONE RELEASE, applied in place** — one `CREATE TABLE` whose composite
+> primary key spans two foreign key columns (proven live, 2026-08-21: `dbo.CustomerProduct` landed
+> clean, both foreign keys trusted; a duplicate pair rejected `Msg 2627`, an orphan pair `Msg 547`).
+> Seed pairs referencing a missing parent block the publish and route to `../create-fk-orphan/SKILL.md`.
 
 ## OutSystems phrasing
 "make this a many-to-many", "a Student can have many Courses and a Course many Students", "add a bridge entity".
@@ -66,7 +70,8 @@ just two loose columns and seeding pairs before both parents exist — then the 
 deploy.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The fragment this op contributes to the pull request (`../../author-pr/SKILL.md` is the template; the
+worked instance is `../../../sample-prs/junction.md`).
 
 **Review & release**
 - A dev lead must review this: two cross-table relationships are added.

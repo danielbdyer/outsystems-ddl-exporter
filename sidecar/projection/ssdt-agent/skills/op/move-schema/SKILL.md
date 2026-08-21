@@ -13,8 +13,13 @@ description: "Use when the developer says \"move the entity to the archive schem
 > every fully-qualified `schema.Table` reference must follow the move, so the running application must
 > change to keep working.
 
-> **Proven precedent:** `../../../sample-prs/move-schema.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **The pull request.** `../../author-pr/SKILL.md` is the ten-section template every change fills;
+> the worked instance for this op is `../../../sample-prs/move-schema.md` — a complete PR proven
+> live on this branch. **Ships as ONE RELEASE, applied in place** — `ALTER SCHEMA target TRANSFER`
+> (or a refactorlog entry) keeps every row and the object_id (proven live, 2026-08-21:
+> `dbo.Category` → `archive.Category`, 3 rows and object_id `933578364` preserved). Without the
+> identity mapping a header edit does a drop-and-recreate — the same behaviour a rename with no
+> refactorlog entry shows.
 
 ## OutSystems phrasing
 "move the entity to the archive schema", "put this table under a different namespace/module".
@@ -70,7 +75,8 @@ relearning that proof from scratch for every operation instead of recognizing th
 underneath them all.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The fragment this op contributes to the pull request (`../../author-pr/SKILL.md` is the template; the
+worked instance is `../../../sample-prs/move-schema.md`).
 
 **Review & release**
 - A dev lead or an experienced developer should review this: the running application must change to

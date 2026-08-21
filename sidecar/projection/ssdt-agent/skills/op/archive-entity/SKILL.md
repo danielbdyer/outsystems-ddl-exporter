@@ -12,8 +12,13 @@ description: Use when the developer says "archive old orders", "move the histori
 > the volume is large. Create destination → migrate (batched) → verify counts. Prove it on a
 > disposable copy before classifying.
 
-> **Proven precedent:** `../../../sample-prs/archive-entity.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **The pull request.** `../../author-pr/SKILL.md` is the ten-section template every change fills;
+> the worked instance for this op is `../../../sample-prs/archive-entity.md` — a complete PR proven
+> live on this branch. **Ships across more than one release (multi-phase):** the archive table is
+> added (additive, one declarative release), then a batched `DELETE … OUTPUT DELETED.* INTO archive`
+> moves the rows — raw DML the data-loss gate does not govern — then the counts are reconciled. The
+> proof is conservation, not a schema delta (proven live, 2026-08-21: 4 = 3 live + 1 archived, moved
+> row byte-identical).
 
 ## OutSystems phrasing
 "archive old orders", "move the historical rows out to an archive table".
@@ -73,7 +78,8 @@ loses or doubles rows and looks identical in the schema, because the schema neve
 rows in the first place. The question that catches it up front: shape change, or data move?
 
 ## On the record
-Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+Fragments for the pull request (`../../author-pr/SKILL.md` is the template; the worked instance is
+`../../../sample-prs/archive-entity.md`), record register.
 
 **Review & release**
 - A dev lead must review this: existing rows are moved out of the live table. A principal must

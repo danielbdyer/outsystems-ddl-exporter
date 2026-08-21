@@ -11,8 +11,14 @@ description: Use when the developer says "delete the Entity", "drop the table, w
 > this: data is removed and the removal cannot be undone. The risk is the irreversible loss, not the
 > release count — one drop in one release still requires a principal. Prove before you classify.
 
-> **Proven precedent:** `../../../sample-prs/delete-entity.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **The pull request.** `../../author-pr/SKILL.md` is the ten-section template every change fills;
+> the worked instance for this op is `../../../sample-prs/delete-entity.md` — a complete PR proven
+> live on this branch. **Ships as ONE RELEASE plus a human fork:** an explicit, idempotent scripted
+> `DROP TABLE` with the `.sql` removed in the same release, under the production posture
+> (`DropObjectsNotInSource=false`) so DacFx neither generates the drop (which the gate blocks) nor
+> re-creates the table; the fork is whether the data is truly safe to lose. The two-release pattern
+> of a narrow does **not** transfer — a model that still declares the table re-creates it empty on the
+> next publish (proven live, 2026-08-21).
 
 ## OutSystems phrasing
 "delete the Entity", "drop the table, we don't need it", "remove the old AuditLog".
@@ -74,7 +80,8 @@ about what is lost, not how much is written. The failure this avoids: reaching f
 `DropObjectsNotInSource` to "make it work" instead of proving the table is truly safe to lose.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`), record register.
+The fragment this op contributes to the pull request (`../../author-pr/SKILL.md` is the template; the
+worked instance is `../../../sample-prs/delete-entity.md`), record register.
 
 **Review & release**
 - A principal must review this: data is removed and the removal cannot be undone. If the table is

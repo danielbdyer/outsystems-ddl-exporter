@@ -11,8 +11,10 @@ description: Use when the developer says "add a new Entity", "create a new table
 > is emitted verbatim, and no existing data is read or written. Prove the clean publish on a
 > disposable copy before classifying.
 
-> **Proven precedent:** `../../../sample-prs/create-entity.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **The pull request.** `../../author-pr/SKILL.md` is the ten-section template every change fills;
+> the worked instance for this op is `../../../sample-prs/create-entity.md` — a complete PR proven
+> live on this branch (`dbo.CustomerPreference` created clean, its foreign key trusted). **Ships as
+> ONE RELEASE, applied in place.**
 
 ## OutSystems phrasing
 "add a new Entity", "create a new table", "I need a new CustomerPreference entity".
@@ -62,7 +64,8 @@ anything not yet here?" The mistake to avoid is treating self-contained additive
 it is — asking for heavier review than a brand-new table nothing depends on actually needs.
 
 ## On the record
-Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+Fragments for the pull request (`../../author-pr/SKILL.md` is the template; the worked instance is
+`../../../sample-prs/create-entity.md`), record register.
 
 **Review & release**
 - Any team member can review this: the change is additive and the running application is unaffected —

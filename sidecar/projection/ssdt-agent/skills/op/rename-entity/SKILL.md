@@ -15,8 +15,12 @@ description: Use when the developer says "rename the Entity", "change the table 
 > drop-enabled diagnostic posture the delta is `DROP TABLE` + `CREATE TABLE` and every row is
 > lost. Stop and get the refactorlog first.
 
-> **Proven precedent:** `../../../sample-prs/rename-entity.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **The pull request.** `../../author-pr/SKILL.md` is the ten-section template every change fills;
+> the worked instance for this op is `../../../sample-prs/rename-entity.md` — a complete PR proven
+> live on this branch. **Ships as ONE RELEASE, applied in place** — the delta is a single
+> `EXEC sp_rename … 'OBJECT'` that keeps every row and the object_id — **only when the refactorlog
+> entry travels with the build.** Without it the delta is `DROP TABLE` + `CREATE TABLE` and the rows
+> are lost (proven live, 2026-08-21: rename kept all 8 rows and object_id `1061578820`).
 
 ## OutSystems phrasing
 "rename the Entity", "change the table name from Customer to Client", "I renamed it in Service Studio".
@@ -73,7 +77,8 @@ as dropping one table and creating another — the most expensive silent data lo
 because nothing errors and the rows are simply gone.
 
 ## On the record
-The fragment this contributes to the pull request (`../../author-pr/SKILL.md`).
+The fragment this contributes to the pull request (`../../author-pr/SKILL.md` is the template; the
+worked instance is `../../../sample-prs/rename-entity.md`).
 
 **Review & release**
 - A dev lead or an experienced developer should review this: the running application must change to
