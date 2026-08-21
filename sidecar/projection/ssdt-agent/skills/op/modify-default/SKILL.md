@@ -10,8 +10,12 @@ description: Use when the developer says "change the default value", "new orders
 > in place: SSDT does a DROP-then-ADD for a change, or a plain DROP to remove it. Prove it on a
 > disposable copy before classifying.
 
-> **Proven precedent:** `../../../sample-prs/modify-default.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ONE RELEASE, in place.** A DROP-then-ADD (modify) or a plain DROP (remove) of the
+> named default; no existing row value changes — a default only ever governs future inserts (F10: a
+> DEFAULT fills only new rows, never backfills). `FINDINGS_AND_CHANGES.md` F10.
+>
+> **Proven precedent:** `../../../sample-prs/modify-default.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "change the default value", "new orders should default to Shipped now, not Pending", "stop
@@ -56,7 +60,9 @@ carry the new value, that's a separate, proven backfill. The surprise this avoid
 changed default to rewrite history. It doesn't — it only ever governs what gets written next.
 
 ## On the record
-Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/modify-default.md`. SHIP terminal: **ONE RELEASE, in place.**
+The fragment this operation contributes:
 
 **Review & release**
 - Any team member can review this: no existing data is touched — a default governs only future
@@ -83,7 +89,7 @@ definition so the restore is exact.
 **Not verified**
 - Application impact — inserts that omit this column now receive the new default, or fail if the
   default was removed and the column is NOT NULL with no value supplied; whether any code relies on
-  the old behaviour is not confirmed here (@app-owner).
+  the old behaviour is not confirmed here (app owner).
 - Other environments — a default created unnamed (`DF__Table__Col__<hash>`) or by an ad-hoc script
   may differ per environment; the disposable copy of Dev cannot see it. Run the verification query
   before promotion.

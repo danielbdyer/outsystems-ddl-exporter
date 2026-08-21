@@ -1,6 +1,6 @@
 ---
 name: add-check
-description: Use when the developer says "Total must be positive", "Status has to be one of these values", "age can't be negative" — any business rule enforced at the data layer via a CHECK constraint. SSDT validates every existing row at deploy; violating rows block the deployment; NOCHECK skips validation but leaves the constraint untrusted.
+description: Use when the developer says "Total must be positive", "Status has to be one of these values", "age can't be negative" — any business rule enforced at the data layer via a CHECK constraint. SSDT re-validates every existing row at deploy; a violating row blocks it (Msg 547); over clean data the check trusts itself.
 ---
 
 The canonical skill body lives in the tree, where its relative citations resolve:

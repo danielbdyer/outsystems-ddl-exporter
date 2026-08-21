@@ -10,8 +10,14 @@ description: Use when the developer says "give this attribute a default value", 
 > place — adding a default never touches existing row values. Prove it on a disposable copy before
 > classifying.
 
-> **Proven precedent:** `../../../sample-prs/add-default.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ONE RELEASE, in place.** Adding a default touches no existing row — proven this
+> branch (F10): after adding a default, an existing `NULL` stayed `NULL` and an existing value was
+> unchanged; only a fresh insert that omitted the column received the default. On a new `NOT NULL`
+> column the default instead stamps every existing row as the column lands (the add-mandatory remedy) —
+> the two shapes wear one word, and the record names which shipped. `FINDINGS_AND_CHANGES.md` F10.
+>
+> **Proven precedent:** `../../../sample-prs/add-default.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "give this attribute a default value", "new rows should default to Active", "everything new should
@@ -73,7 +79,9 @@ two. Keeping them apart is what avoids the common surprise: the column still sho
 deploy, because the default was only ever going to touch new rows.
 
 ## On the record
-Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/add-default.md`. SHIP terminal: **ONE RELEASE, in place.**
+The fragment this operation contributes:
 
 **Review & release**
 - Any team member can review this: the change is additive and the running application is unaffected.
@@ -95,7 +103,7 @@ nothing is restored.
 
 **Not verified**
 - Application impact — inserts that omit this column now receive the default value instead of NULL;
-  whether any code relies on that distinction is not confirmed here (@app-owner).
+  whether any code relies on that distinction is not confirmed here (app owner).
 - Other environments — an existing unnamed default (`DF__Table__Col__<hash>`) on this column in
   Test/UAT/Prod must be dropped before this one lands; the disposable copy of Dev cannot see it. Run
   the verification query before promotion.

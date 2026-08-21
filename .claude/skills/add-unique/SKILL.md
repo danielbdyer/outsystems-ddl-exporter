@@ -1,6 +1,6 @@
 ---
 name: add-unique
-description: Use when the developer says "this attribute should be unique", "no two customers can share an email", "stop duplicate codes" — adding a UNIQUE constraint or unique index. Uniqueness is built over all existing rows at deploy; duplicates block the deployment; UNIQUE permits only one NULL, so several NULLs on a nullable column block it too.
+description: Use when the developer says "this attribute should be unique", "no two customers can share an email", "stop duplicate codes" — adding a UNIQUE constraint or unique index. Uniqueness is built over all existing rows at deploy; duplicates block it (Msg 1505); a unique index permits only one NULL, so several NULLs on a nullable column block it too (use a filtered index).
 ---
 
 The canonical skill body lives in the tree, where its relative citations resolve:

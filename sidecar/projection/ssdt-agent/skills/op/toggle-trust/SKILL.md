@@ -12,8 +12,15 @@ description: Use when the developer says "trust the constraint now that the data
 > change; who must review is inherited from the change this step serves. Prove the *ending* trust
 > state before classifying it as a schema change.
 
-> **Proven precedent:** `../../../sample-prs/toggle-trust.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: scripted, operational — review inherited.** Toggling trust is not declarative; it is
+> a script step (`WITH CHECK CHECK` to re-trust, `NOCHECK` to suspend) against an existing constraint.
+> Under F9/F10 a *fresh* declarative FK or CHECK add already trusts itself, so this op is **not** the
+> create-fk-orphan remedy — it is for a constraint left untrusted another way: a legacy hand-written
+> `WITH NOCHECK`, or one disabled for a bulk load and re-trusted after. The proof is the ending state,
+> `is_not_trusted = 0`. `FINDINGS_AND_CHANGES.md` F9/F10.
+>
+> **Proven precedent:** `../../../sample-prs/toggle-trust.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "trust the constraint now that the data is clean", "turn the FK back on", "temporarily disable the
@@ -27,11 +34,12 @@ an existing constraint — **not a change to the described destination**. Handbo
 
 ## The named trap
 An **untrusted constraint** — left in NOCHECK, the constraint exists but the optimizer ignores it
-(`is_not_trusted = 1`), so it neither enforces nor helps plans. The pairing to remember is the
-FK-with-orphans remedy: `NOCHECK` → reconcile → `WITH CHECK CHECK` to re-trust (see
-`../create-fk-orphan/SKILL.md` and `../../_index/constraint-is-a-claim/SKILL.md` for the trust
-ladder). This operational-not-declarative one-liner is shared with `../rebuild-index/SKILL.md` but
-not lifted (two ops — below the N≥3 bar).
+(`is_not_trusted = 1`), so it neither enforces nor helps plans. Where the untrusted state came from
+matters: a *fresh* declarative FK or CHECK add re-validates and trusts itself (F9/F10), so it does not
+need this op — this op re-trusts a constraint left untrusted **another way**, a legacy hand-written
+`WITH NOCHECK` or one disabled for a bulk load. See `../create-fk-orphan/SKILL.md` (which auto-trusts)
+and `../../_index/constraint-is-a-claim/SKILL.md`. This operational-not-declarative one-liner is shared
+with `../rebuild-index/SKILL.md` but not lifted (two ops — below the N≥3 bar).
 
 ## How it flips (the specifics only)
 It does not flip between declarative SSDT buckets — it is outside the declarative model. As a script
@@ -62,9 +70,9 @@ nothing and invisible to the optimizer.
 
 ## On the record
 
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`), record register.
-As an operational step it usually rides inside a larger change (the FK-with-orphans remedy); these
-are its own lines.
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/toggle-trust.md`. As an operational step it usually rides
+inside a larger change (a bulk load, or re-trusting a legacy untrusted constraint); these are its own lines.
 
 **Review & release**
 - Ships as a scripted change — a constraint's enforcement/trust state cannot be expressed as a table

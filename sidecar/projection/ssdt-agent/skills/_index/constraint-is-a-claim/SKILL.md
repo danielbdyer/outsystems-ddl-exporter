@@ -67,6 +67,11 @@ Steps 2 and 3 are **DacFx's own output**, not something you write. So a reconcil
 reconciled, step 3 fails and the whole publish **blocks with `Msg 547`**; there is no
 silent-untrusted middle state on the declarative path.
 
+**A CHECK constraint is the same** (proven, F10): a declarative `CHECK` add generates the identical
+`WITH NOCHECK ADD` + `WITH CHECK CHECK`, so it trusts itself over clean data and blocks `Msg 547` over
+a violating row — reconcile the violating rows in a pre-deploy, no manual trust step. (A UNIQUE index
+is different: it is build-or-block, `Msg 1505`, with no trust state — see below.)
+
 **The anti-pattern:** hand-writing `WITH NOCHECK ADD` in a script and skipping the re-validation.
 *That* leaves the key **untrusted** (`is_not_trusted = 1`) — protecting nothing reliably and ignored
 by the optimizer, a guarantee no one can trust. Never do this; let the declarative add generate both

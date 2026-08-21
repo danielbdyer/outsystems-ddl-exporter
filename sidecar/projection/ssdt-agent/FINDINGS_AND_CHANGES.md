@@ -119,6 +119,24 @@ Each was published to a throwaway database on the live server; the database name
   silent-untrusted outcome on the declarative path — that comes only from a hand-written
   `WITH NOCHECK` add with no re-validation.
 
+- **F10 — the constraints family: add-check is create-fk's twin; add-unique is build-or-block; DEFAULTs never backfill. (PROVEN 2026-08-21)**
+  - **add-check** (DBs `db_chk`, `db_chkv`): a declarative CHECK add generates the **same two
+    statements as an FK** (F9) — `ALTER TABLE [dbo].[Order] WITH NOCHECK ADD CONSTRAINT
+    [CK_Order_Total] CHECK (Total > 0);` then `ALTER TABLE [dbo].[Order] WITH CHECK CHECK CONSTRAINT
+    [CK_Order_Total];`. Clean data → LAND, `is_not_trusted = 0` (trusts itself). One violating row
+    (`Total = -5`) → **BLOCK `Msg 547`** ("the ALTER TABLE statement conflicted with the CHECK
+    constraint … column 'Total'"). So add-check = create-fk: reconcile the violating rows in a
+    pre-deploy or the add blocks; no manual trust step. The FK-trust law (F9) is the constraint law.
+  - **add-unique** (a unique **INDEX** — the v2 emitter shape): **build-or-block, no trust state**
+    (an index is always enforced once built). A duplicate → `Msg 1505` ("duplicate key value is
+    (A)"); a **second NULL** → `Msg 1505` ("… (<NULL>)") — a unique index permits exactly **one**
+    NULL. Clean values (including one NULL) build. "Unique among the filled values" is a **filtered
+    unique index** (`WHERE col IS NOT NULL`).
+  - **add-default / modify-default** (raw T-SQL): a DEFAULT fills only **new** rows and **never
+    backfills** existing ones — proven: an existing `NULL` stayed `NULL`, an existing value
+    unchanged, only a fresh insert got the default. No validation, no block, no data touched;
+    modify-default is a DROP+ADD of the same class.
+
 ---
 
 ## Part 3 — The change plan, generalized (the doctrine every op inherits)
@@ -278,9 +296,17 @@ child whose key declares it, and does not chain without each level's own cascadi
 The FK-trust correction was propagated so no surface still teaches the manual trust step:
 `skills/author-pr` (the worked example), `skills/_index/constraint-is-a-claim` (the reconcile-first
 pattern), `skills/prove-on-dacpac` (the blocked-publish fix), `skills/operations/keys-and-refs` (the
-TOC), the five keys `skills/op/*`, and the five `sample-prs/*`. (Deferred to the constraints-family
-pass, same law: `add-check`, `add-unique`, `toggle-trust`, `skills/operations/constraints.md` —
-CHECK/UNIQUE validate the same `WITH NOCHECK ADD` + `WITH CHECK CHECK` way; confirm by capture there.)
+TOC), the five keys `skills/op/*`, and the five `sample-prs/*`.
+
+**Constraints family — DONE (2026-08-21, F10).** `add-check` proved create-fk's twin by script
+capture (`db_chk` clean → trusts itself; `db_chkv` violating → `Msg 547`); `add-unique` proved
+build-or-block (`db_uq` plain blocks on the second NULL `Msg 1505`; `db_uqf` filtered → builds,
+`has_filter = 1`); DEFAULTs proved no-backfill. Surfaces brought to the v2 bar and the settled law:
+the two `sample-prs/{add-check,add-unique}.md` (gold form, fresh proof), the five constraint
+`skills/op/{add-check,add-unique,add-default,modify-default,toggle-trust}`, `constraint-is-a-claim`
+(the CHECK-is-the-same note), and `skills/operations/constraints.md` (the TOC). `toggle-trust` reframed:
+under F9/F10 a fresh declarative add auto-trusts, so it is for a legacy/bulk-load untrusted constraint,
+not the create-fk-orphan remedy.
 
 ### 6.5 — The converged skill form (the high-water mark to replicate)
 
