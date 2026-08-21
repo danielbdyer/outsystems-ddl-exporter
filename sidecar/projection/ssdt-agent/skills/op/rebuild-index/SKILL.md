@@ -11,8 +11,13 @@ description: Use when the developer says "the index is fragmented, rebuild it", 
 > it to a scheduled maintenance job keyed to measured fragmentation. Prove the no-delta before
 > classifying it as a schema change.
 
-> **Proven precedent:** `../../../sample-prs/rebuild-index.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: OUT-OF-BAND — no dacpac delta.** A rebuild/reorganize is maintenance against physical
+> storage, not a schema change; it does not ship in the dacpac. Route it to a scheduled maintenance job
+> keyed to measured fragmentation. There is no publish to prove — the proof is the refusal (kept out of
+> the project); `ALTER INDEX … REBUILD` in a post-deploy script re-runs on every publish (anti-idempotent).
+>
+> **Proven precedent:** `../../../sample-prs/rebuild-index.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "the index is fragmented, rebuild it", "reorganize the index to fix performance", "run index maintenance on this table".

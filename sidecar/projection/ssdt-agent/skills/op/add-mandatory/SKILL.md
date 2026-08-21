@@ -55,6 +55,9 @@ is a genuine can't-insert-NULL on a *new* column, cured by supplying a value.
   decide the value.
 - >1M rows → **added scrutiny**: at production row counts the column add may run long or block
   writes (schedule a window).
+- **the new required column will be filtered or looked up** → consider an index, weighing cardinality:
+  a high-selectivity column (an external key, a code) benefits; a low-cardinality one (a Status, a
+  flag) usually does not. See `../../_index/when-to-index/SKILL.md`.
 
 ## Prove it
 With a default, Strict publishes clean and the delta shows the `DEFAULT`. Drop the default and prove
@@ -117,7 +120,7 @@ default-stamped or later-entered values); every other column in each row is unch
 **Not verified**
 - Application impact — inserts that omit this column now rely on the default; with no default, an
   insert that omits it is blocked with "Cannot insert NULL". Whether application code supplies a
-  meaningful value rather than leaning on the default is not confirmed here (@app-owner).
+  meaningful value rather than leaning on the default is not confirmed here (app owner).
 - Other environments — Test, UAT, and Prod may hold different row counts the disposable copy of Dev
   cannot see, and if the column ships without an explicit default, a profile with
   `GenerateSmartDefaults` enabled may silently stamp a value this copy did not. Run the verification

@@ -11,8 +11,14 @@ description: Use when the developer says "we don't need that index anymore", "re
 > query), not structural (lost rows), so the honest proof lives outside the dacpac: usage
 > evidence, not a clean publish. Prove "unused" before classifying.
 
-> **Proven precedent:** `../../../sample-prs/drop-index.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ONE RELEASE, in place (reversible).** SSDT emits `DROP INDEX`; no row is touched and
+> the drop reverses by re-creating the index. The risk is behavioral (a slower query), not structural,
+> so the proof is usage evidence, not a publish — `sys.dm_db_index_usage_stats` showing zero
+> seeks/scans/lookups over a representative window. If the index was on a foreign-key column, dropping
+> it brings back the unindexed-join scan (F11, `../../_index/when-to-index/SKILL.md`); confirm nothing relies on it.
+>
+> **Proven precedent:** `../../../sample-prs/drop-index.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "we don't need that index anymore", "remove the index, it's not used".
@@ -85,7 +91,7 @@ re-creating it runs a write-blocking build whose duration scales with row count.
 **Not verified**
 - Application impact — a disposable copy carries no production query load, so whether any query
   depends on this index, and would slow down once it is gone, is not shown by the publish. Usage
-  evidence from a prod-shaped source is what settles it (@app-owner).
+  evidence from a prod-shaped source is what settles it (app owner).
 - Other environments — usage patterns differ by environment; zero seeks in one environment's window
   does not prove zero in Test, UAT, or Prod. Run the usage query in each before promotion.
 - Reversibility — re-creating the index restores the structure, but the rebuild time and the

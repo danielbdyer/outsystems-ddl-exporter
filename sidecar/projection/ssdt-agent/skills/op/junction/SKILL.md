@@ -42,6 +42,9 @@ in. Do not re-derive the orphan/claim mechanics here.
   lead must review it because existing data is modified.
 - either parent table is large → the foreign-key validation scans both parents → added scrutiny
   at >1M rows: the scan may block writes or run long, so schedule a window.
+- **the second foreign-key column is not covered for reverse joins** → the composite primary key
+  `(FK1, FK2)` makes a join from `FK1` seekable but not one from `FK2` alone → recommend a nonclustered
+  index on `FK2`. See `../../_index/when-to-index/SKILL.md`.
 
 ## Prove it
 A Strict publish creates the bridge clean and is not blocked — proving every seeded pair has both
@@ -102,7 +105,7 @@ application writes pairs into it, dropping the table discards them, and any seed
 - Application impact — a brand-new bridge nothing yet reads or writes does not change existing
   behaviour; any application code that writes pairs is not exercised here, and once the table is
   live an inserted pair pointing at a missing parent is rejected (error 547), a duplicate pair by
-  the composite primary key (@app-owner).
+  the composite primary key (app owner).
 - Other environments — the orphan probe was proven on a disposable copy of Dev only; if the bridge
   ships with seed pairs, Test, UAT, and Prod may hold parent rows this copy cannot see — run the
   verification queries before promotion.

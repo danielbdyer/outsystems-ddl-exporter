@@ -40,6 +40,9 @@ concerns caught at build time, not the deployment being blocked by the rows in t
 - FK to a parent not yet in the project → still the same single schema change, but the build gates
   it on dependency order (the parent must exist first) — a dependency concern, not the data driving
   a different disposition.
+- **the new table has foreign-key or frequently-queried columns** → recommend a nonclustered index on
+  each foreign-key column (SQL Server does not index the child side — F11) and on any column the app
+  will filter, join, or sort by. See `../../_index/when-to-index/SKILL.md`.
 
 ## Prove it
 Strict publish must succeed clean, and the generated delta must be a single `CREATE TABLE
@@ -93,7 +96,7 @@ go with it.
 **Not verified**
 - Application impact — a new table nothing yet reads or writes does not change existing behaviour,
   but any application code intended to read or write it is not exercised by the disposable copy
-  (@app-owner).
+  (app owner).
 - Dependencies — every referenced foreign-key parent must exist in the project, and the new `.sql`
   file must be included by the project glob; the clean Strict publish confirms this only for the
   parents present in this dacpac, not for other environments' project structure.

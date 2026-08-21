@@ -49,6 +49,9 @@ the untrusted key, not the block; the block is the constraint doing its job. See
   `../../_index/multi-phase/SKILL.md`).
 - >1M rows → added scrutiny: the re-validation scans the table and the pre-deploy `DELETE` runs over
   the rows — either may block writes or run long (schedule a window).
+- **the new child column is not auto-indexed** → recommend a nonclustered index on it. SQL Server
+  indexes the parent side of a foreign key, never the child, so the join scans until it is indexed
+  (F11). See `../../_index/when-to-index/SKILL.md`.
 
 ## Prove it
 First prove the add is blocked and by how much — the orphan count via `LEFT JOIN ... WHERE p.<pk> IS
@@ -63,7 +66,9 @@ some Orders point at Customers that do not exist, and the key will not validate 
 there. So this release adds a pre-deploy step that clears the orphans first, then the foreign key adds
 and ends trusted in the same publish. A dev lead should review it, because it changes existing data. The
 call that is yours: how the orphans are fixed — repoint them to a real Customer, add the missing
-Customers, or delete the orphaned Orders.
+Customers, or delete the orphaned Orders. Separately, the CustomerId column is not indexed — a foreign
+key does not index its child side — so a nonclustered index on it is worth adding, in this PR or as a
+fast follow.
 
 ## The reasoning (in conversation)
 The block is the constraint working, not a problem to dodge: `Msg 547` means a child has no parent, and

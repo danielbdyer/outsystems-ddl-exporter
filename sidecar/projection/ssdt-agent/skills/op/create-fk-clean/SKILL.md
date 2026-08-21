@@ -44,6 +44,9 @@ family; the orphan-reconcile path lives in `../create-fk-orphan/SKILL.md`.
   reconcile-then-add change; route to `../create-fk-orphan/SKILL.md`.
 - parent/child table large → the validation scans the rows → added scrutiny at >1M rows: the scan may
   block writes or run long, so schedule a window.
+- **the new child column is not auto-indexed** → recommend a nonclustered index on it. SQL Server
+  indexes the parent side of a foreign key, never the child, so the join scans until it is indexed
+  (F11). See `../../_index/when-to-index/SKILL.md`.
 
 ## Prove it
 Run the orphan probe FIRST: `SELECT COUNT(*) FROM child c LEFT JOIN parent p ON c.<fk> = p.<pk> WHERE
@@ -57,7 +60,9 @@ create-fk-orphan.
 You asked to add the reference from Order to Status. On a copy of Dev, every Order already points at a
 real Status — no orphans — so the foreign key adds and re-validates in one publish and ends trusted, in
 a single release with nothing to reconcile first. One thing changes going forward: an insert or update
-that points an Order at a Status that does not exist is now rejected.
+that points an Order at a Status that does not exist is now rejected. One recommendation: the StatusId
+column is not indexed — SQL Server does not index the child side of a foreign key — so the Order → Status
+join scans Order; a nonclustered index on StatusId is worth adding, in this PR or as a fast follow.
 
 ## The reasoning (in conversation)
 A foreign key is the clearest case of the existing rows setting the shape, not the script: the same

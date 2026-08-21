@@ -137,6 +137,14 @@ Each was published to a throwaway database on the live server; the database name
     unchanged, only a fresh insert got the default. No validation, no block, no data touched;
     modify-default is a DROP+ADD of the same class.
 
+- **F11 — a foreign key does not auto-index the child column; an index is a separate act. (PROVEN 2026-08-21)**
+  On a scratch DB (`ix_probe`), after `child.ParentId` gets a foreign key to `parent(Id)`, `sys.indexes`
+  for `dbo.child` shows only `PK_c` (CLUSTERED on `Id`) — **nothing on `ParentId`**. A `CREATE INDEX
+  IX_child_ParentId ON child(ParentId)` then adds a NONCLUSTERED index on the column. SQL Server indexes
+  the **parent** side of a foreign key (its PK/unique target) but never the **child** column, so every
+  FK we add leaves the join — and the parent-side delete/cascade check — scanning until the child column
+  is indexed by hand. This is the strongest trigger for the `when-to-index` advisory.
+
 ---
 
 ## Part 3 — The change plan, generalized (the doctrine every op inherits)

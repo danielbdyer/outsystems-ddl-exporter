@@ -47,7 +47,9 @@ the publish loop, see `../../prove-on-dacpac/SKILL.md`.
 You asked to add an optional attribute — the safest change in the catalog. On a disposable copy of
 your populated data, SSDT just runs `ALTER TABLE ... ADD ... NULL`, and existing rows simply get
 NULL, so nothing already in the table can conflict with it. It published clean and nothing was lost.
-There's nothing to decide here; it's ready to ship.
+The one thing worth a thought: if this column will be filtered or searched on a table that grows, it
+may want an index (see `../../_index/when-to-index/SKILL.md`); a new optional column nothing queries
+does not, and then it's ready to ship.
 
 ## The reasoning (in conversation)
 An optional add never gets blocked, because NULL is always a valid value for the rows already in the
@@ -82,7 +84,7 @@ holds NULL at deploy; once the application writes values into it, dropping the c
 
 **Not verified**
 - Application impact — a nullable add does not change existing application behaviour, but any code
-  intended to populate the new column is not exercised by the disposable copy (@app-owner).
+  intended to populate the new column is not exercised by the disposable copy (app owner).
 - Production scale and timing — the add is metadata-only on modern SQL Server with
   `IgnoreColumnOrder=True`; that it stays metadata-only at production row counts and on the target's
   edition and version is not confirmed by the small copy.
