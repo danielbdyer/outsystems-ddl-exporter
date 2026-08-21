@@ -80,6 +80,14 @@ Each was published to a throwaway database on the live server; the database name
   re-publish → stable. (DBs `mm_ax`, `mm_2r`.) The tightening class — narrow and make-mandatory —
   is one pattern.
 
+- **F8 — a clean foreign key lands trusted in one release; only the orphan case is untrusted. (PROVEN)**
+  Adding `FK_Order_Status` (`Order.StatusId → Status.Id`) with every child row already valid and **no
+  pre-deploy** → published clean, `is_not_trusted = 0`. The untrusted result in F5 came from the
+  pre-deploy reconcile the orphan required — DacFx adds the key `WITH NOCHECK` only when a pre-deploy
+  is present. So `create-fk-clean` is one release, trusted; `create-fk-orphan` is one release + a fork
+  + the post-deploy `WITH CHECK CHECK`. A CHECK on clean data with no pre-deploy is trusted the same
+  way. (DBs `pb_fkc`, `pb_chk`, 2026-08-21.)
+
 ---
 
 ## Part 3 — The change plan, generalized (the doctrine every op inherits)
