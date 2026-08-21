@@ -74,8 +74,8 @@ CREATE TABLE dbo.Customer
     Name            NVARCHAR(100)   NOT NULL,
 
     -- make-mandatory target. Default state is NULLABLE. Editing this to NOT NULL is the
-    -- one-line change whose outcome the DATA decides — and on a populated table the guard is
-    -- table-has-rows, so it blocks the change even after the NULLs are backfilled away.
+    -- one-line change whose outcome the existing rows determine — and on a populated table the guard
+    -- is table-has-rows, so it blocks the change even after the NULLs are backfilled away.
     Email           NVARCHAR(256)   NULL,
 
     -- rename-attribute target. Rename this to MobileNumber by editing the name. Without a

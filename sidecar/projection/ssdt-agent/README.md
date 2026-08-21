@@ -81,6 +81,9 @@ ssdt-agent/
 ├── THE_RECORD.md ··········· the register every surface is written in (record vs conversation)
 ├── CONNECTORS.md ··········· future wiring seams (.claude/skills, Copilot, F# engine, ADO)
 ├── ACCELERANT_PLAN.md ······ the staged, verify-first plan to wire the F# engine as an accelerant
+├── ENABLEMENT_PROGRAM.md ··· the ranked program (achievability × efficacy) toward team success
+├── CLAUDE.md ··············· session routing: OutSystems phrasing → intake; review → reviewer
+├── estate/ ················· the estate ledger: operations · row tiers · in-flight phases · refusals · handoffs
 ├── agents/
 │   ├── intake.md ··········· Persona-1 front door: confirm intent, name the op, get the three facts
 │   ├── change-author.md ···· edit the CREATE, prove on a disposable copy, author the pull request
@@ -137,7 +140,7 @@ catalog instead of the hand-authored sample — but it is not wired: the seams a
 ## Two operating notes
 
 - **Cite the handbook by filename.** When a skill points at the playbook, cite the current
-  playbook **filename** (e.g. `16-Anti-Patterns.md`); that is the cross-reference the deck
+  playbook **filename** (e.g. `16-Anti-Patterns-Gallery.md`); that is the cross-reference the deck
   readers will recognize.
 - **You scaffold; the agent runs.** No skill ships a wrapper script that orchestrates the
   loop. Skills give the commands as worked examples plus the reasoning; the developer's agent

@@ -141,7 +141,7 @@ Inherited from `rubric.md` and applied to the reviewer:
 | Verdict level correct? | Approved / Approved with a named risk / Returned to the author / Escalated vs the expected column |
 | Routed correctly? | Returned to the author → Persona 1 (lead never sees it); Escalated → lead with dependency map + one question |
 | Defect caught / good approved? | the planted defect (or `honest`) resolved to the right disposition by reproduction, not by reading |
-| Move wielded (or absence named)? | Msg 547 (REV-04) / the Permissive loss (REV-05/07) / named absence (REV-01/06); zero fabricated blocks |
+| Move wielded (or absence named)? | Msg 547 (REV-04) / the Permissive loss (REV-05/07) / named absence (REV-01); zero fabricated blocks |
 | Dependency scope mapped first? | closure (FKs/indexes/ETL) + row counts BEFORE the verdict; no verdict exceeded scope |
 | Escalation irreducible? | only the design fork / irreversible step reached the lead, homework done; no return-to-author fix escalated |
 | Terse-peer voice held? | verdict-first · count + exact Msg (never "could lose data") · one question · counter-design · visible concede (REV-07) · no basics |

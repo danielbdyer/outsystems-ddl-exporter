@@ -1,6 +1,6 @@
 ---
 name: change-author
-description: THE conductor for Persona 1 (the OutSystems-native developer authoring a schema change). Use after intake hands over a change-spec. Drafts the desired-state .sql edit (edit the CREATE, never write ALTER), classifies the change provisionally, then proves the classification against real-shaped data on a disposable copy of Dev to establish how the change actually ships and who must review it, remediates per the operation knowledge, and produces both surfaces: the pull request a reviewer approves by reading (via author-pr) and the developer conversation that explains why. Composes classify-mechanism, prove-on-dacpac, talk-to-local-sql, author-pr, the per-op skill (skills/op/<op-slug>/SKILL.md), and the skills/_index/* knowledge layer. Adaptive: collapses straight to the verdict for a trivial single-phase loosening.
+description: "THE conductor for Persona 1 (the OutSystems-native developer authoring a schema change). Use after intake hands over a change-spec. Drafts the desired-state .sql edit (edit the CREATE, never write ALTER), classifies the change provisionally, then proves the classification against real-shaped data on a disposable copy of Dev to establish how the change actually ships and who must review it, remediates per the operation knowledge, and produces both surfaces: the pull request a reviewer approves by reading (via author-pr) and the developer conversation that explains why. Composes classify-mechanism, prove-on-dacpac, talk-to-local-sql, author-pr, the per-op skill (skills/op/<op-slug>/SKILL.md), and the skills/_index/* knowledge layer. Adaptive: collapses straight to the verdict for a trivial single-phase loosening."
 ---
 
 # Change Author
@@ -37,10 +37,12 @@ developer should experience:
 > would you prefer? Here's the proof."
 
 ## Your input — the change-spec from intake
-The named catalog operation(s), the target object, the desired-state edit (described, not yet
-SQL), the three state-variables (each `known` or `unknown — prove it`), and the business answer to
-intake's one question. If intake didn't run (you were invoked cold), do its job first: name the
-operation, get the three state-variables, ask the one business question. Then proceed.
+The **op-slug(s)** with their per-op skill paths (`skills/op/<op-slug>/SKILL.md`), the pre-flagged
+**shared concern** (`skills/_index/<concern>/SKILL.md`, when one governs), the target object, the
+desired-state edit (described, not yet SQL), the three state-variables (each `known` or
+`unknown — prove it`), and the business answer to intake's one question. If intake didn't run (you
+were invoked cold), do its job first: name the op-slug via `skills/confirm-intent`, get the three
+state-variables, ask the one business question. Then proceed.
 
 ## The three state-variables that decide how the change ships
 Everything you prove is in service of pinning these down **by evidence, not recollection**:
@@ -90,8 +92,10 @@ It is never your final answer for anything past a single in-place schema change 
 Invoke `skills/prove-on-dacpac`. It builds the `.sqlproj` to a dacpac, previews the **real**
 SSDT-generated delta (`/Action:Script`), then publishes to the disposable `ProvingGround` DB under:
 - **Strict** profile — the one that blocks on possible data loss (BlockOnPossibleDataLoss=True,
-  GenerateSmartDefaults=False, DropObjectsNotInSource=True). A clean Strict publish ⇒ the data does
-  not change how the change ships.
+  GenerateSmartDefaults=False, DropObjectsNotInSource=True — the first two mirror production; the
+  drop axis is the **diagnostic posture**: production runs DropObjectsNotInSource=False, where
+  absence is a phantom, not a drop — see prove-on-dacpac's posture split). A clean Strict publish ⇒
+  the data does not change how the change ships.
 - **Permissive** profile — run only when Strict is blocked; it lets the change proceed so the data
   hash can be captured before and after, showing *exactly* what the block was protecting against.
 
@@ -125,8 +129,12 @@ DB is warm before proving.
 - Delta shows a **shadow-table rebuild / drop-by-absence** → name it to the developer explicitly.
 
 ### 5. Remediate per the operation knowledge
-The proof told you what the data does; the operation entry tells you the fix. Author it as a
-**change set**, not a verbal recommendation:
+The proof told you what the data does; the operation entry tells you the fix. When the remedy is a
+**deployment script** (pre-deploy, post-deploy, or ad-hoc), walk `skills/deploy-scripts` — its six
+gates decide whether a script is needed at all (pure-declarative first — the precise change is often
+*no script*), where it goes, its permanence class and header (the folder is the contract), the
+idempotency proof, and its retirement condition. Author the fix as a **change set**, not a verbal
+recommendation:
 - **Pre-deploy backfill** (`Script.PreDeployment.sql`) — fill the NULLs / dedupe before the
   declarative NOT NULL or unique constraint lands. Use the business answer from intake for the value.
   (For make-mandatory, remember the backfill is *necessary but not sufficient* — pair it with the
@@ -135,8 +143,10 @@ The proof told you what the data does; the operation entry tells you the fix. Au
 - **Post-deploy idempotent MERGE** (`Script.PostDeployment.sql` → `Data/Seed.sql`) — for static-data
   seeds and post-deployment backfills. Guard `WHEN MATCHED` so a no-op redeploy affects **0 rows**
   and hashes identical; an unconditional `WHEN MATCHED` over-writes and is wrong.
-- **FK reconcile** — `NOCHECK` → backfill/delete orphans per the business answer → `WITH CHECK CHECK`.
-  Prove the end state is **trusted** (`is_not_trusted=0`); a constraint left at NOCHECK protects nothing.
+- **FK reconcile** — reconcile the orphans (backfill/delete/repoint) per the business answer in a
+  **pre-deploy**; the declarative add re-validates and trusts the key itself (`WITH NOCHECK ADD` +
+  `WITH CHECK CHECK` in one publish, DacFx's own output — F9). Prove the end state is **trusted**
+  (`is_not_trusted=0`); a hand-written NOCHECK left unvalidated protects nothing.
 - **Multi-phase plan** — when old+new code must coexist, lay out the per-release phases
   (add → backfill → cut over → drop) as the staged sequence.
 
@@ -220,7 +230,7 @@ contributes — assemble those fragments; do not re-derive the shape.
   (application impact, other environments, production scale, reversibility).
 
 **The trap, if one was caught** — carried into the PR where it lands, named plainly (handbook
-`16-Anti-Patterns.md` = §19): a rename with no refactorlog entry, or a refactorlog cleanup that
+`16-Anti-Patterns-Gallery.md` = §19): a rename with no refactorlog entry, or a refactorlog cleanup that
 severs identity (`_index/identity-and-refactorlog`) · an optimistic NOT NULL or over-eager narrowing
 (`_index/tightening-class`) · a forgotten FK check (`_index/constraint-is-a-claim`). Catch it in the
 delta or the blocked publish, not after a hypothetical deploy — take the trap's WHY from its `_index`
@@ -281,7 +291,9 @@ its `Msg` and row counts + the clean Strict re-run), the full change set, the na
 reproduces every claim on its own isolated DB rather than trusting your word — and it is the source
 of the PR body (`skills/author-pr`; the Azure DevOps connector in `CONNECTORS.md`). Hand the packet
 to `reviewer` and let its disposition — approved, approved with a named risk, returned to the author,
-or escalated (`THE_RECORD.md` §6) — gate the change.
+or escalated (`THE_RECORD.md` §6) — gate the change. When the packet or the change-spec is captured
+as a file (a real handoff between separate sessions), its home is `estate/handoffs/<change-id>/` —
+transient, swept at merge; the pull request is the durable record (`estate/README.md`).
 
 ### The return leg — a change sent back to the author (you are the fix-renderer)
 When the reviewer returns the change to the author — a real defect fixable without the lead (a

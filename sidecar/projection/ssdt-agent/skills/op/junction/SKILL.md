@@ -5,12 +5,19 @@ description: Use when the developer says "make this a many-to-many", "a Student 
 
 # Junction (M:N bridge table)
 
-> **Default (provisional — the data decides).** Ships as a single schema change, applied in
+> **Default (provisional — prove before you classify).** Ships as a single schema change, applied in
 > place: a new `CREATE TABLE` whose composite primary key spans two foreign key columns; no
 > existing data is read or written. A dev lead must review this: it adds two cross-table
 > relationships. Prove both sides carry no orphan pairs before classifying — if the bridge is
 > seeded with pairs referencing missing parents, the publish is blocked and it routes to
 > `../create-fk-orphan/SKILL.md`.
+
+> **The pull request.** `../../author-pr/SKILL.md` is the ten-section template every change fills;
+> the worked instance for this op is `../../../sample-prs/junction.md` — a complete PR proven live on
+> this branch. **Ships as ONE RELEASE, applied in place** — one `CREATE TABLE` whose composite
+> primary key spans two foreign key columns (proven live, 2026-08-21: `dbo.CustomerProduct` landed
+> clean, both foreign keys trusted; a duplicate pair rejected `Msg 2627`, an orphan pair `Msg 547`).
+> Seed pairs referencing a missing parent block the publish and route to `../create-fk-orphan/SKILL.md`.
 
 ## OutSystems phrasing
 "make this a many-to-many", "a Student can have many Courses and a Course many Students", "add a bridge entity".
@@ -35,6 +42,9 @@ in. Do not re-derive the orphan/claim mechanics here.
   lead must review it because existing data is modified.
 - either parent table is large → the foreign-key validation scans both parents → added scrutiny
   at >1M rows: the scan may block writes or run long, so schedule a window.
+- **the second foreign-key column is not covered for reverse joins** → the composite primary key
+  `(FK1, FK2)` makes a join from `FK1` seekable but not one from `FK2` alone → recommend a nonclustered
+  index on `FK2`. See `../../_index/when-to-index/SKILL.md`.
 
 ## Prove it
 A Strict publish creates the bridge clean and is not blocked — proving every seeded pair has both
@@ -63,7 +73,8 @@ just two loose columns and seeding pairs before both parents exist — then the 
 deploy.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The fragment this op contributes to the pull request (`../../author-pr/SKILL.md` is the template; the
+worked instance is `../../../sample-prs/junction.md`).
 
 **Review & release**
 - A dev lead must review this: two cross-table relationships are added.
@@ -94,7 +105,7 @@ application writes pairs into it, dropping the table discards them, and any seed
 - Application impact — a brand-new bridge nothing yet reads or writes does not change existing
   behaviour; any application code that writes pairs is not exercised here, and once the table is
   live an inserted pair pointing at a missing parent is rejected (error 547), a duplicate pair by
-  the composite primary key (@app-owner).
+  the composite primary key (app owner).
 - Other environments — the orphan probe was proven on a disposable copy of Dev only; if the bridge
   ships with seed pairs, Test, UAT, and Prod may hold parent rows this copy cannot see — run the
   verification queries before promotion.

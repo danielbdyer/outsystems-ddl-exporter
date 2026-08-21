@@ -1,0 +1,14 @@
+{
+  "estate": {
+    "tables": "Modules/**/*.sql",
+    "staticData": ["Data/Seed.sql"]
+  },
+  "container": {
+    "name": "twin-ssdt-agent",
+    "port": 21434
+  },
+  "seed": 7,
+  "scenarios": {
+    "default": {}
+  }
+}

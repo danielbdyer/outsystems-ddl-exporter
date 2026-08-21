@@ -5,13 +5,25 @@ description: Use when the developer says "change the text field to a date", "sto
 
 # Retype explicit (value-reshaping conversion)
 
-> **Default (provisional — the data decides; prove before you classify).** Ships across multiple
+> **Default (provisional — prove before you classify).** Ships across multiple
 > releases (multiple pull requests): add a new column of the target type, convert the values that
 > convert with `TRY_CONVERT`, handle the rows that do not, then drop the old column and rename the
 > new one in — the old and new types coexist while the application migrates. A dev lead must review
 > this: existing data is reshaped and the old column is dropped; if non-convertible rows are dropped
 > rather than reconciled, a principal must review it, because data is removed and cannot be undone.
 > Count the non-convertible rows before promising anything.
+
+> **SHIP terminal: MULTI-PHASE (several releases).** Add a new column of the target type (nullable,
+> additive — one clean release), convert the values with `TRY_CONVERT`, settle the rows that do not
+> convert, move the application, then drop the old column. The **drop-old-column leg is itself a
+> TWO-RELEASE** (a pre-deploy `DROP COLUMN` with the model lagging, then the model drops it —
+> `delete-attribute`'s pattern), because a bare single-step type change on a populated table is
+> refused by `BlockOnPossibleDataLoss`. Proven live 2026-08-21.
+
+> **Proven precedent:** `../../../sample-prs/retype-explicit.md` — the worked instance of the
+> `../../author-pr/SKILL.md` template for this op. Its *What proving showed* carries the real
+> bare-retype `Msg 50000` block, the `TRY_CONVERT` count (1 of 5 unconverted), the clean additive
+> add, and the drop-old-column block.
 
 ## OutSystems phrasing
 "change the Text attribute to a Date", "make this an Integer", "store it as a number now".
@@ -74,15 +86,19 @@ a bare single-step `ALTER COLUMN` that fails or truncates mid-deploy; counting t
 rows first is what turns "change the type" into a plan instead of a gamble.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+Assemble the pull request from the `../../author-pr/SKILL.md` template; the worked instance for
+this op is `../../../sample-prs/retype-explicit.md`. **SHIP terminal: MULTI-PHASE** (several
+releases), the drop-old-column leg a TWO-RELEASE.
 
 **Review & release**
 - A dev lead must review this: existing data is reshaped — values are converted into a new column of
   the target type and the old column is dropped.
-- Ships across multiple releases (multiple pull requests): add a new column of the target type,
-  convert the convertible values with `TRY_CONVERT`, handle the non-convertible rows, then drop the
-  old column and rename the new one in — the old and new types coexist while the application
-  migrates, and the conversion cannot be expressed as a table definition.
+- Ships across multiple releases (multiple pull requests): add a new column of the target type
+  (nullable, additive — one clean release), convert the convertible values with `TRY_CONVERT`,
+  handle the non-convertible rows, then drop the old column and rename the new one in. The old and
+  new types coexist while the application migrates. The **drop-old-column leg is a two-release**
+  (`delete-attribute`'s pattern): a bare single-step type change is refused, and the drop of the
+  populated old column is refused by the same guard.
 - When non-convertible rows are dropped rather than reconciled: a principal must review this — data
   is removed and the removal cannot be undone.
 - Added scrutiny, when it applies: `Added scrutiny: at production row counts the convert-and-swap
@@ -107,7 +123,7 @@ durable. Not auto-reversed.
 
 **Not verified**
 - Application impact — every read and write path still using the old type breaks once the column is
-  swapped; that every caller has moved to the new type is not confirmed here — @app-owner confirms
+  swapped; that every caller has moved to the new type is not confirmed here — app owner confirms
   it.
 - Other environments — Test, UAT, and Prod may hold values that convert differently, or more
   non-convertible rows than this copy; run the `TRY_CONVERT` probe in each environment before the

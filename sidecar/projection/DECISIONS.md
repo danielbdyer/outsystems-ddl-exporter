@@ -30823,3 +30823,49 @@ procedure.
   server's own error, and the same bundle with the unique constraint is green.
   This converts the "IR cannot see server-side constraints" class from
   unknown-unknowns into a measured pass/fail.
+
+---
+
+## 2026-08-11 — The Twin excludes VIEWS from the wipe and the mint (a view carries no data); + the `Readback` "furniture" → "state schema" rename (harvested from the #687 branch, decided there 2026-07-20)
+
+**The decision (a new named rule).** A **view carries no data — it is excluded from the twin's
+pre-mint wipe and from the mint, and retained in the published schema.** This sits beside law 5
+(the `[twin]` state schema is the tool's own, never estate) and law 6 (zero-orphan mint): the
+data plane is estate *tables* only; views and the state schema are the two classes of non-estate
+kinds the read-back drops before wipe/mint sees the catalog.
+
+**The bug it fixes.** `twin up` against an estate containing a view refused with
+`twin.wipe.failed` — the clean-slate wipe issued a `DELETE` against the view, which SQL Server
+refuses for a view over multiple base tables ("not updatable because the modification affects
+multiple base tables"). The mint was equally broken (an `INSERT` into the view under
+`WipeAndLoad`). **Root cause:** `ReadSide.readSchemaCombined` builds the kind set from
+`INFORMATION_SCHEMA.COLUMNS` with no `BASE TABLE` restriction, so view columns are grouped into a
+`Kind` indistinguishable from a base table; `ActConsent.wipeTargets` and the mint then treat it
+as a data-bearing kind.
+
+**Fix site — Twin-local, zero wider surface (not the shared kernel).** Excluded at the twin
+read-back boundary (`Twin.Runtime/Readback.fs`) via a `sys.views` probe (`readViewKeys`) feeding
+a `stripNonEstate` that drops both the state schema and every view from `read` (the mint) and
+`readSchema` (the wipe/status). The alternative — a global `TABLE_TYPE = 'BASE TABLE'` predicate
+in `ReadSide` — was rejected: `ReadSide` is the shared adapter the canary round-trip, the
+transfer contract, and `LiveProfiler` all rest on, and changing its reconstruction semantics
+would demand canary re-validation for a Twin-only need. The view stays **published** (the schema
+fingerprint is computed from estate files, not the read-back), so `status.LiveTables` also stops
+miscounting views as tables — more correct.
+
+**Naming (DDD, ubiquitous language).** While in `Readback`, the opaque ad-hoc metaphor
+**"furniture"** (for the `[twin]` state table) was renamed to **"state schema"** — the term the
+codebase already uses (`TwinDatabase.StateSchema`, `[twin].[__state]`, `readState`/`StoredState`)
+and the charter's law-5 "self-description". `isTwinFurniture`/`stripTwinFurniture` →
+`isTwinStateSchema` + a shared `stripKinds`/`stripNonEstate`; the `TwinDatabase.fs` doc comments
+follow. Private helpers only; no behavior change from the rename.
+
+**Provenance and verification.** Decided and first verified live on the #687 branch
+(2026-07-20), where the proving ground still carried a `vOrderSummary` view; main has since
+removed views from the ssdt-agent tree (`a5827e8`), so the live proving-ground leg does not
+reproduce here and the **standing witness on main is the regression test**:
+`TwinViewLoopTests` (Docker collection `Twin-Docker`, its own `twin-e2e-view`/21733 fixture,
+which authors its own multi-base-table view) asserts `up` returns `Ok` with the view present,
+base tables mint, the view stays published and queryable, and a re-seed stays deterministic.
+Charter note in `THE_TWIN.md` §6 data-flow. **Re-open trigger:** a need to mint *into* an
+updatable single-table view (none today; estate views are read models).

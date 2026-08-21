@@ -21,7 +21,7 @@ named operation + its data-state into two independent findings — **how** the c
 **who must review it, and why** — and, just as importantly, decides whether the answer can be given
 on sight or must be proven on a disposable copy of Dev.
 
-**Classification from the `.sql` text alone is a guess. The data decides how the change ships.**
+**Classification from the `.sql` text alone is a guess. The existing rows determine how the change ships.**
 This skill produces *provisional* findings; `prove-on-dacpac` is what confirms them. Never deliver a
 provisional finding to the developer as if it were proven.
 
@@ -99,6 +99,13 @@ prior rollback to lean on).
 > developer who hears "the base operation is trivial, but this table holds forty million rows, so
 > the metadata edit becomes a blocking build" stops being ambushed at deploy time by a window they
 > did not plan for.
+
+Both added-scrutiny facts are **lookups against the estate ledger, never recollections**:
+`../../estate/operations.md` answers whether the op-slug has shipped on this estate before (no
+row → first-time, the line stands; a row → cite it and the line is discharged), and
+`../../estate/row-tiers.md` answers the table's row tier (`>1M` → the scale line stands, with
+the tier row as its basis). A scrutiny line that contradicts the ledger is a defect in one of
+the two — fixed in the same change, never waved through (`../../estate/README.md`).
 
 ## The three state-variable flips
 

@@ -5,7 +5,16 @@ description: Use when the developer says "remove the reference", "we don't need 
 
 # Drop a foreign key
 
-> **Default (provisional — the data decides; prove before you classify).** Ships as a single schema change, applied in place — a single `ALTER TABLE ... DROP CONSTRAINT`, no data read or written, and the publish never blocks. A dev lead or an experienced developer should review this: dropping the constraint weakens referential integrity and can shift (regress) query plans.
+> **Default (provisional — prove before you classify).** Ships as a single schema change, applied in place — a single `ALTER TABLE ... DROP CONSTRAINT`, no data read or written, and the publish never blocks. A dev lead or an experienced developer reviews this: dropping the constraint weakens referential integrity and can shift (regress) query plans.
+
+> **SHIP terminal: ONE RELEASE, in place.** Proven live on this branch (DB `db_dropfk`): dropping
+> `FK_Order_Status`, the generated script is the single statement `ALTER TABLE [dbo].[Order] DROP
+> CONSTRAINT [FK_Order_Status];`, the strict publish returns `Successfully published database.`, and
+> the key count in `sys.foreign_keys` is 0 afterward. No data is touched; the publish cannot block —
+> a drop has nothing to validate. `FINDINGS_AND_CHANGES.md` F9.
+>
+> **Proven precedent:** `../../../sample-prs/drop-fk.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op, carrying the live messages.
 
 ## OutSystems phrasing
 "remove the reference", "we don't need the link to Customer anymore", "unhook these entities".
@@ -31,7 +40,9 @@ Strict publishes clean; the delta is a single `DROP CONSTRAINT`; nothing blocks 
 A publish that never blocks is not the same as a change with no consequence. A trusted foreign key is information the optimizer *uses* to shape query plans, not just a guard against orphans — so dropping one has effects the publish can't show you. The mistake to avoid is reading "unhook these entities" as zero-risk just because nothing fails at deploy time.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op — with the live messages — is `../../../sample-prs/drop-fk.md`. SHIP terminal:
+**ONE RELEASE, in place.** The fragment this operation contributes:
 
 **Review & release**
 - A dev lead or an experienced developer should review this: dropping the constraint weakens referential integrity and can shift query plans; no data is touched.

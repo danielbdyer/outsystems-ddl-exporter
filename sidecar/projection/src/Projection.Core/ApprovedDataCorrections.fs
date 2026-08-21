@@ -138,8 +138,8 @@ module ApprovedDataCorrections =
             |> List.distinct
         match matches with
         | [ one ] -> Result.success one
-        | []      -> err "dataCorrection.entity.notFound" (String.concat "" [ "referenced entity '"; coord.Module; "/"; coord.Entity; "' is not in the model" ])
-        | _       -> err "dataCorrection.entity.ambiguous" (String.concat "" [ "referenced entity '"; coord.Module; "/"; coord.Entity; "' is ambiguous across the resolved scope" ])
+        | []      -> err "dataCorrection.entity.notFound" (String.concat "" [ "referenced entity '"; coord.Module; "/"; coord.Entity; "' is not in the model" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
+        | _       -> err "dataCorrection.entity.ambiguous" (String.concat "" [ "referenced entity '"; coord.Module; "/"; coord.Entity; "' is ambiguous across the resolved scope" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
 
     /// A deterministic SHA-256 hex digest over a set of rows' subject cells
     /// (sorted by row identity) — the receipt's before/after content anchor the
@@ -150,10 +150,10 @@ module ApprovedDataCorrections =
             rows
             |> List.map (fun r ->
                 let idText = SsKey.serialize r.Identifier
-                let cellText = match StaticRow.value subject r with Some v -> String.concat "" [ "S:"; v ] | None -> "N"
-                String.concat "" [ idText; cellText ])
+                let cellText = match StaticRow.value subject r with Some v -> String.concat "" [ "S:"; v ] | None -> "N"  // LINT-ALLOW: canonical digest pre-image assembly (the S:/N cell serialization); the pre-image IS a string at the hash boundary — the Fingerprint length-prefix precedent, no AST applies
+                String.concat "" [ idText; cellText ])  // LINT-ALLOW: canonical digest pre-image assembly (the S:/N cell serialization); the pre-image IS a string at the hash boundary — the Fingerprint length-prefix precedent, no AST applies
             |> List.sort
-            |> String.concat ""
+            |> String.concat ""  // LINT-ALLOW: canonical digest pre-image assembly (the S:/N cell serialization); the pre-image IS a string at the hash boundary — the Fingerprint length-prefix precedent, no AST applies
         let bytes = System.Text.Encoding.UTF8.GetBytes canonical
         let hash = System.Security.Cryptography.SHA256.HashData(System.ReadOnlySpan<byte>(bytes))
         (System.Convert.ToHexString hash).ToLowerInvariant()
@@ -171,12 +171,12 @@ module ApprovedDataCorrections =
                     evidenceNames
                     |> List.map (fun n ->
                         match StaticRow.value n r with
-                        | Some v -> String.concat "" [ Name.value n; "=S:"; v ]
-                        | None   -> String.concat "" [ Name.value n; "=N" ])
-                    |> String.concat ""
-                String.concat "" [ idText; "|"; cells ])
+                        | Some v -> String.concat "" [ Name.value n; "=S:"; v ]  // LINT-ALLOW: canonical digest pre-image assembly (the S:/N cell serialization); the pre-image IS a string at the hash boundary — the Fingerprint length-prefix precedent, no AST applies
+                        | None   -> String.concat "" [ Name.value n; "=N" ])  // LINT-ALLOW: canonical digest pre-image assembly (the S:/N cell serialization); the pre-image IS a string at the hash boundary — the Fingerprint length-prefix precedent, no AST applies
+                    |> String.concat ""  // LINT-ALLOW: canonical digest pre-image assembly (the S:/N cell serialization); the pre-image IS a string at the hash boundary — the Fingerprint length-prefix precedent, no AST applies
+                String.concat "" [ idText; "|"; cells ])  // LINT-ALLOW: canonical digest pre-image assembly (the S:/N cell serialization); the pre-image IS a string at the hash boundary — the Fingerprint length-prefix precedent, no AST applies
             |> List.sort
-            |> String.concat ""
+            |> String.concat ""  // LINT-ALLOW: canonical digest pre-image assembly (the S:/N cell serialization); the pre-image IS a string at the hash boundary — the Fingerprint length-prefix precedent, no AST applies
         let bytes = System.Text.Encoding.UTF8.GetBytes canonical
         let hash = System.Security.Cryptography.SHA256.HashData(System.ReadOnlySpan<byte>(bytes))
         (System.Convert.ToHexString hash).ToLowerInvariant()
@@ -194,7 +194,7 @@ module ApprovedDataCorrections =
         match AttributeCoordinate.resolveFull catalog c.Subject with
         | Error _ ->
             err "dataCorrection.subject.unresolved"
-                (String.concat "" [ "correction '"; c.Id; "': subject "; c.Subject.Module; "/"; c.Subject.Entity; "/"; c.Subject.Attribute; " is not in the model" ])
+                (String.concat "" [ "correction '"; c.Id; "': subject "; c.Subject.Module; "/"; c.Subject.Entity; "/"; c.Subject.Attribute; " is not in the model" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
         | Ok (kindKey, subjectName, _) ->
             let kindRows = rowsOfKind catalog rows kindKey
             let predicate = c.Predicate |> Option.defaultValue Predicate.All
@@ -209,15 +209,15 @@ module ApprovedDataCorrections =
                 match c.Derivation with
                 | DataCorrectionDerivationSpec.SameRowAttribute source ->
                     match AttributeCoordinate.resolveFull catalog source with
-                    | Error _ -> err "dataCorrection.source.unresolved" (String.concat "" [ "correction '"; c.Id; "': source attribute is not in the model" ])
+                    | Error _ -> err "dataCorrection.source.unresolved" (String.concat "" [ "correction '"; c.Id; "': source attribute is not in the model" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                     | Ok (srcKindKey, srcName, _) when srcKindKey <> kindKey ->
-                        err "dataCorrection.source.differentKind" (String.concat "" [ "correction '"; c.Id; "': same-row source attribute is on a different kind than the subject" ])
+                        err "dataCorrection.source.differentKind" (String.concat "" [ "correction '"; c.Id; "': same-row source attribute is on a different kind than the subject" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                     | Ok (_, srcName, _) ->
                         let refKeySet =
                             if hasGuard DataCorrectionGuard.SourceReferencesExistingTarget then
                                 match c.ReferencedEntity with
                                 | Some ent -> resolveEntity catalog ent |> Result.map (keySetOf catalog rows)
-                                | None -> err "dataCorrection.referencedEntity.missing" (String.concat "" [ "correction '"; c.Id; "': sourceReferencesExistingTarget guard needs a referencedEntity" ])
+                                | None -> err "dataCorrection.referencedEntity.missing" (String.concat "" [ "correction '"; c.Id; "': sourceReferencesExistingTarget guard needs a referencedEntity" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                             else Result.success Set.empty
                         match refKeySet with
                         | Error e -> Error e
@@ -233,26 +233,26 @@ module ApprovedDataCorrections =
 
                 | DataCorrectionDerivationSpec.ParentAttribute (relationship, parentSource) ->
                     match Catalog.tryFindKind kindKey catalog with
-                    | None -> err "dataCorrection.subject.kindMissing" (String.concat "" [ "correction '"; c.Id; "': subject kind missing from the catalog" ])
+                    | None -> err "dataCorrection.subject.kindMissing" (String.concat "" [ "correction '"; c.Id; "': subject kind missing from the catalog" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                     | Some subjectKind ->
                         match subjectKind.References |> List.tryFind (fun r -> ciEq (Name.value r.Name) relationship) with
-                        | None -> err "dataCorrection.relationship.unresolved" (String.concat "" [ "correction '"; c.Id; "': relationship '"; relationship; "' is not a reference on the subject kind" ])
+                        | None -> err "dataCorrection.relationship.unresolved" (String.concat "" [ "correction '"; c.Id; "': relationship '"; relationship; "' is not a reference on the subject kind" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                         | Some reference ->
                             let fkName =
                                 subjectKind.Attributes
                                 |> List.tryFind (fun a -> a.SsKey = reference.SourceAttribute)
                                 |> Option.map (fun a -> a.Name)
                             match fkName with
-                            | None -> err "dataCorrection.relationship.fkMissing" (String.concat "" [ "correction '"; c.Id; "': relationship's source attribute is missing" ])
+                            | None -> err "dataCorrection.relationship.fkMissing" (String.concat "" [ "correction '"; c.Id; "': relationship's source attribute is missing" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                             | Some fk ->
                                 let parentKindKey = reference.TargetKind
                                 match AttributeCoordinate.resolveFull catalog parentSource with
-                                | Error _ -> err "dataCorrection.parentSource.unresolved" (String.concat "" [ "correction '"; c.Id; "': parent source attribute is not in the model" ])
+                                | Error _ -> err "dataCorrection.parentSource.unresolved" (String.concat "" [ "correction '"; c.Id; "': parent source attribute is not in the model" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                                 | Ok (pKindKey, _, _) when pKindKey <> parentKindKey ->
-                                    err "dataCorrection.parentSource.wrongKind" (String.concat "" [ "correction '"; c.Id; "': parent source attribute is not on the relationship's target kind" ])
+                                    err "dataCorrection.parentSource.wrongKind" (String.concat "" [ "correction '"; c.Id; "': parent source attribute is not on the relationship's target kind" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                                 | Ok (_, pSrcName, _) ->
                                     match pkNameOf catalog parentKindKey with
-                                    | None -> err "dataCorrection.parent.noPk" (String.concat "" [ "correction '"; c.Id; "': parent kind has no primary key to join on" ])
+                                    | None -> err "dataCorrection.parent.noPk" (String.concat "" [ "correction '"; c.Id; "': parent kind has no primary key to join on" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                                     | Some parentPk ->
                                         let parentMap =
                                             rowsOfKind catalog rows parentKindKey
@@ -275,13 +275,13 @@ module ApprovedDataCorrections =
                     let sentinelAssertion () =
                         if hasGuard DataCorrectionGuard.SentinelExists then
                             match c.ReferencedEntity with
-                            | None -> err "dataCorrection.referencedEntity.missing" (String.concat "" [ "correction '"; c.Id; "': sentinelExists guard needs a referencedEntity" ])
+                            | None -> err "dataCorrection.referencedEntity.missing" (String.concat "" [ "correction '"; c.Id; "': sentinelExists guard needs a referencedEntity" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                             | Some ent ->
                                 match resolveEntity catalog ent with
                                 | Error e -> Error e
                                 | Ok k ->
                                     if Set.contains value (keySetOf catalog rows k) then Result.success ()
-                                    else err "dataCorrection.sentinel.absent" (String.concat "" [ "correction '"; c.Id; "': sentinel value '"; value; "' does not exist in the referenced target key set" ])
+                                    else err "dataCorrection.sentinel.absent" (String.concat "" [ "correction '"; c.Id; "': sentinel value '"; value; "' does not exist in the referenced target key set" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                         else Result.success ()
                     let selectorOk (r: StaticRow) =
                         (not (hasGuard DataCorrectionGuard.TargetIsNull) || Option.isNone (StaticRow.value subjectName r))
@@ -313,7 +313,7 @@ module ApprovedDataCorrections =
                                                 else jRows
                                             jRetained |> List.exists (fun r ->
                                                 match StaticRow.value fk r with Some v -> Set.contains v excludedPkValues | None -> false)))
-                            if offending then err "dataCorrection.exclude.inboundReference" (String.concat "" [ "correction '"; c.Id; "': a retained row formally references a row about to be excluded" ])
+                            if offending then err "dataCorrection.exclude.inboundReference" (String.concat "" [ "correction '"; c.Id; "': a retained row formally references a row about to be excluded" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                             else Result.success ()
                         else Result.success ()
                     let probesAssertion () =
@@ -324,7 +324,7 @@ module ApprovedDataCorrections =
                                 | (probe: ConfiguredReferenceProbe) :: rest ->
                                     match AttributeCoordinate.resolveFull catalog probe.ReferencingAttribute with
                                     | Error _ ->
-                                        err "dataCorrection.probe.unresolved" (String.concat "" [ "correction '"; c.Id; "': configured reference probe attribute "; probe.ReferencingAttribute.Module; "/"; probe.ReferencingAttribute.Entity; "/"; probe.ReferencingAttribute.Attribute; " is not in the model" ])
+                                        err "dataCorrection.probe.unresolved" (String.concat "" [ "correction '"; c.Id; "': configured reference probe attribute "; probe.ReferencingAttribute.Module; "/"; probe.ReferencingAttribute.Entity; "/"; probe.ReferencingAttribute.Attribute; " is not in the model" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                                     | Ok (probeKindKey, refAttrName, _) ->
                                         // Retained rows of the probe's kind (exclude the subject's
                                         // own about-to-be-excluded rows when the probe points at
@@ -338,7 +338,7 @@ module ApprovedDataCorrections =
                                             retained |> List.exists (fun r ->
                                                 match StaticRow.value refAttrName r with Some v -> Set.contains v excludedPkValues | None -> false)
                                         if offending then
-                                            err "dataCorrection.exclude.configuredReferenceMatch" (String.concat "" [ "correction '"; c.Id; "': a retained row references (via '"; Name.value refAttrName; "') a row about to be excluded" ])
+                                            err "dataCorrection.exclude.configuredReferenceMatch" (String.concat "" [ "correction '"; c.Id; "': a retained row references (via '"; Name.value refAttrName; "') a row about to be excluded" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                                         else loop rest
                             loop c.ConfiguredProbes
                         else Result.success ()
@@ -357,14 +357,14 @@ module ApprovedDataCorrections =
                 let countCheck () =
                     if hasGuard DataCorrectionGuard.ExpectedFindingCount then
                         match c.ExpectedCount with
-                        | None -> err "dataCorrection.expectedCount.missing" (String.concat "" [ "correction '"; c.Id; "': expectedFindingCount guard needs an expectedCount" ])
+                        | None -> err "dataCorrection.expectedCount.missing" (String.concat "" [ "correction '"; c.Id; "': expectedFindingCount guard needs an expectedCount" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                         | Some expected when expected <> matchedCount ->
-                            err "dataCorrection.expectedCount.mismatch" (String.concat "" [ "correction '"; c.Id; "': expected "; string expected; " matched rows, found "; string matchedCount ])
+                            err "dataCorrection.expectedCount.mismatch" (String.concat "" [ "correction '"; c.Id; "': expected "; string expected; " matched rows, found "; string matchedCount ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                         | Some _ -> Result.success ()
                     else Result.success ()
                 let coverageCheck () =
                     if hasGuard DataCorrectionGuard.ExpectedCoverage && changeableCount <> matchedCount then
-                        err "dataCorrection.coverage.incomplete" (String.concat "" [ "correction '"; c.Id; "': coverage incomplete — "; string changeableCount; " of "; string matchedCount; " matched rows carry the required evidence" ])
+                        err "dataCorrection.coverage.incomplete" (String.concat "" [ "correction '"; c.Id; "': coverage incomplete — "; string changeableCount; " of "; string matchedCount; " matched rows carry the required evidence" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                     else Result.success ()
                 match countCheck () with
                 | Error e -> Error e
@@ -404,7 +404,7 @@ module ApprovedDataCorrections =
                                     | (ec: AttributeCoordinate) :: rest ->
                                         match AttributeCoordinate.resolveFull catalog ec with
                                         | Ok (_, n, _) -> loop (n :: acc) rest
-                                        | Error _ -> err "dataCorrection.evidence.unresolved" (String.concat "" [ "correction '"; c.Id; "': evidence column "; ec.Module; "/"; ec.Entity; "/"; ec.Attribute; " is not in the model" ])
+                                        | Error _ -> err "dataCorrection.evidence.unresolved" (String.concat "" [ "correction '"; c.Id; "': evidence column "; ec.Module; "/"; ec.Entity; "/"; ec.Attribute; " is not in the model" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                                 loop [] c.EvidenceColumns
                             match evidenceNamesR with
                             | Error e -> Error e
@@ -496,9 +496,9 @@ module ApprovedDataCorrections =
                 match Map.tryFind id recMap, Map.tryFind id repMap with
                 | Some a, Some b when a.RowsChanged = b.RowsChanged && a.RowsExcluded = b.RowsExcluded -> None
                 | Some a, Some b ->
-                    Some (String.concat "" [ "correction '"; id; "': recorded (changed="; string a.RowsChanged; ", excluded="; string a.RowsExcluded; ") ≠ replayed (changed="; string b.RowsChanged; ", excluded="; string b.RowsExcluded; ")" ])
-                | Some _, None -> Some (String.concat "" [ "correction '"; id; "': recorded by the publish but not reproduced by the fidelity replay" ])
-                | None, Some _ -> Some (String.concat "" [ "correction '"; id; "': reproduced by the fidelity replay but never recorded by the publish" ])
+                    Some (String.concat "" [ "correction '"; id; "': recorded (changed="; string a.RowsChanged; ", excluded="; string a.RowsExcluded; ") ≠ replayed (changed="; string b.RowsChanged; ", excluded="; string b.RowsExcluded; ")" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
+                | Some _, None -> Some (String.concat "" [ "correction '"; id; "': recorded by the publish but not reproduced by the fidelity replay" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
+                | None, Some _ -> Some (String.concat "" [ "correction '"; id; "': reproduced by the fidelity replay but never recorded by the publish" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                 | None, None -> None)
         match mismatch with
         | None -> Result.success ()

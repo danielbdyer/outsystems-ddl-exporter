@@ -5,11 +5,24 @@ description: Use when the developer says "add CreatedBy/CreatedOn/ModifiedBy/Mod
 
 # Add manual audit columns (Optimistic-NOT-NULL trap)
 
-> **Default (provisional — the data decides).** Nullable audit columns ship as a single schema
+> **Default (provisional — prove before you classify).** Nullable audit columns ship as a single schema
 > change, applied in place; any team member can review, since the change is additive and the running
 > application is unaffected. NOT NULL on a populated table ships as one release with a pre-deployment
 > backfill, and a dev lead must review because existing data is modified — prove the backfill clears
 > the block before you classify it.
+
+> **SHIP terminal: ONE RELEASE, in place** (nullable columns, or `NOT NULL` with an explicit default
+> that stamps every existing row as the columns land); **ONE RELEASE with a pre-deploy backfill** for
+> `NOT NULL` with no default on a populated table. Proven live on this branch (SQL Server 2022,
+> `sqlpackage 170.4.83.3`), adding `CreatedBy`/`CreatedOn`/`ModifiedBy`/`ModifiedOn` to
+> `dbo.Customer` (5 rows): as `NOT NULL` with `DEFAULT (SUSER_SNAME())` / `DEFAULT (SYSUTCDATETIME())`
+> the strict publish returns `Successfully published database.` and all 5 existing rows are stamped
+> (for example `CreatedBy = sa`); the same four columns added as `NULL` also publish clean, leaving
+> the 5 rows NULL.
+>
+> **Proven precedent:** `../../../sample-prs/audit-columns.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op, carrying the live proof
+> messages.
 
 ## OutSystems phrasing
 "add CreatedBy / CreatedOn / ModifiedBy / ModifiedOn", "stamp who changed it and when", "basic audit fields".
@@ -18,35 +31,46 @@ description: Use when the developer says "add CreatedBy/CreatedOn/ModifiedBy/Mod
 Ordinary nullable columns (often with `DEFAULT SYSUTCDATETIME()` / `DEFAULT SUSER_SNAME()`) plus app-side or trigger-side stamping. SSDT ADDs them declaratively. Never write ALTER.
 
 ## The named trap
-The *Optimistic NOT NULL* family — if the developer wants the audit columns `NOT NULL` on a populated table without a backfill, the deployment is blocked because existing rows have no `CreatedOn`. A `DEFAULT` covers new rows but **not** existing ones unless `GenerateSmartDefaults` stamps them (which Strict refuses, on purpose). This is the tightening class applied to a fresh column — see `../../_index/tightening-class/SKILL.md`; do not re-derive the row-presence guard here (`make-mandatory` owns the canonical treatment of this class).
+The *Optimistic NOT NULL* family — if the developer wants the audit columns `NOT NULL` on a populated table with no value supplied, the deployment is blocked because existing rows have no `CreatedOn`. This is the same value-needed refusal as `../add-mandatory/SKILL.md`, and it is deliberately **not** the tightening class: a fresh column's block is **cured by supplying the value** — an explicit `DEFAULT` (e.g. `SYSUTCDATETIME()`) stamps every existing row as the column lands and a populated table applies clean (proven: `../../../sample-prs/add-default.md`), which the tightening class's data-blind row-presence guard would never allow. The neighbouring *existing-column* tightening (`make-mandatory`) is the class no default can cure — `../../_index/tightening-class/SKILL.md` keeps the two apart; do not collapse them.
 
 ## How it flips (the specifics only)
 - nullable / table empty → ships as a single schema change, applied in place; any team member can
   review, since the change is additive and the application is unaffected.
-- **`NOT NULL` + populated** → ships as one release with a pre-deployment backfill, then the columns
-  land validated; the backfill that clears the block is the proof. A dev lead must review, because
-  existing data is modified.
+- **`NOT NULL` + populated + explicit DEFAULT** (`SYSUTCDATETIME()` / `SUSER_SNAME()`) → ships as
+  a single schema change, applied in place — the default stamps every existing row as the columns
+  land (the `add-mandatory`/`add-default` proven shape); a dev lead or an experienced developer
+  reviews it, and the stamped values are named on the record.
+- **`NOT NULL` + populated, no default** → the deployment is blocked (value-needed); ships as one
+  release with a pre-deployment staging backfill, then the columns land validated. A dev lead must
+  review, because existing data is modified.
 - **+ >1M rows** → added scrutiny: the backfill is a batched operation and may run long at production
   row counts.
 
 ## Prove it
-If `NOT NULL`, Strict must block the publish on the existing rows with no audit value; the pre-deploy backfill must clear it; the Permissive run shows exactly what `GenerateSmartDefaults` would have silently stamped, so the developer sees what the block was protecting. See `prove-on-dacpac` / `talk-to-local-sql`. On the sample, exercise with the `Customer` seed (AUD-03).
+If `NOT NULL` with an explicit DEFAULT, Strict must publish clean and the delta must show the default stamping as the columns land — prove the stamped values. If `NOT NULL` with no default, Strict must block the publish on the existing rows with no audit value (value-needed); the staging backfill must clear it; the Permissive run shows exactly what `GenerateSmartDefaults` would have silently stamped, so the developer sees what the block was protecting. See `prove-on-dacpac` / `talk-to-local-sql`. On the sample, exercise with the `Customer` seed (AUD-03).
 
 ## The verdict (to the developer)
-You asked for CreatedBy / CreatedOn / ModifiedBy / ModifiedOn. As nullable columns they add in a single release — nothing in your existing data can conflict, so SSDT just applies them. If you want them mandatory (NOT NULL) instead, SSDT refuses on a populated table, because the rows already there have no value to put in the new columns — that's confirmed on a disposable copy of Dev. A pre-deployment backfill that stamps those rows clears it, and it still ships as one release. Do you need these mandatory, or is nullable enough?
+You asked for CreatedBy / CreatedOn / ModifiedBy / ModifiedOn. As nullable columns they add in a single release — nothing in your existing data can conflict, so SSDT just applies them. If you want them mandatory (NOT NULL) instead, the rows already there need a value: with an explicit default (like "now" for CreatedOn) SQL Server stamps every existing row as the columns land and it still applies in one clean step — confirmed on a disposable copy of Dev. Without a default it's refused, and a staging backfill has to fill the rows first. Do you need these mandatory, and if so, is a stamped default value right for the rows that already exist?
 
 ## The reasoning (in conversation)
-A `DEFAULT` describes the future, not the past: it fills new rows, but it never reaches back to the rows already in the table. So making a column mandatory always has to deal with the rows already there — the backfill stamps them, and the now-clean Strict run is the proof it worked. The trap to avoid is expecting NOT NULL with a default to just work on live data; it works on an empty table and blocks on a populated one. The full reasoning is in `../../_index/tightening-class/SKILL.md`.
+A fresh column's block is about a missing value, and the cure is supplying it: an explicit default stamps the rows that are already there as the column lands, and the clean Strict run is the proof. On an existing column the same word behaves oppositely — a default describes future inserts and never reaches back — which is why the two shapes must not be conflated (see `../add-default/SKILL.md`). The trap to avoid is letting `GenerateSmartDefaults` decide the value silently: who supplies the stamp for existing rows is a data-owner decision, made explicitly. The neighbouring existing-column tightening — which no default can cure — is `../../_index/tightening-class/SKILL.md`.
 
 ## On the record
-The fragment this operation contributes to the pull request (`../../author-pr/SKILL.md`). Pick the
-branch the change actually took.
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op — with the live proof messages — is `../../../sample-prs/audit-columns.md`. SHIP
+terminal: **ONE RELEASE, in place** (nullable, or `NOT NULL` with an explicit default); **ONE RELEASE
+with a pre-deploy backfill** for `NOT NULL` with no default. Pick the branch the change actually took.
 
 **Review & release**
 - Nullable columns:
   - Ships as a single schema change, applied in place. No data is read or written.
   - Any team member can review this: the change is additive and the running application is unaffected.
-- `NOT NULL` on a populated table:
+- `NOT NULL` on a populated table, explicit DEFAULT:
+  - Ships as a single schema change, applied in place — the default stamps every existing row as
+    the columns land; the stamped values are named here.
+  - A dev lead or an experienced developer must review this: existing rows receive stamped values,
+    and the running application must keep the columns filled.
+- `NOT NULL` on a populated table, no default:
   - Ships as one release: a pre-deployment script backfills the existing rows, then the schema change
     lands validated.
   - A dev lead must review this: existing data is modified.
@@ -70,7 +94,7 @@ change (including any the pre-deployment backfill stamped), and no pre-existing 
 **Not verified**
 - Application impact: whether the application or a trigger stamps these columns going forward is not
   confirmed here. A nullable column left unwritten stays NULL; a NOT NULL column with no app-side or
-  default write rejects the next insert on a NULL violation. Owner: @app-owner.
+  default write rejects the next insert on a NULL violation. Owner: app owner.
 - Other environments: Test / UAT / Prod may hold rows this copy does not, which a NOT NULL backfill
   must also cover. Run the verification query before promotion.
 - Production scale / timing: at more than ~1M rows the backfill runs batched; its duration and

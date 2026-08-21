@@ -5,12 +5,20 @@ description: Use when the developer says "split Customer into Customer and Custo
 
 # Split one entity into two (the one-release trap; per-column renames with no refactorlog entry)
 
-> **Default (provisional — the data decides; prove before you classify).** Ships across three
+> **Default (provisional — prove before you classify).** Ships across three
 > releases (three pull requests): CREATE the new table and copy the moving columns, cut the
 > application over, then drop the old columns from the source — the old and new shapes coexist while
 > readers migrate. A dev lead must review this: existing data is moved into a new table and a
 > cross-table relationship is added. Prove the source table is empty first — an empty source
 > collapses this to a single additive release any team member can review.
+
+> **SHIP terminal: ACROSS THREE RELEASES (empty source ⇒ ONE).** Phase 1 CREATE the new table + FK +
+> copy the moving columns + dual-write; Phase 2 repoint reads; Phase 3 drop the old columns, which
+> `BlockOnPossibleDataLoss` blocks until the copy is proven hash-equal. An empty source collapses to a
+> single additive release. `../../_index/multi-phase/SKILL.md`.
+>
+> **Proven precedent:** `../../../sample-prs/split-table.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "split Customer into Customer and CustomerAddress", "pull the address fields out into their own entity", "break this entity up".
@@ -66,7 +74,9 @@ on the old columns the moment they're dropped — or loses data, when the copy h
 The full why — why the phases are required — is `../../_index/multi-phase/SKILL.md`.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/split-table.md`. SHIP terminal: **ACROSS THREE RELEASES**
+(a greenfield split collapses to ONE). The fragment this operation contributes:
 
 **Review & release**
 - A dev lead must review this: existing data is moved into a new table (CustomerAddress) and a

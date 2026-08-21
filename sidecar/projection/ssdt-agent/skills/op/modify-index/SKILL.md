@@ -5,10 +5,18 @@ description: Use when the developer says "change the index to cover these column
 
 # Modify an index (change key columns / non-unique → unique / change include list)
 
-> **Default (provisional — the data decides).** A key or include change ships as a single
+> **Default (provisional — prove before you classify).** A key or include change ships as a single
 > declarative schema change, applied in place, and any team member can review it. Adding UNIQUE is a
 > claim over the data — prove no duplicates before classifying; with duplicates present it flips to a
 > pre-deployment de-dupe plus the declarative change.
+
+> **SHIP terminal: ONE RELEASE, in place (DROP + CREATE rebuild).** A key or include change is a
+> structural rebuild over all rows; a non-unique → unique change adds a claim — clean data builds, a
+> duplicate blocks the build with `Msg 1505` (the same duplicate law as add-unique, proven this branch,
+> F10). The rebuild takes a write-blocking lock scaled to row count. `FINDINGS_AND_CHANGES.md` F10.
+>
+> **Proven precedent:** `../../../sample-prs/modify-index.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "change the index to cover these columns too", "make this index unique so we stop getting duplicates", "the index should be on a different attribute now".
@@ -47,11 +55,11 @@ is blocked. Author the pre-deploy de-dupe, re-run Strict, the clean re-run is th
 drive the flip to a blocked deploy.
 
 ## The verdict (to the developer)
-You asked to make that index unique. On a disposable copy of Dev, SSDT refused it: 3 rows share the
-same value, and a unique index is built over every existing row, so it can't be built while those
-duplicates are there. The way through is one release with a pre-deployment de-dupe that clears those
-3 first — then the unique index builds clean on the copy. Are those three duplicate rows safe to
-merge or delete?
+You asked to make that index unique. On a copy of Dev, if any rows share the value, SSDT refuses it
+(`Msg 1505`): a unique index is built over every existing row and cannot build while duplicates are
+there. The way through is one release with a pre-deployment de-dupe that clears the duplicates first —
+then the unique index builds clean. The call that's yours: are the duplicate rows safe to merge or
+delete?
 
 ## The reasoning (in conversation)
 Any change that adds a *constraint* over existing data — UNIQUE here — can flip on what the data
@@ -94,7 +102,7 @@ restore uses.
 **Not verified**
 - Application impact — once the index is unique, any insert or update that would create a duplicate
   key value now fails ("duplicate key was found"). Application-side handling is not confirmed here
-  (@app-owner).
+  (app owner).
 - Other environments — Test, UAT, and Prod may hold duplicates the disposable copy of Dev cannot
   see. Run the verification query before promotion.
 - Production scale and timing — on a large table the DROP+CREATE rebuild and any de-dupe may block

@@ -106,13 +106,13 @@ module BridgeRetargetBinding =
                 | true, n when n >= 0L -> Result.success n
                 | true, _ ->
                     err "pipeline.config.bridgeRetargetEvidence.negativeCount"
-                        (String.concat "" [ "bridge retarget evidence field '"; key; "' must be a non-negative integer count" ])
+                        (String.concat "" [ "bridge retarget evidence field '"; key; "' must be a non-negative integer count" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                 | false, _ ->
                     err "pipeline.config.bridgeRetargetEvidence.nonIntegerCount"
-                        (String.concat "" [ "bridge retarget evidence field '"; key; "' must be an integer count" ])
+                        (String.concat "" [ "bridge retarget evidence field '"; key; "' must be an integer count" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             | _ ->
                 err "pipeline.config.bridgeRetargetEvidence.countNotNumber"
-                    (String.concat "" [ "bridge retarget evidence field '"; key; "' must be a JSON number" ])
+                    (String.concat "" [ "bridge retarget evidence field '"; key; "' must be a JSON number" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
 
     /// Read the optional `identityEvidence` tag. Absent / JSON `null` ⇒ the
     /// fail-closed `Missing` (a warning, never a block). A present value must be one
@@ -134,7 +134,7 @@ module BridgeRetargetBinding =
                     elif ciEq s "ambiguous" then Result.success BridgeIdentityEvidence.Ambiguous
                     else
                         err "pipeline.config.bridgeRetargetEvidence.identityUnrecognized"
-                            (String.concat "" [ "bridge retarget evidence 'identityEvidence' value '"; raw; "' is not recognized. Known: present | missing | ambiguous" ])
+                            (String.concat "" [ "bridge retarget evidence 'identityEvidence' value '"; raw; "' is not recognized. Known: present | missing | ambiguous" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             | _ ->
                 err "pipeline.config.bridgeRetargetEvidence.identityNotString"
                     "bridge retarget evidence 'identityEvidence' must be a string (present | missing | ambiguous)"
@@ -199,13 +199,13 @@ module BridgeRetargetBinding =
                             if List.isEmpty dups then Result.success (Map.ofList pairs)
                             else
                                 err "pipeline.config.bridgeRetargetEvidence.duplicateId"
-                                    (String.concat "" [ "bridge retarget evidence has duplicate id(s): "; String.concat ", " dups ]))
+                                    (String.concat "" [ "bridge retarget evidence has duplicate id(s): "; String.concat ", " dups ]))  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                     | _ ->
                         err "pipeline.config.bridgeRetargetEvidence.retargetsNotArray"
                             "the bridge retarget evidence file's 'retargets' must be an array"
         with :? JsonException as ex ->
             err "pipeline.config.bridgeRetargetEvidence.malformedJson"
-                (String.concat "" [ "could not parse the bridge retarget evidence file as JSON: "; ex.Message ])
+                (String.concat "" [ "could not parse the bridge retarget evidence file as JSON: "; ex.Message ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
 
     /// Read `overrides.bridgeRetargetEvidence.path` into the per-id evidence map.
     /// No path ⇒ the empty map (every retarget stays blocked; byte-identical). A
@@ -219,7 +219,7 @@ module BridgeRetargetBinding =
                 try Result.success (File.ReadAllText o.Path)
                 with ex ->
                     err "pipeline.config.bridgeRetargetEvidence.readFailed"
-                        (String.concat "" [ "could not read the bridge retarget evidence file at '"; o.Path; "': "; ex.Message ])
+                        (String.concat "" [ "could not read the bridge retarget evidence file at '"; o.Path; "': "; ex.Message ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             textR |> Result.bind parseEvidenceDocument
 
     /// Override a profile's FAIL-CLOSED data facts with the supplied evidence — the
@@ -275,24 +275,24 @@ module BridgeRetargetBinding =
             match kindsMatching coord with
             | [] ->
                 err "pipeline.config.bridgeRetargets.entity.notFound"
-                    (String.concat "" [ "bridge retarget '"; entry.Id; "': entity "; coord.Module; "/"; coord.Entity; " is not in the model" ])
+                    (String.concat "" [ "bridge retarget '"; entry.Id; "': entity "; coord.Module; "/"; coord.Entity; " is not in the model" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             | _ :: _ :: _ ->
                 err "pipeline.config.bridgeRetargets.entity.ambiguous"
-                    (String.concat "" [ "bridge retarget '"; entry.Id; "': entity "; coord.Module; "/"; coord.Entity; " is ambiguous across the resolved scope" ])
+                    (String.concat "" [ "bridge retarget '"; entry.Id; "': entity "; coord.Module; "/"; coord.Entity; " is ambiguous across the resolved scope" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             | [ (_, kind) ] ->
                 match kind.References |> List.tryFind (fun r -> ciEq (Name.value r.Name) relationship) with
                 | None ->
                     err "pipeline.config.bridgeRetargets.relationship.notFound"
-                        (String.concat "" [ "bridge retarget '"; entry.Id; "': relationship '"; relationship; "' is not a reference on "; coord.Entity ])
+                        (String.concat "" [ "bridge retarget '"; entry.Id; "': relationship '"; relationship; "' is not a reference on "; coord.Entity ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                 | Some reference -> Result.success [ entry.Id, kind, reference ]
         | Config.BridgeRetargetReference.AllReferencesTo target ->
             match kindsMatching target with
             | [] ->
                 err "pipeline.config.bridgeRetargets.entity.notFound"
-                    (String.concat "" [ "bridge retarget '"; entry.Id; "': reference.allReferencesTo entity "; target.Module; "/"; target.Entity; " is not in the model" ])
+                    (String.concat "" [ "bridge retarget '"; entry.Id; "': reference.allReferencesTo entity "; target.Module; "/"; target.Entity; " is not in the model" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             | _ :: _ :: _ ->
                 err "pipeline.config.bridgeRetargets.entity.ambiguous"
-                    (String.concat "" [ "bridge retarget '"; entry.Id; "': reference.allReferencesTo entity "; target.Module; "/"; target.Entity; " is ambiguous across the resolved scope" ])
+                    (String.concat "" [ "bridge retarget '"; entry.Id; "': reference.allReferencesTo entity "; target.Module; "/"; target.Entity; " is ambiguous across the resolved scope" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             | [ (_, targetKind) ] ->
                 // Every reference in the RESOLVED scope (the catalog is already
                 // narrowed by `model.modules`) whose target is that kind. Ordered by
@@ -307,7 +307,7 @@ module BridgeRetargetBinding =
                     |> List.sortBy (fun (_, k, r) -> k.SsKey, r.SsKey)
                 if List.isEmpty discovered then
                     err "pipeline.config.bridgeRetargets.discoveryEmpty"
-                        (String.concat "" [ "bridge retarget '"; entry.Id; "': reference.allReferencesTo "; target.Module; "/"; target.Entity; " matched no references in the resolved model scope — check the coordinate and `model.modules`" ])
+                        (String.concat "" [ "bridge retarget '"; entry.Id; "': reference.allReferencesTo "; target.Module; "/"; target.Entity; " matched no references in the resolved model scope — check the coordinate and `model.modules`" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                 else
                     discovered
                     |> List.map (fun (moduleName, childKind, reference) ->
@@ -329,7 +329,7 @@ module BridgeRetargetBinding =
         match AttributeCoordinate.resolveFull catalog entry.Bridge with
         | Error _ ->
             err "pipeline.config.bridgeRetargets.bridge.notFound"
-                (String.concat "" [ "bridge retarget '"; retargetId; "': bridge attribute "; entry.Bridge.Module; "/"; entry.Bridge.Entity; "/"; entry.Bridge.Attribute; " is not in the model" ])
+                (String.concat "" [ "bridge retarget '"; retargetId; "': bridge attribute "; entry.Bridge.Module; "/"; entry.Bridge.Entity; "/"; entry.Bridge.Attribute; " is not in the model" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
         | Ok (bridgeKindKey, _, bridgeAttrKey) ->
             let bridgeKind = Catalog.tryFindKind bridgeKindKey catalog
             let bridgeAttr =
@@ -374,10 +374,10 @@ module BridgeRetargetBinding =
                       Profile            = profile }
             | None, _ ->
                 err "pipeline.config.bridgeRetargets.sourceAttribute.missing"
-                    (String.concat "" [ "bridge retarget '"; retargetId; "': the reference's source attribute is missing from its kind" ])
+                    (String.concat "" [ "bridge retarget '"; retargetId; "': the reference's source attribute is missing from its kind" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             | _, None ->
                 err "pipeline.config.bridgeRetargets.bridge.attributeMissing"
-                    (String.concat "" [ "bridge retarget '"; retargetId; "': the resolved bridge attribute is missing from its kind" ])
+                    (String.concat "" [ "bridge retarget '"; retargetId; "': the resolved bridge attribute is missing from its kind" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
 
     /// Resolve one config entry to its plan(s) — one for an explicit reference, N
     /// for a discovery expansion.
@@ -418,7 +418,7 @@ module BridgeRetargetBinding =
             Result.success (Map.fold (fun m k v -> Map.add k v m) fileEvidence derived)
         else
             err "pipeline.config.bridgeRetargetEvidence.sourceConflict"
-                (String.concat "" [ "retarget id(s) carry BOTH file evidence (`overrides.bridgeRetargetEvidence`) and staging-derived evidence (`overrides.bridgeRowStaging`): "; String.concat ", " overlap; " — remove one source; competing accounts of the same data facts are refused" ])
+                (String.concat "" [ "retarget id(s) carry BOTH file evidence (`overrides.bridgeRetargetEvidence`) and staging-derived evidence (`overrides.bridgeRowStaging`): "; String.concat ", " overlap; " — remove one source; competing accounts of the same data facts are refused" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
 
     /// Bind `overrides.bridgeRetargets` into the typed `BridgeRetargetPolicy`,
     /// reading the DATA-half evidence from `overrides.bridgeRetargetEvidence.path`

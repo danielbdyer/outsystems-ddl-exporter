@@ -5,11 +5,19 @@ description: Use when the developer says "move the Region attribute from Custome
 
 # Move an attribute between entities (relationship-ambiguity / cross-table-rename trap)
 
-> **Default (provisional — the data decides; prove before you classify).** Ships across multiple
+> **Default (provisional — prove before you classify).** Ships across multiple
 > releases (multiple pull requests): add the column to the destination and copy the values, repoint
 > readers, then drop the column from the source — the two tables coexist while readers migrate. A dev
 > lead must review this: existing data is moved between tables and the source column is dropped. Prove
 > the relationship is 1:1 before copying anything, so no moved value is ambiguous.
+
+> **SHIP terminal: ACROSS MULTIPLE RELEASES.** Add the column to the destination + copy (keyed by the
+> 1:1 relationship) → repoint readers → drop the source column, which `BlockOnPossibleDataLoss` blocks
+> until the copy is proven hash-equal. Requires a proven 1:1 join; a not-1:1 relationship is a design
+> fork, not a shipping shape. `../../_index/multi-phase/SKILL.md`.
+>
+> **Proven precedent:** `../../../sample-prs/move-attribute.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "move the Region attribute from Customer to Account", "this field is on the wrong entity", "relocate DiscountRate to the parent".
@@ -61,7 +69,9 @@ coexist through the move — is `../../_index/multi-phase/SKILL.md` and
 `../../_index/identity-and-refactorlog/SKILL.md`.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/move-attribute.md`. SHIP terminal: **ACROSS MULTIPLE
+RELEASES.** The fragment this operation contributes:
 
 **Review & release**
 - A dev lead must review this: existing data is moved between tables — the values are copied to the

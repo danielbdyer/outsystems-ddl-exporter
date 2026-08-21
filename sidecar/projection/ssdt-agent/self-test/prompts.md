@@ -1,6 +1,6 @@
 # self-test — prompts (the complete suite)
 
-Human-shaped developer prompts, one per operation across the nine families, phrased the way an
+Human-shaped developer prompts, one per operation across the eight families, phrased the way an
 OutSystems-native developer actually asks — in entities, attributes, references, and the
 **Mandatory** checkbox, never in SSDT mechanics. Each case carries the expected **how it ships**
 and **who must review, and why** findings (`THE_RECORD.md` §5), the **caseType**, the **seed** it
@@ -210,8 +210,11 @@ flag it against the op skill, not the run.
 
 ### COL-02 — add-mandatory · positive
 > **"Add a required Status field to Customer — everyone must have one."**
-- **op:** `skills/op/add-mandatory/SKILL.md` · **_index:** `skills/_index/tightening-class/SKILL.md`
-  (the no-default block face)
+- **op:** `skills/op/add-mandatory/SKILL.md` · **_index:** — (op-owned: the *Optimistic NOT NULL*
+  family — deliberately NOT the tightening class. The block is a value-needed refusal on a NEW
+  column, and an explicit `DEFAULT` clears it on a populated table — proven,
+  `../sample-prs/add-default.md` — which the row-presence guard would never allow. Citing
+  tightening-class here is the miss criterion 6 checks for.)
 - **How it ships:** with an explicit `DEFAULT`, as a single schema change applied in place — SQL
   Server stamps existing rows. Without a default, the deployment is blocked ("Cannot insert NULL").
 - **Who reviews:** a dev lead or an experienced developer should review this — the column is now
@@ -323,25 +326,33 @@ flag it against the op skill, not the run.
 - **Outcome:** the agent runs `MAX(LEN(Code))` (=16) and a `WHERE LEN(Code)>10` count to quantify the
   truncation, proves the Strict data-loss block (the tightening-class row-presence guard; see
   `_index/tightening-class`), runs Permissive + before/after hash to show exactly which value chops,
-  authors the reconcile, and re-runs Strict clean. The verdict names the longest value and the count
-  that truncates.
+  authors the reconcile, and shows the relaxed-gate publish landing it — Strict still blocks after
+  the reconcile (the guard is row-presence, not fit; proven `../sample-prs/narrow.md`), so the
+  logged gate call stays in the packet. The verdict names the longest value and the count that
+  truncates.
 - **Fail mode:** reports "might lose data" without quantifying; or runs Permissive and silently
   truncates `'STANDARD-SKU-001'` to `'STANDARD-S'` without surfacing it.
 
 ### COL-06B — narrow, all fit · flip
 > **"Shorten Product.Code to 20 characters."**
 - **op:** `skills/op/narrow/SKILL.md` · **_index:** `skills/_index/tightening-class/SKILL.md`
-- **How it ships:** as a single schema change applied in place — `MAX(LEN)=16 ≤ 20`, so the
-  `ALTER COLUMN` is not data-losing and nothing blocks.
-- **Who reviews:** a dev lead or an experienced developer should review this — a narrowing the data
-  happens to fit today; confirm the `MAX(LEN)` proof.
+- **How it ships:** not as a clean in-place change — the data-blind guard blocks narrowing on a
+  populated table even though `MAX(LEN)=16 ≤ 20` (row-presence, not fit). With the fit proven, the
+  honest disposition is a **named `BlockOnPossibleDataLoss` relaxation for this one change** —
+  ships as a scripted change, logged. The fit proof is what makes the relaxation *safe*; it is not
+  what clears the block.
+- **Who reviews:** a dev lead or an experienced developer — the running application must respect
+  the new limit, and the relaxation decision is logged with the `MAX(LEN)` proof beneath it.
 - **Seed:** Product DEFAULT seed (max Code length = 16, all fit in 20).
-- **Outcome:** the flip pair of COL-06: same narrow op, but `MAX(LEN)=16 ≤ 20` so every value fits.
-  Strict publishes clean, applied in place. Same op, different target size → different shipping shape,
-  decided by the data probe not the `.sql`. (The guard is still table-has-rows; here the `ALTER COLUMN`
-  is not data-losing so nothing blocks — the distinction the op skill draws from `_index/tightening-class`.)
-- **Fail mode:** reflexively classifies any narrow as a data-loss risk without probing `MAX(LEN)`,
-  reporting a block that does not occur.
+- **Outcome:** the flip pair of COL-06: same narrow op, but every value fits — and Strict STILL
+  blocks, because the guard is table-has-rows (proven: `../sample-prs/narrow.md`, refused even when
+  every value already fits). What the fit changes is the REMEDY: COL-06's over-length data demands
+  a reconcile (a data change) before any gate call; COL-06B's proven fit licenses the named
+  relaxation with no data touched. Same op, same block, different remedy — decided by the data
+  probe, not the `.sql`.
+- **Fail mode:** classifies the fitting narrow as "publishes clean, applied in place" — the guard
+  does not inspect fit, so a clean-apply report is classification from text; or relaxes the gate
+  without the `MAX(LEN)` proof in the packet.
 
 ### COL-07 — retype-explicit · positive
 > **"Change Customer.ContactPhone from text to an integer."**
@@ -932,7 +943,7 @@ text and fails the pair.
 | op | clean leg → how it ships | flipped leg → how it ships | the data that flips it | governing _index |
 |---|---|---|---|---|
 | make-mandatory | COL-03B empty → **applied in place** | COL-03 / COL-03C populated → **scripted (gate-relaxation) or staged across releases** | table-has-rows, not column-has-NULLs | tightening-class |
-| narrow | COL-06B fits → **applied in place** | COL-06 over-length → **pre-deploy reconcile + schema, or staged** | `MAX(LEN)` vs target | tightening-class |
+| narrow | COL-06B fits → **scripted — the gate relaxed after the `MAX(LEN)` proof** | COL-06 over-length → **pre-deploy reconcile + the gate call, or staged** | `MAX(LEN)` vs target decides the REMEDY (the block itself is row-presence) | tightening-class |
 | retype | COL-07B widen → **applied in place** | COL-07 explicit → **staged across releases** | lossless vs lossy conversion | multi-phase |
 | create-FK | KEY-02 clean → **applied in place** | KEY-03 orphan → **scripted (NOCHECK→reconcile→WITH CHECK CHECK), or staged** | orphan count | constraint-is-a-claim |
 | add-unique | CON-02 unique data → **applied in place** | CON-02 / IDX-02 dupes → **pre-deploy dedupe + schema** | duplicate count | constraint-is-a-claim |

@@ -5,14 +5,22 @@ description: Use when the developer says "merge CustomerAddress back into Custom
 
 # Merge two entities into one (collision / silent-1:many-drop trap) — recipe AUTHORED HERE
 
-> **AUTHORED-HERE NOTICE.** Handbook file 14 lists §17.7 "merge-entities" in its index but the template body is empty. The multi-phase recipe below is authored here to fill the gap and is the working contract; fold it back into the handbook when file 14 is completed.
+> **CANONICAL-HOME NOTICE.** The curriculum's §17.7 Table-Merge pattern lives in the playbook at `ssdt-playbook/Operations/Multi-Phase-Patterns/Table-Merge.md` (the final curriculum edition; the numbered handbook file 14 never carried a §17.7 body). The recipe below is this tree's working contract for the op — keep it and the playbook pattern reconciled; when they disagree, the proven recipe here wins and the playbook is corrected.
 
-> **Default (provisional — the data decides; prove before you classify).** Ships across three
+> **Default (provisional — prove before you classify).** Ships across three
 > releases (three pull requests): add the absorbing columns to the survivor and copy the data, cut
 > the application over, then drop the absorbed table — the two tables coexist while readers migrate.
 > A dev lead must review this: existing data is moved into the survivor and the absorbed table is
 > dropped. Prove cardinality (1:1) before copying anything, so a one-to-many absorbed side cannot
 > silently drop rows.
+
+> **SHIP terminal: ACROSS THREE RELEASES (empty absorbed ⇒ ONE).** Add the absorbing columns + copy →
+> repoint reads/FKs/views → drop the absorbed table, which `BlockOnPossibleDataLoss` blocks until the
+> copy is proven. Prove cardinality 1:1 first (a row-count check, before the value-hash) — a 1:many
+> absorbed side silently drops rows and the hash will not catch it. `../../_index/multi-phase/SKILL.md`.
+>
+> **Proven precedent:** `../../../sample-prs/merge-tables.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "merge CustomerAddress back into Customer", "we don't need two entities, combine them", "fold the lookup into its parent".
@@ -74,7 +82,9 @@ rows that survived the copy. The full why — why the two tables coexist through
 `../../_index/multi-phase/SKILL.md`.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/merge-tables.md`. SHIP terminal: **ACROSS THREE RELEASES**
+(an empty absorbed table collapses to ONE). The fragment this operation contributes:
 
 **Review & release**
 - A dev lead must review this: existing data is moved into the survivor's new columns and the

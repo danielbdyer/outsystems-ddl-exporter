@@ -5,10 +5,21 @@ description: Use when the developer says "make this attribute optional", "unchec
 
 # Make optional (NOT NULL → NULL)
 
-> **Default (provisional — the data decides).** Ships as a single schema change, applied in
+> **Default (provisional — prove before you classify).** Ships as a single schema change, applied in
 > place — no data is read or written. Any team member can review it when nothing downstream
 > assumes the column is always populated; a dev lead or an experienced developer should review it
 > when consumers must change to tolerate a NULL. A loosening never blocks the deployment.
+
+> **SHIP terminal: ONE RELEASE, in place.** Proven live on this branch (SQL Server 2022,
+> `sqlpackage 170.4.83.3`): loosening `dbo.CustomerAddress.Line1` from `NOT NULL` to `NULL`, the
+> difference is a single `ALTER COLUMN [Line1] NVARCHAR(120) NULL`, the strict publish
+> (`BlockOnPossibleDataLoss = true`) returns `Successfully published database.`, all 5 rows keep
+> their value, and a re-publish is a no-op. A loosening is never refused at deploy — the risk is
+> downstream.
+>
+> **Proven precedent:** `../../../sample-prs/make-optional.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op, carrying the live proof
+> messages.
 
 ## OutSystems phrasing
 "make this attribute optional", "uncheck Mandatory", "let MiddleName be blank now".
@@ -50,8 +61,9 @@ it tells you nothing about the code that reads the column. That is why the quest
 and breaking a report that quietly assumed the column was always filled.
 
 ## On the record
-The fragment this operation contributes to the pull request (`../../author-pr/SKILL.md`), in the
-record register:
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op — with the live proof messages — is `../../../sample-prs/make-optional.md`. SHIP
+terminal: **ONE RELEASE, in place.** The fragment this operation contributes, in the record register:
 
 **Review & release**
 - Ships as a single schema change, applied in place. No data is read or written.
@@ -76,7 +88,7 @@ has been written (see `../make-mandatory/SKILL.md`).
 
 **Not verified**
 - Application impact — any report, query, or code path that assumed this column is never NULL
-  will now meet one; which consumers depend on it is not confirmed by the publish. @app-owner.
+  will now meet one; which consumers depend on it is not confirmed by the publish. app owner.
 - Other environments — whether Test, UAT, or Prod already hold NULLs, or whether downstream jobs
   there tolerate them, is not known from a disposable copy.
 - Reversibility — only the forward loosening is proven. Re-tightening is a make-mandatory change

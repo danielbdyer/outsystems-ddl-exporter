@@ -1,6 +1,6 @@
 ---
 name: verdict
-description: The four dispositions, the refusal ledger, and escalation routing for the lead's adversarial reviewer. Use after review-change has reproduced a change and dependency-scope + adversary have run. Folds reproduce + scope + attack into exactly one disposition — Approved, Approved with a named risk, Returned to the author, or Escalated with one question for the lead — logs every named risk and escalation in the ledger with its proof artifact, and routes it: a return goes to persona-1 (change-author re-renders the finding as a teaching fix in conversation; the lead never sees it), an escalation goes to the human lead with the dependency map and the single specific question, the homework done. Reuses self-test/rubric.md's dimensions as the audit checklist a change must pass to be approved.
+description: "The four dispositions, the refusal ledger, and escalation routing for the lead's adversarial reviewer. Use after review-change has reproduced a change and dependency-scope + adversary have run. Folds reproduce + scope + attack into exactly one disposition — Approved, Approved with a named risk, Returned to the author, or Escalated with one question for the lead — logs every named risk and escalation in the ledger with its proof artifact, and routes it: a return goes to persona-1 (change-author re-renders the finding as a teaching fix in conversation; the lead never sees it), an escalation goes to the human lead with the dependency map and the single specific question, the homework done. Reuses self-test/rubric.md's dimensions as the audit checklist a change must pass to be approved."
 ---
 
 # Verdict (the disposition)
@@ -112,6 +112,10 @@ LEDGER — <op> on <object>
 
 A downgrade is never silent: a risk without its artifact in the ledger is not a named risk — it is an
 un-discharged obligation, and the change is not approved.
+
+The ledger's named file is **`../../../estate/refusals.md`** — blocks append newest-last, in
+exactly the format above; the CI gate holds the not-silent rule (every block carries its
+`disposition:` and `proof artifact:` fields).
 
 ## The escalation contract (the two routes, exactly)
 

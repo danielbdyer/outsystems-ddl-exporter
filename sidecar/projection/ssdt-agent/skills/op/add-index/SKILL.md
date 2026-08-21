@@ -5,7 +5,19 @@ description: Use when the developer says "add an index on Customer.Email", "make
 
 # Add an index
 
-> **Default (provisional — the data decides).** Ships as a single declarative schema change, applied in place — additive, nothing lost. Any team member can review it: the change is additive and the running application is unaffected. But the *build cost* — a write-blocking lock whose duration scales with row count — lives in the data, not the `.sql`.
+> **Default (provisional — prove before you classify).** Ships as a single declarative schema change, applied in place — additive, nothing lost. Any team member can review it: the change is additive and the running application is unaffected. But the *build cost* — a write-blocking lock whose duration scales with row count — lives in the data, not the `.sql`.
+
+> **SHIP terminal: ONE RELEASE, in place (additive).** SSDT emits `CREATE INDEX` and builds the index
+> over every existing row — a real build (proven F11: `CREATE INDEX IX_child_ParentId` adds a
+> nonclustered index), not a metadata flip. The build takes a write-blocking lock whose duration scales
+> with row count (`WITH (ONLINE = ON)` avoids it, Enterprise/Developer only). Nothing is lost.
+> `FINDINGS_AND_CHANGES.md` F11.
+>
+> **When to add one at all → `../../_index/when-to-index/SKILL.md`** owns the WHETHER; this op owns the
+> HOW. The strongest trigger is a new foreign-key column — SQL Server never indexes the child side.
+>
+> **Proven precedent:** `../../../sample-prs/add-index.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "add an index on Customer.Email", "make this attribute searchable", "the list screen is slow, can we index it".

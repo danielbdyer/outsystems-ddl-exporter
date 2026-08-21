@@ -15,13 +15,13 @@ lives in `_index/`. Nothing here restates a guard or the deploy-time specifics.
 |---|---|---|
 | add-default | `../op/add-default/SKILL.md` | Named DEFAULT for new rows. Applied in place, no data touched; any team member can review. Never backfills existing rows. |
 | modify-default | `../op/modify-default/SKILL.md` | Change/remove default = DROP-then-ADD. Applied in place, no data touched; any team member can review. Never re-stamps old rows. |
-| add-unique | `../op/add-unique/SKILL.md` | UNIQUE over all rows. Duplicates block the deployment → ships with a pre-deployment script first; one-NULL-only bites nullable cols (filtered-index fix). |
-| add-check | `../op/add-check/SKILL.md` | CHECK WITH CHECK over all rows. Violators block the deployment → ships with a pre-deployment script first; NOCHECK leaves it untrusted. |
+| add-unique | `../op/add-unique/SKILL.md` | Unique INDEX built over all rows. A duplicate blocks it (Msg 1505) → de-dupe in a pre-deploy first; a unique index allows only one NULL, so a nullable column uses a filtered index (WHERE col IS NOT NULL). Build-or-block, no trust state. |
+| add-check | `../op/add-check/SKILL.md` | CHECK re-validated over all rows. A violating row blocks it (Msg 547) → reconcile in a pre-deploy first; over clean data the declarative add trusts itself (WITH NOCHECK ADD + WITH CHECK CHECK). The hand-written NOCHECK dodge (untrusted) is the anti-pattern. Create-fk's twin. |
 | toggle-trust | `../op/toggle-trust/SKILL.md` | ⚠️ OPERATIONAL — refuse-and-route. NOCHECK/WITH CHECK CHECK is a script verb; prove it ends `is_not_trusted=0`. |
 
 ## Shared concerns for this family
 
-- **The UNIQUE / CHECK deploy-time block, the NOCHECK→re-trust ladder, UNIQUE-one-NULL + filtered index** — a constraint is a claim proven at apply time → `../_index/constraint-is-a-claim/SKILL.md`.
+- **The UNIQUE / CHECK deploy-time block, the auto-trust of a declarative CHECK add (WITH NOCHECK ADD + WITH CHECK CHECK — the anti-pattern is a hand-written NOCHECK), UNIQUE-one-NULL + filtered index** — a constraint is a claim proven at apply time → `../_index/constraint-is-a-claim/SKILL.md`.
 - **Multi-phase** when violators can't be fixed in-place (grandfather / quarantine) → `../_index/multi-phase/SKILL.md`.
 - **Backfill** of existing rows after a default (the separate idempotent-UPDATE op) → `../_index/idempotent-seed/SKILL.md`.
 

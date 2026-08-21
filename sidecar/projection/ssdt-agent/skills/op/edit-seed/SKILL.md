@@ -5,11 +5,19 @@ description: Use when the developer says "add 'Refunded' to the Status list", "c
 
 # Edit static seed records (unconditional-WHEN-MATCHED trap)
 
-> **Default (provisional — the data decides).** Ships as one release: the seed MERGE in the
+> **Default (provisional — prove before you classify).** Ships as one release: the seed MERGE in the
 > post-deployment script re-runs, inserting the new row or amending the one changed row. The table
 > definition is unchanged. Any team member can review this: the change is additive and the running
 > application is unaffected. Prove the redeploy is silent and the label change touches exactly one row
 > before classifying.
+
+> **SHIP terminal: ONE RELEASE (post-deploy seed).** The seed MERGE re-runs, inserting the new row or
+> amending the one changed row; the table definition is unchanged. Silence is the proof — a no-op
+> redeploy touches 0 rows, and a label change touches exactly 1 (the guarded `WHEN MATCHED`), never the
+> table size. `../../_index/idempotent-seed/SKILL.md`.
+>
+> **Proven precedent:** `../../../sample-prs/edit-seed.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "add 'Refunded' to the Status list", "change the label on this lookup value", "we have a new order type".
@@ -42,7 +50,9 @@ avoids, and it is why the guard compares each column before updating. The full w
 `../../_index/idempotent-seed/SKILL.md` (the guarded MERGE).
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/edit-seed.md`. SHIP terminal: **ONE RELEASE (post-deploy
+seed).** The fragment this operation contributes:
 
 **Review & release**
 - Any team member can review this: a seed value is added (or a label amended) and the running
@@ -67,7 +77,7 @@ in place.
 
 **Not verified**
 - Application impact. Code paths that switch on the exact set of seed values — a screen bound to the
-  list, logic that resolves a value by id — are not exercised on the disposable copy (@app-owner).
+  list, logic that resolves a value by id — are not exercised on the disposable copy (app owner).
 - Other environments. Whether Test, UAT, or Prod already hold this key with a different label, or the
   id is already taken, is unknown from the disposable copy of Dev; run the verification query before
   promotion.

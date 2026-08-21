@@ -45,14 +45,16 @@ Do not guess the operation when the phrasing is ambiguous. "Change the customer 
 widen, retype, rename, or make-mandatory. Reflect the candidates back to the developer in their
 terms and let them pick before you commit a name.
 
-### 2. Name the operation(s) from the catalog
-Map the confirmed intent onto an entry in `skills/operations/*.md`
-(`tables.md` · `columns.md` · `keys-and-refs.md` · `indexes.md` · `constraints.md` ·
-`static-data.md` · `structural.md`). One request may be
-several operations (e.g. "split Customer into Customer + Address" is the multi-PR `split-entity`
-structural op). Name each one. You do not read how the operation flips here — that is
-change-author's job during proving — but you do record which catalog entry owns the operation so
-it can.
+### 2. Carry the op-slug forward — the catalog entry that owns the operation
+`confirm-intent` handed back a change-order naming exactly one **op-slug** per operation — the
+directory name of `skills/op/<op-slug>/SKILL.md` — plus the pre-flagged **sharedConcern**
+(`skills/_index/<concern>/SKILL.md`). Carry those fields into the change-spec **verbatim**: the
+per-op skill is the exact file change-author opens first, and the concern is the WHY it opens
+beside it. One request may be several operations (e.g. "split Customer into Customer + Address"
+is the multi-PR `split-table` structural op) — name each op-slug, one line per op. The family
+TOCs (`skills/operations/*.md`) are orientation surfaces over the same catalog; they restate
+nothing and are never the handoff. You do not read how the operation flips here — that is
+change-author's job during proving.
 
 ### 3. Gather the three state-variables
 These three facts decide how an operation ships and who must review it. You collect what the
@@ -98,7 +100,10 @@ Produce a structured spec. Keep it tight; it is an input contract, not prose:
 ```
 CHANGE-SPEC
   request (developer's words):  "<verbatim>"
-  operation(s):                 <catalog-id>  →  skills/operations/<file>.md
+  op-slug(s):                   <op-slug>  →  skills/op/<op-slug>/SKILL.md
+                                 (from confirm-intent's change-order; one line per op when the
+                                  request decomposes — never a skills/operations/ family path)
+  shared concern:               skills/_index/<concern>/SKILL.md | none
   target object:                <schema>.<Table>[.<Column>]
   desired-state edit:           <the destination, e.g. Email NVARCHAR(256) NOT NULL>
                                  (a description of the CREATE edit — change-author writes the SQL)
@@ -107,7 +112,7 @@ CHANGE-SPEC
     violates-rule:    known:<…>   | unknown — prove it
     coexist required: known:<…>   | unknown — prove it
   business answer:    <the human's answer to the one question, or "none needed">
-  notes:              <ambiguities resolved, multiple-op decomposition, anything change-author needs>
+  notes:              <ambiguities resolved, multi-op decomposition, anything change-author needs>
 ```
 
 Then invoke `change-author` with this spec. You are done.
@@ -123,7 +128,9 @@ Then invoke `change-author` with this spec. You are done.
 - **Do not declare a state-variable "known" to avoid asking.** A guessed row state defeats the
   entire system. `unknown — prove it` is always a valid, honest answer — it is the *default*.
 - **Every file you reference lives under `ssdt-agent/`.** You don't write files here, but if you
-  capture the developer's request anywhere, it stays in this tree.
+  capture the developer's request anywhere, it stays in this tree — the specified home for a
+  captured change-spec is `estate/handoffs/<change-id>/` (transient; swept when the change's
+  pull request merges — see `estate/README.md`).
 
 ## Adaptive shortcut
 If the request is an unmistakable, no-business-choice loosening (e.g. "make Email optional" =

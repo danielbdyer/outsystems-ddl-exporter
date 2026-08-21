@@ -433,7 +433,7 @@ module BridgeRetarget =
             | BridgeCheck.BridgeKeyUnique ->
                 profile.BridgeKeyDuplicateCount = 0L,
                 (if profile.BridgeKeyDuplicateCount = 0L then "bridge key unique"
-                 else System.String.Concat(plural profile.BridgeKeyDuplicateCount "duplicated bridge key" "duplicated bridge keys", " — resolution would be ambiguous"))
+                 else System.String.Concat(plural profile.BridgeKeyDuplicateCount "duplicated bridge key" "duplicated bridge keys", " — resolution would be ambiguous"))  // LINT-ALLOW: terminal audit-narration composition over typed counts at the diagnostics boundary; BCL String.Concat is the irreducible primitive for this free-text detail
             | BridgeCheck.BridgeKeyDeclaredUnique ->
                 profile.BridgeKeyDeclaredUnique,
                 (if profile.BridgeKeyDeclaredUnique then "a single-column unique index or constraint is declared on the bridge key"
@@ -441,7 +441,7 @@ module BridgeRetarget =
             | BridgeCheck.BridgeKeyNonNull ->
                 profile.BridgeKeyNullCount = 0L,
                 (if profile.BridgeKeyNullCount = 0L then "bridge key non-null"
-                 else System.String.Concat(plural profile.BridgeKeyNullCount "bridge row" "bridge rows", " carry a NULL key"))
+                 else System.String.Concat(plural profile.BridgeKeyNullCount "bridge row" "bridge rows", " carry a NULL key"))  // LINT-ALLOW: terminal audit-narration composition over typed counts at the diagnostics boundary; BCL String.Concat is the irreducible primitive for this free-text detail
             | BridgeCheck.SourceAndBridgeKeyTypesMatch ->
                 profile.KeyTypesMatch,
                 (if profile.KeyTypesMatch then "source and bridge key types match" else "source and bridge key types differ")
@@ -451,11 +451,11 @@ module BridgeRetarget =
             | BridgeCheck.AllSourceValuesResolveThroughBridge ->
                 profile.UnresolvedThroughBridgeCount = 0L,
                 (if profile.UnresolvedThroughBridgeCount = 0L then "every in-scope value resolves through the bridge"
-                 else System.String.Concat(plural profile.UnresolvedThroughBridgeCount "in-scope value" "in-scope values", " do not resolve to exactly one bridge row"))
+                 else System.String.Concat(plural profile.UnresolvedThroughBridgeCount "in-scope value" "in-scope values", " do not resolve to exactly one bridge row"))  // LINT-ALLOW: terminal audit-narration composition over typed counts at the diagnostics boundary; BCL String.Concat is the irreducible primitive for this free-text detail
             | BridgeCheck.SourceValuesStillResolveToOriginalParent ->
                 profile.BrokenOriginalParentCount = 0L,
                 (if profile.BrokenOriginalParentCount = 0L then "original parent resolution preserved"
-                 else System.String.Concat(plural profile.BrokenOriginalParentCount "value" "values", " would stop resolving to the original parent"))
+                 else System.String.Concat(plural profile.BrokenOriginalParentCount "value" "values", " would stop resolving to the original parent"))  // LINT-ALLOW: terminal audit-narration composition over typed counts at the diagnostics boundary; BCL String.Concat is the irreducible primitive for this free-text detail
             | BridgeCheck.ExistingRetargetConflict ->
                 not profile.ExistingRetargetConflict,
                 (if profile.ExistingRetargetConflict then "another retarget already claims this reference" else "no conflicting retarget")
@@ -465,11 +465,11 @@ module BridgeRetarget =
             | BridgeCheck.BridgeRowsOrphanedFromSource ->
                 profile.OrphanedBridgeRowCount = 0L,
                 (if profile.OrphanedBridgeRowCount = 0L then "no orphaned bridge rows"
-                 else System.String.Concat(plural profile.OrphanedBridgeRowCount "bridge row" "bridge rows", " have no source row"))
+                 else System.String.Concat(plural profile.OrphanedBridgeRowCount "bridge row" "bridge rows", " have no source row"))  // LINT-ALLOW: terminal audit-narration composition over typed counts at the diagnostics boundary; BCL String.Concat is the irreducible primitive for this free-text detail
             | BridgeCheck.BridgePayloadConflicts ->
                 profile.PayloadConflictCount = 0L,
                 (if profile.PayloadConflictCount = 0L then "no payload conflicts"
-                 else System.String.Concat(plural profile.PayloadConflictCount "payload column" "payload columns", " disagree between bridge and source"))
+                 else System.String.Concat(plural profile.PayloadConflictCount "payload column" "payload columns", " disagree between bridge and source"))  // LINT-ALLOW: terminal audit-narration composition over typed counts at the diagnostics boundary; BCL String.Concat is the irreducible primitive for this free-text detail
             | BridgeCheck.IdentityEvidenceMissing ->
                 profile.IdentityEvidence <> BridgeIdentityEvidence.Missing,
                 (if profile.IdentityEvidence = BridgeIdentityEvidence.Missing then "identity evidence missing" else "identity evidence present")

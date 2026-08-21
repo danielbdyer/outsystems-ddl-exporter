@@ -19,19 +19,46 @@ worked commands; read them, then run them in order.
 > That is how a hundred provers share the warm container without colliding on the same `.sql`,
 > the same `bin/`, or the same DB.
 
-## 0 — The runtime shim (REQUIRED on this machine)
+## The Twin substrate (preferred) vs this warm-container runbook
 
-`sqlpackage` is installed as a dotnet tool targeting .NET 8, but this box has .NET 9 at a
-non-standard path. Export these in the shell that runs `sqlpackage`, or the tool fails to
-start:
+`twin.json` (beside this file) wires the proving ground as a **Twin** — the deterministic,
+evidence-profiled local dev environment (`../../THE_TWIN.md`). When the `twin` CLI is present,
+prefer it for the BEFORE state:
 
 ```bash
-export DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"
-export DOTNET_ROLL_FORWARD=Major
-export MSYS_NO_PATHCONV=1   # Git Bash: keep /Action: switches and /opt/... docker paths intact
+cd ssdt-agent/proving-ground     # from sidecar/projection/
+twin up      # stands up twin-ssdt-agent on localhost,21434; DacFx-publishes Modules/**/*.sql;
+             # applies Data/Seed.sql; mints deterministically (no sqlpackage). `twin reset` tears down.
 ```
 
-`sqlpackage` lives at `C:\Users\danny\.dotnet\tools\sqlpackage.exe` (version 170.4.83).
+The Twin establishes the deterministic BEFORE state; the sqlpackage proving loop below then targets
+`localhost,21434 / twin` (see `../skills/talk-to-local-sql/SKILL.md` §"substrate of record" and
+`../skills/prove-on-dacpac/SKILL.md` §"On the Twin substrate"). This warm-container runbook
+(`localhost,11433 / ProvingGround`) is the **fallback** when the Twin is not wired. The Twin gives
+the sample its reproducible base; the flip-twin variants (empty / clean / violating) stay
+**seed-based** here — the Twin's scenario/pin flip mechanism is for synthetically-minted estates,
+not the static seed.
+
+## 0 — The working directory and the runtime shim (REQUIRED)
+
+Run everything below from **`sidecar/projection/`** — the paths in the commands (`scripts/…`,
+`ssdt-agent/…`) resolve from there, not from the repo root.
+
+`sqlpackage` is installed as a dotnet tool targeting .NET 8. Export these in every shell that
+runs `sqlpackage`, or the tool fails to start — point `DOTNET_ROOT` at the real local dotnet
+root, and keep the roll-forward whenever the installed runtime is newer:
+
+```bash
+export DOTNET_ROOT=/root/.dotnet   # wherever the local dotnet root is
+export DOTNET_ROLL_FORWARD=Major
+# Git Bash only: export MSYS_NO_PATHCONV=1  (keeps /Action: switches + /opt/... docker paths intact)
+```
+
+`sqlpackage` is expected on PATH (`dotnet tool install -g microsoft.sqlpackage`; the findings in
+this tree were proven at version 170.4.83 — **stamp the version you actually ran into every
+finding**, because guard behaviour is version-bound). One worked Windows box, verbatim, for
+contrast: `DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"`, the tool at
+`C:\Users\danny\.dotnet\tools\sqlpackage.exe`, Git Bash with `MSYS_NO_PATHCONV=1`.
 (Alternative to the shim: install the .NET 8 runtime — then the env vars are unnecessary.)
 
 ## 1 — Warm the disposable substrate
@@ -102,10 +129,11 @@ rebuild the dacpac (step 2). One edit, one proof.
 sqlpackage /Action:Script \
   /SourceFile:ssdt-agent/proving-ground/bin/Release/SampleCatalog.dacpac \
   /Profile:ssdt-agent/proving-ground/profiles/ProvingGround.Strict.publish.xml \
-  /OutputPath:ssdt-agent/proving-ground/bin/delta.sql
+  /OutputPath:ssdt-agent/proving-ground/bin/Release/delta.sql
 ```
 
-Read `delta.sql`. This is the REAL SSDT-generated change — the thing a raw `sqlcmd` ALTER loop
+Read `bin/Release/delta.sql` (the canonical delta path — beside the dacpac it was scripted
+from; every surface in this tree uses this same path). This is the REAL SSDT-generated change — the thing a raw `sqlcmd` ALTER loop
 can never reveal. Look for: `DROP`+`CREATE` on a rename (a rename with no refactorlog entry —
 STOP), a shadow-table rebuild (table swap), drop-by-absence, `GenerateSmartDefaults` backfills,
 and — for a make-mandatory — the **table-has-rows guard**
@@ -123,8 +151,13 @@ sqlpackage /Action:Publish \
 - **Succeeds clean, no script** → ships as a single schema change, applied in place; no data is
   read or written.
 - **Blocked** (`BlockOnPossibleDataLoss` / NOT NULL on a populated table / truncation / orphan
-  FK / duplicate key) → the data decides how it ships and who must review it. The block text and
+  FK / duplicate key) → the existing rows determine how it ships and who must review it. The block text and
   row counts are the proof.
+
+> **Read the outcome from the TEXT, not `$?`.** A blocked publish does not reliably exit
+> non-zero (and any `| tail` pipeline masks the status entirely). The block is the presence of
+> `Could not deploy package` with the `Msg` lines beneath it; a clean publish is that text's
+> absence plus `Successfully published database`. The text is the verdict signal, every time.
 
 > **make-mandatory caveat.** The block on NULL->NOT NULL is
 > **table-has-rows, not column-has-NULLs.** On a POPULATED table the block stands even after
@@ -151,8 +184,11 @@ the proof, not a bug.
 ## 8 — Author the remedy, then re-prove Strict clean
 
 Write the real remedy — a `Script.PreDeployment.sql` backfill, a refactorlog entry, a staged
-NOCHECK → reconcile → `WITH CHECK CHECK` FK, a pre-deploy dedupe. Rebuild, re-run **step 6**.
-**The clean Strict re-run is the proof carried to the developer.**
+NOCHECK → reconcile → `WITH CHECK CHECK` FK, a pre-deploy dedupe. If a Permissive run (step 7) or
+a blocked publish already touched the copy, **reset first** (step 9's drop/recreate, then step
+3's BEFORE state) — a blocked publish is non-atomic and can leave residue (an untrusted FK), and
+a proof taken over that residue proves nothing. Then rebuild and re-run **step 6**.
+**The clean Strict re-run, from a reset copy, is the proof carried to the developer.**
 
 > **make-mandatory is the exception.** On a populated table a backfill does NOT produce a clean
 > Strict re-run — the table-has-rows guard still fires. The corrected, proven remedy is a
@@ -191,6 +227,25 @@ this — each owns a fresh unique DB per `../self-test/PROTOCOL.md`.)
 > table — without empirically discovering on the disposable copy that SSDT STILL blocks it — has
 > classified from stale recipe text and the run FAILS. Same edit, three seeds, decided by
 > ROW PRESENCE.
+
+## Deployment-script class folders (the folder is the contract)
+
+The proving ground carries the deployment-script class folders the lifecycle rails require
+(`../skills/deploy-scripts/SKILL.md`) so a script's *permanence class is its location*:
+
+- `Migrations/` · `ReferenceData/` — **permanent · idempotent** (model-restoring backfills, guarded
+  reference seeds). No death certificate; `Retire: never`; proven by the silent redeploy.
+- `OneTime/` — **transient · one-time**. The header **is a death certificate** (a removal work item,
+  or the phase that ends it). Swept on the deprecation train once prod-confirmed.
+- `AdHoc/` — **outside the DACPAC** (scale/lock or a true one-off). Principal review; the four
+  obligations (justify · idempotent-chunked-resumable · trace · reconcile).
+
+Each folder's `README.md` states its contract; `Migrations/001_backfill_customer_region.sql` and
+`OneTime/Release_2026.07_email_normalize.sql` are the worked exemplars. Their `:r` includes in
+`Script.PostDeployment.sql` are **commented** so the standing seed the self-test pins is not
+perturbed — when you prove a real script, author it in the right folder and add its include under
+the matching class heading. The `SampleCatalog.sqlproj` reclassifies all four folders' `*.sql` out
+of the schema build (they are data, not model).
 
 ## Trap watch (handbook 16 = §19) — catch these in the delta, not after
 

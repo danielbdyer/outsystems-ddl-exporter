@@ -21,7 +21,8 @@ lives in `_index/`. Nothing here restates a guard or the specifics of how a chan
 
 ## Shared concerns for this family
 
-- **The blocked unique change** (non-unique → unique on duplicates) is a claim about the data, proven at build time → `../_index/constraint-is-a-claim/SKILL.md` (duplicate probe).
+- **Whether to add an index at all** — the additive ops (create-fk, create-entity, add-optional, add-mandatory, junction) recommend one where warranted; the strongest trigger is a foreign-key column, which SQL Server never auto-indexes (F11) → `../_index/when-to-index/SKILL.md` (the WHETHER; `add-index` owns the HOW).
+- **The blocked unique change** (non-unique → unique on duplicates) is a claim about the data, proven at build time → `../_index/constraint-is-a-claim/SKILL.md` (duplicate probe, `Msg 1505`).
 - Single-op couplings NOT lifted: ONLINE=Enterprise (add-index) and the operational-not-declarative one-liner (rebuild-index, shared only with toggle-trust) stay inline in their op skills.
 
 ## Handbook offset reminder

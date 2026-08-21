@@ -5,7 +5,7 @@ description: Use when the developer says "turn on Auto Number for the Id", "make
 
 # Add / remove IDENTITY (Auto Number) (silent-table-rebuild trap)
 
-> **Default (provisional — the data decides).** On a populated table with incoming foreign keys,
+> **Default (provisional — prove before you classify).** On a populated table with incoming foreign keys,
 > ships across multiple releases: adding or removing IDENTITY cannot be a simple `ALTER` — it is a
 > table property fixed at column creation, so SSDT rebuilds the whole table (a shadow table, a
 > `SET IDENTITY_INSERT` copy that preserves every key, a reseed, and every incoming foreign key
@@ -15,6 +15,14 @@ description: Use when the developer says "turn on Auto Number for the Id", "make
 > time this is done on the estate. Preview the delta and confirm it is a shadow-table rebuild with
 > `SET IDENTITY_INSERT` before promising anything — the danger drives the review need, not the
 > release count. Prove before you classify.
+
+> **SHIP terminal: ACROSS MULTIPLE RELEASES (a table rebuild).** IDENTITY is a table property fixed at
+> column creation, so SSDT rebuilds the whole table (shadow table + `SET IDENTITY_INSERT` copy + reseed
+> + drop/recreate every incoming FK). On a populated table with incoming FKs it stages across releases;
+> with no incoming FKs, one release; empty, a single schema change. `../../_index/identity-and-refactorlog/SKILL.md`.
+>
+> **Proven precedent:** `../../../sample-prs/identity-swap.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "turn on Auto Number for this entity's Id", "make the Id auto-increment", "stop auto-numbering, I
@@ -84,7 +92,9 @@ that a small edit means a small deploy, and shipping a rebuild that silently re-
 reasoning (identity vs. name): `../../_index/identity-and-refactorlog/SKILL.md`.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`), record register.
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/identity-swap.md`. SHIP terminal: **ACROSS MULTIPLE
+RELEASES** (a table rebuild). The fragment this operation contributes:
 
 **Review & release**
 - A dev lead must review this: the whole table is rebuilt (every row is copied) and every incoming
@@ -128,7 +138,7 @@ physical rebuild to repeat.
 - Application impact — after Auto Number is on, the database owns the Id: any insert that supplies an
   explicit Id fails unless it wraps the insert in `SET IDENTITY_INSERT`; for a removal, the mirror —
   the application must now supply the Id itself. Application-side Id handling is not confirmed here
-  (@app-owner).
+  (app owner).
 - Other environments — the rebuild and key preservation were proven on a disposable copy of Dev only;
   Test, UAT, and Prod hold row counts and incoming foreign-key data this copy cannot see. Run the
   verification query before promotion.
