@@ -192,8 +192,8 @@ it. That sub-machine is the authoritative source; this section is its proof.
 |---|---|---|---|
 | **narrow** (`skills/op/narrow`) | yes — shrink | Two-release (F4). Pre-deploy shortens + `ALTER` narrower with model lagging; model catches up next release. Also offer the **CHECK-constraint alternative** below. | **PROVEN** |
 | **make-mandatory**, populated (`skills/op/add-mandatory` / `make-mandatory`) | yes — `NOT NULL` on rows | Same class as narrow — the **identical** row-presence guard (`Modules/Customer.sql`, Twin-documented). Two-release: R1 backfill the NULLs + pre-deploy `ALTER … NOT NULL` with the model lagging; R2 the model catches up. | **PROVEN** (F7, live 2026-08-16) |
-| **delete-attribute** (`skills/op/delete-attribute`) | yes — drop column | A drop cannot pre-run with the model still holding the column (DacFx re-adds it). Needs its own proof; likely deprecate-then-drop across releases. | TO PROVE |
-| **delete-entity** (`skills/op/delete-entity`) | yes — drop table | As above, for a whole table. Needs its own proof. | TO PROVE |
+| **delete-attribute** (`skills/op/delete-attribute`) | yes — drop column | **Two-release.** R1 = pre-deploy `DROP CONSTRAINT` + `DROP COLUMN` with the model still declaring the column (DacFx emits no drop; the row-presence guard never fires) + the corrected seed; R2 = the model drops the column, no-op. Re-publishing R1 **re-adds** the column with its `DEFAULT`, so R1 is a single publish and R2 follows at once. Receipt: `sample-prs/delete-attribute.md` (`Msg 50000` block; `Msg 207` seed trap). | **PROVEN** (2026-08-21) |
+| **delete-entity** (`skills/op/delete-entity`) | yes — drop table | **One release, scripted** — *different from the column drop.* `DropObjectsNotInSource = false` makes removing the `.sql` a phantom (does nothing), so the `.sql` is removed **and** an idempotent pre-deploy `DROP TABLE` runs in the **same** release (raw T-SQL the data-loss gate does not govern). The two-release trick does **not** transfer — a model still holding the table re-creates it empty on the next publish. Receipt: `sample-prs/delete-entity.md` (`SQL72015`/`Msg 50000`; phantom `object_id` unchanged; re-create trap). | **PROVEN** (2026-08-21) |
 | **retype-explicit**, lossy (`skills/op/retype-explicit`) | yes — lossy cast | Already multi-phase; confirm each phase is gate-clean under the axiom. | TO PROVE |
 | **create-fk-orphan** (`skills/op/create-fk-orphan`) | no (the reconcile is manual pre-deploy DML) | Ships in one release. Reconcile the orphan in a pre-deploy, or the publish blocks `Msg 547` (F9). The declarative add ends trusted automatically — no manual trust step (F5 overturned, F9). | **PROVEN** |
 | widen · add-optional · add-index · create-entity · add-default · edit-seed · … | no | Unaffected by the axiom — one declarative release. | n/a |
@@ -223,9 +223,35 @@ it. That sub-machine is the authoritative source; this section is its proof.
   that keeps the column wide would sidestep the two-release, but it clutters the schema, and the
   schema is kept clean. Parked, not built. Revisit only if a concrete case needs a max-length rule
   without the physical narrowing and the clutter is judged worth it then.
-- **Drops (delete-attribute, delete-entity) — still TO PROVE.** The two-release trick does not
-  transfer directly — a drop with the model still holding the object gets re-added. SHIP routes
-  these to REFUSED until their own pattern is proven. Do not write drop guidance until then.
+- **Drops (delete-attribute, delete-entity) — PROVEN (2026-08-21); two distinct patterns.** The
+  earlier "route these to REFUSED; do not write drop guidance until then" note is **retired** — the
+  patterns are proven and recorded. A **column** drop ships **two-release** (R1 pre-deploy
+  `DROP CONSTRAINT` + `DROP COLUMN` with the model lagging so DacFx emits no guarded drop; R2 the
+  model catches up — `sample-prs/delete-attribute.md`). A **table** drop ships **one-release,
+  scripted** (remove the `.sql` **and** run an idempotent pre-deploy `DROP TABLE` in the same
+  release, because `DropObjectsNotInSource = false` makes the file-removal a phantom —
+  `sample-prs/delete-entity.md`). The two-release trick does **not** transfer to a table drop (a
+  model still holding it re-creates it empty). SHIP's REFUSED terminal is for a genuinely
+  un-shippable request, not for drops; Part 4 carries the shapes and receipts.
+- **OPEN — the locked-gate law is not yet propagated to two downstream layers (flagged 2026-08-21).**
+  Batch 1 propagated the two-release/no-relaxation law across the **authoring** composed layer (the op
+  skills, the `_index` knowledge, the standards skills, the operation TOCs, the three standard docs,
+  and the proving-ground). It deliberately did **not** touch two other layers, because doing so
+  changes what each *judges*, not just how it reads — a call for the operator:
+  - **`self-test/*` (the acceptance machinery).** `rubric.md`, `prompts.md`, `review-prompts.md`,
+    `review-rubric.md`, `PROTOCOL.md`, and `golden/make-mandatory-*` still encode the retired
+    relax-vs-stage fork as the **expected** answer. As written they would grade an agent that chose
+    the two-release as *wrong* and one that chose a gate-relaxation as *right* — inverted against the
+    axiom. Re-scoping the acceptance bar to the two-release is its own pass.
+  - **`skills/review/*` (the reviewer persona).** `verdict`, `adversary`, and the `reviewer` agent
+    still escalate "relax the guard vs. stage" as the make-mandatory fork. Under the axiom that is no
+    longer a fork (the shape is two-release, full stop), so those examples describe an escalation that
+    should not occur — the reviewer's disposition for a populated make-mandatory shifts from *Escalated*
+    to *Approved / Approved-with-named-risk*. The blind audit scoped `skills/review/*` out; changing
+    the reviewer's escalation semantics needs its own review.
+
+  Until both are done, an agent reading only the authoring layer is correct; an agent graded by
+  `self-test` or reviewed by `skills/review` can be pushed back toward the retired fork.
 - **Infra — a stable SQL target is needed for proving.** F1–F5 were proven on a SQL Server 2022
   container this session, but the Docker daemon degraded twice and cut the make-mandatory re-proof
   short. `sqlpackage` is now on the box (installed this session); the missing half is a **stable
@@ -301,10 +327,19 @@ child whose key declares it, and does not chain without each level's own cascadi
 
 ### 6.4 — Surfaces corrected to the new law
 
-The FK-trust correction was propagated so no surface still teaches the manual trust step:
-`skills/author-pr` (the worked example), `skills/_index/constraint-is-a-claim` (the reconcile-first
-pattern), `skills/prove-on-dacpac` (the blocked-publish fix), `skills/operations/keys-and-refs` (the
-TOC), the five keys `skills/op/*`, and the five `sample-prs/*`.
+The FK-trust correction was propagated across the declarative-path surfaces: `skills/author-pr` (the
+worked example), `skills/_index/constraint-is-a-claim` (the reconcile-first pattern),
+`skills/prove-on-dacpac` (the blocked-publish fix), `skills/operations/keys-and-refs` (the TOC), the
+five keys `skills/op/*`, the five `sample-prs/*`, `THE_DECISION_TREE.md` (the FK-orphan flex row,
+2026-08-21), and `proving-ground/Modules/Order.sql` (the header, 2026-08-21). The declarative path
+needs **no** manual trust step.
+
+One post-deploy `WITH CHECK CHECK` legitimately remains — as **recovery, not the happy path**: a
+blocked non-atomic publish can leave a key present-but-untrusted (`is_not_trusted = 1`), and
+re-trusting it (or `toggle-trust`'s re-trust of a legacy `WITH NOCHECK` constraint) is the fix for
+that specific partial state (`skills/prove-on-dacpac`, `skills/op/toggle-trust`). That is distinct
+from the overturned F5 claim that the *declarative add itself* required a manual trust step — it
+does not.
 
 **Constraints family — DONE (2026-08-21, F10).** `add-check` proved create-fk's twin by script
 capture (`db_chk` clean → trusts itself; `db_chkv` violating → `Msg 547`); `add-unique` proved

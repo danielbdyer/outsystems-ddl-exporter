@@ -9,13 +9,17 @@
   -------------------------
   - create-FK clean vs with-orphans (Forgotten FK Check): adding
       CONSTRAINT FK_Order_Customer_CustomerId FOREIGN KEY (CustomerId) REFERENCES dbo.Customer(Id)
-    publishes clean ONLY if every CustomerId has a parent. With the orphan present, a clean
-    declarative FK is blocked at deploy. The proven remedy is the script path:
-    add WITH NOCHECK -> reconcile (delete/repoint the orphan) -> WITH CHECK CHECK to re-trust.
+    publishes clean ONLY if every CustomerId has a parent. With the orphan present, the declarative
+    FK is blocked at deploy (Msg 547). The proven remedy is a pre-deploy that reconciles the orphan
+    (delete/repoint) and fixes the seed; the DECLARATIVE add then does the trusting itself. DacFx
+    always emits the same two statements for a declarative FK add — WITH NOCHECK ADD, then
+    WITH CHECK CHECK later in the same publish — so a reconciled key ends trusted (is_not_trusted = 0)
+    with NO manual re-trust step. An untrusted key comes only from a hand-written WITH NOCHECK add
+    that skips the re-validation. (FINDINGS_AND_CHANGES.md F9, overturning F5; self-test prompt 4.)
     Orphan absent vs present flips how the change ships: with clean data the FK ships in place,
-    one ADD CONSTRAINT, no data modified; with the orphan present it ships as a scripted
+    one declarative ADD, no data modified; with the orphan present it ships with a pre-deploy
     reconcile that modifies existing data. Either way a dev lead reviews the new cross-table
-    relationship. (self-test prompt 4.)
+    relationship.
 
   - change-delete-rule / cascade: the OutSystems delete rule (Protect / Ignore / Delete) maps to
     NO ACTION / NO ACTION / CASCADE. Changing it is DROP + ADD of the FK. Watch the delta for

@@ -86,10 +86,9 @@ The fixed spine is in `THE_DECISION_TREE.md`. Each section, in words:
   here. Surface a mechanic to the developer only when it is genuinely inherent and they must act on it
   (reconcile the orphan first, or the two releases of a data-loss change); anything the pipeline is
   configured to handle once is invisible here (`FINDINGS_AND_CHANGES.md` Part 5, *simple by default*).
-  A relaxed gate is a setting on one publish, not a database state — say so, so no one hunts for a
-  second PR. (This estate cannot toggle the gate, so a data-loss change ships as a **two-release**
-  pattern, not a gate relaxation. The **S5 SHIP sub-machine** in `THE_DECISION_TREE.md` decides the
-  shape; the proofs are in `FINDINGS_AND_CHANGES.md`.)
+  This estate cannot toggle the gate, so a data-loss change ships as a **two-release** pattern, not a
+  gate relaxation. The **S5 SHIP sub-machine** in `THE_DECISION_TREE.md` decides the shape; the
+  proofs are in `FINDINGS_AND_CHANGES.md`.
 - **The data** — the counts and the bad rows, named, headline-colon-detail. Nothing else.
 - **What proving showed** — the `Tried / Did / Realized` sequence, on this branch, with the
   real messages. Never a prior run. This is the heart: it shows the reviewer the change was
@@ -103,7 +102,7 @@ The fixed spine is in `THE_DECISION_TREE.md`. Each section, in words:
 
 ## The fork, and the sacred schema
 
-A remedy prepares data, relaxes one gate for one deploy, or stages across releases. **It never
+A remedy prepares data or stages across releases (this estate cannot relax the gate). **It never
 adds a permanent table, column, or constraint** — that is a separate product decision with its
 own PR and its own review. When a fix seems to need new schema, that is the signal to stop and
 ask, not to build (`skills/_index/remediation-adds-no-schema`; `skills/ask-the-developer`).

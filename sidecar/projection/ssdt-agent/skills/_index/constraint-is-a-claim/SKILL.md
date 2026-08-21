@@ -92,8 +92,9 @@ This is the distinction the seed scenarios are built to teach, and it must **not
 - **constraint-is-a-claim** (here) is blocked by an actual data **VIOLATION** — a *value* that breaks
   the rule (a duplicate, an orphan, a failing predicate). The remedy is **reconcile the data**.
 - **`../tightening-class/SKILL.md`** is blocked **DATA-BLIND** on row **PRESENCE** — the
-  `IF EXISTS(any row) RAISERROR` guard never looks at a value. The remedy is **an empty table, a
-  named gate-relaxation, or multi-phase.**
+  `IF EXISTS(any row) RAISERROR` guard never looks at a value. The remedy is **an empty table, or the
+  two-release restructure** — this estate cannot relax the gate (`../../../FINDINGS_AND_CHANGES.md`
+  Part 1).
 
 The overlap that fools people: `add-check`, `add-unique`, and `define-PK` can refuse on a *populated
 but clean* table (that is tightening-class, row-presence) **and** on *dirty data* (that is this

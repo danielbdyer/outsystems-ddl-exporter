@@ -79,8 +79,9 @@ Placement is dependency direction:
 `BlockOnPossibleDataLoss` guard fires on **row presence**, not NULL content. The backfill is necessary
 but not sufficient. This is the tightening class; its WHY is owned by
 `../_index/tightening-class/SKILL.md` — do not re-derive it. **Rail:** never tell a developer a
-pre-deploy backfill "solves" a tightening on a populated table; that change is genuinely multi-phase,
-or it needs a *logged* `BlockOnPossibleDataLoss` relaxation scoped to one deploy (a principal's call).
+pre-deploy backfill "solves" a tightening on a populated table; that change ships as **two releases**,
+because this pipeline cannot relax the data-loss guard (the pre-deploy tightens with the model lagging
+in release one, the model catches up in release two).
 Probe to predict (`../talk-to-local-sql/SKILL.md`), let the Strict publish prove
 (`../prove-on-dacpac/SKILL.md`).
 

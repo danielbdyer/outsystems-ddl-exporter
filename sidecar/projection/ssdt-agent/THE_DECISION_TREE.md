@@ -184,8 +184,15 @@ A section with nothing real collapses to one honest line. It is never padded and
 - **Narrow a populated column / make a populated column NOT NULL:** D0 = yes, gate locked →
   TWO_RELEASE (proven, `FINDINGS_AND_CHANGES.md` F4 and the make-mandatory row).
 - **Add a foreign key with an orphan:** D0 = no (the reconcile is manual pre-deploy DML) →
-  ONE_RELEASE; FORK poses the orphan's fate; a post-deploy `WITH CHECK CHECK` trusts the key (F5).
-- **Drop a column or table:** D0 = yes; the two-release trick does not transfer to a drop — routes
-  to REFUSED until its own pattern is proven (`FINDINGS_AND_CHANGES.md` Part 5).
+  ONE_RELEASE; FORK poses the orphan's fate; the declarative add emits `WITH NOCHECK ADD` +
+  `WITH CHECK CHECK` and ends trusted on its own — no manual trust step (F9, overturning F5).
+- **Drop a column:** D0 = yes (DacFx emits a guarded `DROP COLUMN`) → `TWO_RELEASE` — R1 pre-deploy
+  drops the column with the model lagging, R2 the model catches up (`FINDINGS_AND_CHANGES.md` Part 4;
+  `sample-prs/delete-attribute.md`).
+- **Drop a whole table:** D0 = **no declarative** data-loss step — under `DropObjectsNotInSource =
+  false` removing the `.sql` is a phantom → `ONE_RELEASE`, but the physical drop is an explicit
+  pre-deploy `DROP TABLE` in that **same** release (raw T-SQL the gate does not govern), the `.sql`
+  removed alongside it. The two-release trick does **not** transfer — a model still holding the table
+  re-creates it empty (`FINDINGS_AND_CHANGES.md` Part 4; `sample-prs/delete-entity.md`).
 
 The machine does not change. Only which states carry weight, and which terminal SHIP reaches.

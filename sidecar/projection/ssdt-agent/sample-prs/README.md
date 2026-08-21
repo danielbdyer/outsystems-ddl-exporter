@@ -65,7 +65,7 @@ Every row links to its PR; each PR names the exact green test that proves it.
 | [make-optional](./make-optional.md) | uncheck Is Mandatory | NOT NULL → NULL applies clean |
 | [make-mandatory](./make-mandatory.md) | check Is Mandatory | **blocks** a populated table (row-presence guard) even at 0 NULLs; empty applies |
 | [widen](./widen.md) | enlarge a Text Attribute's length | applies clean; every value preserved (digest identical) |
-| [narrow](./narrow.md) | shrink a Text Attribute's length | refused on any **populated** table (row-presence) even when every value fits; the `MAX(LEN)` proof decides the remedy — relax the gate, or reconcile over-length data first |
+| [narrow](./narrow.md) | shrink a Text Attribute's length | refused on any **populated** table (row-presence) even when every value fits; ships as **two releases** (this pipeline cannot relax the gate) — R1 reconciles any over-length values and narrows with the model lagging, R2 the model catches up |
 | [retype-implicit](./retype-implicit.md) | widen a numeric type | applies in place; every value preserved |
 | [retype-explicit](./retype-explicit.md) | lossy type change | narrowing **blocks** (overflow); widening applies |
 | [delete-attribute](./delete-attribute.md) | delete an Attribute | column drop **blocks** on a populated table; the scripted DROP is the irreversible step |

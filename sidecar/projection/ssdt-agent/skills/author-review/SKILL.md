@@ -88,12 +88,12 @@ single question — last line, answerable in a word. Never three questions; neve
 ```
 Escalated — one question.
 
-Making Email required on a populated table: the zero-blank backfill is proven (0 remain) and the
-deployment is still blocked — the guard checks row presence, not blank values. The two honest paths
-are a logged one-time relaxation of the data-loss guard, or a two-release staging. Both are
-reproduced on a fresh copy; the dependency map is attached.
+Merging OrderArchive into Order: the join is not 1:1 — three parents carry two or more children each
+(reproduced on a fresh copy). A naive copy keeps one row per parent and silently drops the rest, so
+which rows survive is a design decision, not a data fix. Both the cardinality count and the row loss
+a naive copy would cause are reproduced on a fresh copy; the dependency map is attached.
 
-The question: is a one-time relaxation of the data-loss guard acceptable for this column — yes or no?
+The question: collapse these to one row per parent — and by what rule — or does the merge not happen?
 ```
 
 ## Rules
