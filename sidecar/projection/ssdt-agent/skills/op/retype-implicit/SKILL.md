@@ -11,8 +11,15 @@ description: Use when the developer says "change to a bigger number", "INT to BI
 > since the running application is unaffected. Prove the direction is widening — not
 > value-reshaping — before classifying it.
 
-> **Proven precedent:** `../../../sample-prs/retype-implicit.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ONE RELEASE, in place.** Proven live on this branch (SQL Server 2022,
+> `sqlpackage 170.4.83.3`): changing `dbo.OrderLine.LineNumber` from `INT` to `BIGINT`, the
+> difference is a single `ALTER COLUMN [LineNumber] BIGINT NOT NULL`, the strict publish
+> (`BlockOnPossibleDataLoss = true`) returns `Successfully published database.`, the sum, maximum,
+> and value digest are identical before and after (`13` / `3` / `129`), and a re-publish is a no-op.
+>
+> **Proven precedent:** `../../../sample-prs/retype-implicit.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op, carrying the live proof
+> messages.
 
 ## OutSystems phrasing
 "change to a bigger number", "INT to BIGINT", "make this VARCHAR into NVARCHAR".
@@ -61,8 +68,10 @@ ask whether this is a widening (free) or a value-reshaping cast where each row h
 convert.
 
 ## On the record
-The fragment this operation contributes to the pull request (`../../author-pr/SKILL.md`). The base
-finding holds for any genuine widening; add the added-scrutiny line only when the table is large.
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op — with the live proof messages — is `../../../sample-prs/retype-implicit.md`.
+SHIP terminal: **ONE RELEASE, in place.** The base finding holds for any genuine widening; add the
+added-scrutiny line only when the table is large.
 
 **Review & release**
 - Genuine widening: `Any team member can review this: the change is data-preserving — every value

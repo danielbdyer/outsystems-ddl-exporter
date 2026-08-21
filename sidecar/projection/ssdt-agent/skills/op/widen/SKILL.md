@@ -9,8 +9,14 @@ description: Use when the developer says "make the field longer", "increase Emai
 > no data is read or written. Any team member can review it: the change is additive and the running
 > application is unaffected. Prove before you classify — the couplings below can move both findings.
 
-> **Proven precedent:** `../../../sample-prs/widen.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ONE RELEASE, in place.** Proven live on this branch (SQL Server 2022,
+> `sqlpackage 170.4.83.3`): widening `dbo.Customer.Email` from `NVARCHAR(256)` to `NVARCHAR(400)`,
+> the difference is a single `ALTER COLUMN [Email] NVARCHAR(400) NULL`, the strict publish
+> (`BlockOnPossibleDataLoss = true`) returns `Successfully published database.`, the value digest is
+> identical before and after (`-715616066`), and a re-publish is a no-op.
+>
+> **Proven precedent:** `../../../sample-prs/widen.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op, carrying the live proof messages.
 
 ## OutSystems phrasing
 "make the field longer", "increase Email to 256", "give Total more precision".
@@ -53,7 +59,9 @@ change as obviously safe without looking one hop out at what the column particip
 sits in.
 
 ## On the record
-The fragment this operation contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op — with the live proof messages — is `../../../sample-prs/widen.md`. SHIP
+terminal: **ONE RELEASE, in place.** The fragment this operation contributes:
 
 **Review & release**
 - Any team member can review this: the change is additive and the running application is unaffected.

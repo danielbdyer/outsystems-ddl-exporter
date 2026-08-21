@@ -12,8 +12,19 @@ description: Use when the developer says "rename the attribute", "change FirstNa
 > a refactorlog entry SSDT instead drops the old column and adds the new one, and every value in the
 > column is lost — stop and demand the refactorlog before this ships.
 
-> **Proven precedent:** `../../../sample-prs/rename-attribute.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ONE RELEASE, in place — only with the refactorlog entry.** Proven live on this
+> branch (SQL Server 2022, `sqlpackage 170.4.83.3`), renaming `dbo.Customer.ContactPhone` to
+> `MobileNumber` over 5 populated rows. With a `Rename Refactor` entry the difference is
+> `EXEC sp_rename '[dbo].[Customer].[ContactPhone]', 'MobileNumber', 'COLUMN'`, the strict publish
+> succeeds, and the value digest is identical before and after (`1312825711`). Without the entry the
+> difference is `DROP COLUMN [ContactPhone]` + `ADD [MobileNumber]`: the strict publish is refused —
+> `Msg 50000 ... Rows were detected. The schema update is terminating because data loss might occur.`
+> — and a gate-off publish commits the drop, leaving `MobileNumber` NULL in all 5 rows and every
+> phone number lost. Read the difference; it must be `sp_rename`.
+>
+> **Proven precedent:** `../../../sample-prs/rename-attribute.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op, carrying both legs'
+> live proof messages.
 
 ## OutSystems phrasing
 "rename the attribute", "change FirstName to GivenName", "I renamed the field in Service Studio".
@@ -63,7 +74,10 @@ goes. Reading the generated delta every time is how you catch that loss in the s
 costs nothing to fix, instead of in production, where it costs the column.
 
 ## On the record
-The fragment this contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op — with both legs' live proof messages — is
+`../../../sample-prs/rename-attribute.md`. SHIP terminal: **ONE RELEASE, in place — only with the
+refactorlog entry.** The fragment this contributes:
 
 **Review & release**
 - A dev lead or an experienced developer should review this: the running application must change to

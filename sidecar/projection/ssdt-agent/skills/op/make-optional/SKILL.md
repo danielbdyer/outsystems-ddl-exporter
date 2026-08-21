@@ -10,8 +10,16 @@ description: Use when the developer says "make this attribute optional", "unchec
 > assumes the column is always populated; a dev lead or an experienced developer should review it
 > when consumers must change to tolerate a NULL. A loosening never blocks the deployment.
 
-> **Proven precedent:** `../../../sample-prs/make-optional.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ONE RELEASE, in place.** Proven live on this branch (SQL Server 2022,
+> `sqlpackage 170.4.83.3`): loosening `dbo.CustomerAddress.Line1` from `NOT NULL` to `NULL`, the
+> difference is a single `ALTER COLUMN [Line1] NVARCHAR(120) NULL`, the strict publish
+> (`BlockOnPossibleDataLoss = true`) returns `Successfully published database.`, all 5 rows keep
+> their value, and a re-publish is a no-op. A loosening is never refused at deploy — the risk is
+> downstream.
+>
+> **Proven precedent:** `../../../sample-prs/make-optional.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op, carrying the live proof
+> messages.
 
 ## OutSystems phrasing
 "make this attribute optional", "uncheck Mandatory", "let MiddleName be blank now".
@@ -53,8 +61,9 @@ it tells you nothing about the code that reads the column. That is why the quest
 and breaking a report that quietly assumed the column was always filled.
 
 ## On the record
-The fragment this operation contributes to the pull request (`../../author-pr/SKILL.md`), in the
-record register:
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op — with the live proof messages — is `../../../sample-prs/make-optional.md`. SHIP
+terminal: **ONE RELEASE, in place.** The fragment this operation contributes, in the record register:
 
 **Review & release**
 - Ships as a single schema change, applied in place. No data is read or written.

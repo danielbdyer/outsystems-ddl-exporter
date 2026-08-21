@@ -11,8 +11,18 @@ description: Use when the developer says "add CreatedBy/CreatedOn/ModifiedBy/Mod
 > backfill, and a dev lead must review because existing data is modified — prove the backfill clears
 > the block before you classify it.
 
-> **Proven precedent:** `../../../sample-prs/audit-columns.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ONE RELEASE, in place** (nullable columns, or `NOT NULL` with an explicit default
+> that stamps every existing row as the columns land); **ONE RELEASE with a pre-deploy backfill** for
+> `NOT NULL` with no default on a populated table. Proven live on this branch (SQL Server 2022,
+> `sqlpackage 170.4.83.3`), adding `CreatedBy`/`CreatedOn`/`ModifiedBy`/`ModifiedOn` to
+> `dbo.Customer` (5 rows): as `NOT NULL` with `DEFAULT (SUSER_SNAME())` / `DEFAULT (SYSUTCDATETIME())`
+> the strict publish returns `Successfully published database.` and all 5 existing rows are stamped
+> (for example `CreatedBy = sa`); the same four columns added as `NULL` also publish clean, leaving
+> the 5 rows NULL.
+>
+> **Proven precedent:** `../../../sample-prs/audit-columns.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op, carrying the live proof
+> messages.
 
 ## OutSystems phrasing
 "add CreatedBy / CreatedOn / ModifiedBy / ModifiedOn", "stamp who changed it and when", "basic audit fields".
@@ -46,8 +56,10 @@ You asked for CreatedBy / CreatedOn / ModifiedBy / ModifiedOn. As nullable colum
 A fresh column's block is about a missing value, and the cure is supplying it: an explicit default stamps the rows that are already there as the column lands, and the clean Strict run is the proof. On an existing column the same word behaves oppositely — a default describes future inserts and never reaches back — which is why the two shapes must not be conflated (see `../add-default/SKILL.md`). The trap to avoid is letting `GenerateSmartDefaults` decide the value silently: who supplies the stamp for existing rows is a data-owner decision, made explicitly. The neighbouring existing-column tightening — which no default can cure — is `../../_index/tightening-class/SKILL.md`.
 
 ## On the record
-The fragment this operation contributes to the pull request (`../../author-pr/SKILL.md`). Pick the
-branch the change actually took.
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op — with the live proof messages — is `../../../sample-prs/audit-columns.md`. SHIP
+terminal: **ONE RELEASE, in place** (nullable, or `NOT NULL` with an explicit default); **ONE RELEASE
+with a pre-deploy backfill** for `NOT NULL` with no default. Pick the branch the change actually took.
 
 **Review & release**
 - Nullable columns:

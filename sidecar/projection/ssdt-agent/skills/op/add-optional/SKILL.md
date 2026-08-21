@@ -10,8 +10,15 @@ description: Use when the developer says "add an optional attribute", "add a Mid
 > place — existing rows just get NULL, no data is read or written. Prove it on a disposable copy
 > before classifying.
 
-> **Proven precedent:** `../../../sample-prs/add-optional.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ONE RELEASE, in place.** Proven live on this branch (SQL Server 2022,
+> `sqlpackage 170.4.83.3`): the difference is a single
+> `ALTER TABLE dbo.Customer ADD [MiddleName] NVARCHAR(100) NULL`, the strict publish
+> (`BlockOnPossibleDataLoss = true`) returns `Successfully published database.`, the 5 existing rows
+> take NULL, and a re-publish is a no-op.
+>
+> **Proven precedent:** `../../../sample-prs/add-optional.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op, carrying the live proof
+> messages.
 
 ## OutSystems phrasing
 "add an optional attribute", "add a MiddleName field, it can be blank".
@@ -51,7 +58,9 @@ risk in the wrong place — an optional add is genuinely additive, and no existi
 with it.
 
 ## On the record
-Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op — with the live proof messages — is `../../../sample-prs/add-optional.md`. SHIP
+terminal: **ONE RELEASE, in place.** Fragments below, in the record register.
 
 **Review & release**
 - Any team member can review this: the change is additive and the running application is unaffected.
