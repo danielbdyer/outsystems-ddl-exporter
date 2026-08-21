@@ -73,6 +73,13 @@ Each was published to a throwaway database on the live server; the database name
   must be idempotent and safe to re-run over a partial state** — a failed deploy can leave its
   pre-deploy work behind.
 
+- **F7 — make-mandatory (populated `NULL → NOT NULL`) behaves exactly as narrow. (PROVEN)** Model
+  `Email → NOT NULL`, no pre-deploy → refused, `Msg 50000`, the column stayed nullable. The
+  two-release landed and held: R1 (model still `NULL` + a pre-deploy that backfills the NULLs and
+  runs `ALTER … NOT NULL`) → column `NOT NULL`; R2 (model `→ NOT NULL`, no pre-deploy) → no-op;
+  re-publish → stable. (DBs `mm_ax`, `mm_2r`.) The tightening class — narrow and make-mandatory —
+  is one pattern.
+
 ---
 
 ## Part 3 — The change plan, generalized (the doctrine every op inherits)
@@ -119,7 +126,7 @@ it. That sub-machine is the authoritative source; this section is its proof.
 | Op | Data-loss step? | The pattern under the locked gate | Status |
 |---|---|---|---|
 | **narrow** (`skills/op/narrow`) | yes — shrink | Two-release (F4). Pre-deploy shortens + `ALTER` narrower with model lagging; model catches up next release. Also offer the **CHECK-constraint alternative** below. | **PROVEN** |
-| **make-mandatory**, populated (`skills/op/add-mandatory` / `make-mandatory`) | yes — `NOT NULL` on rows | Same class as narrow — the **identical** row-presence guard (`Modules/Customer.sql`, Twin-documented). Two-release: R1 backfill the NULLs + pre-deploy `ALTER … NOT NULL` with the model lagging; R2 the model catches up. | CLASS-PROVEN (narrow F1–F4); live single-op confirm pending a stable server |
+| **make-mandatory**, populated (`skills/op/add-mandatory` / `make-mandatory`) | yes — `NOT NULL` on rows | Same class as narrow — the **identical** row-presence guard (`Modules/Customer.sql`, Twin-documented). Two-release: R1 backfill the NULLs + pre-deploy `ALTER … NOT NULL` with the model lagging; R2 the model catches up. | **PROVEN** (F7, live 2026-08-16) |
 | **delete-attribute** (`skills/op/delete-attribute`) | yes — drop column | A drop cannot pre-run with the model still holding the column (DacFx re-adds it). Needs its own proof; likely deprecate-then-drop across releases. | TO PROVE |
 | **delete-entity** (`skills/op/delete-entity`) | yes — drop table | As above, for a whole table. Needs its own proof. | TO PROVE |
 | **retype-explicit**, lossy (`skills/op/retype-explicit`) | yes — lossy cast | Already multi-phase; confirm each phase is gate-clean under the axiom. | TO PROVE |
