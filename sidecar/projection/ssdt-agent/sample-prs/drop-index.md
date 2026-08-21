@@ -70,6 +70,6 @@ Re-create the index from its definition (restore the `.sql` and republish, or `C
 
 ## Not verified
 
-- **Application impact / query performance.** A disposable copy carries no production query load, so whether any query depends on this index — and would slow down once it is gone — is not shown by the publish. Usage evidence from a prod-shaped source is what settles it (@app-owner).
+- **Application impact / query performance.** A disposable copy carries no production query load, so whether any query depends on this index — and would slow down once it is gone — is not shown by the publish. Usage evidence from a prod-shaped source is what settles it (app owner).
 - **Other environments.** Usage patterns differ by environment; zero seeks in one environment's window does not prove zero in Test, UAT, or Prod. Run the usage query in each before promotion.
 - **Reversibility at scale.** Re-creating the index restores the structure, but the rebuild time and the write-blocking lock at production row counts are not measured on the small copy.

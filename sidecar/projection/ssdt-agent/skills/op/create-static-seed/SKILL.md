@@ -10,8 +10,14 @@ description: Use when the developer says "add a Status lookup", "create a static
 > this — the change is additive and the running application is unaffected. Prove the redeploy is
 > silent before the classification holds.
 
-> **Proven precedent:** `../../../sample-prs/create-static-seed.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ONE RELEASE (schema + post-deploy seed).** The declarative `CREATE TABLE`, then an
+> idempotent MERGE seed in the post-deploy script — explicit-ID lookup keys, never IDENTITY. The
+> correctness property is **silence**: a no-op redeploy touches 0 rows and keeps an identical hash (the
+> idempotent-seed law — `../../_index/idempotent-seed/SKILL.md`, Twin-proven; the seed lands clean, this
+> branch). No existing data is modified.
+>
+> **Proven precedent:** `../../../sample-prs/create-static-seed.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "add a Status lookup", "create a static entity for order types", "a reference table with these fixed values", "a lookup with Active/Inactive".
@@ -60,7 +66,9 @@ deploy, which is broken even when the values still match. Full reasoning:
 `../../_index/idempotent-seed/SKILL.md`.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/create-static-seed.md`. SHIP terminal: **ONE RELEASE
+(schema + post-deploy seed).** The fragment this operation contributes:
 
 **Review & release**
 - Any team member can review this: the change is additive and the running application is unaffected.

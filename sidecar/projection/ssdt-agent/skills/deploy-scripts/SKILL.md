@@ -211,7 +211,7 @@ the existing rows determine how it ships.
 The disposable substrate (`../talk-to-local-sql/SKILL.md`) is real-*shaped*, not real-*sized*, and
 runs the **forward** publish only. It cannot prove production-scale timing or blocking (`>1M rows` is
 added scrutiny — schedule a window); it cannot prove reversibility or that the running application
-still works against the new shape (`@app-owner`, not verified here); it holds one catalog — other
+still works against the new shape (`app owner`, not verified here); it holds one catalog — other
 environments may hold rows this copy does not, and External-Entity / ETL / report consumers are
 dependency scope, not proven here.
 

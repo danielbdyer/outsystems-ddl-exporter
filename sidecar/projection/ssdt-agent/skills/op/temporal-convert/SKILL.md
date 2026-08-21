@@ -13,8 +13,13 @@ description: Use when the developer says "add full history to our existing popul
 > values on a disposable copy before classifying. (A new entity is `../temporal-new/SKILL.md`, a
 > single release.)
 
-> **Proven precedent:** `../../../sample-prs/temporal-convert.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ACROSS RELEASES.** Add the (hidden) period columns with backfilled `ROW START`
+> values, create the paired history table, then turn `SYSTEM_VERSIONING = ON` — staged so the running
+> application keeps working; existing data is modified (the backfill). A new entity is the single-release
+> op `../temporal-new/SKILL.md`. `../../_index/multi-phase/SKILL.md`.
+>
+> **Proven precedent:** `../../../sample-prs/temporal-convert.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "add full history to our existing populated entity", "turn on system versioning for Customer which already has data", "make this live table temporal".
@@ -51,7 +56,9 @@ You asked to start keeping history on Customer, which already has data. This is 
 Converting an existing populated table is staged because the old shape and the new one have to coexist while the period columns are added and backfilled — the shape can't be swapped under a running app in one atomic step. The failure this avoids is subtle: every historical row falsely dated to conversion time instead of when it actually began, which quietly corrupts the very history versioning was turned on to keep. Full reasoning: `../../_index/multi-phase/SKILL.md`.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`), record register.
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/temporal-convert.md`. SHIP terminal: **ACROSS RELEASES.**
+The fragment this operation contributes:
 
 **Review & release**
 - A dev lead must review this: existing data is modified — the period columns are backfilled into
@@ -79,7 +86,7 @@ Turn `SYSTEM_VERSIONING = OFF`, then drop the period columns and the history tab
 **Not verified**
 - Application impact — how the running application behaves against a system-versioned table: explicit
   column-list writes, `SELECT *`, and any attempt to write the hidden period columns are not confirmed
-  here (@app-owner).
+  here (app owner).
 - Other environments — whether Test/UAT/Prod row counts change the backfill outcome or the timing is
   not shown by this copy.
 - Production scale and timing — enabling versioning and backfilling against a large table may block

@@ -113,7 +113,7 @@ block records how many rows would be lost.
 **Not verified**
 - Application impact — any query, view, procedure, report, export, or job that reads the table will
   fail once it is gone: the object no longer resolves. Whether anything in the running application
-  still references it is not confirmed here (@app-owner). `sys.dm_sql_referencing_entities` finds
+  still references it is not confirmed here (app owner). `sys.dm_sql_referencing_entities` finds
   in-database references only, not application code or external consumers.
 - Other environments — the row count and the dependency list were proven on a disposable copy of Dev
   only; Test, UAT, and Prod may hold rows or references this copy cannot see. Run the pre-drop checks

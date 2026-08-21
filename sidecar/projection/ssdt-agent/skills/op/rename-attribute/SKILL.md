@@ -101,7 +101,7 @@ new name must be reverted with it. Not auto-reversed.
 
 **Not verified**
 - Application impact — consumers of the old column name outside the project (reports, ETL,
-  integrations not in the dacpac) break silently until they move to the new name; @app-owner and the
+  integrations not in the dacpac) break silently until they move to the new name; app owner and the
   consumer owners confirm the callers are updated.
 - Other environments — Test, UAT, and Prod may hold external consumers still reading the old name
   where Dev does not. Read the delta and run the verification query before each promotion.

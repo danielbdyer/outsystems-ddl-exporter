@@ -12,8 +12,13 @@ description: Use when the developer says "turn this text Status column into a pr
 > cross-table relationship is added. Prove the mapping is total before the drop, so no value silently
 > becomes NULL.
 
-> **Proven precedent:** `../../../sample-prs/extract-to-lookup.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ACROSS RELEASES (multi-PR).** Create the lookup → seed it → add the FK column →
+> backfill → drop the old free-text column; the old and new shapes coexist while readers migrate. The
+> drop is `BlockOnPossibleDataLoss`-gated and licensed only by the total-mapping proof (zero unmapped
+> values). `../../_index/multi-phase/SKILL.md`.
+>
+> **Proven precedent:** `../../../sample-prs/extract-to-lookup.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "turn this text Status column into a proper Status entity", "these string values should be a lookup so we stop typos".
@@ -62,7 +67,9 @@ is dropped. The failure this avoids is the one-publish version that silently tur
 into NULL. The full why — why the staging is required — is `../../_index/multi-phase/SKILL.md`.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/extract-to-lookup.md`. SHIP terminal: **ACROSS RELEASES
+(multi-PR).** The fragment this operation contributes:
 
 **Review & release**
 - A dev lead must review this: existing data is moved into a new shape and a cross-table relationship

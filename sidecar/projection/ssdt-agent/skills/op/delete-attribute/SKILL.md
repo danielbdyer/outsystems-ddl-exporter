@@ -118,7 +118,7 @@ empty, provably-unused column re-adds losslessly. The drop is not auto-reversed.
 
 **Not verified**
 - Application impact — whether application code outside the database still writes or reads the
-  column. `sys.dm_sql_referencing_entities` sees SQL objects, not application code; @app-owner
+  column. `sys.dm_sql_referencing_entities` sees SQL objects, not application code; app owner
   confirms the app has stopped.
 - Other environments — Test, UAT, and Prod may still have live readers where Dev does not. Run the
   referencing check and the verification query before each promotion.

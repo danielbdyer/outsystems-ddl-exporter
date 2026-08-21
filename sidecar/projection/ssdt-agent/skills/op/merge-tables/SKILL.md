@@ -14,8 +14,13 @@ description: Use when the developer says "merge CustomerAddress back into Custom
 > dropped. Prove cardinality (1:1) before copying anything, so a one-to-many absorbed side cannot
 > silently drop rows.
 
-> **Proven precedent:** `../../../sample-prs/merge-tables.md` — the Twin-proven worked example
-> for this op; its Deployment evidence names the exact green fact.
+> **SHIP terminal: ACROSS THREE RELEASES (empty absorbed ⇒ ONE).** Add the absorbing columns + copy →
+> repoint reads/FKs/views → drop the absorbed table, which `BlockOnPossibleDataLoss` blocks until the
+> copy is proven. Prove cardinality 1:1 first (a row-count check, before the value-hash) — a 1:many
+> absorbed side silently drops rows and the hash will not catch it. `../../_index/multi-phase/SKILL.md`.
+>
+> **Proven precedent:** `../../../sample-prs/merge-tables.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "merge CustomerAddress back into Customer", "we don't need two entities, combine them", "fold the lookup into its parent".
@@ -77,7 +82,9 @@ rows that survived the copy. The full why — why the two tables coexist through
 `../../_index/multi-phase/SKILL.md`.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/merge-tables.md`. SHIP terminal: **ACROSS THREE RELEASES**
+(an empty absorbed table collapses to ONE). The fragment this operation contributes:
 
 **Review & release**
 - A dev lead must review this: existing data is moved into the survivor's new columns and the

@@ -108,7 +108,7 @@ another database FK enforcement was already lost on the archived copy.
 **Not verified**
 - Application impact — any report, screen, or export that reads the archived rows from the live
   source will now miss them. Whether application and reporting code expects those rows in the live
-  table is not confirmed here (@app-owner).
+  table is not confirmed here (app owner).
 - Other environments — Test, UAT, and Prod hold different row counts the disposable copy of Dev
   cannot see. Run the verification query before promotion.
 - Production scale and timing — at production row counts the batched move may run long or block
