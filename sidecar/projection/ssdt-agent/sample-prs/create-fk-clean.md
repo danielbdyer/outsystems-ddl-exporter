@@ -19,12 +19,11 @@ exist, so a wrong or missing StatusId becomes impossible. No work item supplied 
 - The key is trusted, so SQL Server has validated every existing row and the query planner can rely on it.
 
 ## How it ships
-- One release, applied in place. No pre-deploy is needed because every child row already has a parent.
-  The generated script adds the key `WITH NOCHECK` and then re-validates it `WITH CHECK CHECK` in the
-  same publish, so it lands trusted (`is_not_trusted = 0`) — proven below.
+- One release, applied in place. No pre-deploy is needed because every child row already has a parent;
+  the key validates and trusts itself on publish (`is_not_trusted = 0`) — proven below.
 - This is the clean counterpart to `create-fk-orphan`: there, an orphan must be reconciled in a
-  pre-deploy first, or the publish blocks with `Msg 547`. Either way the key ends trusted
-  automatically — the reconcile is the only extra work, not a separate trust step.
+  pre-deploy first, or the publish is refused (`Msg 547`). Either way the key trusts itself — the
+  reconcile is the only extra work.
 
 ## The data
 - 4 orders. Every StatusId (1, 2, 3) matches a seeded Status row. No order points at a missing Status.

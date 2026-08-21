@@ -21,11 +21,10 @@ supplied — attach one before merge.
 - No existing row changes when this deploys; the change is to future delete behaviour only.
 
 ## How it ships
-- One release, applied in place. SQL Server cannot change a foreign key's delete rule in place, so
-  the generated script drops the key and re-adds it with the new rule — proven below. It drops the
-  constraint, re-adds it `WITH NOCHECK`, then re-validates it `WITH CHECK CHECK`. No row is written,
-  but the re-validation reads every child row against the parent, so the key ends trusted
-  (`is_not_trusted = 0`).
+- One release, applied in place. SQL Server cannot change a delete rule in place, so the generated
+  script drops the key and re-adds it with the new rule — proven below. No row is written, but the
+  re-add re-validates every child row against the parent (a read), so the key ends trusted
+  (`is_not_trusted = 0`). At production scale that re-validation is a scan.
 
 ## The data
 - No row is written. The change is to the key's delete rule, not to any row. The re-add re-validates

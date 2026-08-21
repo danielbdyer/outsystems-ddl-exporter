@@ -126,12 +126,13 @@ attach one before merge.
 - The key is made trusted, so SQL Server validates every existing row and the query planner can rely on it.
 
 ## How it ships
-- One release. The row removal is a plain pre-deploy `DELETE`, which the data-loss gate does not govern,
-  so no gate change is needed.
-- The orphan must be removed before the key is added, or the publish blocks: the generated script adds
-  the key `WITH NOCHECK` and then re-validates it `WITH CHECK CHECK` in the same publish, and that
-  re-validation fails on the orphan with `Msg 547`. With the orphan gone it passes and the key lands
-  trusted (`is_not_trusted = 0`) — no separate trust step.
+- A pre-deploy step removes orders with no matching customer (their order lines first, then the
+  orders). Idempotent — re-running removes nothing more.
+- The seed no longer plants the orphan, so a fresh database is clean from the start.
+- The row removal is a plain pre-deploy `DELETE`, which `BlockOnPossibleDataLoss` does not govern, so
+  no gate change is needed.
+- The orphan must be reconciled before the key is added — otherwise the publish is refused
+  (`Msg 547`). Reconciled, the key validates and trusts itself (`is_not_trusted = 0`); nothing to add.
 
 ## The data
 - 4 orders. 1 is an orphan: `Order 4 → CustomerId 999`, and no Customer 999 exists. It has 2 order lines.
@@ -139,14 +140,16 @@ attach one before merge.
 
 ## What proving showed
 Published to a throwaway copy on this branch.
-- **Tried:** add the key, publish → refused. `Msg 547`: the ALTER conflicted with
+- **Tried:** publish the key, orphan still present → refused. `Msg 547`: the ALTER conflicted with
   `FK_Order_Customer_CustomerId` on `dbo.Customer.Id`. The orphan has no parent.
-- **Did:** remove the orphan and its lines in a pre-deploy step; fix the seed; publish → succeeds.
-- **Realized:** the generated script adds the key `WITH NOCHECK` and re-validates it
-  `WITH CHECK CHECK` in the same publish; with the orphan gone the key lands trusted —
-  `is_not_trusted = 0`. A manual post-deploy `WITH CHECK CHECK` is redundant.
-- **Did:** re-publish the full change set on a fresh copy → 3 orders remain, key trusted; re-publish
-  again → nothing changes.
+- **Did:** remove the orphan and its lines in a pre-deploy step; fix the seed; publish → succeeds,
+  0 orphans remain.
+- **Realized:** the generated script adds the key `WITH NOCHECK` and then re-validates it
+  `WITH CHECK CHECK` in the same publish; with the orphan gone the key lands trusted
+  (`is_not_trusted = 0`) on its own.
+- **Confirmed:** the full change set on a fresh copy → key trusted automatically, 3 orders remain;
+  re-publish → nothing changes, still trusted. A manual post-deploy `WITH CHECK CHECK` added on top
+  changed nothing — it is redundant.
 
 ## After deploy — check
 ```sql

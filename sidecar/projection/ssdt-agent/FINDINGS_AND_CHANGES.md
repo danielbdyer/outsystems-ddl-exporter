@@ -206,6 +206,21 @@ it. That sub-machine is the authoritative source; this section is its proof.
   server** to publish against. Provision both in the environment setup so PROVE (the state
   machine's un-skippable guard) can always run — otherwise agents are pushed back toward guessing,
   which the whole machine exists to prevent.
+- **Simple by default — configuration is one-time and central, not per-op (operator, 2026-08-21).**
+  The developer experience on every operation must be simple: reconcile the data if it is dirty,
+  publish, done. Deploy-engine behaviour that **can** be configured — constraint validation and trust
+  is the clearest case — is pinned **once** in the pipeline's DacFx publish profile so a declarative
+  add validates and ends trusted (`is_not_trusted = 0`) on its own. No per-op record tells a developer
+  to add a manual trust step; the after-deploy `is_not_trusted = 0` check is the safety net, and the
+  profile is owned centrally. This is distinct from the data-loss gate (Part 1), which is **locked on**
+  and cannot be configured away — that one genuinely forces the two-release pattern, so it *is* surfaced
+  to developers. The rule: **configure away what you can; surface only what is inherent.**
+  - **Open — pin the profile to the estate's DacFx version.** Auto-trust was proven the default on
+    `sqlpackage 170.4.83.3` (F9); the original Twin proof ran `DacFx 162.5.57` and read as untrusted;
+    the estate pipeline sets DacFx options. So the exact publish-profile settings that guarantee
+    auto-trust must be pinned against the estate's **actual** DacFx version and verified once
+    (`is_not_trusted = 0` on a real publish). Until pinned, the records assume the configured
+    (auto-trust) state and rely on the after-deploy check to catch a profile that does not.
 
 ---
 
