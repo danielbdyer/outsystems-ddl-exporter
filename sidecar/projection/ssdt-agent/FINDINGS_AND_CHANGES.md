@@ -145,6 +145,48 @@ Each was published to a throwaway database on the live server; the database name
   FK we add leaves the join — and the parent-side delete/cascade check — scanning until the child column
   is indexed by hand. This is the strongest trigger for the `when-to-index` advisory.
 
+- **F12 — the structural / reshape family re-proven live; earlier records were narrative, not proof. (PROVEN 2026-08-21)**
+  Eight complex ops re-proven on disposable copies (warm SQL Server 2022, sqlpackage 170.4.83.3,
+  `BlockOnPossibleDataLoss = True`), replacing fabricated or Twin-cited receipts with live ones. The
+  DB name after each is the receipt.
+  - **identity-swap** (`pg_idsw_before`): turning on IDENTITY for `Category.Id` is a **shadow-table
+    rebuild** — `CREATE tmp_ms_xx_Category (Id IDENTITY(1,1))`, `SET IDENTITY_INSERT` copy preserving
+    ids 1,2,3, `DROP TABLE`, `sp_rename` (logged `Starting rebuilding table [dbo].[Category]`). The
+    data-loss gate **allows** it (rows moved, not dropped). `Category` has **no incoming FKs** → one
+    release; the earlier "drop/recreate FKs from Order and OrderLine" was fabricated (nothing
+    references Category). The post-deploy seed's explicit-id insert fails **`Msg 544`** until bracketed
+    with `SET IDENTITY_INSERT` — the seed fix ships in the same change set. End: `is_identity = 1`, ids
+    preserved, `IDENT_CURRENT = 3`, `Product.CategoryId` resolves.
+  - **The content-hash alias law** (`pg_split` / `pg_merge` / `pg_move`): a `FOR XML RAW` content hash
+    **encodes the column names** into the XML, so hashing `SELECT Id, X` against `SELECT CustomerId, X`
+    reads **unequal over identical data**. Both projections must alias to the **same** names. Proven:
+    aliasing to `(k, v …)` makes an identical split copy match (`51703987…`), a merge match
+    (`70353E7E…`), a move match (`0DDC0E13…`). The split/merge/move verification queries were corrected
+    accordingly.
+  - **split-table** (`pg_split`): `ContactPhone` → a new 1:1 `CustomerContact`; additive publish clean,
+    5 rows copied, hash-equal (aliased). (The old record split `Line1`/`City`/`PostalCode` off
+    `Customer`, which never had those columns.)
+  - **merge-tables** (`pg_merge`): `CustomerAddress` → `Customer`; cardinality `absorbed = 5 ==
+    distinct_parents = 5` (1:1); a 2nd address for one Customer → `6 != 5`, the 1:many refusal.
+  - **move-attribute** (`pg_move`): `Customer.Region` → `Account` across the `AccountId` join; 1:1 holds
+    (**excluding NULLs** — else the 2 unmapped rows false-positive as 1:many), hash-equal (aliased);
+    **2 of 5 customers have a NULL `AccountId`** so their Region strands — a fork the old record missed.
+  - **extract-to-lookup** (`pg_base` positive, `pg_move` negative): `StatusText → Status.Code` total
+    mapping returns 0 unmapped; the existing `StatusId` is backfill-consistent (0 mismatches); an
+    injected `StatusText = 'Backordered'` fires the non-total negative.
+  - **retype-explicit** (`pg_retype2`, `pg_retype`): `Order.Total DECIMAL(18,2) → INT` refused
+    (`Warning SQL72015` + `Msg 50000`), all convert with 2 losing cents (the settle fork);
+    `Product.Code → INT` is `TRY_CONVERT`-NULL for all 5 (alphanumeric) — the proof refutes the premise,
+    a STOP. (The old record claimed numeric Codes `100`/`200`/`400`/`500`/`30X` that do not exist.)
+  - **create-static-seed / edit-seed** (`pg_seed`, `pg_base`): the **guarded** `Category` MERGE over
+    unchanged rows touches **0 rows** (silent, `content_hash = -1487866545`); written **unguarded** it
+    touches **3** (the churn anti-pattern). edit-seed: an inserted `Refunded` row touches 1, a re-run 0,
+    a label change (`Hardware → Hardware Pro`) exactly 1 — never the table.
+
+  **The law across the reshape family:** a `BlockOnPossibleDataLoss` block on a Phase-3 drop is
+  **data-blind** (row-presence); the conservation/mapping proof licenses the **reviewer's** decision
+  that the values arrived, never the gate (consistent with `skills/_index/multi-phase`, Batch 1).
+
 ---
 
 ## Part 3 — The change plan, generalized (the doctrine every op inherits)
@@ -252,6 +294,14 @@ it. That sub-machine is the authoritative source; this section is its proof.
 
   Until both are done, an agent reading only the authoring layer is correct; an agent graded by
   `self-test` or reviewed by `skills/review` can be pushed back toward the retired fork.
+- **OPEN — the `SamplePr*` F# facts lag the re-scoped reshape records (flagged 2026-08-21).** Batch 2
+  re-proved the eight structural / reshape ops live on `sqlpackage` (F12) and re-scoped several onto
+  shapes the substrate actually holds (identity-swap's Category has no incoming FKs; split-table moves
+  `ContactPhone`, not phantom address columns; retype-explicit retypes `Order.Total`, not fictional
+  numeric `Product.Code` values). The `tests/Twin.Tests.Integration/SamplePr*Tests.fs` facts for those
+  ops still encode the previous scenarios, so they now describe records that changed. The DB receipt in
+  each rewritten record is the authoritative proof; re-aligning (or retiring) the affected F# facts to
+  the re-scoped scenarios is a follow-up on the test harness, distinct from the reviewer-facing records.
 - **Infra — a stable SQL target is needed for proving.** F1–F5 were proven on a SQL Server 2022
   container this session, but the Docker daemon degraded twice and cut the make-mandatory re-proof
   short. `sqlpackage` is now on the box (installed this session); the missing half is a **stable

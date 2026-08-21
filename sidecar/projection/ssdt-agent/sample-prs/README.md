@@ -19,9 +19,15 @@ consuming that data. Where intuition and reality disagree, these PRs teach reali
   run — the block text, the row counts, the `sys.*` facts, the content digests — never asserted. Each
   PR is now the ten-section gold template (`../skills/author-pr/SKILL.md`); the earlier Twin corpus is
   its provenance, re-grounded on live publishes this branch (`../FINDINGS_AND_CHANGES.md` F1–F11).
-- **Where the proofs live.** `../../tests/Twin.Tests.Integration/SamplePr*Tests.fs` (11 classes, 41
-  facts, all green). Run one class from `sidecar/projection/`:
-  `dotnet test tests/Twin.Tests.Integration/Twin.Tests.Integration.fsproj --filter "FullyQualifiedName~SamplePrTighteningTests"`.
+- **Where the proofs live.** The column, constraint, key, and index families trace to
+  `../../tests/Twin.Tests.Integration/SamplePr*Tests.fs` and to the live `sqlpackage` re-proofs on this
+  branch (`../FINDINGS_AND_CHANGES.md` F1–F11). The **structural / reshape family** (identity-swap,
+  split-table, merge-tables, move-attribute, extract-to-lookup, retype-explicit, create-static-seed,
+  edit-seed) was **re-proven live on `sqlpackage` 170.4.83.3** this branch (F12), each record naming its
+  disposable-copy DB. Those eight were re-scoped onto shapes the substrate actually holds, so the older
+  `SamplePr*` F# facts for them describe the previous scenarios and lag the re-scoped records — the DB
+  receipt in each record is the current proof; re-aligning the F# facts is tracked open in
+  `../FINDINGS_AND_CHANGES.md` Part 5.
 - **The engine pair — a real divergence, resolved 2026-08-21.** The Twin corpus was captured on **DacFx
   162.5.57**; the live re-proof this branch ran on **sqlpackage 170.4.83.3**. On constraint **trust** the
   two diverge, and the live engine is authoritative: a declarative FK or CHECK add generates
@@ -48,9 +54,10 @@ These are the examples where a plausible assumption is *wrong*, and the Twin pro
 - **[delete-entity](./delete-entity.md)** / **[rebuild-index](./rebuild-index.md)** — removing an Entity
   from the model does **not** drop the table under the production posture (phantom survival); an index
   rebuild produces **no declarative delta at all** (it's maintenance, `NothingToApply`).
-- **[identity-swap](./identity-swap.md)** — removing Auto-Number is a **table rebuild**, and the
+- **[identity-swap](./identity-swap.md)** — toggling Auto-Number is a **table rebuild**, and the
   data-loss gate *allows* it (a rebuild moves rows rather than dropping them) — the opposite of what the
-  "BlockOnPossibleDataLoss" name suggests.
+  "BlockOnPossibleDataLoss" name suggests. The real trap is the seed: an explicit-id insert fails
+  `Msg 544` once IDENTITY is on, until bracketed with `SET IDENTITY_INSERT`.
 
 ## The catalog
 
@@ -122,7 +129,7 @@ Every row links to its PR; each PR names the exact green test that proves it.
 | [split-table](./split-table.md) | one Entity → two | phase 1: new table + 1:1 copy (digest match); the source-column drop is the guarded later phase |
 | [merge-tables](./merge-tables.md) | two Entities → one | prove **1:1 cardinality before the copy** or a 1:many merge silently drops rows |
 | [move-attribute](./move-attribute.md) | a field crosses Entities | copy-then-drop, never a rename; 1:1 join + digest match; the source drop is the guarded later phase |
-| [identity-swap](./identity-swap.md) | toggle Auto-Number | a **table rebuild** the gate *allows* (rows moved, not dropped); keys + FKs preserved |
+| [identity-swap](./identity-swap.md) | toggle Auto-Number | a **table rebuild** the gate *allows* (rows moved, not dropped); ids preserved; the seed's explicit-id insert needs `IDENTITY_INSERT` or fails `Msg 544` |
 | [temporal-convert](./temporal-convert.md) | turn on history for an existing Entity | single publish **blocks** (no-default period columns); ships **staged** with historical defaults |
 
 ---
