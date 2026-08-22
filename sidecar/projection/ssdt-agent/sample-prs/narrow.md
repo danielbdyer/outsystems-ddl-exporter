@@ -81,8 +81,9 @@ WHERE object_id = OBJECT_ID('dbo.Product') AND name = 'Code';
 ## How to roll this back
 Re-widening is lossless: `ALTER TABLE dbo.Product ALTER COLUMN Code NVARCHAR(50) NOT NULL` restores
 the 50-character column with no data loss. The characters cut from Product 3 are not restored by
-this; the original `STANDARD-SKU-001` lives in the Release 1 pre-deploy output for a manual
-restore. Backing the change out was not exercised.
+this: the Release 1 reconcile was destructive, so the original `STANDARD-SKU-001` is recoverable only
+from a backup taken before Release 1, or from a durable record the reconcile script was written to keep
+— not from the deploy log. Backing the change out was not exercised.
 
 ## Not checked / still open
 - The cut value is the data owner's call. Shortening `STANDARD-SKU-001` to `STANDARD-S` drops the

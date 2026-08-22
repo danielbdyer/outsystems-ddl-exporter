@@ -134,9 +134,10 @@ distinction the disposable-copy runs exist to teach. When a constraint op refuse
 but clean* table, that is this class; when it refuses on *dirty data*, that is the claim.
 
 And not the same as **Optimistic NOT NULL on a NEW column** (`add-mandatory` / `audit-columns`):
-that block is a value-needed refusal the remedy **cures** — an explicit `DEFAULT` stamps every
-existing row as the column lands, and a populated table applies clean (proven:
-`../../../sample-prs/add-default.md`, DacFx 162.5.57). This class's row-presence guard clears for no
+that block is a value-needed refusal the remedy **cures** — an explicit `DEFAULT` on a **new** NOT
+NULL column stamps every existing row as the column lands, and a populated table applies clean
+(proven: `../../../sample-prs/add-mandatory.md`; contrast `../../../sample-prs/add-default.md`, where a
+default on an **existing** column never backfills). This class's row-presence guard clears for no
 remedy short of the two-release restructure — this estate cannot relax the gate (Part 1). The
 discriminator is one sentence: **if a DEFAULT can fix it, it is not the tightening class.**
 

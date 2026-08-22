@@ -105,12 +105,17 @@ The fixed spine is in `THE_DECISION_TREE.md`. Each section, in words:
 A remedy prepares data or stages across releases (this estate cannot relax the gate). **It never
 adds a permanent table, column, or constraint** — that is a separate product decision with its
 own PR and its own review. When a fix seems to need new schema, that is the signal to stop and
-ask, not to build (`skills/_index/remediation-adds-no-schema`; `skills/ask-the-developer`).
+ask, not to build — pose it as a fork (`skills/ask-the-developer`); the sacred-schema guard the
+authoring machine enforces is `THE_DECISION_TREE.md` S5/S6 (a remedy that would add persistent schema
+routes to FORK).
 
 A fork the proof surfaces — an orphan to delete or reassign, a value to truncate — is the
 developer's to decide. Pose one question: the measured fact, 2–4 options each with its
-consequence and cost and a schema line, and a custom slot. Record the answer as one line. While
-it is open, the PR says so and carries no invented schema.
+consequence and cost and a schema line, and a custom slot. Record the answer as one line. **An open
+fork does not hold the PR — emit-and-flag:** the record is emitted with the question named in *Not
+checked / still open* and the confirmation it forces in *Before promoting*, carrying no invented
+schema. It is resolved in review, before promotion, never silently by the agent
+(`THE_DECISION_TREE.md` S6).
 
 ---
 
