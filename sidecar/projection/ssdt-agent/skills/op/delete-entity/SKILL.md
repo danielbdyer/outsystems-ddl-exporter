@@ -65,9 +65,8 @@ You asked to delete the table. Mechanically this is one drop in one release — 
 kind of change, because once it lands the data is gone for good and there is no undo. On a
 disposable copy of Dev, SSDT's BlockOnPossibleDataLoss blocked the publish because the table still
 holds rows; the block reports the exact row count, and that count is the proof of what would be
-lost — the block is the safety net working, not a failure. Before this ships I drop the inbound
-foreign keys first; I proved on the copy that this order clears the block cleanly
-and the table drops. A principal should review it, because the loss can't be undone. One thing to
+lost — the block is the safety net working, not a failure. Before this ships, the inbound foreign
+keys drop first; the copy showed this order clears the block cleanly and the table drops. A principal should review it, because the loss can't be undone. One thing to
 settle first: is this data truly needed nowhere — no report, no export, no downstream job still
 reading it?
 

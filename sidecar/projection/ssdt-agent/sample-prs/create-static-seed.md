@@ -38,8 +38,7 @@ Proven on copies this branch (`pg_seed` first converge; `pg_base` re-run; sqlpac
 - **Realized:** the silence is the guard. The same MERGE written **unguarded** (`WHEN MATCHED THEN
   UPDATE` with no column comparison) touched **3 rows** — it rewrites every row on every deploy even
   when nothing changed. The correctness property is that a no-op redeploy touches 0 rows and keeps an
-  identical hash; the after-deploy hash re-checks it in each environment
-  (`../skills/_index/idempotent-seed`).
+  identical hash; the after-deploy hash re-checks it in each environment.
 
 ## After deploy — check (each environment)
 ```sql

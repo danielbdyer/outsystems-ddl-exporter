@@ -36,7 +36,7 @@ Proven on a copy this branch (`pg_move`, sqlpackage 170.4.83.3).
   foreign key declared on `Product.CategoryId`, so nothing blocked the delete — the integrity break is
   silent.
 - **Did:** set `IsActive = 0` instead → the value leaves the active list, the row and its references
-  stay intact, and the redeploy is silent (`skills/_index/idempotent-seed`, deactivate-don't-delete).
+  stay intact, and the redeploy is silent — deactivate, don't delete.
 - **Realized:** removing the value from the seed's `VALUES` block does **not** delete the row either —
   the MERGE has no delete-by-absence branch, so the seed is additive. Retiring a value is therefore a
   deliberate `IsActive = 0`, never a delete. (Were a foreign key declared, the delete would instead

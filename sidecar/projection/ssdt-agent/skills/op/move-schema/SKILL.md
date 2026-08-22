@@ -60,8 +60,8 @@ and the rows go with it. For the publish loop, see `../../prove-on-dacpac/SKILL.
 ## The verdict (to the developer)
 You asked to move the entity to another schema. That's the same trap as a rename: with the
 refactorlog SSDT keeps the data, without it SSDT drops the table and recreates it, and the rows go
-with it. On a disposable copy of Dev I proved the move with `ALTER SCHEMA TRANSFER` — the row counts
-and `object_id` came through unchanged, so the table moved rather than being dropped and rebuilt.
+with it. On a disposable copy of Dev the move with `ALTER SCHEMA TRANSFER` came through with the row
+counts and `object_id` unchanged, so the table moved rather than being dropped and rebuilt.
 The one thing to line up is that every fully-qualified `schema.Table` reference has to follow the
 move, so the running application has to change with it — that's why a dev lead or an experienced
 developer should have eyes on the reference list.

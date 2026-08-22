@@ -61,7 +61,7 @@ the moved rows are byte-identical in the archive. For the publish loop, see
 You asked to archive the old rows — move them out of the live table into an archive. SSDT has no
 declarative "move," so this ships in stages across more than one release: the archive table is
 added first, then a batched post-deployment script moves the rows across, then the counts are
-reconciled. On a disposable copy of Dev I proved the counts reconcile exactly — every row ends up
+reconciled. On a disposable copy of Dev the counts reconciled exactly — every row ends up
 either still live or in the archive, none dropped and none duplicated — and each batch commits, so
 the transaction log stays bounded. Because it's over a million rows, the move needs a maintenance
 window on the real table, and a principal should review it — the volume is large and existing data

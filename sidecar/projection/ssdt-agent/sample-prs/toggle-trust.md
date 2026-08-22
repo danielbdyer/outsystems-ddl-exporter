@@ -24,7 +24,7 @@ supplied — attach one before merge.
 
 ## How it ships
 - An operational script step, not part of the dacpac model. A *fresh* declarative FK or CHECK add
-  already re-validates and trusts itself (F9/F10), so this op is not that — it re-trusts a constraint
+  already re-validates and trusts itself, so this op is not that — it re-trusts a constraint
   left untrusted **another way**: a legacy hand-written `WITH NOCHECK`, or one disabled for a bulk load.
 
 ## What proving showed

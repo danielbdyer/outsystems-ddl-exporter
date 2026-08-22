@@ -28,7 +28,7 @@ than `'Pending'`. No work item supplied — attach one before merge.
 Published to a throwaway copy on this branch.
 - **Tried / Did:** publish the modify → the delta is `DROP CONSTRAINT DF_Order_StatusText` then `ADD
   CONSTRAINT DF_Order_StatusText DEFAULT 'Shipped'`, with no UPDATE of existing rows.
-- **Realized (F10):** a DEFAULT fills only new rows and never backfills — changing or dropping it never
+- **Realized:** a DEFAULT fills only new rows and never backfills — changing or dropping it never
   reaches back to rows already written, which keep their values.
 
 ## After deploy — check

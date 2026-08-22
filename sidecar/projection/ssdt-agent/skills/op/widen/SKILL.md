@@ -46,8 +46,8 @@ thing the delta also touches. For the publish loop, see `../../prove-on-dacpac/S
 
 ## The verdict (to the developer)
 Widening keeps every value you already have, so it publishes clean and applies in place — nothing gets
-read or rewritten. The one thing I checked was structural, not data: this column isn't inside an index
-whose key would blow the byte limit, and the NVARCHAR size doubling didn't tip any index over. Anyone
+read or rewritten. The one thing worth checking is structural, not data: whether this column sits inside
+an index whose key would blow the byte limit — here the NVARCHAR size doubling did not tip any index over. Anyone
 on the team can review it.
 
 ## The reasoning (in conversation)

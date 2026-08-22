@@ -35,8 +35,8 @@ Proven on a copy this branch (`pg_seed`, sqlpackage 170.4.83.3).
   `WHEN MATCHED` touched exactly **1 row** (`@@ROWCOUNT = 1`), the one that changed, not the table.
 - **Realized:** the guard is what keeps a label change to one row. The same MERGE written **unguarded**
   (`WHEN MATCHED THEN UPDATE` with no column comparison) touched all 3 existing rows on a no-op run —
-  broken even when the values still match (`../skills/_index/idempotent-seed`). A label change must
-  touch the one row that changed, never rewrite the table.
+  broken even when the values still match. A label change must touch the one row that changed, never
+  rewrite the table.
 
 ## After deploy — check (each environment)
 ```sql

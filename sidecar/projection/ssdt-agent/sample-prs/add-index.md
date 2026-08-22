@@ -30,7 +30,7 @@ attach one before merge.
 Published to a throwaway copy on this branch.
 - **Realized (the reason):** with `FK_Order_Status` present and no explicit index, `sys.indexes` for
   `dbo.[Order]` shows only `PK_Order_Id` on `Id` — **nothing on `StatusId`**. SQL Server does not index
-  the child side of a foreign key (`FINDINGS_AND_CHANGES.md` F11).
+  the child side of a foreign key.
 - **Did:** add the index, publish → `Successfully published database.` `IX_Order_StatusId` lands
   `NONCLUSTERED`, `is_unique = 0`, `is_disabled = 0`; the row count is unchanged.
 
