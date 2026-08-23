@@ -292,14 +292,20 @@ it. That sub-machine is the authoritative source; this section is its proof.
     determined two-release), and a correctly-shaped one is **Approved with a named risk**. The
     escalation examples in `verdict`, `adversary`, the `reviewer` agent, and the `change-author` agent
     were replaced with a genuine design fork (a 1:many merge — which rows survive).
-- **OPEN — the `SamplePr*` F# facts lag the re-scoped reshape records (flagged 2026-08-21).** Batch 2
-  re-proved the eight structural / reshape ops live on `sqlpackage` (F12) and re-scoped several onto
-  shapes the substrate actually holds (identity-swap's Category has no incoming FKs; split-table moves
-  `ContactPhone`, not phantom address columns; retype-explicit retypes `Order.Total`, not fictional
-  numeric `Product.Code` values). The `tests/Twin.Tests.Integration/SamplePr*Tests.fs` facts for those
-  ops still encode the previous scenarios, so they now describe records that changed. The DB receipt in
-  each rewritten record is the authoritative proof; re-aligning (or retiring) the affected F# facts to
-  the re-scoped scenarios is a follow-up on the test harness, distinct from the reviewer-facing records.
+- **RESOLVED (2026-08-22) — the `SamplePr*` F# facts are a valid parallel corpus, not stale.** The
+  earlier note assumed the Twin F# facts encoded the records' pre-re-scope scenarios and so lagged them.
+  On inspection that was wrong: `tests/Twin.Tests.Integration/SamplePr*Tests.fs` is a **self-contained
+  parallel proof corpus on the Twin's own richer synthetic estate** (~25 rows, DacFx 162.5.57), and its
+  scenarios were **never** the record fabrications — the Twin split-table splits `Email` (not phantom
+  address columns), identity-swap **removes** IDENTITY from `Order` with a real `OrderLine` FK (not the
+  record's fabricated Order→Category FK), and retype-explicit is `INT→TINYINT` (`Msg 220` overflow). It
+  **builds clean** and **runs green** (the Rebuild class was re-run this session: identity-swap +
+  temporal-convert, 2/2, ~49 s). Its "relaxed" publishes are the harness's dev-materialization posture
+  and an adversarial *SQL-Server-itself-refuses* probe, not the retired shipping fork. So **no rewrite is
+  warranted**: the two corpora prove the same laws on different substrates — each record's authoritative
+  proof is its `sqlpackage` receipt, and the Twin suite is parallel. `sample-prs/README` now states that
+  relationship; where the engines diverge on constraint trust, the live `sqlpackage` engine is
+  authoritative (the README's engine-pair note).
 - **Infra — a stable SQL target is needed for proving.** F1–F5 were proven on a SQL Server 2022
   container this session, but the Docker daemon degraded twice and cut the make-mandatory re-proof
   short. `sqlpackage` is now on the box (installed this session); the missing half is a **stable

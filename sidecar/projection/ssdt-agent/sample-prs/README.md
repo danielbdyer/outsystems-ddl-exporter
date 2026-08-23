@@ -19,15 +19,16 @@ consuming that data. Where intuition and reality disagree, these PRs teach reali
   run — the block text, the row counts, the `sys.*` facts, the content digests — never asserted. Each
   PR is now the ten-section gold template (`../skills/author-pr/SKILL.md`); the earlier Twin corpus is
   its provenance, re-grounded on live publishes this branch (`../FINDINGS_AND_CHANGES.md` F1–F11).
-- **Where the proofs live.** The column, constraint, key, and index families trace to
-  `../../tests/Twin.Tests.Integration/SamplePr*Tests.fs` and to the live `sqlpackage` re-proofs on this
-  branch (`../FINDINGS_AND_CHANGES.md` F1–F11). The **structural / reshape family** (identity-swap,
-  split-table, merge-tables, move-attribute, extract-to-lookup, retype-explicit, create-static-seed,
-  edit-seed) was **re-proven live on `sqlpackage` 170.4.83.3** this branch (F12), each record naming its
-  disposable-copy DB. Those eight were re-scoped onto shapes the substrate actually holds, so the older
-  `SamplePr*` F# facts for them describe the previous scenarios and lag the re-scoped records — the DB
-  receipt in each record is the current proof; re-aligning the F# facts is tracked open in
-  `../FINDINGS_AND_CHANGES.md` Part 5.
+- **Where the proofs live — two parallel corpora.** Each record's **authoritative** proof is the live
+  `sqlpackage` 170.4.83.3 re-proof on this branch's proving-ground (the 5-row substrate), named by the
+  disposable-copy DB in its *What proving showed* (`../FINDINGS_AND_CHANGES.md` F1–F12). Alongside it,
+  `../../tests/Twin.Tests.Integration/SamplePr*Tests.fs` is a **parallel** proof corpus on the Twin's own
+  richer synthetic estate (~25 rows, DacFx 162.5.57) — self-contained, isolated per fixture, and green.
+  The two prove the **same laws on different substrates**, so their specifics differ by design: the Twin
+  splits `Email` where the record splits `ContactPhone`, moves `CreatedOn` where the record moves
+  `Region`, removes IDENTITY from `Order` where the record adds it to `Category`. Neither claims to prove
+  the other's exact scenario. Where the two engines diverge — constraint **trust** — the live
+  `sqlpackage` engine is authoritative (the engine-pair note below).
 - **The engine pair — a real divergence, resolved 2026-08-21.** The Twin corpus was captured on **DacFx
   162.5.57**; the live re-proof this branch ran on **sqlpackage 170.4.83.3**. On constraint **trust** the
   two diverge, and the live engine is authoritative: a declarative FK or CHECK add generates
