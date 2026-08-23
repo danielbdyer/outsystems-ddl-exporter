@@ -23,7 +23,8 @@ consuming that data. Where intuition and reality disagree, these PRs teach reali
   `sqlpackage` 170.4.83.3 re-proof on this branch's proving-ground (the 5-row substrate), named by the
   disposable-copy DB in its *What proving showed* (`../FINDINGS_AND_CHANGES.md` F1–F12). Alongside it,
   `../../tests/Twin.Tests.Integration/SamplePr*Tests.fs` is a **parallel** proof corpus on the Twin's own
-  richer synthetic estate (~25 rows, DacFx 162.5.57) — self-contained, isolated per fixture, and green.
+  richer synthetic estate (~25 rows, DacFx 162.5.57) — self-contained, isolated per fixture, and green
+  (the full suite was re-run this branch: 11 classes, 41/41 facts, 0 skipped).
   The two prove the **same laws on different substrates**, so their specifics differ by design: the Twin
   splits `Email` where the record splits `ContactPhone`, moves `CreatedOn` where the record moves
   `Region`, removes IDENTITY from `Order` where the record adds it to `Category`. Neither claims to prove

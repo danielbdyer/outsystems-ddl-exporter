@@ -299,8 +299,9 @@ it. That sub-machine is the authoritative source; this section is its proof.
   scenarios were **never** the record fabrications — the Twin split-table splits `Email` (not phantom
   address columns), identity-swap **removes** IDENTITY from `Order` with a real `OrderLine` FK (not the
   record's fabricated Order→Category FK), and retype-explicit is `INT→TINYINT` (`Msg 220` overflow). It
-  **builds clean** and **runs green** (the Rebuild class was re-run this session: identity-swap +
-  temporal-convert, 2/2, ~49 s). Its "relaxed" publishes are the harness's dev-materialization posture
+  **builds clean** and **runs green** — the full suite was re-run this session, **11 classes, 41/41
+  facts, 0 skipped, 0 failed** (matching the corpus's stated size). Its "relaxed" publishes are the
+  harness's dev-materialization posture
   and an adversarial *SQL-Server-itself-refuses* probe, not the retired shipping fork. So **no rewrite is
   warranted**: the two corpora prove the same laws on different substrates — each record's authoritative
   proof is its `sqlpackage` receipt, and the Twin suite is parallel. `sample-prs/README` now states that
