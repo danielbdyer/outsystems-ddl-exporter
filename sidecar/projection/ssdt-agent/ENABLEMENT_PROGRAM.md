@@ -104,10 +104,14 @@ carry an empirical adjudication from the Twin-proven corpus.
   version-stamped guard evidence; arm64 is unaddressed; the SDK pin (`rollForward: disable`)
   and sqlpackage's requirement (`DOTNET_ROLL_FORWARD=Major`) are opposite policies that must
   coexist in one shell.
-- **F6 The gate-relaxation mechanism is under-surfaced.** The flagship finding forces a
+- **F6 The gate-relaxation mechanism is under-surfaced.** ~~The flagship finding forces a
   choice between a named `BlockOnPossibleDataLoss` relaxation and multi-phase staging, but
   the actual flag appears only in `op/narrow`, the Permissive profile, and the golden — not
-  in `op/make-mandatory` or `prove-on-dacpac`, where the choice is actually confronted.
+  in `op/make-mandatory` or `prove-on-dacpac`, where the choice is actually confronted.~~
+  **SUPERSEDED:** the locked-gate axiom (`FINDINGS_AND_CHANGES.md` Part 1) later established that
+  this estate's pipeline **cannot** relax `BlockOnPossibleDataLoss` at all. Gate-relaxation was
+  retired tree-wide, not surfaced further — a data-loss change ships as the **two-release**. There is
+  no relax-vs-stage choice to surface.
 
 ### B. Wrong teachings — surfaces that contradict what the engine proves
 

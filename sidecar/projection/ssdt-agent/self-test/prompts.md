@@ -232,10 +232,10 @@ flag it against the op skill, not the run.
 > **"Make the Email field on Customer required."**
 - **op:** `skills/op/make-mandatory/SKILL.md` · **_index:** `skills/_index/tightening-class/SKILL.md`
 - **How it ships:** not as a single applied-in-place change, and not as a clean pre-deploy-then-
-  schema change either — a backfill alone does not clear the block. The honest verdict is a
-  conscious, documented decision **after** a verified-zero-NULL backfill: either **(a)** a scripted
-  change that relaxes `BlockOnPossibleDataLoss` for this one column, named and bounded, or **(b)**
-  staged across releases.
+  schema change either — a backfill alone does not clear the block. It ships as **two releases**,
+  because this pipeline cannot relax `BlockOnPossibleDataLoss`: Release 1 keeps the model at `NULL`
+  and runs the backfill + `ALTER` in a pre-deploy (so DacFx emits no data-loss step), Release 2 the
+  model catches up as a no-op.
 - **Who reviews:** a dev lead must review this — existing data is modified. Added scrutiny at
   >1M rows.
 - **Seed:** Customer DEFAULT seed: rows 3 and 5 have `Email` NULL.
@@ -247,8 +247,8 @@ flag it against the op skill, not the run.
   2. authors a pre-deploy backfill, re-runs the NULL probe to confirm **0** NULL emails, and proves
      Strict **still** blocks the deployment and the column stays nullable.
   3. delivers the corrected verdict: on a populated table, a backfill alone cannot pass the
-     prod-strict gate — it needs a named gate-relaxation **after** verified zero NULLs, or staging
-     across releases.
+     prod-strict gate — it ships as the **two-release** (this estate cannot relax the gate; R1
+     backfills and tightens with the model lagging, R2 the model catches up).
   The verdict names the real NULL count (**2**) and the empirical fact that the deployment was
   **still blocked at 0 NULLs**.
 - **Fail mode:** reports the old, wrong recipe ("pre-deploy backfill → clean NOT NULL under Strict,
@@ -273,16 +273,16 @@ flag it against the op skill, not the run.
 - **op:** `skills/op/make-mandatory/SKILL.md` · **_index:** `skills/_index/tightening-class/SKILL.md`
 - **How it ships:** the flip pair of COL-03 — same edit, populated with zero NULLs. The deployment
   is still blocked under Strict because the guard is table-has-rows, not column-has-NULLs, so the
-  honest verdict is a named gate-relaxation (proven 0 NULLs first) or staging across releases, not a
-  clean applied-in-place change.
+  honest verdict is the **two-release** (this estate cannot relax the gate; proven 0 NULLs is
+  necessary but not sufficient), not a clean applied-in-place change.
 - **Who reviews:** a dev lead must review this — existing data is modified; the NULL count does not
   change the review need, since the block is table-has-rows. Added scrutiny at >1M rows.
 - **Seed:** Customer re-seeded (scratch) with all 5 Emails populated (zero NULLs).
 - **Outcome:** the agent proves: the NULL probe returns **0**, yet Strict **still** blocks the
   deployment (the table has rows). This is the empirical confirmation of the corrected recipe — zero
   NULLs is **necessary but not sufficient** to pass the prod-strict gate on a populated table. The
-  pass is the agent surfacing exactly this and choosing a conscious gate-relaxation or staging across
-  releases, with the proof.
+  pass is the agent surfacing exactly this and shipping the **two-release** (this estate cannot relax
+  the gate), with the proof.
 - **Fail mode:** claims "zero NULLs → clean, one release" from any old framing and never runs the
   publish to discover the table-has-rows block. Classified-from-text failure.
 
@@ -319,17 +319,19 @@ flag it against the op skill, not the run.
 ### COL-06 — narrow, over-length data · flip
 > **"Shorten Product.Code to 10 characters."**
 - **op:** `skills/op/narrow/SKILL.md` · **_index:** `skills/_index/tightening-class/SKILL.md`
-- **How it ships:** as one release — a pre-deploy script reconciles the over-length values, then the
-  narrowing lands validated; or staged across releases if the over-length data must be preserved.
+- **How it ships:** as **two releases**, because this pipeline cannot relax the gate: Release 1 keeps
+  the model at `NVARCHAR(50)` and, in a pre-deploy, shortens the over-length values then runs the
+  narrowing `ALTER` itself (so DacFx emits no data-loss step); Release 2 the model catches up to
+  `NVARCHAR(10)` as a no-op.
 - **Who reviews:** a dev lead must review this — existing data is modified (values are truncated to fit).
 - **Seed:** Product DEFAULT seed: row 3 `Code = 'STANDARD-SKU-001'` (16 chars).
 - **Outcome:** the agent runs `MAX(LEN(Code))` (=16) and a `WHERE LEN(Code)>10` count to quantify the
   truncation, proves the Strict data-loss block (the tightening-class row-presence guard; see
   `_index/tightening-class`), runs Permissive + before/after hash to show exactly which value chops,
-  authors the reconcile, and shows the relaxed-gate publish landing it — Strict still blocks after
-  the reconcile (the guard is row-presence, not fit; proven `../sample-prs/narrow.md`), so the
-  logged gate call stays in the packet. The verdict names the longest value and the count that
-  truncates.
+  authors the reconcile, and shows the **two-release** landing it — a same-release narrowing still
+  blocks after the reconcile (the guard is row-presence, not fit; proven `../sample-prs/narrow.md`),
+  so the narrowing rides in R1's lagging-model pre-deploy and the model catches up in R2. The verdict
+  names the longest value and the count that truncates.
 - **Fail mode:** reports "might lose data" without quantifying; or runs Permissive and silently
   truncates `'STANDARD-SKU-001'` to `'STANDARD-S'` without surfacing it.
 
@@ -337,22 +339,21 @@ flag it against the op skill, not the run.
 > **"Shorten Product.Code to 20 characters."**
 - **op:** `skills/op/narrow/SKILL.md` · **_index:** `skills/_index/tightening-class/SKILL.md`
 - **How it ships:** not as a clean in-place change — the data-blind guard blocks narrowing on a
-  populated table even though `MAX(LEN)=16 ≤ 20` (row-presence, not fit). With the fit proven, the
-  honest disposition is a **named `BlockOnPossibleDataLoss` relaxation for this one change** —
-  ships as a scripted change, logged. The fit proof is what makes the relaxation *safe*; it is not
-  what clears the block.
+  populated table even though `MAX(LEN)=16 ≤ 20` (row-presence, not fit). It ships as the
+  **two-release** (this estate cannot relax the gate); the fit proof only means R1's reconcile
+  shortens nothing — it does not clear the block.
 - **Who reviews:** a dev lead or an experienced developer — the running application must respect
-  the new limit, and the relaxation decision is logged with the `MAX(LEN)` proof beneath it.
+  the new limit; the `MAX(LEN)` proof documents that no value truncates.
 - **Seed:** Product DEFAULT seed (max Code length = 16, all fit in 20).
 - **Outcome:** the flip pair of COL-06: same narrow op, but every value fits — and Strict STILL
   blocks, because the guard is table-has-rows (proven: `../sample-prs/narrow.md`, refused even when
-  every value already fits). What the fit changes is the REMEDY: COL-06's over-length data demands
-  a reconcile (a data change) before any gate call; COL-06B's proven fit licenses the named
-  relaxation with no data touched. Same op, same block, different remedy — decided by the data
-  probe, not the `.sql`.
+  every value already fits). What the fit changes is only R1's data step: COL-06's over-length data
+  demands a reconcile (a data change) in R1's pre-deploy; COL-06B's proven fit means R1 shortens
+  nothing — but both ship the two-release. Same op, same block, same shape — the fit only decides
+  whether R1 touches data, decided by the probe not the `.sql`.
 - **Fail mode:** classifies the fitting narrow as "publishes clean, applied in place" — the guard
-  does not inspect fit, so a clean-apply report is classification from text; or relaxes the gate
-  without the `MAX(LEN)` proof in the packet.
+  does not inspect fit, so a clean-apply report is classification from text; or claims a
+  gate-relaxation this estate cannot perform.
 
 ### COL-07 — retype-explicit · positive
 > **"Change Customer.ContactPhone from text to an integer."**
@@ -942,8 +943,8 @@ text and fails the pair.
 
 | op | clean leg → how it ships | flipped leg → how it ships | the data that flips it | governing _index |
 |---|---|---|---|---|
-| make-mandatory | COL-03B empty → **applied in place** | COL-03 / COL-03C populated → **scripted (gate-relaxation) or staged across releases** | table-has-rows, not column-has-NULLs | tightening-class |
-| narrow | COL-06B fits → **scripted — the gate relaxed after the `MAX(LEN)` proof** | COL-06 over-length → **pre-deploy reconcile + the gate call, or staged** | `MAX(LEN)` vs target decides the REMEDY (the block itself is row-presence) | tightening-class |
+| make-mandatory | COL-03B empty → **applied in place** | COL-03 / COL-03C populated → **two-release** (this estate cannot relax the gate) | table-has-rows, not column-has-NULLs | tightening-class |
+| narrow | empty → **applied in place** | COL-06 over-length AND COL-06B every-value-fits, both populated → **two-release** | table-has-rows, not value-fit (the fit only decides whether R1 touches data) | tightening-class |
 | retype | COL-07B widen → **applied in place** | COL-07 explicit → **staged across releases** | lossless vs lossy conversion | multi-phase |
 | create-FK | KEY-02 clean → **applied in place** | KEY-03 orphan → **scripted (NOCHECK→reconcile→WITH CHECK CHECK), or staged** | orphan count | constraint-is-a-claim |
 | add-unique | CON-02 unique data → **applied in place** | CON-02 / IDX-02 dupes → **pre-deploy dedupe + schema** | duplicate count | constraint-is-a-claim |

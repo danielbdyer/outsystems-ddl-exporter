@@ -178,10 +178,10 @@ database. There is no path into shared state.
 > treat the persisting block as a protocol failure: re-run the NULL probe to prove 0 NULLs
 > remain, confirm the column stayed nullable, and record that the deployment is still blocked.
 > THAT pair of facts (0 NULLs AND still-blocked) is the proof the case demands. Then prove the
-> chosen remedy — a named `BlockOnPossibleDataLoss` relaxation in a script step
-> (Permissive-equivalent scoped to this one change, after the zero-NULL proof) or a multi-phase
-> restructure — actually lands the `NOT NULL`. The empty-table case (COL-03B) is the only leg
-> that publishes clean as a single in-place schema change.
+> **two-release** lands the `NOT NULL` — this estate cannot relax the gate: Release 1 keeps the model
+> at `NULL` and runs the backfill + `ALTER` in a pre-deploy (so DacFx emits no data-loss step), and
+> Release 2 lets the model catch up as a no-op. The empty-table case (COL-03B) is the only leg that
+> publishes clean as a single in-place schema change.
 
 ## 7 — ON EXIT (success OR failure) — tear down, idempotently
 

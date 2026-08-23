@@ -60,8 +60,10 @@ Each names: the author's likely **claim**, the **move**, the **injection/probe**
    guard is **table-has-rows, not column-has-NULLs** (`IF EXISTS(SELECT TOP 1 1 FROM Customer)
    RAISERROR`). The clean claim is false on any populated table. WHY -> `_index/tightening-class`.
    This is the gating challenge; a reviewer fooled by the clean claim fails the whole review. Finding
-   routes to **Escalated — one question** (gate-relaxation after zero NULLs vs. staging across
-   releases is a design fork).
+   routes to **Returned to the author**: the clean single-release is the disproven recipe; the correct
+   shape is the **two-release** (R1 backfills and tightens with the model lagging, R2 the model catches
+   up). This pipeline cannot relax the gate, so the shape is not a fork — a mis-shaped tightening is a
+   fixable defect, not a lead escalation.
 
 3. **Add-FK claimed clean, orphan probe skipped** — *op `create-fk-clean` / `create-fk-orphan`,
    target e.g. `Order.CustomerId -> Customer`.* Claim: "clean — ships in place, the foreign key
@@ -76,8 +78,8 @@ Each names: the author's likely **claim**, the **move**, the **injection/probe**
    scratch DB; if it exceeds the new size, or inject an over-length value
    (`'STANDARD-SKU-000000001'`), publish. Capture the **truncation block** + the offending length. A
    populated table never collapses to a clean in-place change when a value exceeds target. WHY ->
-   `_index/tightening-class` (Ambitious Narrowing). Finding routes to **Returned to the author**
-   (pre-deploy fit-check + the conscious gate call).
+   `_index/tightening-class` (Ambitious Narrowing). Finding routes to **Returned to the author**:
+   the pre-deploy fit-check, then the **two-release** (this pipeline cannot relax the gate).
 
 5. **Cascade scope unmapped on a delete-rule change** — *op `change-delete-rule`, target e.g. the
    `OrderLine -> Order` FK.* Claim: "ships in place, narrow dependency scope." Before approving,

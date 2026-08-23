@@ -41,16 +41,17 @@
   blocked the change and the column STAYED nullable.
 
   So this backfill is NECESSARY but NOT SUFFICIENT on a populated table. Run it, re-run the NULL
-  probe to PROVE 0 NULLs remain, and you have earned the right to make the conscious call — NOT
-  a clean NOT NULL. The honest, proven remedy on a populated table is ONE of:
-    (a) a TARGETED relaxation of BlockOnPossibleDataLoss for THIS one change, AFTER proving zero
-        NULLs — a scripted change with a named, logged gate-relaxation (for example a scoped
-        publish-profile override). The proof carries BOTH the zero-NULL probe AND the explicit
-        record of the relaxation decision; or
-    (b) fill the column and tighten it across several releases, so the engine never has to relax
-        its guard.
-  An EMPTY table is the clean contrast: no rows, the IF EXISTS is false, the ALTER lands — a
-  single schema change applied in place, no script needed.
+  probe to PROVE 0 NULLs remain, but it does NOT earn a clean NOT NULL in the same release. This
+  estate (Azure DevOps -> Octopus) cannot relax BlockOnPossibleDataLoss, so the proven remedy on a
+  populated table is the TWO-RELEASE:
+    Release 1 -- keep the MODEL at NULL and do the work in this pre-deploy: backfill the NULLs, then
+        run the ALTER ... NOT NULL yourself. Because the model still declares NULL, DacFx generates
+        no data-loss step and the guard never fires; the column comes out NOT NULL. The corrected
+        seed rides here too (a seed still declaring NULL fails Msg 515 after the tightening).
+    Release 2 -- the model declares NOT NULL; the database is already there, so DacFx generates
+        nothing. Proven: self-test/golden/make-mandatory-pr.md (DBs pg_mm / pg_mm_naive).
+  An EMPTY table is the clean contrast: no rows, the IF EXISTS is false, the ALTER lands in one
+  release, no script needed.
 
   Choose a backfill that is HONEST to the developer's intent. The literal placeholder below is
   fine for the proving ground; in production you confirm the real backfill value (a derived
@@ -58,15 +59,15 @@
   that the block is real, that the backfill clears the NULLs, and that Strict STILL refuses.
 */
 
+-- Release 1 of the two-release (keep Modules/Customer.sql at NULL while this runs):
 -- IF EXISTS (SELECT 1 FROM dbo.Customer WHERE Email IS NULL)
--- BEGIN
---     PRINT 'Pre-deploy backfill: stamping NULL Customer.Email rows. NOTE: this clears the NULLs';
---     PRINT 'but does NOT clear the Strict NULL->NOT NULL block on a populated table (table-has-rows';
---     PRINT 'guard). Re-run the NULL probe to confirm 0 remain, then make the conscious gate call.';
 --     UPDATE dbo.Customer
 --         SET Email = N'unknown+' + CAST(Id AS NVARCHAR(20)) + N'@example.invalid'
 --         WHERE Email IS NULL;
--- END
+-- GO
+-- IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.Customer')
+--            AND name = 'Email' AND is_nullable = 1)
+--     ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(256) NOT NULL;  -- model still says NULL, so DacFx emits no ALTER
 -- GO
 
 /*

@@ -44,17 +44,19 @@ reproduce failed? ─── yes ──> is it a design fork / irreversible step?
       │
       ├─ adversary found a DEFECT the developer can fix without the lead?
       │       (missing refactorlog · skipped orphan probe · over-length narrow ·
-      │        unguarded MERGE · NOCHECK-left-untrusted · stale refactorlog)
+      │        unguarded MERGE · NOCHECK-left-untrusted · stale refactorlog ·
+      │        a populated tightening claimed as a clean single release — it is two-release)
       │            └─ yes ──> Returned to the author
       │
       ├─ adversary / dependency map found an IRREDUCIBLE judgment?
-      │       (populated make-mandatory still blocks after backfill = relax the data-loss
-      │        guard vs stage over releases · a deep cascade · an irreversible drop that
-      │        removes data)
+      │       (a merge that proves 1:many — which rows survive is a design decision ·
+      │        a deep cascade that reaches grandchildren · an irreversible drop that
+      │        removes data with no recovery path)
       │            └─ yes ──> Escalated  (attach dependency map + one question)
       │
-      ├─ dependency map has an un-scoped external/ETL consumer OR a reversibility
-      │  asserted but not proven the lead should accept?
+      ├─ dependency map has an un-scoped external/ETL consumer · a reversibility asserted
+      │  but not proven · a correctly-shaped two-release tightening/drop that MODIFIES or
+      │  REMOVES existing data (licensed by its proof) the lead should accept?
       │            └─ yes ──> Approved with a named risk  (one-line lead accept/override)
       │
       └─ every obligation discharged, no downgrading finding, within scope ceiling
@@ -83,6 +85,7 @@ dispositions stand unchanged.
   publish only). **Route:** to the lead as a one-line accept/override, not a discussion. The risk is
   logged in the ledger with its artifact.
   > "Approved with a named risk. The nightly ETL and a report in another database both read this column and neither is in the dacpac, so their behaviour is not verified here. Accept the out-of-band consumers in a line, or hold for confirmation."
+  > "Approved with a named risk. Make-mandatory, populated, 1.2M rows. Correctly shaped as two releases — R1 backfills the NULLs and tightens with the model lagging, R2 the model catches up; the gate is not relaxed (this pipeline cannot). Existing data is modified and the backfill value is settled to 'Unknown'. Accept the two-release data change in a line, or hold to confirm the backfill value."
 
 - **Returned to the author** — a real defect the developer can fix without the lead (missing
   refactorlog, skipped orphan probe, over-length narrow, unguarded seed MERGE, FK left at NOCHECK).
@@ -91,11 +94,11 @@ dispositions stand unchanged.
   > "Returned to the author. Labeled an in-place change, no data touched; reproduced, Strict blocks the publish — 8 orphans (Msg 547), and the orphan probe was never run. Fix: NOCHECK -> reconcile the 8 -> WITH CHECK CHECK, prove is_not_trusted=0. Does not need the lead."
 
 - **Escalated — one question for the lead** — a genuine design fork or irreversible-step judgment
-  (populated make-mandatory that still blocks at zero NULLs; a deep cascade; an irreversible drop
-  that removes data). **Route:** to the human lead, with the dependency
-  map attached and one specific question, the homework done. Name the escalation plainly — a real
-  judgment for the lead, not a hedge.
-  > "Escalated — one question for the lead. Make-mandatory, populated, 1.2M rows. Backfill reaches zero NULLs and Strict still blocks — the guard fires on table-has-rows, not column NULLs. The call is between relaxing the data-loss guard once the zero-NULL count is proven and staging over releases. Dependency map attached. One question: relax the data-loss guard for this one change now that zero NULLs are proven, or stage it across releases?"
+  (a merge that proves 1:many, where which rows survive is the design decision; a deep cascade that
+  reaches grandchildren; an irreversible drop that removes data with no recovery path). **Route:** to
+  the human lead, with the dependency map attached and one specific question, the homework done. Name
+  the escalation plainly — a real judgment for the lead, not a hedge.
+  > "Escalated — one question for the lead. Merge of OrderArchive into Order, 1.2M rows. The cardinality proof is 1:many — 340 parents carry two or more children each — so a straight copy keeps one row per parent and silently drops the rest; which rows survive is a design decision, not a data fix. Dependency map attached. One question: collapse each parent's children to one row by a stated rule, or does the merge not happen?"
 
 ## The refusal ledger
 

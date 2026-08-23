@@ -22,8 +22,10 @@ In conversation, that reaches the developer plainly:
 > "You asked to make Email required. On a disposable copy of Dev, SSDT refused it: it checks
 > whether the table has any rows, not whether Email has blanks, so it blocks the change while
 > the table holds data — even after the blanks are filled. On an empty table it would just
-> apply. With data in the table, this needs a deliberate call: relax the data-loss guard for
-> this one change after proving no blanks remain, or stage it over two releases."
+> apply. With data in the table, it ships as two releases, because this pipeline cannot relax the
+> data-loss guard: release one fills the blanks and tightens the column with the model still saying
+> optional, release two lets the model catch up. The one call that's yours: what should the blank
+> ones become?"
 
 The change then becomes a pull request the reviewer approves by reading — the finding, its
 proof, and what was not checked. That is the whole product: the developer understands what will

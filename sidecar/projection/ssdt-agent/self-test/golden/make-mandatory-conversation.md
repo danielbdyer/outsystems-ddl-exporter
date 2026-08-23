@@ -54,27 +54,29 @@ And it held here: the backfill stamped both blank rows, the count read 0, and th
 still blocked with the column left nullable. On an empty table the same edit would have just
 applied.
 
-So with data in the table this needs a deliberate call, and there were two honest paths: relax
-the data-loss guard for this one publish after proving zero blanks remain, or restructure it to
-ship across two releases. This change took the first — one publish with
-`BlockOnPossibleDataLoss=False`, named and logged, run only after the zero-blank probe. It
-landed: the column is NOT NULL, and an insert with a blank email now fails with error 515, which
-is what "required" means at the database.
+So with data in the table it can't ship as one publish — this pipeline (Azure DevOps → Octopus)
+can't relax the data-loss guard. It ships as two releases. Release 1 keeps the model saying
+optional and does the work in a pre-deployment script: it fills the two blank emails and runs the
+`ALTER … NOT NULL` itself. Because the model still says optional, SSDT generates no data-loss step,
+so the guard never fires — and the column comes out NOT NULL. Release 2 lets the model catch up to
+NOT NULL; the database is already there, so SSDT generates nothing. It landed: the column is NOT
+NULL, and an insert with a blank email now fails with error 515, which is what "required" means at
+the database.
 
 One catch you would have hit later: your project's own seed data still declared those two
-customers with no email. After the tightening, the very next deploy failed at the seed with that
-same error 515 — so the seed rows were updated to the backfilled values too. The rule of thumb: a
-data fix has to live at its source (the seed, the pre-deployment script), or the next deploy
-undoes it or collides with it.
+customers with no email. Publishing the model change without fixing the seed failed at the very
+next step with that same error 515 — so the seed rows were updated to the backfilled values too,
+and they ship in Release 1. The rule of thumb: a data fix has to live at its source (the seed, the
+pre-deployment script), or the next deploy undoes it or collides with it.
 
 The mistake this avoided: trusting the clean blank-count as a green light. The count reaching
 zero is necessary — the column can't tighten with blanks present — but it never clears SSDT's
 block on a populated table, so "backfill it and the NOT NULL just lands" is a recipe that fails.
-The zero count earns the right to make the gate call; it isn't the gate.
+And there is no gate to relax on this estate; the honest shape is the two-release.
 
-What ships: the edited Customer table definition, the pre-deployment backfill, and the corrected
-seed rows — one release, one relaxed publish. A dev lead must review it, because existing data is
-modified (two rows backfilled). Two things still need you:
+What ships: the pre-deployment backfill and ALTER and the corrected seed rows (Release 1), then
+the edited Customer table definition (Release 2) — two releases. A dev lead must review it, because
+existing data is modified (two rows backfilled). Two things still need you:
 
 - Confirm the backfill value with whoever owns customer data — the placeholder is visible
   anywhere an email is shown or sent.

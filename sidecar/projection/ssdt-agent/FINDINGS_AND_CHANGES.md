@@ -275,25 +275,23 @@ it. That sub-machine is the authoritative source; this section is its proof.
   `sample-prs/delete-entity.md`). The two-release trick does **not** transfer to a table drop (a
   model still holding it re-creates it empty). SHIP's REFUSED terminal is for a genuinely
   un-shippable request, not for drops; Part 4 carries the shapes and receipts.
-- **OPEN — the locked-gate law is not yet propagated to two downstream layers (flagged 2026-08-21).**
-  Batch 1 propagated the two-release/no-relaxation law across the **authoring** composed layer (the op
-  skills, the `_index` knowledge, the standards skills, the operation TOCs, the three standard docs,
-  and the proving-ground). It deliberately did **not** touch two other layers, because doing so
-  changes what each *judges*, not just how it reads — a call for the operator:
-  - **`self-test/*` (the acceptance machinery).** `rubric.md`, `prompts.md`, `review-prompts.md`,
-    `review-rubric.md`, `PROTOCOL.md`, and `golden/make-mandatory-*` still encode the retired
-    relax-vs-stage fork as the **expected** answer. As written they would grade an agent that chose
-    the two-release as *wrong* and one that chose a gate-relaxation as *right* — inverted against the
-    axiom. Re-scoping the acceptance bar to the two-release is its own pass.
-  - **`skills/review/*` (the reviewer persona).** `verdict`, `adversary`, and the `reviewer` agent
-    still escalate "relax the guard vs. stage" as the make-mandatory fork. Under the axiom that is no
-    longer a fork (the shape is two-release, full stop), so those examples describe an escalation that
-    should not occur — the reviewer's disposition for a populated make-mandatory shifts from *Escalated*
-    to *Approved / Approved-with-named-risk*. The blind audit scoped `skills/review/*` out; changing
-    the reviewer's escalation semantics needs its own review.
-
-  Until both are done, an agent reading only the authoring layer is correct; an agent graded by
-  `self-test` or reviewed by `skills/review` can be pushed back toward the retired fork.
+- **RESOLVED (2026-08-22) — the locked-gate law is now propagated to the self-test and review layers.**
+  Batch 1 propagated it across the authoring composed layer; a follow-up pass then re-scoped the two
+  downstream layers the earlier note flagged:
+  - **`self-test/*` (acceptance machinery).** `rubric.md`, `prompts.md`, `review-prompts.md`,
+    `review-rubric.md`, `PROTOCOL.md`, and `golden/make-mandatory-*` now encode the **two-release** as
+    the expected answer for a populated make-mandatory and narrow. The golden make-mandatory PR +
+    conversation were **re-proved live** on the two-release (DBs `pg_mm` / `pg_mm_naive`) and rewritten:
+    naive single-release blocks `Msg 50000`; R1 (model lagging + pre-deploy backfill+ALTER) lands
+    (`is_nullable=0`, digest `1818783869`); the seed must ride with the change (`Msg 515`); R2 is a
+    clean no-op. A populated **narrow-that-fits** was proven to still block on row-presence
+    (`NVARCHAR(50)→NVARCHAR(16)`, max len = 16, all fit → `Msg 50000`), so the rubric's "fits → in
+    place" was corrected to two-release (only an EMPTY table is in-place).
+  - **`skills/review/*` (reviewer persona) + `agents/`.** A populated make-mandatory no longer
+    escalates: a mis-authored clean-single-release claim is **Returned to the author** (the shape is a
+    determined two-release), and a correctly-shaped one is **Approved with a named risk**. The
+    escalation examples in `verdict`, `adversary`, the `reviewer` agent, and the `change-author` agent
+    were replaced with a genuine design fork (a 1:many merge — which rows survive).
 - **OPEN — the `SamplePr*` F# facts lag the re-scoped reshape records (flagged 2026-08-21).** Batch 2
   re-proved the eight structural / reshape ops live on `sqlpackage` (F12) and re-scoped several onto
   shapes the substrate actually holds (identity-swap's Category has no incoming FKs; split-table moves
