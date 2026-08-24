@@ -67,7 +67,7 @@ terminal: **ONE RELEASE, in place.** Fragments below, in the record register.
 **Review & release**
 - Any team member can review this: the change is additive and the running application is unaffected.
 - Ships as a single schema change, applied in place. No data is read or written.
-- Added scrutiny: none — an optional column is additive and every existing row takes NULL.
+- Added scrutiny: the change itself adds none — an optional column is additive and every existing row takes NULL. The estate ledger still applies the standing first-time line until add-optional has a row in `../../../estate/operations.md` (during the cutover, that is still every operation); for an additive change that line asks for the one proof on a copy, not a higher reviewer.
 
 **Verification** — run in each environment after deployment
 ```sql
