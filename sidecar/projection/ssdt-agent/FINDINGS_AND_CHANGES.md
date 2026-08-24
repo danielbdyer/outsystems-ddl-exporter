@@ -145,6 +145,48 @@ Each was published to a throwaway database on the live server; the database name
   FK we add leaves the join — and the parent-side delete/cascade check — scanning until the child column
   is indexed by hand. This is the strongest trigger for the `when-to-index` advisory.
 
+- **F12 — the structural / reshape family re-proven live; earlier records were narrative, not proof. (PROVEN 2026-08-21)**
+  Eight complex ops re-proven on disposable copies (warm SQL Server 2022, sqlpackage 170.4.83.3,
+  `BlockOnPossibleDataLoss = True`), replacing fabricated or Twin-cited receipts with live ones. The
+  DB name after each is the receipt.
+  - **identity-swap** (`pg_idsw_before`): turning on IDENTITY for `Category.Id` is a **shadow-table
+    rebuild** — `CREATE tmp_ms_xx_Category (Id IDENTITY(1,1))`, `SET IDENTITY_INSERT` copy preserving
+    ids 1,2,3, `DROP TABLE`, `sp_rename` (logged `Starting rebuilding table [dbo].[Category]`). The
+    data-loss gate **allows** it (rows moved, not dropped). `Category` has **no incoming FKs** → one
+    release; the earlier "drop/recreate FKs from Order and OrderLine" was fabricated (nothing
+    references Category). The post-deploy seed's explicit-id insert fails **`Msg 544`** until bracketed
+    with `SET IDENTITY_INSERT` — the seed fix ships in the same change set. End: `is_identity = 1`, ids
+    preserved, `IDENT_CURRENT = 3`, `Product.CategoryId` resolves.
+  - **The content-hash alias law** (`pg_split` / `pg_merge` / `pg_move`): a `FOR XML RAW` content hash
+    **encodes the column names** into the XML, so hashing `SELECT Id, X` against `SELECT CustomerId, X`
+    reads **unequal over identical data**. Both projections must alias to the **same** names. Proven:
+    aliasing to `(k, v …)` makes an identical split copy match (`51703987…`), a merge match
+    (`70353E7E…`), a move match (`0DDC0E13…`). The split/merge/move verification queries were corrected
+    accordingly.
+  - **split-table** (`pg_split`): `ContactPhone` → a new 1:1 `CustomerContact`; additive publish clean,
+    5 rows copied, hash-equal (aliased). (The old record split `Line1`/`City`/`PostalCode` off
+    `Customer`, which never had those columns.)
+  - **merge-tables** (`pg_merge`): `CustomerAddress` → `Customer`; cardinality `absorbed = 5 ==
+    distinct_parents = 5` (1:1); a 2nd address for one Customer → `6 != 5`, the 1:many refusal.
+  - **move-attribute** (`pg_move`): `Customer.Region` → `Account` across the `AccountId` join; 1:1 holds
+    (**excluding NULLs** — else the 2 unmapped rows false-positive as 1:many), hash-equal (aliased);
+    **2 of 5 customers have a NULL `AccountId`** so their Region strands — a fork the old record missed.
+  - **extract-to-lookup** (`pg_base` positive, `pg_move` negative): `StatusText → Status.Code` total
+    mapping returns 0 unmapped; the existing `StatusId` is backfill-consistent (0 mismatches); an
+    injected `StatusText = 'Backordered'` fires the non-total negative.
+  - **retype-explicit** (`pg_retype2`, `pg_retype`): `Order.Total DECIMAL(18,2) → INT` refused
+    (`Warning SQL72015` + `Msg 50000`), all convert with 2 losing cents (the settle fork);
+    `Product.Code → INT` is `TRY_CONVERT`-NULL for all 5 (alphanumeric) — the proof refutes the premise,
+    a STOP. (The old record claimed numeric Codes `100`/`200`/`400`/`500`/`30X` that do not exist.)
+  - **create-static-seed / edit-seed** (`pg_seed`, `pg_base`): the **guarded** `Category` MERGE over
+    unchanged rows touches **0 rows** (silent, `content_hash = -1487866545`); written **unguarded** it
+    touches **3** (the churn anti-pattern). edit-seed: an inserted `Refunded` row touches 1, a re-run 0,
+    a label change (`Hardware → Hardware Pro`) exactly 1 — never the table.
+
+  **The law across the reshape family:** a `BlockOnPossibleDataLoss` block on a Phase-3 drop is
+  **data-blind** (row-presence); the conservation/mapping proof licenses the **reviewer's** decision
+  that the values arrived, never the gate (consistent with `skills/_index/multi-phase`, Batch 1).
+
 ---
 
 ## Part 3 — The change plan, generalized (the doctrine every op inherits)
@@ -192,8 +234,8 @@ it. That sub-machine is the authoritative source; this section is its proof.
 |---|---|---|---|
 | **narrow** (`skills/op/narrow`) | yes — shrink | Two-release (F4). Pre-deploy shortens + `ALTER` narrower with model lagging; model catches up next release. Also offer the **CHECK-constraint alternative** below. | **PROVEN** |
 | **make-mandatory**, populated (`skills/op/add-mandatory` / `make-mandatory`) | yes — `NOT NULL` on rows | Same class as narrow — the **identical** row-presence guard (`Modules/Customer.sql`, Twin-documented). Two-release: R1 backfill the NULLs + pre-deploy `ALTER … NOT NULL` with the model lagging; R2 the model catches up. | **PROVEN** (F7, live 2026-08-16) |
-| **delete-attribute** (`skills/op/delete-attribute`) | yes — drop column | A drop cannot pre-run with the model still holding the column (DacFx re-adds it). Needs its own proof; likely deprecate-then-drop across releases. | TO PROVE |
-| **delete-entity** (`skills/op/delete-entity`) | yes — drop table | As above, for a whole table. Needs its own proof. | TO PROVE |
+| **delete-attribute** (`skills/op/delete-attribute`) | yes — drop column | **Two-release.** R1 = pre-deploy `DROP CONSTRAINT` + `DROP COLUMN` with the model still declaring the column (DacFx emits no drop; the row-presence guard never fires) + the corrected seed; R2 = the model drops the column, no-op. Re-publishing R1 **re-adds** the column with its `DEFAULT`, so R1 is a single publish and R2 follows at once. Receipt: `sample-prs/delete-attribute.md` (`Msg 50000` block; `Msg 207` seed trap). | **PROVEN** (2026-08-21) |
+| **delete-entity** (`skills/op/delete-entity`) | yes — drop table | **One release, scripted** — *different from the column drop.* `DropObjectsNotInSource = false` makes removing the `.sql` a phantom (does nothing), so the `.sql` is removed **and** an idempotent pre-deploy `DROP TABLE` runs in the **same** release (raw T-SQL the data-loss gate does not govern). The two-release trick does **not** transfer — a model still holding the table re-creates it empty on the next publish. Receipt: `sample-prs/delete-entity.md` (`SQL72015`/`Msg 50000`; phantom `object_id` unchanged; re-create trap). | **PROVEN** (2026-08-21) |
 | **retype-explicit**, lossy (`skills/op/retype-explicit`) | yes — lossy cast | Already multi-phase; confirm each phase is gate-clean under the axiom. | TO PROVE |
 | **create-fk-orphan** (`skills/op/create-fk-orphan`) | no (the reconcile is manual pre-deploy DML) | Ships in one release. Reconcile the orphan in a pre-deploy, or the publish blocks `Msg 547` (F9). The declarative add ends trusted automatically — no manual trust step (F5 overturned, F9). | **PROVEN** |
 | widen · add-optional · add-index · create-entity · add-default · edit-seed · … | no | Unaffected by the axiom — one declarative release. | n/a |
@@ -223,9 +265,48 @@ it. That sub-machine is the authoritative source; this section is its proof.
   that keeps the column wide would sidestep the two-release, but it clutters the schema, and the
   schema is kept clean. Parked, not built. Revisit only if a concrete case needs a max-length rule
   without the physical narrowing and the clutter is judged worth it then.
-- **Drops (delete-attribute, delete-entity) — still TO PROVE.** The two-release trick does not
-  transfer directly — a drop with the model still holding the object gets re-added. SHIP routes
-  these to REFUSED until their own pattern is proven. Do not write drop guidance until then.
+- **Drops (delete-attribute, delete-entity) — PROVEN (2026-08-21); two distinct patterns.** The
+  earlier "route these to REFUSED; do not write drop guidance until then" note is **retired** — the
+  patterns are proven and recorded. A **column** drop ships **two-release** (R1 pre-deploy
+  `DROP CONSTRAINT` + `DROP COLUMN` with the model lagging so DacFx emits no guarded drop; R2 the
+  model catches up — `sample-prs/delete-attribute.md`). A **table** drop ships **one-release,
+  scripted** (remove the `.sql` **and** run an idempotent pre-deploy `DROP TABLE` in the same
+  release, because `DropObjectsNotInSource = false` makes the file-removal a phantom —
+  `sample-prs/delete-entity.md`). The two-release trick does **not** transfer to a table drop (a
+  model still holding it re-creates it empty). SHIP's REFUSED terminal is for a genuinely
+  un-shippable request, not for drops; Part 4 carries the shapes and receipts.
+- **RESOLVED (2026-08-22) — the locked-gate law is now propagated to the self-test and review layers.**
+  Batch 1 propagated it across the authoring composed layer; a follow-up pass then re-scoped the two
+  downstream layers the earlier note flagged:
+  - **`self-test/*` (acceptance machinery).** `rubric.md`, `prompts.md`, `review-prompts.md`,
+    `review-rubric.md`, `PROTOCOL.md`, and `golden/make-mandatory-*` now encode the **two-release** as
+    the expected answer for a populated make-mandatory and narrow. The golden make-mandatory PR +
+    conversation were **re-proved live** on the two-release (DBs `pg_mm` / `pg_mm_naive`) and rewritten:
+    naive single-release blocks `Msg 50000`; R1 (model lagging + pre-deploy backfill+ALTER) lands
+    (`is_nullable=0`, digest `1818783869`); the seed must ride with the change (`Msg 515`); R2 is a
+    clean no-op. A populated **narrow-that-fits** was proven to still block on row-presence
+    (`NVARCHAR(50)→NVARCHAR(16)`, max len = 16, all fit → `Msg 50000`), so the rubric's "fits → in
+    place" was corrected to two-release (only an EMPTY table is in-place).
+  - **`skills/review/*` (reviewer persona) + `agents/`.** A populated make-mandatory no longer
+    escalates: a mis-authored clean-single-release claim is **Returned to the author** (the shape is a
+    determined two-release), and a correctly-shaped one is **Approved with a named risk**. The
+    escalation examples in `verdict`, `adversary`, the `reviewer` agent, and the `change-author` agent
+    were replaced with a genuine design fork (a 1:many merge — which rows survive).
+- **RESOLVED (2026-08-22) — the `SamplePr*` F# facts are a valid parallel corpus, not stale.** The
+  earlier note assumed the Twin F# facts encoded the records' pre-re-scope scenarios and so lagged them.
+  On inspection that was wrong: `tests/Twin.Tests.Integration/SamplePr*Tests.fs` is a **self-contained
+  parallel proof corpus on the Twin's own richer synthetic estate** (~25 rows, DacFx 162.5.57), and its
+  scenarios were **never** the record fabrications — the Twin split-table splits `Email` (not phantom
+  address columns), identity-swap **removes** IDENTITY from `Order` with a real `OrderLine` FK (not the
+  record's fabricated Order→Category FK), and retype-explicit is `INT→TINYINT` (`Msg 220` overflow). It
+  **builds clean** and **runs green** — the full suite was re-run this session, **11 classes, 41/41
+  facts, 0 skipped, 0 failed** (matching the corpus's stated size). Its "relaxed" publishes are the
+  harness's dev-materialization posture
+  and an adversarial *SQL-Server-itself-refuses* probe, not the retired shipping fork. So **no rewrite is
+  warranted**: the two corpora prove the same laws on different substrates — each record's authoritative
+  proof is its `sqlpackage` receipt, and the Twin suite is parallel. `sample-prs/README` now states that
+  relationship; where the engines diverge on constraint trust, the live `sqlpackage` engine is
+  authoritative (the README's engine-pair note).
 - **Infra — a stable SQL target is needed for proving.** F1–F5 were proven on a SQL Server 2022
   container this session, but the Docker daemon degraded twice and cut the make-mandatory re-proof
   short. `sqlpackage` is now on the box (installed this session); the missing half is a **stable
@@ -301,10 +382,19 @@ child whose key declares it, and does not chain without each level's own cascadi
 
 ### 6.4 — Surfaces corrected to the new law
 
-The FK-trust correction was propagated so no surface still teaches the manual trust step:
-`skills/author-pr` (the worked example), `skills/_index/constraint-is-a-claim` (the reconcile-first
-pattern), `skills/prove-on-dacpac` (the blocked-publish fix), `skills/operations/keys-and-refs` (the
-TOC), the five keys `skills/op/*`, and the five `sample-prs/*`.
+The FK-trust correction was propagated across the declarative-path surfaces: `skills/author-pr` (the
+worked example), `skills/_index/constraint-is-a-claim` (the reconcile-first pattern),
+`skills/prove-on-dacpac` (the blocked-publish fix), `skills/operations/keys-and-refs` (the TOC), the
+five keys `skills/op/*`, the five `sample-prs/*`, `THE_DECISION_TREE.md` (the FK-orphan flex row,
+2026-08-21), and `proving-ground/Modules/Order.sql` (the header, 2026-08-21). The declarative path
+needs **no** manual trust step.
+
+One post-deploy `WITH CHECK CHECK` legitimately remains — as **recovery, not the happy path**: a
+blocked non-atomic publish can leave a key present-but-untrusted (`is_not_trusted = 1`), and
+re-trusting it (or `toggle-trust`'s re-trust of a legacy `WITH NOCHECK` constraint) is the fix for
+that specific partial state (`skills/prove-on-dacpac`, `skills/op/toggle-trust`). That is distinct
+from the overturned F5 claim that the *declarative add itself* required a manual trust step — it
+does not.
 
 **Constraints family — DONE (2026-08-21, F10).** `add-check` proved create-fk's twin by script
 capture (`db_chk` clean → trusts itself; `db_chkv` violating → `Msg 547`); `add-unique` proved

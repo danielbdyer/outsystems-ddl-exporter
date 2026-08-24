@@ -28,6 +28,12 @@ supplied — attach one before merge.
 - Check with the application owner that no code path saves a customer without an email or writes
   NULL to it; after Release 1 both fail with `Msg 515`.
 
+## The data
+- 5 customers. 2 have no email: Customer 3 (Initech) and Customer 5 (Stark Industries). The other 3
+  have one.
+- The guard blocks on row presence, not on the NULLs: a table with 0 NULL emails is still refused
+  while it holds any row.
+
 ## How it ships
 - Two releases, because this pipeline (Azure DevOps → Octopus) always publishes with the data-loss
   guard `BlockOnPossibleDataLoss` on and cannot turn it off for one deploy.
@@ -43,12 +49,6 @@ supplied — attach one before merge.
 - **Release 2** — the model declares `Email NOT NULL` and carries no pre-deploy. The database is
   already `NOT NULL`, so DacFx generates nothing. This closes the gap between the model and the
   database.
-
-## The data
-- 5 customers. 2 have no email: Customer 3 (Initech) and Customer 5 (Stark Industries). The other 3
-  have one.
-- The guard blocks on row presence, not on the NULLs: a table with 0 NULL emails is still refused
-  while it holds any row.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

@@ -21,13 +21,13 @@ The developer's stated intent for this PBI: start keeping point-in-time history 
   tracks when each row began. Left to default, the history is dated to conversion time.
 - Confirm this is point-in-time history (temporal), not a row-level change feed.
 
+## The data
+- Existing `Customer` rows get backfilled period columns; their other column values are untouched.
+
 ## How it ships
 - Across several releases so the running application keeps working while the period columns are added,
   backfilled, and system versioning is turned on. Existing data is modified (the backfill). A new entity
   is the single-release op (`temporal-new`).
-
-## The data
-- Existing `Customer` rows get backfilled period columns; their other column values are untouched.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

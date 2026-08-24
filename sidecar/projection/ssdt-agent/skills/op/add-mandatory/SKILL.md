@@ -69,7 +69,7 @@ For the publish loop, see `../../prove-on-dacpac/SKILL.md`.
 You asked to add a required attribute, so every row that already exists needs a value for it. With
 the default you gave it, SSDT stamps every existing row and publishes clean on a disposable copy of
 Dev. Without a default it would have been blocked at deploy — or, with GenerateSmartDefaults on,
-silently filled with an empty string — and I proved both on the copy, so the value that would have
+silently filled with an empty string — both proved out on the copy, so the value that would have
 been invented is visible instead of a surprise. One thing worth your call: is that default the right
 value for the rows that already exist, or should those be set deliberately before the column becomes
 required?

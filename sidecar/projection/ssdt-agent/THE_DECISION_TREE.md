@@ -70,9 +70,12 @@ Each state names: **enter when** · **do** · **leave when** (the exit guard) ·
 - **Do:** if PROVE surfaced a decision only a human can make — an orphan to delete or reassign, a
   value to truncate, a NULL to backfill — pose one structured question (measured fact · 2–4
   options each with consequence, cost, and a schema line · a custom slot · one question).
-- **Leave when:** there is no open fork, **or** the fork is answered with an owner and a date.
-- **Then:** answered or none → EMIT. Unanswered → **BLOCKED_AWAITING_HUMAN** (terminal). The PR
-  cannot be written past an open fork.
+- **Leave when:** the fork is posed and recorded — its answer if it has one, its question if not
+  (with the owner who can answer, where one is known).
+- **Then:** → EMIT, always (**emit-and-flag**). An answered fork records its answer; an open fork
+  records the question as one line in *Not checked / still open* and the confirmation it forces in
+  *Before promoting*. The PR is emitted either way and names the open decision; the fork is resolved
+  in review, before promotion — never silently by the agent, never by inventing schema.
 
 ### S7 · EMIT
 - **Do:** write the ten sections in the register (spine below), each as deep as the change needs.
@@ -85,8 +88,8 @@ Each state names: **enter when** · **do** · **leave when** (the exit guard) ·
   gate relaxation is claimed that this pipeline cannot perform. No trap-name, no invented schema.
 - **Leave when:** all checks pass → **PR_READY** (terminal). Any check fails → back to EMIT.
 
-**Terminals:** `PR_READY` · `BLOCKED_AWAITING_HUMAN` · `REFUSED` (the op is unsafe or out of scope —
-reached from CLASSIFY when no safe shipping shape exists).
+**Terminals:** `PR_READY` (an open fork is emitted-and-flagged, not held) · `REFUSED` (the op is
+unsafe or out of scope — reached from CLASSIFY when no safe shipping shape exists).
 
 ---
 
@@ -136,14 +139,20 @@ stateDiagram-v2
   }
   SHIP --> FORK: shipping shape decided
   FORK --> EMIT: no open fork / fork answered
-  FORK --> BLOCKED_AWAITING_HUMAN: fork open
+  FORK --> EMIT: open fork -> emit-and-flag (posed + recorded)
   EMIT --> VERIFY: ten sections written
   VERIFY --> EMIT: a check failed
   VERIFY --> PR_READY: denotes + shape matches proof
   PR_READY --> [*]
-  BLOCKED_AWAITING_HUMAN --> [*]
   REFUSED --> [*]
 ```
+
+**Emit-and-flag (the open-fork rule).** An open fork does **not** halt the PR. The record is emitted
+with the fork **posed** (`skills/ask-the-developer`) and **recorded** — one line in *Not checked /
+still open*, and the confirmation it forces in *Before promoting*. The reviewer meets a complete,
+reviewable record that names the open decision; the fork is resolved in review, before promotion,
+never silently by the agent, and never by inventing schema (that routes back to the fork). A request
+whose shipping shape cannot be decided at all is `REFUSED` (no safe shape), not a silent hold.
 
 ---
 
@@ -155,8 +164,8 @@ Fixed order, variable depth, collapse-don't-drop:
 2. **Intent** — the developer's stated intent for the PBI.
 3. **What changes** — the schema edit.
 4. **Before promoting** — the risk-driven confirmations, per environment.
-5. **How it ships** — the SHIP terminal, stated plainly (one release, or the two releases and why).
-6. **The data** — the counts and bad rows.
+5. **The data** — the counts and bad rows.
+6. **How it ships** — the SHIP terminal, stated plainly (one release, or the two releases and why).
 7. **What proving showed** — tried / did / realized, on this branch.
 8. **After deploy — check** — the per-environment queries.
 9. **How to roll this back** — the reverse, and what is not auto-undone.
@@ -170,7 +179,9 @@ A section with nothing real collapses to one honest line. It is never padded and
 
 - **PROVE** cannot be left without a real publish on this branch — no precedent, no prior run.
 - **SHIP** has no single-release edge for a data-loss change under a locked gate — only TWO_RELEASE.
-- **FORK** cannot be passed with an open decision — the PR halts at BLOCKED_AWAITING_HUMAN.
+- **FORK emits-and-flags** — an open fork does not halt the PR: the record is emitted with the fork
+  posed (`skills/ask-the-developer`) and recorded in *Not checked / still open* + *Before promoting*.
+  It is resolved in review, before promotion — never silently by the agent.
 - **No state builds persistent schema as a remedy** — that routes to FORK.
 - **VERIFY** cannot reach PR_READY if a sentence fails to denote, the shipping shape disagrees with
   the proof, or a gate relaxation is claimed the pipeline cannot do.
@@ -184,8 +195,15 @@ A section with nothing real collapses to one honest line. It is never padded and
 - **Narrow a populated column / make a populated column NOT NULL:** D0 = yes, gate locked →
   TWO_RELEASE (proven, `FINDINGS_AND_CHANGES.md` F4 and the make-mandatory row).
 - **Add a foreign key with an orphan:** D0 = no (the reconcile is manual pre-deploy DML) →
-  ONE_RELEASE; FORK poses the orphan's fate; a post-deploy `WITH CHECK CHECK` trusts the key (F5).
-- **Drop a column or table:** D0 = yes; the two-release trick does not transfer to a drop — routes
-  to REFUSED until its own pattern is proven (`FINDINGS_AND_CHANGES.md` Part 5).
+  ONE_RELEASE; FORK poses the orphan's fate; the declarative add emits `WITH NOCHECK ADD` +
+  `WITH CHECK CHECK` and ends trusted on its own — no manual trust step (F9, overturning F5).
+- **Drop a column:** D0 = yes (DacFx emits a guarded `DROP COLUMN`) → `TWO_RELEASE` — R1 pre-deploy
+  drops the column with the model lagging, R2 the model catches up (`FINDINGS_AND_CHANGES.md` Part 4;
+  `sample-prs/delete-attribute.md`).
+- **Drop a whole table:** D0 = **no declarative** data-loss step — under `DropObjectsNotInSource =
+  false` removing the `.sql` is a phantom → `ONE_RELEASE`, but the physical drop is an explicit
+  pre-deploy `DROP TABLE` in that **same** release (raw T-SQL the gate does not govern), the `.sql`
+  removed alongside it. The two-release trick does **not** transfer — a model still holding the table
+  re-creates it empty (`FINDINGS_AND_CHANGES.md` Part 4; `sample-prs/delete-entity.md`).
 
 The machine does not change. Only which states carry weight, and which terminal SHIP reaches.

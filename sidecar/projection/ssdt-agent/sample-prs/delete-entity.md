@@ -25,6 +25,10 @@ before merge.
   them read `OrderLine`, because the drop removes the rows for good.
 - Confirm Release 1 landed (the table is gone) in each environment before promoting to the next.
 
+## The data
+- 8 rows in `dbo.OrderLine`, object_id `1061578820`. Every row is removed by the drop.
+- No table has a foreign key pointing at `OrderLine`, so no inbound relationship blocks the drop.
+
 ## How it ships
 - One release, through a scripted drop. The production pipeline publishes with
   `DropObjectsNotInSource = false`, so removing `OrderLine.sql` alone does nothing — the table and
@@ -41,10 +45,6 @@ before merge.
 - Letting DacFx generate the drop instead (a publish with `DropObjectsNotInSource = true`) is blocked
   on a populated table and this pipeline cannot relax that block. That path is a diagnostic, not the
   shipping path.
-
-## The data
-- 8 rows in `dbo.OrderLine`, object_id `1061578820`. Every row is removed by the drop.
-- No table has a foreign key pointing at `OrderLine`, so no inbound relationship blocks the drop.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

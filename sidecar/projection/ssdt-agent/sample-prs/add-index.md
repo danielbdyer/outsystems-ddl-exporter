@@ -19,18 +19,18 @@ attach one before merge.
   in an environment, schedule a window, or use `WITH (ONLINE = ON)` where the edition is
   Enterprise/Developer (it fails on Standard). Confirm the target edition.
 
+## The data
+- 4 orders. No data changes; an index is a derived structure built from the rows already present.
+
 ## How it ships
 - One release, applied in place. SSDT emits `CREATE NONCLUSTERED INDEX` and builds it over every
   existing row — a real build, not a metadata flip. No row is read or written.
-
-## The data
-- 4 orders. No data changes; an index is a derived structure built from the rows already present.
 
 ## What proving showed
 Published to a throwaway copy on this branch.
 - **Realized (the reason):** with `FK_Order_Status` present and no explicit index, `sys.indexes` for
   `dbo.[Order]` shows only `PK_Order_Id` on `Id` — **nothing on `StatusId`**. SQL Server does not index
-  the child side of a foreign key (`FINDINGS_AND_CHANGES.md` F11).
+  the child side of a foreign key.
 - **Did:** add the index, publish → `Successfully published database.` `IX_Order_StatusId` lands
   `NONCLUSTERED`, `is_unique = 0`, `is_disabled = 0`; the row count is unchanged.
 

@@ -17,18 +17,18 @@ than `'Pending'`. No work item supplied — attach one before merge.
 - Confirm no retro re-stamp is wanted: existing rows keep their current `StatusText`. If the new value
   must apply to old rows too, that is a separate, proven backfill.
 
+## The data
+- No row changes. Old rows keep the value they were written with under the previous default.
+
 ## How it ships
 - One release, applied in place. SSDT does a `DROP`-then-`ADD` of the named constraint (a brief
   no-default window inside the deploy transaction). No existing row value changes; no table rebuild.
-
-## The data
-- No row changes. Old rows keep the value they were written with under the previous default.
 
 ## What proving showed
 Published to a throwaway copy on this branch.
 - **Tried / Did:** publish the modify → the delta is `DROP CONSTRAINT DF_Order_StatusText` then `ADD
   CONSTRAINT DF_Order_StatusText DEFAULT 'Shipped'`, with no UPDATE of existing rows.
-- **Realized (F10):** a DEFAULT fills only new rows and never backfills — changing or dropping it never
+- **Realized:** a DEFAULT fills only new rows and never backfills — changing or dropping it never
   reaches back to rows already written, which keep their values.
 
 ## After deploy — check

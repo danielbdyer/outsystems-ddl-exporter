@@ -19,14 +19,14 @@ positive, so a zero or negative total becomes impossible. No work item supplied 
 - If any order has `Total <= 0`, the deploy blocks until those rows are reconciled — correct the value,
   or handle them another way, in a pre-deploy step. That is a data-owner decision; do not guess it.
 
+## The data
+- 4 orders. Every `Total` is positive (the smallest is `75.25`). No order violates `Total > 0`.
+
 ## How it ships
 - One release, applied in place. Every order already satisfies the rule, so the check validates and
   trusts itself on publish (`is_not_trusted = 0`) — nothing to add.
 - If a violating order were present, the publish would be refused (`Msg 547`) until it is reconciled in
   a pre-deploy step; then the check validates and trusts itself the same way.
-
-## The data
-- 4 orders. Every `Total` is positive (the smallest is `75.25`). No order violates `Total > 0`.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

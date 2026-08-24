@@ -69,10 +69,12 @@ and Strict still blocked the change.
 2. Author the pre-deploy backfill, re-run the NULL probe → prove `0` NULLs remain.
 3. Re-run Strict → prove it is **STILL blocked** and the column **stays nullable**. This step is
    the key finding.
-4. Deliver the corrected verdict: (a) a named gate relaxation after proven-zero-NULL, or (b) the
-   multi-phase path — and prove the chosen path lands the `NOT NULL`, including that no
-   post-deployment script re-writes NULLs into the column afterward (a seed still declaring them
-   fails with `Msg 515` once the column is tightened — fix the seed in the same change set).
+4. Deliver the corrected verdict — the **two-release** — and prove it lands the `NOT NULL`: Release 1
+   (model still `NULL` + pre-deploy backfill + `ALTER … NOT NULL`) tightens the column, Release 2
+   (model `→ NOT NULL`, no pre-deploy) is a no-op. Include that no post-deployment script re-writes
+   NULLs into the column afterward (a seed still declaring them fails with `Msg 515` once the column
+   is tightened — fix the seed in the same change set). The gate is never relaxed; this pipeline
+   cannot relax it.
 
 The `COL-03C` twin (zero NULLs from the start) is still blocked; the `COL-03B` twin (EMPTY)
 publishes clean and ships as a single in-place schema change. For the publish loop, see

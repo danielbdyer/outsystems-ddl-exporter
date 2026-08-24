@@ -22,8 +22,9 @@ description: Use when the developer says "change the text field to a date", "sto
 
 > **Proven precedent:** `../../../sample-prs/retype-explicit.md` — the worked instance of the
 > `../../author-pr/SKILL.md` template for this op. Its *What proving showed* carries the real
-> bare-retype `Msg 50000` block, the `TRY_CONVERT` count (1 of 5 unconverted), the clean additive
-> add, and the drop-old-column block.
+> bare-retype `Msg 50000` block (`Order.Total DECIMAL(18,2) → INT`, `pg_retype2`), the precision-loss
+> rows (2 of 4 lose their cents), the convertibility contrast (`Product.Code`: 0 of 5 `TRY_CONVERT` —
+> a STOP, `pg_retype`), and the drop-old-column block.
 
 ## OutSystems phrasing
 "change the Text attribute to a Date", "make this an Integer", "store it as a number now".
@@ -68,13 +69,13 @@ multi-phase path. For the publish loop, see `../../prove-on-dacpac/SKILL.md`; pr
 
 ## The verdict (to the developer)
 You asked to store this column as a Date instead of Text, and the catch is that not every value
-parses as a date. On a disposable copy of Dev I ran `TRY_CONVERT` over your actual data: 12 rows
+parses as a date. On a disposable copy of Dev, `TRY_CONVERT` over the actual data counts the rows that
 don't convert. So this can't be one clean change — it stages across more than one release so the
-running app keeps working: add a new Date column, convert the values that convert, deal with the 12
-that don't, then swap the new column in and drop the old. Those 12 are the real question for you —
-should they be corrected to real dates before the cutover, or is it acceptable for them to land as
-NULL? Correcting them keeps this a reshape a dev lead can sign off; letting them drop means data lost
-for good, which a principal should review.
+running app keeps working: add a new Date column, convert the values that convert, deal with the ones
+that don't, then swap the new column in and drop the old. The non-convertible rows are the real
+question for you — corrected to real dates before the cutover, or acceptable to land as NULL?
+Correcting them keeps this a reshape a dev lead can sign off; letting them drop means data lost for
+good, which a principal should review.
 
 ## The reasoning (in conversation)
 An explicit conversion earns its staging for two reasons, and only the data shows you the first: not

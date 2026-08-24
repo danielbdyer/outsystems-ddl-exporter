@@ -18,17 +18,17 @@ no value is supplied. No work item supplied — attach one before merge.
 - Name the constraint `DF_Order_StatusText`; an auto-named default differs per environment and makes
   diffing fragile.
 
+## The data
+- Existing `StatusText` values are unchanged. The default applies only to rows inserted from here on.
+
 ## How it ships
 - One release, applied in place. SSDT emits `ALTER TABLE … ADD CONSTRAINT DF_Order_StatusText DEFAULT …`;
   it affects future inserts only and touches no existing row.
 
-## The data
-- Existing `StatusText` values are unchanged. The default applies only to rows inserted from here on.
-
 ## What proving showed
 Published to a throwaway copy on this branch.
 - **Tried / Did:** publish → the delta is a clean `ADD CONSTRAINT` with no UPDATE of existing rows.
-- **Realized (F10):** after adding a default, an existing `NULL` stayed `NULL` and an existing value was
+- **Realized:** after adding a default, an existing `NULL` stayed `NULL` and an existing value was
   unchanged; only a fresh insert that omitted the column received the default. A default never
   backfills. (The mirror case — a default riding a *new* `NOT NULL` column — does stamp every existing
   row as the column lands; that is `add-mandatory`, a different op.)

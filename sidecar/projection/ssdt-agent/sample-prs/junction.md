@@ -24,6 +24,12 @@ attach one before merge.
   from each — every seeded pair must have a real Customer and a real Product, or the publish is
   blocked.
 
+## The data
+- No existing data is touched. The table is created empty; there are no pairs for the deploy to be
+  conservative about.
+- The composite primary key over `(CustomerId, ProductId)` forbids the same pair twice; the two
+  foreign keys forbid a pair pointing at a Customer or Product that does not exist.
+
 ## How it ships
 - One release, applied in place. DacFx emits `CREATE TABLE [dbo].[CustomerProduct]`. The table is
   created empty, so both foreign keys are validated with no rows to check and land trusted
@@ -31,12 +37,6 @@ attach one before merge.
 - If the bridge is seeded with pairs referencing a missing parent, the foreign-key validation blocks
   the publish and the change becomes an orphan reconcile (see create-fk-orphan.md), which modifies
   existing data and ships as a scripted change.
-
-## The data
-- No existing data is touched. The table is created empty; there are no pairs for the deploy to be
-  conservative about.
-- The composite primary key over `(CustomerId, ProductId)` forbids the same pair twice; the two
-  foreign keys forbid a pair pointing at a Customer or Product that does not exist.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

@@ -25,6 +25,10 @@ one before merge.
   refactorlog), not `DROP TABLE` + `CREATE TABLE`. A drop-and-recreate in the delta is the data-loss
   signal — stop and add the identity mapping first.
 
+## The data
+- 3 rows in `dbo.Category`, object_id `933578364`. The transfer keeps every row and keeps the
+  object_id, so the table under the new schema is the same table.
+
 ## How it ships
 - One release, applied in place. `ALTER SCHEMA archive TRANSFER dbo.Category` is a metadata operation:
   the object_id and every row are preserved, and no data is read or rewritten. The data-loss gate is
@@ -34,10 +38,6 @@ one before merge.
   addresses. Under the production posture (drops off) it creates an empty table at the new address and
   strands the populated original at the old one; under a drop-enabled posture it drops and recreates,
   and the rows are lost. Ship the scripted transfer or the refactorlog entry, not the bare header edit.
-
-## The data
-- 3 rows in `dbo.Category`, object_id `933578364`. The transfer keeps every row and keeps the
-  object_id, so the table under the new schema is the same table.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

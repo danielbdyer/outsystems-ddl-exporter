@@ -55,8 +55,8 @@ COLUMN`/`ADD`, the refactorlog is missing; catch it in the delta, never after de
 `../../prove-on-dacpac/SKILL.md`.
 
 ## The verdict (to the developer)
-You renamed the attribute, and the data is safe: on a disposable copy of Dev I read the generated
-delta and it came out as `sp_rename`, which renames the column in place and keeps every value. Had
+You renamed the attribute, and the data is safe: on a disposable copy of Dev the generated delta
+came out as `sp_rename`, which renames the column in place and keeps every value. Had
 that refactorlog entry been missing, SSDT would instead have dropped the old column and added a new
 one, losing everything in it — so reading the delta is what makes this safe rather than a hope. The
 real cost is that every caller of the old name has to move to the new one: views, procedures, ORM

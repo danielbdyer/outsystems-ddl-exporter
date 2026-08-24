@@ -212,22 +212,22 @@ The **honest, corrected recipe:**
   it.** No rows, the `IF EXISTS` is false, the RAISERROR never fires, the `ALTER COLUMN NOT NULL`
   lands. (Confirm the table is genuinely empty first.)
 - **POPULATED table (NULLs present OR zero NULLs — it makes no difference)** -> the make-mandatory
-  change **cannot pass the prod-strict gate by backfill alone.** It needs a **conscious, documented
-  decision taken AFTER a verified backfill** (prove `COUNT(*) WHERE col IS NULL = 0` first —
-  necessary, not sufficient), then ONE of:
-  - **(a) Targeted gate-relaxation** — **ships as a scripted change with a named relaxation,**
-    because relaxing the guard for one column cannot be expressed as a table definition. Having
-    proven zero NULLs remain, deliberately disable `BlockOnPossibleDataLoss` for **this one targeted
-    change** — the concrete form is the flag on that single publish invocation,
-    `sqlpackage /Action:Publish … /p:BlockOnPossibleDataLoss=False`, named in the deployment
-    record, never a permanent profile edit — so the `ALTER COLUMN NOT NULL` proceeds against the
-    now-clean column. The proof packet must carry **both** the zero-NULL probe AND the explicit
-    record of the relaxation decision.
-  - **(b) Restructure to stage it across releases** — **ships across multiple releases so the
-    running application keeps working** and the engine never has to relax its guard. A dev lead or
-    an experienced developer must review this: the running application must change to keep working.
-    Added scrutiny where it applies: the table holds more than a million rows, or the operation is a
-    first on this estate.
+  `ALTER` trips the row-presence guard, and this estate's pipeline (Azure DevOps → Octopus, dacpac)
+  **cannot relax `BlockOnPossibleDataLoss` for one deploy** (`../../FINDINGS_AND_CHANGES.md` Part 1 —
+  the locked-gate axiom). So it ships as **two releases**, the pattern proven live on this branch
+  (F7):
+  - **Release 1** — a pre-deploy backfills the NULLs and runs `ALTER COLUMN … NOT NULL` itself, with
+    the **model left at `NULL`**, so DacFx generates no data-loss step and the row-presence guard
+    never fires. Idempotent and safe over a partial state (F6).
+  - **Release 2** — the model catches up to `NOT NULL`. The database is already `NOT NULL`, so DacFx
+    sees model = database and generates nothing.
+
+  Never combine the two (F2 — a model that tightens in the same release the pre-deploy tightens
+  still blocks AND half-applies). Release 1's own `ALTER` fails `Msg 515` if a NULL remains, so the
+  backfill is part of Release 1, not an afterthought. **A dev lead must review this: existing data
+  is modified** — and the running application must keep working across the two releases. Added
+  scrutiny where it applies: the table holds more than a million rows, or the operation is a first
+  on this estate.
 
 **What the proof must EMPIRICALLY show (do not assert it — discover it):**
 
@@ -237,8 +237,10 @@ The **honest, corrected recipe:**
 2. Author the pre-deploy backfill, re-run the NULL probe -> prove `0` NULL emails remain.
 3. Re-run Strict -> prove it **STILL blocks** and the column **stays nullable** — the backfill did
    not satisfy the gate. **This is the finding the section exists for.**
-4. Deliver the corrected verdict and prove the chosen path — (a) named gate-relaxation after
-   proven-zero-NULL, or (b) staged across releases — actually lands the NOT NULL.
+4. Deliver the corrected verdict and prove the **two-release** actually lands the NOT NULL: Release 1
+   (model still `NULL` + pre-deploy backfill + `ALTER … NOT NULL`) tightens the column; Release 2
+   (model `→ NOT NULL`, no pre-deploy) is a no-op; re-publish is stable. The gate is never relaxed,
+   because this pipeline cannot relax it.
 
 This is the central proof that the tree's *prove-don't-advise* thesis holds: the finding surfaced
 here **contradicts an earlier, wrong recipe** rather than parroting it.
@@ -356,17 +358,19 @@ decision that is genuinely theirs. For the make-mandatory case:
 > You asked to make Email required. On a disposable copy of Dev, SSDT refused it: it checks whether
 > the table has any rows, not whether Email has blanks, so it blocks the change while the table
 > holds data — even after the blanks are filled. On an empty table it would just apply. With data in
-> the table, this needs a deliberate call: relax the data-loss guard for this one change after
-> proving no blanks remain, or stage it over two releases. Which would you prefer?
+> the table, it ships as two releases, because this pipeline cannot relax the data-loss guard:
+> release one fills the blanks and tightens the column behind the scenes with the model still saying
+> optional, release two lets the model catch up. The one decision that is yours: what should the
+> blank Emails become?
 
 And the same finding on the record, for the PR body:
 
 > Making Email NOT NULL is blocked while dbo.Customer holds rows: SSDT guards the change with
 > `IF EXISTS (SELECT TOP 1 1 FROM dbo.Customer) RAISERROR(...)`, which fires on row presence, not on
 > blank values — verified on a disposable copy, where a backfill to zero blank Emails was still
-> blocked. A dev lead must review this: existing data is affected. Ships as a scripted change — the
-> data-loss guard is relaxed for this one column after the zero-blank count is proven, or the column
-> is filled and tightened across two releases.
+> blocked. A dev lead must review this: existing data is affected. Ships as two releases, because
+> this pipeline cannot relax the data-loss guard — release one backfills the blanks and tightens the
+> column with the model lagging, release two lets the model catch up as a no-op.
 
 ## The named traps to catch in the delta (handbook file 16 = §19)
 

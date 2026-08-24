@@ -19,9 +19,17 @@ consuming that data. Where intuition and reality disagree, these PRs teach reali
   run — the block text, the row counts, the `sys.*` facts, the content digests — never asserted. Each
   PR is now the ten-section gold template (`../skills/author-pr/SKILL.md`); the earlier Twin corpus is
   its provenance, re-grounded on live publishes this branch (`../FINDINGS_AND_CHANGES.md` F1–F11).
-- **Where the proofs live.** `../../tests/Twin.Tests.Integration/SamplePr*Tests.fs` (11 classes, 41
-  facts, all green). Run one class from `sidecar/projection/`:
-  `dotnet test tests/Twin.Tests.Integration/Twin.Tests.Integration.fsproj --filter "FullyQualifiedName~SamplePrTighteningTests"`.
+- **Where the proofs live — two parallel corpora.** Each record's **authoritative** proof is the live
+  `sqlpackage` 170.4.83.3 re-proof on this branch's proving-ground (the 5-row substrate), named by the
+  disposable-copy DB in its *What proving showed* (`../FINDINGS_AND_CHANGES.md` F1–F12). Alongside it,
+  `../../tests/Twin.Tests.Integration/SamplePr*Tests.fs` is a **parallel** proof corpus on the Twin's own
+  richer synthetic estate (~25 rows, DacFx 162.5.57) — self-contained, isolated per fixture, and green
+  (the full suite was re-run this branch: 11 classes, 41/41 facts, 0 skipped).
+  The two prove the **same laws on different substrates**, so their specifics differ by design: the Twin
+  splits `Email` where the record splits `ContactPhone`, moves `CreatedOn` where the record moves
+  `Region`, removes IDENTITY from `Order` where the record adds it to `Category`. Neither claims to prove
+  the other's exact scenario. Where the two engines diverge — constraint **trust** — the live
+  `sqlpackage` engine is authoritative (the engine-pair note below).
 - **The engine pair — a real divergence, resolved 2026-08-21.** The Twin corpus was captured on **DacFx
   162.5.57**; the live re-proof this branch ran on **sqlpackage 170.4.83.3**. On constraint **trust** the
   two diverge, and the live engine is authoritative: a declarative FK or CHECK add generates
@@ -48,9 +56,10 @@ These are the examples where a plausible assumption is *wrong*, and the Twin pro
 - **[delete-entity](./delete-entity.md)** / **[rebuild-index](./rebuild-index.md)** — removing an Entity
   from the model does **not** drop the table under the production posture (phantom survival); an index
   rebuild produces **no declarative delta at all** (it's maintenance, `NothingToApply`).
-- **[identity-swap](./identity-swap.md)** — removing Auto-Number is a **table rebuild**, and the
+- **[identity-swap](./identity-swap.md)** — toggling Auto-Number is a **table rebuild**, and the
   data-loss gate *allows* it (a rebuild moves rows rather than dropping them) — the opposite of what the
-  "BlockOnPossibleDataLoss" name suggests.
+  "BlockOnPossibleDataLoss" name suggests. The real trap is the seed: an explicit-id insert fails
+  `Msg 544` once IDENTITY is on, until bracketed with `SET IDENTITY_INSERT`.
 
 ## The catalog
 
@@ -65,7 +74,7 @@ Every row links to its PR; each PR names the exact green test that proves it.
 | [make-optional](./make-optional.md) | uncheck Is Mandatory | NOT NULL → NULL applies clean |
 | [make-mandatory](./make-mandatory.md) | check Is Mandatory | **blocks** a populated table (row-presence guard) even at 0 NULLs; empty applies |
 | [widen](./widen.md) | enlarge a Text Attribute's length | applies clean; every value preserved (digest identical) |
-| [narrow](./narrow.md) | shrink a Text Attribute's length | refused on any **populated** table (row-presence) even when every value fits; the `MAX(LEN)` proof decides the remedy — relax the gate, or reconcile over-length data first |
+| [narrow](./narrow.md) | shrink a Text Attribute's length | refused on any **populated** table (row-presence) even when every value fits; ships as **two releases** (this pipeline cannot relax the gate) — R1 reconciles any over-length values and narrows with the model lagging, R2 the model catches up |
 | [retype-implicit](./retype-implicit.md) | widen a numeric type | applies in place; every value preserved |
 | [retype-explicit](./retype-explicit.md) | lossy type change | narrowing **blocks** (overflow); widening applies |
 | [delete-attribute](./delete-attribute.md) | delete an Attribute | column drop **blocks** on a populated table; the scripted DROP is the irreversible step |
@@ -102,7 +111,7 @@ Every row links to its PR; each PR names the exact green test that proves it.
 |---|---|---|
 | [create-static-seed](./create-static-seed.md) | a Static Entity with records | first converge inserts; second is **silent** (0 rows + identical hash + NothingToApply) |
 | [edit-seed](./edit-seed.md) | change a Static Entity record | the guarded MERGE touches **exactly the changed row**; re-run silent |
-| [delete-seed-value](./delete-seed-value.md) | remove a Static Entity record | removing it from the seed does **not** delete the row (the seed is additive); the explicit delete is FK-guarded — a **referenced** value is blocked (Msg 547); prefer IsActive=0 |
+| [delete-seed-value](./delete-seed-value.md) | remove a Static Entity record | removing it from the seed does **not** delete the row (the seed is additive); a hard DELETE of a referenced value is **not** blocked here (no FK declared) — it **silently orphans** the referencing rows; prefer IsActive=0 |
 | [extract-to-lookup](./extract-to-lookup.md) | free-text Attribute → Static Entity ref | phase 1: lookup seeded, 0 unmapped, backfill 0 NULL/0 orphan, FK trusted |
 
 ### Tables & Entities (`SamplePrCleanApply2Tests`, `SamplePrRemovalTests`, `SamplePrRenameTests`, `SamplePrSchemaChangeTests`)
@@ -122,7 +131,7 @@ Every row links to its PR; each PR names the exact green test that proves it.
 | [split-table](./split-table.md) | one Entity → two | phase 1: new table + 1:1 copy (digest match); the source-column drop is the guarded later phase |
 | [merge-tables](./merge-tables.md) | two Entities → one | prove **1:1 cardinality before the copy** or a 1:many merge silently drops rows |
 | [move-attribute](./move-attribute.md) | a field crosses Entities | copy-then-drop, never a rename; 1:1 join + digest match; the source drop is the guarded later phase |
-| [identity-swap](./identity-swap.md) | toggle Auto-Number | a **table rebuild** the gate *allows* (rows moved, not dropped); keys + FKs preserved |
+| [identity-swap](./identity-swap.md) | toggle Auto-Number | a **table rebuild** the gate *allows* (rows moved, not dropped); ids preserved; the seed's explicit-id insert needs `IDENTITY_INSERT` or fails `Msg 544` |
 | [temporal-convert](./temporal-convert.md) | turn on history for an existing Entity | single publish **blocks** (no-default period columns); ships **staged** with historical defaults |
 
 ---

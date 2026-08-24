@@ -91,10 +91,11 @@ proof**:
 - A reviewer that **accepts the author's "a backfill clears the NULLs and it ships clean" claim without
   reproducing the zero-NULL-still-blocks finding** has classified from the packet text exactly as a failing
   author classifies from the `.sql`. **The entire review run FAILS.**
-- The correct verdict is **Escalated** with the fork — relax the data-loss guard after proving zero NULLs,
-  or stage across releases — and the single question to the lead. Anything that routes this design fork to
-  a return to the author (an OS-dev fix) or silently approves it is a dimension-2 + dimension-6 miss on the
-  gating scenario.
+- The correct verdict is **Returned to the author**: the "ships clean" claim is the disproven recipe, and
+  the fix is the developer's — ship it as the **two-release** (R1 backfills and tightens with the model
+  lagging, R2 catches up; this pipeline cannot relax the gate). The shipping shape is determined, not a
+  design fork, so a reviewer that **Escalates** this to the lead (spending the escalation on a settled
+  shape) or silently approves the clean claim is a dimension-2 + dimension-6 miss on the gating scenario.
 
 This is the single proof that the review tree's *reproduce-don't-read* thesis holds for that reviewer, and
 that it discovers a finding that **contradicts the packet's claim** rather than agreeing with it.

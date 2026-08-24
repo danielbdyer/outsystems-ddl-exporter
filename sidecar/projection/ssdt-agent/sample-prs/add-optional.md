@@ -17,15 +17,15 @@ blank — "a field that doesn't have to be filled". No work item supplied — at
   unchanged — every existing row takes NULL, which the new column already permits.
 - Run the verification query below in each environment after deploy and confirm `is_nullable = 1`.
 
+## The data
+- No existing data is touched. `dbo.Customer` holds 5 rows; each takes NULL in the new column as it
+  lands. NULL is a valid value for every existing row, so nothing can conflict with the add.
+
 ## How it ships
 - One release, applied in place. The declarative difference is a single
   `ALTER TABLE dbo.Customer ADD [MiddleName] NVARCHAR(100) NULL`, which contains no data-loss step,
   so the data-loss guard (`BlockOnPossibleDataLoss = true`) never fires and no pre-deploy or
   post-deploy script is needed.
-
-## The data
-- No existing data is touched. `dbo.Customer` holds 5 rows; each takes NULL in the new column as it
-  lands. NULL is a valid value for every existing row, so nothing can conflict with the add.
 
 ## What proving showed
 Published to a throwaway copy of the database on this branch (SQL Server 2022, `sqlpackage 170.4.83.3`).

@@ -35,10 +35,15 @@ what makes these changes **multi-PR**.
   schema change to prove beyond confirming both shapes still agree (hash both). Leave a
   backward-compat **computed column** exposing the old shape if any external consumer still
   references it (see `../identity-and-refactorlog/SKILL.md` for the computed-column bridge).
-- **Phase 3 — subtractive.** Drop the old shape from the project. **This is where
-  `BlockOnPossibleDataLoss` blocks the drop** — under Strict the deployment is blocked until the
-  conservation proof (below) licenses it. A dev lead must review the drop, and once the removed
-  data is genuinely irrecoverable, a principal must review it because the removal cannot be undone.
+- **Phase 3 — subtractive.** Drop the old shape. On a populated table `BlockOnPossibleDataLoss`
+  blocks a declarative drop the **same data-blind way** it blocks every tightening — on row
+  presence, not on whether the copy succeeded (`../tightening-class/SKILL.md`). The conservation
+  proof (below) does **not** lift that gate; the gate never reads it. What the proof licenses is the
+  **reviewer's decision** that the data is safe to remove — it is the evidence the drop is approved
+  on, not a signal the engine acts on. The drop's own shipping shape under the locked gate is the
+  per-op subtractive pattern (`../../op/<op>/SKILL.md`; delete-attribute's 4-phase deprecation is the
+  worked case). A dev lead must review the drop, and once the removed data is genuinely
+  irrecoverable, a principal must review it because the removal cannot be undone.
 
 The empty-source case: if the source is **empty**, there is no data to move — the whole staged
 shape collapses to a clean additive create (plus a clean subtractive drop). Prove the source is
@@ -90,9 +95,13 @@ but always a conservation/totality check:
 - **delete-attribute (4-phase)** → prove the column is genuinely dead: stop-writes phase +
   `sys.dm_sql_referencing_entities` shows nothing reads it, before the irreversible drop.
 
-The `BlockOnPossibleDataLoss` block on the drop phase is **the gate being conservative** — SSDT
-refuses because it cannot know the copy already succeeded. The block is the *licensing gate*; the
-conservation proof is what earns the license.
+The `BlockOnPossibleDataLoss` block on the drop phase is **the gate being conservative and
+data-blind** — SSDT refuses on row presence, and it cannot know (and never checks) that the copy
+already succeeded. So the conservation proof does **not** clear the block, and the gate does not
+read it. The proof clears the only thing evidence *can* clear — the **reviewer's doubt** that the
+data is safe to lose. The gate itself is cleared by the drop's shipping shape (the per-op
+subtractive pattern), never by the proof: keep the two separate, or an agent will wrongly promise
+that a passing proof makes the drop deploy.
 
 ## The ops this governs (and their distinguishing proof)
 

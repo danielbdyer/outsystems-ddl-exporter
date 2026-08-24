@@ -32,9 +32,10 @@ developer should experience:
 > it checks whether the table has any rows, not whether Email has blanks. SSDT writes the deploy
 > script up front and can't know a backfill is coming, so it blocks the change the moment the table
 > holds rows. Even after every NULL was cleared (0 remain), it was still blocked. On an empty table
-> it would just apply. With data in the table, this needs a deliberate call — relax the data-loss
-> guard for this one column after proving no blanks remain, or stage it over two releases. Which
-> would you prefer? Here's the proof."
+> it would just apply. With data in the table, it ships as two releases, because this pipeline cannot
+> relax the data-loss guard — release one fills the blanks and tightens the column with the model
+> still saying optional, release two lets the model catch up. The one call that's yours: what should
+> the blank Emails become? Here's the proof."
 
 ## Your input — the change-spec from intake
 The **op-slug(s)** with their per-op skill paths (`skills/op/<op-slug>/SKILL.md`), the pre-flagged
@@ -116,10 +117,10 @@ DB is warm before proving.
     **NOT** clear the block. SSDT's `NULL -> NOT NULL` guard is
     `IF EXISTS(SELECT TOP 1 1 FROM Table) RAISERROR(...)` — **table-has-rows, not column-has-NULLs.**
     Prove it: clear every NULL (probe returns 0), re-run Strict, and it is still blocked. The honest
-    verdict is then a deliberate call — (a) a named relaxation of BlockOnPossibleDataLoss *after* the
-    proven zero-NULL count (a scripted change — it cannot be expressed as a table definition), or
-    (b) staged across releases. An empty table is the only case that ships as a single in-place
-    change. This same data-blind guard governs `make-mandatory`, `narrow`, and `delete-attribute`
+    verdict is then the **two-release**, because this pipeline cannot relax the gate: (a) Release 1
+    backfills the NULLs and runs `ALTER … NOT NULL` in a pre-deploy with the model lagging, then
+    (b) Release 2 the model catches up as a no-op. An empty table is the only case that ships as a
+    single in-place change. This same data-blind guard governs `make-mandatory`, `narrow`, and `delete-attribute`
     (the drop-column face) uniformly — the class and its WHY are owned by
     **`skills/_index/tightening-class/SKILL.md`**; do not re-derive the guard here. (See also
     `prove-on-dacpac` for the publish loop that proves it.)
@@ -151,9 +152,10 @@ recommendation:
   (add → backfill → cut over → drop) as the staged sequence.
 
 When the remedy embeds a decision only a human can make — delete vs. reassign, truncate vs. widen,
-relax the guard vs. stage across releases, which duplicate survives — pose it per
+the backfill value for a tightening, which duplicate survives — pose it per
 `skills/ask-the-developer`: the measured fact, each option with its consequence, exactly one
-question, and the answer recorded on the pull request with its decider.
+question, and the answer recorded on the pull request with its decider. (The shipping shape is not
+such a decision — a data-loss change is a two-release; this pipeline cannot relax the gate.)
 
 Then **re-run the Strict publish** and confirm it now passes clean. **That clean re-run is the proof
 you hand the developer** — not a claim, a demonstration.
@@ -243,8 +245,8 @@ owner.
   this change rests on, plus the fail mode you avoided. This teaching lives here and never in the
   pull request. Not optional.
 - **The one question**, when the call is genuinely the developer's — the backfill value, reassign vs.
-  delete, relax-the-guard vs. stage — a single plain question in their terms, never a request to go
-  measure the data.
+  delete, truncate vs. widen — a single plain question in their terms, never a request to go measure
+  the data (never the shipping shape, which the machine decides).
 
 ## Adaptive — collapse to a verdict when the proof is trivial
 Classify-by-proving is the rule, but not every change needs the full loop *visibly*. For an

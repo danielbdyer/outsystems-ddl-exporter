@@ -20,15 +20,15 @@ supplied — attach one before merge.
   chain must cascade too.
 - No existing row changes when this deploys; the change is to future delete behaviour only.
 
+## The data
+- No row is written. The change is to the key's delete rule, not to any row. The re-add re-validates
+  every child row against the parent (a read), which at production row counts is a scan.
+
 ## How it ships
 - One release, applied in place. SQL Server cannot change a delete rule in place, so the generated
   script drops the key and re-adds it with the new rule — proven below. No row is written, but the
   re-add re-validates every child row against the parent (a read), so the key ends trusted
   (`is_not_trusted = 0`). At production scale that re-validation is a scan.
-
-## The data
-- No row is written. The change is to the key's delete rule, not to any row. The re-add re-validates
-  every child row against the parent (a read), which at production row counts is a scan.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

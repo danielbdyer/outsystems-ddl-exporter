@@ -18,12 +18,12 @@ and storage cost. No work item supplied — attach one before merge.
   `user_seeks` / `user_scans` / `user_lookups`. If any environment shows usage, stop — the index is
   load-bearing there.
 
+## The data
+- No data is touched. An index is a derived structure, not stored source data.
+
 ## How it ships
 - One release, applied in place. SSDT emits a single `DROP INDEX`; no row is read or written, and the
   publish never blocks.
-
-## The data
-- No data is touched. An index is a derived structure, not stored source data.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

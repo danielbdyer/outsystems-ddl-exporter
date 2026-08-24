@@ -57,7 +57,7 @@ column to its parent looking for NULL parents. For the publish loop, see
 You asked to make this a many-to-many — a Student can have many Courses, a Course many Students.
 In SQL that's a bridge table: a small table whose primary key is the two foreign keys together,
 one pointing at each side. On a disposable copy of your data, SSDT just creates it — there's
-nothing to transition, so nothing can conflict or be lost. I checked both sides and found no
+nothing to transition, so nothing can conflict or be lost. Both sides checked out with no
 orphan pairs, so the two foreign keys validate and the table lands clean. A dev lead should
 review it, because it now ties two tables together with two relationships. The one thing worth
 deciding is whether you're seeding any initial pairs — if so, every pair needs a real row on both

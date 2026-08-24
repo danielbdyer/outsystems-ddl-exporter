@@ -53,8 +53,9 @@ Prove the mapping is **total** BEFORE dropping the old column:
 existing values into a new shape behind a new foreign key, so it can't be done in one publish — it
 stages across a few releases (several PRs), with the old text column and the new lookup living side
 by side until every reader has moved to the FK. On a disposable copy of Dev, before the old column is
-dropped, I proved every existing value maps to a seeded lookup row — zero unmapped — so nothing
-silently becomes NULL. Because this moves existing data and adds a relationship, a dev lead should
+dropped, every existing value proved to map to a seeded lookup row — zero unmapped (`pg_base`) — so
+nothing silently becomes NULL; an injected 'Backordered' value fired the non-total negative (`pg_move`).
+Because this moves existing data and adds a relationship, a dev lead should
 review it. If the current values aren't clean, some may have no home in the lookup yet — do you know
 whether every StatusText value is one of the expected set, or should we plan a reconcile pass for the
 stragglers before the backfill?"

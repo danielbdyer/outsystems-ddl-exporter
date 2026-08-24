@@ -19,13 +19,13 @@ past state of a record can be read at a point in time. No work item supplied —
 - Confirm a history-retention policy is intended: the paired history table grows with every update and
   has no cleanup unless one is set.
 
+## The data
+- None — the entity is new. Nothing to backfill.
+
 ## How it ships
 - One release, applied in place. Temporal versioning is expressible declaratively for a new table, so
   SSDT publishes the system-versioned CREATE — the table, its history table, and the period columns —
   clean. No existing data is read or written.
-
-## The data
-- None — the entity is new. Nothing to backfill.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

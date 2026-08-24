@@ -190,10 +190,10 @@ Label the whole handoff **PROVISIONAL**. It becomes a confirmed finding only aft
   change to keep working. Data-violation variable unknown -> **must prove**. Provisional shipping
   shape: a single in-place schema change *if* the table is truly empty; but on a **populated** table
   it does **not** land clean even with zero NULLs — SSDT's guard is table-has-rows, not
-  column-has-NULLs — so SSDT refuses under the Strict (prod) gate, and shipping needs a conscious
-  call: relax the data-loss guard for this one column after proving zero blanks remain, or stage it
-  across two releases. Proof to demand: `COUNT(*) WHERE Email IS NULL`; then prove SSDT STILL refuses
-  after the backfill clears the blanks.
+  column-has-NULLs — so SSDT refuses under the Strict (prod) gate, and it ships as **two releases**
+  (this pipeline cannot relax the data-loss guard): release one fills the blanks and tightens the
+  column with the model lagging, release two lets the model catch up. Proof to demand:
+  `COUNT(*) WHERE Email IS NULL`; then prove SSDT STILL refuses after the backfill clears the blanks.
 - **"Add an optional Notes field to Customer"** (small). Purely additive, the app is
   oblivious, no existing data touched -> **classify on sight**: ships as a single in-place schema
   change with no data read or written, and any team member can review it. It still goes through

@@ -183,22 +183,21 @@ the proof, not a bug.
 
 ## 8 — Author the remedy, then re-prove Strict clean
 
-Write the real remedy — a `Script.PreDeployment.sql` backfill, a refactorlog entry, a staged
-NOCHECK → reconcile → `WITH CHECK CHECK` FK, a pre-deploy dedupe. If a Permissive run (step 7) or
+Write the real remedy — a `Script.PreDeployment.sql` backfill, a refactorlog entry, a pre-deploy
+reconcile for an FK orphan (the declarative add then emits `WITH NOCHECK ADD` + `WITH CHECK CHECK`
+and trusts itself — F9, no manual step), a pre-deploy dedupe. If a Permissive run (step 7) or
 a blocked publish already touched the copy, **reset first** (step 9's drop/recreate, then step
 3's BEFORE state) — a blocked publish is non-atomic and can leave residue (an untrusted FK), and
 a proof taken over that residue proves nothing. Then rebuild and re-run **step 6**.
 **The clean Strict re-run, from a reset copy, is the proof carried to the developer.**
 
 > **make-mandatory is the exception.** On a populated table a backfill does NOT produce a clean
-> Strict re-run — the table-has-rows guard still fires. The corrected, proven remedy is a
-> CONSCIOUS, DOCUMENTED decision taken AFTER a verified-zero-NULL backfill (the zero-NULL probe
-> is necessary but NOT sufficient): either **(a)** a targeted relaxation of
-> `BlockOnPossibleDataLoss` for THIS one change — which ships as a scripted change carrying a
-> named, logged gate-relaxation — or **(b)** restructure to ship across two releases so the
-> running application keeps working. The proof packet carries the zero-NULL probe AND the
-> explicit gate-relaxation (or the staged phases). The EMPTY-table leg is the clean, in-place,
-> single-phase contrast.
+> Strict re-run — the table-has-rows guard still fires. The corrected, proven remedy is the
+> **two-release** pattern, because this pipeline cannot relax `BlockOnPossibleDataLoss`
+> (`../FINDINGS_AND_CHANGES.md` Part 1): **R1** backfills the NULLs and runs `ALTER … NOT NULL` in a
+> pre-deploy with the model still declaring `NULL` (so DacFx emits no data-loss step); **R2** the
+> model catches up as a no-op. The proof packet carries the zero-NULL probe AND the clean two-release
+> re-run. The EMPTY-table leg is the clean, in-place, single-phase contrast.
 
 ## 9 — Reset between scenarios
 
@@ -212,11 +211,11 @@ this — each owns a fresh unique DB per `../self-test/PROTOCOL.md`.)
 
 | seed scenario (in `Data/Seed.sql`) | the change proven | the outcome it demonstrates | self-test |
 |---|---|---|---|
-| Customer rows 3 & 5 have `Email` NULL (table populated) | make-mandatory `Email NOT NULL` | Strict blocks — guard is **table-has-rows**; backfill clears the NULLs but NOT the block → gate-relaxation or ship across two releases | COL-03 |
+| Customer rows 3 & 5 have `Email` NULL (table populated) | make-mandatory `Email NOT NULL` | Strict blocks — guard is **table-has-rows**; backfill clears the NULLs but NOT the block → **two releases** (this pipeline cannot relax the gate) | COL-03 |
 | Customer table EMPTY (skip the seed / truncate) | the SAME `Email NOT NULL` | no rows → `IF EXISTS` false → ALTER lands → clean single-phase apply in place; any reviewer | COL-03B |
 | Customer re-seeded with ZERO NULL Email (still populated) | the SAME `Email NOT NULL` | STILL blocks — zero NULLs is necessary but NOT sufficient; the guard is row-presence | COL-03C |
 | Customer `ContactPhone` populated, **no refactorlog** | rename `ContactPhone`→`MobileNumber` | delta = DROP+CREATE = a rename with no refactorlog entry loses the column's data → STOP, demand refactorlog | COL-08N |
-| `Order` row 4 has `CustomerId = 999` (orphan) | add FK `Order.CustomerId`→`Customer.Id` | clean FK blocks on orphan → ships as a scripted change (NOCHECK→reconcile→`WITH CHECK CHECK`) | KEY-03 |
+| `Order` row 4 has `CustomerId = 999` (orphan) | add FK `Order.CustomerId`→`Customer.Id` | orphan blocks the declarative add (`Msg 547`) → pre-deploy reconcile; the declarative add then trusts itself (F9), no manual step | KEY-03 |
 | `Product` row 3 `Code` = 16 chars | narrow `Code` to `NVARCHAR(10)` | over-length → Strict data-loss block → reconcile first (probe `MAX(LEN)` to predict) | COL-06 |
 | `Status` seed rows unchanged on re-publish | add lookup value `'Refunded'` | guarded MERGE captures 0 rows on no-op → idempotency proof (0 rows affected + identical content-hash) | STA-02 |
 | `Product` rows 4 & 5 share `Code = 'DUPE'` | add UNIQUE on `Code` | unique index build fails on dupe → pre-deploy dedupe | CON-02 |

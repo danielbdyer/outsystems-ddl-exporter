@@ -52,19 +52,23 @@ reads that as drop-and-add and the column's data is lost — see
   production row counts it may block writes or run long — schedule a window.
 
 ## Prove it
-Phase 1 — Strict publishes the additive CREATE+FK clean; the post-deploy copy runs; hash the moving
-columns source-vs-new-table and prove **equal**. Phase 3 — edit the source CREATE to drop the moved
-columns; Strict MUST block on data loss, and only the proven-equal Phase-1 hash licenses the drop
-(see `../../_index/multi-phase/SKILL.md` for the totality proof). See `prove-on-dacpac` /
-`talk-to-local-sql` for the loop. On the sample, split `Customer` into `Customer` + `CustomerAddress`
-(STR-01; the seeded 1:1 CustomerAddress row is the copy target).
+Phase 1 — Strict publishes the additive CREATE (plus the FK, if the new table references the source)
+clean; the post-deploy copy runs; hash the moving column source-vs-new-table and prove **equal**.
+**Alias both projections to the same column names** — `FOR XML RAW` encodes the column names into the
+XML, so `SELECT Id, ContactPhone` vs `SELECT CustomerId, Phone` hashes *unequal* over identical data;
+alias both to `k, v` and it matches. Phase 3 — edit the source CREATE to drop the moved column; Strict
+blocks on row-presence (the drop ships as the two-release column-drop pattern), and the proven-equal
+Phase-1 hash licenses the *reviewer's* decision to drop, not the gate (`../../_index/multi-phase/SKILL.md`).
+See `prove-on-dacpac` / `talk-to-local-sql`. On the sample, split `ContactPhone` off `Customer` into a
+new `CustomerContact` (STR-01; proven `pg_split`: 5 rows copied, hash-equal when both sides are aliased).
 
 ## The verdict (to the developer)
-Splitting Customer into two entities moves data, so it can't be one release. On a disposable copy of
-Dev I proved the additive half publishes clean and copies all N rows — the source and new-table
-hashes match — and that the column-drop half is blocked until that copy is proven: SSDT refuses to
-drop the old columns while it can't see that the values already arrived. It ships as three PRs, in
-order: create the new table and copy, repoint the reads, then drop the old columns.
+Splitting an entity in two moves data, so it can't be one release. On a disposable copy of Dev the
+additive half published clean and copied every row — the source and new-table hashes matched (with
+both sides aliased to the same names) — and the column-drop half is blocked while the table holds rows:
+SSDT refuses to drop the old column, and the copy-proof is what tells the reviewer every value already
+arrived. It ships as three PRs, in order: create the new table and copy, repoint the reads, then drop
+the old column.
 
 ## The reasoning (in conversation)
 Any change that relocates data between shapes is additive, then cutover, then subtractive, and the
@@ -79,8 +83,8 @@ instance for this op is `../../../sample-prs/split-table.md`. SHIP terminal: **A
 (a greenfield split collapses to ONE). The fragment this operation contributes:
 
 **Review & release**
-- A dev lead must review this: existing data is moved into a new table (CustomerAddress) and a
-  cross-table relationship (the foreign key back to Customer) is added.
+- A dev lead must review this: existing data is moved into a new table and a cross-table relationship
+  (the foreign key back to the source) is added.
 - Ships across three releases (three pull requests): create the new table and copy the moving
   columns, cut the application over (repoint reads), then drop the old columns from the source — the
   old and new shapes coexist while readers migrate, and the copy cannot be expressed as a table
@@ -92,15 +96,16 @@ instance for this op is `../../../sample-prs/split-table.md`. SHIP terminal: **A
 **Verification** — run in each environment after deployment
 ```sql
 -- expect equal hashes: the moving columns hold the same content in the new table as in the source
--- (run after the copy, before the Phase-3 column drop — the gate Strict enforces under
---  BlockOnPossibleDataLoss)
+-- (run after the copy, before the Phase-3 column drop). ALIAS both projections to the SAME column
+-- names (k, v ...) — FOR XML RAW encodes column names into the XML, so different names hash unequal
+-- over identical data.
 SELECT
   CONVERT(CHAR(64), HASHBYTES('SHA2_256',
-    CAST((SELECT <sourcepk>, <moving columns> FROM <source>
+    CAST((SELECT <sourcepk> AS k, <moving column> AS v FROM <source>
           ORDER BY <sourcepk> FOR XML RAW) AS VARBINARY(MAX))), 2) AS source_hash,
   CONVERT(CHAR(64), HASHBYTES('SHA2_256',
-    CAST((SELECT <sourcepk>, <the same columns, now in the new table> FROM <newtable>
-          ORDER BY <sourcepk> FOR XML RAW) AS VARBINARY(MAX))), 2) AS newtable_hash;
+    CAST((SELECT <fk to source> AS k, <the same column, now in the new table> AS v FROM <newtable>
+          ORDER BY <fk to source> FOR XML RAW) AS VARBINARY(MAX))), 2) AS newtable_hash;
 
 -- expect 0 rows: every source row has its copy in the new table (the copy carried all N rows)
 SELECT s.<sourcepk> FROM <source> s

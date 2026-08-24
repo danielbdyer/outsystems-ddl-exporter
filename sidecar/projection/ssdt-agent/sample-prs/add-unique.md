@@ -20,14 +20,14 @@ supplied — attach one before merge.
 - If it finds duplicates, reconcile them in a pre-deploy first (merge the records, or correct the
   email) — a data-owner decision; do not guess it.
 
+## The data
+- 5 customers. 3 have distinct emails; 2 have none (`NULL`). No two filled emails match.
+
 ## How it ships
 - One release, applied in place — the index builds over the existing rows. Nothing is written.
 - The index is filtered (`WHERE Email IS NOT NULL`) because Email is optional: a plain unique index
   would be refused, because two customers have no email and a unique index allows only one blank.
 - A duplicate among the filled emails would block the build the same way, until it is reconciled.
-
-## The data
-- 5 customers. 3 have distinct emails; 2 have none (`NULL`). No two filled emails match.
 
 ## What proving showed
 Published to a throwaway copy on this branch.
@@ -51,8 +51,9 @@ SELECT name, is_unique, has_filter FROM sys.indexes WHERE name = 'UIX_Customer_E
 
 ## How to roll this back
 Drop the index: `DROP INDEX [UIX_Customer_Email] ON dbo.Customer;` — dropping loses no data. If a
-pre-deploy reconcile merged or corrected any row, that is not auto-restored — the originals are in the
-pre-deploy step's output. Backing the change out was not exercised.
+pre-deploy reconcile merged or corrected any row, that is not auto-restored — the originals are
+recoverable only from a backup taken before the reconcile, or from a durable record the reconcile
+script was written to keep, not from the deploy log. Backing the change out was not exercised.
 
 ## Not checked / still open
 - Application impact — any insert or update that gives two customers the same filled email is now

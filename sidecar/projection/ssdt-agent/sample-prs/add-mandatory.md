@@ -21,22 +21,24 @@ merge.
 - Check with the application owner that new inserts supply a real `Segment` rather than leaning on
   the default, and that no insert path breaks now that the column exists and is required.
 
+## The data
+- 5 customers, none of which has a `Segment` today (the column is new). The default `Standard`
+  stamps all 5 as the column is added.
+- No existing column is touched.
+
 ## How it ships
 - One release. With the default in the column definition, DacFx generates a single
   `ALTER TABLE [dbo].[Customer] ADD [Segment] NVARCHAR (20) CONSTRAINT [DF_Customer_Segment]
   DEFAULT (N'Standard') NOT NULL;`. SQL Server fills every existing row from the default as the
   column is added; no data-loss step is generated, so the guard never fires.
-- Add the attribute at the end of the table with `IgnoreColumnOrder` on (the estate's publish
-  posture). Inserting it in the middle of the column list makes DacFx rebuild the whole table —
-  copy every row into a shadow table and rename — which still lands clean but rewrites the table.
+- With `IgnoreColumnOrder` on (the estate's publish posture) DacFx ignores where the attribute sits
+  in the model — proven on a copy: placing `Segment` in the middle of the `Customer` column list still
+  generated a plain `ALTER TABLE … ADD` at the end, not a rebuild. (Only with `IgnoreColumnOrder`
+  **off** would a mid-list insert force DacFx to copy every row into a shadow table to place the column
+  physically.)
 - Without a default on this populated table, the publish is refused: SQL Server has no value for the
   existing rows. A default, or a value for every existing row, is required — do not enable
   `GenerateSmartDefaults`, which invents a value silently.
-
-## The data
-- 5 customers, none of which has a `Segment` today (the column is new). The default `Standard`
-  stamps all 5 as the column is added.
-- No existing column is touched.
 
 ## What proving showed
 Published to a throwaway copy on this branch.

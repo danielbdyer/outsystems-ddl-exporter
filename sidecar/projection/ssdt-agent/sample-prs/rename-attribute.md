@@ -26,6 +26,11 @@ attach one before merge.
   that drops and re-adds means the refactorlog entry did not travel with the change, and the deploy
   would lose every phone number.
 
+## The data
+- `dbo.Customer` holds 5 rows; every one carries a `ContactPhone` value (for example
+  `+1-206-555-0101`). None is NULL. These five numbers are exactly what the rename must preserve and
+  a drop-and-re-add would lose.
+
 ## How it ships
 - One release, applied in place — with the refactorlog entry present. The generated difference is a
   single `EXEC sp_rename '[dbo].[Customer].[ContactPhone]', 'MobileNumber', 'COLUMN'`, a metadata
@@ -35,11 +40,6 @@ attach one before merge.
   `ADD [MobileNumber]` instead — a data-loss step. On this pipeline that difference is refused on a
   populated table, and if the gate were ever relaxed the drop would delete every value. The
   refactorlog entry, not the edited column name, is what carries the data.
-
-## The data
-- `dbo.Customer` holds 5 rows; every one carries a `ContactPhone` value (for example
-  `+1-206-555-0101`). None is NULL. These five numbers are exactly what the rename must preserve and
-  a drop-and-re-add would lose.
 
 ## What proving showed
 Published to a throwaway copy of the database on this branch (SQL Server 2022, `sqlpackage 170.4.83.3`).
