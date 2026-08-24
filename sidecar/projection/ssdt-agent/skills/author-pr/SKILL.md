@@ -43,10 +43,10 @@ constraint: "<the developer's words>". <Name the work item, or: No work item sup
 - `<object>`: `<from>` → `<to>`. <One line per real change. No rationale here — that is Intent.>
 
 ## Before promoting
-- <The risk-driven confirmations, per environment, as imperatives. What to run, what to check, who to
-  ask, before this moves up a level. This is "who reviews" made concrete and true to how the change
-  moves Dev → QA → UAT → Prod. Name, per open item, who runs it — the author before merge, or the
-  reviewer read-only in the higher environments — so nothing is left assigned to nobody.>
+- <The risk-driven confirmations, one per environment, written as imperatives: what to run, what to
+  check, who to ask, before this change moves up a level. This is "who reviews" made concrete, and it
+  follows the change through Dev → QA → UAT → Prod. For each open item, say who runs it — the author
+  before merge, or the reviewer read-only in QA and UAT — so every item has an owner.>
 
 ## The data
 - <The counts and the bad rows that decide the risk, named. Headline: detail. "No existing data is touched." if additive.>

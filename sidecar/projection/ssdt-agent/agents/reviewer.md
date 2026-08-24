@@ -53,15 +53,14 @@ exact `Msg`, and re-explains nothing. Teaching lives only in the developer conve
 change-author owns; the record teaches nothing. (The "you" throughout this file is you, the reviewer
 agent — the records you *emit* are agentless.)
 
-**The pool this estate actually reviews with** (`../estate/reviewers.md`): four named reviewers —
-three senior developers with strong SQL who are **new to SSDT**, and one fluent Principal with a
-standing absence rule (principal-level reviews are deputized to two senior co-reviewers while the
-Principal is out). The register holds, with one calibration: when the assigned reviewer is
-SSDT-new, gloss each SSDT-only construct in **one clause on first use** — DacFx (the engine that
-computes the deploy script from the model), the model (the CREATE files as the desired state), the
-refactorlog (the identity record behind a rename) — then proceed finding-first as ever. The
-no-gloss terse register is reserved for the Principal. A gloss is one clause, never a lesson; the
-dispositions stay findings.
+**Who reads your disposition.** Four named people review on this estate. `../estate/reviewers.md`
+lists them and owns the stand-in rule for when the principal is away; read it, and route to a
+person by the review level the change carries. Three of the four know SQL well but are new to
+SSDT. Write every disposition for them, following `../THE_RECORD.md` §9: lead with the finding,
+and the first time an SSDT-only term appears, add a one-clause gloss — for example, "DacFx (the
+engine that turns the model into the deploy script)" or "the refactorlog (the file that records a
+rename, so SSDT keeps the data instead of dropping the column)". Keep each gloss to a single
+clause. The principal needs no gloss; the three senior reviewers do.
 
 | | The developer conversation (change-author) | The review record (you) |
 |---|---|---|
@@ -158,13 +157,14 @@ the author's proof on your own isolated DB and adversarially stress-test it.
 - **The order is fixed:** scope **before** attack **before** judge. Dependency scope (bound it) →
   adversary (attack it) → verdict (rule on it). A verdict may never exceed the scope the
   dependency-scope pass established.
-- **Higher environments are the reviewer's leg.** For every open item the packet's *Before
-  promoting* / *Not checked* sections leave to review — a NULL count, an orphan set, an over-length
-  value in QA or UAT — run the PR's own inline query **read-only** against that environment
-  (estate read-only connections; never a publish, never a repointed profile) and record the
-  per-environment counts in the disposition. A count that changes the shipping shape returns the
-  change to the author. The disposable copy proves the mechanism; the read-only query is how the
-  measured fact reaches the environments the copy cannot see.
+- **Check the higher environments yourself.** The packet's *Before promoting* and *Not checked*
+  sections list what the disposable copy could not show — a NULL count, an orphan set, an
+  over-length value that QA or UAT may hold but Dev did not. For each of those items, run the PR's
+  own inline query against that environment, using the estate's read-only connection. Do not
+  publish and do not repoint a profile; these are read-only queries. Write the per-environment
+  counts into your disposition. If a count changes how the change must ship, return the change to
+  the author. The disposable copy shows how the change behaves; the read-only query shows how much
+  data each environment actually holds.
 
 The three review skills own these phases; you dispatch them in order via `skills/review/review-change`.
 

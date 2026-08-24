@@ -1,16 +1,18 @@
 # Toolchain pins — the versions proving must match
 
-The estate pipeline (Azure DevOps → Octopus) publishes with a specific DacFx
-configuration; local proving is trustworthy only when its engine matches,
-because publish-guard behaviour is version-bound — auto-trust on a declarative
-FK add read differently on sqlpackage 170.4.83.3 than on DacFx 162.5.57
-(`../FINDINGS_AND_CHANGES.md` Part 5, the open pin item). This file is the
-single place the pins live: the web SessionStart hook reads the sqlpackage
-row before installing; skills and CI cite this file rather than restating
-numbers.
+The estate's pipeline (Azure DevOps → Octopus) publishes with one specific DacFx
+version and one set of flags. Local proving can be trusted only when it runs the
+same DacFx version the pipeline runs, because the publish guard behaves
+differently across versions. One example: adding a foreign key ends up trusted
+automatically on sqlpackage 170.4.83.3, but the same add read as untrusted on
+DacFx 162.5.57 (`../FINDINGS_AND_CHANGES.md` Part 5). This file is the one place
+the versions are pinned. The web SessionStart hook reads the sqlpackage row
+before it installs the tool; skills and CI cite this file instead of repeating
+version numbers.
 
-Until a row is pinned, the tool installs at latest, the hook's status line
-carries `-unpinned`, and every proof record stamps the version actually run.
+Until a row is pinned, the tool installs at the latest version, the hook's
+status line carries `-unpinned`, and every proof record stamps the version it
+actually ran.
 
 | tool | pinned version | source of truth | recorded | notes |
 |---|---|---|---|---|
@@ -22,11 +24,12 @@ carries `-unpinned`, and every proof record stamps the version actually run.
 
 Discipline:
 
-- A pin change is part of the change that needs it, never a drive-by: the
-  sqlpackage row is a one-place edit the hook reads on the next session; the
-  Twin DacFx row is a two-fsproj edit that must ride with a green proof-lane
-  run; either lands with a dated note here.
-- A finding proven on one version does not transfer silently to another.
-  When a pin changes, the version-bound findings (`../FINDINGS_AND_CHANGES.md`
-  Part 2, the trust-state family especially) are re-proven or re-stamped
-  before records cite them.
+- Change a pin only as part of the change that needs it, not on its own.
+  Updating the sqlpackage row is a one-line edit here, which the hook reads at
+  the next session. Updating the Twin's DacFx version means editing two
+  `.fsproj` files, and that edit has to ship together with a green proof-lane
+  run. Either way, add a dated note in this file.
+- A finding proven on one version does not automatically hold on another. When
+  a pin changes, re-prove or re-stamp the findings that depend on the version
+  before any record cites them — especially the trust-state findings in
+  `../FINDINGS_AND_CHANGES.md` Part 2.

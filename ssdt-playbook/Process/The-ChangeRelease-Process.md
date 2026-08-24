@@ -322,12 +322,13 @@ Changes promote through environments:
 Dev → QA → UAT → Prod
 ```
 
-> **First promotion into an already-cut-over environment.** QA and UAT were cut over to SSDT
-> before Dev, from their own cutover publishes — their baselines were not produced by this
-> release train. Before promoting into such an environment for the first time, script the full
-> delta (schema compare of the trunk model against that environment's live database) and
-> confirm it contains **only this change**. Any unrelated delta is cutover drift: reconcile it
-> first, or the publish may block on objects the PR never touched.
+> **The first promotion into QA or UAT needs an extra check.** QA and UAT were cut over to SSDT
+> before Dev. Each was set up by its own cutover publish, so its starting schema was not built by
+> this release train, and it may differ from what the trunk model expects. The first time you
+> promote a change into QA or UAT, run a schema compare of the trunk model against that
+> environment's live database, and confirm the only difference it reports is this change. Any
+> other difference is drift left over from the cutover. Reconcile that drift first; otherwise the
+> publish may block on an object your change never touched.
 
 ### Promotion Gates
 

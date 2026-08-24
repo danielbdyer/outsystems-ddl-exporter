@@ -162,18 +162,22 @@ Even if dimensions suggest a lower tier, these factors push you up:
 | First time doing this operation type | +1 tier or explicit pairing |
 | Novel/unprecedented pattern | Tier 4 regardless |
 
-> **Cutover-window standing rule (until revoked).** Reviewers are a fixed pool of four named
-> people, not open roles: three senior developers (strong SQL, new to SSDT) and one Principal.
-> Tier 1–2: any of the four. Tier 3: one of the senior reviewers, with the agent-produced
-> proof (reproduced delta, dependency scope, per-environment queries) attached. Tier 4 while
-> the Principal is out: **defer the change if it can wait; otherwise two senior reviewers
-> co-review**, a pre-change backup/snapshot is proven, the risk is logged in the refusal
-> ledger, and the Principal ratifies asynchronously on return. During the cutover window the
-> estate's operation register opens empty, so *every* operation is technically first-time —
-> the first-time trigger therefore adds the **evidence obligation** (proof on a disposable
-> copy + reviewer reproduction), not an automatic +1 tier; "pairing with someone who's done
-> it before" is satisfied by the proof-carrying agent workflow until the team accrues its own
-> history.
+> **Cutover-window note (temporary, until the principal returns).** On this estate, four named
+> people review changes: three senior developers and one principal engineer. During the first
+> cutover window the principal is away. While they are away:
+>
+> - A change that would normally need the principal, and that can wait, waits for their return.
+> - A change that cannot wait is reviewed by two of the senior developers together. Before it
+>   ships, take a backup that could restore the data and prove the restore works, and write the
+>   risk down for the principal to confirm on return.
+> - Every operation is new to this estate during the cutover, so the "first time doing this
+>   operation" trigger does not push the tier up on its own. Instead it raises the bar on
+>   evidence: the change is proven on a disposable copy and reproduced by the reviewer. That
+>   proof stands in for "pair with someone who has done it before" until the team builds its own
+>   history.
+>
+> (The agent workflow that produces this proof, and the exact stand-in steps, live with the
+> change tooling in `sidecar/projection/ssdt-agent/estate/reviewers.md`.)
 
 ### Step 4: Document Your Classification
 

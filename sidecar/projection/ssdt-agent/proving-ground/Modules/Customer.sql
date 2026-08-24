@@ -32,8 +32,9 @@
           hand, with the model still declaring NULL (so DacFx generates no tightening step);
       Release 2 — the model catches up and publishes as a no-op, promoted to an environment
           only after Release 1 has landed there.
-    The zero-NULL probe is necessary but not sufficient: the guard is table-has-rows, not
-    column-has-NULLs.
+    Clearing every blank Email first is necessary, but it is not enough on its own: SSDT
+    blocks the change because the table has rows at all, not because the Email column has
+    blanks in it.
     A dev lead must review this: existing data is affected. Added scrutiny applies if the table
     holds >1M rows, or is the first time this operation has run on the estate. This is the
     same-operation, different-seed proof (self-test COL-03 / COL-03B / COL-03C).

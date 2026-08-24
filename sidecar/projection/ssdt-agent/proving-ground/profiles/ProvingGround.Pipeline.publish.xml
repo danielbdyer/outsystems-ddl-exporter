@@ -1,37 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  ProvingGround.Pipeline.publish.xml — the estate-pipeline replica: it reproduces what the
-  real deployment would do.
+  ProvingGround.Pipeline.publish.xml — a copy of the estate pipeline's publish settings, so a
+  local proof can reproduce what the real deployment would do.
 
-  STATUS: PLACEHOLDER — NOT YET VERIFIED AGAINST THE PIPELINE. The estate publishes through
-  Azure DevOps -> Octopus with DacFx flags fixed in the pipeline's own XML. This file exists
-  to hold those flags VERBATIM once they are recorded from the pipeline (with its DacFx
-  version, pinned in ../../estate/toolchain.md). Until then it carries the production
-  posture as proven in the Twin corpus — the block and smart-default axes shared with the
-  Strict profile, and the production drop axis:
+  Status: placeholder, not yet verified against the pipeline. The estate publishes through
+  Azure DevOps -> Octopus, and the DacFx flags are fixed in the pipeline's own XML. This file
+  will hold those flags once someone records them from the pipeline (together with the DacFx
+  version, pinned in ../../estate/toolchain.md). Until then it uses the production settings the
+  Twin corpus already proved: the block and smart-default settings match the Strict profile,
+  and the drop setting is the one production actually uses.
 
-    BlockOnPossibleDataLoss = True   -> the locked gate; this pipeline cannot relax it.
-    GenerateSmartDefaults   = False  -> no silent backfill.
-    DropObjectsNotInSource  = False  -> the PRODUCTION drop axis: absence produces no drop.
-                                        A removed file is a phantom — the object and its rows
-                                        survive a green publish. Drops ship as explicit,
-                                        ordered pre-deployment scripts.
-    IgnoreColumnOrder       = True   -> column-order churn does not masquerade as a change.
+    BlockOnPossibleDataLoss = True   -> the locked gate. This pipeline cannot relax it.
+    GenerateSmartDefaults   = False  -> the deploy does not backfill missing values on its own.
+    DropObjectsNotInSource  = False  -> the production drop setting. Deleting a .sql file drops
+                                        nothing: the object and its rows survive the publish (a
+                                        "phantom"). A real drop ships as an explicit, ordered
+                                        pre-deployment script instead.
+    IgnoreColumnOrder       = True   -> a change in column order alone does not count as a change.
 
-  Use this profile to see the deployment-shaped outcome (phantoms included) on the disposable
-  copy. Use Strict to make would-be drops visible. Neither replaces the other: Strict is the
-  diagnostic posture, this is the deployment posture.
+  Two profiles, two jobs. This one shows the deployment-shaped outcome, phantoms included. The
+  Strict profile makes a would-be drop visible on the disposable copy. Use Strict to find out
+  what a change would remove; use this one to see what the pipeline would actually do.
 
-  To verify and promote this file from placeholder to replica:
-    1. Record the pipeline's DacFx publish flags and version into ../../estate/toolchain.md.
-    2. Mirror the flags here verbatim; note any axis that differs from this scaffold.
-    3. Publish once against a disposable copy and confirm the trust outcome
-       (is_not_trusted = 0 on a declarative FK add) matches the FINDINGS_AND_CHANGES.md
-       Part 5 expectation for that DacFx version.
-    4. Remove this STATUS banner and date the verification.
+  To turn this file from a placeholder into a verified replica:
+    1. Record the pipeline's DacFx publish flags and version in ../../estate/toolchain.md.
+    2. Copy the flags into this file exactly. Note any flag that differs from this draft.
+    3. Publish once against a disposable copy. Confirm the trust outcome (is_not_trusted = 0
+       on a foreign-key add) matches what FINDINGS_AND_CHANGES.md Part 5 expects for that
+       DacFx version.
+    4. Delete this status note and record the date the verification ran.
 
-  Aimed only at the ProvingGround database on the warm container — a disposable copy of Dev.
-  Never point this profile at anything real: a publish is a publish, whatever the posture.
+  Point this profile only at the ProvingGround database on the warm container, which is a
+  disposable copy of Dev. Never point it at a real database. A publish is a publish, whichever
+  settings it uses.
 -->
 <Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
