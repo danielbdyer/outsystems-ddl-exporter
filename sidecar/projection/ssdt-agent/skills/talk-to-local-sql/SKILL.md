@@ -108,7 +108,10 @@ export MSYS_NO_PATHCONV=1   # keep /Action: + /SourceFile: + /opt/... paths inta
 ```
 
 `sqlpackage` is the dotnet tool `microsoft.sqlpackage`, expected on PATH (a global
-`dotnet tool install -g microsoft.sqlpackage` puts it there). One worked Windows box, verbatim,
+`dotnet tool install -g microsoft.sqlpackage` puts it there). In Claude Code web sessions the
+SessionStart hook installs it and exports this shim already — probe with `sqlpackage /Version`
+before installing by hand. Its version pin lives in `../../estate/toolchain.md`; while that
+ledger row reads UNPINNED, stamp the version actually run into every finding. One worked Windows box, verbatim,
 for contrast: `DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"`, the tool at
 `C:\Users\danny\.dotnet\tools\sqlpackage.exe`, invoked from Git Bash with `MSYS_NO_PATHCONV=1`.
 (The durable alternative is installing the .NET 8 runtime; then the roll-forward is unnecessary.)

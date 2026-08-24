@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ProvingGround.Pipeline.publish.xml — the estate-pipeline replica: it reproduces what the
+  real deployment would do.
+
+  STATUS: PLACEHOLDER — NOT YET VERIFIED AGAINST THE PIPELINE. The estate publishes through
+  Azure DevOps -> Octopus with DacFx flags fixed in the pipeline's own XML. This file exists
+  to hold those flags VERBATIM once they are recorded from the pipeline (with its DacFx
+  version, pinned in ../../estate/toolchain.md). Until then it carries the production
+  posture as proven in the Twin corpus — the block and smart-default axes shared with the
+  Strict profile, and the production drop axis:
+
+    BlockOnPossibleDataLoss = True   -> the locked gate; this pipeline cannot relax it.
+    GenerateSmartDefaults   = False  -> no silent backfill.
+    DropObjectsNotInSource  = False  -> the PRODUCTION drop axis: absence produces no drop.
+                                        A removed file is a phantom — the object and its rows
+                                        survive a green publish. Drops ship as explicit,
+                                        ordered pre-deployment scripts.
+    IgnoreColumnOrder       = True   -> column-order churn does not masquerade as a change.
+
+  Use this profile to see the deployment-shaped outcome (phantoms included) on the disposable
+  copy. Use Strict to make would-be drops visible. Neither replaces the other: Strict is the
+  diagnostic posture, this is the deployment posture.
+
+  To verify and promote this file from placeholder to replica:
+    1. Record the pipeline's DacFx publish flags and version into ../../estate/toolchain.md.
+    2. Mirror the flags here verbatim; note any axis that differs from this scaffold.
+    3. Publish once against a disposable copy and confirm the trust outcome
+       (is_not_trusted = 0 on a declarative FK add) matches the FINDINGS_AND_CHANGES.md
+       Part 5 expectation for that DacFx version.
+    4. Remove this STATUS banner and date the verification.
+
+  Aimed only at the ProvingGround database on the warm container — a disposable copy of Dev.
+  Never point this profile at anything real: a publish is a publish, whatever the posture.
+-->
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TargetConnectionString>Server=localhost,11433;Initial Catalog=ProvingGround;User ID=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False</TargetConnectionString>
+    <BlockOnPossibleDataLoss>True</BlockOnPossibleDataLoss>
+    <GenerateSmartDefaults>False</GenerateSmartDefaults>
+    <IgnoreColumnOrder>True</IgnoreColumnOrder>
+    <DropObjectsNotInSource>False</DropObjectsNotInSource>
+    <IncludeTransactionalScripts>True</IncludeTransactionalScripts>
+    <AllowIncompatiblePlatform>False</AllowIncompatiblePlatform>
+    <IgnorePermissions>True</IgnorePermissions>
+  </PropertyGroup>
+</Project>

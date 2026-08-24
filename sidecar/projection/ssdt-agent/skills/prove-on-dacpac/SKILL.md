@@ -341,7 +341,8 @@ assemble into the pull request the reviewer approves by reading:
   **Review & release** section.
 - **The real generated delta** and the Strict outcome — the block (with the verbatim `Msg` and the
   row counts from the content-hash check) and, after the remedy, the clean re-run. These become
-  **Deployment evidence**; stamp the sqlpackage version, because the guard behaviour is version-bound.
+  **Deployment evidence**; stamp the sqlpackage version, because the guard behaviour is
+  version-bound (the estate pin, once recorded, lives in `../../estate/toolchain.md`).
 - **The remedy that makes Strict pass clean**, and its durability at source (for a reconcile, per the
   FK findings above). This feeds **Data remediation**.
 - **The verification query** that returns an unambiguous expected result in any environment —
@@ -407,10 +408,10 @@ Be truthful with the developer about the edges:
 - **External Entities and downstream consumers** (ETL, reports, procs in other databases). The
   disposable copy holds one catalog; cross-database and external effects are out of frame and must
   be named as **dependency scope — what else this change touches**, not proven here.
-- **A profile pointed anywhere but the disposable copy is dangerous.** Both profiles target
-  `localhost,11433 / ProvingGround` only (or a per-executor `PG_<testId>_<rand>` via
-  `/TargetDatabaseName`). Never repoint one at anything else — the whole point is that this DB is
-  disposable.
+- **A profile pointed anywhere but the disposable copy is dangerous.** Every profile under
+  `proving-ground/profiles/` targets `localhost,11433 / ProvingGround` only (or a per-executor
+  `PG_<testId>_<rand>` via `/TargetDatabaseName`). Never repoint one at anything else — the whole
+  point is that this DB is disposable.
 
 When one of these applies, say so plainly: the block and the row count are proven; the rebuild
 duration at production scale is not — that is why the change carries added scrutiny at production
@@ -419,6 +420,11 @@ row counts.
 ## The two publish profiles (fenced examples; the live files are under `proving-ground/profiles/`)
 
 Both aim at the **same disposable copy**. They differ only in the block + smart-default settings.
+A third file sits beside them: `proving-ground/profiles/ProvingGround.Pipeline.publish.xml`, the
+**estate-pipeline replica** — production drop axis (`DropObjectsNotInSource=False`), placeholder
+until the pipeline's real DacFx flags and version are recorded (its header carries the
+verification steps; the pin lives in `../../estate/toolchain.md`). Use it to see the
+deployment-shaped outcome — phantoms included — after Strict has made the would-be drops visible.
 
 **Strict — the profile that surfaces the block**
 (`proving-ground/profiles/ProvingGround.Strict.publish.xml`):
