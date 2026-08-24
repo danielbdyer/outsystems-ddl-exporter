@@ -54,7 +54,7 @@ the change out was not exercised.
 ## Not checked / still open
 - Application impact — once the index is unique, any insert or update that would create a duplicate
   Code fails ("duplicate key was found"); application-side handling is not confirmed here (app owner).
-- Other environments — Test, UAT, and Prod may hold duplicate Codes the copy cannot see. Run the
+- Other environments — QA, UAT, and Prod may hold duplicate Codes the copy cannot see. Run the
   duplicate query before promotion.
 - Production scale and timing — on a large table the `DROP` + `CREATE` rebuild and any de-dupe may
   block writes or run long; the small copy does not show it.

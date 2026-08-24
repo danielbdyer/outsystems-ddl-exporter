@@ -111,6 +111,11 @@ proofs are in `FINDINGS_AND_CHANGES.md`.
       F6). *Clear the bad data, then land the physical fix — in this order.*
     - **R2** — the model catches up to the new shape. DacFx sees model = database and generates
       nothing. R2 goes up an environment only after R1 has landed there.
+    - **First promotion into a separately-cut-over environment** (QA and UAT were baselined by
+      their own cutover publishes, not by this release train): script the full delta against
+      that environment first and confirm it contains **only this change**. Any unrelated delta
+      is cutover drift — reconcile it before R1, or the publish may block on objects this
+      change never touched.
 
 **Forbidden transition (the F2 guard):** there is **no** state where a single release carries both
 the model change and the pre-deploy `ALTER`. Proven to block *and* half-apply

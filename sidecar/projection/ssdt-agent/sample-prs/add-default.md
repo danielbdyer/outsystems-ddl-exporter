@@ -50,5 +50,5 @@ so nothing is restored. Backing the change out was not exercised.
 - Application impact — inserts that omit this column now receive `'Pending'` instead of NULL; whether any
   code relies on that distinction is not confirmed here (app owner).
 - Other environments — an existing unnamed default (`DF__Order__StatusText__<hash>`) on this column in
-  Test/UAT/Prod must be dropped before this one lands; the copy cannot see it. Run the verification
+  QA/UAT/Prod must be dropped before this one lands; the copy cannot see it. Run the verification
   query before promotion.

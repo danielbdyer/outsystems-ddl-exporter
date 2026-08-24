@@ -45,7 +45,8 @@ constraint: "<the developer's words>". <Name the work item, or: No work item sup
 ## Before promoting
 - <The risk-driven confirmations, per environment, as imperatives. What to run, what to check, who to
   ask, before this moves up a level. This is "who reviews" made concrete and true to how the change
-  moves dev → test → UAT → prod.>
+  moves Dev → QA → UAT → Prod. Name, per open item, who runs it — the author before merge, or the
+  reviewer read-only in the higher environments — so nothing is left assigned to nobody.>
 
 ## The data
 - <The counts and the bad rows that decide the risk, named. Headline: detail. "No existing data is touched." if additive.>

@@ -110,7 +110,7 @@ permissive run holds the originals for a manual restore.
 - Application impact — any code path that writes a value longer than the new size is now rejected
   (or was silently truncated under a permissive publish); application-side length validation is not
   confirmed here.
-- Other environments — Test/UAT/Prod may hold longer values than this copy; run the verification
+- Other environments — QA/UAT/Prod may hold longer values than this copy; run the verification
   query before promotion.
 - Production scale / timing — the `ALTER COLUMN` rewrite cost at production row counts is not shown
   by the disposable copy.

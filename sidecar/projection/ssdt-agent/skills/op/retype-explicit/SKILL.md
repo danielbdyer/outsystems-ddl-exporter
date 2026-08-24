@@ -126,7 +126,7 @@ durable. Not auto-reversed.
 - Application impact — every read and write path still using the old type breaks once the column is
   swapped; that every caller has moved to the new type is not confirmed here — app owner confirms
   it.
-- Other environments — Test, UAT, and Prod may hold values that convert differently, or more
+- Other environments — QA, UAT, and Prod may hold values that convert differently, or more
   non-convertible rows than this copy; run the `TRY_CONVERT` probe in each environment before the
   convert phase.
 - Production scale / timing — the convert-and-swap is exercised at seed scale only; blocking and

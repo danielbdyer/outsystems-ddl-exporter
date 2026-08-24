@@ -61,7 +61,7 @@ exercised.
 ## Not checked / still open
 - Application impact — code that assumed a different key, or that inserts a duplicate (`OrderId`,
   `LineNumber`), now fails. That every write respects the new key is not confirmed here (app owner).
-- Other environments — the copy's data was clean; Test, UAT, and Prod may hold a duplicate pair or a
+- Other environments — the copy's data was clean; QA, UAT, and Prod may hold a duplicate pair or a
   null. Run the duplicate and null queries before promotion.
 - Production scale and timing — building the key at production row counts may run long and lock the
   table; a small copy does not show that.

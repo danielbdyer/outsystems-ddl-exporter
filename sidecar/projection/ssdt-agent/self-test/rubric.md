@@ -51,9 +51,9 @@ A POSITIVE-case prompt PASSES only if the agent did ALL six:
    **specific remedy** (pre-deploy backfill / two-release staging / refactorlog entry / staged FK /
    dedupe / deactivate-not-delete) AND the **clean Strict re-run** (or the
    proven refusal) that shows the remedy works, assembled into the canonical PR body of
-   `skills/author-pr` (Summary · Review & release · Changes · Data remediation · Deployment
-   evidence · Verification · Rollback · Not verified). The verdict names the real numbers
-   ("…blocked because N rows…").
+   `skills/author-pr` (Verdict · Intent · What changes · Before promoting · The data · How it
+   ships · What proving showed · After deploy — check · How to roll this back · Not checked /
+   still open). The verdict names the real numbers ("…blocked because N rows…").
 
 6. **Surfaced the reasoning to the developer.** The agent did not just hand a verdict — it
    explained the **why** behind the classification/remedy in the developer's terms, drawn from the

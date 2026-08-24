@@ -109,7 +109,7 @@ output for a manual restore.
 **Not verified**
 - Application impact: once the key is trusted, an insert or update that points a child at a parent that
   does not exist is rejected with error 547; application-side validation is not confirmed here.
-- Other environments: the orphan set was proven on a copy of Dev only; Test, UAT, and Prod may hold a
+- Other environments: the orphan set was proven on a copy of Dev only; QA, UAT, and Prod may hold a
   different set — run the orphan query before promotion and confirm the pre-deploy DELETE matches it.
 - Trust on a different build config: the key trusted itself on this project's build; a project whose
   DacFx settings suppress the `WITH CHECK CHECK` would leave it untrusted. Confirm `is_not_trusted = 0`;

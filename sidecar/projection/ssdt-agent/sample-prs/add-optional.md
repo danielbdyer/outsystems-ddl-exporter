@@ -56,7 +56,7 @@ column discards them. Backing the change out was not exercised.
 ## Not checked / still open
 - Application impact — a nullable add does not change existing application behaviour, but any code
   meant to populate `MiddleName` is not exercised by the copy. The application owner confirms it.
-- Other environments — the add is proven on one copy; run the verification query in Test, UAT, and
+- Other environments — the add is proven on one copy; run the verification query in QA, UAT, and
   Prod after deploy.
 - Production scale and timing — the add is metadata-only on modern SQL Server with
   `IgnoreColumnOrder = True`; that it stays metadata-only at production row counts and on the

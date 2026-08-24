@@ -76,7 +76,7 @@ This playbook exists to minimize the cost and maximize the benefit.
 │   ┌─────────────────────────────────────────┐                            │
 │   │  DEPLOY                                 │                            │
 │   │  - Pipeline deploys to dev              │                            │
-│   │  - Promote to test → UAT → prod         │                            │
+│   │  - Promote to QA → UAT → prod         │                            │
 │   │  - Verify at each stage                 │                            │
 │   └─────────────────────────────────────────┘                            │
 │                                                                          │

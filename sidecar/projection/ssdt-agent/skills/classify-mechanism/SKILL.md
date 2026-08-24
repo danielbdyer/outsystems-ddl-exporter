@@ -136,7 +136,7 @@ This is the judgment call this skill exists to make.
 - The table is **not** above the scale/first-time thresholds.
 
 That is the additive, in-place, any-reviewer corner, and only that corner. Examples:
-`add-attribute-optional`; `create-entity`; a post-deploy `MERGE` that adds a
+`add-optional`; `create-entity`; a post-deploy `MERGE` that adds a
 genuinely new lookup value.
 
 **You MUST prove (hand to `prove-on-dacpac`) whenever ANY of these is true** — which is

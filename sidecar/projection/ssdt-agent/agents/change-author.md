@@ -207,29 +207,34 @@ the pull request a reviewer approves by reading, and the conversation the develo
 mapped to its sections. Each per-op skill states, in its own `## On the record` fragment, what it
 contributes — assemble those fragments; do not re-derive the shape.
 
-- **Review & release** — the two plain findings, provisional until proven and now confirmed
-  (`THE_RECORD.md` §5):
-  - *How it ships* — one of: `Ships as a single schema change, applied in place. No data is read or
-    written.` · `Ships as one release: a pre-deployment script prepares the data, then the schema
-    change lands validated.` · `Ships as one release: the schema change, then a post-deployment
-    script that runs after it lands.` · `Ships as a scripted change — <what> cannot be expressed as a
-    table definition.` · `Ships across <N> releases so the running application keeps working while
-    the change is in flight.`
-  - *Who must review, and why* — from `Any team member can review this: the change is additive and
-    the running application is unaffected.` up to `A principal must review this: data is removed and
-    the removal cannot be undone.`, plus any added-scrutiny line (large table /
-    first-time on this estate). The two findings are independent and never collapse into one: a
-    drop-table-with-data ships in a single release yet still needs a principal, because the loss is
-    irreversible.
-- **Changes / Data remediation** — the edited CREATE(s) and the refactorlog entry / pre-deploy /
-  post-deploy / staged plan the proof requires, all shipping inside the sqlproj; the remediated rows
-  named with their original values recorded.
-- **Deployment evidence** — the real generated delta, the blocked publish with its verbatim `Msg`
-  and **row counts** (from the Strict run and the Permissive snapshot), and the clean Strict re-run
-  after remediation; stamp the sqlpackage version.
-- **Verification / Rollback / Not verified** — the inline check query with its expected result,
-  whether the backout is lossless, and the standing limits a disposable copy cannot prove
-  (application impact, other environments, production scale, reversibility).
+The body is the **ten fixed sections** (`Verdict · Intent · What changes · Before promoting ·
+The data · How it ships · What proving showed · After deploy — check · How to roll this back ·
+Not checked / still open`). Map what the proof established onto them:
+
+- **How it ships** — the proven shipping finding, one of (`THE_RECORD.md` §5): `Ships as a single
+  schema change, applied in place. No data is read or written.` · `Ships as one release: a
+  pre-deployment script prepares the data, then the schema change lands validated.` · `Ships as one
+  release: the schema change, then a post-deployment script that runs after it lands.` · `Ships as
+  a scripted change — <what> cannot be expressed as a table definition.` · `Ships across <N>
+  releases so the running application keeps working while the change is in flight.`
+- **Before promoting** — the risk-driven confirmations per environment, as imperatives — and the
+  who-must-review finding with its reason, from `Any team member can approve this: the change is
+  additive and the running application is unaffected.` up to `A principal must review this: data is
+  removed and the removal cannot be undone.`, plus any added-scrutiny line (large table /
+  first-time on this estate, both read from the estate ledger). The two findings are independent
+  and never collapse into one: a drop-table-with-data ships in a single release yet still needs a
+  principal, because the loss is irreversible. (The Verdict line itself carries no role assignment
+  — `THE_RECORD_FORMS.md`.)
+- **What changes** — the edited CREATE(s) and the refactorlog entry / pre-deploy / post-deploy /
+  staged plan the proof requires, all shipping inside the sqlproj; **The data** — the measured
+  state: row counts, the violating rows named with their original values.
+- **What proving showed** — Tried / Did / Realized: the real generated delta, the blocked publish
+  with its verbatim `Msg` and **row counts** (from the Strict run and the Permissive snapshot), and
+  the clean Strict re-run after remediation; stamp the sqlpackage version.
+- **After deploy — check / How to roll this back / Not checked, still open** — the inline check
+  queries each with `-- expect <result>`, whether the backout is lossless (and the honest line when
+  it was not exercised), and the standing limits a disposable copy cannot prove (application
+  impact, other environments, production scale, reversibility) — plus any open fork, emit-and-flag.
 
 **The trap, if one was caught** — carried into the PR where it lands, named plainly (handbook
 `16-Anti-Patterns-Gallery.md` = §19): a rename with no refactorlog entry, or a refactorlog cleanup that

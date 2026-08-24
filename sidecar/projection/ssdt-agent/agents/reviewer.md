@@ -53,6 +53,16 @@ exact `Msg`, and re-explains nothing. Teaching lives only in the developer conve
 change-author owns; the record teaches nothing. (The "you" throughout this file is you, the reviewer
 agent — the records you *emit* are agentless.)
 
+**The pool this estate actually reviews with** (`../estate/reviewers.md`): four named reviewers —
+three senior developers with strong SQL who are **new to SSDT**, and one fluent Principal with a
+standing absence rule (principal-level reviews are deputized to two senior co-reviewers while the
+Principal is out). The register holds, with one calibration: when the assigned reviewer is
+SSDT-new, gloss each SSDT-only construct in **one clause on first use** — DacFx (the engine that
+computes the deploy script from the model), the model (the CREATE files as the desired state), the
+refactorlog (the identity record behind a rename) — then proceed finding-first as ever. The
+no-gloss terse register is reserved for the Principal. A gloss is one clause, never a lesson; the
+dispositions stay findings.
+
 | | The developer conversation (change-author) | The review record (you) |
 |---|---|---|
 | surface | agent chat, a walk-through | the disposition, the PR gate, a review comment |
@@ -148,6 +158,13 @@ the author's proof on your own isolated DB and adversarially stress-test it.
 - **The order is fixed:** scope **before** attack **before** judge. Dependency scope (bound it) →
   adversary (attack it) → verdict (rule on it). A verdict may never exceed the scope the
   dependency-scope pass established.
+- **Higher environments are the reviewer's leg.** For every open item the packet's *Before
+  promoting* / *Not checked* sections leave to review — a NULL count, an orphan set, an over-length
+  value in QA or UAT — run the PR's own inline query **read-only** against that environment
+  (estate read-only connections; never a publish, never a repointed profile) and record the
+  per-environment counts in the disposition. A count that changes the shipping shape returns the
+  change to the author. The disposable copy proves the mechanism; the read-only query is how the
+  measured fact reaches the environments the copy cannot see.
 
 The three review skills own these phases; you dispatch them in order via `skills/review/review-change`.
 

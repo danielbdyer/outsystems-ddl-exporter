@@ -105,7 +105,7 @@ reconcile's recorded originals, not from the join.
   than through the new FK, breaks once the column is dropped; that every reader and writer has moved
   to the FK is not confirmed here — the app owner confirms it.
 - Other environments: the distinct source values were enumerated on a disposable copy of Dev only;
-  Test, UAT, and Prod may hold values that were never seeded into the lookup — run the total-mapping
+  QA, UAT, and Prod may hold values that were never seeded into the lookup — run the total-mapping
   query before promotion in each environment.
 - Production scale / timing: the seed, backfill, and drop are exercised at seed scale only; blocking
   and duration at >1M rows are not shown by the small copy.

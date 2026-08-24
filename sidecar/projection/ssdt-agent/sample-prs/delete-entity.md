@@ -89,7 +89,7 @@ arranged separately. The row count in the block message (8) records how many row
   fails once it is gone. `sys.dm_sql_referencing_entities` finds in-database references only, not
   application code or external consumers; the app owner confirms nothing outside the database reads it.
 - Other environments — the 8-row count and the empty reference list were measured on a copy of Dev;
-  Test, UAT, and Prod may hold different counts or references. Run the pre-drop checks before each
+  QA, UAT, and Prod may hold different counts or references. Run the pre-drop checks before each
   promotion.
 - Production scale and timing — at large row counts the drop may block writes or run long; the small
   copy does not show duration or locking at that scale.

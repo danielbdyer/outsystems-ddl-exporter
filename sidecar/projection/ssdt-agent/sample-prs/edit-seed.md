@@ -57,5 +57,5 @@ change out was not exercised.
 ## Not checked / still open
 - Application impact — code that switches on the exact set of values (a screen bound to the list, logic
   that resolves a value by id) is not exercised on the copy (app owner).
-- Other environments — whether Test, UAT, or Prod already hold this key with a different label, or the
+- Other environments — whether QA, UAT, or Prod already hold this key with a different label, or the
   id is already taken, is unknown from the copy. Run the verification query before promotion.

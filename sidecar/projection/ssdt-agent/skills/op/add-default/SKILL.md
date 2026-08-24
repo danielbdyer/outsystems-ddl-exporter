@@ -105,5 +105,5 @@ nothing is restored.
 - Application impact — inserts that omit this column now receive the default value instead of NULL;
   whether any code relies on that distinction is not confirmed here (app owner).
 - Other environments — an existing unnamed default (`DF__Table__Col__<hash>`) on this column in
-  Test/UAT/Prod must be dropped before this one lands; the disposable copy of Dev cannot see it. Run
+  QA/UAT/Prod must be dropped before this one lands; the disposable copy of Dev cannot see it. Run
   the verification query before promotion.

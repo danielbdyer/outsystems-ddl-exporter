@@ -57,7 +57,7 @@ step's output for the run that changed them. Backing the change out was not exer
 ## Not checked / still open
 - Application impact — any write that sets an order's `Total` to 0 or less is now rejected with error
   547; application-side validation is not confirmed here (app owner).
-- Other environments — the copy's orders were clean; Test, UAT, and Prod may hold an order with
+- Other environments — the copy's orders were clean; QA, UAT, and Prod may hold an order with
   `Total <= 0`. Run the violation query before promotion; if it finds rows, reconcile them first.
 - Production scale and timing — validating the check at production row counts may run long or block
   writes; a small copy does not show that.

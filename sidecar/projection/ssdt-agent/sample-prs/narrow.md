@@ -91,7 +91,7 @@ from a backup taken before Release 1, or from a durable record the reconcile scr
   settled here.
 - Application impact — any code path that writes a code longer than 10 is rejected after the
   narrowing. That every such path respects the new limit is not confirmed (app owner).
-- Other environments — Test, UAT, and Prod may hold more over-length codes than the 1 on the copy;
+- Other environments — QA, UAT, and Prod may hold more over-length codes than the 1 on the copy;
   the guard blocks in every populated environment. Run the over-length query and land Release 1 in
   each before Release 2.
 - Production scale and timing — the `ALTER COLUMN` rewrite cost at production row counts is not

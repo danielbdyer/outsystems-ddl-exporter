@@ -74,7 +74,7 @@ back there is a database backup.
   that all of them were found and repointed is not confirmed on a copy — the app owner owns closing
   this before promotion.
 - Other environments — the move was proven on a copy of Dev; that the `archive` schema exists and the
-  reference set is the same in Test, UAT, and Prod is not confirmed here. Run the verification query
+  reference set is the same in QA, UAT, and Prod is not confirmed here. Run the verification query
   before each promotion.
 - Production scale and timing — the transfer is a metadata operation, but any dependent rebuild is
   exercised at seed scale only; duration and locking at production row counts are not shown here.

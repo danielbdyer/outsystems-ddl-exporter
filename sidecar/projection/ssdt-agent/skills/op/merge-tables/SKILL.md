@@ -137,7 +137,7 @@ durable.
 - Application impact: the running application must dual-write into the new columns during Phase 1 and
   read the survivor after cutover; that every reader and writer has been repointed off the absorbed
   table is not confirmed here — the app owner confirms it.
-- Other environments: cardinality (1:1) is proven on a disposable copy of Dev only; Test, UAT, and
+- Other environments: cardinality (1:1) is proven on a disposable copy of Dev only; QA, UAT, and
   Prod may hold a 1:many parent this copy does not — run the cardinality query before the copy in
   each environment.
 - External consumers: an outside reference may still read the absorbed table by name; the known ones

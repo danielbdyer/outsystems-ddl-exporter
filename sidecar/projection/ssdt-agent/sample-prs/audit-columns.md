@@ -77,7 +77,7 @@ change introduced, including the ones the defaults stamped. Backing the change o
 - Application impact — whether the application or a trigger stamps these columns on future inserts and
   updates is not confirmed here; a `NOT NULL` column with no app-side write rejects the next insert
   that omits it. The application owner owns it.
-- Other environments — Test, UAT, and Prod hold rows the copy does not, which the defaults also stamp
+- Other environments — QA, UAT, and Prod hold rows the copy does not, which the defaults also stamp
   at their own deploy time and login. Run the verification query in each environment after deploy.
 - Production scale and timing — on the 5-row copy the add is immediate; at large row counts stamping
   every existing row as the columns land can run long. Schedule a window if the table is large.

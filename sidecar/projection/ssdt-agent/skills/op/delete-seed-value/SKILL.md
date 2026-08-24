@@ -89,7 +89,7 @@ deploy, which is the failure this retirement avoids.
 - Application impact. Any screen or logic that filters on `IsActive = 1` stops offering the value;
   code that still resolves it by id keeps working. Which paths the running application exercises is
   not confirmed on the disposable copy — app owner.
-- Other environments. Test, UAT, and Prod may hold additional fact rows referencing the value, or
+- Other environments. QA, UAT, and Prod may hold additional fact rows referencing the value, or
   carry it under a different id. The disposable copy of Dev cannot show this; run the verification
   query before promotion.
 - Reversibility of downstream state. Flipping `IsActive` back to 1 restores the row, but any consumer

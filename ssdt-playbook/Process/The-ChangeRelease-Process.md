@@ -302,7 +302,7 @@ Merge to main
 └────────┬────────┘
          │
          ▼
-    (Promote to Test, UAT, Prod — gated)
+    (Promote to QA, UAT, Prod — gated)
 ```
 
 ### 6.3 Post-Deployment Verification
@@ -319,15 +319,22 @@ After pipeline completes:
 Changes promote through environments:
 
 ```
-Dev → Test → UAT → Prod
+Dev → QA → UAT → Prod
 ```
+
+> **First promotion into an already-cut-over environment.** QA and UAT were cut over to SSDT
+> before Dev, from their own cutover publishes — their baselines were not produced by this
+> release train. Before promoting into such an environment for the first time, script the full
+> delta (schema compare of the trunk model against that environment's live database) and
+> confirm it contains **only this change**. Any unrelated delta is cutover drift: reconcile it
+> first, or the publish may block on objects the PR never touched.
 
 ### Promotion Gates
 
 | Promotion | Gate |
 |-----------|------|
-| Dev → Test | Dev validation complete, basic smoke test |
-| Test → UAT | QA sign-off, integration tests pass |
+| Dev → QA | Dev validation complete, basic smoke test |
+| QA → UAT | QA sign-off, integration tests pass |
 | UAT → Prod | UAT sign-off, change window scheduled, rollback plan confirmed |
 
 ### Production Deployment

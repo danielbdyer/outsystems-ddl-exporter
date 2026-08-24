@@ -225,7 +225,7 @@ You cannot remove a column that OutSystems is still using. The application will 
 | Environment | Coordination needs |
 |-------------|-------------------|
 | Dev | Minimal — developer does both SSDT and OutSystems |
-| Test | Moderate — ensure SSDT deployed before testing |
+| QA | Moderate — ensure SSDT deployed before testing |
 | UAT | Higher — coordinate with test schedule |
 | Prod | Highest — scheduled releases, explicit handoff |
 

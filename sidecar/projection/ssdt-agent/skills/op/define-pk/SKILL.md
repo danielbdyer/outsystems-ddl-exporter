@@ -116,7 +116,7 @@ auto-reversed — record the original values for a manual restore.
 **Not verified**
 - Application impact. Any insert path that writes a duplicate or NULL key will now fail with a
   primary-key violation; the application's insert code is not confirmed here.
-- Other environments. Test, UAT, and Prod may hold duplicate or NULL keys this copy does not — run
+- Other environments. QA, UAT, and Prod may hold duplicate or NULL keys this copy does not — run
   the duplicate and NULL probes in each environment before promotion.
 - Production scale and timing. On a large table the clustered-index build locks the table and runs
   long; a small disposable copy cannot show the duration.

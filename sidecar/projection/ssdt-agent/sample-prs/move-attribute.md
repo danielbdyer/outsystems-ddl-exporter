@@ -81,7 +81,7 @@ recoverable until the drop is durable. Backing the change out was not exercised.
   for them or accept losing those two regions is the developer's call and is not settled on a copy.
 - Application impact — any read or write still pointing at `Customer.Region` breaks once it is dropped;
   that every reader is repointed to `Account` is not confirmed here (app owner).
-- Other environments — the relationship is proven 1:1 on a copy of Dev only; Test, UAT, and Prod may
+- Other environments — the relationship is proven 1:1 on a copy of Dev only; QA, UAT, and Prod may
   hold a one-to-many parent or more unmapped customers this copy does not. Run the 1:1 and coverage
   checks before the copy in each.
 - Production scale — the copy and drop are exercised at seed scale (5 rows) only.

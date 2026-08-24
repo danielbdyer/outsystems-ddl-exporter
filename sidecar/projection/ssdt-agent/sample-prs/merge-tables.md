@@ -77,6 +77,6 @@ durable. Backing the change out was not exercised.
   confirmed here (app owner).
 - External consumers — an outside reference may still read `CustomerAddress` by name; known ones are
   repointed in Release 2, unknown ones are not covered.
-- Other environments — cardinality is proven on a copy of Dev only; Test, UAT, and Prod may hold a
+- Other environments — cardinality is proven on a copy of Dev only; QA, UAT, and Prod may hold a
   1:many parent this copy does not. Run the cardinality query before the copy in each.
 - Production scale — the copy and drop are exercised at seed scale (5 rows) only.

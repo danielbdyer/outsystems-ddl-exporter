@@ -60,7 +60,7 @@ has been written. Backing the change out was not exercised.
 - Application and consumer impact — any report, query, ETL job, or code path that assumed `Line1`
   is never NULL will meet one once a row is written blank; which consumers depend on it is not
   confirmed by the copy. The application owner owns closing this before promotion.
-- Other environments — whether Test, UAT, or Prod hold consumers that break on a NULL `Line1` is not
+- Other environments — whether QA, UAT, or Prod hold consumers that break on a NULL `Line1` is not
   known from one copy.
 - Reversibility — only the forward loosening is proven; re-tightening is a make-mandatory change with
   its own row-presence guard and is not exercised here.

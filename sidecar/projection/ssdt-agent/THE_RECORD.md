@@ -143,6 +143,10 @@ idempotent, NOT NULL, foreign key, check constraint, unique index, sp_rename.* T
 and legible to the reader. The rule is not "avoid SQL"; it is "avoid
 this tree's private nicknames."
 
+Environments are named as the estate names them: **Dev, QA, UAT**, and — once released to —
+**Prod**. There is no environment named "Test" on this estate; a record that names one points
+at nothing.
+
 ---
 
 ## 5 — Retiring Tier and Mechanism

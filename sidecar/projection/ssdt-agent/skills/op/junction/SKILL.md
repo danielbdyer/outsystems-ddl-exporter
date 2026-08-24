@@ -107,7 +107,7 @@ application writes pairs into it, dropping the table discards them, and any seed
   live an inserted pair pointing at a missing parent is rejected (error 547), a duplicate pair by
   the composite primary key (app owner).
 - Other environments — the orphan probe was proven on a disposable copy of Dev only; if the bridge
-  ships with seed pairs, Test, UAT, and Prod may hold parent rows this copy cannot see — run the
+  ships with seed pairs, QA, UAT, and Prod may hold parent rows this copy cannot see — run the
   verification queries before promotion.
 - Production scale — at >1M rows in either parent the foreign-key validation's duration and
   locking are not shown by the small copy.

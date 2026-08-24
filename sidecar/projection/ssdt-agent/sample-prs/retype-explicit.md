@@ -90,7 +90,7 @@ change out was not exercised.
   that every caller has moved to `TotalWhole` is not confirmed (app owner).
 - The rename leg — swapping `TotalWhole` back to the name `Total` needs a refactorlog entry; without
   one, DacFx drops and re-adds and the data is lost. Not exercised here.
-- Other environments — Test, UAT, and Prod may hold more precision-loss rows than the 2 on the copy.
+- Other environments — QA, UAT, and Prod may hold more precision-loss rows than the 2 on the copy.
   Run the precision-loss query in each before the convert phase.
 - Production scale and timing — the convert and the drop at production row counts are not shown by the
   small copy. Schedule a window.

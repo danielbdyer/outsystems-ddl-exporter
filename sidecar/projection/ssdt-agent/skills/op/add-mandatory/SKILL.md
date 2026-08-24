@@ -121,7 +121,7 @@ default-stamped or later-entered values); every other column in each row is unch
 - Application impact — inserts that omit this column now rely on the default; with no default, an
   insert that omits it is blocked with "Cannot insert NULL". Whether application code supplies a
   meaningful value rather than leaning on the default is not confirmed here (app owner).
-- Other environments — Test, UAT, and Prod may hold different row counts the disposable copy of Dev
+- Other environments — QA, UAT, and Prod may hold different row counts the disposable copy of Dev
   cannot see, and if the column ships without an explicit default, a profile with
   `GenerateSmartDefaults` enabled may silently stamp a value this copy did not. Run the verification
   query before promotion.

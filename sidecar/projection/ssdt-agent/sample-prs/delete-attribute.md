@@ -93,7 +93,7 @@ taken before Release 1. Backing the change out was not exercised.
   owner confirms the app has stopped before Release 1.
 - The values themselves — no backup of the `LegacyCode` values is taken by this change; if any are
   needed later, capture them before Release 1.
-- Other environments — Test, UAT, and Prod may still have live readers where the copy does not. Run
+- Other environments — QA, UAT, and Prod may still have live readers where the copy does not. Run
   the referencing query and land Release 1 in each before Release 2.
 - Production scale and timing — the drop cost at production row counts is not shown by the small
   copy. Schedule a window.
