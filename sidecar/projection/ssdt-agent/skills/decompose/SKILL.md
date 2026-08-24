@@ -32,51 +32,84 @@ its object(s). Every atom must be one of the 41 operations — if something does
 is a finding to raise, not an operation to invent. (Name each atom in the developer's words too, so
 the plan is legible: "a Return table", not only `create-entity`.)
 
-**2. Classify each atom's shape** — from its op skill's SHIP terminal, not from the text. Three
-classes decide the packing:
-- **Additive** (in place, no data touched, or a new NOT NULL column with a DEFAULT that backfills):
-  `add-optional`, `create-entity`, `create-static-seed`, `add-index`, a clean `create-fk` over an
-  empty or clean child, `add-mandatory` with a default. These can share a release.
-- **Tightening or destructive on populated data**: `make-mandatory`/`narrow` on rows,
-  `delete-attribute`, `delete-entity`, `add-unique`/`add-check` over dirty data. The locked gate
-  forces each into a two-release (or a scripted release for a table drop).
-- **Multi-phase programs**: `extract-to-lookup`, `merge-tables`, `split-table`, `move-attribute`,
-  `retype-explicit`, `temporal-convert`, `archive-entity`. Each already carries its own
-  expand/migrate/contract sequence (`../_index/multi-phase/SKILL.md`); treat the whole program as
-  one atom here and let its own skill sequence its phases.
+**2. Read each atom's ship shape from its own SHIP terminal — do not restate the count here.** How
+many releases an atom needs, and what forces the staging, is owned by its op skill and the `_index`
+concern behind it; decompose reads that, it does not re-derive it. For packing, sort each atom into
+just two coarse buckets:
+
+- **One-release (batchable).** Ships in a single release, in place. This is the additive corner
+  (`add-optional`, `create-entity`, `create-static-seed`, `add-index`, `junction`, a clean
+  `create-fk`, `add-mandatory` *with* a DEFAULT that backfills) and the lossless or loosening
+  in-place ops (`rename-attribute` and `move-schema`, each with its refactorlog entry; `widen`;
+  `retype-implicit`; `make-optional`; `add-default`; `modify-default`; `drop-fk`; `drop-index`). It
+  also includes the constraint builds `add-unique`, `add-check`, `define-pk` — these ship in **one**
+  release even over dirty data, because a violating row is reconciled in a pre-deploy in the *same*
+  publish and the declarative build then re-validates (`../_index/constraint-is-a-claim/SKILL.md`).
+  A constraint build blocks on a value (`Msg 1505`, `Msg 547`), which is **not** the locked
+  data-loss gate — never treat it as a two-release. These atoms can share a release with one
+  another, subject to the ordering edges in step 3.
+- **Staged (its own release sequence).** Ships across more than one release: the tightening and
+  destructive ops on populated data (`make-mandatory` / `narrow`, `delete-attribute`,
+  `retype-explicit`'s drop leg — each a two-release the locked gate forces; `delete-entity` — a
+  scripted single release, still its own), and the multi-phase programs (`extract-to-lookup`,
+  `merge-tables`, `split-table`, `move-attribute`, `temporal-convert`, `archive-entity` —
+  `../_index/multi-phase/SKILL.md`). Take the exact release count from each atom's SHIP terminal;
+  never share these releases with another atom's.
 
 **3. Draw the dependency edges — and only the ones that cross a release.** Inside a single publish,
-DacFx orders object creation itself (it creates a lookup table before the foreign key that references
-it), so intra-release ordering is not yours to plan. What you plan is what crosses releases or moves
-data:
+DacFx orders object creation itself (it creates a lookup table before the foreign key that
+references it), so intra-release ordering is not yours to plan. What you plan is what crosses
+releases, moves data, or waits on another atom's edit to land first:
 - a backfill can only run after the column it fills exists and the rows it reads from are present;
 - a drop can only run after every object and every application path that depends on it is gone;
-- a foreign key to a new lookup can only be trusted after the lookup is seeded.
-These edges give the order within a concern.
+- a foreign key to a new lookup can only be trusted after the lookup is seeded;
+- **an atom that names a column depends on the atom that renames or retypes that column.** A unique
+  index or check on `Sku` can only be built after the `Code → Sku` rename has landed; a backfill
+  into a retyped column waits for the retype. Whenever one atom changes a column's name or type and
+  another atom references that column, draw the edge from the referencing atom to the edit.
 
-**4. Cluster into concerns — the connected components of the coupling graph.** Two atoms are coupled
-when they share an object or a data flow (Return references OrderLine; the Region lookup backfills a
-Customer column). Follow the couplings; each connected group is one **concern**, and one concern is
-one pull request — coherent, reviewable on its own, revertible on its own. Atoms in different groups
-are independent: they go in separate pull requests and need not wait on each other.
+These edges give the order both within a concern and across concerns.
 
-One caution the object graph alone misses: **two multi-phase reshapes of the same table contend even
-when they touch different columns**, because each keeps that table's definition lagging its database
-for a window, and a second publish in that window reverts the first (the concurrent-publish hazard).
-So treat "reshapes the same table" as a coupling too: either serialize those concerns (one merges
-fully before the next starts) or combine them into one concern. Do not run them in overlapping
-windows.
+**4. Cluster into concerns — but only *reshape*-coupling clusters.** Two atoms can relate in two very
+different ways, and only one of them is a reason to share a pull request:
+- **Reshape-coupling.** Two atoms make a definitional change to the *same existing table* — add,
+  rename, retype, tighten, or drop a column on it; add a constraint to it; split or merge it. These
+  belong in **one concern**, and they must be **serialized on that table**: each keeps the table's
+  definition lagging its database for a window, and a second publish in that window reverts the
+  first (the concurrent-publish hazard). Every definitional change to one table is one concern.
+- **Reference-coupling.** One atom takes a foreign key to, or reads from, a table that *another*
+  atom reshapes, but does not itself reshape that table. This is **not** a reason to merge concerns.
+  It is only an **ordering edge** (step 3): the referencing atom waits if it depends on the change,
+  and is otherwise free. A new feature that references an existing table stays its own pull request
+  even while that table is being renovated elsewhere.
 
-**5. Pack each concern into the fewest releases, and order the concerns.** Within a concern:
-- put every additive atom in the **first release** (the expand);
-- run the data moves next, in the dependency order from step 3 (the migrate);
-- put every drop **last** (the contract), each as the two-release its op requires;
-- fold a trivial additive atom into an existing additive release as a free rider rather than giving
-  it its own pull request, when it shares that concern's table.
+So **the concerns are the connected components of the *reshape*-coupling graph**: group the atoms by
+the existing table each one reshapes, and let a brand-new table plus the atoms that build it be
+their own group. Reference and data-flow edges cross *between* concerns as sequencing, never as
+merges — that is what keeps a new feature that merely points at a renovated table from being
+swallowed into the renovation. One concern is one pull request: coherent, reviewable on its own,
+revertible on its own.
 
-Across concerns: independent concerns can proceed in parallel; concerns that contend on a shared
-table are serialized (step 4). The result is the minimum number of moves — nothing is staged that the
-gate does not force, and nothing independent is serialized that need not be.
+**5. Pack each concern into the fewest releases, in order.** A concern that reshapes one existing
+table may hold several atoms — a rename, a split, a tightening, a constraint-add. Order them so no
+two lag windows overlap and every atom sees the column shapes it expects:
+1. **Rename or retype first.** Land the `rename-attribute` / `retype` atoms (one release each, in
+   place) so every later atom references the final column names and types.
+2. **Expand** — batch the additive atoms into one release where they do not depend on each other.
+3. **Each staged reshape lands fully before the next starts.** A `split-table` (its several
+   releases) completes, then a `make-mandatory` (its two releases) completes — never interleaved,
+   because both keep the table's definition lagging and an overlap reverts one.
+4. **Constraint-adds and drops last**, each after the columns it touches are in final shape: a
+   unique index on `Sku` after the rename lands; a column drop after its readers are gone.
+
+A one-release atom (a rename, a constraint-add, a widen) does not get its own pull request — it
+rides in its concern's sequence at the point step 3's edges allow. A brand-new-table concern that is
+all additive collapses to a single release.
+
+Across concerns: independent concerns proceed in parallel; a reference edge from one concern to
+another only delays the referencing atom until its dependency lands. The result is the minimum
+number of moves — nothing staged that the gate does not force, nothing independent serialized that
+need not be, and no two reshapes of one table in flight at once.
 
 ## What decompose produces
 
@@ -108,11 +141,13 @@ so fold it back in. Drop Product.LegacyCode, which nothing uses. And give Custom
 | CustomerAddress folds into Customer (1:1) | `merge-tables` | multi-phase |
 | drop Product.LegacyCode | `delete-attribute` | destructive (two-release) |
 
-**Step 3–4 — dependencies and concerns.** Return references OrderLine and ReturnReason, and the
-ReturnsAllowed flag is part of the same feature: one connected group. The Region work reshapes
-Customer; the CustomerAddress merge also reshapes Customer; both are multi-phase, so they contend and
-must serialize. LoyaltyTier is a lone additive column on Customer. LegacyCode is a lone drop on
-Product. The concerns:
+**Step 3–4 — dependencies and concerns.** The Returns atoms build *new* tables (ReturnReason,
+Return) and take references to existing ones (OrderLine, ReturnReason). Referencing OrderLine is a
+reference edge, not a reshape of OrderLine, so Returns does not merge into any OrderLine work — it is
+its own concern. Region and CustomerAddress both *reshape* Customer (Region adds RegionId and drops
+the text column; the merge absorbs the address columns), so they reshape-couple on Customer: one
+concern each, serialized. LoyaltyTier is a lone additive column on Customer — it rides in whichever
+Customer concern lands first. LegacyCode is a lone drop on Product. The concerns:
 
 - **PR A — Returns.** ReturnReason lookup + seed, Return table, both foreign keys, Order.ReturnsAllowed.
 - **PR B — Region normalization.** The `extract-to-lookup` program, plus LoyaltyTier riding in its
@@ -152,6 +187,11 @@ another.
 - **Every atom is still proven.** The plan is a sequence of catalog operations; each one still runs
   the full confirm-intent → change-author → prove loop on a disposable copy. Decomposition orders and
   groups; it never lets an operation ship on the strength of the plan alone.
+- **Read each atom's release count; never restate it.** How many releases an atom needs, and which
+  gate forces the staging, is owned by its op skill and its `_index` concern. Decompose reads the
+  SHIP terminal and packs; it does not assert a count of its own. A count decompose invents is a
+  count that can be wrong — the locked data-loss gate and a constraint's `Msg 1505` value-block are
+  different mechanisms, and only the op skill knows which one an atom meets.
 - **Expand before contract, always.** No drop ships before the things that depend on it are gone. If
   the plan puts a drop before its dependents, the plan is wrong.
 - **One concern, one pull request.** Do not batch unrelated concerns to save a review; do not split a
