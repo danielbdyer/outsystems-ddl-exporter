@@ -103,7 +103,7 @@ auto-reversed; the original values are recorded in the pre-deploy step's output.
 **Not verified**
 - Application impact — any code path that writes a value violating the predicate now fails with error
   547 ("conflicted with the CHECK constraint"); application-side validation is not confirmed here (app owner).
-- Other environments — Test, UAT, and Prod may hold violating rows the copy cannot see. Run the
+- Other environments — QA, UAT, and Prod may hold violating rows the copy cannot see. Run the
   violation probe before promotion.
 - Production scale and timing — on a large table the re-validation may block writes or run long; the
   small copy does not show it.

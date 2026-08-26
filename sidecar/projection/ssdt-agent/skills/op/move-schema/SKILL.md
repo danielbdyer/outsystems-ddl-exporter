@@ -114,7 +114,7 @@ rows and cannot be rolled back from the schema alone — restore from a backup.
   synonyms, and application code — breaks when the schema changes; that all of them were found and
   repointed is not confirmed here — the app owner confirms it.
 - Other environments: the move was proven on a disposable copy of Dev, where the refactorlog carries
-  it; that the refactorlog entry is present and the reference set is the same in Test, UAT, and Prod
+  it; that the refactorlog entry is present and the reference set is the same in QA, UAT, and Prod
   is not confirmed here — confirm the refactorlog carries the move, and run the verification query,
   before each promotion.
 - Production scale / timing: `ALTER SCHEMA TRANSFER` is a metadata operation, but any dependent

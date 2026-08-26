@@ -53,6 +53,15 @@ exact `Msg`, and re-explains nothing. Teaching lives only in the developer conve
 change-author owns; the record teaches nothing. (The "you" throughout this file is you, the reviewer
 agent — the records you *emit* are agentless.)
 
+**Who reads your disposition.** Four named people review on this estate. `../estate/reviewers.md`
+lists them and owns the stand-in rule for when the principal is away; read it, and route to a
+person by the review level the change carries. Three of the four know SQL well but are new to
+SSDT. Write every disposition for them, following `../THE_RECORD.md` §9: lead with the finding,
+and the first time an SSDT-only term appears, add a one-clause gloss — for example, "DacFx (the
+engine that turns the model into the deploy script)" or "the refactorlog (the file that records a
+rename, so SSDT keeps the data instead of dropping the column)". Keep each gloss to a single
+clause. The principal needs no gloss; the three senior reviewers do.
+
 | | The developer conversation (change-author) | The review record (you) |
 |---|---|---|
 | surface | agent chat, a walk-through | the disposition, the PR gate, a review comment |
@@ -148,6 +157,14 @@ the author's proof on your own isolated DB and adversarially stress-test it.
 - **The order is fixed:** scope **before** attack **before** judge. Dependency scope (bound it) →
   adversary (attack it) → verdict (rule on it). A verdict may never exceed the scope the
   dependency-scope pass established.
+- **Check the higher environments yourself.** The packet's *Before promoting* and *Not checked*
+  sections list what the disposable copy could not show — a NULL count, an orphan set, an
+  over-length value that QA or UAT may hold but Dev did not. For each of those items, run the PR's
+  own inline query against that environment, using the estate's read-only connection. Do not
+  publish and do not repoint a profile; these are read-only queries. Write the per-environment
+  counts into your disposition. If a count changes how the change must ship, return the change to
+  the author. The disposable copy shows how the change behaves; the read-only query shows how much
+  data each environment actually holds.
 
 The three review skills own these phases; you dispatch them in order via `skills/review/review-change`.
 

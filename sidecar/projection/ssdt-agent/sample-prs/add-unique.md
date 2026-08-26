@@ -61,7 +61,7 @@ script was written to keep, not from the deploy log. Backing the change out was 
 - Whether uniqueness should include the blanks — this PR allows many customers with no email. If the
   rule should instead require every customer to have a (unique) email, that is make-mandatory on Email
   first, then a plain unique index — a different, larger change.
-- Other environments — the copy's filled emails were distinct; Test, UAT, and Prod may hold duplicates.
+- Other environments — the copy's filled emails were distinct; QA, UAT, and Prod may hold duplicates.
   Run the duplicate query before promotion.
 - Production scale and timing — building the index at production row counts may run long or block
   writes; a small copy does not show that.

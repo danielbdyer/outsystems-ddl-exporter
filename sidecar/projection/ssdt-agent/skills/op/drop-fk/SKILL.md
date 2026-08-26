@@ -61,4 +61,4 @@ Re-creating the constraint reverses the drop: `ALTER TABLE <child> ADD CONSTRAIN
 **Not verified**
 - Query-plan impact — dropping a trusted foreign key removes a hint the optimizer used; a plan change or regression will not show on a disposable copy, whose statistics and data volume differ from production. Whoever owns query performance confirms this.
 - Application impact — nothing enforces the reference after the drop; whether application code relies on the database rejecting an order that points at a missing customer is not confirmed here.
-- Other environments — the drop was proven on a disposable copy of Dev only; whether Test, UAT, and Prod behave identically is not shown here. Run the verification query before promotion.
+- Other environments — the drop was proven on a disposable copy of Dev only; whether QA, UAT, and Prod behave identically is not shown here. Run the verification query before promotion.

@@ -125,7 +125,7 @@ backup — until the drop is confirmed durable.
   read it after cutover; that every reader and writer has been repointed off the old columns before
   they drop is not confirmed here — the app owner confirms it.
 - Other environments: the copy's completeness (source and new-table hashes equal) is proven on a
-  disposable copy of Dev only; Test, UAT, and Prod hold their own rows — run the verification queries
+  disposable copy of Dev only; QA, UAT, and Prod hold their own rows — run the verification queries
   before the drop in each environment.
 - Production scale / timing: the copy and column drop are exercised at seed scale only; blocking and
   duration at >1M rows are not shown by the small copy.

@@ -103,7 +103,7 @@ new name must be reverted with it. Not auto-reversed.
 - Application impact — consumers of the old column name outside the project (reports, ETL,
   integrations not in the dacpac) break silently until they move to the new name; app owner and the
   consumer owners confirm the callers are updated.
-- Other environments — Test, UAT, and Prod may hold external consumers still reading the old name
+- Other environments — QA, UAT, and Prod may hold external consumers still reading the old name
   where Dev does not. Read the delta and run the verification query before each promotion.
 - Reversibility — only the forward rename is exercised on the disposable copy; the backout rename is
   the same metadata operation but is not separately proven.

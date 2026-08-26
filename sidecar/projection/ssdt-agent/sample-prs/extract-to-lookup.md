@@ -70,6 +70,6 @@ recorded originals. Backing the change out was not exercised.
 - Application impact — code that reads or writes the old free-text column directly, rather than through
   the FK, breaks once the column is dropped; that every reader and writer has moved to the FK is not
   confirmed here (app owner).
-- Other environments — the distinct source values were enumerated on a copy of Dev only; Test, UAT, and
+- Other environments — the distinct source values were enumerated on a copy of Dev only; QA, UAT, and
   Prod may hold values never seeded into the lookup. Run the total-mapping query before promotion in each.
 - Production scale — the seed, backfill, and drop are exercised at seed scale (4 orders) only.

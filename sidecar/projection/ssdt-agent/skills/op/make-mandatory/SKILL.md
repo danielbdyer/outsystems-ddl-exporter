@@ -132,7 +132,7 @@ manual restore.
 - Application impact. Any code path that inserts the row without the column, or writes NULL to it,
   will now fail once the column is `NOT NULL`. Application-side validation is not confirmed here —
   the app owner owns closing it.
-- Other environments. Test, UAT, and Prod may hold NULLs this disposable copy cannot see. Run the
+- Other environments. QA, UAT, and Prod may hold NULLs this disposable copy cannot see. Run the
   NULL probe in each before promotion.
 - Production scale and timing. On a large table the `ALTER COLUMN` may block writes
   or run long; the small copy cannot show that. Schedule a window.

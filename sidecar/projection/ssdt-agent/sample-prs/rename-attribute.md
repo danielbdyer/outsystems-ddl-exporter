@@ -95,7 +95,7 @@ environment. Backing the change out was not exercised.
 - Application impact — consumers of the old column name outside the project (reports, ETL,
   integrations not in the dacpac) break silently until they move to `MobileNumber`. The application
   owner and the consumer owners confirm the callers are updated.
-- Other environments — Test, UAT, and Prod may hold external consumers still reading `ContactPhone`
+- Other environments — QA, UAT, and Prod may hold external consumers still reading `ContactPhone`
   where the copy does not. Read the difference and run the verification queries before each promotion.
 - A backward-compatibility bridge — if a consumer cannot move in step, a computed column carrying the
   old name can keep it resolving while that consumer catches up. That was not built or exercised here.

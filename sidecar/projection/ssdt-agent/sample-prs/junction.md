@@ -76,7 +76,7 @@ unwritten; once the application writes pairs, dropping the table discards them.
   inserted pair pointing at a missing parent is rejected (`Msg 547`) and a duplicate pair is rejected
   (`Msg 2627`) — the app owner confirms the write paths handle both.
 - Other environments — the parents were confirmed present in this project only; if the bridge ships
-  with seed pairs, Test, UAT, and Prod may hold parent rows the copy cannot see. Run the orphan
+  with seed pairs, QA, UAT, and Prod may hold parent rows the copy cannot see. Run the orphan
   queries before promotion.
 - Production scale — at large row counts in either parent the foreign-key validation's duration and
   locking are not shown by the small copy.

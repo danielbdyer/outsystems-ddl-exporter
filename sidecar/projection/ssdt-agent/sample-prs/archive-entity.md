@@ -74,7 +74,7 @@ automatic. Dropping the empty archive table afterward is lossless only while it 
 - Application impact — any report, screen, or export that reads the archived orders from the live
   table will now miss them. That application and reporting code do not expect those rows in the live
   table is not confirmed on the copy — the app owner confirms it.
-- Other environments — Test, UAT, and Prod hold different `Order` counts the copy of Dev cannot see.
+- Other environments — QA, UAT, and Prod hold different `Order` counts the copy of Dev cannot see.
   Run the conservation query before and after the move in each.
 - Production scale and timing — at production row counts the batched move may run long or block
   writes; the small copy proves the counts conserve and the row is byte-identical, not the duration

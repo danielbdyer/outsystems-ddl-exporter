@@ -133,7 +133,7 @@ source table — until the drop is confirmed durable.
 - Application impact: any read or write path still pointing at the source column breaks once it is
   dropped; that every reader has been repointed to the destination is not confirmed here — the app
   owner confirms it.
-- Other environments: the relationship was proven 1:1 on a disposable copy of Dev only; Test, UAT, and
+- Other environments: the relationship was proven 1:1 on a disposable copy of Dev only; QA, UAT, and
   Prod may hold a one-to-many parent this copy does not — run the 1:1 check before the copy in each
   environment.
 - Production scale / timing: the copy and drop are exercised at seed scale only; blocking and duration

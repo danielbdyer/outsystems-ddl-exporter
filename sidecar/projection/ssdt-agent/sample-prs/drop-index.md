@@ -55,6 +55,6 @@ row count. Backing the change out was not exercised.
   would slow down once it is gone is not shown by the publish. Usage evidence from a prod-shaped source
   settles it (app owner).
 - Other environments — usage patterns differ by environment; zero seeks in one window does not prove
-  zero in Test, UAT, or Prod. Run the usage query in each before promotion.
+  zero in QA, UAT, or Prod. Run the usage query in each before promotion.
 - Reversibility — re-creating the index restores the structure, but the rebuild time and the
   write-blocking lock at production row counts are not measured on the small copy.

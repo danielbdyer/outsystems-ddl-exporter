@@ -104,7 +104,7 @@ recorded in the pre-deploy step's output.
 - Application impact — any insert or update that would create a duplicate now fails ("duplicate key was
   found"); on a plain index a second NULL fails the same way. Application-side handling is not confirmed
   here (app owner).
-- Other environments — Test, UAT, and Prod may hold duplicates the copy cannot see. Run the duplicate
+- Other environments — QA, UAT, and Prod may hold duplicates the copy cannot see. Run the duplicate
   probe before promotion.
 - Production scale and timing — on a large table the build and any de-dupe may block writes or run
   long; the small copy does not show it.

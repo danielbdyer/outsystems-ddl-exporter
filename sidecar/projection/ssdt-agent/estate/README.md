@@ -18,6 +18,7 @@ formats carry no engine identifiers).
 | `row-tiers.md` | "At production row counts, does this change need a window?" — the scale added-scrutiny line becomes a lookup | refreshed from the estate (or the Twin's evidence) whenever tiers shift an order of magnitude |
 | `in-flight.md` | "Which multi-phase changes are mid-flight, what ships next, and by when?" — the forgotten Phase 2 becomes a red gate | a row when phase 1 merges; updated each phase; removed when the final phase ships |
 | `refusals.md` | the named home of the verdict skill's refusal ledger — every named risk and escalation, with its proof artifact | appended by the reviewer at disposition time |
+| `reviewers.md` | "Which named person fills each review level right now, and who stands in when the principal is away?" — the record's review-level sentence becomes a person | updated at the Dev cutover, and whenever a reviewer's availability changes |
 | `handoffs/` | the specified home for captured change-specs and review packets when personas hand off across sessions | written during a change; swept when its pull request merges |
 
 ## The discipline (three rules)

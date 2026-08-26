@@ -89,7 +89,7 @@ has been written (see `../make-mandatory/SKILL.md`).
 **Not verified**
 - Application impact — any report, query, or code path that assumed this column is never NULL
   will now meet one; which consumers depend on it is not confirmed by the publish. app owner.
-- Other environments — whether Test, UAT, or Prod already hold NULLs, or whether downstream jobs
+- Other environments — whether QA, UAT, or Prod already hold NULLs, or whether downstream jobs
   there tolerate them, is not known from a disposable copy.
 - Reversibility — only the forward loosening is proven. Re-tightening is a make-mandatory change
   with its own row-presence guard and is not exercised here.

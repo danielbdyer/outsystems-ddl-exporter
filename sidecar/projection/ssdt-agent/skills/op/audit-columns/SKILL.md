@@ -95,7 +95,7 @@ change (including any the pre-deployment backfill stamped), and no pre-existing 
 - Application impact: whether the application or a trigger stamps these columns going forward is not
   confirmed here. A nullable column left unwritten stays NULL; a NOT NULL column with no app-side or
   default write rejects the next insert on a NULL violation. Owner: app owner.
-- Other environments: Test / UAT / Prod may hold rows this copy does not, which a NOT NULL backfill
+- Other environments: QA / UAT / Prod may hold rows this copy does not, which a NOT NULL backfill
   must also cover. Run the verification query before promotion.
 - Production scale / timing: at more than ~1M rows the backfill runs batched; its duration and
   locking are not shown on the small disposable copy.

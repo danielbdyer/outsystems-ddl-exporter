@@ -60,7 +60,7 @@ before you classify"** (the action that settles it). The same test retires any "
 ## The verdict
 
 One line, first. It answers: what does this do, and what must someone confirm before it moves
-up? Driven by the risk row in `THE_DECISION_TREE.md` Node 4.
+up? Driven by the risk read in `THE_DECISION_TREE.md` S4 CLASSIFY.
 
 - Form: `<what it does>. <the call to action>. <the one blocker, or nothing>.`
 - Example (data-change): `This PR shortens Product.Code to 10 characters and rewrites one

@@ -31,6 +31,22 @@ and the listening notes for OutSystems terms that carry scope — is owned by
 
 ## What you do, in order
 
+### 0. First: is this one change, or a whole need? — the compound check
+Read the request before naming anything. A single request often carries more than one change —
+"stand up returns and clean up the customer model", a feature that adds a few tables, refactors
+one, and drops a column. If the request names more than one change, or one need that clearly
+entails several (new tables *and* a refactor *and* a column drop), it is **compound**: do not
+scope it as a single operation.
+
+Hand a compound request to `skills/decompose` **first**. It breaks the need into the fewest
+well-separated pull requests — each a sequence of catalog operations in the right order — and
+opens an `estate/in-flight.md` row for any multi-release concern. Then run steps 1–4 below on
+**each atom** the plan names, in the plan's order: one confirm-intent, one change-spec, and one
+change-author proof per operation. Decomposition scopes the program; you still scope each
+operation inside it.
+
+A single-operation request skips this step — go straight to step 1.
+
 ### 1. Confirm intent — run the `confirm-intent` skill
 Invoke `skills/confirm-intent`. It disambiguates the developer's words into a **catalog
 operation** and surfaces the **implicit destination** behind the phrasing:

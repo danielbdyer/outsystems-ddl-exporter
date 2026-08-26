@@ -152,7 +152,7 @@ physical rebuild to repeat.
   the application must now supply the Id itself. Application-side Id handling is not confirmed here
   (app owner).
 - Other environments — the rebuild and key preservation were proven on a disposable copy of Dev only;
-  Test, UAT, and Prod hold row counts and incoming foreign-key data this copy cannot see. Run the
+  QA, UAT, and Prod hold row counts and incoming foreign-key data this copy cannot see. Run the
   verification query before promotion.
 - Production scale and timing — the data copy is the expensive part of the rebuild; at production row
   counts it may block writes or run long, which the small copy does not exercise. Schedule a window.

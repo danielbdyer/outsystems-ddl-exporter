@@ -68,9 +68,14 @@ breaks one is not finished.
    carries its basis inline: `verified on a disposable copy`, `0 rows`, `Msg 547`, `is_not_trusted
    = 0`. Do not write the antithesis tic — *"verified, not assumed"*, *"and that's real"* — which
    performs rigor instead of showing it. State the positive evidential claim.
-6. **Name the exact object.** The table, the column, the constraint, the row — by name.
-   `dbo.[Order]`, `CustomerId`, `FK_Order_Customer_CustomerId`, `Order 4`. Never a headless quantity (`no
-   changes` → `The database is unchanged: the second publish issued zero statements.`).
+6. **Name the exact object, and give each sentence a real subject.** Name the table, the column,
+   the constraint, the row: `dbo.[Order]`, `CustomerId`, `FK_Order_Customer_CustomerId`, `Order 4`.
+   Never a headless quantity (`no changes` → `The database is unchanged: the second publish issued
+   zero statements.`). Make the grammatical subject something that can act — a person, a named
+   object, a measured fact. A register does not hold; a copy does not prove; a fact does not travel
+   to an environment. Write `the reviewer looks up who reviews this change`, `the Strict publish
+   blocked the change`, `dbo.Customer holds 5 rows`. When an abstraction sits in the subject slot,
+   the reader has lost the actor and has to guess who does what.
 7. **Admit the unverified.** Anything the disposable copy could not prove — application behaviour,
    other environments, production-scale timing, reversibility — is named in a standing **Not
    verified** finding, never omitted and never quietly upgraded to proven. This is the sidekick
@@ -81,6 +86,18 @@ breaks one is not finished.
    does.
 9. **No numbered axes, no engine jargon, no ceremony.** See §4 (lexicon), §5 (the retired axes),
    §7 (the banned list). A reviewer reads the record, not a taxonomy.
+
+**Terse in manner, complete in reference — hold both.** Terse forbids the words that carry no
+fact: ceremony, narration, reassurance, a second sentence that only repeats the first. Complete
+requires the words the reader needs to rebuild the fact: the person who acted, the object a pronoun
+would hide, the definition a short label would bury. Cut every word that carries nothing. Keep
+every word the reader needs. Assume the reader holds less of the change in their head than the
+author does; the words an author drops as obvious are often the ones the reader needs most. Prefer
+one idea to a sentence, and two plain sentences to one that packs three clauses behind semicolons.
+Do not compress an explanation into a noun and hand the reader the noun: `the deputized form`
+forces the reader to unfold what `two senior reviewers reviewing together while the principal is
+away` states outright. The two demands rarely collide; when they seem to, write for the reader,
+whose test is in §9.
 
 Carried from the parent unchanged: **calm** (the most consequential finding in the most level
 tone), **honest without exception** (every tolerated difference named), **the statement is the
@@ -142,6 +159,10 @@ constraint (`is_not_trusted`), pre-deployment script, post-deployment script, re
 idempotent, NOT NULL, foreign key, check constraint, unique index, sp_rename.* These are precise
 and legible to the reader. The rule is not "avoid SQL"; it is "avoid
 this tree's private nicknames."
+
+Environments are named as the estate names them: **Dev, QA, UAT**, and **Prod** once the team
+releases to it. This estate has no environment called "Test". If a record says "Test", it names
+an environment that does not exist, and the reviewer cannot tell which real environment to check.
 
 ---
 
@@ -216,8 +237,12 @@ Run this over any line before it lands. If it hits, the line is not finished.
 - **Drama:** `destroy(s)`, `fatal`, `catastrophe`, `abort`, `blast`, `veto` as a lead noun (prefer
   `the deployment is blocked` / `SSDT refused`).
 - **Euphemism:** `removes / cleans up` for a drop or delete.
-- **The antithesis tic:** *verified, not assumed* · *real, not a guess* · *and that's real*. State
-  the positive evidential claim (rule 5).
+- **The antithesis tic — any `X, not Y` or `X, never Y` whose negated half adds no fact:**
+  *verified, not assumed* · *real, not a guess* · *and that's real* · *a lookup, never a
+  recollection* · *four named people, not open roles*. State the positive claim on its own. The
+  test: delete the negated half; if the sentence loses no information, the negated half was
+  decoration. (A contrast that does carry a fact — *terse in manner, complete in reference*, where
+  each half constrains differently — is not this tic.)
 - **Engine jargon on any surface:** `Kind`, `OS_KIND_*`, `OSUSR_*`, `SsKey`, `torsor`, `commuting
   square`, `norm`, `δ`. (These belong to the F# engine, never to this tree's output.)
 - **System-shout as a lead:** `REFUSED`, `ERROR`, `FAILED` shouting alone. A calm sentence with the
@@ -248,6 +273,14 @@ Each pair is the same fact, wrong then right. The left is retired; the right is 
 - ✗ `Reversibility looks fine, shipping it.`
 - ✓ `Not verified: reversibility. The disposable copy proves the forward change only. Backing this out is not exercised here; the original values are recorded above for a manual restore.`
 
+**A ledger's own rule (record, an estate file) — compression and the antithesis tic:**
+- ✗ `The reviewer agent and classify-mechanism read this file the way they read the other ledgers — a lookup, never a recollection.`
+- ✓ `The reviewer agent and the classify-mechanism skill both read this file to find out who the reviewers are. They look it up here each time, rather than working from memory.`
+
+**A calibration note (record, the reviewer agent) — an abstraction in the subject, a label left folded:**
+- ✗ `The register holds, with one calibration: when the assigned reviewer is SSDT-new, gloss each SSDT-only construct in one clause on first use — the no-gloss terse register is reserved for the Principal.`
+- ✓ `Three of the four reviewers are new to SSDT. When one of them is the assigned reviewer, add a one-clause gloss the first time an SSDT-only term appears — for example, "the refactorlog (the file that records a rename, so SSDT keeps the data instead of dropping the column)". Keep the gloss to a single clause; the finding still leads. The principal needs no gloss.`
+
 ---
 
 ## 9 — How to use this doc
@@ -258,9 +291,12 @@ Each pair is the same fact, wrong then right. The left is retired; the right is 
   to the one artifact the reviewer reads.
 - **Unsure of a word?** The lexicon (§4). If a DBA would say it, keep it; if it is this tree's
   private nickname, replace it.
-- **The test for any line:** a Principal Engineer trained as a DBA reads it and finds a plain,
-  exact finding with its evidence and the next step — no story, no taxonomy, no term to decode, and
-  an honest account of what was not checked.
+- **The test for any line:** a reviewer who knows SQL well but is new to SSDT reads it and can act
+  on it without asking a question — a plain, exact finding, its evidence, and the next step, with
+  every SSDT-specific term glossed in a clause the first time it appears, and an honest account of
+  what was not checked. Four people review on this estate: three senior developers new to SSDT, and
+  one principal fluent in it. Write for the three; the principal loses nothing by the gloss. (Who
+  fills each slot is recorded in `estate/reviewers.md`, not here.)
 
 *The tree disappears. What remains is the change, its proof, and a reviewer who can approve it by
 reading — stated in one exact, unshowy voice.*

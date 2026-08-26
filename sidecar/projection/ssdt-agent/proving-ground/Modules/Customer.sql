@@ -25,13 +25,16 @@
         the column stays nullable. Proven on a disposable copy of Dev: backfilled to 0 NULL
         emails, Strict still blocked it. So on a populated table this is not a clean
         pre-deploy-script-then-schema release.
-    The honest remedy on a populated table is a conscious, documented decision taken after a
-    verified-zero-NULL backfill (the zero-NULL probe is necessary but not sufficient): either
-      (a) a targeted relaxation of BlockOnPossibleDataLoss for this one change — operationally a
-          scripted change with a named, logged gate-relaxation, which cannot be expressed as a
-          table definition — or
-      (b) restructure it to ship across multiple releases (multiple PRs) so the running
-          application keeps working while the change is in flight.
+    The honest remedy on a populated table is the two-release shape — this pipeline
+    (Azure DevOps -> Octopus) always publishes with BlockOnPossibleDataLoss on and cannot
+    relax it for one change (FINDINGS_AND_CHANGES.md Part 1, the locked-gate axiom):
+      Release 1 — a pre-deployment script backfills every NULL and applies the NOT NULL by
+          hand, with the model still declaring NULL (so DacFx generates no tightening step);
+      Release 2 — the model catches up and publishes as a no-op, promoted to an environment
+          only after Release 1 has landed there.
+    Clearing every blank Email first is necessary, but it is not enough on its own: SSDT
+    blocks the change because the table has rows at all, not because the Email column has
+    blanks in it.
     A dev lead must review this: existing data is affected. Added scrutiny applies if the table
     holds >1M rows, or is the first time this operation has run on the estate. This is the
     same-operation, different-seed proof (self-test COL-03 / COL-03B / COL-03C).

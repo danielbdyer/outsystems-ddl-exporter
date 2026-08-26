@@ -40,6 +40,7 @@ path rewriting. **The portable, normative form:**
 export DOTNET_ROOT=/root/.dotnet        # point at the REAL local dotnet root
 export DOTNET_ROLL_FORWARD=Major        # a .NET-8 tool on a newer installed runtime
 # sqlpackage is expected on PATH — `dotnet tool install -g microsoft.sqlpackage` puts it there
+# (web sessions: the SessionStart hook installs it; pin ledger: ../estate/toolchain.md)
 # Git Bash only: export MSYS_NO_PATHCONV=1  (stops rewriting of /Action: and /opt/... paths; inert elsewhere)
 ```
 

@@ -153,7 +153,10 @@ carry an empirical adjudication from the Twin-proven corpus.
 - **F13 The tree is not packaged for any agent runtime.** `CONNECTORS.md` §1 (adoption into
   `.claude/skills/` is "a copy, not a rewrite" — frontmatter already conforms) remains
   unwired; repo `.claude/` carries hooks only. The praxis exists as files an agent must be
-  told to go read.
+  told to go read. **[RESOLVED 2026-08-11 — O4 landed: the tree is packaged into
+  `.claude/skills/` + `.claude/agents/` as generated dispatch pointers
+  (`sidecar/projection/scripts/ssdt-agent-package.mjs apply`), kept in sync by the
+  `packaging` CI gate.]**
 - **F14 The engine seam is unproven, with one known gap.** `ACCELERANT_PLAN.md` Stage 0 has
   not been run; a concrete divergence was found ahead of it: the F# `SqlprojEmitter` has
   **no PreDeploy item support** (zero hits in `Projection.Targets.SSDT/`), while the
@@ -260,8 +263,11 @@ Scope of done:
 - One canonical `delta.sql` path; the working directory stated correctly everywhere; the
   portable environment block becomes the normative form with the Windows box as the worked
   aside; the SQL Server image gets a digest-pinned tag (F5).
-- The relaxation mechanism (`/p:BlockOnPossibleDataLoss=False`, named and logged) appears
-  where the choice is confronted: `op/make-mandatory` and `prove-on-dacpac` (F6).
+- ~~The relaxation mechanism (`/p:BlockOnPossibleDataLoss=False`, named and logged) appears
+  where the choice is confronted: `op/make-mandatory` and `prove-on-dacpac` (F6).~~
+  **SUPERSEDED 2026-08-22, with F6** — the locked-gate axiom (`FINDINGS_AND_CHANGES.md`
+  Part 1) removed the relax-vs-stage choice tree-wide; the two-release shape is the remedy,
+  and no surface offers the relaxation.
 
 First move: the intake template edit (F1) — the single highest-value diff in the tree.
 Effort: 1 session. Risk: none worth naming.

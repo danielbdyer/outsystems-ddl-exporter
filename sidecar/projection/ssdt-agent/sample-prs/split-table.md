@@ -73,7 +73,7 @@ recoverable until the drop is confirmed durable. Backing the change out was not 
 - Application impact — the application must dual-write into `CustomerContact` during Release 1 and read
   it after cutover; that every reader and writer is repointed off `ContactPhone` before it drops is not
   confirmed here (app owner).
-- Other environments — the copy's completeness is proven on a copy of Dev only; Test, UAT, and Prod hold
+- Other environments — the copy's completeness is proven on a copy of Dev only; QA, UAT, and Prod hold
   their own rows — run the hash and orphan queries before the drop in each.
 - Production scale — the copy and drop are exercised at seed scale (5 rows) only; blocking and duration
   at large row counts are not shown by the small copy.

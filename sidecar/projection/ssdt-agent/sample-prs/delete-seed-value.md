@@ -63,7 +63,7 @@ which is the failure this retirement avoids. Backing the change out was not exer
 - Application impact — a screen or logic that filters on `IsActive = 1` stops offering the value; code
   that still resolves it by id keeps working. Which paths the running application exercises is not
   confirmed on the copy (app owner).
-- Other environments — Test, UAT, and Prod may hold additional rows referencing the value, or carry it
+- Other environments — QA, UAT, and Prod may hold additional rows referencing the value, or carry it
   under a different id. Run the reference query before promotion.
 - Cached consumers — a consumer that cached the active set is not refreshed by this change and is not
   exercised here.

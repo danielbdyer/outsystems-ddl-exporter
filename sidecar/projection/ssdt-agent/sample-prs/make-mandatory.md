@@ -92,7 +92,7 @@ output for a manual restore. Backing the change out was not exercised.
 - Application impact — any code path that saves a customer without an email, or writes NULL to it,
   fails after Release 1 with `Msg 515`. That every such path supplies a value is not confirmed
   (app owner).
-- Other environments — Test, UAT, and Prod may hold more NULL emails than the 2 on the copy; the
+- Other environments — QA, UAT, and Prod may hold more NULL emails than the 2 on the copy; the
   guard blocks in every populated environment. Run the NULL query and land Release 1 in each before
   Release 2.
 - Production scale and timing — the `ALTER COLUMN` rewrite cost at production row counts is not

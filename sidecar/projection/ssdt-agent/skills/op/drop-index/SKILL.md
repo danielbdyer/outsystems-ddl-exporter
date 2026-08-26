@@ -93,6 +93,6 @@ re-creating it runs a write-blocking build whose duration scales with row count.
   depends on this index, and would slow down once it is gone, is not shown by the publish. Usage
   evidence from a prod-shaped source is what settles it (app owner).
 - Other environments — usage patterns differ by environment; zero seeks in one environment's window
-  does not prove zero in Test, UAT, or Prod. Run the usage query in each before promotion.
+  does not prove zero in QA, UAT, or Prod. Run the usage query in each before promotion.
 - Reversibility — re-creating the index restores the structure, but the rebuild time and the
   write-blocking lock at production row counts are not measured on the small copy.

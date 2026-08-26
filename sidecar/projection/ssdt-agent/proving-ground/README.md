@@ -56,7 +56,10 @@ export DOTNET_ROLL_FORWARD=Major
 
 `sqlpackage` is expected on PATH (`dotnet tool install -g microsoft.sqlpackage`; the findings in
 this tree were proven at version 170.4.83 — **stamp the version you actually ran into every
-finding**, because guard behaviour is version-bound). One worked Windows box, verbatim, for
+finding**, because guard behaviour is version-bound). In Claude Code web sessions the
+SessionStart hook installs it and exports the shim; the version pin lives in
+`../estate/toolchain.md` (UNPINNED until the estate pipeline's DacFx version is recorded there).
+On any other box, install it manually as above. One worked Windows box, verbatim, for
 contrast: `DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"`, the tool at
 `C:\Users\danny\.dotnet\tools\sqlpackage.exe`, Git Bash with `MSYS_NO_PATHCONV=1`.
 (Alternative to the shim: install the .NET 8 runtime — then the env vars are unnecessary.)

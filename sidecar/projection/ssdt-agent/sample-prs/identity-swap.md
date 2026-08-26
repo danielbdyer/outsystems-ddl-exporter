@@ -84,7 +84,7 @@ exercised.
 - Incoming foreign keys — `Category` has none, so the drop-and-recreate-FK leg of an identity-swap is
   not exercised by this change. A table with incoming foreign keys would additionally stage those
   around the rebuild.
-- Other environments — the rebuild and id preservation are proven on a copy of Dev only; Test, UAT,
+- Other environments — the rebuild and id preservation are proven on a copy of Dev only; QA, UAT,
   and Prod hold row counts this copy cannot see. Run the verification queries before promotion.
 - Production scale — the data copy is the expensive part of the rebuild; at production row counts it
   may block writes or run long. Schedule a window.

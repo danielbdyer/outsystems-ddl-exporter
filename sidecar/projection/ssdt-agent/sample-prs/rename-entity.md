@@ -88,7 +88,7 @@ only way back there is a database backup.
 - Constraint, index, and trigger names — the rename leaves the table's own objects under their old
   names (`PK_OrderLine_Id`, `DF_OrderLine_Amount`). Renaming them to match is cosmetic and was not done.
 - Other environments — the rename was proven on a copy of Dev, where the refactorlog entry is present.
-  That the entry travels into Test, UAT, and Prod is the load-bearing risk; confirm the delta reads
+  That the entry travels into QA, UAT, and Prod is the load-bearing risk; confirm the delta reads
   `sp_rename` before each promotion.
 - Reversibility — only the forward rename was exercised; the reverse rename and the caller reverts
   were not.

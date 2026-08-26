@@ -85,7 +85,7 @@ Backing the change out was not exercised.
   the existing rows still need a value: add the column nullable, backfill it in a pre-deploy, then
   tighten to `NOT NULL` with the model lagging (Release 1) and let the model catch up (Release 2) —
   the two-release pattern in `make-mandatory.md`. Not exercised here.
-- Other environments — Test, UAT, and Prod hold their own row counts the copy cannot see; the block
+- Other environments — QA, UAT, and Prod hold their own row counts the copy cannot see; the block
   fires in every populated environment without a default. Confirm the default lands in each.
 - Production scale and timing — adding the column with a default at production row counts, or a
   table rebuild if the column is not appended at the end, may run long or block writes. Schedule a

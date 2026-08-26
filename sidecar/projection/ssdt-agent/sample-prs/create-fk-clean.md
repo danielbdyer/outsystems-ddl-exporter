@@ -53,7 +53,7 @@ Backing the change out was not exercised.
 ## Not checked / still open
 - Application impact — any code path that writes an Order with a StatusId that does not exist is now
   rejected with error 547. Application-side validation is not confirmed here; the app owner owns closing it.
-- Other environments — the copy's orders were clean; Test, UAT, and Prod may hold an order with a
+- Other environments — the copy's orders were clean; QA, UAT, and Prod may hold an order with a
   missing Status. Run the orphan query before promotion; if it finds rows, use `create-fk-orphan`.
 - Production scale and timing — validating the key at large row counts may run long; a small copy
   does not show that.

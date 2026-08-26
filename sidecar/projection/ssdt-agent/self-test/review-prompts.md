@@ -160,7 +160,7 @@ surfaced WHY must come from the named `_index` owner, specialized — not re-exp
 
 ---
 
-## REV-03 — make-mandatory claimed clean on a populated table · **defect** · **THE GATING SCENARIO** · escalate
+## REV-03 — make-mandatory claimed clean on a populated table · **defect** · **THE GATING SCENARIO** · catch-and-return
 
 > **Packet:** the author was asked to make `Customer.Email` required. They report: "populated table, 2
 > NULLs; a pre-deploy backfill clears them to 0, so it ships clean as one release — backfill, then NOT
@@ -335,7 +335,7 @@ surfaced WHY must come from the named `_index` owner, specialized — not re-exp
 |---|---|---|---|---|
 | REV-01 | COL-08 | honest | **Approved** | reproduce-not-read (the clean approval; don't false-return) |
 | REV-02 | COL-08N | rename with no refactorlog entry, mislabeled clean | **Returned to the author** | delta read → identity-and-refactorlog; routing to Persona 1 |
-| REV-03 | COL-03/03C | clean-on-populated | **Escalated** | **the core obligation** — reproduce the zero-NULL-still-blocks; escalate the fork |
+| REV-03 | COL-03/03C | clean-on-populated | **Returned to the author** | **the core obligation** — reproduce the zero-NULL-still-blocks; return the disproven recipe (the two-release shape is determined, not a fork — do not spend the escalation) |
 | REV-04 | KEY-03/KEY-02 | skipped-orphan-check | **Returned to the author** | violating-row probe → Msg 547; trust-ladder-ends-trusted |
 | REV-05 | COL-06/06B | over-length claimed clean | **Returned to the author** | `MAX(LEN)` fit-check + consequence check |
 | REV-07 | COL-09 | sparring (posture, not gate) | Named risk / Escalated + **concede** | sparring posture + concede-visibly |

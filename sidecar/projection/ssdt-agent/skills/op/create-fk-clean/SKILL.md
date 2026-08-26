@@ -101,7 +101,7 @@ else is reversed.
 **Not verified**
 - Application impact: any insert or update that points a child at a parent that does not exist is now
   rejected with error 547; application-side validation is not confirmed here.
-- Other environments: the orphan probe was proven on a copy of Dev only; Test, UAT, and Prod may hold
+- Other environments: the orphan probe was proven on a copy of Dev only; QA, UAT, and Prod may hold
   orphans this copy cannot see — run the orphan query before promotion; if it finds rows, use
   create-fk-orphan.
 - Production scale: on a large table the validation scan's duration and locking are not shown by the

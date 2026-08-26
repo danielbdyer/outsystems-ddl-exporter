@@ -78,6 +78,6 @@ in place.
 **Not verified**
 - Application impact. Code paths that switch on the exact set of seed values — a screen bound to the
   list, logic that resolves a value by id — are not exercised on the disposable copy (app owner).
-- Other environments. Whether Test, UAT, or Prod already hold this key with a different label, or the
+- Other environments. Whether QA, UAT, or Prod already hold this key with a different label, or the
   id is already taken, is unknown from the disposable copy of Dev; run the verification query before
   promotion.

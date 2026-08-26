@@ -87,7 +87,7 @@ Turn `SYSTEM_VERSIONING = OFF`, then drop the period columns and the history tab
 - Application impact — how the running application behaves against a system-versioned table: explicit
   column-list writes, `SELECT *`, and any attempt to write the hidden period columns are not confirmed
   here (app owner).
-- Other environments — whether Test/UAT/Prod row counts change the backfill outcome or the timing is
+- Other environments — whether QA/UAT/Prod row counts change the backfill outcome or the timing is
   not shown by this copy.
 - Production scale and timing — enabling versioning and backfilling against a large table may block
   writes or run long; the small copy does not exercise it.

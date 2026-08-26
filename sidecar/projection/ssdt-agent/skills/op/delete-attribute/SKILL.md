@@ -120,7 +120,7 @@ empty, provably-unused column re-adds losslessly. The drop is not auto-reversed.
 - Application impact — whether application code outside the database still writes or reads the
   column. `sys.dm_sql_referencing_entities` sees SQL objects, not application code; app owner
   confirms the app has stopped.
-- Other environments — Test, UAT, and Prod may still have live readers where Dev does not. Run the
+- Other environments — QA, UAT, and Prod may still have live readers where Dev does not. Run the
   referencing check and the verification query before each promotion.
 - Reversibility — only the forward drop is exercised on the disposable copy; the dropped values are
   not recoverable from the schema change, and the pre-drop backup is the sole restore path.

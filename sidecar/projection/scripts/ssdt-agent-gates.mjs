@@ -33,7 +33,7 @@
 
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { dirname, join, relative, basename, normalize } from "node:path";
+import { dirname, join, relative, basename, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -67,7 +67,10 @@ const SCENARIO_ID = /\b(?:REV|COL|TBL|KEY|IDX|CON|STA|STR|AUD|IDEM)-\d{2}[A-Z]?\
 const SLASH_SHORTHAND = /\b(REV|COL)-(\d{2}[A-Z]?)\/(\d{2}[A-Z]?)\b/g;
 
 function gateCitations() {
-  const treeMd = mdIn(TREE).sort();
+  // copilot-package/ is a generated bundle FOR the estate repo; its backticked paths are
+  // estate-repo-root-relative (they resolve only after the tree is vendored there), so the
+  // monorepo citations gate must not try to resolve them. copilot-check owns that bundle.
+  const treeMd = mdIn(TREE).filter((p) => !p.includes(`${sep}copilot-package${sep}`)).sort();
 
   // R1 — relative backticked paths resolve
   for (const p of treeMd) {
@@ -266,12 +269,14 @@ function gatePackaging() {
     const problem = frontmatterProblem(m[1]);
     if (problem) find(p, problem);
   }
-  const r = spawnSync(process.execPath, [join(HERE, "ssdt-agent-package.mjs"), "check"], {
-    encoding: "utf8",
-  });
-  if (r.status !== 0) {
-    const lines = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim().split("\n").slice(1);
-    for (const line of lines) find(join(REPO, ".claude"), line.trim());
+  for (const [verb, root] of [["check", ".claude"], ["copilot-check", "sidecar/projection/ssdt-agent/copilot-package"]]) {
+    const r = spawnSync(process.execPath, [join(HERE, "ssdt-agent-package.mjs"), verb], {
+      encoding: "utf8",
+    });
+    if (r.status !== 0) {
+      const lines = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim().split("\n").slice(1);
+      for (const line of lines) find(join(REPO, root), line.trim());
+    }
   }
 }
 

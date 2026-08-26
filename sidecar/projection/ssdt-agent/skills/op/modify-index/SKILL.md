@@ -103,7 +103,7 @@ restore uses.
 - Application impact — once the index is unique, any insert or update that would create a duplicate
   key value now fails ("duplicate key was found"). Application-side handling is not confirmed here
   (app owner).
-- Other environments — Test, UAT, and Prod may hold duplicates the disposable copy of Dev cannot
+- Other environments — QA, UAT, and Prod may hold duplicates the disposable copy of Dev cannot
   see. Run the verification query before promotion.
 - Production scale and timing — on a large table the DROP+CREATE rebuild and any de-dupe may block
   writes or run long; the small copy does not show it.

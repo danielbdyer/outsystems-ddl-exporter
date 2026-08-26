@@ -3,9 +3,12 @@
 #
 # Ensures the F# sidecar's canary infrastructure is warm at every
 # session start / resume:
-#   1. dotnet SDK 9.0.305 (pinned by global.json's rollForward=disable)
-#   2. Docker daemon (canary tests use Testcontainers.MsSql)
-#   3. mcr.microsoft.com/mssql/server:2022-latest image (~2GB)
+#   1. dotnet SDK (version pinned by sidecar/projection/global.json)
+#   2. sqlpackage (the ssdt-agent proving loop's publish CLI; version
+#      pinned by sidecar/projection/ssdt-agent/estate/toolchain.md)
+#   3. Docker daemon (canary tests use Testcontainers.MsSql)
+#   4. mcr.microsoft.com/mssql/server:2022-latest image (~2GB)
+#   5. warm SQL Server container (scripts/warm-sql.sh)
 #
 # Idempotent — every step probes before acting. Honest about
 # failures — Docker / pull failures log warnings but don't fail the
@@ -141,12 +144,123 @@ export PATH="$DOTNET_DIR:$PATH"
 # without seeing the comprehensive verdict mistakes the dotnet OK
 # for full canary readiness.
 DOTNET_STATE="$DOTNET_VERSION"
+SQLPKG_STATE="missing"
 DOCKER_STATE="missing"
 IMAGE_STATE="skipped"
 WARM_STATE="skipped"
 
 # ---------------------------------------------------------------------
-# 2. Docker daemon — start if installed but not running
+# 2. sqlpackage — the publish CLI the ssdt-agent proving loop runs
+# ---------------------------------------------------------------------
+# SOFT dependency: pure-F# work needs no sqlpackage, and the proving
+# skills document the manual install as a fallback — so failures WARN
+# and degrade, never exit 1 (hook discipline below). Depends only on
+# dotnet, so it runs even when Docker degrades.
+# Version truth lives in the toolchain pin ledger
+# (sidecar/projection/ssdt-agent/estate/toolchain.md) — do NOT
+# hard-code a version here that can drift. While the ledger row reads
+# UNPINNED, the latest tool installs and the status field carries
+# `-unpinned` so proof records remember to stamp the version actually
+# run: guard behaviour is version-bound (ssdt-agent
+# FINDINGS_AND_CHANGES.md Part 5, the open DacFx-pin item).
+TOOLCHAIN_MD="$REPO/sidecar/projection/ssdt-agent/estate/toolchain.md"
+TOOLS_DIR="$HOME/.dotnet/tools"
+
+# Pin resolution: env override first (the warm-sql.sh override
+# pattern), then the ledger row, else unpinned.
+SQLPACKAGE_PIN="${SQLPACKAGE_VERSION:-}"
+if [ -z "$SQLPACKAGE_PIN" ] && [ -f "$TOOLCHAIN_MD" ]; then
+    SQLPACKAGE_PIN="$(grep -E '^\| *sqlpackage ' "$TOOLCHAIN_MD" \
+        | head -n1 | awk -F'|' '{gsub(/^ +| +$/, "", $3); print $3}')"
+    if [ "$SQLPACKAGE_PIN" = "UNPINNED" ]; then
+        SQLPACKAGE_PIN=""
+    fi
+fi
+
+installed_sqlpackage_version() {
+    "$DOTNET_DIR/dotnet" tool list -g 2>/dev/null \
+        | awk 'tolower($1) == "microsoft.sqlpackage" { print $2 }'
+}
+
+ensure_sqlpackage() {
+    # Install, or align to the pin, with the same 3-attempt backoff
+    # as install_dotnet. Cumulative log: /tmp/sqlpackage-install.log.
+    local current verb attempt=1 backoff=2
+    current="$(installed_sqlpackage_version)"
+    if [ -n "$current" ]; then
+        if [ -z "$SQLPACKAGE_PIN" ] || [ "$current" = "$SQLPACKAGE_PIN" ]; then
+            return 0
+        fi
+        verb="update"
+    else
+        verb="install"
+    fi
+    local args=(tool "$verb" -g microsoft.sqlpackage)
+    if [ -n "$SQLPACKAGE_PIN" ]; then
+        args+=(--version "$SQLPACKAGE_PIN")
+    fi
+    if [ -f "$REPO/NuGet.config" ]; then
+        args+=(--configfile "$REPO/NuGet.config")
+    fi
+    while [ "$attempt" -le 3 ]; do
+        log "sqlpackage $verb attempt $attempt/3..."
+        if "$DOTNET_DIR/dotnet" "${args[@]}" >>/tmp/sqlpackage-install.log 2>&1; then
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        if [ "$attempt" -le 3 ]; then
+            sleep "$backoff"
+            backoff=$((backoff * 2))
+        fi
+    done
+    return 1
+}
+
+if ensure_sqlpackage; then
+    # The tool targets net8.0 and this box carries only the 9.x
+    # runtime, so executing it needs DOTNET_ROLL_FORWARD=Major.
+    # Orthogonal to global.json's rollForward=disable: that pins SDK
+    # *selection*; this governs app *runtime* roll-forward, and the
+    # repo's own net9-native apps are unaffected by it.
+    export DOTNET_ROOT="$DOTNET_DIR"
+    export DOTNET_ROLL_FORWARD=Major
+    export PATH="$TOOLS_DIR:$PATH"
+    SQLPKG_RESOLVED="$(installed_sqlpackage_version)"
+    if [ -x "$TOOLS_DIR/sqlpackage" ] && "$TOOLS_DIR/sqlpackage" /Version >/dev/null 2>&1; then
+        if [ -n "$SQLPACKAGE_PIN" ]; then
+            SQLPKG_STATE="$SQLPKG_RESOLVED"
+            log "sqlpackage $SQLPKG_RESOLVED ready (pinned via toolchain ledger)"
+        else
+            SQLPKG_STATE="${SQLPKG_RESOLVED}-unpinned"
+            log "WARNING: sqlpackage $SQLPKG_RESOLVED is UNPINNED — the estate pipeline's"
+            log "         DacFx version is not yet recorded in the toolchain ledger"
+            log "         ($TOOLCHAIN_MD)."
+            log "         Proof records must stamp the version actually run."
+        fi
+        # Persist only after verification, same discipline as dotnet.
+        if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+            {
+                echo "export PATH=\"$TOOLS_DIR:\$PATH\""
+                echo "export DOTNET_ROOT=\"$DOTNET_DIR\""
+                echo "export DOTNET_ROLL_FORWARD=Major"
+            } >> "$CLAUDE_ENV_FILE"
+        fi
+    else
+        SQLPKG_STATE="failed"
+        log "WARNING: sqlpackage installed but failed to execute (/Version)"
+        log "         see /tmp/sqlpackage-install.log; the proving loop"
+        log "         cannot publish until resolved"
+    fi
+else
+    SQLPKG_STATE="failed"
+    log "WARNING: sqlpackage install failed after 3 attempts"
+    log "         see /tmp/sqlpackage-install.log for full output"
+    log "         the ssdt-agent proving loop cannot publish until resolved;"
+    log "         manual fallback: dotnet tool install -g microsoft.sqlpackage"
+fi
+
+# ---------------------------------------------------------------------
+# 3. Docker daemon — start if installed but not running
 # ---------------------------------------------------------------------
 if command -v docker >/dev/null 2>&1; then
     if docker info >/dev/null 2>&1; then
@@ -186,7 +300,7 @@ if command -v docker >/dev/null 2>&1; then
     fi
 
     # ---------------------------------------------------------------------
-    # 3. Pre-pull SQL Server image (only if Docker is up)
+    # 4. Pre-pull SQL Server image (only if Docker is up)
     # ---------------------------------------------------------------------
     SQL_IMAGE="mcr.microsoft.com/mssql/server:2022-latest"
     if docker info >/dev/null 2>&1; then
@@ -221,7 +335,7 @@ if command -v docker >/dev/null 2>&1; then
     fi
 
     # ---------------------------------------------------------------------
-    # 4. Warm SQL Server container — paid once, reused all session
+    # 5. Warm SQL Server container — paid once, reused all session
     # ---------------------------------------------------------------------
     # Per session-29 bench data, container start is ~75% of every
     # canary's wall time. Starting a single warm container at session
@@ -272,26 +386,36 @@ fi
 # Subsystems use stable vocabulary (running / cached / ready /
 # missing / failed / not-ready / skipped) so `tail $HOOK_STATUS |
 # grep -oE 'docker=[a-z-]+'` is a one-liner.
-if [ "$DOCKER_STATE" = "running" ] && [ "$IMAGE_STATE" = "cached" ] && [ "$WARM_STATE" = "ready" ]; then
+if [ "$DOCKER_STATE" = "running" ] && [ "$IMAGE_STATE" = "cached" ] \
+    && [ "$WARM_STATE" = "ready" ] && [ "$SQLPKG_STATE" != "failed" ] \
+    && [ "$SQLPKG_STATE" != "missing" ]; then
     HOOK_VERDICT="READY"
 else
     HOOK_VERDICT="DEGRADED"
 fi
-printf 'session-start %s %s | dotnet=%s | docker=%s | image=%s | warm=%s\n' \
+printf 'session-start %s %s | dotnet=%s | sqlpackage=%s | docker=%s | image=%s | warm=%s\n' \
     "$HOOK_VERDICT" \
     "$(date -u +%FT%TZ)" \
     "$DOTNET_STATE" \
+    "$SQLPKG_STATE" \
     "$DOCKER_STATE" \
     "$IMAGE_STATE" \
     "$WARM_STATE" \
     >> "$HOOK_STATUS"
 
-log "session-start hook complete (verdict: $HOOK_VERDICT; dotnet=$DOTNET_STATE docker=$DOCKER_STATE image=$IMAGE_STATE warm=$WARM_STATE)"
+log "session-start hook complete (verdict: $HOOK_VERDICT; dotnet=$DOTNET_STATE sqlpackage=$SQLPKG_STATE docker=$DOCKER_STATE image=$IMAGE_STATE warm=$WARM_STATE)"
 
 # ---------------------------------------------------------------------
 # Hook discipline (do not remove without writing the rationale)
 # ---------------------------------------------------------------------
 #  - dotnet is REQUIRED — install failures fail the hook (exit 1).
+#  - sqlpackage is SOFT — pure-F# work needs no publish CLI, and the
+#    proving skills carry the manual-install fallback. Its version pin
+#    lives in sidecar/projection/ssdt-agent/estate/toolchain.md (the
+#    single source of truth); unpinned installs resolve latest and the
+#    status field says so (`-unpinned`), because publish-guard
+#    behaviour is version-bound and proof records stamp the version
+#    actually run.
 #  - Docker / SQL Server warm container are SOFT — they have a
 #    fallback in F# (canary tests skip via Deploy.Docker.isAvailable()
 #    or fall back to ephemeral containers per call). Keep them as
