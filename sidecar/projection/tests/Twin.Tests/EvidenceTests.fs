@@ -92,7 +92,33 @@ let private capturedProfile : Profile =
                 (CategoricalDistribution.create custStat [ "XSECRETACTIVE", 40L; "XSECRETDORMANT", 10L ] 2L false (probe 50L) |> Result.value)
               AttributeDistribution.Numeric
                 (NumericDistribution.create ordId 1m 30m 60m 90m 114m 119m 120m 120L (probe 120L) |> Result.value) ]
-        ForeignKeyCardinalities = [ ForeignKeyCardinality.create ordRef fanShape ] }
+        ForeignKeyCardinalities = [ ForeignKeyCardinality.create ordRef fanShape ]
+        // The four reality axes the pack carries through (C1): an orphaned
+        // edge, a duplicated column (on both engine axes), FK selectivity
+        // whose parent-key VALUES must never reach the pack, and a joint
+        // whose tuple values are rich-only.
+        ForeignKeys =
+            [ { ReferenceKey = ordRef
+                HasOrphan    = true
+                OrphanCount  = 3L
+                IsNoCheck    = false
+                ProbeStatus  = probe 120L } ]
+        AttributeRealities =
+            [ { AttributeKey         = custStat
+                IsNullableInDatabase = true
+                HasNulls             = true
+                HasDuplicates        = true
+                HasOrphans           = false
+                IsPresentButInactive = false } ]
+        UniqueCandidates =
+            [ { AttributeKey = custStat
+                HasDuplicate = true
+                ProbeStatus  = probe 50L } ]
+        ForeignKeySelectivities =
+            [ ForeignKeySelectivity.create ordRef [ "XSECRETP7", 70L; "XSECRETP8", 50L ] 2L false (probe 120L) |> Result.value ]
+        JointDistributions =
+            [ JointDistribution.create ordKey [ ordCust; ordId ]
+                [ "XSECRETJ7|XSECRETJ1", 90L; "XSECRETJ8|XSECRETJ2", 30L ] 2L false (probe 120L) |> Result.value ] }
 
 let private richPack : EvidencePack =
     Evidence.ofProfile "uat" captureCatalog keepByLogicalName capturedProfile
@@ -111,6 +137,28 @@ let ``ofProfile rebinds engine evidence to estate coordinates`` () =
     Assert.Equal("dbo.Customer", fan.ParentTable)
 
 [<Fact>]
+let ``ofProfile carries the reality axes to coordinates`` () =
+    let orphan = List.exactlyOne richPack.Orphans
+    Assert.Equal("dbo.Order", orphan.ChildTable)
+    Assert.Equal("CUSTOMERID", orphan.ChildColumn)
+    Assert.Equal("dbo.Customer", orphan.ParentTable)
+    Assert.Equal(3L, orphan.OrphanCount)
+    let sel = List.exactlyOne richPack.Selectivities
+    Assert.Equal(2L, sel.DistinctCount)
+    // The parent-key VALUES are dropped at the capture boundary; only the
+    // count vector travels.
+    Assert.Equal<int64 list>([ 70L; 50L ], sel.Counts)
+    let joint = List.exactlyOne richPack.Joints
+    Assert.Equal("dbo.Order", joint.Table)
+    Assert.Equal<string list>([ "CUSTOMERID"; "ID" ], joint.Columns)
+    Assert.Equal(2, List.length joint.Frequencies)
+    let status =
+        richPack.Tables
+        |> List.find (fun t -> t.Table = "dbo.Customer")
+        |> fun t -> t.Columns |> List.find (fun c -> c.Column = "STATUS")
+    Assert.True status.HasDuplicates
+
+[<Fact>]
 let ``law 3: the shape tier carries no captured literal`` () =
     let shape = Evidence.deriveShape richPack
     Assert.Equal(ShapeTier, shape.Tier)
@@ -121,11 +169,20 @@ let ``law 3: the shape tier carries no captured literal`` () =
     // distinctive interior percentiles).
     Assert.DoesNotContain("114", json)
     Assert.DoesNotContain("119", json)
-    // Structure remains: counts, null rates, distinct counts, fan-out.
+    // No selectivity parent-key value and no joint tuple value survives —
+    // selectivity values never entered the pack; joints drop at derive.
+    Assert.DoesNotContain("XSECRETP", json)
+    Assert.DoesNotContain("XSECRETJ", json)
+    // Structure remains: counts, null rates, distinct counts, fan-out,
+    // orphan counts, selectivity count vectors, duplicate flags.
     let customer = shape.Tables |> List.find (fun t -> t.Table = "dbo.Customer")
     let status = customer.Columns |> List.find (fun c -> c.Column = "STATUS")
     Assert.Equal(Some 2L, status.DistinctCount)
+    Assert.True status.HasDuplicates
     Assert.Equal(1, List.length shape.FanOuts)
+    Assert.Equal(1, List.length shape.Orphans)
+    Assert.Equal(1, List.length shape.Selectivities)
+    Assert.Empty shape.Joints
 
 [<Fact>]
 let ``the codec round-trips a full pack`` () =
@@ -134,6 +191,9 @@ let ``the codec round-trips a full pack`` () =
     Assert.Equal<string list>(richPack.Sources, restored.Sources)
     Assert.Equal<TableEvidence list>(richPack.Tables, restored.Tables)
     Assert.Equal<FanOutEvidence list>(richPack.FanOuts, restored.FanOuts)
+    Assert.Equal<OrphanEvidence list>(richPack.Orphans, restored.Orphans)
+    Assert.Equal<SelectivityEvidence list>(richPack.Selectivities, restored.Selectivities)
+    Assert.Equal<JointEvidence list>(richPack.Joints, restored.Joints)
 
 [<Fact>]
 let ``toProfile binds a pack against the twin catalog by coordinate`` () =
@@ -148,6 +208,86 @@ let ``toProfile binds a pack against the twin catalog by coordinate`` () =
     Assert.Equal(1, List.length profile.ForeignKeyCardinalities)
 
 [<Fact>]
+let ``toProfile binds the reality axes into what the mint reads`` () =
+    let profile = ok (Evidence.toProfile twinIndex richPack)
+    let fk = List.exactlyOne profile.ForeignKeys
+    Assert.True fk.HasOrphan
+    Assert.Equal(3L, fk.OrphanCount)
+    Assert.Equal(refKey ["TO"; "Customer"], fk.ReferenceKey)
+    let sel = List.exactlyOne profile.ForeignKeySelectivities
+    Assert.Equal(2L, sel.DistinctCount)
+    // Rank labels are fabricated at the rebind; the mint draws by rank
+    // and never reads them.
+    Assert.Equal<(string * int64) list>([ "#1", 70L; "#2", 50L ], sel.Frequencies)
+    let joint = List.exactlyOne profile.JointDistributions
+    Assert.Equal<SsKey list>([ attrKey ["TO"; "CustomerId"]; attrKey ["TO"; "Id"] ], joint.AttributeKeys)
+    let reality = List.exactlyOne profile.AttributeRealities
+    Assert.True reality.HasDuplicates
+    Assert.True reality.HasNulls
+    let unique = List.exactlyOne profile.UniqueCandidates
+    Assert.True unique.HasDuplicate
+    Assert.Equal(attrKey ["TC"; "Status"], unique.AttributeKey)
+
+[<Fact>]
+let ``an orphan on an edge the estate does not carry binds nothing and refuses nothing`` () =
+    // The twin catalog WITHOUT the Order → Customer reference — the FK-add
+    // case: the orphan and selectivity evidence exists precisely because
+    // the constraint is not there yet.
+    let orderNoRef =
+        { Kind.create (kindKey ["TO"]) (name "Order") (mkTableId "dbo" "Order")
+            [ attr (attrKey ["TO"; "Id"]) "Id" "Id" Integer true
+              attr (attrKey ["TO"; "CustomerId"]) "CustomerId" "CustomerId" Integer false ] with
+            References = [] }
+    let noRefIndex =
+        CatalogIndex.ofCatalog
+            (Catalog.create [ mkModule (modKey "T") (name "T") [ twinCustomer; orderNoRef ] ] [] |> Result.value)
+    // Fan-outs describe a relationship, so they are removed for this case;
+    // the orphan and selectivity entries stay.
+    let pack = { richPack with FanOuts = [] }
+    let profile = ok (Evidence.toProfile noRefIndex pack)
+    Assert.Empty profile.ForeignKeys
+    Assert.Empty profile.ForeignKeySelectivities
+    // The joint needs no reference and still binds.
+    Assert.Equal(1, List.length profile.JointDistributions)
+
+[<Fact>]
+let ``an old-shape pack deserializes with empty reality axes`` () =
+    let oldJson =
+        """{
+  "tier": "rich",
+  "sources": ["uat"],
+  "tables": [
+    { "table": "dbo.Customer", "rowCount": 5,
+      "columns": [ { "column": "Status", "rowCount": 5, "nullCount": 1 } ] }
+  ],
+  "fanOuts": []
+}"""
+    let pack = ok (Evidence.deserialize oldJson)
+    Assert.Empty pack.Orphans
+    Assert.Empty pack.Selectivities
+    Assert.Empty pack.Joints
+    let status = (List.exactlyOne pack.Tables).Columns |> List.exactlyOne
+    Assert.False status.HasDuplicates
+
+[<Fact>]
+let ``a pack with no reality axes serializes with no reality keys`` () =
+    let plain =
+        { Evidence.emptyPack RichTier with
+            Sources = [ "dev" ]
+            Tables =
+                [ { Table = "dbo.Customer"; RowCount = 5L
+                    Columns =
+                        [ { Column = "Status"; RowCount = 5L; NullCount = 1L; MaxLength = None
+                            DistinctCount = None; Truncated = false; HasDuplicates = false
+                            Frequencies = []; Numeric = None } ] } ] }
+    let json = Evidence.serialize plain
+    Assert.DoesNotContain("orphans", json)
+    Assert.DoesNotContain("selectivities", json)
+    Assert.DoesNotContain("joints", json)
+    Assert.DoesNotContain("hasDuplicates", json)
+    Assert.Equal(plain, ok (Evidence.deserialize json))
+
+[<Fact>]
 let ``law 2: a pack naming an absent column refuses by name`` () =
     let broken =
         { richPack with
@@ -155,7 +295,7 @@ let ``law 2: a pack naming an absent column refuses by name`` () =
                 richPack.Tables
                 |> List.map (fun t ->
                     if t.Table = "dbo.Customer" then
-                        { t with Columns = t.Columns @ [ { Column = "Ghost"; RowCount = 1L; NullCount = 0L; MaxLength = None; DistinctCount = None; Truncated = false; Frequencies = []; Numeric = None } ] }
+                        { t with Columns = t.Columns @ [ { Column = "Ghost"; RowCount = 1L; NullCount = 0L; MaxLength = None; DistinctCount = None; Truncated = false; HasDuplicates = false; Frequencies = []; Numeric = None } ] }
                     else t) }
     Assert.Contains("twin.coordinate.column.unknown", codes (Evidence.toProfile twinIndex broken))
 

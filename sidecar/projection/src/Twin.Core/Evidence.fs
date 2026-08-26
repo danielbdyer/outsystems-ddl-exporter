@@ -39,6 +39,10 @@ type ColumnEvidence = {
     MaxLength     : int option
     DistinctCount : int64 option
     Truncated     : bool
+    /// Deployed evidence: at least one value appears in two or more
+    /// rows. A boolean carries no captured literal, so the shape tier
+    /// keeps it.
+    HasDuplicates : bool
     /// Rich tier only; `[]` in the shape tier.
     Frequencies   : (string * int64) list
     /// Rich tier only; `None` in the shape tier.
@@ -62,23 +66,66 @@ type FanOutEvidence = {
     Shape       : NumericShape
 }
 
+/// Referential-integrity reality for one edge: how many child rows name
+/// a parent that does not exist. Emitted only when the capture observed
+/// at least one orphan. A count is literal-free, so the shape tier keeps
+/// it. The edge may have NO enforcing reference in the estate — that is
+/// the FK-add case this axis exists for — so mint-side binding treats an
+/// absent reference as carried-for-the-witness, never as a refusal.
+type OrphanEvidence = {
+    ChildTable  : string
+    ChildColumn : string
+    ParentTable : string
+    OrphanCount : int64
+}
+
+/// Foreign-key selectivity as counts by rank: how many child rows the
+/// most-referenced parent holds, then the second-most, and so on. The
+/// captured parent-key VALUES are dropped at capture — the mint consumes
+/// counts by rank only — so this axis is literal-free in both tiers by
+/// construction.
+type SelectivityEvidence = {
+    ChildTable    : string
+    ChildColumn   : string
+    ParentTable   : string
+    DistinctCount : int64
+    /// Per-rank child counts, descending.
+    Counts        : int64 list
+}
+
+/// Multi-FK joint co-occurrence for one table: which FK-value tuples
+/// occur together, and how often. Tuple keys carry real parent-key
+/// values, so this axis is RICH ONLY — `deriveShape` drops it.
+type JointEvidence = {
+    Table         : string
+    /// The participating FK column names, in tuple order.
+    Columns       : string list
+    DistinctCount : int64
+    Frequencies   : (string * int64) list
+}
+
 type EvidenceTier =
     | ShapeTier
     | RichTier
 
 type EvidencePack = {
-    Tier    : EvidenceTier
+    Tier          : EvidenceTier
     /// Provenance labels — the source names that contributed.
-    Sources : string list
-    Tables  : TableEvidence list
-    FanOuts : FanOutEvidence list
+    Sources       : string list
+    Tables        : TableEvidence list
+    FanOuts       : FanOutEvidence list
+    Orphans       : OrphanEvidence list
+    Selectivities : SelectivityEvidence list
+    /// Rich tier only; `[]` in the shape tier.
+    Joints        : JointEvidence list
 }
 
 [<RequireQualifiedAccess>]
 module Evidence =
 
     let emptyPack (tier: EvidenceTier) : EvidencePack =
-        { Tier = tier; Sources = []; Tables = []; FanOuts = [] }
+        { Tier = tier; Sources = []; Tables = []; FanOuts = []
+          Orphans = []; Selectivities = []; Joints = [] }
 
     // ------------------------------------------------------------------
     // Capture-side rebinding: Profile → pack (rich).
@@ -142,6 +189,18 @@ module Evidence =
             profile.Distributions
             |> List.choose (function AttributeDistribution.Numeric n -> Some (n.AttributeKey, n) | _ -> None)
             |> Map.ofList
+        // Duplicate reality is measured on two engine axes; either one is
+        // evidence of a duplicate value in the column.
+        let duplicateByAttr =
+            let fromReality =
+                profile.AttributeRealities
+                |> List.filter (fun r -> r.HasDuplicates)
+                |> List.map (fun r -> r.AttributeKey)
+            let fromUnique =
+                profile.UniqueCandidates
+                |> List.filter (fun u -> u.HasDuplicate)
+                |> List.map (fun u -> u.AttributeKey)
+            Set.ofList (fromReality @ fromUnique)
         let columns =
             profile.Columns
             |> List.choose (fun c ->
@@ -156,6 +215,7 @@ module Evidence =
                           Map.tryFind c.AttributeKey categoricalByAttr |> Option.map (fun cat -> cat.DistinctCount)
                       Truncated =
                           Map.tryFind c.AttributeKey categoricalByAttr |> Option.map (fun cat -> cat.IsTruncated) |> Option.defaultValue false
+                      HasDuplicates = Set.contains c.AttributeKey duplicateByAttr
                       Frequencies =
                           Map.tryFind c.AttributeKey categoricalByAttr |> Option.map (fun cat -> cat.Frequencies) |> Option.defaultValue []
                       Numeric =
@@ -177,18 +237,60 @@ module Evidence =
                     { ChildTable = child; ChildColumn = column; ParentTable = parent
                       Shape = shapeOf f.ChildCountDistribution }))
             |> List.sortBy (fun f -> f.ChildTable.ToLowerInvariant(), f.ChildColumn.ToLowerInvariant())
-        { Tier = RichTier; Sources = [ sourceName ]; Tables = tables; FanOuts = fanOuts }
+        let orphans =
+            profile.ForeignKeys
+            |> List.filter (fun r -> r.HasOrphan)
+            |> List.choose (fun r ->
+                Map.tryFind r.ReferenceKey map.RefCoord
+                |> Option.map (fun (child, column, parent) ->
+                    { ChildTable = child; ChildColumn = column; ParentTable = parent
+                      OrphanCount = r.OrphanCount }))
+            |> List.sortBy (fun o -> o.ChildTable.ToLowerInvariant(), o.ChildColumn.ToLowerInvariant())
+        let selectivities =
+            profile.ForeignKeySelectivities
+            |> List.filter (fun s -> not (List.isEmpty s.Frequencies))
+            |> List.choose (fun s ->
+                Map.tryFind s.ReferenceKey map.RefCoord
+                |> Option.map (fun (child, column, parent) ->
+                    { ChildTable = child; ChildColumn = column; ParentTable = parent
+                      DistinctCount = s.DistinctCount
+                      // The captured parent-key values are dropped here, at the
+                      // capture boundary — the mint draws by rank, so only the
+                      // count vector travels.
+                      Counts = s.Frequencies |> List.map snd }))
+            |> List.sortBy (fun s -> s.ChildTable.ToLowerInvariant(), s.ChildColumn.ToLowerInvariant())
+        let joints =
+            profile.JointDistributions
+            |> List.choose (fun j ->
+                match Map.tryFind j.KindKey map.KindCoord with
+                | None -> None
+                | Some table ->
+                    let columnNames =
+                        j.AttributeKeys
+                        |> List.map (fun k -> Map.tryFind k map.AttrCoord |> Option.map snd)
+                    if columnNames |> List.exists Option.isNone then None
+                    else
+                        Some
+                            { Table = table
+                              Columns = columnNames |> List.map Option.get
+                              DistinctCount = j.DistinctCount
+                              Frequencies = j.Frequencies })
+            |> List.sortBy (fun j -> j.Table.ToLowerInvariant(), String.concat "|" j.Columns)
+        { Tier = RichTier; Sources = [ sourceName ]; Tables = tables; FanOuts = fanOuts
+          Orphans = orphans; Selectivities = selectivities; Joints = joints }
 
     // ------------------------------------------------------------------
     // The tier projection (law 3) and the merge (law 4's backstop).
     // ------------------------------------------------------------------
 
     /// Rich → shape: every captured literal dropped; structure, counts,
-    /// and shapes kept. Fan-out shapes carry counts (children per
-    /// parent), never values, so they survive.
+    /// and shapes kept. Fan-out shapes, orphan counts, duplicate flags,
+    /// and selectivity count vectors carry counts, never values, so they
+    /// survive. Joint tuples carry real parent-key values, so they drop.
     let deriveShape (pack: EvidencePack) : EvidencePack =
         { pack with
             Tier = ShapeTier
+            Joints = []
             Tables =
                 pack.Tables
                 |> List.map (fun t ->
@@ -221,7 +323,10 @@ module Evidence =
                     { Tier = first.Tier
                       Sources = packs |> List.collect (fun p -> p.Sources) |> List.distinct
                       Tables = packs |> List.collect (fun p -> p.Tables) |> List.sortBy (fun t -> t.Table.ToLowerInvariant())
-                      FanOuts = packs |> List.collect (fun p -> p.FanOuts) |> List.sortBy (fun f -> f.ChildTable.ToLowerInvariant(), f.ChildColumn.ToLowerInvariant()) }
+                      FanOuts = packs |> List.collect (fun p -> p.FanOuts) |> List.sortBy (fun f -> f.ChildTable.ToLowerInvariant(), f.ChildColumn.ToLowerInvariant())
+                      Orphans = packs |> List.collect (fun p -> p.Orphans) |> List.sortBy (fun o -> o.ChildTable.ToLowerInvariant(), o.ChildColumn.ToLowerInvariant())
+                      Selectivities = packs |> List.collect (fun p -> p.Selectivities) |> List.sortBy (fun s -> s.ChildTable.ToLowerInvariant(), s.ChildColumn.ToLowerInvariant())
+                      Joints = packs |> List.collect (fun p -> p.Joints) |> List.sortBy (fun j -> j.Table.ToLowerInvariant(), String.concat "|" j.Columns) }
 
     // ------------------------------------------------------------------
     // Mint-side rebinding: pack → Profile against the twin catalog.
@@ -233,11 +338,54 @@ module Evidence =
             (max rows NumericDistribution.sampleSizeFloor)
             (ProbeStatus.observed (max rows NumericDistribution.sampleSizeFloor))
 
+    /// Resolve an evidence edge (child table, FK column, parent table)
+    /// against the twin catalog. The three COORDINATES must bind — law 2
+    /// holds for names. The REFERENCE between them is allowed to be
+    /// absent: that is the FK-add case the orphan and selectivity axes
+    /// exist for, so an edge without an enforcing reference resolves to
+    /// `Ok None` rather than refusing. Callers decide what an absent
+    /// reference means for their axis.
+    let private resolveEdge
+        (index: CatalogIndex)
+        (childTable: string)
+        (childColumn: string)
+        (parentTable: string)
+        : Result<Reference option> =
+        match TableCoordinate.parse childTable, TableCoordinate.parse parentTable with
+        | Ok childCoord, Ok parentCoord ->
+            CatalogIndex.bindKind index childCoord
+            |> Result.bind (fun childKind ->
+                CatalogIndex.bindKind index parentCoord
+                |> Result.bind (fun parentKind ->
+                    ColumnCoordinate.create childCoord childColumn
+                    |> Result.bind (CatalogIndex.bindColumn index)
+                    |> Result.map (fun _ ->
+                        childKind.References
+                        |> List.tryFind (fun r ->
+                            r.TargetKind = parentKind.SsKey
+                            && (childKind.Attributes
+                                |> List.exists (fun a ->
+                                    a.SsKey = r.SourceAttribute
+                                    && System.String.Equals(
+                                        ColumnRealization.columnNameText a.Column, childColumn,
+                                        System.StringComparison.OrdinalIgnoreCase)))))))
+        | cR, pR -> Result.failure (Result.errors cR @ Result.errors pR)
+
     /// Bind a pack to the twin catalog as an engine Profile. Law 2: every
     /// evidenced coordinate must exist — an unbound table or column is a
     /// named refusal, never a silent skip (the estate moved ahead of the
-    /// evidence; `twin evidence verify` is the drift answer).
+    /// evidence; `twin evidence verify` is the drift answer). One
+    /// deliberate asymmetry: an orphan or selectivity entry whose
+    /// COORDINATES bind but whose REFERENCE the estate does not carry is
+    /// skipped here and stays in the pack for the witness pass — the
+    /// FK-add case is why those axes are captured at all.
     let toProfile (index: CatalogIndex) (pack: EvidencePack) : Result<Profile> =
+        let rowsByTable =
+            pack.Tables |> List.map (fun t -> t.Table.ToLowerInvariant(), t.RowCount) |> Map.ofList
+        let sampleFor (table: string) (floor: int64) : int64 =
+            Map.tryFind (table.ToLowerInvariant()) rowsByTable
+            |> Option.defaultValue floor
+            |> max floor
         let tableResults =
             pack.Tables
             |> List.map (fun t ->
@@ -268,8 +416,21 @@ module Evidence =
                                     match c.Numeric with
                                     | None -> Result.success None
                                     | Some s -> numericOf attr.SsKey c.RowCount s |> Result.map Some
+                                let duplicate =
+                                    if not c.HasDuplicates then None
+                                    else
+                                        Some
+                                            ({ AttributeKey         = attr.SsKey
+                                               IsNullableInDatabase = false
+                                               HasNulls             = c.NullCount > 0L
+                                               HasDuplicates        = true
+                                               HasOrphans           = false
+                                               IsPresentButInactive = false },
+                                             { AttributeKey = attr.SsKey
+                                               HasDuplicate = true
+                                               ProbeStatus  = ProbeStatus.observed c.RowCount })
                                 match columnProfile, categorical, numeric with
-                                | Ok cp, Ok cat, Ok num -> Result.success (cp, cat, num)
+                                | Ok cp, Ok cat, Ok num -> Result.success (cp, cat, num, duplicate)
                                 | cpR, catR, numR ->
                                     Result.failure (Result.errors cpR @ Result.errors catR @ Result.errors numR)))
                         |> Result.aggregate
@@ -278,48 +439,101 @@ module Evidence =
         let fanOutResults =
             pack.FanOuts
             |> List.map (fun f ->
-                match TableCoordinate.parse f.ChildTable, TableCoordinate.parse f.ParentTable with
-                | Ok childCoord, Ok parentCoord ->
-                    CatalogIndex.bindKind index childCoord
-                    |> Result.bind (fun childKind ->
-                        CatalogIndex.bindKind index parentCoord
-                        |> Result.bind (fun parentKind ->
-                            let reference =
-                                childKind.References
-                                |> List.tryFind (fun r ->
-                                    r.TargetKind = parentKind.SsKey
-                                    && (childKind.Attributes
-                                        |> List.exists (fun a ->
-                                            a.SsKey = r.SourceAttribute
-                                            && System.String.Equals(
-                                                ColumnRealization.columnNameText a.Column, f.ChildColumn,
-                                                System.StringComparison.OrdinalIgnoreCase))))
-                            match reference with
-                            | None ->
-                                Result.failureOf
-                                    (ValidationError.createWithMetadata
-                                        "twin.evidence.fanOutUnbound"
-                                        "A fan-out names a relationship the estate does not carry."
-                                        (Map.ofList
-                                            [ "child", Some f.ChildTable; "column", Some f.ChildColumn
-                                              "parent", Some f.ParentTable ]))
-                            | Some r ->
-                                numericOf r.SsKey (int64 NumericDistribution.sampleSizeFloor) f.Shape
-                                |> Result.map (fun dist ->
-                                    ForeignKeyCardinality.create r.SsKey dist)))
-                | cR, pR -> Result.failure (Result.errors cR @ Result.errors pR))
+                resolveEdge index f.ChildTable f.ChildColumn f.ParentTable
+                |> Result.bind (fun reference ->
+                    match reference with
+                    | None ->
+                        // A fan-out shape is meaningless without the relationship
+                        // it describes, so an absent reference stays a refusal.
+                        Result.failureOf
+                            (ValidationError.createWithMetadata
+                                "twin.evidence.fanOutUnbound"
+                                "A fan-out names a relationship the estate does not carry."
+                                (Map.ofList
+                                    [ "child", Some f.ChildTable; "column", Some f.ChildColumn
+                                      "parent", Some f.ParentTable ]))
+                    | Some r ->
+                        numericOf r.SsKey (int64 NumericDistribution.sampleSizeFloor) f.Shape
+                        |> Result.map (fun dist ->
+                            ForeignKeyCardinality.create r.SsKey dist)))
             |> Result.aggregate
-        match tableResults, fanOutResults with
-        | Ok tables, Ok fanOuts ->
+        // Orphan reality binds when the estate carries the reference; an
+        // edge without one is the FK-add case and stays pack-side for the
+        // witness pass.
+        let orphanResults =
+            pack.Orphans
+            |> List.map (fun o ->
+                resolveEdge index o.ChildTable o.ChildColumn o.ParentTable
+                |> Result.map (fun reference ->
+                    reference
+                    |> Option.map (fun r ->
+                        { ReferenceKey = r.SsKey
+                          HasOrphan    = true
+                          OrphanCount  = o.OrphanCount
+                          IsNoCheck    = false
+                          ProbeStatus  = ProbeStatus.observed (sampleFor o.ChildTable (max o.OrphanCount 1L)) })))
+            |> Result.aggregate
+            |> Result.map (List.choose id)
+        // Selectivity binds by rank: the pack carries counts only, so the
+        // rebind fabricates rank labels — the mint draws by rank and never
+        // reads the labels. Same absent-reference asymmetry as orphans.
+        let selectivityResults =
+            pack.Selectivities
+            |> List.map (fun s ->
+                resolveEdge index s.ChildTable s.ChildColumn s.ParentTable
+                |> Result.bind (fun reference ->
+                    match reference with
+                    | None -> Result.success None
+                    | Some r ->
+                        let ranked = s.Counts |> List.mapi (fun i c -> sprintf "#%d" (i + 1), c)
+                        let truncated = s.DistinctCount <> int64 (List.length s.Counts)
+                        ForeignKeySelectivity.create
+                            r.SsKey ranked s.DistinctCount truncated
+                            (ProbeStatus.observed (max (s.Counts |> List.sum) 1L))
+                        |> Result.map Some))
+            |> Result.aggregate
+            |> Result.map (List.choose id)
+        let jointResults =
+            pack.Joints
+            |> List.filter (fun j -> not (List.isEmpty j.Frequencies))
+            |> List.map (fun j ->
+                match TableCoordinate.parse j.Table with
+                | Error es -> Result.failure es
+                | Ok coord ->
+                    CatalogIndex.bindKind index coord
+                    |> Result.bind (fun kind ->
+                        j.Columns
+                        |> List.map (fun col ->
+                            ColumnCoordinate.create coord col
+                            |> Result.bind (CatalogIndex.bindColumn index)
+                            |> Result.map (fun (_, attr) -> attr.SsKey))
+                        |> Result.aggregate
+                        |> Result.bind (fun attrKeys ->
+                            let truncated = j.DistinctCount <> int64 (List.length j.Frequencies)
+                            JointDistribution.create
+                                kind.SsKey attrKeys j.Frequencies j.DistinctCount truncated
+                                (ProbeStatus.observed (max (j.Frequencies |> List.sumBy snd) 1L)))))
+            |> Result.aggregate
+        match tableResults, fanOutResults, orphanResults, selectivityResults, jointResults with
+        | Ok tables, Ok fanOuts, Ok orphans, Ok selectivities, Ok joints ->
             let cols = tables |> List.collect (fun (_, cols) -> cols)
+            let duplicates = cols |> List.choose (fun (_, _, _, dup) -> dup)
             Result.success
                 { Profile.empty with
-                    Columns = cols |> List.map (fun (cp, _, _) -> cp)
+                    Columns = cols |> List.map (fun (cp, _, _, _) -> cp)
                     Distributions =
-                        (cols |> List.choose (fun (_, cat, _) -> cat |> Option.map AttributeDistribution.Categorical))
-                        @ (cols |> List.choose (fun (_, _, num) -> num |> Option.map AttributeDistribution.Numeric))
-                    ForeignKeyCardinalities = fanOuts }
-        | tR, fR -> Result.failure (Result.errors tR @ Result.errors fR)
+                        (cols |> List.choose (fun (_, cat, _, _) -> cat |> Option.map AttributeDistribution.Categorical))
+                        @ (cols |> List.choose (fun (_, _, num, _) -> num |> Option.map AttributeDistribution.Numeric))
+                    ForeignKeyCardinalities = fanOuts
+                    ForeignKeys = orphans
+                    ForeignKeySelectivities = selectivities
+                    JointDistributions = joints
+                    AttributeRealities = duplicates |> List.map fst
+                    UniqueCandidates = duplicates |> List.map snd }
+        | tR, fR, oR, sR, jR ->
+            Result.failure
+                (Result.errors tR @ Result.errors fR @ Result.errors oR
+                 @ Result.errors sR @ Result.errors jR)
 
     /// Precedence layering: `over`'s evidence replaces `base`'s per
     /// attribute/reference key; everything else unions.
@@ -389,6 +603,7 @@ module Evidence =
                     | Some d -> writer.WriteNumber("distinctCount", d)
                     | None -> ()
                     if c.Truncated then writer.WriteBoolean("truncated", true)
+                    if c.HasDuplicates then writer.WriteBoolean("hasDuplicates", true)
                     match c.Frequencies with
                     | [] -> ()
                     | freqs ->
@@ -426,6 +641,56 @@ module Evidence =
                 writer.WriteEndObject()
                 writer.WriteEndObject()
             writer.WriteEndArray()
+            // The reality axes are additive: each array is omitted when
+            // empty, so a pack carrying none serializes byte-identically
+            // to the pre-axis wire format.
+            match pack.Orphans with
+            | [] -> ()
+            | orphans ->
+                writer.WriteStartArray "orphans"
+                for o in orphans |> List.sortBy (fun o -> o.ChildTable.ToLowerInvariant(), o.ChildColumn.ToLowerInvariant()) do
+                    writer.WriteStartObject()
+                    writer.WriteString("child", o.ChildTable)
+                    writer.WriteString("column", o.ChildColumn)
+                    writer.WriteString("parent", o.ParentTable)
+                    writer.WriteNumber("count", o.OrphanCount)
+                    writer.WriteEndObject()
+                writer.WriteEndArray()
+            match pack.Selectivities with
+            | [] -> ()
+            | selectivities ->
+                writer.WriteStartArray "selectivities"
+                for s in selectivities |> List.sortBy (fun s -> s.ChildTable.ToLowerInvariant(), s.ChildColumn.ToLowerInvariant()) do
+                    writer.WriteStartObject()
+                    writer.WriteString("child", s.ChildTable)
+                    writer.WriteString("column", s.ChildColumn)
+                    writer.WriteString("parent", s.ParentTable)
+                    writer.WriteNumber("distinctCount", s.DistinctCount)
+                    writer.WriteStartArray "counts"
+                    for c in s.Counts do writer.WriteNumberValue c
+                    writer.WriteEndArray()
+                    writer.WriteEndObject()
+                writer.WriteEndArray()
+            match pack.Joints with
+            | [] -> ()
+            | joints ->
+                writer.WriteStartArray "joints"
+                for j in joints |> List.sortBy (fun j -> j.Table.ToLowerInvariant(), String.concat "|" j.Columns) do
+                    writer.WriteStartObject()
+                    writer.WriteString("table", j.Table)
+                    writer.WriteStartArray "columns"
+                    for col in j.Columns do writer.WriteStringValue col
+                    writer.WriteEndArray()
+                    writer.WriteNumber("distinctCount", j.DistinctCount)
+                    writer.WriteStartArray "frequencies"
+                    for (v, n) in j.Frequencies do
+                        writer.WriteStartObject()
+                        writer.WriteString("value", v)
+                        writer.WriteNumber("count", n)
+                        writer.WriteEndObject()
+                    writer.WriteEndArray()
+                    writer.WriteEndObject()
+                writer.WriteEndArray()
             writer.WriteEndObject()) ()
         System.Text.Encoding.UTF8.GetString(stream.ToArray())
 
@@ -481,6 +746,10 @@ module Evidence =
                                             match c.TryGetProperty "truncated" with
                                             | true, v -> v.GetBoolean()
                                             | _ -> false
+                                        HasDuplicates =
+                                            match c.TryGetProperty "hasDuplicates" with
+                                            | true, v -> v.GetBoolean()
+                                            | _ -> false
                                         Frequencies =
                                             match c.TryGetProperty "frequencies" with
                                             | true, freqs when freqs.ValueKind = JsonValueKind.Array ->
@@ -502,6 +771,49 @@ module Evidence =
                           ParentTable = getStr f "parent"
                           Shape = shapeOfEl (f.GetProperty "shape") } ]
                 | _ -> []
-            Result.success { Tier = tier; Sources = sources; Tables = tables; FanOuts = fanOuts }
+            let orphans =
+                match root.TryGetProperty "orphans" with
+                | true, arr when arr.ValueKind = JsonValueKind.Array ->
+                    [ for o in arr.EnumerateArray() ->
+                        { ChildTable = getStr o "child"
+                          ChildColumn = getStr o "column"
+                          ParentTable = getStr o "parent"
+                          OrphanCount = o.GetProperty("count").GetInt64() } ]
+                | _ -> []
+            let selectivities =
+                match root.TryGetProperty "selectivities" with
+                | true, arr when arr.ValueKind = JsonValueKind.Array ->
+                    [ for s in arr.EnumerateArray() ->
+                        { ChildTable = getStr s "child"
+                          ChildColumn = getStr s "column"
+                          ParentTable = getStr s "parent"
+                          DistinctCount = s.GetProperty("distinctCount").GetInt64()
+                          Counts =
+                              match s.TryGetProperty "counts" with
+                              | true, cs when cs.ValueKind = JsonValueKind.Array ->
+                                  [ for c in cs.EnumerateArray() -> c.GetInt64() ]
+                              | _ -> [] } ]
+                | _ -> []
+            let joints =
+                match root.TryGetProperty "joints" with
+                | true, arr when arr.ValueKind = JsonValueKind.Array ->
+                    [ for j in arr.EnumerateArray() ->
+                        { Table = getStr j "table"
+                          Columns =
+                              match j.TryGetProperty "columns" with
+                              | true, cs when cs.ValueKind = JsonValueKind.Array ->
+                                  [ for c in cs.EnumerateArray() -> match c.GetString() with null -> "" | v -> v ]
+                              | _ -> []
+                          DistinctCount = j.GetProperty("distinctCount").GetInt64()
+                          Frequencies =
+                              match j.TryGetProperty "frequencies" with
+                              | true, fs when fs.ValueKind = JsonValueKind.Array ->
+                                  [ for f in fs.EnumerateArray() ->
+                                      getStr f "value", f.GetProperty("count").GetInt64() ]
+                              | _ -> [] } ]
+                | _ -> []
+            Result.success
+                { Tier = tier; Sources = sources; Tables = tables; FanOuts = fanOuts
+                  Orphans = orphans; Selectivities = selectivities; Joints = joints }
         with ex ->
             Result.failureOf (codecError ex.Message)
