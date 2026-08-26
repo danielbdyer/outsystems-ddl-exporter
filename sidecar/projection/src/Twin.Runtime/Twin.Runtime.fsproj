@@ -26,6 +26,7 @@
     <Compile Include="TwinDatabase.fs" />
     <Compile Include="Readback.fs" />
     <Compile Include="TrunkModel.fs" />
+    <Compile Include="Witness.fs" />
     <Compile Include="EvidenceImport.fs" />
     <Compile Include="EvidenceMerge.fs" />
     <Compile Include="Mint.fs" />

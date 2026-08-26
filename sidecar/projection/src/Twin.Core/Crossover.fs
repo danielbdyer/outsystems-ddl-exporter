@@ -66,10 +66,14 @@ type CrossoverDrift = {
 type CrossoverReport = {
     /// (source label, content hash of the input pack) — the inputs the
     /// merge actually read, hash-named so a report is tied to its bytes.
-    Inputs     : (string * string) list
-    Tier       : EvidenceTier
-    Statistics : CrossoverStatistic list
-    Drift      : CrossoverDrift list
+    Inputs       : (string * string) list
+    Tier         : EvidenceTier
+    Statistics   : CrossoverStatistic list
+    Drift        : CrossoverDrift list
+    /// (coordinate, reason) — witnesses the plan declined, because the
+    /// trunk already enforces the rule the reality would violate, or the
+    /// coordinate cannot host one. Filled by the merge run.
+    WitnessSkips : (string * string) list
 }
 
 /// The trunk's coordinate universe, lowercased for membership tests. An
@@ -447,7 +451,8 @@ module Crossover =
                       statistics
                       |> List.ofSeq
                       |> List.sortBy (fun s -> lower s.Table, s.Column |> Option.map lower, s.Statistic)
-                  Drift = [] }
+                  Drift = []
+                  WitnessSkips = [] }
             Result.success (merged, report)
         | several ->
             Result.failureOf (tierMismatch (several |> List.map tierText |> List.sort))
@@ -510,6 +515,13 @@ module Crossover =
                 writer.WriteStartArray "sources"
                 for s in d.Sources |> List.sort do writer.WriteStringValue s
                 writer.WriteEndArray()
+                writer.WriteEndObject()
+            writer.WriteEndArray()
+            writer.WriteStartArray "witnessSkips"
+            for (coordinate, reason) in report.WitnessSkips |> List.sortBy (fun (c, r) -> lower c, r) do
+                writer.WriteStartObject()
+                writer.WriteString("coordinate", coordinate)
+                writer.WriteString("reason", reason)
                 writer.WriteEndObject()
             writer.WriteEndArray()
             writer.WriteEndObject()) ()

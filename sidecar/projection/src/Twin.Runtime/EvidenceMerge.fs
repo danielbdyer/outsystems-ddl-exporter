@@ -21,11 +21,15 @@ module EvidenceMerge =
 
     type MergeRunReport = {
         /// (source label, tables the clamped pack carries).
-        Inputs       : (string * int) list
-        MergedTables : int
-        DriftCount   : int
-        RichPath     : string
-        ReportPath   : string
+        Inputs        : (string * int) list
+        MergedTables  : int
+        DriftCount    : int
+        RichPath      : string
+        ReportPath    : string
+        WitnessCases  : int
+        WitnessSkips  : int
+        WitnessSqlPath : string
+        WitnessAssertPath : string
     }
 
     let defaultReportPath = "twin/evidence-merge.report.json"
@@ -87,12 +91,30 @@ module EvidenceMerge =
                         match Crossover.merge (clamped |> List.map fst) with
                         | Error es -> return Result.failure es
                         | Ok (merged, report) ->
-                            let report = { report with Drift = drift }
+                            // The witness pass: planned against the trunk,
+                            // emitted deterministically, executed by the bake.
+                            let index = CatalogIndex.ofCatalog catalog
+                            let witnessPlan, witnessSkips = Witness.plan index merged
+                            let report =
+                                { report with
+                                    Drift = drift
+                                    WitnessSkips = witnessSkips |> List.map (fun s -> s.Coordinate, s.Reason) }
                             let richPath = TwinConfig.resolvePath root richRef
                             let reportPath =
                                 TwinConfig.resolvePath root (defaultArg merge.ReportPath defaultReportPath)
+                            let witnessDir =
+                                match merge.WitnessPath with
+                                | Some dir -> TwinConfig.resolvePath root dir
+                                | None ->
+                                    match System.IO.Path.GetDirectoryName richPath with
+                                    | null | "" -> root
+                                    | dir -> dir
+                            let witnessSqlPath = System.IO.Path.Combine(witnessDir, "witness.sql")
+                            let witnessAssertPath = System.IO.Path.Combine(witnessDir, "witness.assert.sql")
                             write richPath (Evidence.serialize merged)
                             write reportPath (Crossover.serializeReport report)
+                            write witnessSqlPath (Witness.emitSql config.Seed witnessPlan)
+                            write witnessAssertPath (Witness.emitAssertSql witnessPlan)
                             return
                                 Result.success
                                     { Inputs =
@@ -106,5 +128,9 @@ module EvidenceMerge =
                                       MergedTables = List.length merged.Tables
                                       DriftCount = List.length drift
                                       RichPath = richPath
-                                      ReportPath = reportPath }
+                                      ReportPath = reportPath
+                                      WitnessCases = List.length witnessPlan.Cases
+                                      WitnessSkips = List.length witnessSkips
+                                      WitnessSqlPath = witnessSqlPath
+                                      WitnessAssertPath = witnessAssertPath }
         }

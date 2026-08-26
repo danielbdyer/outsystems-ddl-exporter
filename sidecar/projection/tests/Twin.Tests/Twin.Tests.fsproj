@@ -28,6 +28,7 @@
     <Compile Include="ScenarioCompilerTests.fs" />
     <Compile Include="EvidenceTests.fs" />
     <Compile Include="CrossoverTests.fs" />
+    <Compile Include="WitnessTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

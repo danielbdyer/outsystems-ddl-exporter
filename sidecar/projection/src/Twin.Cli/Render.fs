@@ -164,8 +164,10 @@ module Render =
         [ "The crossover is merged — every blocking fact keeps its worst case, and the report names each winner's environment." ]
         @ perInput
         @ [ System.String.Concat("    ", ni r.MergedTables, " tables merged; ", ni r.DriftCount, " drift entries (coordinates the trunk does not carry).")
+            System.String.Concat("    ", ni r.WitnessCases, " witnesses planned; ", ni r.WitnessSkips, " skipped where the trunk already enforces the rule.")
             System.String.Concat("    merged pack: ", r.RichPath)
             System.String.Concat("    report:      ", r.ReportPath)
+            System.String.Concat("    witnesses:   ", r.WitnessSqlPath, " (+ .assert)")
             "Next: twin evidence derive — the committed shape tier of the merged pack." ]
 
     let evidenceVerify (r: EvidenceImport.VerifyReport) : string list =

@@ -345,7 +345,7 @@ module Evidence =
     /// exist for, so an edge without an enforcing reference resolves to
     /// `Ok None` rather than refusing. Callers decide what an absent
     /// reference means for their axis.
-    let private resolveEdge
+    let resolveEdge
         (index: CatalogIndex)
         (childTable: string)
         (childColumn: string)
