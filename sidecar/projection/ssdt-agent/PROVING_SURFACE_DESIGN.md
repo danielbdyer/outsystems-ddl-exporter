@@ -20,7 +20,8 @@ back toward guessing, which the whole method exists to prevent.
 ## 1 — The promise the surface must keep
 
 On the developer's machine, a small number of commands produce a disposable SQL Server database
-that matches the estate's trunk at a named commit and holds data shaped like Dev's. A pinned
+that matches the estate's trunk at a named commit and holds synthetic data shaped by what Dev,
+QA, and UAT really hold. A pinned
 `sqlpackage` publishes the change under test against that copy, and the developer's agent reads
 what the deployment engine did. The copy resets to its starting state in seconds. A reviewer
 stands up an identical copy on a different machine without trusting the author. No publish from
@@ -145,12 +146,19 @@ and it hides differences it did. So the template names the commit and content fi
 built from, the copy records which template it came from, and refreshing to a new head is
 routine.
 
-**Case 12 — the three state-variables are answered from Dev's real facts.** Whether the table is
-populated, and whether the existing data violates the new rule, are the two facts that flip a
-classification, and both are answered by data. Answers taken from a five-row sample are answers
-about the wrong database. So the copy's schema comes from the estate repository, and its data is
-shaped by what Dev actually holds — row presence and counts, null counts, duplicates, orphans,
-value lengths — either directly (a restore) or through measured evidence (a mint).
+**Case 12 — the three state-variables are answered from the estate's real facts, and the estate
+is three environments.** Whether the table is populated, and whether the existing data violates
+the new rule, are the two facts that flip a classification, and both are answered by data.
+Answers taken from a five-row sample are answers about the wrong database. And a change does not
+stop at Dev: it promotes Dev to QA to UAT, and QA and UAT were cut over earlier and carry their
+own rows — a change that publishes clean against Dev's data can still block at the QA or UAT
+promotion, on a null, an orphan, a duplicate, or a length that only that environment holds. So
+the copy's schema comes from the estate repository, and its data is shaped by evidence measured
+on all three environments, merged so that every blocking fact keeps its worst case: populated
+anywhere means populated here; the longest value, the highest null rate, the union of
+vocabularies, the recorded orphans and duplicates from any environment. A block the copy raises
+from a QA or UAT reality names that environment, so the record carries the remedy to the right
+promotion.
 
 **Case 13 — production magnitude is a ledger fact, and the copy does not pretend otherwise.** The
 copy proves whether a block fires and what changes; it does not prove how long an index build
@@ -161,10 +169,14 @@ stating magnitude claims from the ledger.
 
 ### 3.4 — Operating the surface
 
-**Case 14 — a publish from this surface must be unable to reach a real environment.** The Strict
-profile sets `DropObjectsNotInSource=True`, the diagnostic posture, which is safe only because
-the target is disposable. So every profile on this surface names only local, disposable targets,
-and the credentials it uses open nothing else.
+**Case 14 — a publish from this surface must be unable to reach a real environment, and a
+developer must not need to reach one either.** The Strict profile sets
+`DropObjectsNotInSource=True`, the diagnostic posture, which is safe only because the target is
+disposable. So every profile on this surface names only local, disposable targets, and the
+credentials it uses open nothing else. The owner's standing decision extends the boundary to
+reads: developers hold no credentials to Dev, QA, or UAT — only the controlled capture point
+reads them — and the data a developer receives is synthetic. Nothing in the loop asks a
+developer to query a real database.
 
 **Case 15 — when the substrate is down, the method stalls, and the agent must stop rather than
 guess.** The warm container has degraded mid-proof before — a hanging publish, a batch of
@@ -187,7 +199,8 @@ mechanism (`PHASE_2_CURRICULUM.md` §4).
 1. **A cheap reset.** Restoring the BEFORE state costs seconds, so the loop never economizes on
    resets (cases 5, 6, 7).
 2. **A named, distributable BEFORE state.** The base is an artifact with a commit and a
-   fingerprint in its name, identical bytes on every machine (cases 8, 11, 12).
+   fingerprint in its name, identical bytes on every machine, and fully synthetic — no real row
+   travels to a developer (cases 8, 11, 12, 14).
 3. **A pinned verdict layer.** `sqlpackage` at the pipeline's DacFx version, three profiles, the
    probes, the hash — unchanged from today's skills (cases 3, 4, 10).
 4. **Database-grain isolation on a local, disposable engine.** Unique database per proof,
@@ -324,13 +337,16 @@ measure a real database.
 ### 5.1 — The shape, in one view
 
 ```
+Dev · QA · UAT (read-only, at the capture point only — developers never connect)
+        │  twin evidence import ×3 → crossover merge → the merged pack + drift report
+        ▼
 the estate repository (Azure DevOps)
   CREATE scripts · refactorlog · pre/post-deploy · profiles/
-  twin.json · evidence.shape.json · toolchain pins
+  twin.json · merged evidence (shape tier) · toolchain pins
         │  each trunk head (commit + fingerprint)
         ▼
 the bake job (CI, scheduled and on merge)
-  restore-or-mint the data lane → publish the head schema → BACKUP
+  publish the head schema → mint from the merged evidence → witnesses → BACKUP
         │
         ├─► the template image      — for machines with Docker
         └─► the template backup .bak — for Windows engines without it
@@ -350,35 +366,64 @@ seconds instead of assembled by hand.
 
 ### 5.2 — The template
 
-The template is the trunk-head schema published over the chosen data lane, then frozen with
+The template is the trunk-head schema published and filled with the minted data, then frozen with
 `BACKUP DATABASE` into a native backup file, and optionally wrapped into a container image that
 restores it at start. Its name carries the estate commit and the content fingerprint, and the
 single-row `[twin].[__state]` table inside it carries the same identity, so any copy can be asked
 which base it came from and any proof can stamp that identity into its record.
 
-The data lane has two sources, and the estate chooses per sensitivity era:
+**The data is synthetic, and it models all three environments (owner decision, 2026-08-26).** A
+distributed template never carries a real row. The real databases are read once per capture
+cycle, at a controlled capture point, and what leaves that point is measurements — evidence —
+from which the bake mints the data developers receive. Four parts:
 
-- **The restore lane — for now.** The bake restores the most recent Dev backup and publishes the
-  trunk head over it, so the template holds Dev's real rows: real presence, real null counts,
-  real orphans, real duplicates, real lengths. Every state-variable is answered directly on the
-  copy. This is the right lane while Dev holds no production data, which is the estate's stated
-  situation before the first Prod release. It needs no F# work at all.
-- **The mint lane — the durable end state.** The bake runs `twin up` and `twin seed` against a
-  container: the head schema, then the deterministic mint shaped by the evidence pack captured
-  from Dev. The data is masked by construction above the cardinality threshold and by reviewed
-  classification below it, so the template can be distributed without carrying real values. Row
-  presence and volumes stay faithful to the evidence; individual violations do not survive the
-  mint, so the violation half of a classification is answered from the evidence pack or a probe
-  against the capture source, and the engine's refusal is then reproduced on the copy by
-  planting the violating row — the probe the proving skill already names. Volumes are capped per
-  table at the demonstrated generation ceiling, and the evidence's exact real counts flow into
-  `estate/row-tiers.md`, so magnitude claims keep citing the ledger.
+- **The capture.** The capture point (the owner's machine now; a locked-down pipeline identity
+  later) restores or reaches read-only copies of Dev, QA, and UAT and runs `twin evidence
+  import` against each — one configuration per environment, each declaring its own rendition,
+  with the logical entity name as the cross-environment key, because the Twin keys evidence to
+  logical coordinates and the physical names differ across the environments' histories. The
+  import runs `SELECT` statements only and needs read permission alone. Each capture also
+  compares that environment's live schema against the trunk head, and the differences land in a
+  standing drift report — the first-promotion check's raw material. The template's schema is
+  always the trunk head; a QA or UAT schema difference is reported as drift, never merged into
+  the schema. Developers hold no credentials to any of the three databases.
+- **The crossover merge.** A merge step combines the three evidence packs into one, statistic by
+  statistic, under one governing rule: an extreme survives the merge, and an average never
+  replaces one. Row presence: populated in any environment means populated in the template. Null
+  rate: the highest of the three. Longest observed value: the longest anywhere. Vocabularies:
+  the union, with weights summed. Numeric ranges: the widest envelope kept exactly, the interior
+  shape count-weighted and approximate. Distinct counts: the highest — a lower bound, and
+  conservative in the masking direction, because a column over the threshold anywhere then
+  synthesizes. Recorded orphans and duplicates: the union, with per-environment counts. Every
+  merged statistic keeps the label of the environment that supplied its extreme, so a finding
+  can say which environment a reality came from. The Twin's collision-refusal law is untouched:
+  each environment imports alone, and the merge is an explicit later step over the three packs.
+- **The mint and the witness pass.** The bake mints from the merged pack: row presence, volumes,
+  null rates, and vocabularies land faithfully; masking holds by construction above the
+  cardinality threshold and by reviewed classification below it. Two realities do not survive a
+  mint on its own — it produces zero foreign-key orphans by construction, and it does not reach
+  the observed maximum lengths or range edges. So the bake follows the mint with a deterministic
+  **witness pass** generated from the merged pack: one synthetic value at the observed maximum
+  length per text column, synthetic values at each numeric envelope's edges, the recorded number
+  of orphan rows pointing at keys that do not exist, and the recorded duplicates duplicating
+  synthetic values. Every witness is synthetic-valued and seeded, so two bakes of the same pack
+  plant identical witnesses. The violating-row probe stays in the loop for rules whose
+  violations no captured statistic can record — a predicate over a combination of columns, a
+  pattern — and for the reviewer's adversarial challenges.
+- **The property this buys.** For every statistic the catalog's operations gate on, the template
+  blocks at least where the worst of the three environments would block — and a block raised by
+  a QA or UAT reality is attributed to it, so the pull request's promotion notes carry the
+  remedy to the right environment. A developer authors the union-grade remedy once, locally;
+  every remedy is idempotent by house rule, so it repairs the environments that are dirty and
+  moves nothing in the ones that are clean. Blended counts are not magnitude claims:
+  `estate/row-tiers.md` keeps per-environment counts, and magnitude findings cite the ledger.
 
-Both lanes freeze into the same two renditions with the same naming, and the loop on top is
-identical. The cutover week needs only the restore lane; the mint lane takes over when Prod data
-starts flowing into Dev, or earlier if distributing real Dev rows to laptops becomes
-undesirable. The owner's example — a Docker image persisting the latest synthetic schema and
-data (`HANDOFF_SESSION_2026_08_26.md` §8) — is the mint lane in the image rendition.
+Volumes stay capped per table at the demonstrated generation ceiling. The two renditions and the
+naming are unchanged. The owner's example — a Docker image persisting the latest synthetic
+schema and data (`HANDOFF_SESSION_2026_08_26.md` §8) — is under this decision the only
+distribution form. A restored real backup still exists in the design, but only at the capture
+point: it is what evidence is read from, and the owner's own acceptance substrate for B0. It is
+never a distribution artifact.
 
 The curriculum estate is a third, tiny template: the sample project with its deliberate seed
 defects, baked the same way. The dojo's katas and the self-test fleet run against it, so a
@@ -437,9 +482,15 @@ and fingerprint from `[twin].[__state]`.
 A proof on this surface is trustworthy because each link is checked where it is cheapest to
 check:
 
-- **CI proves the template lawful before publishing it.** `twin check` gates the mint lane (the
-  round-trip law, zero orphans, deterministic re-mint), and the forty-one-fact corpus keeps the
-  engine-behavior claims green on schedule.
+- **CI proves the template lawful before publishing it.** `twin check` gates the mint (the
+  round-trip law, deterministic re-mint), the bake's witness assertions confirm every recorded
+  reality landed — the orphan counts, the max-length witnesses, the envelope edges — and the
+  forty-one-fact corpus keeps the engine-behavior claims green on schedule.
+- **The classify review is a human gate.** Below the cardinality threshold the mint preserves
+  real vocabularies unless a reviewed classification synthesizes them, and numeric shapes
+  reproduce real envelopes unless a correction masks them. A person who knows the domain
+  reviews `twin classify`'s proposal before the first distributed bake, and again whenever the
+  capture set changes.
 - **The artifact ties every machine to the same bytes.** The author and the reviewer restore the
   same named template, so neither depends on the other re-running a generator correctly.
 - **Each machine proves itself once.** The acceptance checks from `PROVING_PATH_WINDOWS.md`
@@ -471,21 +522,33 @@ cutover week depends on neither.
 machine against a restored Dev backup; pin the pipeline's DacFx and the matching `sqlpackage` in
 `estate/toolchain.md`; run the acceptance checks, which settle the constraint-trust question on
 the pinned engine (cases 10, 16; the assessment's prerequisites 1 and 3). This is the degenerate
-form of the design — a hand-restored template — and it is enough for the week.
+form of the design — a hand-restored template — and it is enough for the week. The owner's
+machine is the one machine that holds a real copy, and it doubles as the capture point.
 
-**B1 — the estate configuration and the evidence capture (config; one session).** A `twin.json`
-beside the estate's project; `twin evidence import` against a restored Dev backup at the
-cutover; `twin classify` with a human review of the proposed classifications; the shape tier
-committed to the estate repository; the rich pack held out of it. The evidence's exact counts
-fill `estate/row-tiers.md` with real numbers, retiring the sample-seed placeholders (cases 12,
-13).
+**B1a — the three-environment capture (config; one session at the capture point).** Three
+source configurations — Dev, QA, UAT — each with its own rendition and connection reference,
+run from the capture point against restored or read-only copies. `twin classify` with a human
+review of the proposed classifications. Three rich packs stay at the capture point; three shape
+tiers and the drift report are committed. Per-environment counts fill `estate/row-tiers.md`,
+retiring the sample-seed placeholders (cases 12, 13, 14).
 
-**B2 — the bake job (CI scripting; one to two sessions).** A scheduled and on-merge job that
-produces the template from the restore lane: restore Dev's backup, publish the trunk head,
-`BACKUP DATABASE`, publish the artifact named by commit and fingerprint, and prune old
-templates. The image rendition wraps the same backup. A machine-readable line in the artifact
-and in `[twin].[__state]` carries the identity the record will stamp (cases 6, 8, 11). The mint
-lane joins the job when B1's evidence pack and review exist; `twin check` gates it there.
+**B1b — the crossover merge (new; script-first, one to two sessions).** The per-statistic merge
+of section 5.2, as a standalone tool over the three pack files — the pack codec already exists
+in `../src/Twin.Core/Evidence.fs` — promotable into a `twin evidence merge` verb later.
+Extremes survive; provenance labels ride every merged statistic; the collision-refusal law is
+untouched because each environment imports alone (case 12).
+
+**B1c — violation reality through the Twin's evidence boundary (F#; small).** The kernel's
+profiler already measures orphan and duplicate reality; the Twin's pack drops it today. Carry
+it through, per source, so the merge and the witness pass can read it (cases 2, 12).
+
+**B2 — the bake job (CI scripting; one to two sessions).** A scheduled and on-merge job:
+`twin up` and `seed` from the merged pack at the trunk head, then the witness pass, then the
+witness assertions, then `BACKUP DATABASE`; publish the artifact named by commit and
+fingerprint, and prune old templates. The image rendition wraps the same backup. A
+machine-readable line in the artifact and in `[twin].[__state]` carries the identity the record
+will stamp (cases 6, 8, 11, 12). Until B1a's captures exist, the job bakes the sample estate as
+the reference implementation.
 
 **B3 — the per-machine setup script and acceptance (estate-side; one session).** One script per
 machine: install or verify the engine, install the pinned `sqlpackage`, fetch the current
@@ -510,11 +573,11 @@ repository can pin, per the charter's designed ejection (`../THE_TWIN.md` §8 �
 script exists; its outcome is not yet recorded). Needed only when team machines run Twin verbs
 locally; the template-consuming path of B2 and B3 does not wait for it.
 
-**B7 — later, as the estate matures.** Carry violation reality (orphan counts, over-length,
-duplicate counts) through the Twin's evidence boundary so the mint lane's probes read from the
-pack; a large-volume scenario for timing rehearsal, stated as rehearsal; the proof corpus
-mirrored into the estate's own pipeline; extracted schema baselines of QA and UAT for rehearsing
-the first-promotion drift read.
+**B7 — later, as the estate matures.** Foreign-key fan-out skew carried through the Twin's
+evidence boundary, so the merge's envelope gains the real spread; a large-volume scenario for
+timing rehearsal, stated as rehearsal; the proof corpus mirrored into the estate's own
+pipeline; per-environment scenario templates minted from a single environment's pack, for the
+targeted question "would this block at QA specifically."
 
 ---
 
@@ -534,14 +597,20 @@ the first-promotion drift read.
   follows what is installed, and guard behavior is engine-bound; the per-machine acceptance
   checks are the control, and the toolchain ledger should record the engine version each
   machine proved against.
-- **Dev backup size and restore time on laptops are unmeasured.** The reset promise — seconds —
-  holds for the mint lane's capped volumes and for a modest Dev; a very large Dev backup would
-  push the restore lane toward per-table volume trimming in the bake, which is scripting, but
-  scripting that has to exist.
-- **Mint-lane fidelity gaps are named, and open.** Uniform foreign-key fan-out (the skew
-  evidence exists in the kernel and is dropped at the Twin's boundary), no over-length
-  reproduction, statistical duplicates. The restore lane has none of these gaps, which is
-  why it goes first.
+- **Template size and restore time at real volumes are unmeasured.** The mint's per-table caps
+  bound both, and the bake records both; the reset promise — seconds — is proven at sample
+  scale and assumed until a real-volume bake measures it.
+- **Synthetic fidelity has named residuals.** The witness pass covers the realities the capture
+  records — presence, null rates, lengths, envelopes, orphans, duplicates, vocabularies. It does
+  not model row-level joint realities: a rule over a combination of columns can hold violations
+  no per-column statistic records, which is why the violating-row probe stays in the loop.
+  Foreign-key fan-out merges at its envelope but mints without skew. The three-environment
+  rehearsal on the sample estate (three fabricated environments, captured, merged, minted, then
+  block-equivalence checked) is where each residual is measured rather than assumed.
+- **Captured evidence ages.** Dev moves daily; QA and UAT move at promotions. The capture
+  cadence — Dev with the nightly bake, QA and UAT re-captured on each promotion — is an estate
+  policy, and the manifest names each capture's date so a proof can see how old its realities
+  are.
 - **Sensitivity review is a human step.** Below the cardinality threshold the mint preserves
   real vocabularies unless classified; numeric shapes reproduce unless masked. The classify
   review is on the critical path of distributing minted data, and no code removes it.
