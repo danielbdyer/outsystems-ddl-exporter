@@ -52,16 +52,12 @@ module Mint =
             "An evidence pack could not be read."
             (Map.ofList [ "path", Some path; "detail", Some detail ])
 
-    let private resolvePath (root: string) (ref: string) : string =
-        let cleaned = if ref.StartsWith "file:" then ref.Substring 5 else ref
-        System.IO.Path.Combine(root, cleaned.Replace('/', System.IO.Path.DirectorySeparatorChar))
-
     /// Load the blessed corrections artifact, when configured.
     let loadCorrection (root: string) (path: string option) : Result<Correction option> =
         match path with
         | None -> Result.success None
         | Some rel ->
-            let full = resolvePath root rel
+            let full = TwinConfig.resolvePath root rel
             try
                 let json = System.IO.File.ReadAllText full
                 CorrectionCodec.deserialize json |> Result.map Some
@@ -74,7 +70,7 @@ module Mint =
         match ref with
         | None -> Result.success None
         | Some r ->
-            let full = resolvePath root r
+            let full = TwinConfig.resolvePath root r
             if not (System.IO.File.Exists full) then Result.success None
             else
                 try Evidence.deserialize (System.IO.File.ReadAllText full) |> Result.map Some

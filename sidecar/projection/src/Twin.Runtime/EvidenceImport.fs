@@ -89,10 +89,6 @@ module EvidenceImport =
             "Two entities in the physical source share this logical name; the coordinate cannot bind uniquely. Narrow the source's modules, or rename."
             (Map.ofList [ "source", Some source; "table", Some table ])
 
-    let private resolvePath (root: string) (ref: string) : string =
-        let cleaned = if ref.StartsWith "file:" then ref.Substring 5 else ref
-        System.IO.Path.Combine(root, cleaned.Replace('/', System.IO.Path.DirectorySeparatorChar))
-
     /// Restrict a capture catalog to the kinds the closed set names, and
     /// produce the keep-map (kind → estate coordinate text). The match
     /// axis is the rendition seam: logical sources match on the physical
@@ -207,7 +203,7 @@ module EvidenceImport =
                     match Evidence.merge (List.ofSeq packs) with
                     | Error es -> return Result.failure es
                     | Ok merged ->
-                        let path = resolvePath root richRef
+                        let path = TwinConfig.resolvePath root richRef
                         match System.IO.Path.GetDirectoryName path with
                         | null | "" -> ()
                         | dir -> System.IO.Directory.CreateDirectory dir |> ignore
@@ -231,14 +227,14 @@ module EvidenceImport =
             | None, _ -> return Result.failureOf richUnset
             | _, None -> return Result.failureOf shapeUnset
             | Some richRef, Some shapeRel ->
-                let richPath = resolvePath root richRef
+                let richPath = TwinConfig.resolvePath root richRef
                 if not (System.IO.File.Exists richPath) then
                     return Result.failureOf (richMissing richPath)
                 else
                     match Evidence.deserialize (System.IO.File.ReadAllText richPath) with
                     | Error es -> return Result.failure es
                     | Ok rich ->
-                        let shapePath = resolvePath root shapeRel
+                        let shapePath = TwinConfig.resolvePath root shapeRel
                         match System.IO.Path.GetDirectoryName shapePath with
                         | null | "" -> ()
                         | dir -> System.IO.Directory.CreateDirectory dir |> ignore
@@ -254,7 +250,7 @@ module EvidenceImport =
             match ref with
             | None -> None, []
             | Some r ->
-                let path = resolvePath root r
+                let path = TwinConfig.resolvePath root r
                 if not (System.IO.File.Exists path) then None, []
                 else
                     match Evidence.deserialize (System.IO.File.ReadAllText path) with

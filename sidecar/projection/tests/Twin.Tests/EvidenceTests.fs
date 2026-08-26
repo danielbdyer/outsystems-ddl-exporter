@@ -310,6 +310,13 @@ let ``layer: the richer profile replaces per attribute and unions the rest`` () 
     // No duplicate column entries after layering.
     let statusColumns = layered.Columns |> List.filter (fun c -> c.AttributeKey = attrKey ["TC"; "Status"])
     Assert.Equal(1, List.length statusColumns)
+    // The reality axes survive the layer — a rich pack's orphans and
+    // selectivities are never lost under a shape base.
+    Assert.Equal(1, List.length layered.ForeignKeys)
+    Assert.Equal(1, List.length layered.ForeignKeySelectivities)
+    Assert.Equal(1, List.length layered.JointDistributions)
+    Assert.Equal(1, List.length layered.AttributeRealities)
+    Assert.Equal(1, List.length layered.UniqueCandidates)
 
 [<Fact>]
 let ``merge refuses a table claimed by two packs`` () =

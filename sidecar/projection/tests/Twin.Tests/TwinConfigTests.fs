@@ -207,3 +207,37 @@ let ``scenarioChain walks base-first`` () =
     let c = ok (TwinConfig.parse full)
     let chain = TwinConfig.scenarioChain c "qe" |> List.map (fun s -> s.Name)
     Assert.Equal<string list>([ "default"; "qe" ], chain)
+
+[<Fact>]
+let ``a merge section parses with inputs, report, and witness`` () =
+    let c =
+        ok
+            (TwinConfig.parse
+                """{ "estate": { "tables": "T/*.sql" },
+                     "evidence": { "rich": "file:../secure/merged.rich.json",
+                       "merge": { "inputs": [ "file:../secure/dev.rich.json", "file:../secure/qa.rich.json" ],
+                                  "report": "twin/evidence-merge.report.json",
+                                  "witness": "file:../secure/witness" } } }""")
+    match c.Evidence.Merge with
+    | None -> failwith "the merge section did not parse"
+    | Some m ->
+        Assert.Equal(2, List.length m.Inputs)
+        Assert.Equal(Some "twin/evidence-merge.report.json", m.ReportPath)
+        Assert.Equal(Some "file:../secure/witness", m.WitnessPath)
+
+[<Fact>]
+let ``a merge section with no inputs refuses by path`` () =
+    let r =
+        TwinConfig.parse
+            """{ "estate": { "tables": "T/*.sql" },
+                 "evidence": { "merge": { "inputs": [] } } }"""
+    Assert.Contains("twin.config.evidence.merge.inputsEmpty", codes r)
+    Assert.Equal(Some "$.evidence.merge.inputs", pathOf "twin.config.evidence.merge.inputsEmpty" r)
+
+[<Fact>]
+let ``the merge section is closed-schema`` () =
+    let r =
+        TwinConfig.parse
+            """{ "estate": { "tables": "T/*.sql" },
+                 "evidence": { "merge": { "inputs": ["a.json"], "reprot": "x" } } }"""
+    Assert.Equal(Some "$.evidence.merge.reprot", pathOf "twin.config.unknownKey" r)

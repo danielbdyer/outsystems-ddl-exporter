@@ -536,25 +536,39 @@ module Evidence =
                  @ Result.errors sR @ Result.errors jR)
 
     /// Precedence layering: `over`'s evidence replaces `base`'s per
-    /// attribute/reference key; everything else unions.
+    /// attribute/reference key; everything else unions. Every axis the
+    /// pack carries layers the same way — the reality axes included, so
+    /// a rich pack's orphans and selectivities are never lost under a
+    /// shape base.
     let layer (baseProfile: Profile) (over: Profile) : Profile =
-        let overColumnKeys = over.Columns |> List.map (fun c -> c.AttributeKey) |> Set.ofList
+        let replaceBy (key: 'a -> 'k) (baseXs: 'a list) (overXs: 'a list) : 'a list =
+            let overKeys = overXs |> List.map key |> Set.ofList
+            (baseXs |> List.filter (fun x -> not (Set.contains (key x) overKeys))) @ overXs
         let distKey (d: AttributeDistribution) =
             match d with
             | AttributeDistribution.Categorical c -> c.AttributeKey
             | AttributeDistribution.Numeric n -> n.AttributeKey
-        let overDistKeys = over.Distributions |> List.map distKey |> Set.ofList
-        let overFanKeys = over.ForeignKeyCardinalities |> List.map (fun f -> f.ReferenceKey) |> Set.ofList
         { baseProfile with
-            Columns =
-                (baseProfile.Columns |> List.filter (fun c -> not (Set.contains c.AttributeKey overColumnKeys)))
-                @ over.Columns
-            Distributions =
-                (baseProfile.Distributions |> List.filter (fun d -> not (Set.contains (distKey d) overDistKeys)))
-                @ over.Distributions
+            Columns = replaceBy (fun (c: ColumnProfile) -> c.AttributeKey) baseProfile.Columns over.Columns
+            Distributions = replaceBy distKey baseProfile.Distributions over.Distributions
             ForeignKeyCardinalities =
-                (baseProfile.ForeignKeyCardinalities |> List.filter (fun f -> not (Set.contains f.ReferenceKey overFanKeys)))
-                @ over.ForeignKeyCardinalities }
+                replaceBy (fun (f: ForeignKeyCardinality) -> f.ReferenceKey)
+                    baseProfile.ForeignKeyCardinalities over.ForeignKeyCardinalities
+            ForeignKeys =
+                replaceBy (fun (r: ForeignKeyReality) -> r.ReferenceKey)
+                    baseProfile.ForeignKeys over.ForeignKeys
+            ForeignKeySelectivities =
+                replaceBy (fun (s: ForeignKeySelectivity) -> s.ReferenceKey)
+                    baseProfile.ForeignKeySelectivities over.ForeignKeySelectivities
+            JointDistributions =
+                replaceBy (fun (j: JointDistribution) -> j.KindKey, j.AttributeKeys)
+                    baseProfile.JointDistributions over.JointDistributions
+            AttributeRealities =
+                replaceBy (fun (r: AttributeReality) -> r.AttributeKey)
+                    baseProfile.AttributeRealities over.AttributeRealities
+            UniqueCandidates =
+                replaceBy (fun (u: UniqueCandidateProfile) -> u.AttributeKey)
+                    baseProfile.UniqueCandidates over.UniqueCandidates }
 
     /// The kinds a layered profile carries column evidence for — the
     /// volume seam: an evidenced kind rides observed × scale; an

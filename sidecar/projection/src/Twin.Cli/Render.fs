@@ -156,6 +156,18 @@ module Render =
           System.String.Concat("    ", path)
           "Commit it beside twin.json; the rich pack stays out of the repository." ]
 
+    let evidenceMerge (r: EvidenceMerge.MergeRunReport) : string list =
+        let perInput =
+            r.Inputs
+            |> List.map (fun (source, tables) ->
+                System.String.Concat("    ", source, " — ", ni tables, " tables"))
+        [ "The crossover is merged — every blocking fact keeps its worst case, and the report names each winner's environment." ]
+        @ perInput
+        @ [ System.String.Concat("    ", ni r.MergedTables, " tables merged; ", ni r.DriftCount, " drift entries (coordinates the trunk does not carry).")
+            System.String.Concat("    merged pack: ", r.RichPath)
+            System.String.Concat("    report:      ", r.ReportPath)
+            "Next: twin evidence derive — the committed shape tier of the merged pack." ]
+
     let evidenceVerify (r: EvidenceImport.VerifyReport) : string list =
         let header =
             match r.RichPresent, r.ShapePresent with
@@ -192,6 +204,7 @@ module Render =
           "  twin check   [--scenario <name>]   The proof, on a throwaway database: model, publish, mint, zero orphans, byte-identical re-mint."
           "  twin evidence import                Profile the configured sources into the rich pack (out of repo)."
           "  twin evidence derive                Project rich → shape: the committed, literal-free tier."
+          "  twin evidence merge                 Crossover the per-environment packs: extremes survive; the report names each winner."
           "  twin evidence verify                Bind both packs against the estate; the per-table coverage board."
           "  twin classify                       Propose PII classifications from column names (reviewable artifact)."
           "  twin bake                           A docker build context for a distributable schema image."
