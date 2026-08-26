@@ -239,6 +239,13 @@ docker exec -i projection-mssql-warm /opt/mssql-tools18/bin/sqlcmd \
 After a reset, re-establish the BEFORE state (deploy the current CREATEs + post-deploy seed) per
 `proving-ground/README.md` — that seed is the "real-shaped data" every case is measured against.
 
+**Where a distributed template exists, the restore IS the reset — prefer it.** A copy stood up by
+`estate-kit/restore-proving-copy` from the nightly bake's `.bak` resets by dropping and restoring
+the same template under the same name (`estate-kit/reset-proving-copy`), seconds-scale, and the
+BEFORE state needs no re-deploy — the template *is* the BEFORE state, schema and minted data
+frozen together, and the restored copy names its own base in `[twin].[__state]`. Drop-recreate +
+re-seed stays the path for the sample estate and for scratch databases no template covers.
+
 > **Parallel runs:** when many executors prove cases at once, each owns a **unique** DB
 > (`PG_<testId>_<rand>`) created and dropped exactly the same `docker exec` way, and never touches
 > the shared `ProvingGround` catalog. The full isolation + idempotent-teardown protocol is
