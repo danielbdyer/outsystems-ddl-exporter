@@ -192,8 +192,13 @@ fi
 # 4 — identity: the fingerprints from [twin].[__state], the estate commit
 # stamped back into it so any restored copy can answer which base it is.
 # ---------------------------------------------------------------------------
-COMMIT="$(git rev-parse HEAD)"
-COMMIT8="$(git rev-parse --short=8 HEAD)"
+# The commit is the ESTATE ROOT's head — the repository whose files the
+# template freezes (the estate repo on the nightly; this monorepo for the
+# sample lane) — never the directory the script happens to run from (the
+# kit copy lives outside any repository).
+COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
+[ -n "$COMMIT" ] || die "the estate root is not inside a git repository; the template identity needs the estate commit"
+COMMIT8="$(git -C "$ROOT" rev-parse --short=8 HEAD)"
 BAKED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 STATE_ROW="$("${SQLCMD[@]}" -h -1 -W -s '|' -Q "SET NOCOUNT ON; SELECT ISNULL(SchemaFingerprint,''), ISNULL(DataFingerprint,''), ISNULL(Scenario,''), ISNULL(CAST(Seed AS NVARCHAR(32)),'') FROM [twin].[__state];" | firstRow)"
