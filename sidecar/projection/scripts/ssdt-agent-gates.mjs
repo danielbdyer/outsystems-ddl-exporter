@@ -67,10 +67,14 @@ const SCENARIO_ID = /\b(?:REV|COL|TBL|KEY|IDX|CON|STA|STR|AUD|IDEM)-\d{2}[A-Z]?\
 const SLASH_SHORTHAND = /\b(REV|COL)-(\d{2}[A-Z]?)\/(\d{2}[A-Z]?)\b/g;
 
 function gateCitations() {
-  // copilot-package/ is a generated bundle FOR the estate repo; its backticked paths are
-  // estate-repo-root-relative (they resolve only after the tree is vendored there), so the
-  // monorepo citations gate must not try to resolve them. copilot-check owns that bundle.
-  const treeMd = mdIn(TREE).filter((p) => !p.includes(`${sep}copilot-package${sep}`)).sort();
+  // copilot-package/ and estate-kit/ are generated bundles FOR the estate repo; their
+  // backticked paths are written for the vendored layout (some resolve only after the
+  // tree is vendored there, and the kit's runbook citation lands with C14), so the
+  // monorepo citations gate must not try to resolve them. copilot-check and
+  // estate-kit-check own those bundles; vendor-check proves the whole drop closed.
+  const treeMd = mdIn(TREE)
+    .filter((p) => !p.includes(`${sep}copilot-package${sep}`) && !p.includes(`${sep}estate-kit${sep}`))
+    .sort();
 
   // R1 — relative backticked paths resolve
   for (const p of treeMd) {
@@ -269,7 +273,12 @@ function gatePackaging() {
     const problem = frontmatterProblem(m[1]);
     if (problem) find(p, problem);
   }
-  for (const [verb, root] of [["check", ".claude"], ["copilot-check", "sidecar/projection/ssdt-agent/copilot-package"]]) {
+  for (const [verb, root] of [
+    ["check", ".claude"],
+    ["copilot-check", "sidecar/projection/ssdt-agent/copilot-package"],
+    ["estate-kit-check", "sidecar/projection/ssdt-agent/estate-kit"],
+    ["vendor-check", "sidecar/projection/ssdt-agent"],
+  ]) {
     const r = spawnSync(process.execPath, [join(HERE, "ssdt-agent-package.mjs"), verb], {
       encoding: "utf8",
     });

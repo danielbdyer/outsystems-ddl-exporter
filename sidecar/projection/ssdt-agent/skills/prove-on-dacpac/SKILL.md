@@ -498,7 +498,7 @@ proves the refusal; Permissive, only after, shows the consequence.
 
 ## Connector points
 
-The substrate of record is the **Twin** (`../../../THE_TWIN.md`) when present: `twin up` mints a
+The substrate of record is the **Twin** (`THE_TWIN.md`, the tooling monorepo's charter) when present: `twin up` mints a
 deterministic, evidence-profiled dataset over the estate definition, evolving with the schema, and
 the proving loop above runs against it **unchanged**. The trust is the Twin's own determinism
 (`twin check` = π∘σ≈id, T1 byte-identical, S-stable) — the base data is reproducible by

@@ -1,0 +1,4 @@
+# The staged vendor drop — publish-to-estate.sh's working output, rebuilt
+# from the tree on every publish (vendor-check gates its closure). Never
+# committed: the tree itself is the source of truth.
+vendor-drop/

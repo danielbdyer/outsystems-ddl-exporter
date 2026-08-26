@@ -22,7 +22,7 @@ worked commands; read them, then run them in order.
 ## The Twin substrate (preferred) vs this warm-container runbook
 
 `twin.json` (beside this file) wires the proving ground as a **Twin** — the deterministic,
-evidence-profiled local dev environment (`../../THE_TWIN.md`). When the `twin` CLI is present,
+evidence-profiled local dev environment (`THE_TWIN.md`, the tooling monorepo's charter). When the `twin` CLI is present,
 prefer it for the BEFORE state:
 
 ```bash
@@ -258,4 +258,4 @@ Narrowing · Refactorlog Cleanup.
 
 The hand-authored `SampleCatalog` can be replaced by the F# engine's
 `SqlprojEmitter`/`DacpacEmitter`/`PostDeployEmitter` output from a real OutSystems catalog —
-the prove loop above is unchanged, just real schema. See `../CONNECTORS.md` §3.
+the prove loop above is unchanged, just real schema. See `CONNECTORS.md` §3 in the tooling monorepo.

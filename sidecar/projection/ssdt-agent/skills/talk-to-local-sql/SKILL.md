@@ -20,7 +20,7 @@ touches production; the database is reset between scenarios and dropped without 
 
 ## The substrate of record: the Twin (deterministic), the sample as fallback
 
-The substrate that earns trust is **the Twin** (`../../../THE_TWIN.md`): `twin up` holds a local SQL
+The substrate that earns trust is **the Twin** (`THE_TWIN.md`, the tooling monorepo's charter): `twin up` holds a local SQL
 Server current with the estate's own definitions and fills it with a **deterministic, masked,
 distribution-faithful** dataset. Trust is a property of the *system*, not of any agent re-running it —
 `twin check` proves π∘σ≈id, mints are byte-identical (T1), and a schema edit re-mints only the

@@ -20,7 +20,7 @@ actually ran.
 | DacFx (estate pipeline) | UNPINNED | the Azure DevOps → Octopus publish task and its XML flags | — | when known: pin here, mirror the flags into `../proving-ground/profiles/ProvingGround.Pipeline.publish.xml`, verify auto-trust once (`is_not_trusted = 0` on a real publish), and resolve the `../FINDINGS_AND_CHANGES.md` Part 5 open item |
 | Microsoft.SqlServer.DacFx (Twin corpus) | 162.5.57 | `../../src/Projection.Pipeline/Projection.Pipeline.fsproj`, `../../src/Projection.Targets.SSDT/Projection.Targets.SSDT.fsproj` | 2026-08-22 | the parallel proof corpus's engine; the live sqlpackage engine is authoritative where they diverge |
 | Microsoft.Build.Sql (sqlproj SDK) | 2.2.0 | `../proving-ground/SampleCatalog.sqlproj` | 2026-07-02 | bump only on a real build-failure trigger |
-| SQL Server image (warm container) | 2022-latest (floating) | `../../scripts/warm-sql.sh` (`WARM_SQL_IMAGE` override) | — | pin to a CU/digest tag at cutover; a floating tag under version-stamped guard evidence is a named risk |
+| SQL Server image (warm container) | 2022-latest (floating) | the monorepo's `warm-sql.sh` (`WARM_SQL_IMAGE` override) | — | pin to a CU/digest tag at cutover; a floating tag under version-stamped guard evidence is a named risk |
 
 Discipline:
 
