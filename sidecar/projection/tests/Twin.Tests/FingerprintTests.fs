@@ -45,6 +45,17 @@ let ``seed, scenario, and tool version each change the fingerprint`` () =
     Assert.NotEqual<string>(Fingerprint.value baseline, Fingerprint.value (Fingerprint.compute "0.2.0" "default" 7UL files))
 
 [<Fact>]
+let ``line endings never change the fingerprint`` () =
+    // A Windows checkout (CRLF) and a Linux checkout (LF) of the same
+    // commit must name the SAME template — the distributed identity
+    // cannot depend on the consuming machine's line-ending convention.
+    let lf = Fingerprint.compute "0.1.0" "default" 7UL [ contribution "a.sql" "CREATE TABLE T (\n    Id INT\n);\n" ]
+    let crlf = Fingerprint.compute "0.1.0" "default" 7UL [ contribution "a.sql" "CREATE TABLE T (\r\n    Id INT\r\n);\r\n" ]
+    let cr = Fingerprint.compute "0.1.0" "default" 7UL [ contribution "a.sql" "CREATE TABLE T (\r    Id INT\r);\r" ]
+    Assert.Equal(Fingerprint.value lf, Fingerprint.value crlf)
+    Assert.Equal(Fingerprint.value lf, Fingerprint.value cr)
+
+[<Fact>]
 let ``a stored fingerprint round-trips for comparison`` () =
     let a = Fingerprint.compute "0.1.0" "default" 7UL files
     match Fingerprint.ofStored (Fingerprint.value a) with
