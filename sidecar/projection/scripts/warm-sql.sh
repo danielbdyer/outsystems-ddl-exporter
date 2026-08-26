@@ -127,5 +127,9 @@ case "${1:-start}" in
     restart) docker rm -f "$NAME" >/dev/null 2>&1 || true; cmd_start ;;
     status)  cmd_status ;;
     conn)    conn_line ;;
-    *) err "usage: warm-sql.sh [start|stop|restart|status|conn]"; exit 2 ;;
+    # Daemon bring-up alone — no container. The single source of truth
+    # other scripts (the template bake) call instead of re-implementing
+    # dockerd resurrection.
+    daemon)  ensure_daemon && log "docker daemon: up" ;;
+    *) err "usage: warm-sql.sh [start|stop|restart|status|conn|daemon]"; exit 2 ;;
 esac

@@ -3,3 +3,4 @@ obj/
 *.dacpac
 delta*.sql
 logs/
+templates/
