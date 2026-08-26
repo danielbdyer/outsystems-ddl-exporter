@@ -569,6 +569,24 @@ forget.
 
 ## 6 — What must be built, in order
 
+**Status (2026-08-26, the build program's close).** The build list below landed, with two named
+exceptions. B1c and B1b landed in F# from the start — the evidence pack carries orphan,
+duplicate, selectivity, and joint reality; `twin evidence merge` runs the crossover with
+per-winner attribution and emits the witness pair; `twin evidence audit` is the per-environment
+fidelity gate — and the three-environment rehearsal proves the whole loop as one automated
+Docker fact. B2 landed as `scripts/twin-bake-template.sh` (one bake path), the estate kit's
+Azure DevOps nightly, and a weekly GitHub check that keeps the mechanic proven on the sample
+estate. B3 landed as the estate kit — setup, fetch, restore, reset in mirrored bash and
+PowerShell lanes with the acceptance catalog — packaged with the baked sqlpackage pin and
+carried by the vendor channel, which is proven citation-closed. B5 landed (the fingerprint's
+line-ending-blind identity, the repository's `.gitattributes`, the image emitter's LF
+normalization). Each capture now also writes the standing drift report (the environment against
+the trunk head). B0 and B1a remain the owner's steps and are now paint-by-numbers in
+`CAPTURE_POINT_RUNBOOK.md`. The two open build items are B4 (the existing-server seam for Twin
+verbs on a Docker-less machine — capture, merge, and audit already run engine-agnostically
+through the connection-honoring acquisition) and B6 (the peel; the bake pipeline already
+carries its swap parameter). B7 stays later work.
+
 Each item names the cases it serves. The first two are estate-side work with no F# changes; the
 cutover week depends on neither.
 
@@ -651,16 +669,24 @@ targeted question "would this block at QA specifically."
   follows what is installed, and guard behavior is engine-bound; the per-machine acceptance
   checks are the control, and the toolchain ledger should record the engine version each
   machine proved against.
-- **Template size and restore time at real volumes are unmeasured.** The mint's per-table caps
-  bound both, and the bake records both; the reset promise — seconds — is proven at sample
-  scale and assumed until a real-volume bake measures it.
-- **Synthetic fidelity has named residuals.** The witness pass covers the realities the capture
-  records — presence, null rates, lengths, envelopes, orphans, duplicates, vocabularies. It does
-  not model row-level joint realities: a rule over a combination of columns can hold violations
-  no per-column statistic records, which is why the violating-row probe stays in the loop.
-  Foreign-key fan-out merges at its envelope but mints without skew. The three-environment
-  rehearsal on the sample estate (three fabricated environments, captured, merged, minted, then
-  block-equivalence checked) is where each residual is measured rather than assumed.
+- **Template size and restore time at real volumes are unmeasured.** At sample scale they are
+  measured, not assumed: the bake freezes 565 KB compressed in 0.03 seconds, a restore stands
+  the copy up in 0.5 to 0.9 seconds, and the reset is another restore at the same cost (the
+  bake's manifest and the kit's live acceptance run, 2026-08-26). The mint's per-table caps
+  bound the real-volume figures and every bake's manifest records them; the seconds-scale reset
+  promise stays assumed at real volumes until the first estate bake measures it.
+- **Synthetic fidelity has named residuals, now measured where the rehearsal reaches.** The
+  witness pass plants the realities the capture records — the null-rate floor, lengths,
+  envelopes, orphans, duplicates — and the rehearsal proved the planted template blocks exactly
+  where the worst environment would (the reference add refused at re-validation, the unique add
+  refused on the duplicate key), with the fidelity audit clean per environment. Two residuals
+  stand. Row-level joint realities are not modeled: a rule over a combination of columns can
+  hold violations no per-column statistic records, which is why the violating-row probe stays
+  in the loop. And orphan reality is capturable only through a reference the SOURCE catalog
+  itself carries — the rehearsal's UAT records its orphans through its own not-yet-trusted
+  constraint, the exact shape of an environment running ahead of the trunk — so an edge no
+  environment constrains at all is invisible to capture and belongs to the violating-row probe
+  too. Foreign-key fan-out merges at its envelope but mints without skew.
 - **Captured evidence ages.** Dev moves daily; QA and UAT move at promotions. The capture
   cadence — Dev with the nightly bake, QA and UAT re-captured on each promotion — is an estate
   policy, and the manifest names each capture's date so a proof can see how old its realities
@@ -673,6 +699,10 @@ targeted question "would this block at QA specifically."
 
 ## 8 — The next move
 
-Run B0 on the corporate machine and pin the toolchain ledger. Then build B1 and B2 in that
-order, and put B3's setup script in the estate repository the same week the first template is
-published.
+The built surface stands proven end to end on the sample estate; what remains is operated, not
+built. Run `CAPTURE_POINT_RUNBOOK.md` on the corporate machine: pin the toolchain and pass the
+machine acceptance, capture the three environments and review the classifications, merge and
+bake the first real template and file its fidelity-audit report, then stand the Azure DevOps
+nightly up and raise the vendor pull request. The two open build items — the existing-server
+seam and the peel — widen where the Twin's own verbs run and how the tool ships; neither gates
+the first capture or the first template.
