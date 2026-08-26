@@ -34,6 +34,7 @@
     <Compile Include="TwinConfig.fs" />
     <Compile Include="ScenarioCompiler.fs" />
     <Compile Include="Evidence.fs" />
+    <Compile Include="EvidenceDrift.fs" />
     <Compile Include="Crossover.fs" />
     <Compile Include="FidelityAudit.fs" />
   </ItemGroup>

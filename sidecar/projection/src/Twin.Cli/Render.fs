@@ -145,11 +145,24 @@ module Render =
             r.Sources
             |> List.map (fun s ->
                 System.String.Concat("    ", s.Source, " — ", ni s.Tables, " tables, ", ni s.Columns, " columns"))
+        let drift =
+            if r.DriftTrunk <> "ok" then
+                [ System.String.Concat(
+                      "Schema drift was not compared — the trunk model could not be acquired (", r.DriftTrunk,
+                      "). The captures stand; rerun where the trunk binds for the drift report.") ]
+            elif r.DriftEntries = 0 then
+                [ "Every captured environment's schema matches the trunk head on the captured tables." ]
+            else
+                [ System.String.Concat(
+                      ni r.DriftEntries,
+                      " schema drift entries — coordinates where an environment differs from the trunk head. The template stays at the trunk; the report is the promotion story's raw material.")
+                  System.String.Concat("    ", r.DriftPath) ]
         [ "Evidence imported — the rich pack is written."
           System.String.Concat("    ", r.RichPath) ]
         @ perSource
-        @ [ System.String.Concat("    ", ni r.FanOuts, " relationship fan-outs captured.")
-            "Next: twin evidence derive — the committed, literal-free shape tier." ]
+        @ [ System.String.Concat("    ", ni r.FanOuts, " relationship fan-outs captured.") ]
+        @ drift
+        @ [ "Next: twin evidence derive — the committed, literal-free shape tier." ]
 
     let evidenceDerive (path: string) : string list =
         [ "The shape tier is derived — counts, null rates, cardinalities, fan-out shapes; no captured literal."

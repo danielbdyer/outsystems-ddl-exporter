@@ -83,6 +83,16 @@ BEGIN
     SET @i = @i + 1;
 END
 """
+                            // The environment runs AHEAD of the trunk on one
+                            // fact — Email loosened to NULL-able — and the
+                            // capture's drift leg must report it. (A drift
+                            // fact that keeps every coordinate bound: this
+                            // loop mints straight from the single-source
+                            // pack, and an extra column would lawfully
+                            // refuse at the mint — law 2; the clamp lives
+                            // on the merge path.)
+                            do! Deploy.executeBatch cnn
+                                    "ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR(250) NULL;"
                             // The evidence-configured twin.json variant.
                             System.Environment.SetEnvironmentVariable(SourceConnVar, sourceConn)
                             let configJson =
@@ -107,6 +117,16 @@ END
                                 Assert.True(System.IO.File.Exists report.RichPath)
                                 let richJson = System.IO.File.ReadAllText report.RichPath
                                 Assert.Contains("Alpha", richJson)
+
+                                // The drift leg: the trunk bound (the warm
+                                // acquisition), and the environment's loosened
+                                // Email is a named entry — reported, never
+                                // merged into the model.
+                                Assert.Equal("ok", report.DriftTrunk)
+                                Assert.True(report.DriftEntries >= 1)
+                                let driftJson = System.IO.File.ReadAllText report.DriftPath
+                                Assert.Contains("nullabilityDiffers", driftJson)
+                                Assert.Contains("Email", driftJson)
 
                                 // Derive → the shape pack; law 3 at the file grain.
                                 let! derived = EvidenceImport.derive fixture.Root config

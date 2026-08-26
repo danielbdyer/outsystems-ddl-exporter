@@ -27,6 +27,7 @@
     <Compile Include="TwinIdentityTests.fs" />
     <Compile Include="ScenarioCompilerTests.fs" />
     <Compile Include="EvidenceTests.fs" />
+    <Compile Include="EvidenceDriftTests.fs" />
     <Compile Include="CrossoverTests.fs" />
     <Compile Include="WitnessTests.fs" />
     <Compile Include="FidelityAuditTests.fs" />
