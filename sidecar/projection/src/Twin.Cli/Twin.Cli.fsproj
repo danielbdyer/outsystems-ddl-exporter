@@ -8,6 +8,15 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <RootNamespace>Twin.Cli</RootNamespace>
     <AssemblyName>twin</AssemblyName>
+    <!-- The peel (B6, THE_TWIN.md §8): `twin` ships as a dotnet tool the
+         estate repository pins from a feed — no monorepo checkout. The
+         Version pairs with Twin.Runtime's `Runs.ToolVersion` (the
+         fingerprints' tool-version contribution); bump both together. -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>twin</ToolCommandName>
+    <PackageId>Twin.Tool</PackageId>
+    <Version>0.1.0</Version>
+    <Description>THE TWIN — the SSDT synthetic-data sidecar's operator surface: converge, mint, capture, merge, audit, and bake proving templates from the estate's own definitions.</Description>
   </PropertyGroup>
 
   <!--

@@ -25,6 +25,10 @@ estate repository; changes flow through the vendor channel.
 - `azure-pipelines.bake.yml` — the nightly production bake, imported once as an Azure DevOps
   pipeline (its header carries the owner prerequisites: the GitHub service connection for the
   pinned tooling checkout, the Universal Packages feed, the estate twin root).
+- `twin-bake-template.sh` — the one bake path both lanes share, carried here so the nightly's
+  `toolSource: dotnetTool` mode runs with no monorepo checkout: the pinned `Twin.Tool` dotnet
+  tool plus this script are the whole toolchain (`TWIN_BIN`, `TWIN_TOOL_VERSION`, and
+  `TWIN_TOOLCHAIN_MD` carry the seams).
 - `twin.starter.json` — the starting `twin.json` for the estate's twin root; the capture-point
   runbook (`../CAPTURE_POINT_RUNBOOK.md`) walks its per-environment capture variants.
 

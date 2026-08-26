@@ -419,6 +419,10 @@ function kitAdoptionDoc(pin) {
     "- `azure-pipelines.bake.yml` — the nightly production bake, imported once as an Azure DevOps",
     "  pipeline (its header carries the owner prerequisites: the GitHub service connection for the",
     "  pinned tooling checkout, the Universal Packages feed, the estate twin root).",
+    "- `twin-bake-template.sh` — the one bake path both lanes share, carried here so the nightly's",
+    "  `toolSource: dotnetTool` mode runs with no monorepo checkout: the pinned `Twin.Tool` dotnet",
+    "  tool plus this script are the whole toolchain (`TWIN_BIN`, `TWIN_TOOL_VERSION`, and",
+    "  `TWIN_TOOLCHAIN_MD` carry the seams).",
     "- `twin.starter.json` — the starting `twin.json` for the estate's twin root; the capture-point",
     "  runbook (`../CAPTURE_POINT_RUNBOOK.md`) walks its per-environment capture variants.", "",
     "## Install (first time)", "",
@@ -473,6 +477,14 @@ function estateKitExpected() {
     const content = readFileSync(p, "utf8").replaceAll("__SQLPACKAGE_PIN__", pin);
     exp.set(join(KIT_OUT, rel), withKitMarker(rel, content));
   }
+  // The bake driver ships in the kit so the nightly's post-peel mode
+  // (toolSource: dotnetTool) runs with no monorepo checkout — the single
+  // source of truth stays scripts/twin-bake-template.sh; the kit check
+  // keeps this copy in sync.
+  exp.set(
+    join(KIT_OUT, "twin-bake-template.sh"),
+    withKitMarker("twin-bake-template.sh", readFileSync(join(HERE, "twin-bake-template.sh"), "utf8"))
+  );
   exp.set(join(KIT_OUT, "ADOPTION.md"), kitAdoptionDoc(pin));
   exp.set(join(KIT_OUT, "twin.starter.json"), kitStarterConfig());
   return exp;

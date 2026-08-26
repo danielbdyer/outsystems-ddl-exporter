@@ -144,6 +144,7 @@ Once, in this order:
 2. **The service connection.** Create the GitHub service connection that lets the pipeline
    check out the tooling monorepo, and set the pipeline's `githubServiceConnection` parameter
    to its name. The `toolingRef` parameter pins the monorepo ref; bump it deliberately.
+   (Needed by the pipeline's `toolSource: monorepo` mode only — step 6 removes it.)
 3. **The vendor pull request.** From the monorepo, run `scripts/publish-to-estate.sh
    <estate-clone>`; review the clone's diff, merge `ssdt-agent/copilot-package/.github/` into
    the repository's `.github/` (the one manual step), and raise the pull request in Azure
@@ -155,6 +156,16 @@ Once, in this order:
    identity into `estate/toolchain.md` and the audit report beside it. From then on the
    template refreshes nightly at the estate head, and this machine is needed only for the next
    capture cycle.
+6. **The peel (optional, whenever convenient).** Drop the monorepo checkout from the nightly:
+   in the monorepo run `dotnet pack src/Twin.Cli/Twin.Cli.fsproj -c Release`, push the
+   resulting `Twin.Tool` package to an Azure Artifacts **NuGet** feed with `dotnet nuget push`
+   (`dotnet tool install` reads NuGet feeds only — the Universal Packages protocol carrying
+   the templates does not serve it, though one Azure Artifacts feed can host both), then set
+   the pipeline's `toolSource` to `dotnetTool` with `twinToolFeed` at the feed's NuGet v3
+   source URL and `twinToolVersion` at the pushed version. The pipeline then installs the
+   pinned tool and runs the estate kit's own copy of the bake script; the GitHub bake check
+   proves on every run that both modes bake the identical identity. Bump `twinToolVersion`
+   deliberately, the way `toolingRef` was bumped.
 
 ## The refusals this path can meet
 

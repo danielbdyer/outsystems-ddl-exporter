@@ -44,6 +44,19 @@ Every critical-path slice of the approved plan landed, each proven live before i
 - **The drift leg** (`2ac266e`): every `twin evidence import` also compares the environment's
   bound schema against the trunk head into `twin/evidence-drift.report.json`; trunk-acquisition
   failure is a named skip, never a capture block.
+- **The peel** (B6): `twin` packs as the `Twin.Tool` dotnet tool (PackAsTool on Twin.Cli;
+  the Version pairs with `Runs.ToolVersion`). The bake script carries the peel's seams —
+  `TWIN_BIN` (an installed tool instead of `dotnet run`), `TWIN_TOOL_VERSION`, and
+  `TWIN_TOOLCHAIN_MD`, with the monorepo reads guarded — and ships in the estate kit, so
+  the nightly's `toolSource: dotnetTool` mode installs the pinned package and runs with no
+  monorepo checkout. Proven: the ejection dry-run holds packed-tool included, and the
+  cross-shape bake identity (monorepo `dotnet run` versus the installed tool driven from a
+  script copy outside the repository) is byte-equal on fingerprints and image tag — the
+  GitHub bake check re-proves it on every run. The two FS3511 sites Release compilation
+  surfaced (EvidenceMerge's nested trunk await; EvidenceAudit's tuple-element `for` with an
+  await) are hoisted per the survival rule. Owner-side remainder: push the package to a
+  NuGet feed and flip the parameter (runbook §4 step 6); the charter's full repository move
+  stays deliberate.
 - **The image rendition** (C15 — revived after the owner confirmed Docker Desktop on the
   team's machines): `twin-bake-template.sh --image` wraps the freshly baked `.bak` in the
   bake engine's own image behind a restore-on-first-start entrypoint (generated at bake
@@ -66,8 +79,9 @@ Every critical-path slice of the approved plan landed, each proven live before i
 
 - **The owner's steps** — everything in `CAPTURE_POINT_RUNBOOK.md`. Nothing in the monorepo
   gates them. This is the critical path to day one.
-- **B6, the peel** — `twin` as a distributable dotnet tool; the ADO pipeline's `toolSource`
-  parameter is the swap seat. B7 (fan-out skew, per-environment mints) stays later.
+- **B6's operational tail** — push `Twin.Tool` to an Azure Artifacts NuGet feed and flip the
+  nightly's `toolSource` parameter (runbook §4 step 6); the build side landed. B7 (fan-out
+  skew, per-environment mints) stays later.
 
 ## What will bite you
 

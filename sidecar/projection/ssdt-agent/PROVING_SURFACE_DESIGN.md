@@ -589,9 +589,14 @@ drops only the twin database — proven live end to end against an external inst
 image rendition landed on the bake (`--image`): the `.bak` wrapped in the bake engine's own
 image behind a restore-on-first-start entrypoint, tagged by lane, commit, and data
 fingerprint, the tag recorded in the manifest — proven by running the image and reading its
-identity back, and kept proven by the GitHub bake check. The one
-open build item is B6 (the peel; the bake pipeline already carries its swap parameter). B7
-stays later work.
+identity back, and kept proven by the GitHub bake check. B6 landed as the tool package:
+`twin` packs as the `Twin.Tool` dotnet tool, the bake script carries the peel's seams
+(`TWIN_BIN`, the version and ledger overrides) and ships in the estate kit, and the
+nightly's `toolSource: dotnetTool` mode installs the pinned package and runs with no
+monorepo checkout — both delivery shapes proven to bake the identical identity, on every
+bake-check run. What remains of the peel is operational (push the package to a NuGet feed
+and flip the parameter — the runbook's step) plus the charter's full repository move, which
+stays a deliberate later act. B7 stays later work.
 
 Each item names the cases it serves. The first two are estate-side work with no F# changes; the
 cutover week depends on neither.
@@ -648,8 +653,9 @@ carried line endings in the same pass.
 
 **B6 — the peel (packaging; after B4).** Distribute `twin` as a standalone tool the estate
 repository can pin, per the charter's designed ejection (`../THE_TWIN.md` §8 — the dry-run
-script exists; its outcome is not yet recorded). Needed only when team machines run Twin verbs
-locally; the template-consuming path of B2 and B3 does not wait for it.
+holds, packed tool included: the binary travels, installs from a package source, and answers
+the same surface). Needed only when team machines run Twin verbs locally; the
+template-consuming path of B2 and B3 does not wait for it.
 
 **B7 — later, as the estate matures.** Foreign-key fan-out skew carried through the Twin's
 evidence boundary, so the merge's envelope gains the real spread; a large-volume scenario for
@@ -711,5 +717,7 @@ The built surface stands proven end to end on the sample estate; what remains is
 built. Run `CAPTURE_POINT_RUNBOOK.md` on the corporate machine: pin the toolchain and pass the
 machine acceptance, capture the three environments and review the classifications, merge and
 bake the first real template and file its fidelity-audit report, then stand the Azure DevOps
-nightly up and raise the vendor pull request. The one open build item — the peel — changes how
-the tool ships; it gates neither the first capture nor the first template.
+nightly up and raise the vendor pull request. Nothing is left open on the build side: the
+peel's remaining steps are operational (push `Twin.Tool` to a NuGet feed and flip the
+nightly's `toolSource` parameter), and the charter's full repository move stays a deliberate
+later act. Neither gates the first capture or the first template.

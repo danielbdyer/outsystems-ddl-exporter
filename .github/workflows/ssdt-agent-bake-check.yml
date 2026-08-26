@@ -4,8 +4,10 @@
 # (the proving ground) — with --image, so the image rendition's build,
 # restore-on-first-start, identity answer, and restart idempotence stay
 # proven too (the image dies with the runner; only the .bak + manifest
-# upload) — and uploads the resulting template + manifest as a
-# short-retention artifact. This is deliberately NOT the production nightly:
+# upload) — then re-bakes through the PACKED Twin.Tool dotnet tool from a
+# script copy outside the repository (the ADO nightly's dotnetTool shape)
+# and requires the identical identity, and uploads the template + manifest
+# as a short-retention artifact. This is deliberately NOT the production nightly:
 # the estate's trunk lives in Azure DevOps, and the production bake is the
 # estate repository's azure-pipelines.bake.yml (shipped in the estate kit),
 # which runs this same script against real captured evidence. This check
@@ -106,6 +108,35 @@ jobs:
             || { echo "the restarted container did not skip the restore"; exit 1; }
           echo "restart idempotence verified"
           docker rm -f twin-tpl-smoke >/dev/null
+
+      - name: pack the twin tool and re-bake through it (the peel's identity proof)
+        working-directory: sidecar/projection
+        run: |
+          set -euo pipefail
+          OUT=ssdt-agent/proving-ground/templates
+          idfields() { node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write([m.fingerprints.schema,m.fingerprints.data,m.imageRendition.tag].join("|"));' "$1"; }
+          M1="$(ls -t "$OUT"/*.manifest.json | head -1)"
+          ID1="$(idfields "$M1")"
+          TOOL_VERSION="$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' src/Twin.Cli/Twin.Cli.fsproj | head -1)"
+          dotnet pack src/Twin.Cli/Twin.Cli.fsproj -c Release -o "$RUNNER_TEMP/twin-nupkg" --nologo -v q
+          dotnet tool install Twin.Tool --tool-path "$RUNNER_TEMP/twin-tool" --add-source "$RUNNER_TEMP/twin-nupkg"
+          # The kit-simulation shape: the script copied OUTSIDE the
+          # monorepo, driven by the installed tool with the seams set —
+          # exactly how the ADO nightly's dotnetTool mode runs it.
+          cp scripts/twin-bake-template.sh "$RUNNER_TEMP/kit-sim-bake.sh"
+          TWIN_BIN="$RUNNER_TEMP/twin-tool/twin" \
+            TWIN_TOOL_VERSION="$TOOL_VERSION" \
+            TWIN_TOOLCHAIN_MD="$PWD/ssdt-agent/estate/toolchain.md" \
+            bash "$RUNNER_TEMP/kit-sim-bake.sh" --image "$PWD/ssdt-agent/proving-ground"
+          M2="$(ls -t "$OUT"/*.manifest.json | head -1)"
+          ID2="$(idfields "$M2")"
+          if [ "$ID1" != "$ID2" ]; then
+            echo "the packed tool's bake diverged from the monorepo bake"
+            echo "monorepo:  $ID1"
+            echo "tool:      $ID2"
+            exit 1
+          fi
+          echo "peel identity verified: both delivery shapes bake $ID2"
 
       - name: upload the template + manifest (mechanic evidence, short retention)
         uses: actions/upload-artifact@v4

@@ -68,6 +68,81 @@ module EvidenceMerge =
         | dir -> System.IO.Directory.CreateDirectory dir |> ignore
         System.IO.File.WriteAllText(path, content)
 
+    // The pure merge tail, hoisted out of the task CE entirely (FS3511:
+    // the tuple match on Crossover.merge's pair and the `||>` tuple-apply
+    // do not reduce inside Release resumable code; the survival rule's
+    // hoist remedy). The state machine below holds one await and a plain
+    // single-value match, nothing else.
+    let private finishMerge
+        (root: string)
+        (config: TwinConfig)
+        (merge: MergeSection)
+        (richRef: string)
+        (inputs: EvidencePack list)
+        (catalog: Catalog)
+        : Result<MergeRunReport> =
+        let sets = Crossover.trunkSets (CatalogIndex.ofCatalog catalog)
+        let clamped = inputs |> List.map (Crossover.clamp sets)
+        let drift = clamped |> List.collect snd
+        match Crossover.merge (clamped |> List.map fst) with
+        | Error es -> Result.failure es
+        | Ok (merged, report) ->
+            // The witness pass: planned against the trunk,
+            // emitted deterministically, executed by the bake.
+            let index = CatalogIndex.ofCatalog catalog
+            let witnessPlan, witnessSkips = Witness.plan index merged
+            let report =
+                { report with
+                    Drift = drift
+                    WitnessSkips = witnessSkips |> List.map (fun s -> s.Coordinate, s.Reason) }
+            let richPath = TwinConfig.resolvePath root richRef
+            let reportPath =
+                TwinConfig.resolvePath root (defaultArg merge.ReportPath defaultReportPath)
+            let witnessDir =
+                match merge.WitnessPath with
+                | Some dir -> TwinConfig.resolvePath root dir
+                | None ->
+                    match System.IO.Path.GetDirectoryName richPath with
+                    | null | "" -> root
+                    | dir -> dir
+            let witnessSqlPath = System.IO.Path.Combine(witnessDir, "witness.sql")
+            let witnessAssertPath = System.IO.Path.Combine(witnessDir, "witness.assert.sql")
+            write richPath (Evidence.serialize merged)
+            write reportPath (Crossover.serializeReport report)
+            write witnessSqlPath (Witness.emitSql config.Seed witnessPlan)
+            write witnessAssertPath (Witness.emitAssertSql witnessPlan)
+            Result.success
+                { Inputs =
+                      (clamped |> List.map fst, inputs)
+                      ||> List.map2 (fun c original ->
+                          let label =
+                              match original.Sources with
+                              | [] -> "(unlabeled)"
+                              | sources -> sources |> List.sort |> String.concat "+"  // LINT-ALLOW: the attribution label is the sorted source names joined; a label IS a string primitive
+                          label, List.length c.Tables)
+                  MergedTables = List.length merged.Tables
+                  DriftCount = List.length drift
+                  RichPath = richPath
+                  ReportPath = reportPath
+                  WitnessCases = List.length witnessPlan.Cases
+                  WitnessSkips = List.length witnessSkips
+                  WitnessSqlPath = witnessSqlPath
+                  WitnessAssertPath = witnessAssertPath }
+
+    let private mergeWithTrunk
+        (root: string)
+        (config: TwinConfig)
+        (merge: MergeSection)
+        (richRef: string)
+        (inputs: EvidencePack list)
+        : Task<Result<MergeRunReport>> =
+        task {
+            let! trunk = TrunkModel.readback root config
+            match trunk with
+            | Error es -> return Result.failure es
+            | Ok catalog -> return finishMerge root config merge richRef inputs catalog
+        }
+
     let run (root: string) (config: TwinConfig) : Task<Result<MergeRunReport>> =
         task {
             match config.Evidence.Merge, config.Evidence.RichRef with
@@ -80,57 +155,5 @@ module EvidenceMerge =
                     |> Result.aggregate
                 match loaded with
                 | Error es -> return Result.failure es
-                | Ok inputs ->
-                    let! trunk = TrunkModel.readback root config
-                    match trunk with
-                    | Error es -> return Result.failure es
-                    | Ok catalog ->
-                        let sets = Crossover.trunkSets (CatalogIndex.ofCatalog catalog)
-                        let clamped = inputs |> List.map (Crossover.clamp sets)
-                        let drift = clamped |> List.collect snd
-                        match Crossover.merge (clamped |> List.map fst) with
-                        | Error es -> return Result.failure es
-                        | Ok (merged, report) ->
-                            // The witness pass: planned against the trunk,
-                            // emitted deterministically, executed by the bake.
-                            let index = CatalogIndex.ofCatalog catalog
-                            let witnessPlan, witnessSkips = Witness.plan index merged
-                            let report =
-                                { report with
-                                    Drift = drift
-                                    WitnessSkips = witnessSkips |> List.map (fun s -> s.Coordinate, s.Reason) }
-                            let richPath = TwinConfig.resolvePath root richRef
-                            let reportPath =
-                                TwinConfig.resolvePath root (defaultArg merge.ReportPath defaultReportPath)
-                            let witnessDir =
-                                match merge.WitnessPath with
-                                | Some dir -> TwinConfig.resolvePath root dir
-                                | None ->
-                                    match System.IO.Path.GetDirectoryName richPath with
-                                    | null | "" -> root
-                                    | dir -> dir
-                            let witnessSqlPath = System.IO.Path.Combine(witnessDir, "witness.sql")
-                            let witnessAssertPath = System.IO.Path.Combine(witnessDir, "witness.assert.sql")
-                            write richPath (Evidence.serialize merged)
-                            write reportPath (Crossover.serializeReport report)
-                            write witnessSqlPath (Witness.emitSql config.Seed witnessPlan)
-                            write witnessAssertPath (Witness.emitAssertSql witnessPlan)
-                            return
-                                Result.success
-                                    { Inputs =
-                                          (clamped |> List.map fst, inputs)
-                                          ||> List.map2 (fun c original ->
-                                              let label =
-                                                  match original.Sources with
-                                                  | [] -> "(unlabeled)"
-                                                  | sources -> sources |> List.sort |> String.concat "+"  // LINT-ALLOW: the attribution label is the sorted source names joined; a label IS a string primitive
-                                              label, List.length c.Tables)
-                                      MergedTables = List.length merged.Tables
-                                      DriftCount = List.length drift
-                                      RichPath = richPath
-                                      ReportPath = reportPath
-                                      WitnessCases = List.length witnessPlan.Cases
-                                      WitnessSkips = List.length witnessSkips
-                                      WitnessSqlPath = witnessSqlPath
-                                      WitnessAssertPath = witnessAssertPath }
+                | Ok inputs -> return! mergeWithTrunk root config merge richRef inputs
         }

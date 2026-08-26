@@ -103,6 +103,32 @@ module EvidenceAudit =
                 return Some (System.Convert.ToInt64 count)
         }
 
+    // Hoisted from `run` (FS3511: a `for` over tuple-typed elements with
+    // an await in the body does not statically compile in Release; the
+    // while-walk with single-value binds does — the survival rule's
+    // hoist remedy).
+    let private probeOrphans
+        (cnn: SqlConnection)
+        (index: CatalogIndex)
+        (edges: (string * string * string) list)
+        : Task<OrphanEvidence list> =
+        task {
+            let probed = System.Collections.Generic.List<OrphanEvidence>()
+            let mutable remaining = edges  // LINT-ALLOW: the while-walk's cursor — FS3511 forces this shape (a `for` over tuple elements with an await does not compile in Release); confined to this loop
+            while not (List.isEmpty remaining) do
+                let edge = List.head remaining
+                remaining <- List.tail remaining  // LINT-ALLOW: the while-walk's cursor advance; same FS3511 confinement
+                let! count = orphanCount cnn index edge
+                match count with
+                | Some n when n > 0L ->
+                    let (childTable, childColumn, parentTable) = edge
+                    probed.Add
+                        { ChildTable = childTable; ChildColumn = childColumn
+                          ParentTable = parentTable; OrphanCount = n }
+                | _ -> ()
+            return List.ofSeq probed
+        }
+
     let run (root: string) (config: TwinConfig) : Task<Result<AuditRunReport>> =
         task {
             match config.Evidence.Merge, config.Evidence.RichRef with
@@ -156,20 +182,11 @@ module EvidenceAudit =
                                             |> List.map (fun o -> o.ChildTable, o.ChildColumn, o.ParentTable)
                                             |> List.distinctBy (fun (c, col, p) ->
                                                 c.ToLowerInvariant(), col.ToLowerInvariant(), p.ToLowerInvariant())
-                                        let probed = System.Collections.Generic.List<OrphanEvidence>()
-                                        for edge in edges do
-                                            let! count = orphanCount cnn index edge
-                                            match count with
-                                            | Some n when n > 0L ->
-                                                let (c, col, p) = edge
-                                                probed.Add
-                                                    { ChildTable = c; ChildColumn = col
-                                                      ParentTable = p; OrphanCount = n }
-                                            | _ -> ()
-                                        let minted = { minted with Orphans = minted.Orphans @ List.ofSeq probed }
+                                        let! probed = probeOrphans cnn index edges
+                                        let minted = { minted with Orphans = minted.Orphans @ probed }
                                         // Witness legality skips are the exemptions,
                                         // recomputed deterministically.
-                                        let _, skips = Witness.plan index mergedPack
+                                        let skips = snd (Witness.plan index mergedPack)
                                         let exempt = skips |> List.map (fun s -> s.Coordinate) |> Set.ofList
                                         let report = FidelityAudit.auditAll exempt sourcePacks minted
                                         let reportPath = TwinConfig.resolvePath root defaultReportPath

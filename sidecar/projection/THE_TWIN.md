@@ -199,6 +199,11 @@ scenario, coordinate, and expected shape named.
 - The peel = move `Twin.*` + its two test projects to a new repository; kernel project
   refs become package refs (`dotnet pack` of the manifest's six projects) or a subtree
   copy. The boundary test IS the manifest's honesty.
+- The DISTRIBUTION rendition of the peel is live before the move: `Twin.Cli` packs as the
+  `Twin.Tool` dotnet tool (command `twin`; the kernel travels inside the package), the
+  bake driver carries the seams to run against an installed tool with no monorepo present,
+  and the ejection dry-run proves the packed tool installs and answers. The repository
+  move stays this section's designed full form.
 - Artifacts carry coordinates only — the format survives the peel byte-identical.
 - `Twin.Tests` borrows four fixture builders from `Projection.Tests.Support`
   (`kindKey`/`attrKey`/`mkTableId`/`mkModule` + `mkCatalog`); at the peel they get

@@ -10,6 +10,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+REPO="$PWD"
 
 SCRATCH="$(mktemp -d /tmp/twin-eject-dryrun.XXXXXX)"
 PUBLISH="$SCRATCH/tool"
@@ -56,4 +57,22 @@ set -e
 [ "$CODE" -eq 6 ] || { echo "expected exit 6 (unknown key), got $CODE"; exit 1; }
 echo "$OUT" | grep -q 'containr' || { echo "the refusal did not name the path"; exit 1; }
 
-echo "The ejection dry-run holds: the binary travels, the surface refuses in place."
+# The peel's distribution shape (B6): the same surface through the PACKED
+# dotnet tool — pack, install to a tool path, and re-drive the probes.
+echo "— packing the dotnet-tool rendition (Twin.Tool)"
+dotnet pack "$REPO/src/Twin.Cli/Twin.Cli.fsproj" -c Release -o "$SCRATCH/nupkg" --nologo -v q
+dotnet tool install Twin.Tool --tool-path "$SCRATCH/toolpath" --add-source "$SCRATCH/nupkg" > /dev/null
+TOOL="$SCRATCH/toolpath/twin"
+
+echo "— the installed tool answers the same surface"
+"$TOOL" --help > /dev/null
+set +e
+"$TOOL" status > /dev/null 2>&1
+CODE=$?
+set -e
+[ "$CODE" -eq 6 ] || { echo "expected exit 6 from the installed tool over the malformed config, got $CODE"; exit 1; }
+rm -f twin.json
+"$TOOL" init > /dev/null
+[ -f twin.json ] || { echo "the installed tool's init wrote nothing"; exit 1; }
+
+echo "The ejection dry-run holds: the binary travels, the packed tool installs and answers, the surface refuses in place."
