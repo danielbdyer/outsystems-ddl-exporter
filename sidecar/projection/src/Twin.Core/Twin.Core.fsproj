@@ -35,6 +35,7 @@
     <Compile Include="ScenarioCompiler.fs" />
     <Compile Include="Evidence.fs" />
     <Compile Include="Crossover.fs" />
+    <Compile Include="FidelityAudit.fs" />
   </ItemGroup>
 
   <ItemGroup>

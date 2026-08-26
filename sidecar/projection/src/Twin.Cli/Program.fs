@@ -191,6 +191,12 @@ let main argv =
                 let! report = EvidenceMerge.run root config
                 return report |> Result.map Render.evidenceMerge
             })
+    | "evidence" :: "audit" :: _ ->
+        runWithConfig [] (fun root config _ ->
+            task {
+                let! report = EvidenceAudit.run root config
+                return report |> Result.map Render.evidenceAudit
+            })
     | "evidence" :: "verify" :: _ ->
         runWithConfig [] (fun root config _ ->
             withTwinCatalog root config (fun catalog ->
@@ -198,7 +204,7 @@ let main argv =
     | "evidence" :: _ ->
         emit
             (Render.failure
-                [ ValidationError.create "twin.argv.verb" "evidence takes one of: import, derive, merge, verify." ])
+                [ ValidationError.create "twin.argv.verb" "evidence takes one of: import, derive, merge, audit, verify." ])
         exitArgv
     | "classify" :: _ ->
         runWithConfig [] (fun root config _ ->

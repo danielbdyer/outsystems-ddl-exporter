@@ -29,6 +29,7 @@
     <Compile Include="Witness.fs" />
     <Compile Include="EvidenceImport.fs" />
     <Compile Include="EvidenceMerge.fs" />
+    <Compile Include="EvidenceAudit.fs" />
     <Compile Include="Mint.fs" />
     <Compile Include="Runs.fs" />
     <Compile Include="Check.fs" />

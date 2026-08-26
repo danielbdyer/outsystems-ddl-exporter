@@ -156,6 +156,24 @@ module Render =
           System.String.Concat("    ", path)
           "Commit it beside twin.json; the rich pack stays out of the repository." ]
 
+    let evidenceAudit (r: EvidenceAudit.AuditRunReport) : string list =
+        let perSection =
+            r.Sections
+            |> List.map (fun (source, failures, advisories) ->
+                System.String.Concat(
+                    "    ", source, " — ", ni failures, " blocking failures, ",
+                    ni advisories, " advisories"))
+        let verdictLine =
+            if r.TotalFailures = 0 then
+                "The template is at least as blocking as every audited environment."
+            else
+                System.String.Concat(
+                    "The template under-blocks: ", ni r.TotalFailures,
+                    " blocking failures. Re-merge and re-bake before distributing.")
+        [ verdictLine ]
+        @ perSection
+        @ [ System.String.Concat("    report: ", r.ReportPath) ]
+
     let evidenceMerge (r: EvidenceMerge.MergeRunReport) : string list =
         let perInput =
             r.Inputs
@@ -207,6 +225,7 @@ module Render =
           "  twin evidence import                Profile the configured sources into the rich pack (out of repo)."
           "  twin evidence derive                Project rich → shape: the committed, literal-free tier."
           "  twin evidence merge                 Crossover the per-environment packs: extremes survive; the report names each winner."
+          "  twin evidence audit                 Prove the template against each environment: blocking verdicts and fidelity margins."
           "  twin evidence verify                Bind both packs against the estate; the per-table coverage board."
           "  twin classify                       Propose PII classifications from column names (reviewable artifact)."
           "  twin bake                           A docker build context for a distributable schema image."
