@@ -384,6 +384,20 @@ The curriculum estate is a third, tiny template: the sample project with its del
 defects, baked the same way. The dojo's katas and the self-test fleet run against it, so a
 learner's machine and a working machine differ only in which template they restore.
 
+**The mechanic, proven on the sample estate (2026-08-26).** The bake-restore-reset cycle ran
+live on the warm container, end to end. The sample estate's BEFORE state (the published schema
+plus the seed) froze into a compressed backup in 0.03 seconds, 584 KB. A `RESTORE DATABASE ...
+WITH MOVE` stood it up as a per-proof database in 0.5 seconds, holding the exact seed shape
+(dbo.Customer: 5 rows, 2 NULL Emails). The make-mandatory edit then published against the
+restored copy under the Strict profile and was blocked verbatim — `Could not deploy package`,
+`Msg 50000, Level 16, State 127 — Rows were detected` — with Email left nullable, so the
+proving loop runs unchanged over a restored template. The reset (drop the contaminated copy,
+restore again) took 0.7 seconds, and the unedited model then published clean over the fresh
+restore, confirming the template equals the model it was baked from. Engine stamped: sqlpackage
+170.5.76.0 (the unpinned-latest install of that day; the block matches the 170.4.83.3
+findings). These timings are the sample estate's; a Dev-sized template scales the backup and
+restore, which section 7 keeps open.
+
 ### 5.3 — The local engine
 
 The engine that hosts the copies is deliberately pluggable, because the loop only ever sees a
