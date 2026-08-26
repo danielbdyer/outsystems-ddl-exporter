@@ -65,7 +65,12 @@ SQLCMD=(docker exec -i "$CNAME" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa
 firstRow() { tr -d '\r' | awk 'NF { print; exit }'; }
 
 TWIN=(dotnet run --project src/Twin.Cli --)
-export TWIN_CONFIG="$PWD/$CONFIG"
+# The estate root may arrive absolute (the ADO lane points at a sibling
+# repository checkout) or repo-relative (the local and GitHub lanes).
+case "$CONFIG" in
+    /*) export TWIN_CONFIG="$CONFIG" ;;
+    *)  export TWIN_CONFIG="$PWD/$CONFIG" ;;
+esac
 
 # ---------------------------------------------------------------------------
 # 1 — converge at the estate head, then the crossover when configured, then
