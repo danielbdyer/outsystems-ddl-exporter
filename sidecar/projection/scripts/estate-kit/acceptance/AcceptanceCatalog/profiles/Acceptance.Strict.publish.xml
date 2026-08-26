@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Acceptance.Strict.publish.xml — the production-faithful posture, with NO
+  connection baked in: the acceptance scripts supply /TargetServerName,
+  /TargetDatabaseName, and the authentication arguments per machine, so one
+  profile serves LocalDB, Developer edition, and a container alike.
+
+    BlockOnPossibleDataLoss = True   -> the block IS the verdict
+    GenerateSmartDefaults   = False  -> no silent backfill repairs the refusal
+    DropObjectsNotInSource  = False  -> the deployment-shaped posture
+-->
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <BlockOnPossibleDataLoss>True</BlockOnPossibleDataLoss>
+    <GenerateSmartDefaults>False</GenerateSmartDefaults>
+    <IgnoreColumnOrder>True</IgnoreColumnOrder>
+    <DropObjectsNotInSource>False</DropObjectsNotInSource>
+    <IncludeTransactionalScripts>True</IncludeTransactionalScripts>
+    <AllowIncompatiblePlatform>False</AllowIncompatiblePlatform>
+    <IgnorePermissions>True</IgnorePermissions>
+  </PropertyGroup>
+</Project>

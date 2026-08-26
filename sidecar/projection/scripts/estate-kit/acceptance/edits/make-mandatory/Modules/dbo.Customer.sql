@@ -1,0 +1,16 @@
+-- PRE-AUTHORED PROOF EDIT — make-mandatory (copy over Modules/dbo.Customer.sql).
+-- Email tightens to NOT NULL over a populated table carrying NULLs: the
+-- Strict publish must be BLOCKED (Rows were detected / data loss might
+-- occur), and it must STAY blocked after the NULLs are cleared, because the
+-- guard fires on table-has-rows, not column-has-NULLs. Only the emptied
+-- table publishes clean as a single in-place change.
+CREATE TABLE [dbo].[Customer] (
+    [Id]       INT            IDENTITY(1,1) NOT NULL,
+    [Name]     NVARCHAR(100)  NOT NULL,
+    [Email]    NVARCHAR(250)  NOT NULL,
+    [StatusId] INT            NOT NULL,
+    [RegionId] INT            NULL,
+    [Score]    INT            NULL,
+    CONSTRAINT [PK_Customer] PRIMARY KEY ([Id]),
+    CONSTRAINT [FK_Customer_Status] FOREIGN KEY ([StatusId]) REFERENCES [dbo].[Status] ([Id])
+);

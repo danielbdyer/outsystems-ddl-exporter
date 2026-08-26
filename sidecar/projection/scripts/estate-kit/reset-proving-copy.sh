@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# THE ESTATE KIT — reset a proving copy to the pristine template.
+#
+#   reset-proving-copy.sh --name <db> [--template <path.bak>] [--templates <dir>]
+#
+# The contaminated copy is dropped and the template restored again under the
+# SAME name — the seconds-scale clean slate the proving loop leans on after
+# a Permissive publish or an adversarial probe dirtied the copy. Restoring
+# is the reset; there is no repair path.
+set -euo pipefail
+. "$(dirname "$0")/kit-common.sh"
+
+NAME="" TEMPLATE="" TEMPLATES_DIR="./templates"
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --name)      NAME="$2"; shift 2 ;;
+        --template)  TEMPLATE="$2"; shift 2 ;;
+        --templates) TEMPLATES_DIR="$2"; shift 2 ;;
+        *) kit_die "unknown argument: $1" ;;
+    esac
+done
+[ -n "$NAME" ] || kit_die "--name <db> is required (the copy being reset)"
+
+exec "$(dirname "$0")/restore-proving-copy.sh" --name "$NAME" \
+    ${TEMPLATE:+--template "$TEMPLATE"} --templates "$TEMPLATES_DIR"

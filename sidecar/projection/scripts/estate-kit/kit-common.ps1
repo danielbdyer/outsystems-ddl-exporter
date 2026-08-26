@@ -1,0 +1,127 @@
+# THE ESTATE KIT — shared PowerShell plumbing (dot-sourced; not run).
+#
+# The PowerShell lane targets a NATIVE Windows engine — LocalDB by default,
+# SQL Server Developer edition by -Server override — with native sqlcmd and
+# integrated authentication (pass -SqlUser/-SqlPassword for SQL auth). The
+# bash twins target a containerized engine. Both lanes print the same
+# verdict lines and read every publish verdict from the printed text.
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$script:KitFailures = 0
+
+function Write-KitLog([string] $Message)  { Write-Host "[estate-kit] $Message" -ForegroundColor Cyan }
+function Write-KitPass([string] $Message) { Write-Host "[estate-kit] PASS — $Message" -ForegroundColor Green }
+function Write-KitFail([string] $Message) { Write-Host "[estate-kit] FAIL — $Message" -ForegroundColor Red; $script:KitFailures++ }
+function Stop-Kit([string] $Message)      { Write-Host "[estate-kit] $Message" -ForegroundColor Red; exit 1 }
+
+# sqlcmd against the machine's engine. Integrated auth unless SQL
+# credentials are supplied.
+function Invoke-KitSql {
+    param(
+        [Parameter(Mandatory)] [string] $Server,
+        [string] $Database,
+        [Parameter(Mandatory)] [string] $Query,
+        [string] $SqlUser,
+        [string] $SqlPassword
+    )
+    $args = @('-S', $Server, '-C', '-b')
+    if ($SqlUser) { $args += @('-U', $SqlUser, '-P', $SqlPassword) } else { $args += '-E' }
+    if ($Database) { $args += @('-d', $Database) }
+    $args += @('-Q', $Query)
+    & sqlcmd @args
+    if ($LASTEXITCODE -ne 0) { throw "sqlcmd failed against $Server ($Database)" }
+}
+
+function Get-KitScalar {
+    param(
+        [Parameter(Mandatory)] [string] $Server,
+        [string] $Database,
+        [Parameter(Mandatory)] [string] $Query,
+        [string] $SqlUser,
+        [string] $SqlPassword
+    )
+    $args = @('-S', $Server, '-C', '-b', '-h', '-1', '-W')
+    if ($SqlUser) { $args += @('-U', $SqlUser, '-P', $SqlPassword) } else { $args += '-E' }
+    if ($Database) { $args += @('-d', $Database) }
+    $args += @('-Q', $Query)
+    $out = & sqlcmd @args
+    if ($LASTEXITCODE -ne 0) { throw "sqlcmd failed against $Server ($Database)" }
+    return ($out | Where-Object { $_ -and $_.Trim() } | Select-Object -First 1).Trim()
+}
+
+function Get-KitIdentity {
+    param([string] $Server, [string] $Database, [string] $SqlUser, [string] $SqlPassword)
+    Get-KitScalar -Server $Server -Database $Database -SqlUser $SqlUser -SqlPassword $SqlPassword -Query `
+        "SET NOCOUNT ON; SELECT CONCAT('commit=', ISNULL(TemplateCommit, '(unstamped)'), ' baked=', ISNULL(TemplateBakedAtUtc, '-'), ' data=', LEFT(ISNULL(DataFingerprint, '-'), 8)) FROM [twin].[__state];"
+}
+
+# Order-independent content digest over every user table — the no-op
+# comparator (same T-SQL as the bash lane).
+function Get-KitDigest {
+    param([string] $Server, [string] $Database, [string] $SqlUser, [string] $SqlPassword)
+    Get-KitScalar -Server $Server -Database $Database -SqlUser $SqlUser -SqlPassword $SqlPassword -Query @"
+SET NOCOUNT ON;
+DECLARE @acc BIGINT = 0, @sql NVARCHAR(MAX);
+DECLARE @t TABLE (id INT IDENTITY, qn NVARCHAR(512));
+INSERT INTO @t (qn)
+SELECT QUOTENAME(s.name) + '.' + QUOTENAME(t.name)
+FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id
+WHERE s.name NOT IN ('twin') ORDER BY s.name, t.name;
+DECLARE @i INT = 1, @n INT = (SELECT COUNT(*) FROM @t), @qn NVARCHAR(512), @one BIGINT;
+WHILE @i <= @n
+BEGIN
+    SELECT @qn = qn FROM @t WHERE id = @i;
+    SET @sql = N'SELECT @r = ISNULL(SUM(CONVERT(BIGINT, BINARY_CHECKSUM(*))), 0) + COUNT_BIG(*) FROM ' + @qn;
+    EXEC sp_executesql @sql, N'@r BIGINT OUTPUT', @r = @one OUTPUT;
+    SET @acc = @acc ^ @one;
+    SET @i = @i + 1;
+END
+SELECT CONVERT(NVARCHAR(32), @acc);
+"@
+}
+
+function Get-NewestTemplate([string] $Directory) {
+    $bak = Get-ChildItem -Path (Join-Path $Directory 'twin-template-*.bak') -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $bak) { Stop-Kit "no twin-template-*.bak under $Directory" }
+    $manifest = $bak.FullName -replace '\.bak$', '.manifest.json'
+    if (-not (Test-Path $manifest)) { Stop-Kit "no manifest beside $($bak.Name)" }
+    [pscustomobject]@{ Bak = $bak.FullName; Manifest = $manifest }
+}
+
+# Verify a template pair: the manifest's sha256 and byte count against the
+# artifact. Refuses on mismatch — a torn copy never restores.
+function Test-TemplatePair([string] $Bak, [string] $Manifest) {
+    $m = Get-Content $Manifest -Raw | ConvertFrom-Json
+    $actual = (Get-FileHash -Algorithm SHA256 -Path $Bak).Hash.ToLowerInvariant()
+    if ($m.artifact.sha256 -ne $actual) { Stop-Kit "sha256 mismatch on $(Split-Path -Leaf $Bak): manifest $($m.artifact.sha256), artifact $actual" }
+    if ($m.artifact.bytes -ne (Get-Item $Bak).Length) { Stop-Kit "byte-count mismatch on $(Split-Path -Leaf $Bak)" }
+    return $m
+}
+
+# Restore a template .bak as $Database on a native engine. Idempotent:
+# drop-if-exists first; logical names read from the backup; files land in
+# the instance's default data path.
+function Restore-KitTemplate {
+    param(
+        [Parameter(Mandatory)] [string] $Server,
+        [Parameter(Mandatory)] [string] $Bak,
+        [Parameter(Mandatory)] [string] $Database,
+        [string] $SqlUser,
+        [string] $SqlPassword
+    )
+    $auth = @{ Server = $Server; SqlUser = $SqlUser; SqlPassword = $SqlPassword }
+    $dataPath = Get-KitScalar @auth -Query "SET NOCOUNT ON; SELECT CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS NVARCHAR(512));"
+    if (-not $dataPath) { Stop-Kit "the engine reports no default data path" }
+    Invoke-KitSql @auth -Query "IF DB_ID(N'$Database') IS NOT NULL BEGIN ALTER DATABASE [$Database] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$Database]; END;" | Out-Null
+    $rows = & sqlcmd -S $Server -C -b -h -1 -W -s '|' $(if ($SqlUser) { @('-U', $SqlUser, '-P', $SqlPassword) } else { @('-E') }) -Q "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'$Bak';"
+    if ($LASTEXITCODE -ne 0) { Stop-Kit "RESTORE FILELISTONLY failed for $Bak" }
+    $files = $rows | Where-Object { $_ -and $_.Trim() } | ForEach-Object {
+        $f = $_.Split('|'); [pscustomobject]@{ Logical = $f[0].Trim(); Type = $f[2].Trim() } }
+    $data = ($files | Where-Object Type -eq 'D' | Select-Object -First 1).Logical
+    $log  = ($files | Where-Object Type -eq 'L' | Select-Object -First 1).Logical
+    if (-not $data -or -not $log) { Stop-Kit "could not read the backup's logical file names" }
+    Invoke-KitSql @auth -Query "RESTORE DATABASE [$Database] FROM DISK = N'$Bak' WITH MOVE N'$data' TO N'$dataPath$Database.mdf', MOVE N'$log' TO N'$dataPath$Database.ldf';" | Out-Null
+}
