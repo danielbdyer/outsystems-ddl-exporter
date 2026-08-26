@@ -69,13 +69,18 @@ type TwinCrossoverMergeTests (fixture: TwinCrossoverMergeFixture) =
                 Assert.True(report.DriftCount >= 1)
                 Assert.True(System.IO.File.Exists report.RichPath)
                 Assert.True(System.IO.File.Exists report.ReportPath)
-                // The witness pair lands beside the merged pack: the orphan
-                // edge is enforced by the trunk (Order.CustomerId carries a
-                // reference), so it is a named skip, never a planted witness.
+                // The witness pair lands beside the merged pack, and both
+                // undeliverable realities are NAMED skips, never planted
+                // witnesses: the orphan edge is enforced by the trunk
+                // (Order.CustomerId carries a reference), and QA's null rate
+                // sits on a column the trunk declares NOT NULL — the
+                // make-mandatory drift the promotion story owns.
                 Assert.True(System.IO.File.Exists report.WitnessSqlPath)
                 Assert.True(System.IO.File.Exists report.WitnessAssertPath)
-                Assert.Equal(1, report.WitnessSkips)
-                Assert.Contains("enforcedReference", System.IO.File.ReadAllText report.ReportPath)
+                Assert.Equal(2, report.WitnessSkips)
+                let witnessReport = System.IO.File.ReadAllText report.ReportPath
+                Assert.Contains("enforcedReference", witnessReport)
+                Assert.Contains("notNullable", witnessReport)
                 let reportJson = System.IO.File.ReadAllText report.ReportPath
                 // The QA-only column is drift, named to its environment; the
                 // null-rate winner is QA.

@@ -436,27 +436,26 @@ module Evidence =
                         |> Result.aggregate
                         |> Result.map (fun cols -> kind, cols)))
             |> Result.aggregate
+        // A fan-out binds when the estate carries the reference. An edge
+        // whose coordinates bind but whose reference is absent is the
+        // FK-add case (an environment's own reference recorded ahead of
+        // the trunk — the same edge the orphan evidence rides): σ has no
+        // relationship to attach the cardinality to, so the shape stays
+        // pack-side and never reaches the Profile. Unparseable
+        // coordinates still refuse inside resolveEdge.
         let fanOutResults =
             pack.FanOuts
             |> List.map (fun f ->
                 resolveEdge index f.ChildTable f.ChildColumn f.ParentTable
                 |> Result.bind (fun reference ->
                     match reference with
-                    | None ->
-                        // A fan-out shape is meaningless without the relationship
-                        // it describes, so an absent reference stays a refusal.
-                        Result.failureOf
-                            (ValidationError.createWithMetadata
-                                "twin.evidence.fanOutUnbound"
-                                "A fan-out names a relationship the estate does not carry."
-                                (Map.ofList
-                                    [ "child", Some f.ChildTable; "column", Some f.ChildColumn
-                                      "parent", Some f.ParentTable ]))
+                    | None -> Result.success None
                     | Some r ->
                         numericOf r.SsKey (int64 NumericDistribution.sampleSizeFloor) f.Shape
                         |> Result.map (fun dist ->
-                            ForeignKeyCardinality.create r.SsKey dist)))
+                            Some (ForeignKeyCardinality.create r.SsKey dist))))
             |> Result.aggregate
+            |> Result.map (List.choose id)
         // Orphan reality binds when the estate carries the reference; an
         // edge without one is the FK-add case and stays pack-side for the
         // witness pass.

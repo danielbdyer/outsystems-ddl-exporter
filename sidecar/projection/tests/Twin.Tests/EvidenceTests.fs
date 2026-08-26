@@ -241,11 +241,15 @@ let ``an orphan on an edge the estate does not carry binds nothing and refuses n
     let noRefIndex =
         CatalogIndex.ofCatalog
             (Catalog.create [ mkModule (modKey "T") (name "T") [ twinCustomer; orderNoRef ] ] [] |> Result.value)
-    // Fan-outs describe a relationship, so they are removed for this case;
-    // the orphan and selectivity entries stay.
-    let pack = { richPack with FanOuts = [] }
-    let profile = ok (Evidence.toProfile noRefIndex pack)
+    // The fan-out rides the SAME unconstrained edge (a capture-side
+    // reference records fan-out AND orphan reality together): it too
+    // binds nothing and refuses nothing — σ has no relationship to
+    // attach the cardinality to, so the shape stays pack-side. The
+    // three-environment rehearsal found the earlier refusal here: a
+    // lawfully clamped merged pack carries this edge by design.
+    let profile = ok (Evidence.toProfile noRefIndex richPack)
     Assert.Empty profile.ForeignKeys
+    Assert.Empty profile.ForeignKeyCardinalities
     Assert.Empty profile.ForeignKeySelectivities
     // The joint needs no reference and still binds.
     Assert.Equal(1, List.length profile.JointDistributions)

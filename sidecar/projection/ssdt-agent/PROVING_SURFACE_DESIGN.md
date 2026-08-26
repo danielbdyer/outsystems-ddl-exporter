@@ -400,16 +400,21 @@ from which the bake mints the data developers receive. Four parts:
   each environment imports alone, and the merge is an explicit later step over the three packs.
 - **The mint and the witness pass.** The bake mints from the merged pack: row presence, volumes,
   null rates, and vocabularies land faithfully; masking holds by construction above the
-  cardinality threshold and by reviewed classification below it. Two realities do not survive a
-  mint on its own — it produces zero foreign-key orphans by construction, and it does not reach
-  the observed maximum lengths or range edges. So the bake follows the mint with a deterministic
-  **witness pass** generated from the merged pack: one synthetic value at the observed maximum
-  length per text column, synthetic values at each numeric envelope's edges, the recorded number
-  of orphan rows pointing at keys that do not exist, and the recorded duplicates duplicating
-  synthetic values. Every witness is synthetic-valued and seeded, so two bakes of the same pack
-  plant identical witnesses. The violating-row probe stays in the loop for rules whose
-  violations no captured statistic can record — a predicate over a combination of columns, a
-  pattern — and for the reviewer's adversarial challenges.
+  cardinality threshold and by reviewed classification below it. Three realities do not survive a
+  mint on its own — it draws NULLs row by row at the observed rate, so a realized count can land
+  under the recorded one; it produces zero foreign-key orphans by construction; and it does not
+  reach the observed maximum lengths or range edges. So the bake follows the mint with a
+  deterministic **witness pass** generated from the merged pack: a null-rate floor per column
+  (surplus non-null rows set to NULL until the recorded count holds, whatever the mint's draws
+  realized), one synthetic value at the observed maximum length per text column, synthetic
+  values at each numeric envelope's edges, the recorded number of orphan rows pointing at keys
+  that do not exist, and the recorded duplicates duplicating synthetic values. Two disciplines
+  keep co-resident realities intact: every value witness ranks only non-null rows, so planting a
+  value never converts a NULL; and witnesses on one column claim disjoint row windows, so an
+  orphan plant never overwrites an envelope edge. Every witness is synthetic-valued and seeded,
+  so two bakes of the same pack plant identical witnesses. The violating-row probe stays in the
+  loop for rules whose violations no captured statistic can record — a predicate over a
+  combination of columns, a pattern — and for the reviewer's adversarial challenges.
 - **The property this buys.** For every statistic the catalog's operations gate on, the template
   blocks at least where the worst of the three environments would block — and a block raised by
   a QA or UAT reality is attributed to it, so the pull request's promotion notes carry the
@@ -442,6 +447,42 @@ restore, confirming the template equals the model it was baked from. Engine stam
 170.5.76.0 (the unpinned-latest install of that day; the block matches the 170.4.83.3
 findings). These timings are the sample estate's; a Dev-sized template scales the backup and
 restore, which section 7 keeps open.
+
+**The crossover, rehearsed end to end (2026-08-26).** The full capture-to-block loop ran live
+as one automated proof (`TwinCrossoverRehearsalTests`, 42 seconds on the warm loop; the driver
+is `scripts/twin-crossover-rehearsal.sh`, and the continuous-integration proof lane carries the
+same test). Three environment copies were fabricated on one trunk and given divergent
+realities: a clean Dev at 25 rows; a QA at 20 rows carrying the worst null rate (8 of 20
+emails NULL) and a triplicated address; a UAT at 15 rows carrying a 120-character email, the
+widest numeric envelope (−5 to 120), and three orphaned rows on an edge the trunk does not
+constrain, recorded through a `WITH NOCHECK` reference added on the UAT copy alone — the
+capture-side reference the profiler measures orphan reality against. Each claim below was
+asserted by the test, not observed by hand.
+
+- The three captures ran through `twin evidence import`, one configuration per environment,
+  and the merge attributed every winning extreme to its environment: the null rate to QA, the
+  maximum length and both envelope edges to UAT, the duplicate reality to QA. The merged pack
+  carried QA's rate at Dev's volume (10 of 25), the 120-character length, and UAT's three
+  orphans; the trunk-enforced StatusId edge lawfully declined its witness
+  (`enforcedReference`), and the committed report rendered no captured address.
+- The mint consumed the merged pack with zero mint changes, the witness pair executed with
+  zero assertion failures, and the fidelity audit returned zero blocking failures in each of
+  its three per-environment sections.
+- Block-equivalence held live under the production-faithful publish: the reference-adding edit
+  was refused at the re-validation step with `Msg 547` naming the new constraint, and the
+  unique-index edit was refused with `Msg 1505` on the duplicate key — QA's and UAT's realities
+  each blocking on the template exactly as they would block in their own environments.
+
+The rehearsal also did the work a first execution of a design exists to do: it exposed three
+latent defects, each now fixed with a regression proof. The synthetic load lane derived its
+bulk column list from the first minted row's key set, so a nullable evidenced column whose
+first row drew NULL vanished from the entire load (the availability rule now takes the union
+across rows, with a pure regression suite on the cell shaping). The mint's per-row null draws
+could land under the recorded count, which the audit's rate verdict would refuse (closed by
+the witness pass's null-rate floor). And the evidence rebind refused a fan-out recorded on a
+trunk-unconstrained edge, though a lawfully clamped merged pack carries exactly that edge by
+design (the fan-out now binds under the same absent-reference asymmetry as the orphan and
+selectivity axes).
 
 ### 5.3 — The local engine
 

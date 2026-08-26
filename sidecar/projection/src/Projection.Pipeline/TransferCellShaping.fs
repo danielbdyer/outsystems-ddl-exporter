@@ -24,14 +24,25 @@ module TransferCellShaping =
     /// explicit NULL, which `KeepNulls` pinned in place: the default the
     /// shape gate promised never fired, and a mandatory sink-only column
     /// crashed the bulk load raw. The availability set derives from the
-    /// first row's key set (the ingest SELECT's column list is uniform per
-    /// kind) ∪ the deferred set (deferred columns are deliberately NULLed).
+    /// UNION of the rows' key sets ∪ the deferred set (deferred columns are
+    /// deliberately NULLed). The union, not the first row's keys: an
+    /// ingested kind's key set is uniform (the SELECT projects every column,
+    /// so the union equals any one row's set — byte-identical), but a
+    /// σ-MINTED row omits the key for a cell drawn NULL, so a nullable
+    /// evidenced column that drew NULL on row 1 would otherwise vanish from
+    /// the whole kind's load and every later row's value be silently
+    /// dropped (the three-environment rehearsal's finding, 2026-08-26). A
+    /// row without the key still emits the empty raw → SQL NULL under
+    /// `KeepNulls`, which is exactly what the omitted cell means.
     let private toCellsOver (attrs: Attribute list) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
         match rows with
         | [] -> []
-        | first :: _ ->
+        | _ ->
             let available =
-                Set.union deferred (first.Values |> Map.toSeq |> Seq.map fst |> Set.ofSeq)
+                rows
+                |> Seq.collect (fun r -> r.Values |> Map.toSeq |> Seq.map fst)
+                |> Set.ofSeq
+                |> Set.union deferred
             let carried = attrs |> List.filter (fun a -> Set.contains a.Name available)
             rows
             |> List.map (fun row ->

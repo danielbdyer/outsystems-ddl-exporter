@@ -50,6 +50,7 @@
     <Compile Include="EstateBoardViewTests.fs" />
     <Compile Include="ProgressRendererTests.fs" />
     <Compile Include="TransferPlanTests.fs" />
+    <Compile Include="TransferCellShapingTests.fs" />
     <Compile Include="TransferPlanViewTests.fs" />
     <Compile Include="InterveneTests.fs" />
     <Compile Include="RelaxationStoreTests.fs" />
