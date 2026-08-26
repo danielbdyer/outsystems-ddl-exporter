@@ -115,7 +115,9 @@ a report — so the next person can see where the path stands without asking.
    `bash scripts/twin-bake-template.sh <twin-root>`. The bake converges the twin at the estate
    head, mints from the merged pack, plants and asserts the witness pass, runs the fidelity
    audit as a hard gate, stamps the template identity, and freezes the `.bak` beside its
-   manifest.
+   manifest. Add `--image` to also build the image rendition locally — the `.bak` wrapped in
+   a restore-on-first-start engine image, for machines that run Docker Desktop; the nightly
+   ships the `.bak` only, and pushing the image tag to a registry is a separate decision.
 
 3. **The operator-reality validation.** The bake already ran `twin evidence audit`; read its
    report (`twin/evidence-audit.report.json`) and file it beside the manifest. The audit is the

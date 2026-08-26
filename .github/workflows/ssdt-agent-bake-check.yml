@@ -1,7 +1,10 @@
 # ssdt-agent bake check — the MECHANIC stays proven where it is developed.
 #
 # Runs scripts/twin-bake-template.sh end to end against the SAMPLE estate
-# (the proving ground) and uploads the resulting template + manifest as a
+# (the proving ground) — with --image, so the image rendition's build,
+# restore-on-first-start, identity answer, and restart idempotence stay
+# proven too (the image dies with the runner; only the .bak + manifest
+# upload) — and uploads the resulting template + manifest as a
 # short-retention artifact. This is deliberately NOT the production nightly:
 # the estate's trunk lives in Azure DevOps, and the production bake is the
 # estate repository's azure-pipelines.bake.yml (shipped in the estate kit),
@@ -37,9 +40,9 @@ jobs:
         with:
           global-json-file: global.json
 
-      - name: run the bake against the sample estate
+      - name: run the bake against the sample estate (with the image rendition)
         working-directory: sidecar/projection
-        run: bash scripts/twin-bake-template.sh
+        run: bash scripts/twin-bake-template.sh --image
 
       - name: verify the artifact pair and its identity claims
         working-directory: sidecar/projection
@@ -59,8 +62,50 @@ jobs:
             if (m.commit !== process.env.GITHUB_SHA && process.env.GITHUB_EVENT_NAME !== "pull_request")
               fail("manifest commit disagrees with the checkout");
             if (!m.fingerprints.schema || !m.fingerprints.data) fail("manifest carries no fingerprints");
-            console.log("manifest verified:", m.template);
+            if (!m.imageRendition || !m.imageRendition.tag) fail("manifest carries no image rendition (this check bakes with --image)");
+            console.log("manifest verified:", m.template, "image:", m.imageRendition.tag);
           ' "$BAK" "$MANIFEST" "$(sha256sum "$BAK" | awk '{print $1}')"
+
+      - name: run the image rendition and prove its identity
+        working-directory: sidecar/projection
+        run: |
+          set -euo pipefail
+          OUT=ssdt-agent/proving-ground/templates
+          BAK="$(ls -t "$OUT"/*.bak | head -1)"
+          MANIFEST="${BAK%.bak}.manifest.json"
+          field() { node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(process.argv[2].split(".").reduce((o,k)=>o[k], m)));' "$MANIFEST" "$1"; }
+          TAG="$(field imageRendition.tag)"
+          DATA_FP="$(field fingerprints.data)"
+          COMMIT="$(field commit)"
+          docker run -d --name twin-tpl-smoke -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='Twin@Strong1' \
+            -e MSSQL_MEMORY_LIMIT_MB=2048 "$TAG"
+          SQL=(docker exec twin-tpl-smoke /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Twin@Strong1' -C -d twin -h -1 -W)
+          waitTwin() {
+            for _ in $(seq 1 120); do
+              if "${SQL[@]}" -Q "SET NOCOUNT ON; SELECT 1;" >/dev/null 2>&1; then return 0; fi
+              sleep 2
+            done
+            docker logs twin-tpl-smoke >&2 || true
+            return 1
+          }
+          # Waiting on the twin catalog itself means the restore has landed,
+          # not merely that the engine answers.
+          waitTwin
+          ROW="$("${SQL[@]}" -s '|' -Q "SET NOCOUNT ON; SELECT ISNULL(DataFingerprint,''), ISNULL(TemplateCommit,'') FROM [twin].[__state];" | tr -d '\r' | awk 'NF{print;exit}')"
+          [ "${ROW%%|*}" = "$DATA_FP" ] || { echo "the restored copy's data fingerprint disagrees with the manifest"; exit 1; }
+          if [ "${GITHUB_EVENT_NAME:-}" != "pull_request" ]; then
+            [ "${ROW##*|}" = "$COMMIT" ] || { echo "the restored copy's template commit disagrees with the manifest"; exit 1; }
+          fi
+          ROWS="$("${SQL[@]}" -Q "SET NOCOUNT ON; SELECT COALESCE(SUM(p.[rows]),0) FROM sys.tables t JOIN sys.schemas s ON s.schema_id=t.schema_id JOIN sys.partitions p ON p.object_id=t.object_id AND p.index_id IN (0,1) WHERE s.name <> N'twin' AND t.is_ms_shipped = 0;" | tr -d '\r' | awk 'NF{print;exit}')"
+          [ "$ROWS" -gt 0 ] || { echo "the restored copy holds no estate rows"; exit 1; }
+          echo "image identity verified: $TAG ($ROWS estate rows)"
+          # A restart must find the twin present and skip the restore.
+          docker restart twin-tpl-smoke >/dev/null
+          waitTwin
+          docker logs twin-tpl-smoke 2>&1 | grep -q "the template restore was skipped" \
+            || { echo "the restarted container did not skip the restore"; exit 1; }
+          echo "restart idempotence verified"
+          docker rm -f twin-tpl-smoke >/dev/null
 
       - name: upload the template + manifest (mechanic evidence, short retention)
         uses: actions/upload-artifact@v4

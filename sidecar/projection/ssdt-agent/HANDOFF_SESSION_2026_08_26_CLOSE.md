@@ -44,6 +44,15 @@ Every critical-path slice of the approved plan landed, each proven live before i
 - **The drift leg** (`2ac266e`): every `twin evidence import` also compares the environment's
   bound schema against the trunk head into `twin/evidence-drift.report.json`; trunk-acquisition
   failure is a named skip, never a capture block.
+- **The image rendition** (C15 — revived after the owner confirmed Docker Desktop on the
+  team's machines): `twin-bake-template.sh --image` wraps the freshly baked `.bak` in the
+  bake engine's own image behind a restore-on-first-start entrypoint (generated at bake
+  time; the chown-for-mssql lesson carried into the Dockerfile), tags it
+  `twin-template:<lane>-<commit8>-<dataFp8>`, records the tag in the manifest's
+  `imageRendition`, and prunes this lane's tags alongside the `.bak` prune. The GitHub bake
+  check runs `--image` and proves the run: the restored copy answers its identity from
+  `[twin].[__state]`, holds estate rows, and a restart skips the restore. Registry push
+  stays out of the bake until a registry is named.
 - **The existing-server seam** (B4): `twin.json` names either the managed container or an
   existing server (`server.conn` env:/file: reference; `server.database` the knob, default
   `twin`; both sections explicit refuses). Every verb resolves through
@@ -59,9 +68,6 @@ Every critical-path slice of the approved plan landed, each proven live before i
   gates them. This is the critical path to day one.
 - **B6, the peel** — `twin` as a distributable dotnet tool; the ADO pipeline's `toolSource`
   parameter is the swap seat. B7 (fan-out skew, per-environment mints) stays later.
-- **C15, the image rendition** — optional `--image` on the bake script wrapping the `.bak`;
-  explicitly droppable pre-cutover, and §7's Docker-Desktop question should be answered before
-  effort goes there.
 
 ## What will bite you
 

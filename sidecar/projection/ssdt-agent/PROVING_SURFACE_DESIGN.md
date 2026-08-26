@@ -585,7 +585,11 @@ the trunk head). B0 and B1a remain the owner's steps and are now paint-by-number
 `CAPTURE_POINT_RUNBOOK.md`. B4 landed as the substrate seam: `twin.json` names either the
 managed container or an existing server (`server.conn` as a reference, `server.database` as
 the knob), every verb resolves through it, `down` leaves an existing server alone, `reset`
-drops only the twin database — proven live end to end against an external instance. The one
+drops only the twin database — proven live end to end against an external instance. The
+image rendition landed on the bake (`--image`): the `.bak` wrapped in the bake engine's own
+image behind a restore-on-first-start entrypoint, tagged by lane, commit, and data
+fingerprint, the tag recorded in the manifest — proven by running the image and reading its
+identity back, and kept proven by the GitHub bake check. The one
 open build item is B6 (the peel; the bake pipeline already carries its swap parameter). B7
 stays later work.
 
@@ -664,9 +668,11 @@ targeted question "would this block at QA specifically."
   dacpac; whether the team's `.sqlproj` is SDK-style (`dotnet build`) or classic (Visual
   Studio's msbuild) decides which command the loop's first step uses on their machines. Both
   work; which one is theirs is a fact to record in `estate/toolchain.md`.
-- **Docker Desktop availability on corporate laptops is unknown.** The design does not depend on
-  it — the `.bak` rendition and LocalDB carry the team path — but the image rendition's audience
-  should be confirmed before effort goes to registry plumbing.
+- **Docker Desktop is present on the team's machines** (confirmed by the owner, 2026-08-26 —
+  previously the open question here). The image rendition landed on the bake the same day
+  (`--image`). What stays open is only the registry target: until one is named, the bake
+  builds the image locally where it runs and the `.bak` remains the distribution channel —
+  pushing the tag is the distribution ring's decision, not the bake's.
 - **The engine version on laptops versus the estate's servers.** LocalDB's engine version
   follows what is installed, and guard behavior is engine-bound; the per-machine acceptance
   checks are the control, and the toolchain ledger should record the engine version each
