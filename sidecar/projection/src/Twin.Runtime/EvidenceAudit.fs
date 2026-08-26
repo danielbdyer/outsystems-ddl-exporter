@@ -94,8 +94,8 @@ module EvidenceAudit =
                 let qualifiedOf (c: TableCoordinate) =
                     System.String.Concat(quote (SchemaName.value c.Schema), ".", quote (TableName.value c.Table))  // LINT-ALLOW: terminal audit probe SQL; identifiers pass through the SSDT renderer's quoting
                 use cmd = cnn.CreateCommand()
-                cmd.CommandText <-
-                    System.String.Concat(
+                cmd.CommandText <-  // LINT-ALLOW: terminal audit probe SQL at the command boundary
+                    System.String.Concat(  // LINT-ALLOW: terminal audit probe SQL; identifiers pass through the SSDT renderer's quoting
                         "SELECT COUNT_BIG(*) FROM ", qualifiedOf childCoord, " c LEFT JOIN ",
                         qualifiedOf parentCoord, " p ON c.", quote childColumn, " = p.", quote parentKey,
                         " WHERE c.", quote childColumn, " IS NOT NULL AND p.", quote parentKey, " IS NULL")  // LINT-ALLOW: terminal audit probe SQL; identifiers pass through the SSDT renderer's quoting
@@ -122,14 +122,14 @@ module EvidenceAudit =
                     match inputs with
                     | Error es -> return Result.failure es
                     | Ok sourcePacks ->
-                        match TwinContainer.resolvePassword config.Container.PasswordRef with
+                        match TwinSubstrate.resolve config with
                         | Error es -> return Result.failure es
-                        | Ok password ->
-                            let! state = TwinContainer.state config.Container
+                        | Ok resolved ->
+                            let! state = TwinSubstrate.state config
                             match state with
                             | Error es -> return Result.failure es
                             | Ok TwinContainer.Running ->
-                                use cnn = new SqlConnection(TwinContainer.twinConnectionString config.Container password)
+                                use cnn = new SqlConnection(resolved.TwinConnectionString)
                                 do! cnn.OpenAsync()
                                 let! readBack = Readback.readSchema cnn
                                 match readBack with

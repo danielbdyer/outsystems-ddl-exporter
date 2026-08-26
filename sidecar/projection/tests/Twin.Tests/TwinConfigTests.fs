@@ -241,3 +241,66 @@ let ``the merge section is closed-schema`` () =
             """{ "estate": { "tables": "T/*.sql" },
                  "evidence": { "merge": { "inputs": ["a.json"], "reprot": "x" } } }"""
     Assert.Equal(Some "$.evidence.merge.reprot", pathOf "twin.config.unknownKey" r)
+
+// -- The existing-server substrate (the C8 seam) ----------------------------
+
+[<Fact>]
+let ``a server section parses, and the substrate flips the schema-plane identity`` () =
+    let c =
+        ok
+            (TwinConfig.parse
+                """{ "estate": { "tables": "T/*.sql" },
+                     "server": { "conn": "env:TWIN_SERVER_CONN", "database": "ProvingTwin" } }""")
+    match c.Server with
+    | None -> failwith "the server section did not parse"
+    | Some s ->
+        Assert.Equal("env:TWIN_SERVER_CONN", s.ConnRef)
+        Assert.Equal("ProvingTwin", s.Database)
+    // The container defaults stay populated but inert; the canonical
+    // estate rendering carries the external marker, so the same estate on
+    // the two substrates converges independently.
+    let managed = ok (TwinConfig.parse """{ "estate": { "tables": "T/*.sql" } }""")
+    Assert.Contains("external:ProvingTwin", TwinConfig.canonicalEstate c)
+    Assert.NotEqual<string>(TwinConfig.canonicalEstate managed, TwinConfig.canonicalEstate c)
+
+[<Fact>]
+let ``the server database defaults to the managed twin's name`` () =
+    let c =
+        ok
+            (TwinConfig.parse
+                """{ "estate": { "tables": "T/*.sql" }, "server": { "conn": "file:.twin/server.conn" } }""")
+    Assert.Equal(Some TwinConfig.DefaultServerDatabase, c.Server |> Option.map (fun s -> s.Database))
+
+[<Fact>]
+let ``an inline server connection refuses (D9)`` () =
+    let r =
+        TwinConfig.parse
+            """{ "estate": { "tables": "T/*.sql" },
+                 "server": { "conn": "Server=localhost;User Id=sa;Password=x" } }"""
+    Assert.Contains("twin.config.secretInline", codes r)
+    Assert.Equal(Some "$.server.conn", pathOf "twin.config.secretInline" r)
+
+[<Fact>]
+let ``a server section without a conn refuses by path`` () =
+    let r =
+        TwinConfig.parse
+            """{ "estate": { "tables": "T/*.sql" }, "server": { "database": "x" } }"""
+    Assert.Contains("twin.config.required", codes r)
+    Assert.Equal(Some "$.server.conn", pathOf "twin.config.required" r)
+
+[<Fact>]
+let ``naming both substrates refuses`` () =
+    let r =
+        TwinConfig.parse
+            """{ "estate": { "tables": "T/*.sql" },
+                 "container": { "name": "twin-x" },
+                 "server": { "conn": "env:TWIN_SERVER_CONN" } }"""
+    Assert.Contains("twin.config.substrate.both", codes r)
+
+[<Fact>]
+let ``the server section is closed-schema`` () =
+    let r =
+        TwinConfig.parse
+            """{ "estate": { "tables": "T/*.sql" },
+                 "server": { "conn": "env:V", "databse": "x" } }"""
+    Assert.Equal(Some "$.server.databse", pathOf "twin.config.unknownKey" r)

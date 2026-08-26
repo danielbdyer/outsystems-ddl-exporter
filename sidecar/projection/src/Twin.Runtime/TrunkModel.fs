@@ -33,8 +33,8 @@ module TrunkModel =
             use master = new SqlConnection(masterConnStr)
             master.Open()
             use cmd = master.CreateCommand()
-            cmd.CommandText <-
-                System.String.Concat(
+            cmd.CommandText <-  // LINT-ALLOW: terminal throwaway-drop SQL at the command boundary
+                System.String.Concat(  // LINT-ALLOW: terminal throwaway-drop SQL; the generated database name passes through the SSDT renderer's quoting (and is generated, never operator input)
                     "IF DB_ID(N'", dbName, "') IS NOT NULL BEGIN ALTER DATABASE ",
                     Projection.Targets.SSDT.Render.quote dbName,
                     " SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ",
@@ -62,7 +62,7 @@ module TrunkModel =
                         | Error es -> return Result.failure es
                         | Ok () ->
                             try
-                                builder.InitialCatalog <- dbName
+                                builder.InitialCatalog <- dbName  // LINT-ALLOW: connection-string facet assignment on the ADO.NET builder at the acquisition boundary
                                 use! cnn = openCnn builder.ConnectionString
                                 let! readBack = Readback.readSchema cnn
                                 return readBack

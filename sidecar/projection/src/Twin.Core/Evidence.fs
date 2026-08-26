@@ -275,7 +275,7 @@ module Evidence =
                               Columns = columnNames |> List.map Option.get
                               DistinctCount = j.DistinctCount
                               Frequencies = j.Frequencies })
-            |> List.sortBy (fun j -> j.Table.ToLowerInvariant(), String.concat "|" j.Columns)
+            |> List.sortBy (fun j -> j.Table.ToLowerInvariant(), String.concat "|" j.Columns)  // LINT-ALLOW: deterministic composite sort key over the joint's column list; the joined text is the ordering key, never emitted
         { Tier = RichTier; Sources = [ sourceName ]; Tables = tables; FanOuts = fanOuts
           Orphans = orphans; Selectivities = selectivities; Joints = joints }
 
@@ -326,7 +326,7 @@ module Evidence =
                       FanOuts = packs |> List.collect (fun p -> p.FanOuts) |> List.sortBy (fun f -> f.ChildTable.ToLowerInvariant(), f.ChildColumn.ToLowerInvariant())
                       Orphans = packs |> List.collect (fun p -> p.Orphans) |> List.sortBy (fun o -> o.ChildTable.ToLowerInvariant(), o.ChildColumn.ToLowerInvariant())
                       Selectivities = packs |> List.collect (fun p -> p.Selectivities) |> List.sortBy (fun s -> s.ChildTable.ToLowerInvariant(), s.ChildColumn.ToLowerInvariant())
-                      Joints = packs |> List.collect (fun p -> p.Joints) |> List.sortBy (fun j -> j.Table.ToLowerInvariant(), String.concat "|" j.Columns) }
+                      Joints = packs |> List.collect (fun p -> p.Joints) |> List.sortBy (fun j -> j.Table.ToLowerInvariant(), String.concat "|" j.Columns) }  // LINT-ALLOW: deterministic composite sort key over the joint's column list; the joined text is the ordering key, never emitted
 
     // ------------------------------------------------------------------
     // Mint-side rebinding: pack → Profile against the twin catalog.
@@ -688,7 +688,7 @@ module Evidence =
             | [] -> ()
             | joints ->
                 writer.WriteStartArray "joints"
-                for j in joints |> List.sortBy (fun j -> j.Table.ToLowerInvariant(), String.concat "|" j.Columns) do
+                for j in joints |> List.sortBy (fun j -> j.Table.ToLowerInvariant(), String.concat "|" j.Columns) do  // LINT-ALLOW: deterministic composite sort key over the joint's column list; the joined text is the ordering key, never emitted
                     writer.WriteStartObject()
                     writer.WriteString("table", j.Table)
                     writer.WriteStartArray "columns"

@@ -22,6 +22,7 @@
   <ItemGroup>
     <Compile Include="EstateFiles.fs" />
     <Compile Include="TwinContainer.fs" />
+    <Compile Include="TwinSubstrate.fs" />
     <Compile Include="EstateModel.fs" />
     <Compile Include="TwinDatabase.fs" />
     <Compile Include="Readback.fs" />

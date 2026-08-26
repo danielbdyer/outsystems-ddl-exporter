@@ -93,7 +93,7 @@ module Crossover =
     let private labelOf (pack: EvidencePack) : string =
         match pack.Sources with
         | [] -> "(unlabeled)"
-        | sources -> sources |> List.sort |> String.concat "+"
+        | sources -> sources |> List.sort |> String.concat "+"  // LINT-ALLOW: the attribution label is the sorted source names joined; a label IS a string primitive
 
     let private contentHash (pack: EvidencePack) : string =
         use sha = System.Security.Cryptography.SHA256.Create()
@@ -101,7 +101,7 @@ module Crossover =
         |> System.Text.Encoding.UTF8.GetBytes
         |> sha.ComputeHash
         |> Array.map (fun b -> b.ToString "x2")
-        |> String.concat ""
+        |> String.concat ""  // LINT-ALLOW: terminal SHA-256 hex-digest fold; the digest text is the byte-pair join, no typed primitive applies
 
     // ------------------------------------------------------------------
     // The trunk universe and the clamp.
@@ -134,10 +134,10 @@ module Crossover =
         let dropTable (t: string) =
             drift.Add { Coordinate = t; Kind = TableNotInTrunk; Sources = sources }
         let dropColumn (t: string) (c: string) =
-            drift.Add { Coordinate = System.String.Concat(t, ".", c); Kind = ColumnNotInTrunk; Sources = sources }
+            drift.Add { Coordinate = System.String.Concat(t, ".", c); Kind = ColumnNotInTrunk; Sources = sources }  // LINT-ALLOW: terminal drift-coordinate rendering (table.column); the composite key IS the report's coordinate text
         let dropEdge (child: string) (col: string) (parent: string) =
             drift.Add
-                { Coordinate = System.String.Concat(child, ".", col, " -> ", parent)
+                { Coordinate = System.String.Concat(child, ".", col, " -> ", parent)  // LINT-ALLOW: terminal drift-coordinate rendering (edge arrow); the composite key IS the report's coordinate text
                   Kind = EdgeNotInTrunk; Sources = sources }
         let tables =
             pack.Tables
@@ -187,7 +187,7 @@ module Crossover =
         ValidationError.createWithMetadata
             "twin.evidence.crossover.tierMismatch"
             "The crossover merges packs of one tier. Derive every input to the same tier first."
-            (Map.ofList [ "tiers", Some (String.concat ", " tiers) ])
+            (Map.ofList [ "tiers", Some (String.concat ", " tiers) ])  // LINT-ALLOW: terminal comma-joined tier list in the refusal's metadata; operator-facing free text
 
     let private noInputs : ValidationError =
         ValidationError.create
@@ -279,7 +279,7 @@ module Crossover =
                         |> List.map (fun (_, colEntries) ->
                             let (_, _, first) = List.head colEntries
                             let display = first.Column
-                            let rendered (nc: int64) (rc: int64) = System.String.Concat(string nc, "/", string rc)
+                            let rendered (nc: int64) (rc: int64) = System.String.Concat(string nc, "/", string rc)  // LINT-ALLOW: terminal report-detail rendering (nulls/rows); the literal-free counts text IS the report artifact
                             let nullMerged =
                                 mergeNullRate
                                     (colEntries |> List.map (fun (label, _, c) -> label, c.NullCount, c.RowCount))
@@ -316,7 +316,7 @@ module Crossover =
                                     |> List.filter (fun (_, _, c) -> c.HasDuplicates)
                                     |> List.map (fun (l, _, _) -> l, "duplicates")
                                 stat displayTable (Some display) None "hasDuplicates"
-                                    (claimants |> List.map fst |> List.sort |> String.concat "+")
+                                    (claimants |> List.map fst |> List.sort |> String.concat "+")  // LINT-ALLOW: the attribution label is the sorted claimant names joined; a label IS a string primitive
                                     (colEntries |> List.map (fun (l, _, c) ->
                                         l, (if c.HasDuplicates then "duplicates" else "distinct"))))
                             let truncated = colEntries |> List.exists (fun (_, _, c) -> c.Truncated)
@@ -430,11 +430,11 @@ module Crossover =
                 |> List.map (fun (_, entries) ->
                     let winner = entries |> List.maxBy (fun (l, j) -> j.DistinctCount, l)
                     let (_, first) = List.head entries
-                    stat first.Table (Some (String.concat "|" first.Columns)) None
+                    stat first.Table (Some (String.concat "|" first.Columns)) None  // LINT-ALLOW: the joint's column-list report key; the joined text IS the report's coordinate text
                         "joint" (fst winner)
                         (entries |> List.map (fun (l, j) -> l, string j.DistinctCount))
                     snd winner)
-                |> List.sortBy (fun j -> lower j.Table, String.concat "|" j.Columns)
+                |> List.sortBy (fun j -> lower j.Table, String.concat "|" j.Columns)  // LINT-ALLOW: deterministic composite sort key over the joint's column list; the joined text is the ordering key, never emitted
 
             let merged =
                 { Tier = tier

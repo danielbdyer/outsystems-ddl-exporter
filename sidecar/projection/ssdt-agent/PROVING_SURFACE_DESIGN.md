@@ -582,10 +582,12 @@ carried by the vendor channel, which is proven citation-closed. B5 landed (the f
 line-ending-blind identity, the repository's `.gitattributes`, the image emitter's LF
 normalization). Each capture now also writes the standing drift report (the environment against
 the trunk head). B0 and B1a remain the owner's steps and are now paint-by-numbers in
-`CAPTURE_POINT_RUNBOOK.md`. The two open build items are B4 (the existing-server seam for Twin
-verbs on a Docker-less machine — capture, merge, and audit already run engine-agnostically
-through the connection-honoring acquisition) and B6 (the peel; the bake pipeline already
-carries its swap parameter). B7 stays later work.
+`CAPTURE_POINT_RUNBOOK.md`. B4 landed as the substrate seam: `twin.json` names either the
+managed container or an existing server (`server.conn` as a reference, `server.database` as
+the knob), every verb resolves through it, `down` leaves an existing server alone, `reset`
+drops only the twin database — proven live end to end against an external instance. The one
+open build item is B6 (the peel; the bake pipeline already carries its swap parameter). B7
+stays later work.
 
 Each item names the cases it serves. The first two are estate-side work with no F# changes; the
 cutover week depends on neither.
@@ -703,6 +705,5 @@ The built surface stands proven end to end on the sample estate; what remains is
 built. Run `CAPTURE_POINT_RUNBOOK.md` on the corporate machine: pin the toolchain and pass the
 machine acceptance, capture the three environments and review the classifications, merge and
 bake the first real template and file its fidelity-audit report, then stand the Azure DevOps
-nightly up and raise the vendor pull request. The two open build items — the existing-server
-seam and the peel — widen where the Twin's own verbs run and how the tool ships; neither gates
-the first capture or the first template.
+nightly up and raise the vendor pull request. The one open build item — the peel — changes how
+the tool ships; it gates neither the first capture nor the first template.

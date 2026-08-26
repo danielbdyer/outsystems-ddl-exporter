@@ -44,16 +44,19 @@ Every critical-path slice of the approved plan landed, each proven live before i
 - **The drift leg** (`2ac266e`): every `twin evidence import` also compares the environment's
   bound schema against the trunk head into `twin/evidence-drift.report.json`; trunk-acquisition
   failure is a named skip, never a capture block.
+- **The existing-server seam** (B4): `twin.json` names either the managed container or an
+  existing server (`server.conn` env:/file: reference; `server.database` the knob, default
+  `twin`; both sections explicit refuses). Every verb resolves through
+  `Twin.Runtime/TwinSubstrate.fs`: `up` requires the server reachable and never provisions
+  it, `down` is the named no-op, `reset` drops only the twin database. Proven live:
+  seed → status (`Managed=false`) → down (server left) → reset (database-only drop) against
+  an external instance, plus the unreachable refusal on the write path and the honest report
+  on the read path.
 
 ## What remains
 
 - **The owner's steps** — everything in `CAPTURE_POINT_RUNBOOK.md`. Nothing in the monorepo
   gates them. This is the critical path to day one.
-- **B4, the existing-server seam** (`TwinSubstrate = ManagedContainer | ExternalServer`): lets
-  `twin up`/`seed` run against LocalDB with no Docker. Capture, merge, and audit already run
-  engine-agnostically; the developers' path runs on templates, so this widens convenience, not
-  capability. The plan's C8 slice describes the shape (~24 call sites in `TwinContainer`
-  consumers).
 - **B6, the peel** — `twin` as a distributable dotnet tool; the ADO pipeline's `toolSource`
   parameter is the swap seat. B7 (fan-out skew, per-environment mints) stays later.
 - **C15, the image rendition** — optional `--image` on the bake script wrapping the `.bak`;

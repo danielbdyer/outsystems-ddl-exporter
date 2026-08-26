@@ -161,6 +161,8 @@ twin bake                          (M5) the distributable pre-seeded image (Dock
 {
   "estate":    { "tables": "Modules/**/*.sql", "schemas": "Schemas/*.sql", "staticData": ["Data/StaticSeeds.sql"] },
   "container": { "name": "twin-mssql", "port": 21433, "image": "…mssql/server:2022-latest", "password": "env:TWIN_SQL_PASSWORD" },
+  // OR an existing server instead of the managed container (LocalDB / Developer edition — no Docker):
+  // "server": { "conn": "env:TWIN_SQL_SERVER_CONN", "database": "twin" },
   "evidence":  { "shape": "twin/evidence.shape.json", "rich": "file:../secure/evidence.rich.json",
                  "sources": [ { "name": "on-prem-uat", "rendition": "logical", "conn": "env:UAT_CONN",
                                 "tables": ["dbo.Customer", "dbo.Order"], "sampleRows": 100000 } ] },
@@ -175,6 +177,12 @@ twin bake                          (M5) the distributable pre-seeded image (Dock
                                   "pins": [ { "table": "dbo.Customer", "rows": [ { "Id": 1, "Name": "Canonical Test Customer" } ] } ] } }
 }
 ```
+
+The substrate is a choice, not a stack: a managed `container` (the default) or an existing
+`server` — naming both explicitly refuses (`twin.config.substrate.both`). On an existing
+server every verb resolves through the substrate seam (`Twin.Runtime/TwinSubstrate.fs`):
+`up` requires the server reachable and never provisions it, `down` is a named no-op (the
+server is not the twin's to stop), and `reset` drops only the configured twin database.
 
 Scenario semantics: **a scenario only rewrites evidence, volumes, corrections, and pins —
 it never generates** (`Twin.Core/ScenarioCompiler.fs`). Weights reshape a text column's

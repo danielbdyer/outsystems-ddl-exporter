@@ -67,6 +67,19 @@ type ContainerSection = {
     PasswordRef : string option
 }
 
+/// An EXISTING SQL Server as the twin's substrate — LocalDB, Developer
+/// edition, any reachable instance — instead of a managed container. The
+/// twin never provisions or stops it; `up` requires it reachable, `down`
+/// leaves it alone, `reset` drops only the twin database.
+type ServerSection = {
+    /// `env:` / `file:` reference to the server-level connection string
+    /// (a database in the string is ignored; the twin database rides
+    /// `Database`). Never inline — a connection string carries a secret.
+    ConnRef  : string
+    /// The twin database's name on that server.
+    Database : string
+}
+
 /// The crossover-merge configuration: which per-environment packs merge,
 /// and where the merge writes its decisions.
 type MergeSection = {
@@ -151,7 +164,13 @@ type VolumeMode =
 
 type TwinConfig = {
     Estate          : EstateSection
+    /// The managed-container coordinates. Always populated (defaults when
+    /// the section is absent); INERT when `Server` names an existing
+    /// server — the substrate seam (`TwinSubstrate`) decides which one
+    /// drives, and the parse refuses a config naming both explicitly.
     Container       : ContainerSection
+    /// The existing-server substrate, when configured.
+    Server          : ServerSection option
     Evidence        : EvidenceSection
     CorrectionsPath : string option
     Seed            : uint64
@@ -354,6 +373,27 @@ module TwinConfig =
         | Ok n, Ok p, Ok i, Ok pw, [] -> Result.success { Name = n; Port = p; Image = i; PasswordRef = pw }
         | nR, pR, iR, pwR, closedErrors ->
             Result.failure (Result.errors nR @ Result.errors pR @ Result.errors iR @ Result.errors pwR @ closedErrors)
+
+    /// The twin database's default name on an existing server (mirrors
+    /// the managed container's fixed database name).
+    [<Literal>]
+    let DefaultServerDatabase = "twin"
+
+    let private parseServer (path: string) (el: JsonElement) : Result<ServerSection> =
+        if el.ValueKind <> JsonValueKind.Object then Result.failureOf (wrongType "an object" path) else
+        let closed = checkClosed path [ "conn"; "database" ] el
+        let conn =
+            match tryProp "conn" el with
+            | Some v -> readSecretRef (child path "conn") v
+            | None -> Result.failureOf (missing "the server connection reference (env:/file:)" (child path "conn"))
+        let database =
+            match tryProp "database" el with
+            | Some v -> readString (child path "database") v
+            | None -> Result.success DefaultServerDatabase
+        match conn, database, closed with
+        | Ok c, Ok d, [] -> Result.success { ConnRef = c; Database = d }
+        | cR, dR, closedErrors ->
+            Result.failure (Result.errors cR @ Result.errors dR @ closedErrors)
 
     let private parseRendition (path: string) (el: JsonElement) : Result<EvidenceRendition> =
         readString path el
@@ -730,7 +770,7 @@ module TwinConfig =
     // ------------------------------------------------------------------
 
     let private topLevelKeys =
-        [ "estate"; "container"; "evidence"; "corrections"
+        [ "estate"; "container"; "server"; "evidence"; "corrections"
           "seed"; "scale"; "defaultRows"; "volumes"; "scenarios" ]
 
     /// Parse `twin.json` text to the typed config. Errors aggregate —
@@ -760,6 +800,20 @@ module TwinConfig =
                     match tryProp "container" root with
                     | Some v -> parseContainer "$.container" v
                     | None -> Result.success defaultContainer
+                let server =
+                    match tryProp "server" root with
+                    | Some v -> parseServer "$.server" v |> Result.map Some
+                    | None -> Result.success None
+                // One substrate drives. Both sections EXPLICIT is ambiguous
+                // and refused; `server` beside the defaulted container is
+                // the external mode (the defaults are inert).
+                let substrateExclusive =
+                    match tryProp "container" root, tryProp "server" root with
+                    | Some _, Some _ ->
+                        [ ValidationError.create
+                            "twin.config.substrate.both"
+                            "twin.json names both a managed container and an existing server. Keep exactly one: remove the container section to use the server, or the server section to manage a container." ]
+                    | _ -> []
                 let evidence =
                     match tryProp "evidence" root with
                     | Some v -> parseEvidence "$.evidence" v
@@ -804,11 +858,12 @@ module TwinConfig =
                             | errors -> Result.failure errors)
                     | Some _ -> Result.failureOf (wrongType "an object of scenario name → scenario" "$.scenarios")
                     | None -> Result.success []
-                match estate, container, evidence, corrections, seed, scale, defaultRows, volumes, scenarios, closed with
-                | Ok e, Ok c, Ok ev, Ok co, Ok se, Ok sc, Ok dr, Ok vo, Ok scn, [] ->
+                match estate, container, server, evidence, corrections, seed, scale, defaultRows, volumes, scenarios, closed @ substrateExclusive with
+                | Ok e, Ok c, Ok sv, Ok ev, Ok co, Ok se, Ok sc, Ok dr, Ok vo, Ok scn, [] ->
                     Result.success
                         { Estate = e
                           Container = c
+                          Server = sv
                           Evidence = ev
                           CorrectionsPath = co
                           Seed = se
@@ -816,9 +871,9 @@ module TwinConfig =
                           DefaultRows = dr
                           Volumes = vo
                           Scenarios = scn }
-                | eR, cR, evR, coR, seR, scR, drR, voR, scnR, closedErrors ->
+                | eR, cR, svR, evR, coR, seR, scR, drR, voR, scnR, closedErrors ->
                     Result.failure
-                        (Result.errors eR @ Result.errors cR @ Result.errors evR @ Result.errors coR
+                        (Result.errors eR @ Result.errors cR @ Result.errors svR @ Result.errors evR @ Result.errors coR
                          @ Result.errors seR @ Result.errors scR @ Result.errors drR @ Result.errors voR
                          @ Result.errors scnR @ closedErrors)
 
@@ -908,7 +963,14 @@ module TwinConfig =
             [ c.Estate.TablesPattern
               defaultArg c.Estate.SchemasPattern ""
               String.concat ";" c.Estate.StaticData
-              c.Container.Image ]
+              // The engine the schema publishes to is part of the schema
+              // plane's identity. Managed: the pinned image. External: the
+              // substrate marker (the server's own engine version is not a
+              // config fact and may move under the twin — the per-machine
+              // acceptance and the status probe own that reality).
+              match c.Server with
+              | Some s -> System.String.Concat("external:", s.Database)  // LINT-ALLOW: canonical-form field composition (the fingerprint's length-prefixed rendering wraps it)
+              | None -> c.Container.Image ]
 
     /// The mint-plane canonical config text: what, beyond the schema and
     /// the evidence/correction artifact contents, changes what a mint

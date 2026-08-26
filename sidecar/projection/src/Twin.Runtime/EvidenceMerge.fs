@@ -123,7 +123,7 @@ module EvidenceMerge =
                                               let label =
                                                   match original.Sources with
                                                   | [] -> "(unlabeled)"
-                                                  | sources -> sources |> List.sort |> String.concat "+"
+                                                  | sources -> sources |> List.sort |> String.concat "+"  // LINT-ALLOW: the attribution label is the sorted source names joined; a label IS a string primitive
                                               label, List.length c.Tables)
                                       MergedTables = List.length merged.Tables
                                       DriftCount = List.length drift

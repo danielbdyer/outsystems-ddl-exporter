@@ -77,12 +77,16 @@ module Render =
             [ "No twin container is present."
               System.String.Concat("The repository defines ", ni s.DefinedTables, " tables.")
               "Run: twin up" ]
+        | TwinContainer.Stopped when not s.Managed ->
+            [ "The configured server did not accept a connection."
+              "Start the engine (or fix server.conn), then run: twin up" ]
         | TwinContainer.Stopped ->
             [ "The twin container is stopped."
               "Run: twin up" ]
         | TwinContainer.Running ->
             if not s.DatabasePresent then
-                [ "The twin container is running; the twin database has not been created."
+                [ (if s.Managed then "The twin container is running; the twin database has not been created."
+                   else "The configured server is reachable; the twin database has not been created.")
                   "Run: twin up" ]
             else
                 let current = s.SchemaCurrent = Some true && s.DataCurrent = Some true
@@ -105,11 +109,21 @@ module Render =
                           (match s.LiveTables with Some t -> ni t | None -> "an unknown number of"), " tables.")
                       "Run: twin up" ]
 
-    let down () : string list =
-        [ "The twin container is stopped. State is preserved; twin up restarts it." ]
+    let down (outcome: DownOutcome) : string list =
+        match outcome with
+        | ContainerStopped ->
+            [ "The twin container is stopped. State is preserved; twin up restarts it." ]
+        | ExternalServerLeft ->
+            [ "The configured server is not the twin's to stop; nothing was changed. To drop the twin database, run: twin reset" ]
 
-    let reset () : string list =
-        [ "The twin container has been removed, and its data with it. The next twin up starts from the repository definitions alone." ]
+    let reset (outcome: ResetOutcome) : string list =
+        match outcome with
+        | ContainerRemoved ->
+            [ "The twin container has been removed, and its data with it. The next twin up starts from the repository definitions alone." ]
+        | DatabaseDropped database ->
+            [ System.String.Concat(
+                "The twin database \"", database,
+                "\" has been dropped from the configured server; the server itself stands. The next twin up starts from the repository definitions alone.") ]
 
     let initScaffolded (path: string) : string list =
         [ "A starter twin.json has been written."
@@ -242,8 +256,8 @@ module Render =
           "  twin evidence verify                Bind both packs against the estate; the per-table coverage board."
           "  twin classify                       Propose PII classifications from column names (reviewable artifact)."
           "  twin bake                           A docker build context for a distributable schema image."
-          "  twin down                           Stop the container; keep its state."
-          "  twin reset                          Remove the container and its data."
+          "  twin down                           Stop the container; keep its state. An existing server is left alone."
+          "  twin reset                          Remove the container and its data. On an existing server: drop the twin database only."
           "  twin init                           Write a starter twin.json."
           ""
           "Configuration is read from ./twin.json (or TWIN_CONFIG)." ]

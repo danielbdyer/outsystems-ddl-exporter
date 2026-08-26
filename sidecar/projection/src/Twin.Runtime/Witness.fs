@@ -1,4 +1,11 @@
 namespace Twin.Runtime
+// LINT-ALLOW-FILE: the witness emitter — its output IS terminal T-SQL text
+//   (the deterministic UPDATE witnesses and their assert probes). Every
+//   identifier passes through the SSDT renderer's quoting (`Render.quote` /
+//   `tableQualified`) and every count is a formatted int64. The typed
+//   `Statement` DU does not model UPDATE (the StaticSeedsEmitter precedent),
+//   so `ScriptDomGenerate.toText` does not apply; a witness-SQL AST was
+//   considered and rejected as a second SQL surface with one consumer.
 
 open Projection.Core
 open Twin.Core
