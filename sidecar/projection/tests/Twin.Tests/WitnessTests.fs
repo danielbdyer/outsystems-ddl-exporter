@@ -140,3 +140,109 @@ let ``the assert script carries one check per witness and one failures summary``
 let ``an empty plan asserts zero failures`` () =
     let plan, _ = Witness.plan index (packOf [] [])
     Assert.Contains("SELECT 0 AS failures", Witness.emitAssertSql plan)
+
+// ---------------------------------------------------------------------------
+// The null-rate floor and the row windows: witnesses must never destroy the
+// reality another witness (or the mint's own null draws) planted.
+// ---------------------------------------------------------------------------
+
+let private nullableAttr (key: SsKey) (logical: string) (column: string) (ptype: PrimitiveType) (length: int option) : Attribute =
+    { attrOf key logical column ptype false length false with
+        Column = ColumnRealization.create column true |> Result.value }
+
+/// A trunk whose witnessable columns are NULLABLE — the seat of the
+/// null-rate floor and the window ledger.
+let private customerN : Kind =
+    { Kind.create (kindKey ["CN"]) (name "CustomerN") (mkTableId "dbo" "CustomerN")
+        [ attrOf (attrKey ["CN"; "Id"]) "Id" "Id" Integer true None true
+          nullableAttr (attrKey ["CN"; "Email"]) "Email" "Email" Text (Some 40)
+          nullableAttr (attrKey ["CN"; "RegionId"]) "RegionId" "RegionId" Integer None ] with
+        Modality = [] }
+
+let private region : Kind =
+    { Kind.create (kindKey ["R"]) (name "Region") (mkTableId "dbo" "Region")
+        [ attrOf (attrKey ["R"; "Id"]) "Id" "Id" Integer true None false ] with
+        Modality = [] }
+
+let private indexN =
+    CatalogIndex.ofCatalog
+        (Catalog.create [ mkModule (modKey "WN") (name "WN") [ customerN; region ] ] [] |> Result.value)
+
+[<Fact>]
+let ``the null-rate floor is planned first, ranks non-null rows, and asserts the recorded count`` () =
+    let pack =
+        packOf
+            [ { Table = "dbo.CustomerN"; RowCount = 25L
+                Columns = [ { col "Email" 25L with NullCount = 10L; MaxLength = Some 30 } ] } ] []
+    let plan, skips = Witness.plan indexN pack
+    Assert.Empty skips
+    match plan.Cases with
+    | [ NullRateWitness (_, "Email", _, 10L, 15L); MaxLengthWitness _ ] -> ()
+    | other -> failwithf "the null-rate floor must precede the value witnesses: %A" other
+    let sql = Witness.emitSql 7UL plan
+    Assert.Contains("UPDATE w SET v = NULL WHERE rn > 15;", sql)
+    // Every value witness ranks only non-null rows — planting a value
+    // never converts a NULL.
+    Assert.Contains("IS NOT NULL", sql)
+    Assert.Contains("IS NULL) >= 10", Witness.emitAssertSql plan)
+
+[<Fact>]
+let ``a recorded null on a NOT NULL trunk column is a named skip`` () =
+    let pack =
+        packOf
+            [ { Table = "dbo.Customer"; RowCount = 10L
+                Columns = [ { col "Email" 10L with NullCount = 3L } ] } ] []
+    let plan, skips = Witness.plan index pack
+    Assert.Empty plan.Cases
+    Assert.Equal("notNullable", (List.exactlyOne skips).Reason)
+
+[<Fact>]
+let ``witnesses on one column claim disjoint row windows`` () =
+    // RegionId carries a null rate, an envelope, a duplicate, and an
+    // orphan edge at once: the envelope holds rows 1-2, the duplicate
+    // lands on row 3, the orphans take rows 4-6 — no witness overwrites
+    // another's planted reality.
+    let pack =
+        packOf
+            [ { Table = "dbo.CustomerN"; RowCount = 25L
+                Columns =
+                    [ { col "RegionId" 25L with
+                          NullCount = 10L
+                          Numeric = Some (shape 1m 7777m)
+                          HasDuplicates = true } ] } ]
+            [ { ChildTable = "dbo.CustomerN"; ChildColumn = "RegionId"; ParentTable = "dbo.Region"; OrphanCount = 3L } ]
+    let plan, skips = Witness.plan indexN pack
+    Assert.Empty skips
+    Assert.Equal(4, List.length plan.Cases)
+    let sql = Witness.emitSql 7UL plan
+    Assert.Contains("WHERE rn = 3;", sql)
+    Assert.Contains("WHERE rn > 3 AND rn <= 6;", sql)
+
+[<Fact>]
+let ``an orphan plant clamps to the non-null budget; a budget with no room is a named skip`` () =
+    let clamped =
+        packOf
+            [ { Table = "dbo.CustomerN"; RowCount = 10L
+                Columns = [ { col "RegionId" 10L with NullCount = 6L } ] } ]
+            [ { ChildTable = "dbo.CustomerN"; ChildColumn = "RegionId"; ParentTable = "dbo.Region"; OrphanCount = 99L } ]
+    let plan, skips = Witness.plan indexN clamped
+    Assert.Empty skips
+    Assert.Contains("WHERE rn > 0 AND rn <= 4;", Witness.emitSql 7UL plan)
+    let noRoom =
+        packOf
+            [ { Table = "dbo.CustomerN"; RowCount = 10L
+                Columns = [ { col "RegionId" 10L with NullCount = 10L } ] } ]
+            [ { ChildTable = "dbo.CustomerN"; ChildColumn = "RegionId"; ParentTable = "dbo.Region"; OrphanCount = 2L } ]
+    let _, skips2 = Witness.plan indexN noRoom
+    Assert.Contains("insufficientNonNullRows", skips2 |> List.map (fun s -> s.Reason))
+
+[<Fact>]
+let ``the duplicate assertion ignores NULL groups`` () =
+    // Two NULLs group together under GROUP BY; they must never satisfy a
+    // duplicate witness whose planted reality is a copied VALUE.
+    let pack =
+        packOf
+            [ { Table = "dbo.Customer"; RowCount = 10L
+                Columns = [ { col "Code" 10L with HasDuplicates = true } ] } ] []
+    let plan, _ = Witness.plan index pack
+    Assert.Contains("IS NOT NULL GROUP BY", Witness.emitAssertSql plan)
