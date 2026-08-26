@@ -21,6 +21,13 @@ actually ran.
 | Microsoft.SqlServer.DacFx (Twin corpus) | 162.5.57 | `../../src/Projection.Pipeline/Projection.Pipeline.fsproj`, `../../src/Projection.Targets.SSDT/Projection.Targets.SSDT.fsproj` | 2026-08-22 | the parallel proof corpus's engine; the live sqlpackage engine is authoritative where they diverge |
 | Microsoft.Build.Sql (sqlproj SDK) | 2.2.0 | `../proving-ground/SampleCatalog.sqlproj` | 2026-07-02 | bump only on a real build-failure trigger |
 | SQL Server image (warm container) | 2022-latest (floating) | the monorepo's `warm-sql.sh` (`WARM_SQL_IMAGE` override) | — | pin to a CU/digest tag at cutover; a floating tag under version-stamped guard evidence is a named risk |
+| proving template (nightly bake) | UNBAKED (estate) | the bake's manifest beside each `.bak`; each restored copy's `[twin].[__state]` | — | after the first estate nightly: file the manifest's commit + data fingerprint here, and refresh the row when a template worth pinning ships; the sample-estate mechanic is proven (2026-08-26) |
+| machine (dev container) | sqlpackage 170.5.76.0 · engine 16.0.4265.3 · Developer Edition (64-bit) | this machine | 2026-08-26 | per-machine acceptance PASSED |
+
+Per-machine rows: `estate-kit/setup-proving-machine` ends by printing a `machine (<name>)` row
+in exactly this table's shape — append it here when a machine passes its acceptance, one row per
+machine, refreshed when the machine's engine or sqlpackage moves. The dev-container row above is
+the first exemplar, from the kit's own live acceptance run.
 
 Discipline:
 

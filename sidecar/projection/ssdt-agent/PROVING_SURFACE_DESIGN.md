@@ -434,6 +434,19 @@ The curriculum estate is a third, tiny template: the sample project with its del
 defects, baked the same way. The dojo's katas and the self-test fleet run against it, so a
 learner's machine and a working machine differ only in which template they restore.
 
+**The developer's routine, modeled.** The surface earns its keep in a loop that fits inside a
+working session. Once per machine, `setup-proving-machine` verifies the toolchain and runs the
+acceptance suite; its verdict row lands in the toolchain ledger. When the nightly refreshes the
+template, `get-template` fetches and verifies the new pair — a minute, on the developer's own
+schedule. Per proof, `restore-proving-copy` stands a disposable copy up in about a second, the
+copy names its own base from `[twin].[__state]`, the proving loop publishes against it
+unchanged, and the record stamps the template identity beside the sqlpackage version. When a
+Permissive publish or an adversarial probe dirties the copy, `reset-proving-copy` restores the
+same template under the same name — the reset is a restore, never a repair. No step in the
+routine holds a credential to Dev, QA, UAT, or Prod, and no step queries them: the developer's
+whole data world is the synthetic template, which blocks where the worst of the three
+environments would block.
+
 **The mechanic, proven on the sample estate (2026-08-26).** The bake-restore-reset cycle ran
 live on the warm container, end to end. The sample estate's BEFORE state (the published schema
 plus the seed) froze into a compressed backup in 0.03 seconds, 584 KB. A `RESTORE DATABASE ...
