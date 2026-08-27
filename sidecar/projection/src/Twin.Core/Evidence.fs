@@ -56,6 +56,23 @@ type TextShape = {
     LengthP90          : int option
 }
 
+/// RICH-ONLY (the partner's values are vocabulary literals): the
+/// per-partner-value null structure of a column — nulls in business data
+/// are rarely independent (`ShippedOn` is null exactly while `Status`
+/// says open). Discovered by the reality probe with no configuration:
+/// the partner is a same-table text column with a complete
+/// under-threshold vocabulary and no nulls of its own, kept only when
+/// the per-value rates genuinely spread. The witness pass re-plants the
+/// structure with per-partition floors; the audit holds it as a margin.
+type ConditionalNullEvidence = {
+    /// The partner column whose value classes the null rate follows.
+    Partner : string
+    /// Per partner value: (value, child nulls, child rows). The rows
+    /// over all values sum to the column's RowCount (the partner is
+    /// null-free), and the nulls to its NullCount.
+    Rates   : (string * int64 * int64) list
+}
+
 type ColumnEvidence = {
     Column        : string
     RowCount      : int64
@@ -74,6 +91,9 @@ type ColumnEvidence = {
     /// String-plane counts (both tiers — literal-free by construction);
     /// `None` for non-text columns and pre-F1 packs.
     Text          : TextShape option
+    /// Rich tier only (partner values are literals); `None` in the
+    /// shape tier and for columns with no discovered structure.
+    ConditionalNulls : ConditionalNullEvidence option
 }
 
 type TableEvidence = {
@@ -247,9 +267,11 @@ module Evidence =
                           Map.tryFind c.AttributeKey categoricalByAttr |> Option.map (fun cat -> cat.Frequencies) |> Option.defaultValue []
                       Numeric =
                           Map.tryFind c.AttributeKey numericByAttr |> Option.map shapeOf
-                      // The string-plane counts arrive from the twin-side
-                      // reality probe (Twin.Runtime), never the kernel.
-                      Text = None }))
+                      // The string-plane counts and the conditional-null
+                      // structure arrive from the twin-side reality probe
+                      // (Twin.Runtime), never the kernel.
+                      Text = None
+                      ConditionalNulls = None }))
         let tables =
             columns
             |> List.groupBy fst
@@ -327,7 +349,7 @@ module Evidence =
                     { t with
                         Columns =
                             t.Columns
-                            |> List.map (fun c -> { c with Frequencies = []; Numeric = None }) }) }
+                            |> List.map (fun c -> { c with Frequencies = []; Numeric = None; ConditionalNulls = None }) }) }
 
     let private mergeCollision (table: string) : ValidationError =
         ValidationError.createWithMetadata
@@ -676,6 +698,20 @@ module Evidence =
                         (match ts.LengthP50 with Some v -> writer.WriteNumber("lengthP50", v) | None -> ())
                         (match ts.LengthP90 with Some v -> writer.WriteNumber("lengthP90", v) | None -> ())
                         writer.WriteEndObject()
+                    match c.ConditionalNulls with
+                    | None -> ()
+                    | Some cn ->
+                        writer.WriteStartObject "conditionalNulls"
+                        writer.WriteString("partner", cn.Partner)
+                        writer.WriteStartArray "rates"
+                        for (v, nulls, rows) in cn.Rates do
+                            writer.WriteStartObject()
+                            writer.WriteString("value", v)
+                            writer.WriteNumber("nulls", nulls)
+                            writer.WriteNumber("rows", rows)
+                            writer.WriteEndObject()
+                        writer.WriteEndArray()
+                        writer.WriteEndObject()
                     writer.WriteEndObject()
                 writer.WriteEndArray()
                 writer.WriteEndObject()
@@ -827,6 +863,20 @@ module Evidence =
                                                           (match ts.TryGetProperty "lengthP50" with true, v -> Some (v.GetInt32()) | _ -> None)
                                                       LengthP90 =
                                                           (match ts.TryGetProperty "lengthP90" with true, v -> Some (v.GetInt32()) | _ -> None) }
+                                            | _ -> None
+                                        ConditionalNulls =
+                                            match c.TryGetProperty "conditionalNulls" with
+                                            | true, cn when cn.ValueKind = JsonValueKind.Object ->
+                                                Some
+                                                    { Partner = getStr cn "partner"
+                                                      Rates =
+                                                          match cn.TryGetProperty "rates" with
+                                                          | true, rates when rates.ValueKind = JsonValueKind.Array ->
+                                                              [ for r in rates.EnumerateArray() ->
+                                                                  getStr r "value",
+                                                                  r.GetProperty("nulls").GetInt64(),
+                                                                  r.GetProperty("rows").GetInt64() ]
+                                                          | _ -> [] }
                                             | _ -> None } ]
                               | _ -> [] } ]
                 | _ -> []

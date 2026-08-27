@@ -10,13 +10,15 @@ open Twin.Core
 ///
 /// The operator-reality validation: profile the minted template itself
 /// through the same capture path the environments went through, then run
-/// the pure pack-versus-pack audit against each merge input. The one
-/// thing profiling cannot see — orphans planted on edges the trunk does
-/// not constrain (the profiler measures orphan reality per catalog
-/// reference only) — is probed directly, per recorded edge, and added to
-/// the minted pack before the comparison. Witness legality skips become
-/// the audit's exemptions, recomputed deterministically from the merged
-/// pack rather than parsed from a report.
+/// the pure pack-versus-pack audit against each merge input. What
+/// profiling cannot see is probed directly, per recorded edge, and added
+/// to the minted pack before the comparison: orphans planted on edges the
+/// trunk does not constrain (the profiler measures orphan reality per
+/// catalog reference only), and fan-outs on logical-but-unenforced edges
+/// (the read-back catalog carries enforced references only, so the
+/// profiler's cardinality capture never reaches them). Witness legality
+/// skips become the audit's exemptions, recomputed deterministically from
+/// the merged pack rather than parsed from a report.
 [<RequireQualifiedAccess>]
 module EvidenceAudit =
 
@@ -129,6 +131,72 @@ module EvidenceAudit =
             return List.ofSeq probed
         }
 
+    /// Measure one edge's realized fan-out on the minted copy — child
+    /// side only, because children-per-parent needs no parent join. The
+    /// four measured figures fabricate a conservative shape (interior
+    /// quartiles borrow the measured medians); the audit reads only P95
+    /// (margin) and Max (blocking), both of which are exact here.
+    let private fanOutShape
+        (cnn: SqlConnection)
+        (index: CatalogIndex)
+        (childTable: string)
+        (childColumn: string)
+        : Task<NumericShape option> =
+        task {
+            let bound =
+                match TableCoordinate.parse childTable with
+                | Ok childCoord ->
+                    match CatalogIndex.bindKind index childCoord with
+                    | Ok _ -> Some childCoord
+                    | _ -> None
+                | _ -> None
+            match bound with
+            | None -> return None
+            | Some childCoord ->
+                let qualified =
+                    System.String.Concat(quote (SchemaName.value childCoord.Schema), ".", quote (TableName.value childCoord.Table))  // LINT-ALLOW: terminal audit probe SQL; identifiers pass through the SSDT renderer's quoting
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <-  // LINT-ALLOW: terminal audit probe SQL at the command boundary
+                    System.String.Concat(  // LINT-ALLOW: terminal audit probe SQL; identifiers pass through the SSDT renderer's quoting
+                        "SELECT DISTINCT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY cnt) OVER () AS p50, ",
+                        "PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY cnt) OVER () AS p95, ",
+                        "MIN(cnt) OVER () AS mn, MAX(cnt) OVER () AS mx FROM (SELECT COUNT_BIG(*) AS cnt FROM ",
+                        qualified, " WHERE ", quote childColumn, " IS NOT NULL GROUP BY ", quote childColumn, ") g")  // LINT-ALLOW: terminal audit probe SQL; identifiers pass through the SSDT renderer's quoting
+                use! reader = cmd.ExecuteReaderAsync()
+                let! has = reader.ReadAsync()
+                if not has || reader.IsDBNull 3 then return None
+                else
+                    let p50 = if reader.IsDBNull 0 then 0m else decimal (reader.GetDouble 0)
+                    let p95 = if reader.IsDBNull 1 then 0m else decimal (reader.GetDouble 1)
+                    let mn = if reader.IsDBNull 2 then 0m else decimal (reader.GetInt64 2)
+                    let mx = decimal (reader.GetInt64 3)
+                    return Some { Min = mn; P25 = p50; P50 = p50; P75 = p95; P95 = p95; P99 = mx; Max = mx }
+        }
+
+    // Hoisted for the same FS3511 reason as `probeOrphans`: the fan-out
+    // leg walks recorded edges with an await per step.
+    let private probeFanOuts
+        (cnn: SqlConnection)
+        (index: CatalogIndex)
+        (edges: (string * string * string) list)
+        : Task<FanOutEvidence list> =
+        task {
+            let probed = System.Collections.Generic.List<FanOutEvidence>()
+            let mutable remaining = edges  // LINT-ALLOW: the while-walk's cursor — FS3511 forces this shape (a `for` over tuple elements with an await does not compile in Release); confined to this loop
+            while not (List.isEmpty remaining) do
+                let edge = List.head remaining
+                remaining <- List.tail remaining  // LINT-ALLOW: the while-walk's cursor advance; same FS3511 confinement
+                let (childTable, childColumn, parentTable) = edge
+                let! shape = fanOutShape cnn index childTable childColumn
+                match shape with
+                | Some s ->
+                    probed.Add
+                        { ChildTable = childTable; ChildColumn = childColumn
+                          ParentTable = parentTable; Shape = s }
+                | None -> ()
+            return List.ofSeq probed
+        }
+
     // The audit's tail, hoisted so its awaits head their own state
     // machine (the FS3511 survival rule's shape): probe the recorded
     // orphan edges on the minted copy, recompute the witness exemptions,
@@ -151,6 +219,26 @@ module EvidenceAudit =
                     c.ToLowerInvariant(), col.ToLowerInvariant(), p.ToLowerInvariant())
             let! probed = probeOrphans cnn index edges
             let minted = { minted with Orphans = minted.Orphans @ probed }
+            // Fan-outs the profiler could not reach: recorded edges (max
+            // two or more — the audit ignores the rest) that the minted
+            // pack does not already carry, i.e. edges with no enforced
+            // reference in the read-back catalog.
+            let mintedEdgeKeys =
+                minted.FanOuts
+                |> List.map (fun f ->
+                    f.ChildTable.ToLowerInvariant(), f.ChildColumn.ToLowerInvariant(), f.ParentTable.ToLowerInvariant())
+                |> Set.ofList
+            let fanOutEdges =
+                sourcePacks
+                |> List.collect (fun p -> p.FanOuts)
+                |> List.filter (fun f -> System.Decimal.Ceiling f.Shape.Max >= 2m)
+                |> List.map (fun f -> f.ChildTable, f.ChildColumn, f.ParentTable)
+                |> List.distinctBy (fun (c, col, p) ->
+                    c.ToLowerInvariant(), col.ToLowerInvariant(), p.ToLowerInvariant())
+                |> List.filter (fun (c, col, p) ->
+                    not (Set.contains (c.ToLowerInvariant(), col.ToLowerInvariant(), p.ToLowerInvariant()) mintedEdgeKeys))
+            let! probedFanOuts = probeFanOuts cnn index fanOutEdges
+            let minted = { minted with FanOuts = minted.FanOuts @ probedFanOuts }
             let skips = snd (Witness.plan index mergedPack)
             let exempt = skips |> List.map (fun s -> s.Coordinate) |> Set.ofList
             let report = FidelityAudit.auditAll exempt sourcePacks minted

@@ -17,7 +17,7 @@ open Twin.Core
 let private col (n: string) (rows: int64) (nulls: int64) : ColumnEvidence =
     { Column = n; RowCount = rows; NullCount = nulls; MaxLength = None
       DistinctCount = None; Truncated = false; HasDuplicates = false
-      Frequencies = []; Numeric = None; Text = None }
+      Frequencies = []; Numeric = None; Text = None; ConditionalNulls = None }
 
 let private table (n: string) (columns: ColumnEvidence list) : TableEvidence =
     { Table = n
@@ -154,3 +154,63 @@ let ``length quantiles are advisory margins`` () =
     Assert.False margin.Blocking
     Assert.Contains("minted 20", margin.Detail)
     Assert.Contains("source 30", margin.Detail)
+
+// -- The conditional-null structure and the hot parent (F2) ------------------
+
+let private fanOutOf (child: string) (column: string) (parent: string) (p95: decimal) (mx: decimal) : FanOutEvidence =
+    { ChildTable = child; ChildColumn = column; ParentTable = parent
+      Shape = { Min = 1m; P25 = 1m; P50 = 1m; P75 = p95; P95 = p95; P99 = mx; Max = mx } }
+
+[<Fact>]
+let ``a template without the recorded maximum fan-out fails that edge, blocking`` () =
+    let uat = { pack "uat" [] with FanOuts = [ fanOutOf "dbo.Order" "CustomerId" "dbo.Customer" 2m 5m ] }
+    let minted = pack "minted" []
+    let section = FidelityAudit.audit Set.empty uat minted
+    Assert.Equal(1, section.Failures)
+    let v = section.Verdicts |> List.find (fun v -> v.Statistic = "fanOutMax")
+    Assert.True v.Blocking
+    Assert.False v.Ok
+    Assert.Contains("minted -", v.Detail)
+
+[<Fact>]
+let ``a carried maximum passes while a thinner 95th percentile stays an advisory`` () =
+    let uat = { pack "uat" [] with FanOuts = [ fanOutOf "dbo.Order" "CustomerId" "dbo.Customer" 3m 5m ] }
+    let minted = { pack "minted" [] with FanOuts = [ fanOutOf "dbo.Order" "CustomerId" "dbo.Customer" 2m 5m ] }
+    let section = FidelityAudit.audit Set.empty uat minted
+    Assert.Equal(0, section.Failures)
+    Assert.Equal(1, section.Advisories)
+    let p95 = section.Verdicts |> List.find (fun v -> v.Statistic = "fanOutP95")
+    Assert.False p95.Blocking
+    Assert.False p95.Ok
+
+[<Fact>]
+let ``a maximum under two is no claim on the template`` () =
+    let uat = { pack "uat" [] with FanOuts = [ fanOutOf "dbo.Order" "CustomerId" "dbo.Customer" 1m 1m ] }
+    let section = FidelityAudit.audit Set.empty uat (pack "minted" [])
+    Assert.Equal(0, section.Failures)
+    Assert.Empty(section.Verdicts |> List.filter (fun v -> v.Statistic = "fanOutMax"))
+
+[<Fact>]
+let ``a conditional structure the mint's discovery missed is an advisory naming only columns`` () =
+    let qa =
+        pack "qa"
+            [ table "dbo.Customer"
+                [ { col "Rating" 20L 6L with
+                      ConditionalNulls = Some { Partner = "Name"; Rates = [ "XSECRETVALUE", 6L, 12L ] } } ] ]
+    let minted = pack "minted" [ table "dbo.Customer" [ col "Rating" 20L 6L ] ]
+    let section = FidelityAudit.audit Set.empty qa minted
+    Assert.Equal(0, section.Failures)
+    let v = section.Verdicts |> List.find (fun v -> v.Statistic = "conditionalNulls")
+    Assert.False v.Blocking
+    Assert.False v.Ok
+    Assert.DoesNotContain("XSECRET", v.Detail)
+    Assert.Contains("Name", v.Detail)
+
+[<Fact>]
+let ``a surviving conditional structure with the same partner audits clean`` () =
+    let cn = Some { Partner = "Name"; Rates = [ "V", 6L, 12L ] }
+    let qa = pack "qa" [ table "dbo.Customer" [ { col "Rating" 20L 6L with ConditionalNulls = cn } ] ]
+    let minted = pack "minted" [ table "dbo.Customer" [ { col "Rating" 20L 6L with ConditionalNulls = cn } ] ]
+    let section = FidelityAudit.audit Set.empty qa minted
+    Assert.Equal(0, section.Failures)
+    Assert.Equal(0, section.Advisories)

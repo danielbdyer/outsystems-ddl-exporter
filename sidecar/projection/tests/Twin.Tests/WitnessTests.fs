@@ -37,14 +37,30 @@ let private order : Kind =
         References =
             [ Reference.create (refKey ["O"; "Customer"]) (name "Customer") (attrKey ["O"; "CustomerId"]) (kindKey ["C"]) ] }
 
+// Nullable columns for the conditional-null legs (F2): `attrOf` realizes
+// every column NOT NULL, and the partition floors are legal on nullable
+// columns only.
+let private nullableAttrOf (key: SsKey) (logical: string) (column: string) (ptype: PrimitiveType) (length: int option) : Attribute =
+    { Attribute.create key (name logical) ptype with
+        Column = ColumnRealization.create column true |> Result.value
+        Length = length }
+
+let private person : Kind =
+    { Kind.create (kindKey ["P"]) (name "Person") (mkTableId "dbo" "Person")
+        [ attrOf (attrKey ["P"; "Id"]) "Id" "Id" Integer true None true
+          attrOf (attrKey ["P"; "Name"]) "Name" "Name" Text false (Some 40) false
+          nullableAttrOf (attrKey ["P"; "Rating"]) "Rating" "Rating" Integer None
+          nullableAttrOf (attrKey ["P"; "Nickname"]) "Nickname" "Nickname" Text (Some 40) ] with
+        Modality = [] }
+
 let private index =
     CatalogIndex.ofCatalog
-        (Catalog.create [ mkModule (modKey "W") (name "W") [ customer; order ] ] [] |> Result.value)
+        (Catalog.create [ mkModule (modKey "W") (name "W") [ customer; order; person ] ] [] |> Result.value)
 
 let private col (n: string) (rows: int64) : ColumnEvidence =
     { Column = n; RowCount = rows; NullCount = 0L; MaxLength = None
       DistinctCount = None; Truncated = false; HasDuplicates = false
-      Frequencies = []; Numeric = None; Text = None }
+      Frequencies = []; Numeric = None; Text = None; ConditionalNulls = None }
 
 let private shape (lo: decimal) (hi: decimal) : NumericShape =
     { Min = lo; P25 = lo; P50 = (lo + hi) / 2m; P75 = hi; P95 = hi; P99 = hi; Max = hi }
@@ -341,3 +357,161 @@ let ``string witnesses claim disjoint windows after the duplicate claim`` () =
     Assert.Contains("a' WHERE rn = 4;", sql)
     Assert.Contains("A' WHERE rn = 5;", sql)
     Assert.Contains("SET v = N'' WHERE rn > 8;", sql)
+// -- The conditional-null structure and the hot parent (F2) ------------------
+
+let private conditionalOn (partner: string) (rates: (string * int64 * int64) list) : ConditionalNullEvidence option =
+    Some { Partner = partner; Rates = rates }
+
+let private fanOut (child: string) (column: string) (parent: string) (maxOut: decimal) : FanOutEvidence =
+    { ChildTable = child; ChildColumn = column; ParentTable = parent
+      Shape = { Min = 1m; P25 = 1m; P50 = 1m; P75 = 1m; P95 = maxOut; P99 = maxOut; Max = maxOut } }
+
+[<Fact>]
+let ``a conditional structure on a nullable column plans partition floors past the claimed rows`` () =
+    let pack =
+        packOf
+            [ { Table = "dbo.Person"; RowCount = 20L
+                Columns =
+                    [ { col "Rating" 20L with
+                          NullCount = 6L
+                          ConditionalNulls = conditionalOn "Name" [ "Common", 6L, 12L; "Rare", 0L, 8L ] } ] } ] []
+    let plan, skips = Witness.plan index pack
+    Assert.Empty skips
+    let (partner, rates, offset) =
+        plan.Cases
+        |> List.pick (fun case ->
+            match case with
+            | ConditionalNullWitness (_, _, _, partner, rates, offset) -> Some (partner, rates, offset)
+            | _ -> None)
+    Assert.Equal("Name", partner)
+    Assert.Equal(2, List.length rates)
+    Assert.Equal(0L, offset)
+    let sql = Witness.emitSql 7UL plan
+    // One deficit floor per null-carrying partition, ranked past the
+    // globally claimed rows; the zero-null partition emits nothing.
+    Assert.Contains("ROW_NUMBER() OVER (ORDER BY [Id]) AS grn FROM [dbo].[Person] WHERE [Rating] IS NOT NULL)", sql)
+    Assert.Contains("WHERE p = N'Common' AND grn > 0)", sql)
+    Assert.Contains("UPDATE w SET v = NULL WHERE rn > cnt - 6;", sql)
+    Assert.DoesNotContain("N'Rare'", sql)
+    // The assertion is the floor's own deterministic guarantee on the
+    // max-rate partition — never a hi-vs-lo rate comparison, which σ's
+    // flat draws could falsify by nulling a small partition entirely.
+    let assertSql = Witness.emitAssertSql plan
+    Assert.Contains("N'Common'", assertSql)
+    Assert.DoesNotContain("N'Rare'", assertSql)
+    Assert.Contains("COUNT_BIG(CASE WHEN [Rating] IS NULL THEN 1 END)", assertSql)
+    Assert.Contains("+ 0 >= CASE WHEN", assertSql)
+
+[<Fact>]
+let ``a conditional structure on a NOT NULL column is a named skip`` () =
+    let pack =
+        packOf
+            [ { Table = "dbo.Person"; RowCount = 20L
+                Columns =
+                    [ { col "Name" 20L with
+                          ConditionalNulls = conditionalOn "Rating" [ "X", 2L, 10L ] } ] } ] []
+    let _, skips = Witness.plan index pack
+    Assert.Equal("notNullable", (List.exactlyOne skips).Reason)
+
+[<Fact>]
+let ``partition floors never share a column with string plants — the named windowConflict skip`` () =
+    let pack =
+        packOf
+            [ { Table = "dbo.Person"; RowCount = 20L
+                Columns =
+                    [ { col "Nickname" 20L with
+                          Text = Some (textOnly 2L 0L 0L)
+                          ConditionalNulls = conditionalOn "Name" [ "X", 3L, 10L ] } ] } ] []
+    let plan, skips = Witness.plan index pack
+    // The empty-string floor plants values on the column; a partition
+    // floor there could null a planted row, so the structure stands down.
+    Assert.True(plan.Cases |> List.exists (fun c -> match c with EmptyStringWitness _ -> true | _ -> false))
+    Assert.Equal("windowConflict", (List.exactlyOne skips).Reason)
+
+[<Fact>]
+let ``a partner column the trunk does not carry is a named skip`` () =
+    let pack =
+        packOf
+            [ { Table = "dbo.Person"; RowCount = 20L
+                Columns =
+                    [ { col "Rating" 20L with
+                          NullCount = 2L
+                          ConditionalNulls = conditionalOn "Ghost" [ "X", 2L, 10L ] } ] } ] []
+    let _, skips = Witness.plan index pack
+    Assert.Equal("partnerNotInTrunk", (List.exactlyOne skips).Reason)
+
+[<Fact>]
+let ``the hot parent is planted on the recorded maximum, enforced edges included`` () =
+    // Order.CustomerId -> Customer IS enforced in the trunk: re-pointed
+    // children are valid rows, so the enforced reference is no bar (the
+    // orphan witness's legality is the opposite, by design).
+    let pack =
+        { packOf [] [] with FanOuts = [ fanOut "dbo.Order" "CustomerId" "dbo.Customer" 3.4m ] }
+    let plan, skips = Witness.plan index pack
+    Assert.Empty skips
+    let (count, offset) =
+        plan.Cases
+        |> List.pick (fun case ->
+            match case with
+            | FanOutMaxWitness (_, _, _, _, _, count, offset) -> Some (count, offset)
+            | _ -> None)
+    Assert.Equal(4L, count)
+    Assert.Equal(0L, offset)
+    let sql = Witness.emitSql 7UL plan
+    Assert.Contains("UPDATE w SET v = (SELECT MIN([Id]) FROM [dbo].[Customer]) WHERE rn > 0 AND rn <= 4;", sql)
+    let assertSql = Witness.emitAssertSql plan
+    Assert.Contains("ISNULL(MAX(g.cnt), 0)", assertSql)
+    Assert.Contains(">= 4", assertSql)
+
+[<Fact>]
+let ``a maximum under two is every edge's baseline — silent, never a plant or a skip`` () =
+    let pack =
+        { packOf [] [] with FanOuts = [ fanOut "dbo.Order" "CustomerId" "dbo.Customer" 1.0m ] }
+    let plan, skips = Witness.plan index pack
+    Assert.Empty plan.Cases
+    Assert.Empty skips
+
+[<Fact>]
+let ``the hot parent ranks past rows the orphan witness claimed`` () =
+    let pack =
+        { packOf []
+            [ { ChildTable = "dbo.Customer"; ChildColumn = "Score"; ParentTable = "dbo.Order"; OrphanCount = 2L } ] with
+            FanOuts = [ fanOut "dbo.Customer" "Score" "dbo.Order" 3m ] }
+    let plan, skips = Witness.plan index pack
+    Assert.Empty skips
+    let offset =
+        plan.Cases
+        |> List.pick (fun case ->
+            match case with
+            | FanOutMaxWitness (_, _, _, _, _, _, offset) -> Some offset
+            | _ -> None)
+    Assert.Equal(2L, offset)
+
+[<Fact>]
+let ``partition floors are planned last of all, past every edge claim on the column`` () =
+    // Person.Rating -> Order carries no reference in the trunk, so the
+    // orphan plant is legal and claims two rows; the floor must rank
+    // past them — a floor before an edge plant could null its rows.
+    let pack =
+        { packOf
+            [ { Table = "dbo.Person"; RowCount = 20L
+                Columns =
+                    [ { col "Rating" 20L with
+                          NullCount = 5L
+                          ConditionalNulls = conditionalOn "Name" [ "Common", 4L, 10L; "Rare", 0L, 5L ] } ] } ]
+            [ { ChildTable = "dbo.Person"; ChildColumn = "Rating"; ParentTable = "dbo.Order"; OrphanCount = 2L } ] with
+            FanOuts = [] }
+    let plan, skips = Witness.plan index pack
+    Assert.Empty skips
+    let offset =
+        plan.Cases
+        |> List.pick (fun case ->
+            match case with
+            | ConditionalNullWitness (_, _, _, _, _, offset) -> Some offset
+            | _ -> None)
+    Assert.Equal(2L, offset)
+    let isConditional case = match case with ConditionalNullWitness _ -> true | _ -> false
+    let isOrphan case = match case with OrphanWitness _ -> true | _ -> false
+    Assert.True(
+        List.findIndex isConditional plan.Cases > List.findIndex isOrphan plan.Cases,
+        "the floor must be emitted after the orphan plant")

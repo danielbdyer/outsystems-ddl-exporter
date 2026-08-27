@@ -55,6 +55,21 @@ Every critical-path slice of the approved plan landed, each proven live before i
   the observed max) with the same named-skip legality; the audit blocks on presence where a
   witness can plant and holds the counts as margins. The rehearsal seeds real dirt in all
   three environments and reads it back off the minted template.
+- **F2, conditional nulls and fan-out skew** (same law): the probe also discovers, per table
+  within fixed bounds (two partner columns × three targets, spread threshold 0.15), which
+  partner VALUE a column's nulls concentrate under — rich-tier-only, since partner values are
+  literals — and the kernel's per-reference cardinality capture (five-distinct-parents floor)
+  carries fan-out skew through the pack. The merge takes the widest-spread environment's whole
+  conditional vector and maxes the fan-out maximum; the witness plants partition deficit
+  floors LAST OF ALL (a floor destroys non-null rows, so it ranks past every claim — the
+  ordering that keeps orphan and hot-parent plants alive) and re-points child rows at one real
+  parent for the hot parent (legal on enforced edges — valid rows); the audit blocks on
+  `fanOutMax`, advises on the p95 and on conditional-structure survival, and probes fan-outs
+  on edges the read-back catalog cannot see, the same asymmetry as orphans. The conditional
+  check is the floor's own deterministic guarantee (realized nulls, offset-adjusted, reach the
+  recorded count clamped to the partition) — a strict hi-versus-lo rate comparison flakes
+  under σ's draws and was rebuilt before it shipped. The rehearsal discovers QA's
+  Rating-by-Name joint and UAT's hot region parent unconfigured and reads both back live.
 - **The peel** (B6): `twin` packs as the `Twin.Tool` dotnet tool (PackAsTool on Twin.Cli;
   the Version pairs with `Runs.ToolVersion`). The bake script carries the peel's seams —
   `TWIN_BIN` (an installed tool instead of `dotnet run`), `TWIN_TOOL_VERSION`, and
@@ -91,8 +106,8 @@ Every critical-path slice of the approved plan landed, each proven live before i
 - **The owner's steps** — everything in `CAPTURE_POINT_RUNBOOK.md`. Nothing in the monorepo
   gates them. This is the critical path to day one.
 - **B6's operational tail** — push `Twin.Tool` to an Azure Artifacts NuGet feed and flip the
-  nightly's `toolSource` parameter (runbook §4 step 6); the build side landed. B7 (fan-out
-  skew, per-environment mints) stays later.
+  nightly's `toolSource` parameter (runbook §4 step 6); the build side landed. Of B7, fan-out
+  skew landed as F2; per-environment mints stay later (the F-program's F3).
 
 ## What will bite you
 

@@ -25,7 +25,7 @@ let private codes (r: Result<'a>) : string list =
 let private col (name: string) (rows: int64) (nulls: int64) : ColumnEvidence =
     { Column = name; RowCount = rows; NullCount = nulls; MaxLength = None
       DistinctCount = None; Truncated = false; HasDuplicates = false
-      Frequencies = []; Numeric = None; Text = None }
+      Frequencies = []; Numeric = None; Text = None; ConditionalNulls = None }
 
 let private table (name: string) (columns: ColumnEvidence list) : TableEvidence =
     { Table = name
@@ -268,3 +268,30 @@ let ``a source without string counts merges against one that has them`` () =
     match c.Text with
     | Some ts -> Assert.Equal(10L, ts.EmptyCount)
     | None -> failwith "the lone source's string counts vanished"
+
+// -- The conditional-null structure (F2) ------------------------------------
+
+[<Fact>]
+let ``the widest-spread environment's conditional vector wins whole, never an average`` () =
+    let dev =
+        pack "dev"
+            [ table "dbo.T"
+                [ { col "C" 100L 10L with
+                      ConditionalNulls = Some { Partner = "Status"; Rates = [ "A", 5L, 50L; "B", 5L, 50L ] } } ] ]
+    let qa =
+        pack "qa"
+            [ table "dbo.T"
+                [ { col "C" 40L 12L with
+                      ConditionalNulls = Some { Partner = "Status"; Rates = [ "A", 12L, 20L; "B", 0L, 20L ] } } ] ]
+    let merged, report = ok (Crossover.merge [ dev; qa ])
+    let c = (List.exactlyOne merged.Tables).Columns |> List.exactlyOne
+    match c.ConditionalNulls with
+    | None -> failwith "the merged column dropped the conditional structure"
+    | Some cn ->
+        // qa's spread (0.6 − 0) dominates dev's (0.1 − 0.1 = 0): qa's whole
+        // vector survives verbatim — mixing vectors would fabricate a
+        // co-occurrence no environment exhibited.
+        Assert.Equal("Status", cn.Partner)
+        Assert.Equal<(string * int64 * int64) list>([ "A", 12L, 20L; "B", 0L, 20L ], cn.Rates)
+    let stats = report.Statistics |> List.map (fun s -> s.Statistic, s.Winner)
+    Assert.Contains(("conditionalNulls", "qa"), stats)

@@ -283,7 +283,7 @@ let ``a pack with no reality axes serializes with no reality keys`` () =
                     Columns =
                         [ { Column = "Status"; RowCount = 5L; NullCount = 1L; MaxLength = None
                             DistinctCount = None; Truncated = false; HasDuplicates = false
-                            Frequencies = []; Numeric = None; Text = None } ] } ] }
+                            Frequencies = []; Numeric = None; Text = None; ConditionalNulls = None } ] } ] }
     let json = Evidence.serialize plain
     Assert.DoesNotContain("orphans", json)
     Assert.DoesNotContain("selectivities", json)
@@ -299,7 +299,7 @@ let ``law 2: a pack naming an absent column refuses by name`` () =
                 richPack.Tables
                 |> List.map (fun t ->
                     if t.Table = "dbo.Customer" then
-                        { t with Columns = t.Columns @ [ { Column = "Ghost"; RowCount = 1L; NullCount = 0L; MaxLength = None; DistinctCount = None; Truncated = false; HasDuplicates = false; Frequencies = []; Numeric = None; Text = None } ] }
+                        { t with Columns = t.Columns @ [ { Column = "Ghost"; RowCount = 1L; NullCount = 0L; MaxLength = None; DistinctCount = None; Truncated = false; HasDuplicates = false; Frequencies = []; Numeric = None; Text = None; ConditionalNulls = None } ] }
                     else t) }
     Assert.Contains("twin.coordinate.column.unknown", codes (Evidence.toProfile twinIndex broken))
 
@@ -351,7 +351,8 @@ let ``the text shape round-trips through the codec, counts only`` () =
                             Text =
                                 Some
                                     { EmptyCount = 2L; TrailingSpaceCount = 1L; CaseCollisions = 3L
-                                      LengthP50 = Some 8; LengthP90 = Some 15 } } ] } ] }
+                                      LengthP50 = Some 8; LengthP90 = Some 15 }
+                            ConditionalNulls = None } ] } ] }
     let json = Evidence.serialize pack
     Assert.Contains("\"text\"", json)
     Assert.Contains("trailingSpace", json)
@@ -372,7 +373,7 @@ let ``a column without string counts serializes without the text key`` () =
                     Columns =
                         [ { Column = "Email"; RowCount = 5L; NullCount = 0L; MaxLength = None
                             DistinctCount = None; Truncated = false; HasDuplicates = false
-                            Frequencies = []; Numeric = None; Text = None } ] } ] }
+                            Frequencies = []; Numeric = None; Text = None; ConditionalNulls = None } ] } ] }
     Assert.DoesNotContain("\"text\"", Evidence.serialize pack)
 
 [<Fact>]
@@ -384,3 +385,33 @@ let ``a pre-F1 pack (no text key) deserializes with the shape absent`` () =
     let pack = ok (Evidence.deserialize json)
     let c = (List.exactlyOne pack.Tables).Columns |> List.exactlyOne
     Assert.True c.Text.IsNone
+    Assert.True c.ConditionalNulls.IsNone
+
+// -- The conditional-null structure (F2) ------------------------------------
+
+[<Fact>]
+let ``the conditional-null structure round-trips rich and the shape derivation drops it`` () =
+    let pack =
+        { Evidence.emptyPack RichTier with
+            Sources = [ "qa" ]
+            Tables =
+                [ { Table = "dbo.Customer"; RowCount = 20L
+                    Columns =
+                        [ { Column = "Rating"; RowCount = 20L; NullCount = 6L; MaxLength = None
+                            DistinctCount = None; Truncated = false; HasDuplicates = false
+                            Frequencies = []; Numeric = None; Text = None
+                            ConditionalNulls =
+                                Some
+                                    { Partner = "Name"
+                                      Rates = [ "XSECRETCOMMON", 6L, 12L; "XSECRETRARE", 0L, 8L ] } } ] } ] }
+    let json = Evidence.serialize pack
+    Assert.Contains("\"conditionalNulls\"", json)
+    Assert.Contains("\"partner\"", json)
+    Assert.Contains("XSECRETCOMMON", json)
+    Assert.Equal(pack, ok (Evidence.deserialize json))
+    // Law 3 boundary: the partner VALUES are literals, so the shape tier
+    // drops the whole structure — unlike the string counts, which it keeps.
+    let shaped = Evidence.deriveShape pack
+    let c = (List.exactlyOne shaped.Tables).Columns |> List.exactlyOne
+    Assert.True c.ConditionalNulls.IsNone
+    Assert.DoesNotContain("XSECRET", Evidence.serialize shaped)

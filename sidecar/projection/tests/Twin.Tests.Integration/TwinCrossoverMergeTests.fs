@@ -31,7 +31,7 @@ type TwinCrossoverMergeTests (fixture: TwinCrossoverMergeFixture) =
             let col name rows nulls =
                 { Column = name; RowCount = rows; NullCount = nulls; MaxLength = None
                   DistinctCount = None; Truncated = false; HasDuplicates = false
-                  Frequencies = []; Numeric = None; Text = None }
+                  Frequencies = []; Numeric = None; Text = None; ConditionalNulls = None }
             let devPack =
                 { Evidence.emptyPack RichTier with
                     Sources = [ "dev" ]

@@ -169,6 +169,20 @@ module FidelityAudit =
                                     (match mts.LengthP50 with Some m -> m >= s50 | None -> false)
                                     (System.String.Concat("minted ", (match mts.LengthP50 with Some m -> string m | None -> "-"), "; source ", string s50))  // LINT-ALLOW: terminal audit-detail rendering; the literal-free counts text IS the report artifact
                             | None -> ()
+                        // Conditional-null structure (F2): a margin — did the
+                        // minted copy's own discovery find the same joint?
+                        // The detail names only COLUMN names, never values.
+                        match c.ConditionalNulls with
+                        | Some cn ->
+                            let survived =
+                                match mc.ConditionalNulls with
+                                | Some mcn -> System.String.Equals(mcn.Partner, cn.Partner, System.StringComparison.OrdinalIgnoreCase)
+                                | None -> false
+                            verdict coordinate "conditionalNulls" false survived
+                                (System.String.Concat(  // LINT-ALLOW: terminal audit-detail rendering; column names and counts only — the literal-free text IS the report artifact
+                                    "source by ", cn.Partner, " x", string (List.length cn.Rates), "; minted ",
+                                    (match mc.ConditionalNulls with Some m -> System.String.Concat("by ", m.Partner) | None -> "-")))  // LINT-ALLOW: terminal audit-detail rendering; column names and counts only — the literal-free text IS the report artifact
+                        | None -> ()
         let mintedOrphans =
             minted.Orphans
             |> List.map (fun o -> (lower o.ChildTable, lower o.ChildColumn, lower o.ParentTable), o.OrphanCount)
@@ -181,6 +195,27 @@ module FidelityAudit =
                 |> Option.defaultValue 0L
             verdict coordinate "orphans" true (planted >= 1L)
                 (System.String.Concat("minted ", string planted, "; source ", string o.OrphanCount))  // LINT-ALLOW: terminal audit-detail rendering; the literal-free counts text IS the report artifact
+        // The hot parent (F2): the template must carry each edge's recorded
+        // MAXIMUM fan-out (a max under two is the baseline, not a claim);
+        // the 95th percentile stays a margin.
+        let mintedFanOuts =
+            minted.FanOuts
+            |> List.map (fun f -> (lower f.ChildTable, lower f.ChildColumn, lower f.ParentTable), f.Shape)
+            |> Map.ofList
+        for f in source.FanOuts do
+            let coordinate =
+                System.String.Concat(f.ChildTable, ".", f.ChildColumn, " -> ", f.ParentTable)  // LINT-ALLOW: terminal report-coordinate rendering (edge arrow); the composite key IS the report's coordinate text
+            let recordedMax = System.Decimal.Ceiling f.Shape.Max
+            if recordedMax >= 2m then
+                match Map.tryFind (lower f.ChildTable, lower f.ChildColumn, lower f.ParentTable) mintedFanOuts with
+                | None ->
+                    verdict coordinate "fanOutMax" true false
+                        (System.String.Concat("minted -; source ", string recordedMax))  // LINT-ALLOW: terminal audit-detail rendering; the literal-free counts text IS the report artifact
+                | Some ms ->
+                    verdict coordinate "fanOutMax" true (System.Decimal.Ceiling ms.Max >= recordedMax)
+                        (System.String.Concat("minted ", string (System.Decimal.Ceiling ms.Max), "; source ", string recordedMax))  // LINT-ALLOW: terminal audit-detail rendering; the literal-free counts text IS the report artifact
+                    verdict coordinate "fanOutP95" false (ms.P95 >= f.Shape.P95)
+                        (System.String.Concat("minted ", string ms.P95, "; source ", string f.Shape.P95))  // LINT-ALLOW: terminal audit-detail rendering; the literal-free counts text IS the report artifact
         let all = List.ofSeq verdicts |> List.sortBy (fun v -> lower v.Coordinate, v.Statistic)
         { Source = label
           Failures = all |> List.filter (fun v -> v.Blocking && not v.Ok) |> List.length

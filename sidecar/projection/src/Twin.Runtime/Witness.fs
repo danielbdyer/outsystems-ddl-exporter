@@ -68,6 +68,17 @@ type WitnessCase =
     /// Two rows minted as a synthetic case-collision pair (equal under
     /// UPPER, different raw) — what a CI-collation unique add refuses.
     | CaseCollisionWitness of table: TableCoordinate * column: string * orderBy: string * first: int64 * second: int64 * tokenLength: int
+    /// The conditional-null structure re-planted: each partner value's
+    /// partition floored toward its recorded null count (a deficit
+    /// floor — σ's flat nulls count toward it), ranking past every
+    /// claimed row on the column. Rates carry (value, nulls, rows) as
+    /// recorded; the assert is the floor's own deterministic guarantee —
+    /// the max-rate partition's realized nulls, offset-adjusted, reach
+    /// the recorded count clamped to the partition's minted size.
+    | ConditionalNullWitness of table: TableCoordinate * column: string * orderBy: string * partner: string * rates: (string * int64 * int64) list * offset: int64
+    /// The hot parent: the recorded MAXIMUM fan-out re-pointed onto one
+    /// real parent key — valid rows, so legal even on an enforced edge.
+    | FanOutMaxWitness of child: TableCoordinate * column: string * orderBy: string * parent: TableCoordinate * parentKey: string * count: int64 * offset: int64
 
 type WitnessSkip = {
     Coordinate : string
@@ -308,6 +319,92 @@ module Witness =
                                 claimed.[claimKey o.ChildTable o.ChildColumn] <- offset + planted
                 | _ -> ()
 
+        // The hot parent (F2): the recorded MAXIMUM fan-out planted by
+        // re-pointing child rows at one REAL parent key — valid rows, so
+        // an enforced reference is no bar. A maximum under two is every
+        // edge's baseline, not a reality to plant.
+        for f in pack.FanOuts do
+            let coordinate =
+                System.String.Concat(f.ChildTable, ".", f.ChildColumn, " -> ", f.ParentTable)
+            let recorded = int64 (System.Decimal.Ceiling f.Shape.Max)
+            if recorded >= 2L then
+                match bindTable f.ChildTable, bindTable f.ParentTable with
+                | Some (childCoord, childKind), Some (parentCoord, parentKind) ->
+                    match primaryKeyColumn childKind with
+                    | None -> skips.Add(skip coordinate "noPrimaryKey")
+                    | Some childOrder ->
+                        let parentPk =
+                            parentKind.Attributes
+                            |> List.tryFind (fun a -> a.IsPrimaryKey && a.Type = PrimitiveType.Integer)
+                        match parentPk with
+                        | None -> skips.Add(skip coordinate "parentKeyUnsupported")
+                        | Some pk ->
+                            let offset =
+                                match claimed.TryGetValue(claimKey f.ChildTable f.ChildColumn) with
+                                | true, x -> x
+                                | false, _ -> 0L
+                            let planted =
+                                match nonNullBudget f.ChildTable f.ChildColumn with
+                                | Some budget -> min recorded (budget - offset)
+                                | None -> recorded
+                            if planted < 2L then skips.Add(skip coordinate "insufficientNonNullRows")
+                            else
+                                cases.Add(
+                                    FanOutMaxWitness(
+                                        childCoord, f.ChildColumn, childOrder, parentCoord,
+                                        ColumnRealization.columnNameText pk.Column, planted, offset))
+                                claimed.[claimKey f.ChildTable f.ChildColumn] <- offset + planted
+                | _ -> ()
+
+        // The conditional-null structure (F2), planned LAST OF ALL: its
+        // partition floors DESTROY non-null rows, so they must rank past
+        // EVERY claimed row on the column — value plants, orphan
+        // re-points, hot-parent re-points — never before one. The offset
+        // therefore reads the FINAL ledger, and what that offset costs in
+        // reachable partition rows the check's clamp accounts for. A
+        // column whose text witnesses plant values still cannot host
+        // floors (a tail floor could null a tail-planted empty string) —
+        // the named windowConflict skip.
+        for t in pack.Tables do
+            match bindTable t.Table with
+            | None -> ()
+            | Some (coord, kind) ->
+                match primaryKeyColumn kind with
+                | None -> ()
+                | Some orderBy ->
+                    for c in t.Columns do
+                        match c.ConditionalNulls with
+                        | Some cn when cn.Rates |> List.exists (fun (_, nulls, rows) -> nulls > 0L && rows > 0L) ->
+                            let coordinate = columnCoordinate t.Table c.Column
+                            let attr =
+                                kind.Attributes
+                                |> List.tryFind (fun a ->
+                                    System.String.Equals(
+                                        ColumnRealization.columnNameText a.Column, c.Column,
+                                        System.StringComparison.OrdinalIgnoreCase))
+                            match attr with
+                            | None -> skips.Add(skip coordinate "notInTrunk")
+                            | Some attr ->
+                                let textPlants =
+                                    match c.Text with
+                                    | Some ts -> ts.EmptyCount > 0L || ts.TrailingSpaceCount > 0L || ts.CaseCollisions > 0L
+                                    | None -> false
+                                let partnerInTrunk =
+                                    kind.Attributes
+                                    |> List.exists (fun a ->
+                                        System.String.Equals(ColumnRealization.columnNameText a.Column, cn.Partner, System.StringComparison.OrdinalIgnoreCase))
+                                if attr.IsPrimaryKey then skips.Add(skip coordinate "primaryKeyColumn")
+                                elif not attr.Column.IsNullable then skips.Add(skip coordinate "notNullable")
+                                elif textPlants then skips.Add(skip coordinate "windowConflict")
+                                elif not partnerInTrunk then skips.Add(skip coordinate "partnerNotInTrunk")
+                                else
+                                    let offset =
+                                        match claimed.TryGetValue(claimKey t.Table c.Column) with
+                                        | true, x -> x
+                                        | false, _ -> 0L
+                                    cases.Add(ConditionalNullWitness(coord, c.Column, orderBy, cn.Partner, cn.Rates, offset))
+                        | _ -> ()
+
         { Cases = List.ofSeq cases; Sources = pack.Sources }, List.ofSeq skips
 
     // ------------------------------------------------------------------
@@ -361,6 +458,10 @@ module Witness =
             System.String.Concat("trailingSpace ", TableCoordinate.text t, ".", c)
         | CaseCollisionWitness (t, c, _, _, _, _) ->
             System.String.Concat("caseCollision ", TableCoordinate.text t, ".", c)
+        | ConditionalNullWitness (t, c, _, partner, rates, _) ->
+            System.String.Concat("conditionalNulls ", TableCoordinate.text t, ".", c, " by ", partner, " x", string (List.length rates))
+        | FanOutMaxWitness (child, c, _, parent, _, count, _) ->
+            System.String.Concat("fanOutMax ", TableCoordinate.text child, ".", c, " -> ", TableCoordinate.text parent, " x", n count)
 
     /// Rank a column's NON-NULL rows by the primary key — the shared CTE
     /// body. The filter is the null-preservation law: a value witness
@@ -426,6 +527,31 @@ module Witness =
                 line (System.String.Concat("UPDATE w SET v = N'", stem, "a' WHERE rn = ", n first, ";"))
                 line (System.String.Concat(";WITH w AS (", rowNumbered table column orderBy, ")"))
                 line (System.String.Concat("UPDATE w SET v = N'", stem, "A' WHERE rn = ", n second, ";"))
+            | ConditionalNullWitness (table, column, orderBy, partner, rates, offset) ->
+                // One deficit floor per partner value: keep = partition rows
+                // minus the recorded nulls, so realized nulls rise to at
+                // least the recorded count wherever σ's flat draws fell
+                // short — never below. The rank runs past the globally
+                // claimed rows so no planted value is disturbed.
+                for entry in rates do
+                    let (value, nulls, _) = entry
+                    if nulls > 0L then
+                        let lit = value.Replace("'", "''")
+                        line
+                            (System.String.Concat(
+                                ";WITH g AS (SELECT ", quote column, " AS v, ", quote partner, " AS p, ROW_NUMBER() OVER (ORDER BY ",
+                                quote orderBy, ") AS grn FROM ", qualified table, " WHERE ", quote column, " IS NOT NULL),"))
+                        line
+                            (System.String.Concat(
+                                "      w AS (SELECT v, ROW_NUMBER() OVER (ORDER BY grn) AS rn, COUNT_BIG(*) OVER () AS cnt FROM g WHERE p = N'",
+                                lit, "' AND grn > ", n offset, ")"))
+                        line (System.String.Concat("UPDATE w SET v = NULL WHERE rn > cnt - ", n nulls, ";"))
+            | FanOutMaxWitness (child, column, orderBy, parent, parentKey, count, offset) ->
+                line (System.String.Concat(";WITH w AS (", rowNumbered child column orderBy, ")"))
+                line
+                    (System.String.Concat(
+                        "UPDATE w SET v = (SELECT MIN(", quote parentKey, ") FROM ", qualified parent,
+                        ") WHERE rn > ", n offset, " AND rn <= ", n (offset + count), ";"))
         sb.ToString()
 
     let private check (case: WitnessCase) : string =
@@ -474,6 +600,33 @@ module Witness =
                     " WHERE ", quote column, " IS NOT NULL AND DATALENGTH(", quote column,
                     ") > 0 GROUP BY UPPER(", quote column, ") HAVING COUNT(DISTINCT ",
                     quote column, " COLLATE Latin1_General_BIN2) > 1) THEN 1 ELSE 0 END")
+            | ConditionalNullWitness (table, column, _, partner, rates, offset) ->
+                // The floor's own guarantee, deterministic under ANY σ
+                // landscape: the max-rate partition's realized nulls,
+                // offset-adjusted, reach the recorded count clamped to the
+                // partition's minted size. (A strict hi-vs-lo rate
+                // comparison is NOT deterministic — σ's flat draws can
+                // null a small low partition entirely.) Vacuously true
+                // when the partition is absent from the mint.
+                let rated =
+                    rates |> List.choose (fun (v, nulls, rows) -> if rows > 0L then Some (v, nulls, decimal nulls / decimal rows) else None)
+                let (hi, hiNulls, _) = rated |> List.maxBy (fun (v, _, r) -> r, v)
+                let litHi = hi.Replace("'", "''")
+                let partitionRows =
+                    System.String.Concat("(SELECT COUNT_BIG(*) FROM ", qualified table, " WHERE ", quote partner, " = N'", litHi, "')")
+                let partitionNulls =
+                    System.String.Concat(
+                        "(SELECT COUNT_BIG(CASE WHEN ", quote column, " IS NULL THEN 1 END) FROM ",
+                        qualified table, " WHERE ", quote partner, " = N'", litHi, "')")
+                System.String.Concat(
+                    "CASE WHEN ", partitionRows, " = 0 THEN 1 WHEN ",
+                    partitionNulls, " + ", n offset, " >= CASE WHEN ", partitionRows, " < ", n hiNulls,
+                    " THEN ", partitionRows, " ELSE ", n hiNulls, " END THEN 1 ELSE 0 END")
+            | FanOutMaxWitness (child, column, _, _, _, count, _) ->
+                System.String.Concat(
+                    "CASE WHEN (SELECT ISNULL(MAX(g.cnt), 0) FROM (SELECT COUNT_BIG(*) AS cnt FROM ",
+                    qualified child, " WHERE ", quote column, " IS NOT NULL GROUP BY ", quote column,
+                    ") g) >= ", n count, " THEN 1 ELSE 0 END")
         System.String.Concat("    SELECT N'", name, "' AS name, ", ok, " AS ok")
 
     /// The assertion script: one check per planned witness, a detail

@@ -51,6 +51,7 @@ type TwinCrossoverRehearsalTests (fixture: TwinCrossoverRehearsalFixture) =
     [StatusId]  INT            NOT NULL,
     [CreatedOn] DATETIME2      NOT NULL,
     [Score]     INT            NULL,
+    [Rating]    INT            NULL,
     [RegionId]  INT            NULL,
     CONSTRAINT [PK_Customer] PRIMARY KEY ([Id]),
     CONSTRAINT [FK_Customer_Status] FOREIGN KEY ([StatusId]) REFERENCES [dbo].[Status] ([Id])
@@ -83,8 +84,15 @@ type TwinCrossoverRehearsalTests (fixture: TwinCrossoverRehearsalFixture) =
     //   Score:         all 20% null; envelope dev [10,86] · qa [5,95]
     //                  · uat [-5,120] (both edges' winner)
     //   RegionId:      dev 18/25 null · qa 14/20 · uat 9/15; values 1..3
-    //                  everywhere plus UAT's orphans 9001..9003
+    //                  on dev/qa, UAT a hot parent (1 ×2) over FIVE
+    //                  distinct parents (the kernel derives a fan-out
+    //                  distribution only past five groups) plus the
+    //                  orphans 9001..9003 — UAT's own reference records
+    //                  the skew the trunk cannot see
     //   Names:         'Common' + one env-exclusive value each
+    //   Rating:        QA-only conditional structure — NULL exactly where
+    //                  Name = 'Common' (12/12); dev and uat never null.
+    //                  Nobody configures the discovery; the probe finds it.
     // ------------------------------------------------------------------
 
     static let regionSeed =
@@ -94,13 +102,14 @@ type TwinCrossoverRehearsalTests (fixture: TwinCrossoverRehearsalFixture) =
         """DECLARE @i INT = 1;
 WHILE @i <= 25
 BEGIN
-    INSERT INTO [dbo].[Customer] ([Name], [Email], [StatusId], [CreatedOn], [Score], [RegionId])
+    INSERT INTO [dbo].[Customer] ([Name], [Email], [StatusId], [CreatedOn], [Score], [Rating], [RegionId])
     VALUES (
         CASE WHEN @i >= 24 THEN N'COMMON' WHEN @i <= 15 THEN N'Common' ELSE N'DevOnly' END,
         CONCAT(N'dev', @i, N'@x.example'),
         1 + (@i % 3),
         DATEADD(DAY, @i, '2026-01-01'),
         CASE WHEN @i <= 5 THEN NULL ELSE 10 + (@i - 6) * 4 END,
+        50 + @i,
         CASE WHEN @i <= 18 THEN NULL ELSE 1 + (@i % 3) END);
     SET @i = @i + 1;
 END
@@ -110,7 +119,7 @@ END
         """DECLARE @i INT = 1;
 WHILE @i <= 20
 BEGIN
-    INSERT INTO [dbo].[Customer] ([Name], [Email], [StatusId], [CreatedOn], [Score], [RegionId])
+    INSERT INTO [dbo].[Customer] ([Name], [Email], [StatusId], [CreatedOn], [Score], [Rating], [RegionId])
     VALUES (
         CASE WHEN @i >= 19 THEN N'' WHEN @i <= 12 THEN N'Common' ELSE N'QaOnly' END,
         CASE WHEN @i <= 8 THEN NULL
@@ -119,6 +128,7 @@ BEGIN
         1 + (@i % 3),
         DATEADD(DAY, @i, '2026-02-01'),
         CASE WHEN @i <= 4 THEN NULL ELSE 5 + (@i - 5) * 6 END,
+        CASE WHEN @i <= 12 THEN NULL ELSE 40 + @i END,
         CASE WHEN @i <= 14 THEN NULL ELSE 1 + (@i % 3) END);
     SET @i = @i + 1;
 END
@@ -128,7 +138,7 @@ END
         """DECLARE @i INT = 1;
 WHILE @i <= 15
 BEGIN
-    INSERT INTO [dbo].[Customer] ([Name], [Email], [StatusId], [CreatedOn], [Score], [RegionId])
+    INSERT INTO [dbo].[Customer] ([Name], [Email], [StatusId], [CreatedOn], [Score], [Rating], [RegionId])
     VALUES (
         CASE WHEN @i >= 14 THEN N'UatOnly ' WHEN @i <= 9 THEN N'Common' ELSE N'UatOnly' END,
         CASE WHEN @i = 1 THEN CONCAT(REPLICATE(N'x', 108), N'@uat.example')
@@ -139,8 +149,10 @@ BEGIN
              WHEN @i = 4 THEN -5
              WHEN @i = 15 THEN 120
              ELSE 10 + @i END,
+        20 + @i,
         CASE WHEN @i <= 9 THEN NULL
-             WHEN @i <= 12 THEN @i - 9
+             WHEN @i <= 11 THEN 1
+             WHEN @i = 12 THEN 2
              ELSE 8988 + @i END);
     SET @i = @i + 1;
 END
@@ -343,6 +355,29 @@ END
                 let devName = nameShape (packOf "dev.rich.json")
                 Assert.Equal(Some 1L, devName |> Option.map (fun ts -> ts.CaseCollisions))
 
+                // The conditional-null discovery (F2), also unconfigured:
+                // QA's Rating is NULL exactly where Name = 'Common', and
+                // the probe found the joint on its own.
+                let qaRating =
+                    let customer = (packOf "qa.rich.json").Tables |> List.find (fun t -> t.Table = "dbo.Customer")
+                    (customer.Columns |> List.find (fun c -> c.Column = "Rating")).ConditionalNulls
+                match qaRating with
+                | None -> failwith "the qa capture did not discover the Rating-by-Name conditional structure"
+                | Some cn ->
+                    Assert.Equal("Name", cn.Partner)
+                    let ratingCommon = cn.Rates |> List.find (fun (v, _, _) -> v = "Common")
+                    let (_, commonNulls, commonRows) = ratingCommon
+                    Assert.Equal(12L, commonNulls)
+                    Assert.Equal(12L, commonRows)
+                // UAT's own reference recorded the hot parent on the edge
+                // the trunk cannot see. (StatusId's edge records nothing:
+                // three statuses sit under the kernel's five-parent floor
+                // for a meaningful distribution.)
+                let uatRegionFan =
+                    (packOf "uat.rich.json").FanOuts
+                    |> List.find (fun f -> f.ChildColumn = "RegionId")
+                Assert.True(uatRegionFan.Shape.Max >= 2m, sprintf "UAT's hot parent was not recorded (max=%M)" uatRegionFan.Shape.Max)
+
                 // 3 — the crossover: extremes survive, winners named.
                 let config = this.MergeConfig ()
                 let! run = EvidenceMerge.run fixture.Root config
@@ -362,6 +397,10 @@ END
                 Assert.Equal("qa", this.Winner report "dbo.Customer" "Name" "emptyRate")
                 Assert.Equal("uat", this.Winner report "dbo.Customer" "Name" "trailingSpaceRate")
                 Assert.Equal("dev", this.Winner report "dbo.Customer" "Name" "caseCollisions")
+                // RegionId's conditional structure was discovered in all
+                // three environments (each's nulls sit under 'Common');
+                // the spreads tie at 1.0 and the label order breaks it.
+                Assert.Equal("uat", this.Winner report "dbo.Customer" "RegionId" "conditionalNulls")
                 // The trunk-enforced StatusId edge lawfully declines its
                 // witness — the skip the audit will exempt.
                 let reportJson = System.IO.File.ReadAllText merge.ReportPath
@@ -395,6 +434,15 @@ END
                 Assert.Equal(3L, mergedText.EmptyCount)
                 Assert.Equal(4L, mergedText.TrailingSpaceCount)
                 Assert.Equal(1L, mergedText.CaseCollisions)
+                // QA's conditional structure survives the merge whole —
+                // its lone carrier's vector, never a fabricated mix.
+                let mergedRating = customer.Columns |> List.find (fun c -> c.Column = "Rating")
+                match mergedRating.ConditionalNulls with
+                | Some cn -> Assert.Equal("Name", cn.Partner)
+                | None -> failwith "the merge dropped QA's conditional structure"
+                // UAT's hot parent survives the merge by max.
+                let regionFan = merged.FanOuts |> List.find (fun f -> f.ChildColumn = "RegionId")
+                Assert.True(regionFan.Shape.Max >= 2m, sprintf "uat's RegionId fan-out lost (max=%M)" regionFan.Shape.Max)
 
                 // 4 — mint from the merged pack (zero mint changes), then
                 // plant the witnesses and prove they landed.
@@ -460,7 +508,7 @@ END
                                             | Some _ -> "num:yes"
                                             | None -> "num:-"
                                         sprintf "%s[nullable=%b %s %s %s]" column isNullable colPair cat num
-                                String.concat " " [ describe "Email"; describe "RegionId"; describe "Score" ]
+                                String.concat " " [ describe "Email"; describe "RegionId"; describe "Score"; describe "Rating" ]
                     failwithf
                         "witnesses did not land: %s || minted landscape: emailNulls=%d emailMaxLen=%d regionIdNonNull=%d regionIdMax=%d regionMaxId=%d || bound profile: %s || artifacts: %s"
                         (String.concat " | " failing)
@@ -502,6 +550,19 @@ END
                 Assert.True(trailingNames >= 1L, sprintf "UAT's trailing-space reality did not land (trailing=%d)" trailingNames)
                 let! collisionPairs = SamplePrSql.scalar twinConn "SELECT COUNT_BIG(*) FROM (SELECT UPPER([Name]) AS u FROM [dbo].[Customer] WHERE [Name] IS NOT NULL AND DATALENGTH([Name]) > 0 GROUP BY UPPER([Name]) HAVING COUNT(DISTINCT [Name] COLLATE Latin1_General_BIN2) > 1) g;"
                 Assert.True(collisionPairs >= 1L, sprintf "Dev's case-collision reality did not land (groups=%d)" collisionPairs)
+                // QA's conditional structure, live: the Common partition's
+                // Rating nulls reach the floor's deterministic guarantee —
+                // recorded count clamped to the minted partition, less the
+                // two envelope rows the floor's offset protects.
+                let! commonRows = SamplePrSql.scalar twinConn "SELECT COUNT_BIG(*) FROM [dbo].[Customer] WHERE [Name] = N'Common';"
+                let! commonRatingNulls = SamplePrSql.scalar twinConn "SELECT COUNT_BIG(CASE WHEN [Rating] IS NULL THEN 1 END) FROM [dbo].[Customer] WHERE [Name] = N'Common';"
+                Assert.True(
+                    commonRatingNulls + 2L >= min 12L commonRows,
+                    sprintf "QA's conditional-null structure did not land (common=%d nulls=%d)" commonRows commonRatingNulls)
+                // The hot parent, live: UAT's RegionId maximum realized on
+                // the minted copy — the edge the trunk cannot even see.
+                let! regionFanOut = SamplePrSql.scalar twinConn "SELECT MAX(g.cnt) FROM (SELECT COUNT_BIG(*) AS cnt FROM [dbo].[Customer] WHERE [RegionId] IS NOT NULL GROUP BY [RegionId]) g;"
+                Assert.True(regionFanOut >= 2L, sprintf "uat's RegionId hot parent did not land (max=%d)" regionFanOut)
 
                 // 7 — block-equivalence: the tightening each environment
                 // would refuse is refused by the template, with the same

@@ -657,11 +657,11 @@ holds, packed tool included: the binary travels, installs from a package source,
 the same surface). Needed only when team machines run Twin verbs locally; the
 template-consuming path of B2 and B3 does not wait for it.
 
-**B7 — later, as the estate matures.** Foreign-key fan-out skew carried through the Twin's
-evidence boundary, so the merge's envelope gains the real spread; a large-volume scenario for
+**B7 — later, as the estate matures.** A large-volume scenario for
 timing rehearsal, stated as rehearsal; the proof corpus mirrored into the estate's own
 pipeline; per-environment scenario templates minted from a single environment's pack, for the
-targeted question "would this block at QA specifically."
+targeted question "would this block at QA specifically." (Fan-out skew through the evidence
+boundary, once listed here, landed as F2 below.)
 
 ### The F-program — fidelity combinatorics, discovered rather than configured
 
@@ -690,6 +690,34 @@ under both the declared width and the observed max — each skipped by name wher
 index, an enforced reference, or the primary key makes it unlawful. The audit holds presence
 as ≥-blocking wherever a witness can plant it, with the counts and quantiles as advisory
 margins.
+
+**F2 — conditional nulls and fan-out skew (landed).** Two structural realities a flat rate
+cannot carry. The probe's conditional-null discovery runs per table during every import within
+fixed bounds (at most two partner columns — null-free text columns holding a complete
+under-threshold vocabulary — crossed with at most three partly-null target columns), keeping a
+(partner value → nulls, rows) vector only where the per-value null-rate spread exceeds 0.15;
+partner values are literals, so the axis is rich-tier-only and the shape derivation drops it.
+The merge takes the widest-spread environment's whole vector — mixing vectors would fabricate
+a co-occurrence no environment exhibited. The witness plants it as per-partition deficit
+floors, planned LAST OF ALL because a floor destroys non-null rows: it ranks past every
+claimed row on the column (value plants, orphan re-points, hot parents), and its assertion is
+the floor's own deterministic guarantee — the max-rate partition's realized nulls,
+offset-adjusted, reach the recorded count clamped to the partition's minted size (a strict
+hi-versus-lo rate comparison is NOT deterministic; σ's flat draws can null a small partition
+entirely, a ~20% flake the rehearsal surfaced before it shipped). Fan-out skew rides the
+kernel's existing per-reference cardinality capture (derived only past five distinct parents —
+the kernel's own floor for a meaningful distribution) through the pack's `fanOuts` axis; the
+merge maxes the maximum and weights the interior; the hot-parent witness re-points child rows
+at one real parent key — valid rows, so legal even on an enforced edge, silent under a
+recorded maximum of two (every edge's baseline). The audit blocks on the recorded maximum
+(`fanOutMax`) and advises on the 95th percentile, probing edges the read-back catalog cannot
+see — a logical-but-unenforced reference reaches the profiler on capture (the environment
+carries the FK) but never on the minted copy (the trunk does not), exactly the asymmetry the
+orphan probe already handles. The rehearsal drives all of it unconfigured: QA's Rating is NULL
+precisely where Name = 'Common' and the probe finds the joint on its own; UAT's own reference
+records a hot parent over five distinct region parents on the edge the trunk cannot see; the
+merged template floors the Common partition, re-points the hot parent, and the per-environment
+audit closes with zero blocking failures.
 
 ---
 

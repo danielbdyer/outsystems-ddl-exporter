@@ -399,6 +399,29 @@ module Crossover =
                                           CaseCollisions = collisions
                                           LengthP50 = quantile (fun ts -> ts.LengthP50)
                                           LengthP90 = quantile (fun ts -> ts.LengthP90) }
+                            // Conditional-null structure is a per-environment
+                            // JOINT: mixing vectors across environments would
+                            // fabricate a co-occurrence no environment
+                            // exhibited, so the widest-spread environment's
+                            // whole vector wins (the selectivity/joint
+                            // winner-vector policy).
+                            let conditional =
+                                match colEntries |> List.choose (fun (l, _, c) -> c.ConditionalNulls |> Option.map (fun cn -> l, cn)) with
+                                | [] -> None
+                                | condEntries ->
+                                    let spread (cn: ConditionalNullEvidence) =
+                                        let rates =
+                                            cn.Rates
+                                            |> List.choose (fun (_, nulls, rows) ->
+                                                if rows > 0L then Some (decimal nulls / decimal rows) else None)
+                                        match rates with
+                                        | [] -> 0m
+                                        | _ -> List.max rates - List.min rates
+                                    let condWinner = condEntries |> List.maxBy (fun (l, cn) -> spread cn, l)
+                                    (if List.length condEntries > 1 then
+                                        stat displayTable (Some display) None "conditionalNulls" (fst condWinner)
+                                            (condEntries |> List.map (fun (l, cn) -> l, string (List.length cn.Rates))))
+                                    Some (snd condWinner)
                             { Column = display
                               RowCount = rowCount
                               NullCount = nullCount
@@ -408,7 +431,8 @@ module Crossover =
                               HasDuplicates = hasDuplicates
                               Frequencies = frequencies
                               Numeric = numeric
-                              Text = text })
+                              Text = text
+                              ConditionalNulls = conditional })
                         |> List.sortBy (fun c -> lower c.Column)
                     let tableRowCount =
                         max
