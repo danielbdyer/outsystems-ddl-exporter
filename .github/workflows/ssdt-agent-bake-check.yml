@@ -102,10 +102,21 @@ jobs:
           [ "$ROWS" -gt 0 ] || { echo "the restored copy holds no estate rows"; exit 1; }
           echo "image identity verified: $TAG ($ROWS estate rows)"
           # A restart must find the twin present and skip the restore.
+          # The entrypoint's own readiness poll prints the skip line a
+          # beat AFTER sqlcmd first answers, so the grep is bounded-retried
+          # rather than raced against it.
           docker restart twin-tpl-smoke >/dev/null
           waitTwin
-          docker logs twin-tpl-smoke 2>&1 | grep -q "the template restore was skipped" \
-            || { echo "the restarted container did not skip the restore"; exit 1; }
+          skipped=0
+          for _ in $(seq 1 30); do
+            if docker logs twin-tpl-smoke 2>&1 | grep -q "the template restore was skipped"; then skipped=1; break; fi
+            sleep 2
+          done
+          if [ "$skipped" != 1 ]; then
+            docker logs twin-tpl-smoke >&2 || true
+            echo "the restarted container did not skip the restore"
+            exit 1
+          fi
           echo "restart idempotence verified"
           docker rm -f twin-tpl-smoke >/dev/null
 
