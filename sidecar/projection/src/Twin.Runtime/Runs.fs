@@ -64,6 +64,10 @@ module Runs =
         TotalRows       : int64
         DefinedTables   : int
         UnsatisfiableFks : int
+        /// The volume shell (F4): rows amplified past σ's minted core
+        /// toward the recorded volumes, and the budget-bounded remainder.
+        ShellRows       : int64
+        ShellShortfall  : int64
     }
 
     type UpOutcome =
@@ -252,27 +256,41 @@ module Runs =
                                         match minted with
                                         | Error es -> return Result.failure es
                                         | Ok report ->
-                                            let! totalRows = TwinDatabase.totalRows twinCnn
-                                            let! wrote =
-                                                TwinDatabase.writeDataState twinCnn dataFp scenarioName plan.Seed totalRows
-                                            match wrote with
+                                            // F4 — the volume shell: amplify
+                                            // evidence-riding kinds whose minted
+                                            // rows fall short of the record;
+                                            // inert at scale one. The witness
+                                            // pass runs after and restores every
+                                            // exact count on the amplified
+                                            // landscape.
+                                            let! shell =
+                                                VolumeShell.amplify twinCnn mintCatalog plan.Profile plan.Config pools
+                                            match shell with
                                             | Error es -> return Result.failure es
-                                            | Ok () ->
-                                                let counts = EstateDefinition.counts estate
-                                                return
-                                                    Result.success
-                                                        { SchemaPublished = schemaPublished
-                                                          LanesApplied = lanesApplied
-                                                          ProvidedKinds = Map.count pools
-                                                          MintedKinds =
-                                                              Catalog.allKinds mintCatalog
-                                                              |> List.filter (fun k -> not (Map.containsKey k.SsKey pools))
-                                                              |> List.length
-                                                          Scenario = scenarioName
-                                                          Seed = plan.Seed
-                                                          TotalRows = totalRows
-                                                          DefinedTables = counts.Tables
-                                                          UnsatisfiableFks = List.length report.SyntheticUnsatisfiableFks }
+                                            | Ok shellReport ->
+                                                let! totalRows = TwinDatabase.totalRows twinCnn
+                                                let! wrote =
+                                                    TwinDatabase.writeDataState twinCnn dataFp scenarioName plan.Seed totalRows
+                                                match wrote with
+                                                | Error es -> return Result.failure es
+                                                | Ok () ->
+                                                    let counts = EstateDefinition.counts estate
+                                                    return
+                                                        Result.success
+                                                            { SchemaPublished = schemaPublished
+                                                              LanesApplied = lanesApplied
+                                                              ProvidedKinds = Map.count pools
+                                                              MintedKinds =
+                                                                  Catalog.allKinds mintCatalog
+                                                                  |> List.filter (fun k -> not (Map.containsKey k.SsKey pools))
+                                                                  |> List.length
+                                                              Scenario = scenarioName
+                                                              Seed = plan.Seed
+                                                              TotalRows = totalRows
+                                                              DefinedTables = counts.Tables
+                                                              UnsatisfiableFks = List.length report.SyntheticUnsatisfiableFks
+                                                              ShellRows = shellReport.AddedRows
+                                                              ShellShortfall = shellReport.Shortfall }
         }
 
     /// The one-click converge. Fingerprint match on both planes is the

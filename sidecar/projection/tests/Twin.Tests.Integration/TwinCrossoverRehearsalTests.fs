@@ -612,9 +612,49 @@ END
                 let! regionFanOut = SamplePrSql.scalar twinConn "SELECT MAX(g.cnt) FROM (SELECT COUNT_BIG(*) AS cnt FROM [dbo].[Customer] WHERE [RegionId] IS NOT NULL GROUP BY [RegionId]) g;"
                 Assert.True(regionFanOut >= 2L, sprintf "uat's RegionId hot parent did not land (max=%d)" regionFanOut)
 
-                // 7 — block-equivalence: the tightening each environment
+                // 7 — the volume shell (F4): a scale-capped mint amplifies
+                // back to the recorded volumes with no configuration —
+                // Customer through the identity-key path, Region through
+                // the plain-integer-key offset path — and the SAME witness
+                // pair lands exactly on the amplified landscape. The
+                // block-equivalence step then runs against THIS shelled
+                // template, so the blocking realities are proven at the
+                // amplified magnitude.
+                let shellConfig =
+                    this.ParseConfig
+                        (fixture.ConfigJson.Replace(
+                            "\"seed\": 7,",
+                            "\"seed\": 7,\n  \"scale\": 0.4,\n  \"evidence\": { \"rich\": \"twin/merged.rich.json\",\n    \"merge\": { \"inputs\": [ \"twin/dev.rich.json\", \"twin/qa.rich.json\", \"twin/uat.rich.json\" ] } },"))
+                let! reseeded = Runs.seed fixture.Root shellConfig TwinConfig.BaselineScenario
+                let shell =
+                    match reseeded with
+                    | Ok (Runs.Materialized r) -> r
+                    | Ok (Runs.NothingToApply _) -> failwith "the shell seed applied nothing"
+                    | Error es -> failwithf "shell seed refused: %A" (es |> List.map (fun e -> e.Code, e.Message))
+                Assert.True(shell.ShellRows > 0L, "the capped mint amplified nothing")
+                Assert.Equal(0L, shell.ShellShortfall)
+                let! customerRows = SamplePrSql.scalar twinConn "SELECT COUNT_BIG(*) FROM [dbo].[Customer];"
+                Assert.Equal(25L, customerRows)
+                let! regionRows = SamplePrSql.scalar twinConn "SELECT COUNT_BIG(*) FROM [dbo].[Region];"
+                Assert.Equal(3L, regionRows)
+                // Copied FK values reference the σ core — the enforced
+                // StatusId edge stays valid through the shell.
+                let! statusOrphans =
+                    SamplePrSql.scalar twinConn
+                        "SELECT COUNT_BIG(*) FROM [dbo].[Customer] c LEFT JOIN [dbo].[Status] s ON c.[StatusId] = s.[Id] WHERE s.[Id] IS NULL;"
+                Assert.Equal(0L, statusOrphans)
+                let! _ = SamplePrSql.exec twinConn (System.IO.File.ReadAllText merge.WitnessSqlPath)
+                let! shellFailing = this.FailingChecks twinConn (System.IO.File.ReadAllText merge.WitnessAssertPath)
+                Assert.True(
+                    List.isEmpty shellFailing,
+                    System.String.Concat(
+                        "witnesses did not land on the amplified landscape: ",
+                        String.concat " | " shellFailing))
+
+                // 8 — block-equivalence: the tightening each environment
                 // would refuse is refused by the template, with the same
-                // message the real deployment engine prints.
+                // message the real deployment engine prints — here on the
+                // shelled, full-magnitude landscape.
                 fixture.Rewrite "Tables/dbo.Customer.sql" customerWithRegionFk
                 let! fkAdd = SamplePrPublish.strict fixture.Root fixture.Config
                 match fkAdd with

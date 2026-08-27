@@ -85,6 +85,20 @@ Every critical-path slice of the approved plan landed, each proven live before i
   goes silent on heavily-floored small populations even though the planted envelope is
   there — the audit probes exact MIN/MAX wherever π is silenced, joining the orphan and
   fan-out probes.
+- **F4, the volume shell** (same law; closes risk 3's σ-in-memory ceiling): after every seed,
+  each evidence-riding kind whose minted rows fall short of its recorded volume amplifies in
+  the engine by deterministic key-ordered doubling — identity keys minted by the engine,
+  plain positive integer keys offset by `startMax · 2^(round−1)` (partial-round-safe by
+  induction), unique text members key-stamped inside their declared width, computed columns
+  omitted, FK values copied so they keep referencing the σ core (validity and fan-out skew
+  survive order-free). Fixed 2,000,000-row budget per seed; unamplifiable kinds are named
+  skips and budget remainders reported shortfalls on the seed report. Inert at scale one;
+  BELOW one it makes the witness pass correct for the first time (absolute counts were
+  budgeted against evidence volumes). The rehearsal seeds at 0.4, amplifies Customer
+  (identity path) and Region (plain-key path) back to the record, lands the same witness
+  pair exactly, and runs block-equivalence against the SHELLED template. One trap found
+  live: a blocked FK-add leaves DacFx's NOCHECK constraint behind on the twin, so the shell
+  proof runs BEFORE the block-equivalence publishes, never after.
 - **The peel** (B6): `twin` packs as the `Twin.Tool` dotnet tool (PackAsTool on Twin.Cli;
   the Version pairs with `Runs.ToolVersion`). The bake script carries the peel's seams —
   `TWIN_BIN` (an installed tool instead of `dotnet run`), `TWIN_TOOL_VERSION`, and
@@ -127,8 +141,8 @@ Every critical-path slice of the approved plan landed, each proven live before i
 ## What will bite you
 
 - The pure and Docker test pools never share one `dotnet test` (the OOM rule). The Twin's pure
-  pool is 155 facts; the kernel's 4758; the rehearsal runs focused in ~90 s warm (the F3
-  deep legs added three per-environment mints).
+  pool is 159 facts; the kernel's 4758; the rehearsal runs focused in ~95 s warm (the F3
+  deep legs added three per-environment mints, the F4 shell one scaled re-seed).
 - A background shell does not inherit the conversation's working directory — every background
   command needs its own absolute `cd`, or the run fails on relative paths.
 - The rehearsal test preserves its artifacts and prints the minted landscape plus the bound

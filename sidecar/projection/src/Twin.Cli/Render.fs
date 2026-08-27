@@ -66,9 +66,18 @@ module Render =
                     [ System.String.Concat(
                         ni r.UnsatisfiableFks,
                         " non-nullable relationships could not be satisfied and hold NULL; the affected columns are named in the run detail.") ]
+            let shell =
+                if r.ShellRows = 0L && r.ShellShortfall = 0L then []
+                else
+                    [ System.String.Concat(
+                        "The volume shell amplified ", n0 r.ShellRows,
+                        " rows toward the recorded volumes",
+                        (if r.ShellShortfall = 0L then "."
+                         else System.String.Concat("; ", n0 r.ShellShortfall, " recorded rows sit past the shell budget."))) ]
             [ System.String.Concat(
                 "Twin materialized — ", ni r.DefinedTables, " tables, ", n0 r.TotalRows, " rows.")
               schemaLine; lanesLine; mintLine ]
+            @ shell
             @ unsatisfiable
 
     let status (s: Runs.StatusReport) : string list =

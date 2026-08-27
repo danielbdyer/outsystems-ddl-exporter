@@ -31,6 +31,7 @@
     <Compile Include="CrossoverTests.fs" />
     <Compile Include="SectorPaintTests.fs" />
     <Compile Include="WitnessTests.fs" />
+    <Compile Include="VolumeShellTests.fs" />
     <Compile Include="FidelityAuditTests.fs" />
   </ItemGroup>
 

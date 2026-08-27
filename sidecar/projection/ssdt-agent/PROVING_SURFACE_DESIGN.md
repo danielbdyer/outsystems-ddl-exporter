@@ -746,6 +746,31 @@ numeric floor while still holding its planted envelope — so the audit probes e
 directly wherever the sample floor silences π, the same asymmetry the orphan and fan-out
 probes already handle.
 
+**F4 — the volume shell (landed).** Magnitude realism, closing the σ-materializes-in-memory
+ceiling (risk 3): a production-magnitude table mints at a capped volume (`scale` below one)
+while every witness window and absolute count was budgeted against the EVIDENCE volume — so
+after the mint, each evidence-riding kind whose rows fall short of its record is amplified in
+the engine, where volume is cheap: deterministic doubling (`INSERT … SELECT` over its own
+rows, key-ordered, so identity assignment and the partial round are reproducible) until the
+recorded volume or the fixed global budget (2,000,000 shell rows per seed) is reached. The
+σ-minted core keeps the fidelity — vocabularies, sectors, joints, envelopes; the shell
+multiplies its distributions proportionally, and copied FK values keep referencing the core's
+parents, so referential validity and fan-out skew survive by construction, order-free. The
+witness pass runs AFTER amplification and restores every exact count on the full-magnitude
+landscape — which also makes `scale` below one CORRECT for the first time: previously the
+absolute witness counts assumed evidence-volume landscapes. Legality is per kind and named:
+the key must be single-column IDENTITY (the engine mints shell keys) or positive INTEGER
+(offset `startMax · 2^(round−1)`, collision-free under partial rounds by induction); every
+other unique index needs a text member wide enough for the key-stamped suffix
+(`LEFT(value, L−24) + '~' + key + '~' + round`, NULLs preserved); computed columns are
+omitted. An unamplifiable kind is a named skip and a budget-bounded remainder is a reported
+shortfall — both on the seed report, never silent. At scale one the shell is inert by
+construction. The rehearsal proves it live: a 0.4-scale mint amplifies Customer through the
+identity path and Region through the plain-key path back to the recorded volumes, the
+enforced StatusId edge stays valid through the shell, the SAME witness pair lands exactly on
+the amplified landscape, and the block-equivalence step (Msg 547, Msg 1505) runs against the
+shelled template — the blocking realities proven at the amplified magnitude.
+
 ---
 
 ## 7 — Not verified, and open
@@ -769,8 +794,10 @@ probes already handle.
 - **Template size and restore time at real volumes are unmeasured.** At sample scale they are
   measured, not assumed: the bake freezes 565 KB compressed in 0.03 seconds, a restore stands
   the copy up in 0.5 to 0.9 seconds, and the reset is another restore at the same cost (the
-  bake's manifest and the kit's live acceptance run, 2026-08-26). The mint's per-table caps
-  bound the real-volume figures and every bake's manifest records them; the seconds-scale reset
+  bake's manifest and the kit's live acceptance run, 2026-08-26). The mint's `scale` cap
+  bounds σ's in-memory cost, the F4 volume shell amplifies the capped mint back toward the
+  recorded volumes in the engine (its 2,000,000-row budget and any shortfall on the seed
+  report), and every bake's manifest records the realized figures; the seconds-scale reset
   promise stays assumed at real volumes until the first estate bake measures it.
 - **Synthetic fidelity has named residuals, now measured where the rehearsal reaches.** The
   witness pass plants the realities the capture records — the null-rate floor, lengths,

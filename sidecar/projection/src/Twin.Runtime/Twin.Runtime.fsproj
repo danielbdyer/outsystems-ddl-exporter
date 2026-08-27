@@ -28,6 +28,7 @@
     <Compile Include="Readback.fs" />
     <Compile Include="TrunkModel.fs" />
     <Compile Include="Witness.fs" />
+    <Compile Include="VolumeShell.fs" />
     <Compile Include="RealityProbe.fs" />
     <Compile Include="EvidenceImport.fs" />
     <Compile Include="EvidenceMerge.fs" />
