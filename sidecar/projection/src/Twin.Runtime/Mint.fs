@@ -52,16 +52,12 @@ module Mint =
             "An evidence pack could not be read."
             (Map.ofList [ "path", Some path; "detail", Some detail ])
 
-    let private resolvePath (root: string) (ref: string) : string =
-        let cleaned = if ref.StartsWith "file:" then ref.Substring 5 else ref
-        System.IO.Path.Combine(root, cleaned.Replace('/', System.IO.Path.DirectorySeparatorChar))
-
     /// Load the blessed corrections artifact, when configured.
     let loadCorrection (root: string) (path: string option) : Result<Correction option> =
         match path with
         | None -> Result.success None
         | Some rel ->
-            let full = resolvePath root rel
+            let full = TwinConfig.resolvePath root rel
             try
                 let json = System.IO.File.ReadAllText full
                 CorrectionCodec.deserialize json |> Result.map Some
@@ -74,7 +70,7 @@ module Mint =
         match ref with
         | None -> Result.success None
         | Some r ->
-            let full = resolvePath root r
+            let full = TwinConfig.resolvePath root r
             if not (System.IO.File.Exists full) then Result.success None
             else
                 try Evidence.deserialize (System.IO.File.ReadAllText full) |> Result.map Some
@@ -140,8 +136,10 @@ module Mint =
         let scale, seed = effectiveScaleSeed config chain
 
         // Evidence: shape under rich (rich wins where both speak).
+        let shapePackLoaded = loadPack root config.Evidence.ShapePath
+        let richPackLoaded = loadPack root config.Evidence.RichRef
         let evidenceProfile =
-            match loadPack root config.Evidence.ShapePath, loadPack root config.Evidence.RichRef with
+            match shapePackLoaded, richPackLoaded with
             | Ok shape, Ok rich ->
                 let bind (pack: EvidencePack option) : Result<Profile option> =
                     match pack with
@@ -212,10 +210,23 @@ module Mint =
                             PreserveColumns = Set.union correctedConfig.PreserveColumns compiled.ForcePreserve
                             SynthesizeColumns = Set.difference correctedConfig.SynthesizeColumns compiled.UnSynthesize
                             AugmentPools = augment }
+                    // F3 — the sector realization: when the merged pack
+                    // carries its inputs, σ's global rows are repainted
+                    // into per-environment subpopulations FIRST; Faker
+                    // corrections then pins run after and win, the
+                    // precedence the mint already gives them over σ.
+                    let sectorRealize =
+                        match richPackLoaded with
+                        | Ok (Some rich) when not (List.isEmpty rich.Sectors) ->
+                            let boundKinds =
+                                Catalog.allKinds catalog
+                                |> List.map (fun k -> TableCoordinate.text (TwinIdentity.coordinateOfKind k), k)
+                            SectorPaint.realize seed boundKinds rich.Sectors
+                        | _ -> id
                     Result.success
                         { Config = syntheticConfig
                           Profile = compiled.Overlay evidence
-                          Realize = fakerRealize >> ScenarioCompiler.applyPins compiled.Pins
+                          Realize = sectorRealize >> fakerRealize >> ScenarioCompiler.applyPins compiled.Pins
                           Seed = seed }
 
     /// Drive the kernel's synthetic load against the twin. WipeAndLoad —

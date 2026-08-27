@@ -22,11 +22,18 @@
   <ItemGroup>
     <Compile Include="EstateFiles.fs" />
     <Compile Include="TwinContainer.fs" />
+    <Compile Include="TwinSubstrate.fs" />
     <Compile Include="EstateModel.fs" />
     <Compile Include="TwinDatabase.fs" />
     <Compile Include="Readback.fs" />
+    <Compile Include="TrunkModel.fs" />
+    <Compile Include="Witness.fs" />
+    <Compile Include="VolumeShell.fs" />
+    <Compile Include="RealityProbe.fs" />
     <Compile Include="EvidenceImport.fs" />
+    <Compile Include="EvidenceMerge.fs" />
     <Compile Include="Mint.fs" />
+    <Compile Include="EvidenceAudit.fs" />
     <Compile Include="Runs.fs" />
     <Compile Include="Check.fs" />
   </ItemGroup>

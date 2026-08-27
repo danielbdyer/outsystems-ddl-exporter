@@ -134,6 +134,23 @@ settings (Strict vs Permissive) still come from the profile. Obey the isolation 
 teardown (`twin reset`). The Twin is the base data, never the verdict — the refactorlog / rename /
 pre-post-deploy semantics are proven by *this* sqlpackage publish on top of it.
 
+### On a restored template (when the estate kit's templates are in play)
+
+Where the BEFORE state comes from a distributed template — a copy stood up by
+`estate-kit/restore-proving-copy` from the nightly bake's `.bak` — the loop is again unchanged;
+only two facts move. The reset is a **restore**: drop the contaminated copy and restore the same
+template under the same name (`estate-kit/reset-proving-copy`), seconds-scale, never a repair.
+And the copy answers its own identity: `[twin].[__state]` inside it carries the template's source
+commit, bake time, and fingerprints, and the record **stamps that identity** —
+
+```sql
+SELECT TemplateCommit, TemplateBakedAtUtc, LEFT(DataFingerprint, 8) AS DataFp
+FROM [twin].[__state];
+```
+
+— beside the sqlpackage version, so a reviewer reproduces the proof against the *same base* by
+restoring the same template, not by trusting that two machines happened to hold the same data.
+
 ## Reading a publish outcome — the block lives in the TEXT, never the exit code
 
 A blocked `sqlpackage` publish does **not** reliably exit non-zero — and through any pipeline
@@ -498,7 +515,7 @@ proves the refusal; Permissive, only after, shows the consequence.
 
 ## Connector points
 
-The substrate of record is the **Twin** (`../../../THE_TWIN.md`) when present: `twin up` mints a
+The substrate of record is the **Twin** (`THE_TWIN.md`, the tooling monorepo's charter) when present: `twin up` mints a
 deterministic, evidence-profiled dataset over the estate definition, evolving with the schema, and
 the proving loop above runs against it **unchanged**. The trust is the Twin's own determinism
 (`twin check` = π∘σ≈id, T1 byte-identical, S-stable) — the base data is reproducible by

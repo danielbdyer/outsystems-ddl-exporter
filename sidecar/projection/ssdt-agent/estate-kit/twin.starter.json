@@ -1,0 +1,26 @@
+{
+  "estate": {
+    "tables": "<your-ssdt-project>/Tables/**/*.sql",
+    "staticData": []
+  },
+  "container": {
+    "name": "twin-mssql",
+    "port": 21433
+  },
+  "seed": 7,
+  "defaultRows": 25,
+  "evidence": {
+    "shape": "twin/evidence.shape.json",
+    "rich": "twin/merged.rich.json",
+    "merge": {
+      "inputs": [
+        "twin/dev.rich.json",
+        "twin/qa.rich.json",
+        "twin/uat.rich.json"
+      ]
+    }
+  },
+  "scenarios": {
+    "default": {}
+  }
+}

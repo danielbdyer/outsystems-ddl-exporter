@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AcceptanceCatalog.sqlproj — the estate kit's known catalog.
+
+  The per-machine acceptance suite (setup-proving-machine) publishes THIS
+  project, never the estate's own model, so the acceptance verdicts are
+  independent of whatever the estate looks like on the day a machine is set
+  up. The catalog is deliberately tiny and its seed deliberately dirty in
+  the two ways the proving loop gates on: NULLs in a nullable column (the
+  make-mandatory block's carrier) and a reference-shaped column the model
+  does not constrain (the FK-add trust probe's seat, with every value
+  pointing at a real parent so the added constraint validates trusted).
+
+  The pre-authored proof edits live beside it under ../edits/ — the
+  acceptance copies one over Modules/dbo.Customer.sql, rebuilds, publishes,
+  and reads the engine's verdict from the printed text.
+-->
+<Project Sdk="Microsoft.Build.Sql/2.2.0">
+
+  <PropertyGroup>
+    <Name>AcceptanceCatalog</Name>
+    <DSP>Microsoft.Data.Tools.Schema.Sql.Sql160DatabaseSchemaProvider</DSP>
+    <ModelCollation>1033, CI</ModelCollation>
+    <SuppressTSqlWarnings>71502</SuppressTSqlWarnings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Build Remove="Script.PostDeployment.sql" />
+    <Build Remove="Data\**\*.sql" />
+    <PostDeploy Include="Script.PostDeployment.sql" />
+    <None Include="Data\Seed.sql" />
+  </ItemGroup>
+
+</Project>

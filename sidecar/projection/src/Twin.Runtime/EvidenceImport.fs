@@ -40,6 +40,11 @@ module EvidenceImport =
         Sources   : SourceReport list
         RichPath  : string
         FanOuts   : int
+        /// "ok" when the trunk bound and the drift comparison ran;
+        /// otherwise the named refusal code (the capture proceeded).
+        DriftTrunk   : string
+        DriftEntries : int
+        DriftPath    : string
     }
 
     type TableCoverage = {
@@ -88,10 +93,6 @@ module EvidenceImport =
             "twin.evidence.ambiguousEntity"
             "Two entities in the physical source share this logical name; the coordinate cannot bind uniquely. Narrow the source's modules, or rename."
             (Map.ofList [ "source", Some source; "table", Some table ])
-
-    let private resolvePath (root: string) (ref: string) : string =
-        let cleaned = if ref.StartsWith "file:" then ref.Substring 5 else ref
-        System.IO.Path.Combine(root, cleaned.Replace('/', System.IO.Path.DirectorySeparatorChar))
 
     /// Restrict a capture catalog to the kinds the closed set names, and
     /// produce the keep-map (kind → estate coordinate text). The match
@@ -149,8 +150,9 @@ module EvidenceImport =
             Result.success (filtered, fun k -> Map.tryFind k.SsKey coordByKind)
 
     /// Import one source: open → catalog per rendition → restrict →
-    /// profile → rebind.
-    let private importSource (source: EvidenceSource) : Task<Result<EvidencePack>> =
+    /// profile → rebind. Also yields the restrict step's bound
+    /// (coordinate, source kind) pairs — the drift comparison's input.
+    let private importSource (source: EvidenceSource) : Task<Result<EvidencePack * (string * Kind) list>> =
         task {
             let! opened = ConnectionSpec.openSpec SubstrateRole.Source source.Name source.ConnRef
             match opened with
@@ -173,6 +175,9 @@ module EvidenceImport =
                         // profiler; the closed set is explicit, so every listed
                         // table gets evidence — strip the marks first.
                         let profileCatalog = Catalog.stripStaticPopulations restricted
+                        let bound =
+                            Catalog.allKinds profileCatalog
+                            |> List.choose (fun k -> keep k |> Option.map (fun coord -> coord, k))
                         let options =
                             { SqlProfilerOptions.defaults with
                                 Sampling =
@@ -184,10 +189,22 @@ module EvidenceImport =
                         | Error es -> return Result.failure es
                         | Ok cache ->
                             let profile = ProfileDerivation.attachFromCache cache profileCatalog Profile.empty
-                            return Result.success (Evidence.ofProfile source.Name profileCatalog keep profile)
+                            let pack = Evidence.ofProfile source.Name profileCatalog keep profile
+                            // The string-plane realities, discovered with no
+                            // configuration over the same open connection.
+                            let! enriched = RealityProbe.enrich cnn bound pack
+                            match enriched with
+                            | Error es -> return Result.failure es
+                            | Ok enrichedPack -> return Result.success (enrichedPack, bound)
         }
 
-    /// Import every configured source, merge, write the rich pack.
+    let driftReportPath = "twin/evidence-drift.report.json"
+
+    /// Import every configured source, merge, write the rich pack. Each
+    /// capture also compares its environment's bound schema against the
+    /// TRUNK head — the standing drift report, the promotion story's raw
+    /// material. Trunk acquisition failing is a NAMED SKIP in the report,
+    /// never a capture block: measurements land either way.
     let importAll (root: string) (config: TwinConfig) : Task<Result<ImportReport>> =
         task {
             match config.Evidence.RichRef, config.Evidence.Sources with
@@ -196,22 +213,46 @@ module EvidenceImport =
             | Some richRef, sources ->
                 let mutable failed : ValidationError list = []
                 let packs = System.Collections.Generic.List<EvidencePack>()
+                let boundBySource = System.Collections.Generic.List<string * (string * Kind) list>()
                 for source in sources do
                     if List.isEmpty failed then
                         let! pack = importSource source
                         match pack with
-                        | Ok p -> packs.Add p
+                        | Ok (p, bound) ->
+                            packs.Add p
+                            boundBySource.Add(source.Name, bound)
                         | Error es -> failed <- es
                 if not (List.isEmpty failed) then return Result.failure failed
                 else
                     match Evidence.merge (List.ofSeq packs) with
                     | Error es -> return Result.failure es
                     | Ok merged ->
-                        let path = resolvePath root richRef
+                        let path = TwinConfig.resolvePath root richRef
                         match System.IO.Path.GetDirectoryName path with
                         | null | "" -> ()
                         | dir -> System.IO.Directory.CreateDirectory dir |> ignore
                         System.IO.File.WriteAllText(path, Evidence.serialize merged)
+                        // The drift leg.
+                        let! trunk = TrunkModel.readback root config
+                        let driftReport =
+                            match trunk with
+                            | Error es ->
+                                let code =
+                                    es |> List.tryHead |> Option.map (fun e -> e.Code)
+                                       |> Option.defaultValue "twin.trunk.unavailable"
+                                { Trunk = code; Sections = [] }
+                            | Ok catalog ->
+                                let index = CatalogIndex.ofCatalog catalog
+                                { Trunk = "ok"
+                                  Sections =
+                                      boundBySource
+                                      |> List.ofSeq
+                                      |> List.map (fun (name, bound) -> EvidenceDrift.compare index name bound) }
+                        let driftPath = TwinConfig.resolvePath root driftReportPath
+                        match System.IO.Path.GetDirectoryName driftPath with
+                        | null | "" -> ()
+                        | dir -> System.IO.Directory.CreateDirectory dir |> ignore
+                        System.IO.File.WriteAllText(driftPath, EvidenceDrift.serializeReport driftReport)
                         return
                             Result.success
                                 { Sources =
@@ -221,7 +262,10 @@ module EvidenceImport =
                                           Tables = List.length p.Tables
                                           Columns = p.Tables |> List.sumBy (fun t -> List.length t.Columns) })
                                   RichPath = path
-                                  FanOuts = List.length merged.FanOuts }
+                                  FanOuts = List.length merged.FanOuts
+                                  DriftTrunk = driftReport.Trunk
+                                  DriftEntries = EvidenceDrift.entryCount driftReport
+                                  DriftPath = driftPath }
         }
 
     /// Rich → shape, written to the committed path.
@@ -231,14 +275,14 @@ module EvidenceImport =
             | None, _ -> return Result.failureOf richUnset
             | _, None -> return Result.failureOf shapeUnset
             | Some richRef, Some shapeRel ->
-                let richPath = resolvePath root richRef
+                let richPath = TwinConfig.resolvePath root richRef
                 if not (System.IO.File.Exists richPath) then
                     return Result.failureOf (richMissing richPath)
                 else
                     match Evidence.deserialize (System.IO.File.ReadAllText richPath) with
                     | Error es -> return Result.failure es
                     | Ok rich ->
-                        let shapePath = resolvePath root shapeRel
+                        let shapePath = TwinConfig.resolvePath root shapeRel
                         match System.IO.Path.GetDirectoryName shapePath with
                         | null | "" -> ()
                         | dir -> System.IO.Directory.CreateDirectory dir |> ignore
@@ -254,7 +298,7 @@ module EvidenceImport =
             match ref with
             | None -> None, []
             | Some r ->
-                let path = resolvePath root r
+                let path = TwinConfig.resolvePath root r
                 if not (System.IO.File.Exists path) then None, []
                 else
                     match Evidence.deserialize (System.IO.File.ReadAllText path) with

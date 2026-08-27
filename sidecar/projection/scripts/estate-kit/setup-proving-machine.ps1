@@ -1,0 +1,166 @@
+<#
+THE ESTATE KIT — the one-time machine setup + acceptance suite (Windows).
+
+    .\setup-proving-machine.ps1 [-Templates <dir>] [-SkipTemplate]
+                                [-Server <engine>] [-SqlUser <u> -SqlPassword <p>]
+
+Verifies a developer machine end to end before the team leans on it:
+
+  1. Toolchain — dotnet, sqlpackage (against the pinned version this kit
+     was packaged with), the engine (-Server, default LocalDB), its version.
+  2. Template — the newest verified template restores as a disposable copy
+     that answers its own identity, and resets in seconds.
+  3. Acceptance — the known catalog (never the estate's own model)
+     publishes and the engine's verdicts reproduce: no-op silence with an
+     unchanged content digest; the reference add validating TRUSTED
+     (is_not_trusted = 0) over rows that all point at real parents; and the
+     make-mandatory triple — BLOCKED over rows with NULLs, STILL blocked
+     after the NULLs are cleared (the guard is table-has-rows), clean only
+     on the emptied table.
+
+Every verdict is read from the engine's PRINTED TEXT, never an exit code.
+The suite ends with the toolchain row to record in estate/toolchain.md.
+#>
+param(
+    [string] $Templates = '.\templates',
+    [switch] $SkipTemplate,
+    [string] $Server = '(localdb)\MSSQLLocalDB',
+    [string] $SqlUser,
+    [string] $SqlPassword
+)
+. (Join-Path $PSScriptRoot 'kit-common.ps1')
+
+# The sqlpackage pin this kit was PACKAGED with — the packager bakes the
+# toolchain ledger's row over the placeholder below. A source-tree run
+# (placeholder intact) reports the pin as not yet baked, never silently.
+$SqlpackagePin = '__SQLPACKAGE_PIN__'
+
+$rand = [guid]::NewGuid().ToString('N').Substring(0, 8)
+$acceptDb = "PG_KitAccept_$rand"
+$smokeDb = "PG_KitSmoke_$rand"
+$scratch = Join-Path ([System.IO.Path]::GetTempPath()) "estate-kit-accept-$rand"
+$auth = @{ Server = $Server; SqlUser = $SqlUser; SqlPassword = $SqlPassword }
+
+try {
+    # -----------------------------------------------------------------------
+    # 1 — toolchain.
+    # -----------------------------------------------------------------------
+    if (Get-Command dotnet -ErrorAction SilentlyContinue) { Write-KitPass "dotnet on PATH ($(dotnet --version))" }
+    else { Write-KitFail 'dotnet is not on PATH' }
+
+    $sqlpackageVersion = '(absent)'
+    if (Get-Command sqlpackage -ErrorAction SilentlyContinue) {
+        $sqlpackageVersion = (& sqlpackage /version | Select-Object -Last 1).Trim()
+        if ($SqlpackagePin -like '__SQLPACKAGE_*' -or $SqlpackagePin -eq 'UNPINNED') {
+            Write-KitPass "sqlpackage on PATH ($sqlpackageVersion); the pin is not yet baked — align to the pipeline's DacFx and record both in estate/toolchain.md"
+        }
+        elseif ($SqlpackagePin -eq $sqlpackageVersion) { Write-KitPass "sqlpackage $sqlpackageVersion matches the kit's pin" }
+        else { Write-KitFail "sqlpackage $sqlpackageVersion differs from the kit's pin $SqlpackagePin — trust-state findings are assumed until aligned" }
+    }
+    else { Write-KitFail 'sqlpackage is not on PATH (dotnet tool install --global microsoft.sqlpackage)' }
+
+    $engine = Get-KitScalar @auth -Query "SET NOCOUNT ON; SELECT CONCAT(CAST(SERVERPROPERTY('ProductVersion') AS NVARCHAR(64)), ' · ', CAST(SERVERPROPERTY('Edition') AS NVARCHAR(128)));"
+    if ($engine) { Write-KitPass "SQL Server reachable at '$Server' ($engine)" }
+    else { Stop-Kit "no SQL Server at '$Server' — start the local engine first (sqllocaldb create/start MSSQLLocalDB)" }
+
+    # -----------------------------------------------------------------------
+    # 2 — the template: restore, identity, reset.
+    # -----------------------------------------------------------------------
+    if (-not $SkipTemplate) {
+        $pair = Get-NewestTemplate $Templates
+        Test-TemplatePair $pair.Bak $pair.Manifest | Out-Null
+        Write-KitPass "template pair verified ($(Split-Path -Leaf $pair.Bak))"
+        Restore-KitTemplate @auth -Bak $pair.Bak -Database $smokeDb
+        $identity = Get-KitIdentity @auth -Database $smokeDb
+        if ($identity -like 'commit=(unstamped)*') { Write-KitFail 'the restored copy carries no template identity' }
+        elseif ($identity -like 'commit=*') { Write-KitPass "restored copy answers its identity ($identity)" }
+        else { Write-KitFail "the restored copy's identity could not be read" }
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        Restore-KitTemplate @auth -Bak $pair.Bak -Database $smokeDb
+        $sw.Stop()
+        Write-KitPass ("reset (drop + restore) in {0:N2}s" -f $sw.Elapsed.TotalSeconds)
+    }
+    else { Write-KitLog 'template smoke skipped (-SkipTemplate)' }
+
+    # -----------------------------------------------------------------------
+    # 3 — the acceptance catalog (a scratch copy; the authored kit is never
+    # edited — the PROTOCOL discipline).
+    # -----------------------------------------------------------------------
+    New-Item -ItemType Directory -Force -Path $scratch | Out-Null
+    Copy-Item -Recurse -Force (Join-Path $PSScriptRoot 'acceptance\AcceptanceCatalog\*') $scratch
+    Remove-Item -Recurse -Force (Join-Path $scratch 'bin'), (Join-Path $scratch 'obj') -ErrorAction SilentlyContinue
+
+    function Build-Acceptance {
+        & dotnet build (Join-Path $scratch 'AcceptanceCatalog.sqlproj') -c Release *> $null
+        if ($LASTEXITCODE -ne 0) { Stop-Kit 'the acceptance catalog did not build' }
+    }
+    function Publish-Acceptance {
+        # The verdict lives in the TEXT; a blocked publish does not reliably
+        # exit non-zero.
+        $args = @(
+            '/Action:Publish',
+            "/SourceFile:$(Join-Path $scratch 'bin\Release\AcceptanceCatalog.dacpac')",
+            "/Profile:$(Join-Path $scratch 'profiles\Acceptance.Strict.publish.xml')",
+            "/TargetServerName:$Server",
+            "/TargetDatabaseName:$acceptDb",
+            '/TargetTrustServerCertificate:True'
+        )
+        if ($SqlUser) { $args += @("/TargetUser:$SqlUser", "/TargetPassword:$SqlPassword") }
+        (& sqlpackage @args 2>&1) -join "`n"
+    }
+
+    Build-Acceptance
+    Write-KitLog "baseline publish (+ seed) to [$acceptDb]..."
+    $out = Publish-Acceptance
+    if ($out -match 'Successfully published') { Write-KitPass 'baseline catalog published' }
+    else { Write-KitFail 'the baseline publish did not succeed'; Write-Host $out }
+
+    $d1 = Get-KitDigest @auth -Database $acceptDb
+    $out = Publish-Acceptance
+    $d2 = Get-KitDigest @auth -Database $acceptDb
+    if ($out -match 'Successfully published' -and $d1 -eq $d2) { Write-KitPass "no-op republish left the content digest unchanged ($d1)" }
+    else { Write-KitFail "the no-op republish moved the digest ($d1 -> $d2)" }
+
+    Copy-Item -Recurse -Force (Join-Path $PSScriptRoot 'acceptance\edits\fk-add\*') $scratch
+    Build-Acceptance
+    $out = Publish-Acceptance
+    $trust = Get-KitScalar @auth -Database $acceptDb -Query "SET NOCOUNT ON; SELECT CAST(is_not_trusted AS NVARCHAR(1)) FROM sys.foreign_keys WHERE name = 'FK_Customer_Region';"
+    if ($out -match 'Successfully published' -and $trust -eq '0') { Write-KitPass 'reference add validated TRUSTED (is_not_trusted = 0)' }
+    elseif ($trust -eq '1') { Write-KitFail 'the engine left the added reference UNTRUSTED (is_not_trusted = 1) — record this engine in estate/toolchain.md and add the WITH CHECK CHECK re-validation step to reference records on this machine' }
+    else { Write-KitFail 'the reference-add publish did not land'; Write-Host $out }
+
+    Copy-Item -Recurse -Force (Join-Path $PSScriptRoot 'acceptance\edits\make-mandatory\*') $scratch
+    Build-Acceptance
+    $out = Publish-Acceptance
+    if ($out -match 'Could not deploy package') { Write-KitPass 'make-mandatory BLOCKED over rows with NULLs' }
+    else { Write-KitFail 'make-mandatory was not blocked over NULL rows'; Write-Host $out }
+
+    Invoke-KitSql @auth -Database $acceptDb -Query "UPDATE [dbo].[Customer] SET [Email] = CONCAT(N'fixed', [Id], N'@acceptance.test') WHERE [Email] IS NULL;" | Out-Null
+    $out = Publish-Acceptance
+    if ($out -match 'Could not deploy package') { Write-KitPass 'make-mandatory STILL blocked after the NULLs were cleared (the guard is table-has-rows)' }
+    else { Write-KitFail 'the cleared-NULLs publish was not blocked — the guard read differently on this engine'; Write-Host $out }
+
+    Invoke-KitSql @auth -Database $acceptDb -Query 'DELETE FROM [dbo].[Customer];' | Out-Null
+    $out = Publish-Acceptance
+    $nullable = Get-KitScalar @auth -Database $acceptDb -Query "SET NOCOUNT ON; SELECT CAST(COLUMNPROPERTY(OBJECT_ID('dbo.Customer'), 'Email', 'AllowsNull') AS NVARCHAR(1));"
+    if ($out -match 'Successfully published' -and $nullable -eq '0') { Write-KitPass 'make-mandatory publishes clean on the emptied table (Email is NOT NULL)' }
+    else { Write-KitFail 'the emptied-table publish did not land the NOT NULL'; Write-Host $out }
+
+    # -----------------------------------------------------------------------
+    # 4 — the verdict, and the ledger row to record.
+    # -----------------------------------------------------------------------
+    Write-Host ''
+    if ($script:KitFailures -eq 0) { Write-KitLog "acceptance complete: every check passed. This machine's proving loop is trustworthy." }
+    else { Write-KitLog "acceptance complete with $($script:KitFailures) failure(s) — fix the substrate before the team leans on it; do not route around it." }
+    Write-KitLog 'record in estate/toolchain.md (per-machine row):'
+    $verdict = if ($script:KitFailures -eq 0) { 'PASSED' } else { "FAILED ($($script:KitFailures))" }
+    Write-Host ("| machine ({0}) | sqlpackage {1} · engine {2} | this machine | {3} | per-machine acceptance {4} |" -f `
+        $env:COMPUTERNAME, $sqlpackageVersion, $engine, ((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')), $verdict)
+    exit $(if ($script:KitFailures -eq 0) { 0 } else { 1 })
+}
+finally {
+    try {
+        Invoke-KitSql @auth -Query "IF DB_ID(N'$acceptDb') IS NOT NULL BEGIN ALTER DATABASE [$acceptDb] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$acceptDb]; END; IF DB_ID(N'$smokeDb') IS NOT NULL BEGIN ALTER DATABASE [$smokeDb] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [$smokeDb]; END;" | Out-Null
+    } catch { }
+    Remove-Item -Recurse -Force $scratch -ErrorAction SilentlyContinue
+}

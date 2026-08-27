@@ -45,12 +45,12 @@ module TwinDatabase =
     let emptyState : StoredState =
         { SchemaFingerprint = None; DataFingerprint = None; Scenario = None; Seed = None; MintedRows = None }
 
-    /// Does the twin database exist on the container?
-    let databaseExists (masterCnn: SqlConnection) : Task<bool> =
+    /// Does the named twin database exist on the substrate?
+    let databaseExists (masterCnn: SqlConnection) (database: string) : Task<bool> =
         task {
             use cmd = masterCnn.CreateCommand()
             cmd.CommandText <- "SELECT DB_ID(@name);"
-            cmd.Parameters.AddWithValue("@name", TwinContainer.TwinDatabaseName) |> ignore
+            cmd.Parameters.AddWithValue("@name", database) |> ignore
             let! result = cmd.ExecuteScalarAsync()
             return not (isNull result) && result <> box System.DBNull.Value
         }

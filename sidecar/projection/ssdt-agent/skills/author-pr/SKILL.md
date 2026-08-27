@@ -67,6 +67,9 @@ constraint: "<the developer's words>". <Name the work item, or: No work item sup
 - **Realized:** <the one thing the data taught>.
 - <build/end-state facts: the composed model, is_not_trusted = 0, row counts. If no publish ran this
   session, say so plainly here and put the unproven claims under Not checked — never dress precedent as this change's proof.>
+- <the substrate's identity: the sqlpackage version, and — when the copy was restored from a
+  distributed template — the template commit and data fingerprint read from `[twin].[__state]`,
+  so the reviewer restores the same base.>
 
 ## After deploy — check
 ```sql

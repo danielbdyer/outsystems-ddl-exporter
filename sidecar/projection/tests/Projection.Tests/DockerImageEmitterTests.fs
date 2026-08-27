@@ -107,3 +107,14 @@ let ``T1: DockerImageEmitter Dockerfile + entrypoint + README are byte-identical
     Assert.Equal<string> (a.Dockerfile,       b.Dockerfile)
     Assert.Equal<string> (a.EntrypointScript, b.EntrypointScript)
     Assert.Equal<string> (a.Readme,           b.Readme)
+
+[<Fact>]
+let ``the emitted text artifacts carry no carriage return`` () =
+    // The templates are triple-quoted literals, so a CRLF source checkout
+    // would otherwise leak `\r` into entrypoint.sh — which breaks bash
+    // inside the container — and fork the emitter's byte identity by
+    // checkout convention. Emission normalizes to LF.
+    let ctx = DockerImageEmitter.emit (enrich sampleCatalog) |> mustOk
+    Assert.DoesNotContain("\r", ctx.Dockerfile)
+    Assert.DoesNotContain("\r", ctx.EntrypointScript)
+    Assert.DoesNotContain("\r", ctx.Readme)

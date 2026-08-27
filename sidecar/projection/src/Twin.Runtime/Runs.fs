@@ -39,6 +39,9 @@ module Runs =
 
     type StatusReport = {
         Container        : TwinContainer.ContainerState
+        /// True when the twin manages the container's lifecycle; false on
+        /// an existing server (the renderer phrases the difference).
+        Managed          : bool
         DatabasePresent  : bool
         DefinedTables    : int
         DefinedLanes     : int
@@ -61,6 +64,10 @@ module Runs =
         TotalRows       : int64
         DefinedTables   : int
         UnsatisfiableFks : int
+        /// The volume shell (F4): rows amplified past σ's minted core
+        /// toward the recorded volumes, and the budget-bounded remainder.
+        ShellRows       : int64
+        ShellShortfall  : int64
     }
 
     type UpOutcome =
@@ -187,11 +194,10 @@ module Runs =
         (schemaFp: Fingerprint)
         (dataFp: Fingerprint)
         (estate: EstateDefinition)
-        (password: string)
+        (resolved: ResolvedSubstrate)
         : Task<Result<MaterializeReport>> =
         task {
-            let masterConnStr = TwinContainer.masterConnectionString config.Container password
-            let twinConnStr = TwinContainer.twinConnectionString config.Container password
+            let twinConnStr = resolved.TwinConnectionString
             // Schema plane.
             let! published =
                 task {
@@ -200,7 +206,8 @@ module Runs =
                         match EstateModel.buildDacpac estate with
                         | Error es -> return Result.failure es
                         | Ok dacpac ->
-                            let! deployed = EstateModel.publish masterConnStr dacpac
+                            let! deployed =
+                                EstateModel.publishTo resolved.ServerConnectionString resolved.TwinDatabase dacpac
                             match deployed with
                             | Error es -> return Result.failure es
                             | Ok () ->
@@ -249,27 +256,41 @@ module Runs =
                                         match minted with
                                         | Error es -> return Result.failure es
                                         | Ok report ->
-                                            let! totalRows = TwinDatabase.totalRows twinCnn
-                                            let! wrote =
-                                                TwinDatabase.writeDataState twinCnn dataFp scenarioName plan.Seed totalRows
-                                            match wrote with
+                                            // F4 — the volume shell: amplify
+                                            // evidence-riding kinds whose minted
+                                            // rows fall short of the record;
+                                            // inert at scale one. The witness
+                                            // pass runs after and restores every
+                                            // exact count on the amplified
+                                            // landscape.
+                                            let! shell =
+                                                VolumeShell.amplify twinCnn mintCatalog plan.Profile plan.Config pools
+                                            match shell with
                                             | Error es -> return Result.failure es
-                                            | Ok () ->
-                                                let counts = EstateDefinition.counts estate
-                                                return
-                                                    Result.success
-                                                        { SchemaPublished = schemaPublished
-                                                          LanesApplied = lanesApplied
-                                                          ProvidedKinds = Map.count pools
-                                                          MintedKinds =
-                                                              Catalog.allKinds mintCatalog
-                                                              |> List.filter (fun k -> not (Map.containsKey k.SsKey pools))
-                                                              |> List.length
-                                                          Scenario = scenarioName
-                                                          Seed = plan.Seed
-                                                          TotalRows = totalRows
-                                                          DefinedTables = counts.Tables
-                                                          UnsatisfiableFks = List.length report.SyntheticUnsatisfiableFks }
+                                            | Ok shellReport ->
+                                                let! totalRows = TwinDatabase.totalRows twinCnn
+                                                let! wrote =
+                                                    TwinDatabase.writeDataState twinCnn dataFp scenarioName plan.Seed totalRows
+                                                match wrote with
+                                                | Error es -> return Result.failure es
+                                                | Ok () ->
+                                                    let counts = EstateDefinition.counts estate
+                                                    return
+                                                        Result.success
+                                                            { SchemaPublished = schemaPublished
+                                                              LanesApplied = lanesApplied
+                                                              ProvidedKinds = Map.count pools
+                                                              MintedKinds =
+                                                                  Catalog.allKinds mintCatalog
+                                                                  |> List.filter (fun k -> not (Map.containsKey k.SsKey pools))
+                                                                  |> List.length
+                                                              Scenario = scenarioName
+                                                              Seed = plan.Seed
+                                                              TotalRows = totalRows
+                                                              DefinedTables = counts.Tables
+                                                              UnsatisfiableFks = List.length report.SyntheticUnsatisfiableFks
+                                                              ShellRows = shellReport.AddedRows
+                                                              ShellShortfall = shellReport.Shortfall }
         }
 
     /// The one-click converge. Fingerprint match on both planes is the
@@ -282,38 +303,35 @@ module Runs =
                 match TwinConfig.resolveScenario config scenarioName with
                 | Error es -> return Result.failure es
                 | Ok scenario ->
-                    match TwinContainer.resolvePassword config.Container.PasswordRef with
+                    let schemaFp = schemaFingerprint config estate
+                    let _, seed = Mint.effectiveScaleSeed config (TwinConfig.scenarioChain config scenarioName)
+                    let dataFp = dataFingerprint root config estate scenarioName seed
+                    let! ready = TwinSubstrate.ensureReady config
+                    match ready with
                     | Error es -> return Result.failure es
-                    | Ok password ->
-                        let schemaFp = schemaFingerprint config estate
-                        let _, seed = Mint.effectiveScaleSeed config (TwinConfig.scenarioChain config scenarioName)
-                        let dataFp = dataFingerprint root config estate scenarioName seed
-                        let! running = TwinContainer.ensureRunning config.Container password
-                        match running with
-                        | Error es -> return Result.failure es
-                        | Ok () ->
-                            use! masterCnn = openCnn (TwinContainer.masterConnectionString config.Container password)
-                            let! dbExists = TwinDatabase.databaseExists masterCnn
-                            let! stored =
-                                task {
-                                    if not dbExists then return TwinDatabase.emptyState
-                                    else
-                                        use! twinCnn = openCnn (TwinContainer.twinConnectionString config.Container password)
-                                        return! TwinDatabase.readState twinCnn
-                                }
-                            let schemaCurrent = stored.SchemaFingerprint = Some (Fingerprint.value schemaFp)
-                            let dataCurrent = stored.DataFingerprint = Some (Fingerprint.value dataFp)
-                            if schemaCurrent && dataCurrent && not force then
-                                return
-                                    Result.success
-                                        (NothingToApply (
-                                            (EstateDefinition.counts estate).Tables,
-                                            defaultArg stored.MintedRows 0L,
-                                            defaultArg stored.Scenario scenarioName))
-                            else
-                                let! report =
-                                    materialize root config scenarioName (not schemaCurrent) schemaFp dataFp estate password
-                                return report |> Result.map Materialized
+                    | Ok resolved ->
+                        use! masterCnn = openCnn resolved.ServerConnectionString
+                        let! dbExists = TwinDatabase.databaseExists masterCnn resolved.TwinDatabase
+                        let! stored =
+                            task {
+                                if not dbExists then return TwinDatabase.emptyState
+                                else
+                                    use! twinCnn = openCnn resolved.TwinConnectionString
+                                    return! TwinDatabase.readState twinCnn
+                            }
+                        let schemaCurrent = stored.SchemaFingerprint = Some (Fingerprint.value schemaFp)
+                        let dataCurrent = stored.DataFingerprint = Some (Fingerprint.value dataFp)
+                        if schemaCurrent && dataCurrent && not force then
+                            return
+                                Result.success
+                                    (NothingToApply (
+                                        (EstateDefinition.counts estate).Tables,
+                                        defaultArg stored.MintedRows 0L,
+                                        defaultArg stored.Scenario scenarioName))
+                        else
+                            let! report =
+                                materialize root config scenarioName (not schemaCurrent) schemaFp dataFp estate resolved
+                            return report |> Result.map Materialized
         }
 
     /// Force a fresh mint (schema converged first when stale).
@@ -329,31 +347,31 @@ module Runs =
                 match TwinConfig.resolveScenario config scenarioName with
                 | Error es -> return Result.failure es
                 | Ok scenario ->
-                    match TwinContainer.resolvePassword config.Container.PasswordRef with
+                    match TwinSubstrate.resolve config with
                     | Error es -> return Result.failure es
-                    | Ok password ->
+                    | Ok resolved ->
                         let counts = EstateDefinition.counts estate
                         let schemaFp = schemaFingerprint config estate
                         let _, seed = Mint.effectiveScaleSeed config (TwinConfig.scenarioChain config scenarioName)
                         let dataFp = dataFingerprint root config estate scenarioName seed
-                        let! containerState = TwinContainer.state config.Container
-                        match containerState with
+                        let! substrateState = TwinSubstrate.state config
+                        match substrateState with
                         | Error es -> return Result.failure es
                         | Ok state ->
                             match state with
                             | TwinContainer.Running ->
-                                use! masterCnn = openCnn (TwinContainer.masterConnectionString config.Container password)
-                                let! dbExists = TwinDatabase.databaseExists masterCnn
+                                use! masterCnn = openCnn resolved.ServerConnectionString
+                                let! dbExists = TwinDatabase.databaseExists masterCnn resolved.TwinDatabase
                                 if not dbExists then
                                     return
                                         Result.success
-                                            { Container = state; DatabasePresent = false
+                                            { Container = state; Managed = resolved.Managed; DatabasePresent = false
                                               DefinedTables = counts.Tables; DefinedLanes = counts.StaticData
                                               SchemaCurrent = Some false; DataCurrent = Some false
                                               StoredScenario = None; StoredSeed = None; StoredMintedRows = None
                                               LiveTables = None; LiveRows = None }
                                 else
-                                    use! twinCnn = openCnn (TwinContainer.twinConnectionString config.Container password)
+                                    use! twinCnn = openCnn resolved.TwinConnectionString
                                     let! stored = TwinDatabase.readState twinCnn
                                     let! rows = TwinDatabase.totalRows twinCnn
                                     let! live = Readback.readSchema twinCnn
@@ -363,7 +381,7 @@ module Runs =
                                         | Error _ -> None
                                     return
                                         Result.success
-                                            { Container = state; DatabasePresent = true
+                                            { Container = state; Managed = resolved.Managed; DatabasePresent = true
                                               DefinedTables = counts.Tables; DefinedLanes = counts.StaticData
                                               SchemaCurrent = Some (stored.SchemaFingerprint = Some (Fingerprint.value schemaFp))
                                               DataCurrent = Some (stored.DataFingerprint = Some (Fingerprint.value dataFp))
@@ -373,17 +391,19 @@ module Runs =
                             | _ ->
                                 return
                                     Result.success
-                                        { Container = state; DatabasePresent = false
+                                        { Container = state; Managed = resolved.Managed; DatabasePresent = false
                                           DefinedTables = counts.Tables; DefinedLanes = counts.StaticData
                                           SchemaCurrent = None; DataCurrent = None
                                           StoredScenario = None; StoredSeed = None; StoredMintedRows = None
                                           LiveTables = None; LiveRows = None }
         }
 
-    /// Stop the container; state preserved.
-    let down (config: TwinConfig) : Task<Result<unit>> =
-        TwinContainer.stop config.Container
+    /// Stop the substrate: the managed container stops (state preserved);
+    /// an existing server is left alone — the named no-op.
+    let down (config: TwinConfig) : Task<Result<DownOutcome>> =
+        TwinSubstrate.down config
 
-    /// Remove the container and everything in it.
-    let reset (config: TwinConfig) : Task<Result<unit>> =
-        TwinContainer.remove config.Container
+    /// Remove the managed container and everything in it; on an existing
+    /// server, drop only the twin database — the server stands.
+    let reset (config: TwinConfig) : Task<Result<ResetOutcome>> =
+        TwinSubstrate.reset config

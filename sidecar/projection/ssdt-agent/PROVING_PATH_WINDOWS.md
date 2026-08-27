@@ -68,8 +68,21 @@ step 6.
 The point of proving is to see what the engine does with the actual rows, so the local database
 needs real-shaped data, not the sample seed.
 
-- The most faithful copy is a **restore of a Dev backup**. Restore a recent `.bak` of the Dev
-  database into your local engine.
+- **The distributed template, once the nightly bake runs, is the standard path.** The pipeline
+  bakes a fully synthetic template — the trunk schema plus data minted from measurements of Dev,
+  QA, and UAT, carrying every blocking reality the three environments would raise — and publishes
+  it as a verified `.bak`. Fetch and restore it with the estate kit:
+
+  ```powershell
+  ssdt-agent\estate-kit\get-template.ps1 -From \\<share>\proving-templates
+  ssdt-agent\estate-kit\restore-proving-copy.ps1
+  ```
+
+  The restored copy names its own origin (`[twin].[__state]` carries the source commit and
+  fingerprints), resets in seconds by restoring again, and needs **no credentials to any real
+  environment** — no Dev backup ever reaches a developer machine.
+- Until the template exists, the most faithful copy is a **restore of a Dev backup**. Restore a
+  recent `.bak` of the Dev database into your local engine.
 - If the Dev data is sensitive, restore a **sanitized copy** — real shapes and volumes, masked
   values. The proving loop cares about row counts, nulls, duplicates, orphans, and lengths, not the
   literal values, so masking does not weaken the proof as long as it preserves those shapes.
@@ -128,6 +141,13 @@ the finding, so the agent reads the printed lines, not the process exit status.
 ## Step 6 — Verify the substrate before you rely on it
 
 Two checks confirm the substrate is real. Run them once on each machine before the week.
+
+**The scripted form runs both, and more.** `ssdt-agent\estate-kit\setup-proving-machine.ps1`
+verifies the toolchain, restores the template and reads its identity, and runs the acceptance
+suite on a known catalog — the make-mandatory triple below plus the constraint-trust probe, a
+no-op-republish digest check, and the ledger row to record — printing a PASS/FAIL verdict per
+check. Prefer it; the manual checks below are the same substance, and the fallback where the kit
+is not yet vendored.
 
 **The acceptance test — the make-mandatory block reproduces.** Take a table that holds rows and has
 some blank values in a nullable column. Edit that column to `NOT NULL` in the project, rebuild, and

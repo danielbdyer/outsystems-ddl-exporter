@@ -1,0 +1,17 @@
+-- The make-mandatory edit's NEUTRAL seed. The triple's first two publishes
+-- are BLOCKED before any post-deploy runs; the emptied-table leg applies the
+-- NOT NULL cleanly, and this seed then deliberately re-inserts nothing —
+-- the baseline seed's NULL-email rows would violate the column the edit
+-- just tightened, which would misread as a publish failure instead of the
+-- clean single-phase apply the empty table genuinely gets.
+MERGE INTO [dbo].[Status] AS t
+USING (VALUES (1, N'Open'), (2, N'Closed'), (3, N'Pending')) AS s ([Id], [Name])
+ON t.[Id] = s.[Id]
+WHEN MATCHED AND t.[Name] <> s.[Name] THEN UPDATE SET [Name] = s.[Name]
+WHEN NOT MATCHED BY TARGET THEN INSERT ([Id], [Name]) VALUES (s.[Id], s.[Name]);
+
+MERGE INTO [dbo].[Region] AS t
+USING (VALUES (1, N'North'), (2, N'South'), (3, N'East')) AS s ([Id], [Name])
+ON t.[Id] = s.[Id]
+WHEN MATCHED AND t.[Name] <> s.[Name] THEN UPDATE SET [Name] = s.[Name]
+WHEN NOT MATCHED BY TARGET THEN INSERT ([Id], [Name]) VALUES (s.[Id], s.[Name]);

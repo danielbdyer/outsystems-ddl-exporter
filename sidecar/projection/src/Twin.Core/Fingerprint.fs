@@ -37,8 +37,16 @@ module Fingerprint =
 
     /// Hash one contribution's content. Exposed so callers can log the
     /// per-file digest in a status report without re-deriving the recipe.
+    ///
+    /// Line endings are normalized to LF before hashing: a template's
+    /// identity must not depend on which operating system checked the
+    /// estate out, or a Windows clone and a Linux clone of the same
+    /// commit would name two different templates. Named one-time
+    /// identity flip, 2026-08-26 — applied while no published template
+    /// exists, so no stored fingerprint is orphaned by it.
     let contentHash (content: string) : string =
-        sha256Hex (System.Text.Encoding.UTF8.GetBytes content)
+        let normalized = content.Replace("\r\n", "\n").Replace("\r", "\n")
+        sha256Hex (System.Text.Encoding.UTF8.GetBytes normalized)
 
     /// Compute the fingerprint over the given contributions plus the
     /// run parameters that change what a mint produces.

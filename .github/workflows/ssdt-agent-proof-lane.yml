@@ -1,7 +1,9 @@
 # ssdt-agent proof lane — the Twin-proven corpus stays proven.
 #
-# Runs the 41 SamplePr facts + the Twin view-loop regression against live SQL
-# Server containers (the fixtures own their containers; DacFx drives the
+# Runs the 41 SamplePr facts + the Twin view-loop regression + the crossover
+# proofs (the evidence-merge drop-in and the three-environment rehearsal —
+# PROVING_SURFACE_DESIGN §5.2's acceptance gate) against live SQL Server
+# containers (the fixtures own their containers; DacFx drives the
 # publishes — no sqlpackage needed). Debug configuration, mirroring
 # scripts/twin-test.sh (the SamplePr classes do not compile under Release —
 # FS3511; a known, separate cleanup).
@@ -29,7 +31,7 @@ on:
 
 jobs:
   twin-facts:
-    name: the 41 SamplePr facts + the view-loop regression
+    name: the 41 SamplePr facts + the view-loop and crossover proofs
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -41,5 +43,5 @@ jobs:
         working-directory: sidecar/projection
         run: >
           dotnet test tests/Twin.Tests.Integration/Twin.Tests.Integration.fsproj
-          --filter "FullyQualifiedName~SamplePr|FullyQualifiedName~TwinViewLoopTests"
+          --filter "FullyQualifiedName~SamplePr|FullyQualifiedName~TwinViewLoopTests|FullyQualifiedName~TwinCrossover"
           --logger "console;verbosity=minimal"

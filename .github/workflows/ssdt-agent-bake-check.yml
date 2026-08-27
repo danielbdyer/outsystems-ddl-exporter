@@ -1,0 +1,158 @@
+# ssdt-agent bake check — the MECHANIC stays proven where it is developed.
+#
+# Runs scripts/twin-bake-template.sh end to end against the SAMPLE estate
+# (the proving ground) — with --image, so the image rendition's build,
+# restore-on-first-start, identity answer, and restart idempotence stay
+# proven too (the image dies with the runner; only the .bak + manifest
+# upload) — then re-bakes through the PACKED Twin.Tool dotnet tool from a
+# script copy outside the repository (the ADO nightly's dotnetTool shape)
+# and requires the identical identity, and uploads the template + manifest
+# as a short-retention artifact. This is deliberately NOT the production nightly:
+# the estate's trunk lives in Azure DevOps, and the production bake is the
+# estate repository's azure-pipelines.bake.yml (shipped in the estate kit),
+# which runs this same script against real captured evidence. This check
+# exists so a change to the Twin or to the bake script cannot silently rot
+# the mechanic the ADO pipeline calls.
+#
+# Triggers: on demand, weekly, and on any PR touching the bake path.
+
+name: ssdt-agent bake check
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "41 5 * * 1"
+  pull_request:
+    paths:
+      - "sidecar/projection/scripts/twin-bake-template.sh"
+      - "sidecar/projection/scripts/warm-sql.sh"
+      - "sidecar/projection/src/Twin.Core/**"
+      - "sidecar/projection/src/Twin.Runtime/**"
+      - "sidecar/projection/src/Twin.Cli/**"
+      - ".github/workflows/ssdt-agent-bake-check.yml"
+
+jobs:
+  bake-mechanic:
+    name: bake the sample-estate template end to end
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: run the bake against the sample estate (with the image rendition)
+        working-directory: sidecar/projection
+        run: bash scripts/twin-bake-template.sh --image
+
+      - name: verify the artifact pair and its identity claims
+        working-directory: sidecar/projection
+        run: |
+          set -euo pipefail
+          OUT=ssdt-agent/proving-ground/templates
+          BAK="$(ls -t "$OUT"/*.bak | head -1)"
+          MANIFEST="${BAK%.bak}.manifest.json"
+          node -e '
+            const fs = require("fs");
+            const [bak, manifestPath, sha] = process.argv.slice(1);
+            const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+            const fail = (msg) => { console.error(msg); process.exit(1); };
+            if (m.artifact.file !== require("path").basename(bak)) fail("manifest names a different artifact");
+            if (m.artifact.bytes !== fs.statSync(bak).size) fail("manifest bytes disagree with the artifact");
+            if (m.artifact.sha256 !== sha) fail("manifest sha256 disagrees with the artifact");
+            if (m.commit !== process.env.GITHUB_SHA && process.env.GITHUB_EVENT_NAME !== "pull_request")
+              fail("manifest commit disagrees with the checkout");
+            if (!m.fingerprints.schema || !m.fingerprints.data) fail("manifest carries no fingerprints");
+            if (!m.imageRendition || !m.imageRendition.tag) fail("manifest carries no image rendition (this check bakes with --image)");
+            console.log("manifest verified:", m.template, "image:", m.imageRendition.tag);
+          ' "$BAK" "$MANIFEST" "$(sha256sum "$BAK" | awk '{print $1}')"
+
+      - name: run the image rendition and prove its identity
+        working-directory: sidecar/projection
+        run: |
+          set -euo pipefail
+          OUT=ssdt-agent/proving-ground/templates
+          BAK="$(ls -t "$OUT"/*.bak | head -1)"
+          MANIFEST="${BAK%.bak}.manifest.json"
+          field() { node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(process.argv[2].split(".").reduce((o,k)=>o[k], m)));' "$MANIFEST" "$1"; }
+          TAG="$(field imageRendition.tag)"
+          DATA_FP="$(field fingerprints.data)"
+          COMMIT="$(field commit)"
+          docker run -d --name twin-tpl-smoke -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='Twin@Strong1' \
+            -e MSSQL_MEMORY_LIMIT_MB=2048 "$TAG"
+          SQL=(docker exec twin-tpl-smoke /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Twin@Strong1' -C -d twin -h -1 -W)
+          waitTwin() {
+            for _ in $(seq 1 120); do
+              if "${SQL[@]}" -Q "SET NOCOUNT ON; SELECT 1;" >/dev/null 2>&1; then return 0; fi
+              sleep 2
+            done
+            docker logs twin-tpl-smoke >&2 || true
+            return 1
+          }
+          # Waiting on the twin catalog itself means the restore has landed,
+          # not merely that the engine answers.
+          waitTwin
+          ROW="$("${SQL[@]}" -s '|' -Q "SET NOCOUNT ON; SELECT ISNULL(DataFingerprint,''), ISNULL(TemplateCommit,'') FROM [twin].[__state];" | tr -d '\r' | awk 'NF{print;exit}')"
+          [ "${ROW%%|*}" = "$DATA_FP" ] || { echo "the restored copy's data fingerprint disagrees with the manifest"; exit 1; }
+          if [ "${GITHUB_EVENT_NAME:-}" != "pull_request" ]; then
+            [ "${ROW##*|}" = "$COMMIT" ] || { echo "the restored copy's template commit disagrees with the manifest"; exit 1; }
+          fi
+          ROWS="$("${SQL[@]}" -Q "SET NOCOUNT ON; SELECT COALESCE(SUM(p.[rows]),0) FROM sys.tables t JOIN sys.schemas s ON s.schema_id=t.schema_id JOIN sys.partitions p ON p.object_id=t.object_id AND p.index_id IN (0,1) WHERE s.name <> N'twin' AND t.is_ms_shipped = 0;" | tr -d '\r' | awk 'NF{print;exit}')"
+          [ "$ROWS" -gt 0 ] || { echo "the restored copy holds no estate rows"; exit 1; }
+          echo "image identity verified: $TAG ($ROWS estate rows)"
+          # A restart must find the twin present and skip the restore.
+          # The entrypoint's own readiness poll prints the skip line a
+          # beat AFTER sqlcmd first answers, so the grep is bounded-retried
+          # rather than raced against it.
+          docker restart twin-tpl-smoke >/dev/null
+          waitTwin
+          skipped=0
+          for _ in $(seq 1 30); do
+            if docker logs twin-tpl-smoke 2>&1 | grep -q "the template restore was skipped"; then skipped=1; break; fi
+            sleep 2
+          done
+          if [ "$skipped" != 1 ]; then
+            docker logs twin-tpl-smoke >&2 || true
+            echo "the restarted container did not skip the restore"
+            exit 1
+          fi
+          echo "restart idempotence verified"
+          docker rm -f twin-tpl-smoke >/dev/null
+
+      - name: pack the twin tool and re-bake through it (the peel's identity proof)
+        working-directory: sidecar/projection
+        run: |
+          set -euo pipefail
+          OUT=ssdt-agent/proving-ground/templates
+          idfields() { node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write([m.fingerprints.schema,m.fingerprints.data,m.imageRendition.tag].join("|"));' "$1"; }
+          M1="$(ls -t "$OUT"/*.manifest.json | head -1)"
+          ID1="$(idfields "$M1")"
+          TOOL_VERSION="$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' src/Twin.Cli/Twin.Cli.fsproj | head -1)"
+          dotnet pack src/Twin.Cli/Twin.Cli.fsproj -c Release -o "$RUNNER_TEMP/twin-nupkg" --nologo -v q
+          dotnet tool install Twin.Tool --tool-path "$RUNNER_TEMP/twin-tool" --add-source "$RUNNER_TEMP/twin-nupkg"
+          # The kit-simulation shape: the script copied OUTSIDE the
+          # monorepo, driven by the installed tool with the seams set —
+          # exactly how the ADO nightly's dotnetTool mode runs it.
+          cp scripts/twin-bake-template.sh "$RUNNER_TEMP/kit-sim-bake.sh"
+          TWIN_BIN="$RUNNER_TEMP/twin-tool/twin" \
+            TWIN_TOOL_VERSION="$TOOL_VERSION" \
+            TWIN_TOOLCHAIN_MD="$PWD/ssdt-agent/estate/toolchain.md" \
+            bash "$RUNNER_TEMP/kit-sim-bake.sh" --image "$PWD/ssdt-agent/proving-ground"
+          M2="$(ls -t "$OUT"/*.manifest.json | head -1)"
+          ID2="$(idfields "$M2")"
+          if [ "$ID1" != "$ID2" ]; then
+            echo "the packed tool's bake diverged from the monorepo bake"
+            echo "monorepo:  $ID1"
+            echo "tool:      $ID2"
+            exit 1
+          fi
+          echo "peel identity verified: both delivery shapes bake $ID2"
+
+      - name: upload the template + manifest (mechanic evidence, short retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: twin-template-sample-estate
+          path: sidecar/projection/ssdt-agent/proving-ground/templates/
+          retention-days: 7
+          if-no-files-found: error

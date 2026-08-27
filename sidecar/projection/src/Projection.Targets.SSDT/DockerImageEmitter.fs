@@ -280,11 +280,18 @@ loops where the data accumulates locally.
         use _ = Bench.scope "emit.dockerImage.emit"
         match DacpacEmitter.emit catalog with
         | Ok dacpacBytes ->
+            // The templates are triple-quoted literals, so their line
+            // endings follow the SOURCE CHECKOUT's convention. Normalize
+            // to LF at emission: a CRLF entrypoint.sh breaks bash inside
+            // the container (`\r` after the shebang and every command),
+            // and the emitter's byte-determinism claim must hold across
+            // checkouts, not per line-ending convention.
+            let lf (s: string) : string = s.Replace("\r\n", "\n").Replace("\r", "\n")
             Result.success
                 {
-                    Dockerfile       = dockerfileTemplate
+                    Dockerfile       = lf dockerfileTemplate
                     DacpacBytes      = dacpacBytes
-                    EntrypointScript = entrypointTemplate
-                    Readme           = readmeTemplate
+                    EntrypointScript = lf entrypointTemplate
+                    Readme           = lf readmeTemplate
                 }
         | Error errs -> Error errs

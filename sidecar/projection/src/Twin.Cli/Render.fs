@@ -66,9 +66,18 @@ module Render =
                     [ System.String.Concat(
                         ni r.UnsatisfiableFks,
                         " non-nullable relationships could not be satisfied and hold NULL; the affected columns are named in the run detail.") ]
+            let shell =
+                if r.ShellRows = 0L && r.ShellShortfall = 0L then []
+                else
+                    [ System.String.Concat(
+                        "The volume shell amplified ", n0 r.ShellRows,
+                        " rows toward the recorded volumes",
+                        (if r.ShellShortfall = 0L then "."
+                         else System.String.Concat("; ", n0 r.ShellShortfall, " recorded rows sit past the shell budget."))) ]
             [ System.String.Concat(
                 "Twin materialized — ", ni r.DefinedTables, " tables, ", n0 r.TotalRows, " rows.")
               schemaLine; lanesLine; mintLine ]
+            @ shell
             @ unsatisfiable
 
     let status (s: Runs.StatusReport) : string list =
@@ -77,12 +86,16 @@ module Render =
             [ "No twin container is present."
               System.String.Concat("The repository defines ", ni s.DefinedTables, " tables.")
               "Run: twin up" ]
+        | TwinContainer.Stopped when not s.Managed ->
+            [ "The configured server did not accept a connection."
+              "Start the engine (or fix server.conn), then run: twin up" ]
         | TwinContainer.Stopped ->
             [ "The twin container is stopped."
               "Run: twin up" ]
         | TwinContainer.Running ->
             if not s.DatabasePresent then
-                [ "The twin container is running; the twin database has not been created."
+                [ (if s.Managed then "The twin container is running; the twin database has not been created."
+                   else "The configured server is reachable; the twin database has not been created.")
                   "Run: twin up" ]
             else
                 let current = s.SchemaCurrent = Some true && s.DataCurrent = Some true
@@ -105,11 +118,21 @@ module Render =
                           (match s.LiveTables with Some t -> ni t | None -> "an unknown number of"), " tables.")
                       "Run: twin up" ]
 
-    let down () : string list =
-        [ "The twin container is stopped. State is preserved; twin up restarts it." ]
+    let down (outcome: DownOutcome) : string list =
+        match outcome with
+        | ContainerStopped ->
+            [ "The twin container is stopped. State is preserved; twin up restarts it." ]
+        | ExternalServerLeft ->
+            [ "The configured server is not the twin's to stop; nothing was changed. To drop the twin database, run: twin reset" ]
 
-    let reset () : string list =
-        [ "The twin container has been removed, and its data with it. The next twin up starts from the repository definitions alone." ]
+    let reset (outcome: ResetOutcome) : string list =
+        match outcome with
+        | ContainerRemoved ->
+            [ "The twin container has been removed, and its data with it. The next twin up starts from the repository definitions alone." ]
+        | DatabaseDropped database ->
+            [ System.String.Concat(
+                "The twin database \"", database,
+                "\" has been dropped from the configured server; the server itself stands. The next twin up starts from the repository definitions alone.") ]
 
     let initScaffolded (path: string) : string list =
         [ "A starter twin.json has been written."
@@ -145,16 +168,75 @@ module Render =
             r.Sources
             |> List.map (fun s ->
                 System.String.Concat("    ", s.Source, " — ", ni s.Tables, " tables, ", ni s.Columns, " columns"))
+        let drift =
+            if r.DriftTrunk <> "ok" then
+                [ System.String.Concat(
+                      "Schema drift was not compared — the trunk model could not be acquired (", r.DriftTrunk,
+                      "). The captures stand; rerun where the trunk binds for the drift report.") ]
+            elif r.DriftEntries = 0 then
+                [ "Every captured environment's schema matches the trunk head on the captured tables." ]
+            else
+                [ System.String.Concat(
+                      ni r.DriftEntries,
+                      " schema drift entries — coordinates where an environment differs from the trunk head. The template stays at the trunk; the report is the promotion story's raw material.")
+                  System.String.Concat("    ", r.DriftPath) ]
         [ "Evidence imported — the rich pack is written."
           System.String.Concat("    ", r.RichPath) ]
         @ perSource
-        @ [ System.String.Concat("    ", ni r.FanOuts, " relationship fan-outs captured.")
-            "Next: twin evidence derive — the committed, literal-free shape tier." ]
+        @ [ System.String.Concat("    ", ni r.FanOuts, " relationship fan-outs captured.") ]
+        @ drift
+        @ [ "Next: twin evidence derive — the committed, literal-free shape tier." ]
 
     let evidenceDerive (path: string) : string list =
         [ "The shape tier is derived — counts, null rates, cardinalities, fan-out shapes; no captured literal."
           System.String.Concat("    ", path)
           "Commit it beside twin.json; the rich pack stays out of the repository." ]
+
+    let evidenceAudit (r: EvidenceAudit.AuditRunReport) : string list =
+        let perSection =
+            r.Sections
+            |> List.map (fun (source, failures, advisories) ->
+                System.String.Concat(
+                    "    ", source, " — ", ni failures, " blocking failures, ",
+                    ni advisories, " advisories"))
+        let perDeep =
+            match r.Deep with
+            | [] -> []
+            | deep ->
+                [ "Deep per-environment round-trips (each input minted alone, witnessed, audited):" ]
+                @ (deep
+                   |> List.map (fun (source, failures, advisories) ->
+                       System.String.Concat(
+                           "    ", source, " — ", ni failures, " blocking failures, ",
+                           ni advisories, " advisories")))
+        let verdictLine =
+            if r.TotalFailures = 0 then
+                "The template is at least as blocking as every audited environment."
+            else
+                System.String.Concat(
+                    "The template under-blocks: ", ni r.TotalFailures,
+                    " blocking failures. Re-merge and re-bake before distributing.")
+        [ verdictLine ]
+        @ perSection
+        @ perDeep
+        @ [ System.String.Concat("    report: ", r.ReportPath) ]
+        @ (match r.DeepReportPath with
+           | Some p -> [ System.String.Concat("    deep report: ", p) ]
+           | None -> [])
+
+    let evidenceMerge (r: EvidenceMerge.MergeRunReport) : string list =
+        let perInput =
+            r.Inputs
+            |> List.map (fun (source, tables) ->
+                System.String.Concat("    ", source, " — ", ni tables, " tables"))
+        [ "The crossover is merged — every blocking fact keeps its worst case, and the report names each winner's environment." ]
+        @ perInput
+        @ [ System.String.Concat("    ", ni r.MergedTables, " tables merged; ", ni r.DriftCount, " drift entries (coordinates the trunk does not carry).")
+            System.String.Concat("    ", ni r.WitnessCases, " witnesses planned; ", ni r.WitnessSkips, " skipped where the trunk already enforces the rule.")
+            System.String.Concat("    merged pack: ", r.RichPath)
+            System.String.Concat("    report:      ", r.ReportPath)
+            System.String.Concat("    witnesses:   ", r.WitnessSqlPath, " (+ .assert)")
+            "Next: twin evidence derive — the committed shape tier of the merged pack." ]
 
     let evidenceVerify (r: EvidenceImport.VerifyReport) : string list =
         let header =
@@ -192,11 +274,13 @@ module Render =
           "  twin check   [--scenario <name>]   The proof, on a throwaway database: model, publish, mint, zero orphans, byte-identical re-mint."
           "  twin evidence import                Profile the configured sources into the rich pack (out of repo)."
           "  twin evidence derive                Project rich → shape: the committed, literal-free tier."
+          "  twin evidence merge                 Crossover the per-environment packs: extremes survive; the report names each winner."
+          "  twin evidence audit                 Prove the template against each environment: blocking verdicts and fidelity margins."
           "  twin evidence verify                Bind both packs against the estate; the per-table coverage board."
           "  twin classify                       Propose PII classifications from column names (reviewable artifact)."
           "  twin bake                           A docker build context for a distributable schema image."
-          "  twin down                           Stop the container; keep its state."
-          "  twin reset                          Remove the container and its data."
+          "  twin down                           Stop the container; keep its state. An existing server is left alone."
+          "  twin reset                          Remove the container and its data. On an existing server: drop the twin database only."
           "  twin init                           Write a starter twin.json."
           ""
           "Configuration is read from ./twin.json (or TWIN_CONFIG)." ]

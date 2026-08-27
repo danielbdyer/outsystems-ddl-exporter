@@ -67,12 +67,46 @@ type ContainerSection = {
     PasswordRef : string option
 }
 
+/// An EXISTING SQL Server as the twin's substrate — LocalDB, Developer
+/// edition, any reachable instance — instead of a managed container. The
+/// twin never provisions or stops it; `up` requires it reachable, `down`
+/// leaves it alone, `reset` drops only the twin database.
+type ServerSection = {
+    /// `env:` / `file:` reference to the server-level connection string
+    /// (a database in the string is ignored; the twin database rides
+    /// `Database`). Never inline — a connection string carries a secret.
+    ConnRef  : string
+    /// The twin database's name on that server.
+    Database : string
+}
+
+/// The crossover-merge configuration: which per-environment packs merge,
+/// and where the merge writes its decisions.
+type MergeSection = {
+    /// The per-environment rich packs to merge (`file:` refs or plain
+    /// paths, config-relative). Every input must exist at merge time —
+    /// merging over a missing environment would let an average replace
+    /// an extreme.
+    Inputs      : string list
+    /// Where the merge report lands (config-relative). The report is
+    /// literal-free, so it is committable. Unset means
+    /// twin/evidence-merge.report.json.
+    ReportPath  : string option
+    /// The directory the witness SQL pair lands in (config-relative).
+    /// Unset means beside the resolved rich pack — out of the
+    /// repository, because envelope edges are captured numerics.
+    WitnessPath : string option
+}
+
 type EvidenceSection = {
     /// The committed shape-tier pack path (repo-relative).
     ShapePath : string option
     /// The out-of-repo rich-tier pack reference (`file:` ref or plain path).
     RichRef   : string option
     Sources   : EvidenceSource list
+    /// The crossover-merge configuration; unset means `twin evidence
+    /// merge` refuses with the setting to add.
+    Merge     : MergeSection option
 }
 
 /// How a date window skews inside its range (scenario column override).
@@ -130,7 +164,13 @@ type VolumeMode =
 
 type TwinConfig = {
     Estate          : EstateSection
+    /// The managed-container coordinates. Always populated (defaults when
+    /// the section is absent); INERT when `Server` names an existing
+    /// server — the substrate seam (`TwinSubstrate`) decides which one
+    /// drives, and the parse refuses a config naming both explicitly.
     Container       : ContainerSection
+    /// The existing-server substrate, when configured.
+    Server          : ServerSection option
     Evidence        : EvidenceSection
     CorrectionsPath : string option
     Seed            : uint64
@@ -334,6 +374,27 @@ module TwinConfig =
         | nR, pR, iR, pwR, closedErrors ->
             Result.failure (Result.errors nR @ Result.errors pR @ Result.errors iR @ Result.errors pwR @ closedErrors)
 
+    /// The twin database's default name on an existing server (mirrors
+    /// the managed container's fixed database name).
+    [<Literal>]
+    let DefaultServerDatabase = "twin"
+
+    let private parseServer (path: string) (el: JsonElement) : Result<ServerSection> =
+        if el.ValueKind <> JsonValueKind.Object then Result.failureOf (wrongType "an object" path) else
+        let closed = checkClosed path [ "conn"; "database" ] el
+        let conn =
+            match tryProp "conn" el with
+            | Some v -> readSecretRef (child path "conn") v
+            | None -> Result.failureOf (missing "the server connection reference (env:/file:)" (child path "conn"))
+        let database =
+            match tryProp "database" el with
+            | Some v -> readString (child path "database") v
+            | None -> Result.success DefaultServerDatabase
+        match conn, database, closed with
+        | Ok c, Ok d, [] -> Result.success { ConnRef = c; Database = d }
+        | cR, dR, closedErrors ->
+            Result.failure (Result.errors cR @ Result.errors dR @ closedErrors)
+
     let private parseRendition (path: string) (el: JsonElement) : Result<EvidenceRendition> =
         readString path el
         |> Result.bind (fun v ->
@@ -397,9 +458,41 @@ module TwinConfig =
                               "table", Some coordText
                               "sources", Some (String.concat ", " claimants) ])))
 
+    let private mergeInputsEmpty (path: string) : ValidationError =
+        ValidationError.createWithMetadata
+            "twin.config.evidence.merge.inputsEmpty"
+            "The crossover needs at least one input pack. List the per-environment rich packs under evidence.merge.inputs."
+            (Map.ofList [ "path", Some path ])
+
+    let private parseMerge (path: string) (el: JsonElement) : Result<MergeSection> =
+        if el.ValueKind <> JsonValueKind.Object then Result.failureOf (wrongType "an object" path) else
+        let closed = checkClosed path [ "inputs"; "report"; "witness" ] el
+        let inputs =
+            match tryProp "inputs" el with
+            | Some v when v.ValueKind = JsonValueKind.Array ->
+                v.EnumerateArray()
+                |> Seq.mapi (fun i s -> readString (item (child path "inputs") i) s)
+                |> Result.aggregate
+            | Some _ -> Result.failureOf (wrongType "an array of pack paths" (child path "inputs"))
+            | None -> Result.success []
+        let report =
+            match tryProp "report" el with
+            | Some v -> readString (child path "report") v |> Result.map Some
+            | None -> Result.success None
+        let witness =
+            match tryProp "witness" el with
+            | Some v -> readString (child path "witness") v |> Result.map Some
+            | None -> Result.success None
+        match inputs, report, witness, closed with
+        | Ok [], Ok _, Ok _, [] -> Result.failureOf (mergeInputsEmpty (child path "inputs"))
+        | Ok ins, Ok rep, Ok wit, [] ->
+            Result.success { Inputs = ins; ReportPath = rep; WitnessPath = wit }
+        | insR, repR, witR, closedErrors ->
+            Result.failure (Result.errors insR @ Result.errors repR @ Result.errors witR @ closedErrors)
+
     let private parseEvidence (path: string) (el: JsonElement) : Result<EvidenceSection> =
         if el.ValueKind <> JsonValueKind.Object then Result.failureOf (wrongType "an object" path) else
-        let closed = checkClosed path [ "shape"; "rich"; "sources" ] el
+        let closed = checkClosed path [ "shape"; "rich"; "sources"; "merge" ] el
         let shape =
             match tryProp "shape" el with
             | Some v -> readString (child path "shape") v |> Result.map Some
@@ -416,8 +509,12 @@ module TwinConfig =
                 |> Result.aggregate
             | Some _ -> Result.failureOf (wrongType "an array of evidence sources" (child path "sources"))
             | None -> Result.success []
-        match shape, rich, sources, closed with
-        | Ok sh, Ok ri, Ok so, [] ->
+        let merge =
+            match tryProp "merge" el with
+            | Some v -> parseMerge (child path "merge") v |> Result.map Some
+            | None -> Result.success None
+        match shape, rich, sources, merge, closed with
+        | Ok sh, Ok ri, Ok so, Ok me, [] ->
             let nameDups =
                 Validation.duplicateKeyErrors
                     "twin.config.evidence.duplicateSource"
@@ -426,10 +523,12 @@ module TwinConfig =
                     so
             let collisions = sourceCollisions (child path "sources") so
             match nameDups @ collisions with
-            | [] -> Result.success { ShapePath = sh; RichRef = ri; Sources = so }
+            | [] -> Result.success { ShapePath = sh; RichRef = ri; Sources = so; Merge = me }
             | errors -> Result.failure errors
-        | shR, riR, soR, closedErrors ->
-            Result.failure (Result.errors shR @ Result.errors riR @ Result.errors soR @ closedErrors)
+        | shR, riR, soR, meR, closedErrors ->
+            Result.failure
+                (Result.errors shR @ Result.errors riR @ Result.errors soR
+                 @ Result.errors meR @ closedErrors)
 
     // ------------------------------------------------------------------
     // Scenario parsing (IR only; compilation is M4's scenario compiler).
@@ -671,7 +770,7 @@ module TwinConfig =
     // ------------------------------------------------------------------
 
     let private topLevelKeys =
-        [ "estate"; "container"; "evidence"; "corrections"
+        [ "estate"; "container"; "server"; "evidence"; "corrections"
           "seed"; "scale"; "defaultRows"; "volumes"; "scenarios" ]
 
     /// Parse `twin.json` text to the typed config. Errors aggregate —
@@ -701,10 +800,24 @@ module TwinConfig =
                     match tryProp "container" root with
                     | Some v -> parseContainer "$.container" v
                     | None -> Result.success defaultContainer
+                let server =
+                    match tryProp "server" root with
+                    | Some v -> parseServer "$.server" v |> Result.map Some
+                    | None -> Result.success None
+                // One substrate drives. Both sections EXPLICIT is ambiguous
+                // and refused; `server` beside the defaulted container is
+                // the external mode (the defaults are inert).
+                let substrateExclusive =
+                    match tryProp "container" root, tryProp "server" root with
+                    | Some _, Some _ ->
+                        [ ValidationError.create
+                            "twin.config.substrate.both"
+                            "twin.json names both a managed container and an existing server. Keep exactly one: remove the container section to use the server, or the server section to manage a container." ]
+                    | _ -> []
                 let evidence =
                     match tryProp "evidence" root with
                     | Some v -> parseEvidence "$.evidence" v
-                    | None -> Result.success { ShapePath = None; RichRef = None; Sources = [] }
+                    | None -> Result.success { ShapePath = None; RichRef = None; Sources = []; Merge = None }
                 let corrections =
                     match tryProp "corrections" root with
                     | Some v -> readString "$.corrections" v |> Result.map Some
@@ -745,11 +858,12 @@ module TwinConfig =
                             | errors -> Result.failure errors)
                     | Some _ -> Result.failureOf (wrongType "an object of scenario name → scenario" "$.scenarios")
                     | None -> Result.success []
-                match estate, container, evidence, corrections, seed, scale, defaultRows, volumes, scenarios, closed with
-                | Ok e, Ok c, Ok ev, Ok co, Ok se, Ok sc, Ok dr, Ok vo, Ok scn, [] ->
+                match estate, container, server, evidence, corrections, seed, scale, defaultRows, volumes, scenarios, closed @ substrateExclusive with
+                | Ok e, Ok c, Ok sv, Ok ev, Ok co, Ok se, Ok sc, Ok dr, Ok vo, Ok scn, [] ->
                     Result.success
                         { Estate = e
                           Container = c
+                          Server = sv
                           Evidence = ev
                           CorrectionsPath = co
                           Seed = se
@@ -757,9 +871,9 @@ module TwinConfig =
                           DefaultRows = dr
                           Volumes = vo
                           Scenarios = scn }
-                | eR, cR, evR, coR, seR, scR, drR, voR, scnR, closedErrors ->
+                | eR, cR, svR, evR, coR, seR, scR, drR, voR, scnR, closedErrors ->
                     Result.failure
-                        (Result.errors eR @ Result.errors cR @ Result.errors evR @ Result.errors coR
+                        (Result.errors eR @ Result.errors cR @ Result.errors svR @ Result.errors evR @ Result.errors coR
                          @ Result.errors seR @ Result.errors scR @ Result.errors drR @ Result.errors voR
                          @ Result.errors scnR @ closedErrors)
 
@@ -849,7 +963,14 @@ module TwinConfig =
             [ c.Estate.TablesPattern
               defaultArg c.Estate.SchemasPattern ""
               String.concat ";" c.Estate.StaticData
-              c.Container.Image ]
+              // The engine the schema publishes to is part of the schema
+              // plane's identity. Managed: the pinned image. External: the
+              // substrate marker (the server's own engine version is not a
+              // config fact and may move under the twin — the per-machine
+              // acceptance and the status probe own that reality).
+              match c.Server with
+              | Some s -> System.String.Concat("external:", s.Database)  // LINT-ALLOW: canonical-form field composition (the fingerprint's length-prefixed rendering wraps it)
+              | None -> c.Container.Image ]
 
     /// The mint-plane canonical config text: what, beyond the schema and
     /// the evidence/correction artifact contents, changes what a mint
@@ -872,6 +993,15 @@ module TwinConfig =
     /// baseline default (an explicitly named missing scenario is a
     /// refusal — a typo'd `--scenario quater-end` must not silently mint
     /// baseline data).
+    /// Resolve a config-relative file reference. A `file:` prefix is
+    /// allowed and stripped; forward slashes are written in the config
+    /// and translated to the platform separator here; an absolute path
+    /// wins unchanged (Path.Combine semantics). One definition — the
+    /// import, the mint, and the merge all resolve the same way.
+    let resolvePath (root: string) (ref: string) : string =
+        let cleaned = if ref.StartsWith "file:" then ref.Substring 5 else ref
+        System.IO.Path.Combine(root, cleaned.Replace('/', System.IO.Path.DirectorySeparatorChar))
+
     let resolveScenario (config: TwinConfig) (name: string) : Result<ScenarioIr option> =
         match config.Scenarios |> List.tryFind (fun (n, _) -> n = name) with
         | Some (_, s) -> Result.success (Some s)

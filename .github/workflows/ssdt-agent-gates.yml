@@ -25,6 +25,7 @@ on:
       - ".github/PULL_REQUEST_TEMPLATE/schema-change.md"
       - "sidecar/projection/scripts/ssdt-agent-gates.mjs"
       - "sidecar/projection/scripts/ssdt-agent-package.mjs"
+      - "sidecar/projection/scripts/estate-kit/**"
       - ".github/workflows/ssdt-agent-gates.yml"
   push:
     branches: [main]
@@ -37,6 +38,7 @@ on:
       - ".github/PULL_REQUEST_TEMPLATE/schema-change.md"
       - "sidecar/projection/scripts/ssdt-agent-gates.mjs"
       - "sidecar/projection/scripts/ssdt-agent-package.mjs"
+      - "sidecar/projection/scripts/estate-kit/**"
       - ".github/workflows/ssdt-agent-gates.yml"
 
 jobs:

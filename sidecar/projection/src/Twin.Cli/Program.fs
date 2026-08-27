@@ -125,14 +125,14 @@ let private withTwinCatalog
     (body: Projection.Core.Catalog -> Result<string list>)
     : System.Threading.Tasks.Task<Result<string list>> =
     task {
-        match TwinContainer.resolvePassword config.Container.PasswordRef with
+        match TwinSubstrate.resolve config with
         | Error es -> return Result.failure es
-        | Ok password ->
-            let! state = TwinContainer.state config.Container
+        | Ok resolved ->
+            let! state = TwinSubstrate.state config
             match state with
             | Error es -> return Result.failure es
             | Ok TwinContainer.Running ->
-                use cnn = new Microsoft.Data.SqlClient.SqlConnection(TwinContainer.twinConnectionString config.Container password)
+                use cnn = new Microsoft.Data.SqlClient.SqlConnection(resolved.TwinConnectionString)
                 do! cnn.OpenAsync()
                 let! catalog = Readback.readSchema cnn
                 return catalog |> Result.bind body
@@ -185,6 +185,18 @@ let main argv =
                 let! path = EvidenceImport.derive root config
                 return path |> Result.map Render.evidenceDerive
             })
+    | "evidence" :: "merge" :: _ ->
+        runWithConfig [] (fun root config _ ->
+            task {
+                let! report = EvidenceMerge.run root config
+                return report |> Result.map Render.evidenceMerge
+            })
+    | "evidence" :: "audit" :: _ ->
+        runWithConfig [] (fun root config _ ->
+            task {
+                let! report = EvidenceAudit.run root config
+                return report |> Result.map Render.evidenceAudit
+            })
     | "evidence" :: "verify" :: _ ->
         runWithConfig [] (fun root config _ ->
             withTwinCatalog root config (fun catalog ->
@@ -192,7 +204,7 @@ let main argv =
     | "evidence" :: _ ->
         emit
             (Render.failure
-                [ ValidationError.create "twin.argv.verb" "evidence takes one of: import, derive, verify." ])
+                [ ValidationError.create "twin.argv.verb" "evidence takes one of: import, derive, merge, audit, verify." ])
         exitArgv
     | "classify" :: _ ->
         runWithConfig [] (fun root config _ ->
@@ -206,13 +218,13 @@ let main argv =
         runWithConfig [] (fun _ config _ ->
             task {
                 let! outcome = Runs.down config
-                return outcome |> Result.map (fun () -> Render.down ())
+                return outcome |> Result.map Render.down
             })
     | "reset" :: _ ->
         runWithConfig [] (fun _ config _ ->
             task {
                 let! outcome = Runs.reset config
-                return outcome |> Result.map (fun () -> Render.reset ())
+                return outcome |> Result.map Render.reset
             })
     | verb :: _ ->
         emit

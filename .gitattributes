@@ -1,0 +1,19 @@
+# Line-ending discipline. The Twin's fingerprint normalizes to LF before
+# hashing, so template identity survives any checkout convention — but the
+# working tree should not manufacture avoidable diffs either, and a shell
+# script with CRLF breaks bash outright. The listed classes normalize in
+# the repository and shell scripts check out as LF; PowerShell keeps CRLF
+# for notepad-friendliness on the operator machines that run it. No
+# catch-all: a handful of V1 project files are stored with CRLF, and
+# renormalizing them is churn this program has no reason to cause.
+*.sh text eol=lf
+*.sql text
+*.fs text
+*.fsx text
+*.fsproj text
+*.json text
+*.md text
+*.yml text
+*.yaml text
+*.mjs text
+*.ps1 text eol=crlf
