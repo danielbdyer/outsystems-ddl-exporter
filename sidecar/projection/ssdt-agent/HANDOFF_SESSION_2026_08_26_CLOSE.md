@@ -44,6 +44,17 @@ Every critical-path slice of the approved plan landed, each proven live before i
 - **The drift leg** (`2ac266e`): every `twin evidence import` also compares the environment's
   bound schema against the trunk head into `twin/evidence-drift.report.json`; trunk-acquisition
   failure is a named skip, never a capture block.
+- **F1, string reality** (the F-program's first slice; its law is ZERO NEW CONFIGURATION —
+  no twin.json keys, no runbook steps): every import runs the twin-side reality probe
+  (`RealityProbe.fs`) over each evidenced text column — empty-string, trailing-space, and
+  case-collision counts plus LEN p50/p90, counts only, never values — and the audit probes
+  the minted copy the same way. The merge rescales empties and trailing by the null-rate
+  policy and takes collisions and quantiles by max; three new witness classes plant the
+  realities synthetically (empty floor from the top of the non-null space; length-safe
+  trailing reshape; a seeded token pair differing only in final-letter case, capped under
+  the observed max) with the same named-skip legality; the audit blocks on presence where a
+  witness can plant and holds the counts as margins. The rehearsal seeds real dirt in all
+  three environments and reads it back off the minted template.
 - **The peel** (B6): `twin` packs as the `Twin.Tool` dotnet tool (PackAsTool on Twin.Cli;
   the Version pairs with `Runs.ToolVersion`). The bake script carries the peel's seams —
   `TWIN_BIN` (an installed tool instead of `dotnet run`), `TWIN_TOOL_VERSION`, and

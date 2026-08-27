@@ -189,7 +189,13 @@ module EvidenceImport =
                         | Error es -> return Result.failure es
                         | Ok cache ->
                             let profile = ProfileDerivation.attachFromCache cache profileCatalog Profile.empty
-                            return Result.success (Evidence.ofProfile source.Name profileCatalog keep profile, bound)
+                            let pack = Evidence.ofProfile source.Name profileCatalog keep profile
+                            // The string-plane realities, discovered with no
+                            // configuration over the same open connection.
+                            let! enriched = RealityProbe.enrich cnn bound pack
+                            match enriched with
+                            | Error es -> return Result.failure es
+                            | Ok enrichedPack -> return Result.success (enrichedPack, bound)
         }
 
     let driftReportPath = "twin/evidence-drift.report.json"

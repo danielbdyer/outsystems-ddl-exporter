@@ -663,6 +663,34 @@ timing rehearsal, stated as rehearsal; the proof corpus mirrored into the estate
 pipeline; per-environment scenario templates minted from a single environment's pack, for the
 targeted question "would this block at QA specifically."
 
+### The F-program — fidelity combinatorics, discovered rather than configured
+
+The program deepening the synthesis beyond the C-slices, under one governing law: **zero new
+configuration**. Every axis is discovered by `twin evidence import` on its own (fixed internal
+constants, named here, the way the cardinality threshold already works), merged by a fixed
+policy in the extremes-survive family, reproduced by the mint or planted exactly by the
+witness pass under the same legality discipline, and checked by the audit. No new `twin.json`
+keys — the config's closed schema is the executable form of that promise — and no new runbook
+steps: the owner's capture commands are unchanged.
+
+**F1 — string reality (landed).** The twin-side reality probe (`Twin.Runtime/RealityProbe.fs`)
+runs during every import and over the minted copy for the audit, discovering per text column:
+the EMPTY-STRING count (distinct from NULL — a NOT NULL flip passes over `''` while the
+application treats it as missing), the TRAILING-SPACE count (unique indexes compare under ANSI
+padding, so `'x '` collides with `'x'` there while `=` folds them), the CASE-COLLISION count
+(distinct values folding together under UPPER — what a CI-collation unique add refuses;
+computed only for bounded-length columns up to NVARCHAR(450), the indexable ones), and the LEN
+median and 90th percentile. Counts only, never values — both tiers keep the whole record. The
+merge carries empties and trailing by the null-rate policy (worst rate rescaled to the merged
+row count with the integer ceiling), collisions and quantiles by max. Three new witness
+classes plant the realities synthetically — the empty floor takes the tail of the non-null
+space above every bottom-claimed row, the trailing reshape trims to the declared width before
+appending, the collision pair is a seeded token differing only in final-letter case and capped
+under both the declared width and the observed max — each skipped by name where a unique
+index, an enforced reference, or the primary key makes it unlawful. The audit holds presence
+as ≥-blocking wherever a witness can plant it, with the counts and quantiles as advisory
+margins.
+
 ---
 
 ## 7 — Not verified, and open

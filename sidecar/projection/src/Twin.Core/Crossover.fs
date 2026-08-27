@@ -350,6 +350,55 @@ module Crossover =
                                          stat displayTable (Some display) None "envelopeMax" (fst maxWinner)
                                              (ls |> List.map (fun (l, s) -> l, string s.Max)))
                                     Some (weightedShape shapes)
+                            // The string-plane counts: empty and trailing
+                            // follow the null-rate policy (the worst RATE's
+                            // pair rescaled to the merged row count — an
+                            // extreme survives, never an average); collision
+                            // counts and length quantiles take the MAX.
+                            let text =
+                                match colEntries |> List.choose (fun (l, _, c) -> c.Text |> Option.map (fun ts -> l, c.RowCount, ts)) with
+                                | [] -> None
+                                | textEntries ->
+                                    // The worst RATE among the sources that carry
+                                    // the axis, rescaled to the MERGED row count
+                                    // (a pre-F1 source without the axis must not
+                                    // shrink the rescale target).
+                                    let ratePolicy (statistic: string) (pick: TextShape -> int64) : int64 =
+                                        let rated = textEntries |> List.filter (fun (_, colRows, _) -> colRows > 0L)
+                                        match rated with
+                                        | [] -> 0L
+                                        | _ ->
+                                            let worst =
+                                                rated
+                                                |> List.maxBy (fun (l, colRows, ts) ->
+                                                    decimal (pick ts) / decimal colRows, colRows, l)
+                                            let winner, worstRows, worstShape = worst
+                                            let count = pick worstShape
+                                            let scaled =
+                                                if worstRows = rowCount || count = 0L then count
+                                                else min rowCount (int64 (ceil (decimal count * decimal rowCount / decimal worstRows)))
+                                            (if textEntries |> List.exists (fun (_, _, ts) -> pick ts > 0L) then
+                                                stat displayTable (Some display) None statistic winner
+                                                    (textEntries |> List.map (fun (l, _, ts) -> l, string (pick ts))))
+                                            scaled
+                                    let maxPolicy (pick: TextShape -> int64) : int64 =
+                                        textEntries |> List.map (fun (_, _, ts) -> pick ts) |> List.max
+                                    let quantile (pick: TextShape -> int option) : int option =
+                                        match textEntries |> List.choose (fun (_, _, ts) -> pick ts) with
+                                        | [] -> None
+                                        | vs -> Some (List.max vs)
+                                    let collisions = maxPolicy (fun ts -> ts.CaseCollisions)
+                                    (if collisions > 0L then
+                                        let winner =
+                                            textEntries |> List.maxBy (fun (l, _, ts) -> ts.CaseCollisions, l)
+                                        stat displayTable (Some display) None "caseCollisions" (let (l, _, _) = winner in l)
+                                            (textEntries |> List.map (fun (l, _, ts) -> l, string ts.CaseCollisions)))
+                                    Some
+                                        { EmptyCount = ratePolicy "emptyRate" (fun ts -> ts.EmptyCount)
+                                          TrailingSpaceCount = ratePolicy "trailingSpaceRate" (fun ts -> ts.TrailingSpaceCount)
+                                          CaseCollisions = collisions
+                                          LengthP50 = quantile (fun ts -> ts.LengthP50)
+                                          LengthP90 = quantile (fun ts -> ts.LengthP90) }
                             { Column = display
                               RowCount = rowCount
                               NullCount = nullCount
@@ -358,7 +407,8 @@ module Crossover =
                               Truncated = truncated
                               HasDuplicates = hasDuplicates
                               Frequencies = frequencies
-                              Numeric = numeric })
+                              Numeric = numeric
+                              Text = text })
                         |> List.sortBy (fun c -> lower c.Column)
                     let tableRowCount =
                         max

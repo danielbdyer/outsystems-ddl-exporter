@@ -32,6 +32,30 @@ type NumericShape = {
     P95 : decimal; P99 : decimal; Max : decimal
 }
 
+/// The string-plane realities the deploy engine actually trips on —
+/// COUNTS ONLY, never values, so both tiers keep the whole record
+/// (masked by construction). Captured by the twin-side reality probe
+/// during import; absent for non-text columns and for packs captured
+/// before this axis existed.
+type TextShape = {
+    /// Rows holding the EMPTY STRING — distinct from NULL (a NOT NULL
+    /// flip passes over `''` while the application treats it as missing;
+    /// the row-fidelity digest already separates the two bytes).
+    EmptyCount         : int64
+    /// Rows whose value carries a trailing space (unique indexes compare
+    /// under ANSI padding, so `'x '` and `'x'` collide there while `=`
+    /// folds them — the pad-fold trap, witnessed synthetically).
+    TrailingSpaceCount : int64
+    /// Distinct values that fold together under UPPER — the pairs a
+    /// CI-collation unique add refuses. Computed only for bounded-length
+    /// columns (the indexable ones); 0 elsewhere.
+    CaseCollisions     : int64
+    /// The length distribution beyond the max: LEN's median and 90th
+    /// percentile over non-null rows (advisory fidelity margins).
+    LengthP50          : int option
+    LengthP90          : int option
+}
+
 type ColumnEvidence = {
     Column        : string
     RowCount      : int64
@@ -47,6 +71,9 @@ type ColumnEvidence = {
     Frequencies   : (string * int64) list
     /// Rich tier only; `None` in the shape tier.
     Numeric       : NumericShape option
+    /// String-plane counts (both tiers — literal-free by construction);
+    /// `None` for non-text columns and pre-F1 packs.
+    Text          : TextShape option
 }
 
 type TableEvidence = {
@@ -219,7 +246,10 @@ module Evidence =
                       Frequencies =
                           Map.tryFind c.AttributeKey categoricalByAttr |> Option.map (fun cat -> cat.Frequencies) |> Option.defaultValue []
                       Numeric =
-                          Map.tryFind c.AttributeKey numericByAttr |> Option.map shapeOf }))
+                          Map.tryFind c.AttributeKey numericByAttr |> Option.map shapeOf
+                      // The string-plane counts arrive from the twin-side
+                      // reality probe (Twin.Runtime), never the kernel.
+                      Text = None }))
         let tables =
             columns
             |> List.groupBy fst
@@ -636,6 +666,16 @@ module Evidence =
                         writer.WriteNumber("p95", s.P95); writer.WriteNumber("p99", s.P99)
                         writer.WriteNumber("max", s.Max)
                         writer.WriteEndObject()
+                    match c.Text with
+                    | None -> ()
+                    | Some ts ->
+                        writer.WriteStartObject "text"
+                        if ts.EmptyCount > 0L then writer.WriteNumber("empty", ts.EmptyCount)
+                        if ts.TrailingSpaceCount > 0L then writer.WriteNumber("trailingSpace", ts.TrailingSpaceCount)
+                        if ts.CaseCollisions > 0L then writer.WriteNumber("caseCollisions", ts.CaseCollisions)
+                        (match ts.LengthP50 with Some v -> writer.WriteNumber("lengthP50", v) | None -> ())
+                        (match ts.LengthP90 with Some v -> writer.WriteNumber("lengthP90", v) | None -> ())
+                        writer.WriteEndObject()
                     writer.WriteEndObject()
                 writer.WriteEndArray()
                 writer.WriteEndObject()
@@ -772,6 +812,21 @@ module Evidence =
                                         Numeric =
                                             match c.TryGetProperty "numeric" with
                                             | true, n when n.ValueKind = JsonValueKind.Object -> Some (shapeOfEl n)
+                                            | _ -> None
+                                        Text =
+                                            match c.TryGetProperty "text" with
+                                            | true, ts when ts.ValueKind = JsonValueKind.Object ->
+                                                Some
+                                                    { EmptyCount =
+                                                          (match ts.TryGetProperty "empty" with true, v -> v.GetInt64() | _ -> 0L)
+                                                      TrailingSpaceCount =
+                                                          (match ts.TryGetProperty "trailingSpace" with true, v -> v.GetInt64() | _ -> 0L)
+                                                      CaseCollisions =
+                                                          (match ts.TryGetProperty "caseCollisions" with true, v -> v.GetInt64() | _ -> 0L)
+                                                      LengthP50 =
+                                                          (match ts.TryGetProperty "lengthP50" with true, v -> Some (v.GetInt32()) | _ -> None)
+                                                      LengthP90 =
+                                                          (match ts.TryGetProperty "lengthP90" with true, v -> Some (v.GetInt32()) | _ -> None) }
                                             | _ -> None } ]
                               | _ -> [] } ]
                 | _ -> []

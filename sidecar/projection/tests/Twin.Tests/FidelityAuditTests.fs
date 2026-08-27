@@ -17,7 +17,7 @@ open Twin.Core
 let private col (n: string) (rows: int64) (nulls: int64) : ColumnEvidence =
     { Column = n; RowCount = rows; NullCount = nulls; MaxLength = None
       DistinctCount = None; Truncated = false; HasDuplicates = false
-      Frequencies = []; Numeric = None }
+      Frequencies = []; Numeric = None; Text = None }
 
 let private table (n: string) (columns: ColumnEvidence list) : TableEvidence =
     { Table = n
@@ -115,3 +115,42 @@ let ``a lawful merge output never fails a blocking verdict against its own input
     | Ok (merged, _) ->
         let report = FidelityAudit.auditAll Set.empty inputs { merged with Sources = [ "minted" ] }
         FidelityAudit.failures report = 0
+// -- The string-plane axis (F1) ---------------------------------------------
+
+let private textOf (empty: int64) (trailing: int64) (collisions: int64) : TextShape =
+    { EmptyCount = empty; TrailingSpaceCount = trailing; CaseCollisions = collisions
+      LengthP50 = None; LengthP90 = None }
+
+[<Fact>]
+let ``a template with no empty strings under-blocks an environment that has them`` () =
+    let qa = pack "qa" [ table "dbo.Customer" [ { col "Email" 50L 0L with Text = Some (textOf 3L 0L 0L) } ] ]
+    let minted = pack "minted" [ table "dbo.Customer" [ col "Email" 50L 0L ] ]
+    let section = FidelityAudit.audit Set.empty qa minted
+    let failing = section.Verdicts |> List.find (fun v -> v.Statistic = "emptyString")
+    Assert.False failing.Ok
+    Assert.True failing.Blocking
+    Assert.True(section.Failures >= 1)
+
+[<Fact>]
+let ``a planted presence satisfies the blocking claim while the count stays a margin`` () =
+    let qa = pack "qa" [ table "dbo.Customer" [ { col "Email" 50L 0L with Text = Some (textOf 5L 1L 2L) } ] ]
+    let minted = pack "minted" [ table "dbo.Customer" [ { col "Email" 50L 0L with Text = Some (textOf 2L 1L 1L) } ] ]
+    let section = FidelityAudit.audit Set.empty qa minted
+    Assert.Equal(0, section.Failures)
+    let margin = section.Verdicts |> List.find (fun v -> v.Statistic = "emptyStringCount")
+    Assert.False margin.Ok
+    Assert.False margin.Blocking
+
+[<Fact>]
+let ``length quantiles are advisory margins`` () =
+    let qa =
+        pack "qa" [ table "dbo.Customer" [ { col "Email" 50L 0L with Text = Some { textOf 0L 0L 0L with LengthP90 = Some 30 } } ] ]
+    let minted =
+        pack "minted" [ table "dbo.Customer" [ { col "Email" 50L 0L with Text = Some { textOf 0L 0L 0L with LengthP90 = Some 20 } } ] ]
+    let section = FidelityAudit.audit Set.empty qa minted
+    Assert.Equal(0, section.Failures)
+    let margin = section.Verdicts |> List.find (fun v -> v.Statistic = "lengthP90")
+    Assert.False margin.Ok
+    Assert.False margin.Blocking
+    Assert.Contains("minted 20", margin.Detail)
+    Assert.Contains("source 30", margin.Detail)

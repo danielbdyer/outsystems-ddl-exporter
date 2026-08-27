@@ -283,7 +283,7 @@ let ``a pack with no reality axes serializes with no reality keys`` () =
                     Columns =
                         [ { Column = "Status"; RowCount = 5L; NullCount = 1L; MaxLength = None
                             DistinctCount = None; Truncated = false; HasDuplicates = false
-                            Frequencies = []; Numeric = None } ] } ] }
+                            Frequencies = []; Numeric = None; Text = None } ] } ] }
     let json = Evidence.serialize plain
     Assert.DoesNotContain("orphans", json)
     Assert.DoesNotContain("selectivities", json)
@@ -299,7 +299,7 @@ let ``law 2: a pack naming an absent column refuses by name`` () =
                 richPack.Tables
                 |> List.map (fun t ->
                     if t.Table = "dbo.Customer" then
-                        { t with Columns = t.Columns @ [ { Column = "Ghost"; RowCount = 1L; NullCount = 0L; MaxLength = None; DistinctCount = None; Truncated = false; HasDuplicates = false; Frequencies = []; Numeric = None } ] }
+                        { t with Columns = t.Columns @ [ { Column = "Ghost"; RowCount = 1L; NullCount = 0L; MaxLength = None; DistinctCount = None; Truncated = false; HasDuplicates = false; Frequencies = []; Numeric = None; Text = None } ] }
                     else t) }
     Assert.Contains("twin.coordinate.column.unknown", codes (Evidence.toProfile twinIndex broken))
 
@@ -334,3 +334,53 @@ let ``evidencedKinds names exactly the kinds carrying column evidence`` () =
     let evidenced = Evidence.evidencedKinds twinIndex profile
     Assert.Contains(kindKey ["TC"], evidenced)
     Assert.Contains(kindKey ["TO"], evidenced)
+
+// -- The string-plane axis (F1) ---------------------------------------------
+
+[<Fact>]
+let ``the text shape round-trips through the codec, counts only`` () =
+    let pack =
+        { Evidence.emptyPack RichTier with
+            Sources = [ "dev" ]
+            Tables =
+                [ { Table = "dbo.Customer"; RowCount = 5L
+                    Columns =
+                        [ { Column = "Email"; RowCount = 5L; NullCount = 0L; MaxLength = Some 20
+                            DistinctCount = None; Truncated = false; HasDuplicates = false
+                            Frequencies = []; Numeric = None
+                            Text =
+                                Some
+                                    { EmptyCount = 2L; TrailingSpaceCount = 1L; CaseCollisions = 3L
+                                      LengthP50 = Some 8; LengthP90 = Some 15 } } ] } ] }
+    let json = Evidence.serialize pack
+    Assert.Contains("\"text\"", json)
+    Assert.Contains("trailingSpace", json)
+    Assert.Contains("caseCollisions", json)
+    Assert.Equal(pack, ok (Evidence.deserialize json))
+    // Law 3: the shape tier keeps the whole record — every field is a count.
+    let shaped = Evidence.deriveShape pack
+    let shapedCol = (List.exactlyOne shaped.Tables).Columns |> List.exactlyOne
+    Assert.True shapedCol.Text.IsSome
+
+[<Fact>]
+let ``a column without string counts serializes without the text key`` () =
+    let pack =
+        { Evidence.emptyPack RichTier with
+            Sources = [ "dev" ]
+            Tables =
+                [ { Table = "dbo.Customer"; RowCount = 5L
+                    Columns =
+                        [ { Column = "Email"; RowCount = 5L; NullCount = 0L; MaxLength = None
+                            DistinctCount = None; Truncated = false; HasDuplicates = false
+                            Frequencies = []; Numeric = None; Text = None } ] } ] }
+    Assert.DoesNotContain("\"text\"", Evidence.serialize pack)
+
+[<Fact>]
+let ``a pre-F1 pack (no text key) deserializes with the shape absent`` () =
+    let json =
+        """{ "tier": "rich", "sources": ["dev"],
+             "tables": [ { "table": "dbo.Customer", "rowCount": 5,
+                           "columns": [ { "column": "Email", "rowCount": 5, "nullCount": 1 } ] } ] }"""
+    let pack = ok (Evidence.deserialize json)
+    let c = (List.exactlyOne pack.Tables).Columns |> List.exactlyOne
+    Assert.True c.Text.IsNone

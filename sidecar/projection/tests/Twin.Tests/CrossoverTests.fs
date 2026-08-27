@@ -25,7 +25,7 @@ let private codes (r: Result<'a>) : string list =
 let private col (name: string) (rows: int64) (nulls: int64) : ColumnEvidence =
     { Column = name; RowCount = rows; NullCount = nulls; MaxLength = None
       DistinctCount = None; Truncated = false; HasDuplicates = false
-      Frequencies = []; Numeric = None }
+      Frequencies = []; Numeric = None; Text = None }
 
 let private table (name: string) (columns: ColumnEvidence list) : TableEvidence =
     { Table = name
@@ -230,3 +230,41 @@ let ``the report renders no captured literal`` () =
     let json = Crossover.serializeReport report
     Assert.DoesNotContain("XSECRET", json)
     Assert.Contains("nullRate", json)
+// -- The string-plane axis (F1) ---------------------------------------------
+
+let private textShape (empty: int64) (trailing: int64) (collisions: int64) (p50: int option) (p90: int option) : TextShape =
+    { EmptyCount = empty; TrailingSpaceCount = trailing; CaseCollisions = collisions
+      LengthP50 = p50; LengthP90 = p90 }
+
+[<Fact>]
+let ``string counts merge extreme-preservingly: worst rate rescaled, collisions and quantiles by max`` () =
+    let dev =
+        pack "dev" [ table "dbo.T" [ { col "C" 1000L 0L with Text = Some (textShape 1L 0L 0L (Some 10) (Some 20)) } ] ]
+    let qa =
+        pack "qa" [ table "dbo.T" [ { col "C" 10L 0L with Text = Some (textShape 2L 3L 4L (Some 12) (Some 18)) } ] ]
+    let merged, report = ok (Crossover.merge [ dev; qa ])
+    let c = (List.exactlyOne merged.Tables).Columns |> List.exactlyOne
+    match c.Text with
+    | None -> failwith "the merged column dropped the string counts"
+    | Some ts ->
+        // qa's 2/10 empty rate dominates dev's 1/1000 and rescales to the
+        // merged 1,000 rows with the int64 ceiling — the null-rate policy.
+        Assert.Equal(200L, ts.EmptyCount)
+        Assert.Equal(300L, ts.TrailingSpaceCount)
+        Assert.Equal(4L, ts.CaseCollisions)
+        Assert.Equal(Some 12, ts.LengthP50)
+        Assert.Equal(Some 20, ts.LengthP90)
+    let stats = report.Statistics |> List.map (fun s -> s.Statistic, s.Winner)
+    Assert.Contains(("emptyRate", "qa"), stats)
+    Assert.Contains(("trailingSpaceRate", "qa"), stats)
+    Assert.Contains(("caseCollisions", "qa"), stats)
+
+[<Fact>]
+let ``a source without string counts merges against one that has them`` () =
+    let dev = pack "dev" [ table "dbo.T" [ col "C" 100L 0L ] ]
+    let qa = pack "qa" [ table "dbo.T" [ { col "C" 50L 0L with Text = Some (textShape 5L 0L 0L None None) } ] ]
+    let merged, _ = ok (Crossover.merge [ dev; qa ])
+    let c = (List.exactlyOne merged.Tables).Columns |> List.exactlyOne
+    match c.Text with
+    | Some ts -> Assert.Equal(10L, ts.EmptyCount)
+    | None -> failwith "the lone source's string counts vanished"

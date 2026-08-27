@@ -44,7 +44,7 @@ let private index =
 let private col (n: string) (rows: int64) : ColumnEvidence =
     { Column = n; RowCount = rows; NullCount = 0L; MaxLength = None
       DistinctCount = None; Truncated = false; HasDuplicates = false
-      Frequencies = []; Numeric = None }
+      Frequencies = []; Numeric = None; Text = None }
 
 let private shape (lo: decimal) (hi: decimal) : NumericShape =
     { Min = lo; P25 = lo; P50 = (lo + hi) / 2m; P75 = hi; P95 = hi; P99 = hi; Max = hi }
@@ -246,3 +246,98 @@ let ``the duplicate assertion ignores NULL groups`` () =
                 Columns = [ { col "Code" 10L with HasDuplicates = true } ] } ] []
     let plan, _ = Witness.plan index pack
     Assert.Contains("IS NOT NULL GROUP BY", Witness.emitAssertSql plan)
+// -- The string-plane witnesses (F1) ----------------------------------------
+
+let private textOnly (empty: int64) (trailing: int64) (collisions: int64) : TextShape =
+    { EmptyCount = empty; TrailingSpaceCount = trailing; CaseCollisions = collisions
+      LengthP50 = None; LengthP90 = None }
+
+[<Fact>]
+let ``the empty-string floor claims the tail of the non-null space, above every bottom claim`` () =
+    let pack =
+        packOf
+            [ { Table = "dbo.Customer"; RowCount = 10L
+                Columns =
+                    [ { col "Email" 10L with
+                          MaxLength = Some 32
+                          Text = Some (textOnly 3L 0L 0L) } ] } ] []
+    let plan, skips = Witness.plan index pack
+    Assert.Empty skips
+    let sql = Witness.emitSql 7UL plan
+    // The max-length witness claims row 1; the floor sets the top three
+    // of the ten non-null rows empty — windows disjoint by construction.
+    // (An empty string is a VALUE: the floor is legal on a NOT NULL
+    // column, exactly the case the NOT-NULL-passes-over-'' trap needs.)
+    Assert.Contains("WHERE rn = 1;", sql)
+    Assert.Contains("SET v = N'' WHERE rn > 7;", sql)
+    let assertSql = Witness.emitAssertSql plan
+    Assert.Contains("DATALENGTH", assertSql)
+    Assert.Contains(">= 3", assertSql)
+
+[<Fact>]
+let ``the trailing-space witness reshapes one row length-safely`` () =
+    let pack =
+        packOf
+            [ { Table = "dbo.Customer"; RowCount = 10L
+                Columns = [ { col "Email" 10L with Text = Some (textOnly 0L 2L 0L) } ] } ] []
+    let plan, skips = Witness.plan index pack
+    Assert.Empty skips
+    let sql = Witness.emitSql 7UL plan
+    // Email is NVARCHAR(40): the reshape trims to 39 then appends the space.
+    Assert.Contains("LEFT(v, 39) + N' ' WHERE rn = 1;", sql)
+    Assert.Contains("RTRIM", Witness.emitAssertSql plan)
+
+[<Fact>]
+let ``the case-collision pair differs only in case and stays under the observed max`` () =
+    let pack =
+        packOf
+            [ { Table = "dbo.Customer"; RowCount = 10L
+                Columns =
+                    [ { col "Email" 10L with
+                          MaxLength = Some 3
+                          Text = Some (textOnly 0L 0L 2L) } ] } ] []
+    let plan, skips = Witness.plan index pack
+    Assert.Empty skips
+    let sql = Witness.emitSql 7UL plan
+    // The stem is capped at MaxLength - 1 = 2 characters, so the planted
+    // pair never disturbs the max-length claim.
+    let stems =
+        [ for line in sql.Split '\n' do
+            let t = line.Trim()
+            if t.StartsWith "UPDATE w SET v = N'" && (t.Contains "a' WHERE" || t.Contains "A' WHERE") then t ]
+    Assert.Equal(2, List.length stems)
+    Assert.Contains("a' WHERE rn = 2;", sql)
+    Assert.Contains("A' WHERE rn = 3;", sql)
+    let assertSql = Witness.emitAssertSql plan
+    Assert.Contains("GROUP BY UPPER(", assertSql)
+    Assert.Contains("COUNT(DISTINCT", assertSql)
+
+[<Fact>]
+let ``a MAX-typed column cannot host the collision pair — a named skip`` () =
+    let pack =
+        packOf
+            [ { Table = "dbo.Customer"; RowCount = 10L
+                Columns = [ { col "Code" 10L with Text = Some (textOnly 0L 0L 1L) } ] } ] []
+    let plan, skips = Witness.plan index pack
+    Assert.Empty plan.Cases
+    Assert.Equal("typeUnsupported", (List.exactlyOne skips).Reason)
+
+[<Fact>]
+let ``string witnesses claim disjoint windows after the duplicate claim`` () =
+    let pack =
+        packOf
+            [ { Table = "dbo.Customer"; RowCount = 10L
+                Columns =
+                    [ { col "Email" 10L with
+                          HasDuplicates = true
+                          Text = Some (textOnly 2L 1L 1L) } ] } ] []
+    let plan, skips = Witness.plan index pack
+    Assert.Empty skips
+    let sql = Witness.emitSql 7UL plan
+    // Duplicate claims row 2, trailing row 3, the collision rows 4 and 5,
+    // and the empty floor covers rows 9 and 10 — nothing overlaps.
+    Assert.Contains("WHERE rn = 2;", sql)
+    Assert.Contains("+ N' ' WHERE rn = 3;", sql)
+    Assert.Contains("a' WHERE rn = 4;", sql)
+    Assert.Contains("A' WHERE rn = 5;", sql)
+    Assert.Contains("SET v = N'' WHERE rn > 8;", sql)

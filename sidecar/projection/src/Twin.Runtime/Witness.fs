@@ -59,6 +59,15 @@ type WitnessCase =
     | EnvelopeEdgeWitness of table: TableCoordinate * column: string * orderBy: string * low: decimal * high: decimal * integral: bool
     | OrphanWitness of child: TableCoordinate * column: string * orderBy: string * parent: TableCoordinate * parentKey: string * count: int64 * offset: int64
     | DuplicateWitness of table: TableCoordinate * column: string * orderBy: string * target: int64
+    /// The tail of the non-null space becomes `''` — exact count, above
+    /// every bottom-claimed row (the empty-string floor, F1).
+    | EmptyStringWitness of table: TableCoordinate * column: string * orderBy: string * count: int64 * floorAbove: int64
+    /// One row's value reshaped to carry a trailing space, length-safe
+    /// against the declared width (the pad-fold trap made real).
+    | TrailingSpaceWitness of table: TableCoordinate * column: string * orderBy: string * target: int64 * declaredLength: int option
+    /// Two rows minted as a synthetic case-collision pair (equal under
+    /// UPPER, different raw) — what a CI-collation unique add refuses.
+    | CaseCollisionWitness of table: TableCoordinate * column: string * orderBy: string * first: int64 * second: int64 * tokenLength: int
 
 type WitnessSkip = {
     Coordinate : string
@@ -209,6 +218,52 @@ module Witness =
                                     else
                                         cases.Add(DuplicateWitness(coord, c.Column, orderBy, target))
                                         claimedRows <- max claimedRows target
+                            // The string-plane realities (F1) — planted only
+                            // on text columns, with the same legality
+                            // discipline; the empty floor claims the TAIL of
+                            // the non-null space, above every bottom claim.
+                            match c.Text with
+                            | Some ts when attr.Type = PrimitiveType.Text ->
+                                if ts.TrailingSpaceCount > 0L then
+                                    if attr.IsPrimaryKey then skips.Add(skip coordinate "primaryKeyColumn")
+                                    elif isEnforcedFkSource kind attr.SsKey then skips.Add(skip coordinate "enforcedReference")
+                                    elif hasSingleColumnUnique kind attr.SsKey then skips.Add(skip coordinate "uniqueIndexed")
+                                    else
+                                        let target = claimedRows + 1L
+                                        if nonNull < target then skips.Add(skip coordinate "insufficientNonNullRows")
+                                        else
+                                            cases.Add(TrailingSpaceWitness(coord, c.Column, orderBy, target, attr.Length))
+                                            claimedRows <- target
+                                if ts.CaseCollisions > 0L then
+                                    if attr.IsPrimaryKey then skips.Add(skip coordinate "primaryKeyColumn")
+                                    elif isEnforcedFkSource kind attr.SsKey then skips.Add(skip coordinate "enforcedReference")
+                                    elif hasSingleColumnUnique kind attr.SsKey then skips.Add(skip coordinate "uniqueIndexed")
+                                    elif attr.Length.IsNone then skips.Add(skip coordinate "typeUnsupported")
+                                    else
+                                        let second = claimedRows + 2L
+                                        if nonNull < second then skips.Add(skip coordinate "insufficientNonNullRows")
+                                        else
+                                            // The pair's token stays under BOTH the
+                                            // declared width and the observed max —
+                                            // the max-length witness's claim must
+                                            // survive the collision plant.
+                                            let byDeclared = max 0 (attr.Length.Value - 1)
+                                            let byObserved =
+                                                match c.MaxLength with
+                                                | Some m -> max 0 (m - 1)
+                                                | None -> 7
+                                            let tokenLength = min 7 (min byDeclared byObserved)
+                                            cases.Add(CaseCollisionWitness(coord, c.Column, orderBy, claimedRows + 1L, second, tokenLength))
+                                            claimedRows <- second
+                                if ts.EmptyCount > 0L then
+                                    if attr.IsPrimaryKey then skips.Add(skip coordinate "primaryKeyColumn")
+                                    elif isEnforcedFkSource kind attr.SsKey then skips.Add(skip coordinate "enforcedReference")
+                                    elif hasSingleColumnUnique kind attr.SsKey then skips.Add(skip coordinate "uniqueIndexed")
+                                    else
+                                        let planted = min ts.EmptyCount (nonNull - claimedRows)
+                                        if planted < 1L then skips.Add(skip coordinate "insufficientNonNullRows")
+                                        else cases.Add(EmptyStringWitness(coord, c.Column, orderBy, planted, nonNull - planted))
+                            | Some _ | None -> ()
                             claimed.[claimKey t.Table c.Column] <- claimedRows
 
         for o in pack.Orphans do
@@ -300,6 +355,12 @@ module Witness =
             System.String.Concat("orphans ", TableCoordinate.text child, ".", c, " -> ", TableCoordinate.text parent, " x", n count)
         | DuplicateWitness (t, c, _, _) ->
             System.String.Concat("duplicate ", TableCoordinate.text t, ".", c)
+        | EmptyStringWitness (t, c, _, count, _) ->
+            System.String.Concat("emptyString ", TableCoordinate.text t, ".", c, " x", n count)
+        | TrailingSpaceWitness (t, c, _, _, _) ->
+            System.String.Concat("trailingSpace ", TableCoordinate.text t, ".", c)
+        | CaseCollisionWitness (t, c, _, _, _, _) ->
+            System.String.Concat("caseCollision ", TableCoordinate.text t, ".", c)
 
     /// Rank a column's NON-NULL rows by the primary key — the shared CTE
     /// body. The filter is the null-preservation law: a value witness
@@ -349,6 +410,22 @@ module Witness =
                     (System.String.Concat(
                         "UPDATE w SET v = (SELECT w2.v FROM (", rowNumbered table column orderBy,
                         ") w2 WHERE w2.rn = 1) WHERE rn = ", n target, ";"))
+            | EmptyStringWitness (table, column, orderBy, _, floorAbove) ->
+                line (System.String.Concat(";WITH w AS (", rowNumbered table column orderBy, ")"))
+                line (System.String.Concat("UPDATE w SET v = N'' WHERE rn > ", n floorAbove, ";"))
+            | TrailingSpaceWitness (table, column, orderBy, target, declared) ->
+                let expr =
+                    match declared with
+                    | Some d when d >= 1 -> System.String.Concat("LEFT(v, ", string (d - 1), ") + N' '")
+                    | _ -> "v + N' '"
+                line (System.String.Concat(";WITH w AS (", rowNumbered table column orderBy, ")"))
+                line (System.String.Concat("UPDATE w SET v = ", expr, " WHERE rn = ", n target, ";"))
+            | CaseCollisionWitness (table, column, orderBy, first, second, tokenLength) ->
+                let stem = token seed [ TableCoordinate.text table; column; "caseCollision" ] tokenLength
+                line (System.String.Concat(";WITH w AS (", rowNumbered table column orderBy, ")"))
+                line (System.String.Concat("UPDATE w SET v = N'", stem, "a' WHERE rn = ", n first, ";"))
+                line (System.String.Concat(";WITH w AS (", rowNumbered table column orderBy, ")"))
+                line (System.String.Concat("UPDATE w SET v = N'", stem, "A' WHERE rn = ", n second, ";"))
         sb.ToString()
 
     let private check (case: WitnessCase) : string =
@@ -379,6 +456,24 @@ module Witness =
                     "CASE WHEN EXISTS (SELECT ", quote column, " FROM ", qualified table,
                     " WHERE ", quote column, " IS NOT NULL GROUP BY ", quote column,
                     " HAVING COUNT(*) > 1) THEN 1 ELSE 0 END")
+            | EmptyStringWitness (table, column, _, count, _) ->
+                System.String.Concat(
+                    "CASE WHEN (SELECT COUNT_BIG(*) FROM ", qualified table, " WHERE ",
+                    quote column, " IS NOT NULL AND DATALENGTH(", quote column, ") = 0) >= ",
+                    n count, " THEN 1 ELSE 0 END")
+            | TrailingSpaceWitness (table, column, _, _, _) ->
+                System.String.Concat(
+                    "CASE WHEN EXISTS (SELECT 1 FROM ", qualified table, " WHERE ",
+                    quote column, " IS NOT NULL AND DATALENGTH(", quote column,
+                    ") <> DATALENGTH(RTRIM(", quote column, "))) THEN 1 ELSE 0 END")
+            | CaseCollisionWitness (table, column, _, _, _, _) ->
+                // COUNT(DISTINCT) under a CI collation folds the pair back
+                // together — the binary collation keeps the variants apart.
+                System.String.Concat(
+                    "CASE WHEN EXISTS (SELECT UPPER(", quote column, ") FROM ", qualified table,
+                    " WHERE ", quote column, " IS NOT NULL AND DATALENGTH(", quote column,
+                    ") > 0 GROUP BY UPPER(", quote column, ") HAVING COUNT(DISTINCT ",
+                    quote column, " COLLATE Latin1_General_BIN2) > 1) THEN 1 ELSE 0 END")
         System.String.Concat("    SELECT N'", name, "' AS name, ", ok, " AS ok")
 
     /// The assertion script: one check per planned witness, a detail

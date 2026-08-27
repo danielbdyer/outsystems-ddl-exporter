@@ -96,7 +96,7 @@ WHILE @i <= 25
 BEGIN
     INSERT INTO [dbo].[Customer] ([Name], [Email], [StatusId], [CreatedOn], [Score], [RegionId])
     VALUES (
-        CASE WHEN @i <= 15 THEN N'Common' ELSE N'DevOnly' END,
+        CASE WHEN @i >= 24 THEN N'COMMON' WHEN @i <= 15 THEN N'Common' ELSE N'DevOnly' END,
         CONCAT(N'dev', @i, N'@x.example'),
         1 + (@i % 3),
         DATEADD(DAY, @i, '2026-01-01'),
@@ -112,7 +112,7 @@ WHILE @i <= 20
 BEGIN
     INSERT INTO [dbo].[Customer] ([Name], [Email], [StatusId], [CreatedOn], [Score], [RegionId])
     VALUES (
-        CASE WHEN @i <= 12 THEN N'Common' ELSE N'QaOnly' END,
+        CASE WHEN @i >= 19 THEN N'' WHEN @i <= 12 THEN N'Common' ELSE N'QaOnly' END,
         CASE WHEN @i <= 8 THEN NULL
              WHEN @i <= 11 THEN N'dupe@qa.example'
              ELSE CONCAT(N'qa', @i, N'@y.example') END,
@@ -130,7 +130,7 @@ WHILE @i <= 15
 BEGIN
     INSERT INTO [dbo].[Customer] ([Name], [Email], [StatusId], [CreatedOn], [Score], [RegionId])
     VALUES (
-        CASE WHEN @i <= 9 THEN N'Common' ELSE N'UatOnly' END,
+        CASE WHEN @i >= 14 THEN N'UatOnly ' WHEN @i <= 9 THEN N'Common' ELSE N'UatOnly' END,
         CASE WHEN @i = 1 THEN CONCAT(REPLICATE(N'x', 108), N'@uat.example')
              ELSE CONCAT(N'uat', @i, N'@z.example') END,
         1 + (@i % 3),
@@ -326,6 +326,23 @@ END
                 Assert.Equal("dbo.Region", uatOrphan.ParentTable)
                 Assert.Equal(3L, uatOrphan.OrphanCount)
 
+                // The string-plane probe discovered each environment's dirt
+                // with no configuration: QA's empty Names, UAT's trailing
+                // spaces, Dev's case collision.
+                let packOf (name: string) =
+                    match Evidence.deserialize (System.IO.File.ReadAllText (System.IO.Path.Combine(fixture.Root, "twin", name))) with
+                    | Ok p -> p
+                    | Error es -> failwithf "pack unreadable: %A" (es |> List.map (fun e -> e.Code))
+                let nameShape (pack: EvidencePack) =
+                    let customer = pack.Tables |> List.find (fun t -> t.Table = "dbo.Customer")
+                    (customer.Columns |> List.find (fun c -> c.Column = "Name")).Text
+                let qaName = nameShape (packOf "qa.rich.json")
+                Assert.Equal(Some 2L, qaName |> Option.map (fun ts -> ts.EmptyCount))
+                let uatName = nameShape (packOf "uat.rich.json")
+                Assert.Equal(Some 2L, uatName |> Option.map (fun ts -> ts.TrailingSpaceCount))
+                let devName = nameShape (packOf "dev.rich.json")
+                Assert.Equal(Some 1L, devName |> Option.map (fun ts -> ts.CaseCollisions))
+
                 // 3 — the crossover: extremes survive, winners named.
                 let config = this.MergeConfig ()
                 let! run = EvidenceMerge.run fixture.Root config
@@ -342,6 +359,9 @@ END
                 Assert.Equal("uat", this.Winner report "dbo.Customer" "Score" "envelopeMin")
                 Assert.Equal("uat", this.Winner report "dbo.Customer" "Score" "envelopeMax")
                 Assert.Equal("uat", this.Winner report "dbo.Customer" "RegionId" "envelopeMax")
+                Assert.Equal("qa", this.Winner report "dbo.Customer" "Name" "emptyRate")
+                Assert.Equal("uat", this.Winner report "dbo.Customer" "Name" "trailingSpaceRate")
+                Assert.Equal("dev", this.Winner report "dbo.Customer" "Name" "caseCollisions")
                 // The trunk-enforced StatusId edge lawfully declines its
                 // witness — the skip the audit will exempt.
                 let reportJson = System.IO.File.ReadAllText merge.ReportPath
@@ -364,6 +384,17 @@ END
                 Assert.Equal(Some 120, email.MaxLength)
                 Assert.True email.HasDuplicates
                 Assert.Equal(3L, (List.exactlyOne merged.Orphans).OrphanCount)
+                // The merged string counts: QA's empty rate and UAT's
+                // trailing rate each rescaled to the merged 25 rows with
+                // the ceiling; Dev's collision carried by max.
+                let mergedName = customer.Columns |> List.find (fun c -> c.Column = "Name")
+                let mergedText =
+                    match mergedName.Text with
+                    | Some ts -> ts
+                    | None -> failwith "the merge dropped the string counts"
+                Assert.Equal(3L, mergedText.EmptyCount)
+                Assert.Equal(4L, mergedText.TrailingSpaceCount)
+                Assert.Equal(1L, mergedText.CaseCollisions)
 
                 // 4 — mint from the merged pack (zero mint changes), then
                 // plant the witnesses and prove they landed.
@@ -465,6 +496,12 @@ END
                 Assert.True(orphanRows >= 3L, sprintf "UAT's orphan reality did not land (orphans=%d)" orphanRows)
                 let! vocab = SamplePrSql.scalar twinConn "SELECT COUNT_BIG(DISTINCT [Name]) FROM [dbo].[Customer] WHERE [Name] IN (N'DevOnly', N'QaOnly', N'UatOnly');"
                 Assert.Equal(3L, vocab)
+                let! emptyNames = SamplePrSql.scalar twinConn "SELECT COUNT_BIG(*) FROM [dbo].[Customer] WHERE [Name] IS NOT NULL AND DATALENGTH([Name]) = 0;"
+                Assert.True(emptyNames >= 3L, sprintf "QA's empty-string reality did not land (empties=%d)" emptyNames)
+                let! trailingNames = SamplePrSql.scalar twinConn "SELECT COUNT_BIG(*) FROM [dbo].[Customer] WHERE [Name] IS NOT NULL AND DATALENGTH([Name]) <> DATALENGTH(RTRIM([Name]));"
+                Assert.True(trailingNames >= 1L, sprintf "UAT's trailing-space reality did not land (trailing=%d)" trailingNames)
+                let! collisionPairs = SamplePrSql.scalar twinConn "SELECT COUNT_BIG(*) FROM (SELECT UPPER([Name]) AS u FROM [dbo].[Customer] WHERE [Name] IS NOT NULL AND DATALENGTH([Name]) > 0 GROUP BY UPPER([Name]) HAVING COUNT(DISTINCT [Name] COLLATE Latin1_General_BIN2) > 1) g;"
+                Assert.True(collisionPairs >= 1L, sprintf "Dev's case-collision reality did not land (groups=%d)" collisionPairs)
 
                 // 7 — block-equivalence: the tightening each environment
                 // would refuse is refused by the template, with the same

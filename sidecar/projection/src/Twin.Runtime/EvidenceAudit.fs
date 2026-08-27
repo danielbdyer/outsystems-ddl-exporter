@@ -129,6 +129,42 @@ module EvidenceAudit =
             return List.ofSeq probed
         }
 
+    // The audit's tail, hoisted so its awaits head their own state
+    // machine (the FS3511 survival rule's shape): probe the recorded
+    // orphan edges on the minted copy, recompute the witness exemptions,
+    // run the pack-vs-pack comparison per environment, write the report.
+    let private auditMinted
+        (cnn: SqlConnection)
+        (root: string)
+        (sourcePacks: EvidencePack list)
+        (mergedPack: EvidencePack)
+        (catalog: Catalog)
+        (minted: EvidencePack)
+        : Task<Result<AuditRunReport>> =
+        task {
+            let index = CatalogIndex.ofCatalog catalog
+            let edges =
+                sourcePacks
+                |> List.collect (fun p -> p.Orphans)
+                |> List.map (fun o -> o.ChildTable, o.ChildColumn, o.ParentTable)
+                |> List.distinctBy (fun (c, col, p) ->
+                    c.ToLowerInvariant(), col.ToLowerInvariant(), p.ToLowerInvariant())
+            let! probed = probeOrphans cnn index edges
+            let minted = { minted with Orphans = minted.Orphans @ probed }
+            let skips = snd (Witness.plan index mergedPack)
+            let exempt = skips |> List.map (fun s -> s.Coordinate) |> Set.ofList
+            let report = FidelityAudit.auditAll exempt sourcePacks minted
+            let reportPath = TwinConfig.resolvePath root defaultReportPath
+            write reportPath (FidelityAudit.serializeReport report)
+            return
+                Result.success
+                    { Sections =
+                          report.Sections
+                          |> List.map (fun s -> s.Source, s.Failures, s.Advisories)
+                      TotalFailures = FidelityAudit.failures report
+                      ReportPath = reportPath }
+        }
+
     let run (root: string) (config: TwinConfig) : Task<Result<AuditRunReport>> =
         task {
             match config.Evidence.Merge, config.Evidence.RichRef with
@@ -172,31 +208,18 @@ module EvidenceAudit =
                                             ProfileDerivation.attachFromCache cache profileCatalog Profile.empty
                                         let keep (k: Kind) =
                                             Some (TableCoordinate.text (TwinIdentity.coordinateOfKind k))
-                                        let minted =
+                                        let bare =
                                             Evidence.ofProfile "minted" profileCatalog keep profile
-                                        // Probe the recorded orphan edges directly.
-                                        let index = CatalogIndex.ofCatalog catalog
-                                        let edges =
-                                            sourcePacks
-                                            |> List.collect (fun p -> p.Orphans)
-                                            |> List.map (fun o -> o.ChildTable, o.ChildColumn, o.ParentTable)
-                                            |> List.distinctBy (fun (c, col, p) ->
-                                                c.ToLowerInvariant(), col.ToLowerInvariant(), p.ToLowerInvariant())
-                                        let! probed = probeOrphans cnn index edges
-                                        let minted = { minted with Orphans = minted.Orphans @ probed }
-                                        // Witness legality skips are the exemptions,
-                                        // recomputed deterministically.
-                                        let skips = snd (Witness.plan index mergedPack)
-                                        let exempt = skips |> List.map (fun s -> s.Coordinate) |> Set.ofList
-                                        let report = FidelityAudit.auditAll exempt sourcePacks minted
-                                        let reportPath = TwinConfig.resolvePath root defaultReportPath
-                                        write reportPath (FidelityAudit.serializeReport report)
-                                        return
-                                            Result.success
-                                                { Sections =
-                                                      report.Sections
-                                                      |> List.map (fun s -> s.Source, s.Failures, s.Advisories)
-                                                  TotalFailures = FidelityAudit.failures report
-                                                  ReportPath = reportPath }
+                                        // The minted side carries the same
+                                        // string-plane counts the sources do —
+                                        // the audit compares like with like.
+                                        let boundKinds =
+                                            Catalog.allKinds profileCatalog
+                                            |> List.choose (fun k -> keep k |> Option.map (fun coordText -> coordText, k))
+                                        let! enriched = RealityProbe.enrich cnn boundKinds bare
+                                        match enriched with
+                                        | Error es -> return Result.failure es
+                                        | Ok minted ->
+                                            return! auditMinted cnn root sourcePacks mergedPack catalog minted
                             | Ok _ -> return Result.failureOf notUp
         }

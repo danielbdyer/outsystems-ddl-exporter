@@ -135,6 +135,40 @@ module FidelityAudit =
                                     "minted ", (match mc.DistinctCount with Some m -> string m | None -> "-"),
                                     "; source ", string s))
                         | None -> ()
+                        // The string-plane realities (F1): presence is
+                        // blocking wherever a witness can plant it; the
+                        // counts and length quantiles are fidelity margins.
+                        match c.Text with
+                        | None -> ()
+                        | Some ts ->
+                            let mts =
+                                mc.Text
+                                |> Option.defaultValue
+                                    { EmptyCount = 0L; TrailingSpaceCount = 0L; CaseCollisions = 0L
+                                      LengthP50 = None; LengthP90 = None }
+                            if ts.EmptyCount > 0L then
+                                verdict coordinate "emptyString" true (mts.EmptyCount >= 1L)
+                                    (System.String.Concat("minted ", string mts.EmptyCount, "; source ", string ts.EmptyCount))  // LINT-ALLOW: terminal audit-detail rendering; the literal-free counts text IS the report artifact
+                                verdict coordinate "emptyStringCount" false (mts.EmptyCount >= ts.EmptyCount)
+                                    (System.String.Concat("minted ", string mts.EmptyCount, "; source ", string ts.EmptyCount))  // LINT-ALLOW: terminal audit-detail rendering; the literal-free counts text IS the report artifact
+                            if ts.TrailingSpaceCount > 0L then
+                                verdict coordinate "trailingSpace" true (mts.TrailingSpaceCount >= 1L)
+                                    (System.String.Concat("minted ", string mts.TrailingSpaceCount, "; source ", string ts.TrailingSpaceCount))  // LINT-ALLOW: terminal audit-detail rendering; the literal-free counts text IS the report artifact
+                            if ts.CaseCollisions > 0L then
+                                verdict coordinate "caseCollisions" true (mts.CaseCollisions >= 1L)
+                                    (System.String.Concat("minted ", string mts.CaseCollisions, "; source ", string ts.CaseCollisions))  // LINT-ALLOW: terminal audit-detail rendering; the literal-free counts text IS the report artifact
+                            match ts.LengthP90 with
+                            | Some s90 ->
+                                verdict coordinate "lengthP90" false
+                                    (match mts.LengthP90 with Some m -> m >= s90 | None -> false)
+                                    (System.String.Concat("minted ", (match mts.LengthP90 with Some m -> string m | None -> "-"), "; source ", string s90))  // LINT-ALLOW: terminal audit-detail rendering; the literal-free counts text IS the report artifact
+                            | None -> ()
+                            match ts.LengthP50 with
+                            | Some s50 ->
+                                verdict coordinate "lengthP50" false
+                                    (match mts.LengthP50 with Some m -> m >= s50 | None -> false)
+                                    (System.String.Concat("minted ", (match mts.LengthP50 with Some m -> string m | None -> "-"), "; source ", string s50))  // LINT-ALLOW: terminal audit-detail rendering; the literal-free counts text IS the report artifact
+                            | None -> ()
         let mintedOrphans =
             minted.Orphans
             |> List.map (fun o -> (lower o.ChildTable, lower o.ChildColumn, lower o.ParentTable), o.OrphanCount)
