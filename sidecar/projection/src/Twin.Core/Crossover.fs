@@ -517,7 +517,20 @@ module Crossover =
                   FanOuts = fanOuts
                   Orphans = orphans
                   Selectivities = selectivities
-                  Joints = joints }
+                  Joints = joints
+                  // F3: the inputs ride the merged pack whole, labeled —
+                  // the sector mint's raw material, no configuration.
+                  // One level deep by construction (an input's own
+                  // sectors are stripped when it becomes one). A LONE
+                  // input keeps its provenance untouched — re-merging a
+                  // merged pack changes nothing, sectors included.
+                  Sectors =
+                      match labeled with
+                      | [ (_, only) ] -> only.Sectors
+                      | _ ->
+                          labeled
+                          |> List.map (fun (label, p) -> label, { p with Sectors = [] })
+                          |> List.sortBy (fun (l, _) -> l.ToLowerInvariant()) }
             let report =
                 { Inputs = inputs
                   Tier = tier

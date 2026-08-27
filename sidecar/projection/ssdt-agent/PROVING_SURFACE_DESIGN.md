@@ -719,6 +719,33 @@ records a hot parent over five distinct region parents on the edge the trunk can
 merged template floors the Common partition, re-points the hot parent, and the per-environment
 audit closes with zero blocking failures.
 
+**F3 — the sector mint and the deep per-environment audit (landed).** The merged rich pack now
+carries its inputs whole: `twin evidence merge` embeds each environment's pack as a labeled
+`sectors` entry (rich-tier-only — `deriveShape` drops the axis; one level deep by
+construction; a lone input's merge keeps its provenance untouched so re-merging stays the
+identity). The mint consumes them with no configuration through the same boundary seam Faker
+and pins already ride: after σ generates the global rows from the merged evidence, the sector
+paint (`Twin.Core/SectorPaint.fs`, pure) partitions each evidenced kind's rows into
+contiguous slices proportional to each sector's recorded volume and redraws every slice's
+frequency-carrying text columns from THAT sector's own vocabulary — by largest-remainder
+QUOTA, never by chance draws, so every recorded value lands its proportional presence
+deterministically. A dev-slice row then reads dev-like where the environments diverge, the
+union still covers every environment, and the paint never touches nullness, keys, enforced-FK
+sources, single-column-unique columns, or the empty-string sentinel. One ordering rule closes
+the loop with the witness pass: the sector that recorded the EMPTY STRINGS paints last, so
+the empty floor's tail plants land in the sector whose reality they are. And the audit gains
+its deep leg, automatic whenever the merge names inputs: for each environment, a throwaway
+database is published from the estate head, minted from that environment's pack ALONE, its
+own witnesses planted and asserted, profiled back, and audited against the same pack —
+"would this block at QA specifically" proven per bake, reported beside the template sections
+(`twin/evidence-audit.deep.report.json`) and counted in the same blocking gate. Building it
+surfaced two measurement truths now designed in: a probe-stripped empty string leaves the
+vocabulary channel AND the distinct count together (a complete vocabulary must stay
+complete), and a heavily-floored small population falls under the profiler's five-sample
+numeric floor while still holding its planted envelope — so the audit probes exact MIN/MAX
+directly wherever the sample floor silences π, the same asymmetry the orphan and fan-out
+probes already handle.
+
 ---
 
 ## 7 — Not verified, and open

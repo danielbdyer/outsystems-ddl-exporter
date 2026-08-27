@@ -261,17 +261,27 @@ module RealityProbe =
                                                 | false, _ -> c
                                             match shapes.TryGetValue((t.Table.ToLowerInvariant(), c.Column.ToLowerInvariant())) with
                                             | true, shape ->
+                                                // The kernel's raw-value convention makes
+                                                // `""` the NULL sentinel end to end, so a
+                                                // real empty string cannot ride the
+                                                // vocabulary channel — its count lives in
+                                                // TextShape.EmptyCount and the witness
+                                                // floor re-plants it exactly. When the
+                                                // strip removes a vocabulary entry, the
+                                                // distinct count follows it out — a
+                                                // complete vocabulary must stay complete
+                                                // (DistinctCount ≤ Frequencies.Length is
+                                                // the categorical constructor's law).
+                                                let stripped =
+                                                    shape.EmptyCount > 0L
+                                                    && c.Frequencies |> List.exists (fun (v, _) -> v = "")
                                                 { c with
                                                     Text = Some shape
-                                                    // The kernel's raw-value convention makes
-                                                    // `""` the NULL sentinel end to end, so a
-                                                    // real empty string cannot ride the
-                                                    // vocabulary channel — its count lives in
-                                                    // TextShape.EmptyCount and the witness
-                                                    // floor re-plants it exactly.
+                                                    DistinctCount =
+                                                        if stripped then c.DistinctCount |> Option.map (fun d -> max 0L (d - 1L))
+                                                        else c.DistinctCount
                                                     Frequencies =
-                                                        if shape.EmptyCount > 0L then
-                                                            c.Frequencies |> List.filter (fun (v, _) -> v <> "")
+                                                        if stripped then c.Frequencies |> List.filter (fun (v, _) -> v <> "")
                                                         else c.Frequencies }
                                             | false, _ -> c) }) }
                 return Result.success enriched

@@ -190,6 +190,16 @@ module Render =
                 System.String.Concat(
                     "    ", source, " — ", ni failures, " blocking failures, ",
                     ni advisories, " advisories"))
+        let perDeep =
+            match r.Deep with
+            | [] -> []
+            | deep ->
+                [ "Deep per-environment round-trips (each input minted alone, witnessed, audited):" ]
+                @ (deep
+                   |> List.map (fun (source, failures, advisories) ->
+                       System.String.Concat(
+                           "    ", source, " — ", ni failures, " blocking failures, ",
+                           ni advisories, " advisories")))
         let verdictLine =
             if r.TotalFailures = 0 then
                 "The template is at least as blocking as every audited environment."
@@ -199,7 +209,11 @@ module Render =
                     " blocking failures. Re-merge and re-bake before distributing.")
         [ verdictLine ]
         @ perSection
+        @ perDeep
         @ [ System.String.Concat("    report: ", r.ReportPath) ]
+        @ (match r.DeepReportPath with
+           | Some p -> [ System.String.Concat("    deep report: ", p) ]
+           | None -> [])
 
     let evidenceMerge (r: EvidenceMerge.MergeRunReport) : string list =
         let perInput =

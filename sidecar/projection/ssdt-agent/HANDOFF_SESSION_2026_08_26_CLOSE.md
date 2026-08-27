@@ -70,6 +70,21 @@ Every critical-path slice of the approved plan landed, each proven live before i
   recorded count clamped to the partition) — a strict hi-versus-lo rate comparison flakes
   under σ's draws and was rebuilt before it shipped. The rehearsal discovers QA's
   Rating-by-Name joint and UAT's hot region parent unconfigured and reads both back live.
+- **F3, the sector mint and the deep per-environment audit** (same law): the merge embeds its
+  inputs whole as labeled `sectors` in the merged rich pack (rich-only; singleton merges keep
+  provenance so idempotence holds), and the mint repaints σ's rows into contiguous
+  per-environment slices through the same Realize seam Faker and pins ride — vocabularies
+  re-drawn per sector by largest-remainder quota (`SectorPaint.fs`, pure), keys/references/
+  unique columns/nullness/the `''` sentinel untouched, and the empties-recording sector
+  painting LAST so the empty floor's tail plants land in its own sector. `twin evidence
+  audit` now also round-trips every input alone — throwaway database, per-environment mint,
+  that pack's witnesses, profile-back, audit — the "would this block at QA specifically"
+  proof, in the same blocking gate and its own report. Two measurement truths from the build:
+  the probe's `''` strip must decrement DistinctCount with it (a complete vocabulary stays
+  complete — `toProfile` refuses otherwise), and the profiler's five-sample numeric floor
+  goes silent on heavily-floored small populations even though the planted envelope is
+  there — the audit probes exact MIN/MAX wherever π is silenced, joining the orphan and
+  fan-out probes.
 - **The peel** (B6): `twin` packs as the `Twin.Tool` dotnet tool (PackAsTool on Twin.Cli;
   the Version pairs with `Runs.ToolVersion`). The bake script carries the peel's seams —
   `TWIN_BIN` (an installed tool instead of `dotnet run`), `TWIN_TOOL_VERSION`, and
@@ -107,12 +122,13 @@ Every critical-path slice of the approved plan landed, each proven live before i
   gates them. This is the critical path to day one.
 - **B6's operational tail** — push `Twin.Tool` to an Azure Artifacts NuGet feed and flip the
   nightly's `toolSource` parameter (runbook §4 step 6); the build side landed. Of B7, fan-out
-  skew landed as F2; per-environment mints stay later (the F-program's F3).
+  skew landed as F2 and the per-environment mints landed as F3's deep audit leg.
 
 ## What will bite you
 
 - The pure and Docker test pools never share one `dotnet test` (the OOM rule). The Twin's pure
-  pool is 110 facts; the kernel's 4758; the rehearsal runs focused in ~45 s warm.
+  pool is 155 facts; the kernel's 4758; the rehearsal runs focused in ~90 s warm (the F3
+  deep legs added three per-environment mints).
 - A background shell does not inherit the conversation's working directory — every background
   command needs its own absolute `cd`, or the run fails on relative paths.
 - The rehearsal test preserves its artifacts and prints the minted landscape plus the bound

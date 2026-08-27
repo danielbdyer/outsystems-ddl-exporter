@@ -4,6 +4,7 @@ open System.Threading.Tasks
 open Microsoft.Data.SqlClient
 open Projection.Core
 open Projection.Adapters.Sql
+open Projection.Pipeline
 open Twin.Core
 
 /// THE TWIN — `twin evidence audit` (Twin.Runtime).
@@ -11,25 +12,36 @@ open Twin.Core
 /// The operator-reality validation: profile the minted template itself
 /// through the same capture path the environments went through, then run
 /// the pure pack-versus-pack audit against each merge input. What
-/// profiling cannot see is probed directly, per recorded edge, and added
-/// to the minted pack before the comparison: orphans planted on edges the
-/// trunk does not constrain (the profiler measures orphan reality per
-/// catalog reference only), and fan-outs on logical-but-unenforced edges
-/// (the read-back catalog carries enforced references only, so the
-/// profiler's cardinality capture never reaches them). Witness legality
-/// skips become the audit's exemptions, recomputed deterministically from
-/// the merged pack rather than parsed from a report.
+/// profiling cannot see is probed directly, per recorded coordinate, and
+/// added to the minted pack before the comparison: orphans planted on
+/// edges the trunk does not constrain (the profiler measures orphan
+/// reality per catalog reference only), fan-outs on
+/// logical-but-unenforced edges (the read-back catalog carries enforced
+/// references only, so the profiler's cardinality capture never reaches
+/// them), and exact envelopes for columns the numeric sample floor
+/// silences (a heavily-floored small population still holds its planted
+/// edges — MIN/MAX are exact at any count). Witness legality skips
+/// become the audit's exemptions, recomputed deterministically from the
+/// merged pack rather than parsed from a report.
 [<RequireQualifiedAccess>]
 module EvidenceAudit =
 
     type AuditRunReport = {
         /// (source label, blocking failures, advisories).
         Sections      : (string * int * int) list
+        /// The deep per-environment legs (F3): a throwaway template
+        /// minted from each input alone, witness-planted, and audited
+        /// against that same input — "would this block at QA
+        /// specifically", proven rather than asserted. Empty only when
+        /// the merge names no inputs (which the audit already refuses).
+        Deep          : (string * int * int) list
         TotalFailures : int
         ReportPath    : string
+        DeepReportPath : string option
     }
 
     let defaultReportPath = "twin/evidence-audit.report.json"
+    let deepReportPath = "twin/evidence-audit.deep.report.json"
 
     let private mergeUnset : ValidationError =
         ValidationError.create
@@ -197,20 +209,125 @@ module EvidenceAudit =
             return List.ofSeq probed
         }
 
-    // The audit's tail, hoisted so its awaits head their own state
-    // machine (the FS3511 survival rule's shape): probe the recorded
-    // orphan edges on the minted copy, recompute the witness exemptions,
-    // run the pack-vs-pack comparison per environment, write the report.
-    let private auditMinted
+    /// Probe the exact envelope for one column — MIN and MAX are exact
+    /// at any row count, while the profiler's numeric distribution obeys
+    /// the statistical sample-size floor and goes silent on a
+    /// heavily-floored small population. Dates probe as ticks, matching
+    /// the capture convention (K2).
+    let private envelopeOf
         (cnn: SqlConnection)
-        (root: string)
-        (sourcePacks: EvidencePack list)
-        (mergedPack: EvidencePack)
-        (catalog: Catalog)
-        (minted: EvidencePack)
-        : Task<Result<AuditRunReport>> =
+        (index: CatalogIndex)
+        (tableName: string)
+        (columnName: string)
+        : Task<NumericShape option> =
         task {
-            let index = CatalogIndex.ofCatalog catalog
+            let bound =
+                match TableCoordinate.parse tableName with
+                | Ok coord ->
+                    match CatalogIndex.bindKind index coord with
+                    | Ok kind ->
+                        kind.Attributes
+                        |> List.tryFind (fun a ->
+                            System.String.Equals(
+                                ColumnRealization.columnNameText a.Column, columnName,
+                                System.StringComparison.OrdinalIgnoreCase))
+                        |> Option.bind (fun a ->
+                            match a.Type with
+                            | PrimitiveType.Integer | PrimitiveType.Decimal
+                            | PrimitiveType.DateTime | PrimitiveType.Date -> Some coord
+                            | _ -> None)
+                    | _ -> None
+                | _ -> None
+            match bound with
+            | None -> return None
+            | Some coord ->
+                let qualified =
+                    System.String.Concat(quote (SchemaName.value coord.Schema), ".", quote (TableName.value coord.Table))  // LINT-ALLOW: terminal audit probe SQL; identifiers pass through the SSDT renderer's quoting
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <-  // LINT-ALLOW: terminal audit probe SQL at the command boundary
+                    System.String.Concat(  // LINT-ALLOW: terminal audit probe SQL; identifiers pass through the SSDT renderer's quoting
+                        "SELECT MIN(", quote columnName, "), MAX(", quote columnName, ") FROM ",
+                        qualified, " WHERE ", quote columnName, " IS NOT NULL")
+                use! reader = cmd.ExecuteReaderAsync()
+                let! has = reader.ReadAsync()
+                if not has || reader.IsDBNull 0 || reader.IsDBNull 1 then return None
+                else
+                    let toDecimal (o: obj) : decimal =
+                        match o with
+                        | :? System.DateTime as dt -> decimal dt.Ticks
+                        | :? System.DateTimeOffset as dto -> decimal dto.Ticks
+                        | v -> System.Convert.ToDecimal(v, System.Globalization.CultureInfo.InvariantCulture)
+                    let mn = toDecimal (reader.GetValue 0)
+                    let mx = toDecimal (reader.GetValue 1)
+                    let mid = (mn + mx) / 2m
+                    return Some { Min = mn; P25 = mn; P50 = mid; P75 = mx; P95 = mx; P99 = mx; Max = mx }
+        }
+
+    // Hoisted for the same FS3511 reason as `probeOrphans`: the envelope
+    // walk awaits once per unmeasured coordinate.
+    let private probeEnvelopes
+        (cnn: SqlConnection)
+        (index: CatalogIndex)
+        (sourcePacks: EvidencePack list)
+        (minted: EvidencePack)
+        : Task<EvidencePack> =
+        task {
+            let mintedMeasured =
+                minted.Tables
+                |> List.collect (fun t ->
+                    t.Columns
+                    |> List.map (fun c ->
+                        (t.Table.ToLowerInvariant(), c.Column.ToLowerInvariant()), c.Numeric.IsSome))
+                |> Map.ofList
+            let targets =
+                sourcePacks
+                |> List.collect (fun p ->
+                    p.Tables
+                    |> List.collect (fun t ->
+                        t.Columns
+                        |> List.filter (fun c -> c.Numeric.IsSome)
+                        |> List.map (fun c -> t.Table, c.Column)))
+                |> List.distinctBy (fun (t, c) -> t.ToLowerInvariant(), c.ToLowerInvariant())
+                |> List.filter (fun (t, c) ->
+                    match Map.tryFind (t.ToLowerInvariant(), c.ToLowerInvariant()) mintedMeasured with
+                    | Some false -> true
+                    | _ -> false)
+            let probed = System.Collections.Generic.Dictionary<string * string, NumericShape>()  // LINT-ALLOW: the while-walk's accumulator — sealed function-local, assembled once then read immutably; FS3511 forces the walk shape
+            let mutable remaining = targets  // LINT-ALLOW: the while-walk's cursor — FS3511 forces this shape (a `for` over tuple elements with an await does not compile in Release); confined to this loop
+            while not (List.isEmpty remaining) do
+                let target = List.head remaining
+                remaining <- List.tail remaining  // LINT-ALLOW: the while-walk's cursor advance; same FS3511 confinement
+                let (tableName, columnName) = target
+                let! shape = envelopeOf cnn index tableName columnName
+                match shape with
+                | Some s -> probed.[(tableName.ToLowerInvariant(), columnName.ToLowerInvariant())] <- s  // LINT-ALLOW: the while-walk's accumulator write; same sealed-local confinement
+                | None -> ()
+            return
+                { minted with
+                    Tables =
+                        minted.Tables
+                        |> List.map (fun t ->
+                            { t with
+                                Columns =
+                                    t.Columns
+                                    |> List.map (fun c ->
+                                        match probed.TryGetValue((t.Table.ToLowerInvariant(), c.Column.ToLowerInvariant())) with
+                                        | true, s when c.Numeric.IsNone -> { c with Numeric = Some s }
+                                        | _ -> c) }) }
+        }
+
+    /// Probe what profiling cannot see for the given sources — orphans
+    /// on unconstrained edges, fan-outs on unenforced ones, exact
+    /// envelopes under the numeric sample floor — and fold the results
+    /// into the minted pack before the comparison. Shared by the
+    /// template leg and the deep per-environment legs.
+    let private probeRecordedEdges
+        (cnn: SqlConnection)
+        (index: CatalogIndex)
+        (sourcePacks: EvidencePack list)
+        (minted: EvidencePack)
+        : Task<EvidencePack> =
+        task {
             let edges =
                 sourcePacks
                 |> List.collect (fun p -> p.Orphans)
@@ -239,19 +356,256 @@ module EvidenceAudit =
                     not (Set.contains (c.ToLowerInvariant(), col.ToLowerInvariant(), p.ToLowerInvariant()) mintedEdgeKeys))
             let! probedFanOuts = probeFanOuts cnn index fanOutEdges
             let minted = { minted with FanOuts = minted.FanOuts @ probedFanOuts }
+            return! probeEnvelopes cnn index sourcePacks minted
+        }
+
+    /// Profile a minted database through the same capture path the
+    /// environments went through, string-plane counts included. The
+    /// catalog is the profile-plane one (static populations stripped).
+    let private profileMinted
+        (cnn: SqlConnection)
+        (profileCatalog: Catalog)
+        : Task<Result<EvidencePack>> =
+        task {
+            let! cache =
+                LiveProfiler.captureEvidenceCacheWith SqlProfilerOptions.defaults cnn profileCatalog
+            match cache with
+            | Error es -> return Result.failure es
+            | Ok cache ->
+                let profile = ProfileDerivation.attachFromCache cache profileCatalog Profile.empty
+                let keep (k: Kind) =
+                    Some (TableCoordinate.text (TwinIdentity.coordinateOfKind k))
+                let bare = Evidence.ofProfile "minted" profileCatalog keep profile
+                let boundKinds =
+                    Catalog.allKinds profileCatalog
+                    |> List.choose (fun k -> keep k |> Option.map (fun coordText -> coordText, k))
+                return! RealityProbe.enrich cnn boundKinds bare
+        }
+
+    // The audit's tail, hoisted so its awaits head their own state
+    // machine (the FS3511 survival rule's shape): probe the recorded
+    // edges on the minted copy, recompute the witness exemptions, run
+    // the pack-vs-pack comparison per environment.
+    let private auditMinted
+        (cnn: SqlConnection)
+        (sourcePacks: EvidencePack list)
+        (mergedPack: EvidencePack)
+        (catalog: Catalog)
+        (minted: EvidencePack)
+        : Task<Result<AuditReport>> =
+        task {
+            let index = CatalogIndex.ofCatalog catalog
+            let! minted = probeRecordedEdges cnn index sourcePacks minted
             let skips = snd (Witness.plan index mergedPack)
             let exempt = skips |> List.map (fun s -> s.Coordinate) |> Set.ofList
-            let report = FidelityAudit.auditAll exempt sourcePacks minted
-            let reportPath = TwinConfig.resolvePath root defaultReportPath
-            write reportPath (FidelityAudit.serializeReport report)
-            return
-                Result.success
-                    { Sections =
-                          report.Sections
-                          |> List.map (fun s -> s.Source, s.Failures, s.Advisories)
-                      TotalFailures = FidelityAudit.failures report
-                      ReportPath = reportPath }
+            return Result.success (FidelityAudit.auditAll exempt sourcePacks minted)
         }
+
+    // ------------------------------------------------------------------
+    // The deep per-environment leg (F3): mint a throwaway template from
+    // ONE environment's pack alone, plant that pack's own witnesses, and
+    // audit the result against the same pack — decision (j)'s
+    // per-environment round-trip, automatic whenever the merge names
+    // inputs. "Would this block at QA specifically" is then proven per
+    // bake, never asserted.
+    // ------------------------------------------------------------------
+
+    let private connTo (serverCnnStr: string) (db: string) : string =
+        let builder = SqlConnectionStringBuilder serverCnnStr
+        builder.InitialCatalog <- db  // LINT-ALLOW: terminal ADO.NET builder boundary; the vendor connection-string API is imperative by contract
+        builder.ConnectionString
+
+    let private deepDbName (label: string) : string =
+        let cleaned = label |> String.map (fun ch -> if System.Char.IsLetterOrDigit ch then ch else '_')
+        System.String.Concat("TwinDeepAudit_", cleaned)  // LINT-ALLOW: terminal throwaway database name; the label is reduced to identifier characters on the line above
+
+    let private dropDatabase (serverCnnStr: string) (db: string) : Task<unit> =
+        task {
+            use cnn = new SqlConnection(serverCnnStr)
+            do! cnn.OpenAsync()
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-  // LINT-ALLOW: terminal throwaway-drop SQL at the command boundary
+                System.String.Concat(  // LINT-ALLOW: terminal throwaway-drop SQL; the database name is generated and identifier-safe by construction
+                    "IF DB_ID(N'", db, "') IS NOT NULL BEGIN ALTER DATABASE [", db,
+                    "] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [", db, "]; END")
+            let! _ = cmd.ExecuteNonQueryAsync()
+            return ()
+        }
+
+    let private deepWitnessFailed (label: string) (failures: int64) : ValidationError =
+        ValidationError.createWithMetadata
+            "twin.evidence.audit.deepWitnessFailed"
+            "A deep per-environment leg's witnesses did not land on its throwaway template."
+            (Map.ofList [ "environment", Some label; "failures", Some (string failures) ])
+
+    /// Read the witness assertion script's final `failures` figure.
+    let private witnessFailures (cnn: SqlConnection) (sql: string) : Task<int64> =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <- sql  // LINT-ALLOW: terminal witness-assert SQL at the command boundary; the script is the emitter's own artifact
+            use! reader = cmd.ExecuteReaderAsync()
+            let mutable failures = 0L  // LINT-ALLOW: the result-set walk's accumulator — ADO.NET readers are imperatively paged; confined to this loop
+            let mutable moreSets = true  // LINT-ALLOW: the result-set walk's cursor; same confinement
+            while moreSets do
+                let failureSet = reader.FieldCount = 1 && reader.GetName 0 = "failures"
+                let mutable moreRows = true  // LINT-ALLOW: the result-set walk's row cursor; same confinement
+                while moreRows do
+                    let! has = reader.ReadAsync()
+                    if not has then moreRows <- false  // LINT-ALLOW: the result-set walk's cursor advance; same confinement
+                    elif failureSet then failures <- System.Convert.ToInt64 (reader.GetValue 0)  // LINT-ALLOW: the result-set walk's accumulator assignment; same confinement
+                let! next = reader.NextResultAsync()
+                moreSets <- next  // LINT-ALLOW: the result-set walk's cursor advance; same confinement
+            return failures
+        }
+
+    // Publish the estate head into the throwaway, apply the static
+    // lanes, and mint from the ONE environment's pack — the same steps
+    // the twin's own seed takes, against a different database.
+    let private deepMint
+        (root: string)
+        (config: TwinConfig)
+        (serverCnn: string)
+        (db: string)
+        (estate: EstateDefinition)
+        (dacpac: byte[])
+        (inputRel: string)
+        : Task<Result<Catalog>> =
+        task {
+            let! published = EstateModel.publishTo serverCnn db dacpac
+            match published with
+            | Error es -> return Result.failure es
+            | Ok () ->
+                use cnn = new SqlConnection(connTo serverCnn db)
+                do! cnn.OpenAsync()
+                let! lanes = TwinDatabase.applyStaticLanes cnn estate
+                match lanes with
+                | Error es -> return Result.failure es
+                | Ok _ ->
+                    let! readBack = Readback.read cnn
+                    match readBack with
+                    | Error es -> return Result.failure es
+                    | Ok catalog ->
+                        let pools = Readback.providedPools catalog
+                        let mintCatalog = Catalog.stripStaticPopulations catalog
+                        let envConfig =
+                            { config with
+                                Evidence = { config.Evidence with ShapePath = None; RichRef = Some inputRel } }
+                        match Mint.prepare root envConfig TwinConfig.BaselineScenario mintCatalog pools with
+                        | Error es -> return Result.failure es
+                        | Ok plan ->
+                            let! minted = Mint.run cnn mintCatalog plan
+                            match minted with
+                            | Error es -> return Result.failure es
+                            | Ok _ -> return Result.success mintCatalog
+        }
+
+    let private deepAuditBody
+        (root: string)
+        (config: TwinConfig)
+        (serverCnn: string)
+        (db: string)
+        (estate: EstateDefinition)
+        (dacpac: byte[])
+        (label: string)
+        (inputRel: string)
+        (envPack: EvidencePack)
+        : Task<Result<AuditSection>> =
+        task {
+            let! mintedCatalog = deepMint root config serverCnn db estate dacpac inputRel
+            match mintedCatalog with
+            | Error es -> return Result.failure es
+            | Ok mintCatalog ->
+                use cnn = new SqlConnection(connTo serverCnn db)
+                do! cnn.OpenAsync()
+                let index = CatalogIndex.ofCatalog mintCatalog
+                let witnessPlan, skips = Witness.plan index envPack
+                do! Deploy.executeBatch cnn (Witness.emitSql config.Seed witnessPlan)
+                let! failures = witnessFailures cnn (Witness.emitAssertSql witnessPlan)
+                if failures > 0L then return Result.failureOf (deepWitnessFailed label failures)
+                else
+                    let! minted = profileMinted cnn mintCatalog
+                    match minted with
+                    | Error es -> return Result.failure es
+                    | Ok minted ->
+                        let! minted = probeRecordedEdges cnn index [ envPack ] minted
+                        let exempt = skips |> List.map (fun s -> s.Coordinate) |> Set.ofList
+                        return Result.success (FidelityAudit.audit exempt envPack minted)
+        }
+
+    let private deepAuditOne
+        (root: string)
+        (config: TwinConfig)
+        (serverCnn: string)
+        (estate: EstateDefinition)
+        (dacpac: byte[])
+        (entry: string * string * EvidencePack)
+        : Task<Result<AuditSection>> =
+        task {
+            let (label, inputRel, envPack) = entry
+            let db = deepDbName label
+            // Pre-clean a crashed prior run, then guarantee the drop.
+            do! dropDatabase serverCnn db
+            try
+                return! deepAuditBody root config serverCnn db estate dacpac label inputRel envPack
+            finally
+                (dropDatabase serverCnn db).GetAwaiter().GetResult()
+        }
+
+    // Hoisted for the same FS3511 reason as `probeOrphans`: the deep
+    // walk awaits once per environment.
+    let private deepAuditAll
+        (root: string)
+        (config: TwinConfig)
+        (serverCnn: string)
+        (entries: (string * string * EvidencePack) list)
+        : Task<Result<AuditSection list>> =
+        task {
+            match EstateFiles.resolve root config.Estate with
+            | Error es -> return Result.failure es
+            | Ok estate ->
+                match EstateModel.buildDacpac estate with
+                | Error es -> return Result.failure es
+                | Ok dacpac ->
+                    let sections = System.Collections.Generic.List<AuditSection>()
+                    let mutable failed : ValidationError list = []  // LINT-ALLOW: the while-walk's failure latch — FS3511 forces this shape (a `for` over tuple elements with an await does not compile in Release); confined to this loop
+                    let mutable remaining = entries  // LINT-ALLOW: the while-walk's cursor; same FS3511 confinement
+                    while not (List.isEmpty remaining) && List.isEmpty failed do
+                        let entry = List.head remaining
+                        remaining <- List.tail remaining  // LINT-ALLOW: the while-walk's cursor advance; same FS3511 confinement
+                        let! result = deepAuditOne root config serverCnn estate dacpac entry
+                        match result with
+                        | Error es -> failed <- es  // LINT-ALLOW: the while-walk's failure latch assignment; same FS3511 confinement
+                        | Ok section -> sections.Add section
+                    if not (List.isEmpty failed) then return Result.failure failed
+                    else return Result.success (List.ofSeq sections)
+        }
+
+    let private labelInputs (inputs: string list) (packs: EvidencePack list) : (string * string * EvidencePack) list =
+        List.map2
+            (fun rel (pack: EvidencePack) ->
+                let label =
+                    match pack.Sources with
+                    | [] -> "(unlabeled)"
+                    | sources -> sources |> List.sort |> String.concat "+"  // LINT-ALLOW: the attribution label is the sorted source names joined; a label IS a string primitive
+                label, rel, pack)
+            inputs packs
+
+    /// Write both reports and fold the two legs into the run summary.
+    let private assembleRunReport
+        (root: string)
+        (main: AuditReport)
+        (deepSections: AuditSection list)
+        : AuditRunReport =
+        let deep : AuditReport = { Sections = deepSections |> List.sortBy (fun s -> s.Source) }
+        let mainPath = TwinConfig.resolvePath root defaultReportPath
+        write mainPath (FidelityAudit.serializeReport main)
+        let deepPath = TwinConfig.resolvePath root deepReportPath
+        write deepPath (FidelityAudit.serializeReport deep)
+        { Sections = main.Sections |> List.map (fun s -> s.Source, s.Failures, s.Advisories)
+          Deep = deep.Sections |> List.map (fun s -> s.Source, s.Failures, s.Advisories)
+          TotalFailures = FidelityAudit.failures main + FidelityAudit.failures deep
+          ReportPath = mainPath
+          DeepReportPath = Some deepPath }
 
     let run (root: string) (config: TwinConfig) : Task<Result<AuditRunReport>> =
         task {
@@ -285,29 +639,24 @@ module EvidenceAudit =
                                 match readBack with
                                 | Error es -> return Result.failure es
                                 | Ok catalog ->
+                                    // The minted side carries the same
+                                    // string-plane counts the sources do —
+                                    // the audit compares like with like.
                                     let profileCatalog = Catalog.stripStaticPopulations catalog
-                                    let! cache =
-                                        LiveProfiler.captureEvidenceCacheWith
-                                            SqlProfilerOptions.defaults cnn profileCatalog
-                                    match cache with
+                                    let! minted = profileMinted cnn profileCatalog
+                                    match minted with
                                     | Error es -> return Result.failure es
-                                    | Ok cache ->
-                                        let profile =
-                                            ProfileDerivation.attachFromCache cache profileCatalog Profile.empty
-                                        let keep (k: Kind) =
-                                            Some (TableCoordinate.text (TwinIdentity.coordinateOfKind k))
-                                        let bare =
-                                            Evidence.ofProfile "minted" profileCatalog keep profile
-                                        // The minted side carries the same
-                                        // string-plane counts the sources do —
-                                        // the audit compares like with like.
-                                        let boundKinds =
-                                            Catalog.allKinds profileCatalog
-                                            |> List.choose (fun k -> keep k |> Option.map (fun coordText -> coordText, k))
-                                        let! enriched = RealityProbe.enrich cnn boundKinds bare
-                                        match enriched with
+                                    | Ok minted ->
+                                        let! mainReport = auditMinted cnn sourcePacks mergedPack catalog minted
+                                        match mainReport with
                                         | Error es -> return Result.failure es
-                                        | Ok minted ->
-                                            return! auditMinted cnn root sourcePacks mergedPack catalog minted
+                                        | Ok mainReport ->
+                                            let! deepSections =
+                                                deepAuditAll root config resolved.ServerConnectionString
+                                                    (labelInputs merge.Inputs sourcePacks)
+                                            match deepSections with
+                                            | Error es -> return Result.failure es
+                                            | Ok deepSections ->
+                                                return Result.success (assembleRunReport root mainReport deepSections)
                             | Ok _ -> return Result.failureOf notUp
         }

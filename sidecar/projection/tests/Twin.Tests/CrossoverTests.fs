@@ -295,3 +295,16 @@ let ``the widest-spread environment's conditional vector wins whole, never an av
         Assert.Equal<(string * int64 * int64) list>([ "A", 12L, 20L; "B", 0L, 20L ], cn.Rates)
     let stats = report.Statistics |> List.map (fun s -> s.Statistic, s.Winner)
     Assert.Contains(("conditionalNulls", "qa"), stats)
+
+// -- The sector axis (F3) ----------------------------------------------------
+
+[<Fact>]
+let ``the merge embeds each input whole as a labeled sector`` () =
+    let dev = pack "dev" [ table "dbo.T" [ col "C" 100L 10L ] ]
+    let qa = pack "qa" [ table "dbo.T" [ col "C" 40L 12L ] ]
+    let merged, _ = ok (Crossover.merge [ dev; qa ])
+    Assert.Equal<string list>([ "dev"; "qa" ], merged.Sectors |> List.map fst)
+    let (_, devSector) = merged.Sectors |> List.find (fun (l, _) -> l = "dev")
+    Assert.Equal<TableEvidence list>(dev.Tables, devSector.Tables)
+    // Nesting is one level deep by construction.
+    Assert.Empty devSector.Sectors

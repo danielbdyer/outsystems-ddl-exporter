@@ -89,9 +89,13 @@ type TwinCrossoverRehearsalTests (fixture: TwinCrossoverRehearsalFixture) =
     //                  distribution only past five groups) plus the
     //                  orphans 9001..9003 — UAT's own reference records
     //                  the skew the trunk cannot see
-    //   Names:         'Common' + one env-exclusive value each
+    //   Names:         'Common' + one env-exclusive value each; volumes
+    //                  weighted so every exclusive value's sector-paint
+    //                  quota exceeds the witness rows that can overwrite
+    //                  its slice (the F3 subpopulation asserts are then
+    //                  deterministic, not seed-lucky)
     //   Rating:        QA-only conditional structure — NULL exactly where
-    //                  Name = 'Common' (12/12); dev and uat never null.
+    //                  Name = 'Common' (10/10); dev and uat never null.
     //                  Nobody configures the discovery; the probe finds it.
     // ------------------------------------------------------------------
 
@@ -104,7 +108,7 @@ WHILE @i <= 25
 BEGIN
     INSERT INTO [dbo].[Customer] ([Name], [Email], [StatusId], [CreatedOn], [Score], [Rating], [RegionId])
     VALUES (
-        CASE WHEN @i >= 24 THEN N'COMMON' WHEN @i <= 15 THEN N'Common' ELSE N'DevOnly' END,
+        CASE WHEN @i >= 24 THEN N'COMMON' WHEN @i <= 11 THEN N'Common' ELSE N'DevOnly' END,
         CONCAT(N'dev', @i, N'@x.example'),
         1 + (@i % 3),
         DATEADD(DAY, @i, '2026-01-01'),
@@ -121,14 +125,14 @@ WHILE @i <= 20
 BEGIN
     INSERT INTO [dbo].[Customer] ([Name], [Email], [StatusId], [CreatedOn], [Score], [Rating], [RegionId])
     VALUES (
-        CASE WHEN @i >= 19 THEN N'' WHEN @i <= 12 THEN N'Common' ELSE N'QaOnly' END,
+        CASE WHEN @i >= 19 THEN N'' WHEN @i <= 10 THEN N'Common' ELSE N'QaOnly' END,
         CASE WHEN @i <= 8 THEN NULL
              WHEN @i <= 11 THEN N'dupe@qa.example'
              ELSE CONCAT(N'qa', @i, N'@y.example') END,
         1 + (@i % 3),
         DATEADD(DAY, @i, '2026-02-01'),
         CASE WHEN @i <= 4 THEN NULL ELSE 5 + (@i - 5) * 6 END,
-        CASE WHEN @i <= 12 THEN NULL ELSE 40 + @i END,
+        CASE WHEN @i <= 10 THEN NULL ELSE 40 + @i END,
         CASE WHEN @i <= 14 THEN NULL ELSE 1 + (@i % 3) END);
     SET @i = @i + 1;
 END
@@ -367,8 +371,8 @@ END
                     Assert.Equal("Name", cn.Partner)
                     let ratingCommon = cn.Rates |> List.find (fun (v, _, _) -> v = "Common")
                     let (_, commonNulls, commonRows) = ratingCommon
-                    Assert.Equal(12L, commonNulls)
-                    Assert.Equal(12L, commonRows)
+                    Assert.Equal(10L, commonNulls)
+                    Assert.Equal(10L, commonRows)
                 // UAT's own reference recorded the hot parent on the edge
                 // the trunk cannot see. (StatusId's edge records nothing:
                 // three statuses sit under the kernel's five-parent floor
@@ -443,6 +447,9 @@ END
                 // UAT's hot parent survives the merge by max.
                 let regionFan = merged.FanOuts |> List.find (fun f -> f.ChildColumn = "RegionId")
                 Assert.True(regionFan.Shape.Max >= 2m, sprintf "uat's RegionId fan-out lost (max=%M)" regionFan.Shape.Max)
+                // The merged pack carries its three inputs whole as
+                // sectors (F3) — the mint's subpopulation raw material.
+                Assert.Equal<string list>([ "dev"; "qa"; "uat" ], merged.Sectors |> List.map fst)
 
                 // 4 — mint from the merged pack (zero mint changes), then
                 // plant the witnesses and prove they landed.
@@ -521,13 +528,40 @@ END
                     match audited with
                     | Ok a -> a
                     | Error es -> failwithf "audit refused: %A" (es |> List.map (fun e -> e.Code, e.Message))
-                Assert.Equal(0, audit.TotalFailures)
+                if audit.TotalFailures <> 0 then
+                    // Preserve the verdict artifacts — a failed audit must
+                    // be diagnosable after teardown.
+                    let debugDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "twin-rehearsal-debug")
+                    System.IO.Directory.CreateDirectory debugDir |> ignore
+                    let keep (path: string) =
+                        if System.IO.File.Exists path then
+                            let file = match System.IO.Path.GetFileName path with | null | "" -> "artifact" | f -> f
+                            System.IO.File.Copy(path, System.IO.Path.Combine(debugDir, file), true)
+                    keep audit.ReportPath
+                    match audit.DeepReportPath with
+                    | Some p -> keep p
+                    | None -> ()
+                    failwithf
+                        "the audit under-blocks: sections=%A deep=%A || reports kept: %s"
+                        audit.Sections audit.Deep debugDir
                 Assert.Equal<string list>(
                     [ "dev"; "qa"; "uat" ],
                     audit.Sections |> List.map (fun (source, _, _) -> source))
                 for section in audit.Sections do
                     let (_, sectionFailures, _) = section
                     Assert.Equal(0, sectionFailures)
+                // The deep legs (F3): each environment minted ALONE on a
+                // throwaway database, its own witnesses planted, and the
+                // result audited against that same environment — "would
+                // this block at QA specifically", proven per bake.
+                Assert.Equal<string list>(
+                    [ "dev"; "qa"; "uat" ],
+                    audit.Deep |> List.map (fun (source, _, _) -> source))
+                for deepSection in audit.Deep do
+                    let (deepSource, deepFailures, _) = deepSection
+                    Assert.True(
+                        (deepFailures = 0),
+                        sprintf "the %s deep round-trip under-blocks (%d failures)" deepSource deepFailures)
 
                 // 6 — the realities, live on the minted template.
                 let! emailNulls = SamplePrSql.scalar twinConn "SELECT COUNT_BIG(*) FROM [dbo].[Customer] WHERE [Email] IS NULL;"
@@ -557,8 +591,22 @@ END
                 let! commonRows = SamplePrSql.scalar twinConn "SELECT COUNT_BIG(*) FROM [dbo].[Customer] WHERE [Name] = N'Common';"
                 let! commonRatingNulls = SamplePrSql.scalar twinConn "SELECT COUNT_BIG(CASE WHEN [Rating] IS NULL THEN 1 END) FROM [dbo].[Customer] WHERE [Name] = N'Common';"
                 Assert.True(
-                    commonRatingNulls + 2L >= min 12L commonRows,
+                    commonRatingNulls + 2L >= min 10L commonRows,
                     sprintf "QA's conditional-null structure did not land (common=%d nulls=%d)" commonRows commonRatingNulls)
+                // The subpopulations (F3): sector slices are contiguous in
+                // generated-key order — dev, then uat, then qa (the
+                // empties-carrying sector paints last, so the empty floor's
+                // plants land in the sector whose reality they are). Each
+                // environment's exclusive vocabulary sits inside its slice.
+                let! devMax = SamplePrSql.scalar twinConn "SELECT ISNULL(MAX([Id]), -1) FROM [dbo].[Customer] WHERE [Name] = N'DevOnly';"
+                let! uatMin = SamplePrSql.scalar twinConn "SELECT ISNULL(MIN([Id]), 999) FROM [dbo].[Customer] WHERE [Name] = N'UatOnly';"
+                let! uatMax = SamplePrSql.scalar twinConn "SELECT ISNULL(MAX([Id]), -1) FROM [dbo].[Customer] WHERE [Name] = N'UatOnly';"
+                let! qaMin = SamplePrSql.scalar twinConn "SELECT ISNULL(MIN([Id]), 999) FROM [dbo].[Customer] WHERE [Name] = N'QaOnly';"
+                Assert.True(devMax >= 1L, "dev's exclusive vocabulary vanished from its slice")
+                Assert.True(uatMax >= 1L, "uat's exclusive vocabulary vanished from its slice")
+                Assert.True(qaMin <= 25L, "qa's exclusive vocabulary vanished from its slice")
+                Assert.True(devMax < uatMin, sprintf "the dev slice bleeds past the uat slice (devMax=%d uatMin=%d)" devMax uatMin)
+                Assert.True(uatMax < qaMin, sprintf "the uat slice bleeds past the qa slice (uatMax=%d qaMin=%d)" uatMax qaMin)
                 // The hot parent, live: UAT's RegionId maximum realized on
                 // the minted copy — the edge the trunk cannot even see.
                 let! regionFanOut = SamplePrSql.scalar twinConn "SELECT MAX(g.cnt) FROM (SELECT COUNT_BIG(*) AS cnt FROM [dbo].[Customer] WHERE [RegionId] IS NOT NULL GROUP BY [RegionId]) g;"

@@ -36,6 +36,7 @@
     <Compile Include="Evidence.fs" />
     <Compile Include="EvidenceDrift.fs" />
     <Compile Include="Crossover.fs" />
+    <Compile Include="SectorPaint.fs" />
     <Compile Include="FidelityAudit.fs" />
   </ItemGroup>
 

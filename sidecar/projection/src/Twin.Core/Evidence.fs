@@ -165,6 +165,13 @@ type EvidencePack = {
     Selectivities : SelectivityEvidence list
     /// Rich tier only; `[]` in the shape tier.
     Joints        : JointEvidence list
+    /// The crossover's inputs, embedded whole and labeled (F3): the
+    /// merged pack carries each environment's own evidence so the mint
+    /// can realize per-environment subpopulations with no configuration.
+    /// Nested packs carry literals, so the axis is RICH ONLY —
+    /// `deriveShape` drops it — and nesting is one level deep (a sector
+    /// never carries sectors).
+    Sectors       : (string * EvidencePack) list
 }
 
 [<RequireQualifiedAccess>]
@@ -172,7 +179,7 @@ module Evidence =
 
     let emptyPack (tier: EvidenceTier) : EvidencePack =
         { Tier = tier; Sources = []; Tables = []; FanOuts = []
-          Orphans = []; Selectivities = []; Joints = [] }
+          Orphans = []; Selectivities = []; Joints = []; Sectors = [] }
 
     // ------------------------------------------------------------------
     // Capture-side rebinding: Profile → pack (rich).
@@ -329,7 +336,7 @@ module Evidence =
                               Frequencies = j.Frequencies })
             |> List.sortBy (fun j -> j.Table.ToLowerInvariant(), String.concat "|" j.Columns)  // LINT-ALLOW: deterministic composite sort key over the joint's column list; the joined text is the ordering key, never emitted
         { Tier = RichTier; Sources = [ sourceName ]; Tables = tables; FanOuts = fanOuts
-          Orphans = orphans; Selectivities = selectivities; Joints = joints }
+          Orphans = orphans; Selectivities = selectivities; Joints = joints; Sectors = [] }
 
     // ------------------------------------------------------------------
     // The tier projection (law 3) and the merge (law 4's backstop).
@@ -343,6 +350,7 @@ module Evidence =
         { pack with
             Tier = ShapeTier
             Joints = []
+            Sectors = []
             Tables =
                 pack.Tables
                 |> List.map (fun t ->
@@ -378,7 +386,11 @@ module Evidence =
                       FanOuts = packs |> List.collect (fun p -> p.FanOuts) |> List.sortBy (fun f -> f.ChildTable.ToLowerInvariant(), f.ChildColumn.ToLowerInvariant())
                       Orphans = packs |> List.collect (fun p -> p.Orphans) |> List.sortBy (fun o -> o.ChildTable.ToLowerInvariant(), o.ChildColumn.ToLowerInvariant())
                       Selectivities = packs |> List.collect (fun p -> p.Selectivities) |> List.sortBy (fun s -> s.ChildTable.ToLowerInvariant(), s.ChildColumn.ToLowerInvariant())
-                      Joints = packs |> List.collect (fun p -> p.Joints) |> List.sortBy (fun j -> j.Table.ToLowerInvariant(), String.concat "|" j.Columns) }  // LINT-ALLOW: deterministic composite sort key over the joint's column list; the joined text is the ordering key, never emitted
+                      Joints = packs |> List.collect (fun p -> p.Joints) |> List.sortBy (fun j -> j.Table.ToLowerInvariant(), String.concat "|" j.Columns)  // LINT-ALLOW: deterministic composite sort key over the joint's column list; the joined text is the ordering key, never emitted
+                      // The capture-side union never carries sectors —
+                      // they are the CROSSOVER's provenance, not a
+                      // single environment's.
+                      Sectors = [] }
 
     // ------------------------------------------------------------------
     // Mint-side rebinding: pack → Profile against the twin catalog.
@@ -640,11 +652,10 @@ module Evidence =
     let private tierText (t: EvidenceTier) : string =
         match t with ShapeTier -> "shape" | RichTier -> "rich"
 
-    let serialize (pack: EvidencePack) : string =
-        let options = JsonWriterOptions(Indented = true)
-        use stream = new System.IO.MemoryStream()
-        (fun () ->
-            use writer = new Utf8JsonWriter(stream, options)
+    // Recursive so the sector axis (F3) can nest each input pack whole;
+    // every axis stays omit-when-empty, so a sector-free pack serializes
+    // byte-identically to the pre-sector wire format.
+    let rec private writeBody (writer: Utf8JsonWriter) (pack: EvidencePack) : unit =
             writer.WriteStartObject()
             writer.WriteString("tier", tierText pack.Tier)
             writer.WriteStartArray "sources"
@@ -780,7 +791,25 @@ module Evidence =
                     writer.WriteEndArray()
                     writer.WriteEndObject()
                 writer.WriteEndArray()
-            writer.WriteEndObject()) ()
+            match pack.Sectors with
+            | [] -> ()
+            | sectors ->
+                writer.WriteStartArray "sectors"
+                for (label, sectorPack) in sectors |> List.sortBy (fun (l, _) -> l.ToLowerInvariant()) do
+                    writer.WriteStartObject()
+                    writer.WriteString("label", label)
+                    writer.WritePropertyName "pack"
+                    writeBody writer sectorPack
+                    writer.WriteEndObject()
+                writer.WriteEndArray()
+            writer.WriteEndObject()
+
+    let serialize (pack: EvidencePack) : string =
+        let options = JsonWriterOptions(Indented = true)
+        use stream = new System.IO.MemoryStream()
+        (fun () ->
+            use writer = new Utf8JsonWriter(stream, options)
+            writeBody writer pack) ()
         System.Text.Encoding.UTF8.GetString(stream.ToArray())
 
     let private codecError (detail: string) : ValidationError =
@@ -789,10 +818,7 @@ module Evidence =
             "The evidence pack did not parse."
             (Map.ofList [ "detail", Some detail ])
 
-    let deserialize (json: string) : Result<EvidencePack> =
-        try
-            use doc = JsonDocument.Parse json
-            let root = doc.RootElement
+    let rec private readPack (root: JsonElement) : EvidencePack =
             let getStr (el: JsonElement) (name: string) : string =
                 match el.TryGetProperty name with
                 | true, v ->
@@ -930,8 +956,22 @@ module Evidence =
                                       getStr f "value", f.GetProperty("count").GetInt64() ]
                               | _ -> [] } ]
                 | _ -> []
-            Result.success
-                { Tier = tier; Sources = sources; Tables = tables; FanOuts = fanOuts
-                  Orphans = orphans; Selectivities = selectivities; Joints = joints }
+            let sectors =
+                match root.TryGetProperty "sectors" with
+                | true, arr when arr.ValueKind = JsonValueKind.Array ->
+                    [ for s in arr.EnumerateArray() ->
+                        getStr s "label",
+                        (match s.TryGetProperty "pack" with
+                         | true, p when p.ValueKind = JsonValueKind.Object -> readPack p
+                         | _ -> emptyPack RichTier) ]
+                | _ -> []
+            { Tier = tier; Sources = sources; Tables = tables; FanOuts = fanOuts
+              Orphans = orphans; Selectivities = selectivities; Joints = joints
+              Sectors = sectors }
+
+    let deserialize (json: string) : Result<EvidencePack> =
+        try
+            use doc = JsonDocument.Parse json
+            Result.success (readPack doc.RootElement)
         with ex ->
             Result.failureOf (codecError ex.Message)

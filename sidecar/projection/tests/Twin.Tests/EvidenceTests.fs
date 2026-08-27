@@ -415,3 +415,25 @@ let ``the conditional-null structure round-trips rich and the shape derivation d
     let c = (List.exactlyOne shaped.Tables).Columns |> List.exactlyOne
     Assert.True c.ConditionalNulls.IsNone
     Assert.DoesNotContain("XSECRET", Evidence.serialize shaped)
+
+// -- The sector axis (F3) ----------------------------------------------------
+
+[<Fact>]
+let ``sectors round-trip rich, nested one level, and the shape derivation drops them`` () =
+    let inner =
+        { Evidence.emptyPack RichTier with
+            Sources = [ "qa" ]
+            Tables = [ { Table = "dbo.Customer"; RowCount = 3L; Columns = [] } ] }
+    let pack =
+        { Evidence.emptyPack RichTier with
+            Sources = [ "dev"; "qa" ]
+            Sectors = [ "qa", inner ] }
+    let json = Evidence.serialize pack
+    Assert.Contains("\"sectors\"", json)
+    Assert.Contains("\"label\"", json)
+    Assert.Equal(pack, ok (Evidence.deserialize json))
+    // Sector packs carry literals wholesale — the shape tier drops the axis.
+    Assert.True (Evidence.deriveShape pack).Sectors.IsEmpty
+    // A sector-free pack serializes without the key at all (the additive
+    // wire-format contract every reality axis honors).
+    Assert.DoesNotContain("sectors", Evidence.serialize inner)
