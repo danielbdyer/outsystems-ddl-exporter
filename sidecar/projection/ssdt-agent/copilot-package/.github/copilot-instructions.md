@@ -21,8 +21,9 @@ and worked examples. Use it whenever you help with a schema or data change.
 - A request to review a schema pull request is a review task. Take the `reviewer` role, or read
   `ssdt-agent/agents/reviewer.md`.
 - In an editor with neither custom agents nor skills (Visual Studio 2022), the prompt files
-  under `.github/prompts/` adopt the same roles: `#prompt:ssdt-intake`,
-  `#prompt:ssdt-change-author`, `#prompt:ssdt-review`.
+  under `.github/prompts/` are the entry: `#prompt:ssdt-schema-change` runs the whole
+  authoring flow (intake then change-author) in one conversation; `#prompt:ssdt-intake`,
+  `#prompt:ssdt-change-author`, `#prompt:ssdt-review` adopt one role at a time.
 
 ## The one rule that governs all of it
 

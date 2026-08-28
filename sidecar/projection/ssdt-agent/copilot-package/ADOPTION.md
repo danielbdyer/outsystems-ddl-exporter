@@ -19,8 +19,10 @@ hand.
   custom agents, for Visual Studio versions that support them (2026 18.4+).
 - `.github/skills/*/SKILL.md` — the operation skills and shared-knowledge skills as dispatch
   pointers Copilot matches on (2026 18.5+). Each points into the vendored tree for its full body.
-- `.github/prompts/*.prompt.md` — the Visual Studio 2022 entry points: `#prompt:ssdt-intake`,
-  `#prompt:ssdt-change-author`, `#prompt:ssdt-review` adopt the same three roles manually.
+- `.github/prompts/*.prompt.md` — the Visual Studio 2022 entry points:
+  `#prompt:ssdt-schema-change` is the one door (intake then change-author, one conversation);
+  `#prompt:ssdt-intake`, `#prompt:ssdt-change-author`, `#prompt:ssdt-review` adopt one role
+  at a time.
 - `.github/PULL_REQUEST_TEMPLATE/schema-change.md` and
   `.azuredevops/pull_request_template/schema-change.md` — the ten-section schema-change pull
   request template (mirrors `ssdt-agent/skills/author-pr/SKILL.md`), for either host.
@@ -74,8 +76,9 @@ automated.
 - **Visual Studio 2022, 17.14.** No custom agents and no skills. The router and the path-scoped
   instructions still load (with the step-0 switch on), and they tell Copilot's agent mode to
   adopt a role by reading the agent file and to find the matching skill via the index. The
-  prompt files give a clickable entry: `#prompt:ssdt-intake` (or the ➕ reference picker) adopts
-  the role without typing the routing by hand. Proving still runs, because it is terminal
+  prompt files give a clickable entry: `#prompt:ssdt-schema-change` (or the ➕ reference
+  picker) runs the whole authoring flow without typing the routing by hand, and the per-role
+  prompts adopt one role at a time. Proving still runs, because it is terminal
   commands the agent runs with your approval.
 - **Agent mode turned off, or ask-only Copilot.** Only the router and the manually attached
   instruction files apply. The skills and agents become documents a developer reads. The tree is
@@ -146,7 +149,7 @@ and also writes the `.github/` and `.azuredevops/` files in place at the reposit
 `copilot-check` verifies both. The `packaging` gate runs it in the source repo's CI;
 `ssdt-agent/pipelines/ssdt-agent-check.yml` runs it on ADO.
 
-Bundle fingerprint: `828975e281d5` — a content hash over the generator and every source
+Bundle fingerprint: `0e8bda6e2d53` — a content hash over the generator and every source
 file. It changes exactly when regeneration is due, so a stale vendored bundle is detectable at a
 glance.
 
