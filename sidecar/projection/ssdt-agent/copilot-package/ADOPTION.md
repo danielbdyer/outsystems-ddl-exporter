@@ -66,6 +66,11 @@ Visual Studio's Copilot support has grown quickly, so the workflow is built to d
 Each rung down still works; the router carries the parts the newer features would have
 automated.
 
+**The direction (owner's call, 2026-08-28): Visual Studio 2026 is the priority rung.** Moving
+everyone to 2026 is the plan of record — the agents-and-skills rung is the workflow as designed.
+Visual Studio 2022 stays supported through the prompt files and the router for as long as the
+migration runs; treat the 2022 rung as the bridge, not the destination.
+
 - **Best case — Visual Studio 2026, version 18.5 or newer.** Copilot discovers the custom agents
   and the skills automatically, attaches the path-scoped instructions, and reads the router. The
   full workflow is available.
@@ -149,7 +154,7 @@ and also writes the `.github/` and `.azuredevops/` files in place at the reposit
 `copilot-check` verifies both. The `packaging` gate runs it in the source repo's CI;
 `ssdt-agent/pipelines/ssdt-agent-check.yml` runs it on ADO.
 
-Bundle fingerprint: `0e8bda6e2d53` — a content hash over the generator and every source
+Bundle fingerprint: `047e6c5dbd9c` — a content hash over the generator and every source
 file. It changes exactly when regeneration is due, so a stale vendored bundle is detectable at a
 glance.
 
