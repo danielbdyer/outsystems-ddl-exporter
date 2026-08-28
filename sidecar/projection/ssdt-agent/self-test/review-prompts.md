@@ -329,6 +329,61 @@ surfaced WHY must come from the named `_index` owner, specialized — not re-exp
 
 ---
 
+## REV-09 — a compound release packing reshape-coupled atoms · **defect** · catch-and-return
+
+> **Packet:** one pull request carries two atoms on `dbo.Customer` — the `ContactPhone → MobileNumber`
+> rename (refactorlog entry present) and the `Email NULL → NOT NULL` tightening — and claims one
+> release: "the rename is safe, and the blanks are backfilled in a pre-deploy, so the whole thing
+> ships in place." Proof = a delta listing showing the `sp_rename` and the `ALTER`, and a NULL probe
+> reading 0.
+
+- **mirrors:** `CMP-02` (the reshape-coupling molecule; `sample-prs/compound/rename-then-tighten.md`)
+- **op:** `skills/decompose/SKILL.md` step 4 · **_index:** `skills/_index/tightening-class/SKILL.md`
+- **planted:** `defect` — the release count is wrong at the RELEASE grain: the combined delta is
+  vetoed by its strictest atom, and the veto is atomic (`FINDINGS_AND_CHANGES.md` F13).
+- **seed:** Customer DEFAULT (populated; some Email blanks); the `.refactorlog` PRESENT in scratch;
+  both edits applied to the scratch CREATE.
+- **expected verdict:** **Returned to the author** — serialize: Release 1 the rename (with the
+  seed's column references renamed in the same change set), then the tightening as its own
+  two-release. Not an escalation: the shape is determined by the locked gate, not a design fork.
+- **reproduce obligation:** publish the COMBINED delta once on the reviewer's own DB and capture
+  both halves of F13 — the refusal (`Msg 50000`, row-presence), and the rollback (the old column
+  name still present, Email still nullable). A reviewer who only re-checks the NULL probe has
+  reproduced the atom and missed the molecule.
+- **wield:** none to inject — the packet's own combined delta is the violating artifact; publishing
+  it IS the attack.
+- **fail mode:** approving because "each atom is individually fine" (atom-grain review of a
+  release-grain claim); or returning only the tightening and letting the rename "ship first" without
+  naming the seed's column references as part of its change set.
+
+---
+
+## REV-10 — an honestly-authored additive batch · honest · **the compound clean approval**
+
+> **Packet:** one pull request stands up a Returns feature as ONE release — a `ReturnReason` lookup
+> plus seed, a `Return` table with two foreign keys, and `Order.ReturnsAllowed BIT NOT NULL DEFAULT (1)`
+> on the populated `Order` — and claims a single clean publish: every atom is additive, the engine
+> orders the objects, the default stamps existing rows, the keys land trusted. Proof = the one
+> combined Strict publish, clean, with the stamped-rows count and `is_not_trusted = 0` for every key.
+
+- **mirrors:** `CMP-01` (the additive batch; `sample-prs/compound/additive-batch.md`)
+- **op:** `skills/decompose/SKILL.md` steps 2 and 5 · **_index:** `skills/_index/constraint-is-a-claim/SKILL.md`
+- **planted:** `honest` — the packing is correct and the proof is the right shape (one release-grain
+  publish, `FINDINGS_AND_CHANGES.md` F14).
+- **seed:** the DEFAULT estate; the scratch carries the two new table files and the Order edit.
+- **expected verdict:** **Approved** → deploy gate.
+- **reproduce obligation:** ONE combined publish on the reviewer's own DB — not six per-atom
+  publishes — verifying the release-grain facts: clean, all existing Order rows stamped, both keys
+  present and trusted. Splitting the batch to "review each atom separately" re-proves the atoms and
+  misses the release; it also fails the obligation even when the disposition lands right.
+- **wield:** none — an all-additive release has no block to inject; naming that absence is the
+  honest result. Do NOT manufacture one.
+- **fail mode:** the false return — demanding the feature be split into six pull requests "to be
+  safe", which trades one coherent review for six review cycles with no added safety (the packing
+  law is decompose's, and the engine confirmed it).
+
+---
+
 ## Scenario coverage map (what each scenario proves about the reviewer)
 
 | id | mirrors | planted | expected verdict | the reviewer skill it stresses |
@@ -340,6 +395,8 @@ surfaced WHY must come from the named `_index` owner, specialized — not re-exp
 | REV-05 | COL-06/06B | over-length claimed clean | **Returned to the author** | `MAX(LEN)` fit-check + consequence check |
 | REV-07 | COL-09 | sparring (posture, not gate) | Named risk / Escalated + **concede** | sparring posture + concede-visibly |
 | REV-08 | COL-01 + external | honest (clean), un-scoped consumer | **Approved with a named risk** | dependency-scope maps the cross-boundary consumer; names the un-provable residual |
+| REV-09 | CMP-02 | reshape-coupled atoms packed into one release | **Returned to the author** | release-grain reproduction — publish the COMBINED delta, capture the atomic veto (F13) |
+| REV-10 | CMP-01 | honest additive batch, one release | **Approved** | one release-grain publish, not six atom publishes; don't false-return a correct molecule |
 
 > The **make-mandatory review** (REV-03) is the gating scenario, exactly as its authoring twin
 > (COL-03/03B/03C) gates the authoring suite: a reviewer that approves the clean claim **without

@@ -314,7 +314,26 @@ lessons — the existing Phase-2 plan already says this correctly.
 
 ---
 
-## 8. The one-line stance
+## 8. Execution addendum (2026-08-28, same branch)
+
+The ordered list in §7 has been executed to the edge of what this environment can reach; the
+review stands as written and this addendum only records what landed, so a later reader does
+not mistake the plan for the remaining work. Landed, each proven live and gated: the portable
+proving loop (`scripts/prove.mjs`, the one-command verdict; `PORTABILITY.md`); the substrate
+as a pulled fingerprint-versioned artifact (`scripts/bake.mjs`, the bake lane, both
+production routes content-hash identical); the compound corpus (`sample-prs/compound/`, the
+release-delta doctrine, the compound record form, findings F13–F17); the four drop-inverse
+kits with both drop-pk faces (F18); constraint-trust re-confirmed on the current engine
+(F19); Twin facts for the inverse and compound archetypes (`SamplePrInverseTests`,
+`SamplePrCompoundTests`); the lag-window hold as a mechanism (the in-flight `tables` column +
+`scripts/inflight-check.mjs`, and the ADO PR-validation template); the vendor verb with the
+prune list as generator behavior; the compound reviewer scenarios (REV-09, REV-10); and the
+schema-derived evidence floor (`Twin.Core/DerivedEvidence.fs` — zero-configuration realism
+under every captured tier). Still owner-side: the Visual Studio pilot, the pipeline's DacFx
+pin, `twin evidence import` against real Dev, and the post-pilot trim decisions
+(personas → phases, the register fold).
+
+## 9. The one-line stance
 
 A genuinely excellent body of engine truth and knowledge architecture, wrapped in three
 times more prose than its consumers can use, still missing the four mechanisms — a pulled

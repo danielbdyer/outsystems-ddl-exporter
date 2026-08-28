@@ -27,6 +27,7 @@
     <Compile Include="TwinIdentityTests.fs" />
     <Compile Include="ScenarioCompilerTests.fs" />
     <Compile Include="EvidenceTests.fs" />
+    <Compile Include="DerivedEvidenceTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

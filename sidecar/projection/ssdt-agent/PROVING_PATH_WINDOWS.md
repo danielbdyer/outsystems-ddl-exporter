@@ -82,7 +82,11 @@ The tool verifies the artifact's sha256 against the manifest and imports it into
 named `<base>_<fingerprint>` on the engine your `prove.config.json` names — LocalDB works as-is.
 No drop is ever needed: each schema version restores under its own name, and old copies are
 dropped at leisure. No real value reaches the laptop, which retires the sensitive-data question
-below entirely. The proving loop cares about row counts, nulls, duplicates, orphans, and
+below entirely. And the artifact is useful from day zero: even before any real Dev data has been
+profiled, the mint's schema-derived floor fills every column with plausible, deterministic values
+from the schema alone (names, types, lengths, nullability), so a bake with no evidence is still a
+functional, realistic proving substrate — sampled evidence, when it arrives, simply wins wherever
+it speaks. The proving loop cares about row counts, nulls, duplicates, orphans, and
 lengths, and the synthetic mint preserves exactly those shapes.
 
 **Fallback while no artifact exists — restore a Dev backup.**

@@ -66,15 +66,17 @@ These are the examples where a plausible assumption is *wrong*, and the Twin pro
 `compound/` holds the molecule proofs — the additive batch that ships six atoms in one release,
 the reshape pair one release cannot carry, and the full extract-to-lookup program driven through
 its migrate and contract legs. The unit of proof there is the release delta; `compound/README.md`
-carries the read order. These were proven live through the packaged loop
-(`../scripts/prove.mjs`, sqlpackage 170.5.76, 2026-08-28), not by the Twin fact suite —
-Twin facts for the compound corpus are a named follow-on.
+carries the read order. Proven live through the packaged loop (`../scripts/prove.mjs`,
+sqlpackage 170.5.76, 2026-08-28) AND held by the fact suite: `SamplePrCompoundTests` carries the
+additive-batch and atomic-veto laws on the Twin substrate (`FINDINGS_AND_CHANGES.md` F13/F14);
+the full program's three mid-flight findings (F15–F17) live in the exemplar's captured record.
 
 ## The catalog
 
-Every row links to its PR; each PR names the exact green test that proves it. Four inverse
-operations (2026-08-28) are proven live through the packaged loop rather than a Twin fact —
-their rows say so.
+Every row links to its PR; each PR names the exact green test that proves it. The four inverse
+operations (2026-08-28) are proven twice: live through the packaged loop (their records' receipts)
+and by `SamplePrInverseTests` on the Twin substrate, including both drop-pk faces and the
+gap-risk re-add refusals.
 
 ### Columns (`SamplePrTighteningTests`, `SamplePrCleanApplyTests`, `SamplePrCleanApply2Tests`)
 | Operation | In OutSystems | What the publish actually does (proven) |
@@ -98,9 +100,9 @@ their rows say so.
 | [add-check](./add-check.md) | enforce a business rule at the DB | over a violating row: `WITH CHECK CHECK` fails (Msg 547), leaves it **untrusted**; conforming data lands trusted |
 | [add-unique](./add-unique.md) | mark an Attribute unique | duplicates **block** the unique index build (Msg 1505); a unique column applies |
 | [toggle-trust](./toggle-trust.md) | validate an untrusted constraint | `WITH CHECK CHECK` flips `is_not_trusted` 1→0 over clean data; a violation keeps it untrusted |
-| [drop-check](./drop-check.md) | stop enforcing a rule | clean one-statement drop (proven live, packaged loop 2026-08-28); the re-add re-validates every row written in the gap |
-| [drop-unique](./drop-unique.md) | allow duplicates again | clean `DROP INDEX` (proven live, packaged loop 2026-08-28); a duplicate written in the gap blocks the re-add (Msg 1505) |
-| [drop-default](./drop-default.md) | stop defaulting new rows | clean one-statement drop (proven live, packaged loop 2026-08-28); the risk is every insert that relied on the default |
+| [drop-check](./drop-check.md) | stop enforcing a rule | clean one-statement drop (`SamplePrInverseTests`); the re-add re-validates and REFUSES over a violating row written in the gap |
+| [drop-unique](./drop-unique.md) | allow duplicates again | clean `DROP INDEX` (`SamplePrInverseTests`); a duplicate written in the gap REFUSES the re-add |
+| [drop-default](./drop-default.md) | stop defaulting new rows | clean one-statement drop (`SamplePrInverseTests`); the risk is every insert that relied on the default |
 
 ### Indexes (`SamplePrCleanApplyTests`, `SamplePrSchemaChangeTests`, `SamplePrRemovalTests`)
 | Operation | In OutSystems | What the publish actually does (proven) |
@@ -116,7 +118,7 @@ their rows say so.
 | [create-fk-clean](./create-fk-clean.md) | link an Entity to another (clean data) | FK lands **trusted**, orphan probe 0; an orphan becomes rejected (Msg 547) |
 | [create-fk-orphan](./create-fk-orphan.md) | link an Entity (orphan present) | unreconciled: blocks (Msg 547); reconcile the orphan in a pre-deploy → the add **trusts itself** (is_not_trusted 0), no manual step |
 | [drop-fk](./drop-fk.md) | remove a reference | clean drop; rows survive, the **guarantee** is what you lose (orphan probe 547→0) |
-| [drop-pk](./drop-pk.md) | remove the Identifier's key | referenced by any FK: **refused at build** (`SQL71516`), the engine never reached; unreferenced: clean drop, the table is a heap after (proven live, packaged loop 2026-08-28) |
+| [drop-pk](./drop-pk.md) | remove the Identifier's key | referenced by any FK: **refused at build** (`SQL71516`), the engine never reached; unreferenced: clean drop, the table is a heap after (`SamplePrInverseTests`, both faces) |
 | [define-pk](./define-pk.md) | give an Entity its identifier | PK + clustered index built; rows/digest intact |
 | [junction](./junction.md) | model many-to-many | new bridge, both FKs trusted, composite PK; a duplicate pair rejected (Msg 2627) |
 | [change-delete-rule](./change-delete-rule.md) | set the Delete Rule (Protect/Delete) | FK NO ACTION → CASCADE, clean metadata DROP+ADD; Protect blocks, Cascade removes children |

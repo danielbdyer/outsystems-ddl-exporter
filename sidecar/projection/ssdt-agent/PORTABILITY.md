@@ -30,7 +30,11 @@ every surface supports:
    seed elsewhere — as a `.bacpac` named by the content fingerprint of the estate sources,
    beside a manifest carrying its sha256. `restore` imports it into a fingerprint-versioned
    database on whatever engine the config names. The consuming machine needs sqlpackage and
-   nothing else: no F#, no monorepo, no container, no real data.
+   nothing else: no F#, no monorepo, no container, no real data. And the artifact needs no
+   evidence to be useful: the mint's schema-derived floor (`../THE_TWIN.md` §9) fills every
+   uncaptured column with plausible deterministic values from the schema alone, so the
+   substrate is first-class from day zero and stale sampled checkpoints stay functional as
+   the schema moves — captured evidence simply wins wherever it speaks.
 
 Above the waist, the **AI-surface adapters** are all generated from the canonical tree:
 `.claude/` pointers for Claude Code; `.github/skills/` + `.github/agents/` for Copilot

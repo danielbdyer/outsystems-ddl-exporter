@@ -34,6 +34,7 @@
     <Compile Include="TwinConfig.fs" />
     <Compile Include="ScenarioCompiler.fs" />
     <Compile Include="Evidence.fs" />
+    <Compile Include="DerivedEvidence.fs" />
   </ItemGroup>
 
   <ItemGroup>

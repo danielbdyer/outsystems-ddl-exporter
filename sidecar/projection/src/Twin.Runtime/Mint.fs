@@ -15,11 +15,14 @@ open Twin.Core
 /// pools, and the scenario compilation.
 ///
 /// Precedence, per column: scenario override → rich evidence → shape
-/// evidence → type-default + corrections realism. Volumes, per kind:
-/// scenario (explicit rows / per-parent derivation) → evidence
-/// (observed × scale) → default (`defaultRows`, flat or
-/// centrality-weighted). Every kind carries an explicit resolution —
-/// nothing is silently zero-row.
+/// evidence → the schema-derived floor (`DerivedEvidence` — the
+/// zero-configuration realism layer, always on) → type-default +
+/// corrections realism. Volumes, per kind: scenario (explicit rows /
+/// per-parent derivation) → evidence (observed × scale) → default
+/// (`defaultRows`, flat or centrality-weighted) — volume resolution
+/// reads CAPTURED evidence only, so the floor's nominal counts never
+/// decide how many rows a kind mints. Every kind carries an explicit
+/// resolution — nothing is silently zero-row.
 [<RequireQualifiedAccess>]
 module Mint =
 
@@ -154,9 +157,21 @@ module Mint =
                 | sR, rR -> Result.failure (Result.errors sR @ Result.errors rR)
             | sR, rR -> Result.failure (Result.errors (sR |> Result.map ignore) @ Result.errors (rR |> Result.map ignore))
 
-        match evidenceProfile with
+        // The zero-configuration floor: schema-derived distributions layered
+        // UNDER every captured tier (captured wins wherever it speaks).
+        // Derived from this same catalog, so binding cannot structurally
+        // fail — but a failure, should one ever appear, is a named refusal,
+        // never a silent downgrade. Volume resolution below reads the
+        // CAPTURED profile only.
+        let layeredProfile =
+            evidenceProfile
+            |> Result.bind (fun evidence ->
+                Evidence.toProfile index (DerivedEvidence.pack catalog)
+                |> Result.map (fun floor -> evidence, Evidence.layer floor evidence))
+
+        match layeredProfile with
         | Error es -> Result.failure es
-        | Ok evidence ->
+        | Ok (evidence, layered) ->
             let evidenced = Evidence.evidencedKinds index evidence
             let defaults = defaultVolumes config catalog pools evidenced
             let defaultVolumeOf (k: SsKey) : int =
@@ -214,7 +229,7 @@ module Mint =
                             AugmentPools = augment }
                     Result.success
                         { Config = syntheticConfig
-                          Profile = compiled.Overlay evidence
+                          Profile = compiled.Overlay layered
                           Realize = fakerRealize >> ScenarioCompiler.applyPins compiled.Pins
                           Seed = seed }
 
