@@ -66,7 +66,26 @@ step 6.
 ## Step 3 — Real-shaped data
 
 The point of proving is to see what the engine does with the actual rows, so the local database
-needs real-shaped data, not the sample seed.
+needs real-shaped data, not the sample seed. Two paths, in order of preference:
+
+**Preferred — pull the baked artifact.** When the estate publishes a bake artifact (a
+fingerprint-versioned `.bacpac` of the current schema filled with masked, deterministic,
+distribution-faithful synthetic data — produced by `ssdt-agent/scripts/bake.mjs make` on the
+machine or pipeline that holds the Twin), the developer machine needs no backup, no real data,
+and no container. Download the artifact and its `bake.manifest.json`, then:
+
+```powershell
+node ssdt-agent\scripts\bake.mjs restore
+```
+
+The tool verifies the artifact's sha256 against the manifest and imports it into a NEW database
+named `<base>_<fingerprint>` on the engine your `prove.config.json` names — LocalDB works as-is.
+No drop is ever needed: each schema version restores under its own name, and old copies are
+dropped at leisure. No real value reaches the laptop, which retires the sensitive-data question
+below entirely. The proving loop cares about row counts, nulls, duplicates, orphans, and
+lengths, and the synthetic mint preserves exactly those shapes.
+
+**Fallback while no artifact exists — restore a Dev backup.**
 
 - The most faithful copy is a **restore of a Dev backup**. Restore a recent `.bak` of the Dev
   database into your local engine.

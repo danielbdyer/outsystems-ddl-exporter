@@ -27,21 +27,21 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve, basename } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const TOOL_VERSION = '0.1.0';
-const TREE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+export const TREE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
-const EXIT = { OK: 0, ARGV: 1, BLOCKED: 3, UNREACHABLE: 4, CONFIG: 6, BUILD: 7, INDETERMINATE: 9 };
+export const EXIT = { OK: 0, ARGV: 1, BLOCKED: 3, UNREACHABLE: 4, CONFIG: 6, BUILD: 7, INDETERMINATE: 9 };
 
 const log = (line) => process.stderr.write(`prove: ${line}\n`);
-const fail = (code, line) => { process.stderr.write(`prove: ${line}\n`); process.exit(code); };
+export const fail = (code, line) => { process.stderr.write(`prove: ${line}\n`); process.exit(code); };
 
 // ---------------------------------------------------------------------------
 // argv
 // ---------------------------------------------------------------------------
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -92,7 +92,7 @@ function resolvePassword(target, origin) {
   return target.password; // built-in substrate defaults only; a config file should use passwordEnv
 }
 
-function connectionString(target, dbOverride) {
+export function connectionString(target, dbOverride) {
   const db = dbOverride || target.database;
   const parts = [`Server=${target.server}`, `Initial Catalog=${db}`];
   if (target.auth === 'integrated') parts.push('Integrated Security=True');
@@ -130,7 +130,7 @@ const CONFIG_TEMPLATE = `{
 (for a SQL-auth engine instead: "target": { "server": "localhost,1433", "database": "ProvingCopy",
  "user": "sa", "passwordEnv": "PROVE_SQL_PASSWORD" })`;
 
-function resolveSubstrate(args, projectDir) {
+export function resolveSubstrate(args, projectDir) {
   // 1 — the committed answer: prove.config.json (the estate's own substrate declaration).
   const configPath = findConfig(args.config, projectDir);
   if (configPath) {
@@ -176,7 +176,7 @@ function resolveSubstrate(args, projectDir) {
 // project + profiles + build
 // ---------------------------------------------------------------------------
 
-function resolveProject(args, substrate) {
+export function resolveProject(args, substrate) {
   const candidate = args.project || (substrate && substrate.project)
     || (existsSync(join(TREE_ROOT, 'proving-ground', 'SampleCatalog.sqlproj'))
         ? join(TREE_ROOT, 'proving-ground', 'SampleCatalog.sqlproj') : null);
@@ -186,7 +186,7 @@ function resolveProject(args, substrate) {
   return p;
 }
 
-function resolveProfiles(substrate, projectDir) {
+export function resolveProfiles(substrate, projectDir) {
   if (substrate.profiles && substrate.profiles.strict) return substrate.profiles;
   const defaults = {
     strict: join(projectDir, 'profiles', 'ProvingGround.Strict.publish.xml'),
@@ -196,7 +196,7 @@ function resolveProfiles(substrate, projectDir) {
   fail(EXIT.CONFIG, `no Strict publish profile found (looked for ${defaults.strict}); name one in prove.config.json`);
 }
 
-function sh(cmd, cmdArgs, opts = {}) {
+export function sh(cmd, cmdArgs, opts = {}) {
   const env = { ...process.env, DOTNET_ROLL_FORWARD: process.env.DOTNET_ROLL_FORWARD || 'Major' };
   if (!env.DOTNET_ROOT && existsSync(join(process.env.HOME || '', '.dotnet', 'dotnet')))
     env.DOTNET_ROOT = join(process.env.HOME, '.dotnet');
@@ -213,7 +213,7 @@ function sh(cmd, cmdArgs, opts = {}) {
   return r;
 }
 
-function detectBuildMode(projectPath, declared) {
+export function detectBuildMode(projectPath, declared) {
   if (declared && declared !== 'auto') return declared;
   const text = readFileSync(projectPath, 'utf8');
   return /Sdk\s*=\s*"Microsoft\.Build\.Sql/i.test(text) ? 'dotnet' : 'msbuild';
@@ -232,7 +232,7 @@ function newestDacpac(dir) {
   return best && best.path;
 }
 
-function build(projectPath, mode, timeoutSeconds) {
+export function build(projectPath, mode, timeoutSeconds) {
   const projectDir = dirname(projectPath);
   log(`building (${mode}): ${basename(projectPath)}`);
   const r = mode === 'dotnet'
@@ -253,12 +253,12 @@ function build(projectPath, mode, timeoutSeconds) {
 // sqlpackage + classification
 // ---------------------------------------------------------------------------
 
-function sqlpackageVersion() {
+export function sqlpackageVersion() {
   const r = sh('sqlpackage', ['/version'], { timeoutSeconds: 60, enoentHint: 'dotnet tool install --global microsoft.sqlpackage' });
   return (r.stdout || '').trim().split('\n').pop();
 }
 
-function runSqlpackage(action, dacpac, profile, conn, outPath, timeoutSeconds) {
+export function runSqlpackage(action, dacpac, profile, conn, outPath, timeoutSeconds) {
   const args = [`/Action:${action}`, `/SourceFile:${dacpac}`, `/Profile:${profile}`, `/TargetConnectionString:${conn}`];
   if (outPath) args.push(`/OutputPath:${outPath}`, '/OverwriteFiles:True');
   return sh('sqlpackage', args, { timeoutSeconds, enoentHint: 'dotnet tool install --global microsoft.sqlpackage' });
@@ -415,10 +415,13 @@ function verbSelftest() {
 
 // ---------------------------------------------------------------------------
 
-const args = parseArgs(process.argv.slice(2));
-const verb = args._[0];
-if (args.help || !verb) { process.stderr.write(USAGE + '\n'); process.exit(verb ? EXIT.OK : EXIT.ARGV); }
-if (verb === 'detect') process.exit(verbDetect(args));
-else if (verb === 'verdict') process.exit(verbVerdict(args));
-else if (verb === 'selftest') process.exit(verbSelftest());
-else fail(EXIT.ARGV, `unknown verb '${verb}' — one of: detect, verdict, selftest`);
+// Dispatch only when executed directly — bake.mjs imports this module for its helpers.
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const args = parseArgs(process.argv.slice(2));
+  const verb = args._[0];
+  if (args.help || !verb) { process.stderr.write(USAGE + '\n'); process.exit(verb ? EXIT.OK : EXIT.ARGV); }
+  if (verb === 'detect') process.exit(verbDetect(args));
+  else if (verb === 'verdict') process.exit(verbVerdict(args));
+  else if (verb === 'selftest') process.exit(verbSelftest());
+  else fail(EXIT.ARGV, `unknown verb '${verb}' — one of: detect, verdict, selftest`);
+}

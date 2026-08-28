@@ -317,7 +317,7 @@ the constraint-trust check) before relying on it.
 |---|---|
 | Engine | SQL Server Express LocalDB, or a local SQL Server Developer edition |
 | Server | `(localdb)\MSSQLLocalDB` (LocalDB) or `localhost` (Developer edition) |
-| Disposable copy | `ProvingCopy` — restored from a Dev `.bak`; never a shared environment |
+| Disposable copy | preferred: a pulled bake artifact (`../../scripts/bake.mjs restore` — a fingerprint-versioned `.bacpac` of masked, deterministic data; no real values reach the laptop). Fallback while no artifact exists: `ProvingCopy` restored from a Dev `.bak`. Never a shared environment |
 | Auth | Integrated Security (no password) |
 | sqlcmd | on the HOST (installs with Visual Studio's data tooling / SSMS) — no docker |
 
@@ -328,9 +328,12 @@ file run through it unchanged:
 sqlcmd -S "(localdb)\MSSQLLocalDB" -d ProvingCopy -Q "<sql>"
 ```
 
-**Reset = re-restore.** The disposable copy is born from a backup, so the clean-slate move is not
-drop-and-reseed but re-restore (the runbook's step 3, `RESTORE DATABASE ... WITH REPLACE`) — every
-scenario starts from the same real-shaped backup. Drop the copy entirely when done:
+**Reset = re-pull or re-restore.** The disposable copy is born from an artifact, so the
+clean-slate move is not drop-and-reseed but re-import: a pulled bake artifact restores into a
+fresh fingerprint-versioned database (`bake.mjs restore` — no drop ever needed; old versions are
+dropped at leisure), and a backup-born `ProvingCopy` re-restores (the runbook's step 3,
+`RESTORE DATABASE ... WITH REPLACE`). Every scenario starts from the same artifact. Drop a copy
+entirely when done:
 
 ```powershell
 sqlcmd -S "(localdb)\MSSQLLocalDB" -Q "IF DB_ID('ProvingCopy') IS NOT NULL BEGIN ALTER DATABASE ProvingCopy SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ProvingCopy; END"

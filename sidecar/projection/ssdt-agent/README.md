@@ -84,6 +84,7 @@ ssdt-agent/
 ├── CONNECTORS.md ··········· future wiring seams (.claude/skills, Copilot, F# engine, ADO)
 ├── PORTABILITY.md ·········· one waist, generated edges: the AI-surface + dev-surface portability model
 ├── scripts/prove.mjs ······· the packaged proving loop: build → delta → Strict → structured verdict
+├── scripts/bake.mjs ········ the substrate as a pulled artifact: bake a fingerprint-versioned .bacpac; restore it anywhere
 ├── ACCELERANT_PLAN.md ······ the staged, verify-first plan to wire the F# engine as an accelerant
 ├── ENABLEMENT_PROGRAM.md ··· the ranked program (achievability × efficacy) toward team success
 ├── CLAUDE.md ··············· session routing: OutSystems phrasing → intake; review → reviewer

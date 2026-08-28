@@ -25,6 +25,12 @@ every surface supports:
    the project, the build mode, and the profiles for a machine or a repository. When it is
    absent, the tool falls back to the same detection ladder `skills/talk-to-local-sql/SKILL.md`
    teaches (the Twin, then the warm container, then stop-and-say-so).
+4. **One pulled data artifact.** `scripts/bake.mjs` exports the current baseline — the Twin's
+   deterministic masked mint where the Twin runs, the published schema plus its idempotent
+   seed elsewhere — as a `.bacpac` named by the content fingerprint of the estate sources,
+   beside a manifest carrying its sha256. `restore` imports it into a fingerprint-versioned
+   database on whatever engine the config names. The consuming machine needs sqlpackage and
+   nothing else: no F#, no monorepo, no container, no real data.
 
 Above the waist, the **AI-surface adapters** are all generated from the canonical tree:
 `.claude/` pointers for Claude Code; `.github/skills/` + `.github/agents/` for Copilot
@@ -43,7 +49,8 @@ code: a LocalDB instance, a Developer-edition install, and a container differ on
 | Skill discovery (2026 18.5+ auto-discovers; 18.4 and 2022 do not) | every entry surface routes to the same canonical body; `skills/INDEX.md` is the one-hop manual route |
 | Custom agents (2026) vs none (2022) | personas exist as agent files where supported and as `#prompt:` files where not; both read the same bodies |
 | SQL engine (LocalDB / local install / container) | the engine is a connection target in `prove.config.json`; nothing in the loop asks *how* the engine runs |
-| Docker present or absent | Docker is incidental: a container is just an endpoint, and the synthetic substrate can travel as data (a `.bacpac`/`.bak` restored into LocalDB) instead of as an image |
+| Docker present or absent | Docker is incidental: a container is just an endpoint, and the synthetic substrate travels as data — the bake artifact (`scripts/bake.mjs`), a fingerprint-versioned `.bacpac` restored into LocalDB or any engine |
+| Real data on laptops | retired by the artifact: the bake carries masked, deterministic synthetic rows with the same counts, nulls, duplicates, orphans, and lengths — the shapes the publish guards fire on |
 | Publish engine | `sqlpackage` everywhere — the one cross-platform constant, pinned via `estate/toolchain.md` |
 | Build (classic `.sqlproj` needs MSBuild; SDK-style builds anywhere) | detected from the project file by the tool; each mode carries its own remediation message |
 | Shell quirks (Git Bash path mangling, exit-code folklore, the .NET roll-forward shim) | the tool spawns without a shell, sets the shim itself, and classifies from the output text |
