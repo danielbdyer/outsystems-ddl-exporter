@@ -329,7 +329,16 @@ kits with both drop-pk faces (F18); constraint-trust re-confirmed on the current
 `scripts/inflight-check.mjs`, and the ADO PR-validation template); the vendor verb with the
 prune list as generator behavior; the compound reviewer scenarios (REV-09, REV-10); and the
 schema-derived evidence floor (`Twin.Core/DerivedEvidence.fs` — zero-configuration realism
-under every captured tier). Still owner-side: the Visual Studio pilot, the pipeline's DacFx
+under every captured tier); the mint trust gate (`TwinDatabase.revalidateConstraints` —
+`WITH CHECK CHECK` over every user CHECK and foreign key after each mint, refusing with
+`twin.mint.constraintViolation` instead of handing over silently-untrusted data); the
+one-approver recalibration (the principal level retired by the owner's 2026-08-28 call —
+`THE_RECORD.md` §5's second finding is now *what the approving dev lead weighs*, recalibrated
+tree-wide with `estate/reviewers.md` rewritten for the single class); and two form-factor
+refactors from §6 — the one-door Copilot prompt (`#prompt:ssdt-schema-change`,
+packager-synthesized, intake → change-author in one conversation) and `talk-to-local-sql`
+restructured tool-first (prove/twin/bake lead; the per-machine rungs demoted to the fallback
+they encode). Still owner-side: the Visual Studio pilot, the pipeline's DacFx
 pin, `twin evidence import` against real Dev, and the post-pilot trim decisions
 (personas → phases, the register fold).
 
