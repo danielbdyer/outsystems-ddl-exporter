@@ -481,3 +481,22 @@ these findings ground: **the unit of proof is the release delta** (`skills/prove
   populated child reconciled in the same release's pre-deploy, and one CHECK over clean data —
   all ended `is_not_trusted = 0` (F9's law, current engine; `estate/toolchain.md` carries the
   dated row). The estate pipeline's own DacFx version remains the open pin.
+
+- **F20 — The scale lane's first light: three engine defects, and the tier where the scan
+  surfaces. (PROVEN, 2026-08-28)** Standing up `proving-ground/twin.scale.json` (181k- and
+  1.18M-row scenarios, floor-minted) surfaced three defects before any timing was taken, each
+  fixed on this branch. (1) The unique-value synthesizer was width-blind: a 21-char token into
+  `Status.Code NVARCHAR(20)` failed the bulk copy; tokens are now fitted to the declared width
+  (verbatim where they fit — byte-identity kept — compact base-36 where they would truncate;
+  a width too small even for the ordinal is left to the unique index to refuse by name).
+  (2) The mint trust gate's Release build hit `FS3511` in two new shapes, both now in
+  `CLAUDE.md` survival rule 5. (3) σ's per-row draws indexed F# *lists* — `List.tryItem i`
+  per row and `pool.[j]` per FK draw, O(rows × pool) — invisible at the sample tier,
+  12.7× the whole mint at 181k (75.1 s → 5.9 s once array-backed), and a wall at 1.18M
+  (killed unfinished at 13 min; 28.0 s after the fix, ~42k rows/s, values byte-identical).
+  The measured tiers (`estate/scale-datapoints.md`): every green Strict publish and the
+  `Msg 50000` refusal stay inside single-digit tool overhead at BOTH tiers except the
+  nonclustered index build, the first operation whose engine cost surfaces (~11 s over floor
+  at 1.05M rows); FK and CHECK re-validation scans are still invisible there; a re-mint
+  through live CK+FK+IX costs +8.6 s at 1.18M and ends trusted. The added-scrutiny window's
+  teeth begin at the index-shaped operations, roughly linearly above 1M on this substrate.

@@ -492,11 +492,23 @@ module SyntheticData =
             | _              -> false
         let rowCount = pkPools |> Map.tryFind kind.SsKey |> Option.map List.length |> Option.defaultValue 0
         let pkPool = pkPools |> Map.tryFind kind.SsKey |> Option.defaultValue []
+        // Array views of the pools, materialized ONCE per kind: the per-row
+        // closure below indexes them per row/draw, and a linked-list index
+        // there is O(rows × pool) — invisible at 100k rows, a wall at 1M
+        // (measured on the proving-ground scale lane). Same values, same
+        // order: byte-identity is untouched.
+        let pkArr = List.toArray pkPool
         let pkAttr = kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey)
         // Reference (FK) source attributes → target kind, for §3 step 2.
         let fkByAttr =
             kind.References
             |> List.map (fun ref -> ref.SourceAttribute, ref.TargetKind)
+            |> Map.ofList
+        let fkPoolArr : Map<SsKey, string[]> =
+            fkByAttr
+            |> Map.toList
+            |> List.map (fun (_, target) ->
+                target, (pkPools |> Map.tryFind target |> Option.defaultValue [] |> List.toArray))
             |> Map.ofList
         // §6.3 (F5) — SourceAttribute → ReferenceKey, for the captured FK
         // selectivity lookup. The selectivity's count-DESC frequencies weight the
@@ -554,8 +566,8 @@ module SyntheticData =
                         j.AttributeKeys
                         |> List.map (fun attrKey ->
                             match Map.tryFind attrKey fkByAttr with
-                            | Some target -> pkPools |> Map.tryFind target |> Option.defaultValue []
-                            | None        -> [])
+                            | Some target -> pkPools |> Map.tryFind target |> Option.defaultValue [] |> List.toArray
+                            | None        -> [||])
                     let weights = decoded |> List.map snd
                     let tuples = decoded |> List.map fst |> List.toArray
                     let attrKeys = j.AttributeKeys
@@ -567,7 +579,7 @@ module SyntheticData =
                             |> List.mapi (fun p attrKey ->
                                 let pool = posPools.[p]
                                 let rank = rankMaps.[p] |> Map.tryFind parts.[p] |> Option.defaultValue 0
-                                let v = if List.isEmpty pool then "" else pool.[min rank (List.length pool - 1)]
+                                let v = if pool.Length = 0 then "" else pool.[min rank (pool.Length - 1)]
                                 attrKey, v)
                             |> List.filter (fun (_, v) -> v <> "")
                             |> Map.ofList
@@ -617,17 +629,16 @@ module SyntheticData =
                     let raw =
                         if attr.IsPrimaryKey then
                             // step 1 — the surrogate from the kind's PK pool.
-                            match List.tryItem i pkPool with
-                            | Some v -> Some v
-                            | None   -> Some (surrogateRaw attr.Type kindHash i)
+                            if i < pkArr.Length then Some pkArr.[i]
+                            else Some (surrogateRaw attr.Type kindHash i)
                         elif Map.containsKey attr.SsKey fkByAttr then
                             // step 2 — draw from the parent pool (zero orphans).
                             let target = fkByAttr.[attr.SsKey]
-                            let pool = pkPools |> Map.tryFind target |> Option.defaultValue []
+                            let pool = fkPoolArr |> Map.tryFind target |> Option.defaultValue [||]
                             let nulled, s = drawsNull profile attr.SsKey state
                             state <- s
                             if nulled && nullable then None
-                            elif List.isEmpty pool then
+                            elif pool.Length = 0 then
                                 // empty parent pool — NULL. For a non-nullable FK
                                 // this is an unsatisfiable structure: NM-21 names it
                                 // via the `unsatisfiableFks` diagnostics computed
@@ -643,11 +654,11 @@ module SyntheticData =
                                 match Map.tryFind attr.SsKey jointAssignment with
                                 | Some v -> Some v
                                 | None ->
-                                    match fkSelectivityWeights attr.SsKey (List.length pool) with
+                                    match fkSelectivityWeights attr.SsKey pool.Length with
                                     | Some weights ->
                                         let j, s = weightedIndex weights state
                                         state <- s
-                                        Some pool.[min j (List.length pool - 1)]
+                                        Some pool.[min j (pool.Length - 1)]
                                     | None ->
                                         // §H-072 — intra-cluster FK locality (opt-in). When the child
                                         // and target kinds share a cluster, references concentrate on
@@ -655,7 +666,7 @@ module SyntheticData =
                                         // cluster reads as a self-consistent slice); cross-cluster and
                                         // no-cluster edges keep the uniform draw (byte-identical — same
                                         // single draw, same modulus). Always a valid index → zero orphans.
-                                        let poolLen = List.length pool
+                                        let poolLen = pool.Length
                                         let effLen =
                                             if sameCluster kind.SsKey target then intraClusterHotCount poolLen
                                             else poolLen
@@ -686,7 +697,7 @@ module SyntheticData =
                                         Some (typeDefaultRaw attr.Type (nextDraw ()))
                     raw |> Option.map (fun v -> attr.Name, v))
             { Identifier =
-                (match pkAttr, List.tryItem i pkPool with
+                (match pkAttr, (if i < pkArr.Length then Some pkArr.[i] else None) with
                  | Some _, Some pkRaw ->
                      // a stable per-row identity rooted in the kind + PK value.
                      SsKey.synthesizedComposite "SYNTH_ROW" [ SsKey.rootOriginal kind.SsKey; pkRaw ]

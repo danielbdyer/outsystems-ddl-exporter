@@ -338,7 +338,12 @@ tree-wide with `estate/reviewers.md` rewritten for the single class); and two fo
 refactors from §6 — the one-door Copilot prompt (`#prompt:ssdt-schema-change`,
 packager-synthesized, intake → change-author in one conversation) and `talk-to-local-sql`
 restructured tool-first (prove/twin/bake lead; the per-machine rungs demoted to the fallback
-they encode). Still owner-side: the Visual Studio pilot, the pipeline's DacFx
+they encode); and the scale lane (`proving-ground/twin.scale.json` + `estate/scale-datapoints.md`)
+— whose first run surfaced and fixed three engine defects (width-blind unique tokens, two
+Release-only FS3511 shapes, O(rows × pool) list indexing in σ's draws: 75 s → 5.9 s at 181k,
+a 13-minute wall → 28 s at 1.18M) and measured where the added-scrutiny line's teeth begin
+(the index build is the first engine cost visible over tool overhead, at ~1M rows; F20).
+Still owner-side: the Visual Studio pilot, the pipeline's DacFx
 pin, `twin evidence import` against real Dev, and the post-pilot trim decisions
 (personas → phases, the register fold).
 
