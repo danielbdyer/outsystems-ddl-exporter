@@ -338,6 +338,32 @@ module SyntheticData =
     let private synthToken (attrHash: uint64) (bucket: int) : string =
         "syn:" + (attrHash &&& 0xFFFFFFFFUL).ToString("x8") + ":" + string bucket
 
+    /// Lowercase base-36 of a non-negative ordinal — the compact distinct
+    /// token for a unique column whose declared width the full token exceeds.
+    let private base36 (i: int) : string =
+        if i <= 0 then "0"
+        else
+            let digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+            let sb = System.Text.StringBuilder()
+            let mutable n = i
+            while n > 0 do
+                sb.Insert(0, digits.[n % 36]) |> ignore
+                n <- n / 36
+            sb.ToString()
+
+    /// The step-3 distinct-per-row token, fitted to the column's declared
+    /// width: the full token verbatim wherever it fits (or no finite width
+    /// is declared), else the compact base-36 ordinal. A width too small
+    /// even for the ordinal is left for the unique index to refuse by name
+    /// — never a silent modulo that would forge a duplicate.
+    let internal uniqueToken (declaredLength: int option) (attrHash: uint64) (i: int) : string =
+        let full = "u:" + attrHash.ToString("x8") + ":" + string i
+        match declaredLength with
+        | Some w when w > 0 && full.Length > w ->
+            let compact = "u" + base36 i
+            if compact.Length <= w then compact else base36 i
+        | _ -> full
+
     /// Sample a categorical column. `Preserve` emits the real bucket value;
     /// `Synthesize` emits the bucket's synthetic token. Bucket selection is
     /// the same weighted draw in both modes, so the frequency shape is
@@ -640,8 +666,8 @@ module SyntheticData =
                             state <- s
                             if nulled && nullable then None
                             elif isSingleColumnUnique kind attr then
-                                // step 3 — a distinct value per row.
-                                Some ("u:" + attrHash.ToString("x8") + ":" + string i)
+                                // step 3 — a distinct value per row, fitted to the declared width.
+                                Some (uniqueToken attr.Length attrHash i)
                             else
                                 // step 4 — distribution sample / type default.
                                 match Profile.tryFindCategorical attr.SsKey profile with

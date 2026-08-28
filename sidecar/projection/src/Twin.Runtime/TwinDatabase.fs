@@ -194,9 +194,36 @@ WHERE s.name <> N'twin' AND t.is_ms_shipped = 0;
     /// so a mint either ends with every constraint TRUSTED or refuses by
     /// name. The schema-derived floor cannot read a predicate; a scenario,
     /// correction, or evidence entry owns the data-side remedy.
-    let revalidateConstraints (twinCnn: SqlConnection) : Task<Result<int>> =
+    let private bracketIdent (n: string) : string =
+        System.String.Concat("[", n.Replace("]", "]]"), "]")  // LINT-ALLOW: identifier quoting at the command boundary
+
+    /// One `WITH CHECK CHECK CONSTRAINT` attempt; `None` on success, the
+    /// display name + engine detail on failure. Hoisted to module level so
+    /// the caller's loop carries no try/with around an await (FS3511).
+    let private recheckConstraint
+        (twinCnn: SqlConnection)
+        (schemaName: string)
+        (tableName: string)
+        (constraintName: string)
+        : Task<(string * string) option> =
         task {
             try
+                use cmd = twinCnn.CreateCommand()
+                cmd.CommandText <-
+                    System.String.Concat(  // LINT-ALLOW: terminal DDL at the command boundary; identifiers bracket-escaped above
+                        "ALTER TABLE ", bracketIdent schemaName, ".", bracketIdent tableName,
+                        " WITH CHECK CHECK CONSTRAINT ", bracketIdent constraintName, ";")
+                let! _ = cmd.ExecuteNonQueryAsync()
+                return None
+            with ex ->
+                return
+                    Some (
+                        System.String.Concat(bracketIdent schemaName, ".", bracketIdent tableName, ".", bracketIdent constraintName),  // LINT-ALLOW: refusal display path
+                        ex.Message)
+        }
+
+    let private revalidateCore (twinCnn: SqlConnection) : Task<Result<int>> =
+        task {
                 let candidates = System.Collections.Generic.List<string * string * string>()
                 use listCmd = twinCnn.CreateCommand()
                 listCmd.CommandText <-
@@ -222,21 +249,15 @@ WHERE s.name <> N'twin' AND t.is_ms_shipped = 0;
                     else go <- false
                 r.Close()
 
-                let bracket (n: string) = System.String.Concat("[", n.Replace("]", "]]"), "]")  // LINT-ALLOW: identifier quoting at the command boundary
                 let failures = System.Collections.Generic.List<string * string>()
-                for (schemaName, tableName, constraintName) in candidates do
-                    try
-                        use cmd = twinCnn.CreateCommand()
-                        cmd.CommandText <-
-                            System.String.Concat(  // LINT-ALLOW: terminal DDL at the command boundary; identifiers bracket-escaped above
-                                "ALTER TABLE ", bracket schemaName, ".", bracket tableName,
-                                " WITH CHECK CHECK CONSTRAINT ", bracket constraintName, ";")
-                        let! _ = cmd.ExecuteNonQueryAsync()
-                        ()
-                    with ex ->
-                        failures.Add(
-                            System.String.Concat(bracket schemaName, ".", bracket tableName, ".", bracket constraintName),  // LINT-ALLOW: refusal display path
-                            ex.Message)
+                let mutable idx = 0
+                while idx < candidates.Count do
+                    let schemaName, tableName, constraintName = candidates.[idx]
+                    let! failure = recheckConstraint twinCnn schemaName tableName constraintName
+                    match failure with
+                    | Some f -> failures.Add f
+                    | None -> ()
+                    idx <- idx + 1
 
                 if failures.Count = 0 then return Result.success candidates.Count
                 else
@@ -250,6 +271,12 @@ WHERE s.name <> N'twin' AND t.is_ms_shipped = 0;
                                     [ "constraint", Some firstName
                                       "failing", Some (string failures.Count)
                                       "detail", Some firstDetail ]))
+        }
+
+    let revalidateConstraints (twinCnn: SqlConnection) : Task<Result<int>> =
+        task {
+            try
+                return! revalidateCore twinCnn
             with ex ->
                 return Result.failureOf (sqlFailure "revalidate constraints" ex.Message)
         }
