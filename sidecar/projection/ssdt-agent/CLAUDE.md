@@ -13,9 +13,11 @@ hands `change-author` a change-spec to prove. A review request ("look at this sc
 "reproduce this change") is **Persona 2**: the `reviewer` agent over `skills/review/`.
 
 The tree is packaged into `.claude/skills/` and `.claude/agents/` as **generated dispatch
-pointers** (`sidecar/projection/scripts/ssdt-agent-package.mjs apply`; the `packaging` gate keeps
-them in sync). The canonical bodies live here, where their relative citations resolve — a
-packaged skill's body routes you to its in-tree file; follow it.
+pointers**, and into `copilot-package/` as the GitHub Copilot bundle for the estate repository
+(the tree's own generator, `scripts/ssdt-agent-package.mjs` — `apply` / `copilot-apply`; the
+`packaging` gate keeps both in sync, and `skills/INDEX.md` is generated with the bundle). The
+canonical bodies live here, where their relative citations resolve — a packaged skill's body
+routes you to its in-tree file; follow it.
 
 Never edit a packaged pointer by hand; edit the source skill and re-run `apply`. Everything else
 about working in this tree — the substrate, the proving loop, the registers, the self-test —

@@ -29,17 +29,20 @@
 //              disposition + proof artifact with no unfilled placeholders
 //
 // Node ≥ 18, zero dependencies. Run from anywhere; paths resolve from this
-// file's location.
+// file's location. Lives inside the tree (ssdt-agent/scripts/) so it travels
+// with a vendored copy; these gates are the SOURCE MONOREPO's CI face — a
+// vendored estate runs `ssdt-agent-package.mjs copilot-check` instead (see
+// ../pipelines/ssdt-agent-check.yml).
 
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, relative, basename, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const PROJ = dirname(HERE);                    // sidecar/projection
+const HERE = dirname(fileURLToPath(import.meta.url));  // <tree>/scripts
+const TREE = dirname(HERE);                    // .../ssdt-agent
+const PROJ = dirname(TREE);                    // sidecar/projection
 const REPO = dirname(dirname(PROJ));           // repo root
-const TREE = join(PROJ, "ssdt-agent");
 
 const findings = [];
 const find = (path, msg) => findings.push(`${relative(REPO, path)}: ${msg}`);
@@ -210,18 +213,25 @@ const CANONICAL_SECTIONS = [
 ];
 
 function gateMirror() {
-  const template = join(REPO, ".github", "PULL_REQUEST_TEMPLATE", "schema-change.md");
-  if (!existsSync(template)) {
-    find(template, "schema-change PR template is missing");
-    return;
-  }
-  const heads = [...read(template).matchAll(/^## (.+)$/gm)].map((m) => m[1].trim());
-  for (const section of CANONICAL_SECTIONS) {
-    const present = heads.some(
-      (h) => h === section || h.startsWith(section + " ") || h.startsWith(section + " —")
-    );
-    if (!present) {
-      find(template, `template lost the canonical section \`${section}\` (author-pr/SKILL.md is the source of truth)`);
+  // Two mirrors of author-pr's ten sections: the monorepo's own PR template, and
+  // the tree's canonical template the Copilot bundle is generated from.
+  const templates = [
+    join(REPO, ".github", "PULL_REQUEST_TEMPLATE", "schema-change.md"),
+    join(TREE, "pr-template", "schema-change.md"),
+  ];
+  for (const template of templates) {
+    if (!existsSync(template)) {
+      find(template, "schema-change PR template is missing");
+      continue;
+    }
+    const heads = [...read(template).matchAll(/^## (.+)$/gm)].map((m) => m[1].trim());
+    for (const section of CANONICAL_SECTIONS) {
+      const present = heads.some(
+        (h) => h === section || h.startsWith(section + " ") || h.startsWith(section + " —")
+      );
+      if (!present) {
+        find(template, `template lost the canonical section \`${section}\` (author-pr/SKILL.md is the source of truth)`);
+      }
     }
   }
 }
