@@ -29,6 +29,11 @@ the agent. The **evidence-profiling config (`twin.json`) is version-controlled b
 evolves as the schema evolves**. Do not restate the Twin's laws here — point.
 
 ### Detect the substrate
+This ladder is encoded in `../../scripts/prove.mjs` (`detect` prints the resolved substrate as
+JSON; an explicit `prove.config.json` — the estate's committed declaration of its engine
+endpoint, project, and profiles — outranks every rung, and makes LocalDB or any local SQL
+Server a first-class target with no container anywhere). The rungs, for when you dispatch by
+hand:
 - `proving-ground/twin.json` present **and** the `twin` CLI available (`twin` on PATH, or
   `dotnet run --project src/Twin.Cli --` from `sidecar/projection/`, source repository only) →
   **the Twin substrate**.

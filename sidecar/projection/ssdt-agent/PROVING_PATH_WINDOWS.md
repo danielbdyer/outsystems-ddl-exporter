@@ -143,6 +143,31 @@ sqlpackage /Action:Publish /SourceFile:bin\Release\YourProject.dacpac /Profile:L
 package.` with a `Msg` line; a clean one prints `Successfully published database.`. The block is
 the finding, so the agent reads the printed lines, not the process exit status.
 
+**The one-command form.** With Node installed (version 18 or newer — the same requirement the
+bundle's CI check carries), the build → delta → publish → read-the-text sequence runs as one
+command that applies the rule above itself and prints a structured verdict (JSON on stdout;
+exit code 0 = published clean, 3 = blocked, 7 = build failed):
+
+```powershell
+node ssdt-agent\scripts\prove.mjs verdict --project YourProject.sqlproj
+```
+
+Declare this machine's substrate once in a `prove.config.json` beside the project, so the tool
+targets the local copy and picks the right build (MSBuild for a classic project must run from a
+Developer PowerShell either way):
+
+```json
+{
+  "project": "YourProject.sqlproj",
+  "build": "auto",
+  "profiles": { "strict": "Local.Strict.publish.xml", "permissive": "Local.Permissive.publish.xml" },
+  "target": { "server": "(localdb)\\MSSQLLocalDB", "database": "ProvingCopy", "auth": "integrated" }
+}
+```
+
+No Docker and no container appears anywhere in this path: the engine is LocalDB or any local
+SQL Server, and the tool only ever connects to the endpoint the config names.
+
 ## Step 6 — Verify the substrate before you rely on it
 
 Two checks confirm the substrate is real. Run them once on each machine before the week.

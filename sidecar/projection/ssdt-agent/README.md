@@ -82,6 +82,8 @@ ssdt-agent/
 ├── README.md ··············· you are here — the model, the two findings, the read order
 ├── THE_RECORD.md ··········· the register every surface is written in (record vs conversation)
 ├── CONNECTORS.md ··········· future wiring seams (.claude/skills, Copilot, F# engine, ADO)
+├── PORTABILITY.md ·········· one waist, generated edges: the AI-surface + dev-surface portability model
+├── scripts/prove.mjs ······· the packaged proving loop: build → delta → Strict → structured verdict
 ├── ACCELERANT_PLAN.md ······ the staged, verify-first plan to wire the F# engine as an accelerant
 ├── ENABLEMENT_PROGRAM.md ··· the ranked program (achievability × efficacy) toward team success
 ├── CLAUDE.md ··············· session routing: OutSystems phrasing → intake; review → reviewer
@@ -144,8 +146,12 @@ catalog instead of the hand-authored sample — but it is not wired: the seams a
 - **Cite the handbook by filename.** When a skill points at the playbook, cite the current
   playbook **filename** (e.g. `16-Anti-Patterns-Gallery.md`); that is the cross-reference the deck
   readers will recognize.
-- **You scaffold; the agent runs.** No skill ships a wrapper script that orchestrates the
-  loop. Skills give the commands as worked examples plus the reasoning; the developer's agent
-  runs `docker` / `dotnet` / `sqlpackage` itself. A small hand-authored `.sqlproj` / `.sql` /
-  `.publish.xml` sample project is data, not a wrapper — that is allowed and lives in
-  `proving-ground/`.
+- **You scaffold; the agent runs — with one packaged exception.** Skills give the commands as
+  worked examples plus the reasoning; the developer's agent runs `docker` / `dotnet` /
+  `sqlpackage` itself. A small hand-authored `.sqlproj` / `.sql` / `.publish.xml` sample
+  project is data, not a wrapper — that is allowed and lives in `proving-ground/`. The one
+  packaged exception is `scripts/prove.mjs`, the proven build → delta → Strict → verdict
+  sequence folded into a single command with a structured result (`CONNECTORS.md` §4,
+  executed; the reasoning is `PORTABILITY.md`). The scaffolded sequence in
+  `skills/prove-on-dacpac/` remains the explanation of what that tool does, and the fallback
+  when it cannot run; judgment stays in the skills, mechanics in the tool.

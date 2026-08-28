@@ -46,6 +46,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run the gates
         run: node sidecar/projection/ssdt-agent/scripts/ssdt-agent-gates.mjs all
+      - name: prove.mjs selftest (publish-output classifier stays honest)
+        run: node sidecar/projection/ssdt-agent/scripts/prove.mjs selftest
 
   build-proving-ground:
     name: proving ground compiles

@@ -40,6 +40,32 @@ If `classify-mechanism` said **on-sight** (the purely-additive corner — additi
 unaffected), still run one clean Strict publish to confirm no surprise delta — but no flip is
 possible.
 
+## The one-command form (run this; the scaffold below is what it does)
+
+The loop below is packaged as one command, `../../scripts/prove.mjs` (`CONNECTORS.md` §4,
+executed; the portability model is `../../PORTABILITY.md`). It detects the substrate (an
+explicit `prove.config.json`, else the Twin, else the warm container), detects the build mode
+from the project file (SDK-style → `dotnet build`; classic → MSBuild), generates and keeps the
+real delta, publishes under Strict, and classifies the printed outcome — the same
+text-not-exit-code rule this skill teaches, applied by the tool:
+
+```bash
+node ssdt-agent/scripts/prove.mjs verdict [--project <path.sqlproj>] [--db PG_<id>_<rand>] [--permissive]
+```
+
+stdout is one JSON verdict object: the substrate, the build, `delta.path` plus named
+data-motion signals read from the generated script (the data-loss guard, `DROP TABLE`,
+`DROP COLUMN`, a `tmp_ms_xx` shadow rebuild, `sp_rename`), and the Strict outcome with the
+verbatim engine messages (`Msg`/`SQL72014` lines). The exit code carries the verdict class:
+**0 published clean · 3 blocked (the finding, never a tool error) · 4 unreachable · 6 config ·
+7 build failed · 9 indeterminate**. `--permissive` runs the Permissive leg only after a block,
+so the consequence can be observed; the before/after probes and the content hash stay yours to
+run (`../talk-to-local-sql/SKILL.md`). `--db` gives a parallel executor its unique database
+(`self-test/PROTOCOL.md`). Read the JSON, then reason exactly as "Reading the result" below
+teaches — the tool produces the evidence; classifying what it means for how the change ships
+is still this skill's job, and the scaffolded sequence below remains both the explanation of
+what the tool does and the fallback when it cannot run.
+
 ## Running in parallel — see self-test/PROTOCOL.md
 
 When MANY executors prove cases at once (the self-test fleet), do **not** publish to the shared
