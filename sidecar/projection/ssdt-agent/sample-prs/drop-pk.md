@@ -3,7 +3,7 @@
 ## Verdict
 This change removes `PK_Category_Id` from `dbo.Category`. Nothing references Category, so it
 ships as a single in-place schema change — and leaves the table a heap with no identity rule:
-duplicate Ids become writable and lookups scan. A dev lead must review it. The companion
+duplicate Ids become writable and lookups scan. A dev lead approves this. The companion
 finding on the record below: the same edit on a referenced table does not reach the engine at
 all — the project refuses to build. Confirm the end state actually wanted; a request like this
 is usually a key change (drop plus define), not a bare removal. No work item supplied — attach

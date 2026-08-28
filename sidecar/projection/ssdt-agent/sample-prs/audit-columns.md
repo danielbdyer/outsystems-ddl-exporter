@@ -18,7 +18,7 @@ each Customer and when — "basic audit fields", `CreatedBy` / `CreatedOn` / `Mo
 - `dbo.Customer.ModifiedOn`: add `DATETIME2(3) NOT NULL DEFAULT (SYSUTCDATETIME())`.
 
 ## Before promoting
-- A dev lead or an experienced developer should approve this: the existing rows receive stamped
+- A dev lead approves this: the existing rows receive stamped
   values, and the running application must keep the four columns filled on every insert and update
   going forward.
 - Confirm the application (or a trigger) writes these columns on new inserts and on updates. A `NOT

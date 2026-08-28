@@ -15,9 +15,9 @@ attach one before merge.
   type and width unchanged).
 
 ## Before promoting
-- Any team member can approve this when nothing downstream assumes `Line1` is always populated. If a
-  report, an ETL/SSIS job, or application code does assume it, a dev lead or an experienced developer
-  should approve instead — the consumer must change to tolerate a NULL. This changes who reviews, not
+- A dev lead approves this with the lightest look when nothing downstream assumes `Line1` is
+  always populated. If a report, an ETL/SSIS job, or application code does assume it, the approval
+  weighs that the consumer must change to tolerate a NULL. This changes what the lead weighs, not
   how it ships.
 - Check with the owners of any consumer that reads `Line1` and confirm a NULL is safe there.
 

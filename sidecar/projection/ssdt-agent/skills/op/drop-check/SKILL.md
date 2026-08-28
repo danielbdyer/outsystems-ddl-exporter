@@ -7,7 +7,7 @@ description: Use when the developer says "remove the rule that Total must be pos
 
 > **Default (provisional — prove before you classify).** Ships as a single schema change, applied
 > in place — one `ALTER TABLE ... DROP CONSTRAINT`, no data read or written, and the publish never
-> blocks. A dev lead or an experienced developer reviews it: the business rule stops being enforced
+> blocks. A dev lead approves this: the business rule stops being enforced
 > at the data layer, and rows that violate it can be written from that moment on.
 
 > **SHIP terminal: ONE RELEASE, in place.** Proven live on this branch (database `PG_inv_x1`,
@@ -37,7 +37,7 @@ violating rows can accumulate, and the re-add re-validates every existing row
 
 ## How it flips (the specifics only)
 - **permanent removal — the rule is genuinely retired** → ships in place as a single schema
-  change; a dev lead or an experienced developer reviews it (the data layer stops enforcing a
+  change; a dev lead approves it (the data layer stops enforcing a
   business rule).
 - **temporary removal to let a load through** → not this op: route to `../toggle-trust/SKILL.md`
   (`NOCHECK` / re-enable `WITH CHECK`), which keeps the constraint's identity and re-validates on
@@ -71,7 +71,7 @@ worked instance is `../../../sample-prs/drop-check.md`. SHIP terminal: **ONE REL
 place.** The fragment this operation contributes:
 
 **Review & release**
-- A dev lead or an experienced developer must review this: a business rule stops being enforced
+- A dev lead approves this: a business rule stops being enforced
   at the data layer; no data is touched.
 - Ships as a single schema change, applied in place — one `ALTER TABLE ... DROP CONSTRAINT`.
   No data is read or written, and the publish never blocks.

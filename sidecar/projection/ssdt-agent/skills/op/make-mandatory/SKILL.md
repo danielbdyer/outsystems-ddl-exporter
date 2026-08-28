@@ -6,10 +6,10 @@ description: Use when the developer says "make Email required", "tick the Mandat
 # Make mandatory (NULL → NOT NULL) — the tightening-class change
 
 > **Default (provisional — prove before you classify).** On an EMPTY table this ships as a single schema
-> change applied in place, and any team member can review it. On a POPULATED table — NULLs
+> change applied in place, and a dev lead approves this. On a POPULATED table — NULLs
 > present or already zero, it does not matter — it does not ship in place and it does not land by
 > a pre-deployment backfill in one release either; the tightening cannot ride the same release as
-> the model, so it ships as **two releases**, and a dev lead must review it because existing data
+> the model, so it ships as **two releases**, and a dev lead approves this because existing data
 > is affected. Prove before you classify.
 
 > **SHIP terminal: TWO-RELEASE.** This pipeline (Azure DevOps → Octopus) cannot relax
@@ -42,8 +42,7 @@ does not work and must not be used: it was disproven, a pre-deploy backfill clea
 and Strict still blocked the change.
 
 ## How it flips (the specifics only)
-- **table EMPTY** → ships as a single schema change applied in place, and any team member can
-  review it (the `IF EXISTS` is false; the ALTER lands — verify genuinely empty first)
+- **table EMPTY** → ships as a single schema change applied in place, and a dev lead approves this (the `IF EXISTS` is false; the ALTER lands — verify genuinely empty first)
 - **table POPULATED — NULLs present OR zero NULLs, does not matter** → cannot pass the
   prod-strict gate in one release (see `../../_index/tightening-class/SKILL.md`). After proving
   `COUNT(*) WHERE Col IS NULL = 0` (necessary, not sufficient), it ships as **two releases**
@@ -58,7 +57,7 @@ and Strict still blocked the change.
       the change set.
     - **R2** — the model declares `NOT NULL` with no pre-deploy; the database is already `NOT NULL`,
       so DacFx generates nothing. R2 goes up an environment only after R1 has landed there.
-  A dev lead must review this because existing data is affected; add scrutiny if the table holds
+  A dev lead approves this because existing data is affected; add scrutiny if the table holds
   more than a million rows, or this is the first time on this estate. Relaxing the gate for one
   publish is not available on this estate — do not offer it.
 
@@ -102,9 +101,8 @@ Assemble the pull request from the `../../author-pr/SKILL.md` template; the work
 this op is `../../../sample-prs/make-mandatory.md`. **SHIP terminal: TWO-RELEASE.**
 
 **Review & release**
-- A dev lead must review this: existing data is affected — an existing column is tightened to
-  `NOT NULL` while the table holds rows. (On an empty table the change ships in place and any
-  team member can review it.)
+- A dev lead approves this, weighing that existing data is affected — an existing column is tightened to
+  `NOT NULL` while the table holds rows. (On an empty table the change ships in place and a dev lead approves this.)
 - Ships as **two releases**: R1 fills the NULLs and runs `ALTER … NOT NULL` in a pre-deploy with
   the model still declaring `NULL` (published once); R2 lets the model catch up as a no-op. The
   seed that feeds the column stops writing NULL in the same change set. The data-loss guard is not

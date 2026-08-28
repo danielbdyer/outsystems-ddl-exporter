@@ -146,7 +146,7 @@ and also writes the `.github/` and `.azuredevops/` files in place at the reposit
 `copilot-check` verifies both. The `packaging` gate runs it in the source repo's CI;
 `ssdt-agent/pipelines/ssdt-agent-check.yml` runs it on ADO.
 
-Bundle fingerprint: `e07414c53138` — a content hash over the generator and every source
+Bundle fingerprint: `828975e281d5` — a content hash over the generator and every source
 file. It changes exactly when regeneration is due, so a stale vendored bundle is detectable at a
 glance.
 

@@ -7,7 +7,7 @@ description: Use when the developer says "codes don't have to be unique anymore"
 
 > **Default (provisional — prove before you classify).** Ships as a single schema change, applied
 > in place — one `DROP INDEX` (or `DROP CONSTRAINT` for a keyed form), no data read or written,
-> and the publish never blocks. A dev lead or an experienced developer reviews it: an identity
+> and the publish never blocks. A dev lead approves this: an identity
 > guarantee the application and other tables may rely on stops being enforced.
 
 > **SHIP terminal: ONE RELEASE, in place.** Proven live on this branch (database `PG_inv_x1`,
@@ -37,7 +37,7 @@ reconciled. The index was also a real index: reads that used it may slow.
 
 ## How it flips (the specifics only)
 - **permanent removal — duplicates are now legitimate** → ships in place as a single schema
-  change; a dev lead or an experienced developer reviews it. Confirm no MERGE, upsert, or seed
+  change; a dev lead approves it. Confirm no MERGE, upsert, or seed
   keys on the column.
 - **the column is a MERGE or seed key** (`../../_index/idempotent-seed/SKILL.md`) → the seed's
   `ON` clause can start matching several rows; the seed keyed on it is part of the change set,
@@ -74,7 +74,7 @@ worked instance is `../../../sample-prs/drop-unique.md`. SHIP terminal: **ONE RE
 place.** The fragment this operation contributes:
 
 **Review & release**
-- A dev lead or an experienced developer must review this: an identity guarantee stops being
+- A dev lead approves this: an identity guarantee stops being
   enforced; no data is touched.
 - Ships as a single schema change, applied in place — one `DROP INDEX` (or
   `ALTER TABLE ... DROP CONSTRAINT`). No data is read or written, and the publish never blocks.

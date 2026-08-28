@@ -106,7 +106,7 @@ part of the change set, not an afterthought. Proven live; the captured run is
   sub-machine; the concrete narrow and make-mandatory shapes are in `FINDINGS_AND_CHANGES.md`
   Part 4.
 
-  **A dev lead must review this: existing data is modified.** Added scrutiny raises that bar — this
+  **A dev lead approves this, weighing that existing data is modified.** Added scrutiny raises that bar — this
   table is large enough that the change may block writes or run long at production row counts, or
   this is the first time the operation has been done on this estate.
 
@@ -120,7 +120,7 @@ them. What each op still owns in its own SKILL:
 - **narrow** — the probe is `MAX(LEN(col))` + `COUNT(*) WHERE LEN(col) > <new>`; `MAX(LEN)` already
   fitting means Release 1's reconcile shortens nothing, but it never buys a clean single-phase on a
   populated table — the row-presence guard still forces the two releases.
-- **delete-attribute** — the values are irrecoverable; a principal must review this, since data is
+- **delete-attribute** — the values are irrecoverable; a dev lead approves this, with the strongest weigh-line, since data is
   removed and the removal cannot be undone even when the drop is mechanically one statement; the
   4-phase deprecation is its multi-phase shape (see `../multi-phase/SKILL.md`).
 

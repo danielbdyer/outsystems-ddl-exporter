@@ -13,8 +13,8 @@ lives in `_index/`. Nothing here restates a guard or the deploy-time specifics.
 
 | Op | Per-op skill | What it is / how it flips |
 |---|---|---|
-| add-default | `../op/add-default/SKILL.md` | Named DEFAULT for new rows. Applied in place, no data touched; any team member can review. Never backfills existing rows. |
-| modify-default | `../op/modify-default/SKILL.md` | Change/remove default = DROP-then-ADD. Applied in place, no data touched; any team member can review. Never re-stamps old rows. |
+| add-default | `../op/add-default/SKILL.md` | Named DEFAULT for new rows. Applied in place, no data touched; the lightest look. Never backfills existing rows. |
+| modify-default | `../op/modify-default/SKILL.md` | Change/remove default = DROP-then-ADD. Applied in place, no data touched; the lightest look. Never re-stamps old rows. |
 | add-unique | `../op/add-unique/SKILL.md` | Unique INDEX built over all rows. A duplicate blocks it (Msg 1505) → de-dupe in a pre-deploy first; a unique index allows only one NULL, so a nullable column uses a filtered index (WHERE col IS NOT NULL). Build-or-block, no trust state. |
 | add-check | `../op/add-check/SKILL.md` | CHECK re-validated over all rows. A violating row blocks it (Msg 547) → reconcile in a pre-deploy first; over clean data the declarative add trusts itself (WITH NOCHECK ADD + WITH CHECK CHECK). The hand-written NOCHECK dodge (untrusted) is the anti-pattern. Create-fk's twin. |
 | toggle-trust | `../op/toggle-trust/SKILL.md` | ⚠️ OPERATIONAL — refuse-and-route. NOCHECK/WITH CHECK CHECK is a script verb; prove it ends `is_not_trusted=0`. |

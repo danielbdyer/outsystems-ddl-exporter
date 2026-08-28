@@ -15,7 +15,7 @@ before merge.
 - `dbo.OrderLine.LineNumber`: `INT NOT NULL` → `BIGINT NOT NULL` (a widening type change).
 
 ## Before promoting
-- Any team member can approve this: a widening type change keeps every value and the running
+- A dev lead approves this: a widening type change keeps every value and the running
   application is unaffected.
 - Confirm the direction is `INT → BIGINT`, not the reverse. A narrowing (`BIGINT → INT`, `INT →
   TINYINT`) or a value-reshaping cast (Text → Date) is refused on a populated table and is a

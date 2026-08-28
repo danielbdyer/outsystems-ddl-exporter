@@ -23,9 +23,9 @@ A change is **Approved** only if it passes the same fitness bar the author was s
 change is graded by the same dimensions the author is:
 
 1. intent + op-slug correct · 2. state-variables proven (not read) · 3. both findings emitted (how it
-ships, who must review) · 4. named trap caught in the delta · 5. the decisive finding named, with a
+ships, what the approving dev lead weighs) · 4. named trap caught in the delta · 5. the decisive finding named, with a
 remedy that re-passes · 6. reasoning surfaced from the correct `_index` owner. Plus the metrics:
-how-it-ships and who-reviews accuracy, block-prediction, negative-case refusal-correctness,
+how-it-ships and weigh-line accuracy, block-prediction, negative-case refusal-correctness,
 flip-discriminator, reasoning-source. **A packet that fails any of the six is not Approved** — it is
 at least Returned to the author, and which criterion failed selects the route.
 

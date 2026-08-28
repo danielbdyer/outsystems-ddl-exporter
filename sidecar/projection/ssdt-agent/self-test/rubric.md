@@ -2,7 +2,7 @@
 
 How to score a run of `prompts.md` / the test matrix. The bar is not "did the agent give a
 plausible answer" — it is "did the agent **prove** the answer against the data, emit **both
-findings** (how it ships and who must review), catch the **named trap**, deliver **the verdict and
+findings** (how it ships and what the approving dev lead weighs), catch the **named trap**, deliver **the verdict and
 a complete PR body** (per `skills/author-pr`) with a remedy that re-passes Strict clean (or
 correctly REFUSES when refusal is the right call), AND **surface the reasoning** to the developer,
 so the developer comes away understanding why."
@@ -34,10 +34,9 @@ A POSITIVE-case prompt PASSES only if the agent did ALL six:
    diff).
 
 3. **Emitted BOTH findings.** *How it ships* — applied in place / a post- or pre-deploy script /
-   scripted / staged — **with its release-count** (one release vs staged across releases), AND *who
-   must review* — any team member / dev lead / principal — with any **added scrutiny** named (>1M
-   rows / first-time op). **Review level kept distinct from release-count** — a single-release
-   drop can still need a principal.
+   scripted / staged — **with its release-count** (one release vs staged across releases), AND *what the approving dev lead weighs* — from the lightest look to the strongest call — with any **added scrutiny** named (>1M
+   rows / first-time op). **The weigh kept distinct from release-count** — a single-release
+   drop can still carry the strongest weigh-line.
 
 4. **Caught the named anti-pattern, in the delta.** When the seed plants one (handbook 16 =
    §19: a rename with no refactorlog entry, Optimistic NOT NULL, Forgotten FK Check, Ambitious
@@ -152,8 +151,8 @@ already generated) will have emptied the NULLs. The corrected developer-facing v
 > column nullable. So on your populated table this is not a clean backfill-then-NOT-NULL — it ships
 > as two releases, because this pipeline cannot relax the data-loss guard: release one fills the
 > blanks and tightens the column with the model lagging, release two lets the model catch up. The
-> proof is ready. A dev lead must review this because existing data is affected. On
-> an empty table it would just apply, and any team member could review it; the difference is
+> proof is ready. A dev lead approves this, weighing that existing data is affected. On
+> an empty table it would just apply with the lightest look; the difference is
 > entirely the rows."
 
 ---
@@ -172,7 +171,7 @@ would do. That is the whole point: the engine is the ground truth.
 | metric | what it measures | how it is scored against the real engine | aggregation |
 |---|---|---|---|
 | **Shipping-shape accuracy** | did the agent state correctly how the change ships (applied in place / post-deploy script / pre-deploy script / scripted / staged) and its release-count? | compare the agent's stated shape to the one the **real** delta/block implies — a clean Strict publish ⇒ applied in place; a data-loss block cleared by a pre-deploy step ⇒ a pre-deployment script; the corrected make-mandatory verdict ⇒ two-release (this estate cannot relax the gate). The engine's behavior, not the expected-column, is ground truth when they disagree (then fix the prompt). | % of positive+flip prompts correct |
-| **Review-level accuracy** | correct who-must-review level (any team member / dev lead / principal) **and** every added-scrutiny note named | the added-scrutiny triggers (>1M rows, first-time) are facts about the seed/estate, checked directly; review-level must stay distinct from release-count (a single-release drop that still needs a principal counts as a miss if graded by release count) | % correct, added-scrutiny notes counted separately |
+| **Weigh-line accuracy** | correct what-the-lead-weighs finding (from the lightest look to the strongest call) **and** every added-scrutiny note named | the added-scrutiny triggers (>1M rows, first-time) are facts about the seed/estate, checked directly; the weigh must stay distinct from release-count (a single-release drop that still carries the strongest weigh-line counts as a miss if graded by release count) | % correct, added-scrutiny notes counted separately |
 | **Block-prediction** | did the agent PREDICT the Strict block (via the probe) before proving it? | the pre-publish probe (NULL count / `MAX(LEN)` / orphan LEFT JOIN / dup GROUP BY / violation WHERE) must have been run and its result must MATCH the real Strict block that follows. Predicted-and-confirmed = full; proven-but-not-predicted = partial; neither = miss | % of block-bearing cases predicted-then-confirmed |
 | **Negative-case refusal-correctness** | for every `…N` case, did the refusal / block / escalation fire correctly? | binary against the real engine: the block or destructive delta was proven (BlockOnPossibleDataLoss row count, DROP+CREATE in the delta, `is_not_trusted=1`, 1:many row counts, unmapped-value rows) AND a safe alternative proposed AND the fail mode named. Pushing the change through = automatic 0 | ALL negatives must pass for an aggregate PASS |
 | **Flip-discriminator** | for each pair, did both halves prove and yield DIFFERENT outcomes? | run both legs on their two seeds against the real engine; PASS only if the two real outcomes differ AND the agent's two verdicts differ accordingly. Same verdict for both halves = classified-from-text = fail the pair | per-pair PASS/FAIL; make-mandatory pair is gating |
@@ -186,8 +185,8 @@ isolated DB: the `/Action:Script` delta (`$SCRATCH/bin/delta.sql`), the Strict p
 (clean or a named block with row counts), and — on a block — the Permissive before/after hash diff.
 Scoring reads THOSE artifacts, not the agent's prose:
 
-1. **Shipping shape / review level** — read the real delta + block and derive the shipping shape the
-   engine actually forces; compare to the agent's stated shape and review level. Engine wins ties;
+1. **Shipping shape / weigh-line** — read the real delta + block and derive the shipping shape the
+   engine actually forces; compare to the agent's stated shape and weigh-line. Engine wins ties;
    if the engine contradicts the prompt's expected column, the prompt is stale — record it and fix
    the prompt in the same pass (the suite is self-correcting against the engine).
 2. **Block-prediction** — confirm the probe SQL in the agent's transcript ran BEFORE the publish and
@@ -221,7 +220,7 @@ A failing metric localizes to a **surface**, and the fix lands in that surface's
 |--------------------------------|----------------------------------------------------------------------|
 | Op-slug chosen correct?        | matches the prompt's `op` (`skills/op/<slug>`); note wrong-slug misses |
 | Shipping shape correct?        | matches the real engine (incl. IF/otherwise on renames; the corrected make-mandatory verdict) |
-| Review level correct?          | matches expected, including any added-scrutiny note, named explicitly |
+| Weigh-line correct?            | matches expected, including any added-scrutiny note, named explicitly |
 | Block predicted then confirmed?| probe ran BEFORE publish and its count matched the real block        |
 | Proof artifact present?        | a real delta / block text with row counts / hash diff was produced   |
 | Which state-variable flipped?  | populated / violates / coexist — name the one that drove it |

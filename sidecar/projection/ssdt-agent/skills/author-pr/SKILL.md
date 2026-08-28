@@ -32,7 +32,8 @@ silently dropped.
 ## Verdict
 <One line. What this does · the risk-driven call to action (Confirm <the thing> in each environment
  before promoting) · the one open item, or nothing. The call to action IS the review ask — not a
- role assignment ("a dev lead must review" says nothing; every PR is reviewed). Drawn from the risk
+ role assignment ("a dev lead approves this" alone says nothing; a dev lead approves every change —
+ what the lead weighs is the content). Drawn from the risk
  table in THE_RECORD_FORMS.md.>
 
 ## Intent
@@ -44,7 +45,7 @@ constraint: "<the developer's words>". <Name the work item, or: No work item sup
 
 ## Before promoting
 - <The risk-driven confirmations, one per environment, written as imperatives: what to run, what to
-  check, who to ask, before this change moves up a level. This is "who reviews" made concrete, and it
+  check, who to ask, before this change moves up a level. This is the weigh-line made concrete, and it
   follows the change through Dev → QA → UAT → Prod. For each open item, say who runs it — the author
   before merge, or the reviewer read-only in QA and UAT — so every item has an owner.>
 

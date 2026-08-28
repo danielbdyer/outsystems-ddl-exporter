@@ -29,8 +29,8 @@ what makes these changes **multi-PR**.
 - **Phase 1 — additive.** Create the new shape (table / column / lookup / archive destination).
   Post-deploy-copy the existing rows across; dual-write new rows so both shapes stay in agreement.
   The app still reads the old shape. **Strict publishes clean — it is purely additive.** It ships
-  as an additive schema change plus a post-deployment copy; because the application gains a
-  dual-write, a dev lead or an experienced developer should review it.
+  as an additive schema change plus a post-deployment copy; the approval weighs the dual-write
+  the application gains.
 - **Phase 2 — cutover.** Repoint app reads (and FKs, views) from the old shape to the new. No
   schema change to prove beyond confirming both shapes still agree (hash both). Leave a
   backward-compat **computed column** exposing the old shape if any external consumer still
@@ -42,8 +42,9 @@ what makes these changes **multi-PR**.
   **reviewer's decision** that the data is safe to remove — it is the evidence the drop is approved
   on, not a signal the engine acts on. The drop's own shipping shape under the locked gate is the
   per-op subtractive pattern (`../../op/<op>/SKILL.md`; delete-attribute's 4-phase deprecation is the
-  worked case). A dev lead must review the drop, and once the removed data is genuinely
-  irrecoverable, a principal must review it because the removal cannot be undone.
+  worked case). A dev lead approves the drop; once the removed data is genuinely irrecoverable,
+  the approval carries the strongest weigh-line on this estate — the removal cannot be undone,
+  and the record names it explicitly.
 
 The empty-source case: if the source is **empty**, there is no data to move — the whole staged
 shape collapses to a clean additive create (plus a clean subtractive drop). Prove the source is

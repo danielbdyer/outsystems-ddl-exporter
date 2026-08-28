@@ -8,7 +8,7 @@ description: Use when the developer says "turn this text Status column into a pr
 > **Default (provisional — prove before you classify).** Ships across releases
 > (multiple pull requests): create the lookup, seed it with the distinct existing values, add the FK
 > column, backfill, then drop the old free-text column — the old and new representations coexist
-> while readers migrate. A dev lead must review this: existing data is moved into a new shape and a
+> while readers migrate. A dev lead approves this: existing data is moved into a new shape and a
 > cross-table relationship is added. Prove the mapping is total before the drop, so no value silently
 > becomes NULL.
 
@@ -36,11 +36,10 @@ A multi-step transform: **create** the lookup table, **seed** it with the distin
 Doing it in one publish and silently losing the unmapped values — any source text with no seeded lookup row becomes NULL, or blocks the FK from validating. This is the **Forgotten-FK-Check** face (handbook 16 = §19.3) *and* a coexistence move. The staging/coexistence why is `../../_index/multi-phase/SKILL.md`; the seed leg's guarded MERGE + explicit IDs are `../../_index/idempotent-seed/SKILL.md`. Do not re-derive either here.
 
 ## How it flips (the specifics only)
-- clean distinct values, all mappable → ships across releases (multiple PRs); a dev lead must review
-  it, because existing data is moved into a new shape and a cross-table relationship is added.
+- clean distinct values, all mappable → ships across releases (multiple PRs); a dev lead approves this, weighing that existing data is moved into a new shape and a cross-table relationship is added.
 - **unmapped / dirty source values present** → still staged across releases, but a pre-backfill
-  reconcile is required so nothing maps to NULL; if any value is lost, a principal must review it,
-  because data is removed and the removal cannot be undone.
+  reconcile is required so nothing maps to NULL; if any value is lost, the approval carries the
+  strongest weigh-line, because data is removed and the removal cannot be undone.
 - **+ >1M rows** → added scrutiny: the backfill scans the table and may block writes or run long —
   schedule a window.
 
@@ -55,8 +54,8 @@ stages across a few releases (several PRs), with the old text column and the new
 by side until every reader has moved to the FK. On a disposable copy of Dev, before the old column is
 dropped, every existing value proved to map to a seeded lookup row — zero unmapped (`pg_base`) — so
 nothing silently becomes NULL; an injected 'Backordered' value fired the non-total negative (`pg_move`).
-Because this moves existing data and adds a relationship, a dev lead should
-review it. If the current values aren't clean, some may have no home in the lookup yet — do you know
+Because this moves existing data and adds a relationship, the approving dev
+lead weighs both. If the current values aren't clean, some may have no home in the lookup yet — do you know
 whether every StatusText value is one of the expected set, or should we plan a reconcile pass for the
 stragglers before the backfill?"
 
@@ -73,9 +72,10 @@ instance for this op is `../../../sample-prs/extract-to-lookup.md`. SHIP termina
 (multi-PR).** The fragment this operation contributes:
 
 **Review & release**
-- A dev lead must review this: existing data is moved into a new shape and a cross-table relationship
-  (the lookup foreign key) is added. If any source value has no lookup row and would be lost, a
-  principal must review this: data is removed and the removal cannot be undone.
+- A dev lead approves this: existing data is moved into a new shape and a cross-table relationship
+  (the lookup foreign key) is added. If any source value has no lookup row and would be lost, the
+  approval carries the strongest weigh-line: data is removed and the removal cannot be undone,
+  named explicitly in the approval.
 - Ships across releases (multiple pull requests): create the lookup table, seed it with the distinct
   existing values, add the FK column, backfill by joining text → lookup key, then drop the old
   free-text column — the old and new representations coexist while readers migrate, and the seed and

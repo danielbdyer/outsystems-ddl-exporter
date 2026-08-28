@@ -5,7 +5,7 @@ description: Use when the developer says "remove the reference", "we don't need 
 
 # Drop a foreign key
 
-> **Default (provisional — prove before you classify).** Ships as a single schema change, applied in place — a single `ALTER TABLE ... DROP CONSTRAINT`, no data read or written, and the publish never blocks. A dev lead or an experienced developer reviews this: dropping the constraint weakens referential integrity and can shift (regress) query plans.
+> **Default (provisional — prove before you classify).** Ships as a single schema change, applied in place — a single `ALTER TABLE ... DROP CONSTRAINT`, no data read or written, and the publish never blocks. A dev lead approves this: dropping the constraint weakens referential integrity and can shift (regress) query plans.
 
 > **SHIP terminal: ONE RELEASE, in place.** Proven live on this branch (DB `db_dropfk`): dropping
 > `FK_Order_Status`, the generated script is the single statement `ALTER TABLE [dbo].[Order] DROP
@@ -26,7 +26,7 @@ Remove the `CONSTRAINT` from the table definition. SSDT emits `ALTER TABLE ... D
 Dropping a **trusted** FK removes a hint the **query optimizer** relied on — plans can change and regress. None material to the publish (dropping never loses rows). Edge: when the drop is only to unblock another change (a type change, a table drop), document *why* — re-adding the constraint later re-runs the orphan validation (see `../create-fk-orphan/SKILL.md`).
 
 ## How it flips (the specifics only)
-- permanent removal → ships in place as a single schema change; a dev lead or experienced developer should review it (integrity weakens, plans can shift).
+- permanent removal → ships in place as a single schema change; a dev lead approves it, weighing the weakened integrity (plans can shift).
 - dropped as a temporary step inside a larger migration (type change, table drop) → a sub-step of a multi-step / multi-PR plan, not standalone (see `../../_index/multi-phase/SKILL.md`).
 - re-adding it later → that re-add re-runs create-fk orphan validation → can flip then.
 
@@ -34,7 +34,7 @@ Dropping a **trusted** FK removes a hint the **query optimizer** relied on — p
 Strict publishes clean; the delta is a single `DROP CONSTRAINT`; nothing blocks it (dropping never loses rows). The proof is mostly confirming the delta touches *only* the constraint and nothing rebuilds. Flag the optimizer-plan and integrity-loss consequences to the developer, since the publish itself cannot fail. See `../../prove-on-dacpac/SKILL.md` + `../../talk-to-local-sql/SKILL.md`.
 
 ## The verdict (to the developer)
-"You asked to remove the reference. Dropping it always publishes clean — removing a constraint never loses data, so there's nothing to remediate first. Two things are worth knowing before it ships: the database stops enforcing that Orders point at real Customers, so nothing prevents an orphan being written afterward; and any query plan that trusted the foreign key may change, occasionally for the worse. Neither shows up in the publish itself, which is why this is worth a second set of eyes from a lead or an experienced developer. One thing to confirm: is this a permanent removal, or a temporary step to unblock another change like a type change or a table drop? If it's temporary, it belongs inside that larger migration rather than shipping on its own."
+"You asked to remove the reference. Dropping it always publishes clean — removing a constraint never loses data, so there's nothing to remediate first. Two things are worth knowing before it ships: the database stops enforcing that Orders point at real Customers, so nothing prevents an orphan being written afterward; and any query plan that trusted the foreign key may change, occasionally for the worse. Neither shows up in the publish itself, which is exactly what the approving dev lead weighs. One thing to confirm: is this a permanent removal, or a temporary step to unblock another change like a type change or a table drop? If it's temporary, it belongs inside that larger migration rather than shipping on its own."
 
 ## The reasoning (in conversation)
 A publish that never blocks is not the same as a change with no consequence. A trusted foreign key is information the optimizer *uses* to shape query plans, not just a guard against orphans — so dropping one has effects the publish can't show you. The mistake to avoid is reading "unhook these entities" as zero-risk just because nothing fails at deploy time.
@@ -45,7 +45,7 @@ instance for this op — with the live messages — is `../../../sample-prs/drop
 **ONE RELEASE, in place.** The fragment this operation contributes:
 
 **Review & release**
-- A dev lead or an experienced developer should review this: dropping the constraint weakens referential integrity and can shift query plans; no data is touched.
+- A dev lead approves this: dropping the constraint weakens referential integrity and can shift query plans; no data is touched.
 - Ships as a single schema change, applied in place — a single `ALTER TABLE ... DROP CONSTRAINT`. No data is read or written, and the publish never blocks.
 - Added scrutiny: none. The drop reads and writes no data, so row count is not a factor.
 

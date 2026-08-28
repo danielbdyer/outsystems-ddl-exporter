@@ -16,10 +16,11 @@ description: "Use whenever proving surfaces a decision only a human can make —
 
 1. **The measured fact.** What the copy proved, with names and counts — never "some rows".
    *"Order 4 points at customer 999, and no such customer exists — one row."*
-2. **Each option, with its consequence.** In the two findings' terms: what ships, who must review,
+2. **Each option, with its consequence.** In the two findings' terms: what ships, what the approving dev lead weighs,
    what is lost or kept, and what it costs later. Two or three options; no more.
-   *"Reassign it to a real customer — one UPDATE, a dev lead reviews it. Or delete it — that also
-   deletes its two order lines, the loss is permanent, and a principal must review it."*
+   *"Reassign it to a real customer — one UPDATE the lead weighs as modified data. Or delete it —
+   that also deletes its two order lines, the loss is permanent, and the approval carries the
+   strongest weigh-line."*
 3. **Exactly one question, in their words.** A choice between the named options, or a value only
    they know. *"Reassign or delete?"* — then stop and wait.
 
@@ -31,7 +32,7 @@ chat is not a decision; it is a memory.
 
 | Fork | The measured fact to state | The options and their consequences | The question |
 |---|---|---|---|
-| **Orphan rows** (adding a foreign key) | the orphan rows by id and count, and what they point at | reassign (an UPDATE; dev-lead review) · delete (cascades to named children; permanent; principal review) | "Reassign or delete?" |
+| **Orphan rows** (adding a foreign key) | the orphan rows by id and count, and what they point at | reassign (an UPDATE; the lead weighs modified data) · delete (cascades to named children; permanent; the lead's strongest call) | "Reassign or delete?" |
 | **NOT NULL on a populated table** | the blank count, and that clearing blanks alone still leaves the deployment blocked (the guard checks rows, not blanks) — so it ships as two releases, because this pipeline cannot relax the data-loss guard | the shipping shape is not the developer's choice (two-release: release one fills and tightens with the model lagging, release two catches up); the decision that *is* theirs is the backfill value | "What should the blank ones become?" |
 | **Over-length values** (narrowing) | the longest value, and the count that will not fit | truncate (the named values are cut; permanent) · widen the target size (nothing lost; is the requirement wrong?) · keep the values and stage the change | "Truncate them, pick a bigger size, or keep them?" |
 | **Duplicates** (unique constraint/index) | the duplicated values and how many rows share each | pick the surviving row by a stated rule (newest? most complete?) · fix the duplicates at the source first | "Which row wins, and by what rule?" |

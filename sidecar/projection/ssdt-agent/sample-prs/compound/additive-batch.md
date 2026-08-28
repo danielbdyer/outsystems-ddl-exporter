@@ -7,8 +7,7 @@
 
 ## Verdict
 This change stands up the Returns feature and tightens nothing that exists: every atom is
-additive, so the whole batch ships as ONE release, in one publish, and any team member can
-review it. The engine orders the objects itself — no hand-sequencing inside a release. Confirm
+additive, so the whole batch ships as ONE release, in one publish, and a dev lead approves this. The engine orders the objects itself — no hand-sequencing inside a release. Confirm
 only the seed values for ReturnReason with the product owner. No work item supplied — attach
 one before merge.
 

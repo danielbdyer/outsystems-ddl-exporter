@@ -1,16 +1,17 @@
 ---
 name: classify-mechanism
-description: Use after confirm-intent has named the operation and gathered the three state-variables, to state PROVISIONALLY how a change ships and who must review it, before proving. Walks the handbook decision cascade (file 15 = §18.1, Q1-Q4), adds the standing-risk escalations (>1M rows / first-time op), keeps how-it-ships and who-reviews as independent findings, and decides WHEN a change can be classified on sight versus when it MUST be proven on a disposable copy of Dev. Emits a provisional pair of findings that prove-on-dacpac confirms or flips.
+description: Use after confirm-intent has named the operation and gathered the three state-variables, to state PROVISIONALLY how a change ships and what the approving dev lead weighs, before proving. Walks the handbook decision cascade (file 15 = §18.1, Q1-Q4), adds the standing-risk escalations (>1M rows / first-time op), keeps how-it-ships and what-the-lead-weighs as independent findings, and decides WHEN a change can be classified on sight versus when it MUST be proven on a disposable copy of Dev. Emits a provisional pair of findings that prove-on-dacpac confirms or flips.
 ---
 
 # Classify mechanism
 
 > **Why this matters.** The findings produced here are **provisional on purpose** — classifying
 > from the `.sql` text alone is the named failure mode, and the data holds the casting vote. How a
-> change ships and who must review it are kept as **two independent findings** because they are
-> genuinely independent: a `DROP TABLE` ships as a single scripted change, yet a principal must
-> review it because the data is gone irreversibly. Never fold the review level into how simply the
-> change ships, and never treat a from-text reading as final past the purely-additive corner — the
+> change ships and what the approving dev lead weighs are kept as **two independent findings** because they are
+> genuinely independent: a `DROP TABLE` ships as a single scripted change, yet its approval
+> carries the strongest weigh-line, because the data is gone irreversibly. Never fold the
+> weigh-line into how simply the change ships, and never treat a from-text reading as final past
+> the purely-additive corner — the
 > test is "would this same `.sql` edit get the same answer regardless of the rows?" If it would, the
 > reading is a guess and the data still has to decide. Surface this to the developer: once a
 > developer sees that the shipping shape can *change on data they didn't mention*, they stop
@@ -18,23 +19,24 @@ description: Use after confirm-intent has named the operation and gathered the t
 
 You are helping an **OutSystems-native developer** land a safe schema change. This skill turns a
 named operation + its data-state into two independent findings — **how** the change ships and
-**who must review it, and why** — and, just as importantly, decides whether the answer can be given
+**what the approving dev lead weighs, and why** — and, just as importantly, decides whether the answer can be given
 on sight or must be proven on a disposable copy of Dev.
 
 **Classification from the `.sql` text alone is a guess. The existing rows determine how the change ships.**
 This skill produces *provisional* findings; `prove-on-dacpac` is what confirms them. Never deliver a
 provisional finding to the developer as if it were proven.
 
-## How it ships and who reviews are independent — state BOTH, always
+## How it ships and what the lead weighs are independent — state BOTH, always
 
 - **How it ships** = the release shape. Five shapes, below.
-- **Who must review, and why** = the review level, with added-scrutiny escalations. Four levels,
-  below.
+- **What the approving dev lead weighs** = the weight of the approval, from the lightest look to
+  the strongest call, with added-scrutiny escalations. Below.
 
-These are not the same finding. **How simply a change ships is not who must review it.** A
-`DROP TABLE` on populated data ships as a single scripted change (one release), but a principal must
-review it because the data is gone irreversibly. Keep the two findings separate, or a change that
-removes data gets under-reviewed on the strength of how simply it ships.
+These are not the same finding. **How simply a change ships is not what its approval weighs.**
+A `DROP TABLE` on populated data ships as a single scripted change (one release), but the
+approval carries the strongest weigh-line, because the data is gone irreversibly. Keep the two
+findings separate, or a change that removes data gets under-weighed on the strength of how
+simply it ships.
 
 ## The five shipping shapes (the team's release vocabulary)
 
@@ -56,26 +58,32 @@ shape name is internal; the §5 sentence is what a reviewer reads.
   script-only: one release, scripts included.
 - **MULTI-PR** = multi-phase: staged across releases.
 
-## The review-level decision cascade (handbook file 15 = §18.1, Q1-Q4)
+## The weigh-line decision cascade (handbook file 15 = §18.1, Q1-Q4; recalibrated 2026-08-28)
 
-Walk these in order. The **first** question that fires sets the review floor; nothing after it can
-lower the reviewer's seniority, only raise it.
+On this estate every schema change is approved by a dev lead, and only by a dev lead — a
+developer never approves a schema change, their own or another's. The approver is constant, so
+the cascade no longer routes between reviewer levels: it sets **what the approving lead
+weighs** (`THE_RECORD.md` §5). Walk the questions in order; the **first** that fires sets the
+weigh-line's floor; nothing after it can lighten the weight, only add to it.
 
 - **Q1 — Will data be lost?** (drop table/column with data, narrowing truncation, a rename with no
   refactorlog entry)
-  -> **a principal must review this: data is removed and the removal cannot be undone.** Stop here
-  for the floor; this is the irreversible band.
+  -> **a dev lead approves this, weighing that data is removed and the removal cannot be
+  undone — the strongest call on this estate, named explicitly in the approval.** Stop here for
+  the floor; this is the irreversible band, and `estate/reviewers.md`'s irreversible-change
+  practice (a proven restore point before shipping) applies.
 - **Q2 — Will existing data change or move?** (backfill, retype, value migration)
-  -> **a dev lead must review this: existing data is modified** — and staging across releases
-  (MULTI-PR) is on the table.
+  -> **a dev lead approves this, weighing that existing data is modified** — and staging across
+  releases (MULTI-PR) is on the table.
 - **Q3 — Cross-table or external dependencies?** (FK, view, proc, ETL, reports, External Entities)
-  -> **a dev lead must review this: a cross-table relationship is added.**
+  -> **a dev lead approves this, weighing that a cross-table relationship is added.**
 - **Q4 — Can the app keep working unchanged?**
-  - **NO** (the running OutSystems app breaks without a code change) -> **a dev lead or an
-    experienced developer should review this: the running application must change to keep working**
-    — ships as a single release (SINGLE-PR).
-  - **YES** (additive, app oblivious) -> **any team member can review this: the change is additive
-    and the running application is unaffected** — ships in place (SINGLE-PHASE).
+  - **NO** (the running OutSystems app breaks without a code change) -> **a dev lead approves
+    this, weighing that the running application must change to keep working** — ships as a
+    single release (SINGLE-PR).
+  - **YES** (additive, app oblivious) -> **a dev lead approves this: the change is additive and
+    the running application is unaffected — the lightest look on this estate** — ships in place
+    (SINGLE-PHASE).
 
 Then apply the escalations.
 
@@ -88,13 +96,13 @@ Each adds a standing-risk line to the review finding (they stack):
 - **First-time operation** for this team/codebase. Added scrutiny: this operation has not been
   performed on this estate before — no muscle memory, no prior proof.
 
-The most senior reviewer is a principal; once a principal must review (data removed irreversibly),
-the added-scrutiny lines only sharpen the warning (a first-time operation, for instance, leaves no
+Once the weigh-line is the irreversible band (data removed, the removal cannot be undone), the
+added-scrutiny lines only sharpen the warning (a first-time operation, for instance, leaves no
 prior rollback to lean on).
 
 > **Why this matters.** The added-scrutiny lines exist because some risks are *standing*, not
 > visible in the single delta: scale turns a metadata edit into a blocking build, and a
-> first-time op has no prior proof to lean on. The review level of a change is not only what *this*
+> first-time op has no prior proof to lean on. The weight of a change's approval is not only what *this*
 > edit does to the data — it is what the table's *context* makes every edit cost. Surface this: a
 > developer who hears "the base operation is trivial, but this table holds forty million rows, so
 > the metadata edit becomes a blocking build" stops being ambushed at deploy time by a window they
@@ -170,7 +178,7 @@ A structured handoff to `prove-on-dacpac`:
 - **operation** (from the change-order).
 - **provisional how it ships** — the release shape in plain words (in place / post-deploy script /
   pre-deploy script first / scripted / staged across releases), and its release bucket.
-- **provisional who must review, and why** — the review level in plain words, with each
+- **provisional what the approving dev lead weighs** — the weigh-line in plain words, with each
   added-scrutiny line (large table / first-time) named and why.
 - **cascade trace**: which of Q1-Q4 fired and set the floor.
 - **which state-variable flips the answer**: the one that, if it crosses, changes how the change
@@ -186,8 +194,7 @@ Label the whole handoff **PROVISIONAL**. It becomes a confirmed finding only aft
 ## Worked examples
 
 - **"Make Customer.Email required."** Operation `make-mandatory`. Q4 = NO (the app may write NULLs
-  today) -> a dev lead or an experienced developer should review this: the running application must
-  change to keep working. Data-violation variable unknown -> **must prove**. Provisional shipping
+  today) -> A dev lead approves this, weighing that the running application must change to keep working. Data-violation variable unknown -> **must prove**. Provisional shipping
   shape: a single in-place schema change *if* the table is truly empty; but on a **populated** table
   it does **not** land clean even with zero NULLs — SSDT's guard is table-has-rows, not
   column-has-NULLs — so SSDT refuses under the Strict (prod) gate, and it ships as **two releases**
@@ -196,21 +203,20 @@ Label the whole handoff **PROVISIONAL**. It becomes a confirmed finding only aft
   `COUNT(*) WHERE Email IS NULL`; then prove SSDT STILL refuses after the backfill clears the blanks.
 - **"Add an optional Notes field to Customer"** (small). Purely additive, the app is
   oblivious, no existing data touched -> **classify on sight**: ships as a single in-place schema
-  change with no data read or written, and any team member can review it. It still goes through
+  change with no data read or written, and a dev lead approves it with the lightest look. It still goes through
   `prove-on-dacpac` for a clean-publish confirmation, but no flip is possible.
-- **"Drop the AuditLog table"** (populated). Q1 = YES (data is removed) -> a principal
-  must review this: data is removed and the removal cannot be undone; the floor is set immediately.
-  It ships as a single scripted change: how simply it ships is not who
-  must review it. Must prove: SSDT's refusal under `BlockOnPossibleDataLoss` is the safety proof;
+- **"Drop the AuditLog table"** (populated). Q1 = YES (data is removed) -> a dev lead approves
+  this, weighing that data is removed and the removal cannot be undone; the floor is set immediately.
+  It ships as a single scripted change: how simply it ships is not what the approving dev lead weighs. Must prove: SSDT's refusal under `BlockOnPossibleDataLoss` is the safety proof;
   sequencing is drop-FKs-first.
 - **"Add a FK from Order.CustomerId to Customer"** (orphans unknown). Q3 = YES (a cross-table
-  relationship is added) -> a dev lead must review this. Must prove. Provisional shipping shape: a
+  relationship is added) -> a dev lead approves this. Must prove. Provisional shipping shape: a
   single in-place schema change *if* there are no orphans; flips to a scripted change (`NOCHECK` ->
   reconcile -> `WITH CHECK CHECK`) *if* orphans exist. **Forgotten FK Check** suspected.
 
 ## Connector points
 
-- The two findings — how it ships and who must review — are the **Review & release** section of the
+- The two findings — how it ships and what the approving dev lead weighs — are the **Review & release** section of the
   pull request (`THE_RECORD.md` §5). `change-author`'s review packet carries them to `reviewer`, and
   `author-pr` renders them in the record register. See `CONNECTORS.md`.
 - `.claude/skills/`-shaped and Copilot-mappable (format verify-first); see `CONNECTORS.md`.

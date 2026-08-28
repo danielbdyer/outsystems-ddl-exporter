@@ -8,9 +8,9 @@ description: Use when the developer says "split Customer into Customer and Custo
 > **Default (provisional — prove before you classify).** Ships across three
 > releases (three pull requests): CREATE the new table and copy the moving columns, cut the
 > application over, then drop the old columns from the source — the old and new shapes coexist while
-> readers migrate. A dev lead must review this: existing data is moved into a new table and a
+> readers migrate. A dev lead approves this: existing data is moved into a new table and a
 > cross-table relationship is added. Prove the source table is empty first — an empty source
-> collapses this to a single additive release any team member can review.
+> collapses this to a single additive release, the lightest look on this estate.
 
 > **SHIP terminal: ACROSS THREE RELEASES (empty source ⇒ ONE).** Phase 1 CREATE the new table + FK +
 > copy the moving columns + dual-write; Phase 2 repoint reads; Phase 3 drop the old columns, which
@@ -42,10 +42,9 @@ reads that as drop-and-add and the column's data is lost — see
 
 ## How it flips (the specifics only)
 - new entity, **source table empty** (greenfield split) → collapses to a single additive release:
-  just CREATE both tables, no data to move, and any team member can review it. Prove the source is
+  just CREATE both tables, no data to move, and a dev lead approves this. Prove the source is
   empty first.
-- source populated, app reads old columns → ships across three releases (three PRs); a dev lead must
-  review it, because existing data is moved into a new table and a cross-table relationship is added.
+- source populated, app reads old columns → ships across three releases (three PRs); a dev lead approves this, because existing data is moved into a new table and a cross-table relationship is added.
   Phase 1 additive CREATE + FK + copy + dual-write · Phase 2 repoint reads · Phase 3 drop the old
   columns, where `BlockOnPossibleDataLoss` blocks the deployment until the copy is proven.
 - **+ >1M rows / first-time** → added scrutiny: the copy is a long-running batched operation; at
@@ -83,7 +82,7 @@ instance for this op is `../../../sample-prs/split-table.md`. SHIP terminal: **A
 (a greenfield split collapses to ONE). The fragment this operation contributes:
 
 **Review & release**
-- A dev lead must review this: existing data is moved into a new table and a cross-table relationship
+- A dev lead approves this: existing data is moved into a new table and a cross-table relationship
   (the foreign key back to the source) is added.
 - Ships across three releases (three pull requests): create the new table and copy the moving
   columns, cut the application over (repoint reads), then drop the old columns from the source — the

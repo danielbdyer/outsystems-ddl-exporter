@@ -44,8 +44,8 @@ A lookup ID is an **identity other rows depend on.** A hard `DELETE` of a seed r
 value" — it **orphans every fact row** pointing at it and breaks the app's `StatusId = 3` constant.
 The discipline is **`IsActive = 0`**: retire the value while preserving its identity and history. A
 hard DELETE that orphans fact rows removes data irreversibly and is usually **wrong** — refuse it and
-propose deactivation. A deletion pressed anyway is a principal's call, because the removal cannot be
-undone.
+propose deactivation. A deletion pressed anyway carries the strongest weigh-line on this estate —
+the approving dev lead names the irreversible removal explicitly.
 
 ### 4. Silence is the proof (specialize per op; do not restate the whole thing there)
 
@@ -73,7 +73,7 @@ non-silent redeploy as a bug even when the data ends up correct.
 
 - **create-static-seed** — the CREATE is declarative (schema slot); the seed is the guarded MERGE
   (data slot); explicit IDs. Ships as one release — the schema change, then the post-deployment
-  MERGE that runs after it lands; any team member can review it, since it is additive and the
+  MERGE that runs after it lands; a dev lead approves this, since it is additive and the
   running application is unaffected.
 - **edit-seed** — add a value (`WHEN NOT MATCHED`) or change a label (**one** guarded `WHEN MATCHED`
   row — prove the branch touches exactly 1 row, not the table size).
@@ -83,8 +83,7 @@ non-silent redeploy as a bug even when the data ends up correct.
   is idempotent-MERGE work; the *rest* of extract-to-lookup (the FK backfill + old-column drop) is
   multi-phase, see `../multi-phase/SKILL.md`.
 - **data-plane row ops** — the four row fates (insert / guarded update / unchanged / careful
-  delete) under one null-safe MERGE; a bulk DELETE of populated rows removes data irreversibly, so a
-  principal must review it.
+  delete) under one null-safe MERGE; a bulk DELETE of populated rows removes data irreversibly, so a dev lead approves this, with the strongest weigh-line.
 
 ## Prove it (pointer, not a re-scaffold)
 

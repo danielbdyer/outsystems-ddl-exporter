@@ -5,8 +5,8 @@ description: Use when the developer says "I want full history on this new entity
 
 # Add temporal versioning — new entity
 
-> **Default (provisional — prove before you classify).** A dev lead or an experienced developer should
-> review this: turning on system versioning is a design commitment — a paired history table that
+> **Default (provisional — prove before you classify).** A dev lead approves this, weighing that
+> turning on system versioning is a design commitment — a paired history table that
 > grows with every update — even though the table is new and no existing data is touched. Ships as a
 > single schema change, applied in place: temporal versioning IS expressible declaratively for a new
 > table, so SSDT publishes the system-versioned CREATE — the table, its paired history table, and the
@@ -31,7 +31,7 @@ description: Use when the developer says "I want full history on this new entity
 **Building the history the developer didn't ask for.** "Keep history" can mean two different things: *point-in-time row history* — what a row looked like at a past moment (temporal versioning, this op) — or a *row-level change feed* of old→new values for a downstream consumer, which is a different mechanism handled outside this agent. Settle which one at **intake**, before building; standing up system versioning when a change feed was wanted (or the reverse) is a design error, cheapest to catch up front.
 
 ## How it flips (the specifics only)
-- **new table** (this op) → ships as a single schema change, applied in place: the system-versioned CREATE, its history table, and the period columns publish clean, nothing to transition. A dev lead or an experienced developer should review it — system versioning is a design commitment — but no existing data is touched.
+- **new table** (this op) → ships as a single schema change, applied in place: the system-versioned CREATE, its history table, and the period columns publish clean, nothing to transition. A dev lead approves this — system versioning is a design commitment — but no existing data is touched.
 - existing **empty** table → the same single in-place schema change; with no rows there is nothing to backfill.
 - existing **populated** table → NOT this op; route to `../temporal-convert/SKILL.md`, where the period columns must be backfilled first and the change stages across releases.
 - **+ the entity is expected to reach large row counts (> 1M), or this is the first system-versioned table on the estate** → added scrutiny: the paired history table grows with every update, and a first-time temporal build has no prior proof on this estate.
@@ -61,7 +61,7 @@ instance for this op is `../../../sample-prs/temporal-new.md`. SHIP terminal: **
 The fragment this operation contributes:
 
 **Review & release**
-- A dev lead or an experienced developer should review this: turning on system versioning is a
+- A dev lead approves this: turning on system versioning is a
   design commitment — a paired history table that grows with every update. No existing data is
   touched: the entity is new.
 - Ships as a single schema change, applied in place: temporal versioning is expressible

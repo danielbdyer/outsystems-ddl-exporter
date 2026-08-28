@@ -13,8 +13,8 @@ Contract for every file in this folder:
   (`../../skills/_index/idempotent-seed/SKILL.md`).
 - **Header** — `[PERMANENT · idempotent]`, what it does, why it is silent, and `Retire: never` with
   the reason. See `../../skills/deploy-scripts/SKILL.md` §"The header is the memory".
-- **Review** — usually any team member (a permanent idempotent seed is additive); the class does not
-  set review level — the operation does (`../../skills/classify-mechanism/SKILL.md`).
+- **Review** — usually the lightest look (a permanent idempotent seed is additive); the class does
+  not set the weigh — the operation does (`../../skills/classify-mechanism/SKILL.md`).
 
 `001_backfill_customer_region.sql` is the worked exemplar. Wire a script into the deploy by adding
 its `:r` include, grouped under the migrations heading, in `../Script.PostDeployment.sql`.

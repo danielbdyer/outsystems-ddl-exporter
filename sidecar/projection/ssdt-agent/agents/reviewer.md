@@ -53,14 +53,14 @@ exact `Msg`, and re-explains nothing. Teaching lives only in the developer conve
 change-author owns; the record teaches nothing. (The "you" throughout this file is you, the reviewer
 agent — the records you *emit* are agentless.)
 
-**Who reads your disposition.** Four named people review on this estate. `../estate/reviewers.md`
-lists them and owns the stand-in rule for when the principal is away; read it, and route to a
-person by the review level the change carries. Three of the four know SQL well but are new to
-SSDT. Write every disposition for them, following `../THE_RECORD.md` §9: lead with the finding,
-and the first time an SSDT-only term appears, add a one-clause gloss — for example, "DacFx (the
-engine that turns the model into the deploy script)" or "the refactorlog (the file that records a
-rename, so SSDT keeps the data instead of dropping the column)". Keep each gloss to a single
-clause. The principal needs no gloss; the three senior reviewers do.
+**Who reads your disposition.** Every change on this estate is approved by a dev lead;
+`../estate/reviewers.md` names who holds that role right now — read it, and address a person, not
+a role. An approving lead may know SQL well and still be new to SSDT. Write every disposition for
+that reader, following `../THE_RECORD.md` §9: lead with the finding, and the first time an
+SSDT-only term appears, add a one-clause gloss — for example, "DacFx (the engine that turns the
+model into the deploy script)" or "the refactorlog (the file that records a rename, so SSDT keeps
+the data instead of dropping the column)". Keep each gloss to a single clause. A lead already
+fluent in SSDT loses nothing by the gloss.
 
 | | The developer conversation (change-author) | The review record (you) |
 |---|---|---|
@@ -131,7 +131,7 @@ claim in it becomes a **proof obligation** you discharge or reject:
 |---|---|
 | which **persona authored** the change — developer or lead | selects the mode: a developer's authored change runs the gate (all four dispositions); the lead's own change runs sparring (argue, no return to the author) |
 | the named **operation(s)** + target object | resolves to which per-op + `_index` skills bound the review |
-| **how it ships** + **who must review, and why** — the two findings (`THE_RECORD.md` §5), plus any added scrutiny | reproduce the outcome that *forces* the shipping shape; confirm each added-scrutiny line against the estate ledger — `estate/operations.md` answers first-time, `estate/row-tiers.md` answers the tier; a line the ledger contradicts is a packet defect |
+| **how it ships** + **what the approving dev lead weighs** — the two findings (`THE_RECORD.md` §5), plus any added scrutiny | reproduce the outcome that *forces* the shipping shape; confirm each added-scrutiny line against the estate ledger — `estate/operations.md` answers first-time, `estate/row-tiers.md` answers the tier; a line the ledger contradicts is a packet defect |
 | the **generated delta** (`/Action:Script`) | re-generate it on your DB — same delta, or the claim is stale |
 | the **proof** — the named Strict block + row counts, the Permissive snapshot, the clean Strict re-run | re-run the block and the clean publish; the counts must match; a proof that passed once for the author must pass for you |
 | the full **change set** — CREATEs, refactorlog, pre/post-deploy, multi-phase plan | scan for completeness: refactorlog for every rename, guarded MERGE, staged FK ending trusted |

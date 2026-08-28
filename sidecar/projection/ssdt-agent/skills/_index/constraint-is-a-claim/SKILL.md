@@ -41,8 +41,7 @@ publish, because the publish delta is the honest proof.
 ## The discriminator: clean data lands in place, dirty data needs a script
 
 - **Data satisfies the claim** → the constraint lands clean → it **ships as a single schema change,
-  applied in place, with no data remediation.** A dev lead or an experienced developer should review
-  it: inserts and updates are now validated, so the running application must produce conforming data
+  applied in place, with no data remediation.** A dev lead approves this: inserts and updates are now validated, so the running application must produce conforming data
   — and for a foreign key, a cross-table relationship is added.
 - **Data violates the claim** → the apply is **blocked** → **reconcile first**, which changes how it
   ships: the reconcile ships as a pre-deploy script in one release (the pre-deploy prepares the data,

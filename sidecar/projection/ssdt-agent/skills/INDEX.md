@@ -61,7 +61,7 @@ when the tree is vendored in the estate repository).
 - `ask-the-developer` — Use whenever proving surfaces a decision only a human can make → `skills/ask-the-developer/SKILL.md`
 - `author-pr` — Use to turn a proven schema change into the pull request a reviewer approves by reading → `skills/author-pr/SKILL.md`
 - `author-review` — Use when the reviewer writes its disposition → `skills/author-review/SKILL.md`
-- `classify-mechanism` — Use after confirm-intent has named the operation and gathered the three state-variables, to state PROVISIONALLY how a change ships and who must review it, before proving. Walks the handbook decision cascade (file 15 =… → `skills/classify-mechanism/SKILL.md`
+- `classify-mechanism` — Use after confirm-intent has named the operation and gathered the three state-variables, to state PROVISIONALLY how a change ships and what the approving dev lead weighs, before proving. Walks the handbook decision ca… → `skills/classify-mechanism/SKILL.md`
 - `confirm-intent` — Use FIRST, before any classification or proving, whenever an OutSystems-native developer asks for a schema change in their own words ("make Email required", "rename this attribute", "add a foreign key", "drop that tab… → `skills/confirm-intent/SKILL.md`
 - `decompose` — Use FIRST when one request needs several schema changes at once → `skills/decompose/SKILL.md`
 - `deploy-scripts` — The deployment-script lifecycle rails. Use whenever a change needs a pre-deployment, post-deployment, or ad-hoc script → `skills/deploy-scripts/SKILL.md`

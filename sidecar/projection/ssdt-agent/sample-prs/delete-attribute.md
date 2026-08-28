@@ -21,8 +21,8 @@ used — "drop this field, it is not needed anymore". No work item supplied — 
   computed column, or index — still references `LegacyCode`. This query sees SQL objects, not
   application code.
 - Check with the application owner that no application code still reads or writes `LegacyCode`. The
-  column's values are gone once Release 1 lands and cannot be recovered from the schema; a principal
-  signs this off because the loss cannot be undone.
+  column's values are gone once Release 1 lands and cannot be recovered from the schema; the
+  approving dev lead names that loss explicitly, because it cannot be undone.
 - Confirm Release 1 has landed in an environment — the column is already gone there — before sending
   Release 2 up to it.
 

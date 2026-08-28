@@ -9,8 +9,8 @@ description: Use when the developer says "remove the primary key", "this table s
 > foreign key references the key, the project does not build — `SQL71516` at build time, before
 > any publish — so the change cannot ship at all until the dependents are handled. When nothing
 > references it, the drop ships as a single schema change, applied in place, and the table becomes
-> a heap. A dev lead must review either face: the table's identity guarantee and its clustered
-> organization are both removed.
+> a heap. A dev lead approves either face, weighing that the table's identity guarantee and its
+> clustered organization are both removed.
 
 > **SHIP terminal: ONE RELEASE, in place — or REFUSED AT BUILD.** Both proven live on this branch
 > (database `PG_inv_x1`, sqlpackage 170.5.76). Referenced face: with
@@ -47,8 +47,7 @@ uniqueness on `Id`, duplicate keys now writable, and lookups scanning.
 - **any FK references the key** → REFUSED AT BUILD (`SQL71516`). No shipping shape exists until
   the request is re-scoped: drop the dependents first (each its own op and review), or the real
   intent is a key change.
-- **nothing references the key** → ships in place as a single schema change; a dev lead must
-  review it (identity and clustering both removed; the table is a heap after).
+- **nothing references the key** → ships in place as a single schema change; a dev lead approves this (identity and clustering both removed; the table is a heap after).
 - **the real request is "change the key"** → not this op alone: that is drop-then-`../define-pk/SKILL.md`,
   and on a populated table the new key's build re-validates uniqueness over every row — scope it
   as that program.
@@ -83,7 +82,7 @@ worked instance is `../../../sample-prs/drop-pk.md`. SHIP terminal: **ONE RELEAS
 (unreferenced) or **REFUSED AT BUILD** (referenced). The fragment this operation contributes:
 
 **Review & release**
-- A dev lead must review this: the table's identity guarantee and clustered organization are
+- A dev lead approves this: the table's identity guarantee and clustered organization are
   removed; no data is touched.
 - Unreferenced: ships as a single schema change, applied in place — one
   `ALTER TABLE ... DROP CONSTRAINT`; the table is a heap afterward. Referenced: does not ship —

@@ -7,8 +7,8 @@ description: Use when the developer says "remove the default value", "stop defau
 
 > **Default (provisional — prove before you classify).** Ships as a single schema change, applied in
 > place — one `ALTER TABLE ... DROP CONSTRAINT`, no data read or written, and the publish never
-> blocks. Any team member can review it when the column is nullable. When the column is `NOT NULL`,
-> a dev lead or an experienced developer reviews it: every insert path that omitted the column and
+> blocks. A dev lead approves this when the column is nullable. When the column is `NOT NULL`,
+> a dev lead approves it: every insert path that omitted the column and
 > relied on the default now fails at runtime, so the running application may need to change.
 
 > **SHIP terminal: ONE RELEASE, in place.** Proven live on this branch (database `PG_inv_x1`,
@@ -39,9 +39,8 @@ part of the change set, exactly as `../../_index/idempotent-seed/SKILL.md` requi
 
 ## How it flips (the specifics only)
 - **column is nullable** → the next insert that omits the column writes NULL instead of the
-  default. Nothing fails; the meaning of "omitted" changes. Any team member can review it.
-- **column is NOT NULL** → the next insert that omits the column fails with `Msg 515`. A dev
-  lead or an experienced developer reviews it, because the application must supply the value
+  default. Nothing fails; the meaning of "omitted" changes. A dev lead approves this.
+- **column is NOT NULL** → the next insert that omits the column fails with `Msg 515`. A dev lead approves this, because the application must supply the value
   everywhere before the default goes.
 - **the default was doing backfill duty on a new NOT NULL column** (`../add-mandatory/SKILL.md`)
   → dropping it after the column landed is safe for existing rows; the insert-path risk above
@@ -73,9 +72,9 @@ worked instance is `../../../sample-prs/drop-default.md`. SHIP terminal: **ONE R
 place.** The fragment this operation contributes:
 
 **Review & release**
-- On a nullable column, any team member can approve this: the change is insert-time behavior
-  only and the running application is unaffected. On a `NOT NULL` column, a dev lead or an
-  experienced developer must review it: every insert that omitted the column now fails.
+- On a nullable column the approval is the lightest look: the change is insert-time behavior
+  only and the running application is unaffected. On a `NOT NULL` column the approval weighs
+  that every insert omitting the column now fails.
 - Ships as a single schema change, applied in place — one `ALTER TABLE ... DROP CONSTRAINT`.
   No data is read or written, and the publish never blocks.
 - Added scrutiny: none. The drop reads and writes no data, so row count is not a factor.

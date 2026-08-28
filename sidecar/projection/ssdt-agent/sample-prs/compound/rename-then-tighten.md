@@ -9,8 +9,8 @@ Combined into one release, this change does not ship: the tightening's row-prese
 blocks the publish, and the whole release rolls back with it — the rename included, although
 the rename alone is safe. It ships as a serialized sequence on one table: Release 1 the rename
 (in place, identity preserved), then the tightening as its own two-release
-(`../make-mandatory.md`). A dev lead must review the sequence; existing data is affected by
-the tightening leg.
+(`../make-mandatory.md`). A dev lead approves the sequence, weighing that existing data is
+affected by the tightening leg.
 
 ## Intent
 The developer's stated intent: the attribute is a mobile number and should be named one, and a

@@ -98,8 +98,7 @@ move under the same disciplines.
 
 **What it replaces:** the manual handoff from `change-author` to a human reviewer.
 
-**The contract:** `change-author`'s **review packet** — the operation, how it ships and who
-must review (the two plain findings, `THE_RECORD.md` §5), the real generated delta, the proof
+**The contract:** `change-author`'s **review packet** — the operation, how it ships and what the approving dev lead weighs (the two plain findings, `THE_RECORD.md` §5), the real generated delta, the proof
 (the blocked deployment and its row counts), the remedy, and the named trap — is the body of
 the pull request `skills/author-pr` composes. `reviewer` is the gate.
 

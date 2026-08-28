@@ -125,11 +125,9 @@ unrecorded rename is the failure mode.
 
 ## The ops this governs (and how each differs)
 
-- **rename-attribute** — `sp_rename ... 'COLUMN'`; a dev lead or an experienced developer should
-  review it, because every caller of the column name (views, procs, ORM mappings, reports, ETL)
+- **rename-attribute** — `sp_rename ... 'COLUMN'`; a dev lead approves this, because every caller of the column name (views, procs, ORM mappings, reports, ETL)
   must change.
-- **rename-entity** — `sp_rename ... 'OBJECT'`; a dev lead or an experienced developer should
-  review it, because every reference to the table name breaks.
+- **rename-entity** — `sp_rename ... 'OBJECT'`; a dev lead approves this, because every reference to the table name breaks.
 - **move-schema** — the two-part `schema.Table` name is *just an address*; the refactorlog (or an
   explicit `ALTER SCHEMA target TRANSFER source.Table`, which preserves `object_id`) tells SSDT the
   identity survived the move. Same DROP+CREATE trap without it.

@@ -10,8 +10,8 @@ description: Use when the developer says "remove the attribute", "delete the Leg
 > is blocked: SSDT refuses the drop on `BlockOnPossibleDataLoss` because the table holds rows whose
 > values would be lost (the row-presence gate; see `../../_index/tightening-class/SKILL.md`). The
 > app must have stopped reading the column first (the deprecation), and then the physical drop ships
-> as **two releases**. A dev lead reviews at minimum; a principal must review once the column holds
-> data whose loss cannot be undone — *danger is not release-count.*
+> as **two releases**. A dev lead approves this; once the column holds data whose loss cannot be
+> undone, the approval carries the strongest weigh-line — *danger is not release-count.*
 
 > **SHIP terminal: TWO-RELEASE.** This pipeline (Azure DevOps → Octopus) cannot relax
 > `BlockOnPossibleDataLoss`, so a populated drop ships as R1 (a pre-deploy that drops the column's
@@ -49,9 +49,11 @@ not re-derive either here.
 
 ## How it flips (the specifics only)
 - column empty / provably unused, no dependents → ships as a single schema change applied in place,
-  but a dev lead reviews at minimum: a drop is structurally irreversible even with no data to lose
+  but the approval is never the lightest look: a drop is structurally irreversible even with no
+  data to lose
 - column holds data → `BlockOnPossibleDataLoss` blocks the drop (row-presence — see
-  `../../_index/tightening-class/SKILL.md`); the loss cannot be undone, so a principal must review.
+  `../../_index/tightening-class/SKILL.md`); the loss cannot be undone, so the approval carries
+  the strongest weigh-line, named explicitly.
   The physical drop ships as **two releases**: R1 a pre-deploy drops the default constraint then the
   column with the model still declaring it (published once — a re-publish re-adds the column with
   its default); R2 the model drops the column as a no-op. The seed stops writing the column in the
@@ -74,7 +76,7 @@ the column is provably empty/unused is the proof. For the publish loop, see
 holds values and two views read it, so dropping it now would lose that data for good and break
 those views. The safe path is a 4-phase deprecation across releases — stop writing the column,
 confirm nothing reads it, then drop it once it's provably dead. Because the values can't be
-recovered afterward, a principal signs this one off. Do you know whether any application code still
+recovered afterward, the dev lead who approves it names that loss explicitly. Do you know whether any application code still
 writes this column, or should it be treated as live and staged through the full deprecation?"
 
 ## The reasoning (in conversation)
@@ -92,7 +94,7 @@ this op is `../../../sample-prs/delete-attribute.md`. **SHIP terminal: TWO-RELEA
 column (ONE-RELEASE on an empty, unused one).
 
 **Review & release**
-- A principal must review this: data is removed and the removal cannot be undone. (An empty,
+- A dev lead approves this, weighing that data is removed and the removal cannot be undone — the strongest call on this estate, named explicitly in the approval. (An empty,
   provably-unused column loses no data, but a drop is structurally irreversible — a dev lead
   reviews at minimum.)
 - Ships as **two releases** after the app has stopped reading the column: R1 a pre-deploy drops the

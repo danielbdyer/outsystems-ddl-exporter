@@ -6,7 +6,7 @@ description: Use when the developer says "shorten Code to 10 chars", "tighten th
 # Narrow (Ambitious Narrowing) — tightening class
 
 > **Default (provisional — prove before you classify).** On an empty table, narrowing ships as a single
-> schema change applied in place — no data is read or written, and any team member can review it.
+> schema change applied in place — no data is read or written, and a dev lead approves this.
 > On a populated table it is not a clean in-place change: the data-blind guard blocks it regardless
 > of whether every value fits, so it ships as **two releases**. Prove first.
 
@@ -39,17 +39,16 @@ the guard here.
 
 ## How it flips (empty vs populated dominates; whether the values fit is the second question)
 - **empty table** (guard false) → ships as a single schema change, applied in place; no data is
-  read or written. Any team member can review it.
+  read or written. A dev lead approves this.
 - **populated, `MAX(LEN) <= new size`** (every value fits) → **still blocked under Strict** — not
   a clean in-place change. Ships as **two releases**: R1 runs `ALTER COLUMN` narrower in a
-  pre-deploy with the model still declaring the wider type; R2 the model catches up. A dev lead or
-  an experienced developer should review it (the running application must respect the new limit).
+  pre-deploy with the model still declaring the wider type; R2 the model catches up. A dev lead approves this (the running application must respect the new limit).
   Same shape as make-mandatory — see `../../_index/tightening-class/SKILL.md`.
 - **populated, any value exceeds new size** → real truncation: the over-length rows are reconciled
   first (a data change), and the seed that feeds the column stops writing over-length values in the
   same change set (else `Msg 2628` at the post-deploy seed). Ships as **two releases**: R1 the
   pre-deploy reconciles the values and narrows the column with the model lagging; R2 the model
-  catches up. A dev lead must review this: existing data is modified.
+  catches up. A dev lead approves this, weighing that existing data is modified.
 - **>1M rows** → added scrutiny: at production row counts the `ALTER COLUMN` rewrite may block
   writes or run long — schedule a window.
 
@@ -83,13 +82,13 @@ this op is `../../../sample-prs/narrow.md`. **SHIP terminal: TWO-RELEASE** on a 
 ONE-RELEASE on an empty one. Take the line the data proves.
 
 **Review & release**
-- Empty table: `Any team member can review this: the table is empty, so no data can be lost.` ·
+- Empty table: `A dev lead approves this: the table is empty, so no data can be lost.` ·
   `Ships as a single schema change, applied in place. No data is read or written.`
-- Populated, every value fits: `A dev lead or an experienced developer should review this: after
+- Populated, every value fits: `A dev lead approves this: after
   narrowing, the running application can no longer store values longer than the new size.` ·
   `Ships as two releases: R1 narrows the column in a pre-deploy with the model lagging, R2 the
   model catches up. The data-loss guard is not relaxed, because this pipeline cannot relax it.`
-- Populated, values exceed the new size: `A dev lead must review this: existing data is modified —
+- Populated, values exceed the new size: `A dev lead approves this, weighing that existing data is modified —
   over-length values are reconciled before the column narrows.` · `Ships as two releases: R1
   reconciles the over-length values and narrows the column with the model lagging (the seed that
   feeds the column is reconciled in the same change set); R2 the model catches up.`

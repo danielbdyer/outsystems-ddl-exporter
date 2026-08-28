@@ -14,7 +14,7 @@ The developer's stated intent for this PBI: make the `Email` field longer so lon
   nullability unchanged).
 
 ## Before promoting
-- Any team member can approve this: enlarging a column keeps every value and the running application
+- A dev lead approves this: enlarging a column keeps every value and the running application
   is unaffected.
 - Where `Email` sits inside a non-clustered index key, confirm the widen does not push that key past
   the ~1700-byte limit (`NVARCHAR` storage doubles). `Email` is in no index here, and `NVARCHAR(400)`

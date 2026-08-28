@@ -12,8 +12,8 @@ The program ships as THREE releases. Release M reconciles the one unmapped statu
 pre-deployment step and lands `FK_Order_Status_StatusId` trusted in the same publish. Release
 C1 drops `StatusText` physically in a pre-deployment step with the model still declaring it —
 the naive declarative drop is refused by the data-loss guard — and Release C2 lets the model
-catch up as a no-op. A dev lead must review each release; existing data is modified, and the
-contract leg is irreversible once the free text is gone. Hold other publishes to an
+catch up as a no-op. A dev lead approves each release, weighing that existing data is modified
+and that the contract leg is irreversible once the free text is gone. Hold other publishes to an
 environment while C1 is landed and until C2 follows it there: a publish carrying the lagging
 model re-creates the dropped column, backfilled with its default, on a green publish.
 

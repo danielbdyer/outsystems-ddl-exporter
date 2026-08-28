@@ -133,7 +133,7 @@ surfaced WHY must come from the named `_index` owner, specialized — not re-exp
 ## REV-02 — a rename with no refactorlog entry, mislabeled clean · **defect** · catch-and-return
 
 > **Packet:** the author renamed `Customer.ContactPhone` → `MobileNumber` and claims it ships in place as
-> one `sp_rename`, clean, reviewable by a dev lead or an experienced developer — BUT the `.refactorlog`
+> one `sp_rename`, clean, the approval weighing only the app-side caller change — BUT the `.refactorlog`
 > entry is **missing** from what they authored. The packet asserts "rename done, sp_rename" from reading
 > the `.sql`, with no reproduced delta.
 
@@ -295,7 +295,7 @@ surfaced WHY must come from the named `_index` owner, specialized — not re-exp
 ## REV-08 — clean change with an un-scoped external consumer · **not a defect** · **the forced Approved-with-a-named-risk**
 
 > **Packet:** the author added an optional `ShipNote` column to `Order` and claims it ships in place,
-> clean, reviewable by any team member because the change is additive and the running application is
+> clean, the lightest look because the change is additive and the running application is
 > unaffected — proof: additive nullable, Strict clean, nothing blocked, `Order` rows preserved. The
 > change IS data-safe and reproduces clean. What the packet does NOT account for: a downstream
 > **report/ETL consumer** reads `Order`'s shape out-of-band — a cross-boundary consumer the dacpac

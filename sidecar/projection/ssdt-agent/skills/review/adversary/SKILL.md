@@ -19,8 +19,8 @@ one and read the engine.
 
 ## The two moves this pass wields (owned by `prove-on-dacpac`, not redefined)
 
-- **The consequence run** — for a data-removing op that a principal must review because data is
-  removed irreversibly. After Strict blocks, run Permissive on the scratch copy to let the
+- **The consequence run** — for a data-removing op whose approval carries the strongest
+  weigh-line because data is removed irreversibly. After Strict blocks, run Permissive on the scratch copy to let the
   irreversible act happen, then snapshot the exact rows and values that would be lost (the
   content-hash check in `talk-to-local-sql`). Turns "this could lose data" into "40,132 rows would
   be lost, here they are."

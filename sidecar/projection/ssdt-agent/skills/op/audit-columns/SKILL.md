@@ -6,9 +6,9 @@ description: Use when the developer says "add CreatedBy/CreatedOn/ModifiedBy/Mod
 # Add manual audit columns (Optimistic-NOT-NULL trap)
 
 > **Default (provisional — prove before you classify).** Nullable audit columns ship as a single schema
-> change, applied in place; any team member can review, since the change is additive and the running
+> change, applied in place; a dev lead approves them with the lightest look, since the change is additive and the running
 > application is unaffected. NOT NULL on a populated table ships as one release with a pre-deployment
-> backfill, and a dev lead must review because existing data is modified — prove the backfill clears
+> backfill, and the approval weighs that existing data is modified — prove the backfill clears
 > the block before you classify it.
 
 > **SHIP terminal: ONE RELEASE, in place** (nullable columns, or `NOT NULL` with an explicit default
@@ -34,15 +34,14 @@ Ordinary nullable columns (often with `DEFAULT SYSUTCDATETIME()` / `DEFAULT SUSE
 The *Optimistic NOT NULL* family — if the developer wants the audit columns `NOT NULL` on a populated table with no value supplied, the deployment is blocked because existing rows have no `CreatedOn`. This is the same value-needed refusal as `../add-mandatory/SKILL.md`, and it is deliberately **not** the tightening class: a fresh column's block is **cured by supplying the value** — an explicit `DEFAULT` (e.g. `SYSUTCDATETIME()`) stamps every existing row as the column lands and a populated table applies clean (proven: `../../../sample-prs/add-default.md`), which the tightening class's data-blind row-presence guard would never allow. The neighbouring *existing-column* tightening (`make-mandatory`) is the class no default can cure — `../../_index/tightening-class/SKILL.md` keeps the two apart; do not collapse them.
 
 ## How it flips (the specifics only)
-- nullable / table empty → ships as a single schema change, applied in place; any team member can
-  review, since the change is additive and the application is unaffected.
+- nullable / table empty → ships as a single schema change, applied in place; the lightest look,
+  since the change is additive and the application is unaffected.
 - **`NOT NULL` + populated + explicit DEFAULT** (`SYSUTCDATETIME()` / `SUSER_SNAME()`) → ships as
   a single schema change, applied in place — the default stamps every existing row as the columns
-  land (the `add-mandatory`/`add-default` proven shape); a dev lead or an experienced developer
-  reviews it, and the stamped values are named on the record.
+  land (the `add-mandatory`/`add-default` proven shape); a dev lead approves it, and the stamped values are named on the record.
 - **`NOT NULL` + populated, no default** → the deployment is blocked (value-needed); ships as one
-  release with a pre-deployment staging backfill, then the columns land validated. A dev lead must
-  review, because existing data is modified.
+  release with a pre-deployment staging backfill, then the columns land validated. The approval
+  weighs that existing data is modified.
 - **+ >1M rows** → added scrutiny: the backfill is a batched operation and may run long at production
   row counts.
 
@@ -64,16 +63,16 @@ with a pre-deploy backfill** for `NOT NULL` with no default. Pick the branch the
 **Review & release**
 - Nullable columns:
   - Ships as a single schema change, applied in place. No data is read or written.
-  - Any team member can review this: the change is additive and the running application is unaffected.
+  - A dev lead approves this: the change is additive and the running application is unaffected — the lightest look on this estate.
 - `NOT NULL` on a populated table, explicit DEFAULT:
   - Ships as a single schema change, applied in place — the default stamps every existing row as
     the columns land; the stamped values are named here.
-  - A dev lead or an experienced developer must review this: existing rows receive stamped values,
+  - A dev lead approves this: existing rows receive stamped values,
     and the running application must keep the columns filled.
 - `NOT NULL` on a populated table, no default:
   - Ships as one release: a pre-deployment script backfills the existing rows, then the schema change
     lands validated.
-  - A dev lead must review this: existing data is modified.
+  - A dev lead approves this, weighing that existing data is modified.
 - Added scrutiny, when it applies:
   - Added scrutiny: at production row counts the backfill may block writes or run long — schedule a
     window.

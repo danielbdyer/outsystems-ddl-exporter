@@ -35,18 +35,17 @@ Every deployment script belongs to exactly one class. The class is not a comment
 **folder**, and the folder is a contract about lifespan, guard, re-run behaviour, and review. Get the
 class right and the rest is mechanical.
 
-| Class | Folder | Guard that keeps it silent | Re-run | Lifespan | Retirement trigger | Default review |
+| Class | Folder | Guard that keeps it silent | Re-run | Lifespan | Retirement trigger | Default weigh-line |
 |---|---|---|---|---|---|---|
 | **Pure declarative** (no script) | — (the `.sql` model) | n/a — SSDT computes the delta | n/a | forever (it *is* the model) | never | per the op |
-| **Permanent · idempotent** | `/Migrations/`, `/ReferenceData/` | natural: `WHERE … IS NULL`, `IF NOT EXISTS`, guarded `MERGE` | **silent** — 0 rows, identical hash | **forever** | **never** | usually any team member |
-| **Guarded · marker-inert** | `/Migrations/` | a `MigrationHistory` marker row, not natural idempotency | inert after first success per env | forever *until every env is past it* | eligible once the marker exists in all envs | reviewer, sometimes principal |
+| **Permanent · idempotent** | `/Migrations/`, `/ReferenceData/` | natural: `WHERE … IS NULL`, `IF NOT EXISTS`, guarded `MERGE` | **silent** — 0 rows, identical hash | **forever** | **never** | usually the lightest look |
+| **Guarded · marker-inert** | `/Migrations/` | a `MigrationHistory` marker row, not natural idempotency | inert after first success per env | forever *until every env is past it* | eligible once the marker exists in all envs | the marker's guarded body — heavier when it modifies data |
 | **Transient · one-time** | `/OneTime/` | idempotent so a lagging env can re-run safely | silent, but slated to leave | until prod-confirmed + one sweep | **prod-applied → deprecation-train PR removes the file** | matches the op it serves |
-| **Ad-hoc · outside the deploy** | `/AdHoc/` (checked in, *not* run by the DACPAC) | idempotent + chunked + resumable | run by a human, possibly interrupted | until reconciled + prod-confirmed | archived after reconciliation proves no drift | **principal** (runs outside the safety net) |
+| **Ad-hoc · outside the deploy** | `/AdHoc/` (checked in, *not* run by the DACPAC) | idempotent + chunked + resumable | run by a human, possibly interrupted | until reconciled + prod-confirmed | archived after reconciliation proves no drift | **the heaviest weigh (runs outside the safety net)** |
 
-The two `classify-mechanism` findings stay independent here too: **how a script ships is not who must
-review it.** A one-time `DELETE` of populated rows ships as a single transient post-deploy script, yet
-a principal must review it because the data is gone irreversibly. Never fold review level into how
-simply the script ships.
+The two `classify-mechanism` findings stay independent here too: **how a script ships is not what the approving dev lead weighs.** A one-time `DELETE` of populated rows ships as a single transient post-deploy script, yet
+the approval carries the strongest weigh-line because the data is gone irreversibly. Never fold
+the weigh into how simply the script ships.
 
 **The classes in one breath.** *Pure declarative* is the first and best answer — no script at all;
 SSDT already does add-column, widen, add-nullable, add-index, rename-with-refactorlog. *Permanent ·
@@ -105,8 +104,9 @@ ticket, date, operator, environments-applied, and the batching parameters used �
 against prod with no mark in source control *is* drift) · **reconcile** (after the motion, the
 declarative model and any permanent seed must still describe the resulting state; update the seed so a
 fresh deploy reproduces it, then prove no drift — a clean schema compare and, where data is governed,
-a matching content hash via `../talk-to-local-sql/SKILL.md`). Highest scrutiny; **principal review by
-default.** "Removal" for ad-hoc means archiving out of `/AdHoc/` once reconciled and prod-confirmed.
+a matching content hash via `../talk-to-local-sql/SKILL.md`). Highest scrutiny; **the heaviest
+approval weigh-line by default** — the script runs outside the deploy's safety net, and the
+approving dev lead weighs exactly that. "Removal" for ad-hoc means archiving out of `/AdHoc/` once reconciled and prod-confirmed.
 
 ## The header is the memory (birth writes the death certificate)
 
@@ -170,8 +170,8 @@ the existing rows determine how it ships.
   script**. Refuse script sprawl. This is the "no more and no less" rail — the precise change is
   often *no script*.
 - **Gate 1 — Pre, post, or ad-hoc?** Dependency direction decides pre vs post; the transaction
-  boundary + scale/lock decides whether it leaves the DACPAC. If ad-hoc, escalate to principal now and
-  attach the four obligations.
+  boundary + scale/lock decides whether it leaves the DACPAC. If ad-hoc, flag it to the approving
+  dev lead now and attach the four obligations.
 - **Gate 2 — Permanence class → folder + guard + header.** Assign the class; it dictates the folder,
   the guard style, and the header template. If transient, the header **must** carry a death
   certificate with a removal work item.
@@ -185,7 +185,7 @@ the existing rows determine how it ships.
   matching content hash. Drift is the failure this gate catches.
 - **Gate 6 — Record the fragment.** Contribute to `../author-pr/SKILL.md`: the mechanism, the
   permanence class, the retirement condition, the idempotency proof (the three silent-redeploy
-  assertions), and the review level with any added scrutiny — *how it ships* and *who reviews it* kept
+  assertions), and the weigh-line with any added scrutiny — *how it ships* and *what the lead weighs* kept
   as two independent findings.
 
 ## The named traps (recognize on sight, stop)
@@ -236,8 +236,8 @@ What this skill contributes to the pull request (`../author-pr/SKILL.md`), in th
 **almost exclusively presentation of evidence**, the precise scripts required and nothing more:
 
 **Review & release**
-- Who must review, and why — from the permanence class (any team member for a permanent idempotent
-  seed; a principal for an ad-hoc or an irreversible one-time `DELETE`), independent of how it ships.
+- What the approving dev lead weighs — from the permanence class (the lightest look for a permanent idempotent
+  seed; the strongest weigh-line for an ad-hoc or an irreversible one-time `DELETE`), independent of how it ships.
 - How it ships — the mechanism (pre-deploy prepares then the delta lands; the delta then a post-deploy;
   a scripted change; staged across releases), plus the permanence class and folder.
 - Added scrutiny, if any — CDC-tracked / `>1M rows` / first-time on this estate, each on its own line.

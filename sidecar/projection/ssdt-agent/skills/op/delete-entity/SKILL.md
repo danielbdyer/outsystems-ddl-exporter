@@ -7,9 +7,10 @@ description: Use when the developer says "delete the Entity", "drop the table, w
 
 > **Default (provisional — prove before you classify).** Ships as a scripted change in a single release — in
 > production the drop is an explicit pre-deployment `DROP`, not the mere absence of the file,
-> sequenced after any inbound foreign keys are dropped. A principal must review
-> this: data is removed and the removal cannot be undone. The risk is the irreversible loss, not the
-> release count — one drop in one release still requires a principal. Prove before you classify.
+> sequenced after any inbound foreign keys are dropped. A dev lead approves this, weighing that
+> data is removed and the removal cannot be undone — the strongest call on this estate, named
+> explicitly in the approval. The risk is the irreversible loss, not the release count — one drop
+> in one release still carries the strongest weigh-line. Prove before you classify.
 
 > **The pull request.** `../../author-pr/SKILL.md` is the ten-section template every change fills;
 > the worked instance for this op is `../../../sample-prs/delete-entity.md` — a complete PR proven
@@ -38,12 +39,11 @@ block on a populated table is the row-presence gate — see `../../_index/tighte
 for why it is data-blind; do not re-derive the guard here.
 
 ## How it flips (the specifics only)
-- table empty, no dependents → mechanically a clean drop, but a principal must still review it if
-  the table held business data, because the loss cannot be undone; if it is provably scratch (no
-  business data), the review need is lower
+- table empty, no dependents → mechanically a clean drop, but the approval still carries the
+  strongest weigh-line if the table held business data, because the loss cannot be undone; if it
+  is provably scratch (no business data), the weigh is lighter
 - table populated → `BlockOnPossibleDataLoss` blocks the drop (row-presence — see
-  `../../_index/tightening-class/SKILL.md`); the drop is the irreversible act, so a principal must
-  review it: data is removed and cannot be undone
+  `../../_index/tightening-class/SKILL.md`); the drop is the irreversible act, so a dev lead approves this, with the strongest weigh-line: data is removed and cannot be undone
 - inbound foreign keys exist → drop those foreign keys **first** (the script owns the ordering) → a
   small multi-step script
 - >1M rows or a first-time drop on this estate → added scrutiny: at production row counts the drop
@@ -55,7 +55,7 @@ copy) a Strict publish must **block** on `BlockOnPossibleDataLoss` when rows exi
 block with the row count as the safety proof of what would be lost. Under the **production
 posture**, prove the phantom: removing the file publishes green and the table survives untouched
 — which is why the shipped change is the explicit, ordered pre-deployment script, whose safety
-rests on the enumerated references and the principal's review, not on an engine guard. Then prove
+rests on the enumerated references and the lead's explicit approval, not on an engine guard. Then prove
 the ordered remedy (drop foreign keys → drop) on a disposable copy of Dev. Run
 `sys.dm_sql_referencing_entities` against the table to enumerate what still points at it. For the
 publish loop, see `../../prove-on-dacpac/SKILL.md`; probes, `../../talk-to-local-sql/SKILL.md`.
@@ -66,7 +66,8 @@ kind of change, because once it lands the data is gone for good and there is no 
 disposable copy of Dev, SSDT's BlockOnPossibleDataLoss blocked the publish because the table still
 holds rows; the block reports the exact row count, and that count is the proof of what would be
 lost — the block is the safety net working, not a failure. Before this ships, the inbound foreign
-keys drop first; the copy showed this order clears the block cleanly and the table drops. A principal should review it, because the loss can't be undone. One thing to
+keys drop first; the copy showed this order clears the block cleanly and the table drops. The dev
+lead who approves it names the loss explicitly, because it can't be undone. One thing to
 settle first: is this data truly needed nowhere — no report, no export, no downstream job still
 reading it?
 
@@ -83,7 +84,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 worked instance is `../../../sample-prs/delete-entity.md`), record register.
 
 **Review & release**
-- A principal must review this: data is removed and the removal cannot be undone. If the table is
+- A dev lead approves this, weighing that data is removed and the removal cannot be undone — the strongest call on this estate, named explicitly in the approval. If the table is
   provably scratch (no business data ever), the review need is lower.
 - Ships as a scripted change in a single release — in production the drop is an explicit
   pre-deployment `DROP` (not the mere absence of the `.sql` file), sequenced after any inbound

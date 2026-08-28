@@ -6,7 +6,7 @@ description: Use when the developer says "make the field longer", "increase Emai
 # Widen length/type
 
 > **Default (provisional — prove before you classify).** Ships as a single schema change, applied in place —
-> no data is read or written. Any team member can review it: the change is additive and the running
+> no data is read or written. A dev lead approves this: the change is additive and the running
 > application is unaffected. Prove before you classify — the couplings below can move both findings.
 
 > **SHIP terminal: ONE RELEASE, in place.** Proven live on this branch (SQL Server 2022,
@@ -33,7 +33,7 @@ storage** vs `VARCHAR`, which can tip an index over that limit. This is a single
 recurs only here), so it stays inline — not lifted to an index skill.
 
 ## How it flips (the specifics only)
-- widen a non-indexed column → ships in place, no data read or written; any team member can review it
+- widen a non-indexed column → ships in place, no data read or written; a dev lead approves this
 - the column sits in an index key and the widen blows the byte limit → the publish is blocked / build
   complains → drop/redesign the index → a multi-step single PR
 - very large table on an old SQL version → may rebuild rather than run metadata-only → added scrutiny
@@ -64,7 +64,7 @@ instance for this op — with the live proof messages — is `../../../sample-pr
 terminal: **ONE RELEASE, in place.** The fragment this operation contributes:
 
 **Review & release**
-- Any team member can review this: the change is additive and the running application is unaffected.
+- A dev lead approves this: the change is additive and the running application is unaffected — the lightest look on this estate.
 - Ships as a single schema change, applied in place. No data is read or written.
 - Added scrutiny, only where the condition holds (otherwise "None."):
   - Indexed near the limit — the column sits in an index key and the widen pushes it toward the

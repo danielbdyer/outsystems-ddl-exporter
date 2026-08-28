@@ -5,7 +5,7 @@ description: Use when the developer says "add a new Entity", "create a new table
 
 # Create entity
 
-> **Default (provisional — prove before you classify).** Any team member can review this: the change is
+> **Default (provisional — prove before you classify).** A dev lead approves this: the change is
 > additive and self-contained — a brand-new table nothing yet depends on, and the running
 > application is unaffected. Ships as a single schema change, applied in place: the `CREATE TABLE`
 > is emitted verbatim, and no existing data is read or written. Prove the clean publish on a
@@ -31,8 +31,7 @@ project glob misses silently never deploys. Neither is driven by the data: both 
 concerns caught at build time, not the deployment being blocked by the rows in the table.
 
 ## How it flips (the specifics only)
-- new standalone table → ships as a single schema change, applied in place; any team member can
-  review it (nothing depends on it, nothing to transition — additive, the running application is
+- new standalone table → ships as a single schema change, applied in place; a dev lead approves this (nothing depends on it, nothing to transition — additive, the running application is
   unaffected).
 - table needs seed/lookup rows on creation → ships as one release: the CREATE, then a
   post-deployment script that seeds the rows after the table lands (the guarded MERGE seed — see
@@ -71,7 +70,7 @@ Fragments for the pull request (`../../author-pr/SKILL.md` is the template; the 
 `../../../sample-prs/create-entity.md`), record register.
 
 **Review & release**
-- Any team member can review this: the change is additive and the running application is unaffected —
+- A dev lead approves this: the change is additive and the running application is unaffected — the lightest look on this estate —
   a brand-new table nothing yet depends on.
 - Ships as a single schema change, applied in place: SSDT emits `CREATE TABLE [schema].[Name]`
   verbatim. No existing data is read or written. If the table needs seed rows on creation, it ships

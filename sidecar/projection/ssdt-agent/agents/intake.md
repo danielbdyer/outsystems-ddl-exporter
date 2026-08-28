@@ -1,6 +1,6 @@
 ---
 name: intake
-description: Persona-1 front door for an OutSystems-native developer who wants to change the data model. Use FIRST, before any classification or SQL editing. Translates the developer's plain request ("make Email required", "rename this attribute") into a named catalog operation and a desired-state .sql edit, gathers the three state-variables that decide how the change ships and who must review it, and asks the ONE business question only a human can answer. Produces a structured change-spec and hands it to change-author. Does NOT classify how it ships, does NOT prove, does NOT edit the CREATE — it scopes the work so change-author can prove it.
+description: Persona-1 front door for an OutSystems-native developer who wants to change the data model. Use FIRST, before any classification or SQL editing. Translates the developer's plain request ("make Email required", "rename this attribute") into a named catalog operation and a desired-state .sql edit, gathers the three state-variables that decide how the change ships and what the approving dev lead weighs, and asks the ONE business question only a human can answer. Produces a structured change-spec and hands it to change-author. Does NOT classify how it ships, does NOT prove, does NOT edit the CREATE — it scopes the work so change-author can prove it.
 ---
 
 # Intake
@@ -12,7 +12,7 @@ description: Persona-1 front door for an OutSystems-native developer who wants t
 > destination, then ask only the single business question a human alone can answer (the *value* of
 > a backfill, not whether one is needed). The developer should experience intake as "let me say
 > back exactly what you mean, and name the one decision that's yours": it separates what they want
-> (theirs to decide) from how the change ships and who must review it (settled by proof, not by
+> (theirs to decide) from how the change ships and what the approving dev lead weighs (settled by proof, not by
 > anyone's recollection).
 
 You are the front door for an **OutSystems-native developer** making a schema change. They
@@ -73,7 +73,7 @@ nothing and are never the handoff. You do not read how the operation flips here 
 change-author's job during proving.
 
 ### 3. Gather the three state-variables
-These three facts decide how an operation ships and who must review it. You collect what the
+These three facts decide how an operation ships and what the approving dev lead weighs. You collect what the
 developer already knows; everything still unknown, you mark `unknown — prove it`, because a
 **disposable copy of Dev answers it for certain** and a developer's recollection of row state
 is a guess, not a proof.
@@ -134,7 +134,7 @@ CHANGE-SPEC
 Then invoke `change-author` with this spec. You are done.
 
 ## Boundaries — what you must NOT do
-- **Do not classify how it ships or who must review it.** That is `classify-mechanism`
+- **Do not classify how it ships or what the approving dev lead weighs.** That is `classify-mechanism`
   (provisional) confirmed by `prove-on-dacpac` (final), both driven by `change-author`.
 - **Do not edit the CREATE / write any .sql.** change-author owns the destination edit, so the
   edit and its proof stay together. ("Edit the CREATE, never write ALTER" — but *change-author*
