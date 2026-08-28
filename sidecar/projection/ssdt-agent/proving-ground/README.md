@@ -107,6 +107,13 @@ dotnet build ssdt-agent/proving-ground/SampleCatalog.sqlproj -c Release
 # -> ssdt-agent/proving-ground/bin/Release/SampleCatalog.dacpac
 ```
 
+> `SampleCatalog.sqlproj` is an **SDK-style** (Microsoft.Build.Sql) project, which is why the
+> .NET CLI builds it headless on any machine — including CI. It is CLI substrate, not IDE
+> content: do **not** add it to a Visual Studio solution. Visual Studio 2026 opens only original
+> (classic) SQL projects, and in Visual Studio 2022 the SDK-style experience is a preview
+> component that cannot be installed side-by-side with classic SSDT. (An estate's own classic
+> `.sqlproj` builds with MSBuild instead — `../PROVING_PATH_WINDOWS.md` step 5.)
+
 ## 3 — Establish the BEFORE state (once per scenario)
 
 Publish the *current* CREATEs and run the post-deploy seed so the disposable copy holds the

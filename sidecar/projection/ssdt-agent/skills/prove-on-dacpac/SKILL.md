@@ -64,13 +64,16 @@ executors. (Single-developer, one-at-a-time use can target `ProvingGround` direc
 
 ## The proving loop (scaffolded here; the developer's agent runs each command)
 
-> All commands assume **`sidecar/projection/` as the working directory** (the paths below —
-> `scripts/…`, `ssdt-agent/…` — resolve from there, not from the repo root) and a warm disposable
-> copy — see `talk-to-local-sql` for the container, the connection string, and the **runtime
-> shim**: `sqlpackage` is a .NET-8 dotnet tool, so point `DOTNET_ROOT` at the real local dotnet
-> root and keep `DOTNET_ROLL_FORWARD=Major` whenever the installed runtime is newer. On Git Bash
-> only, also export `MSYS_NO_PATHCONV=1` so the `/Action:` / `/SourceFile:` switches and any
-> `/opt/...` docker-exec paths are not mangled (the flag is inert on other shells).
+> All commands assume **the directory that contains `ssdt-agent/` as the working directory** —
+> `sidecar/projection/` in the source repository, the repository root where the tree is vendored
+> (the estate) — so the `ssdt-agent/…` paths below resolve; `scripts/…` is the source repository's
+> warm-container helper. The substrate itself is dispatched by `talk-to-local-sql` (the warm
+> container or the Twin in the source repository; the estate's local engine per
+> `../../PROVING_PATH_WINDOWS.md`), which also owns the connection string and the **runtime
+> shim**: where `sqlpackage` is the .NET-8 dotnet tool, point `DOTNET_ROOT` at the real local
+> dotnet root and keep `DOTNET_ROLL_FORWARD=Major` whenever the installed runtime is newer. On
+> Git Bash only, also export `MSYS_NO_PATHCONV=1` so the `/Action:` / `/SourceFile:` switches and
+> any `/opt/...` docker-exec paths are not mangled (the flag is inert on other shells).
 
 ```bash
 # 0. Runtime shim (REQUIRED in every shell that calls sqlpackage) + warm DB
@@ -89,6 +92,11 @@ scripts/warm-sql.sh start                 # container projection-mssql-warm, loc
 #    "Edit the CREATE, never write ALTER."
 
 # 3. BUILD the destination to a dacpac
+#    SampleCatalog is an SDK-style (Microsoft.Build.Sql) project, so the .NET CLI builds it
+#    anywhere. A classic (original) SSDT .sqlproj — the usual estate format — does NOT build
+#    with `dotnet build`; use MSBuild from a Visual Studio Developer shell instead:
+#      msbuild YourProject.sqlproj /p:Configuration=Release
+#    (the fork is spelled out in ../../PROVING_PATH_WINDOWS.md, step 5)
 dotnet build ssdt-agent/proving-ground/SampleCatalog.sqlproj -c Release
 #    -> ssdt-agent/proving-ground/bin/Release/SampleCatalog.dacpac
 
@@ -133,6 +141,26 @@ settings (Strict vs Permissive) still come from the profile. Obey the isolation 
 `../talk-to-local-sql/SKILL.md`: the Twin sets BEFORE, then only sqlpackage touches `twin` until
 teardown (`twin reset`). The Twin is the base data, never the verdict — the refactorlog / rename /
 pre-post-deploy semantics are proven by *this* sqlpackage publish on top of it.
+
+### On the estate Windows substrate (the vendored tree on a developer machine)
+
+The loop is unchanged; the substrate and the paths move. Set up the machine once per
+`../../PROVING_PATH_WINDOWS.md` — a local engine, `sqlpackage`, a restored `ProvingCopy` of real
+Dev data, and the two local publish profiles — and verify it with that runbook's step 6 before
+trusting a verdict from it. Then run the same five steps against the estate's own project:
+
+- **Build** the estate `.sqlproj` — MSBuild for a classic project
+  (`msbuild YourProject.sqlproj /p:Configuration=Release`, from a Visual Studio Developer shell),
+  `dotnet build` only for an SDK-style one.
+- **Script and Publish** with the same `sqlpackage /Action:…` commands, pointing `/SourceFile:` at
+  the built dacpac and `/Profile:` at `Local.Strict.publish.xml` (then the Permissive copy, only
+  after a block).
+- **Probe and hash** through the host `sqlcmd` against the local engine — the SQL is identical;
+  only the wrapper differs (`../talk-to-local-sql/SKILL.md` §"The estate Windows substrate").
+
+If any leg of that substrate is missing — no local engine, no restored Dev copy, the build fails —
+**stop and tell the developer** (the runbook's "when proving cannot run" rule). Do not classify
+from the SQL text while the substrate is down.
 
 ## Reading a publish outcome — the block lives in the TEXT, never the exit code
 

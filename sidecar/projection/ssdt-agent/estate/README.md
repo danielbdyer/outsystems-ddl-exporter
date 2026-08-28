@@ -33,6 +33,6 @@ formats carry no engine identifiers).
    enforces (a stale row fails the build until it is advanced or consciously re-dated);
    `handoffs/` entries are swept at merge — the pull request is the durable record.
 
-The `estate` face of `sidecar/projection/scripts/ssdt-agent-gates.mjs` keeps these ledgers
+The `estate` face of `sidecar/projection/ssdt-agent/scripts/ssdt-agent-gates.mjs` keeps these ledgers
 machine-readable (table structure) and keeps `in-flight.md` honest (no silently expired
 windows; every refusal row carries its proof artifact).

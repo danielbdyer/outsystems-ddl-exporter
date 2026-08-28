@@ -79,7 +79,7 @@
 
 <!-- Mandatory — the standing limits of a disposable-copy publish, specific to THIS change:
      - Application impact: the exact new failure the running app can hit, and who confirms it (@owner)
-     - Other environments: what Test/UAT/Prod data this copy cannot know; run the verification query
+     - Other environments: what QA/UAT/Prod data this copy cannot know; run the verification query
        before promotion
      - Production scale and timing: blocking or duration the small copy cannot show
      - Reversibility: if the forward publish is all that was proven, say so -->

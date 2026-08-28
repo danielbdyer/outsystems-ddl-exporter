@@ -114,10 +114,28 @@ profiles apply here, pointed at the local copy.
 
 ## Step 5 — The loop
 
-Build the project to a dacpac, then publish it:
+Build the project to a dacpac, then publish it. **The build command depends on the project
+format** — open the `.sqlproj` and look at its root element:
+
+- **Original (classic) SSDT project** — no `Sdk="Microsoft.Build.Sql"` attribute; the usual format
+  for an estate built in Visual Studio (and the only format Visual Studio 2026 opens). Classic
+  projects do **not** build with `dotnet build` — use MSBuild from a **Developer PowerShell for
+  Visual Studio** (or Build → Build Solution in the IDE):
+
+  ```powershell
+  msbuild YourProject.sqlproj /p:Configuration=Release /v:minimal
+  ```
+
+- **SDK-style project** — the root element carries `Sdk="Microsoft.Build.Sql"`. These build with
+  the .NET CLI on any machine with the SDK:
+
+  ```powershell
+  dotnet build YourProject.sqlproj -c Release
+  ```
+
+Then publish the built dacpac:
 
 ```powershell
-dotnet build YourProject.sqlproj -c Release
 sqlpackage /Action:Publish /SourceFile:bin\Release\YourProject.dacpac /Profile:Local.Strict.publish.xml
 ```
 

@@ -1,6 +1,6 @@
 ---
 name: talk-to-local-sql
-description: The disposable local-SQL substrate prove-on-dacpac publishes against. Use whenever prove-on-dacpac needs a warm local SQL Server to publish against, a fresh-or-reset ProvingGround database, ad-hoc sqlcmd queries (row counts, MAX(LEN), NULL counts), or the content-hash check that answers "did the values actually change". Brings up the existing warm-sql container, supplies the connection string, the required runtime shim, and the docker-exec sqlcmd form (the host has NO sqlcmd) — the developer's agent runs the commands. No wrapper script.
+description: The disposable local-SQL substrate prove-on-dacpac publishes against, dispatched per machine. Use whenever prove-on-dacpac needs a local SQL Server to publish to, a fresh-or-reset disposable database, ad-hoc sqlcmd probes (row counts, MAX(LEN), NULL counts, duplicates, orphans), or the content-hash check that answers "did the values actually change". Detects the substrate first — the Twin or the warm-sql container in the source repository (docker-exec sqlcmd; that host has NO sqlcmd), or the estate Windows substrate (a local engine with host sqlcmd, per PROVING_PATH_WINDOWS.md) — then supplies the connection parameters and command forms for that substrate. The developer's agent runs the commands; no wrapper script.
 ---
 
 # Talk to local SQL
@@ -30,10 +30,22 @@ evolves as the schema evolves**. Do not restate the Twin's laws here — point.
 
 ### Detect the substrate
 - `proving-ground/twin.json` present **and** the `twin` CLI available (`twin` on PATH, or
-  `dotnet run --project src/Twin.Cli --` from `sidecar/projection/`) → **the Twin substrate**.
-- else → the hand-authored `ProvingGround` sample on the warm container (the rest of this file).
+  `dotnet run --project src/Twin.Cli --` from `sidecar/projection/`, source repository only) →
+  **the Twin substrate**.
+- else `scripts/warm-sql.sh` present (a source-repository checkout) → **the warm-container sample
+  substrate** — the hand-authored `ProvingGround` sample, the docker-exec sections below.
+- else (the tree is vendored, e.g. at `ssdt-agent/` in the estate repository) → **the estate
+  Windows substrate**: a local engine and a restored copy of real Dev data per
+  `../../PROVING_PATH_WINDOWS.md` — see "The estate Windows substrate" below.
 
-The proving **loop is identical** on either substrate — only the BEFORE-state setup differs.
+The proving **loop is identical** on every substrate — the BEFORE-state setup and the command
+wrappers differ; the SQL inside the probes and the content-hash check is substrate-independent.
+
+> **Scope of the docker sections.** "The runtime shim", "sqlcmd lives in the CONTAINER", "Bring up
+> the warm container", and the docker-exec forms of the probe / reset blocks are the
+> **warm-container substrate's** mechanics (the shim also serves the Twin). On the estate Windows
+> substrate, take the wrapper commands from "The estate Windows substrate" below and reuse the
+> same SQL.
 
 ### Establish the BEFORE state on the Twin
 Run from the config's directory — `root` is the `twin.json` directory, so the estate globs resolve
@@ -89,8 +101,8 @@ tables — that is where empty/clean/violating become named `twin.json` scenario
 scenarios drive the static sample's variants.
 
 The commands and SQL are scaffolded here; the developer's agent runs them. There is **no wrapper
-script** — the existing `scripts/warm-sql.sh` (plain bash, already in the repo) is reused, and
-`sqlcmd` (via `docker exec`, see below) / `sqlpackage` run directly.
+script** — the existing `scripts/warm-sql.sh` (plain bash, already in the source repository) is
+reused, and `sqlcmd` (via `docker exec`, see below) / `sqlpackage` run directly.
 
 ## The runtime shim (REQUIRED before any sqlpackage call)
 
@@ -288,6 +300,49 @@ Run it once before the Permissive publish, once after, and compare `RowCount` + 
 > should be **identical**. That silence is the idempotency guarantee, the strongest result this
 > substrate produces, not a non-event.
 
+## The estate Windows substrate (the vendored tree)
+
+When the tree is vendored in the estate repository, there is no warm container and no
+`scripts/warm-sql.sh` — the substrate is the developer's own Windows machine, set up once per
+`../../PROVING_PATH_WINDOWS.md` (a local engine, `sqlpackage`, a restored copy of real Dev data,
+and the two local publish profiles). Verify it with that runbook's step 6 (the acceptance test and
+the constraint-trust check) before relying on it.
+
+| Field | Value |
+|---|---|
+| Engine | SQL Server Express LocalDB, or a local SQL Server Developer edition |
+| Server | `(localdb)\MSSQLLocalDB` (LocalDB) or `localhost` (Developer edition) |
+| Disposable copy | `ProvingCopy` — restored from a Dev `.bak`; never a shared environment |
+| Auth | Integrated Security (no password) |
+| sqlcmd | on the HOST (installs with Visual Studio's data tooling / SSMS) — no docker |
+
+The wrapper is plain host `sqlcmd` from PowerShell; every probe and the content-hash query in this
+file run through it unchanged:
+
+```powershell
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d ProvingCopy -Q "<sql>"
+```
+
+**Reset = re-restore.** The disposable copy is born from a backup, so the clean-slate move is not
+drop-and-reseed but re-restore (the runbook's step 3, `RESTORE DATABASE ... WITH REPLACE`) — every
+scenario starts from the same real-shaped backup. Drop the copy entirely when done:
+
+```powershell
+sqlcmd -S "(localdb)\MSSQLLocalDB" -Q "IF DB_ID('ProvingCopy') IS NOT NULL BEGIN ALTER DATABASE ProvingCopy SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ProvingCopy; END"
+```
+
+Notes that differ from the container substrate:
+
+- The runtime shim is usually unnecessary here: `sqlpackage` is Visual Studio's own or the
+  `dotnet tool` install per the runbook, and `MSYS_NO_PATHCONV` is a Git Bash concern that does
+  not apply in PowerShell.
+- The publish profiles are the runbook's `Local.Strict.publish.xml` and a Permissive copy — the
+  same two postures as `proving-ground/profiles/`, pointed at the local engine. Never point one at
+  anything that cannot be dropped.
+- The estate's own project usually builds with **MSBuild** (a classic `.sqlproj`), not
+  `dotnet build` — the build fork is in `../../PROVING_PATH_WINDOWS.md` step 5 and
+  `../prove-on-dacpac/SKILL.md`.
+
 ## Honest limits of this substrate
 
 - It is real-*shaped*, not real-*sized* — it cannot prove production-scale timing or blocking; at
@@ -305,12 +360,16 @@ Run it once before the Permissive publish, once after, and compare `RowCount` + 
 
 ## Hard rules
 
-- **No new wrapper / orchestration script.** Reuse `scripts/warm-sql.sh`; run `sqlcmd` (via
-  `docker exec`) / `sqlpackage` directly. The agent runs the commands.
-- **Host has no sqlcmd — always `docker exec` into `projection-mssql-warm`**, server `localhost`
-  inside the container, with `MSYS_NO_PATHCONV=1` on Git Bash.
-- Everything authored for this tree lives under `ssdt-agent/`; the substrate itself reuses the
-  existing repo container.
+- **No new wrapper / orchestration script.** Reuse what the substrate already owns
+  (`scripts/warm-sql.sh` in the source repository; the standing local engine on the estate); run
+  `sqlcmd` / `sqlpackage` directly. The agent runs the commands.
+- **On the warm container the host has no sqlcmd** — always `docker exec` into
+  `projection-mssql-warm`, server `localhost` inside the container, with `MSYS_NO_PATHCONV=1` on
+  Git Bash. **On the estate Windows substrate `sqlcmd` runs on the host** against the local
+  engine.
+- Everything authored for this tree lives under `ssdt-agent/`; the substrate is whatever the
+  machine already owns — the warm container in the source repository, the local engine on the
+  estate.
 
 ## Connector points
 

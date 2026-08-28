@@ -5,7 +5,12 @@ description: Use when the developer says "merge CustomerAddress back into Custom
 
 # Merge two entities into one (collision / silent-1:many-drop trap) — recipe AUTHORED HERE
 
-> **CANONICAL-HOME NOTICE.** The curriculum's §17.7 Table-Merge pattern lives in the playbook at `ssdt-playbook/Operations/Multi-Phase-Patterns/Table-Merge.md` (the final curriculum edition; the numbered handbook file 14 never carried a §17.7 body). The recipe below is this tree's working contract for the op — keep it and the playbook pattern reconciled; when they disagree, the proven recipe here wins and the playbook is corrected.
+> **CANONICAL-HOME NOTICE.** The curriculum's §17.7 Table-Merge pattern lives in the **source
+> repository's** playbook (`ssdt-playbook/Operations/Multi-Phase-Patterns/Table-Merge.md` there —
+> the playbook is not vendored with this tree; the numbered handbook file 14 never carried a §17.7
+> body). The recipe below is this tree's working contract for the op and is complete on its own —
+> keep it and the playbook pattern reconciled in the source repository; when they disagree, the
+> proven recipe here wins and the playbook is corrected.
 
 > **Default (provisional — prove before you classify).** Ships across three
 > releases (three pull requests): add the absorbing columns to the survivor and copy the data, cut

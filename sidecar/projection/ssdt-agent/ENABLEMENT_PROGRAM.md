@@ -155,7 +155,7 @@ carry an empirical adjudication from the Twin-proven corpus.
   unwired; repo `.claude/` carries hooks only. The praxis exists as files an agent must be
   told to go read. **[RESOLVED 2026-08-11 — O4 landed: the tree is packaged into
   `.claude/skills/` + `.claude/agents/` as generated dispatch pointers
-  (`sidecar/projection/scripts/ssdt-agent-package.mjs apply`), kept in sync by the
+  (`sidecar/projection/ssdt-agent/scripts/ssdt-agent-package.mjs apply`), kept in sync by the
   `packaging` CI gate.]**
 - **F14 The engine seam is unproven, with one known gap.** `ACCELERANT_PLAN.md` Stage 0 has
   not been run; a concrete divergence was found ahead of it: the F# `SqlprojEmitter` has
