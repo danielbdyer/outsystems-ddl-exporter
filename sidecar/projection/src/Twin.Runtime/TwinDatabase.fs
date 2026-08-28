@@ -184,3 +184,72 @@ WHERE s.name <> N'twin' AND t.is_ms_shipped = 0;
             with _ ->
                 return 0L
         }
+
+    /// Post-mint constraint re-validation — the trust gate. The bulk load
+    /// path does not enforce CHECK constraints, so a mint whose generated
+    /// data violates one would otherwise land green with the constraint
+    /// silently untrusted (`is_not_trusted = 1`) — a local copy that stops
+    /// matching what an upper environment enforces. This pass re-validates
+    /// every user check and foreign key (`WITH CHECK CHECK CONSTRAINT`),
+    /// so a mint either ends with every constraint TRUSTED or refuses by
+    /// name. The schema-derived floor cannot read a predicate; a scenario,
+    /// correction, or evidence entry owns the data-side remedy.
+    let revalidateConstraints (twinCnn: SqlConnection) : Task<Result<int>> =
+        task {
+            try
+                let candidates = System.Collections.Generic.List<string * string * string>()
+                use listCmd = twinCnn.CreateCommand()
+                listCmd.CommandText <-
+                    """
+SELECT s.name, t.name, c.name
+FROM sys.check_constraints c
+JOIN sys.tables t ON t.object_id = c.parent_object_id
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+WHERE s.name <> N'twin' AND t.is_ms_shipped = 0
+UNION ALL
+SELECT s.name, t.name, fk.name
+FROM sys.foreign_keys fk
+JOIN sys.tables t ON t.object_id = fk.parent_object_id
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+WHERE s.name <> N'twin' AND t.is_ms_shipped = 0;
+"""
+                let! reader = listCmd.ExecuteReaderAsync()
+                use r = reader
+                let mutable go = true
+                while go do
+                    let! hasRow = r.ReadAsync()
+                    if hasRow then candidates.Add(r.GetString 0, r.GetString 1, r.GetString 2)
+                    else go <- false
+                r.Close()
+
+                let bracket (n: string) = System.String.Concat("[", n.Replace("]", "]]"), "]")  // LINT-ALLOW: identifier quoting at the command boundary
+                let failures = System.Collections.Generic.List<string * string>()
+                for (schemaName, tableName, constraintName) in candidates do
+                    try
+                        use cmd = twinCnn.CreateCommand()
+                        cmd.CommandText <-
+                            System.String.Concat(  // LINT-ALLOW: terminal DDL at the command boundary; identifiers bracket-escaped above
+                                "ALTER TABLE ", bracket schemaName, ".", bracket tableName,
+                                " WITH CHECK CHECK CONSTRAINT ", bracket constraintName, ";")
+                        let! _ = cmd.ExecuteNonQueryAsync()
+                        ()
+                    with ex ->
+                        failures.Add(
+                            System.String.Concat(bracket schemaName, ".", bracket tableName, ".", bracket constraintName),  // LINT-ALLOW: refusal display path
+                            ex.Message)
+
+                if failures.Count = 0 then return Result.success candidates.Count
+                else
+                    let firstName, firstDetail = failures.[0]
+                    return
+                        Result.failureOf
+                            (ValidationError.createWithMetadata
+                                "twin.mint.constraintViolation"
+                                "The minted data violates a declared constraint; the twin refuses rather than hold it untrusted."
+                                (Map.ofList
+                                    [ "constraint", Some firstName
+                                      "failing", Some (string failures.Count)
+                                      "detail", Some firstDetail ]))
+            with ex ->
+                return Result.failureOf (sqlFailure "revalidate constraints" ex.Message)
+        }

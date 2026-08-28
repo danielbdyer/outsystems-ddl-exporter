@@ -231,9 +231,14 @@ scenario, coordinate, and expected shape named.
   the unchanged columns byte-identical. What the floor does NOT do, named: it cannot guess
   business semantics (a floor Status vocabulary is generic — the static lanes and real
   evidence own real vocabularies), and it does not read CHECK-constraint predicates (its
-  numerics default non-negative, which satisfies the common `>= 0` class; a stricter
-  predicate over floor data remains a named residual). A corrections artifact still owns
-  PII/Faker presentation realism on top (`twin classify`).
+  numerics default non-negative, which satisfies the common `>= 0` class). The residual is
+  gated, not silent: **the post-mint trust gate** (2026-08-28, `TwinDatabase.revalidateConstraints`,
+  wired in `Runs.up` before the data fingerprint lands) re-validates every user check and
+  foreign key, so a mint either ends with every constraint TRUSTED (`is_not_trusted = 0` —
+  the twin matches what an upper environment enforces) or refuses by constraint name
+  (`twin.mint.constraintViolation`); a scenario, correction, or evidence entry owns the
+  data-side remedy. A corrections artifact still owns PII/Faker presentation realism on top
+  (`twin classify`).
 - **`--watch`** deferred behind the same reconcile loop (operator decision 2026-07-18).
 - **Composite/natural PKs** inherit the kernel's named v1 boundary.
 - **L3 joint synthesis** stays bounded by the kernel's F5b surface.
