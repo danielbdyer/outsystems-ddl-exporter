@@ -40,6 +40,17 @@ If `classify-mechanism` said **on-sight** (the purely-additive corner — additi
 unaffected), still run one clean Strict publish to confirm no surprise delta — but no flip is
 possible.
 
+## The unit of proof is the release delta
+
+A pull request often carries several operations, and the engine compiles ONE script per release
+— so what gets published to the copy is the release's combined delta, exactly as the pull
+request ships it, never one atom at a time. Per-operation proofs establish the vocabulary (which
+guard, which Msg, which flip); the release's own publish is the verdict. Proven at this grain in
+`../../sample-prs/compound/`: a release is vetoed by its strictest atom and rolls back whole
+(`IncludeTransactionalScripts`), and the post-deployment seed's column claims bind every atom in
+the release at once. When `../decompose/SKILL.md` packed several atoms into one release, prove
+that packing by publishing it as one.
+
 ## The one-command form (run this; the scaffold below is what it does)
 
 The loop below is packaged as one command, `../../scripts/prove.mjs` (`CONNECTORS.md` §4,

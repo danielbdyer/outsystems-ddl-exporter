@@ -94,7 +94,15 @@ part of the change set, not an afterthought. Proven live; the captured run is
   Never combine the two (F2 — a model that tightens in the same release the pre-deploy tightens
   still trips the guard AND half-applies). Release 1's own `ALTER` fails `Msg 515` if a NULL or an
   over-length value remains, so the reconcile is part of Release 1, not an afterthought. Name both
-  releases in the pull request. The full graph is `../../../THE_DECISION_TREE.md`'s S5 SHIP
+  releases in the pull request. **And hold every other publish to that environment between
+  Release 1 and Release 2.** The model deliberately lags in that window, so ANY publish that
+  carries it — a second developer shipping an unrelated change included — regenerates the old
+  shape and reverts the tightening, with every check green. The revert was captured live on a
+  disposable copy (the drop face: one lagging-model publish re-created the dropped column,
+  backfilled from its default — `../../../sample-prs/compound/extract-to-lookup-program.md`).
+  The pull request's *Before promoting* section carries the hold as an imperative, and the
+  in-flight ledger row (`../../../estate/in-flight.md`) is the register the hold is checked
+  against. The full graph is `../../../THE_DECISION_TREE.md`'s S5 SHIP
   sub-machine; the concrete narrow and make-mandatory shapes are in `FINDINGS_AND_CHANGES.md`
   Part 4.
 

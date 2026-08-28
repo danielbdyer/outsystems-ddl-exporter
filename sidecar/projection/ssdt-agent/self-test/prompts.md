@@ -919,6 +919,68 @@ flag it against the op skill, not the run.
 
 ---
 
+## Family: drops — the inverse operations (added 2026-08-28, proven live on sqlpackage 170.5.76)
+
+### CON-07 — drop-default · positive
+> **"Stop giving new products the LEGACY code automatically — the loader supplies a real one now."**
+- **op:** `skills/op/drop-default/SKILL.md`
+- **How it ships:** as a single schema change applied in place — one `DROP CONSTRAINT`; the publish never blocks.
+- **Who reviews:** a dev lead or an experienced developer — the column is `NOT NULL`, so an insert that omitted it now fails at runtime.
+- **Seed:** the standard Product seed (5 rows; the default fills only new rows).
+- **Outcome:** the agent proves the clean single-statement delta, then surfaces the risk the publish cannot show — the insert paths (application and seed) that relied on the default — and routes that confirmation to the application owner.
+- **Fail mode:** reads the green publish as consequence-free and never asks who inserts without the column.
+
+### CON-05 — drop-check · flip (permanent vs load)
+> **"Drop the rule that Total can't be negative — we book refunds as negative orders now."**
+- **op:** `skills/op/drop-check/SKILL.md` · **_index:** `skills/_index/constraint-is-a-claim/SKILL.md`
+- **How it ships:** as a single schema change applied in place; the drop validates nothing and never blocks.
+- **Who reviews:** a dev lead or an experienced developer — a business rule stops being enforced at the data layer.
+- **Seed:** the standard Order seed (4 rows, all Totals non-negative).
+- **Outcome:** the agent distinguishes retirement from suspension — "drop it so the load can run" routes to `toggle-trust`, not here — and records that a re-add later re-validates every row written in the gap.
+- **Fail mode:** scopes a temporary load exception as a permanent rule deletion, or treats the clean publish as proof the change is safe.
+
+### CON-06 — drop-unique · positive
+> **"Status codes don't have to be unique anymore — two rows can share a code during the reorg."**
+- **op:** `skills/op/drop-unique/SKILL.md`
+- **How it ships:** as a single schema change applied in place — one `DROP INDEX`; never blocks.
+- **Who reviews:** a dev lead or an experienced developer — an identity guarantee stops being enforced.
+- **Seed:** the standard Status seed (3 rows, distinct codes).
+- **Outcome:** the agent checks what keys on the column — a MERGE or upsert keyed on it starts matching several rows — and records that re-adding uniqueness is blocked by any duplicate written in the gap (`Msg 1505`).
+- **Fail mode:** treats it as an index-tuning change instead of a meaning change.
+
+### KEY-06 — drop-pk · flip (referenced vs unreferenced)
+> **"Remove the primary key from Category — the feed we're switching to brings its own identity."**
+- **op:** `skills/op/drop-pk/SKILL.md`
+- **How it ships:** unreferenced — as a single schema change applied in place, leaving a heap. Referenced by any foreign key — it does not ship at all: the project refuses to build (`SQL71516`) before the engine is reached.
+- **Who reviews:** a dev lead — identity and clustered organization are both removed.
+- **Seed:** Category (3 rows, unreferenced) for the clean face; add `FK_OrderLine_Order_OrderId` and remove `PK_Order_Id` for the build-refusal face.
+- **Outcome:** the agent probes the build first (the model is the first gate), names the heap consequence on the clean face, and asks whether the real intent is a key change (drop + define-pk as one program).
+- **Fail mode:** deletes the referencing foreign keys to make the build pass, without scoping each as its own reviewed change.
+
+## Family: compound — the release-grain molecules (see `../sample-prs/compound/README.md`)
+
+The unit of proof is the release delta: these cases hand the agent a MOLECULE, and the verdict
+is about the release train, not any one atom. Each maps to a proven exemplar in
+`../sample-prs/compound/`.
+
+### CMP-01 — additive batch · positive
+> **"Stand up returns: a Return entity, a ReturnReason lookup with its values, references to order lines and reasons, and a ReturnsAllowed flag on Order that's on for everyone."**
+- **plan:** `skills/decompose/SKILL.md` → one release, one publish (every atom additive).
+- **Outcome:** the agent packs all six atoms into ONE release, lets the engine order the objects, and proves the single combined delta — clean, defaults backfilled, every key trusted. Exemplar: `../sample-prs/compound/additive-batch.md`.
+- **Fail mode:** one PR per atom (six reviews for one feature), or hand-sequencing object creation inside the release.
+
+### CMP-02 — reshape coupling · negative (the combined release is refused)
+> **"Rename Customer.ContactPhone to MobileNumber, and while you're in there make Email required."**
+- **plan:** `skills/decompose/SKILL.md` step 4 — both atoms reshape `dbo.Customer`: one concern, serialized.
+- **Outcome:** the agent refuses the combined release and proves why: the tightening's guard vetoes the whole delta, rename included (atomic rollback), so Release 1 is the rename (with the refactorlog entry AND the seed's column references) and the tightening ships as its own two-release. Exemplar: `../sample-prs/compound/rename-then-tighten.md`.
+- **Fail mode:** shipping both in one publish because "the rename is safe", or calling the combined block a rename problem.
+
+### CMP-03 — the multi-phase program's back half · flip
+> **"Finish the StatusText cleanup: everything maps to the Status lookup now, so wire the reference and get rid of the text column."**
+- **plan:** migrate release (pre-deploy reconcile + FK, one publish), then the contract two-release the locked gate forces.
+- **Outcome:** the agent measures the unmapped value, records the mapping as the seed's truth (not only a pre-deploy patch — the seed undoes a repoint it disagrees with), retires the migrate block before the contract phase, and names the lag window between C1 and C2 with the hold-other-publishes instruction. Exemplar: `../sample-prs/compound/extract-to-lookup-program.md`.
+- **Fail mode:** the reconcile lives only in the pre-deploy (the seed reverts it), the seed still names the dropped column (`Msg 207` on a half-applied release), or the stale migrate block breaks C1.
+
 ## Cross-family traps (the obvious call is wrong)
 
 ### IDEM-01N — no-op redeploy (silence is the proof) · negative
@@ -970,10 +1032,13 @@ The ~41 per-op skills each have at least one prompt above. The mapping:
   make-optional=COL-04 · widen=COL-05 · narrow=COL-06/06B · retype-implicit=COL-07B ·
   retype-explicit=COL-07 · rename-attribute=COL-08/08N · delete-attribute=COL-09
 - **keys-and-refs:** define-pk=KEY-01 · create-fk-clean=KEY-02 · create-fk-orphan=KEY-03/03N ·
-  change-delete-rule=KEY-04 · drop-fk=KEY-05
+  change-delete-rule=KEY-04 · drop-fk=KEY-05 · drop-pk=KEY-06
 - **indexes:** add-index=IDX-01 · modify-index=IDX-02/02B · drop-index=IDX-03 · rebuild-index=IDX-04N
 - **constraints:** add-default=CON-01 · modify-default=CON-01B · add-unique=CON-02/02N ·
-  add-check=CON-03 · toggle-trust=CON-04N
+  add-check=CON-03 · toggle-trust=CON-04N · drop-check=CON-05 · drop-unique=CON-06 ·
+  drop-default=CON-07
+- **compound (release-grain):** additive batch=CMP-01 · reshape coupling=CMP-02 ·
+  multi-phase back half=CMP-03
 - **static-data:** create-static-seed=STA-01 · edit-seed=STA-02 (+IDEM-01N) · extract-to-lookup=STA-03/03N ·
   delete-seed-value=STA-04N
 - **structural:** split-table=STR-01 · merge-tables=STR-02/02N · move-attribute=STR-03 · identity-swap=STR-04

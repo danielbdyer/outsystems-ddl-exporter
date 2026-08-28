@@ -37,14 +37,14 @@ hand.
    each machine: ask Copilot Chat "what governs schema changes in this repository?" and confirm
    `copilot-instructions.md` appears in the response's **References** list. No reference means
    the switch is off or the file did not load — fix that machine before relying on the workflow.
-1. **Vendor the tree.** Copy the whole `ssdt-agent/` directory (the canonical tree) into the
-   root of your estate repository, so its path is `ssdt-agent/` at the repository root. The
-   skills, agents, and instructions in this bundle reference it there. If you vendor it to a
-   different path, adjust the `ssdt-agent/...` references throughout the bundle to match.
-   Program history of the source repository is safe to prune from the vendored copy — nothing
-   functional cites it: `ASSESSMENT_2026_08_24.md`, `ENABLEMENT_PROGRAM.md`,
-   `HANDOFF_SESSION_2026_08_26.md`, `PHASE_2_CURRICULUM.md`, `ACCELERANT_PLAN.md`, and the
-   tree's `CLAUDE.md` (source-repo session routing). Keep everything else: the skills cite
+1. **Vendor the tree.** From the source repository, run
+   `node sidecar/projection/ssdt-agent/scripts/ssdt-agent-package.mjs vendor <estate-repo-root>`
+   — it copies the canonical tree to `ssdt-agent/` at the estate repository root and prunes the
+   source repository's program history automatically (the assessment, the enablement program,
+   the session handoffs and plans, and the tree's `CLAUDE.md`), which nothing functional cites.
+   A hand copy of the whole `ssdt-agent/` directory works too; the pruning is then yours. If
+   you vendor to a different path, adjust the `ssdt-agent/...` references throughout the
+   bundle to match. Keep everything else: the skills cite
    `CONNECTORS.md`, `FINDINGS_AND_CHANGES.md`, `THE_RECORD.md`, `THE_RECORD_FORMS.md`,
    `THE_DECISION_TREE.md`, `PROVING_PATH_WINDOWS.md`, `estate/`, `self-test/`, `sample-prs/`,
    and `proving-ground/` from inside the tree — and `scripts/` + `copilot-package/` are the
@@ -146,7 +146,7 @@ and also writes the `.github/` and `.azuredevops/` files in place at the reposit
 `copilot-check` verifies both. The `packaging` gate runs it in the source repo's CI;
 `ssdt-agent/pipelines/ssdt-agent-check.yml` runs it on ADO.
 
-Bundle fingerprint: `6f6c4407c4b0` — a content hash over the generator and every source
+Bundle fingerprint: `e07414c53138` — a content hash over the generator and every source
 file. It changes exactly when regeneration is due, so a stale vendored bundle is detectable at a
 glance.
 

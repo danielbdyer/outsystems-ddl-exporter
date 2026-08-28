@@ -50,6 +50,8 @@ jobs:
         run: node sidecar/projection/ssdt-agent/scripts/prove.mjs selftest
       - name: bake.mjs selftest (fingerprint and naming laws stay honest)
         run: node sidecar/projection/ssdt-agent/scripts/bake.mjs selftest
+      - name: inflight-check.mjs selftest (the lag-window hold stays honest)
+        run: node sidecar/projection/ssdt-agent/scripts/inflight-check.mjs selftest
 
   build-proving-ground:
     name: proving ground compiles

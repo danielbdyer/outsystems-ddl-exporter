@@ -127,7 +127,12 @@ equality that licenses the drop) and the row-count / mapping probes, see
 
 Every change this concern governs holds a row in **`../../../estate/in-flight.md`** from the
 merge of its first phase until the final phase ships: phase N of M, what ships next, and the
-date the current window closes. Advancing a phase updates the row; the CI gate fails the
+date the current window closes. **While any phase's model lags its database — every
+tightening's R1→R2 gap and every contract leg — hold other publishes to that environment:**
+any publish carrying the lagging model regenerates the old shape on a green publish (captured
+live: one lagging-model publish re-created a dropped column, backfilled from its default —
+`../../../sample-prs/compound/extract-to-lookup-program.md`). The in-flight row is the
+register that hold is checked against. Advancing a phase updates the row; the CI gate fails the
 build on an expired window, so re-dating one is a conscious, reviewer-signed act; shipping
 the final phase deletes the row. A multi-phase change without its register row is incomplete
 — the same standing as a rename without its refactorlog entry.

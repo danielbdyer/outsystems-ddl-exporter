@@ -1,0 +1,65 @@
+# ssdt-agent PR validation — the pipeline reproduces the proof (CONNECTORS.md §5, the shape).
+#
+# For a VENDORED estate repository on Azure DevOps. Register this pipeline and add it to the
+# default branch's build-validation policy, so a schema pull request is gated by machinery, not
+# by trusting the author's pasted evidence:
+#
+#   1. inflight-check — refuses a PR that touches a table held by an open in-flight lag window
+#      (estate/in-flight.md). A publish into a lag window reverts the in-flight change on a
+#      green publish; the check makes the hold structural.
+#   2. bake restore — pulls the current proving substrate (the fingerprint-versioned .bacpac
+#      published by the bake lane) onto the agent's own SQL instance. No real data, no Docker
+#      requirement: any reachable SQL Server works, including a hosted agent's localdb.
+#   3. prove verdict — publishes the PR's ACTUAL combined delta (the unit of proof is the
+#      release delta) under the Strict profile and publishes the JSON verdict as a build
+#      artifact. Exit 0 (published clean) passes; exit 3 (blocked) fails the check WITH the
+#      verdict attached — the PR must carry its remedy (the pre-deployment step, or the
+#      two-release shape whose R1 publishes clean by design); any other exit is a tooling
+#      failure and fails loudly.
+#
+# FILL IN before first use (marked <>): the variable-group or secret for the SQL password, the
+# project path, and where your bake artifact is published (a pipeline artifact of the bake
+# lane, or a file share). Node >= 18 on the agent.
+
+trigger: none # build-validation policy invokes it on PRs
+
+pool:
+  vmImage: windows-latest # LocalDB ships on the hosted Windows image; any pool with a reachable SQL Server works
+
+variables:
+  BAKE_SQL_PASSWORD: "" # unused with LocalDB integrated auth; set via variable group for SQL auth
+
+steps:
+  - checkout: self
+    fetchDepth: 0
+
+  - script: node ssdt-agent/scripts/inflight-check.mjs diff origin/$(System.PullRequest.TargetBranchName)
+    displayName: "in-flight lag-window hold"
+
+  - script: sqllocaldb create MSSQLLocalDB && sqllocaldb start MSSQLLocalDB
+    displayName: "start LocalDB"
+
+  - script: dotnet tool install --global microsoft.sqlpackage
+    displayName: "install sqlpackage"
+
+  - task: DownloadPipelineArtifact@2
+    displayName: "pull the proving substrate (bake artifact)"
+    inputs:
+      source: specific
+      project: <your-project>
+      pipeline: <the-bake-lane-pipeline-id>
+      artifact: proving-substrate
+      path: $(Pipeline.Workspace)/bake
+
+  - script: node ssdt-agent/scripts/bake.mjs restore --manifest $(Pipeline.Workspace)/bake/bake.manifest.json --config <path-to>/prove.config.json
+    displayName: "restore the substrate (fingerprint-versioned; no drop needed)"
+
+  - script: node ssdt-agent/scripts/prove.mjs verdict --project <path-to>/<YourProject>.sqlproj --config <path-to>/prove.config.json --db $(Build.BuildId)_pr
+    displayName: "prove the PR's combined delta (Strict)"
+
+  - task: PublishPipelineArtifact@1
+    displayName: "publish the verdict"
+    condition: always()
+    inputs:
+      targetPath: <path-to>/bin/prove
+      artifact: prove-verdict

@@ -183,6 +183,33 @@ change: the **Verdict**'s risk class, its **How it ships** shape (its SHIP termi
 standing **Not checked** items. Assemble the PR from those; the op owns the specifics, this skill owns
 the shape and the register.
 
+## The compound record — one pull request, several operations
+
+A pull request that carries a molecule — several operations in one release, or one program across
+several — writes the ten sections ONCE, at the pull request's grain, never once per atom. Worked
+instances: `../../sample-prs/compound/` (the additive batch, the serialized reshape pair, the full
+multi-phase program). How the sections stretch:
+
+- A one-line **atoms** header under the title names each operation (its op-slug) and its object,
+  so the reviewer sees the molecule's parts before the sections begin.
+- **What changes** enumerates every atom's edit; **The data** carries the counts each atom's
+  verdict turned on.
+- **How it ships** names the release train, one line per release: which atoms ride each release
+  and what forces any staging (read from each atom's SHIP terminal; the packing itself is
+  provisional until the combined delta publishes — `../prove-on-dacpac/SKILL.md`). For a
+  multi-release train, *Before promoting* carries the ordering imperatives and the
+  hold-other-publishes line for every lag window.
+- **What proving showed** reports the release-grain publishes — the combined delta's outcome per
+  release, in order — plus any atom-grain proof that decided a fork. A finding that only exists
+  at the release grain (a vetoed sibling, a seed claim over another atom's column, a stale
+  phase-bound script) is stated as such.
+- **Rollback** reverses the train in reverse order, and says which release is the commitment
+  step after which reversal is no longer lossless.
+
+Each atom's fragments (its verification query, its rollback line, its Not-checked items) still
+come from its own skill's `## On the record`; the compound record consolidates them without
+duplicating the reasoning.
+
 ## Hard rules
 
 - **The register is `THE_RECORD_FORMS.md`.** The developer is the author, the agent invisible; every

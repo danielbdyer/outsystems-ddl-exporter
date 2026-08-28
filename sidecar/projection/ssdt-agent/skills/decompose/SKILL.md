@@ -184,9 +184,17 @@ another.
 
 ## The invariants decompose must not break
 
+- **The unit of proof is the release delta.** The engine compiles one script per release, so a
+  packed release is proven by publishing its COMBINED delta to the disposable copy — not by the
+  sum of its atoms' individual proofs. The plan's packing is provisional exactly the way
+  `../classify-mechanism/SKILL.md`'s cascade is provisional: the combined publish confirms it or
+  flips it. Proven at the release grain in `../../sample-prs/compound/` — a blocking atom vetoes
+  its whole release (the innocent siblings roll back with it), and the post-deployment seed's
+  claims apply to every atom's columns at once.
 - **Every atom is still proven.** The plan is a sequence of catalog operations; each one still runs
   the full confirm-intent → change-author → prove loop on a disposable copy. Decomposition orders and
-  groups; it never lets an operation ship on the strength of the plan alone.
+  groups; it never lets an operation ship on the strength of the plan alone — and the packed
+  release is then proven as one delta, per the invariant above.
 - **Read each atom's release count; never restate it.** How many releases an atom needs, and which
   gate forces the staging, is owned by its op skill and its `_index` concern. Decompose reads the
   SHIP terminal and packs; it does not assert a count of its own. A count decompose invents is a

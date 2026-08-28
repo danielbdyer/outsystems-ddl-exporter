@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Package the ssdt-agent tree as loadable agent surfaces — apply | check |
-// copilot-apply | copilot-check.
+// copilot-apply | copilot-check | vendor <dest>.
 //
 // CONNECTORS.md §1 and §2, executed with the repo's regenerate-and-diff
 // discipline instead of raw copies: each packaged entry is a POINTER — the
@@ -395,14 +395,14 @@ function adoptionDoc() {
     "   each machine: ask Copilot Chat \"what governs schema changes in this repository?\" and confirm",
     "   `copilot-instructions.md` appears in the response's **References** list. No reference means",
     "   the switch is off or the file did not load — fix that machine before relying on the workflow.",
-    "1. **Vendor the tree.** Copy the whole `ssdt-agent/` directory (the canonical tree) into the",
-    "   root of your estate repository, so its path is `ssdt-agent/` at the repository root. The",
-    "   skills, agents, and instructions in this bundle reference it there. If you vendor it to a",
-    "   different path, adjust the `ssdt-agent/...` references throughout the bundle to match.",
-    "   Program history of the source repository is safe to prune from the vendored copy — nothing",
-    "   functional cites it: `ASSESSMENT_2026_08_24.md`, `ENABLEMENT_PROGRAM.md`,",
-    "   `HANDOFF_SESSION_2026_08_26.md`, `PHASE_2_CURRICULUM.md`, `ACCELERANT_PLAN.md`, and the",
-    "   tree's `CLAUDE.md` (source-repo session routing). Keep everything else: the skills cite",
+    "1. **Vendor the tree.** From the source repository, run",
+    "   `node sidecar/projection/ssdt-agent/scripts/ssdt-agent-package.mjs vendor <estate-repo-root>`",
+    "   — it copies the canonical tree to `ssdt-agent/` at the estate repository root and prunes the",
+    "   source repository's program history automatically (the assessment, the enablement program,",
+    "   the session handoffs and plans, and the tree's `CLAUDE.md`), which nothing functional cites.",
+    "   A hand copy of the whole `ssdt-agent/` directory works too; the pruning is then yours. If",
+    "   you vendor to a different path, adjust the `ssdt-agent/...` references throughout the",
+    "   bundle to match. Keep everything else: the skills cite",
     "   `CONNECTORS.md`, `FINDINGS_AND_CHANGES.md`, `THE_RECORD.md`, `THE_RECORD_FORMS.md`,",
     "   `THE_DECISION_TREE.md`, `PROVING_PATH_WINDOWS.md`, `estate/`, `self-test/`, `sample-prs/`,",
     "   and `proving-ground/` from inside the tree — and `scripts/` + `copilot-package/` are the",
@@ -566,8 +566,48 @@ function runCopilot(mode) {
   console.log(`ssdt-agent copilot package: ${expected.size} entries in sync`);
 }
 
+// Program history of the source repository: safe to prune from a vendored copy — nothing
+// functional cites it. Kept in one place so ADOPTION.md's prose and the vendor verb agree.
+const VENDOR_PRUNE = new Set([
+  "ASSESSMENT_2026_08_24.md",
+  "ARCHITECTURE_REVIEW_2026_08_28.md",
+  "ENABLEMENT_PROGRAM.md",
+  "HANDOFF_SESSION_2026_08_26.md",
+  "PHASE_2_CURRICULUM.md",
+  "ACCELERANT_PLAN.md",
+  "CLAUDE.md",
+]);
+const VENDOR_SKIP_DIRS = new Set(["bin", "obj", "node_modules", ".git"]);
+
+function runVendor(dest) {
+  if (!dest) {
+    console.log("usage: ssdt-agent-package.mjs vendor <estate-repo-root>");
+    process.exit(1);
+  }
+  const destRoot = join(dest, VENDOR);
+  let copied = 0, pruned = 0;
+  const copyDir = (from, to, depth) => {
+    for (const name of readdirSync(from)) {
+      const src = join(from, name);
+      const isDir = statSync(src).isDirectory();
+      if (isDir && VENDOR_SKIP_DIRS.has(name)) continue;
+      if (depth === 0 && !isDir && VENDOR_PRUNE.has(name)) { pruned++; continue; }
+      const tgt = join(to, name);
+      if (isDir) { copyDir(src, tgt, depth + 1); continue; }
+      mkdirSync(dirname(tgt), { recursive: true });
+      writeFileSync(tgt, readFileSync(src));
+      copied++;
+    }
+  };
+  copyDir(TREE, destRoot, 0);
+  console.log(`vendored ${copied} files into ${destRoot} (${pruned} program-history files pruned)`);
+  console.log(`next: from ${dest}, run \`node ${VENDOR}/scripts/ssdt-agent-package.mjs copilot-apply\``);
+  console.log(`      to write the .github/ and .azuredevops/ bundles in place, then follow ADOPTION.md.`);
+}
+
 function main() {
   const mode = process.argv[2] ?? "check";
+  if (mode === "vendor") return runVendor(process.argv[3]);
   if (mode === "copilot-apply" || mode === "copilot-check") return runCopilot(mode);
 
   const expected = new Map();

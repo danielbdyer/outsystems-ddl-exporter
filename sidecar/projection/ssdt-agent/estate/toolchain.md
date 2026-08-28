@@ -16,7 +16,7 @@ actually ran.
 
 | tool | pinned version | source of truth | recorded | notes |
 |---|---|---|---|---|
-| sqlpackage | UNPINNED | the estate pipeline's DacFx publish step — record its version here | — | latest installs while unpinned; align to the pipeline's DacFx before trusting trust-state findings |
+| sqlpackage | UNPINNED | the estate pipeline's DacFx publish step — record its version here | — | latest installs while unpinned; align to the pipeline's DacFx before trusting trust-state findings. Constraint-trust re-confirmed on 170.5.76 (2026-08-28): four declarative FK adds — three on empty children, one over a populated child (`FK_CustomerAddress_Customer_CustomerId`, 5 rows) and one over a populated child in the same release as its pre-deploy reconcile (`FK_Order_Status_StatusId`) — and one CHECK add all landed `is_not_trusted = 0` on live publishes (`../sample-prs/compound/`, `../sample-prs/drop-check.md`). The estate pipeline's own version stays the open item |
 | DacFx (estate pipeline) | UNPINNED | the Azure DevOps → Octopus publish task and its XML flags | — | when known: pin here, mirror the flags into `../proving-ground/profiles/ProvingGround.Pipeline.publish.xml`, verify auto-trust once (`is_not_trusted = 0` on a real publish), and resolve the `../FINDINGS_AND_CHANGES.md` Part 5 open item |
 | Microsoft.SqlServer.DacFx (Twin corpus) | 162.5.57 | `../../src/Projection.Pipeline/Projection.Pipeline.fsproj`, `../../src/Projection.Targets.SSDT/Projection.Targets.SSDT.fsproj` | 2026-08-22 | the parallel proof corpus's engine; the live sqlpackage engine is authoritative where they diverge |
 | Microsoft.Build.Sql (sqlproj SDK) | 2.2.0 | `../proving-ground/SampleCatalog.sqlproj` | 2026-07-02 | bump only on a real build-failure trigger |
