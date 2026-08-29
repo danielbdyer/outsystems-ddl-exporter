@@ -150,7 +150,7 @@ public sealed class UatUsersPipelineRunner : IUatUsersPipelineRunner
                 "Executing uat-users pipeline for {Schema}.{Table} -> {Path}.",
                 schema,
                 table,
-                Path.Combine(artifacts.Root, "uat-users"));
+                Path.Combine(artifacts.Root, UatUsersArtifactNames.Directory));
 
             await pipeline.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
 

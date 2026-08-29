@@ -21,40 +21,26 @@ internal sealed class RelationshipDocumentMapper
     }
 
     public Result<ImmutableArray<RelationshipModel>> Map(RelationshipDocument[]? docs, DocumentPathContext path)
-    {
-        if (docs is null || docs.Length == 0)
+        => _context.MapArray<RelationshipDocument, RelationshipModel>(docs, path, (doc, relationshipPath) =>
         {
-            return Result<ImmutableArray<RelationshipModel>>.Success(ImmutableArray<RelationshipModel>.Empty);
-        }
-
-        var builder = ImmutableArray.CreateBuilder<RelationshipModel>(docs.Length);
-        for (var i = 0; i < docs.Length; i++)
-        {
-            var doc = docs[i];
-            if (doc is null)
-            {
-                continue;
-            }
-
-            var relationshipPath = path.Index(i);
             var attributeResult = AttributeName.Create(doc.ViaAttributeName);
             if (attributeResult.IsFailure)
             {
-                return Result<ImmutableArray<RelationshipModel>>.Failure(
+                return Result<RelationshipModel>.Failure(
                     _context.WithPath(relationshipPath.Property("viaAttributeName"), attributeResult.Errors));
             }
 
             var entityResult = EntityName.Create(doc.TargetEntityName);
             if (entityResult.IsFailure)
             {
-                return Result<ImmutableArray<RelationshipModel>>.Failure(
+                return Result<RelationshipModel>.Failure(
                     _context.WithPath(relationshipPath.Property("toEntity_name"), entityResult.Errors));
             }
 
             var tableResult = TableName.Create(doc.TargetEntityPhysicalName);
             if (tableResult.IsFailure)
             {
-                return Result<ImmutableArray<RelationshipModel>>.Failure(
+                return Result<RelationshipModel>.Failure(
                     _context.WithPath(relationshipPath.Property("toEntity_physicalName"), tableResult.Errors));
             }
 
@@ -73,17 +59,10 @@ internal sealed class RelationshipDocumentMapper
                 hasConstraint,
                 MapActualConstraints(doc));
 
-            if (relationshipResult.IsFailure)
-            {
-                return Result<ImmutableArray<RelationshipModel>>.Failure(
-                    _context.WithPath(relationshipPath, relationshipResult.Errors));
-            }
-
-            builder.Add(relationshipResult.Value);
-        }
-
-        return Result<ImmutableArray<RelationshipModel>>.Success(builder.ToImmutable());
-    }
+            return relationshipResult.IsFailure
+                ? Result<RelationshipModel>.Failure(_context.WithPath(relationshipPath, relationshipResult.Errors))
+                : relationshipResult;
+        });
 
     private static IEnumerable<RelationshipActualConstraint> MapActualConstraints(RelationshipDocument doc)
     {

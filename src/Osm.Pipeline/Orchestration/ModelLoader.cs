@@ -40,7 +40,7 @@ internal sealed class ModelLoader
         }
 
         var ingestionWarnings = new List<string>();
-        var sqlMetadataOptions = CreateSqlMetadataOptions(context.Request.SqlOptions);
+        var sqlMetadataOptions = context.Request.SqlOptions?.ToModelIngestionMetadata();
         var ingestionOptions = new ModelIngestionOptions(
             context.Request.ModuleFilter.ValidationOverrides,
             MissingSchemaFallback: null,
@@ -59,24 +59,4 @@ internal sealed class ModelLoader
 
         return Result<BootstrapPipelineContext>.Success(context);
 }
-
-    private static ModelIngestionSqlMetadataOptions? CreateSqlMetadataOptions(ResolvedSqlOptions sqlOptions)
-    {
-        if (sqlOptions is null || string.IsNullOrWhiteSpace(sqlOptions.ConnectionString))
-        {
-            return null;
-        }
-
-        var authentication = sqlOptions.Authentication;
-        var connectionOptions = new SqlConnectionOptions(
-            authentication.Method,
-            authentication.TrustServerCertificate,
-            authentication.ApplicationName,
-            authentication.AccessToken);
-
-        return new ModelIngestionSqlMetadataOptions(
-            sqlOptions.ConnectionString,
-            connectionOptions,
-            sqlOptions.CommandTimeoutSeconds);
-    }
 }

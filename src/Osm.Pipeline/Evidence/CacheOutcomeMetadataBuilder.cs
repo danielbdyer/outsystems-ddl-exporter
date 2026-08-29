@@ -5,11 +5,11 @@ using System.Linq;
 
 namespace Osm.Pipeline.Evidence;
 
-internal sealed class CacheMetadataBuilder
+internal sealed class CacheOutcomeMetadataBuilder
 {
     private readonly IPathCanonicalizer _pathCanonicalizer;
 
-    public CacheMetadataBuilder(IPathCanonicalizer pathCanonicalizer)
+    public CacheOutcomeMetadataBuilder(IPathCanonicalizer pathCanonicalizer)
     {
         _pathCanonicalizer = pathCanonicalizer ?? throw new ArgumentNullException(nameof(pathCanonicalizer));
     }

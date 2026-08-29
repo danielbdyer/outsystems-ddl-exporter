@@ -18,7 +18,7 @@ public sealed class UatUsersArtifacts
         }
 
         Root = Path.GetFullPath(outputDirectory);
-        _artifactRoot = Path.Combine(Root, "uat-users");
+        _artifactRoot = Path.Combine(Root, UatUsersArtifactNames.Directory);
         Directory.CreateDirectory(_artifactRoot);
         _idempotentEmission = idempotentEmission;
     }
@@ -27,7 +27,7 @@ public sealed class UatUsersArtifacts
 
     public string GetDefaultUserMapPath()
     {
-        return Path.Combine(_artifactRoot, "00_user_map.csv");
+        return Path.Combine(_artifactRoot, UatUsersArtifactNames.UserMap);
     }
 
     public void WriteLines(string relativePath, IEnumerable<string> lines)

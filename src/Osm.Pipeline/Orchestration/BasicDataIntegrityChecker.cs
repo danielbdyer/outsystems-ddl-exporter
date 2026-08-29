@@ -173,7 +173,7 @@ public sealed class BasicDataIntegrityChecker
                 cancellationToken.ThrowIfCancellationRequested();
                 tablesChecked++;
 
-                var snapshot = EntityEmissionSnapshot.Create(module.Name.Value, entity);
+                var snapshot = EmittableEntityProjection.Create(module.Name.Value, entity);
                 var sourceTableName = entity.PhysicalName.Value;
                 var targetTableName = namingOverrides.GetEffectiveTableName(
                     entity.Schema.Value,

@@ -6,7 +6,11 @@ namespace Osm.Smo;
 
 internal static class ScripterExtensions
 {
-    public static void Dispose(this Scripter? scripter)
+    // Named explicitly (and invoked by name from SmoContext) rather than as a
+    // `Dispose` extension that bound invisibly via namespace import — that made it
+    // look like dead code to readers and tooling while it was actually load-bearing
+    // (it disconnects and disposes the underlying SqlConnection).
+    public static void DisconnectAndDispose(Scripter? scripter)
     {
         if (scripter is null)
         {

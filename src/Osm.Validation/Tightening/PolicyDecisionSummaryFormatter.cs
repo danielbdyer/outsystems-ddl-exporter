@@ -343,54 +343,6 @@ public static class PolicyDecisionSummaryFormatter
         return new SummaryEntry(missing.Length, 90, message);
     }
 
-    private static SummaryEntry? BuildNullContradictionSummary(ImmutableArray<ColumnDecisionReport> columns)
-    {
-        var contradicting = columns
-            .Where(column => !column.MakeNotNull && HasRationale(column, TighteningRationales.DataHasNulls))
-            .ToArray();
-
-        if (contradicting.Length == 0)
-        {
-            return null;
-        }
-
-        var entityCount = CountEntities(contradicting);
-        var message =
-            $"{FormatAttributeCount(contradicting.Length)} across {FormatEntityCount(entityCount)} stayed nullable because profiling detected NULL values.";
-        return new SummaryEntry(contradicting.Length, 95, message);
-    }
-
-    private static SummaryEntry? BuildOrphanSummary(ImmutableArray<ColumnDecisionReport> columns)
-    {
-        var orphaned = columns
-            .Where(column => !column.MakeNotNull && HasRationale(column, TighteningRationales.DataHasOrphans))
-            .ToArray();
-
-        if (orphaned.Length == 0)
-        {
-            return null;
-        }
-
-        var entityCount = CountEntities(orphaned);
-        var ignoreRules = orphaned.Count(column => HasRationale(column, TighteningRationales.DeleteRuleIgnore));
-
-        var builder = new StringBuilder();
-        builder.Append(
-            $"{FormatAttributeCount(orphaned.Length)} across {FormatEntityCount(entityCount)} stayed nullable because orphaned rows were detected");
-
-        if (ignoreRules == orphaned.Length)
-        {
-            builder.Append(" under Ignore delete rules");
-        }
-        else if (ignoreRules > 0)
-        {
-            builder.Append($" and {ignoreRules} {(ignoreRules == 1 ? "attribute" : "attributes")} use Ignore delete rules");
-        }
-
-        builder.Append('.');
-        return new SummaryEntry(orphaned.Length, 100, builder.ToString());
-    }
-
     private static int CountEntities(IReadOnlyList<ColumnDecisionReport> columns)
     {
         return columns

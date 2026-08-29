@@ -217,7 +217,7 @@ public sealed class UatUsersCommand : IUatUsersCommand
             var sourceFingerprint = BuildSourceFingerprint(options.ConnectionString!);
             _logger.LogInformation(
                 "Resolved artifacts root to {ArtifactsRoot}; user map path is {UserMapPath}; source fingerprint is {SourceFingerprint}.",
-                Path.Combine(artifacts.Root, "uat-users"),
+                Path.Combine(artifacts.Root, UatUsersArtifactNames.Directory),
                 userMapPath,
                 sourceFingerprint);
 
@@ -249,7 +249,7 @@ public sealed class UatUsersCommand : IUatUsersCommand
             _logger.LogInformation("Invoking uat-users pipeline.");
             await pipeline.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
 
-            _logger.LogInformation("uat-users artifacts written to {Path}.", Path.Combine(artifacts.Root, "uat-users"));
+            _logger.LogInformation("uat-users artifacts written to {Path}.", Path.Combine(artifacts.Root, UatUsersArtifactNames.Directory));
 
             // Optional verification phase (M2.1)
             if (options.VerifyArtifacts)
@@ -265,7 +265,7 @@ public sealed class UatUsersCommand : IUatUsersCommand
                 var report = reportGenerator.GenerateReport(verificationContext, artifacts.Root);
 
                 var reportPath = options.VerificationReportPath
-                    ?? Path.Combine(artifacts.Root, "uat-users", "verification-report.json");
+                    ?? Path.Combine(artifacts.Root, UatUsersArtifactNames.Directory, UatUsersArtifactNames.VerificationReport);
 
                 await reportGenerator.WriteReportAsync(report, reportPath).ConfigureAwait(false);
 

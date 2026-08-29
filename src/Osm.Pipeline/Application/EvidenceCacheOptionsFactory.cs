@@ -7,10 +7,10 @@ namespace Osm.Pipeline.Application;
 
 internal sealed class EvidenceCacheOptionsFactory
 {
-    private readonly CacheMetadataBuilder _metadataBuilder;
+    private readonly CacheKeyMetadataBuilder _metadataBuilder;
     private readonly IPathCanonicalizer _pathCanonicalizer;
 
-    public EvidenceCacheOptionsFactory(CacheMetadataBuilder metadataBuilder, IPathCanonicalizer pathCanonicalizer)
+    public EvidenceCacheOptionsFactory(CacheKeyMetadataBuilder metadataBuilder, IPathCanonicalizer pathCanonicalizer)
     {
         _metadataBuilder = metadataBuilder ?? throw new ArgumentNullException(nameof(metadataBuilder));
         _pathCanonicalizer = pathCanonicalizer ?? throw new ArgumentNullException(nameof(pathCanonicalizer));

@@ -73,25 +73,10 @@ internal sealed class SmoTableBuilder
 
     public static IComparer<SmoTableDefinition> DefinitionComparer { get; } = new SmoTableDefinitionComparer();
 
-    private sealed class SmoTableDefinitionComparer : IComparer<SmoTableDefinition>
+    private sealed class SmoTableDefinitionComparer : NullSafeComparer<SmoTableDefinition>
     {
-        public int Compare(SmoTableDefinition? x, SmoTableDefinition? y)
+        protected override int CompareNonNull(SmoTableDefinition x, SmoTableDefinition y)
         {
-            if (ReferenceEquals(x, y))
-            {
-                return 0;
-            }
-
-            if (x is null)
-            {
-                return -1;
-            }
-
-            if (y is null)
-            {
-                return 1;
-            }
-
             var comparison = StringComparer.Ordinal.Compare(x.Module, y.Module);
             if (comparison != 0)
             {

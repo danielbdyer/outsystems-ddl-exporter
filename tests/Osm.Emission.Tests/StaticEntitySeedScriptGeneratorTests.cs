@@ -245,7 +245,7 @@ public class StaticEntitySeedScriptGeneratorTests
 
         var module = CreateModule("Sales", entity);
         var model = CreateModel(module);
-        var snapshot = EntityEmissionSnapshot.Create("Sales", entity);
+        var snapshot = EmittableEntityProjection.Create("Sales", entity);
 
         var definitions = StaticEntitySeedDefinitionBuilder.Build(model, NamingOverrideOptions.Empty);
         var definition = Assert.Single(definitions);
