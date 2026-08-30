@@ -29,8 +29,8 @@ namespace Projection.Core
 /// faithfulness rung in `NORTH_STAR.matrix.generated.md`. `Axis` is one
 /// of the five round-trip axes (Schema / Data / Identity / Time /
 /// Decision); `Disposition` is `OpenGap` (a closeable fidelity debt that
-/// caps the axis at L2-partial — e.g. `IndexOptionsUnreflected`, retired when
-/// the round-trip preserves it) or `AcceptedFaithful` (a representation-
+/// caps the axis at L2-partial — e.g. the since-retired `FkTrustUnreflected`,
+/// deleted when the round-trip preserved it) or `AcceptedFaithful` (a representation-
 /// only equivalence or an erasure covered by a separate witness, which
 /// does not reduce faithfulness). The honesty mechanism: retiring a
 /// variant deletes its tag, so the generator auto-flips the axis — no one
@@ -58,21 +58,19 @@ type ToleratedDivergence =
     /// @ladder PostDeployForeignKeysSplit Schema AcceptedFaithful
     | PostDeployForeignKeysSplit
 
-    /// E1 (debrief G3) — non-PK index *structure* (owner + name +
-    /// uniqueness + ordered key columns) IS now reflected in
-    /// `PhysicalSchema.Indexes` and compared on the round-trip (retiring the
-    /// prior `IndexOptionsUnreflected`, which said indexes were invisible
-    /// entirely). What remains unreflected is the index *options*: the
-    /// filter predicate (filtered indexes), INCLUDE columns (covering
-    /// indexes), and the storage options (FILLFACTOR / PAD_INDEX / lock
-    /// flags / DATA_COMPRESSION). `ReadSide.readIndexes` recovers none of
-    /// these (it excludes `is_included_column` and reads no option columns),
-    /// so they are symmetric-but-lost on both halves of the canary. Named
-    /// here so the residual is *closed* (documented), not silent. Retiring
-    /// it: extend `readIndexes` to recover the options + widen
-    /// `PhysicalIndex` + ensure V2 emit preserves them round-trip.
-    /// @ladder IndexOptionsUnreflected Schema OpenGap
-    | IndexOptionsUnreflected
+    // `IndexOptionsUnreflected` was RETIRED at schema-L3.1 (2026-08-30): the
+    // index OPTION surface — filter predicate, INCLUDE columns, FILLFACTOR /
+    // PAD_INDEX / lock flags / STATISTICS_NORECOMPUTE / IGNORE_DUP_KEY /
+    // disabled state / DATA_COMPRESSION / data space — is now recovered by
+    // `ReadSide.readIndexes` (+ `sys.stats` / `sys.partitions` /
+    // `sys.data_spaces`), carried on the widened `PhysicalIndex`, and
+    // compared on the round-trip. The gap's exact prior shape ("symmetric-
+    // but-lost on both halves of the canary") is pinned by the two-arm
+    // witness in `IndexRoundtripTests` (agreement: a filtered covering
+    // index with storage options round-trips empty-diff; falsifiability:
+    // an option-stripped projection DIVERGES against the same readback).
+    // No DU variant remains, per the dead-algebra-retirement precedent;
+    // the config token now fails closed at `Tolerance.parse`.
 
     // NM-16's four kind-facet tolerances (KindTriggersUnreflectedInDiff /
     // KindChecksUnreflectedInDiff / KindModalityUnreflectedInDiff /
@@ -279,7 +277,6 @@ module ToleratedDivergence =
         function
         | ToleratedDivergence.HeaderCommentsOmitted          -> ToleratedDivergence.HeaderCommentsOmitted
         | ToleratedDivergence.PostDeployForeignKeysSplit     -> ToleratedDivergence.PostDeployForeignKeysSplit
-        | ToleratedDivergence.IndexOptionsUnreflected             -> ToleratedDivergence.IndexOptionsUnreflected
         | ToleratedDivergence.StaticPopulationsUnreflected   -> ToleratedDivergence.StaticPopulationsUnreflected
         | ToleratedDivergence.CompositePkFkUnreflected       -> ToleratedDivergence.CompositePkFkUnreflected
         | ToleratedDivergence.CharAnsiPaddingTolerated       -> ToleratedDivergence.CharAnsiPaddingTolerated
@@ -306,7 +303,6 @@ module ToleratedDivergence =
             [
                 coverage ToleratedDivergence.HeaderCommentsOmitted
                 coverage ToleratedDivergence.PostDeployForeignKeysSplit
-                coverage ToleratedDivergence.IndexOptionsUnreflected
                 coverage ToleratedDivergence.StaticPopulationsUnreflected
                 coverage ToleratedDivergence.CompositePkFkUnreflected
                 coverage ToleratedDivergence.CharAnsiPaddingTolerated
@@ -327,7 +323,6 @@ module ToleratedDivergence =
         match d with
         | ToleratedDivergence.HeaderCommentsOmitted        -> "HeaderCommentsOmitted"
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> "PostDeployForeignKeysSplit"
-        | ToleratedDivergence.IndexOptionsUnreflected           -> "IndexOptionsUnreflected"
         | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
         | ToleratedDivergence.CompositePkFkUnreflected     -> "CompositePkFkUnreflected"
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> "CharAnsiPaddingTolerated"
@@ -393,8 +388,8 @@ module Tolerance =
 
     /// Construct from an explicit set. Use when a per-environment
     /// configuration carries its own subset (e.g., DEV accepts
-    /// HeaderCommentsOmitted + IndexOptionsUnreflected; STAGING accepts
-    /// only IndexOptionsUnreflected; PROD accepts none).
+    /// HeaderCommentsOmitted + CharAnsiPaddingTolerated; STAGING accepts
+    /// only CharAnsiPaddingTolerated; PROD accepts none).
     let ofSet (divergences: Set<ToleratedDivergence>) : Tolerance =
         Tolerance divergences
 

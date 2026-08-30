@@ -193,7 +193,6 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
         match variant with
         | ToleratedDivergence.HeaderCommentsOmitted        -> ()
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> ()
-        | ToleratedDivergence.IndexOptionsUnreflected           -> ()
         | ToleratedDivergence.StaticPopulationsUnreflected -> ()
         | ToleratedDivergence.CompositePkFkUnreflected     -> ()
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> ()
@@ -220,7 +219,11 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
     // **WP-3 / F11 (2026-07-16):** 12 — EmptyTextNormalizedToNull RETIRED
     // (the option-grain cell carriers keep '' and NULL distinct end-to-end;
     // the erasure it named no longer exists to tolerate).
-    Assert.Equal(12, Set.count ToleratedDivergence.allKnown)
+    // **schema-L3.1 (2026-08-30):** 11 — IndexOptionsUnreflected RETIRED
+    // (ReadSide recovers the full index option surface; the widened
+    // PhysicalIndex compares it; IndexRoundtripTests carries the two-arm
+    // closure witness).
+    Assert.Equal(11, Set.count ToleratedDivergence.allKnown)
 
 // ---------------------------------------------------------------------------
 // NM-70 (WP5) — the identity-annotation emit | omit gate.

@@ -189,7 +189,7 @@ let ``6.H.2: a corrupt embedded schema fails the load (codec re-validation surfa
 let private provenanceTolerances : Tolerance =
     Tolerance.strict
     |> Tolerance.withDivergence ToleratedDivergence.HeaderCommentsOmitted
-    |> Tolerance.withDivergence ToleratedDivergence.IndexOptionsUnreflected
+    |> Tolerance.withDivergence ToleratedDivergence.PostDeployForeignKeysSplit
 
 let private provenanceApplied : (SsKey * OverlayAxis option) list =
     [ customer.SsKey, Some OverlayAxis.Emission

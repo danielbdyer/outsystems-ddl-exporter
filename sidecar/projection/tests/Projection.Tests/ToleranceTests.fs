@@ -33,7 +33,6 @@ type ToleratedDivergenceGen =
             [
                 ToleratedDivergence.HeaderCommentsOmitted
                 ToleratedDivergence.PostDeployForeignKeysSplit
-                ToleratedDivergence.IndexOptionsUnreflected
                 ToleratedDivergence.StaticPopulationsUnreflected
                 ToleratedDivergence.CompositePkFkUnreflected
                 ToleratedDivergence.CharAnsiPaddingTolerated
@@ -117,11 +116,16 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains ten variants (op
     // end-to-end (None = NULL out-of-band; `Some ""` renders `N''` and
     // survives transfer), so the erasure the tolerance named no longer
     // exists to tolerate.
-    Assert.Equal (12, Set.count ToleratedDivergence.allKnown)
+    // **schema-L3.1 (2026-08-30):** 11 — `IndexOptionsUnreflected` is
+    // RETIRED: `ReadSide.readIndexes` recovers the full option surface
+    // (filter / INCLUDE / storage flags / compression / data space), the
+    // widened `PhysicalIndex` compares it, and the two-arm witness in
+    // `IndexRoundtripTests` pins the closure.
+    Assert.Equal (11, Set.count ToleratedDivergence.allKnown)
 
 [<Fact>]
 let ``Tolerance.ofSet round-trips through divergences`` () =
-    let s = Set.ofList [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.IndexOptionsUnreflected ]
+    let s = Set.ofList [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.PostDeployForeignKeysSplit ]
     let t = Tolerance.ofSet s
     Assert.Equal<Set<ToleratedDivergence>> (s, Tolerance.divergences t)
 
@@ -129,7 +133,7 @@ let ``Tolerance.ofSet round-trips through divergences`` () =
 let ``Tolerance.withDivergence on strict yields a singleton tolerance`` () =
     let t = Tolerance.strict |> Tolerance.withDivergence ToleratedDivergence.HeaderCommentsOmitted
     Assert.True (Tolerance.tolerates ToleratedDivergence.HeaderCommentsOmitted t)
-    Assert.False (Tolerance.tolerates ToleratedDivergence.IndexOptionsUnreflected t)
+    Assert.False (Tolerance.tolerates ToleratedDivergence.PostDeployForeignKeysSplit t)
     Assert.Equal (1, Set.count (Tolerance.divergences t))
 
 [<Fact>]
@@ -228,11 +232,25 @@ let ``3.4: empty config parses to strict (safe default); blank tokens are skippe
     match Tolerance.parse [] with
     | Ok t -> Assert.True(Tolerance.isStrict t)
     | Error e -> Assert.Fail(sprintf "%A" e)
-    match Tolerance.parse [ "  "; "IndexOptionsUnreflected"; "" ] with
+    match Tolerance.parse [ "  "; "CharAnsiPaddingTolerated"; "" ] with
     | Ok t ->
-        Assert.True(Tolerance.tolerates ToleratedDivergence.IndexOptionsUnreflected t)
+        Assert.True(Tolerance.tolerates ToleratedDivergence.CharAnsiPaddingTolerated t)
         Assert.Equal(1, Set.count (Tolerance.divergences t))
     | Error e -> Assert.Fail(sprintf "%A" e)
+
+[<Fact>]
+let ``schema-L3: the retired Schema OpenGap tolerance tokens fail closed (the config migration note made executable)`` () =
+    // Grows as the schema-L3 program retires each Schema OpenGap: a
+    // per-environment config still naming a retired token now errors by
+    // design — the gap is CLOSED, so accepting it is meaningless; the
+    // operator drops the token (each retirement's DECISIONS entry carries
+    // the migration note).
+    let retiredTokens = [ "IndexOptionsUnreflected" ]
+    for token in retiredTokens do
+        Assert.Equal<ToleratedDivergence option>(None, ToleratedDivergence.tryParse token)
+        match Tolerance.parse [ token ] with
+        | Ok t -> Assert.Fail(sprintf "retired token %s must fail closed; got Ok %A" token (Tolerance.divergences t))
+        | Error (UnknownDivergence t) -> Assert.Equal(token, t)
 
 [<Fact>]
 let ``3.4: DEV tolerating HeaderCommentsOmitted passes the divergence; PROD strict fails it`` () =

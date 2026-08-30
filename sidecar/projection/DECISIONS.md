@@ -33198,3 +33198,76 @@ exclusion is jurisdictional (their copy is the operator's signature), not protec
 One word either way settles it.
 
 The program is closed. The books are balanced.
+
+---
+
+## 2026-08-30 — schema-L3.1: the index OPTION surface round-trips (`IndexOptionsUnreflected` RETIRED)
+
+**THE SCHEMA-L3 PROGRAM OPENS** (operator commission 2026-08-30: "Let's plan to get the
+Schema to Level 3 in the North Star generated output!"; plan approved the same day; the
+operator additionally ruled the two adjacent silent drops — NM-28b and debrief-G4 — FOLD
+IN rather than defer). Ground: both Schema `@axis` witnesses already exist and pass; the
+axis caps at L2-partial solely on the three `@ladder … Schema OpenGap` tags in
+`Tolerance.fs`. The program is three genuine closures + a coda; retagging
+`AcceptedFaithful` (the ladder's named soft spot) is forbidden — every closure lands
+with an M1-style two-arm witness. Slices: L3.1 index options (this entry) → L3.2
+composite-FK + NM-28b → L3.3a the named compose-seam refusal → L3.3b the flip →
+L3.4 close-out.
+
+**The finding.** The tolerance's own text: the index option surface — filter predicate,
+INCLUDE columns, FILLFACTOR / PAD_INDEX / lock flags / STATISTICS_NORECOMPUTE /
+IGNORE_DUP_KEY / disabled state / DATA_COMPRESSION / data space — was
+"symmetric-but-lost on BOTH halves of the canary": the IR, the OSSYS adapter, the codec,
+and the SSDT emitter all carried it in full; only `ReadSide.readIndexes` (which excluded
+`is_included_column` rows and read no option columns) and the 5-field `PhysicalIndex`
+were narrow, so option drift was invisible to the round-trip by construction.
+
+**The closure (comparator + readback only; zero IR/emitter change).**
+- `ReadSide.readIndexes` reads the full surface (`sys.indexes` option columns +
+  `is_included_column`/`partition_ordinal` + `sys.stats.no_recompute` +
+  `sys.partitions.data_compression` (partition 1) + `sys.data_spaces` name/type);
+  `attachIndexes` reconstructs every option field EXPLICITLY (the `{ Index.create …
+  with }` site previously inherited every option default silently — survival rule 7's
+  exact failure shape, now named in place). Key columns filter `key_ordinal > 0`;
+  INCLUDE columns route to `Index.IncludedColumns`; partition-only columns feed the
+  partition-scheme data-space recovery.
+- `PhysicalIndex` widens 5 → 16 fields with effective-value encodings symmetric on both
+  halves: the filter compares whitespace/bracket/paren-stripped + lowercased (SQL Server
+  canonicalizes `filter_definition`; a wrapping difference is not a divergence, a
+  predicate change is); INCLUDE compares as a sorted set; `fill_factor 0` ≡ `None`;
+  compression/data-space compare as the EFFECTIVE physical value ("NONE"/"PRIMARY" when
+  nothing is declared — an explicit server-default and an omitted clause are physically
+  indistinguishable). One documented residual, named in the docstring and NOT a
+  tolerance: a partition scheme's column binding is compared only as far as both sides
+  recover it. `renderDiff` names non-default options; a default-only index renders
+  byte-identically to the pre-widening form.
+
+**The two-arm witness** (`IndexRoundtripTests`, the M1 pattern): the fixture gains a
+filtered covering index (`INCLUDE` + `WHERE` + `FILLFACTOR = 80` + `PAD_INDEX = ON`)
+and IGNORE_DUP_KEY on the unique index; AGREEMENT — the wide canary's diff stays empty
+with the recovered options asserted non-vacuously (filter/include/fillfactor/pad/
+ignore_dup_key each pinned); FALSIFIABILITY — an option-stripped projection of the SAME
+readback DIVERGES on the index axis (before this slice those two projections were
+equal: the blindness, demonstrated).
+
+**Retirement mechanics** (the NM-17/M1/EmptyText checklist): variant + `@ladder` tag
+deleted, gravestone in place, coverage/allKnown/name arms dropped, `allKnown` 12 → 11;
+matrix regenerated same-commit — Schema's open cell now reads `CompositePkFkUnreflected,
+TriggerBodyUnparsedDropped`, footer `tolerances 11 (2 open)`. Pins moved:
+MatrixLadderTests D1 re-anchored (named tolerance → CompositePkFkUnreflected + a
+DoesNotContain on the retired name; "3 open" → "2 open" with the history line);
+ToleranceTests count + fixtures + the NEW `schema-L3` retired-token fail-closed test;
+ManifestUnsupportedTests set; SsdtExtendedPropertyEmissionTests arm; provenance fixtures
+(ModelFidelity/LifecycleStore/ChangeManifest/ReportRun) re-pointed to
+`PostDeployForeignKeysSplit`; MultiEnvironmentPromotionTests ladder examples →
+`CharAnsiPaddingTolerated`. `IndexPhysicalMetadataDeployE2ETests` re-scoped in its
+header: it remains the per-option catalog-view probe (names WHICH option diverged);
+the canary now names the index.
+
+**Config migration note (fail-closed, witnessed):** a per-environment tolerance config
+still naming `IndexOptionsUnreflected` now errors by design — the gap is closed;
+accepting it is meaningless. Drop the token.
+
+Not behavioral for clean estates: both canary halves recover identically, so a faithful
+round-trip's diff stays empty; only genuinely drifted option state (previously
+invisible) now surfaces.

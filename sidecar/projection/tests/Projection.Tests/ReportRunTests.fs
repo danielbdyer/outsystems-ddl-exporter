@@ -116,7 +116,7 @@ let ``M18: toJson surfaces the To-episode tolerance residual + applied-transform
     let tolerances =
         Tolerance.strict
         |> Tolerance.withDivergence ToleratedDivergence.HeaderCommentsOmitted
-        |> Tolerance.withDivergence ToleratedDivergence.IndexOptionsUnreflected
+        |> Tolerance.withDivergence ToleratedDivergence.PostDeployForeignKeysSplit
     let appliedTransforms : (SsKey * OverlayAxis option) list =
         [ customerKey, Some Tightening; orderKey, None ]
     let e1p = e1 |> Episode.withProvenance tolerances appliedTransforms
@@ -129,7 +129,7 @@ let ``M18: toJson surfaces the To-episode tolerance residual + applied-transform
     let residual = arr edge0.["toleranceResidual"] |> Seq.map (fun n -> (nn n).GetValue<string>()) |> List.ofSeq
     Assert.Equal<string list>(
         [ ToleratedDivergence.name ToleratedDivergence.HeaderCommentsOmitted
-          ToleratedDivergence.name ToleratedDivergence.IndexOptionsUnreflected ],
+          ToleratedDivergence.name ToleratedDivergence.PostDeployForeignKeysSplit ],
         residual)
     // The applied-transforms carry the canonical SsKey + the overlay axis (or null).
     let applied = arr edge0.["appliedTransforms"] |> Seq.map obj |> List.ofSeq
