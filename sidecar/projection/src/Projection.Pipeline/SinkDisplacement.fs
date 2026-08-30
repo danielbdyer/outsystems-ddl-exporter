@@ -91,9 +91,19 @@ module SinkDisplacement =
               SinkTable.Temporal; SinkTable.Capabilities ]
 
     /// One row of any rowset — the displacement's before/after image
-    /// carrier (a closed sum over the sixteen row records).
+    /// carrier (a closed sum over the sixteen row records). Renamed from
+    /// `SinkRow` at align-III.19/X3: this is the WITNESS plane (the
+    /// mirrored OSSYS metadata the sync verb witnessed), not the transfer
+    /// write-target — the one-letter-apart collision with the workbench's
+    /// `SinkRows` (transfer-sink candidate rows) dissolves with the rename.
+    /// THE FREEZE (standing from Chapter II onward): new witness-plane
+    /// names take `Witness-`/`Witnessed-`, never `Sink-`; the surviving
+    /// `Sink*` names on this plane (`SinkTable`, `SinkStore`, `SinkJournal`,
+    /// the `sink:` refs and `sink.*` codes) are the operator-visible
+    /// chapter vocabulary and ride until the full B-family rename earns its
+    /// own arc.
     [<RequireQualifiedAccess>]
-    type SinkRow =
+    type WitnessedRow =
         | Module of MetadataSnapshotRunner.OssysModuleRow
         | Entity of MetadataSnapshotRunner.OssysEntityRow
         | Attribute of MetadataSnapshotRunner.OssysAttributeRow
@@ -138,8 +148,8 @@ module SinkDisplacement =
             /// Canonical key text (deterministic; the journal's key field).
             KeyText  : string
             KeyBasis : KeyBasis
-            Before   : SinkRow option
-            After    : SinkRow option
+            Before   : WitnessedRow option
+            After    : WitnessedRow option
             Domain   : DomainTransition option
         }
 
@@ -313,35 +323,35 @@ module SinkDisplacement =
         (beforeSnapshot: MetadataSnapshotRunner.MetadataSnapshot)
         (afterSnapshot: MetadataSnapshotRunner.MetadataSnapshot)
         (table: SinkTable)
-        (before: SinkRow option)
-        (after: SinkRow option)
+        (before: WitnessedRow option)
+        (after: WitnessedRow option)
         : DomainTransition option =
         match table, before, after with
-        | SinkTable.Entities, Some (SinkRow.Entity b), Some (SinkRow.Entity a) ->
+        | SinkTable.Entities, Some (WitnessedRow.Entity b), Some (WitnessedRow.Entity a) ->
             if b.IsActive && not a.IsActive then Some DomainTransition.EntityDeactivated
             elif not b.IsActive && a.IsActive then Some DomainTransition.EntityReactivated
             elif b.EspaceId <> a.EspaceId then Some (DomainTransition.EntityRehomed (b.EspaceId, a.EspaceId))
             elif b.PhysicalTableName <> a.PhysicalTableName then
                 Some (DomainTransition.PhysicalTableClaimChanged (b.PhysicalTableName, a.PhysicalTableName))
             else None
-        | SinkTable.Entities, None, Some (SinkRow.Entity a) ->
+        | SinkTable.Entities, None, Some (WitnessedRow.Entity a) ->
             if a.IsExternal && isExtensionModule afterSnapshot a.EspaceId then
                 Some DomainTransition.EntityRegisteredExternal
             elif tableClaimedByOther beforeSnapshot a then
                 Some (DomainTransition.PhysicalTableSuperseded a.PhysicalTableName)
             else None
-        | SinkTable.Attributes, Some (SinkRow.Attribute b), Some (SinkRow.Attribute a) ->
+        | SinkTable.Attributes, Some (WitnessedRow.Attribute b), Some (WitnessedRow.Attribute a) ->
             if b.IsActive && not a.IsActive then Some DomainTransition.AttributeRetired
             elif not b.IsActive && a.IsActive then Some DomainTransition.AttributeReactivated
             else
                 match attributeFacetsOf b a with
                 | [] -> None
                 | facets -> Some (DomainTransition.AttributeRetyped facets)
-        | SinkTable.Modules, Some (SinkRow.Module b), Some (SinkRow.Module a) ->
+        | SinkTable.Modules, Some (WitnessedRow.Module b), Some (WitnessedRow.Module a) ->
             if b.IsActive && not a.IsActive then Some DomainTransition.ModuleRetired
             elif not b.IsActive && a.IsActive then Some DomainTransition.ModuleReactivated
             else None
-        | SinkTable.Capabilities, Some (SinkRow.Capability _), Some (SinkRow.Capability _) ->
+        | SinkTable.Capabilities, Some (WitnessedRow.Capability _), Some (WitnessedRow.Capability _) ->
             Some DomainTransition.ShapeChanged
         | _ -> None
 
@@ -354,7 +364,7 @@ module SinkDisplacement =
         (afterSnapshot: MetadataSnapshotRunner.MetadataSnapshot)
         (table: SinkTable)
         (keyOf: 'row -> string * KeyBasis)
-        (lift: 'row -> SinkRow)
+        (lift: 'row -> WitnessedRow)
         (beforeRows: 'row list)
         (afterRows: 'row list)
         : Displacement list =
@@ -395,22 +405,22 @@ module SinkDisplacement =
         (a: MetadataSnapshotRunner.MetadataSnapshot)
         (b: MetadataSnapshotRunner.MetadataSnapshot)
         : Displacement list =
-        [ diffRowset a b SinkTable.Modules moduleKey SinkRow.Module a.Modules b.Modules
-          diffRowset a b SinkTable.Entities entityKey SinkRow.Entity a.Entities b.Entities
-          diffRowset a b SinkTable.Attributes attributeKey SinkRow.Attribute a.Attributes b.Attributes
-          diffRowset a b SinkTable.References referenceKey SinkRow.Reference a.References b.References
-          diffRowset a b SinkTable.PhysicalTables physicalTableKey SinkRow.PhysicalTable a.PhysicalTables b.PhysicalTables
-          diffRowset a b SinkTable.ColumnReality columnRealityKey SinkRow.ColumnReality a.ColumnReality b.ColumnReality
-          diffRowset a b SinkTable.ColumnChecks columnCheckKey SinkRow.ColumnCheck a.ColumnChecks b.ColumnChecks
-          diffRowset a b SinkTable.PhysColsPresent physColsPresentKey SinkRow.PhysColsPresent a.PhysColsPresent b.PhysColsPresent
-          diffRowset a b SinkTable.Indexes indexKey SinkRow.Index a.Indexes b.Indexes
-          diffRowset a b SinkTable.IndexColumns indexColumnKey SinkRow.IndexColumn a.IndexColumns b.IndexColumns
-          diffRowset a b SinkTable.ForeignKeysReality fkRealityKey SinkRow.FkReality a.ForeignKeysReality b.ForeignKeysReality
-          diffRowset a b SinkTable.ForeignKeyColumns fkColumnKey SinkRow.FkColumn a.ForeignKeyColumns b.ForeignKeyColumns
-          diffRowset a b SinkTable.Triggers triggerKey SinkRow.Trigger a.Triggers b.Triggers
-          diffRowset a b SinkTable.Sequences sequenceKey SinkRow.Sequence a.Sequences b.Sequences
-          diffRowset a b SinkTable.Temporal temporalKey SinkRow.Temporal a.Temporal b.Temporal
-          diffRowset a b SinkTable.Capabilities capabilityKey SinkRow.Capability a.Capabilities b.Capabilities ]
+        [ diffRowset a b SinkTable.Modules moduleKey WitnessedRow.Module a.Modules b.Modules
+          diffRowset a b SinkTable.Entities entityKey WitnessedRow.Entity a.Entities b.Entities
+          diffRowset a b SinkTable.Attributes attributeKey WitnessedRow.Attribute a.Attributes b.Attributes
+          diffRowset a b SinkTable.References referenceKey WitnessedRow.Reference a.References b.References
+          diffRowset a b SinkTable.PhysicalTables physicalTableKey WitnessedRow.PhysicalTable a.PhysicalTables b.PhysicalTables
+          diffRowset a b SinkTable.ColumnReality columnRealityKey WitnessedRow.ColumnReality a.ColumnReality b.ColumnReality
+          diffRowset a b SinkTable.ColumnChecks columnCheckKey WitnessedRow.ColumnCheck a.ColumnChecks b.ColumnChecks
+          diffRowset a b SinkTable.PhysColsPresent physColsPresentKey WitnessedRow.PhysColsPresent a.PhysColsPresent b.PhysColsPresent
+          diffRowset a b SinkTable.Indexes indexKey WitnessedRow.Index a.Indexes b.Indexes
+          diffRowset a b SinkTable.IndexColumns indexColumnKey WitnessedRow.IndexColumn a.IndexColumns b.IndexColumns
+          diffRowset a b SinkTable.ForeignKeysReality fkRealityKey WitnessedRow.FkReality a.ForeignKeysReality b.ForeignKeysReality
+          diffRowset a b SinkTable.ForeignKeyColumns fkColumnKey WitnessedRow.FkColumn a.ForeignKeyColumns b.ForeignKeyColumns
+          diffRowset a b SinkTable.Triggers triggerKey WitnessedRow.Trigger a.Triggers b.Triggers
+          diffRowset a b SinkTable.Sequences sequenceKey WitnessedRow.Sequence a.Sequences b.Sequences
+          diffRowset a b SinkTable.Temporal temporalKey WitnessedRow.Temporal a.Temporal b.Temporal
+          diffRowset a b SinkTable.Capabilities capabilityKey WitnessedRow.Capability a.Capabilities b.Capabilities ]
         |> List.concat
 
     /// The journal's norm at this grain (T15's reading: entry count).
@@ -422,7 +432,7 @@ module SinkDisplacement =
 
     let private applyToRowset<'row when 'row : equality>
         (keyOf: 'row -> string * KeyBasis)
-        (unlift: SinkRow -> 'row option)
+        (unlift: WitnessedRow -> 'row option)
         (d: Displacement)
         (rows: 'row list)
         : 'row list =
@@ -442,37 +452,37 @@ module SinkDisplacement =
         : MetadataSnapshotRunner.MetadataSnapshot =
         match d.Table with
         | SinkTable.Modules ->
-            { state with Modules = applyToRowset moduleKey (function SinkRow.Module r -> Some r | _ -> None) d state.Modules }
+            { state with Modules = applyToRowset moduleKey (function WitnessedRow.Module r -> Some r | _ -> None) d state.Modules }
         | SinkTable.Entities ->
-            { state with Entities = applyToRowset entityKey (function SinkRow.Entity r -> Some r | _ -> None) d state.Entities }
+            { state with Entities = applyToRowset entityKey (function WitnessedRow.Entity r -> Some r | _ -> None) d state.Entities }
         | SinkTable.Attributes ->
-            { state with Attributes = applyToRowset attributeKey (function SinkRow.Attribute r -> Some r | _ -> None) d state.Attributes }
+            { state with Attributes = applyToRowset attributeKey (function WitnessedRow.Attribute r -> Some r | _ -> None) d state.Attributes }
         | SinkTable.References ->
-            { state with References = applyToRowset referenceKey (function SinkRow.Reference r -> Some r | _ -> None) d state.References }
+            { state with References = applyToRowset referenceKey (function WitnessedRow.Reference r -> Some r | _ -> None) d state.References }
         | SinkTable.PhysicalTables ->
-            { state with PhysicalTables = applyToRowset physicalTableKey (function SinkRow.PhysicalTable r -> Some r | _ -> None) d state.PhysicalTables }
+            { state with PhysicalTables = applyToRowset physicalTableKey (function WitnessedRow.PhysicalTable r -> Some r | _ -> None) d state.PhysicalTables }
         | SinkTable.ColumnReality ->
-            { state with ColumnReality = applyToRowset columnRealityKey (function SinkRow.ColumnReality r -> Some r | _ -> None) d state.ColumnReality }
+            { state with ColumnReality = applyToRowset columnRealityKey (function WitnessedRow.ColumnReality r -> Some r | _ -> None) d state.ColumnReality }
         | SinkTable.ColumnChecks ->
-            { state with ColumnChecks = applyToRowset columnCheckKey (function SinkRow.ColumnCheck r -> Some r | _ -> None) d state.ColumnChecks }
+            { state with ColumnChecks = applyToRowset columnCheckKey (function WitnessedRow.ColumnCheck r -> Some r | _ -> None) d state.ColumnChecks }
         | SinkTable.PhysColsPresent ->
-            { state with PhysColsPresent = applyToRowset physColsPresentKey (function SinkRow.PhysColsPresent r -> Some r | _ -> None) d state.PhysColsPresent }
+            { state with PhysColsPresent = applyToRowset physColsPresentKey (function WitnessedRow.PhysColsPresent r -> Some r | _ -> None) d state.PhysColsPresent }
         | SinkTable.Indexes ->
-            { state with Indexes = applyToRowset indexKey (function SinkRow.Index r -> Some r | _ -> None) d state.Indexes }
+            { state with Indexes = applyToRowset indexKey (function WitnessedRow.Index r -> Some r | _ -> None) d state.Indexes }
         | SinkTable.IndexColumns ->
-            { state with IndexColumns = applyToRowset indexColumnKey (function SinkRow.IndexColumn r -> Some r | _ -> None) d state.IndexColumns }
+            { state with IndexColumns = applyToRowset indexColumnKey (function WitnessedRow.IndexColumn r -> Some r | _ -> None) d state.IndexColumns }
         | SinkTable.ForeignKeysReality ->
-            { state with ForeignKeysReality = applyToRowset fkRealityKey (function SinkRow.FkReality r -> Some r | _ -> None) d state.ForeignKeysReality }
+            { state with ForeignKeysReality = applyToRowset fkRealityKey (function WitnessedRow.FkReality r -> Some r | _ -> None) d state.ForeignKeysReality }
         | SinkTable.ForeignKeyColumns ->
-            { state with ForeignKeyColumns = applyToRowset fkColumnKey (function SinkRow.FkColumn r -> Some r | _ -> None) d state.ForeignKeyColumns }
+            { state with ForeignKeyColumns = applyToRowset fkColumnKey (function WitnessedRow.FkColumn r -> Some r | _ -> None) d state.ForeignKeyColumns }
         | SinkTable.Triggers ->
-            { state with Triggers = applyToRowset triggerKey (function SinkRow.Trigger r -> Some r | _ -> None) d state.Triggers }
+            { state with Triggers = applyToRowset triggerKey (function WitnessedRow.Trigger r -> Some r | _ -> None) d state.Triggers }
         | SinkTable.Sequences ->
-            { state with Sequences = applyToRowset sequenceKey (function SinkRow.Sequence r -> Some r | _ -> None) d state.Sequences }
+            { state with Sequences = applyToRowset sequenceKey (function WitnessedRow.Sequence r -> Some r | _ -> None) d state.Sequences }
         | SinkTable.Temporal ->
-            { state with Temporal = applyToRowset temporalKey (function SinkRow.Temporal r -> Some r | _ -> None) d state.Temporal }
+            { state with Temporal = applyToRowset temporalKey (function WitnessedRow.Temporal r -> Some r | _ -> None) d state.Temporal }
         | SinkTable.Capabilities ->
-            { state with Capabilities = applyToRowset capabilityKey (function SinkRow.Capability r -> Some r | _ -> None) d state.Capabilities }
+            { state with Capabilities = applyToRowset capabilityKey (function WitnessedRow.Capability r -> Some r | _ -> None) d state.Capabilities }
 
     /// Fold ⊕ — with `diff`, the FTC pair at the acquisition grain:
     /// `applyAll (diff a b) (canonical a) = canonical b`.

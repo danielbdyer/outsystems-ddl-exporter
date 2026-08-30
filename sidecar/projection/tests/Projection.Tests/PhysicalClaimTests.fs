@@ -219,7 +219,7 @@ let ``align-II.10: assembly reads the journal's appearance line — genesis, a l
               KeyText = sprintf "entity:%d" entityId
               KeyBasis = SinkDisplacement.KeyBasis.Positional entityId
               Before = None
-              After = Some (SinkDisplacement.SinkRow.Entity (OssysSnapshotBuilders.entityRow entityId 800 "Order" table))
+              After = Some (SinkDisplacement.WitnessedRow.Entity (OssysSnapshotBuilders.entityRow entityId 800 "Order" table))
               Domain = None } }
     // Order appeared at genesis; Shipment's re-registration at sync 3; the
     // tombstoned original has NO appearance line (a reconciled ledger).

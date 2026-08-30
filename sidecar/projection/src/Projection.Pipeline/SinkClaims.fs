@@ -33,7 +33,7 @@ module SinkClaims =
         journal
         |> List.tryPick (fun l ->
             match l.Displacement.After with
-            | Some (SinkDisplacement.SinkRow.Entity e) when
+            | Some (SinkDisplacement.WitnessedRow.Entity e) when
                 e.EntityId = entityId
                 && System.String.Equals(e.PhysicalTableName, table, System.StringComparison.OrdinalIgnoreCase) ->
                 Some l.SyncId

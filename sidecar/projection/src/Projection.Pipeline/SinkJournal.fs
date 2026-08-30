@@ -82,29 +82,29 @@ module SinkJournal =
             jw.WriteEndArray()
         jw.WriteEndObject()
 
-    let private writeRowImage (jw: Utf8JsonWriter) (name: string) (row: SinkDisplacement.SinkRow option) =
+    let private writeRowImage (jw: Utf8JsonWriter) (name: string) (row: SinkDisplacement.WitnessedRow option) =
         jw.WritePropertyName name
         match row with
         | None -> jw.WriteNullValue()
         | Some r ->
             jw.WriteStartObject()
             match r with
-            | SinkDisplacement.SinkRow.Module x -> MetadataSnapshotCodec.Rows.writeModule jw x
-            | SinkDisplacement.SinkRow.Entity x -> MetadataSnapshotCodec.Rows.writeEntity jw x
-            | SinkDisplacement.SinkRow.Attribute x -> MetadataSnapshotCodec.Rows.writeAttribute jw x
-            | SinkDisplacement.SinkRow.Reference x -> MetadataSnapshotCodec.Rows.writeReference jw x
-            | SinkDisplacement.SinkRow.PhysicalTable x -> MetadataSnapshotCodec.Rows.writePhysicalTable jw x
-            | SinkDisplacement.SinkRow.ColumnReality x -> MetadataSnapshotCodec.Rows.writeColumnReality jw x
-            | SinkDisplacement.SinkRow.ColumnCheck x -> MetadataSnapshotCodec.Rows.writeColumnCheck jw x
-            | SinkDisplacement.SinkRow.PhysColsPresent x -> MetadataSnapshotCodec.Rows.writePhysColsPresent jw x
-            | SinkDisplacement.SinkRow.Index x -> MetadataSnapshotCodec.Rows.writeIndex jw x
-            | SinkDisplacement.SinkRow.IndexColumn x -> MetadataSnapshotCodec.Rows.writeIndexColumn jw x
-            | SinkDisplacement.SinkRow.FkReality x -> MetadataSnapshotCodec.Rows.writeFkReality jw x
-            | SinkDisplacement.SinkRow.FkColumn x -> MetadataSnapshotCodec.Rows.writeFkColumn jw x
-            | SinkDisplacement.SinkRow.Trigger x -> MetadataSnapshotCodec.Rows.writeTrigger jw x
-            | SinkDisplacement.SinkRow.Sequence x -> MetadataSnapshotCodec.Rows.writeSequence jw x
-            | SinkDisplacement.SinkRow.Temporal x -> MetadataSnapshotCodec.Rows.writeTemporal jw x
-            | SinkDisplacement.SinkRow.Capability x -> MetadataSnapshotCodec.Rows.writeCapability jw x
+            | SinkDisplacement.WitnessedRow.Module x -> MetadataSnapshotCodec.Rows.writeModule jw x
+            | SinkDisplacement.WitnessedRow.Entity x -> MetadataSnapshotCodec.Rows.writeEntity jw x
+            | SinkDisplacement.WitnessedRow.Attribute x -> MetadataSnapshotCodec.Rows.writeAttribute jw x
+            | SinkDisplacement.WitnessedRow.Reference x -> MetadataSnapshotCodec.Rows.writeReference jw x
+            | SinkDisplacement.WitnessedRow.PhysicalTable x -> MetadataSnapshotCodec.Rows.writePhysicalTable jw x
+            | SinkDisplacement.WitnessedRow.ColumnReality x -> MetadataSnapshotCodec.Rows.writeColumnReality jw x
+            | SinkDisplacement.WitnessedRow.ColumnCheck x -> MetadataSnapshotCodec.Rows.writeColumnCheck jw x
+            | SinkDisplacement.WitnessedRow.PhysColsPresent x -> MetadataSnapshotCodec.Rows.writePhysColsPresent jw x
+            | SinkDisplacement.WitnessedRow.Index x -> MetadataSnapshotCodec.Rows.writeIndex jw x
+            | SinkDisplacement.WitnessedRow.IndexColumn x -> MetadataSnapshotCodec.Rows.writeIndexColumn jw x
+            | SinkDisplacement.WitnessedRow.FkReality x -> MetadataSnapshotCodec.Rows.writeFkReality jw x
+            | SinkDisplacement.WitnessedRow.FkColumn x -> MetadataSnapshotCodec.Rows.writeFkColumn jw x
+            | SinkDisplacement.WitnessedRow.Trigger x -> MetadataSnapshotCodec.Rows.writeTrigger jw x
+            | SinkDisplacement.WitnessedRow.Sequence x -> MetadataSnapshotCodec.Rows.writeSequence jw x
+            | SinkDisplacement.WitnessedRow.Temporal x -> MetadataSnapshotCodec.Rows.writeTemporal jw x
+            | SinkDisplacement.WitnessedRow.Capability x -> MetadataSnapshotCodec.Rows.writeCapability jw x
             jw.WriteEndObject()
 
     let private domainToken (t: SinkDisplacement.DomainTransition) : string =
@@ -179,27 +179,27 @@ module SinkJournal =
            | Some t -> Ok t
            | None -> fail "sink.journal.unknownTable" (sprintf "unknown journal table token '%s'" token)
 
-    let private readRowImage (table: SinkDisplacement.SinkTable) (el: JsonElement) : Result<SinkDisplacement.SinkRow option> =
+    let private readRowImage (table: SinkDisplacement.SinkTable) (el: JsonElement) : Result<SinkDisplacement.WitnessedRow option> =
         if el.ValueKind = JsonValueKind.Null then Ok None
         else
-            let lift (r: Result<'a>) (wrap: 'a -> SinkDisplacement.SinkRow) = r |> Result.map (wrap >> Some)
+            let lift (r: Result<'a>) (wrap: 'a -> SinkDisplacement.WitnessedRow) = r |> Result.map (wrap >> Some)
             match table with
-            | SinkDisplacement.SinkTable.Modules -> lift (MetadataSnapshotCodec.Rows.readModule el) SinkDisplacement.SinkRow.Module
-            | SinkDisplacement.SinkTable.Entities -> lift (MetadataSnapshotCodec.Rows.readEntity el) SinkDisplacement.SinkRow.Entity
-            | SinkDisplacement.SinkTable.Attributes -> lift (MetadataSnapshotCodec.Rows.readAttribute el) SinkDisplacement.SinkRow.Attribute
-            | SinkDisplacement.SinkTable.References -> lift (MetadataSnapshotCodec.Rows.readReference el) SinkDisplacement.SinkRow.Reference
-            | SinkDisplacement.SinkTable.PhysicalTables -> lift (MetadataSnapshotCodec.Rows.readPhysicalTable el) SinkDisplacement.SinkRow.PhysicalTable
-            | SinkDisplacement.SinkTable.ColumnReality -> lift (MetadataSnapshotCodec.Rows.readColumnReality el) SinkDisplacement.SinkRow.ColumnReality
-            | SinkDisplacement.SinkTable.ColumnChecks -> lift (MetadataSnapshotCodec.Rows.readColumnCheck el) SinkDisplacement.SinkRow.ColumnCheck
-            | SinkDisplacement.SinkTable.PhysColsPresent -> lift (MetadataSnapshotCodec.Rows.readPhysColsPresent el) SinkDisplacement.SinkRow.PhysColsPresent
-            | SinkDisplacement.SinkTable.Indexes -> lift (MetadataSnapshotCodec.Rows.readIndex el) SinkDisplacement.SinkRow.Index
-            | SinkDisplacement.SinkTable.IndexColumns -> lift (MetadataSnapshotCodec.Rows.readIndexColumn el) SinkDisplacement.SinkRow.IndexColumn
-            | SinkDisplacement.SinkTable.ForeignKeysReality -> lift (MetadataSnapshotCodec.Rows.readFkReality el) SinkDisplacement.SinkRow.FkReality
-            | SinkDisplacement.SinkTable.ForeignKeyColumns -> lift (MetadataSnapshotCodec.Rows.readFkColumn el) SinkDisplacement.SinkRow.FkColumn
-            | SinkDisplacement.SinkTable.Triggers -> lift (MetadataSnapshotCodec.Rows.readTrigger el) SinkDisplacement.SinkRow.Trigger
-            | SinkDisplacement.SinkTable.Sequences -> lift (MetadataSnapshotCodec.Rows.readSequence el) SinkDisplacement.SinkRow.Sequence
-            | SinkDisplacement.SinkTable.Temporal -> lift (MetadataSnapshotCodec.Rows.readTemporal el) SinkDisplacement.SinkRow.Temporal
-            | SinkDisplacement.SinkTable.Capabilities -> lift (MetadataSnapshotCodec.Rows.readCapability el) SinkDisplacement.SinkRow.Capability
+            | SinkDisplacement.SinkTable.Modules -> lift (MetadataSnapshotCodec.Rows.readModule el) SinkDisplacement.WitnessedRow.Module
+            | SinkDisplacement.SinkTable.Entities -> lift (MetadataSnapshotCodec.Rows.readEntity el) SinkDisplacement.WitnessedRow.Entity
+            | SinkDisplacement.SinkTable.Attributes -> lift (MetadataSnapshotCodec.Rows.readAttribute el) SinkDisplacement.WitnessedRow.Attribute
+            | SinkDisplacement.SinkTable.References -> lift (MetadataSnapshotCodec.Rows.readReference el) SinkDisplacement.WitnessedRow.Reference
+            | SinkDisplacement.SinkTable.PhysicalTables -> lift (MetadataSnapshotCodec.Rows.readPhysicalTable el) SinkDisplacement.WitnessedRow.PhysicalTable
+            | SinkDisplacement.SinkTable.ColumnReality -> lift (MetadataSnapshotCodec.Rows.readColumnReality el) SinkDisplacement.WitnessedRow.ColumnReality
+            | SinkDisplacement.SinkTable.ColumnChecks -> lift (MetadataSnapshotCodec.Rows.readColumnCheck el) SinkDisplacement.WitnessedRow.ColumnCheck
+            | SinkDisplacement.SinkTable.PhysColsPresent -> lift (MetadataSnapshotCodec.Rows.readPhysColsPresent el) SinkDisplacement.WitnessedRow.PhysColsPresent
+            | SinkDisplacement.SinkTable.Indexes -> lift (MetadataSnapshotCodec.Rows.readIndex el) SinkDisplacement.WitnessedRow.Index
+            | SinkDisplacement.SinkTable.IndexColumns -> lift (MetadataSnapshotCodec.Rows.readIndexColumn el) SinkDisplacement.WitnessedRow.IndexColumn
+            | SinkDisplacement.SinkTable.ForeignKeysReality -> lift (MetadataSnapshotCodec.Rows.readFkReality el) SinkDisplacement.WitnessedRow.FkReality
+            | SinkDisplacement.SinkTable.ForeignKeyColumns -> lift (MetadataSnapshotCodec.Rows.readFkColumn el) SinkDisplacement.WitnessedRow.FkColumn
+            | SinkDisplacement.SinkTable.Triggers -> lift (MetadataSnapshotCodec.Rows.readTrigger el) SinkDisplacement.WitnessedRow.Trigger
+            | SinkDisplacement.SinkTable.Sequences -> lift (MetadataSnapshotCodec.Rows.readSequence el) SinkDisplacement.WitnessedRow.Sequence
+            | SinkDisplacement.SinkTable.Temporal -> lift (MetadataSnapshotCodec.Rows.readTemporal el) SinkDisplacement.WitnessedRow.Temporal
+            | SinkDisplacement.SinkTable.Capabilities -> lift (MetadataSnapshotCodec.Rows.readCapability el) SinkDisplacement.WitnessedRow.Capability
 
     let private asNonNullString (code: string) (context: string) (el: JsonElement) : Result<string> =
         match el.GetString() with

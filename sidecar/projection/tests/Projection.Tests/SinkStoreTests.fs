@@ -193,7 +193,7 @@ module SinkStoreTests =
                   KeyText = "espace:800"
                   KeyBasis = SinkDisplacement.KeyBasis.Positional 800
                   Before = None
-                  After = Some (SinkDisplacement.SinkRow.Module (OssysSnapshotBuilders.moduleRow 800 "Fulfillment"))
+                  After = Some (SinkDisplacement.WitnessedRow.Module (OssysSnapshotBuilders.moduleRow 800 "Fulfillment"))
                   Domain = None } }
         match SinkJournal.admitChain [ line 2; line 1 ] with
         | Ok _ -> Assert.Fail "a regressing chain admitted"
@@ -215,7 +215,7 @@ module SinkStoreTests =
                   KeyText = "espace:800"
                   KeyBasis = SinkDisplacement.KeyBasis.Positional 800
                   Before = None
-                  After = Some (SinkDisplacement.SinkRow.Module (OssysSnapshotBuilders.moduleRow 800 "Fulfillment"))
+                  After = Some (SinkDisplacement.WitnessedRow.Module (OssysSnapshotBuilders.moduleRow 800 "Fulfillment"))
                   Domain = None } }
         // A well-formed two-sync chain admits (genesis → sync 2 linking to 1).
         match SinkJournal.admitChain [ line 1 None; line 2 (Some (ord 1)) ] with
@@ -242,7 +242,7 @@ module SinkStoreTests =
                       KeyText = "espace:800"
                       KeyBasis = SinkDisplacement.KeyBasis.Positional 800
                       Before = None
-                      After = Some (SinkDisplacement.SinkRow.Module (OssysSnapshotBuilders.moduleRow 800 "Fulfillment"))
+                      After = Some (SinkDisplacement.WitnessedRow.Module (OssysSnapshotBuilders.moduleRow 800 "Fulfillment"))
                       Domain = None } }
         let tampered = rendered.Replace("\"syncId\":1", "\"syncId\":0")
         match SinkJournal.parseLine tampered with
@@ -260,8 +260,8 @@ module SinkStoreTests =
                 { Table = SinkDisplacement.SinkTable.Entities
                   KeyText = "entity:8000"
                   KeyBasis = SinkDisplacement.KeyBasis.Positional 8000
-                  Before = Some (SinkDisplacement.SinkRow.Entity (OssysSnapshotBuilders.entityRow 8000 800 "Order" "OSUSR_FUL_ORDER"))
-                  After = Some (SinkDisplacement.SinkRow.Entity { OssysSnapshotBuilders.entityRow 8000 800 "Order" "OSUSR_FUL_ORDER" with IsActive = false })
+                  Before = Some (SinkDisplacement.WitnessedRow.Entity (OssysSnapshotBuilders.entityRow 8000 800 "Order" "OSUSR_FUL_ORDER"))
+                  After = Some (SinkDisplacement.WitnessedRow.Entity { OssysSnapshotBuilders.entityRow 8000 800 "Order" "OSUSR_FUL_ORDER" with IsActive = false })
                   Domain = Some SinkDisplacement.DomainTransition.EntityDeactivated } }
         match SinkJournal.parseLine (SinkJournal.renderLine original) with
         | Error e -> Assert.Fail (sprintf "line did not parse back: %A" e)
@@ -295,8 +295,8 @@ module SinkStoreTests =
                     { Table = SinkDisplacement.SinkTable.Entities
                       KeyText = "entity:8000"
                       KeyBasis = SinkDisplacement.KeyBasis.Positional 8000
-                      Before = Some (SinkDisplacement.SinkRow.Entity (OssysSnapshotBuilders.entityRow 8000 800 "Order" "OSUSR_FUL_ORDER"))
-                      After = Some (SinkDisplacement.SinkRow.Entity { OssysSnapshotBuilders.entityRow 8000 800 "Order" "OSUSR_FUL_ORDER" with IsActive = false })
+                      Before = Some (SinkDisplacement.WitnessedRow.Entity (OssysSnapshotBuilders.entityRow 8000 800 "Order" "OSUSR_FUL_ORDER"))
+                      After = Some (SinkDisplacement.WitnessedRow.Entity { OssysSnapshotBuilders.entityRow 8000 800 "Order" "OSUSR_FUL_ORDER" with IsActive = false })
                       Domain = domain } }
             match SinkJournal.parseLine (SinkJournal.renderLine line) with
             | Ok parsed -> Assert.Equal(line, parsed)
@@ -309,7 +309,7 @@ module SinkStoreTests =
                     { Table = SinkDisplacement.SinkTable.Entities; KeyText = "entity:1"
                       KeyBasis = SinkDisplacement.KeyBasis.Positional 1
                       Before = None
-                      After = Some (SinkDisplacement.SinkRow.Entity (OssysSnapshotBuilders.entityRow 1 800 "A" "OSUSR_A"))
+                      After = Some (SinkDisplacement.WitnessedRow.Entity (OssysSnapshotBuilders.entityRow 1 800 "A" "OSUSR_A"))
                       Domain = Some SinkDisplacement.DomainTransition.ShapeChanged } }
         match SinkJournal.parseLine (rendered.Replace("\"shapeChanged\"", "\"mysteryToken\"")) with
         | Ok _ -> Assert.Fail "an unknown domain token parsed"

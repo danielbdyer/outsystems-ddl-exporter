@@ -33012,3 +33012,25 @@ the chapter's domain word are the concept register, per the audit's own
 anti-finding.
 
 **Doc-only; not behavioral.**
+
+---
+
+## 2026-08-30 — align-III.19 (X3): the witness-plane row is `WitnessedRow`; the "Witness-" freeze is written down
+
+**The finding (audit a9, F4).** "Sink" was tri-modal in one assembly — the transfer
+write-target (meaning A, the legitimate sink), the witnessed OSSYS metadata mirror
+(meaning B), and an event receiver — with the specimen collision `SinkDisplacement.SinkRow`
+(meaning B) vs the workbench's `SinkRows` (meaning A) one letter apart on different planes.
+
+**The decision (the measured cut; one rename).** `SinkDisplacement.SinkRow` →
+**`WitnessedRow`** — the displacement's before/after image carrier is the WITNESS plane's
+row, and now says so (~96 reference lines across SinkDisplacement/SinkJournal/SinkClaims +
+SinkStoreTests/PhysicalClaimTests; wire-safe — the DU name never reaches bytes, the
+journal's table tokens come from `SinkTable.token`). The FREEZE rides the type's doc,
+standing from Chapter II onward: new witness-plane names take `Witness-`/`Witnessed-`,
+never `Sink-`. The surviving `Sink*` names on the plane (`SinkTable`, `SinkStore`,
+`SinkJournal`, the `sink:` refs and `sink.*` codes) are the operator-visible chapter
+vocabulary — the full B-family rename is L-effort touching the operator surface and rides
+until it earns its own arc (the audit's own scoping).
+
+**Grep-absence:** `\bSinkRow\b` = 0 in src+tests. Not behavioral.
