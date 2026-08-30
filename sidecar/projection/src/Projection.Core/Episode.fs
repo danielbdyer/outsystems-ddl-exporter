@@ -31,20 +31,49 @@ module EpisodeCoordinate =
 /// `Profile` is a per-run *input* (substrate for tightening), co-recorded
 /// in-memory on the `Episode` but never persisted — persisting it would be the
 /// speculative-`RowDiff`-value trap §12.4 warns against.
+/// The data-plane measurement co-recorded on an `Episode` (align-III.6):
+/// either the CDC ruler genuinely ran (`Observed` — a measured capture
+/// count, zero included, plus the optional provenance handle) or no
+/// measurement was taken at all (`NotObserved` — a schema-only record).
+/// **Measured-zero ≠ unmeasured**: an idempotent redeploy's CDC-silence
+/// (observed zero captures — the strongest guarantee) is a different fact
+/// from "no one looked", and the DU keeps them apart where the retired
+/// `{ CdcCaptureCount = 0 }` record folded both onto the same value.
+[<RequireQualifiedAccess>]
 type DataObservation =
-    {
-        CdcCaptureCount : int
-        CdcHandle       : string option
-    }
+    | NotObserved
+    | Observed of captureCount: int * handle: string option
 
 [<RequireQualifiedAccess>]
 module DataObservation =
 
-    /// No data movement observed (a schema-only episode, or genesis).
-    let empty : DataObservation = { CdcCaptureCount = 0; CdcHandle = None }
+    /// The measuring producer — the CDC ruler ran and read `captureCount`
+    /// (zero is a real reading: CDC-silence, T15's isometry at rest).
+    let observed (captureCount: int) (handle: string option) : DataObservation =
+        DataObservation.Observed (captureCount, handle)
 
-    let create (captureCount: int) (handle: string option) : DataObservation =
-        { CdcCaptureCount = captureCount; CdcHandle = handle }
+    /// The norm projection: an unmeasured plane contributes zero
+    /// displacement — it cannot CLAIM movement it never measured — and a
+    /// measured plane contributes its reading. The DU, not this fold,
+    /// carries the measured-zero vs unmeasured distinction; take the fold
+    /// only where a norm is being summed or displayed.
+    let captureCount (d: DataObservation) : int =
+        match d with
+        | DataObservation.NotObserved -> 0
+        | DataObservation.Observed (c, _) -> c
+
+    /// The provenance handle (an LSN, a capture-instance token) — only a
+    /// real measurement can carry one.
+    let handle (d: DataObservation) : string option =
+        match d with
+        | DataObservation.NotObserved -> None
+        | DataObservation.Observed (_, h) -> h
+
+    /// Whether the CDC ruler ran at all.
+    let ran (d: DataObservation) : bool =
+        match d with
+        | DataObservation.NotObserved -> false
+        | DataObservation.Observed _ -> true
 
 
 /// A multi-plane snapshot at one `Version`: the point at which the calculus
@@ -121,7 +150,7 @@ module Episode =
     /// no accepted divergence, no applied overlay) — the genesis shape and the
     /// durable-faithful shape (see `durableProjection`).
     let ofSchema (coordinate: EpisodeCoordinate) (schema: Catalog) : Episode =
-        create coordinate schema Profile.empty None DataObservation.empty
+        create coordinate schema Profile.empty None DataObservation.NotObserved
 
     /// Thread the provenance planes onto an episode — the per-run tolerance
     /// residual (the canary's accepted-divergence set) and the §5.5

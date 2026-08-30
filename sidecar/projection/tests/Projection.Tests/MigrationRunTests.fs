@@ -109,7 +109,7 @@ let ``6.D.1: record opens a timeline at genesis on the first migration`` () =
     withTempFile (fun path ->
         let artifacts = MigrationRun.preview DeclareAll sampleCatalog renamedTarget |> mustOk
         let coord = EpisodeCoordinate.create (ver 0 "1.0.0") Environment.Dev (at "2026-06-01T09:00:00+00:00")
-        let chain = MigrationRun.record path (tl "dev") coord (Some "reflog#1") (DataObservation.create 0 None) artifacts |> mustOk
+        let chain = MigrationRun.record path (tl "dev") coord (Some "reflog#1") (DataObservation.NotObserved) artifacts |> mustOk
         Assert.Equal(1, EpisodicLifecycle.episodes chain |> List.length)
         Assert.Equal<Catalog>(renamedTarget, (EpisodicLifecycle.head chain).Schema))
 
@@ -123,7 +123,7 @@ let ``6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces
         // Episode 1: migrate sampleCatalog → reshapedTarget, recorded.
         let artifacts = MigrationRun.preview DeclareNone sampleCatalog reshapedTarget |> mustOk
         let coord = EpisodeCoordinate.create (ver 1 "1.1.0") Environment.Dev (at "2026-06-08T09:00:00+00:00")
-        let chain = MigrationRun.record path (tl "dev") coord (Some "reflog#1") (DataObservation.create 12 (Some "lsn:0x0C")) artifacts |> mustOk
+        let chain = MigrationRun.record path (tl "dev") coord (Some "reflog#1") (DataObservation.observed 12 (Some "lsn:0x0C")) artifacts |> mustOk
         // The FTC over the recorded chain reproduces B (genesis ⊕ δ = target).
         let reconstructed = EpisodicLifecycle.reconstructLatestSchema chain |> mustOk
         Assert.True(CatalogDiff.isEmpty (CatalogDiff.between reshapedTarget reconstructed))
@@ -236,10 +236,10 @@ let ``6.D.1: record refuses a non-advancing version (NonMonotonic)`` () =
     withTempFile (fun path ->
         let artifacts = MigrationRun.preview DeclareAll sampleCatalog renamedTarget |> mustOk
         let coord0 = EpisodeCoordinate.create (ver 5 "1.5.0") Environment.Dev (at "2026-06-01T09:00:00+00:00")
-        MigrationRun.record path (tl "dev") coord0 None (DataObservation.create 0 None) artifacts |> mustOk |> ignore
+        MigrationRun.record path (tl "dev") coord0 None (DataObservation.NotObserved) artifacts |> mustOk |> ignore
         // A second record at a NON-advancing ordinal must refuse.
         let coord1 = EpisodeCoordinate.create (ver 5 "1.5.1") Environment.Dev (at "2026-06-02T09:00:00+00:00")
-        match MigrationRun.record path (tl "dev") coord1 None (DataObservation.create 0 None) artifacts with
+        match MigrationRun.record path (tl "dev") coord1 None (DataObservation.NotObserved) artifacts with
         | FsResult.Error (NonMonotonic _) -> ()
         | other -> Assert.Fail(sprintf "expected NonMonotonic, got %A" other))
 
@@ -276,7 +276,7 @@ let ``AC-P8: recordVerified persists a verified execute; the store reloads and r
         let outcome = verifiedOutcome sampleCatalog reshapedTarget
         let chain =
             MigrationRun.recordVerified path (tl "dev") Environment.Dev
-                (at "2026-06-08T09:00:00+00:00") (Some "reflog#1") (DataObservation.create 0 None) outcome
+                (at "2026-06-08T09:00:00+00:00") (Some "reflog#1") (DataObservation.NotObserved) outcome
             |> mustOk
         Assert.Equal(1, EpisodicLifecycle.episodes chain |> List.length)
         // The file exists on disk — durable, not just in-memory.
@@ -291,14 +291,14 @@ let ``AC-P8: a second recordVerified appends at the next monotonic ordinal (time
     withTempFile (fun path ->
         // First episode: genesis at sampleCatalog → reshapedTarget.
         MigrationRun.recordVerified path (tl "dev") Environment.Dev
-            (at "2026-06-08T09:00:00+00:00") None (DataObservation.create 0 None)
+            (at "2026-06-08T09:00:00+00:00") None (DataObservation.NotObserved)
             (verifiedOutcome sampleCatalog reshapedTarget)
         |> mustOk |> ignore
         // Second episode: reshapedTarget → renamedTarget. nextCoordinate derives
         // ordinal 1 from the store's head (ordinal 0); the append is monotone.
         let chain =
             MigrationRun.recordVerified path (tl "dev") Environment.Dev
-                (at "2026-06-15T09:00:00+00:00") None (DataObservation.create 0 None)
+                (at "2026-06-15T09:00:00+00:00") None (DataObservation.NotObserved)
                 (verifiedOutcome reshapedTarget renamedTarget)
             |> mustOk
         Assert.Equal(2, EpisodicLifecycle.episodes chain |> List.length)
@@ -309,7 +309,7 @@ let ``AC-P8: recordVerified refuses an UNVERIFIED outcome (the timeline only car
     withTempFile (fun path ->
         let outcome = { verifiedOutcome sampleCatalog reshapedTarget with Verified = false }
         match MigrationRun.recordVerified path (tl "dev") Environment.Dev
-                (at "2026-06-08T09:00:00+00:00") None (DataObservation.create 0 None) outcome with
+                (at "2026-06-08T09:00:00+00:00") None (DataObservation.NotObserved) outcome with
         | FsResult.Error (NonMonotonic _) -> ()
         | other -> Assert.Fail(sprintf "expected refusal of an unverified outcome, got %A" other)
         // And nothing was written — an unverified run leaves no provenance.

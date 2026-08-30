@@ -39,9 +39,9 @@ let private coord o lbl env day = EpisodeCoordinate.create (ver o lbl) env (at (
 // Environment round-trip including the `Named` escape hatch.
 let private e0 = Episode.ofSchema (coord 0 "1.0.0" Environment.Dev 1) sampleCatalog
 let private e1 =
-    Episode.create (coord 1 "1.1.0" Environment.Qa 8) targetCatalog Profile.empty (Some "reflog#1") (DataObservation.create 120 (Some "lsn:0x10"))
+    Episode.create (coord 1 "1.1.0" Environment.Qa 8) targetCatalog Profile.empty (Some "reflog#1") (DataObservation.observed 120 (Some "lsn:0x10"))
 let private e2 =
-    Episode.create (coord 2 "1.2.0" (Environment.Named "staging") 15) targetCatalog Profile.empty None (DataObservation.create 0 None)
+    Episode.create (coord 2 "1.2.0" (Environment.Named "staging") 15) targetCatalog Profile.empty None (DataObservation.NotObserved)
 
 let private chain : EpisodicLifecycle =
     EpisodicLifecycle.genesis (tl "dev") e0
@@ -99,8 +99,8 @@ let ``6.H.2: every plane but the Profile survives the round-trip (coordinate, sc
         Assert.Equal(1, Version.ordinal loadedE1.Coordinate.Version)
         Assert.Equal(at "2026-06-08T09:00:00+00:00", loadedE1.Coordinate.At)
         Assert.Equal(Some "reflog#1", loadedE1.RefactorLogRef)
-        Assert.Equal(120, loadedE1.Data.CdcCaptureCount)
-        Assert.Equal(Some "lsn:0x10", loadedE1.Data.CdcHandle)
+        Assert.Equal(120, DataObservation.captureCount loadedE1.Data)
+        Assert.Equal(Some "lsn:0x10", DataObservation.handle loadedE1.Data)
         Assert.Equal<Catalog>(targetCatalog, loadedE1.Schema))
 
 [<Fact>]
@@ -198,7 +198,7 @@ let private provenanceApplied : (SsKey * OverlayAxis option) list =
     |> List.sort
 
 let private provenanceEpisode : Episode =
-    Episode.create (coord 1 "1.1.0" Environment.Qa 8) targetCatalog Profile.empty (Some "reflog#1") (DataObservation.create 120 (Some "lsn:0x10"))
+    Episode.create (coord 1 "1.1.0" Environment.Qa 8) targetCatalog Profile.empty (Some "reflog#1") (DataObservation.observed 120 (Some "lsn:0x10"))
     |> Episode.withProvenance provenanceTolerances provenanceApplied
 
 let private provenanceChain : EpisodicLifecycle =
@@ -291,7 +291,7 @@ let private sampleReceipts : DataCorrectionReceipt list =
         ApprovedBy = None; ApprovedAt = None } ]
 
 let private receiptEpisode : Episode =
-    Episode.create (coord 1 "1.1.0" Environment.Qa 8) targetCatalog Profile.empty (Some "reflog#1") (DataObservation.create 120 (Some "lsn:0x10"))
+    Episode.create (coord 1 "1.1.0" Environment.Qa 8) targetCatalog Profile.empty (Some "reflog#1") (DataObservation.observed 120 (Some "lsn:0x10"))
     |> Episode.withDataCorrectionReceipts sampleReceipts
 
 let private receiptChain : EpisodicLifecycle =
@@ -416,3 +416,51 @@ let ``align-III.1: a receipt's malformed 'approvedAt' is a ParseFailure; a store
         match LifecycleStore.load path with
         | FsResult.Error (LifecycleStoreError.ParseFailure _) -> ()
         | other -> Assert.Fail(sprintf "expected ParseFailure, got %A" other))
+
+// ===========================================================================
+// align-III.6 — the observation presence flag: measured-zero ≠ unmeasured,
+// AT REST. Three generations of bytes, one total reader.
+// ===========================================================================
+
+[<Fact>]
+let ``align-III.6: a measured ZERO survives the store — Observed 0 round-trips as Observed, never NotObserved`` () =
+    withTempFile (fun path ->
+        let silence =
+            Episode.create (coord 3 "1.3.0" Environment.Dev 20) targetCatalog Profile.empty None (DataObservation.observed 0 None)
+        let extended = EpisodicLifecycle.append silence chain |> mustResultOk
+        LifecycleStore.save path extended |> mustStoreOk
+        let loaded = LifecycleStore.load path |> mustStoreOk
+        let last = EpisodicLifecycle.latest loaded
+        Assert.Equal(DataObservation.observed 0 None, last.Data)
+        Assert.True(Projection.Core.DataObservation.ran last.Data))
+
+[<Fact>]
+let ``align-III.6: a NotObserved episode writes NO presence flag — schema-only stores are byte-compatible with pre-III.6`` () =
+    withTempFile (fun path ->
+        // A chain of only unmeasured episodes (genesis via ofSchema) must not
+        // mention the flag at all — its bytes are the pre-III.6 shape.
+        LifecycleStore.save path (EpisodicLifecycle.genesis (tl "dev") e0) |> mustStoreOk
+        let text = System.IO.File.ReadAllText path
+        Assert.DoesNotContain("cdcObserved", text)
+        let loaded = LifecycleStore.load path |> mustStoreOk
+        Assert.Equal(DataObservation.NotObserved, (EpisodicLifecycle.head loaded).Data))
+
+[<Fact>]
+let ``align-III.6: pre-III.6 bytes read totally — an unflagged positive count is a measurement; an unflagged zero is NotObserved`` () =
+    withTempFile (fun path ->
+        LifecycleStore.save path chain |> mustStoreOk
+        // Strip every presence flag to simulate a store written before III.6
+        // (e1 carried Observed 120 — the only flagged episode in `chain`).
+        let stripped =
+            System.Text.RegularExpressions.Regex.Replace(
+                System.IO.File.ReadAllText path, @"\s*""cdcObserved"": true,", "")
+        Assert.DoesNotContain("cdcObserved", stripped)
+        System.IO.File.WriteAllText(path, stripped)
+        let loaded = LifecycleStore.load path |> mustStoreOk
+        let episodes = EpisodicLifecycle.episodes loaded
+        // e1's positive count was always unambiguously a measurement…
+        Assert.Equal(DataObservation.observed 120 (Some "lsn:0x10"), episodes.[1].Data)
+        // …while e0/e2's zero was the old conflation and reads the safe
+        // direction: NotObserved, never a fabricated measurement.
+        Assert.Equal(DataObservation.NotObserved, episodes.[0].Data)
+        Assert.Equal(DataObservation.NotObserved, episodes.[2].Data))

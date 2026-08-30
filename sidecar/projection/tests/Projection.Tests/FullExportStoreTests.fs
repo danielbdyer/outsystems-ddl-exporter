@@ -509,7 +509,7 @@ let ``G3: a rename across episodes lands in the bundle's refactorlog in DEPLOYED
         let coordinate =
             EpisodeCoordinate.create (Version.create 0 "v0" |> mustOk) Environment.Dev priorAt
         let genesis =
-            Episode.create coordinate (priorSchemaOldUser ()) Profile.empty None DataObservation.empty
+            Episode.create coordinate (priorSchemaOldUser ()) Profile.empty None DataObservation.NotObserved
         LifecycleStore.save store (EpisodicLifecycle.genesis tl genesis) |> mustStoreOk
         // Run the full-export: the model names the kind `User` — same SsKey,
         // new logical name — a RENAME the deployed estate must sp_rename.
@@ -549,7 +549,7 @@ let ``G3: the accumulated document is CUMULATIVE — a later no-change run still
         let coordinate =
             EpisodeCoordinate.create (Version.create 0 "v0" |> mustOk) Environment.Dev priorAt
         let genesis =
-            Episode.create coordinate (priorSchemaOldUser ()) Profile.empty None DataObservation.empty
+            Episode.create coordinate (priorSchemaOldUser ()) Profile.empty None DataObservation.NotObserved
         LifecycleStore.save store (EpisodicLifecycle.genesis tl genesis) |> mustStoreOk
         let _, leg2 = runWithStoreReport cfg2 store 2
         let _, leg3 = runWithStoreReport cfg3 store 3

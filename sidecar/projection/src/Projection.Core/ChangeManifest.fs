@@ -59,7 +59,7 @@ module ChangeManifest =
               Channels = CatalogDiff.channelCounts diff
               SchemaNorm = CatalogDiff.norm diff
               RefactorLogRef = toEpisode.RefactorLogRef
-              CdcCaptureCount = toEpisode.Data.CdcCaptureCount
+              CdcCaptureCount = DataObservation.captureCount toEpisode.Data
               // The tolerance residual is the named-divergence list the To-
               // episode's canary accepted on this edge — `Set` rendered to a
               // name-sorted list for T1 byte-determinism. `Tolerance.strict`

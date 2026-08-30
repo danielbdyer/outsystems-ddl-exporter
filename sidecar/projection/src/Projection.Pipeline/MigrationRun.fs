@@ -793,7 +793,7 @@ module MigrationRun =
                 if not outcome.Verified then
                     return Ok (outcome, None)
                 else
-                    match recordVerified path timeline environment at refactorLogRef DataObservation.empty outcome with
+                    match recordVerified path timeline environment at refactorLogRef DataObservation.NotObserved outcome with
                     | Ok chain -> return Ok (outcome, Some chain)
                     | Error e -> return Error (ExecutionFailed (sprintf "execute verified but recording the episode failed: %A" e))
         }
@@ -976,7 +976,7 @@ module MigrationRun =
                     match! Deploy.cdcCaptureTotal sink with
                     | Error es -> return Error (SchemaReadFailed es)
                     | Ok post ->
-                    let data = DataObservation.create (post - baseline) None
+                    let data = DataObservation.observed (post - baseline) None
                     // PL-10 (S12 sibling) — the record tail is one sync call
                     // (module-level: FS3511) paying ONE store load.
                     return recordDataOutcome path timeline environment at refactorLogRef data schema report

@@ -41,8 +41,8 @@ let private coord1 = EpisodeCoordinate.create (ver 1 "1.1.0") Environment.Dev (a
 let private coord2 = EpisodeCoordinate.create (ver 2 "1.2.0") Environment.Dev (at "2026-06-15T09:00:00+00:00")
 
 let private e0 : Episode = Episode.ofSchema coord0 sampleCatalog
-let private e1 : Episode = Episode.create coord1 targetCatalog Profile.empty (Some "refactorlog#1") (DataObservation.create 10 None)
-let private e2 : Episode = Episode.create coord2 targetCatalog Profile.empty (Some "refactorlog#2") (DataObservation.create 20 None)
+let private e1 : Episode = Episode.create coord1 targetCatalog Profile.empty (Some "refactorlog#1") (DataObservation.observed 10 None)
+let private e2 : Episode = Episode.create coord2 targetCatalog Profile.empty (Some "refactorlog#2") (DataObservation.observed 20 None)
 
 let private threeEpisodeChain : EpisodicLifecycle =
     EpisodicLifecycle.genesis (tl "eject-dev") e0
@@ -175,7 +175,7 @@ let ``ReportRun: a genesis-only timeline reports no change since genesis`` () =
 // each only when non-empty (a strict, skeleton-only edge stays silent).
 
 let private provenanceE1 : Episode =
-    Episode.create coord1 targetCatalog Profile.empty (Some "refactorlog#1") (DataObservation.create 10 None)
+    Episode.create coord1 targetCatalog Profile.empty (Some "refactorlog#1") (DataObservation.observed 10 None)
     |> Episode.withProvenance
         (Tolerance.strict |> Tolerance.withDivergence ToleratedDivergence.HeaderCommentsOmitted)
         [ customer.SsKey, Some OverlayAxis.Emission; order.SsKey, None ]

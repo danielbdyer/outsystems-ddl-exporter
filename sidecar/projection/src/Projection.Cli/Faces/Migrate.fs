@@ -526,7 +526,7 @@ let private runMigrateWithDataLeg
                 | Ok (o, chain) ->
                     printfn "Schema applied and data loaded — %d table(s) transferred; recorded to %s (%d row(s) captured; %d episode(s) on timeline %s)."
                         (List.length o.Transfer.Kinds) store
-                        (EpisodicLifecycle.latest chain).Data.CdcCaptureCount
+                        (Projection.Core.DataObservation.captureCount (EpisodicLifecycle.latest chain).Data)
                         (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
                     return 0
                 | Error e -> return reportMigrationError e

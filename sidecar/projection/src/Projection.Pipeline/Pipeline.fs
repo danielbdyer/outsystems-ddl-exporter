@@ -3201,7 +3201,7 @@ module Compose =
                                     match Version.create 0 "v0" with
                                     | Ok v -> EpisodeCoordinate.create v environment at
                                     | Error _ -> coordinate
-                                let fromEpisode = Episode.create priorCoordinate prior Profile.empty None DataObservation.empty
+                                let fromEpisode = Episode.create priorCoordinate prior Profile.empty None DataObservation.NotObserved
                                 match ChangeManifest.between fromEpisode episode with
                                 | Error e -> Error (DisplacementFailed e)
                                 | Ok manifest ->
@@ -3246,7 +3246,7 @@ module Compose =
         | Error errors -> Result.failure errors
         | Ok emitted ->
             let physicalNamed = operatorRenamedKinds cfg acquired.ReadCatalog
-            match runStoreLegOnPrior storePath storePrior physicalNamed timeline environment at None DataObservation.empty (emittedToleranceResidual (defaultArg cfg.Emission.Tolerance Tolerance.permissive) emitted) appliedTransforms acquired.Receipts emitted with
+            match runStoreLegOnPrior storePath storePrior physicalNamed timeline environment at None DataObservation.NotObserved (emittedToleranceResidual (defaultArg cfg.Emission.Tolerance Tolerance.permissive) emitted) appliedTransforms acquired.Receipts emitted with
             | Ok leg -> Result.success (Some leg)
             | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
 
@@ -3262,7 +3262,7 @@ module Compose =
     ///
     /// **Scope (W1-B leg 1):** diff-vs-prior + `ChangeManifest` +
     /// refactorlog-accumulate + `record`. NO data-merge / data-load leg (a
-    /// larger feature, out of scope for 6b); `DataObservation.empty` is recorded
+    /// larger feature, out of scope for 6b); `DataObservation.NotObserved` is recorded
     /// (the CDC-measure leg is a sibling track the parent joins).
     ///
     /// Failure surfaces, split by phase (G3): a malformed store refuses BEFORE
@@ -3345,7 +3345,7 @@ module Compose =
     /// movement (the change-measure ‖·‖ via `Deploy.cdcCaptureTotal`, the
     /// production reader), and — when a store is supplied — record an episode
     /// (schema = `emitted`) with the **measured** `DataObservation` (not
-    /// `DataObservation.empty`). The seed is a MERGE, so the measure on a first
+    /// `DataObservation.NotObserved`). The seed is a MERGE, so the measure on a first
     /// load = rows inserted; on an idempotent re-run = 0 (CDC-silent). Catalog +
     /// seed are caller-supplied so this is unit-testable without a config file;
     /// `runWithConfigAndLoad` is the config-driven wrapper.
@@ -3363,7 +3363,7 @@ module Compose =
         : Result<FullExportStoreLeg option * int> =
         match storePath with
         | Some path when not (System.String.IsNullOrWhiteSpace path) ->
-            let data = DataObservation.create cdcDelta None
+            let data = DataObservation.observed cdcDelta None
             // The data-load leg records the measured CDC `DataObservation` but
             // carries no composed-run lineage trail at this site (the trail is a
             // schema-emission artifact, not a load artifact), so the §5.5 overlay

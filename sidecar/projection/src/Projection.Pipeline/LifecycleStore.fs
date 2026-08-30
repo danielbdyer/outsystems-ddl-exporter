@@ -80,12 +80,23 @@ module LifecycleStore =
         jw.WriteString("at", c.At.ToString(isoFormat, inv))
         jw.WriteEndObject()
 
+    /// align-III.6 — the observation writes with a PRESENCE FLAG:
+    /// `Observed` carries `"cdcObserved": true` (so a measured ZERO is
+    /// distinguishable at rest); `NotObserved` writes the exact pre-III.6
+    /// "empty" bytes (count 0, null handle, NO flag) — schema-only stores
+    /// stay byte-identical.
     let private writeData (jw: Utf8JsonWriter) (d: DataObservation) : unit =
         jw.WriteStartObject()
-        jw.WriteNumber("cdcCaptureCount", d.CdcCaptureCount)
-        match d.CdcHandle with
-        | Some h -> jw.WriteString("cdcHandle", h)
-        | None   -> jw.WriteNull("cdcHandle")
+        match d with
+        | DataObservation.NotObserved ->
+            jw.WriteNumber("cdcCaptureCount", 0)
+            jw.WriteNull("cdcHandle")
+        | DataObservation.Observed (count, handle) ->
+            jw.WriteBoolean("cdcObserved", true)
+            jw.WriteNumber("cdcCaptureCount", count)
+            match handle with
+            | Some h -> jw.WriteString("cdcHandle", h)
+            | None   -> jw.WriteNull("cdcHandle")
         jw.WriteEndObject()
 
     /// The episode's **tolerance residual** (NM-34) — the accepted-divergence
@@ -333,9 +344,25 @@ module LifecycleStore =
         | Error m, _ -> Error m
         | _, Error m -> Error m
 
+    /// align-III.6 — the flagged read, total over both generations of bytes.
+    /// A present `cdcObserved: true` is a real measurement (zero included);
+    /// pre-III.6 bytes carry no flag, where a POSITIVE count was always a
+    /// genuine measurement and a ZERO count was the old conflation — it reads
+    /// `NotObserved`, the safe direction (never a fabricated measurement).
     let private readData (el: JsonElement) : Result<DataObservation, string> =
         fieldInt el "cdcCaptureCount"
-        |> mapR (fun count -> DataObservation.create count (optStr el "cdcHandle"))
+        |> mapR (fun count ->
+            let handle = optStr el "cdcHandle"
+            let flagged =
+                match el.TryGetProperty "cdcObserved" with
+                | true, v when v.ValueKind = JsonValueKind.True  -> Some true
+                | true, v when v.ValueKind = JsonValueKind.False -> Some false
+                | _ -> None
+            match flagged with
+            | Some true  -> DataObservation.observed count handle
+            | Some false -> DataObservation.NotObserved
+            | None when count > 0 -> DataObservation.observed count handle
+            | None -> DataObservation.NotObserved)
 
     /// The episode's tolerance residual (NM-34). A **missing** `tolerances`
     /// field reads as `Tolerance.strict` (forward-compatible with pre-NM-34

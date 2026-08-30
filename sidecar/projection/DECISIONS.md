@@ -32579,3 +32579,42 @@ the twin references.
 **Not behavioral.** No production caller invoked the deleted API; no wire format moves.
 The only new production code is `replayTo` (pure fetch). Verification: build + analyzers
 clean; fast pool; matrix byte-stable.
+
+---
+
+## 2026-08-30 — align-III.6: `DataObservation` becomes a DU — measured-zero ≠ unmeasured
+
+**The finding (audit a5, S5).** The data-plane observation on an `Episode` was
+`{ CdcCaptureCount : int; CdcHandle : string option }` with `empty = { 0; None }` — folding
+two different facts onto one value: **CDC-silence** (the ruler ran and read zero — an
+idempotent redeploy's strongest guarantee, T15's isometry at rest) and **no measurement**
+(a schema-only record; nobody looked). The codebase's own gestalt names silence as a
+guarantee; a type that cannot state "the ruler ran" cannot carry it.
+
+**The decision.** `DataObservation = NotObserved | Observed of captureCount * handle option`
+(`[<RequireQualifiedAccess>]`). `observed` is the measuring producer (zero is a real
+reading); `captureCount` is the norm projection (an unmeasured plane contributes zero — it
+cannot claim movement it never measured — with the doc naming the fold); `handle`/`ran`
+complete the module. `empty`/`create` are RETIRED — every production site re-declared
+itself: the four schema-only record sites (`Episode.ofSchema`, `MigrationRun.recordVerified`'s
+schema leg, both `Pipeline` store-leg priors) are `NotObserved`; the two measuring sites
+(`MigrationRun` post−baseline, `Pipeline` cdcDelta) are `observed` — including a measured
+DELTA OF ZERO, which now survives as `Observed 0`.
+
+**The codec (presence flag; three generations, one total reader).** `LifecycleStore`
+writes `Observed` with `"cdcObserved": true` before the count; `NotObserved` writes the
+exact pre-III.6 "empty" bytes (count 0, null handle, NO flag) — schema-only stores are
+byte-identical. Reading: a flag decides outright; unflagged bytes (pre-III.6 stores) read
+a POSITIVE count as the measurement it always unambiguously was, and a ZERO count as
+`NotObserved` — the safe direction (never a fabricated measurement). **The named cost:** a
+genuinely-measured-zero episode stored BEFORE this slice re-reads as `NotObserved` — the
+old bytes cannot carry the distinction; that loss is exactly the debt being retired, and
+the safe direction under it.
+
+**BEHAVIORAL:** stores holding measured episodes gain the flag on next write (the one
+expected byte motion; `ChangeManifest.CdcCaptureCount` stays `int` via the named norm
+projection, so reports/manifests/eject surfaces are byte-identical). Laws:
+`EpisodeTests` (Observed 0 ≠ NotObserved; both project zero), `LifecycleStoreTests`
+(measured-zero round-trip; NotObserved writes no flag — byte-compat witness; the
+three-generation unflagged read). `MigrationCanaryTests`' live Docker witnesses re-pinned
+onto the projection.

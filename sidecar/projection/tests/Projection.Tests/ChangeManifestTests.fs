@@ -33,9 +33,9 @@ let private coord o lbl day = EpisodeCoordinate.create (ver o lbl) Environment.D
 
 let private e0 = Episode.ofSchema (coord 0 "1.0.0" 1) sampleCatalog
 let private e1 =
-    Episode.create (coord 1 "1.1.0" 8) renamedCatalog Profile.empty (Some "reflog#1") (DataObservation.create 120 (Some "lsn:0x10"))
+    Episode.create (coord 1 "1.1.0" 8) renamedCatalog Profile.empty (Some "reflog#1") (DataObservation.observed 120 (Some "lsn:0x10"))
 let private e2 =
-    Episode.create (coord 2 "1.2.0" 15) sampleCatalog Profile.empty (Some "reflog#2") (DataObservation.create 95 None)
+    Episode.create (coord 2 "1.2.0" 15) sampleCatalog Profile.empty (Some "reflog#2") (DataObservation.observed 95 None)
 
 let private chain : EpisodicLifecycle =
     EpisodicLifecycle.genesis (tl "dev") e0
@@ -63,7 +63,7 @@ let ``6.H.4: change-manifest records the displacement (move counts + refactorlog
 [<Fact>]
 let ``6.H.4: an idempotent edge (no schema change) has norm 0`` () =
     // E1 → an episode with the same schema: zero schema displacement.
-    let e1b = Episode.create (coord 3 "1.3.0" 22) renamedCatalog Profile.empty None (DataObservation.create 0 None)
+    let e1b = Episode.create (coord 3 "1.3.0" 22) renamedCatalog Profile.empty None (DataObservation.NotObserved)
     let m = ChangeManifest.between e1 e1b |> mustOk
     Assert.Equal(0, m.SchemaNorm)
     Assert.Equal(None, m.RefactorLogRef)
