@@ -32873,3 +32873,35 @@ plan's specimen requirement): the two-schema specimen (two sets, observed bases,
 independent adoptions), the no-physical-row `Assumed "dbo"` reading with byte-identical
 render, the cross-schema residue subtraction, and the key/text algebra (case-folded,
 basis-blind identity; catalog-prefixed display only when a catalog is present).
+
+---
+
+## 2026-08-30 — align-III.14: one canonical crossing for environment labels (`Environment.parse`)
+
+**The finding (audit a8, H2).** `Environment` had five cases and no parse: every
+label→Environment crossing minted its own reading. `Substrate.fromRef` wrote
+`Named label` ALWAYS — `fromRef role "DEV" …` produced `Named "DEV"`, a semantic twin of
+`Dev` that compares unequal, groups separately, and renders identically; the CLI's
+`OperatorConsole.parseEnvironment` carried the one real canonicalization table (Trim +
+case-fold over the four stage names) in the WRONG LAYER; the fidelity face minted `Named`
+raw; and the lifecycle store's read side reconstructed whatever tag was persisted, so a
+store written by a `fromRef`-path run could hold the twin durably.
+
+**The decision.** Core gains **`Environment.parse : string -> Environment`** — total,
+canonicalizing (the four stage names resolve case-insensitively to their canonical cases;
+anything else is the trimmed `Named` escape hatch), idempotent through `name`
+(`parse (name (parse s)) = parse s`). Every crossing routes through it: `Substrate.fromRef`
+(the twin is no longer mintable there), `OperatorConsole.parseEnvironment` (now a
+delegation — the stage table lives in Core), the fidelity face's two mints, and the
+lifecycle store's `Named` READ arm — a persisted `Named "DEV"` loads as `Dev`
+(read-side canonicalization; the genuine escape-hatch label is untouched).
+
+**Migration note.** No store rewrite: canonicalization happens at load, and the next
+save writes the canonical tag — a one-time, per-store re-key of exactly the twin values,
+byte-identical for stores that never held a twin. The wire stays the tagged object
+(`kind`/`name`), so `Named "staging"` still round-trips unambiguously.
+
+**BEHAVIORAL** only for label spellings that previously produced the twin: they now
+compare equal to their canonical case everywhere (grouping, display, persistence). Laws
+in `LifecycleStoreTests`: the parse table + idempotence, the `fromRef` canonical mint,
+and the tampered-store read-side canonicalization beside the surviving escape-hatch law.

@@ -318,7 +318,7 @@ module LifecycleStore =
             | "Qa"   -> Ok Environment.Qa
             | "Uat"  -> Ok Environment.Uat
             | "Prod" -> Ok Environment.Prod
-            | "Named" -> fieldStr el "name" |> mapR Environment.Named
+            | "Named" -> fieldStr el "name" |> mapR Environment.parse   // align-III.14: read-side canonicalization — a store written as Named "DEV" loads as Dev
             | o -> Error (sprintf "unknown environment kind '%s'" o))
 
     let private readCoordinate (el: JsonElement) : Result<EpisodeCoordinate, string> =

@@ -464,3 +464,47 @@ let ``align-III.6: pre-III.6 bytes read totally — an unflagged positive count 
         // direction: NotObserved, never a fabricated measurement.
         Assert.Equal(DataObservation.NotObserved, episodes.[0].Data)
         Assert.Equal(DataObservation.NotObserved, episodes.[2].Data))
+
+// ===========================================================================
+// align-III.14 — Environment.parse: one total, canonicalizing crossing.
+// ===========================================================================
+
+[<Fact>]
+let ``align-III.14: Environment.parse resolves the four stage names case-insensitively and keeps everything else as trimmed Named`` () =
+    Assert.Equal(Environment.Dev,  Environment.parse "DEV")
+    Assert.Equal(Environment.Dev,  Environment.parse "dev")
+    Assert.Equal(Environment.Qa,   Environment.parse " qa ")
+    Assert.Equal(Environment.Uat,  Environment.parse "Uat")
+    Assert.Equal(Environment.Prod, Environment.parse "prod")
+    Assert.Equal(Environment.Named "staging", Environment.parse " staging ")
+    // Idempotent through `name`: a canonicalized value stays put.
+    for s in [ "DEV"; "dev"; "staging"; "QA"; "container stand-in" ] do
+        let once = Environment.parse s
+        Assert.Equal(once, Environment.parse (Environment.name once))
+
+[<Fact>]
+let ``align-III.14: Substrate.fromRef mints the canonical case — a "DEV" label is Dev, never its Named twin`` () =
+    let s = Substrate.fromRef SubstrateRole.Source "DEV" (ConnectionRef.Raw "Server=.;")
+    Assert.Equal(Environment.Dev, s.Environment)
+    let named = Substrate.fromRef SubstrateRole.Source "staging" (ConnectionRef.Raw "Server=.;")
+    Assert.Equal(Environment.Named "staging", named.Environment)
+
+[<Fact>]
+let ``align-III.14: the store read-side canonicalizes — a persisted Named "DEV" loads as Dev; a genuine Named label survives`` () =
+    withTempFile (fun path ->
+        LifecycleStore.save path chain |> mustStoreOk
+        // Tamper the genesis coordinate's canonical Dev into the Named twin
+        // an older writer could have persisted.
+        let text = System.IO.File.ReadAllText path
+        let tampered =
+            text.Replace(
+                "\"kind\": \"Dev\"",
+                "\"kind\": \"Named\",\n        \"name\": \"DEV\"")
+        Assert.NotEqual<string>(text, tampered)
+        System.IO.File.WriteAllText(path, tampered)
+        let loaded = LifecycleStore.load path |> mustStoreOk
+        Assert.Equal(Environment.Dev, (EpisodicLifecycle.head loaded).Coordinate.Environment)
+        // The genuine escape-hatch label is untouched by canonicalization.
+        Assert.Equal(
+            Environment.Named "staging",
+            (EpisodicLifecycle.episodes loaded).[2].Coordinate.Environment))

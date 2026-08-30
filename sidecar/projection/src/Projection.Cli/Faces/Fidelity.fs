@@ -197,11 +197,11 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
             // with the stand-in's logical names — the rename-aware leg the LE-3
             // canaries prove, mirrored).
             let srcSub : Substrate =
-                { Environment = Projection.Core.Environment.Named args.FromLabel
+                { Environment = Projection.Core.Environment.parse args.FromLabel
                   Role = SubstrateRole.Source
                   ConnectionRef = ConnectionRef.Raw args.SourceConn }
             let sinkSub : Substrate =
-                { Environment = Projection.Core.Environment.Named "container stand-in"
+                { Environment = Projection.Core.Environment.parse "container stand-in"
                   Role = SubstrateRole.Sink
                   ConnectionRef = ConnectionRef.Raw scratchConn }
             match TransferConnections.create srcSub sinkSub false with
