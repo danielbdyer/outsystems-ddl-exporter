@@ -31,11 +31,11 @@ let runSliceExtract (args: string list) : int =
         match result with
         | Ok (census, dangling) ->
             eprintfn "Slice golden written to %s." out
-            for (entity, n) in census do eprintfn "  %s: %d row(s)" entity n
+            for (entity, n) in census do eprintfn "  %s: %s" entity (sprintf "%d %s" n (if n = 1 then "row" else "rows"))
             if dangling > 0 then
                 eprintfn
-                    "  WARNING: %d dangling mandatory FK(s) — the slice is NOT referentially self-contained (gated at apply)."
-                    dangling
+                    "  WARNING: %s — the slice is NOT referentially self-contained (gated at apply)."
+                    (sprintf "%d %s" dangling (if dangling = 1 then "dangling mandatory FK" else "dangling mandatory FKs"))
             0
         | Error errors ->
             printErrors Console.Error errors
@@ -98,7 +98,7 @@ let runSliceApply (reset: bool) (args: string list) : int =
                     let skipped = List.length report.SkippedReferences
                     eprintfn "Slice applied to %s (live)." target
                     if skipped > 0 then
-                        eprintfn "  WARNING: %d reference(s) skipped as unresolved orphans." skipped
+                        eprintfn "  WARNING: %s skipped as unresolved orphans." (sprintf "%d %s" skipped (if skipped = 1 then "reference" else "references"))
                         9
                     else 0
                 | Error errors -> exitForErrors errors
@@ -138,7 +138,7 @@ let runSliceApply (reset: bool) (args: string list) : int =
                 let result = (SliceApplyRun.applyToFile target golden deleteScope out).GetAwaiter().GetResult()
                 let code =
                     match result with
-                    | Ok n -> eprintfn "Slice %s artifact written to %s (%d row(s))." (if reset then "reset" else "load") out n; 0
+                    | Ok n -> eprintfn "Slice %s artifact written to %s (%s)." (if reset then "reset" else "load") out (sprintf "%d %s" n (if n = 1 then "row" else "rows")); 0
                     | Error errors -> exitForErrors errors
                 dumpBench (if reset then "slice-reset" else "slice-apply")
                 code
@@ -196,7 +196,7 @@ let runSliceFlow (args: string list) : int =
                                 "Slice flow '%s' %s: %s → %s."
                                 name (if execute then "applied" else "previewed") sf.Source sf.Target
                             if skipped > 0 then
-                                eprintfn "  WARNING: %d reference(s) skipped as unresolved orphans." skipped
+                                eprintfn "  WARNING: %s skipped as unresolved orphans." (sprintf "%d %s" skipped (if skipped = 1 then "reference" else "references"))
                                 9
                             else 0
                         | Error errors ->

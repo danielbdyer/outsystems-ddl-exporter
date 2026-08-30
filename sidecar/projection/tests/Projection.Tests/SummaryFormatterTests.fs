@@ -48,8 +48,8 @@ let ``5.13.summary: NullabilityOutcome.EnforceNotNull PrimaryKey classifies as P
     }
     let text =
         SummaryFormatter.format nullability emptyUniqueIndex emptyForeignKey |> joined
-    Assert.Contains("[PrimaryKey  ]    1 decision(s)", text)
-    Assert.Contains("[Physical    ]    0 decision(s)", text)
+    Assert.Contains("[PrimaryKey  ]    1 decision — ", text)
+    Assert.Contains("[Physical    ]    0 decisions — ", text)
 
 [<Fact>]
 let ``5.13.summary: PhysicallyNotNull classifies as Physical bucket`` () =
@@ -61,7 +61,7 @@ let ``5.13.summary: PhysicallyNotNull classifies as Physical bucket`` () =
     }
     let text =
         SummaryFormatter.format nullability emptyUniqueIndex emptyForeignKey |> joined
-    Assert.Contains("[Physical    ]    1 decision(s)", text)
+    Assert.Contains("[Physical    ]    1 decision — ", text)
 
 [<Fact>]
 let ``5.13.summary: LogicalMandatory variants classify as Mandatory bucket`` () =
@@ -78,7 +78,7 @@ let ``5.13.summary: LogicalMandatory variants classify as Mandatory bucket`` () 
     }
     let text =
         SummaryFormatter.format nullability emptyUniqueIndex emptyForeignKey |> joined
-    Assert.Contains("[Mandatory   ]    3 decision(s)", text)
+    Assert.Contains("[Mandatory   ]    3 decisions — ", text)
 
 [<Fact>]
 let ``5.13.summary: RequireOperatorApproval classifies as Remediation bucket`` () =
@@ -91,7 +91,7 @@ let ``5.13.summary: RequireOperatorApproval classifies as Remediation bucket`` (
     }
     let text =
         SummaryFormatter.format nullability emptyUniqueIndex emptyForeignKey |> joined
-    Assert.Contains("[Remediation ]    1 decision(s)", text)
+    Assert.Contains("[Remediation ]    1 decision — ", text)
 
 [<Fact>]
 let ``5.13.summary: KeepNullable RelaxedUnderEvidence classifies as Remediation bucket`` () =
@@ -103,7 +103,7 @@ let ``5.13.summary: KeepNullable RelaxedUnderEvidence classifies as Remediation 
     }
     let text =
         SummaryFormatter.format nullability emptyUniqueIndex emptyForeignKey |> joined
-    Assert.Contains("[Remediation ]    1 decision(s)", text)
+    Assert.Contains("[Remediation ]    1 decision — ", text)
 
 [<Fact>]
 let ``5.13.summary: KeepNullable for non-Remediation reasons does not classify`` () =
@@ -118,8 +118,8 @@ let ``5.13.summary: KeepNullable for non-Remediation reasons does not classify``
     let text =
         SummaryFormatter.format nullability emptyUniqueIndex emptyForeignKey |> joined
     // All buckets show 0 — these decisions don't map to any of the 6.
-    Assert.Contains("[Remediation ]    0 decision(s)", text)
-    Assert.Contains("[Mandatory   ]    0 decision(s)", text)
+    Assert.Contains("[Remediation ]    0 decisions — ", text)
+    Assert.Contains("[Mandatory   ]    0 decisions — ", text)
 
 // ----------------------------------------------------------------------
 // Bucket classification — ForeignKey + UniqueIndex
@@ -136,7 +136,7 @@ let ``5.13.summary: ForeignKeyOutcome.EnforceConstraint classifies as ForeignKey
     }
     let text =
         SummaryFormatter.format emptyNullability emptyUniqueIndex fk |> joined
-    Assert.Contains("[ForeignKey  ]    1 decision(s)", text)
+    Assert.Contains("[ForeignKey  ]    1 decision — ", text)
 
 [<Fact>]
 let ``5.13.summary: ForeignKeyOutcome.DoNotEnforce DataHasOrphans classifies as Remediation`` () =
@@ -148,7 +148,7 @@ let ``5.13.summary: ForeignKeyOutcome.DoNotEnforce DataHasOrphans classifies as 
     }
     let text =
         SummaryFormatter.format emptyNullability emptyUniqueIndex fk |> joined
-    Assert.Contains("[Remediation ]    1 decision(s)", text)
+    Assert.Contains("[Remediation ]    1 decision — ", text)
 
 [<Fact>]
 let ``5.13.summary: UniqueIndexOutcome.EnforceUnique classifies as Unique bucket`` () =
@@ -160,7 +160,7 @@ let ``5.13.summary: UniqueIndexOutcome.EnforceUnique classifies as Unique bucket
     }
     let text =
         SummaryFormatter.format emptyNullability ui emptyForeignKey |> joined
-    Assert.Contains("[Unique      ]    1 decision(s)", text)
+    Assert.Contains("[Unique      ]    1 decision — ", text)
 
 [<Fact>]
 let ``5.13.summary: UniqueIndexOutcome.DoNotEnforce DataHasDuplicates classifies as Remediation`` () =
@@ -172,7 +172,7 @@ let ``5.13.summary: UniqueIndexOutcome.DoNotEnforce DataHasDuplicates classifies
     }
     let text =
         SummaryFormatter.format emptyNullability ui emptyForeignKey |> joined
-    Assert.Contains("[Remediation ]    1 decision(s)", text)
+    Assert.Contains("[Remediation ]    1 decision — ", text)
 
 // ----------------------------------------------------------------------
 // The unique-index split (2026-07-18): carried-from-source vs promoted vs
@@ -195,7 +195,7 @@ let ``unique-split: a declared-unique index is 'carried from source', never 'pro
     }
     let lines = SummaryFormatter.format emptyNullability ui emptyForeignKey
     // The enforced-total bucket line is unchanged (carried counts as enforced).
-    Assert.Contains("[Unique      ]    1 decision(s)", joined lines)
+    Assert.Contains("[Unique      ]    1 decision — ", joined lines)
     Assert.Equal(1, splitCount "carried from source" lines)
     Assert.Equal(0, splitCount "promoted from profile evidence" lines)
 
@@ -245,7 +245,7 @@ let ``unique-split: the three withheld reasons each carry their own count`` () =
 [<Fact>]
 let ``unique-split: an empty unique decision set reads all-zero (a default publish promotes nothing)`` () =
     let lines = SummaryFormatter.format emptyNullability emptyUniqueIndex emptyForeignKey
-    Assert.Contains("[Unique      ]    0 decision(s)", joined lines)
+    Assert.Contains("[Unique      ]    0 decisions — ", joined lines)
     Assert.Equal(0, splitCount "carried from source" lines)
     Assert.Equal(0, splitCount "promoted from profile evidence" lines)
 
@@ -297,7 +297,7 @@ let ``5.13.summary: totals line aggregates structural-tightenings + remediation 
         ]
     }
     let text = SummaryFormatter.format nullability emptyUniqueIndex emptyForeignKey |> joined
-    Assert.Contains("Totals: 1 structural tightening(s); 1 remediation finding(s).", text)
+    Assert.Contains("Totals: 1 structural tightening; 1 remediation finding.", text)
 
 // ----------------------------------------------------------------------
 // Sample SsKey carriage (first 3 entries per bucket)

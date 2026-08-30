@@ -252,7 +252,7 @@ module BridgeRowStagingBinding =
                 if List.isEmpty uncovered then Result.success ()
                 else
                     err "pipeline.config.bridgeRowStaging.mandatoryUncovered"
-                        (String.concat "" [ "bridge row staging '"; entry.Id; "': mandatory bridge attribute(s) not covered by key/identity/mappings/constants: "; uncovered |> List.map (fun a -> Name.value a.Name) |> String.concat ", "; " — a staged insert could not produce a complete row" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
+                        (String.concat "" [ "bridge row staging '"; entry.Id; "': mandatory bridge attributes not covered by key/identity/mappings/constants: "; uncovered |> List.map (fun a -> Name.value a.Name) |> String.concat ", "; " — a staged insert could not produce a complete row" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
             let links = linkRetargets catalog sourceKind bridgeKey retargets
             let! () =
                 if List.isEmpty links then
@@ -284,7 +284,7 @@ module BridgeRowStagingBinding =
             entries |> List.countBy (fun e -> e.Id) |> List.filter (fun (_, n) -> n > 1) |> List.map fst
         if not (List.isEmpty dupIds) then
             err "pipeline.config.bridgeRowStaging.duplicateId"
-                (String.concat "" [ "overrides.bridgeRowStaging has duplicate id(s): "; String.concat ", " dupIds ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
+                (String.concat "" [ "overrides.bridgeRowStaging has duplicate ids: "; String.concat ", " dupIds ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
         else
             entries
             |> List.map (bindOne catalog cfg.Overrides.BridgeRetargets)
@@ -299,4 +299,4 @@ module BridgeRowStagingBinding =
                 if List.isEmpty claimedTwice then Result.success resolved
                 else
                     err "pipeline.config.bridgeRowStaging.retargetClaimedTwice"
-                        (String.concat "" [ "bridge retarget(s) claimed by more than one staging declaration: "; String.concat ", " claimedTwice ]))  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
+                        (String.concat "" [ "bridge retargets claimed by more than one staging declaration: "; String.concat ", " claimedTwice ]))  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent

@@ -33078,3 +33078,43 @@ written yesterday reads today). `SpineLedger` is out of scope (its own future sl
 the overload still stings). Blast radius: 16 files, ~70 reference lines.
 
 **Grep-absence:** `\bRunLedger\b` = 0 outside the rename's own notes. Not behavioral.
+
+---
+
+## 2026-08-30 — align-III.22: the lazy plural dies in src (a11 stage 2, the long tail)
+
+**The charge (a11's stage-2 deferral, trigger fired).** The align-III.1v ratchet froze
+nine repaired surfaces at zero `(s)`; the deferral's own terms widened the freeze to the
+full src tree "when the transfer/emitter long tail is repaired." This slice repaired it:
+~163 sites across Cli faces, Core passes, Adapters, Targets emitters, and Pipeline runs,
+swept to **zero live occurrences in every production string** — and the enumeration
+surfaced a second morphology family the stage-1 net never listed: `(ies)` / `(es)`
+(`identity(ies)`, `entr(ies)`, `batch(es)`, `entity(ies)`), same lazy suffix, same ban.
+
+**The mechanics (the readable-aloud discipline, §1 rule 3 + §2.2).** Where a count is in
+hand, the counted form: per-surface `counted`/`counted64` helpers (Transfer.fs,
+TransferRun.fs) or the inline `sprintf "%d %s" n (if n = 1 then … else …)` for tail
+files. Where the verb conjugates, the ARG carries it (`"source identity has no target
+match"` / `"source identities have no target match"`); where a pronoun agrees, the whole
+clause switches (GoBoard's green-unverified verdict: "1 finding below remains unverified
+— the board could not read it" / "N findings … read them"; Preflight's tightening
+refusal: "1 column carries NULLs … tightens it" / "N columns carry NULLs … tightens
+them", and the "First:" enumerator appears only when there IS a second). Where no count
+exists, the plural-neutral rewrite ("add the proposed reconcile entries to the flow").
+Six test pins moved with the copy (RemediationEmitter ×4, TransferImpact ×2,
+GoBoardDocker ×1 — the stale `(s)` pins were themselves sweep findings).
+
+**The ratchet (VoiceRegisterTests, widened).** The frozen nine-file list is retired; the
+law now scans EVERY `src/**/*.fs`: comment lines skipped (doc-comments may name the
+banned form), only double-quoted string spans inspected (code like `sb.Append(s)` never
+trips), suffix family `(s)|(es)|(ies)|(en)`, with a >300-file floor so a broken root
+resolution cannot pass vacuously.
+
+**The consent carve-out (standing, and now measured).** `WriteSignoff.fs` and
+`ActConsent.fs` stay EXCLUDED from the ratchet — the a11 ruling reserves their copy for
+the operator's own signature, and no agent sweep touches them absent an explicit ruling.
+Measured this slice: both files hold ZERO lazy plurals today, so the exclusion is
+jurisdictional, not protective — the open question for the operator at the program close
+is whether the ratchet may simply include them.
+
+**Not behavioral** beyond operator copy: no code path, wire byte, or exit code moves.

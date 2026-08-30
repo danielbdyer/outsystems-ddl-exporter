@@ -153,7 +153,7 @@ type GoBoardDockerTests(fixture: EphemeralContainerFixture) =
                         Assert.Equal(5, red1)
                         Assert.Contains("evidence: reconcile 'AppCore.City:Name'", redOut)
                         Assert.Contains("sink-unique", redOut)          // Lisbon/Porto are distinct on the sink
-                        Assert.Contains("2/2 sampled source value(s) found in the sink", redOut)
+                        Assert.Contains("2/2 sampled source values found in the sink", redOut)
                         Assert.Contains("STRONG", redOut)
 
                         // 2. GREEN — the SAME flow with the proposed

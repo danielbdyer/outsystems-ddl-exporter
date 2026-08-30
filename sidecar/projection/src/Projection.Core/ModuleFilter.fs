@@ -421,7 +421,7 @@ module ModuleFilter =
             Result.failureOf (
                 ValidationError.create
                     "moduleFilter.modules.missing"
-                    (sprintf "Requested module(s) not found in catalog: %s." codes))
+                    (sprintf "Requested modules not found in catalog: %s." codes))
         else
             Result.success { catalog with Modules = List.ofSeq resolved }
 
@@ -464,8 +464,9 @@ module ModuleFilter =
                             ValidationError.create
                                 "moduleFilter.entities.missing"
                                 (sprintf
-                                    "Module '%s' does not contain entity(ies): %s."
+                                    "Module '%s' does not contain %s: %s."
                                     (Name.value m.Name)
+                                    (sprintf "%d %s" (List.length missing) (if List.length missing = 1 then "entity" else "entities"))
                                     (String.concat ", " missing)))
                     if List.isEmpty kept && List.isEmpty missing then
                         entityErrors.Add(

@@ -141,7 +141,7 @@ module NullabilityPass =
                 Code     = "tightening.nullability.tightenedWithinBudget"
                 Message  =
                     sprintf
-                        "Column tightened to NOT NULL over %d/%d observed null(s), within the configured budget %s — the tightening is surfaced, not silent; those rows must be reconciled before the constraint holds."
+                        "Column tightened to NOT NULL over %d/%d observed nulls, within the configured budget %s — the tightening is surfaced, not silent; those rows must be reconciled before the constraint holds."
                         nulls rows (budget.ToString(System.Globalization.CultureInfo.InvariantCulture))
                 SsKey    = Some decision.AttributeKey
                 Metadata =

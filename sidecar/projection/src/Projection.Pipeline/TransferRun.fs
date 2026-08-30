@@ -37,6 +37,15 @@ open Projection.Targets.SSDT
 /// (the halt never fires; FK orphans still surface POST-write as
 /// `SkippedReferences` + the exit-9 verdict via `narrateDropExit`).
 [<RequireQualifiedAccess>]
+/// align-III.22 (THE_VOICE §2.2): the counted plural for this file's run
+/// notices — "1 row" / "3 rows", never "row(s)".
+[<AutoOpen>]
+module internal TransferRunProse =
+    let counted (n: int) (one: string) (many: string) : string =
+        sprintf "%d %s" n (if n = 1 then one else many)
+    let counted64 (n: int64) (one: string) (many: string) : string =
+        sprintf "%d %s" n (if n = 1L then one else many)
+
 type ReverseLegRealization =
     | Streaming of journalDirectory: string option
     | Materialized
@@ -468,7 +477,7 @@ module Transfer =
                         let sql = sprintf "SELECT COUNT_BIG(*) FROM [%s].[%s] WHERE [%s] IS NOT NULL;" (TableId.schemaText source.Physical) (TableId.tableText source.Physical) (ColumnRealization.columnNameText a.Column)  // LINT-ALLOW: terminal SQL-text boundary; validated coordinates
                         let! n = probeInboundCount sink sql
                         if n > 0L then
-                            let line = sprintf "%s has %d row(s) whose %s points at %s — the replace-wipe of %s would orphan them" (Name.value source.Name) n (Name.value a.Name) (Name.value target.Name) (Name.value target.Name)
+                            let line = sprintf "%s has %s whose %s points at %s — the replace-wipe of %s would orphan them" (Name.value source.Name) (counted64 n "row" "rows") (Name.value a.Name) (Name.value target.Name) (Name.value target.Name)
                             return! scanInboundOrphans sink acknowledged rest (line :: acc)
                         else return! scanInboundOrphans sink acknowledged rest acc
         }
@@ -755,8 +764,8 @@ module Transfer =
             Some (ValidationError.create
                     "transfer.unbreakableCycleFk"
                     (sprintf
-                        "%d non-deferrable cycle FK(s) — cannot execute a clean two-phase load"
-                        plan.UnbreakableCycleFks.Length))
+                        "%s — cannot execute a clean two-phase load"
+                        (counted plan.UnbreakableCycleFks.Length "non-deferrable cycle FK" "non-deferrable cycle FKs")))
         else
             match compositeAssignedBySinkKinds catalog plan with
             | k :: _ ->
@@ -789,8 +798,8 @@ module Transfer =
                 Some (ValidationError.create
                         "transfer.subsetFkEscapes"
                         (sprintf
-                            "%d relationship(s) escape the declared table subset (their rows would keep SOURCE-environment references): %s. Reconcile each target against the sink's rows, or widen the subset."
-                            escapes.Length (String.concat "; " escapes)))
+                            "%s the declared table subset (their rows would keep SOURCE-environment references): %s. Reconcile each target against the sink's rows, or widen the subset."
+                            (counted escapes.Length "relationship escapes" "relationships escape") (String.concat "; " escapes)))
 
     /// T0.3 (2026-07-09) — the OUT-OF-CONTRACT foreign-reference gate. An in-subset
     /// FK to a NON-User kind ABSENT from the acquired contract loads the raw source
@@ -812,8 +821,8 @@ module Transfer =
                 let tokens = unacked |> List.map (fun (owner, r) -> TransferSubset.foreignRefToken owner r)
                 Some (ValidationError.create
                         "transfer.subsetFkEscapes.targetOutOfContract"
-                        (sprintf "%d reference(s) target a kind OUTSIDE the acquired contract; their rows would keep SOURCE-environment surrogates (a silent cross-wire): %s. Declare each environment-stable in the flow's `foreignRefs`, or widen the acquisition to include the target's espace."
-                            unacked.Length (String.concat "; " tokens)))
+                        (sprintf "%s a kind OUTSIDE the acquired contract; their rows would keep SOURCE-environment surrogates (a silent cross-wire): %s. Declare each environment-stable in the flow's `foreignRefs`, or widen the acquisition to include the target's espace."
+                            (counted unacked.Length "out-of-contract reference targets" "out-of-contract references target") (String.concat "; " tokens)))
 
     /// T1.5 (2026-07-09) — the plan-derivable IDENTITY-INSERT detection. A load
     /// whose disposition is `PreservedFromSource` onto a kind with an IDENTITY PK
@@ -868,8 +877,8 @@ module Transfer =
             Some (ValidationError.create
                     "transfer.loadOrderUnproven"
                     (sprintf
-                        "the load order is unproven inside %d unresolved dependency cycle(s): %s — a live load could land children before their parents within a cycle.%s"
-                        unresolvedCycles.Length cycleText narration))
+                        "the load order is unproven inside %s: %s — a live load could land children before their parents within a cycle.%s"
+                        (counted unresolvedCycles.Length "unresolved dependency cycle" "unresolved dependency cycles") cycleText narration))
 
     /// AC-I5 — pre-write validate-user-map. A reconciling Transfer whose
     /// user-map leaves Source identities unmatched would, post-write, surface
@@ -898,8 +907,8 @@ module Transfer =
             Some (ValidationError.create
                     "transfer.reconcile.pinnedOwnerMissing"
                     (sprintf
-                        "%d pinned owner(s) name a sink row that does not exist (%s) — every re-keyed reference would dangle. Create the row in the sink, or fix the pinned key; refusing before any write."
-                        missing.Length described))
+                        "%s name a sink row that does not exist (%s) — every re-keyed reference would dangle. Create the row in the sink, or fix the pinned key; refusing before any write."
+                        (counted missing.Length "pinned owner" "pinned owners") described))
 
     let validateUserMap (allowDrops: bool) (reconciled: ReconciledIdentity) : ValidationError option =
         if allowDrops || List.isEmpty reconciled.Unmatched then None
@@ -913,8 +922,8 @@ module Transfer =
             Some (ValidationError.create
                     "transfer.unmappedIdentities"
                     (sprintf
-                        "%d Source identit(ies) have no Sink match in the user-map (kind(s): %s); refusing --execute before any write. Remediate the user-map or pass --allow-drops to accept the loss."
-                        reconciled.Unmatched.Length kinds))
+                        "%s no Sink match in the user-map (kinds: %s); refusing --execute before any write. Remediate the user-map or pass --allow-drops to accept the loss."
+                        (counted reconciled.Unmatched.Length "Source identity has" "Source identities have") kinds))
 
     // -- G1 / G2: connection + permission pre-flight (T-VI spanning) ---------
     //
@@ -1068,15 +1077,15 @@ module Transfer =
                 | Some k -> Name.value k.Name
                 | None   -> SsKey.rootOriginal key
             let describe (d: StaticLookupDivergence) =
-                [ if not (List.isEmpty d.ColumnDrifts)    then yield sprintf "%d column(s) drifted" (List.length d.ColumnDrifts)
-                  if not (List.isEmpty d.ExtraOnTarget)   then yield sprintf "%d extra sink row(s)" (List.length d.ExtraOnTarget)
-                  if not (List.isEmpty d.MissingOnTarget) then yield sprintf "%d missing row(s)" (List.length d.MissingOnTarget) ]
+                [ if not (List.isEmpty d.ColumnDrifts)    then yield sprintf "%s drifted" (counted (List.length d.ColumnDrifts) "column" "columns")
+                  if not (List.isEmpty d.ExtraOnTarget)   then yield sprintf "%s" (counted (List.length d.ExtraOnTarget) "extra sink row" "extra sink rows")
+                  if not (List.isEmpty d.MissingOnTarget) then yield sprintf "%s" (counted (List.length d.MissingOnTarget) "missing row" "missing rows")]
                 |> String.concat ", "
                 |> sprintf "%s (%s)" (kindName d.Kind)
             Some
                 (ValidationError.create "transfer.staticLookup.diverged"
-                    (sprintf "%d static-lookup table(s) are NOT identical across the environments: %s. A static-lookup asserts the reference data is held identical; reconcile the rows (or reclassify the table as existing-reference) before authorizing the run."
-                        (List.length dirty) (dirty |> List.map describe |> String.concat "; ")))
+                    (sprintf "%s NOT identical across the environments: %s. A static-lookup asserts the reference data is held identical; reconcile the rows (or reclassify the table as existing-reference) before authorizing the run."
+                        (counted (List.length dirty) "static-lookup table is" "static-lookup tables are") (dirty |> List.map describe |> String.concat "; ")))
 
     let private reconcileAgainstSink
         (ignore: Set<Name>)
@@ -1351,8 +1360,8 @@ module Transfer =
                 ValidationError.createWithMetadata
                     "transfer.writeSignoff.actUnblessed"
                     (sprintf
-                        "%d act(s) this run performs are not blessed at their current fingerprint — the most consequential: %s Bless each act in the review workbench (`check go <flow> --review`; d blesses the act under the cursor) or add the `{ \"act\": …, \"fingerprint\": … }` entries the board's consent line prints to the flow's `signoff`; then authorize the run again."
-                        (List.length sorted) leadStatement)
+                        "%s this run performs are not blessed at their current fingerprint — the most consequential: %s Bless each act in the review workbench (`check go <flow> --review`; d blesses the act under the cursor) or add the `{ \"act\": …, \"fingerprint\": … }` entries the board's consent line prints to the flow's `signoff`; then authorize the run again."
+                        (counted (List.length sorted) "act" "acts") leadStatement)
                     metadata
             task {
                 let mutable probes : Map<SsKey, ActEvidence.PopulationProbe> = Map.empty
@@ -1424,8 +1433,8 @@ module Transfer =
                                         (ValidationError.create
                                             "transfer.cdcTrackedSink"
                                             (sprintf
-                                                "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
-                                                (List.length tracked)
+                                                "Sink has %s (e.g. %s); refusing --execute. Pass --allow-cdc to override."
+                                                (counted (List.length tracked) "CDC-tracked table" "CDC-tracked tables")
                                                 (tracked |> List.truncate 3 |> String.concat ", ")))
                     else return Ok ()
                 }
@@ -1526,7 +1535,7 @@ module Transfer =
                             else
                                 return Some
                                     (ValidationError.create "transfer.supportingScope.inboundOrphan"
-                                        (sprintf "%d table(s) outside the transfer reference a table inside it; the replace-wipe would orphan their rows (FK 547): %s. Add the referencing table(s) to `tables`, clear their rows, or declare them blocked-dependent." (List.length blockers) (String.concat "; " blockers)))
+                                        (sprintf "%s a table inside it; the replace-wipe would orphan their rows (FK 547): %s. Add the referencing tables to `tables`, clear their rows, or declare them blocked-dependent." (counted (List.length blockers) "table outside the transfer references" "tables outside the transfer reference") (String.concat "; " blockers)))
                         | None -> return None
                     else return None
                 }
@@ -1564,7 +1573,7 @@ module Transfer =
                                 sprintf "SELECT COUNT_BIG(*) FROM [%s].[%s];" (TableId.schemaText k.Physical) (TableId.tableText k.Physical)  // LINT-ALLOW: terminal SQL-text boundary; validated TableId coordinates (mirrors countKindRows)
                             let! scalar = cmd.ExecuteScalarAsync()
                             let n = int (unbox<int64> scalar)
-                            if n > 0 then populated <- sprintf "%s: %d row(s)" (Name.value k.Name) n :: populated
+                            if n > 0 then populated <- sprintf "%s: %s" (Name.value k.Name) (counted n "row" "rows") :: populated
                         match List.rev populated with
                         | []   -> return None
                         | rows ->
@@ -1851,8 +1860,8 @@ module Transfer =
                                         (ValidationError.create
                                             "synthetic.cdcTrackedSink"
                                             (sprintf
-                                                "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
-                                                (List.length tracked)
+                                                "Sink has %s (e.g. %s); refusing --execute. Pass --allow-cdc to override."
+                                                (counted (List.length tracked) "CDC-tracked table" "CDC-tracked tables")
                                                 (tracked |> List.truncate 3 |> String.concat ", ")))
                     else return Ok ()
                 }
@@ -1998,8 +2007,8 @@ module Transfer =
                                         (ValidationError.create
                                             "slice.apply.cdcTrackedSink"
                                             (sprintf
-                                                "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --go. Pass --allow-cdc to override."
-                                                (List.length tracked)
+                                                "Sink has %s (e.g. %s); refusing --go. Pass --allow-cdc to override."
+                                                (counted (List.length tracked) "CDC-tracked table" "CDC-tracked tables")
                                                 (tracked |> List.truncate 3 |> String.concat ", ")))
                     else return Ok ()
                 }
@@ -2364,7 +2373,7 @@ module Transfer =
                                 else
                                     return Some
                                         (ValidationError.create "transfer.resume.chunkInDoubt"
-                                            (sprintf "chunk %d of %s was attempted but never confirmed, and the sink now holds %d row(s) vs the %d its completed chunks wrote — it may have partially committed, and resume cannot rebuild the sink-minted identities. Re-run with strategy: replace, or clear %s on the sink and resume." chunkIx (Name.value kind.Name) actualNow expectedBefore (Name.value kind.Name)))
+                                            (sprintf "chunk %d of %s was attempted but never confirmed, and the sink now holds %s vs the %d its completed chunks wrote — it may have partially committed, and resume cannot rebuild the sink-minted identities. Re-run with strategy: replace, or clear %s on the sink and resume." chunkIx (Name.value kind.Name) (counted actualNow "row" "rows") expectedBefore (Name.value kind.Name)))
                         }
                     match inDoubtRefusal with
                     | Some refusal -> return Result.failureOf refusal
@@ -2732,8 +2741,8 @@ module Transfer =
                                         (ValidationError.create
                                             "transfer.cdcTrackedSink"
                                             (sprintf
-                                                "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
-                                                (List.length tracked)
+                                                "Sink has %s (e.g. %s); refusing --execute. Pass --allow-cdc to override."
+                                                (counted (List.length tracked) "CDC-tracked table" "CDC-tracked tables")
                                                 (tracked |> List.truncate 3 |> String.concat ", ")))
                     else return Ok ()
                 }
@@ -2901,8 +2910,8 @@ module Transfer =
                             return Result.failureOf
                                 (ValidationError.create "transfer.resume.journalAddressDrift"
                                     (sprintf
-                                        "the journal directory holds %d journal(s) under a DIFFERENT plan marker (e.g. %s) but none for this run — the plan changed since the journaled run, so resuming would silently re-stream and DOUBLE committed work. Clear the journal directory to reload from scratch, or restore the prior plan to resume."
-                                        (List.length addressDrift)
+                                        "the journal directory holds %s under a DIFFERENT plan marker (e.g. %s) but none for this run — the plan changed since the journaled run, so resuming would silently re-stream and DOUBLE committed work. Clear the journal directory to reload from scratch, or restore the prior plan to resume."
+                                        (counted (List.length addressDrift) "journal" "journals")
                                         (addressDrift |> List.truncate 1 |> List.map (fun f -> System.IO.Path.GetFileName f |> nonNull) |> String.concat ", ")))
                         else
                         // D — the streaming data-leg compensating-undo. A mid-stream

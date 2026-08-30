@@ -143,7 +143,7 @@ module MetadataExtractionError =
         | MetadataExtractionError.ResultSetMissing (expectedCount, actualCount) ->
             let prose =
                 sprintf
-                    "OSSYS rowsets script emitted %d result set(s); expected %d. SQL-contract drift suspected."
+                    "OSSYS rowsets script emitted %d result sets; expected %d. SQL-contract drift suspected."
                     actualCount
                     expectedCount
             ValidationError.createWithMetadata

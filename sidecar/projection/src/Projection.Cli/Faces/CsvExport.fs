@@ -39,12 +39,12 @@ let runCsvExport
                     match t.Provenance with
                     | Projection.Targets.Data.CsvExport.Provenance.Declared   -> "declared in the flow's tables"
                     | Projection.Targets.Data.CsvExport.Provenance.Referenced -> "pulled in by a reference from the exported set"
-                printfn "Wrote %d row(s) of %s.%s to %s (%s)." t.RowCount t.Module t.Entity t.FileName provenance
+                printfn "Wrote %s of %s.%s to %s (%s)." (sprintf "%d %s" t.RowCount (if t.RowCount = 1 then "row" else "rows")) t.Module t.Entity t.FileName provenance
             printfn ""
             (match referenced with
              | [] -> ()
              | rs ->
-                 printfn "%d table(s) arrived by reference: rows the exported set points at, followed transitively; static reference tables are excluded — their content is identical in every environment." rs.Length
+                 printfn "%s arrived by reference: rows the exported set points at, followed transitively; static reference tables are excluded — their content is identical in every environment." (sprintf "%d %s" rs.Length (if rs.Length = 1 then "table" else "tables"))
                  printfn "")
             // Escaping references with the pull OFF: name each one and the
             // exact lever that carries it — never a refusal (nothing here is
@@ -52,11 +52,11 @@ let runCsvExport
             (match report.EscapeLines with
              | [] -> ()
              | lines ->
-                 printfn "%d relationship(s) point at tables outside the exported set — those foreign-key values will not resolve inside these files:" lines.Length
+                 printfn "%s point at tables outside the exported set — those foreign-key values will not resolve inside these files:" (sprintf "%d %s" lines.Length (if lines.Length = 1 then "relationship" else "relationships"))
                  for line in lines do printfn "  %s" line
                  printfn "To include the referenced rows (followed transitively; static reference tables excluded), set \"withReferenced\": true on the flow, or run once with --with-referenced."
                  printfn "")
             printfn "The column mapping (physical name to Service Studio name), the row counts, and each table's provenance are recorded in %s." report.ManifestPath
             printfn "One caveat to read the files with: a database NULL and an empty text value are both written as an empty field — the source read collapses them before any file is composed."
-            printfn "Exported %d table(s): %d declared, %d by reference. Nothing was written to any database." report.Tables.Length declared.Length referenced.Length
+            printfn "Exported %s: %d declared, %d by reference. Nothing was written to any database." (sprintf "%d %s" report.Tables.Length (if report.Tables.Length = 1 then "table" else "tables")) declared.Length referenced.Length
             0)

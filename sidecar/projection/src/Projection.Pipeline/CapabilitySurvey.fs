@@ -312,7 +312,7 @@ module CapabilitySurvey =
         let findingReports = reports |> List.filter (fun r -> not (List.isEmpty r.ArchetypeFindings))
         if List.isEmpty blockedReports && List.isEmpty findingReports then []
         else
-            [ yield "Advisory — capability survey found environment(s) that may not be able to do what this run asks (proceeding anyway; this is a warning, not a gate):"
+            [ yield "Advisory — the capability survey found environments that may not be able to do what this run asks (proceeding anyway; this is a warning, not a gate):"
               for r in blockedReports do
                   if not r.Reachable then
                       yield sprintf "  %s: unreachable" r.Name

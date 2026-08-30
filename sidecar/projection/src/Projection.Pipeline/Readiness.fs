@@ -218,11 +218,11 @@ module Readiness =
                   | None    -> "schema could not be compared"
                   | Some _  ->
                       if schemaN = 0 then "schema matches"
-                      else sprintf "%s schema change(s) — not the agreed shape" (humane schemaN)
+                      else sprintf "%s %s — not the agreed shape" (humane schemaN) (if schemaN = 1 then "schema change" else "schema changes")
               let dataText =
                   if not r.DataEvidenceAvailable then "data advisory-silent"
                   elif rollup.Total = 0 then "0 data dealbreakers"
-                  else sprintf "%s data dealbreaker(s)" (humane rollup.Total)
+                  else sprintf "%s %s" (humane rollup.Total) (if rollup.Total = 1 then "data dealbreaker" else "data dealbreakers")
               yield sprintf "  %-12s %-8s %s · %s" e.Env (verdictWord e.Verdict) schemaText dataText
               if rollup.Total > 0 then
                   for cat in rollup.Categories do
@@ -245,7 +245,7 @@ module Readiness =
                   [ if not (List.isEmpty blocked) then
                         yield sprintf "%s not the agreed shape (%s)" (humane (List.length blocked)) (String.concat ", " blocked)
                     if not (List.isEmpty paused) then
-                        yield sprintf "%s carrying data dealbreaker(s) (%s)" (humane (List.length paused)) (String.concat ", " paused) ]
+                        yield sprintf "%s carrying data dealbreakers (%s)" (humane (List.length paused)) (String.concat ", " paused) ]
               yield
                   sprintf "  ESTATE — %s of %s ready. %s; resolve before cutover."
                       (humane ready) (humane total) (String.concat "; " parts) ]

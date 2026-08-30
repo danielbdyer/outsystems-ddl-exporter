@@ -143,9 +143,10 @@ module SummaryFormatter =
         (rollup: BucketRollup)
         : unit =
         sb.AppendLine(
-            sprintf "  [%-12s] %4d decision(s) — %s"
+            sprintf "  [%-12s] %4d %s — %s"
                 (bucketLabel rollup.Bucket)
                 rollup.Count
+                (if rollup.Count = 1 then "decision" else "decisions")
                 (bucketNarration rollup.Bucket))
         |> ignore
         for key in rollup.FirstKeys do
@@ -227,7 +228,7 @@ module SummaryFormatter =
     /// Build the per-bucket rollup `Map` from the three DecisionSets.
     /// Each decision contributes to at most one bucket per
     /// classifier; rollups initialize empty (zero count) for every
-    /// bucket so the prose carries explicit "0 decision(s)" lines
+    /// bucket so the prose carries explicit "0 decisions" lines
     /// (V1 parity: V1 emits the bucket header even when count = 0;
     /// V2 preserves this for operator-readability + diff-friendliness).
     let private buildRollups
@@ -315,8 +316,9 @@ module SummaryFormatter =
             |> Seq.sumBy (fun (_, r) -> r.Count)
         let remediationCount = (Map.find Bucket.Remediation rollups).Count
         sb.AppendLine(
-            sprintf "Totals: %d structural tightening(s); %d remediation finding(s)."
-                totalActioned remediationCount)
+            sprintf "Totals: %s; %s."
+                (sprintf "%d structural %s" totalActioned (if totalActioned = 1 then "tightening" else "tightenings"))
+                (sprintf "%d remediation %s" remediationCount (if remediationCount = 1 then "finding" else "findings")))
         |> ignore
         let text = sb.ToString()
         // Split on newlines + drop the trailing empty string from the

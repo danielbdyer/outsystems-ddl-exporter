@@ -120,12 +120,12 @@ let runCheckDeploy (bundleDir: string) : int =
             let report =
                 (Deploy.withBootstrappedDatabase "check-deploy" "SELECT 1;" (fun cnn ->
                     DeployFeasibility.applyBundle cnn files)).GetAwaiter().GetResult()
-            printfn "check deploy: %d file(s), %d batch(es) applied." (List.length files) report.BatchesApplied
+            printfn "check deploy: %s, %s applied." (sprintf "%d %s" (List.length files) (if (List.length files) = 1 then "file" else "files")) (sprintf "%d %s" report.BatchesApplied (if report.BatchesApplied = 1 then "batch" else "batches"))
             if DeployFeasibility.Report.green report then
                 printfn "check deploy: GREEN — the server accepted the whole bundle."
                 0
             else
-                printfn "check deploy: %d batch(es) REFUSED at the fixed point:" (List.length report.Findings)
+                printfn "check deploy: %s REFUSED at the fixed point:" (sprintf "%d %s" (List.length report.Findings) (if List.length report.Findings = 1 then "batch" else "batches"))
                 for f in report.Findings do
                     printfn "  %s (batch %d): %s" f.File f.BatchOrdinal f.Error
                 5

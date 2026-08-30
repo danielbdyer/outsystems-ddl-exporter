@@ -219,7 +219,7 @@ let private segmentHtml (catalog: Catalog) (sb: StringBuilder) (openFirst: bool)
     // the unchanged remainder, counted (never listed)
     let unchanged = s.Context |> List.sumBy (fun c -> c.Unchanged)
     if unchanged > 0 then
-        sb.Append(sprintf "<div class=\"more\">+ %d unchanged row(s) across this segment not listed.</div>" unchanged) |> ignore
+        sb.Append(sprintf "<div class=\"more\">+ %s across this segment not listed.</div>" (sprintf "%d %s" unchanged (if unchanged = 1 then "unchanged row" else "unchanged rows"))) |> ignore
     sb.Append("</div></details>") |> ignore
 
 let private css = """
@@ -342,7 +342,7 @@ let private summaryHtml (catalog: Catalog) (sb: StringBuilder) (summary: Transfe
     summary
     |> List.groupBy (fun r -> r.Role.Variety)
     |> List.iter (fun (variety, rows) ->
-        sb.Append(sprintf "<tr class=\"grp\"><td colspan=\"6\">%s <span class=\"cnt\">· %d table(s)</span></td></tr>" (esc (groupLabel variety)) (List.length rows)) |> ignore
+        sb.Append(sprintf "<tr class=\"grp\"><td colspan=\"6\">%s <span class=\"cnt\">· %s</span></td></tr>" (esc (groupLabel variety)) (sprintf "%d %s" (List.length rows) (if (List.length rows) = 1 then "table" else "tables"))) |> ignore
         for r in rows do
             let key = r.Role.Key |> Option.map esc |> Option.defaultValue "—"
             sb.Append(sprintf "<tr><td class=\"tname\">%s</td><td><span class=\"rchip\">%s</span></td><td class=\"num\">%d</td><td>%s</td><td class=\"key\">%s</td><td class=\"rsn\">%s</td></tr>"
@@ -374,7 +374,7 @@ let private confirmHtml (catalog: Catalog) (sb: StringBuilder) (summary: Transfe
         let drifted = verified |> List.filter (fun r -> [ "drift"; "diverge"; "extra"; "missing"; "⚠" ] |> List.exists (r.Role.Verdict |> Option.defaultValue "").Contains)
         let clean = List.length verified - List.length drifted
         sb.Append("<h2>Reference data — the 1:1 confirmation <span class=\"sub\">the matched/identical verdict, per table</span></h2><div class=\"hrule\"></div><div class=\"confirm\">") |> ignore
-        sb.Append(sprintf "<div class=\"confirm-head\"><span class=\"dot\"></span><b>%d of %d reference table(s) verified</b><span>— matched by natural key; a static-lookup additionally holds every column identical, with no extra or missing rows.</span></div>" clean (List.length verified)) |> ignore
+        sb.Append(sprintf "<div class=\"confirm-head\"><span class=\"dot\"></span><b>%d of %s verified</b><span>— matched by natural key; a static-lookup additionally holds every column identical, with no extra or missing rows.</span></div>" clean (sprintf "%d %s" (List.length verified) (if (List.length verified) = 1 then "reference table" else "reference tables"))) |> ignore
         sb.Append("<div class=\"confirm-grid\">") |> ignore
         for r in verified do
             let isDrift = [ "drift"; "diverge"; "extra"; "missing"; "⚠" ] |> List.exists (r.Role.Verdict |> Option.defaultValue "").Contains
@@ -478,7 +478,7 @@ let toHtmlTriaged (catalog: Catalog) (units: TransferTriage.TransferUnit list) (
         if not (List.isEmpty tail) then
             let tailRows =
                 tail |> List.sumBy (fun u -> u.Segment.Context |> List.sumBy (fun c -> c.Added + c.Deleted + c.Changed + c.Unchanged))
-            sb.Append(sprintf "<div class=\"more\">and %d more settled unit(s) — %d row(s), each counted in the summary above and present in full in %s.impact.json.</div>" (List.length tail) tailRows (esc impact.Flow)) |> ignore
+            sb.Append(sprintf "<div class=\"more\">and %d more settled units — %s, each counted in the summary above and present in full in %s.impact.json.</div>" (List.length tail) (sprintf "%d %s" tailRows (if tailRows = 1 then "row" else "rows")) (esc impact.Flow)) |> ignore
     sb.Append(sprintf "<footer><span>projection check go %s --impact</span><span>·</span><span>go-board/%s.impact.html</span></footer>" (esc impact.Flow) (esc impact.Flow)) |> ignore
     sb.Append("</div></body></html>") |> ignore
     sb.ToString()

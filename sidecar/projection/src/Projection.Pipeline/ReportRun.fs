@@ -67,7 +67,7 @@ module ReportRun =
     /// Render the bundle as operator-facing lines (THE_VOICE register: stative;
     /// the norm surfaced as the minimality proof). One line per recorded edge.
     let render (bundle: ReportBundle) : string list =
-        [ yield sprintf "Change report — timeline '%s', %d episode(s) recorded." bundle.Timeline bundle.EpisodeCount
+        [ yield sprintf "Change report — timeline '%s', %s recorded." bundle.Timeline (sprintf "%d %s" bundle.EpisodeCount (if bundle.EpisodeCount = 1 then "episode" else "episodes"))
           yield sprintf "Total changes recorded since genesis: %d." bundle.PathLength
           yield ""
           if List.isEmpty bundle.Manifests then
@@ -76,7 +76,7 @@ module ReportRun =
               yield "Changes, oldest to newest:"
               for m in bundle.Manifests do
                   let c = m.Channels
-                  yield sprintf "  %s → %s · %d schema change(s) (%d added · %d dropped · %d renamed) · %d row(s) captured"
+                  yield sprintf "  %s → %s · %d schema changes (%d added · %d dropped · %d renamed) · %d rows captured"
                             (Version.label m.From.Version) (Version.label m.To.Version)
                             m.SchemaNorm c.AddedKinds c.RemovedKinds c.RenamedKinds m.CdcCaptureCount
                   // NM-32 — the change-accounting "under what equivalence was
@@ -89,7 +89,7 @@ module ReportRun =
                       let names = m.ToleranceResidual |> List.map ToleratedDivergence.name |> String.concat ", "
                       yield sprintf "      accepted under tolerance: %s" names
                   if not (List.isEmpty m.AppliedTransforms) then
-                      yield sprintf "      applied transforms recorded: %d overlay row(s)" (List.length m.AppliedTransforms) ]
+                      yield sprintf "      applied transforms recorded: %s" (sprintf "%d %s" (List.length m.AppliedTransforms) (if (List.length m.AppliedTransforms) = 1 then "overlay row" else "overlay rows"))]
 
     // ----------------------------------------------------------------------
     // The machine lens (M18 / THE VECTOR §5.2) — the change report as a

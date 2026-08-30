@@ -48,7 +48,7 @@ module SliceApplyRun =
                 if not (List.isEmpty badCols) then
                     Result.failureOf
                         (ValidationError.create "slice.schemaParity"
-                            (sprintf "entity '%s': target schema lacks column(s) %s."
+                            (sprintf "entity '%s': target schema lacks columns %s."
                                 e.Entity (badCols |> List.map Name.value |> String.concat ", ")))
                 else
                     let rows =

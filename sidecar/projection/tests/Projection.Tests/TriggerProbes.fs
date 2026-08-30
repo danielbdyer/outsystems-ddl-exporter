@@ -107,7 +107,7 @@ let ``probe H-006/H-099: no pass-scoped bench label exceeds 50 percent of the re
     Assert.True(
         List.isEmpty offenders,
         sprintf
-            "H-006/H-099's trigger has FIRED: pass label(s) dominate the recorded canary wall: %s. \
+            "H-006/H-099's trigger has FIRED — dominating pass labels on the recorded canary wall: %s. \
              Cash out the deferral (parallel composition / remote execution) or amend the trigger — not this probe."
             (offenders |> List.map (fun s -> sprintf "%s (%.0f ms)" s.Label s.MeanMs) |> String.concat ", "))
 
@@ -141,6 +141,6 @@ let ``probe: the deferred Composition primitives (fallback/accumulate/wrap/lift)
     Assert.True(
         List.isEmpty built,
         sprintf
-            "Deferred Composition primitive(s) are now BUILT: %s. The Active-deferrals index row(s) must cash out \
+            "Deferred Composition primitives are now BUILT: %s. Their Active-deferrals index rows must cash out \
              in the same commit (DECISIONS.md) — update the index, then this probe's expectation."
             (String.concat ", " built))

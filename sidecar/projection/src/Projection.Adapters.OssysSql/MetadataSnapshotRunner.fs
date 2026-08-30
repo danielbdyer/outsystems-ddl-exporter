@@ -1532,7 +1532,7 @@ module MetadataSnapshotRunner =
                 [ { DiagnosticEntry.create
                       "adapter:OSSYS" DiagnosticSeverity.Info
                       "adapter.ossys.columnReality.nullabilityDivergence"
-                      (sprintf "%d column(s) diverge on nullability between the logical OSSYS model and the deployed schema (%d logical-mandatory over deployed-nullable, %d logical-nullable over deployed NOT NULL; e.g. %s). A mandatory attribute is validated by the platform at run time only (database constraints are created for primary keys and references), so logical-mandatory over deployed-nullable is the platform's own deployment shape. A deployed NOT NULL is preserved in the emitted schema (decision 2); a logical-mandatory declaration over a deployed-nullable column emits NOT NULL from the model — a tightening — and the rows that contradict it are itemized in fidelity.json with per-column recommendations (the backfill block, or a keepNullable entry past the repair band)."
+                      (sprintf "%d columns diverge on nullability between the logical OSSYS model and the deployed schema (%d logical-mandatory over deployed-nullable, %d logical-nullable over deployed NOT NULL; e.g. %s). A mandatory attribute is validated by the platform at run time only (database constraints are created for primary keys and references), so logical-mandatory over deployed-nullable is the platform's own deployment shape. A deployed NOT NULL is preserved in the emitted schema (decision 2); a logical-mandatory declaration over a deployed-nullable column emits NOT NULL from the model — a tightening — and the rows that contradict it are itemized in fidelity.json with per-column recommendations (the backfill block, or a keepNullable entry past the repair band)."
                           (List.length diverged)
                           (List.length mandatoryButNullable)
                           (List.length nullableButNotNull)
@@ -1648,7 +1648,7 @@ module MetadataSnapshotRunner =
                     [ { DiagnosticEntry.create
                           "adapter:OSSYS" DiagnosticSeverity.Warning
                           "adapter.ossys.primaryKey.divergence"
-                          (sprintf "Entity %s (id %d): Is_Identifier marks attribute(s) %s but ossys_Entity.PrimaryKey_SS_Key names %O. The engine carries the explicit attribute flag; remediate the source or confirm which is authoritative."
+                          (sprintf "Entity %s (id %d): Is_Identifier marks attributes %s but ossys_Entity.PrimaryKey_SS_Key names %O. The engine carries the explicit attribute flag; remediate the source or confirm which is authoritative."
                               e.EntityName e.EntityId
                               (flagged |> List.map (fun a -> a.AttrName) |> String.concat ", ")
                               pkKey)

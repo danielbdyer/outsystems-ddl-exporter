@@ -99,12 +99,17 @@ module Preflight =
         match violations with
         | [] -> "no tightening violations"
         | first :: _ ->
+            let head =
+                match List.length violations with
+                | 1 -> "1 column carries NULLs but a Decision tightens it to NOT NULL"
+                | n -> sprintf "%d columns carry NULLs but a Decision tightens them to NOT NULL" n
             sprintf
-                "%d column(s) carry NULLs but a Decision tightens them to NOT NULL; the load would fail mid-write. First: attribute %s in kind %s has %d NULL row(s). Remediate the data or relax the tightening before executing."
-                (List.length violations)
+                "%s; the load would fail mid-write. %s %s in kind %s has %s. Remediate the data or relax the tightening before executing."
+                head
+                (if List.length violations = 1 then "Attribute" else "First: attribute")
                 (SsKey.rootOriginal first.AttributeKey)
                 (SsKey.rootOriginal first.KindKey)
-                first.NullCount
+                (sprintf "%d %s" first.NullCount (if first.NullCount = 1L then "NULL row" else "NULL rows"))
 
     /// Pure: the attribute `SsKey`s whose Nullability facet *narrows* (source
     /// nullable → target NOT NULL) between two catalogs. This is the tightened

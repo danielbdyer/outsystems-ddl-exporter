@@ -31,7 +31,7 @@ let ``apply runbook: the four phases render in order and the verify step names c
     let phase4 = runbook.IndexOf "## Phase 4 — Verify"
     Assert.True(phase1 >= 0 && phase1 < phase2 && phase2 < phase3 && phase3 < phase4, "the four phases render in order")
     Assert.Contains("check fidelity", runbook)
-    Assert.Contains("2 schema(s)", runbook)
+    Assert.Contains("2 schemas", runbook)
 
 [<Fact>]
 let ``apply runbook: the deployment batches render in dependency order, each precondition naming the batch before it`` () =
