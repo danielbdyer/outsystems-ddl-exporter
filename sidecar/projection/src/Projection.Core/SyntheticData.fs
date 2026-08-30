@@ -617,6 +617,13 @@ module SyntheticData =
                 | None      -> Map.empty
             let cells =
                 kind.Attributes
+                // An engine-stamped column (`rowversion`) takes no
+                // generated cell: absent from the row's Values, the bulk
+                // projection omits the column (the sink-only rule) and
+                // the engine stamps the value at load. `S-stable` holds —
+                // every other column's stream is content-addressed to its
+                // own coordinate, untouched by this exclusion.
+                |> List.filter (fun attr -> not (attr.SqlStorage |> Option.exists SqlStorageType.isEngineStamped))
                 |> List.choose (fun attr ->
                     let attrHash = fnv1a (SsKey.serialize attr.SsKey)
                     let nullable = attr.Column.IsNullable

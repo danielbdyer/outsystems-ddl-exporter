@@ -723,3 +723,25 @@ let ``unique tokens fit the declared width and stay verbatim where the width all
     // The wide column keeps the verbatim full token — the fitting rule only
     // engages where the width would truncate.
     Assert.All(wides, fun v -> Assert.StartsWith("u:", v))
+
+[<Fact>]
+let ``an engine-stamped column (rowversion) takes no generated cell; sibling columns hold S-stable`` () =
+    // σ generates no cell for `rowversion` storage: absent from the row's
+    // Values, the bulk projection omits the column (the sink-only rule)
+    // and the ENGINE stamps the value at load. Content-addressed streams
+    // keep every sibling column byte-identical to the stamp-less kind.
+    let stampKey = attrKey ["C"; "Stamp"]
+    let stamped : Kind =
+        { customer with
+            Attributes =
+                customer.Attributes
+                @ [ { attr stampKey "Stamp" Binary false false with
+                        SqlStorage = Some SqlStorageType.RowVersion } ] }
+    let catalogStamped : Catalog =
+        Catalog.create [ mkModule (modKey "M") (name "M") [ stamped; order ] ] [] |> mkOk
+    let v1 = SyntheticData.generate catalog        profile cfg 7UL
+    let v2 = SyntheticData.generate catalogStamped profile cfg 7UL
+    Assert.NotEmpty v2.[custKey]
+    Assert.Empty (valuesOf v2 custKey "Stamp")
+    for attrName in [ "Id"; "Status"; "Email"; "Score"; "Notes" ] do
+        Assert.Equal<string list>(valuesOf v1 custKey attrName, valuesOf v2 custKey attrName)

@@ -161,7 +161,9 @@ module CatalogCodec =
          | SqlStorageType.Binary n         -> jw.WriteStringValue "Binary"; jw.WriteNumber("length", n)
          | SqlStorageType.Image            -> jw.WriteStringValue "Image"
          | SqlStorageType.UniqueIdentifier -> jw.WriteStringValue "UniqueIdentifier"
-         | SqlStorageType.Xml              -> jw.WriteStringValue "Xml")
+         | SqlStorageType.Xml              -> jw.WriteStringValue "Xml"
+         | SqlStorageType.SqlVariant       -> jw.WriteStringValue "SqlVariant"
+         | SqlStorageType.RowVersion       -> jw.WriteStringValue "RowVersion")
         jw.WriteEndObject()
 
     let private wSqlLiteral (jw: Utf8JsonWriter) (lit: SqlLiteral) : unit =
@@ -580,6 +582,8 @@ module CatalogCodec =
             | "Image"            -> Ok SqlStorageType.Image
             | "UniqueIdentifier" -> Ok SqlStorageType.UniqueIdentifier
             | "Xml"              -> Ok SqlStorageType.Xml
+            | "SqlVariant"       -> Ok SqlStorageType.SqlVariant
+            | "RowVersion"       -> Ok SqlStorageType.RowVersion
             | o -> fail "codec.sqlStorage.unknown" (sprintf "unknown SqlStorageType kind '%s'" o)) el
 
     let private readSqlLiteral (el: JsonElement) : Result<SqlLiteral> =

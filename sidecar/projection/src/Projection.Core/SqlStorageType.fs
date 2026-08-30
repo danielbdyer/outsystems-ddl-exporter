@@ -66,6 +66,18 @@ type SqlStorageType =
     | Image
     | UniqueIdentifier
     | Xml
+    /// A variant cell carries a base-typed value; the raw plane carries
+    /// its canonical invariant string, so the stored base type is not
+    /// preserved through a transfer (named lossy — `Estate`'s
+    /// `EmissionLossyScalar`). Enters through DBA-authored on-prem
+    /// columns only; OutSystems produces none.
+    | SqlVariant
+    /// Engine-stamped 8-byte row stamp (`rowversion`; catalog views
+    /// report the legacy name `timestamp`). SQL Server writes it on
+    /// every INSERT/UPDATE and refuses an explicit value (Msg 273), so
+    /// it is read back but never minted, never bulk-loaded, and never
+    /// part of a re-mint content digest.
+    | RowVersion
 
 [<RequireQualifiedAccess>]
 module SqlStorageType =
@@ -104,8 +116,15 @@ module SqlStorageType =
         | SqlStorageType.Time _ -> Time
         | SqlStorageType.VarBinary _
         | SqlStorageType.Binary _
-        | SqlStorageType.Image -> Binary
+        | SqlStorageType.Image
+        // 8 opaque engine-stamped bytes — semantically binary; the
+        // engine-stamped write semantics live in `isEngineStamped`.
+        | SqlStorageType.RowVersion -> Binary
         | SqlStorageType.UniqueIdentifier -> Guid
+        // The raw plane carries a variant cell as its canonical
+        // invariant string (`ReadSide.formatRawValue`), so the
+        // semantic category is Text.
+        | SqlStorageType.SqlVariant -> Text
 
     /// The canonical concrete realization a bare `PrimitiveType`
     /// implies when no source evidence narrows it further. This is the
@@ -135,6 +154,17 @@ module SqlStorageType =
         | Time     -> SqlStorageType.Time None
         | Binary   -> SqlStorageType.VarBinary Max
         | Guid     -> SqlStorageType.UniqueIdentifier
+
+    /// The engine-stamped storage types: SQL Server writes the value on
+    /// every INSERT and UPDATE and refuses an explicit one (`rowversion`
+    /// — Msg 273). Consumers exclude such columns from generated cells
+    /// (σ — the shaping layer then omits the column and the engine
+    /// stamps it at load) and from re-mint content digests (the stamp
+    /// differs across two identical mints by construction).
+    let isEngineStamped (st: SqlStorageType) : bool =
+        match st with
+        | SqlStorageType.RowVersion -> true
+        | _ -> false
 
     /// Parse a SQL Server type expression into a concrete storage type.
     /// Two evidence shapes converge here:
@@ -225,4 +255,10 @@ module SqlStorageType =
             | "image"            -> Some SqlStorageType.Image
             | "uniqueidentifier" -> Some SqlStorageType.UniqueIdentifier
             | "xml"              -> Some SqlStorageType.Xml
+            | "sql_variant"      -> Some SqlStorageType.SqlVariant
+            // `rowversion` is the preferred name; the catalog views
+            // (INFORMATION_SCHEMA.DATA_TYPE, sys.types) still report
+            // the legacy `timestamp` — both spellings are one type.
+            | "rowversion"
+            | "timestamp"        -> Some SqlStorageType.RowVersion
             | _                  -> None

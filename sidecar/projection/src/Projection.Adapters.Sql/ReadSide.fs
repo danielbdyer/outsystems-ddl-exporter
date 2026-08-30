@@ -577,8 +577,18 @@ module ReadSide =
                             // semantic `Type` drives the canary's
                             // PhysicalSchema comparison; `SqlStorage`
                             // stays `None` (semantic fallback) so this
-                            // path's emission is unchanged.
-                            SqlStorage = None
+                            // path's emission is unchanged — EXCEPT the
+                            // two storage types whose load-bearing
+                            // semantics the semantic category erases:
+                            // `sql_variant` (variant-ness; bare `Text`
+                            // would re-emit as NVARCHAR) and
+                            // `rowversion` (engine-stamped; σ and the
+                            // re-mint digest must exclude the column).
+                            // Everything else keeps None, byte-identical.
+                            SqlStorage =
+                                match SqlStorageType.ofSqlType row.DataType row.Length row.Precision row.Scale with
+                                | Some ((SqlStorageType.SqlVariant | SqlStorageType.RowVersion) as st) -> Some st
+                                | _ -> None
                             // WP8 / NM-72 — ReadSide reflects the deployed
                             // SQL Server schema, which carries no OutSystems
                             // authored attribute order (ORDINAL_POSITION is
@@ -680,9 +690,29 @@ module ReadSide =
                 | :? single as s -> s.ToString("G9", inv)
                 | _ -> System.Convert.ToDecimal(v).ToString(inv)
             | Text ->
-                match v.ToString() with
-                | null -> ""
-                | s -> s
+                // A `sql_variant` column (semantic Text) surfaces its
+                // UNDERLYING base-typed value boxed — int, decimal,
+                // DateTime, byte[], Guid, … — and `ToString()` on those
+                // is culture-sensitive. Canonicalize through the same
+                // RawValueCodec forms the dedicated categories use, so
+                // a variant cell's raw form is deterministic and
+                // machine-independent; genuine string cells (every
+                // non-variant text storage type) pass through unchanged.
+                match v with
+                | :? string as s -> s
+                | :? System.DateTimeOffset as dto -> RawValueCodec.formatDateTimeOffset dto
+                | :? System.DateTime as dt -> RawValueCodec.formatDateTime dt
+                | :? System.TimeSpan as ts -> RawValueCodec.formatTime ts
+                | :? bool as b -> RawValueCodec.formatBoolean b
+                | :? System.Guid as g -> RawValueCodec.formatGuid g
+                | :? (byte[]) as b -> System.Convert.ToHexString b
+                | :? double as d -> d.ToString("G17", inv)
+                | :? single as s -> s.ToString("G9", inv)
+                | :? decimal as m -> m.ToString(inv)
+                | _ ->
+                    match System.Convert.ToString(v, inv) with
+                    | null -> ""
+                    | s -> s
             | Binary ->
                 // Older SqlClient surfaces `varbinary`/`binary` as
                 // `SqlBytes` / `SqlBinary` rather than `byte[]`.
@@ -1445,16 +1475,26 @@ module ReadSide =
             cmd.CommandText <-
                 // Five batches separated by `;`. Order matters — the
                 // `NextResultAsync` walk below depends on it.
-                //   1. columns          (INFORMATION_SCHEMA.COLUMNS)
+                //   1. columns          (INFORMATION_SCHEMA.COLUMNS, BASE TABLEs only —
+                //                        every other batch below is already sys.tables-
+                //                        scoped; scoping this one keeps a VIEW's columns
+                //                        out of the type mapping, so a view exposing a
+                //                        type the mapping does not know cannot refuse
+                //                        the whole read-back. A view carries no data;
+                //                        consumers that care about views probe sys.views
+                //                        themselves, per the Twin's Readback.)
                 //   2. primary keys     (INFORMATION_SCHEMA.TABLE_CONSTRAINTS join)
                 //   3. identity cols    (sys.columns)
                 //   4. foreign keys     (sys.foreign_keys join)
                 //   5. logical-name xps (sys.extended_properties; slice D.1.b)
-                "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE, \
-                        CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE \
-                 FROM INFORMATION_SCHEMA.COLUMNS \
-                 WHERE TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA') \
-                 ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION; \
+                "SELECT c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE, c.IS_NULLABLE, \
+                        c.CHARACTER_MAXIMUM_LENGTH, c.NUMERIC_PRECISION, c.NUMERIC_SCALE \
+                 FROM INFORMATION_SCHEMA.COLUMNS c \
+                 JOIN INFORMATION_SCHEMA.TABLES tt \
+                   ON tt.TABLE_SCHEMA = c.TABLE_SCHEMA AND tt.TABLE_NAME = c.TABLE_NAME \
+                 WHERE c.TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA') \
+                   AND tt.TABLE_TYPE = 'BASE TABLE' \
+                 ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION; \
                  SELECT kcu.TABLE_SCHEMA, kcu.TABLE_NAME, kcu.COLUMN_NAME \
                  FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc \
                  JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu \
