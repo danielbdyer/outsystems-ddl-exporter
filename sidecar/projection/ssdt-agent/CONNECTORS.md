@@ -4,8 +4,9 @@ This tree is **built and self-contained today** for both personas — the OutSys
 developer who authors the change, and the lead's reviewer who gates it. It is also deliberately
 shaped so it can be wired into larger machinery later without rewriting the bodies. This file is
 the single place every such seam is named. Each entry states: **what it replaces**, **the
-contract across the seam**, and **what must be verified before it is built**. Nothing here is
-wired now — these are connector points, not a backlog.
+contract across the seam**, and **what must be verified before it is built**. §1 is wired
+(packaged 2026-08-11 as generated dispatch pointers — see `CLAUDE.md`); every other seam is
+unwired — these are connector points, not a backlog.
 
 ---
 

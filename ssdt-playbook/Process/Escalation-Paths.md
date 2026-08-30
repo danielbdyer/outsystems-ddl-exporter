@@ -33,7 +33,7 @@ Escalate even if tier seems lower when:
 | Uncertain about tier/classification | Dev lead |
 | First time doing a specific operation type | Dev lead or experienced IC for pairing |
 | Multi-phase change spanning releases | Dev lead to verify sequencing |
-| Deployment failure in test/UAT/prod | Dev lead + on-call if prod |
+| Deployment failure in QA/UAT/prod | Dev lead + on-call if prod |
 | Data loss or suspected data corruption | Principal + Danny immediately |
 | Novel pattern not covered in playbook | Principal |
 

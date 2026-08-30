@@ -5,11 +5,16 @@ description: Use when the developer says "add a new Entity", "create a new table
 
 # Create entity
 
-> **Default (provisional — the data decides).** Any team member can review this: the change is
+> **Default (provisional — prove before you classify).** Any team member can review this: the change is
 > additive and self-contained — a brand-new table nothing yet depends on, and the running
 > application is unaffected. Ships as a single schema change, applied in place: the `CREATE TABLE`
 > is emitted verbatim, and no existing data is read or written. Prove the clean publish on a
 > disposable copy before classifying.
+
+> **The pull request.** `../../author-pr/SKILL.md` is the ten-section template every change fills;
+> the worked instance for this op is `../../../sample-prs/create-entity.md` — a complete PR proven
+> live on this branch (`dbo.CustomerPreference` created clean, its foreign key trusted). **Ships as
+> ONE RELEASE, applied in place.**
 
 ## OutSystems phrasing
 "add a new Entity", "create a new table", "I need a new CustomerPreference entity".
@@ -35,6 +40,9 @@ concerns caught at build time, not the deployment being blocked by the rows in t
 - FK to a parent not yet in the project → still the same single schema change, but the build gates
   it on dependency order (the parent must exist first) — a dependency concern, not the data driving
   a different disposition.
+- **the new table has foreign-key or frequently-queried columns** → recommend a nonclustered index on
+  each foreign-key column (SQL Server does not index the child side — F11) and on any column the app
+  will filter, join, or sort by. See `../../_index/when-to-index/SKILL.md`.
 
 ## Prove it
 Strict publish must succeed clean, and the generated delta must be a single `CREATE TABLE
@@ -59,7 +67,8 @@ anything not yet here?" The mistake to avoid is treating self-contained additive
 it is — asking for heavier review than a brand-new table nothing depends on actually needs.
 
 ## On the record
-Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+Fragments for the pull request (`../../author-pr/SKILL.md` is the template; the worked instance is
+`../../../sample-prs/create-entity.md`), record register.
 
 **Review & release**
 - Any team member can review this: the change is additive and the running application is unaffected —
@@ -87,7 +96,7 @@ go with it.
 **Not verified**
 - Application impact — a new table nothing yet reads or writes does not change existing behaviour,
   but any application code intended to read or write it is not exercised by the disposable copy
-  (@app-owner).
+  (app owner).
 - Dependencies — every referenced foreign-key parent must exist in the project, and the new `.sql`
   file must be included by the project glob; the clean Strict publish confirms this only for the
   parents present in this dacpac, not for other environments' project structure.

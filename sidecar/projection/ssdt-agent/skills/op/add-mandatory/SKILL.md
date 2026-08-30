@@ -5,11 +5,23 @@ description: Use when the developer says "add a required attribute", "add a Stat
 
 # Add mandatory attribute (Optimistic NOT NULL)
 
-> **Default (provisional — the data decides).** A dev lead or an experienced developer should
+> **Default (provisional — prove before you classify).** A dev lead or an experienced developer should
 > review this: adding a required attribute means the running application must change to keep
 > working. With an explicit default it ships as a single schema change, applied in place — SQL
 > Server fills every existing row from the default as the column is added. Populated with no
 > default: the deployment is blocked. Prove it on a disposable copy before classifying.
+
+> **SHIP terminal: ONE-RELEASE with a default.** With an explicit `DEFAULT`, DacFx generates a
+> single `ALTER TABLE … ADD … NOT NULL CONSTRAINT DEFAULT` that stamps every existing row — no
+> data-loss step, so it ships in one release. Without a default on a populated table the publish is
+> refused (no value for the existing rows). If no default is acceptable for new rows, the fallback
+> is the make-mandatory **TWO-RELEASE** (add nullable, pre-deploy backfill, tighten with the model
+> lagging, then the model catches up). Proven live 2026-08-21.
+
+> **Proven precedent:** `../../../sample-prs/add-mandatory.md` — the worked instance of the
+> `../../author-pr/SKILL.md` template for this op. Its *What proving showed* carries the real
+> Warning SQL72015 + `Msg 50000` block with no default, and the clean one-release `ALTER TABLE …
+> ADD` with the default that stamps every existing row.
 
 ## OutSystems phrasing
 "add a required attribute", "add a Status field, everyone must have one".
@@ -32,14 +44,20 @@ is a genuine can't-insert-NULL on a *new* column, cured by supplying a value.
 - table empty → ships as a single schema change, applied in place; any team member can review it
   (no rows to fill, so the default is optional).
 - populated + explicit DEFAULT → ships as a single schema change, applied in place — SQL Server
-  fills existing rows from the default as the column is added; a dev lead or an experienced
-  developer reviews it, because adding a required attribute means the running application must
-  change to keep working.
-- populated, **no DEFAULT** → the deployment is blocked → add a default (back to a single in-place
-  schema change) or a **pre-deployment backfill** that fills the rows before the column lands; do
-  **not** let `GenerateSmartDefaults` silently decide the value.
+  fills existing rows from the default as the column is added (proven:
+  `../../../sample-prs/add-default.md` — every existing row stamped, the publish clean); a dev
+  lead or an experienced developer reviews it, because adding a required attribute means the
+  running application must change to keep working.
+- populated, **no DEFAULT** → the deployment is blocked (proven:
+  `../../../sample-prs/add-mandatory.md` — refused at 25 rows, applied on the emptied table) →
+  add a default (back to a single in-place schema change) or a **pre-deployment backfill** that
+  stages the rows before the column tightens; do **not** let `GenerateSmartDefaults` silently
+  decide the value.
 - >1M rows → **added scrutiny**: at production row counts the column add may run long or block
   writes (schedule a window).
+- **the new required column will be filtered or looked up** → consider an index, weighing cardinality:
+  a high-selectivity column (an external key, a code) benefits; a low-cardinality one (a Status, a
+  flag) usually does not. See `../../_index/when-to-index/SKILL.md`.
 
 ## Prove it
 With a default, Strict publishes clean and the delta shows the `DEFAULT`. Drop the default and prove
@@ -51,7 +69,7 @@ For the publish loop, see `../../prove-on-dacpac/SKILL.md`.
 You asked to add a required attribute, so every row that already exists needs a value for it. With
 the default you gave it, SSDT stamps every existing row and publishes clean on a disposable copy of
 Dev. Without a default it would have been blocked at deploy — or, with GenerateSmartDefaults on,
-silently filled with an empty string — and I proved both on the copy, so the value that would have
+silently filled with an empty string — both proved out on the copy, so the value that would have
 been invented is visible instead of a surprise. One thing worth your call: is that default the right
 value for the rows that already exist, or should those be set deliberately before the column becomes
 required?
@@ -64,7 +82,9 @@ the question to settle before this ships is a plain one — who supplies the val
 already exist: you, explicitly, or the engine, silently? It should never be silently.
 
 ## On the record
-Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+Assemble the pull request from the `../../author-pr/SKILL.md` template; the worked instance for
+this op is `../../../sample-prs/add-mandatory.md`. **SHIP terminal: ONE-RELEASE with a default**
+(TWO-RELEASE fallback if no default is acceptable). Record register.
 
 **Review & release**
 - A dev lead or an experienced developer should review this: adding a required attribute means the
@@ -100,8 +120,8 @@ default-stamped or later-entered values); every other column in each row is unch
 **Not verified**
 - Application impact — inserts that omit this column now rely on the default; with no default, an
   insert that omits it is blocked with "Cannot insert NULL". Whether application code supplies a
-  meaningful value rather than leaning on the default is not confirmed here (@app-owner).
-- Other environments — Test, UAT, and Prod may hold different row counts the disposable copy of Dev
+  meaningful value rather than leaning on the default is not confirmed here (app owner).
+- Other environments — QA, UAT, and Prod may hold different row counts the disposable copy of Dev
   cannot see, and if the column ships without an explicit default, a profile with
   `GenerateSmartDefaults` enabled may silently stamp a value this copy did not. Run the verification
   query before promotion.

@@ -1,14 +1,14 @@
 ---
 name: ask-the-developer
-description: Use whenever proving surfaces a decision only a human can make — an orphan row that must be deleted or reassigned, a populated table that blocks a NOT NULL, over-length values facing truncation, duplicates facing a unique constraint, a cardinality that is not 1:1, an unmapped lookup value. Owns the shape of the mid-flow question: state the measured fact, lay out each option with its consequence, ask exactly one question in the developer's words, and record the answer with its owner in the pull request. Intake owns the one up-front question; this skill owns the forks that only appear after publishing to a disposable copy.
+description: "Use whenever proving surfaces a decision only a human can make — an orphan row that must be deleted or reassigned, a populated table that blocks a NOT NULL, over-length values facing truncation, duplicates facing a unique constraint, a cardinality that is not 1:1, an unmapped lookup value. Owns the shape of the mid-flow question: state the measured fact, lay out each option with its consequence, ask exactly one question in the developer's words, and record the answer with its owner in the pull request. Intake owns the one up-front question; this skill owns the forks that only appear after publishing to a disposable copy."
 ---
 
 # Ask the developer (the mid-flow decision)
 
 > **Why this exists.** The disposable copy can establish what the data *is*; it can never establish
 > what the business *wants done about it*. When a proof surfaces a fork, the two failure modes are
-> mirror images: deciding for the developer (a silent truncation, a silent delete, an unlogged
-> gate-relaxation), or dumping raw options on them with no consequences attached. The middle path is
+> mirror images: deciding for the developer (a silent truncation, a silent delete, a blank filled
+> with a guessed value), or dumping raw options on them with no consequences attached. The middle path is
 > one disciplined shape, used every time. `confirm-intent` asks the one question *before* proving;
 > this skill owns the questions that only exist *after*.
 
@@ -32,7 +32,7 @@ chat is not a decision; it is a memory.
 | Fork | The measured fact to state | The options and their consequences | The question |
 |---|---|---|---|
 | **Orphan rows** (adding a foreign key) | the orphan rows by id and count, and what they point at | reassign (an UPDATE; dev-lead review) · delete (cascades to named children; permanent; principal review) | "Reassign or delete?" |
-| **NOT NULL on a populated table** | the blank count, and that clearing blanks alone still leaves the deployment blocked (the guard checks rows, not blanks) | relax the data-loss guard for this one change after a proven zero-blank count (a logged, scripted decision) · fill and tighten across two releases | "Relax the guard once, or stage it?" — plus the value question: "What should the blank ones become?" |
+| **NOT NULL on a populated table** | the blank count, and that clearing blanks alone still leaves the deployment blocked (the guard checks rows, not blanks) — so it ships as two releases, because this pipeline cannot relax the data-loss guard | the shipping shape is not the developer's choice (two-release: release one fills and tightens with the model lagging, release two catches up); the decision that *is* theirs is the backfill value | "What should the blank ones become?" |
 | **Over-length values** (narrowing) | the longest value, and the count that will not fit | truncate (the named values are cut; permanent) · widen the target size (nothing lost; is the requirement wrong?) · keep the values and stage the change | "Truncate them, pick a bigger size, or keep them?" |
 | **Duplicates** (unique constraint/index) | the duplicated values and how many rows share each | pick the surviving row by a stated rule (newest? most complete?) · fix the duplicates at the source first | "Which row wins, and by what rule?" |
 | **Check-constraint violators** | the violating rows and the predicate they fail | correct them to a stated value · exempt old rows by staging the rule | "What is the correct value for these rows — or do old rows get grandfathered?" |

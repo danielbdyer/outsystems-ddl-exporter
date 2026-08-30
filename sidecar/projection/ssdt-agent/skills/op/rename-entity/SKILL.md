@@ -5,19 +5,36 @@ description: Use when the developer says "rename the Entity", "change the table 
 
 # Rename entity
 
-> **Default (provisional — the data decides).** With the refactorlog entry: ships as a single
+> **Default (provisional — prove before you classify).** With the refactorlog entry: ships as a single
 > schema change applied in place, the delta a metadata `sp_rename`, no data read or written; a dev
 > lead or an experienced developer should review it, because the running application must change to
-> keep working — every caller referencing the old name breaks. Without the refactorlog entry: the
-> delta is `DROP TABLE` + `CREATE TABLE` and every row is lost — stop and get the refactorlog first.
+> keep working — every caller referencing the old name breaks. Without the refactorlog entry the
+> rename does not happen, in one of two ways decided by the deploy's drop posture: under the
+> production posture (`DropObjectsNotInSource=False`) the publish returns Ok and performs a
+> **phantom rename** — the new table created empty, the populated original stranded; under the
+> drop-enabled diagnostic posture the delta is `DROP TABLE` + `CREATE TABLE` and every row is
+> lost. Stop and get the refactorlog first.
+
+> **The pull request.** `../../author-pr/SKILL.md` is the ten-section template every change fills;
+> the worked instance for this op is `../../../sample-prs/rename-entity.md` — a complete PR proven
+> live on this branch. **Ships as ONE RELEASE, applied in place** — the delta is a single
+> `EXEC sp_rename … 'OBJECT'` that keeps every row and the object_id — **only when the refactorlog
+> entry travels with the build.** Without it the delta is `DROP TABLE` + `CREATE TABLE` and the rows
+> are lost (proven live, 2026-08-21: rename kept all 8 rows and object_id `1061578820`).
 
 ## OutSystems phrasing
 "rename the Entity", "change the table name from Customer to Client", "I renamed it in Service Studio".
 
 ## SSDT meaning
 With a **refactorlog entry**, SSDT emits `EXEC sp_rename 'schema.Old', 'New', 'OBJECT'` — data
-and `object_id` preserved. **Without** the entry SSDT sees one table vanish and a new one
-appear and emits `DROP TABLE [Old]` + `CREATE TABLE [New]` — all rows lost. Never write `ALTER`.
+and `object_id` preserved. **Without** the entry SSDT sees one table vanish and a new one appear,
+and what happens next depends entirely on the deploy's drop posture. Under the **production
+posture** (`DropObjectsNotInSource=False` — proven on the Twin, DacFx 162.5.57): the publish
+returns **Ok** and performs a **phantom rename** — `[New]` is created **empty** and the populated
+`[Old]` is stranded exactly where it was; the rows do not follow and nothing errors. Under the
+**diagnostic posture** (`DropObjectsNotInSource=True`, the disposable copy): the delta is
+`DROP TABLE [Old]` + `CREATE TABLE [New]` — all rows lost. Either way the intended rename did not
+happen. Never write `ALTER`.
 
 ## The named trap
 A rename with no refactorlog entry (handbook 16 = §19.1), with its companion Refactorlog Cleanup
@@ -28,8 +45,11 @@ A rename with no refactorlog entry (handbook 16 = §19.1), with its companion Re
 - refactorlog entry present → ships in place, the delta is `sp_rename`; a dev lead or an experienced
   developer reviews it, because every caller crosses a boundary the rename breaks — FKs, views,
   procs, ETL, reports all reference the name
-- **refactorlog entry missing** → the delta is `DROP`+`CREATE` and every row is lost; stop and demand
-  the refactorlog before anything else (see `../../_index/identity-and-refactorlog/SKILL.md`)
+- **refactorlog entry missing** → the rename does not happen: a phantom under the production
+  posture (new table empty, original stranded, publish green — proven:
+  `../../../sample-prs/rename-entity.md`), a data-losing `DROP`+`CREATE` under the diagnostic
+  posture; stop and demand the refactorlog before anything else (see
+  `../../_index/identity-and-refactorlog/SKILL.md`)
 - external consumers must keep the old name → the rename stages across releases so those consumers
   can migrate during a transition window
 
@@ -42,8 +62,10 @@ authored. For the publish loop, see `../../prove-on-dacpac/SKILL.md`.
 ## The verdict (to the developer)
 You renamed the entity. On a disposable copy of Dev, SSDT generated `sp_rename`, so the rows are
 preserved and the table keeps its identity. That only works because the refactorlog entry exists —
-without it SSDT would see the old table vanish and a new one appear, DROP and re-CREATE the table,
-and lose every row. The rename is metadata-only, but the new name breaks every caller — foreign
+without it SSDT sees the old table vanish and a new one appear, and either quietly creates the new
+table empty while stranding your data under the old name (a green deploy that didn't do what you
+asked — that's what a real production posture does), or drops and re-creates the table and loses
+every row. The rename is metadata-only, but the new name breaks every caller — foreign
 keys, views, procedures, ETL, reports — so a dev lead or an experienced developer should review it
 before it ships. One question: does anything outside this project still need the old name? If so,
 the rename must stage across releases so those consumers can migrate before the old name goes away.
@@ -55,7 +77,8 @@ as dropping one table and creating another — the most expensive silent data lo
 because nothing errors and the rows are simply gone.
 
 ## On the record
-The fragment this contributes to the pull request (`../../author-pr/SKILL.md`).
+The fragment this contributes to the pull request (`../../author-pr/SKILL.md` is the template; the
+worked instance is `../../../sample-prs/rename-entity.md`).
 
 **Review & release**
 - A dev lead or an experienced developer should review this: the running application must change to

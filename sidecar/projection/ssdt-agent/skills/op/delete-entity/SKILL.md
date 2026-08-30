@@ -5,20 +5,32 @@ description: Use when the developer says "delete the Entity", "drop the table, w
 
 # Delete entity
 
-> **Default (provisional — the data decides).** Ships as a scripted change in a single release — in
+> **Default (provisional — prove before you classify).** Ships as a scripted change in a single release — in
 > production the drop is an explicit pre-deployment `DROP`, not the mere absence of the file,
 > sequenced after any inbound foreign keys are dropped. A principal must review
 > this: data is removed and the removal cannot be undone. The risk is the irreversible loss, not the
 > release count — one drop in one release still requires a principal. Prove before you classify.
 
+> **The pull request.** `../../author-pr/SKILL.md` is the ten-section template every change fills;
+> the worked instance for this op is `../../../sample-prs/delete-entity.md` — a complete PR proven
+> live on this branch. **Ships as ONE RELEASE plus a human fork:** an explicit, idempotent scripted
+> `DROP TABLE` with the `.sql` removed in the same release, under the production posture
+> (`DropObjectsNotInSource=false`) so DacFx neither generates the drop (which the gate blocks) nor
+> re-creates the table; the fork is whether the data is truly safe to lose. The two-release pattern
+> of a narrow does **not** transfer — a model that still declares the table re-creates it empty on the
+> next publish (proven live, 2026-08-21).
+
 ## OutSystems phrasing
 "delete the Entity", "drop the table, we don't need it", "remove the old AuditLog".
 
 ## SSDT meaning
-Remove the `.sql` file; with `DropObjectsNotInSource=True` SSDT emits `DROP TABLE
-[schema].[Name]`. On a populated table `BlockOnPossibleDataLoss=True` **blocks** the publish —
-that block is the safety proof, not a failure. In production `DropObjectsNotInSource` is usually
-**False**, so the drop needs an explicit pre-deployment `DROP`, not mere absence.
+Remove the `.sql` file; with `DropObjectsNotInSource=True` (the diagnostic posture) SSDT emits
+`DROP TABLE [schema].[Name]`, and on a populated table `BlockOnPossibleDataLoss=True` **blocks**
+the publish — that block is the safety proof, not a failure. In production
+`DropObjectsNotInSource` is **False**, and there removing the file alone does **nothing**: a
+**phantom removal** — the table and every row survive and the publish returns Ok (proven:
+`../../../sample-prs/delete-entity.md`, DacFx 162.5.57). The drop the change intends is therefore
+an explicit pre-deployment `DROP`, never mere absence.
 
 ## The named trap
 Dropping a table with inbound **foreign keys** — the drop fails until they are dropped first. The
@@ -38,20 +50,23 @@ for why it is data-blind; do not re-derive the guard here.
   may block writes or run long, and the operation has not been performed here before
 
 ## Prove it
-A Strict publish must **block** on `BlockOnPossibleDataLoss` when rows exist — show that block with
-the row count as the safety proof. Then prove the ordered remedy (drop foreign keys → drop) on a
-disposable copy of Dev. Run `sys.dm_sql_referencing_entities` against the table to
-enumerate what still points at it. For the publish loop, see `../../prove-on-dacpac/SKILL.md`;
-probes, `../../talk-to-local-sql/SKILL.md`.
+Two postures, two proofs. Under the **diagnostic posture** (drop-not-in-source on the disposable
+copy) a Strict publish must **block** on `BlockOnPossibleDataLoss` when rows exist — show that
+block with the row count as the safety proof of what would be lost. Under the **production
+posture**, prove the phantom: removing the file publishes green and the table survives untouched
+— which is why the shipped change is the explicit, ordered pre-deployment script, whose safety
+rests on the enumerated references and the principal's review, not on an engine guard. Then prove
+the ordered remedy (drop foreign keys → drop) on a disposable copy of Dev. Run
+`sys.dm_sql_referencing_entities` against the table to enumerate what still points at it. For the
+publish loop, see `../../prove-on-dacpac/SKILL.md`; probes, `../../talk-to-local-sql/SKILL.md`.
 
 ## The verdict (to the developer)
 You asked to delete the table. Mechanically this is one drop in one release — but it's the gravest
 kind of change, because once it lands the data is gone for good and there is no undo. On a
 disposable copy of Dev, SSDT's BlockOnPossibleDataLoss blocked the publish because the table still
 holds rows; the block reports the exact row count, and that count is the proof of what would be
-lost — the block is the safety net working, not a failure. Before this ships I drop the inbound
-foreign keys first; I proved on the copy that this order clears the block cleanly
-and the table drops. A principal should review it, because the loss can't be undone. One thing to
+lost — the block is the safety net working, not a failure. Before this ships, the inbound foreign
+keys drop first; the copy showed this order clears the block cleanly and the table drops. A principal should review it, because the loss can't be undone. One thing to
 settle first: is this data truly needed nowhere — no report, no export, no downstream job still
 reading it?
 
@@ -64,7 +79,8 @@ about what is lost, not how much is written. The failure this avoids: reaching f
 `DropObjectsNotInSource` to "make it work" instead of proving the table is truly safe to lose.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`), record register.
+The fragment this op contributes to the pull request (`../../author-pr/SKILL.md` is the template; the
+worked instance is `../../../sample-prs/delete-entity.md`), record register.
 
 **Review & release**
 - A principal must review this: data is removed and the removal cannot be undone. If the table is
@@ -96,10 +112,10 @@ block records how many rows would be lost.
 **Not verified**
 - Application impact — any query, view, procedure, report, export, or job that reads the table will
   fail once it is gone: the object no longer resolves. Whether anything in the running application
-  still references it is not confirmed here (@app-owner). `sys.dm_sql_referencing_entities` finds
+  still references it is not confirmed here (app owner). `sys.dm_sql_referencing_entities` finds
   in-database references only, not application code or external consumers.
 - Other environments — the row count and the dependency list were proven on a disposable copy of Dev
-  only; Test, UAT, and Prod may hold rows or references this copy cannot see. Run the pre-drop checks
+  only; QA, UAT, and Prod may hold rows or references this copy cannot see. Run the pre-drop checks
   before promotion.
 - Production scale and timing — at >1M rows the drop may block writes or run long; the small copy
   does not show duration or blocking at production scale.

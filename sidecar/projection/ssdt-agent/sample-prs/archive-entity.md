@@ -1,76 +1,83 @@
-# OrderLine: archive the old lines (a data move, not a drop — every row is conserved, byte-identical, and batched)
+# Order → archive.OrderArchive: move retired orders to an archive table (every row is conserved, none dropped or doubled)
 
-**In OutSystems** — You archive old `OrderLine` records — "move the historical rows out to an archive table", "move records we don't need live anymore". You keep the data; you just stop carrying it in the live table.
-**In SSDT** — this is a **data movement**, which SSDT does not express declaratively. The archive destination is a table (created declaratively, or scripted); the row move is a **batched** `DELETE ... OUTPUT DELETED.* INTO archive.X` in a post-deployment step. SSDT describes *shapes*, not *data motion*.
+## Verdict
+This PR moves retired `Order` rows out of the live table into `archive.OrderArchive`, conserving
+every row — each ends up either still live or in the archive, none dropped and none duplicated.
+Confirm in each environment that nothing still reads the archived orders as if they were live — a
+report, a screen, an export — before promoting, and schedule a window at production volume because
+the move runs row by row.
 
-## Summary
+## Intent
+The developer's stated intent for this PBI: move orders that are no longer active out of the live
+`Order` table into an archive table, keeping the data available but out of the live path. The
+retired set here is the Cancelled orders (`StatusId = 3`). No work item supplied — attach one before
+merge.
 
-You archive the older `OrderLine` rows — move them out of the live table into an archive table, keeping every one. Archiving is the **safe retirement** of data, and it is the counterpoint to the drops elsewhere in this wave: nothing is lost, nothing is dropped, the rows are *relocated*. This was proven objectively against a Twin — a disposable SQL Server database published from this estate and filled with real-shaped synthetic data.
+## What changes
+- `archive.OrderArchive`: new archive table with the same columns as `dbo.[Order]`.
+- The retired `Order` rows are moved to it by a batched `DELETE dbo.[Order] OUTPUT DELETED.* INTO
+  archive.OrderArchive WHERE StatusId = 3`, which removes each row from the live table and writes it
+  to the archive in one statement.
 
-Because this is a move, not a shape change, the proof is a **conservation check**, not a schema diff: after the move, does every original row still exist somewhere — either still live, or in the archive — with none dropped and none duplicated? On the Twin the counts reconciled exactly: 25 rows in, split into 12 kept live and 13 archived, 25 accounted for, the archived rows **byte-identical** to the originals, and **no row in both tables**. The move ran in **batches** that each commit, so the transaction log stays bounded rather than growing to hold the whole move at once.
+## Before promoting
+- Run the conservation query (below) after the move in each environment and confirm live rows plus
+  archived rows equal the pre-move total — no row lost, none doubled.
+- Confirm nothing still needs the archived orders in the live table — check with the report, screen,
+  and export owners, because a consumer that reads `dbo.[Order]` will no longer see the moved rows.
+- Confirm Release 1 (the archive table added) has landed in an environment before running the move
+  there, so the application can read both tables while the move is in flight.
 
-The one question that decides whether this is safe: **shape change, or data move?** The moment it is a data move, the failure to avoid is an unbatched move that silently loses or doubles rows and looks identical in the schema — because the schema never described the rows in the first place. No work item was provided with the request; attach one before merge so the record is traceable.
+## The data
+- 4 rows in `dbo.[Order]` before the move. 1 is Cancelled (`StatusId = 3`) and is moved to the archive;
+  3 remain live.
+- After the move: 3 live + 1 archived = 4, the pre-move total. The moved row is byte-identical in the
+  archive — its content hash before the delete equals its content hash in the archive.
 
-## Review & release
+## How it ships
+- Across more than one release, because a running application cannot switch which table it reads in
+  the same instant the rows move. Release 1 adds `archive.OrderArchive` (additive, one declarative
+  release). Release 2 runs the batched move once the application can read both. The move itself is a
+  data motion, which SSDT does not express declaratively — it is a scripted `DELETE … OUTPUT DELETED.*
+  INTO …` that the data-loss gate does not govern, run in batches so the transaction log stays bounded.
+- The archive table's creation and the row move are separate steps for a reason: the additive create
+  is safe on its own, and the move is the reviewed, reversible-with-effort data motion.
 
-- A **dev lead** must review this: existing rows are moved out of the live table. A **principal** reviews it instead when the move cannot be undone (a cross-database archive loses FK enforcement) or the volume is large.
-- It ships **across releases**: the archive table is added first, then a batched post-deployment script moves the rows (`DELETE ... OUTPUT DELETED.* INTO archive.OrderLine`), then the counts are reconciled — so the running application keeps reading live data while the move is in flight.
-- Added scrutiny, when it applies: at large volume (>1M rows) the move may block writes or run long and **batching is mandatory** — schedule a window.
+## What proving showed
+Published to a throwaway copy on this branch.
+- **Tried:** publish the full project to establish `dbo.[Order]` with 4 rows, then add
+  `archive.OrderArchive` and run the batched `DELETE … OUTPUT DELETED.* INTO archive.OrderArchive
+  WHERE StatusId = 3` on the copy.
+- **Did:** count both sides — the live table holds 3 rows, the archive holds 1, and 3 + 1 = 4, the
+  recorded pre-move total. No row was lost and none doubled.
+- **Realized:** the moved row is preserved exactly. A `SHA2_256` content hash of the retired row taken
+  before the delete equalled the hash of the row in the archive afterward (`BYTE-IDENTICAL`). The
+  proof for a data move is conservation and a content hash, not a schema difference, because the
+  schema never described the rows.
 
-## Changes
-
-| File | Change |
-|---|---|
-| `Tables/archive.OrderLine.sql` (new) | **New** — the archive destination table (`[archive].[OrderLine]`, a passive store: no `IDENTITY`, so the original `Id`s are preserved) |
-| *(post-deployment script, not a table definition)* | The **batched** `DELETE TOP (n) ... OUTPUT DELETED.* INTO [archive].[OrderLine]` that relocates the rows — SSDT cannot express data motion, so this is authored, not modeled |
-
-No column or key change to `dbo.OrderLine` itself — the live table keeps its shape; only its older rows relocate.
-
-## Data remediation
-
-This change *is* a data operation, so the "remediation" is the move itself, and its correctness is the conservation proof. The invariant that must hold after the move: `live_rows + archived_rows == the recorded pre-move total`, with the archived rows byte-identical to the originals and no `Id` present in both tables. Child rows with foreign keys must move (or their FKs be disabled) **before** their parents; a cross-database archive loses FK enforcement on the archived copy. The move must be **batched** so the transaction log stays bounded.
-
-## Deployment evidence — objective proof, 2026-07-22, Microsoft.SqlServer.DacFx 162.5.57
-
-The proof is a green integration test that publishes this estate to a live Twin, materializes real-shaped data, creates the archive destination, and runs the **batched** move on the disposable copy — then asserts the conservation facts directly (no row dropped, none duplicated, the archived rows byte-identical, the move committed in more than one batch).
-
-**Test:** `Twin.Tests.Integration.SamplePrRemovalTests+SamplePrRemovalTests.archive-entity: retiring rows to an archive table conserves every row (live + archived == original), byte-identical and batched`
-
-```
-Passed!  - Failed:     0, Passed:     5, Skipped:     0, Total:     5, Duration: 1 m 19 s - Twin.Tests.Integration.dll (net9.0)
-```
-
-**Fact 1 — the counts reconcile exactly: every row is conserved, none duplicated.** `dbo.OrderLine` held **25 rows**. The older half (the 13 rows with `Id <= 13`) moved to `[archive].[OrderLine]`; **12** stayed live. After the move, `12 + 13 = 25` — the original total, with **zero** rows present in both tables. Verbatim from the run:
-
-```
-baseline: dbo.OrderLine total rows=25; retire the older half (Id <= 13) = 13 rows; keep 12 live; moved-rows digest=-1779981349
-batched move (DELETE TOP (7) ... OUTPUT DELETED.* INTO [archive].[OrderLine] WHERE Id <= 13): committed in 2 batches
-  after move: live rows=12, archived rows=13, live + archived=25 (original total=25 -> conserved=true)
-  archived-rows digest=-1779981349 (moved-rows digest before=-1779981349 -> byte-identical=true); overlap (Id in both tables)=0 (0 = none duplicated)
-```
-
-Reading the facts: `live + archived = 25` equals the original total (`conserved=true`) — **no row lost, none doubled**. The archived-rows digest (`-1779981349`) equals the digest those rows carried *before* the move (`byte-identical=true`) — the archive holds the same values, not a lossy copy. `overlap ... = 0` — no `Id` is in both tables, so nothing was duplicated. And the move **committed in 2 batches** (`DELETE TOP (7)` over 13 rows), demonstrating the log-bounded batched form rather than one all-or-nothing transaction.
-
-## Verification — run in each environment after deployment
-
+## After deploy — check
 ```sql
--- expect live_rows + archived_rows to equal the recorded pre-move total: no row lost, none doubled.
+-- live rows plus archived rows equal the recorded pre-move total, expect them to sum to it
 SELECT
-  (SELECT COUNT(*) FROM dbo.OrderLine)      AS live_rows,
-  (SELECT COUNT(*) FROM archive.OrderLine)  AS archived_rows;
-
--- expect 0 rows: no Id is present in both tables (nothing duplicated).
-SELECT COUNT(*) AS in_both
-FROM dbo.OrderLine d JOIN archive.OrderLine a ON a.Id = d.Id;
+  (SELECT COUNT(*) FROM dbo.[Order])            AS live_rows,
+  (SELECT COUNT(*) FROM archive.OrderArchive)   AS archived_rows,
+  (SELECT COUNT(*) FROM dbo.[Order])
+    + (SELECT COUNT(*) FROM archive.OrderArchive) AS live_plus_archived;
 ```
 
-## Rollback
+## How to roll this back
+The move reverses as a batched move from the archive back to the live table: `DELETE
+archive.OrderArchive OUTPUT DELETED.* INTO dbo.[Order]`. The moved rows are preserved byte-identical
+in the archive, so the data itself is recoverable; the reverse move is a scripted step, not
+automatic. Dropping the empty archive table afterward is lossless only while it is empty.
 
-Reversal is a reverse batched move from the archive back to the source. The moved rows are preserved byte-identical in the archive (proven by the before/after digest), so the data itself is recoverable; the reverse move is a scripted operation, not automatic. Where the archive lives in another database, FK enforcement was already lost on the archived copy. Only the forward move was exercised here.
-
-## Not verified
-
-- **Application impact.** Any report, screen, or export that reads the archived rows from the live source will now miss them. Whether application and reporting code expects those rows in the live table is not confirmed here (@app-owner).
-- **Other environments.** Test, UAT, and Prod hold different row counts the disposable copy cannot see. Run the verification query before promotion.
-- **Production scale and timing.** At production row counts the batched move may run long or block writes; the small copy proves the batches commit and the counts conserve in shape, not the duration at scale.
-- **Reversibility.** A cross-database archive loses FK enforcement, and the reverse move is not exercised on the copy; the forward move is all that was proven.
+## Not checked / still open
+- Application impact — any report, screen, or export that reads the archived orders from the live
+  table will now miss them. That application and reporting code do not expect those rows in the live
+  table is not confirmed on the copy — the app owner confirms it.
+- Other environments — QA, UAT, and Prod hold different `Order` counts the copy of Dev cannot see.
+  Run the conservation query before and after the move in each.
+- Production scale and timing — at production row counts the batched move may run long or block
+  writes; the small copy proves the counts conserve and the row is byte-identical, not the duration
+  at scale. Schedule a window.
+- Reversibility — the reverse move was not exercised on the copy; only the forward move and its
+  conservation were proven.

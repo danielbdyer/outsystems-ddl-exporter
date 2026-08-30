@@ -5,13 +5,21 @@ description: Use when the developer says "I want full history on this new entity
 
 # Add temporal versioning — new entity
 
-> **Default (provisional — the data decides).** A dev lead or an experienced developer should
+> **Default (provisional — prove before you classify).** A dev lead or an experienced developer should
 > review this: turning on system versioning is a design commitment — a paired history table that
 > grows with every update — even though the table is new and no existing data is touched. Ships as a
 > single schema change, applied in place: temporal versioning IS expressible declaratively for a new
 > table, so SSDT publishes the system-versioned CREATE — the table, its paired history table, and the
 > two period columns — clean. Prove the clean publish on a disposable copy before classifying.
 > (Converting an EXISTING populated table is a different op — route to `../temporal-convert/SKILL.md`.)
+
+> **SHIP terminal: ONE RELEASE, in place.** Temporal versioning is expressible declaratively for a new
+> table, so SSDT publishes the system-versioned CREATE — the table, its paired history table, and the
+> two `GENERATED ALWAYS AS ROW START/END` period columns — clean; no existing data is touched. A
+> populated table is the different op `../temporal-convert/SKILL.md` (across releases). Twin-proven.
+>
+> **Proven precedent:** `../../../sample-prs/temporal-new.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "I want full history on this new entity", "keep every version of every row (new table)", "point-in-time history from birth".
@@ -48,7 +56,9 @@ elsewhere). The mistake to avoid is standing up system versioning when a change 
 wanted, or the reverse.
 
 ## On the record
-Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/temporal-new.md`. SHIP terminal: **ONE RELEASE, in place.**
+The fragment this operation contributes:
 
 **Review & release**
 - A dev lead or an experienced developer should review this: turning on system versioning is a
@@ -86,7 +96,7 @@ current rows and their accumulated history.
 **Not verified**
 - Application impact — a new entity nothing yet reads or writes does not change existing behaviour,
   but the application code that will query the history (`FOR SYSTEM_TIME`) is new and is not
-  exercised by the disposable copy (@app-owner).
+  exercised by the disposable copy (app owner).
 - Design intent — the disposable copy proves the system-versioned table publishes clean; it cannot
   confirm that point-in-time history, and not a row-level change feed, is what the use case needs. That
   is a design confirmation owed at intake, not something the copy can settle.

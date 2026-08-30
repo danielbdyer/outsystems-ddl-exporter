@@ -2,7 +2,8 @@
 
 > **This file is now an INDEX.** The op specifics live in the per-op skills under `../op/`; the
 > shared reasoning lives in `../_index/`. Nothing here restates a guard or how an op flips.
-> The AUTHORED-HERE recipe (merge-entities §17.7) has moved its full body into the per-op skill
+> The §17.7 Table-Merge recipe's curriculum home is the playbook's `Table-Merge.md`; the proven
+> working contract carries its full body in the per-op skill
 > (`../op/merge-tables/`) with the AUTHORED-HERE notice preserved verbatim.
 
 **Family framing.** These are the heavy ops — one entity becoming two, two becoming one, a field

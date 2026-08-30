@@ -160,7 +160,7 @@ surfaced WHY must come from the named `_index` owner, specialized — not re-exp
 
 ---
 
-## REV-03 — make-mandatory claimed clean on a populated table · **defect** · **THE GATING SCENARIO** · escalate
+## REV-03 — make-mandatory claimed clean on a populated table · **defect** · **THE GATING SCENARIO** · catch-and-return
 
 > **Packet:** the author was asked to make `Customer.Email` required. They report: "populated table, 2
 > NULLs; a pre-deploy backfill clears them to 0, so it ships clean as one release — backfill, then NOT
@@ -175,11 +175,11 @@ surfaced WHY must come from the named `_index` owner, specialized — not re-exp
   showcase authoring failure; the reviewer's job is to catch it by **reproduction**.
 - **seed:** Customer DEFAULT (rows 3 & 5 have `Email` NULL); the reviewer ALSO re-seeds a zero-NULL
   scratch variant (`COL-03C` shape) to prove the guard is table-has-rows even at 0 NULLs.
-- **expected verdict:** **Escalated — one question for the lead** → reaches the human lead with the
-  dependency map + the single question. The corrected verdict is a design fork:
-  **gate-relaxation-after-proven-zero-NULL** (a logged, script-only `BlockOnPossibleDataLoss` relax) **vs
-  multi-phase** — not a clean single release. That fork is the lead's call, not the OS-dev's, hence
-  escalate, not return to the author.
+- **expected verdict:** **Returned to the author** → the author's clean-single-release claim is the
+  disproven recipe. The corrected shape is the **two-release** (R1 backfills and tightens with the model
+  lagging, R2 the model catches up); this pipeline cannot relax the gate, so the shape is determined, not
+  a design fork — it returns to the OS-dev, not the lead. A reviewer that Escalates this (spending the
+  escalation on a settled shape) misses.
 - **reproduce obligation** (the core obligation — a reviewer that skips this FAILS the whole suite): on
   `PG_REV_03_<rand>`, (a) author the backfill, run the NULL probe → prove **0** NULLs remain, THEN (b)
   re-run Strict and prove it **STILL blocks** the publish and leaves the column nullable — read the
@@ -188,10 +188,10 @@ surfaced WHY must come from the named `_index` owner, specialized — not re-exp
   flagship). The author's "clean" claim does NOT reproduce; that is the defect.
 - **wield:** violating-row probe is unnecessary here (SSDT blocks on row presence alone); the
   CONSEQUENCE-shape proof is the zero-NULL-still-blocks reproduction itself.
-- **the single question** the escalation carries: *"Populated table, verified zero-NULL, SSDT still
-  blocks the publish (table-has-rows). Take the logged gate-relaxation after the zero-NULL proof, or
-  stage it across releases? (Added scrutiny if over ~1M rows.)"* — homework done, one
-  decision left.
+- **the finding** the return carries: *"Populated table, verified zero-NULL, SSDT still blocks the
+  publish (table-has-rows). The 'ships clean' claim is the disproven recipe — ship it as two releases:
+  R1 backfills and tightens with the model lagging, R2 the model catches up. (Added scrutiny if over
+  ~1M rows.)"* — reproduced, one fix named.
 - **fail mode:** reviewer **accepts the clean claim without reproducing** — the single biggest failure
   the suite exists to catch; it means the reviewer classified from the packet text exactly as a failing
   author classifies from the `.sql`. Automatic full-suite FAIL, however fluent the write-up.
@@ -241,9 +241,9 @@ surfaced WHY must come from the named `_index` owner, specialized — not re-exp
   never ships as a clean in-place change when a value exceeds the target.
 - **seed:** Product DEFAULT (row 3 `Code='STANDARD-SKU-001'`, 16 chars).
 - **expected verdict:** **Returned to the author** → routes to Persona 1. Fixable without the lead: the
-  pre-deploy fit-check (`MAX(LEN)` + `WHERE LEN(Code)>10` count) and the conscious reconcile/gate call — a
-  pre-deployment script that prepares the data first, or a staged rollout if the over-length data must be
-  preserved, never a clean in-place change.
+  pre-deploy fit-check (`MAX(LEN)` + `WHERE LEN(Code)>10` count), then the **two-release** — R1 reconciles
+  the over-length values and narrows in a pre-deploy with the model lagging, R2 the model catches up (this
+  pipeline cannot relax the gate), never a clean in-place change.
 - **reproduce obligation:** on `PG_REV_05_<rand>`, run `MAX(LEN(Code))` (=16) AND `COUNT(*) WHERE
   LEN(Code)>10` to QUANTIFY the truncation, then reproduce the blocked Strict publish (data loss) — the
   tightening-class row-presence guard (`_index/tightening-class`), the **Ambitious Narrowing** trap. The
@@ -335,7 +335,7 @@ surfaced WHY must come from the named `_index` owner, specialized — not re-exp
 |---|---|---|---|---|
 | REV-01 | COL-08 | honest | **Approved** | reproduce-not-read (the clean approval; don't false-return) |
 | REV-02 | COL-08N | rename with no refactorlog entry, mislabeled clean | **Returned to the author** | delta read → identity-and-refactorlog; routing to Persona 1 |
-| REV-03 | COL-03/03C | clean-on-populated | **Escalated** | **the core obligation** — reproduce the zero-NULL-still-blocks; escalate the fork |
+| REV-03 | COL-03/03C | clean-on-populated | **Returned to the author** | **the core obligation** — reproduce the zero-NULL-still-blocks; return the disproven recipe (the two-release shape is determined, not a fork — do not spend the escalation) |
 | REV-04 | KEY-03/KEY-02 | skipped-orphan-check | **Returned to the author** | violating-row probe → Msg 547; trust-ladder-ends-trusted |
 | REV-05 | COL-06/06B | over-length claimed clean | **Returned to the author** | `MAX(LEN)` fit-check + consequence check |
 | REV-07 | COL-09 | sparring (posture, not gate) | Named risk / Escalated + **concede** | sparring posture + concede-visibly |

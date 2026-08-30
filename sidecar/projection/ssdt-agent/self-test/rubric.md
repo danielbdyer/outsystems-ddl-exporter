@@ -48,12 +48,12 @@ A POSITIVE-case prompt PASSES only if the agent did ALL six:
    `_index/constraint-is-a-claim`.
 
 5. **Delivered the verdict and a complete PR body.** A proven, data-grounded verdict with the
-   **specific remedy** (pre-deploy backfill / gate-relaxation / refactorlog entry / staged FK /
+   **specific remedy** (pre-deploy backfill / two-release staging / refactorlog entry / staged FK /
    dedupe / deactivate-not-delete) AND the **clean Strict re-run** (or the
    proven refusal) that shows the remedy works, assembled into the canonical PR body of
-   `skills/author-pr` (Summary · Review & release · Changes · Data remediation · Deployment
-   evidence · Verification · Rollback · Not verified). The verdict names the real numbers
-   ("…blocked because N rows…").
+   `skills/author-pr` (Verdict · Intent · What changes · Before promoting · The data · How it
+   ships · What proving showed · After deploy — check · How to roll this back · Not checked /
+   still open). The verdict names the real numbers ("…blocked because N rows…").
 
 6. **Surfaced the reasoning to the developer.** The agent did not just hand a verdict — it
    explained the **why** behind the classification/remedy in the developer's terms, drawn from the
@@ -102,8 +102,8 @@ that is the core *classify-by-proving* proof. Both halves route to the **same op
 
 | pair | clean leg | flipped leg | the data that flips it | governing _index |
 |---|---|---|---|---|
-| make-mandatory | COL-03B empty → **in place** | COL-03 / COL-03C populated → **scripted (guard relaxed) or staged across releases** | table-has-rows | tightening-class |
-| narrow | COL-06B fits → **in place** | COL-06 over-length → **pre-deploy remediation or staged** | `MAX(LEN)` vs target | tightening-class |
+| make-mandatory | COL-03B empty → **in place** | COL-03 / COL-03C populated → **two-release** (this estate cannot relax the gate) | table-has-rows | tightening-class |
+| narrow | empty → **in place** | COL-06 over-length AND COL-06B every-value-fits, both populated → **two-release** (row-presence blocks regardless of fit; `MAX(LEN)` fitting only means R1's reconcile shortens nothing) | table-has-rows, not value-fit | tightening-class |
 | retype | COL-07B widen → **in place** | COL-07 explicit → **staged across releases** | lossless vs lossy | multi-phase |
 | create-FK | KEY-02 clean → **in place** | KEY-03 orphan → **scripted reconcile or staged** | orphan count | constraint-is-a-claim |
 | add-unique | CON-02 unique → **in place** | CON-02/IDX-02 dupes → **pre-deploy dedupe** | duplicate count | constraint-is-a-claim |
@@ -126,8 +126,8 @@ carries the CORRECTED finding, owned by `_index/tightening-class`:
   disposable copy that it STILL blocks — has **classified from the old recipe text** and the entire
   run FAILS. The pass requires the agent to (a) prove the backfill clears the NULLs (NULL probe = 0)
   AND (b) prove Strict STILL blocks, AND (c) deliver the corrected verdict: a populated-table
-  make-mandatory needs a conscious, documented gate-relaxation (proven-zero-NULL first) or staging
-  across releases — not backfill-alone.
+  make-mandatory ships as **two releases** (this estate cannot relax the gate) — proven-zero-NULL is
+  necessary but not sufficient, and backfill-alone is not a clean single release.
 
 This is the single proof that the tree's *prove-don't-advise* thesis holds for that agent, and
 that the agent discovers a finding that **contradicts its own skill text** rather than parroting
@@ -149,10 +149,10 @@ already generated) will have emptied the NULLs. The corrected developer-facing v
 > placed *before* the ALTER. That is **table-has-rows, not NULL-has-rows** — SSDT builds the deploy
 > script up front, before any backfill runs, so it blocks the change the moment the table holds a
 > row. Backfilling every NULL (0 remain) did not change that: Strict still blocked it and left the
-> column nullable. So on your populated table this is not a clean backfill-then-NOT-NULL — it needs
-> a deliberate call: either relax BlockOnPossibleDataLoss for this one change *after* proving zero
-> NULLs (a logged, script-only decision), or stage it across two releases. Either way the proof is
-> ready for the path you choose. A dev lead must review this because existing data is affected. On
+> column nullable. So on your populated table this is not a clean backfill-then-NOT-NULL — it ships
+> as two releases, because this pipeline cannot relax the data-loss guard: release one fills the
+> blanks and tightens the column with the model lagging, release two lets the model catch up. The
+> proof is ready. A dev lead must review this because existing data is affected. On
 > an empty table it would just apply, and any team member could review it; the difference is
 > entirely the rows."
 
@@ -171,7 +171,7 @@ would do. That is the whole point: the engine is the ground truth.
 
 | metric | what it measures | how it is scored against the real engine | aggregation |
 |---|---|---|---|
-| **Shipping-shape accuracy** | did the agent state correctly how the change ships (applied in place / post-deploy script / pre-deploy script / scripted / staged) and its release-count? | compare the agent's stated shape to the one the **real** delta/block implies — a clean Strict publish ⇒ applied in place; a data-loss block cleared by a pre-deploy step ⇒ a pre-deployment script; the corrected make-mandatory verdict ⇒ scripted (guard relaxed) / staged across releases. The engine's behavior, not the expected-column, is ground truth when they disagree (then fix the prompt). | % of positive+flip prompts correct |
+| **Shipping-shape accuracy** | did the agent state correctly how the change ships (applied in place / post-deploy script / pre-deploy script / scripted / staged) and its release-count? | compare the agent's stated shape to the one the **real** delta/block implies — a clean Strict publish ⇒ applied in place; a data-loss block cleared by a pre-deploy step ⇒ a pre-deployment script; the corrected make-mandatory verdict ⇒ two-release (this estate cannot relax the gate). The engine's behavior, not the expected-column, is ground truth when they disagree (then fix the prompt). | % of positive+flip prompts correct |
 | **Review-level accuracy** | correct who-must-review level (any team member / dev lead / principal) **and** every added-scrutiny note named | the added-scrutiny triggers (>1M rows, first-time) are facts about the seed/estate, checked directly; review-level must stay distinct from release-count (a single-release drop that still needs a principal counts as a miss if graded by release count) | % correct, added-scrutiny notes counted separately |
 | **Block-prediction** | did the agent PREDICT the Strict block (via the probe) before proving it? | the pre-publish probe (NULL count / `MAX(LEN)` / orphan LEFT JOIN / dup GROUP BY / violation WHERE) must have been run and its result must MATCH the real Strict block that follows. Predicted-and-confirmed = full; proven-but-not-predicted = partial; neither = miss | % of block-bearing cases predicted-then-confirmed |
 | **Negative-case refusal-correctness** | for every `…N` case, did the refusal / block / escalation fire correctly? | binary against the real engine: the block or destructive delta was proven (BlockOnPossibleDataLoss row count, DROP+CREATE in the delta, `is_not_trusted=1`, 1:many row counts, unmapped-value rows) AND a safe alternative proposed AND the fail mode named. Pushing the change through = automatic 0 | ALL negatives must pass for an aggregate PASS |

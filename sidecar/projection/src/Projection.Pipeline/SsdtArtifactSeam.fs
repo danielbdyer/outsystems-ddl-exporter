@@ -70,7 +70,7 @@ module SsdtArtifactSeam =
                             let segments = file.RelativePath.Split('/')
                             let basename = segments.[segments.Length - 1]
                             { file with
-                                RelativePath = System.String.Concat(folder, "/", basename) }) }
+                                RelativePath = System.String.Concat(folder, "/", basename) }) }  // LINT-ALLOW: bundle-relative path assembly at the artifact-naming boundary (the SsdtDdlEmitter Modules/ path-builder precedent); segments are the validated folder + basename
 
     /// The registered post-emit SSDT-artifact rewrites, in application order. The
     /// SINGLE source `apply` / `metadata` / `executedNames` all project from. A

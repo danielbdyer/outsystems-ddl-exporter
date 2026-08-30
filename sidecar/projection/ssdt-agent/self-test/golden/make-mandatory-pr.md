@@ -1,76 +1,89 @@
-# Customer: make Email required (two rows backfilled)
+# Customer — make Email required (two releases)
 
-## Summary
-dbo.Customer.Email is tightened from `NVARCHAR(256) NULL` to `NOT NULL`, so a customer row can no
-longer be saved without an email address. The business reason, in the requester's words: "no
-customer should be missing an email." Two existing rows hold NULL Email and are backfilled in the
-same release. No work item was provided with the request — attach one before merge so the record
-is traceable.
+## Verdict
+This change makes `dbo.Customer.Email` reject NULL, so a customer can no longer be saved without
+an email; it fills the 2 existing customers that have none. On a populated table this pipeline
+cannot relax the data-loss guard, so it ships as two releases. Confirm the fill value with the
+data owner, and land Release 1 in each environment before Release 2.
 
-## Review & release
-- A dev lead must review this: existing data is modified — two dbo.Customer rows are backfilled,
-  and an existing column is tightened to NOT NULL while the table holds rows.
-- Ships as a scripted change: the data-loss guard (BlockOnPossibleDataLoss) is relaxed for this
-  one publish, after the zero-NULL count is proven — a publish-time decision that cannot be
-  expressed as a table definition.
-- Added scrutiny: none.
+## Intent
+Make the Email attribute on Customer required — in the requester's words, "no customer should be
+missing an email." No work item was supplied with the request; attach one before merge so the
+record is traceable.
 
-## Changes
-| File | Change |
-|---|---|
-| Modules/Customer.sql | Tightens Email from `NVARCHAR(256) NULL` to `NOT NULL` in the table definition |
-| Script.PreDeployment.sql | Enables the idempotent backfill: rows where Email IS NULL are stamped `unknown+<Id>@example.invalid` before the schema change lands |
-| Data/Seed.sql | Customer rows 3 and 5 now seed the backfilled Email values; the seed previously declared NULL for both, which fails after the tightening (Msg 515) |
+## What changes
+- `dbo.Customer.Email`: `NVARCHAR(256) NULL` → `NVARCHAR(256) NOT NULL`.
+- Release 1 is a pre-deployment script that backfills the rows holding NULL and runs the
+  `ALTER … NOT NULL` while the table definition still declares `NULL`; the seed rows for the same
+  two customers carry the backfilled values in the same release.
+- Release 2 declares `Email NOT NULL` in the table definition. The database is already tightened,
+  so nothing is generated.
 
-No renames (the refactorlog is unchanged). No index changes; no view or procedure definitions
-change.
+No rename (the refactorlog is unchanged). No index, view, or procedure changes.
 
-## Data remediation
-Two of the five dbo.Customer rows violate the new rule: Customer 3 (Initech) and Customer 5
-(Stark Industries) hold NULL Email (counted on the disposable copy, 2026-07-16).
-- Decision: backfill each with a distinct placeholder, `unknown+<Id>@example.invalid`. This value
-  is an assumed answer taken from the project's pre-deployment worked example; no business owner
-  has confirmed it. The assumption is named under Not verified and must be settled before
-  promotion.
-- Rows affected: 2. Original values recorded for audit: Customer 3, Email NULL →
-  `unknown+3@example.invalid`; Customer 5, Email NULL → `unknown+5@example.invalid`.
-- The post-deployment seed declared NULL Email for the same two rows. Left as it was, the first
-  deploy after the tightening fails in the seed — Msg 515, "Cannot insert the value NULL into
-  column 'Email' … UPDATE fails." — observed on the disposable copy. The seed rows now carry the
-  backfilled values, so the remediation is durable at source and a redeploy captures zero rows.
+## Before promoting
+- A dev lead must review this: existing data is modified — two `dbo.Customer` rows are backfilled,
+  and an existing column is tightened while the table holds rows.
+- Confirm the backfill value with the customer-data owner before Release 1. `unknown+<Id>@example.invalid`
+  is an assumed placeholder, not a confirmed business answer (see Not checked).
+- Run the NULL-email query (below) in each environment. The count differs per environment; the
+  disposable copy held 2. Every NULL must be filled before Release 1 tightens the column there.
+- Land Release 1 in an environment — the column already rejects NULL there — before sending
+  Release 2 up to it. Do not re-publish Release 1 on its own, and hold other Dev publishes during
+  the window: while the table definition lags, an intervening publish carries the old shape and
+  reverts the tightening.
+- Added scrutiny: first time on this estate — the operations ledger holds no prior make-mandatory
+  (during the cutover, that is every operation).
 
-## Deployment evidence — disposable copy of Dev, 2026-07-16, sqlpackage 170.4.83.3
-- The generated deploy script guards the tightening on row presence, not on blank values.
-  Verbatim from the generated delta, placed above the ALTER:
+## The data
+Two of the five `dbo.Customer` rows violate the new rule: Customer 3 (Initech) and Customer 5
+(Stark Industries) hold NULL Email. Counted on a disposable copy of Dev, 2026-08-24: 5 rows,
+2 NULL.
+- Backfill: each row gets a distinct placeholder — Customer 3 → `unknown+3@example.invalid`,
+  Customer 5 → `unknown+5@example.invalid`. Original values recorded for audit: both were NULL.
+
+## How it ships
+Ships across two releases so the running application keeps working while the change is in flight.
+Release 1 is a pre-deployment script — backfill, then `ALTER COLUMN Email NVARCHAR(256) NOT NULL` —
+with the table definition still declaring `NULL`, plus the corrected seed. Release 2 is the table
+definition declaring `NOT NULL`. This pipeline (Azure DevOps → Octopus) always publishes with the
+data-loss guard on and cannot relax it for one deploy, so the tightening is done behind a lagging
+definition rather than as a single declarative change.
+
+## What proving showed
+Published to a disposable copy of Dev on this branch, 2026-08-24, sqlpackage 170.4.83.3.
+
+- **Tried** the naive single release — the definition tightened to `NOT NULL`, no pre-deploy —
+  against the populated copy (`pg_mm_naive`, 5 rows, 2 NULL). **Did:** the deployment refused it —
+  `Msg 50000, Level 16, State 127 — Rows were detected. The schema update is terminating because
+  data loss might occur.` The generated guard sits above the ALTER and reads row presence, not
+  values:
   ```sql
   IF EXISTS (select top 1 1 from [dbo].[Customer])
       RAISERROR (N'Rows were detected. The schema update is terminating because data loss might occur.', 16, 127) WITH NOWAIT
   ...
   ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (256) NOT NULL;
   ```
-  The script never inspects the Email column.
-- The publish under the strict profile is blocked while dbo.Customer holds rows (5 rows, 2 NULL
-  Emails):
-  `Error SQL72014: … Msg 50000, Level 16, State 127 — Rows were detected. The schema update is
-  terminating because data loss might occur.`
-- The backfill alone does not clear the block. With the pre-deployment backfill active, the NULL
-  count reached 0, the strict publish was blocked again with the same error, and the column stayed
-  nullable (is_nullable = 1). Zero blanks is necessary, not sufficient: the guard fires on row
-  presence.
-- A relaxed publish attempted before the seed fix failed in the post-deployment seed — Msg 515,
-  "Cannot insert the value NULL into column 'Email' … UPDATE fails." The schema change had already
-  landed when the seed failed: the publish is not atomic across the schema transaction and the
-  post-deployment script. The Data/Seed.sql change in this set removes that failure.
-- From the original state, one publish with `/p:BlockOnPossibleDataLoss=False` lands the complete
-  change set: the backfill stamps both rows, the ALTER lands, the seed captures nothing. End
-  state: is_nullable = 0, zero NULL Emails, 5 rows.
-- An INSERT with NULL Email now fails:
-  `Msg 515, Level 16, State 2 — Cannot insert the value NULL into column 'Email', table
-  '…dbo.Customer'; column does not allow nulls. INSERT fails.` The row count is unchanged (5).
-- A second publish of the same build issued no object changes, and the Customer content digest is
-  identical before and after (5 rows, digest 0xFFFFFFFF5E8E9706): the database is unchanged.
+  **Realized:** a same-release backfill cannot clear the block — the guard is computed once, up
+  front, from the pre-publish state — and the column was left nullable.
+- **Tried** Release 1 — the definition still `NULL`, the pre-deploy backfill and ALTER, the
+  corrected seed — on `pg_mm`. **Did:** the publish succeeded; end state `is_nullable = 0`, 5 rows,
+  0 NULL, Customer 3/5 = `unknown+3/5@example.invalid`, content digest
+  `CHECKSUM_AGG(BINARY_CHECKSUM(Id, Name, Email)) = 1818783869`. **Realized:** the tightening lands
+  because the deploy was planned from a state where the definition and the database agreed (`NULL`),
+  so the main script never touches Email — the pre-deploy does.
+- **Tried** Release 1 without the seed fix. **Did:** the post-deployment seed failed —
+  `Msg 515, Level 16, State 2 — Cannot insert the value NULL into column 'Email' … UPDATE fails.`
+  **Realized:** the seed must carry the backfilled values, or the first deploy after the tightening
+  collides with it. The corrected seed rows ship in Release 1.
+- **Tried** Release 2 — the definition `NOT NULL`, no pre-deploy — on the already-tightened `pg_mm`.
+  **Did:** the generated delta contained no ALTER on Email; the publish issued no object change;
+  the content digest was unchanged (`1818783869`). **Realized:** with the definition and the
+  database both `NOT NULL`, Release 2 is a clean no-op.
+- An INSERT with NULL Email now fails: `Msg 515 — Cannot insert the value NULL into column 'Email'`.
+  The row count is unchanged (5).
 
-## Verification — run in each environment after deployment
+## After deploy — check
 ```sql
 -- expect 0: no row holds a NULL in the tightened column
 SELECT COUNT(*) AS null_rows FROM dbo.Customer WHERE Email IS NULL;
@@ -80,24 +93,23 @@ SELECT is_nullable FROM sys.columns
 WHERE object_id = OBJECT_ID('dbo.Customer') AND name = 'Email';
 ```
 
-## Rollback
+## How to roll this back
 Re-widening the column is lossless:
 `ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(256) NULL;`
 The backfill is not auto-reversed: a full backout also restores Customer 3 and Customer 5 to NULL
-Email (originals recorded above) and reverts the seed rows, or the next deploy re-stamps the
+(originals recorded above) and reverts the seed rows, or the next deploy re-stamps the
 placeholders. Backing the change out was not exercised on the disposable copy.
 
-## Not verified
-- Application impact. Any code path that saves a Customer without an Email, or writes NULL to it,
-  now fails with error 515. Application-side validation is not confirmed here — the application
-  owner owns closing this before promotion.
+## Not checked / still open
 - The backfill value. `unknown+<Id>@example.invalid` is an assumed placeholder, not a confirmed
-  business answer. A data owner must accept the placeholder or supply real addresses; the
-  placeholder is visible anywhere Email is displayed or mailed.
-- Other environments. Test, UAT, and Prod may hold NULL Emails this copy cannot see; on deploy the
-  backfill stamps all of them with placeholders. Run the NULL probe in each environment before
-  promotion, and note the relaxed-gate publish applies there too — the guard fires on row presence
-  in every populated environment.
+  business answer. A data owner must accept it or supply real addresses; the placeholder is visible
+  anywhere Email is displayed or sent.
+- Application impact. Any code path that saves a Customer without an Email, or writes NULL to it,
+  now fails with error 515. Application-side validation is not confirmed here; the application owner
+  owns closing this before promotion.
+- Other environments. QA, UAT, and Prod may hold more NULL Emails than the 2 on the disposable
+  copy; the Release-1 backfill stamps whatever it finds. Run the NULL query and land Release 1 in
+  each before Release 2.
 - Production scale and timing. The ALTER COLUMN may block writes or run long at production row
   counts; the small copy cannot show that. Schedule a window.
-- Reversibility. The forward publish is proven; backing the change out is not exercised here.
+- Reversibility. The forward two-release is proven; backing the change out is not exercised here.

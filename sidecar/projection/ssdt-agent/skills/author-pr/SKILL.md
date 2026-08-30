@@ -1,198 +1,195 @@
 ---
 name: author-pr
-description: Use to turn a proven schema change into the pull request a reviewer approves by reading. THE terminal artifact of the tree — every operation skill feeds it. Produces the canonical Azure DevOps PR body (Summary · Review & release · Changes · Data remediation · Deployment evidence · Verification · Rollback · Not verified) in the record register of THE_RECORD.md. Evidence is summarized in the body; scripts ship inside the sqlproj; nothing is attached for the reviewer to run by hand. Use after prove-on-dacpac has confirmed the change and any remediation is durable at source.
+description: Use to turn a proven schema change into the pull request a reviewer approves by reading — THE terminal artifact of the tree, the hyper-clear PR template every op produces. Ten fixed sections (Verdict · Intent · What changes · Before promoting · How it ships · The data · What proving showed · After deploy — check · How to roll this back · Not checked), written in the plain record register of THE_RECORD_FORMS.md, following the S-state machine of THE_DECISION_TREE.md. Use after the change is proven on a copy.
 ---
 
-# Author the pull request
+# The pull request — the template
 
-> **The record, not the story.** The pull request is the one artifact a reviewer reads to decide.
-> It is written entirely in the **record register** (`../../THE_RECORD.md` §2): agentless findings,
-> proof beneath each, the next move named, and an honest account of what was not checked. No numbered
-> axes (`THE_RECORD.md` §5), no nicknames (§7), no teaching — the teaching happened in the
-> conversation with the developer and stays there. A Principal Engineer trained as a DBA approves
-> this by reading it, without a meeting and without running anything.
+> **This is the one thing a reviewer reads to decide.** It is the developer speaking to the
+> reviewer; the agent is invisible and never refers to itself. It is plain enough for a global team
+> — a reviewer in Pune or Porto — and exact enough for a DBA. Ten sections, fixed order, each only
+> as deep as the change needs. `THE_DECISION_TREE.md` is the procedure that fills it;
+> `THE_RECORD_FORMS.md` is the register every word obeys; `FINDINGS_AND_CHANGES.md` holds the
+> proofs the shipping shapes rest on.
 
-You compose the PR body from what `prove-on-dacpac` established. You do not re-prove; you report.
-Every claim in the body is one the disposable-copy run already demonstrated, carried here with its
-evidence.
+## The register, in one breath
 
-## What ships where (the reviewer runs nothing by hand)
+- The **developer** is the author. Never a sentence whose subject is the agent — no *I*, *we*, *the agent*.
+- **State the fact, not a pointer to it.** A count, an object, a real message — never "the precedent" or "this operation".
+- **Plain words.** Explain each SQL term once. No idioms. Lead with the conclusion, then explain.
+- **Direct the reviewer** with plain imperatives: `Confirm…` · `Schedule…` · `Check with…`.
+- **No trap-names, no taxonomy, no trivial negatives.** Report what the data does.
+- **The proof reads `tried / did / realized`** with the real messages from the run on this branch.
 
-- **The change ships in the sqlproj.** Edited `CREATE`s, the `.refactorlog`, `Script.PreDeployment.sql`,
-  `Script.PostDeployment.sql` — all in the project, all part of the diff. The reviewer reads them in
-  the PR; they are not attachments.
-- **Evidence is summarized in the body**, not attached. The verbatim error, the row counts, the
-  end-state probes go in **Deployment evidence** as text a reviewer reads. A `.json` artifact or a
-  raw `.sql` transcript is not attached for the reviewer to execute — the finding plus its proof is
-  the deliverable.
-- **Verification queries are inline** so the reviewer can spot-check and the deployer can re-run them
-  in each environment after promotion. They read; they do not depend on running.
+## The template — the ten sections
 
-## The canonical body
-
-Fill every section. A section with nothing to report says so in one line (`No data is remediated.`)
-— it is never dropped, because its absence is itself a finding a reviewer relies on.
+Fixed order. A section with nothing real collapses to one honest line; it is never padded and never
+silently dropped.
 
 ```
-# <table>: <plain summary of the change> (<one-clause consequence, if any>)
+# <object>: <plain change> (<one-clause consequence, if any>)
 
-## Summary
-<1–3 sentences: what changes, on which table/columns, and the business reason. Name the work item.>
+## Verdict
+<One line. What this does · the risk-driven call to action (Confirm <the thing> in each environment
+ before promoting) · the one open item, or nothing. The call to action IS the review ask — not a
+ role assignment ("a dev lead must review" says nothing; every PR is reviewed). Drawn from the risk
+ table in THE_RECORD_FORMS.md.>
 
-## Review & release
-- <Who must review, and why — one plain finding. THE_RECORD.md §5.>
-- <How it ships — one plain finding. THE_RECORD.md §5.>
-- <Added scrutiny, if any: large table / first-time — each its own line, or "None.">
+## Intent
+The developer's stated intent for this PBI: <paraphrase>, with a direct quote for the one crucial
+constraint: "<the developer's words>". <Name the work item, or: No work item supplied — attach one before merge.>
 
-## Changes
-| File | Change |
-|---|---|
-| <path> | <what changed, plainly> |
-<Then one line naming what is NOT touched where a reviewer would wonder: refactorlog unchanged;
- no index or procedure changes.>
+## What changes
+- `<object>`: `<from>` → `<to>`. <One line per real change. No rationale here — that is Intent.>
 
-## Data remediation
-<If existing data is changed to let the constraint land: state the violating rows by name and count,
- the decision taken and who approved it, and the original values for audit. If none: "No data is
- remediated." >
+## Before promoting
+- <The risk-driven confirmations, one per environment, written as imperatives: what to run, what to
+  check, who to ask, before this change moves up a level. This is "who reviews" made concrete, and it
+  follows the change through Dev → QA → UAT → Prod. For each open item, say who runs it — the author
+  before merge, or the reviewer read-only in QA and UAT — so every item has an owner.>
 
-## Deployment evidence — <disposable copy, e.g. Dev>, <date>, sqlpackage <version>
-<What the publish did, as findings with proof beneath:
- - the blocked publish (before remediation), verbatim error + count, if applicable
- - the clean publish (after remediation), and the proven end state (is_not_trusted = 0, counts)
- - what the generated deploy script contained (the shape: ADD CONSTRAINT / sp_rename / no rebuild)
- - the second, no-op publish if idempotency matters>
+## The data
+- <The counts and the bad rows that decide the risk, named. Headline: detail. "No existing data is touched." if additive.>
 
-## Verification — run in each environment after deployment
+## How it ships
+- <The SHIP terminal from THE_DECISION_TREE.md S5, stated plainly. ONE RELEASE → say nothing beyond
+  the change. TWO RELEASES (a data-loss change on this locked-gate pipeline) → name R1 (a pre-deploy
+  physical change with the model unchanged) and R2 (the model catches up), and that the gate is not
+  relaxed because it cannot be. This estate cannot relax the gate; a two-release is the shape, never a
+  relaxation. A declarative FK/constraint add re-validates and trusts itself (WITH NOCHECK ADD
+  + WITH CHECK CHECK in one publish); dirty child data blocks it (Msg 547) until reconciled — never
+  invent a manual trust step (FINDINGS F9).>
+
+## What proving showed
+<Published to a throwaway copy on this branch. Never a prior run.>
+- **Tried:** <the publish, and the exact Msg on a block>.
+- **Did:** <the next real step, and what happened>.
+- **Realized:** <the one thing the data taught>.
+- <build/end-state facts: the composed model, is_not_trusted = 0, row counts. If no publish ran this
+  session, say so plainly here and put the unproven claims under Not checked — never dress precedent as this change's proof.>
+
+## After deploy — check
 ```sql
--- <what it proves, and the expected result>
-<query>
+-- <what it proves>, expect <result>
+<query, runnable in each environment>
 ```
 
-## Rollback
-<How the change is backed out and whether that is lossless; what is NOT auto-reversible, with the
- recorded originals that a manual restore would use.>
+## How to roll this back
+<The reverse step, and whether the backout itself loses data. What is NOT auto-reversed, and where the
+ recorded originals live for a manual restore. "Backing the change out was not exercised." if so.>
 
-## Not verified
-<Mandatory. The standing limits of a disposable-copy publish, specific to this change:
- - application impact — the exact new failure the running app will hit, and who owns confirming it
- - other environments — anything about Test/UAT/Prod data this copy cannot know
- - production scale / timing — blocking or duration the small copy cannot show
- - reversibility — if the forward publish is all that was proven>
+## Not checked / still open
+- <The honest limits of a copy: application impact (the exact new failure and its owner) · other
+  environments · production scale/timing · reversibility · anything the copy could not run this
+  session · any open fork awaiting a human decision. Never empty, never generic.>
 ```
 
-## Section rules
+## Section rules that carry the most weight
 
-- **Title.** `<table>: <change>` in plain words, with a parenthetical consequence only when there is
-  one (`(one orphan row remediated)`). No axis, no nickname.
-- **Summary.** The business reason belongs here — *why*, in one clause — because a reviewer approves
-  intent, not just mechanics. Name the work item so the record is traceable.
-- **Review & release.** Exactly the two findings of `THE_RECORD.md` §5, plus any added-scrutiny line.
-  Never a number, never a grid.
-- **Changes.** A file table, then the honest negative — what a reviewer might fear changed and did
-  not. The negative is load-bearing: `refactorlog unchanged` tells a reviewer no rename is hiding.
-- **Data remediation.** This is where a change earns or loses trust. Name the rows. State the
-  decision and its human owner. Record the original values — a reviewer must be able to see what was
-  changed and reconstruct it. "Nobody uses it" and "the data's clean" are claims; state the proof or
-  state that it is unproven.
-- **Deployment evidence.** Findings with proof beneath (`THE_RECORD.md` §2 rule 2). The blocked
-  publish is *evidence the guard works*, not a failure to hide — show it, then show the clean re-run.
-  Name what the generated script did so the reviewer need not imagine it. Stamp the sqlpackage
-  version — the guard behaviour is empirical and version-bound.
-- **Verification.** Queries that return an unambiguous expected result (`-- expect 0 rows`), runnable
-  in any environment. These outlive the PR; they are how the deployer confirms each promotion.
-- **Rollback.** State plainly whether it is lossless. A remediation `UPDATE` is not auto-reversed —
-  say so, and point at the recorded originals. Do not claim reversibility the run did not prove
-  (`THE_RECORD.md` §2 rule 7).
-- **Not verified.** Required, every time. This is the sidekick admitting the edges: a disposable copy
-  proves the schema transition against the data's *shape*, and is silent on the application, other
-  environments, production scale, and backing the change out. Name the specific unverified thing for
-  *this* change and who owns closing it — never a generic disclaimer, never omitted.
+- **Verdict.** The whole PR in one line. It names the risk and the one thing to confirm — not a
+  reviewer's rank. If more than about five facts change the reviewer's mind, the change is too big
+  for one PR (`THE_DECISION_TREE.md` S5): split it.
+- **How it ships.** This is where the deployment reality lives. A narrow, a drop, or a populated
+  `NOT NULL` on this pipeline is **two releases** — R1 changes the database physically while the
+  model lags; R2 the model catches up. Never claim one declarative release, and never claim a gate
+  relaxation this pipeline cannot perform (`FINDINGS_AND_CHANGES.md` F2).
+- **What proving showed.** The heart. It shows the reviewer the change was published to a copy and
+  what the database actually did, as a plain sequence with the real messages. A claim that was not
+  proven this session goes under **Not checked**, not here.
+- **Not checked.** Required, every time. A copy proves the schema transition against the data's
+  shape; it is silent on the running app, other environments, production scale, and the backout.
+  Name the specific unverified thing for *this* change and who owns it.
 
-## Worked example — the go-live Order hardening
+## Worked example — a foreign key with an orphan (proven live, 2026-08-21)
 
-The change: add `FK_Order_Customer_CustomerId` (`Order.CustomerId` → `Customer.Id`) and `CK_Order_Total`
-(`Total > 0`) to `dbo.[Order]`. One seeded row (`Order 4`, `CustomerId 999`) has no parent; all
-totals are already positive.
+Real messages from a publish to SQL Server 2022 on this branch. `Order 4` points to `CustomerId 999`,
+which does not exist.
 
 ```
-# Order: add FK_Order_Customer_CustomerId and CK_Order_Total (one orphan row remediated)
+# Order → Customer: add a foreign key (one orphan order removed so the add does not block)
 
-## Summary
-Two constraints are added to dbo.[Order] ahead of go-live (AB#1234). FK_Order_Customer_CustomerId makes
-Order.CustomerId a real reference to Customer, so an order can no longer point at a customer that
-does not exist. CK_Order_Total enforces Total > 0, so zero- and negative-value orders are rejected.
+## Verdict
+This PR adds a rule that every Order must point to a real Customer, and removes 1 order that points
+to a customer who does not exist. Confirm that order is junk, not a real order, in each environment
+before promoting. Removing it cannot be undone from the schema — the only rollback is a restore.
 
-## Review & release
-- A dev lead must review this: existing data is modified (one row) and a cross-table relationship is added.
-- Ships as one release: a pre-deployment remediation, then both constraints land validated and trusted.
-- Added scrutiny: none. dbo.[Order] is well under the large-table threshold and this operation is routine on this estate.
+## Intent
+The developer's stated intent for this PBI: make the database reject any Order that does not belong
+to a real Customer, so a missing or wrong customer id becomes impossible. No work item supplied —
+attach one before merge.
 
-## Changes
-| File | Change |
-|---|---|
-| Modules/Order.sql | Adds FK_Order_Customer_CustomerId and CK_Order_Total to the table definition |
-| Script.PreDeployment.sql | Reassigns one orphan Order row before the foreign key validates |
-No renames (refactorlog unchanged). No index or procedure changes.
+## What changes
+- `dbo.[Order].CustomerId`: add a foreign key to `dbo.Customer(Id)`, named `FK_Order_Customer_CustomerId`.
 
-## Data remediation
-One row violates the foreign key: Order 4 holds CustomerId 999, and no such customer exists.
-- Decision: reassign to CustomerId 1 (approved by J. Whoever, AB#1234). Deletion was rejected — it
-  would also remove OrderLines 7 and 8.
-- Rows affected: 1. Original value recorded for audit: Order 4, CustomerId 999 → 1.
-- The check constraint has 0 violating rows: all four Totals are positive (verified 2026-07-16).
+## Before promoting
+- Run the orphan query (below) and confirm every order it lists is junk that can be removed — the set
+  differs per environment. If one is real, stop and reassign it to the right customer instead.
+- The key is made trusted, so SQL Server validates every existing row and the query planner can rely on it.
 
-## Deployment evidence — disposable copy of Dev, 2026-07-16, sqlpackage 170.4.83
-- Without the remediation, the deployment is blocked: Msg 547 — conflicted with FOREIGN KEY
-  constraint "FK_Order_Customer_CustomerId" (dbo.Customer, column Id). This confirms the constraint validates.
-- With the remediation, the deployment succeeds. Both constraints end trusted (is_not_trusted = 0).
-- The generated deploy script adds each constraint WITH NOCHECK, then re-validates WITH CHECK CHECK —
-  two ADD CONSTRAINT statements and the one remediation UPDATE. No table rebuild, no drops.
-- A second publish of the same build issued no changes.
+## The data
+- 4 orders. 1 is an orphan: `Order 4 → CustomerId 999`, and no Customer 999 exists. It has 2 order lines.
+- Orders 1–3 point to real customers.
 
-## Verification — run in each environment after deployment
+## How it ships
+- A pre-deploy step removes orders with no matching customer (their order lines first, then the
+  orders). Idempotent — re-running removes nothing more.
+- The seed no longer plants the orphan, so a fresh database is clean from the start.
+- The row removal is a plain pre-deploy `DELETE`, which `BlockOnPossibleDataLoss` does not govern, so
+  no gate change is needed.
+- The orphan must be reconciled before the key is added — otherwise the publish is refused
+  (`Msg 547`). Reconciled, the key validates and trusts itself (`is_not_trusted = 0`); nothing to add.
+
+## What proving showed
+Published to a throwaway copy on this branch.
+- **Tried:** publish the key, orphan still present → refused. `Msg 547`: the ALTER conflicted with
+  `FK_Order_Customer_CustomerId` on `dbo.Customer.Id`. The orphan has no parent.
+- **Did:** remove the orphan and its lines in a pre-deploy step; fix the seed; publish → succeeds,
+  0 orphans remain.
+- **Realized:** the generated script adds the key `WITH NOCHECK` and then re-validates it
+  `WITH CHECK CHECK` in the same publish; with the orphan gone the key lands trusted
+  (`is_not_trusted = 0`) on its own.
+- **Confirmed:** the full change set on a fresh copy → key trusted automatically, 3 orders remain;
+  re-publish → nothing changes, still trusted. A manual post-deploy `WITH CHECK CHECK` added on top
+  changed nothing — it is redundant.
+
+## After deploy — check
 ```sql
--- expect 0 rows: every order points at a real customer
+-- every order points at a real customer, expect 0 rows
 SELECT o.Id, o.CustomerId FROM dbo.[Order] o
-LEFT JOIN dbo.Customer c ON c.Id = o.CustomerId WHERE c.Id IS NULL;
+WHERE NOT EXISTS (SELECT 1 FROM dbo.Customer c WHERE c.Id = o.CustomerId);
 
--- expect both rows, is_not_trusted = 0
-SELECT name, is_not_trusted FROM sys.foreign_keys     WHERE name = 'FK_Order_Customer_CustomerId'
-UNION ALL
-SELECT name, is_not_trusted FROM sys.check_constraints WHERE name = 'CK_Order_Total';
+-- the key is trusted, expect 0
+SELECT is_not_trusted FROM sys.foreign_keys WHERE name = 'FK_Order_Customer_CustomerId';
 ```
 
-## Rollback
-Both constraints drop without data loss:
-ALTER TABLE dbo.[Order] DROP CONSTRAINT FK_Order_Customer_CustomerId;
-ALTER TABLE dbo.[Order] DROP CONSTRAINT CK_Order_Total;
-The remediation UPDATE is not auto-reversed; the original value (Order 4 → 999) is recorded above.
+## How to roll this back
+Drop the key: `ALTER TABLE dbo.[Order] DROP CONSTRAINT FK_Order_Customer_CustomerId;` — dropping loses
+no data. The removed orders are not restored by dropping the key; they are in the pre-deploy step's
+output for the run that removed them. Backing the change out was not exercised.
 
-## Not verified
-- Application impact. Any code path that inserts an Order before its Customer exists, or writes
-  Total <= 0, will now fail with error 547. Application-side validation is not confirmed — @app-owner.
-- Other environments. The origin of CustomerId 999 is unknown; if it was a placeholder convention,
-  Test and UAT may hold more orphans. Run the verification query before promotion.
+## Not checked / still open
+- The orphan's fate is the developer's call. This PR removes it as junk. If it is a real order,
+  reassign it instead — a separate reconcile.
+- The pre-deploy step also removes the orphan's order lines. If order lines feed a report or export,
+  confirm that is safe.
+- No load test: on a large table, validating the key and deleting rows can run long — schedule a window.
 ```
 
-## Composing from the operation skills
+## Where each op fills in
 
-Each operation skill states, in its own `## On the record` fragment, what it contributes to these
-sections: its **Review & release** findings, its **Verification** query, its **Rollback** statement,
-and its standing **Not verified** items. Assemble the body from those fragments; the operation skill
-owns the specifics, this skill owns the shape and the register.
-
-A complete **captured** example from a live run — every count, error, and digest in it observed on a
-disposable copy — is `../../self-test/golden/make-mandatory-pr.md`, with its developer conversation
-alongside. That pair is the standard to imitate.
+Every operation skill states, in the plain register, what it contributes to this template for its
+change: the **Verdict**'s risk class, its **How it ships** shape (its SHIP terminal), the exact
+**tried / did / realized** its proof produces, its **After deploy** query, its **Rollback**, and its
+standing **Not checked** items. Assemble the PR from those; the op owns the specifics, this skill owns
+the shape and the register.
 
 ## Hard rules
 
-- **The register is `../../THE_RECORD.md` §2.** Agentless, findings-first, proof beneath, next move
-  named, limits admitted. Run the §7 banned list before the body lands.
-- **Nothing is attached for the reviewer to run.** Scripts ship in the sqlproj; evidence is
-  summarized as text; queries are inline for reading and later re-running.
-- **Do not re-prove in the PR.** The body reports what `prove-on-dacpac` established. If a claim was
-  not proven, it goes under **Not verified**, not under **Deployment evidence**.
-- **Everything authored stays under `ssdt-agent/`.** The PR body is composed, not written into the
-  repo tree, except where a real change set lives in the proving ground or a real project.
+- **The register is `THE_RECORD_FORMS.md`.** The developer is the author, the agent invisible; every
+  sentence denotes a referent; plain global English; no trap-names.
+- **Nothing is attached for the reviewer to run.** The change ships in the sqlproj (edited `CREATE`s,
+  the refactorlog, the pre/post-deploy scripts); evidence is summarized as text; queries are inline.
+- **Do not re-prove in the PR — report what the branch's publish established.** A claim that was not
+  proven goes under **Not checked**, never dressed as this change's evidence.
+- **The shipping shape is decided by the state machine, not chosen.** A data-loss change on this
+  locked-gate pipeline is two releases (`THE_DECISION_TREE.md` S5).

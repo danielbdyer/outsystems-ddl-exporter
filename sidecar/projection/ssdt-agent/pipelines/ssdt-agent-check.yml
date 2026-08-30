@@ -1,0 +1,34 @@
+# ssdt-agent check — the Azure DevOps pipeline for a vendored tree (the estate repository).
+#
+# The source monorepo's GitHub Actions gates do not run on Azure DevOps; this pipeline carries
+# the one check a vendored estate needs: the generated Copilot bundle (.github/ + .azuredevops/
+# + the skill dispatch pointers + skills/INDEX.md) stays in sync with the canonical tree it was
+# generated from. The generator ships inside the tree (ssdt-agent/scripts/) and detects the
+# vendored layout, so `copilot-check` verifies both the staged bundle and the repo-root copies.
+#
+# Register it once: Pipelines → New pipeline → Azure Repos Git → Existing Azure Pipelines YAML
+# file → /ssdt-agent/pipelines/ssdt-agent-check.yml. For pull-request validation on Azure Repos,
+# add this pipeline to the default branch's build-validation policy (the YAML `pr:` trigger
+# applies only to GitHub/Bitbucket-hosted repos); the `trigger:` below covers CI on push.
+#
+# Requires Node ≥ 18 on the agent. Microsoft-hosted ubuntu images carry it; on a self-hosted
+# Windows agent, install Node or add a NodeTool step before the check.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - ssdt-agent/**
+      - .github/**
+      - .azuredevops/**
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+
+  - script: node --version && node ssdt-agent/scripts/ssdt-agent-package.mjs copilot-check
+    displayName: ssdt-agent bundle in sync with the vendored tree

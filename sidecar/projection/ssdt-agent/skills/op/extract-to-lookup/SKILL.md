@@ -5,12 +5,20 @@ description: Use when the developer says "turn this text Status column into a pr
 
 # Extract free-text column to a lookup entity (Forgotten-FK-Check / lost-unmapped-values trap)
 
-> **Default (provisional — the data decides; prove before you classify).** Ships across releases
+> **Default (provisional — prove before you classify).** Ships across releases
 > (multiple pull requests): create the lookup, seed it with the distinct existing values, add the FK
 > column, backfill, then drop the old free-text column — the old and new representations coexist
 > while readers migrate. A dev lead must review this: existing data is moved into a new shape and a
 > cross-table relationship is added. Prove the mapping is total before the drop, so no value silently
 > becomes NULL.
+
+> **SHIP terminal: ACROSS RELEASES (multi-PR).** Create the lookup → seed it → add the FK column →
+> backfill → drop the old free-text column; the old and new shapes coexist while readers migrate. The
+> drop is `BlockOnPossibleDataLoss`-gated and licensed only by the total-mapping proof (zero unmapped
+> values). `../../_index/multi-phase/SKILL.md`.
+>
+> **Proven precedent:** `../../../sample-prs/extract-to-lookup.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "turn this text Status column into a proper Status entity", "these string values should be a lookup so we stop typos".
@@ -45,8 +53,9 @@ Prove the mapping is **total** BEFORE dropping the old column:
 existing values into a new shape behind a new foreign key, so it can't be done in one publish — it
 stages across a few releases (several PRs), with the old text column and the new lookup living side
 by side until every reader has moved to the FK. On a disposable copy of Dev, before the old column is
-dropped, I proved every existing value maps to a seeded lookup row — zero unmapped — so nothing
-silently becomes NULL. Because this moves existing data and adds a relationship, a dev lead should
+dropped, every existing value proved to map to a seeded lookup row — zero unmapped (`pg_base`) — so
+nothing silently becomes NULL; an injected 'Backordered' value fired the non-total negative (`pg_move`).
+Because this moves existing data and adds a relationship, a dev lead should
 review it. If the current values aren't clean, some may have no home in the lookup yet — do you know
 whether every StatusText value is one of the expected set, or should we plan a reconcile pass for the
 stragglers before the backfill?"
@@ -59,7 +68,9 @@ is dropped. The failure this avoids is the one-publish version that silently tur
 into NULL. The full why — why the staging is required — is `../../_index/multi-phase/SKILL.md`.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/extract-to-lookup.md`. SHIP terminal: **ACROSS RELEASES
+(multi-PR).** The fragment this operation contributes:
 
 **Review & release**
 - A dev lead must review this: existing data is moved into a new shape and a cross-table relationship
@@ -94,7 +105,7 @@ reconcile's recorded originals, not from the join.
   than through the new FK, breaks once the column is dropped; that every reader and writer has moved
   to the FK is not confirmed here — the app owner confirms it.
 - Other environments: the distinct source values were enumerated on a disposable copy of Dev only;
-  Test, UAT, and Prod may hold values that were never seeded into the lookup — run the total-mapping
+  QA, UAT, and Prod may hold values that were never seeded into the lookup — run the total-mapping
   query before promotion in each environment.
 - Production scale / timing: the seed, backfill, and drop are exercised at seed scale only; blocking
   and duration at >1M rows are not shown by the small copy.

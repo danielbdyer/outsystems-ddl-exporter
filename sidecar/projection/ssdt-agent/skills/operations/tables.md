@@ -14,14 +14,18 @@ disposable copy of Dev (`../prove-on-dacpac/SKILL.md`).
 
 ## The ops (table of contents)
 
-| Op | Per-op skill | What it is / how it flips |
+Every line names the op's **SHIP terminal** — the deployment shape the S5 sub-machine decides
+(`../../THE_DECISION_TREE.md`), proven live on this branch and written up in the op's worked PR
+(`../../sample-prs/<op>.md`, an instance of the ten-section template `../author-pr/SKILL.md`).
+
+| Op | Per-op skill | SHIP terminal · what it is / how it flips |
 |---|---|---|
-| create-entity | `../op/create-entity/SKILL.md` | New table. Additive — ships in place as a single schema change, any team member can review it; the only risk is a dependency (a missing FK parent, caught at build time), not a data flip. |
-| rename-entity | `../op/rename-entity/SKILL.md` | Rename an existing table. A refactorlog entry makes it a metadata `sp_rename` (ships in place, data preserved), reviewed by a dev lead or experienced developer because every caller of the old name must change; a rename with no refactorlog entry becomes DROP + CREATE and every row is lost. |
-| delete-entity | `../op/delete-entity/SKILL.md` | Drop a table. Ships as a scripted change in one release, but a principal must review it — the data is removed and cannot be undone; the block on a populated table is the safety proof. |
-| move-schema | `../op/move-schema/SKILL.md` | Schema change — the same refactorlog trap as a rename. With the refactorlog (or a scripted `ALTER SCHEMA TRANSFER`) the data, `object_id`, and counts are preserved; without it, DROP + CREATE and the rows are lost. A dev lead or experienced developer reviews it — every `schema.Table` reference must follow the move. |
-| archive-entity | `../op/archive-entity/SKILL.md` | Data move, not a shape change. Ships across releases (multi-phase) — the archive table is added, then a batched migrate, then the counts are reconciled; a dev lead reviews the relocation of existing data (a principal at large volume). The conservation-count proof settles it. |
-| junction | `../op/junction/SKILL.md` | M:N bridge — a composite PK over two FKs. Ships in place as a single schema change; a dev lead reviews the two cross-table relationships added. The shape *is* the guarantee (no orphans via the two FKs, no duplicate pairs via the composite PK). |
+| create-entity | `../op/create-entity/SKILL.md` | **ONE RELEASE, in place.** New table, additive — `CREATE TABLE` emitted verbatim, no existing data touched; the new table's foreign key lands trusted. The only risk is a dependency (a missing FK parent or a file the glob misses), caught at build time, not a data flip. |
+| rename-entity | `../op/rename-entity/SKILL.md` | **ONE RELEASE, in place — only with the refactorlog.** A refactorlog entry makes the delta a metadata `EXEC sp_rename … 'OBJECT'` (every row and the object_id preserved); without it the delta is `DROP TABLE` + `CREATE TABLE` and the rows are lost. Every caller of the old name must change. |
+| delete-entity | `../op/delete-entity/SKILL.md` | **ONE RELEASE plus a human fork.** An explicit, idempotent scripted `DROP TABLE` with the `.sql` removed in the same release, under the production posture so DacFx neither generates the drop (the gate blocks it on a populated table — `Msg 50000`) nor re-creates the table. The narrow's two-release pattern does not transfer. The fork: is the data truly safe to lose? |
+| move-schema | `../op/move-schema/SKILL.md` | **ONE RELEASE, in place.** `ALTER SCHEMA TRANSFER` (or a refactorlog entry) preserves the data, `object_id`, and counts — the same identity discipline as a rename. Without the identity mapping a header edit does DROP + CREATE and the rows are lost. Every `schema.Table` reference must follow the move. |
+| archive-entity | `../op/archive-entity/SKILL.md` | **MULTI-PHASE across releases.** A data move, not a shape change: the archive table is added (additive, one release), then a batched `DELETE … OUTPUT DELETED.* INTO archive` moves the rows (raw DML the gate does not govern), then the counts are reconciled. The conservation-count proof settles it. |
+| junction | `../op/junction/SKILL.md` | **ONE RELEASE, in place.** M:N bridge — one `CREATE TABLE` whose composite PK spans two FK columns; no existing data touched. The shape *is* the guarantee (no orphan pair via the two FKs — `Msg 547`; no duplicate pair via the composite PK — `Msg 2627`). Seed pairs with a missing parent block the publish and route to `../op/create-fk-orphan/SKILL.md`. |
 
 ## Shared concerns for this family (the `_index` layer)
 

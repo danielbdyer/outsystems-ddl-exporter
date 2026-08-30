@@ -5,14 +5,27 @@ description: Use when the developer says "merge CustomerAddress back into Custom
 
 # Merge two entities into one (collision / silent-1:many-drop trap) — recipe AUTHORED HERE
 
-> **AUTHORED-HERE NOTICE.** Handbook file 14 lists §17.7 "merge-entities" in its index but the template body is empty. The multi-phase recipe below is authored here to fill the gap and is the working contract; fold it back into the handbook when file 14 is completed.
+> **CANONICAL-HOME NOTICE.** The curriculum's §17.7 Table-Merge pattern lives in the **source
+> repository's** playbook (`ssdt-playbook/Operations/Multi-Phase-Patterns/Table-Merge.md` there —
+> the playbook is not vendored with this tree; the numbered handbook file 14 never carried a §17.7
+> body). The recipe below is this tree's working contract for the op and is complete on its own —
+> keep it and the playbook pattern reconciled in the source repository; when they disagree, the
+> proven recipe here wins and the playbook is corrected.
 
-> **Default (provisional — the data decides; prove before you classify).** Ships across three
+> **Default (provisional — prove before you classify).** Ships across three
 > releases (three pull requests): add the absorbing columns to the survivor and copy the data, cut
 > the application over, then drop the absorbed table — the two tables coexist while readers migrate.
 > A dev lead must review this: existing data is moved into the survivor and the absorbed table is
 > dropped. Prove cardinality (1:1) before copying anything, so a one-to-many absorbed side cannot
 > silently drop rows.
+
+> **SHIP terminal: ACROSS THREE RELEASES (empty absorbed ⇒ ONE).** Add the absorbing columns + copy →
+> repoint reads/FKs/views → drop the absorbed table, which `BlockOnPossibleDataLoss` blocks until the
+> copy is proven. Prove cardinality 1:1 first (a row-count check, before the value-hash) — a 1:many
+> absorbed side silently drops rows and the hash will not catch it. `../../_index/multi-phase/SKILL.md`.
+>
+> **Proven precedent:** `../../../sample-prs/merge-tables.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "merge CustomerAddress back into Customer", "we don't need two entities, combine them", "fold the lookup into its parent".
@@ -55,15 +68,22 @@ The inverse of a split. ADD the absorbing columns to the surviving table's CREAT
   `BlockOnPossibleDataLoss` until the Phase-1 hashes prove every value is now in the survivor.
 
 ## Prove it
-Phase 1 — the **row-count cardinality check** (absorbed rows == distinct parent keys) BEFORE anything else; then hash the absorbed columns vs. the new survivor columns and prove equal. Phase 3 — Strict blocks the `DROP TABLE` until the hashes match. See `prove-on-dacpac` / `talk-to-local-sql`. On the sample, merge `CustomerAddress` (seeded 1:1) into `Customer` (STR-02); a scratch seed adding a 2nd CustomerAddress row for one Customer fires the 1:many refusal (STR-02N).
+Phase 1 — the **row-count cardinality check** (absorbed rows == distinct parent keys) BEFORE anything
+else; then hash the absorbed columns vs. the new survivor columns and prove equal — **alias both
+projections to the same names** (`FOR XML RAW` encodes column names, so a perfect copy hashes unequal
+otherwise). Phase 3 — Strict blocks the `DROP TABLE` on row-presence; the hash licenses the reviewer's
+decision to drop, not the gate. See `prove-on-dacpac` / `talk-to-local-sql`. On the sample, merge
+`CustomerAddress` (seeded 1:1) into `Customer` (STR-02; proven `pg_merge`: cardinality 5 == 5,
+hash-equal when aliased); a scratch 2nd CustomerAddress row for one Customer fires the 1:many refusal
+(absorbed 6 != parents 5, STR-02N).
 
 ## The verdict (to the developer)
-You asked to merge CustomerAddress into Customer. On a disposable copy of your data I proved it's
-1:1 — the row counts match — so the copy carries every row and loses nothing. If it had been
-one-to-many, a straight copy would have kept one row per customer and silently dropped the rest;
-that's why the count comes first, before anything is copied. The data copy publishes cleanly, and
-SSDT refuses the final drop of the old table until the copy is proven complete. It ships as three
-PRs: add the columns and copy, cut the app over, then drop the old table.
+You asked to merge CustomerAddress into Customer. On a disposable copy of your data the row counts
+matched — 1:1 — so the copy carries every row and loses nothing. If it had been one-to-many, a straight
+copy would have kept one row per customer and silently dropped the rest; that's why the count comes
+first, before anything is copied. The data copy publishes cleanly, and the final drop of the old table
+stays blocked while it holds rows — the copy-proof is what tells the reviewer every value already
+arrived. It ships as three PRs: add the columns and copy, cut the app over, then drop the old table.
 
 ## The reasoning (in conversation)
 A row-count proof and a value-hash are two different proofs, and the count has to come first.
@@ -74,7 +94,9 @@ rows that survived the copy. The full why — why the two tables coexist through
 `../../_index/multi-phase/SKILL.md`.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/merge-tables.md`. SHIP terminal: **ACROSS THREE RELEASES**
+(an empty absorbed table collapses to ONE). The fragment this operation contributes:
 
 **Review & release**
 - A dev lead must review this: existing data is moved into the survivor's new columns and the
@@ -96,13 +118,14 @@ SELECT
   (SELECT COUNT(DISTINCT <parentkey>) FROM <absorbed>) AS distinct_parents;
 
 -- expect equal hashes: the absorbed columns now hold the same content on the survivor
--- (run after the copy, before the Phase-3 drop — the gate Strict enforces on DROP TABLE)
+-- (run after the copy, before the Phase-3 drop). ALIAS both projections to the SAME names
+-- (k, a, b ...) — FOR XML RAW encodes column names, so different names hash unequal over identical data.
 SELECT
   CONVERT(CHAR(64), HASHBYTES('SHA2_256',
-    CAST((SELECT <parentkey>, <absorbed columns> FROM <absorbed>
+    CAST((SELECT <parentkey> AS k, <absorbed columns aliased a, b, ...> FROM <absorbed>
           ORDER BY <parentkey> FOR XML RAW) AS VARBINARY(MAX))), 2) AS absorbed_hash,
   CONVERT(CHAR(64), HASHBYTES('SHA2_256',
-    CAST((SELECT <parentkey>, <the same columns, now on the survivor> FROM <survivor>
+    CAST((SELECT <parentkey> AS k, <the same columns, now on the survivor, aliased a, b, ...> FROM <survivor>
           WHERE <absorbing_col> IS NOT NULL ORDER BY <parentkey> FOR XML RAW)
          AS VARBINARY(MAX))), 2) AS survivor_hash;
 ```
@@ -119,7 +142,7 @@ durable.
 - Application impact: the running application must dual-write into the new columns during Phase 1 and
   read the survivor after cutover; that every reader and writer has been repointed off the absorbed
   table is not confirmed here — the app owner confirms it.
-- Other environments: cardinality (1:1) is proven on a disposable copy of Dev only; Test, UAT, and
+- Other environments: cardinality (1:1) is proven on a disposable copy of Dev only; QA, UAT, and
   Prod may hold a 1:many parent this copy does not — run the cardinality query before the copy in
   each environment.
 - External consumers: an outside reference may still read the absorbed table by name; the known ones

@@ -5,10 +5,19 @@ description: Use when the developer says "give this attribute a default value", 
 
 # Add a default
 
-> **Default (provisional — the data decides).** Any team member can review this: the change is
+> **Default (provisional — prove before you classify).** Any team member can review this: the change is
 > additive and the running application is unaffected. Ships as a single schema change, applied in
 > place — adding a default never touches existing row values. Prove it on a disposable copy before
 > classifying.
+
+> **SHIP terminal: ONE RELEASE, in place.** Adding a default touches no existing row — proven this
+> branch (F10): after adding a default, an existing `NULL` stayed `NULL` and an existing value was
+> unchanged; only a fresh insert that omitted the column received the default. On a new `NOT NULL`
+> column the default instead stamps every existing row as the column lands (the add-mandatory remedy) —
+> the two shapes wear one word, and the record names which shipped. `FINDINGS_AND_CHANGES.md` F10.
+>
+> **Proven precedent:** `../../../sample-prs/add-default.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "give this attribute a default value", "new rows should default to Active", "everything new should
@@ -16,19 +25,33 @@ start as Pending".
 
 ## SSDT meaning
 A named default constraint on the column — `CONSTRAINT DF_<Table>_<Col> DEFAULT (<value>) FOR <Col>`
-(or inline). SSDT emits `ADD CONSTRAINT`. It affects **future inserts only** — it does NOT backfill
-existing rows.
+(or inline). Two shapes share this vocabulary, and they behave **oppositely** on existing rows:
+
+- **On an EXISTING column** (this file's primary): SSDT emits `ADD CONSTRAINT`. It affects
+  **future inserts only** — it does NOT backfill existing rows.
+- **Riding a NEW `NOT NULL` column** (the `add-mandatory` remedy): the
+  `ADD [Col] ... NOT NULL CONSTRAINT ... DEFAULT` **backfills every existing row from the default
+  as the column lands** — that stamp is exactly why a populated table applies clean (proven:
+  `../../../sample-prs/add-default.md`, DacFx 162.5.57).
 
 ## The named trap
 The **unnamed default**: letting SSDT auto-name the constraint (`DF__Table__Col__<hash>`) yields a
 name that differs per environment, and diffing and refactoring become fragile — always name it
-`DF_<Table>_<Col>`. Second surprise: the default does not fill existing NULLs. It touches only new
-rows; backfilling the existing rows is a separate op (see `../make-mandatory/SKILL.md` for the
-NOT-NULL-with-backfill path).
+`DF_<Table>_<Col>`. Second surprise: on an **existing** column the default does not fill existing
+NULLs — it touches only new rows; backfilling the existing rows is a separate op (see
+`../make-mandatory/SKILL.md` for the NOT-NULL-with-backfill path). The mirror surprise: on a
+**new** NOT NULL column the engine does the opposite and stamps every existing row (the second
+shape above) — the two shapes are different operations wearing one word, and the record must name
+which one shipped.
 
 ## How it flips (the specifics only)
-- adding a default → ships as a single schema change, applied in place; any team member can review
-  it, in any data state.
+- adding a default to an existing column → ships as a single schema change, applied in place; any
+  team member can review it, in any data state — no existing row is touched.
+- the default rides a NEW mandatory column (the `add-mandatory` remedy) → ships as a single schema
+  change, applied in place, **and the default stamps every existing row as the column lands**
+  (proven: `../../../sample-prs/add-default.md`). The stamped values are data the record names; a
+  dev lead or an experienced developer reviews it, because the application must now supply or
+  accept that value.
 - the developer also wants existing rows backfilled → a separate op. It ships as one release: the
   schema change, then a post-deployment script that runs an idempotent UPDATE after it lands (see
   `../../_index/idempotent-seed/SKILL.md`). If the column is also becoming NOT NULL, follow
@@ -56,7 +79,9 @@ two. Keeping them apart is what avoids the common surprise: the column still sho
 deploy, because the default was only ever going to touch new rows.
 
 ## On the record
-Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/add-default.md`. SHIP terminal: **ONE RELEASE, in place.**
+The fragment this operation contributes:
 
 **Review & release**
 - Any team member can review this: the change is additive and the running application is unaffected.
@@ -78,7 +103,7 @@ nothing is restored.
 
 **Not verified**
 - Application impact — inserts that omit this column now receive the default value instead of NULL;
-  whether any code relies on that distinction is not confirmed here (@app-owner).
+  whether any code relies on that distinction is not confirmed here (app owner).
 - Other environments — an existing unnamed default (`DF__Table__Col__<hash>`) on this column in
-  Test/UAT/Prod must be dropped before this one lands; the disposable copy of Dev cannot see it. Run
+  QA/UAT/Prod must be dropped before this one lands; the disposable copy of Dev cannot see it. Run
   the verification query before promotion.

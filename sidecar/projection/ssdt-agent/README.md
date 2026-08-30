@@ -22,8 +22,10 @@ In conversation, that reaches the developer plainly:
 > "You asked to make Email required. On a disposable copy of Dev, SSDT refused it: it checks
 > whether the table has any rows, not whether Email has blanks, so it blocks the change while
 > the table holds data — even after the blanks are filled. On an empty table it would just
-> apply. With data in the table, this needs a deliberate call: relax the data-loss guard for
-> this one change after proving no blanks remain, or stage it over two releases."
+> apply. With data in the table, it ships as two releases, because this pipeline cannot relax the
+> data-loss guard: release one fills the blanks and tightens the column with the model still saying
+> optional, release two lets the model catch up. The one call that's yours: what should the blank
+> ones become?"
 
 The change then becomes a pull request the reviewer approves by reading — the finding, its
 proof, and what was not checked. That is the whole product: the developer understands what will
@@ -81,6 +83,9 @@ ssdt-agent/
 ├── THE_RECORD.md ··········· the register every surface is written in (record vs conversation)
 ├── CONNECTORS.md ··········· future wiring seams (.claude/skills, Copilot, F# engine, ADO)
 ├── ACCELERANT_PLAN.md ······ the staged, verify-first plan to wire the F# engine as an accelerant
+├── ENABLEMENT_PROGRAM.md ··· the ranked program (achievability × efficacy) toward team success
+├── CLAUDE.md ··············· session routing: OutSystems phrasing → intake; review → reviewer
+├── estate/ ················· the estate ledger: operations · row tiers · in-flight phases · refusals · handoffs
 ├── agents/
 │   ├── intake.md ··········· Persona-1 front door: confirm intent, name the op, get the three facts
 │   ├── change-author.md ···· edit the CREATE, prove on a disposable copy, author the pull request
@@ -137,7 +142,7 @@ catalog instead of the hand-authored sample — but it is not wired: the seams a
 ## Two operating notes
 
 - **Cite the handbook by filename.** When a skill points at the playbook, cite the current
-  playbook **filename** (e.g. `16-Anti-Patterns.md`); that is the cross-reference the deck
+  playbook **filename** (e.g. `16-Anti-Patterns-Gallery.md`); that is the cross-reference the deck
   readers will recognize.
 - **You scaffold; the agent runs.** No skill ships a wrapper script that orchestrates the
   loop. Skills give the commands as worked examples plus the reasoning; the developer's agent

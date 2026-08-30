@@ -5,10 +5,20 @@ description: Use when the developer says "shorten Code to 10 chars", "tighten th
 
 # Narrow (Ambitious Narrowing) — tightening class
 
-> **Default (provisional — the data decides).** On an empty table, narrowing ships as a single
+> **Default (provisional — prove before you classify).** On an empty table, narrowing ships as a single
 > schema change applied in place — no data is read or written, and any team member can review it.
 > On a populated table it is not a clean in-place change: the data-blind guard blocks it regardless
-> of whether every value fits. Prove first.
+> of whether every value fits, so it ships as **two releases**. Prove first.
+
+> **SHIP terminal: TWO-RELEASE.** This pipeline (Azure DevOps → Octopus) cannot relax
+> `BlockOnPossibleDataLoss`, so a populated narrowing ships as R1 (a pre-deploy that reconciles the
+> over-length values + `ALTER COLUMN` narrower, with the model still declaring the wider type) then
+> R2 (the model catches up as a no-op). Proven live 2026-08-21; `FINDINGS_AND_CHANGES.md` F1–F4.
+> Relaxing the gate for one publish is not available on this estate — do not offer it.
+
+> **Proven precedent:** `../../../sample-prs/narrow.md` — the worked instance of the
+> `../../author-pr/SKILL.md` template for this op. Its *What proving showed* carries the real
+> `Msg 50000` block, the `Msg 2628` seed truncation after the narrowing, and the two-release land.
 
 ## OutSystems phrasing
 "shorten Code to 10 characters", "tighten this field", "reduce the precision".
@@ -31,14 +41,15 @@ the guard here.
 - **empty table** (guard false) → ships as a single schema change, applied in place; no data is
   read or written. Any team member can review it.
 - **populated, `MAX(LEN) <= new size`** (every value fits) → **still blocked under Strict** — not
-  a clean in-place change. Honest disposition: relax `BlockOnPossibleDataLoss` for this one change
-  after proving `MAX(LEN)` fits — ships as a scripted change, logged. A dev lead or an experienced
-  developer should review it (the running application must respect the new limit). Same shape as
-  make-mandatory with zero NULLs — see `../../_index/tightening-class/SKILL.md`.
-- **populated, any value exceeds new size** → real truncation: reconcile the over-length rows
-  first (a data change) **and** still face the guard. Ships across releases if the values must be
-  preserved (see `../../_index/multi-phase/SKILL.md`), or as a scripted change after a
-  truncate-with-intent reconcile. A dev lead must review this: existing data is modified.
+  a clean in-place change. Ships as **two releases**: R1 runs `ALTER COLUMN` narrower in a
+  pre-deploy with the model still declaring the wider type; R2 the model catches up. A dev lead or
+  an experienced developer should review it (the running application must respect the new limit).
+  Same shape as make-mandatory — see `../../_index/tightening-class/SKILL.md`.
+- **populated, any value exceeds new size** → real truncation: the over-length rows are reconciled
+  first (a data change), and the seed that feeds the column stops writing over-length values in the
+  same change set (else `Msg 2628` at the post-deploy seed). Ships as **two releases**: R1 the
+  pre-deploy reconciles the values and narrows the column with the model lagging; R2 the model
+  catches up. A dev lead must review this: existing data is modified.
 - **>1M rows** → added scrutiny: at production row counts the `ALTER COLUMN` rewrite may block
   writes or run long — schedule a window.
 
@@ -50,13 +61,13 @@ the count. Run Permissive (`BlockOnPossibleDataLoss=False`) and the before/after
 publish loop, see `../../prove-on-dacpac/SKILL.md`; probes, `../../talk-to-local-sql/SKILL.md`.
 
 ## The verdict (to the developer)
-"You asked to shorten Code to 10 — it looks like a one-liner. I checked your data first: the
-longest Code is 14 characters, and 37 rows are longer than 10. On a disposable copy of Dev, SSDT
-refused the change to protect those 37 rows, and a permissive run showed exactly which characters
-would have been truncated. So the real question is those 37 rows: do you want them deliberately
-truncated to 10, or is the extra length real data we have to keep? If they can be truncated, this
-ships as a scripted change with the reconcile below; if the values must be kept, it stages across
-two releases. (On an empty table it would have been a clean one-liner.)"
+"You asked to shorten Code to 10 — it looks like a one-liner. On a copy of
+Dev, SSDT refused it: the guard fires because the table has rows, not because a value is too long.
+`<N>` codes are longer than 10 and would be cut; a permissive run shows exactly which characters
+go. So the real question is those over-length codes: cut them to 10 on purpose, or is the extra
+length real data to keep? Either way, with rows in the table it ships as two releases — R1
+reconciles the values and narrows the column in a pre-deploy while the model still says wide, then
+R2 lets the model catch up. On an empty table it would have been a clean one-liner."
 
 ## The reasoning (in conversation)
 Narrowing shares one guard behaviour and one remedy shape with make-mandatory and delete-attribute
@@ -67,19 +78,21 @@ once and you stop re-discovering the same block one operation at a time. (The sh
 `../../_index/tightening-class/SKILL.md`.)
 
 ## On the record
-The fragment this operation contributes to the pull request (`../../author-pr/SKILL.md`), drawn
-from the cases above. Take the line the data proves.
+Assemble the pull request from the `../../author-pr/SKILL.md` template; the worked instance for
+this op is `../../../sample-prs/narrow.md`. **SHIP terminal: TWO-RELEASE** on a populated table,
+ONE-RELEASE on an empty one. Take the line the data proves.
 
 **Review & release**
 - Empty table: `Any team member can review this: the table is empty, so no data can be lost.` ·
   `Ships as a single schema change, applied in place. No data is read or written.`
 - Populated, every value fits: `A dev lead or an experienced developer should review this: after
   narrowing, the running application can no longer store values longer than the new size.` ·
-  `Ships as a scripted change — the data-loss guard is relaxed for this one column after MAX(LEN)
-  is proven to fit.`
+  `Ships as two releases: R1 narrows the column in a pre-deploy with the model lagging, R2 the
+  model catches up. The data-loss guard is not relaxed, because this pipeline cannot relax it.`
 - Populated, values exceed the new size: `A dev lead must review this: existing data is modified —
-  over-length values are reconciled before the column narrows.` · `Ships across releases if the
-  values must be preserved, or as a scripted change: reconcile the over-length rows, then narrow.`
+  over-length values are reconciled before the column narrows.` · `Ships as two releases: R1
+  reconciles the over-length values and narrows the column with the model lagging (the seed that
+  feeds the column is reconciled in the same change set); R2 the model catches up.`
 - Added scrutiny, when it applies: `Added scrutiny: at production row counts the ALTER COLUMN
   rewrite may block writes or run long — schedule a window.`
 
@@ -97,7 +110,7 @@ permissive run holds the originals for a manual restore.
 - Application impact — any code path that writes a value longer than the new size is now rejected
   (or was silently truncated under a permissive publish); application-side length validation is not
   confirmed here.
-- Other environments — Test/UAT/Prod may hold longer values than this copy; run the verification
+- Other environments — QA/UAT/Prod may hold longer values than this copy; run the verification
   query before promotion.
 - Production scale / timing — the `ALTER COLUMN` rewrite cost at production row counts is not shown
   by the disposable copy.

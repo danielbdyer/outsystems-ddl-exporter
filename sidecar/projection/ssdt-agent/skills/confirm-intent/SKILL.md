@@ -201,7 +201,7 @@ you are routing to its owner. The five concerns and their triggers:
 
 | If the op is… | pre-flag the concern |
 |---|---|
-| `make-mandatory`, `narrow`, `delete-attribute`, the NOT-NULL face of `add-mandatory`/`audit-columns` | `skills/_index/tightening-class/SKILL.md` (table-has-rows, data-blind guard) |
+| `make-mandatory`, `narrow`, `delete-attribute` — the *existing-column* tightenings. (A fresh column's NOT-NULL block — `add-mandatory`/`audit-columns` — is the op-owned value-needed refusal, cured by a DEFAULT; deliberately not this class) | `skills/_index/tightening-class/SKILL.md` (table-has-rows, data-blind guard) |
 | `rename-entity`, `rename-attribute`, `move-schema`, `move-attribute` | `skills/_index/identity-and-refactorlog/SKILL.md` (identity ≠ name) |
 | `split-table`, `merge-tables`, `move-attribute`, `extract-to-lookup`, `archive-entity`, `retype-explicit`, `temporal-convert`, `delete-attribute` (4-phase) | `skills/_index/multi-phase/SKILL.md` (old + new coexist; conservation proof) |
 | `define-pk`, `create-fk-clean`, `create-fk-orphan`, `add-unique`, `add-check`, `toggle-trust`, `modify-index`→unique | `skills/_index/constraint-is-a-claim/SKILL.md` (a constraint is a data claim) |

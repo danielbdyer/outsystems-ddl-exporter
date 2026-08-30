@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ProvingGround.Pipeline.publish.xml — a copy of the estate pipeline's publish settings, so a
+  local proof can reproduce what the real deployment would do.
+
+  Status: placeholder, not yet verified against the pipeline. The estate publishes through
+  Azure DevOps -> Octopus, and the DacFx flags are fixed in the pipeline's own XML. This file
+  will hold those flags once someone records them from the pipeline (together with the DacFx
+  version, pinned in ../../estate/toolchain.md). Until then it uses the production settings the
+  Twin corpus already proved: the block and smart-default settings match the Strict profile,
+  and the drop setting is the one production actually uses.
+
+    BlockOnPossibleDataLoss = True   -> the locked gate. This pipeline cannot relax it.
+    GenerateSmartDefaults   = False  -> the deploy does not backfill missing values on its own.
+    DropObjectsNotInSource  = False  -> the production drop setting. Deleting a .sql file drops
+                                        nothing: the object and its rows survive the publish (a
+                                        "phantom"). A real drop ships as an explicit, ordered
+                                        pre-deployment script instead.
+    IgnoreColumnOrder       = True   -> a change in column order alone does not count as a change.
+
+  Two profiles, two jobs. This one shows the deployment-shaped outcome, phantoms included. The
+  Strict profile makes a would-be drop visible on the disposable copy. Use Strict to find out
+  what a change would remove; use this one to see what the pipeline would actually do.
+
+  To turn this file from a placeholder into a verified replica:
+    1. Record the pipeline's DacFx publish flags and version in ../../estate/toolchain.md.
+    2. Copy the flags into this file exactly. Note any flag that differs from this draft.
+    3. Publish once against a disposable copy. Confirm the trust outcome (is_not_trusted = 0
+       on a foreign-key add) matches what FINDINGS_AND_CHANGES.md Part 5 expects for that
+       DacFx version.
+    4. Delete this status note and record the date the verification ran.
+
+  Point this profile only at the ProvingGround database on the warm container, which is a
+  disposable copy of Dev. Never point it at a real database. A publish is a publish, whichever
+  settings it uses.
+-->
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TargetConnectionString>Server=localhost,11433;Initial Catalog=ProvingGround;User ID=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False</TargetConnectionString>
+    <BlockOnPossibleDataLoss>True</BlockOnPossibleDataLoss>
+    <GenerateSmartDefaults>False</GenerateSmartDefaults>
+    <IgnoreColumnOrder>True</IgnoreColumnOrder>
+    <DropObjectsNotInSource>False</DropObjectsNotInSource>
+    <IncludeTransactionalScripts>True</IncludeTransactionalScripts>
+    <AllowIncompatiblePlatform>False</AllowIncompatiblePlatform>
+    <IgnorePermissions>True</IgnorePermissions>
+  </PropertyGroup>
+</Project>

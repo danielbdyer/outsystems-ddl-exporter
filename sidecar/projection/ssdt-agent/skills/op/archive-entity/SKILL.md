@@ -5,12 +5,20 @@ description: Use when the developer says "archive old orders", "move the histori
 
 # Archive entity
 
-> **Default (provisional — the data decides).** Ships across releases: the archive table is added,
+> **Default (provisional — prove before you classify).** Ships across releases: the archive table is added,
 > then a batched post-deployment script moves the rows and the counts are reconciled, so the
 > running application keeps reading live data while the move is in flight. A dev lead must review
 > this: existing rows are moved out of the live table — a principal if the move cannot be undone or
 > the volume is large. Create destination → migrate (batched) → verify counts. Prove it on a
 > disposable copy before classifying.
+
+> **The pull request.** `../../author-pr/SKILL.md` is the ten-section template every change fills;
+> the worked instance for this op is `../../../sample-prs/archive-entity.md` — a complete PR proven
+> live on this branch. **Ships across more than one release (multi-phase):** the archive table is
+> added (additive, one declarative release), then a batched `DELETE … OUTPUT DELETED.* INTO archive`
+> moves the rows — raw DML the data-loss gate does not govern — then the counts are reconciled. The
+> proof is conservation, not a schema delta (proven live, 2026-08-21: 4 = 3 live + 1 archived, moved
+> row byte-identical).
 
 ## OutSystems phrasing
 "archive old orders", "move the historical rows out to an archive table".
@@ -53,7 +61,7 @@ the moved rows are byte-identical in the archive. For the publish loop, see
 You asked to archive the old rows — move them out of the live table into an archive. SSDT has no
 declarative "move," so this ships in stages across more than one release: the archive table is
 added first, then a batched post-deployment script moves the rows across, then the counts are
-reconciled. On a disposable copy of Dev I proved the counts reconcile exactly — every row ends up
+reconciled. On a disposable copy of Dev the counts reconciled exactly — every row ends up
 either still live or in the archive, none dropped and none duplicated — and each batch commits, so
 the transaction log stays bounded. Because it's over a million rows, the move needs a maintenance
 window on the real table, and a principal should review it — the volume is large and existing data
@@ -70,7 +78,8 @@ loses or doubles rows and looks identical in the schema, because the schema neve
 rows in the first place. The question that catches it up front: shape change, or data move?
 
 ## On the record
-Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+Fragments for the pull request (`../../author-pr/SKILL.md` is the template; the worked instance is
+`../../../sample-prs/archive-entity.md`), record register.
 
 **Review & release**
 - A dev lead must review this: existing rows are moved out of the live table. A principal must
@@ -99,8 +108,8 @@ another database FK enforcement was already lost on the archived copy.
 **Not verified**
 - Application impact — any report, screen, or export that reads the archived rows from the live
   source will now miss them. Whether application and reporting code expects those rows in the live
-  table is not confirmed here (@app-owner).
-- Other environments — Test, UAT, and Prod hold different row counts the disposable copy of Dev
+  table is not confirmed here (app owner).
+- Other environments — QA, UAT, and Prod hold different row counts the disposable copy of Dev
   cannot see. Run the verification query before promotion.
 - Production scale and timing — at production row counts the batched move may run long or block
   writes; the small copy proves the batches commit and the log stays bounded in shape, not the

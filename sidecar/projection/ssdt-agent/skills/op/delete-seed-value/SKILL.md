@@ -5,11 +5,22 @@ description: Use when the developer says "delete the Cancelled status value", "r
 
 # Retire a static lookup value (hard-DELETE-orphans trap — deactivate, don't delete)
 
-> **Default (provisional — the data decides).** Deactivate via `IsActive = 0`, carried by the seed
+> **Default (provisional — prove before you classify).** Deactivate via `IsActive = 0`, carried by the seed
 > MERGE in the post-deployment script and shipped as one release. A dev lead or an experienced
 > developer should review it while the value is still referenced; any team member can review the
-> retirement of a value nothing points at. Prove the reference before classifying: a hard DELETE is
-> refused when fact rows or the application point at the value.
+> retirement of a value nothing points at. Prove the reference before classifying: a hard DELETE of a
+> referenced value is **not refused** unless a foreign key is declared — where none is, it silently
+> orphans the referencing rows (proven `pg_move`: deleting a referenced `Category` succeeded and
+> orphaned 2 `Product` rows).
+
+> **SHIP terminal: ONE RELEASE (post-deploy seed) — deactivate, not delete.** The seed MERGE sets
+> `IsActive = 0` on the retired row (the guarded `WHEN MATCHED`), preserving its identity so no
+> referencing row is orphaned. A hard DELETE of a referenced value blocks `Msg 547` only where a
+> foreign key is declared; where none is (as on `Product.CategoryId`), it silently orphans — the worse
+> outcome, and the reason to deactivate. `../../_index/idempotent-seed/SKILL.md`.
+>
+> **Proven precedent:** `../../../sample-prs/delete-seed-value.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "delete the Cancelled status value", "retire this lookup value", "remove this order type from the list".
@@ -45,7 +56,9 @@ That is why the safe move preserves the row and just marks it inactive. The full
 `../../_index/idempotent-seed/SKILL.md`.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op is `../../../sample-prs/delete-seed-value.md`. SHIP terminal: **ONE RELEASE
+(post-deploy seed) — deactivate, not delete.** The fragment this operation contributes:
 
 **Review & release**
 - A dev lead or an experienced developer should review this: the value leaves the set the running
@@ -75,8 +88,8 @@ deploy, which is the failure this retirement avoids.
 **Not verified**
 - Application impact. Any screen or logic that filters on `IsActive = 1` stops offering the value;
   code that still resolves it by id keeps working. Which paths the running application exercises is
-  not confirmed on the disposable copy — @app-owner.
-- Other environments. Test, UAT, and Prod may hold additional fact rows referencing the value, or
+  not confirmed on the disposable copy — app owner.
+- Other environments. QA, UAT, and Prod may hold additional fact rows referencing the value, or
   carry it under a different id. The disposable copy of Dev cannot show this; run the verification
   query before promotion.
 - Reversibility of downstream state. Flipping `IsActive` back to 1 restores the row, but any consumer

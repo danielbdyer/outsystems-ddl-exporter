@@ -5,7 +5,19 @@ description: Use when the developer says "add an index on Customer.Email", "make
 
 # Add an index
 
-> **Default (provisional — the data decides).** Ships as a single declarative schema change, applied in place — additive, nothing lost. Any team member can review it: the change is additive and the running application is unaffected. But the *build cost* — a write-blocking lock whose duration scales with row count — lives in the data, not the `.sql`.
+> **Default (provisional — prove before you classify).** Ships as a single declarative schema change, applied in place — additive, nothing lost. Any team member can review it: the change is additive and the running application is unaffected. But the *build cost* — a write-blocking lock whose duration scales with row count — lives in the data, not the `.sql`.
+
+> **SHIP terminal: ONE RELEASE, in place (additive).** SSDT emits `CREATE INDEX` and builds the index
+> over every existing row — a real build (proven F11: `CREATE INDEX IX_child_ParentId` adds a
+> nonclustered index), not a metadata flip. The build takes a write-blocking lock whose duration scales
+> with row count (`WITH (ONLINE = ON)` avoids it, Enterprise/Developer only). Nothing is lost.
+> `FINDINGS_AND_CHANGES.md` F11.
+>
+> **When to add one at all → `../../_index/when-to-index/SKILL.md`** owns the WHETHER; this op owns the
+> HOW. The strongest trigger is a new foreign-key column — SQL Server never indexes the child side.
+>
+> **Proven precedent:** `../../../sample-prs/add-index.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op.
 
 ## OutSystems phrasing
 "add an index on Customer.Email", "make this attribute searchable", "the list screen is slow, can we index it".
@@ -26,7 +38,7 @@ Not a §19 anti-pattern by name — the silent cost is the trap: a non-`ONLINE` 
 Build the dacpac, run Strict `sqlpackage /Action:Script`, and confirm the delta is a clean `CREATE INDEX` with **no drop, no table rebuild** — a clean Strict publish confirms the change ships as a single declarative schema change. The disposable copy is small, so the observed build time is not the production build time — **row count is the predictor**; say so explicitly when the target is large. See `../../prove-on-dacpac/SKILL.md` + `../../talk-to-local-sql/SKILL.md`.
 
 ## The verdict (to the developer)
-"Adding the index is additive — I published it to a disposable copy of your data, SSDT just ran CREATE INDEX, and nothing was lost. The one caveat is the build itself: on the real table it locks writes while it runs, and how long that lasts scales with the row count. On a large table we'd either run it online (that needs SQL Server Enterprise) or schedule it in a low-traffic window. Do you know which edition the target is, and when a good window would be?"
+"Adding the index is additive — published to a disposable copy of your data, SSDT just ran CREATE INDEX, and nothing was lost. The one caveat is the build itself: on the real table it locks writes while it runs, and how long that lasts scales with the row count. On a large table it either runs online (that needs SQL Server Enterprise) or is scheduled in a low-traffic window. Do you know which edition the target is, and when a good window would be?"
 
 ## The reasoning (in conversation)
 The thing to hold onto: separate what the engine does from what it costs. What it does is always the same — CREATE INDEX, a clean additive change with nothing lost. What it costs is a write-blocking lock whose duration scales with the row count, and only the row count tells you how long. The failure this avoids is shipping an index blind and blocking production writes for an unplanned stretch.

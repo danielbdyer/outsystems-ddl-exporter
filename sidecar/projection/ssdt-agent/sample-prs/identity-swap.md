@@ -1,182 +1,90 @@
-# Order: stop auto-numbering the Id (a table rebuild — every foreign key dropped and recreated)
+# Category: turn on Auto Number for Id (a table rebuild the data-loss gate allows; every id preserved, the seed switches to IDENTITY_INSERT)
 
-**In OutSystems** — You turn *Auto Number = No* on the `Order` Entity's `Id`, because you want to assign Order Ids yourself instead of letting the database generate them.
-**In SSDT** — `[Id] INT IDENTITY(1,1)` becomes `[Id] INT NOT NULL` in `Tables/dbo.Order.sql`. You delete two words; the publish engine turns that one-line edit into a **full table rebuild**.
+## Verdict
+This PR turns on IDENTITY (Auto Number) for `Category.Id`. IDENTITY cannot be `ALTER`ed onto an
+existing column, so SSDT rebuilds the whole table: a shadow copy under `SET IDENTITY_INSERT` that
+preserves every id, then a `DROP`+`sp_rename` swap. The data-loss gate **allows** it — a rebuild
+moves rows, it does not drop them. `Category` has no incoming foreign keys, so it ships in one
+release. The one edit that rides with it: the seed inserts explicit `Category` ids, which fails
+`Msg 544` once the column is IDENTITY unless it is bracketed with `SET IDENTITY_INSERT`. Confirm every
+id is preserved and the seed (and any app insert of an explicit id) is bracketed before promoting.
 
-## Summary
+## Intent
+The developer's stated intent for this PBI: make `Category.Id` database-generated (Auto Number). No
+work item supplied — attach one before merge.
 
-You ask for a one-word change — turn Auto Number off — and the size of the `.sql` edit tells you nothing
-about the size of the deploy. **A column's IDENTITY property is fixed when the column is created and cannot
-be `ALTER`ed off in place.** So SSDT rebuilds the whole `Order` table behind the scenes: it builds a shadow
-copy of the table *without* Auto Number, copies every row across with its `Id` preserved, drops the original,
-renames the shadow into place, and **drops and recreates every foreign key that touches `Order`** — the
-incoming one from `OrderLine`, *and* `Order`'s own two outgoing keys to `Customer` and `Status` — around the
-rebuild. This is the most dangerous kind of "one-line edit" in the catalogue: if the copy did not preserve
-the keys, every `Id` would be re-minted and every `OrderLine` would point at the wrong order.
+## What changes
+- `dbo.Category`: `Id INT NOT NULL` → `Id INT IDENTITY(1,1) NOT NULL`. SSDT realizes this as a
+  shadow-table rebuild (IDENTITY cannot be added in place).
+- `Data/Seed.sql`: the `Category` MERGE is bracketed with `SET IDENTITY_INSERT dbo.Category ON … OFF`,
+  because it inserts explicit ids (1, 2, 3) into what is now an IDENTITY column.
 
-This was proven objectively against a **Twin** — a disposable SQL Server 2022 database published from this
-estate and filled with real-shaped synthetic data — under a **production-faithful** publish
-(`BlockOnPossibleDataLoss = true`, `GenerateSmartDefaults = false`, `DropObjectsNotInSource = false`), the
-deployment a real environment runs. **The discovered outcome: the production gate *performed* the rebuild.**
-Because a rebuild *moves* every row into the shadow table rather than dropping any, it is data-preserving, so
-`BlockOnPossibleDataLoss` does not block it — the publish applied in a single atomic transaction, every `Id`
-value came through unchanged, and every `OrderLine` still resolved to a real `Order`. No work item was
-provided with the request; attach one before merge so the record is traceable.
+## Before promoting
+- Confirm the generated delta is a shadow-table rebuild with `SET IDENTITY_INSERT` (below) — not a
+  no-op. If SSDT does not show `Starting rebuilding table [dbo].[Category]`, the IDENTITY edit did not
+  register.
+- Confirm every existing `Category.Id` is preserved and every `Product.CategoryId` still resolves.
+- Confirm the seed and any application code that inserts a `Category` with an explicit id is bracketed
+  with `SET IDENTITY_INSERT` — otherwise it fails `Msg 544`. From now on the database owns new ids.
 
-## Review & release
+## The data
+- 3 `Category` rows (ids 1, 2, 3: Hardware, Software, Service), all preserved by `SET IDENTITY_INSERT`
+  during the rebuild; the counter reseeds to `IDENT_CURRENT = 3`, so the next generated id is 4.
+- 5 `Product` rows carry `CategoryId` (1, 2, 3, 1, 2) as plain values; the preserved ids keep every
+  one resolving.
 
-- **A dev lead must review this.** The whole `Order` table is rebuilt (every row copied into a shadow table)
-  and **every foreign key touching it is dropped and recreated** — not only the incoming key from `OrderLine`
-  but `Order`'s own outgoing keys to `Customer` and `Status`.
-- **The schema change is a single production publish** (proven below), applied atomically inside one
-  `SERIALIZABLE` transaction with `XACT_ABORT ON`: the shadow-table swap and the foreign-key drop/recreate are
-  bracketed *inside that one deploy*, so a failure rolls the whole thing back and leaves `Order` exactly as it
-  was. What sequences across the rollout is the **application-side Id handling** (below), not the schema.
-- **The `.sql` edit is deceptive** — deleting `IDENTITY(1,1)` generates a full shadow-table swap. Preview the
-  delta and confirm it is a rebuild (a `tmp_ms_xx_Order` shadow table and `sp_rename`) before promising
-  anything; the danger, not the line count, drives the review need.
-- Added scrutiny: this is the first time this rebuild is proven on the estate; at production row counts the
-  row-by-row copy is the expensive part and may block writes or run long — schedule a window.
+## How it ships
+- One release. On a populated table with **no incoming foreign keys** — which is `Category` here —
+  the rebuild moves the rows into the shadow table under `SET IDENTITY_INSERT` and the data-loss gate
+  does not block it, so there is nothing to stage. The seed fix ships in the same release. (A table
+  *with* incoming foreign keys would additionally drop and recreate them around the rebuild; that is
+  not exercised here because nothing references `Category`.)
 
-## Changes
+## What proving showed (published to a throwaway copy, this branch)
+Published onto a populated copy (`pg_idsw_before`, sqlpackage 170.4.83.3, `BlockOnPossibleDataLoss = True`).
+- **Tried:** publish the IDENTITY edit onto the populated copy. The delta is a **shadow-table rebuild** —
+  `CREATE TABLE [dbo].[tmp_ms_xx_Category] ([Id] INT IDENTITY(1,1) …)`, then
+  `SET IDENTITY_INSERT [dbo].[tmp_ms_xx_Category] ON; INSERT … SELECT [Id],[Code],[IsActive] FROM
+  [dbo].[Category] ORDER BY [Id]; SET IDENTITY_INSERT … OFF;`, then `DROP TABLE [dbo].[Category];` and
+  `sp_rename` of the shadow table and its PK. The publish logged `Starting rebuilding table
+  [dbo].[Category]...` and the data-loss gate did **not** block the rebuild.
+- **Did:** the first attempt failed in the post-deploy seed — `Error SQL72014 … Msg 544, Level 16:
+  Cannot insert explicit value for identity column in table 'Category' when IDENTITY_INSERT is set to
+  OFF.` Bracketing the `Category` MERGE with `SET IDENTITY_INSERT dbo.Category ON … OFF` cleared it,
+  and the publish succeeded.
+- **Realized:** after the rebuild `is_identity = 1`, the ids are still `1, 2, 3`,
+  `IDENT_CURRENT('dbo.Category') = 3`, every `Product.CategoryId` resolves (0 orphans), and a second
+  publish makes no change (no rebuild — the shape already matches). The `Msg 544` is the real trap of
+  this "one-line edit": turning on IDENTITY breaks every explicit-id insert, the seed included, until
+  it moves to `IDENTITY_INSERT`.
 
-| File | Change |
-|---|---|
-| `Tables/dbo.Order.sql` | Removes `IDENTITY(1,1)` from `[Id]` — `[Id] INT IDENTITY(1,1) NOT NULL` becomes `[Id] INT NOT NULL`. Every other column and constraint is unchanged. |
-
-No renames (the refactorlog is unchanged). No column is dropped or retyped — but note the deploy is **not** an
-`ALTER`: SSDT cannot alter a column out of IDENTITY, so the generated delta rebuilds the entire table and
-re-creates `PK_Order`, `FK_Order_Customer`, `FK_Order_Status`, and `FK_OrderLine_Order`.
-
-## Application cutover — the Id handling (the OutSystems half)
-
-The schema rebuild is provable on a disposable copy; the application change is not, and it is part of the same
-change. With Auto Number **off**, the database no longer generates `Order` Ids — the application must **supply
-the `Id` itself** on every insert, or the insert fails. This is the exact mirror of turning Auto Number *on*
-(where any insert that supplies an explicit Id fails unless it wraps the insert in `SET IDENTITY_INSERT`). The
-application release that starts supplying Ids must be sequenced with the schema release; that every insert path
-now provides an `Id` is confirmed by the application owner, not here.
-
-## Deployment evidence — objective proof, production-faithful publish, live Twin (SQL Server 2022), 2026-07-22, Microsoft.SqlServer.DacFx 162.5.57
-
-The proof is a green integration test that publishes this estate to a live Twin, materializes real-shaped
-`Order` data (25 rows, `Id` auto-numbered 1–25) with `OrderLine` children pointing at it, **reads the generated
-deploy delta**, then applies the IDENTITY removal under the production-faithful posture and consumes the data
-to assert the outcome. The key set and the whole row set are each hashed (an order-sensitive `SHA2_256` over
-the `FOR XML RAW` projection) so a re-minted or lost key would shift the digest. DacFx is the same publish
-engine `sqlpackage` wraps.
-
-**Test:** `Twin.Tests.Integration.SamplePrRebuildTests+SamplePrRebuildTests.identity-swap: removing IDENTITY from Order.Id is a table rebuild — the true outcome under the production gate, keys and incoming FK preserved`
-
-```
-Passed!  - Failed:     0, Passed:     2, Skipped:     0, Total:     2, Duration: 51 s - Twin.Tests.Integration.dll (net9.0)
-```
-
-**Fact 1 — the one-line edit generates a shadow-table rebuild that drops and recreates every foreign key.**
-Scripting the delta (without executing it) under the production posture shows the change is not an `ALTER` at
-all — it is a full rebuild through a `tmp_ms_xx_Order` shadow table. Verbatim from the generated deploy script,
-the load-bearing part:
-
+## After deploy — check (each environment)
 ```sql
-ALTER TABLE [dbo].[Order] DROP CONSTRAINT [FK_Order_Customer];
-ALTER TABLE [dbo].[Order] DROP CONSTRAINT [FK_Order_Status];
-ALTER TABLE [dbo].[OrderLine] DROP CONSTRAINT [FK_OrderLine_Order];
--- Starting rebuilding table [dbo].[Order]...
-BEGIN TRANSACTION;
-SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
-SET XACT_ABORT ON;
-CREATE TABLE [dbo].[tmp_ms_xx_Order] (
-    [Id]         INT             NOT NULL,
-    [CustomerId] INT             NOT NULL,
-    [StatusId]   INT             NOT NULL,
-    [Channel]    NVARCHAR (20)   NOT NULL,
-    [Total]      DECIMAL (18, 2) NOT NULL,
-    [PlacedOn]   DATETIME2 (7)   NOT NULL,
-    CONSTRAINT [tmp_ms_xx_constraint_PK_Order1] PRIMARY KEY CLUSTERED ([Id] ASC)
-);
-IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Order])
-    BEGIN
-        INSERT INTO [dbo].[tmp_ms_xx_Order] ([Id], [CustomerId], [StatusId], [Channel], [Total], [PlacedOn])
-        SELECT [Id], [CustomerId], [StatusId], [Channel], [Total], [PlacedOn]
-        FROM [dbo].[Order] ORDER BY [Id] ASC;
-    END
-DROP TABLE [dbo].[Order];
-EXECUTE sp_rename N'[dbo].[tmp_ms_xx_Order]', N'Order';
-EXECUTE sp_rename N'[dbo].[tmp_ms_xx_constraint_PK_Order1]', N'PK_Order', N'OBJECT';
-COMMIT TRANSACTION;
--- ... then every foreign key is recreated and re-validated:
-ALTER TABLE [dbo].[Order]     WITH NOCHECK ADD CONSTRAINT [FK_Order_Customer]   FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([Id]);
-ALTER TABLE [dbo].[Order]     WITH NOCHECK ADD CONSTRAINT [FK_Order_Status]     FOREIGN KEY ([StatusId])   REFERENCES [dbo].[Status] ([Id]);
-ALTER TABLE [dbo].[OrderLine] WITH NOCHECK ADD CONSTRAINT [FK_OrderLine_Order]  FOREIGN KEY ([OrderId])    REFERENCES [dbo].[Order] ([Id]);
-ALTER TABLE [dbo].[Order]     WITH CHECK CHECK CONSTRAINT [FK_Order_Customer];
-ALTER TABLE [dbo].[Order]     WITH CHECK CHECK CONSTRAINT [FK_Order_Status];
-ALTER TABLE [dbo].[OrderLine] WITH CHECK CHECK CONSTRAINT [FK_OrderLine_Order];
+-- expect is_identity = 1: the Id column is now database-generated
+SELECT name, is_identity FROM sys.columns WHERE object_id = OBJECT_ID('dbo.Category') AND name = 'Id';
+
+-- expect current_seed >= max_id: the next generated id cannot collide with an existing row
+SELECT IDENT_CURRENT('dbo.Category') AS current_seed, MAX(Id) AS max_id FROM dbo.Category;
+
+-- expect 0 rows: every Product still points at a real Category (the rebuild preserved the ids)
+SELECT p.Id FROM dbo.Product p LEFT JOIN dbo.Category c ON c.Id = p.CategoryId WHERE c.Id IS NULL;
 ```
 
-The copy is `INSERT ... SELECT ... ORDER BY [Id]` into a shadow column that is a plain `INT`, so the `Id` values
-are carried across directly and **no `SET IDENTITY_INSERT` is needed** — that step is the mirror concern, load-
-bearing only when Auto Number is turned *on* and keys must be forced into a *new* identity column (the
-`temporal-convert` proof in this same run shows DacFx emitting exactly that `SET IDENTITY_INSERT ... ON` when it
-rebuilds an identity table). The three `WITH CHECK CHECK CONSTRAINT` statements re-validate the recreated keys,
-so they land **trusted**.
+## How to roll this back
+Backing this out is itself a table rebuild in the other direction — removing the IDENTITY property
+with the same shadow-table copy under `SET IDENTITY_INSERT`, and reverting the seed to a plain insert.
+It is not a single statement and not auto-reversible; the forward rebuild preserves every id, so there
+is no data-value change to undo — only the physical rebuild to repeat. Backing the change out was not
+exercised.
 
-**Fact 2 — the production gate performed the rebuild; every key was preserved and every child still resolves.**
-`Order` held **25 rows**, `Id` was `IDENTITY` (`IsIdentity = 1`), `MAX(Id) = 25`, and `OrderLine` held 25 rows
-with **0 orphans**. The production-faithful publish of the IDENTITY removal was **accepted** — the rebuild is
-data-preserving, so `BlockOnPossibleDataLoss` did not block it. After the apply: `Id` is a plain column
-(`IsIdentity = 0`, off `sys.identity_columns`), the row count and key range are unchanged, the `Id` digest and
-the whole-row digest are **byte-for-byte identical to before**, and every `OrderLine` still points at a real
-`Order` (0 orphans) through a **trusted** recreated key. Verbatim from the run:
-
-```
-baseline: Order.Id IsIdentity=1 (1 = IDENTITY), sys.identity_columns=1, Order rows=25, MAX(Id)=25, OrderLine rows=25, OrderLine orphans=0, FK_OrderLine_Order exists=1
-  Id digest=2E21CF06E0C13F9DBEF6F310553F578AEBD6D58770ED647391741523DD0479E0; whole-row digest=FE097CFBDCAA76494E86B10CFB63E6C2AC4E228DC302E89BB01C9FC526B4171E
-production publish (BlockOnPossibleDataLoss=true) remove IDENTITY from [dbo].[Order].[Id]: APPLIED (Ok) — the gate performed the data-preserving rebuild
-phase 1 result (declarative (production publish performed the rebuild)):
-  Order.Id IsIdentity=0 (0 = plain column, no longer auto-numbered), sys.identity_columns=0
-  Order rows=25 (was 25), MAX(Id)=25 (was 25), OrderLine rows=25 (was 25)
-  keys preserved: Id digest=2E21CF06E0C13F9DBEF6F310553F578AEBD6D58770ED647391741523DD0479E0 (match=true); whole-row digest=FE097CFBDCAA76494E86B10CFB63E6C2AC4E228DC302E89BB01C9FC526B4171E (match=true)
-  incoming reference intact: OrderLine orphans=0 (0 = every child still points at a real parent), FK_OrderLine_Order exists=1 (is_not_trusted=0)
-```
-
-The `Id` digest matching **byte-for-byte** is the load-bearing proof: the shadow-table copy preserved every key
-value, so `OrderLine`'s references still resolve. Confirmed on `mcr.microsoft.com/mssql/server:2022-latest`.
-
-## Verification — run in each environment after deployment
-
-```sql
--- expect is_identity = 0: the Id column is no longer database-generated (Auto Number off)
-SELECT name, is_identity FROM sys.columns
-WHERE object_id = OBJECT_ID('dbo.[Order]') AND name = 'Id';
-
--- expect 0 rows: every OrderLine still points at a real Order (no key was re-minted by the rebuild)
-SELECT ol.Id FROM dbo.OrderLine ol
-LEFT JOIN dbo.[Order] o ON o.Id = ol.OrderId WHERE o.Id IS NULL;
-
--- expect is_not_trusted = 0 for each recreated key: the rebuild re-validated them (WITH CHECK)
-SELECT name, is_not_trusted FROM sys.foreign_keys
-WHERE name IN ('FK_Order_Customer', 'FK_Order_Status', 'FK_OrderLine_Order');
-```
-
-## Rollback
-
-Backing this out is **itself a table rebuild in the other direction** — re-adding `IDENTITY(1,1)` to `[Id]` is
-the same shadow-table swap, except the reverse direction *does* need `SET IDENTITY_INSERT ON` on the shadow to
-force the existing `Id` values into the new identity column (without it the keys would be re-minted from 1 and
-every `OrderLine` would point at the wrong order), plus the same drop-and-recreate of every foreign key. It is
-not a single `DROP CONSTRAINT` and it is not auto-reversible; it must be previewed and proven the same way. The
-forward rebuild preserved every `Id` value, so there is no data-value change to undo — only the physical
-rebuild to repeat. Backing the change out was not exercised.
-
-## Not verified
-
-- **Application impact.** With Auto Number off, the database no longer generates `Order` Ids: any insert that
-  does not supply an `Id` fails. That every insert path now provides an `Id` is confirmed by the application
-  owner, not here.
-- **Other environments.** The rebuild and key preservation were proven on a disposable copy of Dev only; Test,
-  UAT, and Prod hold row counts and `OrderLine` data this copy cannot see. Run the verification queries before
-  promotion in each.
-- **Production scale and timing.** The row-by-row copy is the expensive part of the rebuild; at production row
-  counts it may block writes or run long, which the 25-row copy does not exercise. Schedule a window.
-- **Reversibility.** Only the forward rebuild (removing IDENTITY) is proven; the inverse rebuild that re-adds
-  IDENTITY — and the `SET IDENTITY_INSERT` step it requires to preserve keys — is not exercised here.
+## Not checked / still open
+- Application impact — after Auto Number is on, the database owns the id: any insert that supplies an
+  explicit id fails with `Msg 544` unless it wraps the insert in `SET IDENTITY_INSERT`. Application-side
+  id handling beyond the seed is not confirmed here (app owner).
+- Incoming foreign keys — `Category` has none, so the drop-and-recreate-FK leg of an identity-swap is
+  not exercised by this change. A table with incoming foreign keys would additionally stage those
+  around the rebuild.
+- Other environments — the rebuild and id preservation are proven on a copy of Dev only; QA, UAT,
+  and Prod hold row counts this copy cannot see. Run the verification queries before promotion.
+- Production scale — the data copy is the expensive part of the rebuild; at production row counts it
+  may block writes or run long. Schedule a window.

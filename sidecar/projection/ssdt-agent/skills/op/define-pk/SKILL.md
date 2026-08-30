@@ -5,12 +5,22 @@ description: Use when the developer says "set the primary key", "the Identifier"
 
 # Define the primary key (the Identifier)
 
-> **Default (provisional — the data decides).** New table: the primary key is part of the CREATE —
-> it ships as a single schema change applied in place, and any team member can review it, because
-> the change is additive and the running application is unaffected. Existing populated table: the
-> primary key builds a clustered index that scans and reorders every row — it still ships as a
-> single in-place schema change, but a dev lead or an experienced developer should review it,
-> because the build runs over live data. Prove the key is unique and non-NULL before you classify.
+> **Default (provisional — prove before you classify).** New table: the primary key is part of the
+> CREATE — it ships as a single schema change applied in place, and any team member can review it,
+> because the change is additive and the running application is unaffected. Existing populated table:
+> the primary key builds a clustered index that scans and reorders every row — it still ships as a
+> single in-place schema change, but a dev lead or an experienced developer reviews it, because the
+> build runs over live data. Prove the key is unique and non-NULL before you classify.
+
+> **SHIP terminal: ONE RELEASE.** New table: the key is in the CREATE, additive. Populated table: the
+> clustered-index build runs over the rows in one release. Proven live on this branch: a duplicate key
+> → `Msg 1505` ("duplicate key … (1, 1)") + `Msg 1750`; a nullable key column → `Msg 8111` ("Cannot
+> define PRIMARY KEY constraint on nullable column") + `Msg 1750`; a clean composite (`OrderId`,
+> `LineNumber`) builds. A duplicate or NULL routes to a pre-deploy reconcile in the same release, or
+> across releases when old and new code must coexist — a fork the developer decides.
+>
+> **Proven precedent:** `../../../sample-prs/define-pk.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op, carrying the live messages.
 
 ## OutSystems phrasing
 "the Identifier", "set the primary key", "make this the unique key for the entity", "use a composite
@@ -54,10 +64,10 @@ Author the dedupe/assign-keys pre-deployment script, then re-run the Strict publ
 running the probes. Seed: OrderLine (KEY-01) proves the composite `OrderId + LineNumber`.
 
 ## The verdict (to the developer)
-"Defining the Identifier on a new entity is free — it's part of the create, so it just applies. On
-your existing table it builds a clustered index over every row. I checked first: the key is unique
-with no NULLs, so it publishes clean. It gets a closer review than a brand-new table only because
-the build runs over every existing row — not because anything is wrong with your data."
+"Defining the Identifier on a new entity is free — it's part of the create, so it just applies. On an
+existing table it builds a clustered index over every row. On a copy of Dev the key is unique with no
+NULLs, so it publishes clean. It gets a closer review than a brand-new table only because the build
+runs over every existing row — not because anything is wrong with the data."
 
 ## The reasoning (in conversation)
 A key constraint is a claim about the rows that already exist: it holds only if every row is unique
@@ -67,7 +77,9 @@ family (`../../_index/constraint-is-a-claim/SKILL.md`). The mistake this avoids:
 clean and shipping a change that gets blocked at deploy time on dirty keys.
 
 ## On the record
-What this operation contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op — with the live messages — is `../../../sample-prs/define-pk.md`. SHIP terminal:
+**ONE RELEASE.** The fragment this operation contributes:
 
 **Review & release** — the proven branch selects one pair of findings:
 - New table — Any team member can review this: the change is additive and the running application is
@@ -104,7 +116,7 @@ auto-reversed — record the original values for a manual restore.
 **Not verified**
 - Application impact. Any insert path that writes a duplicate or NULL key will now fail with a
   primary-key violation; the application's insert code is not confirmed here.
-- Other environments. Test, UAT, and Prod may hold duplicate or NULL keys this copy does not — run
+- Other environments. QA, UAT, and Prod may hold duplicate or NULL keys this copy does not — run
   the duplicate and NULL probes in each environment before promotion.
 - Production scale and timing. On a large table the clustered-index build locks the table and runs
   long; a small disposable copy cannot show the duration.

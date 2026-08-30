@@ -5,12 +5,26 @@ description: Use when the developer says "rename the attribute", "change FirstNa
 
 # Rename attribute (a rename with no refactorlog entry)
 
-> **Default (provisional — the data decides; prove before you classify).** With a refactorlog entry
+> **Default (provisional — prove before you classify).** With a refactorlog entry
 > this ships as a single schema change, applied in place: a metadata `sp_rename` renames the column
 > and preserves its data. A dev lead or an experienced developer should review it — every caller of
 > the old name (views, procedures, ORM mappings, reports, ETL) must change to keep working. Without
 > a refactorlog entry SSDT instead drops the old column and adds the new one, and every value in the
 > column is lost — stop and demand the refactorlog before this ships.
+
+> **SHIP terminal: ONE RELEASE, in place — only with the refactorlog entry.** Proven live on this
+> branch (SQL Server 2022, `sqlpackage 170.4.83.3`), renaming `dbo.Customer.ContactPhone` to
+> `MobileNumber` over 5 populated rows. With a `Rename Refactor` entry the difference is
+> `EXEC sp_rename '[dbo].[Customer].[ContactPhone]', 'MobileNumber', 'COLUMN'`, the strict publish
+> succeeds, and the value digest is identical before and after (`1312825711`). Without the entry the
+> difference is `DROP COLUMN [ContactPhone]` + `ADD [MobileNumber]`: the strict publish is refused —
+> `Msg 50000 ... Rows were detected. The schema update is terminating because data loss might occur.`
+> — and a gate-off publish commits the drop, leaving `MobileNumber` NULL in all 5 rows and every
+> phone number lost. Read the difference; it must be `sp_rename`.
+>
+> **Proven precedent:** `../../../sample-prs/rename-attribute.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op, carrying both legs'
+> live proof messages.
 
 ## OutSystems phrasing
 "rename the attribute", "change FirstName to GivenName", "I renamed the field in Service Studio".
@@ -41,8 +55,8 @@ COLUMN`/`ADD`, the refactorlog is missing; catch it in the delta, never after de
 `../../prove-on-dacpac/SKILL.md`.
 
 ## The verdict (to the developer)
-You renamed the attribute, and the data is safe: on a disposable copy of Dev I read the generated
-delta and it came out as `sp_rename`, which renames the column in place and keeps every value. Had
+You renamed the attribute, and the data is safe: on a disposable copy of Dev the generated delta
+came out as `sp_rename`, which renames the column in place and keeps every value. Had
 that refactorlog entry been missing, SSDT would instead have dropped the old column and added a new
 one, losing everything in it — so reading the delta is what makes this safe rather than a hope. The
 real cost is that every caller of the old name has to move to the new one: views, procedures, ORM
@@ -60,7 +74,10 @@ goes. Reading the generated delta every time is how you catch that loss in the s
 costs nothing to fix, instead of in production, where it costs the column.
 
 ## On the record
-The fragment this contributes to the pull request (`../../author-pr/SKILL.md`).
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op — with both legs' live proof messages — is
+`../../../sample-prs/rename-attribute.md`. SHIP terminal: **ONE RELEASE, in place — only with the
+refactorlog entry.** The fragment this contributes:
 
 **Review & release**
 - A dev lead or an experienced developer should review this: the running application must change to
@@ -84,9 +101,9 @@ new name must be reverted with it. Not auto-reversed.
 
 **Not verified**
 - Application impact — consumers of the old column name outside the project (reports, ETL,
-  integrations not in the dacpac) break silently until they move to the new name; @app-owner and the
+  integrations not in the dacpac) break silently until they move to the new name; app owner and the
   consumer owners confirm the callers are updated.
-- Other environments — Test, UAT, and Prod may hold external consumers still reading the old name
+- Other environments — QA, UAT, and Prod may hold external consumers still reading the old name
   where Dev does not. Read the delta and run the verification query before each promotion.
 - Reversibility — only the forward rename is exercised on the disposable copy; the backout rename is
   the same metadata operation but is not separately proven.

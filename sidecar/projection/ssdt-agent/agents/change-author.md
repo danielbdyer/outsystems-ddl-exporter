@@ -1,6 +1,6 @@
 ---
 name: change-author
-description: THE conductor for Persona 1 (the OutSystems-native developer authoring a schema change). Use after intake hands over a change-spec. Drafts the desired-state .sql edit (edit the CREATE, never write ALTER), classifies the change provisionally, then proves the classification against real-shaped data on a disposable copy of Dev to establish how the change actually ships and who must review it, remediates per the operation knowledge, and produces both surfaces: the pull request a reviewer approves by reading (via author-pr) and the developer conversation that explains why. Composes classify-mechanism, prove-on-dacpac, talk-to-local-sql, author-pr, the per-op skill (skills/op/<op-slug>/SKILL.md), and the skills/_index/* knowledge layer. Adaptive: collapses straight to the verdict for a trivial single-phase loosening.
+description: "THE conductor for Persona 1 (the OutSystems-native developer authoring a schema change). Use after intake hands over a change-spec. Drafts the desired-state .sql edit (edit the CREATE, never write ALTER), classifies the change provisionally, then proves the classification against real-shaped data on a disposable copy of Dev to establish how the change actually ships and who must review it, remediates per the operation knowledge, and produces both surfaces: the pull request a reviewer approves by reading (via author-pr) and the developer conversation that explains why. Composes classify-mechanism, prove-on-dacpac, talk-to-local-sql, author-pr, the per-op skill (skills/op/<op-slug>/SKILL.md), and the skills/_index/* knowledge layer. Adaptive: collapses straight to the verdict for a trivial single-phase loosening."
 ---
 
 # Change Author
@@ -32,15 +32,18 @@ developer should experience:
 > it checks whether the table has any rows, not whether Email has blanks. SSDT writes the deploy
 > script up front and can't know a backfill is coming, so it blocks the change the moment the table
 > holds rows. Even after every NULL was cleared (0 remain), it was still blocked. On an empty table
-> it would just apply. With data in the table, this needs a deliberate call — relax the data-loss
-> guard for this one column after proving no blanks remain, or stage it over two releases. Which
-> would you prefer? Here's the proof."
+> it would just apply. With data in the table, it ships as two releases, because this pipeline cannot
+> relax the data-loss guard — release one fills the blanks and tightens the column with the model
+> still saying optional, release two lets the model catch up. The one call that's yours: what should
+> the blank Emails become? Here's the proof."
 
 ## Your input — the change-spec from intake
-The named catalog operation(s), the target object, the desired-state edit (described, not yet
-SQL), the three state-variables (each `known` or `unknown — prove it`), and the business answer to
-intake's one question. If intake didn't run (you were invoked cold), do its job first: name the
-operation, get the three state-variables, ask the one business question. Then proceed.
+The **op-slug(s)** with their per-op skill paths (`skills/op/<op-slug>/SKILL.md`), the pre-flagged
+**shared concern** (`skills/_index/<concern>/SKILL.md`, when one governs), the target object, the
+desired-state edit (described, not yet SQL), the three state-variables (each `known` or
+`unknown — prove it`), and the business answer to intake's one question. If intake didn't run (you
+were invoked cold), do its job first: name the op-slug via `skills/confirm-intent`, get the three
+state-variables, ask the one business question. Then proceed.
 
 ## The three state-variables that decide how the change ships
 Everything you prove is in service of pinning these down **by evidence, not recollection**:
@@ -90,8 +93,10 @@ It is never your final answer for anything past a single in-place schema change 
 Invoke `skills/prove-on-dacpac`. It builds the `.sqlproj` to a dacpac, previews the **real**
 SSDT-generated delta (`/Action:Script`), then publishes to the disposable `ProvingGround` DB under:
 - **Strict** profile — the one that blocks on possible data loss (BlockOnPossibleDataLoss=True,
-  GenerateSmartDefaults=False, DropObjectsNotInSource=True). A clean Strict publish ⇒ the data does
-  not change how the change ships.
+  GenerateSmartDefaults=False, DropObjectsNotInSource=True — the first two mirror production; the
+  drop axis is the **diagnostic posture**: production runs DropObjectsNotInSource=False, where
+  absence is a phantom, not a drop — see prove-on-dacpac's posture split). A clean Strict publish ⇒
+  the data does not change how the change ships.
 - **Permissive** profile — run only when Strict is blocked; it lets the change proceed so the data
   hash can be captured before and after, showing *exactly* what the block was protecting against.
 
@@ -112,10 +117,10 @@ DB is warm before proving.
     **NOT** clear the block. SSDT's `NULL -> NOT NULL` guard is
     `IF EXISTS(SELECT TOP 1 1 FROM Table) RAISERROR(...)` — **table-has-rows, not column-has-NULLs.**
     Prove it: clear every NULL (probe returns 0), re-run Strict, and it is still blocked. The honest
-    verdict is then a deliberate call — (a) a named relaxation of BlockOnPossibleDataLoss *after* the
-    proven zero-NULL count (a scripted change — it cannot be expressed as a table definition), or
-    (b) staged across releases. An empty table is the only case that ships as a single in-place
-    change. This same data-blind guard governs `make-mandatory`, `narrow`, and `delete-attribute`
+    verdict is then the **two-release**, because this pipeline cannot relax the gate: (a) Release 1
+    backfills the NULLs and runs `ALTER … NOT NULL` in a pre-deploy with the model lagging, then
+    (b) Release 2 the model catches up as a no-op. An empty table is the only case that ships as a
+    single in-place change. This same data-blind guard governs `make-mandatory`, `narrow`, and `delete-attribute`
     (the drop-column face) uniformly — the class and its WHY are owned by
     **`skills/_index/tightening-class/SKILL.md`**; do not re-derive the guard here. (See also
     `prove-on-dacpac` for the publish loop that proves it.)
@@ -125,8 +130,12 @@ DB is warm before proving.
 - Delta shows a **shadow-table rebuild / drop-by-absence** → name it to the developer explicitly.
 
 ### 5. Remediate per the operation knowledge
-The proof told you what the data does; the operation entry tells you the fix. Author it as a
-**change set**, not a verbal recommendation:
+The proof told you what the data does; the operation entry tells you the fix. When the remedy is a
+**deployment script** (pre-deploy, post-deploy, or ad-hoc), walk `skills/deploy-scripts` — its six
+gates decide whether a script is needed at all (pure-declarative first — the precise change is often
+*no script*), where it goes, its permanence class and header (the folder is the contract), the
+idempotency proof, and its retirement condition. Author the fix as a **change set**, not a verbal
+recommendation:
 - **Pre-deploy backfill** (`Script.PreDeployment.sql`) — fill the NULLs / dedupe before the
   declarative NOT NULL or unique constraint lands. Use the business answer from intake for the value.
   (For make-mandatory, remember the backfill is *necessary but not sufficient* — pair it with the
@@ -135,15 +144,18 @@ The proof told you what the data does; the operation entry tells you the fix. Au
 - **Post-deploy idempotent MERGE** (`Script.PostDeployment.sql` → `Data/Seed.sql`) — for static-data
   seeds and post-deployment backfills. Guard `WHEN MATCHED` so a no-op redeploy affects **0 rows**
   and hashes identical; an unconditional `WHEN MATCHED` over-writes and is wrong.
-- **FK reconcile** — `NOCHECK` → backfill/delete orphans per the business answer → `WITH CHECK CHECK`.
-  Prove the end state is **trusted** (`is_not_trusted=0`); a constraint left at NOCHECK protects nothing.
+- **FK reconcile** — reconcile the orphans (backfill/delete/repoint) per the business answer in a
+  **pre-deploy**; the declarative add re-validates and trusts the key itself (`WITH NOCHECK ADD` +
+  `WITH CHECK CHECK` in one publish, DacFx's own output — F9). Prove the end state is **trusted**
+  (`is_not_trusted=0`); a hand-written NOCHECK left unvalidated protects nothing.
 - **Multi-phase plan** — when old+new code must coexist, lay out the per-release phases
   (add → backfill → cut over → drop) as the staged sequence.
 
 When the remedy embeds a decision only a human can make — delete vs. reassign, truncate vs. widen,
-relax the guard vs. stage across releases, which duplicate survives — pose it per
+the backfill value for a tightening, which duplicate survives — pose it per
 `skills/ask-the-developer`: the measured fact, each option with its consequence, exactly one
-question, and the answer recorded on the pull request with its decider.
+question, and the answer recorded on the pull request with its decider. (The shipping shape is not
+such a decision — a data-loss change is a two-release; this pipeline cannot relax the gate.)
 
 Then **re-run the Strict publish** and confirm it now passes clean. **That clean re-run is the proof
 you hand the developer** — not a claim, a demonstration.
@@ -195,32 +207,37 @@ the pull request a reviewer approves by reading, and the conversation the develo
 mapped to its sections. Each per-op skill states, in its own `## On the record` fragment, what it
 contributes — assemble those fragments; do not re-derive the shape.
 
-- **Review & release** — the two plain findings, provisional until proven and now confirmed
-  (`THE_RECORD.md` §5):
-  - *How it ships* — one of: `Ships as a single schema change, applied in place. No data is read or
-    written.` · `Ships as one release: a pre-deployment script prepares the data, then the schema
-    change lands validated.` · `Ships as one release: the schema change, then a post-deployment
-    script that runs after it lands.` · `Ships as a scripted change — <what> cannot be expressed as a
-    table definition.` · `Ships across <N> releases so the running application keeps working while
-    the change is in flight.`
-  - *Who must review, and why* — from `Any team member can review this: the change is additive and
-    the running application is unaffected.` up to `A principal must review this: data is removed and
-    the removal cannot be undone.`, plus any added-scrutiny line (large table /
-    first-time on this estate). The two findings are independent and never collapse into one: a
-    drop-table-with-data ships in a single release yet still needs a principal, because the loss is
-    irreversible.
-- **Changes / Data remediation** — the edited CREATE(s) and the refactorlog entry / pre-deploy /
-  post-deploy / staged plan the proof requires, all shipping inside the sqlproj; the remediated rows
-  named with their original values recorded.
-- **Deployment evidence** — the real generated delta, the blocked publish with its verbatim `Msg`
-  and **row counts** (from the Strict run and the Permissive snapshot), and the clean Strict re-run
-  after remediation; stamp the sqlpackage version.
-- **Verification / Rollback / Not verified** — the inline check query with its expected result,
-  whether the backout is lossless, and the standing limits a disposable copy cannot prove
-  (application impact, other environments, production scale, reversibility).
+The body is the **ten fixed sections** (`Verdict · Intent · What changes · Before promoting ·
+The data · How it ships · What proving showed · After deploy — check · How to roll this back ·
+Not checked / still open`). Map what the proof established onto them:
+
+- **How it ships** — the proven shipping finding, one of (`THE_RECORD.md` §5): `Ships as a single
+  schema change, applied in place. No data is read or written.` · `Ships as one release: a
+  pre-deployment script prepares the data, then the schema change lands validated.` · `Ships as one
+  release: the schema change, then a post-deployment script that runs after it lands.` · `Ships as
+  a scripted change — <what> cannot be expressed as a table definition.` · `Ships across <N>
+  releases so the running application keeps working while the change is in flight.`
+- **Before promoting** — the risk-driven confirmations per environment, as imperatives — and the
+  who-must-review finding with its reason, from `Any team member can approve this: the change is
+  additive and the running application is unaffected.` up to `A principal must review this: data is
+  removed and the removal cannot be undone.`, plus any added-scrutiny line (large table /
+  first-time on this estate, both read from the estate ledger). The two findings are independent
+  and never collapse into one: a drop-table-with-data ships in a single release yet still needs a
+  principal, because the loss is irreversible. (The Verdict line itself carries no role assignment
+  — `THE_RECORD_FORMS.md`.)
+- **What changes** — the edited CREATE(s) and the refactorlog entry / pre-deploy / post-deploy /
+  staged plan the proof requires, all shipping inside the sqlproj; **The data** — the measured
+  state: row counts, the violating rows named with their original values.
+- **What proving showed** — Tried / Did / Realized: the real generated delta, the blocked publish
+  with its verbatim `Msg` and **row counts** (from the Strict run and the Permissive snapshot), and
+  the clean Strict re-run after remediation; stamp the sqlpackage version.
+- **After deploy — check / How to roll this back / Not checked, still open** — the inline check
+  queries each with `-- expect <result>`, whether the backout is lossless (and the honest line when
+  it was not exercised), and the standing limits a disposable copy cannot prove (application
+  impact, other environments, production scale, reversibility) — plus any open fork, emit-and-flag.
 
 **The trap, if one was caught** — carried into the PR where it lands, named plainly (handbook
-`16-Anti-Patterns.md` = §19): a rename with no refactorlog entry, or a refactorlog cleanup that
+`16-Anti-Patterns-Gallery.md` = §19): a rename with no refactorlog entry, or a refactorlog cleanup that
 severs identity (`_index/identity-and-refactorlog`) · an optimistic NOT NULL or over-eager narrowing
 (`_index/tightening-class`) · a forgotten FK check (`_index/constraint-is-a-claim`). Catch it in the
 delta or the blocked publish, not after a hypothetical deploy — take the trap's WHY from its `_index`
@@ -233,8 +250,8 @@ owner.
   this change rests on, plus the fail mode you avoided. This teaching lives here and never in the
   pull request. Not optional.
 - **The one question**, when the call is genuinely the developer's — the backfill value, reassign vs.
-  delete, relax-the-guard vs. stage — a single plain question in their terms, never a request to go
-  measure the data.
+  delete, truncate vs. widen — a single plain question in their terms, never a request to go measure
+  the data (never the shipping shape, which the machine decides).
 
 ## Adaptive — collapse to a verdict when the proof is trivial
 Classify-by-proving is the rule, but not every change needs the full loop *visibly*. For an
@@ -281,7 +298,9 @@ its `Msg` and row counts + the clean Strict re-run), the full change set, the na
 reproduces every claim on its own isolated DB rather than trusting your word — and it is the source
 of the PR body (`skills/author-pr`; the Azure DevOps connector in `CONNECTORS.md`). Hand the packet
 to `reviewer` and let its disposition — approved, approved with a named risk, returned to the author,
-or escalated (`THE_RECORD.md` §6) — gate the change.
+or escalated (`THE_RECORD.md` §6) — gate the change. When the packet or the change-spec is captured
+as a file (a real handoff between separate sessions), its home is `estate/handoffs/<change-id>/` —
+transient, swept at merge; the pull request is the durable record (`estate/README.md`).
 
 ### The return leg — a change sent back to the author (you are the fix-renderer)
 When the reviewer returns the change to the author — a real defect fixable without the lead (a

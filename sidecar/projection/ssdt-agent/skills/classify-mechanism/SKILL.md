@@ -21,7 +21,7 @@ named operation + its data-state into two independent findings — **how** the c
 **who must review it, and why** — and, just as importantly, decides whether the answer can be given
 on sight or must be proven on a disposable copy of Dev.
 
-**Classification from the `.sql` text alone is a guess. The data decides how the change ships.**
+**Classification from the `.sql` text alone is a guess. The existing rows determine how the change ships.**
 This skill produces *provisional* findings; `prove-on-dacpac` is what confirms them. Never deliver a
 provisional finding to the developer as if it were proven.
 
@@ -100,6 +100,13 @@ prior rollback to lean on).
 > the metadata edit becomes a blocking build" stops being ambushed at deploy time by a window they
 > did not plan for.
 
+Both added-scrutiny facts are **lookups against the estate ledger, never recollections**:
+`../../estate/operations.md` answers whether the op-slug has shipped on this estate before (no
+row → first-time, the line stands; a row → cite it and the line is discharged), and
+`../../estate/row-tiers.md` answers the table's row tier (`>1M` → the scale line stands, with
+the tier row as its basis). A scrutiny line that contradicts the ledger is a defect in one of
+the two — fixed in the same change, never waved through (`../../estate/README.md`).
+
 ## The three state-variable flips
 
 The **same operation** changes how it ships as the data crosses a threshold. This is the
@@ -129,7 +136,7 @@ This is the judgment call this skill exists to make.
 - The table is **not** above the scale/first-time thresholds.
 
 That is the additive, in-place, any-reviewer corner, and only that corner. Examples:
-`add-attribute-optional`; `create-entity`; a post-deploy `MERGE` that adds a
+`add-optional`; `create-entity`; a post-deploy `MERGE` that adds a
 genuinely new lookup value.
 
 **You MUST prove (hand to `prove-on-dacpac`) whenever ANY of these is true** — which is
@@ -183,10 +190,10 @@ Label the whole handoff **PROVISIONAL**. It becomes a confirmed finding only aft
   change to keep working. Data-violation variable unknown -> **must prove**. Provisional shipping
   shape: a single in-place schema change *if* the table is truly empty; but on a **populated** table
   it does **not** land clean even with zero NULLs — SSDT's guard is table-has-rows, not
-  column-has-NULLs — so SSDT refuses under the Strict (prod) gate, and shipping needs a conscious
-  call: relax the data-loss guard for this one column after proving zero blanks remain, or stage it
-  across two releases. Proof to demand: `COUNT(*) WHERE Email IS NULL`; then prove SSDT STILL refuses
-  after the backfill clears the blanks.
+  column-has-NULLs — so SSDT refuses under the Strict (prod) gate, and it ships as **two releases**
+  (this pipeline cannot relax the data-loss guard): release one fills the blanks and tightens the
+  column with the model lagging, release two lets the model catch up. Proof to demand:
+  `COUNT(*) WHERE Email IS NULL`; then prove SSDT STILL refuses after the backfill clears the blanks.
 - **"Add an optional Notes field to Customer"** (small). Purely additive, the app is
   oblivious, no existing data touched -> **classify on sight**: ships as a single in-place schema
   change with no data read or written, and any team member can review it. It still goes through

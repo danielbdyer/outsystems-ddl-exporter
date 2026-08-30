@@ -5,13 +5,26 @@ description: Use when the developer says "change the text field to a date", "sto
 
 # Retype explicit (value-reshaping conversion)
 
-> **Default (provisional — the data decides; prove before you classify).** Ships across multiple
+> **Default (provisional — prove before you classify).** Ships across multiple
 > releases (multiple pull requests): add a new column of the target type, convert the values that
 > convert with `TRY_CONVERT`, handle the rows that do not, then drop the old column and rename the
 > new one in — the old and new types coexist while the application migrates. A dev lead must review
 > this: existing data is reshaped and the old column is dropped; if non-convertible rows are dropped
 > rather than reconciled, a principal must review it, because data is removed and cannot be undone.
 > Count the non-convertible rows before promising anything.
+
+> **SHIP terminal: MULTI-PHASE (several releases).** Add a new column of the target type (nullable,
+> additive — one clean release), convert the values with `TRY_CONVERT`, settle the rows that do not
+> convert, move the application, then drop the old column. The **drop-old-column leg is itself a
+> TWO-RELEASE** (a pre-deploy `DROP COLUMN` with the model lagging, then the model drops it —
+> `delete-attribute`'s pattern), because a bare single-step type change on a populated table is
+> refused by `BlockOnPossibleDataLoss`. Proven live 2026-08-21.
+
+> **Proven precedent:** `../../../sample-prs/retype-explicit.md` — the worked instance of the
+> `../../author-pr/SKILL.md` template for this op. Its *What proving showed* carries the real
+> bare-retype `Msg 50000` block (`Order.Total DECIMAL(18,2) → INT`, `pg_retype2`), the precision-loss
+> rows (2 of 4 lose their cents), the convertibility contrast (`Product.Code`: 0 of 5 `TRY_CONVERT` —
+> a STOP, `pg_retype`), and the drop-old-column block.
 
 ## OutSystems phrasing
 "change the Text attribute to a Date", "make this an Integer", "store it as a number now".
@@ -56,13 +69,13 @@ multi-phase path. For the publish loop, see `../../prove-on-dacpac/SKILL.md`; pr
 
 ## The verdict (to the developer)
 You asked to store this column as a Date instead of Text, and the catch is that not every value
-parses as a date. On a disposable copy of Dev I ran `TRY_CONVERT` over your actual data: 12 rows
+parses as a date. On a disposable copy of Dev, `TRY_CONVERT` over the actual data counts the rows that
 don't convert. So this can't be one clean change — it stages across more than one release so the
-running app keeps working: add a new Date column, convert the values that convert, deal with the 12
-that don't, then swap the new column in and drop the old. Those 12 are the real question for you —
-should they be corrected to real dates before the cutover, or is it acceptable for them to land as
-NULL? Correcting them keeps this a reshape a dev lead can sign off; letting them drop means data lost
-for good, which a principal should review.
+running app keeps working: add a new Date column, convert the values that convert, deal with the ones
+that don't, then swap the new column in and drop the old. The non-convertible rows are the real
+question for you — corrected to real dates before the cutover, or acceptable to land as NULL?
+Correcting them keeps this a reshape a dev lead can sign off; letting them drop means data lost for
+good, which a principal should review.
 
 ## The reasoning (in conversation)
 An explicit conversion earns its staging for two reasons, and only the data shows you the first: not
@@ -74,15 +87,19 @@ a bare single-step `ALTER COLUMN` that fails or truncates mid-deploy; counting t
 rows first is what turns "change the type" into a plan instead of a gamble.
 
 ## On the record
-The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`).
+Assemble the pull request from the `../../author-pr/SKILL.md` template; the worked instance for
+this op is `../../../sample-prs/retype-explicit.md`. **SHIP terminal: MULTI-PHASE** (several
+releases), the drop-old-column leg a TWO-RELEASE.
 
 **Review & release**
 - A dev lead must review this: existing data is reshaped — values are converted into a new column of
   the target type and the old column is dropped.
-- Ships across multiple releases (multiple pull requests): add a new column of the target type,
-  convert the convertible values with `TRY_CONVERT`, handle the non-convertible rows, then drop the
-  old column and rename the new one in — the old and new types coexist while the application
-  migrates, and the conversion cannot be expressed as a table definition.
+- Ships across multiple releases (multiple pull requests): add a new column of the target type
+  (nullable, additive — one clean release), convert the convertible values with `TRY_CONVERT`,
+  handle the non-convertible rows, then drop the old column and rename the new one in. The old and
+  new types coexist while the application migrates. The **drop-old-column leg is a two-release**
+  (`delete-attribute`'s pattern): a bare single-step type change is refused, and the drop of the
+  populated old column is refused by the same guard.
 - When non-convertible rows are dropped rather than reconciled: a principal must review this — data
   is removed and the removal cannot be undone.
 - Added scrutiny, when it applies: `Added scrutiny: at production row counts the convert-and-swap
@@ -107,9 +124,9 @@ durable. Not auto-reversed.
 
 **Not verified**
 - Application impact — every read and write path still using the old type breaks once the column is
-  swapped; that every caller has moved to the new type is not confirmed here — @app-owner confirms
+  swapped; that every caller has moved to the new type is not confirmed here — app owner confirms
   it.
-- Other environments — Test, UAT, and Prod may hold values that convert differently, or more
+- Other environments — QA, UAT, and Prod may hold values that convert differently, or more
   non-convertible rows than this copy; run the `TRY_CONVERT` probe in each environment before the
   convert phase.
 - Production scale / timing — the convert-and-swap is exercised at seed scale only; blocking and

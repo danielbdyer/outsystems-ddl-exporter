@@ -40,6 +40,55 @@ ALTER TABLE [dbo].[Customer] ADD [EmailAddress] NVARCHAR(256) NULL;
 (For a whole entity it is `DROP TABLE` + `CREATE TABLE`; for a schema move it is the same shape on
 the two-part name.)
 
+## The refactorlog entry, exactly (the worked example)
+
+The entry is DacFx serialization XML in `<project>.refactorlog`, and it is the artifact this
+whole concern turns on — so the complete form is given here to copy-adapt, never to recall from
+memory. Renaming column `ContactPhone` to `MobileNumber` on `dbo.Customer` (the tree's canonical
+rename case, COL-08N):
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<Operations Version="1.0" xmlns="http://schemas.microsoft.com/sqlserver/dac/Serialization/2012/02">
+  <Operation Name="Rename Refactor" Key="a3d2b1c4-7e6f-4a5b-9c8d-0e1f2a3b4c5d" ChangeDateTime="08/11/2026 14:00:00">
+    <Property Name="ElementName" Value="[dbo].[Customer].[ContactPhone]" />
+    <Property Name="ElementType" Value="SqlSimpleColumn" />
+    <Property Name="ParentElementName" Value="[dbo].[Customer]" />
+    <Property Name="ParentElementType" Value="SqlTable" />
+    <Property Name="NewName" Value="[MobileNumber]" />
+  </Operation>
+</Operations>
+```
+
+Renaming a whole table (`dbo.OrderLine` → `dbo.OrderItem`) is the same element with no parent
+properties:
+
+```xml
+  <Operation Name="Rename Refactor" Key="b7c8d9e0-1f2a-4b3c-8d9e-5a6b7c8d9e0f" ChangeDateTime="08/11/2026 14:00:00">
+    <Property Name="ElementName" Value="[dbo].[OrderLine]" />
+    <Property Name="ElementType" Value="SqlTable" />
+    <Property Name="NewName" Value="[OrderItem]" />
+  </Operation>
+```
+
+The rules that make an entry valid and safe:
+
+- **ElementName is the OLD fully-qualified name** (`[dbo].[Table].[OldColumn]` for a column,
+  `[dbo].[OldTable]` for a table); **NewName is the NEW short name only**, bracketed.
+- **Key is a fresh GUID per entry** — generate one; never copy another entry's — and
+  **ChangeDateTime** is `MM/DD/YYYY HH:MM:SS` (invariant-culture, as the tooling writes it).
+- The entry lands **in the same change as the edited CREATE**: the CREATE says the new name, the
+  refactorlog says it is the same identity. One without the other is the trap this concern owns.
+- **Append, never rewrite.** Entries accumulate in file order and a fresh-environment deploy
+  replays them all — Refactorlog Cleanup (below) is why a deleted entry re-becomes drop+create.
+- A **schema move** is safer as the explicit script — `ALTER SCHEMA target TRANSFER
+  source.Table` preserves `object_id` — and either way the delta read (below) is what settles it.
+
+Validity is provable without publishing: `dotnet build` of the `.sqlproj` parses the refactorlog
+and embeds it in the dacpac — a malformed entry fails the build — and the delta preview
+(`../../prove-on-dacpac/SKILL.md` step 4) must then show `sp_rename`, which is the read that
+settles it.
+
 ## The named traps this concern owns
 
 - **A rename with no refactorlog entry** (handbook **16** = §19.1) — editing the name text

@@ -1,140 +1,101 @@
-# OrderLine: make Note required (a populated table is blocked until backfilled and gate-relaxed)
+# Customer.Email: require a value (2 empty emails filled, then the column tightened across two releases)
 
-**In OutSystems** — You set *Is Mandatory = Yes* on the `OrderLine.Note` Attribute.
-**In SSDT** — `[Note] NVARCHAR(200) NULL` becomes `[Note] NVARCHAR(200) NOT NULL` in `Tables/dbo.OrderLine.sql`. You edit the column; the publish engine decides whether the table's rows let that land.
+## Verdict
+This change makes `dbo.Customer.Email` reject NULL, so every customer must have an email; it fills
+the 2 customers that have none today and tightens the column. This pipeline cannot relax the
+data-loss guard, so it ships as two releases. Confirm the fill value with the data owner and land
+Release 1 in each environment before Release 2. No work item supplied — attach one before merge.
 
-## Summary
+## Intent
+The developer's stated intent for this PBI: make an email address mandatory on every customer, so
+a customer can no longer be saved without one — "this attribute must be filled". No work item
+supplied — attach one before merge.
 
-You set *Is Mandatory = Yes* on `OrderLine.Note`, so an order line can no longer be saved without a
-note. In OutSystems the flag flips and Service Studio handles the rest; here the same intent is a
-declarative tightening of an existing column, and a production publish **refuses it while the table
-holds rows** — even after every NULL is filled in. This change was proven objectively against a Twin —
-a disposable SQL Server database published from this estate and filled with real-shaped synthetic data
-— with a **production-faithful** publish (`BlockOnPossibleDataLoss = true`, the deployment a real
-environment runs). No work item was provided with the request; attach one before merge so the record
-is traceable.
+## What changes
+- `dbo.Customer.Email`: `NVARCHAR(256) NULL` → `NVARCHAR(256) NOT NULL`.
+- `Data/Seed.sql`: the 2 rows that carried a NULL email — Customer 3 (Initech) and Customer 5
+  (Stark Industries) — now carry a real address, so the post-deploy seed stops writing NULL into
+  the tightened column.
 
-## Review & release
+## Before promoting
+- Run the NULL-email query (below) in each environment. The count differs per environment; the
+  copy held 2. Every NULL must be filled before Release 1 goes up there.
+- Confirm the fill value with the data owner. The copy used the placeholder
+  `unknown+<Id>@example.invalid`; a real address, or a decision to collect the missing emails
+  first, is a data-owner decision.
+- Confirm Release 1 has landed in an environment — the column already rejects NULL there — before
+  sending Release 2 up to it.
+- Check with the application owner that no code path saves a customer without an email or writes
+  NULL to it; after Release 1 both fail with `Msg 515`.
 
-- A dev lead must review this: an existing column is tightened to NOT NULL while the table holds rows,
-  and existing data must be remediated before the constraint can land.
-- It does not ship as a single in-place edit. The production publish is blocked while `dbo.OrderLine`
-  holds rows — the guard checks **row presence, not blank content**, so backfilling every NULL is
-  necessary but **not sufficient**. It ships one of two ways: (a) backfill the NULL notes, then apply
-  the tightening in a publish with a **logged, reviewed `BlockOnPossibleDataLoss` relaxation** for that
-  one deployment; or (b) a staged rollout — add a new NOT NULL column with a default, migrate values,
-  drop the old column — which the guard never fires on. On an empty table the same edit ships as one
-  clean declarative change.
-- Added scrutiny: first time this operation is proven on the Twin. At production row counts the
-  `ALTER COLUMN` (once gate-relaxed) may run long or block writes — schedule a window.
+## The data
+- 5 customers. 2 have no email: Customer 3 (Initech) and Customer 5 (Stark Industries). The other 3
+  have one.
+- The guard blocks on row presence, not on the NULLs: a table with 0 NULL emails is still refused
+  while it holds any row.
 
-## Changes
+## How it ships
+- Two releases, because this pipeline (Azure DevOps → Octopus) always publishes with the data-loss
+  guard `BlockOnPossibleDataLoss` on and cannot turn it off for one deploy.
+- **Release 1** — a pre-deploy script fills the NULL emails and runs
+  `ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(256) NOT NULL`. The model still declares
+  `Email NULL`, so DacFx generates no tightening step and the guard never fires. The script is
+  idempotent: it fills only rows still NULL and alters only while the column is still nullable, so
+  it is safe to re-run and safe if a later step fails. The corrected seed ships here — a post-deploy
+  seed that still writes a NULL email fails once the column is `NOT NULL` (`Msg 515`).
+- Publish Release 1 once. Re-publishing Release 1 reverts the column to NULL: with the model still
+  declaring `NULL` against a database that is already `NOT NULL`, DacFx generates
+  `ALTER COLUMN Email NVARCHAR(256) NULL`. Send Release 2 up promptly.
+- **Release 2** — the model declares `Email NOT NULL` and carries no pre-deploy. The database is
+  already `NOT NULL`, so DacFx generates nothing. This closes the gap between the model and the
+  database.
 
-| File | Change |
-|---|---|
-| `Tables/dbo.OrderLine.sql` | Tightens `[Note]` from `NVARCHAR(200) NULL` to `NVARCHAR(200) NOT NULL` in the table definition |
+## What proving showed
+Published to a throwaway copy on this branch.
+- **Tried:** edit the column to `NOT NULL`, publish under the guard → refused. `Msg 50000`: "Rows
+  were detected. The schema update is terminating because data loss might occur." The generated
+  script guards the tightening with `IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer]) RAISERROR(…)`
+  above the `ALTER COLUMN`; Warning SQL72016 named the column. The column stayed nullable.
+- **Did:** fill the 2 NULL emails in a pre-deploy step and run the ALTER, model still declaring
+  `NULL` → the post-deploy seed still wrote NULL into the now-`NOT NULL` column, so the deploy
+  failed with `Msg 515`: "Cannot insert the value NULL into column 'Email' … UPDATE fails." The
+  pre-deploy's tightening had already committed — the column was `NOT NULL` with 0 NULLs even though
+  the deploy failed.
+- **Did:** correct the seed so the 2 rows carry a real address; publish Release 1 once → published,
+  the column is `NOT NULL`. Publish Release 2 (model `NOT NULL`, no pre-deploy) → published, nothing
+  changed; re-publish → published, nothing changed.
+- **Realized:** filling the NULLs is necessary but not enough — the guard fires on row presence, so
+  the tightening cannot ride the same release as the model. The pre-deploy side effect survives a
+  failed deploy, so it must be idempotent, and the seed feeding the column must stop writing NULL in
+  the same change set.
 
-No renames (the refactorlog is unchanged). No index, view, or procedure changes. Only the nullability
-of `[Note]` changes — width (200), type (`NVARCHAR`), and every other column are untouched.
-
-## Data remediation
-
-Backfilling the NULL `Note` values is **necessary but not sufficient**. The production guard fires on
-row presence, so a fully-backfilled populated table is still blocked; the backfill must be paired with
-the logged gate relaxation, or replaced by the staged add-column rollout (see Review & release). No
-backfill value is prescribed here — that is a data-owner decision (named under Not verified).
-
-On the proof substrate the two facts were observed directly:
-- With `Note` filled on **all 25 rows and zero NULLs**, the production-faithful publish was **still
-  refused** (row-presence guard). Backfilling to zero NULLs does not clear the block.
-- With the table **emptied to 0 rows**, the identical edit **applied** clean.
-
-## Deployment evidence — objective proof, production-faithful publish, 2026-07-22, Microsoft.SqlServer.DacFx 162.5.57
-
-The proof is a green integration test that publishes this estate to a live Twin, seeds the blocking
-condition in real-shaped data, and asserts the outcome under a **production-faithful** DacFx posture
-(`BlockOnPossibleDataLoss = true`, no smart-defaults — mirroring
-`ssdt-agent/proving-ground/profiles/ProvingGround.Strict.publish.xml`). DacFx is the same publish
-engine `sqlpackage` wraps.
-
-**Test:** `Twin.Tests.Integration.SamplePrMakeMandatoryTests+SamplePrMakeMandatoryTests.make OrderLine.Note mandatory: production publish blocks a populated table, applies when empty`
-
-```
-Passed!  - Failed:     0, Passed:     1, Skipped:     0, Total:     1, Duration: 55 s - Twin.Tests.Integration.dll (net9.0)
-```
-
-**Fact 1 (primary) — a populated table is REFUSED, even with zero NULLs.** OrderLine held 25 rows and
-`Note IS NULL` = 0 (`is_nullable` = 1). The production-faithful publish of the NOT NULL edit was
-refused; the guard checks row presence, not blank content. Verbatim from the run — the generated deploy
-script and the block it raised:
-
-```
-Warning SQL72016: The column Note on table [dbo].[OrderLine] must be changed from NULL to NOT NULL. If the table contains data, the ALTER script may not work. To avoid this issue, you must add values to this column for all rows or mark it as allowing NULL values, or enable the generation of smart-defaults as a deployment option.
-Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 50000, Level 16, State 127, Line 6 Rows were detected. The schema update is terminating because data loss might occur.
-Error SQL72045: Script execution error.  The executed script:
-IF EXISTS (SELECT TOP 1 1
-           FROM   [dbo].[OrderLine])
-    RAISERROR (N'Rows were detected. The schema update is terminating because data loss might occur.', 16, 127)
-        WITH NOWAIT;
-```
-
-The guard (`IF EXISTS ... RAISERROR`) sits above the `ALTER COLUMN` and never inspects the `Note`
-column. After the refusal: `is_nullable` = 1 (unchanged), rows = 25 (intact), `Note IS NULL` = 0
-(unchanged) — the block left the schema and data exactly as they were.
-
-**Fact 2 (primary) — the same edit on an EMPTY table applies clean.** With OrderLine emptied to 0 rows,
-the identical NOT NULL edit published successfully under the same production-faithful posture:
-`is_nullable` = 0 (`Note` is now mandatory). The guard's `IF EXISTS` is false, so nothing blocks.
-
-**Fact 3 (secondary) — the Twin's own relaxed publish blocks only on an actual NULL.** The Twin's
-`Runs.up` publishes with `BlockOnPossibleDataLoss = false`, which suppresses the row-presence guard.
-Under it, with 3 of 25 rows holding a NULL `Note`, the publish was refused by SQL Server's
-execution-time NULL check instead:
-
-```
-Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 515, Level 16, State 2, Line 1 Cannot insert the value NULL into column 'Note', table 'twin.dbo.OrderLine'; column does not allow nulls. UPDATE fails.
-Error SQL72045: Script execution error.  The executed script:
-ALTER TABLE [dbo].[OrderLine] ALTER COLUMN [Note] NVARCHAR (200) NOT NULL;
-```
-
-`is_nullable` stayed 1. This is the weaker of the two blocks: it clears once the NULLs are gone, which
-is why the *production* guard (Fact 1) is the one that governs how this ships.
-
-## Verification — run in each environment after deployment
-
+## After deploy — check
 ```sql
--- BEFORE tightening — expect 0. Necessary, not sufficient: even at 0 the production
--- publish is blocked by the row-presence guard until BlockOnPossibleDataLoss is relaxed.
-SELECT COUNT(*) AS null_notes FROM dbo.OrderLine WHERE Note IS NULL;
+-- no customer holds a NULL email, expect 0
+SELECT COUNT(*) AS null_emails FROM dbo.Customer WHERE Email IS NULL;
 
--- AFTER deployment — expect is_nullable = 0: the column landed NOT NULL
+-- the column rejects NULL, expect is_nullable = 0
 SELECT is_nullable FROM sys.columns
-WHERE object_id = OBJECT_ID('dbo.OrderLine') AND name = 'Note';
+WHERE object_id = OBJECT_ID('dbo.Customer') AND name = 'Email';
 ```
 
-## Rollback
+## How to roll this back
+Re-widening is lossless: `ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(256) NULL` restores
+the nullable column with no data loss. The values written into the 2 previously-empty rows are not
+set back to NULL by this; their pre-Release-1 originals (both NULL) live in the Release 1 pre-deploy
+output for a manual restore. Backing the change out was not exercised.
 
-Re-widening the column is lossless:
-
-```sql
-ALTER TABLE dbo.OrderLine ALTER COLUMN Note NVARCHAR(200) NULL;
-```
-
-The backfill is not auto-reversed — a full backout would also restore the rows that were backfilled to
-their prior NULL, from the values recorded before the backfill. Backing the change out was not
-exercised.
-
-## Not verified
-
-- **Application impact.** Any code path that saves an OrderLine without a `Note`, or writes NULL to it,
-  will fail once the column is mandatory (`Msg 515` at insert/update). Application-side validation is
-  not confirmed here — the application owner owns closing this before promotion.
-- **The backfill value.** No `Note` placeholder is chosen here; a data owner must supply it. The value
-  is visible anywhere `Note` is displayed.
-- **Other environments.** Test, UAT, and Prod may hold NULL `Note` rows this copy cannot see. The
-  row-presence guard fires in *every* populated environment regardless — run the BEFORE probe and plan
-  the gate-relaxed (or staged) rollout in each before promotion.
-- **Production scale and timing.** Once the gate is relaxed, the `ALTER COLUMN` may block writes or run
-  long at production row counts; the small copy cannot show that. Schedule a window.
-- **Reversibility.** The forward publish is proven (both the block and the empty-table apply); backing
-  the change out was not exercised.
+## Not checked / still open
+- The fill value is the data owner's call. The copy used the placeholder
+  `unknown+<Id>@example.invalid` — a real address, or collecting the missing emails first, is not
+  settled here.
+- Application impact — any code path that saves a customer without an email, or writes NULL to it,
+  fails after Release 1 with `Msg 515`. That every such path supplies a value is not confirmed
+  (app owner).
+- Other environments — QA, UAT, and Prod may hold more NULL emails than the 2 on the copy; the
+  guard blocks in every populated environment. Run the NULL query and land Release 1 in each before
+  Release 2.
+- Production scale and timing — the `ALTER COLUMN` rewrite cost at production row counts is not
+  shown by the small copy. Schedule a window.
+- Reversibility — the forward change and its lossless re-widening are the limit of what the copy
+  proved; restoring the original NULLs is not exercised.

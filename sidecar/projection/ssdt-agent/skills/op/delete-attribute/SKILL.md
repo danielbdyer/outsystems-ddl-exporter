@@ -5,13 +5,26 @@ description: Use when the developer says "remove the attribute", "delete the Leg
 
 # Delete attribute (4-phase deprecation)
 
-> **Default (provisional — the data decides; prove before you classify).** An empty column source
+> **Default (provisional — prove before you classify).** An empty column source
 > drops in place — it ships as a single schema change, no data read or written. A populated column
 > is blocked: SSDT refuses the drop on `BlockOnPossibleDataLoss` because the table holds rows whose
 > values would be lost (the row-presence gate; see `../../_index/tightening-class/SKILL.md`). The
-> safe remedy is the 4-phase deprecation staged across releases, or a named gate-relaxation once the
-> column is proven dead. A dev lead reviews at minimum; a principal must review once the column
-> holds data whose loss cannot be undone — *danger is not release-count.*
+> app must have stopped reading the column first (the deprecation), and then the physical drop ships
+> as **two releases**. A dev lead reviews at minimum; a principal must review once the column holds
+> data whose loss cannot be undone — *danger is not release-count.*
+
+> **SHIP terminal: TWO-RELEASE.** This pipeline (Azure DevOps → Octopus) cannot relax
+> `BlockOnPossibleDataLoss`, so a populated drop ships as R1 (a pre-deploy that drops the column's
+> default constraint then the column, with the model still declaring it) then R2 (the model drops
+> the column as a no-op). Proven live 2026-08-21 — this advances `FINDINGS_AND_CHANGES.md` Part 5,
+> where drops were still TO PROVE. Two drop-specific wrinkles: the seed must stop writing the column
+> in the same change set (else `Msg 207` at the post-deploy seed), and re-publishing R1 **re-adds**
+> the column with its default (every row stamped with the placeholder), so R1 is a single publish
+> and R2 must follow at once. Relaxing the gate is not available on this estate.
+
+> **Proven precedent:** `../../../sample-prs/delete-attribute.md` — the worked instance of the
+> `../../author-pr/SKILL.md` template for this op. Its *What proving showed* carries the real
+> `Msg 50000` block, the `Msg 207` seed-reference failure, the re-add drift, and the two-release land.
 
 ## OutSystems phrasing
 "remove the attribute", "delete the LegacyCode field, we don't use it".
@@ -38,10 +51,14 @@ not re-derive either here.
 - column empty / provably unused, no dependents → ships as a single schema change applied in place,
   but a dev lead reviews at minimum: a drop is structurally irreversible even with no data to lose
 - column holds data → `BlockOnPossibleDataLoss` blocks the drop (row-presence — see
-  `../../_index/tightening-class/SKILL.md`); the loss cannot be undone, so a principal must review
-- app still reads/writes the column → coexistence required → ships across releases as the 4-phase
-  deprecation (soft-deprecate → stop writes → verify unused → drop; see
-  `../../_index/multi-phase/SKILL.md`), and the running application must change to keep working
+  `../../_index/tightening-class/SKILL.md`); the loss cannot be undone, so a principal must review.
+  The physical drop ships as **two releases**: R1 a pre-deploy drops the default constraint then the
+  column with the model still declaring it (published once — a re-publish re-adds the column with
+  its default); R2 the model drops the column as a no-op. The seed stops writing the column in the
+  same change set (else `Msg 207`).
+- app still reads/writes the column → coexistence required → the 4-phase deprecation (soft-deprecate
+  → stop writes → verify unused → drop; see `../../_index/multi-phase/SKILL.md`) precedes the drop,
+  and the running application must change to keep working
 - referenced by a view/proc/index → drop those first → ordered multi-step
 - >1M rows → added scrutiny: at production row counts the drop may run long — schedule a window
 
@@ -70,15 +87,19 @@ because once the values are gone they're gone. The failure this avoids is blind-
 it's truly dead.
 
 ## On the record
-The fragment this contributes to the pull request (`../../author-pr/SKILL.md`).
+Assemble the pull request from the `../../author-pr/SKILL.md` template; the worked instance for
+this op is `../../../sample-prs/delete-attribute.md`. **SHIP terminal: TWO-RELEASE** on a populated
+column (ONE-RELEASE on an empty, unused one).
 
 **Review & release**
 - A principal must review this: data is removed and the removal cannot be undone. (An empty,
   provably-unused column loses no data, but a drop is structurally irreversible — a dev lead
   reviews at minimum.)
-- Ships across releases as the 4-phase deprecation (soft-deprecate → stop writes → verify unused →
-  drop) so the running application keeps working while the change is in flight. An empty, unused
-  column with no dependents ships as a single schema change, applied in place.
+- Ships as **two releases** after the app has stopped reading the column: R1 a pre-deploy drops the
+  column with the model lagging (published once); R2 the model drops the column as a no-op. The
+  seed stops writing the column in the same change set. The data-loss guard is not relaxed, because
+  this pipeline cannot relax it. An empty, unused column with no dependents ships as a single schema
+  change, applied in place.
 - Added scrutiny, when the table is large: at production row counts the drop may block writes or
   run long — schedule a window.
 
@@ -97,9 +118,9 @@ empty, provably-unused column re-adds losslessly. The drop is not auto-reversed.
 
 **Not verified**
 - Application impact — whether application code outside the database still writes or reads the
-  column. `sys.dm_sql_referencing_entities` sees SQL objects, not application code; @app-owner
+  column. `sys.dm_sql_referencing_entities` sees SQL objects, not application code; app owner
   confirms the app has stopped.
-- Other environments — Test, UAT, and Prod may still have live readers where Dev does not. Run the
+- Other environments — QA, UAT, and Prod may still have live readers where Dev does not. Run the
   referencing check and the verification query before each promotion.
 - Reversibility — only the forward drop is exercised on the disposable copy; the dropped values are
   not recoverable from the schema change, and the pre-drop backup is the sole restore path.

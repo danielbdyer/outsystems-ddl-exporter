@@ -1,81 +1,90 @@
 ---
 name: add-check
-description: Use when the developer says "Total must be positive", "Status has to be one of these values", "age can't be negative" — any business rule enforced at the data layer via a CHECK constraint. SSDT validates every existing row at deploy; violating rows block the deployment; NOCHECK skips validation but leaves the constraint untrusted.
+description: Use when the developer says "Total must be positive", "Status has to be one of these values", "age can't be negative" — any business rule enforced at the data layer via a CHECK constraint. SSDT re-validates every existing row at deploy; a violating row blocks it (Msg 547); over clean data the check trusts itself.
 ---
 
 # Add a check constraint
 
-> **Default (provisional — the data decides).** A dev lead or an experienced developer should
-> review this: adding the check means the running application must change to keep working. Ships as
-> a single schema change, applied in place, when every existing row already satisfies the predicate.
-> Prove zero violations on a disposable copy before classifying.
+> **Default (provisional — prove before you classify).** One release, applied in place — the check
+> re-validates every existing row and, over clean data, trusts itself (`is_not_trusted = 0`); no data
+> is modified. A dev lead or an experienced developer reviews it: the running application must produce
+> conforming data or its writes are rejected. Prove zero violations on a copy first; a violating row
+> blocks the deploy until it is reconciled.
+
+> **SHIP terminal: ONE RELEASE, trusts itself.** Proven live on this branch (DBs `db_chk`, `db_chkv`):
+> adding `CK_Order_Total CHECK (Total > 0)`, the generated script is `ALTER TABLE [dbo].[Order] WITH
+> NOCHECK ADD CONSTRAINT [CK_Order_Total] CHECK (Total > 0);` then `ALTER TABLE [dbo].[Order] WITH CHECK
+> CHECK CONSTRAINT [CK_Order_Total];` — the **same two statements as a foreign key** (F9/F10). Clean
+> data → `Successfully published database.`, `is_not_trusted = 0`. One violating row (`Total = -5`) →
+> **BLOCK `Msg 547`** ("conflicted with the CHECK constraint … column 'Total'"). `FINDINGS_AND_CHANGES.md` F10.
+>
+> **Proven precedent:** `../../../sample-prs/add-check.md` — the worked instance of the ten-section
+> pull-request template (`../../author-pr/SKILL.md`) for this op, carrying the live messages.
 
 ## OutSystems phrasing
 "Total must be positive", "Status has to be one of these values", "age can't be negative" — any
 business rule the developer wants enforced at the data layer.
 
 ## SSDT meaning
-`CONSTRAINT CK_<Table>_<Col> CHECK (<predicate>)`. SSDT adds the constraint **WITH CHECK** by
-default, validating **every existing row** at deploy.
+`CONSTRAINT CK_<Table>_<Col> CHECK (<predicate>)` added to the table's CREATE. On publish, the
+generated script adds the constraint `WITH NOCHECK` and then re-validates it `WITH CHECK CHECK`,
+checking **every existing row**. Over clean data it ends trusted; a violating row blocks the deploy
+with `Msg 547`. Edit the CREATE; never write `ALTER`.
 
 ## The named trap
-**Existing rows that violate the predicate block the deployment.** The escape hatch — **WITH
-NOCHECK** — is its own trap: it skips validation but leaves the constraint **untrusted**
-(`is_not_trusted = 1`), so the optimizer ignores it and bad rows can already be present. Both belong
-to the constraint-is-a-claim family — a violating value blocks the deploy, and the trust ladder
-governs NOCHECK — see `../../_index/constraint-is-a-claim/SKILL.md`; do not re-derive the claim or
-NOCHECK mechanics here.
+A check is create-fk's twin: a single violating row blocks the deploy at the `WITH CHECK CHECK`
+re-validation (`Msg 547`). Reaching for `WITH NOCHECK` by hand to get past the block is the
+anti-pattern — it leaves the check **untrusted** (`is_not_trusted = 1`), so the optimizer ignores it
+and bad rows stay. The block is the constraint working; the fix is to reconcile the data, not to dodge
+the check. See `../../_index/constraint-is-a-claim/SKILL.md`.
 
 ## How it flips (the specifics only)
-- every existing row satisfies the predicate → ships as a single schema change, applied in place; a
-  dev lead or an experienced developer reviews it because the running application must change to keep
-  working (prove it).
-- violating rows PRESENT → **flip to a pre-deployment fix-up plus the declarative change, in one
-  PR**: the pre-deploy fix-up brings violators into compliance BEFORE the WITH CHECK validation; a
-  dev lead must review this because existing data is modified — see
-  `../../_index/constraint-is-a-claim/SKILL.md`.
-- violating rows that CANNOT be fixed in-place (legitimate legacy data) → consider staging across
-  releases (quarantine / grandfather — see `../../_index/multi-phase/SKILL.md`), or accept WITH
-  NOCHECK *only* as a named, documented, explicitly-untrusted decision.
-- \+ >1M rows / first-time on this estate → **added scrutiny**: at production row counts the WITH
-  CHECK validation may run long or block writes (schedule a window), and a first-time operation
-  warrants an extra reviewer.
+- every existing row satisfies the predicate → one release, in place; the check re-validates and trusts
+  itself. A dev lead or an experienced developer reviews it, because the running application must now
+  produce conforming data.
+- violating rows present → a pre-deploy step brings them into compliance first, then the same
+  declarative add re-validates and trusts itself; without the reconcile the publish blocks (`Msg 547`).
+  A dev lead reviews it, because existing data is modified.
+- violating rows that cannot be fixed in-place (legitimate legacy data) → stage across releases
+  (quarantine / grandfather — see `../../_index/multi-phase/SKILL.md`), or accept an untrusted check
+  only as a named, logged, explicit exception.
+- >1M rows / first-time on this estate → added scrutiny: at production row counts the re-validation may
+  run long or block writes (schedule a window); a first-time operation warrants an extra reviewer.
 
 ## Prove it
-Run the violation probe FIRST: `SELECT COUNT(*) FROM <table> WHERE NOT (<predicate>)`. Then build +
-Strict publish (adds WITH CHECK): clean → zero violations; a build failure ("conflicted with the
-CHECK constraint") means the deployment is blocked. Author the pre-deploy fix-up, re-run Strict
-clean. If anyone proposes WITH NOCHECK, prove the cost:
-`SELECT is_not_trusted FROM sys.check_constraints WHERE name='CK_…'` returns 1. See
+Run the violation probe FIRST: `SELECT COUNT(*) FROM <table> WHERE NOT (<predicate>)`. Then publish:
+clean → the check lands trusted; any violating row → the publish blocks with `Msg 547` naming the
+constraint and column. Author the pre-deploy reconcile, re-publish clean, and confirm
+`SELECT is_not_trusted FROM sys.check_constraints WHERE name='CK_…'` returns 0. See
 `../../prove-on-dacpac/SKILL.md` + `../../talk-to-local-sql/SKILL.md`.
 
 ## The verdict (to the developer)
-You asked to enforce Total > 0. On a disposable copy of Dev, SSDT refused it: 7 existing rows have a
-Total of 0 or less, and the check validates every existing row when it is added. The way through is
-a pre-deployment script that brings those 7 rows into compliance before the check validates — then
-it lands clean and stays trusted. Skipping validation with NOCHECK would let it land, but the check
-would be untrusted and the optimizer would ignore it, so I wouldn't take that route. What should
-those 7 rows become — is there a correct Total for them, or should they be handled another way?
+You asked to enforce Total > 0. On a copy of Dev, every order already satisfies it, so the check adds
+and re-validates in one publish and ends trusted — one release, nothing to reconcile. If any order had
+a Total of 0 or less, the publish would be refused (`Msg 547`) until those rows were reconciled in a
+pre-deploy step first. Going forward, a write that sets a Total to 0 or less is rejected.
 
 ## The reasoning (in conversation)
-Run the violation probe (`WHERE NOT (<predicate>)`) before anything else, and treat NOCHECK as a
-debt, not a shortcut: if you ever reach for it, prove the untrusted state and get the constraint
-back to trusted. The failure this avoids is "just add the rule" over legacy data that already
-violates it — the deploy blocks, or NOCHECK silences it and you quietly ship a constraint the
-optimizer will not use. See `../../_index/constraint-is-a-claim/SKILL.md`.
+Run the violation probe (`WHERE NOT (<predicate>)`) before anything else: the same check text lands in
+one release when every row conforms, and blocks with `Msg 547` the moment one row does not — so you
+read what will happen from the violation count, never from the `.sql`. The declarative add re-validates
+itself (`WITH NOCHECK ADD` then `WITH CHECK CHECK`), so a clean check ends trusted on its own; an
+untrusted check comes only from a hand-written `WITH NOCHECK` dodge. See
+`../../_index/constraint-is-a-claim/SKILL.md`.
 
 ## On the record
-Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op — with the live messages — is `../../../sample-prs/add-check.md`. SHIP terminal:
+**ONE RELEASE, trusts itself.** The fragment this operation contributes:
 
 **Review & release**
-- A dev lead or an experienced developer should review this: the running application must change to
-  keep working. When a pre-deployment script fixes violating rows first, a dev lead must review this:
-  existing data is modified.
-- Ships as a single schema change, applied in place; the check validates the existing rows as it
-  lands. With remediation, it ships as one release: a pre-deployment script brings the violating rows
-  into compliance, then the check lands validated and trusted.
-- Added scrutiny, when it applies: at production row counts the WITH CHECK validation may block
-  writes or run long (schedule a window); a first-time operation on this estate.
+- A dev lead or an experienced developer reviews this: the running application must produce conforming
+  data, or its writes are rejected with error 547. When a pre-deploy step reconciles violating rows
+  first, a dev lead reviews it: existing data is modified.
+- Ships as one release, applied in place — the check re-validates every existing row in the publish and
+  ends trusted. No data is modified unless a reconcile is needed.
+- Added scrutiny, when it applies: at production row counts the re-validation may block writes or run
+  long (schedule a window); a first-time operation on this estate.
 
 **Verification** — run in each environment after deployment
 ```sql
@@ -87,17 +96,14 @@ SELECT is_not_trusted FROM sys.check_constraints WHERE name = 'CK_<Table>_<Col>'
 ```
 
 **Rollback**
-The constraint drops without data loss: `ALTER TABLE <table> DROP CONSTRAINT CK_<Table>_<Col>;`. A
-pre-deployment fix-up UPDATE is not auto-reversed; the original values recorded under Data
-remediation are what a manual restore uses.
+The constraint drops without data loss: `ALTER TABLE <table> DROP CONSTRAINT CK_<Table>_<Col>;`. This
+is also the cleanup for an untrusted check left by a blocked attempt. A pre-deploy reconcile is not
+auto-reversed; the original values are recorded in the pre-deploy step's output.
 
 **Not verified**
-- Application impact — any code path that writes a value violating the predicate now fails on the
-  check constraint conflict ("conflicted with the CHECK constraint"); application-side validation is
-  not confirmed here (@app-owner).
-- Other environments — Test, UAT, and Prod may hold violating rows the disposable copy of Dev cannot
-  see. Run the verification query before promotion.
-- Production scale and timing — on a large table the WITH CHECK validation may block writes or run
-  long; the small copy does not show it.
-- Reversibility — if a pre-deployment script remediated rows, backing that out is not exercised here;
-  the recorded originals are what a manual restore would use.
+- Application impact — any code path that writes a value violating the predicate now fails with error
+  547 ("conflicted with the CHECK constraint"); application-side validation is not confirmed here (app owner).
+- Other environments — QA, UAT, and Prod may hold violating rows the copy cannot see. Run the
+  violation probe before promotion.
+- Production scale and timing — on a large table the re-validation may block writes or run long; the
+  small copy does not show it.

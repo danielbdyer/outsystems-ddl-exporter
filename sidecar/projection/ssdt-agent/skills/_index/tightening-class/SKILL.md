@@ -79,25 +79,28 @@ part of the change set, not an afterthought. Proven live; the captured run is
   `ALTER` lands. *(Confirm the table is genuinely empty first.)* This ships as a single schema
   change, applied in place — the **only** clean single-phase leg, and the lightest to review, since
   an empty table puts no data at risk.
-- **POPULATED table (violations present OR zero violations — it makes no difference)** → the change
-  **cannot pass the prod-strict gate by backfill/reconcile alone.** It requires a **conscious,
-  documented decision taken AFTER a verified probe** (prove the violation count is 0 first —
-  necessary, not sufficient), then ONE of:
-  - **(a) Targeted gate-relaxation.** Having *proven* zero violations remain, deliberately disable
-    `BlockOnPossibleDataLoss` for **this one targeted change** (a scoped publish-profile override or
-    a script-only path) so the tightening `ALTER` proceeds against the now-clean column. This
-    **ships as a scripted change** — the data-loss guard is relaxed for this one change, which
-    cannot be expressed as a table definition. The proof packet must carry **both** the
-    zero-violation probe **AND** the explicit record of the relaxation decision.
-  - **(b) Restructure across releases.** Stage it so the engine never has to relax its guard (add
-    the tightened column in a new structure and migrate, or sequence the tightening across releases
-    where the model state the engine diffs no longer trips the table-has-rows guard). This **ships
-    across multiple releases** so the running application keeps working while the change is in
-    flight, each release its own pull request.
+- **POPULATED table (violations present OR zero violations — it makes no difference)** → the
+  tightening `ALTER` trips the row-presence guard, and this estate's pipeline (Azure DevOps →
+  Octopus, dacpac) **cannot relax `BlockOnPossibleDataLoss` for one deploy**
+  (`../../../FINDINGS_AND_CHANGES.md` Part 1 — the locked-gate axiom). So it ships as **two
+  releases** — the pattern proven live on this branch (F4 narrow, F7 make-mandatory):
+  - **Release 1** — a one-time pre-deploy script reconciles the data (backfill the NULLs; shorten
+    the over-length values) and runs the tightening `ALTER` itself, **with the model left at the
+    old shape**, so DacFx generates no data-loss step and the row-presence guard never fires.
+    Idempotent and safe over a partial state (F6).
+  - **Release 2** — the model catches up to the new shape. The database is already tightened, so
+    DacFx sees model = database and generates nothing.
 
-  Either way, **a dev lead must review this: existing data is modified.** Added scrutiny raises that
-  bar — this table is large enough that the change may block writes or run long at production row
-  counts, or this is the first time the operation has been done on this estate.
+  Never combine the two (F2 — a model that tightens in the same release the pre-deploy tightens
+  still trips the guard AND half-applies). Release 1's own `ALTER` fails `Msg 515` if a NULL or an
+  over-length value remains, so the reconcile is part of Release 1, not an afterthought. Name both
+  releases in the pull request. The full graph is `../../../THE_DECISION_TREE.md`'s S5 SHIP
+  sub-machine; the concrete narrow and make-mandatory shapes are in `FINDINGS_AND_CHANGES.md`
+  Part 4.
+
+  **A dev lead must review this: existing data is modified.** Added scrutiny raises that bar — this
+  table is large enough that the change may block writes or run long at production row counts, or
+  this is the first time the operation has been done on this estate.
 
 ## How the per-op specifics differ (they still point here)
 
@@ -106,9 +109,9 @@ them. What each op still owns in its own SKILL:
 
 - **make-mandatory** — the probe is `COUNT(*) WHERE col IS NULL`; the trap is trusting a clean NULL
   probe as a green light.
-- **narrow** — the probe is `MAX(LEN(col))` + `COUNT(*) WHERE LEN(col) > <new>`; `MAX(LEN)` fitting
-  decides gate-relaxation vs. multi-phase for the *remedy*, but never buys a clean single-phase on
-  a populated table.
+- **narrow** — the probe is `MAX(LEN(col))` + `COUNT(*) WHERE LEN(col) > <new>`; `MAX(LEN)` already
+  fitting means Release 1's reconcile shortens nothing, but it never buys a clean single-phase on a
+  populated table — the row-presence guard still forces the two releases.
 - **delete-attribute** — the values are irrecoverable; a principal must review this, since data is
   removed and the removal cannot be undone even when the drop is mechanically one statement; the
   4-phase deprecation is its multi-phase shape (see `../multi-phase/SKILL.md`).
@@ -129,6 +132,14 @@ the rule (a duplicate, an orphan, a failing predicate). **This** class **blocks 
 PRESENCE** — the guard never looks at a value. Collapsing the two would re-lose the exact
 distinction the disposable-copy runs exist to teach. When a constraint op refuses on a *populated
 but clean* table, that is this class; when it refuses on *dirty data*, that is the claim.
+
+And not the same as **Optimistic NOT NULL on a NEW column** (`add-mandatory` / `audit-columns`):
+that block is a value-needed refusal the remedy **cures** — an explicit `DEFAULT` on a **new** NOT
+NULL column stamps every existing row as the column lands, and a populated table applies clean
+(proven: `../../../sample-prs/add-mandatory.md`; contrast `../../../sample-prs/add-default.md`, where a
+default on an **existing** column never backfills). This class's row-presence guard clears for no
+remedy short of the two-release restructure — this estate cannot relax the gate (Part 1). The
+discriminator is one sentence: **if a DEFAULT can fix it, it is not the tightening class.**
 
 ## Handbook
 

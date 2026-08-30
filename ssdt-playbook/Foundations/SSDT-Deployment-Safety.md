@@ -46,10 +46,16 @@ Your publish profile (`.publish.xml`) controls deployment behavior. These settin
 
 **Recommendations:**
 
+> **This estate's settings are fixed in the pipeline.** The Azure DevOps → Octopus publish
+> carries its DacFx flags in the pipeline's own XML for every environment (QA and UAT already
+> publish with them). The tables in this section are generic SSDT guidance for understanding
+> the axes — the pipeline profile is authoritative, and developers never choose per-deploy
+> settings.
+
 | Environment | Setting | Rationale |
 |-------------|---------|-----------|
 | Dev | True | Keep it clean, catch issues early |
-| Test | True | Should match prod process |
+| QA | True | Should match prod process |
 | UAT | False | Don't accidentally drop test fixtures |
 | Prod | **False** | Never auto-drop in prod |
 
@@ -87,7 +93,7 @@ Smart defaults can mask problems. You may not want empty strings or zeros silent
 
 ## Settings Matrix by Environment
 
-| Setting | Dev | Test | UAT | Prod |
+| Setting | Dev | QA | UAT | Prod |
 |---------|-----|------|-----|------|
 | BlockOnPossibleDataLoss | True | True | True | **True** |
 | DropObjectsNotInSource | True | True | False | **False** |

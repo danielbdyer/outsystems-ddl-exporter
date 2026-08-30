@@ -5,10 +5,20 @@ description: Use when the developer says "add an optional attribute", "add a Mid
 
 # Add optional attribute
 
-> **Default (provisional — the data decides).** Any team member can review this: the change is
+> **Default (provisional — prove before you classify).** Any team member can review this: the change is
 > additive and the running application is unaffected. Ships as a single schema change, applied in
 > place — existing rows just get NULL, no data is read or written. Prove it on a disposable copy
 > before classifying.
+
+> **SHIP terminal: ONE RELEASE, in place.** Proven live on this branch (SQL Server 2022,
+> `sqlpackage 170.4.83.3`): the difference is a single
+> `ALTER TABLE dbo.Customer ADD [MiddleName] NVARCHAR(100) NULL`, the strict publish
+> (`BlockOnPossibleDataLoss = true`) returns `Successfully published database.`, the 5 existing rows
+> take NULL, and a re-publish is a no-op.
+>
+> **Proven precedent:** `../../../sample-prs/add-optional.md` — the worked instance of the
+> ten-section pull-request template (`../../author-pr/SKILL.md`) for this op, carrying the live proof
+> messages.
 
 ## OutSystems phrasing
 "add an optional attribute", "add a MiddleName field, it can be blank".
@@ -37,7 +47,9 @@ the publish loop, see `../../prove-on-dacpac/SKILL.md`.
 You asked to add an optional attribute — the safest change in the catalog. On a disposable copy of
 your populated data, SSDT just runs `ALTER TABLE ... ADD ... NULL`, and existing rows simply get
 NULL, so nothing already in the table can conflict with it. It published clean and nothing was lost.
-There's nothing to decide here; it's ready to ship.
+The one thing worth a thought: if this column will be filtered or searched on a table that grows, it
+may want an index (see `../../_index/when-to-index/SKILL.md`); a new optional column nothing queries
+does not, and then it's ready to ship.
 
 ## The reasoning (in conversation)
 An optional add never gets blocked, because NULL is always a valid value for the rows already in the
@@ -48,12 +60,14 @@ risk in the wrong place — an optional add is genuinely additive, and no existi
 with it.
 
 ## On the record
-Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
+The pull request is an instance of the ten-section template in `../../author-pr/SKILL.md`; the worked
+instance for this op — with the live proof messages — is `../../../sample-prs/add-optional.md`. SHIP
+terminal: **ONE RELEASE, in place.** Fragments below, in the record register.
 
 **Review & release**
 - Any team member can review this: the change is additive and the running application is unaffected.
 - Ships as a single schema change, applied in place. No data is read or written.
-- Added scrutiny: none — an optional column is additive and every existing row takes NULL.
+- Added scrutiny: the change itself adds none — an optional column is additive and every existing row takes NULL. The estate ledger still applies the standing first-time line until add-optional has a row in `../../../estate/operations.md` (during the cutover, that is still every operation); for an additive change that line asks for the one proof on a copy, not a higher reviewer.
 
 **Verification** — run in each environment after deployment
 ```sql
@@ -70,7 +84,7 @@ holds NULL at deploy; once the application writes values into it, dropping the c
 
 **Not verified**
 - Application impact — a nullable add does not change existing application behaviour, but any code
-  intended to populate the new column is not exercised by the disposable copy (@app-owner).
+  intended to populate the new column is not exercised by the disposable copy (app owner).
 - Production scale and timing — the add is metadata-only on modern SQL Server with
   `IgnoreColumnOrder=True`; that it stays metadata-only at production row counts and on the target's
   edition and version is not confirmed by the small copy.

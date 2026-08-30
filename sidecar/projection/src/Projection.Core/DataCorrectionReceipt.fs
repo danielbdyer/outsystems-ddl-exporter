@@ -52,7 +52,7 @@ module DataCorrectionDerivation =
         | other ->
             Result.failureOf
                 (ValidationError.create "dataCorrection.derivation.unknown"
-                    (String.concat "" [ "unknown data-correction derivation '"; other; "'" ]))
+                    (String.concat "" [ "unknown data-correction derivation '"; other; "'" ]))  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
 
     /// Whether this derivation needs another kind's rows (a parent/lookup map).
     /// The pipelined publish path drains and drops rows per-kind and never
@@ -145,7 +145,7 @@ module DataCorrectionGuard =
         | other ->
             Result.failureOf
                 (ValidationError.create "dataCorrection.guard.unknown"
-                    (String.concat "" [ "unknown data-correction guard '"; other; "'" ]))
+                    (String.concat "" [ "unknown data-correction guard '"; other; "'" ]))  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
 
 /// The recorded outcome of evaluating one guard while applying a correction. A
 /// receipt only exists on a SUCCESSFUL apply, so every result on a persisted
@@ -233,7 +233,7 @@ module DataCorrectionReceipt =
     /// A deterministic sort key: `(CorrectionId, module, entity, attribute)`.
     /// The manifest / lifecycle artifact sorts by this so the persisted receipt
     /// stream is byte-deterministic across runs.
-    let sortKey (r: DataCorrectionReceipt) : string * string * string * string =
+    let sortKey (r: DataCorrectionReceipt) : string * string * string * string =  // LINT-ALLOW: deterministic four-segment sort key at the ordering boundary; a named record for a single-consumer transient key was considered and adds no invariant — the tuple is irreducible here
         (r.CorrectionId, r.Subject.Module, r.Subject.Entity, r.Subject.Attribute)
 
     /// Order a receipt list deterministically by `sortKey`.
