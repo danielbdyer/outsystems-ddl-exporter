@@ -7,7 +7,7 @@ description: Use when the developer says "add 'Refunded' to the Status list", "c
 
 > **Default (provisional — prove before you classify).** Ships as one release: the seed MERGE in the
 > post-deployment script re-runs, inserting the new row or amending the one changed row. The table
-> definition is unchanged. Any team member can review this: the change is additive and the running
+> definition is unchanged. A dev lead approves this: the change is additive and the running
 > application is unaffected. Prove the redeploy is silent and the label change touches exactly one row
 > before classifying.
 
@@ -29,7 +29,7 @@ Extend or amend the `VALUES` block of the MERGE in the post-deploy seed. Adding 
 An **unconditional `WHEN MATCHED`** that rewrites every row on every deploy — this is the idempotent-seed concern; see `../../_index/idempotent-seed/SKILL.md`. (Retiring a referenced value is `delete-seed-value` — route there; that op owns deactivate-don't-delete.)
 
 ## How it flips (the specifics only)
-- add a new value / change a label → ships as one release; any team member can review it — the change
+- add a new value / change a label → ships as one release; a dev lead approves this — the change
   is additive and the running application is unaffected.
 - retire a value the app references → route to `../delete-seed-value/SKILL.md` (deactivate, don't delete).
 
@@ -55,7 +55,7 @@ instance for this op is `../../../sample-prs/edit-seed.md`. SHIP terminal: **ONE
 seed).** The fragment this operation contributes:
 
 **Review & release**
-- Any team member can review this: a seed value is added (or a label amended) and the running
+- A dev lead approves this: a seed value is added (or a label amended) and the running
   application is unaffected. The change is additive; existing rows keep their identity.
 - Ships as one release: the seed MERGE in the post-deployment script re-runs, inserting the new row or
   amending the one changed row. The table definition is unchanged.

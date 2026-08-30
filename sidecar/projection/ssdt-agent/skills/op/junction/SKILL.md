@@ -7,7 +7,7 @@ description: Use when the developer says "make this a many-to-many", "a Student 
 
 > **Default (provisional — prove before you classify).** Ships as a single schema change, applied in
 > place: a new `CREATE TABLE` whose composite primary key spans two foreign key columns; no
-> existing data is read or written. A dev lead must review this: it adds two cross-table
+> existing data is read or written. A dev lead approves this: it adds two cross-table
 > relationships. Prove both sides carry no orphan pairs before classifying — if the bridge is
 > seeded with pairs referencing missing parents, the publish is blocked and it routes to
 > `../create-fk-orphan/SKILL.md`.
@@ -38,8 +38,7 @@ in. Do not re-derive the orphan/claim mechanics here.
   place; a dev lead reviews it because two cross-table relationships are added.
 - bridge seeded with pairs referencing missing parents → the foreign-key validation blocks the
   publish → this becomes the orphan-reconcile path: route to `../create-fk-orphan/SKILL.md` (and
-  `../../_index/constraint-is-a-claim/SKILL.md`), where it ships as a scripted change and a dev
-  lead must review it because existing data is modified.
+  `../../_index/constraint-is-a-claim/SKILL.md`), where it ships as a scripted change and a dev lead approves this because existing data is modified.
 - either parent table is large → the foreign-key validation scans both parents → added scrutiny
   at >1M rows: the scan may block writes or run long, so schedule a window.
 - **the second foreign-key column is not covered for reverse joins** → the composite primary key
@@ -77,7 +76,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 worked instance is `../../../sample-prs/junction.md`).
 
 **Review & release**
-- A dev lead must review this: two cross-table relationships are added.
+- A dev lead approves this: two cross-table relationships are added.
 - Ships as a single schema change, applied in place — one `CREATE TABLE` whose composite primary
   key spans two foreign key columns; no existing data is read or written.
 - Added scrutiny: none for small parents; at >1M rows in either parent the foreign-key validation

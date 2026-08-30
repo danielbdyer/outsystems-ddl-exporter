@@ -5,7 +5,7 @@ description: Use when the developer says "give this attribute a default value", 
 
 # Add a default
 
-> **Default (provisional — prove before you classify).** Any team member can review this: the change is
+> **Default (provisional — prove before you classify).** A dev lead approves this: the change is
 > additive and the running application is unaffected. Ships as a single schema change, applied in
 > place — adding a default never touches existing row values. Prove it on a disposable copy before
 > classifying.
@@ -45,18 +45,16 @@ shape above) — the two shapes are different operations wearing one word, and t
 which one shipped.
 
 ## How it flips (the specifics only)
-- adding a default to an existing column → ships as a single schema change, applied in place; any
-  team member can review it, in any data state — no existing row is touched.
+- adding a default to an existing column → ships as a single schema change, applied in place; a dev lead approves this, in any data state — no existing row is touched.
 - the default rides a NEW mandatory column (the `add-mandatory` remedy) → ships as a single schema
   change, applied in place, **and the default stamps every existing row as the column lands**
-  (proven: `../../../sample-prs/add-default.md`). The stamped values are data the record names; a
-  dev lead or an experienced developer reviews it, because the application must now supply or
+  (proven: `../../../sample-prs/add-default.md`). The stamped values are data the record names; a dev lead approves it, because the application must now supply or
   accept that value.
 - the developer also wants existing rows backfilled → a separate op. It ships as one release: the
   schema change, then a post-deployment script that runs an idempotent UPDATE after it lands (see
   `../../_index/idempotent-seed/SKILL.md`). If the column is also becoming NOT NULL, follow
-  `../make-mandatory/SKILL.md` instead. The default itself still ships in place and stays reviewable
-  by any team member.
+  `../make-mandatory/SKILL.md` instead. The default itself still ships in place and keeps the
+  lightest look.
 
 ## Prove it
 Build + Strict `sqlpackage /Action:Script`; confirm the delta is a clean
@@ -84,7 +82,7 @@ instance for this op is `../../../sample-prs/add-default.md`. SHIP terminal: **O
 The fragment this operation contributes:
 
 **Review & release**
-- Any team member can review this: the change is additive and the running application is unaffected.
+- A dev lead approves this: the change is additive and the running application is unaffected — the lightest look on this estate.
 - Ships as a single schema change, applied in place. No data is read or written.
 - Added scrutiny: none. Adding a default is additive and touches no existing rows.
 

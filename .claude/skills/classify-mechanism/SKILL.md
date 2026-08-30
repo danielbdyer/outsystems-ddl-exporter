@@ -1,6 +1,6 @@
 ---
 name: classify-mechanism
-description: Use after confirm-intent has named the operation and gathered the three state-variables, to state PROVISIONALLY how a change ships and who must review it, before proving. Walks the handbook decision cascade (file 15 = §18.1, Q1-Q4), adds the standing-risk escalations (>1M rows / first-time op), keeps how-it-ships and who-reviews as independent findings, and decides WHEN a change can be classified on sight versus when it MUST be proven on a disposable copy of Dev. Emits a provisional pair of findings that prove-on-dacpac confirms or flips.
+description: Use after confirm-intent has named the operation and gathered the three state-variables, to state PROVISIONALLY how a change ships and what the approving dev lead weighs, before proving. Walks the handbook decision cascade (file 15 = §18.1, Q1-Q4), adds the standing-risk escalations (>1M rows / first-time op), keeps how-it-ships and what-the-lead-weighs as independent findings, and decides WHEN a change can be classified on sight versus when it MUST be proven on a disposable copy of Dev. Emits a provisional pair of findings that prove-on-dacpac confirms or flips.
 ---
 
 The canonical skill body lives in the tree, where its relative citations resolve:

@@ -6,7 +6,7 @@ description: Use when the developer says "change the index to cover these column
 # Modify an index (change key columns / non-unique → unique / change include list)
 
 > **Default (provisional — prove before you classify).** A key or include change ships as a single
-> declarative schema change, applied in place, and any team member can review it. Adding UNIQUE is a
+> declarative schema change, applied in place, and a dev lead approves this. Adding UNIQUE is a
 > claim over the data — prove no duplicates before classifying; with duplicates present it flips to a
 > pre-deployment de-dupe plus the declarative change.
 
@@ -35,13 +35,12 @@ or include change with no uniqueness added is never blocked by the data.
 
 ## How it flips (the specifics only)
 - key or include change, no uniqueness added → ships as a single declarative schema change, applied
-  in place; any team member can review it, though the DROP+CREATE rebuild blocks writes like
-  add-index, and a large table pushes it to an experienced developer with a named window.
+  in place; a dev lead approves this, though the DROP+CREATE rebuild blocks writes like
+  add-index, and on a large table the approval names a maintenance window.
 - non-unique → unique, NO duplicates → still a single declarative schema change, applied in place
   (prove it).
 - non-unique → unique, duplicates PRESENT → **flip to a pre-deployment de-dupe plus the declarative
-  change, in one PR**: the pre-deploy de-dupe clears the duplicates BEFORE the unique build; a dev
-  lead must review this because existing data is modified — the block is on the actual duplicate
+  change, in one PR**: the pre-deploy de-dupe clears the duplicates BEFORE the unique build; a dev lead approves this because existing data is modified — the block is on the actual duplicate
   values, see `../../_index/constraint-is-a-claim/SKILL.md`.
 - \+ >1M rows → **added scrutiny**: at production row counts the rebuild and any de-dupe may block
   writes or run long (schedule a window — rebuild + dedupe cost).
@@ -72,10 +71,10 @@ de-dupe first.
 Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
 
 **Review & release**
-- Any team member can review a key or include change: it is a structural rebuild and the running
-  application is unaffected. Adding UNIQUE is a rule the running application must satisfy, so an
-  experienced developer should review it; when a pre-deployment de-dupe is needed, a dev lead must
-  review this: existing data is modified.
+- A dev lead approves a key or include change with the lightest look: it is a structural rebuild
+  and the running application is unaffected. Adding UNIQUE is a rule the running application must
+  satisfy, and the approval weighs that; when a pre-deployment de-dupe is needed, the approval
+  weighs that existing data is modified.
 - Ships as a single declarative schema change, applied in place: SSDT emits `DROP INDEX` + `CREATE
   INDEX`, a full rebuild over all rows. With remediation, it ships as one release: a pre-deployment
   de-dupe clears the duplicates, then the unique index builds validated.

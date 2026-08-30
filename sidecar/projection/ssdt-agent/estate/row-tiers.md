@@ -23,3 +23,8 @@ and UAT hold their own row counts, which differ from Dev's.
 | dbo.Order | 1–1k | 4 rows | sample seed (Data/Seed.sql), 2026-08-11 |
 | dbo.OrderLine | 1–1k | 8 rows | sample seed (Data/Seed.sql), 2026-08-11 |
 | dbo.Product | 1–1k | 5 rows | sample seed (Data/Seed.sql), 2026-08-11 |
+
+Measured publish timings at the 100k–1M and >1M tiers — what each tier actually costs on a
+Strict publish, and where the engine's scan becomes visible over the tool's overhead — live
+in `scale-datapoints.md`, re-measured from the proving-ground scale lane
+(`../proving-ground/twin.scale.json`).

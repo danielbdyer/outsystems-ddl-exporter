@@ -1,7 +1,8 @@
 # AdHoc/ — outside the deploy (the escape hatch and the drift frontier)
 
 Scripts here are **checked in but NOT run by the DACPAC** — they live outside the source of truth,
-which is why they are the most dangerous class and carry **principal review by default**. A script
+which is why they are the most dangerous class and carry **the heaviest approval weigh-line by
+default**. A script
 leaves the deploy path for exactly two legitimate reasons, and only two:
 
 1. **Scale / lock** — too long-running or too lock-heavy for the single deploy transaction (a batched

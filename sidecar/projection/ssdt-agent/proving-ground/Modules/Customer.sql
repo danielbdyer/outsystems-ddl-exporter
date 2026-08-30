@@ -19,7 +19,7 @@
     placed before the ALTER COLUMN. That is table-has-rows, not column-has-NULLs. Consequences:
       * Empty table -> the IF EXISTS is false, the RAISERROR never fires, the ALTER COLUMN
         NOT NULL lands. It ships as a single schema change applied in place, no data read or
-        written, and any team member can review it.
+        written — the lightest look.
       * Populated table (NULLs present or zero NULLs — it does not matter which) -> Strict
         always blocks it. A pre-deploy backfill that clears every NULL does not clear the block;
         the column stays nullable. Proven on a disposable copy of Dev: backfilled to 0 NULL

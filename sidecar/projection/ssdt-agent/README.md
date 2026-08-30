@@ -47,21 +47,25 @@ Every change carries two independent findings. State both; never collapse them i
   foreign key, an identity swap.
 - Across N releases, so the running application keeps working while the change is in flight.
 
-**Who must review, and why** — decided by what the change does to data and to the running app:
+**What the approving dev lead weighs** — on this estate every schema change is approved by a
+dev lead, and only by a dev lead; a developer never approves a schema change, their own or
+another's. The approver is constant, so the finding names the weight, decided by what the
+change does to data and to the running app:
 
-- Any team member — the change is additive and the running application is unaffected.
-- A dev lead or an experienced developer — the running application must change to keep working.
-- A dev lead — existing data is modified, or a cross-table relationship is added.
-- A principal — data is removed and the removal cannot be undone.
+- The lightest look — the change is additive and the running application is unaffected.
+- The running application must change to keep working.
+- Existing data is modified, or a cross-table relationship is added.
+- Data is removed and the removal cannot be undone — the strongest call, named explicitly in
+  the approval.
 
 Two facts add scrutiny on top of that, each stated on its own line when it holds: at production
 row counts the change may block writes or run long (schedule a window); or the operation has not
 been performed on this estate before.
 
-The two findings are orthogonal — review need is not shipping shape. Dropping a populated table
-ships as a single in-place change, but a principal must review it, because the data is removed
-and cannot be undone. State how it ships and who must review as two separate findings, every
-time.
+The two findings are orthogonal — the weight of the approval is not the shipping shape.
+Dropping a populated table ships as a single in-place change, yet it carries the strongest
+weigh-line, because the data is removed and cannot be undone. State how it ships and what the
+lead weighs as two separate findings, every time.
 
 ## The three state-variables the data must settle
 
@@ -72,7 +76,7 @@ learned by proving against the data:
 2. **Does the existing data violate the new rule?** (orphans / NULLs / dupes / over-length)
 3. **Must old + new application code coexist** during the change?
 
-Each fact that crosses its threshold changes how the change ships or who must review it. The
+Each fact that crosses its threshold changes how the change ships or what the approving dev lead weighs. The
 disposable copy of Dev exists to settle #1 and #2 with evidence rather than a guess.
 
 ## The tree map
@@ -82,6 +86,9 @@ ssdt-agent/
 ├── README.md ··············· you are here — the model, the two findings, the read order
 ├── THE_RECORD.md ··········· the register every surface is written in (record vs conversation)
 ├── CONNECTORS.md ··········· future wiring seams (.claude/skills, Copilot, F# engine, ADO)
+├── PORTABILITY.md ·········· one waist, generated edges: the AI-surface + dev-surface portability model
+├── scripts/prove.mjs ······· the packaged proving loop: build → delta → Strict → structured verdict
+├── scripts/bake.mjs ········ the substrate as a pulled artifact: bake a fingerprint-versioned .bacpac; restore it anywhere
 ├── ACCELERANT_PLAN.md ······ the staged, verify-first plan to wire the F# engine as an accelerant
 ├── ENABLEMENT_PROGRAM.md ··· the ranked program (achievability × efficacy) toward team success
 ├── CLAUDE.md ··············· session routing: OutSystems phrasing → intake; review → reviewer
@@ -92,7 +99,7 @@ ssdt-agent/
 │   └── reviewer.md ········· Persona 2: reproduce the change, then a plain disposition
 ├── skills/
 │   ├── confirm-intent/ ····· OutSystems phrasing → catalog operation + the implicit destination
-│   ├── classify-mechanism/ · the decision cascade → a provisional how-it-ships + who-reviews
+│   ├── classify-mechanism/ · the decision cascade → a provisional how-it-ships + what-the-lead-weighs
 │   ├── prove-on-dacpac/ ····· the proving loop that confirms or flips the classification
 │   ├── talk-to-local-sql/ ··· the disposable-copy substrate + the content-hash check
 │   ├── op/ ················· the 41 per-operation skills — each proves, then feeds the PR
@@ -144,8 +151,12 @@ catalog instead of the hand-authored sample — but it is not wired: the seams a
 - **Cite the handbook by filename.** When a skill points at the playbook, cite the current
   playbook **filename** (e.g. `16-Anti-Patterns-Gallery.md`); that is the cross-reference the deck
   readers will recognize.
-- **You scaffold; the agent runs.** No skill ships a wrapper script that orchestrates the
-  loop. Skills give the commands as worked examples plus the reasoning; the developer's agent
-  runs `docker` / `dotnet` / `sqlpackage` itself. A small hand-authored `.sqlproj` / `.sql` /
-  `.publish.xml` sample project is data, not a wrapper — that is allowed and lives in
-  `proving-ground/`.
+- **You scaffold; the agent runs — with one packaged exception.** Skills give the commands as
+  worked examples plus the reasoning; the developer's agent runs `docker` / `dotnet` /
+  `sqlpackage` itself. A small hand-authored `.sqlproj` / `.sql` / `.publish.xml` sample
+  project is data, not a wrapper — that is allowed and lives in `proving-ground/`. The one
+  packaged exception is `scripts/prove.mjs`, the proven build → delta → Strict → verdict
+  sequence folded into a single command with a structured result (`CONNECTORS.md` §4,
+  executed; the reasoning is `PORTABILITY.md`). The scaffolded sequence in
+  `skills/prove-on-dacpac/` remains the explanation of what that tool does, and the fallback
+  when it cannot run; judgment stays in the skills, mechanics in the tool.

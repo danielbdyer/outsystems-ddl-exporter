@@ -15,11 +15,11 @@ lives in `_index/`. Nothing here restates a guard or the specifics of how a chan
 
 | Op | Per-op skill | What it is / how it flips |
 |---|---|---|
-| define-PK | `../op/define-pk/SKILL.md` | The Identifier. New table: ships in place, additive — any team member can review. Populated: a clustered-index build over every row; blocked by duplicate or NULL keys, which routes to a pre-deployment fix or a staged release; a dev lead or experienced developer reviews the build over live data. |
+| define-PK | `../op/define-pk/SKILL.md` | The Identifier. New table: ships in place, additive — the lightest look. Populated: a clustered-index build over every row; blocked by duplicate or NULL keys, which routes to a pre-deployment fix or a staged release; the approval weighs the build over live data. |
 | create-FK clean | `../op/create-fk-clean/SKILL.md` | Clean child data. One release, in place — the add re-validates the child rows and ends trusted; no data modified; a dev lead reviews the new cross-table relationship. Prove zero orphans; if any, route to create-fk-orphan. |
 | create-FK with orphans | `../op/create-fk-orphan/SKILL.md` | Dirty data. Reconcile the orphan in a pre-deploy (or the add blocks Msg 547); the declarative add then ends trusted on its own — no manual trust step. A dev lead reviews; existing data is modified. |
 | change-delete-rule / cascade | `../op/change-delete-rule/SKILL.md` | Protect/Ignore/Delete → an ON DELETE action, applied in place via DROP+ADD; no data modified. A dev lead reviews the behavioural change — CASCADE lets one parent delete remove child rows in another table, widening the dependency scope. |
-| drop-FK | `../op/drop-fk/SKILL.md` | Remove the reference. Always ships in place, clean — the publish never blocks. A dev lead or experienced developer reviews the weakened integrity and the optimizer-plan shift. |
+| drop-FK | `../op/drop-fk/SKILL.md` | Remove the reference. Always ships in place, clean — the publish never blocks. The approval weighs the weakened integrity and the optimizer-plan shift. |
 
 ## Shared concerns for this family
 

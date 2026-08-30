@@ -8,8 +8,8 @@ Whole-table operations. The developer thinks in **Entities**; in SQL these are `
 destinations and what SSDT's publish engine does to existing data. This family's character:
 *additive at one end (create, junction) and irreversible at the other (delete, archive)*. It is
 where the two findings pull furthest apart — a `DROP TABLE` ships as a single scripted release, yet
-a principal must review it because the data is removed and cannot be recovered. **Proving is
-classifying.** How a change ships, and who must review it, is stated only after it is confirmed on a
+a dev lead approves this, with the strongest weigh-line because the data is removed and cannot be recovered. **Proving is
+classifying.** How a change ships, and what the approving dev lead weighs, is stated only after it is confirmed on a
 disposable copy of Dev (`../prove-on-dacpac/SKILL.md`).
 
 ## The ops (table of contents)

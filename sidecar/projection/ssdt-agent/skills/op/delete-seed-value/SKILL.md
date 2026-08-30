@@ -6,9 +6,9 @@ description: Use when the developer says "delete the Cancelled status value", "r
 # Retire a static lookup value (hard-DELETE-orphans trap — deactivate, don't delete)
 
 > **Default (provisional — prove before you classify).** Deactivate via `IsActive = 0`, carried by the seed
-> MERGE in the post-deployment script and shipped as one release. A dev lead or an experienced
-> developer should review it while the value is still referenced; any team member can review the
-> retirement of a value nothing points at. Prove the reference before classifying: a hard DELETE of a
+> MERGE in the post-deployment script and shipped as one release. A dev lead approves it, weighing
+> the live references while the value is still referenced; retiring a value nothing points at is
+> the lightest look. Prove the reference before classifying: a hard DELETE of a
 > referenced value is **not refused** unless a foreign key is declared — where none is, it silently
 > orphans the referencing rows (proven `pg_move`: deleting a referenced `Category` succeeded and
 > orphaned 2 `Product` rows).
@@ -33,11 +33,11 @@ Set `IsActive = 0` on the seed row (the guarded `WHEN MATCHED` fires for that on
 
 ## How it flips (the specifics only)
 - value unreferenced, no fact rows point at it → a clean subtractive seed edit is defensible, but
-  default to `IsActive = 0` anyway. Any team member can review it: nothing points at the value.
-- **value the app / fact rows reference** → `IsActive = 0`, shipped as one release, reviewed by a dev
-  lead or an experienced developer. A hard DELETE that orphans those fact rows removes data
-  irreversibly and would need a principal — it is usually wrong; refuse the DELETE and propose
-  deactivation.
+  default to `IsActive = 0` anyway. A dev lead approves this: nothing points at the value.
+- **value the app / fact rows reference** → `IsActive = 0`, shipped as one release; the approval
+  weighs the live references. A hard DELETE that orphans those fact rows removes data
+  irreversibly and would carry the strongest weigh-line — it is usually wrong; refuse the DELETE
+  and propose deactivation.
 
 ## Prove it
 Prove the reference exists before choosing: `SELECT COUNT(*) FROM <factTable> WHERE <fk> = <valueId>` — nonzero means DELETE orphans, deactivate instead. After the `IsActive = 0` edit, redeploy unchanged and assert **0 rows affected** + identical hash. See `prove-on-dacpac` / `talk-to-local-sql`. On the sample, `dbo.Category` is referenced by `dbo.Product.CategoryId`, so a hard DELETE of a Category value fires the orphan negative (STA-04N).
@@ -61,9 +61,9 @@ instance for this op is `../../../sample-prs/delete-seed-value.md`. SHIP termina
 (post-deploy seed) — deactivate, not delete.** The fragment this operation contributes:
 
 **Review & release**
-- A dev lead or an experienced developer should review this: the value leaves the set the running
+- A dev lead approves this: the value leaves the set the running
   application offers, so someone should confirm no active flow depends on it. Existing references are
-  preserved — no fact row is orphaned. (A value nothing references can be reviewed by any team member.)
+  preserved — no fact row is orphaned. (A value nothing references is the lightest look.)
 - Ships as one release: the seed MERGE in the post-deployment script re-runs and sets `IsActive = 0`
   for the retired row. The table definition is unchanged.
 - Added scrutiny: none — the guarded `WHEN MATCHED` sets `IsActive = 0` on only the one retired row.

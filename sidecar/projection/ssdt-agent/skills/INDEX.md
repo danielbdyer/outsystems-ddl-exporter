@@ -27,8 +27,12 @@ when the tree is vendored in the estate repository).
 - `delete-attribute` — Use when the developer says "remove the attribute", "delete the LegacyCode field nobody uses", "drop this column", "get rid of this field" → `skills/op/delete-attribute/SKILL.md`
 - `delete-entity` — Use when the developer says "delete the Entity", "drop the table, we don't need it", "remove the old AuditLog" → `skills/op/delete-entity/SKILL.md`
 - `delete-seed-value` — Use when the developer says "delete the Cancelled status value", "retire this lookup value", "remove the option nobody picks anymore", "drop this order type from the list" → `skills/op/delete-seed-value/SKILL.md`
+- `drop-check` — Use when the developer says "remove the rule that Total must be positive", "stop enforcing that status list", "drop the check so this load can go through" → `skills/op/drop-check/SKILL.md`
+- `drop-default` — Use when the developer says "remove the default value", "stop defaulting this attribute", "new rows shouldn't get a value automatically anymore" → `skills/op/drop-default/SKILL.md`
 - `drop-fk` — Use when the developer says "remove the reference", "we don't need the link to Customer anymore", "unhook these entities" → `skills/op/drop-fk/SKILL.md`
 - `drop-index` — Use when the developer says "we don't need that index anymore", "remove the index, it's not used" → `skills/op/drop-index/SKILL.md`
+- `drop-pk` — Use when the developer says "remove the primary key", "this table shouldn't have an Identifier", "we're changing the key" → `skills/op/drop-pk/SKILL.md`
+- `drop-unique` — Use when the developer says "codes don't have to be unique anymore", "remove the uniqueness rule", "allow duplicates on this attribute" → `skills/op/drop-unique/SKILL.md`
 - `edit-seed` — Use when the developer says "add 'Refunded' to the Status list", "change the label on this lookup value", "we have a new order type", "rename the Cancelled option" → `skills/op/edit-seed/SKILL.md`
 - `extract-to-lookup` — Use when the developer says "turn this text Status column into a proper Status entity", "these string values should be a lookup so we stop typos", "promote the free-text StatusText into a real reference entity" → `skills/op/extract-to-lookup/SKILL.md`
 - `identity-swap` — Use when the developer says "turn on Auto Number for the Id", "make the Id auto-increment", "stop auto-numbering, I want to set Ids myself", "switch this entity to a database-generated key" → `skills/op/identity-swap/SKILL.md`
@@ -57,7 +61,7 @@ when the tree is vendored in the estate repository).
 - `ask-the-developer` — Use whenever proving surfaces a decision only a human can make → `skills/ask-the-developer/SKILL.md`
 - `author-pr` — Use to turn a proven schema change into the pull request a reviewer approves by reading → `skills/author-pr/SKILL.md`
 - `author-review` — Use when the reviewer writes its disposition → `skills/author-review/SKILL.md`
-- `classify-mechanism` — Use after confirm-intent has named the operation and gathered the three state-variables, to state PROVISIONALLY how a change ships and who must review it, before proving. Walks the handbook decision cascade (file 15 =… → `skills/classify-mechanism/SKILL.md`
+- `classify-mechanism` — Use after confirm-intent has named the operation and gathered the three state-variables, to state PROVISIONALLY how a change ships and what the approving dev lead weighs, before proving. Walks the handbook decision ca… → `skills/classify-mechanism/SKILL.md`
 - `confirm-intent` — Use FIRST, before any classification or proving, whenever an OutSystems-native developer asks for a schema change in their own words ("make Email required", "rename this attribute", "add a foreign key", "drop that tab… → `skills/confirm-intent/SKILL.md`
 - `decompose` — Use FIRST when one request needs several schema changes at once → `skills/decompose/SKILL.md`
 - `deploy-scripts` — The deployment-script lifecycle rails. Use whenever a change needs a pre-deployment, post-deployment, or ad-hoc script → `skills/deploy-scripts/SKILL.md`

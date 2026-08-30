@@ -19,11 +19,11 @@ authoring rubric grades the author on. The reviewer does not invent a grading le
 `rubric.md`'s dimensions into **proof obligations** and checks each one against the reproduced artifacts:
 
 - The six pass criteria (confirm-intent + op-slug · determined-by-proving · both findings (how it ships +
-  who reviews) · named-trap-caught · the verdict + a complete PR body per `author-pr` ·
+  what the lead weighs) · named-trap-caught · the verdict + a complete PR body per `author-pr` ·
   reasoning-surfaced-from-the-`_index`-owner) become the **checklist a change must pass to earn an
   Approved**. A packet that misses any is at best Approved with a named risk and usually Returned to the
   author.
-- The seven metrics (how-it-ships accuracy · who-reviews accuracy · block-prediction · negative-refusal ·
+- The seven metrics (how-it-ships accuracy · weigh-line accuracy · block-prediction · negative-refusal ·
   flip-discriminator · token cost · reasoning-surfaced) are the **dimensions the reviewer audits** — but
   scored against the reviewer's **own reproduced** delta and block, not the author's packet. When the
   reproduced engine contradicts the packet, the **engine wins** and the packet's claim is the defect.

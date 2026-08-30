@@ -1,6 +1,6 @@
 ---
 name: talk-to-local-sql
-description: The disposable local-SQL substrate prove-on-dacpac publishes against, dispatched per machine. Use whenever prove-on-dacpac needs a local SQL Server to publish to, a fresh-or-reset disposable database, ad-hoc sqlcmd probes (row counts, MAX(LEN), NULL counts, duplicates, orphans), or the content-hash check that answers "did the values actually change". Detects the substrate first — the Twin or the warm-sql container in the source repository (docker-exec sqlcmd; that host has NO sqlcmd), or the estate Windows substrate (a local engine with host sqlcmd, per PROVING_PATH_WINDOWS.md) — then supplies the connection parameters and command forms for that substrate. The developer's agent runs the commands; no wrapper script.
+description: The disposable local-SQL substrate prove-on-dacpac publishes against, dispatched per machine. Use whenever prove-on-dacpac needs a local SQL Server to publish to, a fresh-or-reset disposable database, ad-hoc sqlcmd probes (row counts, MAX(LEN), NULL counts, duplicates, orphans), or the content-hash check that answers "did the values actually change". Tools first — scripts/prove.mjs detect resolves the substrate, twin up / scripts/bake.mjs restore establish the BEFORE state, prove.mjs verdict runs the publish loop — then this file supplies the per-machine hand rungs those tools encode — the Twin or the warm-sql container in the source repository (docker-exec sqlcmd; that host has NO sqlcmd), or the estate Windows substrate (a local engine with host sqlcmd, per PROVING_PATH_WINDOWS.md). The developer's agent runs the commands; no new wrapper script.
 ---
 
 # Talk to local SQL
@@ -18,6 +18,24 @@ This skill owns the substrate `prove-on-dacpac` publishes against: a disposable 
 database, real-*shaped* but safe to drop, standing in for the Dev database. Nothing here ever
 touches production; the database is reset between scenarios and dropped without ceremony.
 
+## Reach for the tools first
+
+Three zero-dependency tools (Node ≥ 18, in `../../scripts/`) already encode this file's
+dispatch, setup, and publish loop. Start every job at its tool; drop to the hand rungs below
+only when dispatching by hand or when the tool's own verdict says the substrate is unreachable
+(exit 4) or misconfigured (exit 6).
+
+| Job | Tool-first form | The hand rungs below |
+|---|---|---|
+| Which substrate is this machine? | `node ssdt-agent/scripts/prove.mjs detect` — prints the resolved substrate as JSON; a committed `prove.config.json` outranks every rung | "Detect the substrate" |
+| Establish / reset the BEFORE state | `twin up` (Twin substrate) · `node ssdt-agent/scripts/bake.mjs restore` (estate, pulled artifact) · `scripts/warm-sql.sh start` + the seed (sample) | the reset blocks, per substrate |
+| Build + Strict/Permissive publish + verdict | `node ssdt-agent/scripts/prove.mjs verdict` — JSON verdict on stdout; exit 0 published · 3 blocked · 7 build failed · 9 indeterminate | `../prove-on-dacpac/SKILL.md`'s hand loop |
+| Data probes (NULLs, MAX(LEN), duplicates, orphans) | the SQL below, through the substrate's sqlcmd form — the SQL **is** the tool | "Run sqlcmd against it" |
+| Content-hash check ("did values change?") | same — substrate-independent SQL | "The content-hash check" |
+
+The probes and the content-hash SQL are the payload and never change per machine; only the
+wrapper around them does. That wrapper is what the rest of this file dispatches.
+
 ## The substrate of record: the Twin (deterministic), the sample as fallback
 
 The substrate that earns trust is **the Twin** (`../../../THE_TWIN.md`): `twin up` holds a local SQL
@@ -29,6 +47,11 @@ the agent. The **evidence-profiling config (`twin.json`) is version-controlled b
 evolves as the schema evolves**. Do not restate the Twin's laws here — point.
 
 ### Detect the substrate
+This ladder is encoded in `../../scripts/prove.mjs` (`detect` prints the resolved substrate as
+JSON; an explicit `prove.config.json` — the estate's committed declaration of its engine
+endpoint, project, and profiles — outranks every rung, and makes LocalDB or any local SQL
+Server a first-class target with no container anywhere). The rungs, for when you dispatch by
+hand:
 - `proving-ground/twin.json` present **and** the `twin` CLI available (`twin` on PATH, or
   `dotnet run --project src/Twin.Cli --` from `sidecar/projection/`, source repository only) →
   **the Twin substrate**.
@@ -312,7 +335,7 @@ the constraint-trust check) before relying on it.
 |---|---|
 | Engine | SQL Server Express LocalDB, or a local SQL Server Developer edition |
 | Server | `(localdb)\MSSQLLocalDB` (LocalDB) or `localhost` (Developer edition) |
-| Disposable copy | `ProvingCopy` — restored from a Dev `.bak`; never a shared environment |
+| Disposable copy | preferred: a pulled bake artifact (`../../scripts/bake.mjs restore` — a fingerprint-versioned `.bacpac` of masked, deterministic data; no real values reach the laptop). Fallback while no artifact exists: `ProvingCopy` restored from a Dev `.bak`. Never a shared environment |
 | Auth | Integrated Security (no password) |
 | sqlcmd | on the HOST (installs with Visual Studio's data tooling / SSMS) — no docker |
 
@@ -323,9 +346,12 @@ file run through it unchanged:
 sqlcmd -S "(localdb)\MSSQLLocalDB" -d ProvingCopy -Q "<sql>"
 ```
 
-**Reset = re-restore.** The disposable copy is born from a backup, so the clean-slate move is not
-drop-and-reseed but re-restore (the runbook's step 3, `RESTORE DATABASE ... WITH REPLACE`) — every
-scenario starts from the same real-shaped backup. Drop the copy entirely when done:
+**Reset = re-pull or re-restore.** The disposable copy is born from an artifact, so the
+clean-slate move is not drop-and-reseed but re-import: a pulled bake artifact restores into a
+fresh fingerprint-versioned database (`bake.mjs restore` — no drop ever needed; old versions are
+dropped at leisure), and a backup-born `ProvingCopy` re-restores (the runbook's step 3,
+`RESTORE DATABASE ... WITH REPLACE`). Every scenario starts from the same artifact. Drop a copy
+entirely when done:
 
 ```powershell
 sqlcmd -S "(localdb)\MSSQLLocalDB" -Q "IF DB_ID('ProvingCopy') IS NOT NULL BEGIN ALTER DATABASE ProvingCopy SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ProvingCopy; END"

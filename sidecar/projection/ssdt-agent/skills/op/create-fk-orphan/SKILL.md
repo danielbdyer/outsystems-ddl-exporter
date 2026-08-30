@@ -41,9 +41,9 @@ the untrusted key, not the block; the block is the constraint doing its job. See
 
 ## How it flips (the specifics only)
 - orphans reconcilable in one release → one release, in place: a pre-deploy `DELETE`/repoint clears the
-  orphans, then the declarative add lands trusted. A dev lead reviews it, because existing data is modified.
-- orphan reconcile **deletes** child rows → data is removed and cannot be undone from the schema; a
-  principal reviews it.
+  orphans, then the declarative add lands trusted. A dev lead approves it, weighing that existing data is modified.
+- orphan reconcile **deletes** child rows → data is removed and cannot be undone from the schema;
+  the approval carries the strongest weigh-line, named explicitly.
 - reconcile must wait on an app change (orphans still being created) → stages across releases so the
   running application keeps working while the change is in flight; a coexistence concern (see
   `../../_index/multi-phase/SKILL.md`).
@@ -83,8 +83,8 @@ instance for this op — with the live messages — is `../../../sample-prs/crea
 terminal: **ONE RELEASE, trusted (pre-deploy reconcile).** The fragment this operation contributes:
 
 **Review & release**
-- A dev lead reviews this: existing data is modified (the orphans are reconciled) and a new cross-table
-  relationship is added. If the reconcile deletes child rows, a principal reviews it: data is removed
+- A dev lead approves this, weighing that existing data is modified (the orphans are reconciled) and a new cross-table
+  relationship is added. If the reconcile deletes child rows, the approval carries the strongest weigh-line: data is removed
   and cannot be undone from the schema.
 - Ships as one release, applied in place — a pre-deploy step reconciles the orphans, then the
   declarative add re-validates every child row and ends trusted. If orphans are still being created by

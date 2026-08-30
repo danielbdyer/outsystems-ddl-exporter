@@ -12,8 +12,9 @@ Contract for every file:
   `Prod-applied:` stamp slot, and a `Removal:` line naming the work item that will sweep it (or, for
   a phase-bound script, the phase/release that ends it — see
   `../../skills/_index/multi-phase/SKILL.md`). A script with no stated retirement is not finished.
-- **Review** — matches the operation it serves; a one-time `DELETE` of populated rows still needs a
-  principal because the data is gone irreversibly (`../../skills/classify-mechanism/SKILL.md`).
+- **Review** — matches the operation it serves; a one-time `DELETE` of populated rows still
+  carries the strongest weigh-line because the data is gone irreversibly
+  (`../../skills/classify-mechanism/SKILL.md`).
 
 The named failure this folder exists to prevent: the one-time script left in past prod, re-executing
 stale logic on every publish until the post-deploy is a monolith nobody trusts. The death-certificate

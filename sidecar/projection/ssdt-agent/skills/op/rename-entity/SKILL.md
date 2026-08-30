@@ -7,7 +7,7 @@ description: Use when the developer says "rename the Entity", "change the table 
 
 > **Default (provisional — prove before you classify).** With the refactorlog entry: ships as a single
 > schema change applied in place, the delta a metadata `sp_rename`, no data read or written; a dev
-> lead or an experienced developer should review it, because the running application must change to
+> lead approves it, weighing that the running application must change to
 > keep working — every caller referencing the old name breaks. Without the refactorlog entry the
 > rename does not happen, in one of two ways decided by the deploy's drop posture: under the
 > production posture (`DropObjectsNotInSource=False`) the publish returns Ok and performs a
@@ -42,8 +42,7 @@ A rename with no refactorlog entry (handbook 16 = §19.1), with its companion Re
 `../../_index/identity-and-refactorlog/SKILL.md`; do not re-derive the refactorlog mechanics here.
 
 ## How it flips (the specifics only)
-- refactorlog entry present → ships in place, the delta is `sp_rename`; a dev lead or an experienced
-  developer reviews it, because every caller crosses a boundary the rename breaks — FKs, views,
+- refactorlog entry present → ships in place, the delta is `sp_rename`; a dev lead approves it, because every caller crosses a boundary the rename breaks — FKs, views,
   procs, ETL, reports all reference the name
 - **refactorlog entry missing** → the rename does not happen: a phantom under the production
   posture (new table empty, original stranded, publish green — proven:
@@ -66,7 +65,7 @@ without it SSDT sees the old table vanish and a new one appear, and either quiet
 table empty while stranding your data under the old name (a green deploy that didn't do what you
 asked — that's what a real production posture does), or drops and re-creates the table and loses
 every row. The rename is metadata-only, but the new name breaks every caller — foreign
-keys, views, procedures, ETL, reports — so a dev lead or an experienced developer should review it
+keys, views, procedures, ETL, reports — so a dev lead approves this
 before it ships. One question: does anything outside this project still need the old name? If so,
 the rename must stage across releases so those consumers can migrate before the old name goes away.
 
@@ -81,8 +80,7 @@ The fragment this contributes to the pull request (`../../author-pr/SKILL.md` is
 worked instance is `../../../sample-prs/rename-entity.md`).
 
 **Review & release**
-- A dev lead or an experienced developer should review this: the running application must change to
-  keep working — the rename breaks every caller that references the old name (foreign keys, views,
+- A dev lead approves this, weighing that the running application must change to keep working — the rename breaks every caller that references the old name (foreign keys, views,
   procedures, ETL, reports).
 - Ships as a single schema change, applied in place. The delta is a metadata `sp_rename`; no data is
   read or written.

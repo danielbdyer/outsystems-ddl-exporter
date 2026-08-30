@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Package the ssdt-agent tree as loadable agent surfaces — apply | check |
-// copilot-apply | copilot-check.
+// copilot-apply | copilot-check | vendor <dest>.
 //
 // CONNECTORS.md §1 and §2, executed with the repo's regenerate-and-diff
 // discipline instead of raw copies: each packaged entry is a POINTER — the
@@ -184,8 +184,9 @@ function routerDoc() {
     "- A request to review a schema pull request is a review task. Take the `reviewer` role, or read",
     "  `" + VENDOR + "/agents/reviewer.md`.",
     "- In an editor with neither custom agents nor skills (Visual Studio 2022), the prompt files",
-    "  under `.github/prompts/` adopt the same roles: `#prompt:ssdt-intake`,",
-    "  `#prompt:ssdt-change-author`, `#prompt:ssdt-review`.", "",
+    "  under `.github/prompts/` are the entry: `#prompt:ssdt-schema-change` runs the whole",
+    "  authoring flow (intake then change-author) in one conversation; `#prompt:ssdt-intake`,",
+    "  `#prompt:ssdt-change-author`, `#prompt:ssdt-review` adopt one role at a time.", "",
     "## The one rule that governs all of it", "",
     "You cannot tell how a schema change will behave by reading its SQL. The same edit ships one way",
     "against an empty table and another way against a table that holds rows. So do not classify a",
@@ -294,7 +295,32 @@ function promptDocs() {
     "Visual Studio 2026, select the `" + "@" + role + "` agent from the picker instead.", "",
   ].join("\n");
 
+  const schemaChange = [
+    GEN, "",
+    "# ssdt-schema-change — the one door for any schema change", "",
+    "State what you want changed in your own words — \"make Email required\", \"add a reference",
+    "to Customer\", \"rename this attribute\", \"drop that table\". Then run the whole authoring",
+    "flow in this one conversation:", "",
+    "1. **Scope it (intake).** Read `" + VENDOR + "/agents/intake.md` (from the repository root)",
+    "   and follow it: name the operation, gather the three state-variables, ask the one",
+    "   business question only a human can answer, and write the change-spec.",
+    "2. **Prove and author it (change-author).** Without waiting for a new conversation, read",
+    "   `" + VENDOR + "/agents/change-author.md` and carry the change-spec through it: edit the",
+    "   CREATE (never a hand-written ALTER), prove the change on a disposable copy of the",
+    "   database, and produce the pull request a reviewer approves by reading, plus the",
+    "   plain-words explanation.", "",
+    "Pause only at the intake role's one business question — everything else runs end to end.",
+    "Do not classify from the SQL text at any point: the disposable-copy publish is the",
+    "classification (`" + VENDOR + "/skills/prove-on-dacpac/SKILL.md`).", "",
+    "If the request is actually a review of an existing schema pull request, this is the wrong",
+    "door — use `#prompt:ssdt-review` (the reviewer role) instead.", "",
+    "These prompt files exist for editors without custom agents (Visual Studio 2022). In",
+    "Visual Studio 2026, the `@intake` and `@change-author` agents run the same two stages",
+    "from the picker.", "",
+  ].join("\n");
+
   return [
+    ["ssdt-schema-change.prompt.md", schemaChange],
     ["ssdt-intake.prompt.md", mk(
       "ssdt-intake — scope a schema change",
       "intake",
@@ -379,8 +405,10 @@ function adoptionDoc() {
     "  custom agents, for Visual Studio versions that support them (2026 18.4+).",
     "- `.github/skills/*/SKILL.md` — the operation skills and shared-knowledge skills as dispatch",
     "  pointers Copilot matches on (2026 18.5+). Each points into the vendored tree for its full body.",
-    "- `.github/prompts/*.prompt.md` — the Visual Studio 2022 entry points: `#prompt:ssdt-intake`,",
-    "  `#prompt:ssdt-change-author`, `#prompt:ssdt-review` adopt the same three roles manually.",
+    "- `.github/prompts/*.prompt.md` — the Visual Studio 2022 entry points:",
+    "  `#prompt:ssdt-schema-change` is the one door (intake then change-author, one conversation);",
+    "  `#prompt:ssdt-intake`, `#prompt:ssdt-change-author`, `#prompt:ssdt-review` adopt one role",
+    "  at a time.",
     "- `.github/PULL_REQUEST_TEMPLATE/schema-change.md` and",
     "  `.azuredevops/pull_request_template/schema-change.md` — the ten-section schema-change pull",
     "  request template (mirrors `ssdt-agent/skills/author-pr/SKILL.md`), for either host.",
@@ -395,14 +423,14 @@ function adoptionDoc() {
     "   each machine: ask Copilot Chat \"what governs schema changes in this repository?\" and confirm",
     "   `copilot-instructions.md` appears in the response's **References** list. No reference means",
     "   the switch is off or the file did not load — fix that machine before relying on the workflow.",
-    "1. **Vendor the tree.** Copy the whole `ssdt-agent/` directory (the canonical tree) into the",
-    "   root of your estate repository, so its path is `ssdt-agent/` at the repository root. The",
-    "   skills, agents, and instructions in this bundle reference it there. If you vendor it to a",
-    "   different path, adjust the `ssdt-agent/...` references throughout the bundle to match.",
-    "   Program history of the source repository is safe to prune from the vendored copy — nothing",
-    "   functional cites it: `ASSESSMENT_2026_08_24.md`, `ENABLEMENT_PROGRAM.md`,",
-    "   `HANDOFF_SESSION_2026_08_26.md`, `PHASE_2_CURRICULUM.md`, `ACCELERANT_PLAN.md`, and the",
-    "   tree's `CLAUDE.md` (source-repo session routing). Keep everything else: the skills cite",
+    "1. **Vendor the tree.** From the source repository, run",
+    "   `node sidecar/projection/ssdt-agent/scripts/ssdt-agent-package.mjs vendor <estate-repo-root>`",
+    "   — it copies the canonical tree to `ssdt-agent/` at the estate repository root and prunes the",
+    "   source repository's program history automatically (the assessment, the enablement program,",
+    "   the session handoffs and plans, and the tree's `CLAUDE.md`), which nothing functional cites.",
+    "   A hand copy of the whole `ssdt-agent/` directory works too; the pruning is then yours. If",
+    "   you vendor to a different path, adjust the `ssdt-agent/...` references throughout the",
+    "   bundle to match. Keep everything else: the skills cite",
     "   `CONNECTORS.md`, `FINDINGS_AND_CHANGES.md`, `THE_RECORD.md`, `THE_RECORD_FORMS.md`,",
     "   `THE_DECISION_TREE.md`, `PROVING_PATH_WINDOWS.md`, `estate/`, `self-test/`, `sample-prs/`,",
     "   and `proving-ground/` from inside the tree — and `scripts/` + `copilot-package/` are the",
@@ -419,6 +447,10 @@ function adoptionDoc() {
     "Visual Studio's Copilot support has grown quickly, so the workflow is built to degrade cleanly.",
     "Each rung down still works; the router carries the parts the newer features would have",
     "automated.", "",
+    "**The direction (owner's call, 2026-08-28): Visual Studio 2026 is the priority rung.** Moving",
+    "everyone to 2026 is the plan of record — the agents-and-skills rung is the workflow as designed.",
+    "Visual Studio 2022 stays supported through the prompt files and the router for as long as the",
+    "migration runs; treat the 2022 rung as the bridge, not the destination.", "",
     "- **Best case — Visual Studio 2026, version 18.5 or newer.** Copilot discovers the custom agents",
     "  and the skills automatically, attaches the path-scoped instructions, and reads the router. The",
     "  full workflow is available.",
@@ -429,8 +461,9 @@ function adoptionDoc() {
     "- **Visual Studio 2022, 17.14.** No custom agents and no skills. The router and the path-scoped",
     "  instructions still load (with the step-0 switch on), and they tell Copilot's agent mode to",
     "  adopt a role by reading the agent file and to find the matching skill via the index. The",
-    "  prompt files give a clickable entry: `#prompt:ssdt-intake` (or the ➕ reference picker) adopts",
-    "  the role without typing the routing by hand. Proving still runs, because it is terminal",
+    "  prompt files give a clickable entry: `#prompt:ssdt-schema-change` (or the ➕ reference",
+    "  picker) runs the whole authoring flow without typing the routing by hand, and the per-role",
+    "  prompts adopt one role at a time. Proving still runs, because it is terminal",
     "  commands the agent runs with your approval.",
     "- **Agent mode turned off, or ask-only Copilot.** Only the router and the manually attached",
     "  instruction files apply. The skills and agents become documents a developer reads. The tree is",
@@ -566,8 +599,48 @@ function runCopilot(mode) {
   console.log(`ssdt-agent copilot package: ${expected.size} entries in sync`);
 }
 
+// Program history of the source repository: safe to prune from a vendored copy — nothing
+// functional cites it. Kept in one place so ADOPTION.md's prose and the vendor verb agree.
+const VENDOR_PRUNE = new Set([
+  "ASSESSMENT_2026_08_24.md",
+  "ARCHITECTURE_REVIEW_2026_08_28.md",
+  "ENABLEMENT_PROGRAM.md",
+  "HANDOFF_SESSION_2026_08_26.md",
+  "PHASE_2_CURRICULUM.md",
+  "ACCELERANT_PLAN.md",
+  "CLAUDE.md",
+]);
+const VENDOR_SKIP_DIRS = new Set(["bin", "obj", "node_modules", ".git"]);
+
+function runVendor(dest) {
+  if (!dest) {
+    console.log("usage: ssdt-agent-package.mjs vendor <estate-repo-root>");
+    process.exit(1);
+  }
+  const destRoot = join(dest, VENDOR);
+  let copied = 0, pruned = 0;
+  const copyDir = (from, to, depth) => {
+    for (const name of readdirSync(from)) {
+      const src = join(from, name);
+      const isDir = statSync(src).isDirectory();
+      if (isDir && VENDOR_SKIP_DIRS.has(name)) continue;
+      if (depth === 0 && !isDir && VENDOR_PRUNE.has(name)) { pruned++; continue; }
+      const tgt = join(to, name);
+      if (isDir) { copyDir(src, tgt, depth + 1); continue; }
+      mkdirSync(dirname(tgt), { recursive: true });
+      writeFileSync(tgt, readFileSync(src));
+      copied++;
+    }
+  };
+  copyDir(TREE, destRoot, 0);
+  console.log(`vendored ${copied} files into ${destRoot} (${pruned} program-history files pruned)`);
+  console.log(`next: from ${dest}, run \`node ${VENDOR}/scripts/ssdt-agent-package.mjs copilot-apply\``);
+  console.log(`      to write the .github/ and .azuredevops/ bundles in place, then follow ADOPTION.md.`);
+}
+
 function main() {
   const mode = process.argv[2] ?? "check";
+  if (mode === "vendor") return runVendor(process.argv[3]);
   if (mode === "copilot-apply" || mode === "copilot-check") return runCopilot(mode);
 
   const expected = new Map();

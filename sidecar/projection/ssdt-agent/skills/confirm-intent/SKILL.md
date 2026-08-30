@@ -1,6 +1,6 @@
 ---
 name: confirm-intent
-description: Use FIRST, before any classification or proving, whenever an OutSystems-native developer asks for a schema change in their own words ("make Email required", "rename this attribute", "add a foreign key", "drop that table"). Disambiguates the request into exactly one op-slug (a skills/op/<op-slug>/ directory), surfaces the implicit SSDT destination the developer didn't say out loud, gathers the three data-state variables that decide how the change ships and who must review it, and pre-flags the governing skills/_index/ concern. Hands a structured change-order naming the op-slug + its per-op skill downstream. Does NOT edit SQL or classify.
+description: Use FIRST, before any classification or proving, whenever an OutSystems-native developer asks for a schema change in their own words ("make Email required", "rename this attribute", "add a foreign key", "drop that table"). Disambiguates the request into exactly one op-slug (a skills/op/<op-slug>/ directory), surfaces the implicit SSDT destination the developer didn't say out loud, gathers the three data-state variables that decide how the change ships and what the approving dev lead weighs, and pre-flags the governing skills/_index/ concern. Hands a structured change-order naming the op-slug + its per-op skill downstream. Does NOT edit SQL or classify.
 ---
 
 # Confirm intent
@@ -44,8 +44,7 @@ A **change-order** — a small structured handoff for `classify-mechanism`:
   `idempotent-seed`). Optional but valued — it lets the change-author open the right WHY first.
 - **notes**: anything ambiguous you resolved, and how.
 
-You do **not** edit any `.sql`, and you do **not** decide how the change ships or who must review
-it — that is `classify-mechanism`'s job.
+You do **not** edit any `.sql`, and you do **not** decide how the change ships or what the approving dev lead weighs — that is `classify-mechanism`'s job.
 
 ## Step 1 — name exactly one operation
 

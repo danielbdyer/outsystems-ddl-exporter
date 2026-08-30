@@ -26,10 +26,10 @@
 
 ## Review & release
 
-- <!-- Who must review, and why — one plain finding. E.g.:
-     "Any team member can review this: the change is additive and the running application is unaffected."
-     "A dev lead must review this: existing data is modified."
-     "A principal must review this: data is removed and the removal cannot be undone." -->
+- <!-- What the approving dev lead weighs — one plain finding. E.g.:
+     "A dev lead approves this: the change is additive and the running application is unaffected — the lightest look on this estate."
+     "A dev lead approves this, weighing that existing data is modified."
+     "A dev lead approves this, weighing that data is removed and the removal cannot be undone — the strongest call on this estate, named explicitly in the approval." -->
 - <!-- How it ships — one plain finding. E.g.:
      "Ships as a single schema change, applied in place. No data is read or written."
      "Ships as one release: a pre-deployment script prepares the data, then the schema change lands validated."

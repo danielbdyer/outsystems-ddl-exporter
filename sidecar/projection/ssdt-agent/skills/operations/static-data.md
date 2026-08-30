@@ -13,9 +13,9 @@ redeploy must touch zero rows and keep an identical hash.
 
 | Op | Per-op skill | What it is / how it flips |
 |---|---|---|
-| create-static-seed | `../op/create-static-seed/SKILL.md` | new lookup entity + idempotent MERGE seed; additive, any team member can review; ships as a schema change plus a post-deployment seed; FK-target ⇒ parents-first |
-| edit-seed | `../op/edit-seed/SKILL.md` | add/amend seed rows in the post-deployment seed; any team member can review; label change must touch ONE row |
-| extract-to-lookup | `../op/extract-to-lookup/SKILL.md` | promote a free-text column to a lookup + FK; ships across releases; a dev lead must review — a cross-table relationship is added and data is moved; prove total mapping before drop |
+| create-static-seed | `../op/create-static-seed/SKILL.md` | new lookup entity + idempotent MERGE seed; additive, the lightest look; ships as a schema change plus a post-deployment seed; FK-target ⇒ parents-first |
+| edit-seed | `../op/edit-seed/SKILL.md` | add/amend seed rows in the post-deployment seed; the lightest look; label change must touch ONE row |
+| extract-to-lookup | `../op/extract-to-lookup/SKILL.md` | promote a free-text column to a lookup + FK; ships across releases; the approval weighs the added cross-table relationship and the moved data; prove total mapping before drop |
 | delete-seed-value | `../op/delete-seed-value/SKILL.md` | retire a lookup value; **deactivate (`IsActive=0`), don't delete**; refuse hard DELETE if referenced |
 
 ## Shared concerns for this family

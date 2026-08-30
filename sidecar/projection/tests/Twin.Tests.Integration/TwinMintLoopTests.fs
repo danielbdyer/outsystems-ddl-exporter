@@ -174,3 +174,89 @@ type TwinMintLoopTests (fixture: TwinMintEstateFixture) =
                 Assert.True(r.DeterministicRemint, "the re-mint must be byte-identical")
                 Assert.Empty r.Findings
         }
+
+    /// Drop the twin database (pooled connections cleared) so the next up
+    /// republishes a pristine schema — the per-fact isolation this class's
+    /// schema-editing fact needs (SamplePrSupport compiles later, so the
+    /// primitive is local here).
+    member private _.DropTwinDb () : Task<unit> =
+        task {
+            match TwinContainer.resolvePassword fixture.Config.Container.PasswordRef with
+            | Error _ -> return ()
+            | Ok password ->
+                match! TwinContainer.ensureRunning fixture.Config.Container password with
+                | Error _ -> return ()
+                | Ok () ->
+                    SqlConnection.ClearAllPools()
+                    use cnn = new SqlConnection(TwinContainer.masterConnectionString fixture.Config.Container password)
+                    do! cnn.OpenAsync()
+                    use cmd = cnn.CreateCommand()
+                    cmd.CommandText <-
+                        "IF DB_ID('twin') IS NOT NULL BEGIN ALTER DATABASE [twin] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [twin]; END;"
+                    let! _ = cmd.ExecuteNonQueryAsync()
+                    return ()
+        }
+
+    /// The trust gate: a mint whose generated data violates a declared CHECK
+    /// refuses by name (`twin.mint.constraintViolation`) instead of landing
+    /// green with the constraint silently untrusted; a satisfiable CHECK
+    /// mints and ends TRUSTED (`is_not_trusted = 0`), so the twin's trust
+    /// state matches what an upper environment enforces. The fact restores
+    /// the baseline estate and reconverges on exit (order-independence).
+    [<Fact>]
+    member this.``trust gate: a violating mint refuses by constraint name; a satisfiable check ends trusted`` () : Task =
+        task {
+            let orderLineWith (check: string) =
+                "CREATE TABLE [dbo].[OrderLine] (\n"
+                + "    [Id]       INT           IDENTITY(1,1) NOT NULL,\n"
+                + "    [OrderId]  INT           NOT NULL,\n"
+                + "    [Sku]      NVARCHAR(64)  NOT NULL,\n"
+                + "    [Quantity] INT           NOT NULL,\n"
+                + "    [Note]     NVARCHAR(200) NULL,\n"
+                + "    CONSTRAINT [PK_OrderLine] PRIMARY KEY ([Id]),\n"
+                + "    CONSTRAINT [FK_OrderLine_Order] FOREIGN KEY ([OrderId]) REFERENCES [dbo].[Order] ([Id]),\n"
+                + "    CONSTRAINT [CK_OrderLine_Quantity] CHECK (" + check + ")\n"
+                + ");\n"
+            let baselineOrderLine =
+                "CREATE TABLE [dbo].[OrderLine] (\n"
+                + "    [Id]       INT           IDENTITY(1,1) NOT NULL,\n"
+                + "    [OrderId]  INT           NOT NULL,\n"
+                + "    [Sku]      NVARCHAR(64)  NOT NULL,\n"
+                + "    [Quantity] INT           NOT NULL,\n"
+                + "    [Note]     NVARCHAR(200) NULL,\n"
+                + "    CONSTRAINT [PK_OrderLine] PRIMARY KEY ([Id]),\n"
+                + "    CONSTRAINT [FK_OrderLine_Order] FOREIGN KEY ([OrderId]) REFERENCES [dbo].[Order] ([Id])\n"
+                + ");\n"
+
+            // Leg 1 — impossible predicate: the floor's quantities can never
+            // satisfy it, and the mint must refuse by name.
+            fixture.Rewrite "Tables/dbo.OrderLine.sql" (orderLineWith "[Quantity] >= 100000")
+            do! this.DropTwinDb()
+            let! violating = Runs.up fixture.Root fixture.Config TwinConfig.BaselineScenario false
+            match violating with
+            | Ok _ -> failwith "a mint violating the CHECK materialized — expected the trust gate to refuse"
+            | Error es ->
+                Assert.Contains(es, fun e -> e.Code = "twin.mint.constraintViolation")
+                let detail =
+                    es
+                    |> List.map (fun e -> e.Metadata |> Map.tryFind "detail" |> Option.flatten |> Option.defaultValue "")
+                    |> String.concat "\n"
+                Assert.Contains("CK_OrderLine_Quantity", detail)
+
+            // Leg 2 — satisfiable predicate: the mint lands and the check is
+            // re-validated to TRUSTED.
+            fixture.Rewrite "Tables/dbo.OrderLine.sql" (orderLineWith "[Quantity] >= 0")
+            do! this.DropTwinDb()
+            do! this.Up()
+            let! notTrusted =
+                this.Scalar "SELECT CAST(is_not_trusted AS INT) FROM sys.check_constraints WHERE name = 'CK_OrderLine_Quantity'"
+            let! rows = this.Scalar "SELECT COUNT(*) FROM [dbo].[OrderLine]"
+            Assert.Equal(0L, notTrusted)
+            Assert.True(rows > 0L)
+
+            // Restore the baseline and reconverge so sibling facts inherit a
+            // pristine estate.
+            fixture.Rewrite "Tables/dbo.OrderLine.sql" baselineOrderLine
+            do! this.DropTwinDb()
+            do! this.Up()
+        }

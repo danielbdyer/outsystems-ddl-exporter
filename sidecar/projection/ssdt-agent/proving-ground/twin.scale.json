@@ -1,0 +1,29 @@
+{
+  "estate": {
+    "tables": "Modules/**/*.sql"
+  },
+  "container": {
+    "name": "twin-ssdt-agent-scale",
+    "port": 21435
+  },
+  "seed": 7,
+  "scenarios": {
+    "default": {},
+    "scale": {
+      "tables": {
+        "dbo.Customer": { "rows": 20000 },
+        "dbo.Product": { "rows": 1000 },
+        "dbo.Order": { "rows": 40000 },
+        "dbo.OrderLine": { "rows": 120000 }
+      }
+    },
+    "scale1m": {
+      "tables": {
+        "dbo.Customer": { "rows": 30000 },
+        "dbo.Product": { "rows": 2000 },
+        "dbo.Order": { "rows": 100000 },
+        "dbo.OrderLine": { "rows": 1050000 }
+      }
+    }
+  }
+}

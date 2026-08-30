@@ -7,7 +7,7 @@ description: Use when the developer says "change to a bigger number", "INT to BI
 
 > **Default (provisional — prove before you classify).** A true widening is data-preserving — every value
 > already fits the bigger type, so there is nothing for the engine to refuse. Ships as a single
-> schema change, applied in place: no data is read or written, and any team member can review it,
+> schema change, applied in place: no data is read or written, and a dev lead approves this,
 > since the running application is unaffected. Prove the direction is widening — not
 > value-reshaping — before classifying it.
 
@@ -37,7 +37,7 @@ it is NOT this op — route to `../retype-explicit/SKILL.md`.
 
 ## How it flips (the specifics only)
 - implicit/widening, all values convert → ships as a single schema change, applied in place; no
-  data is read or written. Any team member can review it — the change is data-preserving and the
+  data is read or written. A dev lead approves this — the change is data-preserving and the
   running application is unaffected.
 - VARCHAR→NVARCHAR on an indexed column → storage doubles → the index-key byte-limit edge (see
   `../widen/SKILL.md`)
@@ -74,7 +74,7 @@ SHIP terminal: **ONE RELEASE, in place.** The base finding holds for any genuine
 added-scrutiny line only when the table is large.
 
 **Review & release**
-- Genuine widening: `Any team member can review this: the change is data-preserving — every value
+- Genuine widening: `A dev lead approves this: the change is data-preserving — every value
   already fits the wider type — and the running application is unaffected.` · `Ships as a single
   schema change, applied in place. No data is read or written.`
 - Added scrutiny, when it applies: `Added scrutiny: at production row counts the ALTER COLUMN

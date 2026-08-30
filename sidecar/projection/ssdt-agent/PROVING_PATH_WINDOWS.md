@@ -66,7 +66,30 @@ step 6.
 ## Step 3 — Real-shaped data
 
 The point of proving is to see what the engine does with the actual rows, so the local database
-needs real-shaped data, not the sample seed.
+needs real-shaped data, not the sample seed. Two paths, in order of preference:
+
+**Preferred — pull the baked artifact.** When the estate publishes a bake artifact (a
+fingerprint-versioned `.bacpac` of the current schema filled with masked, deterministic,
+distribution-faithful synthetic data — produced by `ssdt-agent/scripts/bake.mjs make` on the
+machine or pipeline that holds the Twin), the developer machine needs no backup, no real data,
+and no container. Download the artifact and its `bake.manifest.json`, then:
+
+```powershell
+node ssdt-agent\scripts\bake.mjs restore
+```
+
+The tool verifies the artifact's sha256 against the manifest and imports it into a NEW database
+named `<base>_<fingerprint>` on the engine your `prove.config.json` names — LocalDB works as-is.
+No drop is ever needed: each schema version restores under its own name, and old copies are
+dropped at leisure. No real value reaches the laptop, which retires the sensitive-data question
+below entirely. And the artifact is useful from day zero: even before any real Dev data has been
+profiled, the mint's schema-derived floor fills every column with plausible, deterministic values
+from the schema alone (names, types, lengths, nullability), so a bake with no evidence is still a
+functional, realistic proving substrate — sampled evidence, when it arrives, simply wins wherever
+it speaks. The proving loop cares about row counts, nulls, duplicates, orphans, and
+lengths, and the synthetic mint preserves exactly those shapes.
+
+**Fallback while no artifact exists — restore a Dev backup.**
 
 - The most faithful copy is a **restore of a Dev backup**. Restore a recent `.bak` of the Dev
   database into your local engine.
@@ -142,6 +165,31 @@ sqlpackage /Action:Publish /SourceFile:bin\Release\YourProject.dacpac /Profile:L
 **Read the result from the text, not the exit code.** A blocked publish prints `Could not deploy
 package.` with a `Msg` line; a clean one prints `Successfully published database.`. The block is
 the finding, so the agent reads the printed lines, not the process exit status.
+
+**The one-command form.** With Node installed (version 18 or newer — the same requirement the
+bundle's CI check carries), the build → delta → publish → read-the-text sequence runs as one
+command that applies the rule above itself and prints a structured verdict (JSON on stdout;
+exit code 0 = published clean, 3 = blocked, 7 = build failed):
+
+```powershell
+node ssdt-agent\scripts\prove.mjs verdict --project YourProject.sqlproj
+```
+
+Declare this machine's substrate once in a `prove.config.json` beside the project, so the tool
+targets the local copy and picks the right build (MSBuild for a classic project must run from a
+Developer PowerShell either way):
+
+```json
+{
+  "project": "YourProject.sqlproj",
+  "build": "auto",
+  "profiles": { "strict": "Local.Strict.publish.xml", "permissive": "Local.Permissive.publish.xml" },
+  "target": { "server": "(localdb)\\MSSQLLocalDB", "database": "ProvingCopy", "auth": "integrated" }
+}
+```
+
+No Docker and no container appears anywhere in this path: the engine is LocalDB or any local
+SQL Server, and the tool only ever connects to the endpoint the config names.
 
 ## Step 6 — Verify the substrate before you rely on it
 

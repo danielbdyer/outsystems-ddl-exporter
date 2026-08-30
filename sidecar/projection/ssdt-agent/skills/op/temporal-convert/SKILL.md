@@ -5,7 +5,7 @@ description: Use when the developer says "add full history to our existing popul
 
 # Convert an existing populated table to temporal (backfilled-ROW-START trap)
 
-> **Default (provisional — prove before you classify).** A dev lead must review this: existing data is
+> **Default (provisional — prove before you classify).** A dev lead approves this: existing data is
 > modified — the period columns are backfilled into every existing row, and left without sensible
 > historical defaults every row falsely claims to have begun at conversion time. Ships across several
 > releases so the running application keeps working while the period columns are added, backfilled,
@@ -38,7 +38,7 @@ Adding the period columns to a populated table needs **sensible historical defau
 
 ## How it flips (the specifics only)
 - existing **populated** table (this op) → ships across several releases: add the period columns with
-  backfilled start times, create the history table, enable versioning; a dev lead must review it
+  backfilled start times, create the history table, enable versioning; a dev lead approves this
   because existing data is modified.
 - existing **empty** table → collapses to a single schema change applied in place, one release — no
   data to backfill.
@@ -61,7 +61,7 @@ instance for this op is `../../../sample-prs/temporal-convert.md`. SHIP terminal
 The fragment this operation contributes:
 
 **Review & release**
-- A dev lead must review this: existing data is modified — the period columns are backfilled into
+- A dev lead approves this, weighing that existing data is modified — the period columns are backfilled into
   every existing row on a live table.
 - Ships across several releases so the running application keeps working while the period columns are
   added, backfilled, and system versioning is turned on.

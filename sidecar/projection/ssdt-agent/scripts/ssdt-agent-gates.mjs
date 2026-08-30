@@ -66,7 +66,7 @@ const mdIn = (dir) => walk(dir).filter((p) => p.endsWith(".md"));
 
 const REL_PATH = /`((?:\.\.\/)+[\w./ -]+?(?:\.(?:md|sql|xml|json|refactorlog)|\/))`/g;
 const BARE_MD = /`([A-Za-z0-9][\w. -]*?\.md)`/g;
-const SCENARIO_ID = /\b(?:REV|COL|TBL|KEY|IDX|CON|STA|STR|AUD|IDEM)-\d{2}[A-Z]?\b/g;
+const SCENARIO_ID = /\b(?:REV|COL|TBL|KEY|IDX|CON|STA|STR|AUD|IDEM|CMP)-\d{2}[A-Z]?\b/g;
 const SLASH_SHORTHAND = /\b(REV|COL)-(\d{2}[A-Z]?)\/(\d{2}[A-Z]?)\b/g;
 
 function gateCitations() {
@@ -321,12 +321,13 @@ function gateEstate() {
     });
   }
 
-  // No in-flight phase sits past its window (column 6: `window closes`, YYYY-MM-DD).
+  // No in-flight phase sits past its window (column 7: `window closes`, YYYY-MM-DD; column 3
+  // is `tables`, the machine-readable hold inflight-check.mjs enforces).
   const inflight = join(estate, "in-flight.md");
   if (existsSync(inflight)) {
     const today = new Date().toISOString().slice(0, 10);
     for (const cells of tableRows(read(inflight)).slice(1)) {
-      const when = cells[5] ?? "";
+      const when = cells[6] ?? "";
       if (!/^\d{4}-\d{2}-\d{2}$/.test(when)) {
         find(inflight, `in-flight row \`${cells[0] ?? "?"}\`: window-closes is not YYYY-MM-DD (\`${when}\`)`);
       } else if (when < today) {

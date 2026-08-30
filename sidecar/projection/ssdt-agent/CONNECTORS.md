@@ -78,19 +78,19 @@ do not import the assembly.
 
 ## 4 — sqlpackage driving (the gap this tree closes)
 
-**What it replaces:** nothing yet — this is the missing capability. The engine emits artifacts
-but never runs `sqlpackage /Action:Script` or `/Action:Publish`.
-
-**The contract:** `skills/prove-on-dacpac` **is** that driver, kept deliberately as
-**agent-run commands** rather than a wrapper script (per the hard constraint that skills
-scaffold, they do not orchestrate). The agent runs each `sqlpackage` invocation itself and
-reads the result.
-
-**Verify first / connector note:** a future build *could* fold the proven command sequence
-into the engine's bundle step (an `SsdtBundle.prove` verb). If that is ever done, the
-two-profile discipline and the data-hash snapshot must survive intact — the Strict profile that
-detects whether the deployment is blocked, the Permissive profile that surfaces the consequence,
-and the snapshot that proves the data is conserved. These are the proof itself.
+**Status: built (2026-08-28) as `scripts/prove.mjs`** — the proven command sequence folded
+into one tool call with a structured verdict (JSON on stdout; exit 0 published · 3 blocked ·
+4 unreachable · 6 config · 7 build failed · 9 indeterminate), substrate-dispatched
+(`prove.config.json`, else the Twin, else the warm container — Docker is one substrate, never
+a requirement; see `PORTABILITY.md`). The disciplines this seam required survive intact: the
+Strict profile detects whether the deployment is blocked; the Permissive profile (the
+`--permissive` leg, run only after a block) surfaces the consequence; and the data probes plus
+the content-hash snapshot remain **skill-owned** (`skills/talk-to-local-sql`) — the tool
+produces the publish evidence, it does not subsume the probes. The scaffolded sequence in
+`skills/prove-on-dacpac` remains as the explanation and the fallback. The tool is
+deliberately engine-external (Node, zero dependencies, lives in the tree, travels on vendor
+and on eject); folding it into the F# engine (`SsdtBundle.prove`) stays a possible later
+move under the same disciplines.
 
 ---
 
@@ -98,8 +98,7 @@ and the snapshot that proves the data is conserved. These are the proof itself.
 
 **What it replaces:** the manual handoff from `change-author` to a human reviewer.
 
-**The contract:** `change-author`'s **review packet** — the operation, how it ships and who
-must review (the two plain findings, `THE_RECORD.md` §5), the real generated delta, the proof
+**The contract:** `change-author`'s **review packet** — the operation, how it ships and what the approving dev lead weighs (the two plain findings, `THE_RECORD.md` §5), the real generated delta, the proof
 (the blocked deployment and its row counts), the remedy, and the named trap — is the body of
 the pull request `skills/author-pr` composes. `reviewer` is the gate.
 
