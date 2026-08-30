@@ -43,7 +43,7 @@ type SinkClaimsSeedTests(fixture: EphemeralContainerFixture) =
                         |> Result.defaultValue []
                     let outcomes =
                         SinkClaims.adjudicateAll snapshot journal
-                        |> List.map (fun (s, o) -> s.Table.ToUpperInvariant(), o)
+                        |> List.map (fun (s, o) -> s.Ref.Table.ToUpperInvariant(), o)
                         |> Map.ofList
 
                     // 1) The healthy baseline adopts.
@@ -80,7 +80,7 @@ type SinkClaimsSeedTests(fixture: EphemeralContainerFixture) =
                             Assert.False(o.IsActive)
                             let shipmentSet =
                                 SinkClaims.assemble snapshot journal
-                                |> List.find (fun s -> s.Table.ToUpperInvariant() = "OSUSR_FUL_SHIPMENT")
+                                |> List.find (fun s -> s.Ref.Table.ToUpperInvariant() = "OSUSR_FUL_SHIPMENT")
                             match PhysicalClaimRules.proposeCorrespondence shipmentSet (PhysicalClaimRules.adjudicate shipmentSet) with
                             | Some p ->
                                 Assert.Equal(o.EntityId, p.From.EntityId)
@@ -107,11 +107,11 @@ type SinkClaimsSeedTests(fixture: EphemeralContainerFixture) =
                     let _ =
                         match residue with
                         | Ok [ archive ] ->
-                            Assert.Equal("OSUSR_FUL_ARCHIVE", archive.Table)
+                            Assert.Equal("OSUSR_FUL_ARCHIVE", archive.Ref.Table)
                             match PhysicalClaimRules.adjudicate archive with
                             | PhysicalClaimRules.PhysicalClaimOutcome.Unclaimed -> ()
                             | other -> Assert.Fail (sprintf "expected Unclaimed, got %A" other)
-                        | Ok other -> Assert.Fail (sprintf "expected exactly the orphan, got %A" (other |> List.map (fun s -> s.Table)))
+                        | Ok other -> Assert.Fail (sprintf "expected exactly the orphan, got %A" (other |> List.map (fun s -> s.Ref.Table)))
                         | Error es -> Assert.Fail (sprintf "the sweep refused: %A" es)
                     return ()
                 }))

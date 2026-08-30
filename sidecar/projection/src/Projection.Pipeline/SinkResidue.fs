@@ -27,12 +27,24 @@ open Projection.Adapters.OssysSql
 [<RequireQualifiedAccess>]
 module SinkResidue =
 
-    /// The tables the witnessed edition claims — every entity row, active
+    /// The addresses the witnessed edition claims — every entity row, active
     /// AND tombstoned (a tombstone still claims its table until DbCleaner
     /// drops it; only a table with NO metadata row at all is residue).
-    let claimedTables (snapshot: MetadataSnapshotRunner.MetadataSnapshot) : Set<string> =
+    /// align-III.13: keyed on the FULL address (schema + table) via the same
+    /// observed/assumed reading `SinkClaims.assemble` takes, so a
+    /// cross-schema name collision no longer suppresses residue — the
+    /// subtraction is a true set-difference at the grain reality has.
+    let claimedTables (snapshot: MetadataSnapshotRunner.MetadataSnapshot) : Set<string * string> =
+        let observedSchemas : Map<int, string> =
+            snapshot.PhysicalTables
+            |> List.map (fun pt -> pt.EntityId, pt.SchemaName)
+            |> Map.ofList
         snapshot.Entities
-        |> List.map (fun e -> e.PhysicalTableName.ToUpperInvariant())
+        |> List.map (fun e ->
+            let schema =
+                Map.tryFind e.EntityId observedSchemas
+                |> Option.defaultValue "dbo"
+            schema.ToUpperInvariant(), e.PhysicalTableName.ToUpperInvariant())
         |> Set.ofList
 
     /// Probe the environment's OutSystems data-table universe.
@@ -76,8 +88,12 @@ module SinkResidue =
                 let claimed = claimedTables snapshot
                 return
                     universe
-                    |> List.filter (fun (_, table) -> not (Set.contains (table.ToUpperInvariant()) claimed))
+                    |> List.filter (fun (schema, table) ->
+                        not (Set.contains (schema.ToUpperInvariant(), table.ToUpperInvariant()) claimed))
                     |> List.map (fun (schema, table) ->
-                        ({ Schema = schema; Table = table; Claims = [] } : PhysicalClaimRules.ClaimSet))
+                        // The probe READ this schema from INFORMATION_SCHEMA —
+                        // an Observed basis by construction.
+                        ({ Ref = PhysicalClaimRules.PhysicalTableRef.observed schema table
+                           Claims = [] } : PhysicalClaimRules.ClaimSet))
                     |> Result.success
         }

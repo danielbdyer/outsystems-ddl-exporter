@@ -32836,3 +32836,40 @@ the compose operator "does not exist today" — promoted/SHIPPED 2026-06-01; cor
 **Not behavioral.** Registry motion: C 9 → 10 (matrix + gate move in this commit).
 *— The L-track (III.8–III.12) closes here; the named IIIa/IIIb seam passes unexercised
 (no split needed).*
+
+---
+
+## 2026-08-30 — align-III.13: the claims plane addresses reality at its own grain (`PhysicalTableRef` + `SchemaBasis`)
+
+**The finding (audit a1, F3).** The adjudication plane was pinched at the table end of the
+containment tower: `SinkClaims.assemble` grouped rival claims by TABLE NAME alone and
+declared `Schema = "dbo"` as a constant on every set — while the snapshot in hand carried
+each entity's OBSERVED schema through the physical-table rowset, joined for exactly this
+purpose elsewhere. `SinkResidue.sweep` subtracted claimed NAMES from a probed
+(schema, table) universe, discarding the schema it had just read. A multi-schema estate
+mis-grouped rivals into one false contest or stamped `dbo` onto a non-dbo table's DECIDE
+finding; a cross-schema name collision silently suppressed residue. The declared constant
+sat at the same grain as the sweep's observed reading — two epistemic standings, one
+unmarked string field.
+
+**The decision.** Core mints the address at reality's grain:
+`PhysicalTableRef = { Catalog : string option; Schema : SchemaBasis; Table }` with
+`SchemaBasis = Observed | Assumed` — the basis is epistemic standing, not location, so
+the grouping/subtraction KEY folds case and ignores the basis while record equality
+still distinguishes them. `Catalog` is `None` under the standing single-catalog posture
+(the field makes a multi-catalog address EXPRESSIBLE, not common). `ClaimSet` and
+`CorrespondenceProposal` carry the ref; `assemble` reads each entity's observed schema
+from the physical-table join and falls back to `Assumed "dbo"` — the honest name for the
+retired constant; the residue sweep subtracts on the full address (its probe reads
+INFORMATION_SCHEMA, so its refs are Observed by construction); the S13 annotation pass
+keys and renders through the ref.
+
+**BEHAVIORAL on multi-schema estates only:** same-name tables in different schemas now
+form separate claim sets (independent adoptions instead of a false Contested) and
+cross-schema residue is no longer suppressed. For the standing dbo posture everything is
+byte-identical — the finding subjects and rendered addresses keep the exact
+"schema.table" text (pinned by test). Laws (`PhysicalClaimTests`, test-FIRST per the
+plan's specimen requirement): the two-schema specimen (two sets, observed bases,
+independent adoptions), the no-physical-row `Assumed "dbo"` reading with byte-identical
+render, the cross-schema residue subtraction, and the key/text algebra (case-folded,
+basis-blind identity; catalog-prefixed display only when a catalog is present).

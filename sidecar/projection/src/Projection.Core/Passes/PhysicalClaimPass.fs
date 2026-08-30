@@ -46,13 +46,14 @@ module PhysicalClaimPass =
             outcomes
             |> List.filter (fun (_, o) -> nonTrivial o)
             |> List.map (fun (set, o) ->
-                (set.Schema.ToUpperInvariant(), set.Table.ToUpperInvariant()), (set, o))
+                ((PhysicalClaimRules.SchemaBasis.schema set.Ref.Schema).ToUpperInvariant(),
+                 set.Ref.Table.ToUpperInvariant()), (set, o))
             |> Map.ofList
         c |> CatalogTraversal.mapKindsTotal (fun events k ->
             let key = (TableId.schemaText k.Physical).ToUpperInvariant(), (TableId.tableText k.Physical).ToUpperInvariant()
             match Map.tryFind key byTable with
             | Some (set, outcome) ->
-                let table = System.String.Concat(set.Schema, ".", set.Table) // LINT-ALLOW: terminal annotation-subject composition at the lineage boundary; the typed ClaimSet IS the structure
+                let table = PhysicalClaimRules.PhysicalTableRef.text set.Ref
                 LineageBuffer.add
                     (LineageEvent.forPass passName version classification k.SsKey
                         (Annotated (PhysicalClaimDecision (table, outcome))))

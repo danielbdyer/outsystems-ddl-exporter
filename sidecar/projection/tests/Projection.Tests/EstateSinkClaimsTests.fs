@@ -33,7 +33,7 @@ let private claim (id: int) (name: string) (active: bool) (ext: bool) (sync: int
       FirstWitnessedSync = PhysicalClaimRules.FirstWitnessedSync.ofAppearance (Some (ord sync)) }
 
 let private setOf (table: string) (claims: PhysicalClaimRules.PhysicalClaim list) : PhysicalClaimRules.ClaimSet =
-    { Schema = "dbo"; Table = table; Claims = claims }
+    { Ref = PhysicalClaimRules.PhysicalTableRef.observed "dbo" table; Claims = claims }
 
 let private adjudicated (table: string) (claims: PhysicalClaimRules.PhysicalClaim list) =
     let s = setOf table claims

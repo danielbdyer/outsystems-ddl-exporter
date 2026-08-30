@@ -2286,7 +2286,11 @@ module Estate =
             |> Option.defaultValue ""
         outcomes
         |> List.choose (fun (set, outcome) ->
-            let subject = sprintf "%s.%s" set.Schema set.Table
+            // align-III.13: the subject is the full physical address —
+            // byte-identical ("schema.table") for the standing posture; a
+            // multi-schema estate's findings now name the schema that was
+            // actually observed instead of a declared constant.
+            let subject = PhysicalClaimRules.PhysicalTableRef.text set.Ref
             match outcome with
             | PhysicalClaimRules.PhysicalClaimOutcome.Contested rivals ->
                 Some

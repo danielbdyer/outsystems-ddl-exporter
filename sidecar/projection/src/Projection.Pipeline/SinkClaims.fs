@@ -59,10 +59,32 @@ module SinkClaims =
             snapshot.Modules
             |> List.map (fun m -> m.EspaceId, m.EspaceName)
             |> Map.ofList
+        // align-III.13: the snapshot OBSERVES each entity's schema through
+        // the physical-table rowset (joined by entity id); an entity with no
+        // physical row reads the ASSUMED OutSystems default — the honest
+        // form of the constant `"dbo"` this replaced. Grouping keys on the
+        // FULL address (schema + table), so a multi-schema estate no longer
+        // mis-groups rival claims that merely share a table name.
+        let observedSchemas : Map<int, string> =
+            snapshot.PhysicalTables
+            |> List.map (fun pt -> pt.EntityId, pt.SchemaName)
+            |> Map.ofList
+        let refOf (e: MetadataSnapshotRunner.OssysEntityRow) : PhysicalClaimRules.PhysicalTableRef =
+            match Map.tryFind e.EntityId observedSchemas with
+            | Some schema -> PhysicalClaimRules.PhysicalTableRef.observed schema e.PhysicalTableName
+            | None -> PhysicalClaimRules.PhysicalTableRef.assumedDbo e.PhysicalTableName
         snapshot.Entities
-        |> List.groupBy (fun e -> e.PhysicalTableName.ToUpperInvariant())
+        |> List.groupBy (fun e -> PhysicalClaimRules.PhysicalTableRef.key (refOf e))
         |> List.map (fun (_, entities) ->
-            let table = (List.head entities).PhysicalTableName
+            let refs = entities |> List.map refOf
+            // One address, possibly mixed bases: any OBSERVATION upgrades
+            // the set's standing (the assumed reading of the same address
+            // carries no extra information).
+            let setRef =
+                refs
+                |> List.tryFind (fun r -> PhysicalClaimRules.SchemaBasis.isObserved r.Schema)
+                |> Option.defaultValue (List.head refs)
+            let table = setRef.Table
             let claims =
                 entities
                 |> List.map (fun e ->
@@ -73,10 +95,9 @@ module SinkClaims =
                        IsActive = e.IsActive
                        IsExternalRegistration = e.IsExternal && Set.contains e.EspaceId extensionEspaces
                        FirstWitnessedSync = firstWitnessedSync journal e.EntityId table } : PhysicalClaimRules.PhysicalClaim))
-            ({ Schema = "dbo"
-               Table = table
+            ({ Ref = setRef
                Claims = claims } : PhysicalClaimRules.ClaimSet))
-        |> List.sortBy (fun s -> s.Table.ToUpperInvariant())
+        |> List.sortBy (fun s -> PhysicalClaimRules.PhysicalTableRef.key s.Ref)
 
     /// Assemble and adjudicate in one motion — the estate-side consumer's
     /// shape: every table's outcome, in stable table order.

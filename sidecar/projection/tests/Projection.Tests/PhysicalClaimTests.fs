@@ -32,7 +32,7 @@ let private claim (id: int) (name: string) (active: bool) (ext: bool) (sync: int
       FirstWitnessedSync = PhysicalClaimRules.FirstWitnessedSync.ofAppearance (Some (ord sync)) }
 
 let private setOf (claims: PhysicalClaimRules.PhysicalClaim list) : PhysicalClaimRules.ClaimSet =
-    { Schema = "dbo"; Table = "OSUSR_FUL_T"; Claims = claims }
+    { Ref = PhysicalClaimRules.PhysicalTableRef.observed "dbo" "OSUSR_FUL_T"; Claims = claims }
 
 [<Fact>]
 let ``the ladder is total and closed: empty ⇒ Unclaimed; tombstones only ⇒ TombstoneOnly`` () =
@@ -100,7 +100,7 @@ let ``a sole live claim over tombstones proposes the correspondence — From is 
         Assert.Equal(9002, p.To.EntityId)
         Assert.Equal(8005, p.From.EntityId)
         Assert.True(p.SameName)
-        Assert.Equal("OSUSR_FUL_T", p.Table)
+        Assert.Equal("OSUSR_FUL_T", p.Ref.Table)
     | None -> Assert.Fail "expected a correspondence proposal"
 
 [<Fact>]
@@ -144,8 +144,8 @@ let private edition () =
 [<Fact>]
 let ``claims assemble from the witnessed edition (tombstones included) with the extension flag from the module kind`` () =
     let sets = SinkClaims.assemble (edition ()) []
-    Assert.Equal<string list>([ "OSUSR_FUL_ORDER"; "OSUSR_FUL_SHIPMENT" ], sets |> List.map (fun s -> s.Table))
-    let shipment = sets |> List.find (fun s -> s.Table = "OSUSR_FUL_SHIPMENT")
+    Assert.Equal<string list>([ "OSUSR_FUL_ORDER"; "OSUSR_FUL_SHIPMENT" ], sets |> List.map (fun s -> s.Ref.Table))
+    let shipment = sets |> List.find (fun s -> s.Ref.Table = "OSUSR_FUL_SHIPMENT")
     Assert.Equal(2, List.length shipment.Claims)
     let ext = shipment.Claims |> List.find (fun c -> c.EntityId = 9002)
     Assert.True(ext.IsExternalRegistration, "the extension module's external entity carries the flag")
@@ -153,7 +153,7 @@ let ``claims assemble from the witnessed edition (tombstones included) with the 
     let tomb = shipment.Claims |> List.find (fun c -> c.EntityId = 8002)
     Assert.False(tomb.IsActive)
     Assert.False(tomb.IsExternalRegistration)
-    match SinkClaims.adjudicateAll (edition ()) [] |> List.find (fun (s, _) -> s.Table = "OSUSR_FUL_SHIPMENT") |> snd with
+    match SinkClaims.adjudicateAll (edition ()) [] |> List.find (fun (s, _) -> s.Ref.Table = "OSUSR_FUL_SHIPMENT") |> snd with
     | PhysicalClaimRules.PhysicalClaimOutcome.Adopted (winner, _) -> Assert.Equal(9002, winner.EntityId)
     | other -> Assert.Fail (sprintf "expected the re-registration adopted, got %A" other)
 
@@ -163,7 +163,7 @@ open Projection.Core.Passes
 open Projection.Tests.Fixtures
 
 let private adjudicatedAt (table: string) (claims: PhysicalClaimRules.PhysicalClaim list) =
-    let s : PhysicalClaimRules.ClaimSet = { Schema = "dbo"; Table = table; Claims = claims }
+    let s : PhysicalClaimRules.ClaimSet = { Ref = PhysicalClaimRules.PhysicalTableRef.observed "dbo" table; Claims = claims }
     s, PhysicalClaimRules.adjudicate s
 
 [<Fact>]
@@ -225,9 +225,9 @@ let ``align-II.10: assembly reads the journal's appearance line — genesis, a l
     // tombstoned original has NO appearance line (a reconciled ledger).
     let journal = [ appearance 1 8000 "OSUSR_FUL_ORDER"; appearance 3 9002 "OSUSR_FUL_SHIPMENT" ]
     let sets = SinkClaims.assemble (edition ()) journal
-    let order = (sets |> List.find (fun s -> s.Table = "OSUSR_FUL_ORDER")).Claims |> List.find (fun c -> c.EntityId = 8000)
+    let order = (sets |> List.find (fun s -> s.Ref.Table = "OSUSR_FUL_ORDER")).Claims |> List.find (fun c -> c.EntityId = 8000)
     Assert.Equal(PhysicalClaimRules.FirstWitnessedSync.SinceGenesis, order.FirstWitnessedSync)
-    let shipment = sets |> List.find (fun s -> s.Table = "OSUSR_FUL_SHIPMENT")
+    let shipment = sets |> List.find (fun s -> s.Ref.Table = "OSUSR_FUL_SHIPMENT")
     let ext = shipment.Claims |> List.find (fun c -> c.EntityId = 9002)
     Assert.Equal(PhysicalClaimRules.FirstWitnessedSync.AtSync (ord 3), ext.FirstWitnessedSync)
     let tomb = shipment.Claims |> List.find (fun c -> c.EntityId = 8002)
@@ -243,3 +243,86 @@ let ``align-II.10: assembly reads the journal's appearance line — genesis, a l
             Assert.Contains("@sync ?", fromText)
         | None -> Assert.Fail "expected a correspondence proposal over the tombstone"
     | other -> Assert.Fail (sprintf "expected adoption, got %A" other)
+
+// -- align-III.13: the physical address at the grain reality has ---------------
+
+[<Fact>]
+let ``align-III.13: a multi-schema estate groups claims by FULL address — same table name in two schemas is two claim sets, not one false contest`` () =
+    // Two ACTIVE entities share the table NAME across schemas — the old
+    // name-only grouping merged them into one set and adjudicated a false
+    // Contested; the full-address grouping keeps them apart and each
+    // adopts alone.
+    let edition =
+        { OssysSnapshotBuilders.snapshotOf
+            [ OssysSnapshotBuilders.moduleRow 800 "App"
+              OssysSnapshotBuilders.moduleRow 801 "ExtApp" ]
+            [ OssysSnapshotBuilders.entityRow 8000 800 "Doc" "OSUSR_APP_DOC"
+              OssysSnapshotBuilders.entityRow 8100 801 "Doc" "OSUSR_APP_DOC" ]
+            [ OssysSnapshotBuilders.identifierRow 80001 8000
+              OssysSnapshotBuilders.identifierRow 81001 8100 ]
+          with
+            Capabilities = []
+            PhysicalTables =
+              [ OssysSnapshotBuilders.physicalTableRow 8000 "dbo" "OSUSR_APP_DOC"
+                OssysSnapshotBuilders.physicalTableRow 8100 "ext" "OSUSR_APP_DOC" ] }
+    let sets = SinkClaims.assemble edition []
+    Assert.Equal(2, List.length sets)
+    let schemas =
+        sets
+        |> List.map (fun s -> PhysicalClaimRules.SchemaBasis.schema s.Ref.Schema)
+        |> List.sort
+    Assert.Equal<string list>([ "dbo"; "ext" ], schemas)
+    // Every schema here was OBSERVED (the physical-table rowset supplied it).
+    Assert.All(sets, fun s -> Assert.True(PhysicalClaimRules.SchemaBasis.isObserved s.Ref.Schema))
+    // Each address adjudicates independently: two sole-live adoptions,
+    // never the false Contested the name-grain produced.
+    for (_, outcome) in SinkClaims.adjudicateAll edition [] do
+        match outcome with
+        | PhysicalClaimRules.PhysicalClaimOutcome.Adopted _ -> ()
+        | other -> Assert.Fail (sprintf "expected independent adoptions, got %A" other)
+
+[<Fact>]
+let ``align-III.13: an entity with no physical-table row reads the ASSUMED default schema — named epistemic standing, not a declared constant`` () =
+    let edition =
+        { OssysSnapshotBuilders.snapshotOf
+            [ OssysSnapshotBuilders.moduleRow 800 "App" ]
+            [ OssysSnapshotBuilders.entityRow 8000 800 "Order" "OSUSR_APP_ORDER" ]
+            [ OssysSnapshotBuilders.identifierRow 80001 8000 ]
+          with Capabilities = [] }
+    let set = SinkClaims.assemble edition [] |> List.exactlyOne
+    Assert.Equal(PhysicalClaimRules.SchemaBasis.Assumed "dbo", set.Ref.Schema)
+    Assert.False(PhysicalClaimRules.SchemaBasis.isObserved set.Ref.Schema)
+    // The rendered address is byte-identical to the prior constant's form.
+    Assert.Equal("dbo.OSUSR_APP_ORDER", PhysicalClaimRules.PhysicalTableRef.text set.Ref)
+
+[<Fact>]
+let ``align-III.13: the residue subtraction keys on the full address — a cross-schema name collision no longer suppresses residue`` () =
+    // The edition claims dbo.OSUSR_APP_DOC only; a probed ext.OSUSR_APP_DOC
+    // is residue. The old name-only subtraction folded them together and
+    // the ext table vanished from the sweep.
+    let edition =
+        { OssysSnapshotBuilders.snapshotOf
+            [ OssysSnapshotBuilders.moduleRow 800 "App" ]
+            [ OssysSnapshotBuilders.entityRow 8000 800 "Doc" "OSUSR_APP_DOC" ]
+            [ OssysSnapshotBuilders.identifierRow 80001 8000 ]
+          with
+            Capabilities = []
+            PhysicalTables = [ OssysSnapshotBuilders.physicalTableRow 8000 "dbo" "OSUSR_APP_DOC" ] }
+    let claimed = SinkResidue.claimedTables edition
+    Assert.Contains(("DBO", "OSUSR_APP_DOC"), claimed)
+    Assert.DoesNotContain(("EXT", "OSUSR_APP_DOC"), claimed)
+
+[<Fact>]
+let ``align-III.13: the ref identity folds case and ignores the basis; the text renders schema-qualified (catalog-prefixed only when present)`` () =
+    let observed = PhysicalClaimRules.PhysicalTableRef.observed "DBO" "OSUSR_T"
+    let assumed = PhysicalClaimRules.PhysicalTableRef.assumedDbo "osusr_t"
+    // Same address (case-folded), different epistemic standing — the KEY
+    // agrees (an observed and an assumed reading of one address are the
+    // same address); equality on the full record still distinguishes them.
+    Assert.Equal(PhysicalClaimRules.PhysicalTableRef.key observed, PhysicalClaimRules.PhysicalTableRef.key assumed)
+    Assert.NotEqual<PhysicalClaimRules.PhysicalTableRef>(observed, assumed)
+    Assert.Equal("DBO.OSUSR_T", PhysicalClaimRules.PhysicalTableRef.text observed)
+    Assert.Equal(
+        "OtherDb.dbo.OSUSR_T",
+        PhysicalClaimRules.PhysicalTableRef.text
+            { observed with Catalog = Some "OtherDb"; Schema = PhysicalClaimRules.SchemaBasis.Observed "dbo" })

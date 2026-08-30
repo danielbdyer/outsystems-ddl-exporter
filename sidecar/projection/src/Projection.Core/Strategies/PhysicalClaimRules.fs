@@ -96,10 +96,70 @@ module PhysicalClaimRules =
         FirstWitnessedSync : FirstWitnessedSync
     }
 
+    /// The epistemic standing of a schema reading (align-III.13): OBSERVED
+    /// schemas come from the estate's own metadata (the physical-table
+    /// rowset, an INFORMATION_SCHEMA probe); ASSUMED schemas are defaults
+    /// supplied where nothing was read (the OutSystems-standard `dbo` for
+    /// an entity whose snapshot carries no physical-table row). The old
+    /// shape DECLARED `"dbo"` as a constant at the same grain as the
+    /// residue sweep's observed schema — one type, two epistemic standings,
+    /// unmarked.
+    [<RequireQualifiedAccess>]
+    type SchemaBasis =
+        | Observed of schema: string
+        | Assumed of schema: string
+
+    [<RequireQualifiedAccess>]
+    module SchemaBasis =
+        let schema (b: SchemaBasis) : string =
+            match b with
+            | SchemaBasis.Observed s | SchemaBasis.Assumed s -> s
+
+        let isObserved (b: SchemaBasis) : bool =
+            match b with SchemaBasis.Observed _ -> true | SchemaBasis.Assumed _ -> false
+
+    /// The physical address at the grain reality has — the containment
+    /// tower's lower floors (environment ⊃ database ⊃ schema ⊃ table).
+    /// `Catalog` is `None` inside the connection's own database (the
+    /// standing single-catalog posture; the field exists so a multi-catalog
+    /// address is EXPRESSIBLE, not so it is common).
+    type PhysicalTableRef = {
+        Catalog : string option
+        Schema  : SchemaBasis
+        Table   : string
+    }
+
+    [<RequireQualifiedAccess>]
+    module PhysicalTableRef =
+        /// The grouping/subtraction identity: catalog + schema TEXT + table,
+        /// case-folded the way SQL Server resolves names. The BASIS does not
+        /// enter the identity — an observed and an assumed reading of one
+        /// address are the SAME address; the basis is epistemic standing,
+        /// not location.
+        let key (r: PhysicalTableRef) : string * string * string =
+            ((r.Catalog |> Option.defaultValue "").ToUpperInvariant(),
+             (SchemaBasis.schema r.Schema).ToUpperInvariant(),
+             r.Table.ToUpperInvariant())
+
+        /// The display/diagnostic form — `schema.table`, catalog-prefixed
+        /// only when a catalog is present (byte-identical to the prior
+        /// `Schema.Table` rendering for the standing posture).
+        let text (r: PhysicalTableRef) : string =
+            match r.Catalog with
+            | Some c -> System.String.Concat(c, ".", SchemaBasis.schema r.Schema, ".", r.Table) // LINT-ALLOW: terminal diagnostic projection at the rendering boundary; the typed ref IS the structure
+            | None -> System.String.Concat(SchemaBasis.schema r.Schema, ".", r.Table) // LINT-ALLOW: terminal diagnostic projection at the rendering boundary; the typed ref IS the structure
+
+        /// The observed-basis constructor the probes use; `assumedDbo` is
+        /// the honest name for the old fabricated constant.
+        let observed (schema: string) (table: string) : PhysicalTableRef =
+            { Catalog = None; Schema = SchemaBasis.Observed schema; Table = table }
+
+        let assumedDbo (table: string) : PhysicalTableRef =
+            { Catalog = None; Schema = SchemaBasis.Assumed "dbo"; Table = table }
+
     /// One physical table and every claim the journal can assemble on it.
     type ClaimSet = {
-        Schema : string
-        Table : string
+        Ref : PhysicalTableRef
         Claims : PhysicalClaim list
     }
 
@@ -171,7 +231,7 @@ module PhysicalClaimRules =
     /// boundary consumer prints. Strings emerge only here (the
     /// `RemovalReason.toDiagnosticString` convention).
     let toStructured (set: ClaimSet) (outcome: PhysicalClaimOutcome) : (string * string) list =
-        let table = System.String.Concat(set.Schema, ".", set.Table) // LINT-ALLOW: terminal diagnostic projection at the rendering boundary; the typed ClaimSet IS the structure
+        let table = PhysicalTableRef.text set.Ref
         [ "table", table
           "outcome", token outcome
           match outcome with
@@ -198,8 +258,7 @@ module PhysicalClaimRules =
     /// the ruling's own hands, and the closed `DerivationReason` set
     /// widens THEN, not here).
     type CorrespondenceProposal = {
-        Schema : string
-        Table : string
+        Ref : PhysicalTableRef
         /// The tombstoned prior edition proposed as the same identity —
         /// the LATEST-witnessed tombstone when several ride the lineage
         /// (the edition nearest the cutover).
@@ -226,8 +285,7 @@ module PhysicalClaimRules =
             |> List.sortByDescending (fun c -> FirstWitnessedSync.rank c.FirstWitnessedSync, c.EntityId)
             |> List.tryHead
             |> Option.map (fun from ->
-                { Schema = set.Schema
-                  Table = set.Table
+                { Ref = set.Ref
                   From = from
                   To = winner
                   SameName = System.String.Equals(from.EntityName, winner.EntityName, System.StringComparison.OrdinalIgnoreCase) })
@@ -238,7 +296,7 @@ module PhysicalClaimRules =
     /// The proposal's structured rendering — the same
     /// typed-payload→clauses convention as `toStructured`.
     let correspondenceClauses (p: CorrespondenceProposal) : (string * string) list =
-        [ "table", System.String.Concat(p.Schema, ".", p.Table) // LINT-ALLOW: terminal diagnostic projection at the rendering boundary; the typed proposal IS the structure
+        [ "table", PhysicalTableRef.text p.Ref
           "from", claimText p.From
           "to", claimText p.To
           "sameName", (if p.SameName then "true" else "false") ]
