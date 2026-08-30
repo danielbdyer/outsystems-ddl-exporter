@@ -48,14 +48,14 @@ the honest weakest-rung summary.
 
 | Axis | L1 witness | L2 faithful | L3 composed | Open tolerances | Ladder |
 |---|:--:|:--:|:--:|---|---|
-| **Schema** | ✅ | ◑ L2-partial | ✅ | `TriggerBodyUnparsedDropped` | ◑ L2-partial |
+| **Schema** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Data** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Identity** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Time** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Decision** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 
-**Rungs reached: L1 5/5 · L2 4/5 · L3 5/5.** Tolerance set:
-10 named, of which **1 open** (`OpenGap`). A cell cannot be
+**Rungs reached: L1 5/5 · L2 5/5 · L3 5/5.** Tolerance set:
+9 named, of which **0 open** (`OpenGap`). A cell cannot be
 hand-marked: L1/L3 require the `@axis`-tagged witness test to exist; L2 requires the
 open tolerance to be retired from `Tolerance.fs`. The generator under-claims; it
 never over-claims.
@@ -92,4 +92,4 @@ never over-claims.
 > eject). Both are out-of-ladder by construction (a non-round-trip dimension is a category
 > error in a round-trip `ToleratedDivergence`), named here per THE VECTOR Wave 5 honesty.
 
-_Self-reported · gate=PASS · L2 axioms live/C/D=94/10/1 · rungs L1/L2/L3=5/4/5 of 5 · tolerances 10 (1 open)_
+_Self-reported · gate=PASS · L2 axioms live/C/D=94/10/1 · rungs L1/L2/L3=5/5/5 of 5 · tolerances 9 (0 open)_

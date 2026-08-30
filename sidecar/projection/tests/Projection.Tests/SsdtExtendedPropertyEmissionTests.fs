@@ -197,7 +197,6 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> ()
         | ToleratedDivergence.DecimalScaleTolerated        -> ()
         | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad -> ()
-        | ToleratedDivergence.TriggerBodyUnparsedDropped   -> ()
         | ToleratedDivergence.BooleanCanonicalizationTolerated -> ()
         | ToleratedDivergence.DateTimeTickPrecisionTolerated -> ()
         | ToleratedDivergence.IntegerWidthNormalized       -> ()
@@ -226,7 +225,10 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
     // (Reference.Legs carries the full composite-FK column list; every
     // lane populates, emits, and compares per leg; the arity gate refuses
     // the legless residual).
-    Assert.Equal(10, Set.count ToleratedDivergence.allKnown)
+    // **schema-L3.3b (2026-08-30):** 9 — TriggerBodyUnparsedDropped
+    // RETIRED (the last Schema OpenGap): the publish refuses at the
+    // compose seam by name; the Schema axis reaches ✅ L3.
+    Assert.Equal(9, Set.count ToleratedDivergence.allKnown)
 
 // ---------------------------------------------------------------------------
 // NM-70 (WP5) — the identity-annotation emit | omit gate.

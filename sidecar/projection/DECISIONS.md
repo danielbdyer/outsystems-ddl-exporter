@@ -33395,3 +33395,30 @@ TRIGGER and no marker; the gate-domain theorem over a corpus including the
 comments-only edge). `DacpacEmitterTests`' M2 pin re-anchored to the defense marker
 of the direct-render escape hatch. No tolerance change in this slice — the flip
 (L3.3b) is deliberately a separate, mechanically-tiny commit.
+
+---
+
+## 2026-08-30 — schema-L3.3b: THE FLIP — Schema reaches ✅ L3 (`TriggerBodyUnparsedDropped` RETIRED; zero open tolerances)
+
+The mechanically-tiny commit the program built toward. `TriggerBodyUnparsedDropped` —
+the LAST `@ladder … Schema OpenGap` — retires by the docstring's own second path
+("refuse at emit when it cannot parse, mirroring the `.dacpac` path"): schema-L3.3a
+made the refusal NAMED (`emitter.ssdt.triggerUnparsed`), early (before any render),
+theorem-backed (gate-pass ⟹ render), and lane-complete. No faithful trigger is ever
+dropped from the text; a gated publish refuses by name with no artifact written.
+
+Retirement mechanics per the checklist: variant + tag deleted with the gravestone;
+coverage/allKnown/name arms dropped; `allKnown` 10 → 9 (every survivor
+AcceptedFaithful); the M2 tolerance pin inverted into the fail-closed token witness;
+MatrixLadderTests' D1 pin — which spent its life naming Schema's CURRENT open
+tolerance — now asserts the L3 state POSITIVELY, with the discriminating control
+retained; ManifestUnsupportedTests / SsdtExtendedPropertyEmissionTests trimmed.
+
+**The generated matrix now reads:**
+`| **Schema** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |` — **rungs L1/L2/L3 = 5/5/5 of 5 ·
+tolerances 9 (0 open)**. Every axis of the round-trip ladder is at L3; every erasure
+that remains is AcceptedFaithful with its own witness. The generator auto-flipped —
+nothing was hand-marked (the M1 precedent, completed).
+
+Config migration note: `TriggerBodyUnparsedDropped` fails closed at `Tolerance.parse`;
+configs naming it must drop it.

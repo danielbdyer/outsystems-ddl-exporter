@@ -68,8 +68,7 @@ let ``Unsupported.compute names match current ToleratedDivergence variants`` () 
               "HeaderCommentsOmitted"
               "IntegerWidthNormalized"
               "PostDeployForeignKeysSplit"
-              "StaticPopulationsUnreflected"
-              "TriggerBodyUnparsedDropped" ]
+              "StaticPopulationsUnreflected" ]
     Assert.Equal<Set<string>> (expected, result)
 
 [<Fact>]

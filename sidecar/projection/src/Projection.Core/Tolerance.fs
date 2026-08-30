@@ -191,21 +191,23 @@ type ToleratedDivergence =
     /// @ladder FkTrustNotRestoredOnBulkLoad Decision AcceptedFaithful
     | FkTrustNotRestoredOnBulkLoad
 
-    /// M2 (THE VECTOR, Wave 0 honesty) — a `Statement.CreateTrigger` whose
-    /// definition body fails to parse (`ScriptDomBuild.tryParseTriggerBody`
-    /// returns `None`, H-019) is dropped from the SSDT **text** artifact at
-    /// `Render.fs` / `ScriptDomGenerate.fs`. The drop was a bare `()` justified
-    /// by appeal to "the canary roundtrip surfaces regressions" — but no such
-    /// detector covers the text path, so the erasure was **silent**, the one
-    /// thing the named-erasure law forbids absolutely. (The `.dacpac` path
-    /// already refuses + names the dropped object, NM-24; only the text path was
-    /// silent — the asymmetry this variant closes.) Named here so the erasure is
-    /// *closed*; the render site now emits an in-band marker comment naming this
-    /// tolerance instead of vanishing. **Retiring it:** emit a trigger whose body
-    /// round-trips, or refuse at emit when it cannot parse (mirroring the
-    /// `.dacpac` path), so no faithful trigger is ever dropped from the text.
-    /// @ladder TriggerBodyUnparsedDropped Schema OpenGap
-    | TriggerBodyUnparsedDropped
+    // `TriggerBodyUnparsedDropped` was RETIRED at schema-L3.3b (2026-08-30),
+    // taking the docstring's own second retirement path: the publish
+    // REFUSES at emit when a trigger body cannot parse, mirroring the
+    // `.dacpac` path — schema-L3.3a moved the #669 pre-flight to the
+    // compose seam (`SsdtDdlEmitter.emissionRefusal` → the named
+    // `emitter.ssdt.triggerUnparsed`), strengthened the gate to the
+    // renderer's success domain (gate-pass ⟹ render, the comments-only
+    // edge included), and gated the one production flat lane
+    // (`statementsChecked`). No faithful trigger is ever dropped from the
+    // text: a gated publish refuses BY NAME with no artifact written; the
+    // render marker survives only as loud defense for ungated direct
+    // callers. Witness: `ComposeEmitRefusalTests` (refusal + agreement +
+    // gate-domain corpus). This was the LAST Schema OpenGap — deleting
+    // this tag flips the generated matrix's Schema axis to ✅ L3
+    // (L1/L2/L3 = 5/5/5). No DU variant remains, per the dead-algebra-
+    // retirement precedent; the config token fails closed at
+    // `Tolerance.parse`.
 
     /// T17/B4b — the row-fidelity comparator's canonical cell form renders a
     /// model `Boolean` attribute as `"true"`/`"false"` REGARDLESS of the
@@ -282,7 +284,6 @@ module ToleratedDivergence =
         | ToleratedDivergence.CharAnsiPaddingTolerated       -> ToleratedDivergence.CharAnsiPaddingTolerated
         | ToleratedDivergence.DecimalScaleTolerated          -> ToleratedDivergence.DecimalScaleTolerated
         | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad   -> ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
-        | ToleratedDivergence.TriggerBodyUnparsedDropped     -> ToleratedDivergence.TriggerBodyUnparsedDropped
         | ToleratedDivergence.BooleanCanonicalizationTolerated -> ToleratedDivergence.BooleanCanonicalizationTolerated
         | ToleratedDivergence.DateTimeTickPrecisionTolerated -> ToleratedDivergence.DateTimeTickPrecisionTolerated
         | ToleratedDivergence.IntegerWidthNormalized         -> ToleratedDivergence.IntegerWidthNormalized
@@ -307,7 +308,6 @@ module ToleratedDivergence =
                 coverage ToleratedDivergence.CharAnsiPaddingTolerated
                 coverage ToleratedDivergence.DecimalScaleTolerated
                 coverage ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
-                coverage ToleratedDivergence.TriggerBodyUnparsedDropped
                 coverage ToleratedDivergence.BooleanCanonicalizationTolerated
                 coverage ToleratedDivergence.DateTimeTickPrecisionTolerated
                 coverage ToleratedDivergence.IntegerWidthNormalized
@@ -326,7 +326,6 @@ module ToleratedDivergence =
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> "CharAnsiPaddingTolerated"
         | ToleratedDivergence.DecimalScaleTolerated        -> "DecimalScaleTolerated"
         | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad -> "FkTrustNotRestoredOnBulkLoad"
-        | ToleratedDivergence.TriggerBodyUnparsedDropped   -> "TriggerBodyUnparsedDropped"
         | ToleratedDivergence.BooleanCanonicalizationTolerated -> "BooleanCanonicalizationTolerated"
         | ToleratedDivergence.DateTimeTickPrecisionTolerated -> "DateTimeTickPrecisionTolerated"
         | ToleratedDivergence.IntegerWidthNormalized       -> "IntegerWidthNormalized"
