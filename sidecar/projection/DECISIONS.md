@@ -32799,3 +32799,40 @@ target class), and the four Composition rows' status re-stated as "unbuilt;
 absence machine-probed" — the probe replaces the session-stamp.
 
 **Not behavioral** — probes + index rows.
+
+---
+
+## 2026-08-30 — align-III.12: the eject enters the executable registry; L3's first amendment; A35 re-anchored (the L-track closes)
+
+**L3-Eject (audit a10, F8).** The eject — the audit synthesis's "outcome that cannot be
+partially right" — had neither law nor stub nor deferral row: the engine's entire
+provenance discipline converges on one terminal delivery no surface named. It now has
+both registry forms: `PRODUCT_AXIOMS.md` Group C carries **L3-Eject (candidate)** — the
+terminal package must REPLAY (`reconstructLatestSchema(genesis, exported chain)` = frozen
+state; the terminal `ChangeManifest` series complete; publication REFUSED if the chain
+does not replay) — and `AxiomTests.fs` carries its Bucket-C stub (C 9 → 10) whose
+promotion trigger is the §5.12 fork-3 resolution / the eject chapter's dependent slice,
+at which point the witness gates `EjectRun`'s publication path. The substrate is already
+live (T13, T19, `admitChain`); only the gate is deferred — and now the deferral is
+IN the registry like every other outcome.
+
+**L3-CC2 amended (audit a10, F4 — PRODUCT_AXIOMS' first amendment).** The original pinned
+one uniform pass signature; A41's registry legitimately carries six output shapes while
+the PROTECTED OUTCOME — every transformation enumerated, classified, dual-writer-run,
+registry-composed — holds everywhere. A conformance check written from the original's
+letter would have rejected the shipped system. Restated outcome-first in place; the
+original preserved under V2 Amendments (no longer "None today"), with the governing rule
+the amendment sets: **L3 laws quantify over outcomes; realizations appear as witnesses.**
+
+**A35 re-anchored (audit a6, F6).** A35's normative worked example cited the retired
+`RawTextEmitter.statements`; a fresh agent grepping the axiom's anchor found comments
+only. Re-pointed to the live canonical form `SsdtDdlEmitter.statements`, and the three
+stale code doc-comments (Catalog.fs, Lineage.fs, TopologicalOrder.fs) now name the
+retirement instead of implying a live module.
+
+**In passing (same currency class):** PRODUCT_AXIOMS' A-Lifecycle-4 paragraph still said
+the compose operator "does not exist today" — promoted/SHIPPED 2026-06-01; corrected.
+
+**Not behavioral.** Registry motion: C 9 → 10 (matrix + gate move in this commit).
+*— The L-track (III.8–III.12) closes here; the named IIIa/IIIb seam passes unexercised
+(no split needed).*

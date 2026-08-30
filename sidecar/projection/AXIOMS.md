@@ -1305,11 +1305,13 @@ strengthens to *statement-stream determinism* — identical Catalog
 produces identical Statement sequence; `Render.toText` produces
 identical bytes from identical streams.
 
-**Worked example.** `RawTextEmitter.statements : Catalog ->
-seq<Statement>` is the canonical form. `Render.toText : seq<Statement>
--> string` produces .sql text. `Deploy.executeStream : SqlConnection
--> seq<Statement> -> Task<unit>` produces the deployed target
-database. Both consume the same stream; both witness the same
+**Worked example** *(re-pointed align-III.12 — the original example,
+`RawTextEmitter.statements`, was retired with its module; the axiom's
+normative anchor follows the living code)*. `SsdtDdlEmitter.statements :
+Catalog -> seq<Statement>` is the canonical form. `Render.toText :
+seq<Statement> -> string` produces .sql text. `Deploy.executeStream :
+SqlConnection -> seq<Statement> -> Task<unit>` produces the deployed
+target database. Both consume the same stream; both witness the same
 algebra; T1 holds at the stream level.
 
 **Implications.** A18 (Π consumes Catalog × Profile, never Policy)

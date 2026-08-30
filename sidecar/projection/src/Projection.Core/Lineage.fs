@@ -47,8 +47,9 @@ type RemovalReason =
 module RemovalReason =
 
     /// Render the typed reason as a stable diagnostic string. Used by
-    /// boundary consumers (RawTextEmitter comments, future audit
-    /// readers) that need a flat presentation form. Returns the same
+    /// boundary consumers (emitter header comments — SsdtDdlEmitter
+    /// today — and audit readers) that need a flat presentation form.
+    /// Returns the same
     /// strings the prior `Removed of string` payload carried, so this
     /// is a structural seam, not a behavior change:
     ///   - `OriginPredicate Origin.Native`    → `"origin=Native"`

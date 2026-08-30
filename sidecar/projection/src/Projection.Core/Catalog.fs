@@ -2005,7 +2005,7 @@ module Catalog =
     ///   5. Every `Index.Columns` entry exists on its owning
     ///      `Kind.Attributes`.
     ///
-    /// `tryFindKind`, `RawTextEmitter.fkDef`, and
+    /// `tryFindKind`, the since-retired `RawTextEmitter.fkDef`, and
     /// `PhysicalSchema.toPhysicalForeignKeys` previously each
     /// re-validated #3/#4 by silently dropping bad references. Per
     /// the discipline "invariants live with the type, not in the

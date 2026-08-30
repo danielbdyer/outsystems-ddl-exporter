@@ -1705,6 +1705,19 @@ let ``A48: offline manifest reconcile is sound (source-absent verification)`` ()
         "tests/Projection.Tests.Integration/FidelityRowsDockerTests.fs"
         "P2-S3 offline reconcile: --against proves a target byte-identical to a captured manifest with NO live source; a tampered cell reads exit 5"
 
+[<Fact(Skip = "L3-Eject LAW (candidate; named align-III.12) — the terminal package \
+reconstructs — Bucket C. At eject (the one outcome that cannot be partially right; \
+no upstream remains to re-derive from) the shipped package must REPLAY: \
+reconstructLatestSchema(genesis, exported chain) reproduces the frozen state, the \
+terminal ChangeManifest series is complete over the exported edges, and publication \
+is REFUSED if the chain does not replay. Substrate already live: T13 (the FTC fold), \
+T19 (journal replay), EpisodicLifecycle.admitChain (align-III.2); EjectRun is the \
+assembly seam. Promotion trigger: the eject-deliverable fork resolves (§5.12 fork 3, \
+Active-deferrals index — frozen state + full refactorlog history vs state alone) / \
+the eject chapter's dependent slice opens; the witness then gates EjectRun's \
+publication path on the replay. PRODUCT_AXIOMS.md Group C carries the L3 statement.")>]
+let ``L3-Eject: the terminal package reconstructs — publication refused if the chain does not replay`` () = ()
+
 // ===========================================================================
 // Coverage summary — GENERATED, not maintained here (align-III.10)
 // ===========================================================================
