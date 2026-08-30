@@ -22,8 +22,15 @@ generating ten theorems (T1–T10). V2 has extended the system: A6, A12,
 A17, A18, A24, and T1 carry amendments (recorded under "V2 Amendments"
 below); A32, A33, A34, A35, A36, A39, A40, A41, A42, and T11 are new;
 the Wave-6 Change Algebra (2026-06-01) added theorems T12–T16 and axiom
-A43 (see "The Change Algebra — T12–T16 + A43"). The current count is
-**A1–A43 generating T1–T16** with six amended originals. The axioms are grouped into eight thematic clusters; the
+A43 (see "The Change Algebra — T12–T16 + A43"); A44 (the config⟷movement
+isomorphism) was chartered in `THE_CONFIG_CONTROL_PLANE.md` (2026-06-08)
+and is resident below; the estate/fidelity chapter (2026-07) added
+A45–A48 + T17–T18; the data-sink chapter (2026-08-15) added A49 + T19;
+the alignment program (2026-08-16) added A50–A54. The current count is
+**A1–A54 generating T1–T19** with six amended originals — but do not
+trust restated counts, including this one: the executable registry
+(`AxiomTests.fs` + `scripts/verifiability-gate.sh`) is the authority.
+The axioms are grouped into eight thematic clusters; the
 theorems cluster by what falls out of the construction. Code and tests
 cite the **amended** form when both exist; the original form is the
 historical lineage of the amendment.
@@ -2085,6 +2092,35 @@ scaffolding lands at Stage 0 Tier 1 (S0.F) before chapter 3.1
 opens.** Future chapters that surface new amendment candidates
 append to this section at chapter open with TBD bodies; the
 scaffolding grows monotonically with the chapter pre-scopes.
+
+## A44 — the config is an isomorphic image of the movement space (`expressible ⇔ reachable`; adopted from THE_CONFIG_CONTROL_PLANE §2, resident align-III.8)
+
+**Statement.** The operator config and the engine's resolved `MovementSpec` form a total,
+faithful, direction-derived correspondence `Φ = resolveFlowSpec`, in three clauses:
+
+1. **Faithful (Φ is a function; `parse ∘ render = id`).** Every config resolves to exactly
+   one `MovementSpec`; rendering a spec and re-parsing it is the identity on the movement
+   config DOM — the operator's control surface cannot drift from what the engine consumes.
+2. **Total / spanning (`reachable ⇔ expressible`).** Every model-bearing `PlanAction` the
+   engine can execute has a config pre-image, and every parse-accepted flow resolves to a
+   real action or a NAMED refusal. The named residual set is **∅** (`residualActions =
+   Set.empty` since 2026-06-10 S6) — the strongest form of the statement.
+3. **Direction is derived, never stored.** `direction : (source rendition, sink rendition,
+   scope) → {A→B, B→A, A→A, mint→A, eject}` is a pure function of the endpoints — a
+   stored direction knob is unrepresentable.
+
+This is the movement-space instance of T16 / the iso-ladder: where T16's witness is
+`Ingestion ∘ Projection = id` on states, A44's witness is `render ∘ resolve = id` on the
+config⟷spec pair — the adjunction lifted to the operator's control surface. History and
+the directional 16-variant table: `THE_CONFIG_CONTROL_PLANE.md` §2–§3 (the law was
+chartered there 2026-06-08 as "A44 candidate" and its canary closed to residual-∅ on
+2026-06-10; this section makes it RESIDENT in the numbered system — the A44 slot it
+always named).
+
+**Witness.** LIVE — `MovementIsomorphismTests.fs` (the A44 isomorphism canary: the
+`A44 clause 1/2/3` law family — faithfulness round-trips per config block, the
+residual-∅ spanning witness, and direction-purity). Gated in `AxiomTests.fs` via M16
+citations.
 
 ## A45 — espace invariance across the environment lattice (estate chapter open, 2026-07-15; adopted 2026-07-17)
 

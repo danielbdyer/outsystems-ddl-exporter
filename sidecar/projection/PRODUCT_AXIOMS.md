@@ -453,7 +453,7 @@ Plus ~10 Tier-2 candidates from the audit's gap-hunt (Q1-Q30; see `AUDIT_2026_05
 
 ## Group Lifecycle — Operationalized (2026-05-31, §5.3)
 
-`AXIOMS.md` A6-amended names Lifecycle as one of V2's three substantive aggregates (Catalog + Policy + Lifecycle). The temporal axis is **operationalized** as of §5.3 (`src/Projection.Core/Lifecycle.fs`): `Version` / `Timeline` value objects, the monotone `Lifecycle` snapshot chain, `evolutionChain` (fold `CatalogDiff.between`), and `replayTo`. Lifecycle is an **outer envelope** over `Project`, not a fourth `ProjectionInput` field (A6-amended / A17).
+`AXIOMS.md` A6-amended names Lifecycle as one of V2's three substantive aggregates (Catalog + Policy + Lifecycle). The temporal axis is **operationalized** on the durable episodic grain (`src/Projection.Core/Episode.fs`; the `Version` / `Timeline` value objects live in `Lifecycle.fs`): the monotone `EpisodicLifecycle` chain, `schemaEvolutionChain` (fold `CatalogDiff.between`), and `replayTo` (the schema-only `Lifecycle`/`CatalogSnapshot` twin these were first built as was deleted at align-III.5). Lifecycle is an **outer envelope** over `Project`, not a fourth `ProjectionInput` field (A6-amended / A17).
 
 - **L3-L1.** Schema evolution is replayable: any snapshotted Catalog C_i is recoverable from its `Version` via `Lifecycle.replayTo` (materialized form; the diff-replay reconstruction form `fold applyDiff C₀` lands with the `CatalogDiff` compose operator, H-007). *Witness:* `LifecycleTests.fs` `` ``A-Lifecycle-1 (L3-L1): replayTo recovers the snapshotted catalog`` ``; `AxiomTests.fs` A-Lifecycle-1.
 - **L3-L2.** Refactor-log history is monotonic: `Lifecycle.append` requires a strictly-increasing `Version` ordinal; a non-monotone append fails rather than reordering, so prior history is never altered. *Witness:* `LifecycleTests.fs` `` ``A-Lifecycle-2 (L3-L2): append advances latest and never alters prior history`` ``; `AxiomTests.fs` A-Lifecycle-2.
@@ -471,7 +471,7 @@ A fourth axiom — **A-Lifecycle-4** (evolutionChain composition is associative)
 
 ## Cross-references
 
-- `AXIOMS.md` — L2 formal-system axioms (A1–A43 + T1–T16) that underwrite this surface.
+- `AXIOMS.md` — L2 formal-system axioms (A1–A54 + T1–T19; the executable registry in `AxiomTests.fs` is the count's authority) that underwrite this surface.
 - `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` — coverage map (which L3 axioms are Bucket A/B/C/D), campaigns to address Bucket D, methodology.
 - `V2_PRODUCTION_CUTOVER.md` — cutover plan; campaigns from the audit operationalize as Phase A workstreams here.
 - `VISION.md` — strategic frame; the *why* of the cutover.

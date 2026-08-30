@@ -32651,3 +32651,31 @@ captures; upheld on observed silence; never on an unmeasured edge; out of scope 
 and idempotent edges). Matrix regenerated in the same commit.
 
 **Not behavioral** — a pure predicate with no caller yet.
+
+---
+
+## 2026-08-30 — align-III.8: A44 is resident; the axiom headline stops lying
+
+**The finding (audit a6/a9, L1).** The numbered system had a hole and a stale headline.
+`A44` — the config⟷movement isomorphism (`expressible ⇔ reachable`) — was chartered in
+`THE_CONFIG_CONTROL_PLANE.md` §2 (2026-06-08) as "A44 candidate", its canary went fully
+live with residual-∅ two days later (S6), and A45–A54 were then numbered AROUND the hole
+for two months while `AXIOMS.md` never seated it. Meanwhile the headline still declared
+"The current count is A1–A43 generating T1–T16" — five axioms and three theorems stale —
+and `PRODUCT_AXIOMS.md`'s cross-reference repeated it.
+
+**The decision.** A44 gets its resident section in `AXIOMS.md` (the three clauses —
+faithful `parse ∘ render = id`; total/spanning with the residual-∅ strongest form;
+direction derived, never stored — with the T16 iso-ladder framing and the charter
+provenance) placed in numbering order before A45, and a LIVE gated pointer in
+`AxiomTests.fs` (M16 `citationOf` over the four load-bearing `MovementIsomorphismTests`
+laws: clause-1 faithfulness, both clause-2 spanning directions, clause-3
+direction-purity) — born in exactly the form III.9 will lift the neighboring Skip-prose
+stubs into. The headline now enumerates the real lineage (A44 charter; estate/fidelity
+A45–A48 + T17–T18; sink A49 + T19; alignment A50–A54), states **A1–A54 generating
+T1–T19**, and — per the CLAUDE.md rule that restated counts are bugs — names the
+executable registry as the count's authority in the same breath. `PRODUCT_AXIOMS.md`'s
+cross-ref follows suit, and its §Lifecycle operationalization paragraph is re-pointed
+onto the episodic grain (the align-III.5 deletion had left it citing the deleted twin).
+
+**Not behavioral** — documentation residency + one new live gated fact (89 → 90 live).

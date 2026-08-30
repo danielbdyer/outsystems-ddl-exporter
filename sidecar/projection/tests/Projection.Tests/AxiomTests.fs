@@ -1609,6 +1609,30 @@ static product algebra (Pass.product / `&&&`) once anticipated this but was \
 retired 2026-06-04 (unused); rebuild it when the trigger eventually fires.")>]
 let ``H-099: remote pass execution (perf trigger unfired)`` () = ()
 
+[<Fact>]
+let ``A44: the config is an isomorphic image of the movement space (expressible ⇔ reachable)`` () =
+    // align-III.8 — A44 RESIDENT. Chartered in THE_CONFIG_CONTROL_PLANE §2
+    // (2026-06-08, "A44 candidate"); its isomorphism canary closed to
+    // residual-∅ on 2026-06-10 (S6) and has been live ever since — this
+    // entry seats the law in the numbered registry it always named.
+    // Clause 1 (faithful): parse ∘ render = id on the movement config DOM.
+    citationOf
+        "tests/Projection.Tests/MovementIsomorphismTests.fs"
+        "A44 clause 1 — parse ∘ render = id on the movement config DOM (faithfulness)"
+    // Clause 2 (total/spanning, the strongest form): the named residual is ∅ —
+    // every model-bearing action is flow-reachable, and every parse-accepted
+    // flow resolves to a real action or a NAMED refusal.
+    citationOf
+        "tests/Projection.Tests/MovementIsomorphismTests.fs"
+        "A44 clause 2 — the residual is ∅: mustReach spans the whole model-bearing surface (the strongest A44 statement)"
+    citationOf
+        "tests/Projection.Tests/MovementIsomorphismTests.fs"
+        "A44 clause 2 — expressible ⇒ reachable: every parse-accepted flow resolves to a real action or a NAMED refusal"
+    // Clause 3: direction is a pure function of the endpoints, never a knob.
+    citationOf
+        "tests/Projection.Tests/MovementIsomorphismTests.fs"
+        "A44 clause 3 — Direction is a pure function of (src, sink, origin), never a stored knob"
+
 [<Fact(Skip = "A45 LAW (adopted 2026-07-17 at the loop-closing chapter close) — espace \
 invariance across the environment lattice (estate chapter open, 2026-07-15). For any \
 authored model deployed at N espace cells, the OSSYS-read catalogs normalized to \
