@@ -32539,3 +32539,43 @@ as `loadRun` reads it; a torn record file is skipped). The law
 survive now yields the fold instead of `None` (the board diffs against the true baseline
 instead of resetting); a healthy store is byte-identical. No new axiom row — the FTC's
 axiom is T13; this is its reading-grain instance, witnessed in `EstateHistoryTests`.
+
+---
+
+## 2026-08-30 — align-III.5: the schema-only `Lifecycle`/`CatalogSnapshot` dead twin is deleted (the episodic grain stands alone)
+
+**The finding (audit a5, S4).** Two carriers of the same temporal law lived side by side:
+the schema-only, in-memory `Lifecycle` over `CatalogSnapshot`s (never serialized, no
+production consumer — kept alive solely by its own tests) and the durable multi-plane
+`EpisodicLifecycle` over `Episode`s (the grain `LifecycleStore` persists and every
+production caller reads). The dead-algebra retirement precedent (2026-06-04) applies:
+zero-consumer symmetry-builds get deleted.
+
+**The decision.** `Lifecycle.fs` now hosts only the living value objects (`Version`,
+`Timeline` — used across ReportRun / MigrationRun / LifecycleStore / Pipeline / the faces);
+`CatalogSnapshot`, `Lifecycle`, and its module are GONE. The one API the dead twin had that
+the living grain lacked is PORTED, not lost: **`EpisodicLifecycle.replayTo`** — L3-L1's
+materialized fetch (recover the schema stored at a `Version`, refusing absent versions by
+name, `episodicLifecycle.version.notFound`) — lands beside its diff-fold peer
+`reconstructLatestSchema`, mirroring the fetch/derive pairing the twin documented.
+
+**The law port.** `LifecycleTests.fs` re-targets wholesale onto `EpisodicLifecycle` +
+`Episode.ofSchema` (the exact carrier `CatalogSnapshot` collapsed into). The axiom-cited
+test names are UNCHANGED — `A-Lifecycle-1 (L3-L1)` ×2, `A-Lifecycle-2 (L3-L2)` ×2,
+`A-Lifecycle-3 (L3-L3)`, the `Time round-trip (replay): replayTo genesis …` matrix witness,
+6.A.11/H-007 reconstruction, 6.H.3 netDiff ×3, P4 ×3, NM-45 ×2, E4 — so the AxiomTests
+citations and the NORTH_STAR Time cell hold with zero motion (matrix regen byte-stable).
+Refusal-code pins move to the episodic surface's own codes
+(`episodicLifecycle.append.nonMonotonic`, `episodicLifecycle.version.notFound`).
+
+**Doc re-points in the same commit.** AXIOMS.md §A-Lifecycle preamble + A-Lifecycle-1 text
+(episodic carrier; the stale "awaits the compose operator" parenthetical corrected), T13's
+witness line (`reconstructLatestSchema`), and T13's 2026-06-01 **Latent** note flipped to
+**Resolved** (the durable substrate shipped as `Episode`+`LifecycleStore`; the in-memory
+twin it was measured against is deleted). `THE_USE_CASE_ONTOLOGY.md` §Accumulate names the
+`Episode` append + `reconstructLatestSchema`. `ArtifactByKind`/`Episode` doc comments drop
+the twin references.
+
+**Not behavioral.** No production caller invoked the deleted API; no wire format moves.
+The only new production code is `replayTo` (pure fetch). Verification: build + analyzers
+clean; fast pool; matrix byte-stable.

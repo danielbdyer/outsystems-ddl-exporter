@@ -255,16 +255,19 @@ identical content produce the same hash; the second is a no-op.
 
 ### A-Lifecycle-1..4 — the temporal axis (operationalized 2026-05-31, §5.3)
 
-A `Lifecycle` is a monotone chain of `CatalogSnapshot`s along one `Timeline`
-(`src/Projection.Core/Lifecycle.fs`). It is the **outer envelope** over
+An `EpisodicLifecycle` is a monotone chain of `Episode`s along one `Timeline`
+(`src/Projection.Core/Episode.fs`; the schema-only `Lifecycle`/`CatalogSnapshot`
+twin these laws were first authored against was deleted at align-III.5 — the
+durable multi-plane grain subsumed it). It is the **outer envelope** over
 `Project` — the inner kernel `Catalog × Policy × Profile` is untouched
 (A6-amended / A17). These underwrite `PRODUCT_AXIOMS.md` Group Lifecycle
 (L3-L1 / L3-L2 / L3-L3).
 
-**A-Lifecycle-1 (↔ L3-L1). Schema evolution is replayable.** `replayTo`
-recovers the Catalog stored at any `Version` (materialized form; the
-diff-replay reconstruction `fold applyDiff C₀` awaits the `CatalogDiff`
-compose operator — H-007).
+**A-Lifecycle-1 (↔ L3-L1). Schema evolution is replayable.**
+`EpisodicLifecycle.replayTo` recovers the schema stored at any `Version`
+(the materialized fetch; its diff-fold peer `reconstructLatestSchema`
+*derives* the latest from the per-edge deltas — 6.A.11 / H-007 — and agrees
+with the fetch modulo the captured surface).
 
   *Property test.* `` ``A-Lifecycle-1 (L3-L1): replayTo recovers the snapshotted catalog`` `` (`LifecycleTests.fs`).
 
@@ -1907,8 +1910,8 @@ B` + `applyDiff threads the passed-in catalog … (no-cheat)`.
 
 **T13 — evolution over time (Chasles along the timeline).**
 `replay(t) = genesis ⊕ (δ₀ + … + δ_t)` = `fold ⊕`. Composition of deltas IS
-the schema/data history. Witness: `Lifecycle.reconstructLatest` (fold
-applyDiff). The `compose : Delta → Delta → Delta` operator (diff∘diff) is **SHIPPED**
+the schema/data history. Witness: `EpisodicLifecycle.reconstructLatestSchema`
+(fold applyDiff). The `compose : Delta → Delta → Delta` operator (diff∘diff) is **SHIPPED**
 as `CatalogDiff.compose` (6.H.3, 2026-06-01); A-Lifecycle-4 promoted to Bucket A.
 **M12 (THE VECTOR Wave 2, SHIPPED):** the groupoid INVERSE
 `CatalogDiff.inverse d = between (target d) (source d)` completes the partial
@@ -1928,13 +1931,13 @@ the `MigrationCanaryTests` M21 canaries on real SQL Server (T13 citations). The
 unreachable) stays deferred — gated on the managed-login long-transaction grant
 survey + P7b throughput; per the J5 managed-env evidence the compensating channel
 is the buildable arm.
-**Latent (2026-06-01 morphology research):** `reconstructLatest` runs only over
-**in-memory values in tests** — there is **no durable episode** to integrate
-over (`CatalogSnapshot` is schema-only, single-plane, never serialized). The
-FTC is proven, the substrate absent. `CatalogDiff.compose` + `Lifecycle.netDiff`
-are SHIPPED (6.H.3); the **remaining** activation is the durable multi-plane
-`Episode` + `LifecycleStore` (`EXECUTION_PLAN.md` 6.H.1–6.H.2; `WAVE_6_MORPHOLOGY.md`
-§4 F1–F2).
+**Resolved (the 2026-06-01 latent note, closed align-III.5):** the durable
+multi-plane substrate the morphology research found absent SHIPPED as
+`Episode` + `LifecycleStore` (6.H.1–6.H.2), and the schema-only in-memory
+twin (`Lifecycle`/`CatalogSnapshot`) it was measured against is now DELETED —
+the FTC fold (`reconstructLatestSchema`), the integral (`netSchemaDiff`,
+6.H.3), and the fetch (`replayTo`) all live on the durable episodic grain,
+with the ported laws in `LifecycleTests.fs`.
 
 **T14 — channel decomposition (orthogonality as a direct sum).**
 `δ = ⊕_c π_c(δ)`, `π_c ∘ π_{c'} = 0` (c≠c'), `Σ_c π_c = id`, `‖δ‖ = Σ_c ‖π_c δ‖`.

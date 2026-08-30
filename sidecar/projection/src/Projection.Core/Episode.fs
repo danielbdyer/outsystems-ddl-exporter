@@ -48,8 +48,8 @@ module DataObservation =
 
 
 /// A multi-plane snapshot at one `Version`: the point at which the calculus
-/// integrates. Where `CatalogSnapshot` (`Lifecycle.fs`) is schema-only and
-/// single-plane, an `Episode` *co-records* the five concerns at one release
+/// integrates. Where the retired schema-only `CatalogSnapshot` twin recorded
+/// one plane (deleted at align-III.5), an `Episode` *co-records* the five concerns at one release
 /// coordinate — Schema (the `Catalog`), Data (the CDC observation), Identity
 /// (carried inside the `Catalog`'s `SsKey`s), Time (the `Coordinate`), and the
 /// emitted refactorlog reference (Decision). This co-recording is what makes
@@ -207,8 +207,7 @@ module EpisodicLifecycle =
           Admission = ChainAdmission.Monotone episodeOrdinal }
 
     /// Append the next episode, enforcing L3-L2 (monotonic history) on the
-    /// schema-plane ordinal `ledgerSpec` declares — the same rule
-    /// `Lifecycle.append` holds. A non-monotone append fails rather than
+    /// ordinal `ledgerSpec` declares. A non-monotone append fails rather than
     /// silently reordering. This is the incremental face of the grain's
     /// `Monotone` ResumeAdmit; `admitChain` is its whole-chain face.
     let append (episode: Episode) (lifecycle: EpisodicLifecycle) : Result<EpisodicLifecycle> =
@@ -232,14 +231,34 @@ module EpisodicLifecycle =
         Ledger.admitChain ledgerSpec chain
 
     /// The schema-plane diff chain `[between E₀.Schema E₁.Schema; …]` — the
-    /// per-edge displacement along the timeline (the same fold `Lifecycle`
-    /// runs, projected onto `Episode.Schema`). Genesis-only ⇒ empty chain.
+    /// per-edge displacement along the timeline, projected onto
+    /// `Episode.Schema`. Genesis-only ⇒ empty chain.
     let schemaEvolutionChain (lifecycle: EpisodicLifecycle) : Result<CatalogDiff list, EmitError> =
         let (EpisodicLifecycle data) = lifecycle
         data.Episodes
         |> List.pairwise
         |> List.map (fun (prior, next) -> CatalogDiff.between prior.Schema next.Schema)
         |> Ok
+
+    /// L3-L1 (replayability) in materialized form: recover the schema stored
+    /// at a `Version`. Lookup is by ordinal (the position's identity); an
+    /// absent version fails by name. This is the exact *fetch* — it returns
+    /// the stored episode's schema byte-for-byte (including facets the diff
+    /// does not capture: references, indexes, sequences). Its diff-fold peer
+    /// is `reconstructLatestSchema` (6.A.11 / H-007), which *derives* the
+    /// latest from the deltas and agrees with the fetch modulo the captured
+    /// surface. Ported from the retired schema-only twin at align-III.5.
+    let replayTo (version: Version) (lifecycle: EpisodicLifecycle) : Result<Catalog> =
+        let (EpisodicLifecycle data) = lifecycle
+        let target = Version.ordinal version
+        match data.Episodes |> List.tryFind (fun e -> episodeOrdinal e = target) with
+        | Some e -> Result.success e.Schema
+        | None ->
+            Result.failureOf (
+                ValidationError.createWithMetadata
+                    "episodicLifecycle.version.notFound"
+                    "No episode exists at the requested version."
+                    (Map.ofList [ "ordinal", Some (string target) ]))
 
     /// The FTC over the durable chain: `fold applyDiff E₀.Schema [δ₀; δ₁; …]`,
     /// reconstructing the latest schema from genesis + the per-edge deltas. The
@@ -260,7 +279,7 @@ module EpisodicLifecycle =
         | Error e  -> Error e
 
     /// The net schema displacement genesis → latest (the integral ∫δ as a single
-    /// delta; `Lifecycle.netDiff`'s episodic peer). `P4`: computed by **folding
+    /// delta — 6.H.3's production form). `P4`: computed by **folding
     /// `CatalogDiff.compose` over the `schemaEvolutionChain`** — the production
     /// consumer of the groupoid composition `⊕` on the episodic plane. The
     /// functor law guarantees the fold equals the direct `between E₀.Schema

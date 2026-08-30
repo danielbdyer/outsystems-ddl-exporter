@@ -5,6 +5,15 @@ open Projection.Core
 open Projection.Targets.SSDT
 open Projection.Tests.Fixtures
 
+// ---------------------------------------------------------------------------
+// The temporal axis on its LIVING carrier (align-III.5): these laws were
+// authored against the schema-only `Lifecycle`/`CatalogSnapshot` twin and are
+// ported verbatim onto `EpisodicLifecycle` + `Episode.ofSchema` — the durable
+// multi-plane grain that subsumed it. The axiom-cited test names (L3-L1 /
+// L3-L2 / L3-L3, the Time round-trip witness) are unchanged; the refusal
+// codes are the episodic surface's own.
+// ---------------------------------------------------------------------------
+
 // FSharp.Core's two-arity Result constructors collide with
 // `Projection.Core.DiagnosticSeverity.Error` once `Projection.Core` is
 // opened; the private alias mirrors `CatalogDiffTests.fs` /
@@ -37,20 +46,27 @@ let private ver (ordinal: int) (label: string) : Version = Version.create ordina
 let private tl (name: string) : Timeline = Timeline.create name |> mustResultOk
 
 // ---------------------------------------------------------------------------
-// Rename scenario (mirrors RefactorLogEmitterTests): C₁ rewrites `customer`'s
+// Rename scenario (mirrors RefactorLogEmitterTests): E₁ rewrites `customer`'s
 // Name while preserving its SsKey (A1, identity-survives-rename). The diff
-// C₀ → C₁ is exactly one table rename.
+// E₀ → E₁ is exactly one table rename.
 // ---------------------------------------------------------------------------
 
 let private renamedCustomerKind : Kind = { customer with Name = nameOf "Patron" }
 let private renamedSalesModule : Module = { salesModule with Kinds = [ renamedCustomerKind; order; country ] }
 let private targetCatalog : Catalog = IRBuilders.mkCatalog [ renamedSalesModule ]
 
-let private c0 : CatalogSnapshot = { Version = ver 0 "1.0.0"; Catalog = sampleCatalog }
-let private c1 : CatalogSnapshot = { Version = ver 1 "1.1.0"; Catalog = targetCatalog }
+let private at0 = System.DateTimeOffset(2026, 1, 1, 0, 0, 0, System.TimeSpan.Zero)
 
-let private devGenesis : Lifecycle = Lifecycle.genesis (tl "dev") c0
-let private devChain : Lifecycle = Lifecycle.append c1 devGenesis |> mustResultOk
+/// A schema-only episode at an ordinal — `Episode.ofSchema` is the exact
+/// carrier the retired `CatalogSnapshot` collapsed into.
+let private ep (ordinal: int) (label: string) (catalog: Catalog) : Episode =
+    Episode.ofSchema (EpisodeCoordinate.create (ver ordinal label) Environment.Dev at0) catalog
+
+let private e0 : Episode = ep 0 "1.0.0" sampleCatalog
+let private e1 : Episode = ep 1 "1.1.0" targetCatalog
+
+let private devGenesis : EpisodicLifecycle = EpisodicLifecycle.genesis (tl "dev") e0
+let private devChain : EpisodicLifecycle = EpisodicLifecycle.append e1 devGenesis |> mustResultOk
 
 // ===========================================================================
 // L-α — Version / Timeline value objects
@@ -78,51 +94,51 @@ let ``Timeline.create rejects a blank name and accepts a valid one`` () =
     Assert.Equal("uat", Timeline.name (tl "uat"))
 
 // ===========================================================================
-// L-β — Lifecycle chain + monotonic append (L3-L2)
+// L-β — episodic chain + monotonic append (L3-L2)
 // ===========================================================================
 
 [<Fact>]
-let ``genesis: head and latest are the genesis snapshot`` () =
-    Assert.Equal(c0, Lifecycle.head devGenesis)
-    Assert.Equal(c0, Lifecycle.latest devGenesis)
-    Assert.Equal("dev", Timeline.name (Lifecycle.timeline devGenesis))
+let ``genesis: head and latest are the genesis episode`` () =
+    Assert.Equal(e0, EpisodicLifecycle.head devGenesis)
+    Assert.Equal(e0, EpisodicLifecycle.latest devGenesis)
+    Assert.Equal("dev", Timeline.name (EpisodicLifecycle.timeline devGenesis))
 
 [<Fact>]
 let ``A-Lifecycle-2 (L3-L2): append rejects a non-monotonic ordinal`` () =
     // Same ordinal as genesis — not strictly increasing.
-    let stale : CatalogSnapshot = { Version = ver 0 "0.9.0"; Catalog = targetCatalog }
-    let es = Lifecycle.append stale devGenesis |> mustResultFail
-    Assert.Contains(es, fun e -> e.Code = "lifecycle.append.nonMonotonic")
+    let stale : Episode = ep 0 "0.9.0" targetCatalog
+    let es = EpisodicLifecycle.append stale devGenesis |> mustResultFail
+    Assert.Contains(es, fun e -> e.Code = "episodicLifecycle.append.nonMonotonic")
 
 [<Fact>]
 let ``A-Lifecycle-2 (L3-L2): append advances latest and never alters prior history`` () =
-    Assert.Equal(c1, Lifecycle.latest devChain)
-    Assert.Equal(c0, Lifecycle.head devChain)
-    // Prior history is unaltered: the genesis lifecycle still has one snapshot.
-    Assert.Equal(1, List.length (Lifecycle.snapshots devGenesis))
-    Assert.Equal(2, List.length (Lifecycle.snapshots devChain))
+    Assert.Equal(e1, EpisodicLifecycle.latest devChain)
+    Assert.Equal(e0, EpisodicLifecycle.head devChain)
+    // Prior history is unaltered: the genesis lifecycle still has one episode.
+    Assert.Equal(1, List.length (EpisodicLifecycle.episodes devGenesis))
+    Assert.Equal(2, List.length (EpisodicLifecycle.episodes devChain))
 
 // ===========================================================================
-// L-γ — evolutionChain (fold CatalogDiff.between)
+// L-γ — schemaEvolutionChain (fold CatalogDiff.between over Episode.Schema)
 // ===========================================================================
 
 [<Fact>]
 let ``evolutionChain: a genesis-only lifecycle has no edges`` () =
-    let diffs = Lifecycle.evolutionChain devGenesis |> mustOk
+    let diffs = EpisodicLifecycle.schemaEvolutionChain devGenesis |> mustOk
     Assert.Empty(diffs)
 
 [<Fact>]
 let ``evolutionChain: one diff per edge`` () =
-    let diffs = Lifecycle.evolutionChain devChain |> mustOk
+    let diffs = EpisodicLifecycle.schemaEvolutionChain devChain |> mustOk
     Assert.Equal(1, List.length diffs)
-    // Three snapshots → two edges.
-    let c2 : CatalogSnapshot = { Version = ver 2 "1.2.0"; Catalog = sampleCatalog }
-    let longer = Lifecycle.append c2 devChain |> mustResultOk
-    Assert.Equal(2, List.length (Lifecycle.evolutionChain longer |> mustOk))
+    // Three episodes → two edges.
+    let e2 : Episode = ep 2 "1.2.0" sampleCatalog
+    let longer = EpisodicLifecycle.append e2 devChain |> mustResultOk
+    Assert.Equal(2, List.length (EpisodicLifecycle.schemaEvolutionChain longer |> mustOk))
 
 [<Fact>]
-let ``evolutionChain: the C0 to C1 edge captures the customer rename`` () =
-    let diff = Lifecycle.evolutionChain devChain |> mustOk |> List.head
+let ``evolutionChain: the E0 to E1 edge captures the customer rename`` () =
+    let diff = EpisodicLifecycle.schemaEvolutionChain devChain |> mustOk |> List.head
     let renamed = CatalogDiff.renamed diff
     Assert.True(Map.containsKey customerKey renamed)
     Assert.Equal("Patron", Name.value (Map.find customerKey renamed).NewName)
@@ -133,29 +149,29 @@ let ``evolutionChain: the C0 to C1 edge captures the customer rename`` () =
 
 [<Fact>]
 let ``A-Lifecycle-1 (L3-L1): replayTo recovers the snapshotted catalog`` () =
-    Assert.Equal<Catalog>(sampleCatalog, Lifecycle.replayTo (ver 0 "1.0.0") devChain |> mustResultOk)
-    Assert.Equal<Catalog>(targetCatalog, Lifecycle.replayTo (ver 1 "1.1.0") devChain |> mustResultOk)
+    Assert.Equal<Catalog>(sampleCatalog, EpisodicLifecycle.replayTo (ver 0 "1.0.0") devChain |> mustResultOk)
+    Assert.Equal<Catalog>(targetCatalog, EpisodicLifecycle.replayTo (ver 1 "1.1.0") devChain |> mustResultOk)
 
 [<Fact>]
 let ``A-Lifecycle-1 (L3-L1): replayTo fails on an absent version`` () =
-    let es = Lifecycle.replayTo (ver 9 "9.9.9") devChain |> mustResultFail
-    Assert.Contains(es, fun e -> e.Code = "lifecycle.version.notFound")
+    let es = EpisodicLifecycle.replayTo (ver 9 "9.9.9") devChain |> mustResultFail
+    Assert.Contains(es, fun e -> e.Code = "episodicLifecycle.version.notFound")
 
 // NORTH_STAR §1 Time-axis round-trip witness (matrix-status.sh keys the Time
 // cell on the `replayTo genesis` substring). §5.3 earns it: the genesis
-// catalog C₀ is recoverable by replaying to its Version.
+// catalog E₀.Schema is recoverable by replaying to its Version.
 [<Fact>]
 let ``Time round-trip (replay): replayTo genesis recovers the genesis catalog`` () =
-    Assert.Equal<Catalog>(sampleCatalog, Lifecycle.replayTo (ver 0 "1.0.0") devChain |> mustResultOk)
+    Assert.Equal<Catalog>(sampleCatalog, EpisodicLifecycle.replayTo (ver 0 "1.0.0") devChain |> mustResultOk)
 
 // 6.A.11 (H-007) — replayability as a real reconstruction (fold applyDiff),
-// not a snapshot fetch. The chain-level round-trip law: reconstructLatest
-// derives the latest catalog from the per-edge deltas and agrees with the
-// stored snapshot modulo the diff's captured surface.
+// not a snapshot fetch. The chain-level round-trip law: reconstructLatestSchema
+// derives the latest schema from the per-edge deltas and agrees with the
+// stored episode modulo the diff's captured surface.
 [<Fact>]
 let ``A-Lifecycle (6.A.11 / H-007): reconstructLatest derives the latest snapshot via fold applyDiff`` () =
-    let reconstructed = Lifecycle.reconstructLatest devChain |> mustOk
-    let latest = (Lifecycle.latest devChain).Catalog
+    let reconstructed = EpisodicLifecycle.reconstructLatestSchema devChain |> mustOk
+    let latest = Episode.schema (EpisodicLifecycle.latest devChain)
     // The reconstruction (fold applyDiff genesis) reproduces the stored latest
     // (the customer-rename evolution) over the captured surface.
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between latest reconstructed))
@@ -163,25 +179,25 @@ let ``A-Lifecycle (6.A.11 / H-007): reconstructLatest derives the latest snapsho
     Assert.False(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog reconstructed))
 
 [<Fact>]
-let ``reconstructLatest: a genesis-only lifecycle reconstructs C0`` () =
-    let reconstructed = Lifecycle.reconstructLatest devGenesis |> mustOk
+let ``reconstructLatest: a genesis-only lifecycle reconstructs E0`` () =
+    let reconstructed = EpisodicLifecycle.reconstructLatestSchema devGenesis |> mustOk
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog reconstructed))
 
-// 6.H.3 — netDiff (the integral ∫δ as a single delta) + its equality to
-// fold-compose over the evolution chain (the FTC's companion). A 3-snapshot
+// 6.H.3 — netSchemaDiff (the integral ∫δ as a single delta) + its equality to
+// fold-compose over the evolution chain (the FTC's companion). A 3-episode
 // chain genuinely exercises CatalogDiff.compose in the fold.
 [<Fact>]
 let ``6.H.3: netDiff applied to genesis reproduces latest (the integral)`` () =
-    let nd = Lifecycle.netDiff devChain |> mustOk
+    let nd = EpisodicLifecycle.netSchemaDiff devChain |> mustOk
     let reconstructed = CatalogDiff.applyDiff sampleCatalog nd
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between targetCatalog reconstructed))
 
 [<Fact>]
 let ``6.H.3: netDiff equals fold compose over the evolution chain (3 snapshots)`` () =
-    // genesis (sampleCatalog) → c1 (Customer renamed Patron) → c2 (back to sample).
-    let c2 : CatalogSnapshot = { Version = ver 2 "1.2.0"; Catalog = sampleCatalog }
-    let chainLc = Lifecycle.append c2 devChain |> mustResultOk
-    let edges = Lifecycle.evolutionChain chainLc |> mustOk
+    // genesis (sampleCatalog) → e1 (Customer renamed Patron) → e2 (back to sample).
+    let e2 : Episode = ep 2 "1.2.0" sampleCatalog
+    let chainLc = EpisodicLifecycle.append e2 devChain |> mustResultOk
+    let edges = EpisodicLifecycle.schemaEvolutionChain chainLc |> mustOk
     Assert.Equal(2, List.length edges)  // two edges → the fold actually composes
     let folded =
         match edges with
@@ -191,30 +207,31 @@ let ``6.H.3: netDiff equals fold compose over the evolution chain (3 snapshots)`
                 | Some c -> c
                 | None -> Assert.Fail "lifecycle edges must be composable"; Unchecked.defaultof<_>) d0
         | [] -> Assert.Fail "expected edges"; Unchecked.defaultof<_>
-    let nd = Lifecycle.netDiff chainLc |> mustOk
+    let nd = EpisodicLifecycle.netSchemaDiff chainLc |> mustOk
     let viaFold = CatalogDiff.applyDiff sampleCatalog folded
     let viaNet = CatalogDiff.applyDiff sampleCatalog nd
     // Both reproduce the latest (sampleCatalog again, here) over the captured surface.
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between viaFold viaNet))
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog viaNet))
 
-// P4 — CatalogDiff.compose now has a PRODUCTION caller: Lifecycle.netDiff folds
-// it over the evolution chain. This test asserts the production net-diff (the
-// compose fold) equals the direct between(genesis, latest) over a ≥3-snapshot
-// chain — the functor law exercised in production, not just the unit test.
+// P4 — CatalogDiff.compose's PRODUCTION caller on the temporal axis:
+// EpisodicLifecycle.netSchemaDiff folds it over the evolution chain. This test
+// asserts the production net-diff (the compose fold) equals the direct
+// between(genesis, latest) over a ≥3-episode chain — the functor law exercised
+// in production, not just the unit test.
 [<Fact>]
 let ``P4 (6.H.3): production netDiff (compose fold) equals direct between(genesis, latest) over a 3-snapshot chain`` () =
-    // genesis (sampleCatalog) → c1 (Customer renamed Patron) → c2 (back to sample).
-    // Three snapshots, two edges → the netDiff fold genuinely composes.
-    let c2 : CatalogSnapshot = { Version = ver 2 "1.2.0"; Catalog = sampleCatalog }
-    let chainLc = Lifecycle.append c2 devChain |> mustResultOk
-    Assert.Equal(2, List.length (Lifecycle.evolutionChain chainLc |> mustOk))
-    // The production netDiff routes through CatalogDiff.compose (P4 consumer).
-    let viaCompose = Lifecycle.netDiff chainLc |> mustOk
+    // genesis (sampleCatalog) → e1 (Customer renamed Patron) → e2 (back to sample).
+    // Three episodes, two edges → the netSchemaDiff fold genuinely composes.
+    let e2 : Episode = ep 2 "1.2.0" sampleCatalog
+    let chainLc = EpisodicLifecycle.append e2 devChain |> mustResultOk
+    Assert.Equal(2, List.length (EpisodicLifecycle.schemaEvolutionChain chainLc |> mustOk))
+    // The production netSchemaDiff routes through CatalogDiff.compose (P4 consumer).
+    let viaCompose = EpisodicLifecycle.netSchemaDiff chainLc |> mustOk
     // The direct between(genesis, latest) — the diff the fold must equal by the
     // functor law.
-    let genesis = (Lifecycle.head chainLc).Catalog
-    let latest = (Lifecycle.latest chainLc).Catalog
+    let genesis = Episode.schema (EpisodicLifecycle.head chainLc)
+    let latest = Episode.schema (EpisodicLifecycle.latest chainLc)
     let direct = CatalogDiff.between genesis latest
     // The composed net-diff equals the direct diff on the captured surface.
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between
@@ -225,14 +242,14 @@ let ``P4 (6.H.3): production netDiff (compose fold) equals direct between(genesi
 
 [<Fact>]
 let ``P4 (6.H.3): production netDiff over a non-trivial-net 3-snapshot chain equals direct between`` () =
-    // genesis (sampleCatalog) → c1 (Customer renamed Patron) → c2 (stays Patron).
+    // genesis (sampleCatalog) → e1 (Customer renamed Patron) → e2 (stays Patron).
     // Net displacement E0→E2 is a genuine rename (NOT empty) — discriminates a
     // compose fold that silently dropped the middle edge.
-    let c2 : CatalogSnapshot = { Version = ver 2 "1.2.0"; Catalog = targetCatalog }
-    let chainLc = Lifecycle.append c2 devChain |> mustResultOk
-    let viaCompose = Lifecycle.netDiff chainLc |> mustOk
-    let genesis = (Lifecycle.head chainLc).Catalog
-    let direct = CatalogDiff.between genesis (Lifecycle.latest chainLc).Catalog
+    let e2 : Episode = ep 2 "1.2.0" targetCatalog
+    let chainLc = EpisodicLifecycle.append e2 devChain |> mustResultOk
+    let viaCompose = EpisodicLifecycle.netSchemaDiff chainLc |> mustOk
+    let genesis = Episode.schema (EpisodicLifecycle.head chainLc)
+    let direct = CatalogDiff.between genesis (Episode.schema (EpisodicLifecycle.latest chainLc))
     // Both reconstruct the latest (Patron) from genesis.
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between
                                         (CatalogDiff.applyDiff genesis viaCompose)
@@ -243,16 +260,15 @@ let ``P4 (6.H.3): production netDiff over a non-trivial-net 3-snapshot chain equ
 
 [<Fact>]
 let ``P4 (6.H.3): production netDiff on a genesis-only lifecycle is the empty delta`` () =
-    let nd = Lifecycle.netDiff devGenesis |> mustOk
+    let nd = EpisodicLifecycle.netSchemaDiff devGenesis |> mustOk
     Assert.True(CatalogDiff.isEmpty nd)
 
 // ---------------------------------------------------------------------------
-// NM-45 — netDiff's non-composable fold is a NAMED refusal, not a silent
+// NM-45 — netSchemaDiff's non-composable fold is a NAMED refusal, not a silent
 // fallback. `CatalogDiff.compose` returns `None` (fail-loud) exactly when two
-// diffs are not adjacent on the captured surface; netDiff used to swallow that
-// into the direct `between` it was meant to corroborate. The branch is
-// unreachable for a well-formed monotone chain (Lifecycle.append enforces it),
-// so we (1) prove the fail-loud precondition `compose` guards on directly, and
+// diffs are not adjacent on the captured surface; the branch is unreachable
+// for a well-formed monotone chain (EpisodicLifecycle.append enforces it), so
+// we (1) prove the fail-loud precondition `compose` guards on directly, and
 // (2) prove every well-formed multi-edge chain that reaches the fold returns Ok
 // — the NonComposableLifecycleChain error never fires on a monotone chain.
 // ---------------------------------------------------------------------------
@@ -263,7 +279,7 @@ let ``NM-45: CatalogDiff.compose returns None (fail-loud) on non-adjacent diffs`
     // d2 : genesis → genesis (the empty self-diff). d1's TARGET (Patron) does
     // NOT meet d2's SOURCE (genesis/Customer) on the captured surface, so the
     // groupoid composition is undefined — `compose` returns None. This is the
-    // exact fail-loud signal netDiff's None branch now names rather than masks.
+    // exact fail-loud signal netSchemaDiff's None branch names rather than masks.
     let d1 = CatalogDiff.between sampleCatalog targetCatalog
     let d2 = CatalogDiff.between sampleCatalog sampleCatalog
     Assert.True(Option.isNone (CatalogDiff.compose d1 d2),
@@ -277,13 +293,13 @@ let ``NM-45: CatalogDiff.compose returns None (fail-loud) on non-adjacent diffs`
 let ``NM-45: netDiff over a well-formed monotone chain is always Ok (the named refusal never fires)`` () =
     // Several well-formed chains, each reaching the compose fold (>= 2 edges).
     // Every one must be Ok — NonComposableLifecycleChain is unreachable by
-    // construction for a monotone lifecycle.
-    let c2a : CatalogSnapshot = { Version = ver 2 "1.2.0"; Catalog = sampleCatalog }
-    let c2b : CatalogSnapshot = { Version = ver 2 "1.2.0"; Catalog = targetCatalog }
-    let chainBackToSample = Lifecycle.append c2a devChain |> mustResultOk
-    let chainStaysPatron  = Lifecycle.append c2b devChain |> mustResultOk
+    // construction for a monotone episodic lifecycle.
+    let e2a : Episode = ep 2 "1.2.0" sampleCatalog
+    let e2b : Episode = ep 2 "1.2.0" targetCatalog
+    let chainBackToSample = EpisodicLifecycle.append e2a devChain |> mustResultOk
+    let chainStaysPatron  = EpisodicLifecycle.append e2b devChain |> mustResultOk
     for chain in [ chainBackToSample; chainStaysPatron ] do
-        match Lifecycle.netDiff chain with
+        match EpisodicLifecycle.netSchemaDiff chain with
         | Ok _ -> ()
         | Error (NonComposableLifecycleChain reason) ->
             Assert.Fail(sprintf "monotone chain produced the named non-composable refusal: %s" reason)
@@ -291,22 +307,22 @@ let ``NM-45: netDiff over a well-formed monotone chain is always Ok (the named r
 
 [<Fact>]
 let ``A-Lifecycle-3 (L3-L3): timelines are independent histories`` () =
-    let uat = Lifecycle.genesis (tl "uat") c0
+    let uat = EpisodicLifecycle.genesis (tl "uat") e0
     // Appending on dev produces a new value; the uat history is untouched.
-    Assert.Equal("uat", Timeline.name (Lifecycle.timeline uat))
-    Assert.Equal("dev", Timeline.name (Lifecycle.timeline devChain))
-    Assert.Equal(1, List.length (Lifecycle.snapshots uat))
-    Assert.Equal(2, List.length (Lifecycle.snapshots devChain))
+    Assert.Equal("uat", Timeline.name (EpisodicLifecycle.timeline uat))
+    Assert.Equal("dev", Timeline.name (EpisodicLifecycle.timeline devChain))
+    Assert.Equal(1, List.length (EpisodicLifecycle.episodes uat))
+    Assert.Equal(2, List.length (EpisodicLifecycle.episodes devChain))
 
 // ===========================================================================
-// §V E4 acceptance — Lifecycle's first real consumer.
-// A 2-version evolutionChain feeds RefactorLogEmitter end-to-end and the
-// stored prior catalog (C₀) becomes the refactor-log diff baseline.
+// §V E4 acceptance — the temporal chain's first real consumer.
+// A 2-episode schemaEvolutionChain feeds RefactorLogEmitter end-to-end and
+// the stored prior schema (E₀) becomes the refactor-log diff baseline.
 // ===========================================================================
 
 [<Fact>]
 let ``E4: a 2-version evolutionChain drives RefactorLogEmitter to a correct sp_rename`` () =
-    let diff = Lifecycle.evolutionChain devChain |> mustOk |> List.head
+    let diff = EpisodicLifecycle.schemaEvolutionChain devChain |> mustOk |> List.head
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let entries = ArtifactByKind.toMap artifact
     let customerEntries = Map.find customerKey entries

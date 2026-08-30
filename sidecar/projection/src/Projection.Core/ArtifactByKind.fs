@@ -36,7 +36,7 @@ type EmitError =
     /// (e.g., a kind appearing both in `Modality.Static` AND in the
     /// migration team's pickup channel under `AllRemaining`).
     | OverlappingEmitterCoverage of SsKey * emitters: string list
-    /// NM-45 — `Lifecycle.netDiff` / `Episode.netSchemaDiff` fold
+    /// NM-45 — `EpisodicLifecycle.netSchemaDiff` folds
     /// `CatalogDiff.compose` (the partial groupoid `⊕`) across an evolution
     /// chain. `compose` returns `None` — fail-loud, "never a silently-wrong
     /// result" — exactly when two adjacent diffs do NOT meet on the captured
