@@ -30867,5 +30867,45 @@ reproduce here and the **standing witness on main is the regression test**:
 `TwinViewLoopTests` (Docker collection `Twin-Docker`, its own `twin-e2e-view`/21733 fixture,
 which authors its own multi-base-table view) asserts `up` returns `Ok` with the view present,
 base tables mint, the view stays published and queryable, and a re-seed stays deterministic.
+
+## 2026-08-30 — `sql_variant` + `rowversion` enter the storage vocabulary (on-prem read-back); views excluded before column type mapping
+
+The estate's on-prem databases carry DBA-authored `sql_variant` and `rowversion` columns —
+the evidence that fires the IR-growth trigger (no OutSystems attribute type produces either;
+they enter through read-back and `external_dbType` overrides only). Until now one such column
+made `ReadSide.read` refuse the whole catalog (`sqlTypeCorrespondence.unknown`), taking
+`twin up` / `twin check` / evidence import down with it.
+
+- **`SqlStorageType.SqlVariant` → `Text`.** The raw plane carries a variant cell as its
+  canonical invariant string: `ReadSide.formatRawValue`'s Text arm now canonicalizes the
+  boxed base-typed value through the same `RawValueCodec` forms the dedicated categories use
+  (a culture-sensitive `ToString()` there would have made the raw plane machine-dependent);
+  genuine string cells pass through unchanged. The stored base type does not survive a
+  transfer — named lossy (`EmissionLossyScalar`, the WP-17 posture), never silent.
+- **`SqlStorageType.RowVersion` → `Binary`, plus `SqlStorageType.isEngineStamped`.** The
+  engine writes the value on every INSERT/UPDATE and refuses an explicit one (Msg 273), so σ
+  generates no cell for it — the sink-only projection rule then omits the column and the
+  engine stamps at load; `S-stable` holds, content-addressed streams leave every sibling
+  untouched — and `twin check`'s re-mint digest projects it away (a restamp across two
+  identical mints is not a difference). Both catalog spellings parse: the catalog views
+  report the legacy `timestamp` for a rowversion column.
+- **ReadSide hydrates `SqlStorage` for exactly these two** — the semantic category erases
+  their load-bearing semantics (variant-ness; engine-stamped-ness). Every other type keeps
+  the documented `None`, emission byte-identical.
+- **Views are excluded BEFORE column type mapping.** The combined read's column batch was
+  the one view-leaky query (every sibling batch was already `sys.tables`-scoped); it now
+  joins `INFORMATION_SCHEMA.TABLES … TABLE_TYPE = 'BASE TABLE'`, so a view exposing a type
+  the mapping does not know cannot refuse the read-back. Extends the 2026-08-11 rule (a view
+  carries no data); the Twin's `sys.views` strip stays as the `[twin]`-schema owner and the
+  defensive twin.
+
+Witnesses: `SqlStorageTypeTests` (both spellings; `isEngineStamped`), `ReadSideRawFormTests`
+(canonical variant carriage), `SyntheticDataTests` (no generated cell; siblings `S-stable`),
+`CatalogCodecTests` / `SqlStorageEmissionTests` (codec + DDL round-trips), and the Docker
+witness `SqlVariantRowVersionReadbackTests` — four claims on a real SQL Server: both types
+read back typed and canonical (via the live `timestamp` spelling), a variant cell's boxed
+base values land in canonical raw form with NULL out-of-band, the engine stamps what σ
+omits, and a `hierarchyid`-bearing view neither refuses the read-back nor reconstructs as a
+kind. `TwinViewLoopTests` stays green (the view stays published; base tables mint).
 Charter note in `THE_TWIN.md` §6 data-flow. **Re-open trigger:** a need to mint *into* an
 updatable single-table view (none today; estate views are read models).

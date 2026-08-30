@@ -104,7 +104,24 @@ module Check =
             let mutable acc = Map.empty
             for kind in Catalog.allKinds catalog do
                 let table = Projection.Targets.SSDT.Render.tableQualified kind.Physical
-                let! d = scalar cnn (System.String.Concat("SELECT COALESCE(CHECKSUM_AGG(BINARY_CHECKSUM(*)), 0) FROM ", table, ";"))  // LINT-ALLOW: terminal SQL-text probe; the table identifier passes through the SSDT renderer's quoting
+                // An engine-stamped column (`rowversion`) restamps on every
+                // load, so its bytes differ across two identical mints —
+                // include it and the re-mint identity ruler lies. Project
+                // it away through a derived table; `BINARY_CHECKSUM(*)`
+                // keeps its ignore-noncomparable semantics for the rest.
+                let stamped, carried =
+                    kind.Attributes
+                    |> List.partition (fun a -> a.SqlStorage |> Option.exists SqlStorageType.isEngineStamped)
+                let source =
+                    match stamped, carried with
+                    | [], _ | _, [] -> table
+                    | _ ->
+                        let cols =
+                            carried
+                            |> List.map (fun a -> Projection.Targets.SSDT.Render.quote (ColumnRealization.columnNameText a.Column))
+                            |> String.concat ", "  // LINT-ALLOW: terminal SQL select-list comma joiner over renderer-quoted column names
+                        System.String.Concat("(SELECT ", cols, " FROM ", table, ") AS [q]")  // LINT-ALLOW: terminal SQL-text probe; identifiers pass through the SSDT renderer's quoting
+                let! d = scalar cnn (System.String.Concat("SELECT COALESCE(CHECKSUM_AGG(BINARY_CHECKSUM(*)), 0) FROM ", source, ";"))  // LINT-ALLOW: terminal SQL-text probe; the table identifier passes through the SSDT renderer's quoting
                 acc <- Map.add table d acc
             return acc
         }

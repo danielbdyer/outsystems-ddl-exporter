@@ -122,3 +122,33 @@ let ``ofSqlType returns None for empty and unknown types`` () =
 let ``ofSqlType parenthesized parameters win over facet arguments`` () =
     // External override "NVARCHAR(MAX)" beats a stray facet length.
     Assert.Equal (Some (SqlStorageType.NVarChar Max), SqlStorageType.ofSqlType "NVARCHAR(MAX)" (Some 50) None None)
+
+// ---------------------------------------------------------------------------
+// sql_variant / rowversion — the on-prem DBA-authored scalars (no OutSystems
+// attribute type produces either; they enter through read-back only).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``sql_variant and rowversion project to Text and Binary`` () =
+    // A variant cell rides the raw plane as its canonical string; the
+    // engine-stamped row stamp is 8 opaque bytes.
+    Assert.Equal (Text, SqlStorageType.toPrimitiveType SqlStorageType.SqlVariant)
+    Assert.Equal (Binary, SqlStorageType.toPrimitiveType SqlStorageType.RowVersion)
+
+[<Fact>]
+let ``ofSqlType parses sql_variant and BOTH rowversion spellings`` () =
+    // The catalog views (INFORMATION_SCHEMA.DATA_TYPE, sys.types) report
+    // the legacy name `timestamp` for a rowversion column — a read-back
+    // that only knew the preferred spelling would still refuse.
+    Assert.Equal (Some SqlStorageType.SqlVariant, SqlStorageType.ofSqlType "sql_variant" None None None)
+    Assert.Equal (Some SqlStorageType.SqlVariant, SqlStorageType.ofSqlType "SQL_VARIANT" None None None)
+    Assert.Equal (Some SqlStorageType.RowVersion, SqlStorageType.ofSqlType "rowversion" None None None)
+    Assert.Equal (Some SqlStorageType.RowVersion, SqlStorageType.ofSqlType "timestamp" None None None)
+
+[<Fact>]
+let ``isEngineStamped names exactly the engine-written storage types`` () =
+    Assert.True (SqlStorageType.isEngineStamped SqlStorageType.RowVersion)
+    Assert.False (SqlStorageType.isEngineStamped SqlStorageType.SqlVariant)
+    Assert.False (SqlStorageType.isEngineStamped SqlStorageType.Xml)
+    Assert.False (SqlStorageType.isEngineStamped (SqlStorageType.VarBinary Max))
+    Assert.False (SqlStorageType.isEngineStamped SqlStorageType.UniqueIdentifier)

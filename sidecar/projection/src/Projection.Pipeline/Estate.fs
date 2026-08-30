@@ -1292,6 +1292,8 @@ module Estate =
                     | Some SqlStorageType.Real               -> Some ("real", "IEEE-754 single precision, carried as a decimal string")
                     | Some (SqlStorageType.DateTimeOffset _) -> Some ("datetimeoffset", "the time-zone offset")
                     | Some SqlStorageType.Xml                -> Some ("xml", "whitespace and attribute order, since the document is re-serialized")
+                    | Some SqlStorageType.SqlVariant         -> Some ("sql_variant", "the stored base type, since the value is carried as its canonical string")
+                    | Some SqlStorageType.RowVersion         -> Some ("rowversion", "the value itself — the engine restamps it at every write, so it is never carried")
                     | _                                      -> None
                 lossy
                 |> Option.map (fun (typeName, what) ->
