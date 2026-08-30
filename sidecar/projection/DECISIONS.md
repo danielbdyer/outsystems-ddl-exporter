@@ -33034,3 +33034,27 @@ vocabulary — the full B-family rename is L-effort touching the operator surfac
 until it earns its own arc (the audit's own scoping).
 
 **Grep-absence:** `\bSinkRow\b` = 0 in src+tests. Not behavioral.
+
+---
+
+## 2026-08-30 — align-III.20 (X4): the configured place wears its own word (`Place`)
+
+**The finding (audit a9, F5).** Three types named `Environment` were live in one
+compilation: Core's cutover-rotation identity DU (`Dev|Qa|Uat|Prod|Named` — Episode-
+embedded), the Pipeline CONFIG RECORD (`{Name; Access; Grant; Store; Rendition;
+Archetype; AtomicDeploy; Revert}`), and the BCL's `System.Environment`. The Pipeline
+record's own doc called it "A named place" and its module said "place" 29× — the domain
+word existed; the type didn't wear it. Every CLI seam wrote full paths to pick a winner,
+and the typed-tree analyzer documents the collision as a constraint it engineered around.
+
+**The decision (one rename).** The Pipeline record renames to **`Place`** (+ its
+companion module — `Place.effectiveArchetype`). Core's `Environment` DU KEEPS its name
+(the older rotation identity), `System.Environment` is the BCL's, and the JSON key
+`environments` plus the parse/render function names (`parseEnvironment` /
+`renderEnvironment` — pinned by the A44 clause-1 law name) are surface contracts and
+stay. Blast radius: MovementSurface + CapabilitySurvey + four test files; the config
+wire is byte-identical.
+
+**Grep-absence:** no `Projection.Pipeline.Environment` remains; the surviving
+`Environment` tokens in the renamed files are the JSON-key/function-name surface
+contracts and the doc note naming the rename. Not behavioral.

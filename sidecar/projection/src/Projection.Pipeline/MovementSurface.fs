@@ -177,10 +177,10 @@ module CapabilityProfile =
               ResumeCheckpoint = ResumeKind.ClientJournal
               WipeStrategy     = WipeKind.ChildFirstDelete }
 
-/// A named place (THE_CLI.md §4.1): its reach (`Access`) and, for a target,
+/// A named place (THE_CLI.md §4.1; renamed from `Environment` at align-III.20/X4 — the record wears its own documented word, dissolving the three-way collision with Core's rotation-identity `Environment` DU and the BCL's `System.Environment`; the JSON key `environments` is a surface contract and stays): its reach (`Access`) and, for a target,
 /// its permission (`Grant`). D9 holds — a `Direct`/`Bundle` address is a
 /// reference or a folder, never an inline secret.
-type Environment =
+type Place =
     {
         Name   : string
         Access : Access
@@ -200,7 +200,7 @@ type Environment =
         /// declared-only (NOT eagerly inferred) so existing configs render
         /// byte-identically and `parse ∘ render = id` holds without parse-time
         /// inference diverging; consumers DEFAULT it from `Grant` via
-        /// `Environment.effectiveArchetype`. Nothing branches on it until Slices
+        /// `Place.effectiveArchetype`. Nothing branches on it until Slices
         /// B/C/S — Slice A is byte-identical by construction.
         Archetype : Archetype option
         /// M22 — opt OUT of the atomic schema-deploy envelope for this place
@@ -214,7 +214,7 @@ type Environment =
     }
 
 [<RequireQualifiedAccess>]
-module Environment =
+module Place =
 
     /// The EFFECTIVE archetype of a place — its declared `Archetype`, else
     /// inferred from the `Grant` facet (`SchemaAndData → FullRights`,
@@ -222,7 +222,7 @@ module Environment =
     /// names (DATABASE_ARCHETYPES.md §6.1) done LAZILY at read time, so the stored
     /// field stays declared-only (byte-identical render) while consumers still see
     /// a class for any grant-bearing place. This is what Slices B/C/S read.
-    let effectiveArchetype (env: Environment) : Archetype option =
+    let effectiveArchetype (env: Place) : Archetype option =
         match env.Archetype with
         | Some a -> Some a
         | None   -> env.Grant |> Option.map Archetype.ofGrant
@@ -288,7 +288,7 @@ type ReadinessSpec =
 type ProjectionConfig =
     {
         /// THE_CLI.md §4.1 — named places with access/grant.
-        Environments : Map<string, Environment>
+        Environments : Map<string, Place>
         /// THE_CLI.md §4.2 — named source→target Move recipes.
         Flows        : Map<string, Flow>
         /// The authored `osm_model.json` file — the model **fallback** (kept
@@ -628,7 +628,7 @@ module ProjectionConfig =
         | "manageddml" | "managed-dml" | "managed" | "dml" -> Result.success Archetype.ManagedDml
         | other -> Result.failureOf (err "cli.config.envArchetypeUnknown" (sprintf "environment '%s' archetype '%s' is not full-rights | managed-dml." envName other))
 
-    let private parseEnvironment (name: string) (el: JsonElement) : Result<Environment> =
+    let private parseEnvironment (name: string) (el: JsonElement) : Result<Place> =
         if el.ValueKind <> JsonValueKind.Object then
             Result.failureOf (err "cli.config.envShape" (sprintf "environment '%s' must be a JSON object." name))
         else
@@ -1263,11 +1263,11 @@ module ProjectionConfig =
         | Strategy.Replace -> "replace"
         | Strategy.Fresh   -> "fresh"
 
-    /// Render one `Environment` to its `JsonObject` — the dual of
+    /// Render one `Place` to its `JsonObject` — the dual of
     /// `parseEnvironment`. `access` + its companion (`out` for bundle, `conn`
     /// for direct; docker is bare) reconstruct the reach; `grant`/`store`/
     /// `rendition` carry the optional facets only when present.
-    let renderEnvironment (env: Environment) : JsonObject =
+    let renderEnvironment (env: Place) : JsonObject =
         let o = JsonObject()
         (match env.Access with
          | Access.Bundle (out, conn) ->
@@ -1942,7 +1942,7 @@ module Command =
     /// the landed partial, and the runner wiring waits on the rendering design
     /// (documented in `THE_DATA_PRODUCERS.md` §6 LE-1 + `CONFIRMED_BACKLOG` J3).
     let reverseLegOf (cfg: ProjectionConfig) (flow: Flow) : ReverseLeg option =
-        let liveConnOf (envName: string) : (Environment * string) option =
+        let liveConnOf (envName: string) : (Place * string) option =
             match Map.tryFind envName cfg.Environments with
             | Some env ->
                 match env.Access with
@@ -2055,9 +2055,9 @@ module Command =
                 // `FullRights` (IDENTITY_INSERT + CREATE TABLE) ⇒ PreferPreservedKeys
                 // + sink-resident resume; `ManagedDml` / undeclared ⇒ `structural`
                 // (byte-identical). The two engine bits are projected here, the one
-                // site that sees both the sink `Environment` and `CapabilityProfile`.
+                // site that sees both the sink `Place` and `CapabilityProfile`.
                 let sinkCapability : SinkLoadCapability =
-                    match Environment.effectiveArchetype toEnv with
+                    match Place.effectiveArchetype toEnv with
                     | Some archetype ->
                         let profile = CapabilityProfile.``of`` archetype
                         { IdentityPolicy =
@@ -2078,7 +2078,7 @@ module Command =
                 // direct full-access sink, OFF otherwise; the env `atomicDeploy`
                 // config overrides the default; `--no-atomic` overrides per run.
                 let atomicDefault =
-                    match toEnv.Access, Environment.effectiveArchetype toEnv with
+                    match toEnv.Access, Place.effectiveArchetype toEnv with
                     | Access.Direct _, Some Archetype.FullRights -> true
                     | _ -> false
                 let atomicResolved = (toEnv.AtomicDeploy |> Option.defaultValue atomicDefault) && not opts.NoAtomic
@@ -2592,7 +2592,7 @@ module Command =
                      // ManagedDml target ⇒ `Structural` (the pre-P1-S3 default). So
                      // the container proof reproduces the cutover's identity handling.
                      let identityPolicy : IdentityPolicy =
-                         match Map.tryFind flow.To cfg.Environments |> Option.bind Environment.effectiveArchetype with
+                         match Map.tryFind flow.To cfg.Environments |> Option.bind Place.effectiveArchetype with
                          | Some archetype when (CapabilityProfile.``of`` archetype).IdentityInsert -> IdentityPolicy.PreferPreservedKeys
                          | _ -> IdentityPolicy.Structural
                      let modelOssys = cfg.Shaping.Model.Ossys
