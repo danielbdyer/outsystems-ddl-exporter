@@ -114,6 +114,7 @@ let ``6.D.1: record opens a timeline at genesis on the first migration`` () =
         Assert.Equal<Catalog>(renamedTarget, (EpisodicLifecycle.head chain).Schema))
 
 [<Fact>]
+// @axis Time migrate
 let ``6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces B (durable round-trip)`` () =
     withTempFile (fun path ->
         // Episode 0: genesis at sampleCatalog (no migration — the starting state).

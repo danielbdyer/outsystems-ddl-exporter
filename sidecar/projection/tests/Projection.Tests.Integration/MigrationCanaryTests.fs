@@ -169,6 +169,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                 }))
 
     [<Fact>]
+    // @axis Schema migrate
     member _.``migrate A B canary: one execute evolves A→B across three channels; B reproduces B, data survives, re-run is idempotent`` () =
         if not (Deploy.Docker.ensureRunning ()) then () else
         TaskSync.run (fun () ->
@@ -293,6 +294,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     // -- the data-transfer composition (cross-substrate: schema + data) ------
 
     [<Fact>]
+    // @axis Data migrate
     member _.``migrate canary: executeWithData migrates the sink schema then loads rows from the source`` () =
         if not (Deploy.Docker.ensureRunning ()) then () else
         TaskSync.run (fun () ->
@@ -1357,6 +1359,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     // sole remaining line: declaring you accept the narrowing does NOT let you
     // apply NOT NULL while NULL rows physically remain.
     [<Fact>]
+    // @axis Decision migrate
     member _.``G9: migrate refuses a NOT-NULL tightening on NULL-bearing data via a pre-flight, before any ALTER`` () =
         if not (Deploy.Docker.ensureRunning ()) then () else
         TaskSync.run (fun () ->
@@ -1449,6 +1452,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     //    and the A→B diff is a pure widening (same kind SsKeys, same names).
 
     [<Fact>]
+    // @axis Identity migrate
     member _.``AC-X2: one-command migrate-with-data re-keys Order FKs to the Sink's email-matched identity (fails for Map.empty)`` () =
         if not (Deploy.Docker.ensureRunning ()) then () else
         let reKeyDdlA =

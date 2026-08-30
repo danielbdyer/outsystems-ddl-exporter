@@ -103,6 +103,7 @@ let private programmaticUserCatalog : Catalog =
     { Modules = [ userModule ]; Sequences = [] }
 
 [<Fact>]
+// @axis Schema roundtrip
 let ``M3: V2-internal closure — programmatic Catalog round-trips through emit / deploy / read with empty PhysicalSchema diff`` () =
     if skipIfNoDocker "v2-closure" then
         let source = programmaticUserCatalog
@@ -902,6 +903,7 @@ let ``Wave 5: column Projection.SsKey persistence — ReadSide recovers OssysOri
 // ---------------------------------------------------------------------
 
 [<Fact>]
+// @axis Identity roundtrip
 let ``Identity round-trip: reload preserves SsKey across emit / deploy / ReadSide`` () =
     if skipIfNoDocker "identity-reload-preserves-sskey" then
         let acctKey = SsKey.ossysOriginal (System.Guid.Parse "33333333-3333-3333-3333-333333333333")
@@ -937,6 +939,7 @@ let ``Identity round-trip: reload preserves SsKey across emit / deploy / ReadSid
 // ---------------------------------------------------------------------
 
 [<Fact>]
+// @axis Decision roundtrip
 let ``decision adjunction: emitted-then-read-back schema reproduces the DecisionOverlay`` () =
     if skipIfNoDocker "decision-adjunction-roundtrip" then
         let mkAttr (k: SsKey) (col: string) (isPk: bool) (nullable: bool) : Attribute =

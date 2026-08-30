@@ -8,39 +8,52 @@
 # NORTH_STAR.matrix.generated.md:
 #   1. The L2 executable-axiom rollup + the T-II gate verdict, machine-derived
 #      from tests/Projection.Tests/AxiomTests.fs (live verified/convention vs
-#      deferred C/D).
+#      deferred C/D), PLUS the per-bucket deferred-entry list generated from
+#      the Skip attributes' own `Bucket` tokens (align-III.10 — the summary
+#      cannot drift from the attributes because it IS the attributes).
 #   2. The §1 round-trip *ladder* matrix. For each axis the generator reports
 #      three rungs, each derived from the proof — never asserted by hand:
-#        - **L1 (witness present)** — a backtick-quoted round-trip test by the
-#          cell's witness name exists in the tree.
+#        - **L1 (witness present)** — a test SELF-DECLARES as the axis's
+#          round-trip witness via a `// @axis <Axis> roundtrip` tag on the
+#          line above its backtick-quoted name (align-III.10; the tag rides
+#          the test, so a rename keeps the binding and a deletion opens the
+#          cell — the generator no longer hard-codes test names).
 #        - **L2 (faithful)** — no *open* named tolerance sits on the axis. The
 #          proof surface is `Tolerance.fs`'s `@ladder` tags: a variant tagged
 #          `OpenGap` (a closeable fidelity debt) caps its axis at L2-partial;
 #          `AcceptedFaithful` variants (representation-only, or covered by a
 #          separate witness) do not. Retiring a variant deletes its tag, so the
 #          axis auto-flips to faithful — L2 cannot be hand-marked.
-#        - **L3 (composed)** — a backtick-quoted `migrate A B` witness covering
-#          the axis exists (the axis participates in the one-command migration).
-#   3. The cross-check that every live `ToleratedDivergence` variant (per the
-#      `name` single-source-of-truth) carries exactly one `@ladder` tag — a new
-#      variant cannot land untagged, and a renamed variant fails fast.
+#        - **L3 (composed)** — a `// @axis <Axis> migrate`-tagged witness
+#          exists (the axis participates in the one-command migration).
+#   3. Two cross-checks, each exit 3 on drift:
+#        - every live `ToleratedDivergence` variant carries exactly one
+#          `@ladder` tag, AND every tag's axis/disposition tokens are drawn
+#          from the known vocabularies (align-III.10 — a typo'd axis used to
+#          silently detach the tolerance from its axis, an over-claim);
+#        - every (axis × rung) has AT MOST one `@axis` witness tag (two
+#          claimants is ambiguity, not coverage).
 #
 # Honesty mechanism (the whole point of D1): a human cannot mark a cell green —
-# the witness test must exist (L1/L3) and the open tolerance must be retired in
-# code (L2). The generator UNDER-claims; it never over-claims.
+# the witness tag must ride a real test (L1/L3) and the open tolerance must be
+# retired in code (L2). The generator UNDER-claims; it never over-claims.
+# align-III.10 extended the honesty to the generator's OWN parsing: the Skip
+# attribute is MULTILINE (backslash-continued strings) and the file carries a
+# commented Skip exemplar in its doc header, so the bucket counts are derived
+# from comment-stripped text with a state machine that reads each attribute to
+# its `)>]` close — the first-line-only grep this replaced undercounted Bucket
+# C (6 of the true 9) and counted the doc-comment decoy as a deferral.
 #
 # Scope honesty: L2 here is "no open *named* tolerance on the axis." Silent
 # drops with no named surface (e.g. the cross-schema FK filter, debrief G4) and
-# unwitnessed sub-axes (e.g. the 3-axis Decision adjunction, debrief G12) are
-# NOT auto-detected — they have no machine surface yet. They are tracked in the
-# debrief until E2/F2 give them a named diagnostic/witness, at which point they
-# too become machine-visible. "Witness/tolerance-present ≠ feature-complete."
+# unwitnessed sub-axes are NOT auto-detected — they have no machine surface
+# yet. "Witness/tolerance-present ≠ feature-complete."
 #
-# Pure bash + grep; no dotnet required (mirrors scripts/verifiability-gate.sh +
-# scripts/lint-discipline.sh). Run at chapter close; wire into CI alongside the
+# Pure bash + grep/awk; no dotnet required (mirrors scripts/verifiability-gate.sh
+# + scripts/lint-discipline.sh). Run at chapter close; wire into CI alongside the
 # lint + verifiability gates. A non-empty `git diff` on the generated file = a
-# coverage shift. Exit 0 = wrote the matrix; 2 = setup error; 3 = an untagged /
-# drifted tolerance variant (the cross-check failed).
+# coverage shift. Exit 0 = wrote the matrix; 2 = setup error; 3 = a drifted
+# `@ladder` / `@axis` surface (a cross-check failed).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -51,13 +64,38 @@ OUT="$ROOT/NORTH_STAR.matrix.generated.md"
 [ -f "$AX" ]  || { echo "matrix-status: AxiomTests.fs not found at $AX" >&2; exit 2; }
 [ -f "$TOL" ] || { echo "matrix-status: Tolerance.fs not found at $TOL" >&2; exit 2; }
 
-# --- T-II: executable-axiom rollup (unchanged) -----------------------------
-skips="$(grep -E '\[<Fact\(Skip' "$AX" || true)"
-live=$(grep -cE '^[[:space:]]*\[<Fact>\]' "$AX" || true)
-skip_total=$(printf '%s\n' "$skips" | grep -c . || true)
-c=$(printf '%s\n' "$skips" | grep -cE 'Bucket C' || true)
-d=$(printf '%s\n' "$skips" | grep -cE 'Bucket D' || true)
+# --- T-II: executable-axiom rollup (align-III.10: honest multiline parsing) --
+# Comment-strip first (the doc header carries a `[<Fact(Skip` exemplar), then
+# read each Skip attribute to its `)>]` close and take the entry's test name
+# from the next backtick-quoted line. Output: `<bucket>\t<name>` rows where
+# bucket ∈ C | D | HORIZON | UNCLASSIFIED.
+stripped_ax="$(grep -vE '^[[:space:]]*//' "$AX")"
+skip_rows="$(printf '%s\n' "$stripped_ax" | awk '
+  /\[<Fact\(Skip/ { inskip=1; buf="" }
+  inskip {
+    buf = buf $0 "\n"
+    if (/\)>\]/) { pending=1; inskip=0 }
+    next
+  }
+  pending && /``/ {
+    name=$0; sub(/^[^`]*``/, "", name); sub(/``.*$/, "", name)
+    bucket = "UNCLASSIFIED"
+    if      (buf ~ /Skip = \"H-/) bucket = "HORIZON"
+    else if (buf ~ /Bucket C/)    bucket = "C"
+    else if (buf ~ /Bucket D/)    bucket = "D"
+    print bucket "\t" name
+    pending=0
+  }')"
+live=$(printf '%s\n' "$stripped_ax" | grep -cE '^[[:space:]]*\[<Fact>\]' || true)
+skip_total=$(printf '%s\n' "$skip_rows" | grep -c . || true)
+c=$(printf '%s\n' "$skip_rows" | awk -F'\t' '$1=="C"' | grep -c . || true)
+d=$(printf '%s\n' "$skip_rows" | awk -F'\t' '$1=="D"' | grep -c . || true)
 total=$(( live + skip_total ))
+
+bucket_list() {
+  # Markdown bullet rows for one bucket's entries, name-quoted.
+  printf '%s\n' "$skip_rows" | awk -F'\t' -v b="$1" '$1==b {print "- `" $2 "`"}'
+}
 
 if "$ROOT/scripts/verifiability-gate.sh" >/dev/null 2>&1; then tii="PASS"; else tii="FAIL"; fi
 
@@ -79,49 +117,59 @@ if [ -n "$missing" ] || [ -n "$orphan" ]; then
   exit 3
 fi
 
+# --- align-III.10: @ladder TOKEN validation --------------------------------
+# A tag whose axis is not a known ladder axis silently detached its variant
+# from every axis (the tolerance vanished from the L2 check — an over-claim);
+# an unknown disposition token likewise fell through the OpenGap filter. Both
+# now refuse by name.
+AXES="Schema Data Identity Time Decision"
+bad_tags="$(printf '%s\n' "$ladder_tags" | awk -v axes="$AXES" '
+  BEGIN { n=split(axes, a, " "); for (i=1; i<=n; i++) ok[a[i]]=1 }
+  NF {
+    if (!(($2) in ok))                                  { print $0 " (unknown axis)" ; next }
+    if ($3 != "OpenGap" && $3 != "AcceptedFaithful")    { print $0 " (unknown disposition)" }
+  }')"
+if [ -n "$bad_tags" ]; then
+  echo "matrix-status: @ladder token drift in Tolerance.fs — unknown axis/disposition token(s):" >&2
+  printf '%s\n' "$bad_tags" | sed 's/^/    @ladder /' >&2
+  echo "  Known axes: ${AXES}. Known dispositions: OpenGap | AcceptedFaithful." >&2
+  exit 3
+fi
+
 open_for_axis() {
   # Variant names tagged OpenGap on the given axis, space-joined (or "").
   printf '%s\n' "$ladder_tags" | awk -v ax="$1" '$2==ax && $3=="OpenGap" {print $1}' | paste -sd' ' -
 }
 
-# --- T-I: the round-trip ladder matrix -------------------------------------
-# "Axis|round-trip-witness-FULL-NAME|migrate(A B)-witness-FULL-NAME". A rung is
-# VERIFIED iff the EXACT, FULL backtick-quoted test name exists under tests/.
-# The binding is structural, not a loose substring: `witness_status` matches the
-# whole name bounded by its `` `` `` delimiters (fixed-string, so the name's
-# regex metacharacters — `(`, `;`, `—`, `→`, `?`, `/`, `.` — are literal), so a
-# witness can NOT be satisfied by an accidental substring hit on an unrelated
-# test (e.g. the bare `data canary` prefix matches eight Transfer tests; only the
-# named `data canary: multi-table FK chain …` test is the Data L1 witness). Each
-# name below was confirmed to resolve to exactly one test on the current tree, so
-# the regenerated matrix keeps the same verdicts (L1 5/5). Matches `let ``…``` and
-# `member _.``…``` forms alike. Axis names match the `@ladder` axis tokens so the
-# tolerance set joins by axis.
-cells='Schema|M3: V2-internal closure — programmatic Catalog round-trips through emit / deploy / read with empty PhysicalSchema diff|migrate A B canary: one execute evolves A→B across three channels; B reproduces B, data survives, re-run is idempotent
-Data|data canary: multi-table FK chain round-trips with empty PhysicalSchema diff|migrate canary: executeWithData migrates the sink schema then loads rows from the source
-Identity|Identity round-trip: reload preserves SsKey across emit / deploy / ReadSide|AC-X2: one-command migrate-with-data re-keys Order FKs to the Sink'"'"'s email-matched identity (fails for Map.empty)
-Time|Time round-trip (replay): replayTo genesis recovers the genesis catalog|6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces B (durable round-trip)
-Decision|decision adjunction: emitted-then-read-back schema reproduces the DecisionOverlay|G9: migrate refuses a NOT-NULL tightening on NULL-bearing data via a pre-flight, before any ALTER'
-
-witness_status() {
-  # Exact, anchored full-name binding: the test name must appear verbatim,
-  # bounded by its `` `` `` delimiters. Fixed-string (`grep -F`) so the name's
-  # regex metacharacters are literal; the leading/trailing `` `` `` anchors the
-  # match to a whole backtick-quoted name, defeating accidental substring hits.
-  local name="$1"
-  if grep -rhF "\`\`${name}\`\`" "$TESTS" >/dev/null 2>&1; then echo "VERIFIED"; else echo "OPEN"; fi
+# --- T-I: the round-trip ladder matrix (@axis self-declaration) ------------
+# align-III.10: the witnesses SELF-DECLARE. A test claims an (axis, rung) cell
+# by carrying `// @axis <Axis> <roundtrip|migrate>` on the line directly above
+# its backtick-quoted name. The generator discovers the name; it no longer
+# hard-codes it, so a rename travels with the test and a deletion opens the
+# cell (under-claim). Two claimants for one cell is ambiguity — exit 3.
+axis_witness() {
+  local axis="$1" rung="$2"
+  local tag_re="^[[:space:]]*// @axis ${axis} ${rung}[[:space:]]*$"
+  local count
+  count=$(grep -rE --include='*.fs' -c "$tag_re" "$TESTS" 2>/dev/null | awk -F: '{s+=$NF} END{print s+0}')
+  if [ "$count" -gt 1 ]; then
+    echo "matrix-status: ambiguous @axis tag — ${count} tests claim '@axis ${axis} ${rung}' (exactly one may)." >&2
+    grep -rlE --include='*.fs' "$tag_re" "$TESTS" | sed 's/^/    /' >&2
+    exit 3
+  fi
+  [ "$count" -eq 0 ] && { echo ""; return; }
+  grep -rhE --include='*.fs' -A3 "$tag_re" "$TESTS" 2>/dev/null \
+    | grep -m1 -oE '``[^`]+``' | sed 's/^``//; s/``$//'
 }
-icon()    { case "$1" in VERIFIED) echo "✅";; *) echo "⬚";; esac; }
 
 l1n=0; l2n=0; l3n=0; counted=0; rows=""
-while IFS='|' read -r axis rtname mgname; do
-  [ -z "$axis" ] && continue
+for axis in $AXES; do
   counted=$((counted+1))
-  l1=$(witness_status "$rtname")
-  l3=$(witness_status "$mgname")
+  rtname="$(axis_witness "$axis" roundtrip)"
+  mgname="$(axis_witness "$axis" migrate)"
+  if [ -n "$rtname" ]; then l1="VERIFIED"; l1n=$((l1n+1)); else l1="OPEN"; fi
+  if [ -n "$mgname" ]; then l3="VERIFIED"; l3n=$((l3n+1)); else l3="OPEN"; fi
   opens="$(open_for_axis "$axis")"
-  [ "$l1" = "VERIFIED" ] && l1n=$((l1n+1))
-  [ "$l3" = "VERIFIED" ] && l3n=$((l3n+1))
 
   if [ -n "$opens" ]; then
     l2cell="◑ L2-partial"
@@ -136,8 +184,10 @@ while IFS='|' read -r axis rtname mgname; do
   else                               level="✅ L3"
   fi
 
-  rows+="| **$axis** | $(icon "$l1") | $l2cell | $(icon "$l3") | $opencell | $level |"$'\n'
-done <<< "$cells"
+  case "$l1" in VERIFIED) i1="✅";; *) i1="⬚";; esac
+  case "$l3" in VERIFIED) i3="✅";; *) i3="⬚";; esac
+  rows+="| **$axis** | $i1 | $l2cell | $i3 | $opencell | $level |"$'\n'
+done
 
 variant_count=$(printf '%s\n' "$variant_names" | grep -c . || true)
 open_count=$(printf '%s\n' "$ladder_tags" | awk '$3=="OpenGap"' | grep -c . || true)
@@ -149,7 +199,7 @@ open_count=$(printf '%s\n' "$ladder_tags" | awk '$3=="OpenGap"' | grep -c . || t
   echo
   echo "# NORTH STAR — Matrix Status (generated)"
   echo
-  echo "_Derived from \`tests/Projection.Tests/AxiomTests.fs\` + \`src/Projection.Core/Tolerance.fs\` (the \`@ladder\` tags) + the test tree. The §1 bullseye, self-reported at the **ladder level**._"
+  echo "_Derived from \`tests/Projection.Tests/AxiomTests.fs\` + \`src/Projection.Core/Tolerance.fs\` (the \`@ladder\` tags) + the test tree's \`@axis\` witness tags. The §1 bullseye, self-reported at the **ladder level**._"
   echo
   echo "## T-II — Executable-axiom totality (L2 formal axioms)"
   echo
@@ -158,17 +208,35 @@ open_count=$(printf '%s\n' "$ladder_tags" | awk '$3=="OpenGap"' | grep -c . || t
   echo "| Live | verified (\"verified by …\") or convention-enforced \`[<Fact>]\` | $live |"
   echo "| Deferred C | weakness — \`[<Fact(Skip … Bucket C …)>]\` | $c |"
   echo "| Deferred D | unnamed/unbacked — \`[<Fact(Skip … Bucket D …)>]\` | $d |"
+  echo "| Horizon stubs | future-feature reservations (\`Skip = \"H-…\"\`; bucket-exempt) | $(printf '%s\n' "$skip_rows" | awk -F'\t' '$1=="HORIZON"' | grep -c . || true) |"
   echo "| **total axiom entries** | | **$total** |"
   echo
   echo "**Verifiability gate: \`$tii\`** — no deferral claims verified (no phantom Bucket-A/B); every deferral names its bucket."
   echo
+  echo "### Deferred entries (generated from the Skip attributes' own \`Bucket\` tokens; align-III.10)"
+  echo
+  echo "**Bucket C (weakness, promotion trigger named in each Skip):**"
+  echo
+  bucket_list "C"
+  echo
+  echo "**Bucket D (unnamed/unbacked):**"
+  echo
+  bucket_list "D"
+  if [ -n "$(bucket_list UNCLASSIFIED)" ]; then
+    echo
+    echo "**UNCLASSIFIED axiom/theorem deferrals (classify C/D — the gate WARNs on these):**"
+    echo
+    bucket_list "UNCLASSIFIED"
+  fi
+  echo
   echo "## T-I — Round-trip ladder (the §1 bullseye matrix)"
   echo
   echo "Each axis carries three rungs, each derived from the proof — never hand-asserted."
-  echo "**L1** = a round-trip witness test exists. **L2** = no *open* named tolerance sits"
-  echo "on the axis (an \`@ladder … OpenGap\` variant in \`Tolerance.fs\` caps the axis at"
-  echo "L2-partial; retiring the variant in code auto-flips it). **L3** = a \`migrate A B\`"
-  echo "witness covers the axis. The **Ladder** column is the honest weakest-rung summary."
+  echo "**L1** = a \`// @axis <Axis> roundtrip\`-tagged witness test exists. **L2** = no *open*"
+  echo "named tolerance sits on the axis (an \`@ladder … OpenGap\` variant in \`Tolerance.fs\`"
+  echo "caps the axis at L2-partial; retiring the variant in code auto-flips it). **L3** = a"
+  echo "\`// @axis <Axis> migrate\`-tagged witness covers the axis. The **Ladder** column is"
+  echo "the honest weakest-rung summary."
   echo
   echo "| Axis | L1 witness | L2 faithful | L3 composed | Open tolerances | Ladder |"
   echo "|---|:--:|:--:|:--:|---|---|"
@@ -176,8 +244,9 @@ open_count=$(printf '%s\n' "$ladder_tags" | awk '$3=="OpenGap"' | grep -c . || t
   echo
   echo "**Rungs reached: L1 $l1n/$counted · L2 $l2n/$counted · L3 $l3n/$counted.** Tolerance set:"
   echo "$variant_count named, of which **$open_count open** (\`OpenGap\`). A cell cannot be"
-  echo "hand-marked: L1/L3 require the witness test to exist; L2 requires the open tolerance"
-  echo "to be retired from \`Tolerance.fs\`. The generator under-claims; it never over-claims."
+  echo "hand-marked: L1/L3 require the \`@axis\`-tagged witness test to exist; L2 requires the"
+  echo "open tolerance to be retired from \`Tolerance.fs\`. The generator under-claims; it"
+  echo "never over-claims."
   echo
   echo "> **Witness/tolerance-present ≠ feature-complete.** L2 here is \"no open *named*"
   echo "> tolerance on the axis.\" Silent drops with no named surface (the cross-schema FK"

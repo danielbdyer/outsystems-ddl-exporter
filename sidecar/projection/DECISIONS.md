@@ -32706,3 +32706,53 @@ this commit carries the four class flips. Test names unchanged (the registry's i
 is stable).
 
 **Not behavioral.**
+
+---
+
+## 2026-08-30 — align-III.10: the matrix generator tells the truth about its own inputs (C 6→9; the decoy retired; `@axis` self-declaration)
+
+**The finding (audit a6, L3).** The self-verification meta-cell had four honesty gaps of
+its own:
+
+1. **Single-line bucket parsing.** Both `matrix-status.sh` and `verifiability-gate.sh`
+   grepped only the FIRST line of each `[<Fact(Skip …)>]` attribute; a `Bucket C` token on
+   a backslash-continuation line was invisible. The published Bucket-C count was 6; the
+   true count is **9** (A21, A27, T2, T5–T10). The gate's "unclassified deferral" WARN
+   (lately 4) was entirely parse artifact — every axiom/theorem deferral IS classified.
+2. **The decoy.** The file's own doc header carries a commented `[<Fact(Skip` exemplar;
+   the bare grep counted it as a deferral (34 vs the xUnit-ground-truth 33 — the matrix
+   total was off by one).
+3. **A hand-maintained bucket summary.** The tail comment block still declared "52
+   entries, A1–A41 + T1–T11" — the registry had more than doubled. The exact
+   restated-count defect CLAUDE.md §8 names.
+4. **Hard-coded witness names + unvalidated tags.** The ladder's ten witness names lived
+   verbatim in the SCRIPT (a rename opened the cell with no pointer back), and an
+   `@ladder` tag with a typo'd axis/disposition token silently detached its tolerance
+   from the L2 check — an over-claim path.
+
+**The decisions.**
+
+- Both scripts parse COMMENT-STRIPPED text with a state machine reading each Skip
+  attribute to its `)>]` close, taking the entry's name from the following backticked
+  line. The phantom rule narrows to attribute grain: phantom ⇔ mentions Bucket A/B while
+  declaring NO C/D (A21's "Promoted to Bucket A when …" promotion narrative is not a
+  claim).
+- The per-bucket entry lists are now GENERATED into the matrix from the attributes' own
+  `Bucket` tokens; the hand summary block in `AxiomTests.fs` is replaced by a pointer to
+  the generated surface. A new Horizon-stub row makes the 127 total reconcile against
+  xUnit's own count by inspection.
+- `@ladder` tokens are validated: axis ∈ {Schema, Data, Identity, Time, Decision},
+  disposition ∈ {OpenGap, AcceptedFaithful}; drift exits 3 by name.
+- The ten ladder witnesses SELF-DECLARE via `// @axis <Axis> <roundtrip|migrate>` tags
+  riding directly above their names (six test files touched, comments only). The
+  generator discovers the name from the tag — a rename travels with the test, a deletion
+  opens the cell (under-claim), and two claimants for one cell exit 3 (ambiguity is not
+  coverage). Discovery reproduced the prior ladder verdicts exactly (L1 5/5 · L2 4/5 ·
+  L3 5/5 — Schema's three open tolerances unchanged).
+
+**The ONE named re-baseline (risk R6).** `NORTH_STAR.matrix.generated.md` re-records
+with the corrections: Live 94 (unchanged) / **C 9** / D 1 / Horizon 23 / **total 127**
+(was 94/6/1/—/128), plus the generated deferred-entry lists. Every count motion is a
+parser correction, not a coverage change — the registry itself did not move.
+
+**Not behavioral** (scripts + comments + one generated artifact).

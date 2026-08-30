@@ -1706,42 +1706,21 @@ let ``A48: offline manifest reconcile is sound (source-absent verification)`` ()
         "P2-S3 offline reconcile: --against proves a target byte-identical to a captured manifest with NO live source; a tampered cell reads exit 5"
 
 // ===========================================================================
-// Coverage summary (audit trail; verifiable by grep against this file)
+// Coverage summary — GENERATED, not maintained here (align-III.10)
 // ===========================================================================
 //
-//   Bucket A (verified + structural):     A1, A2, A4, A6, A12, A15, A18,
-//                                          A23, A24, A25, A26, A32, A34,
-//                                          A41, A46 + T1, T4, T11, T18
-//                                          (17 axioms + 4 theorems)
+// The hand-maintained per-bucket roll-up that lived at this spot drifted to
+// "52 entries, A1–A41 + T1–T11" while the registry more than doubled — the
+// exact restated-count defect CLAUDE.md §8 names. The summary is now a
+// GENERATED projection of this file's own Skip attributes:
+// `scripts/matrix-status.sh` parses every `[<Fact(Skip …)>]` (multiline-aware,
+// comment-stripped) and writes the per-bucket entry lists + counts to
+// `NORTH_STAR.matrix.generated.md`; `scripts/verifiability-gate.sh` enforces
+// the honesty rules on the same parse (no phantom Bucket-A/B claim; every
+// axiom/theorem deferral names C or D).
 //
-//   Bucket B (convention-enforced):       A3, A5, A7–A11, A13, A14, A16,
-//                                          A17, A19, A20, A22, A28, A29,
-//                                          A30, A31, A33, A35, A36, A39,
-//                                          A40
-//                                          (22 axioms)
-//
-//   Bucket C (weakly covered):            A21, A27 + T2, T5, T6, T7, T8,
-//                                          T9, T10
-//                                          (2 axioms + 7 theorems)
-//
-//   Bucket D (unnamed gap):               T3
-//                                          (1 theorem)
-//
-//   Total: 41 axioms (A1–A41) + 11 theorems (T1–T11) = 52 entries.
-//
-// **Promotion path.** A Skip-stubbed axiom flips to `[<Fact>]` when its
-// trigger fires:
-//   - **A21:** when a frozen-catalog canary lands with byte-identity assertion
-//   - **A27:** when SnapshotStore integration tests assert atomicity property
-//   - **T2:** when a canary fixture forces the disjoint-modules coproduct shape
-//   - **T3–T10:** kept as `Skip` because each is either derived (T5, T6, T9, T10),
-//     out-of-Core (T7, T8), or pure categorical (T3); explicit re-derivation
-//     tests would be ceremony with no marginal lift.
-//
-// **Discipline.** The Skip rationale names the bucket AND the promotion
-// trigger. Adding a new axiom or theorem adds a new entry here in the
-// same commit; chapter-close ritual audits this file's coverage delta
-// against AXIOMS.md.
+// **Discipline (unchanged).** A Skip rationale names its bucket AND its
+// promotion trigger in the attribute itself — the parse reads exactly that.
 
 // ===========================================================================
 // T18 + A46 — the v7 cycle-resolution algebra (2026-07-18)
