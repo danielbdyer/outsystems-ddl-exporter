@@ -40,6 +40,43 @@ If `classify-mechanism` said **on-sight** (the purely-additive corner — additi
 unaffected), still run one clean Strict publish to confirm no surprise delta — but no flip is
 possible.
 
+## The unit of proof is the release delta
+
+A pull request often carries several operations, and the engine compiles ONE script per release
+— so what gets published to the copy is the release's combined delta, exactly as the pull
+request ships it, never one atom at a time. Per-operation proofs establish the vocabulary (which
+guard, which Msg, which flip); the release's own publish is the verdict. Proven at this grain in
+`../../sample-prs/compound/`: a release is vetoed by its strictest atom and rolls back whole
+(`IncludeTransactionalScripts`), and the post-deployment seed's column claims bind every atom in
+the release at once. When `../decompose/SKILL.md` packed several atoms into one release, prove
+that packing by publishing it as one.
+
+## The one-command form (run this; the scaffold below is what it does)
+
+The loop below is packaged as one command, `../../scripts/prove.mjs` (`CONNECTORS.md` §4,
+executed; the portability model is `../../PORTABILITY.md`). It detects the substrate (an
+explicit `prove.config.json`, else the Twin, else the warm container), detects the build mode
+from the project file (SDK-style → `dotnet build`; classic → MSBuild), generates and keeps the
+real delta, publishes under Strict, and classifies the printed outcome — the same
+text-not-exit-code rule this skill teaches, applied by the tool:
+
+```bash
+node ssdt-agent/scripts/prove.mjs verdict [--project <path.sqlproj>] [--db PG_<id>_<rand>] [--permissive]
+```
+
+stdout is one JSON verdict object: the substrate, the build, `delta.path` plus named
+data-motion signals read from the generated script (the data-loss guard, `DROP TABLE`,
+`DROP COLUMN`, a `tmp_ms_xx` shadow rebuild, `sp_rename`), and the Strict outcome with the
+verbatim engine messages (`Msg`/`SQL72014` lines). The exit code carries the verdict class:
+**0 published clean · 3 blocked (the finding, never a tool error) · 4 unreachable · 6 config ·
+7 build failed · 9 indeterminate**. `--permissive` runs the Permissive leg only after a block,
+so the consequence can be observed; the before/after probes and the content hash stay yours to
+run (`../talk-to-local-sql/SKILL.md`). `--db` gives a parallel executor its unique database
+(`self-test/PROTOCOL.md`). Read the JSON, then reason exactly as "Reading the result" below
+teaches — the tool produces the evidence; classifying what it means for how the change ships
+is still this skill's job, and the scaffolded sequence below remains both the explanation of
+what the tool does and the fallback when it cannot run.
+
 ## Running in parallel — see self-test/PROTOCOL.md
 
 When MANY executors prove cases at once (the self-test fleet), do **not** publish to the shared
@@ -236,8 +273,7 @@ prod-strict gate on a populated table.
 
 The **honest, corrected recipe:**
 
-- **EMPTY table** -> **ships as a single schema change, applied in place; any team member can review
-  it.** No rows, the `IF EXISTS` is false, the RAISERROR never fires, the `ALTER COLUMN NOT NULL`
+- **EMPTY table** -> **ships as a single schema change, applied in place; a dev lead approves this.** No rows, the `IF EXISTS` is false, the RAISERROR never fires, the `ALTER COLUMN NOT NULL`
   lands. (Confirm the table is genuinely empty first.)
 - **POPULATED table (NULLs present OR zero NULLs — it makes no difference)** -> the make-mandatory
   `ALTER` trips the row-presence guard, and this estate's pipeline (Azure DevOps → Octopus, dacpac)
@@ -252,8 +288,7 @@ The **honest, corrected recipe:**
 
   Never combine the two (F2 — a model that tightens in the same release the pre-deploy tightens
   still blocks AND half-applies). Release 1's own `ALTER` fails `Msg 515` if a NULL remains, so the
-  backfill is part of Release 1, not an afterthought. **A dev lead must review this: existing data
-  is modified** — and the running application must keep working across the two releases. Added
+  backfill is part of Release 1, not an afterthought. **A dev lead approves this, weighing that existing data is modified** — and the running application must keep working across the two releases. Added
   scrutiny where it applies: the table holds more than a million rows, or the operation is a first
   on this estate.
 
@@ -343,8 +378,8 @@ stamped" — not merely assert "data might change."
 Two moves the fitness runs invented and proved — use them where they fit, and do **not** fabricate
 them where they cannot fire:
 
-- **consequence check** — for a data-removing op that a principal must review because data is
-  removed irreversibly (`delete-attribute`, `delete-entity`, `narrow` past the data, drop-table):
+- **consequence check** — for a data-removing op whose approval carries the strongest weigh-line
+  because data is removed irreversibly (`delete-attribute`, `delete-entity`, `narrow` past the data, drop-table):
   after Strict blocks, run Permissive to let the irreversible act happen on the disposable copy and
   snapshot the exact rows and values that would be lost — so the claim that data is removed is
   **observed, not asserted.** (This is the Strict->Permissive pattern above, named.)
@@ -364,7 +399,7 @@ honest result.
 The proof hands back a set of findings, each with its evidence, ready for `../author-pr/SKILL.md` to
 assemble into the pull request the reviewer approves by reading:
 
-- **How it ships** and **who must review, and why** — the two plain findings
+- **How it ships** and **what the approving dev lead weighs** — the two plain findings
   (`../../THE_RECORD.md` §5), now proven rather than provisional. These become the PR's
   **Review & release** section.
 - **The real generated delta** and the Strict outcome — the block (with the verbatim `Msg` and the
@@ -397,7 +432,7 @@ And the same finding on the record, for the PR body:
 > Making Email NOT NULL is blocked while dbo.Customer holds rows: SSDT guards the change with
 > `IF EXISTS (SELECT TOP 1 1 FROM dbo.Customer) RAISERROR(...)`, which fires on row presence, not on
 > blank values — verified on a disposable copy, where a backfill to zero blank Emails was still
-> blocked. A dev lead must review this: existing data is affected. Ships as two releases, because
+> blocked. A dev lead approves this, weighing that existing data is affected. Ships as two releases, because
 > this pipeline cannot relax the data-loss guard — release one backfills the blanks and tightens the
 > column with the model lagging, release two lets the model catch up as a no-op.
 
@@ -420,8 +455,8 @@ Be truthful with the developer about the edges:
   **claim**, not something this loop demonstrated. State it plainly: the forward change is proven
   safe for the data; backing it out is not exercised here.
 - **Application impact — the disposable copy cannot prove the running app keeps working.** This is
-  state-variable 3 (must old + new app code coexist), and it is the very thing that separates a
-  change any team member can review from one a dev lead must review because the running application
+  state-variable 3 (must old + new app code coexist), and it is the very thing that separates the
+  lightest look on this estate from an approval that weighs that the running application
   must change to keep working. A single-connection publish against a disposable copy cannot show
   whether the live OutSystems app — or old and new app code mid-rollout — still compiles and reads
   correctly against the new shape. That answer comes from the developer and the architecture,

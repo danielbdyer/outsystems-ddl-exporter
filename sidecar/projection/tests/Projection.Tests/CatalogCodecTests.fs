@@ -262,7 +262,8 @@ let private allStorageTypes : SqlStorageType list =
       SqlStorageType.DateTimeOffset (Some 3); SqlStorageType.DateTimeOffset None
       SqlStorageType.SmallDateTime; SqlStorageType.Date; SqlStorageType.Time (Some 2); SqlStorageType.Time None
       SqlStorageType.VarBinary (SqlLength.Bounded 16); SqlStorageType.VarBinary SqlLength.Max
-      SqlStorageType.Binary 8; SqlStorageType.Image; SqlStorageType.UniqueIdentifier; SqlStorageType.Xml ]
+      SqlStorageType.Binary 8; SqlStorageType.Image; SqlStorageType.UniqueIdentifier; SqlStorageType.Xml
+      SqlStorageType.SqlVariant; SqlStorageType.RowVersion ]
 
 [<Fact>]
 let ``every SqlStorageType (incl. SqlLength Bounded/Max) round-trips`` () =

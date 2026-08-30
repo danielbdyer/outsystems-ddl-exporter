@@ -8,7 +8,7 @@ description: Use when the developer says "move the Region attribute from Custome
 > **Default (provisional — prove before you classify).** Ships across multiple
 > releases (multiple pull requests): add the column to the destination and copy the values, repoint
 > readers, then drop the column from the source — the two tables coexist while readers migrate. A dev
-> lead must review this: existing data is moved between tables and the source column is dropped. Prove
+> lead approves this, weighing that existing data is moved between tables and the source column is dropped. Prove
 > the relationship is 1:1 before copying anything, so no moved value is ambiguous.
 
 > **SHIP terminal: ACROSS MULTIPLE RELEASES.** Add the column to the destination + copy (keyed by the
@@ -40,7 +40,7 @@ A one-column split. ADD the column to the destination CREATE, copy the values ke
   holds rows, even an all-NULL column drop is blocked under `BlockOnPossibleDataLoss`, so that drop
   ships with a pre-deployment step that clears the guard. One pull request each.
 - source populated, **proven 1:1** → ships across multiple releases (multiple pull requests): the two
-  tables coexist while readers migrate; a dev lead must review it, because existing data is moved
+  tables coexist while readers migrate; a dev lead approves this, because existing data is moved
   between tables and the source column is dropped.
 - relationship **not 1:1** → STOP: the value is ambiguous — a design decision (which Region wins?),
   not a change in how it ships.
@@ -84,7 +84,7 @@ instance for this op is `../../../sample-prs/move-attribute.md`. SHIP terminal: 
 RELEASES.** The fragment this operation contributes:
 
 **Review & release**
-- A dev lead must review this: existing data is moved between tables — the values are copied to the
+- A dev lead approves this: existing data is moved between tables — the values are copied to the
   destination and the source column is dropped.
 - Ships across multiple releases (multiple pull requests): add the column to the destination and copy
   the values keyed by the relationship, repoint every reader, then drop the source column — the two

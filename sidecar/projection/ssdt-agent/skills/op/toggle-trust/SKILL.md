@@ -9,7 +9,7 @@ description: Use when the developer says "trust the constraint now that the data
 > state is operational, script-only work against an existing constraint, not a shape SSDT converges
 > to, so it does not ship as a table definition. There is no schema disposition to assign — the
 > correct outcome routes it to a pre/post-deployment script (or a runbook). Ships as a scripted
-> change; who must review is inherited from the change this step serves. Prove the *ending* trust
+> change; what the approving dev lead weighs is inherited from the change this step serves. Prove the *ending* trust
 > state before classifying it as a schema change.
 
 > **SHIP terminal: scripted, operational — review inherited.** Toggling trust is not declarative; it is
@@ -78,7 +78,7 @@ inside a larger change (a bulk load, or re-trusting a legacy untrusted constrain
 - Ships as a scripted change — a constraint's enforcement/trust state cannot be expressed as a table
   definition; it lives in a pre/post-deployment script or a runbook.
 - The review need is inherited from the change this step serves. Where it re-trusts a constraint
-  after reconciling data (the FK-with-orphans remedy): a dev lead must review this, because existing
+  after reconciling data (the FK-with-orphans remedy): a dev lead approves this, because existing
   data is modified.
 
 **Verification** — run in each environment after deployment

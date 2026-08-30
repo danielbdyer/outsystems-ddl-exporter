@@ -15,7 +15,7 @@ description: Use when the developer says "merge CustomerAddress back into Custom
 > **Default (provisional — prove before you classify).** Ships across three
 > releases (three pull requests): add the absorbing columns to the survivor and copy the data, cut
 > the application over, then drop the absorbed table — the two tables coexist while readers migrate.
-> A dev lead must review this: existing data is moved into the survivor and the absorbed table is
+> A dev lead approves this: existing data is moved into the survivor and the absorbed table is
 > dropped. Prove cardinality (1:1) before copying anything, so a one-to-many absorbed side cannot
 > silently drop rows.
 
@@ -46,7 +46,7 @@ The inverse of a split. ADD the absorbing columns to the surviving table's CREAT
 - absorbed entity **empty** → drop it as a clean subtractive change and add the survivor's columns
   in place, in a single release. No data to move.
 - absorbed populated, **proven 1:1** with survivor → ships across three releases (the three phases
-  below); a dev lead must review it, because existing data is moved into the survivor and the
+  below); a dev lead approves this, because existing data is moved into the survivor and the
   absorbed table is dropped.
 - absorbed populated, **1:many** (collision) → still staged across releases, but the merge is
   *semantically wrong as stated*: STOP and tell the developer the cardinality — a design decision,
@@ -59,7 +59,7 @@ The inverse of a split. ADD the absorbing columns to the surviving table's CREAT
 - **Phase 1 (additive):** ADD the absorbing columns (nullable) to the survivor CREATE,
   post-deploy-copy from the absorbed entity, dual-write new rows. Prove cardinality here: count
   absorbed rows vs. distinct parents — equal = 1:1, safe; unequal = 1:many, STOP. Strict publishes
-  clean. A dev lead or an experienced developer should review this: the running application must
+  clean. A dev lead approves this: the running application must
   change to dual-write into the new columns.
 - **Phase 2 (cutover):** repoint app reads, FKs, and views from the absorbed entity to the
   survivor's new columns. Any external consumer that still references the absorbed entity by name
@@ -99,7 +99,7 @@ instance for this op is `../../../sample-prs/merge-tables.md`. SHIP terminal: **
 (an empty absorbed table collapses to ONE). The fragment this operation contributes:
 
 **Review & release**
-- A dev lead must review this: existing data is moved into the survivor's new columns and the
+- A dev lead approves this: existing data is moved into the survivor's new columns and the
   absorbed table is dropped once the copy is proven complete.
 - Ships across three releases (three pull requests): add the absorbing columns and copy from the
   absorbed table, cut the application over (repoint reads, foreign keys, and views), then drop the

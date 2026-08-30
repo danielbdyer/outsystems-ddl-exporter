@@ -13,7 +13,7 @@ blank — "a field that doesn't have to be filled". No work item supplied — at
 - `dbo.Customer.MiddleName`: add `NVARCHAR(100) NULL` (a new nullable column).
 
 ## Before promoting
-- Any team member can approve this: the column is additive and the running application keeps working
+- A dev lead approves this: the column is additive and the running application keeps working
   unchanged — every existing row takes NULL, which the new column already permits.
 - Run the verification query below in each environment after deploy and confirm `is_nullable = 1`.
 

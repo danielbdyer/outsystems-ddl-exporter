@@ -50,9 +50,11 @@ module Readback =
                 |> List.filter (fun m -> not (List.isEmpty m.Kinds)) }
 
     /// The normalized `schema.table` keys of every VIEW in the twin
-    /// database. Read from `sys.views` so a view can be told from a base
-    /// table (the read-back catalog does not distinguish them — both
-    /// arrive as `Kind`s). A view has no rows to wipe or mint.
+    /// database, read from `sys.views`. `ReadSide.read` scopes its column
+    /// ingestion to BASE TABLEs (a view's columns never reach the type
+    /// mapping, so an exotic view column cannot refuse the read-back);
+    /// this probe and the strip below stay as the defensive twin of that
+    /// rule. A view has no rows to wipe or mint.
     let private readViewKeys (twinCnn: SqlConnection) : Task<Set<string>> =
         task {
             use cmd = twinCnn.CreateCommand()

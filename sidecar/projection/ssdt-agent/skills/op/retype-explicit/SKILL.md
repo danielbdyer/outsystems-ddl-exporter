@@ -8,9 +8,10 @@ description: Use when the developer says "change the text field to a date", "sto
 > **Default (provisional — prove before you classify).** Ships across multiple
 > releases (multiple pull requests): add a new column of the target type, convert the values that
 > convert with `TRY_CONVERT`, handle the rows that do not, then drop the old column and rename the
-> new one in — the old and new types coexist while the application migrates. A dev lead must review
-> this: existing data is reshaped and the old column is dropped; if non-convertible rows are dropped
-> rather than reconciled, a principal must review it, because data is removed and cannot be undone.
+> new one in — the old and new types coexist while the application migrates. A dev lead approves
+> this, weighing that existing data is reshaped and the old column is dropped; if non-convertible
+> rows are dropped rather than reconciled, the approval carries the strongest weigh-line — data is
+> removed and the removal cannot be undone.
 > Count the non-convertible rows before promising anything.
 
 > **SHIP terminal: MULTI-PHASE (several releases).** Add a new column of the target type (nullable,
@@ -51,10 +52,10 @@ coexistence here.
 ## How it flips (the specifics only)
 - explicit/narrowing → ships across multiple releases (multiple pull requests): add a new column of
   the target type → `UPDATE ... SET new = TRY_CONVERT(<type>, old)` → app transitions → drop old,
-  rename new in — existing data is reshaped, so a dev lead must review it (see
+  rename new in — existing data is reshaped, so a dev lead approves this (see
   `../../_index/multi-phase/SKILL.md`).
 - any value fails `TRY_CONVERT` (returns NULL) → those rows need explicit handling → stays multi-PR;
-  drop the non-convertible rows rather than reconcile them and a principal must review it, because
+  drop the non-convertible rows rather than reconcile them and a dev lead approves this, with the strongest weigh-line, because
   data is removed and cannot be undone.
 - direction is actually widening/lossless → **wrong op** → `../retype-implicit/SKILL.md`
 - >1M rows → added scrutiny: at production row counts the convert-and-swap may block writes or run
@@ -74,8 +75,8 @@ don't convert. So this can't be one clean change — it stages across more than 
 running app keeps working: add a new Date column, convert the values that convert, deal with the ones
 that don't, then swap the new column in and drop the old. The non-convertible rows are the real
 question for you — corrected to real dates before the cutover, or acceptable to land as NULL?
-Correcting them keeps this a reshape a dev lead can sign off; letting them drop means data lost for
-good, which a principal should review.
+Correcting them keeps this an ordinary reshape; letting them drop means data lost for good, which
+the approving dev lead weighs as an irreversible removal, named in the approval.
 
 ## The reasoning (in conversation)
 An explicit conversion earns its staging for two reasons, and only the data shows you the first: not
@@ -92,7 +93,7 @@ this op is `../../../sample-prs/retype-explicit.md`. **SHIP terminal: MULTI-PHAS
 releases), the drop-old-column leg a TWO-RELEASE.
 
 **Review & release**
-- A dev lead must review this: existing data is reshaped — values are converted into a new column of
+- A dev lead approves this: existing data is reshaped — values are converted into a new column of
   the target type and the old column is dropped.
 - Ships across multiple releases (multiple pull requests): add a new column of the target type
   (nullable, additive — one clean release), convert the convertible values with `TRY_CONVERT`,
@@ -100,7 +101,7 @@ releases), the drop-old-column leg a TWO-RELEASE.
   new types coexist while the application migrates. The **drop-old-column leg is a two-release**
   (`delete-attribute`'s pattern): a bare single-step type change is refused, and the drop of the
   populated old column is refused by the same guard.
-- When non-convertible rows are dropped rather than reconciled: a principal must review this — data
+- When non-convertible rows are dropped rather than reconciled: a dev lead approves this, with the strongest weigh-line — data
   is removed and the removal cannot be undone.
 - Added scrutiny, when it applies: `Added scrutiny: at production row counts the convert-and-swap
   may block writes or run long — schedule a window.`

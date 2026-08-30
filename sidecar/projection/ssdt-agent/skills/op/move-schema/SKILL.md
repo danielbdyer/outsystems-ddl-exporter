@@ -9,7 +9,7 @@ description: "Use when the developer says \"move the entity to the archive schem
 > change applied in place when the refactorlog carries the move, or as a scripted change
 > (`ALTER SCHEMA TRANSFER`) when `object_id` preservation is preferred or the table is large — either
 > way the data, `object_id`, and row counts are preserved. Without a refactorlog entry SSDT reads it
-> as drop-and-create and the rows are lost. A dev lead or an experienced developer should review this:
+> as drop-and-create and the rows are lost. A dev lead approves this:
 > every fully-qualified `schema.Table` reference must follow the move, so the running application must
 > change to keep working.
 
@@ -79,8 +79,7 @@ The fragment this op contributes to the pull request (`../../author-pr/SKILL.md`
 worked instance is `../../../sample-prs/move-schema.md`).
 
 **Review & release**
-- A dev lead or an experienced developer should review this: the running application must change to
-  keep working — every fully-qualified `schema.Table` reference must follow the move.
+- A dev lead approves this, weighing that the running application must change to keep working — every fully-qualified `schema.Table` reference must follow the move.
 - Ships as a single schema change applied in place when the refactorlog carries the move (the data,
   `object_id`, and row counts are preserved), or as a scripted change (`ALTER SCHEMA TRANSFER`) when
   `object_id` preservation is preferred or the table is large — the transfer cannot be expressed as a

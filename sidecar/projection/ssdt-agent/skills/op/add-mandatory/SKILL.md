@@ -5,8 +5,8 @@ description: Use when the developer says "add a required attribute", "add a Stat
 
 # Add mandatory attribute (Optimistic NOT NULL)
 
-> **Default (provisional — prove before you classify).** A dev lead or an experienced developer should
-> review this: adding a required attribute means the running application must change to keep
+> **Default (provisional — prove before you classify).** A dev lead approves this, weighing that
+> adding a required attribute means the running application must change to keep
 > working. With an explicit default it ships as a single schema change, applied in place — SQL
 > Server fills every existing row from the default as the column is added. Populated with no
 > default: the deployment is blocked. Prove it on a disposable copy before classifying.
@@ -41,12 +41,11 @@ tightening class: that one blocks on row presence for an *existing* column, wher
 is a genuine can't-insert-NULL on a *new* column, cured by supplying a value.
 
 ## How it flips (the specifics only)
-- table empty → ships as a single schema change, applied in place; any team member can review it
+- table empty → ships as a single schema change, applied in place; a dev lead approves this
   (no rows to fill, so the default is optional).
 - populated + explicit DEFAULT → ships as a single schema change, applied in place — SQL Server
   fills existing rows from the default as the column is added (proven:
-  `../../../sample-prs/add-default.md` — every existing row stamped, the publish clean); a dev
-  lead or an experienced developer reviews it, because adding a required attribute means the
+  `../../../sample-prs/add-default.md` — every existing row stamped, the publish clean); a dev lead approves it, because adding a required attribute means the
   running application must change to keep working.
 - populated, **no DEFAULT** → the deployment is blocked (proven:
   `../../../sample-prs/add-mandatory.md` — refused at 25 rows, applied on the emptied table) →
@@ -87,9 +86,8 @@ this op is `../../../sample-prs/add-mandatory.md`. **SHIP terminal: ONE-RELEASE 
 (TWO-RELEASE fallback if no default is acceptable). Record register.
 
 **Review & release**
-- A dev lead or an experienced developer should review this: adding a required attribute means the
-  running application must change to keep working. On an empty table the change is additive and any
-  team member can review it.
+- A dev lead approves this: adding a required attribute means the
+  running application must change to keep working. On an empty table the change is additive and a dev lead approves this.
 - Ships as a single schema change, applied in place — with an explicit default, SQL Server fills
   every existing row from the default as the column is added. With no default on a populated table
   the deployment is blocked ("Cannot insert NULL"); shipping then needs an explicit default, or a

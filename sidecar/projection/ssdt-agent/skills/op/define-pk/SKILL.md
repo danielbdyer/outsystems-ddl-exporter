@@ -6,10 +6,10 @@ description: Use when the developer says "set the primary key", "the Identifier"
 # Define the primary key (the Identifier)
 
 > **Default (provisional — prove before you classify).** New table: the primary key is part of the
-> CREATE — it ships as a single schema change applied in place, and any team member can review it,
+> CREATE — it ships as a single schema change applied in place, and a dev lead approves this,
 > because the change is additive and the running application is unaffected. Existing populated table:
 > the primary key builds a clustered index that scans and reorders every row — it still ships as a
-> single in-place schema change, but a dev lead or an experienced developer reviews it, because the
+> single in-place schema change, but a dev lead approves it, because the
 > build runs over live data. Prove the key is unique and non-NULL before you classify.
 
 > **SHIP terminal: ONE RELEASE.** New table: the key is in the CREATE, additive. Populated table: the
@@ -40,16 +40,15 @@ trap: confusing an IDENTITY surrogate with a natural key — see `../identity-sw
 
 ## How it flips (the specifics only)
 - new table: the primary key is inline in the CREATE. Ships as a single schema change applied in
-  place; any team member can review it — the change is additive and the running application is
+  place; a dev lead approves this — the change is additive and the running application is
   unaffected.
 - existing table, key column already unique and non-NULL: ships as a single in-place schema change,
-  but the clustered-index build scans and reorders every row — a dev lead or an experienced
-  developer should review it, because the build runs over live data.
+  but the clustered-index build scans and reorders every row — a dev lead approves this, because the build runs over live data.
 - existing table with duplicate or NULL key values: the index build is blocked on the actual
   duplicate or NULL rows, and the error names the offending keys. Ships as one release with a
   pre-deployment script that dedupes or assigns keys, after which the primary key lands validated —
   or across several releases when old and new application code must coexist while the key is
-  introduced. A dev lead must review this: existing data is modified to make the key hold. See
+  introduced. A dev lead approves this, weighing that existing data is modified to make the key hold. See
   `../../_index/constraint-is-a-claim/SKILL.md`.
 - more than 1M rows: added scrutiny — at production row counts the clustered-index build locks the
   table and runs long; schedule a window.
@@ -82,13 +81,11 @@ instance for this op — with the live messages — is `../../../sample-prs/defi
 **ONE RELEASE.** The fragment this operation contributes:
 
 **Review & release** — the proven branch selects one pair of findings:
-- New table — Any team member can review this: the change is additive and the running application is
-  unaffected. Ships as a single schema change, applied in place; the primary key is part of the
+- New table — A dev lead approves this: the change is additive and the running application is unaffected — the lightest look on this estate. Ships as a single schema change, applied in place; the primary key is part of the
   CREATE.
-- Existing populated table, key already unique and non-NULL — A dev lead or an experienced developer
-  should review this: the clustered-index build runs over every existing row. Ships as a single
+- Existing populated table, key already unique and non-NULL — A dev lead approves this: the clustered-index build runs over every existing row. Ships as a single
   schema change, applied in place; the build scans and reorders every row.
-- Existing table with duplicate or NULL keys — A dev lead must review this: existing data is modified
+- Existing table with duplicate or NULL keys — A dev lead approves this, weighing that existing data is modified
   to make the key hold. Ships as one release with a pre-deployment script that dedupes or assigns
   keys, then the primary key lands validated (or across several releases when old and new code must
   coexist).

@@ -66,8 +66,9 @@ up? Driven by the risk read in `THE_DECISION_TREE.md` S4 CLASSIFY.
 - Example (data-change): `This PR shortens Product.Code to 10 characters and rewrites one
   existing value to do so. Confirm the shortened value is correct in each environment before
   promoting upward. (Blocker: not yet proven on a copy.)`
-- No slot for: a role assignment ("a dev lead must review" — every PR is reviewed, so it says
-  nothing), an adjective on the change, or more than one blocker.
+- No slot for: a role assignment ("a dev lead approves this" alone — a dev lead approves every PR,
+  so the bare role says nothing; the weigh-line lives in Review & release), an adjective on the
+  change, or more than one blocker.
 
 ---
 

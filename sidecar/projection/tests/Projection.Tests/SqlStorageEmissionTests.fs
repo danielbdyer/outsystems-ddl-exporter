@@ -221,3 +221,17 @@ let ``Emission: external_dbType override renders the concrete type`` () =
 let ``Emission: xml renders XML (via XmlDataTypeReference)`` () =
     let body = emitBody (singleAttrJson "xml" "null" "null")
     Assert.Contains ("XML", body)
+
+[<Fact>]
+let ``Emission: external_dbType sql_variant renders SQL_VARIANT`` () =
+    // No OutSystems attribute type produces a variant; it enters through
+    // a DBA-authored override (or read-back). Text-category consistent.
+    let body = emitBody (singleAttrJson "rtText" "null" "\"SQL_VARIANT\"")
+    Assert.Contains ("SQL_VARIANT", body.ToUpperInvariant())
+
+[<Fact>]
+let ``Emission: external_dbType rowversion renders ROWVERSION`` () =
+    // Binary-category consistent; the engine-stamped semantics live in
+    // `SqlStorageType.isEngineStamped`, not in the DDL.
+    let body = emitBody (singleAttrJson "binarydata" "null" "\"ROWVERSION\"")
+    Assert.Contains ("ROWVERSION", body.ToUpperInvariant())

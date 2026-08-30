@@ -232,6 +232,8 @@ module ScriptDomBuild =
         | SqlStorageType.Binary _         -> SqlDataTypeOption.Binary
         | SqlStorageType.Image            -> SqlDataTypeOption.Image
         | SqlStorageType.UniqueIdentifier -> SqlDataTypeOption.UniqueIdentifier
+        | SqlStorageType.SqlVariant       -> SqlDataTypeOption.Sql_Variant
+        | SqlStorageType.RowVersion       -> SqlDataTypeOption.Rowversion
         | SqlStorageType.Xml              -> SqlDataTypeOption.None  // unreachable; Xml builds XmlDataTypeReference before this call
 
     /// Build a `DataTypeReference` from a concrete `SqlStorageType` —

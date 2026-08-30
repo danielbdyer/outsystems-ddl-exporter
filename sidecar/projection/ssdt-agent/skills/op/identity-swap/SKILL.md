@@ -10,7 +10,7 @@ description: Use when the developer says "turn on Auto Number for the Id", "make
 > table property fixed at column creation, so SSDT rebuilds the whole table (a shadow table, a
 > `SET IDENTITY_INSERT` copy that preserves every key, a reseed, and every incoming foreign key
 > dropped and recreated around the rebuild), and that foreign-key bracket keeps the running
-> application working while the change is in flight. A dev lead must review this: the whole table is
+> application working while the change is in flight. A dev lead approves this: the whole table is
 > rebuilt and cross-table relationships are dropped and recreated, with added scrutiny the first
 > time this is done on the estate. Preview the delta and confirm it is a shadow-table rebuild with
 > `SET IDENTITY_INSERT` before promising anything — the danger drives the review need, not the
@@ -55,13 +55,12 @@ the key mapping re-mints keys the way a rename with no refactorlog entry loses a
 
 ## How it flips (the specifics only)
 - table **empty, no FKs** → the rebuild copies nothing; ships as a single schema change (still
-  confirm the delta is a rebuild, not a no-op). A dev lead or an experienced developer should review
-  it, because the running application's Id handling changes.
+  confirm the delta is a rebuild, not a no-op). A dev lead approves this, because the running application's Id handling changes.
 - table populated, **no incoming FKs** → ships as one release, a single scripted rebuild with the
-  `SET IDENTITY_INSERT` copy and the reseed proven. A dev lead must review it: the whole table is
+  `SET IDENTITY_INSERT` copy and the reseed proven. A dev lead approves this: the whole table is
   rebuilt and every row is copied.
 - table populated **WITH incoming FKs** → ships across multiple releases; the FK drop and recreate
-  must bracket the rebuild so the running application keeps working. A dev lead must review it, with
+  must bracket the rebuild so the running application keeps working. A dev lead approves this, with
   added scrutiny the first time this is done on the estate.
 - **+ >1M rows** → added scrutiny: the data copy is the expensive part and may block writes or run
   long; schedule a window.
@@ -108,9 +107,9 @@ instance for this op is `../../../sample-prs/identity-swap.md`. SHIP terminal: *
 RELEASES** (a table rebuild). The fragment this operation contributes:
 
 **Review & release**
-- A dev lead must review this: the whole table is rebuilt (every row is copied) and every incoming
+- A dev lead approves this: the whole table is rebuilt (every row is copied) and every incoming
   foreign key is dropped and recreated around the rebuild. On an empty table with no incoming foreign
-  keys the rebuild copies nothing and a dev lead or experienced developer can review it, because the
+  keys the rebuild copies nothing and the approval weighs only that the
   running application's Id handling still changes.
 - Ships across multiple releases on a populated table with incoming foreign keys — the foreign keys
   are dropped, the table is rebuilt (a shadow table, a `SET IDENTITY_INSERT` copy that preserves every

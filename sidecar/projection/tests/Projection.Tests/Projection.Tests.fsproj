@@ -96,6 +96,7 @@
     <Compile Include="SqlStorageTypeTests.fs" />
     <Compile Include="SqlLiteralTests.fs" />
     <Compile Include="BulkTests.fs" />
+    <Compile Include="ReadSideRawFormTests.fs" />
     <Compile Include="SqlIdentifierTests.fs" />
     <Compile Include="OssysTypeMappingTests.fs" />
     <Compile Include="LineageTests.fs" />

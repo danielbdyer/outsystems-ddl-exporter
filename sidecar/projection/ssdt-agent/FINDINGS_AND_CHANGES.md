@@ -424,3 +424,79 @@ not the create-fk-orphan remedy.
    Rollback / Not verified), each review line naming who **and** the risk.
 
 Every classification in the skill traces to a real publish named in §6.3 — proving is classifying.
+
+---
+
+## Part 7 — The release-grain findings (2026-08-28): molecules, inverses, and the current engine
+
+Proven on this branch through the packaged loop (`scripts/prove.mjs`, sqlpackage **170.5.76**,
+SQL Server 2022); the disposable databases are the receipts (`PG_mol_x1`, `PG_inv_x1`). The
+worked records are `sample-prs/compound/` and the four `sample-prs/drop-*.md`. The doctrine
+these findings ground: **the unit of proof is the release delta** (`skills/prove-on-dacpac`,
+`skills/decompose`).
+
+- **F13 — A release is vetoed by its strictest atom, and the veto is atomic. (PROVEN)** One
+  publish carrying an identity-preserving rename (`sp_rename`, refactorlog entry present) AND a
+  populated tightening → refused (`Msg 50000`), and the copy afterward shows the rename did NOT
+  land: the whole delta rolled back under `IncludeTransactionalScripts = true`, the innocent
+  atom with it. (DB `PG_mol_x1`.) Reshape-coupled atoms serialize; the combined release is not a
+  shortcut.
+
+- **F14 — An all-additive batch inherits no guard and ships as one publish. (PROVEN)** Two new
+  tables, their seed, three foreign-key adds (one over a populated child), and a defaulted NOT
+  NULL column on a populated table published clean as ONE delta, first attempt; DacFx ordered
+  the objects; the default stamped all existing rows; every key ended `is_not_trusted = 0`.
+  (DB `PG_mol_x1`; `sample-prs/compound/additive-batch.md`.)
+
+- **F15 — The post-deployment seed's claims bind every atom in the release, and undo what they
+  contradict. (PROVEN, two faces)** (a) A pre-deploy repoint the seed still contradicted was
+  reverted BY the seed in the same green publish — the seed is the truth surface; the pre-deploy
+  only makes live rows match it. (b) After a column drop committed in pre-deploy, the seed still
+  naming that column failed the publish with `Msg 207` on a half-applied release — the corrected
+  seed is part of the change set (the F6 non-atomicity, now on the drop and rename faces; the
+  rename face failed identically until the seed's six column references were renamed with it).
+  (DB `PG_mol_x1`.)
+
+- **F16 — A phase-bound pre-deploy block breaks the phase after it, and retiring it is the next
+  phase's change-set work. (PROVEN)** The migrate-release reconcile block, left in place, read
+  the column the contract release drops — `Msg 207` before anything else ran. (DB `PG_mol_x1`;
+  the deploy-scripts lifecycle rule, now with its receipt.)
+
+- **F17 — The lag-window revert, captured on a green publish. (PROVEN)** With contract-R1 landed
+  (column physically dropped, model lagging), one more publish of the same release reported
+  `Successfully published database` and re-created the column, every row backfilled from its
+  default — the original values destroyed. Harmless in the program only because the migrate
+  release had already moved the information. (DB `PG_mol_x1`.) The hold-other-publishes
+  instruction (`skills/_index/tightening-class`, `skills/_index/multi-phase`) and the in-flight
+  `tables` column + `scripts/inflight-check.mjs` are this finding's remedies.
+
+- **F18 — A referenced primary-key drop refuses at the MODEL build; the engine is never
+  reached. (PROVEN)** With a foreign key targeting the table, removing its PK fails
+  `dotnet build` with `SQL71516` naming the referencing file — no dacpac, no delta, no publish.
+  Unreferenced, the drop publishes clean as one `DROP CONSTRAINT` and the table is a heap after,
+  rows intact. (DB `PG_inv_x1`; `sample-prs/drop-pk.md`.)
+
+- **F19 — Constraint-trust re-confirmed on 170.5.76. (PROVEN)** Five declarative constraint adds
+  on this branch — three FKs on empty children, one FK over a populated child, one FK over a
+  populated child reconciled in the same release's pre-deploy, and one CHECK over clean data —
+  all ended `is_not_trusted = 0` (F9's law, current engine; `estate/toolchain.md` carries the
+  dated row). The estate pipeline's own DacFx version remains the open pin.
+
+- **F20 — The scale lane's first light: three engine defects, and the tier where the scan
+  surfaces. (PROVEN, 2026-08-28)** Standing up `proving-ground/twin.scale.json` (181k- and
+  1.18M-row scenarios, floor-minted) surfaced three defects before any timing was taken, each
+  fixed on this branch. (1) The unique-value synthesizer was width-blind: a 21-char token into
+  `Status.Code NVARCHAR(20)` failed the bulk copy; tokens are now fitted to the declared width
+  (verbatim where they fit — byte-identity kept — compact base-36 where they would truncate;
+  a width too small even for the ordinal is left to the unique index to refuse by name).
+  (2) The mint trust gate's Release build hit `FS3511` in two new shapes, both now in
+  `CLAUDE.md` survival rule 5. (3) σ's per-row draws indexed F# *lists* — `List.tryItem i`
+  per row and `pool.[j]` per FK draw, O(rows × pool) — invisible at the sample tier,
+  12.7× the whole mint at 181k (75.1 s → 5.9 s once array-backed), and a wall at 1.18M
+  (killed unfinished at 13 min; 28.0 s after the fix, ~42k rows/s, values byte-identical).
+  The measured tiers (`estate/scale-datapoints.md`): every green Strict publish and the
+  `Msg 50000` refusal stay inside single-digit tool overhead at BOTH tiers except the
+  nonclustered index build, the first operation whose engine cost surfaces (~11 s over floor
+  at 1.05M rows); FK and CHECK re-validation scans are still invisible there; a re-mint
+  through live CK+FK+IX costs +8.6 s at 1.18M and ends trusted. The added-scrutiny window's
+  teeth begin at the index-shaped operations, roughly linearly above 1M on this substrate.

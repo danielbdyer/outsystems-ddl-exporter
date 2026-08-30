@@ -73,7 +73,7 @@ breaks one is not finished.
    Never a headless quantity (`no changes` → `The database is unchanged: the second publish issued
    zero statements.`). Make the grammatical subject something that can act — a person, a named
    object, a measured fact. A register does not hold; a copy does not prove; a fact does not travel
-   to an environment. Write `the reviewer looks up who reviews this change`, `the Strict publish
+   to an environment. Write `the reviewer looks up which dev lead approves this change`, `the Strict publish
    blocked the change`, `dbo.Customer holds 5 rows`. When an abstraction sits in the subject slot,
    the reader has lost the actor and has to guess who does what.
 7. **Admit the unverified.** Anything the disposable copy could not prove — application behaviour,
@@ -94,9 +94,9 @@ would hide, the definition a short label would bury. Cut every word that carries
 every word the reader needs. Assume the reader holds less of the change in their head than the
 author does; the words an author drops as obvious are often the ones the reader needs most. Prefer
 one idea to a sentence, and two plain sentences to one that packs three clauses behind semicolons.
-Do not compress an explanation into a noun and hand the reader the noun: `the deputized form`
-forces the reader to unfold what `two senior reviewers reviewing together while the principal is
-away` states outright. The two demands rarely collide; when they seem to, write for the reader,
+Do not compress an explanation into a noun and hand the reader the noun: `the two-release shape`
+forces the reader to unfold what `release one backfills the blanks and tightens the column while
+the model still says optional; release two lets the model catch up` states outright. The two demands rarely collide; when they seem to, write for the reader,
 whose test is in §9.
 
 Carried from the parent unchanged: **calm** (the most consequential finding in the most level
@@ -149,7 +149,7 @@ vocabulary never surfaces.
 | `blast radius` | **the dependency scope** / **what else this change touches** |
 | `the corpse` / `snapshot the corpse` | **the rows that would be deleted** / **the values that would be lost** |
 | `Mechanism 1–5` | a plain statement of **how it ships** (§5) |
-| `Tier 1–4`, `+1` | a plain statement of **who must review, and why** (§5) |
+| `Tier 1–4`, `+1` | a plain statement of **what the approving dev lead weighs** (§5) |
 | `BLESS / HAND-BACK / REFUSE-ESCALATE` | the plain dispositions (§6) |
 | `graduation` / `level up` | (teaching happens in conversation; it is never labelled) |
 | `the spine` / `the oracle` / `the flip` | the specific finding, named literally |
@@ -184,20 +184,26 @@ becomes one plain finding.
 | scripted, not declarative | `Ships as a scripted change — <reconciling the foreign key / the identity change> cannot be expressed as a table definition.` |
 | staged across releases | `Ships across <N> releases so the running application keeps working while the change is in flight.` |
 
-**Who must review, and why** (replaces "Tier 1–4" and the "+1" escalations):
+**What the approving dev lead weighs** (replaces "Tier 1–4", the "+1" escalations, and the
+retired principal level — recalibrated 2026-08-28): on this estate every schema change is
+approved by a dev lead, and only by a dev lead. A developer never approves a schema change —
+not their own, not another developer's. The approver is therefore constant, and the finding no
+longer names a role: it names **what the change asks the lead to weigh**, so the lightest
+change and the gravest carry the same approver and visibly different weight.
 
 | The situation | What the record states |
 |---|---|
-| additive, application unaffected | `Any team member can review this: the change is additive and the running application is unaffected.` |
-| the application must change | `A dev lead or an experienced developer should review this: the running application must change to keep working.` |
-| existing data is modified | `A dev lead must review this: existing data is modified.` |
-| a cross-table relationship is added | `A dev lead must review this: a cross-table relationship is added.` |
-| data is removed, irreversibly | `A principal must review this: data is removed and the removal cannot be undone.` |
+| additive, application unaffected | `A dev lead approves this: the change is additive and the running application is unaffected — the lightest look on this estate.` |
+| the application must change | `A dev lead approves this, weighing that the running application must change to keep working.` |
+| existing data is modified | `A dev lead approves this, weighing that existing data is modified.` |
+| a cross-table relationship is added | `A dev lead approves this, weighing that a cross-table relationship is added.` |
+| data is removed, irreversibly | `A dev lead approves this, weighing that data is removed and the removal cannot be undone — the strongest call on this estate, named explicitly in the approval.` |
 | the table is large (adds scrutiny) | `Added scrutiny: at production row counts this change may block writes or run long — schedule a window.` |
 | first time on this estate (adds scrutiny) | `Added scrutiny: this operation has not been performed on this estate before.` |
 
-The two findings stand together and never collapse into one number. The reviewer learns who must
-look and why, and how the change reaches production — in sentences, not a grid.
+The two findings stand together and never collapse into one number. The reviewer learns what
+this change asks them to weigh, and how the change reaches production — in sentences, not a
+grid.
 
 ---
 
@@ -223,8 +229,8 @@ disposition; it is an opinion.
 
 Run this over any line before it lands. If it hits, the line is not finished.
 
-- **Numbered axes as output:** `Mechanism 3`, `Tier 2`, `+1 tier`. Say how it ships and who reviews
-  (§5).
+- **Numbered axes as output:** `Mechanism 3`, `Tier 2`, `+1 tier`. Say how it ships and what the
+  lead weighs (§5).
 - **The tree's private nicknames:** `magic line`, `the spine`, `the graduation`, `graduate / level
   up`, `the oracle`, `the flip / flip twin`, `the corpse`, `proving ground` (in a record), `blast
   radius`, `naked` (as in *naked rename* — say `a rename with no refactorlog entry`). The ban is the
@@ -263,7 +269,7 @@ Each pair is the same fact, wrong then right. The left is retired; the right is 
 
 **The same change, on the record (PR body):**
 - ✗ `Mechanism 4 (gate-relaxation) / Tier 2. The veto fired as expected — table-has-rows. Magic line: proved 0 NULLs, still vetoed.`
-- ✓ `Making Email NOT NULL is blocked while dbo.Customer holds rows: SSDT guards the change with IF EXISTS (SELECT TOP 1 1 FROM dbo.Customer) RAISERROR(...), which fires on row presence, not on blank values — verified on a disposable copy, where a backfill to zero blank Emails was still blocked. A dev lead must review this: existing data is affected. Ships as two releases, because this pipeline cannot relax the data-loss guard — release one backfills the blanks and tightens the column with the model lagging, release two lets the model catch up as a no-op.`
+- ✓ `Making Email NOT NULL is blocked while dbo.Customer holds rows: SSDT guards the change with IF EXISTS (SELECT TOP 1 1 FROM dbo.Customer) RAISERROR(...), which fires on row presence, not on blank values — verified on a disposable copy, where a backfill to zero blank Emails was still blocked. A dev lead approves this, weighing that existing data is affected. Ships as two releases, because this pipeline cannot relax the data-loss guard — release one backfills the blanks and tightens the column with the model lagging, release two lets the model catch up as a no-op.`
 
 **A dependency-scope finding (review, record):**
 - ✗ `Blast radius: a downstream reporting job + nightly ETL read this. BLESS-WITH-NAMED-RISK — the corpse is downstream.`
@@ -278,8 +284,8 @@ Each pair is the same fact, wrong then right. The left is retired; the right is 
 - ✓ `The reviewer agent and the classify-mechanism skill both read this file to find out who the reviewers are. They look it up here each time, rather than working from memory.`
 
 **A calibration note (record, the reviewer agent) — an abstraction in the subject, a label left folded:**
-- ✗ `The register holds, with one calibration: when the assigned reviewer is SSDT-new, gloss each SSDT-only construct in one clause on first use — the no-gloss terse register is reserved for the Principal.`
-- ✓ `Three of the four reviewers are new to SSDT. When one of them is the assigned reviewer, add a one-clause gloss the first time an SSDT-only term appears — for example, "the refactorlog (the file that records a rename, so SSDT keeps the data instead of dropping the column)". Keep the gloss to a single clause; the finding still leads. The principal needs no gloss.`
+- ✗ `The register holds, with one calibration: when the approving lead is SSDT-new, gloss each SSDT-only construct in one clause on first use — the no-gloss terse register is reserved for the SSDT-fluent lead.`
+- ✓ `A dev lead who approves on this estate may know SQL well and still be new to SSDT. Add a one-clause gloss the first time an SSDT-only term appears — for example, "the refactorlog (the file that records a rename, so SSDT keeps the data instead of dropping the column)". Keep the gloss to a single clause; the finding still leads. A lead already fluent in SSDT loses nothing by the gloss.`
 
 ---
 
@@ -294,9 +300,9 @@ Each pair is the same fact, wrong then right. The left is retired; the right is 
 - **The test for any line:** a reviewer who knows SQL well but is new to SSDT reads it and can act
   on it without asking a question — a plain, exact finding, its evidence, and the next step, with
   every SSDT-specific term glossed in a clause the first time it appears, and an honest account of
-  what was not checked. Four people review on this estate: three senior developers new to SSDT, and
-  one principal fluent in it. Write for the three; the principal loses nothing by the gloss. (Who
-  fills each slot is recorded in `estate/reviewers.md`, not here.)
+  what was not checked. Every change on this estate is approved by a dev lead, and a lead may be
+  fluent in SSDT or new to it. Write for the SSDT-new lead; a fluent lead loses nothing by the
+  gloss. (Who holds the approver role is recorded in `estate/reviewers.md`, not here.)
 
 *The tree disappears. What remains is the change, its proof, and a reviewer who can approve it by
 reading — stated in one exact, unshowy voice.*

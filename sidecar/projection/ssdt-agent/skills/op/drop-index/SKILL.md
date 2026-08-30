@@ -6,8 +6,8 @@ description: Use when the developer says "we don't need that index anymore", "re
 # Drop an index
 
 > **Default (provisional — prove before you classify).** Ships as a single schema change, applied in place
-> — no data is read or written, and the drop reverses by re-creating the index. Any team member
-> can review it when the index is genuinely unused. But the risk here is behavioral (a slower
+> — no data is read or written, and the drop reverses by re-creating the index. A dev lead
+> approves it with the lightest look when the index is genuinely unused. But the risk here is behavioral (a slower
 > query), not structural (lost rows), so the honest proof lives outside the dacpac: usage
 > evidence, not a clean publish. Prove "unused" before classifying.
 
@@ -33,10 +33,9 @@ query fast, and "not used" is an assumption until proven. Recognize it when the 
 don't think anything uses it" without evidence. None material to the publish.
 
 ## How it flips (the specifics only)
-- Genuinely unused index → ships as a single schema change, applied in place; any team member can
-  review it, because no data is lost and the drop reverses cleanly.
+- Genuinely unused index → ships as a single schema change, applied in place; a dev lead approves this, because no data is lost and the drop reverses cleanly.
 - Index backs a hot query / FK lookup → still a single in-place schema change, but the silent
-  performance regression means a dev lead or an experienced developer should review it; prove
+  performance regression means a dev lead approves this; prove
   "unused" from usage evidence first.
 
 ## Prove it
@@ -65,11 +64,11 @@ the deploy came back clean.
 Fragments for the pull request (`../../author-pr/SKILL.md`), record register.
 
 **Review & release**
-- Any team member can review this when usage evidence shows the index is unused: no data is lost
+- A dev lead approves this when usage evidence shows the index is unused: no data is lost
   and the drop reverses by re-creating the index.
 - Ships as a single schema change, applied in place. No data is read or written.
 - Added scrutiny, when the index backs a hot query or FK lookup: dropping it is a silent
-  performance regression, so a dev lead or an experienced developer should review it — and "unused"
+  performance regression, so a dev lead approves this — and "unused"
   must be proven from usage evidence first.
 
 **Verification** — run in each environment after deployment

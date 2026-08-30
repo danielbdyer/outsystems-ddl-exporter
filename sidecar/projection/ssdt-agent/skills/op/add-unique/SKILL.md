@@ -6,8 +6,8 @@ description: Use when the developer says "this attribute should be unique", "no 
 # Add a unique constraint
 
 > **Default (provisional — prove before you classify).** One release, applied in place — the unique
-> index builds over the existing rows; no data is modified. A dev lead or an experienced developer
-> reviews it: the running application is now rejected when it would create a duplicate. Prove no
+> index builds over the existing rows; no data is modified. A dev lead approves this, weighing
+> that the running application is now rejected when it would create a duplicate. Prove no
 > duplicates — and no second NULL on a nullable column — before classifying; either blocks the build.
 
 > **SHIP terminal: ONE RELEASE, build-or-block.** A unique index is enforced the moment it builds —
@@ -37,8 +37,7 @@ a nullable column with two or more NULLs blocks the build the same way (the "dup
 blocks the build, not row presence; see `../../_index/constraint-is-a-claim/SKILL.md`.
 
 ## How it flips (the specifics only)
-- no duplicates, and at most one NULL → one release, in place; the index builds and is enforced. A dev
-  lead or an experienced developer reviews it, because the application is now rejected on a duplicate.
+- no duplicates, and at most one NULL → one release, in place; the index builds and is enforced. A dev lead approves this, because the application is now rejected on a duplicate.
 - duplicates present → a pre-deploy de-dupe clears them first, then the index builds; without it the
   publish blocks (`Msg 1505`). A dev lead reviews it, because existing data is modified.
 - nullable column with more than one NULL → a **filtered** unique index (`WHERE <Col> IS NOT NULL`)
@@ -77,9 +76,9 @@ instance for this op — with the live messages — is `../../../sample-prs/add-
 **ONE RELEASE, build-or-block.** The fragment this operation contributes:
 
 **Review & release**
-- A dev lead or an experienced developer reviews this: the application is now rejected when it would
+- A dev lead approves this: the application is now rejected when it would
   create a duplicate (or, on a plain index, a second blank). When a pre-deploy de-dupe removes
-  duplicate rows first, a dev lead reviews it: existing data is modified.
+  duplicate rows first, the approval also weighs that existing data is modified.
 - Ships as one release, applied in place — the unique index builds over the existing rows. No data is
   modified unless a de-dupe is needed.
 - Added scrutiny, when it applies: at production row counts the build and any de-dupe may block writes

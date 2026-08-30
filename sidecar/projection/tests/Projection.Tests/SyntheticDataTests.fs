@@ -685,3 +685,63 @@ let ``S-stable: removing a column leaves every surviving column byte-identical``
     for attrName in [ "Id"; "CustomerId"; "OptCustomerId" ] do
         Assert.Equal<string list>(valuesOf v1 ordKey attrName, valuesOf v2 ordKey attrName)
     Assert.Empty(valuesOf v2 custKey "Score")
+
+[<Fact>]
+let ``unique tokens fit the declared width and stay verbatim where the width allows`` () =
+    // A single-column unique index over a narrow declared width must mint
+    // values the engine can store — distinct AND within the width — while a
+    // width the full token fits keeps the verbatim token (surfaced by the
+    // proving-ground scale lane: Status.Code NVARCHAR(20) truncated at bulk
+    // copy before this rule existed).
+    let uqKey     = kindKey ["UQ"]
+    let uqId      = attrKey ["UQ"; "Id"]
+    let uqCode    = attrKey ["UQ"; "Code"]
+    let uqWide    = attrKey ["UQ"; "Wide"]
+    let uqTable : Kind =
+        { Kind.create uqKey (name "UniqueWidths") (mkTableId "dbo" "UQT")
+            [ attr uqId "Id" Integer true false
+              { attr uqCode "Code" Text false false with Length = Some 8 }
+              { attr uqWide "Wide" Text false false with Length = Some 64 } ] with
+            Indexes =
+                [ { Index.create (idxKey ["UX_UQT_Code"]) (name "UX_UQT_Code")
+                      [ IndexColumn.create uqCode IndexColumnDirection.Ascending ]
+                      with Uniqueness = IndexUniqueness.Unique }
+                  { Index.create (idxKey ["UX_UQT_Wide"]) (name "UX_UQT_Wide")
+                      [ IndexColumn.create uqWide IndexColumnDirection.Ascending ]
+                      with Uniqueness = IndexUniqueness.Unique } ] }
+    let uqCatalog = Catalog.create [ mkModule (modKey "MU") (name "MU") [ uqTable ] ] [] |> mkOk
+    let uqProfile =
+        { Profile.empty with
+            Columns = [ col uqId 50L 0L; col uqCode 50L 0L; col uqWide 50L 0L ] }
+    let m = SyntheticData.generate uqCatalog uqProfile cfg 7UL
+    let codes = valuesOf m uqKey "Code"
+    let wides = valuesOf m uqKey "Wide"
+    Assert.Equal(50, codes.Length)
+    Assert.Equal(50, codes |> List.distinct |> List.length)
+    Assert.All(codes, fun v -> Assert.True(v.Length <= 8, $"'{v}' exceeds the declared width 8"))
+    Assert.Equal(50, wides |> List.distinct |> List.length)
+    // The wide column keeps the verbatim full token — the fitting rule only
+    // engages where the width would truncate.
+    Assert.All(wides, fun v -> Assert.StartsWith("u:", v))
+
+[<Fact>]
+let ``an engine-stamped column (rowversion) takes no generated cell; sibling columns hold S-stable`` () =
+    // σ generates no cell for `rowversion` storage: absent from the row's
+    // Values, the bulk projection omits the column (the sink-only rule)
+    // and the ENGINE stamps the value at load. Content-addressed streams
+    // keep every sibling column byte-identical to the stamp-less kind.
+    let stampKey = attrKey ["C"; "Stamp"]
+    let stamped : Kind =
+        { customer with
+            Attributes =
+                customer.Attributes
+                @ [ { attr stampKey "Stamp" Binary false false with
+                        SqlStorage = Some SqlStorageType.RowVersion } ] }
+    let catalogStamped : Catalog =
+        Catalog.create [ mkModule (modKey "M") (name "M") [ stamped; order ] ] [] |> mkOk
+    let v1 = SyntheticData.generate catalog        profile cfg 7UL
+    let v2 = SyntheticData.generate catalogStamped profile cfg 7UL
+    Assert.NotEmpty v2.[custKey]
+    Assert.Empty (valuesOf v2 custKey "Stamp")
+    for attrName in [ "Id"; "Status"; "Email"; "Score"; "Notes" ] do
+        Assert.Equal<string list>(valuesOf v1 custKey attrName, valuesOf v2 custKey attrName)

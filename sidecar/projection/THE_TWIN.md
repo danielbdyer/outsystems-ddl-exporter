@@ -218,8 +218,27 @@ scenario, coordinate, and expected shape named.
   it must hold the unchanged data FIXED so a v1↔v2 test difference is the schema, not the
   dice. The `--dry-run --explain` view of the per-column resolution chain is the adjacent,
   still-deferred inspectability slice (named in the DECISIONS entry).
-- **Evidence-free realism needs a corrections artifact** — without one, columns mint as
-  shaped tokens; `twin init`'s proposer scaffolds the classification (M5 wires it).
+- **Evidence-free columns mint through the schema-derived floor** (2026-08-28,
+  `Twin.Core/DerivedEvidence.fs`): a pure, always-on projection from the estate's own
+  catalog — column names, types, declared lengths, nullability — to invented, plausible
+  rich-tier distributions, layered UNDER every captured tier (captured wins wherever it
+  speaks; volumes read captured evidence only). An email-named column mints email-shaped
+  values, an amount-named numeric a non-negative range, a status-named text a small stable
+  vocabulary the τ-preserve rule keeps, chronological columns a fixed recent window — with
+  zero configuration and no privacy dimension (every value is derived, never captured). The
+  floor also gives stale evidence its checkpoint semantics: a column added after the last
+  capture rides the floor while every captured column keeps its shape, and S-stable holds
+  the unchanged columns byte-identical. What the floor does NOT do, named: it cannot guess
+  business semantics (a floor Status vocabulary is generic — the static lanes and real
+  evidence own real vocabularies), and it does not read CHECK-constraint predicates (its
+  numerics default non-negative, which satisfies the common `>= 0` class). The residual is
+  gated, not silent: **the post-mint trust gate** (2026-08-28, `TwinDatabase.revalidateConstraints`,
+  wired in `Runs.up` before the data fingerprint lands) re-validates every user check and
+  foreign key, so a mint either ends with every constraint TRUSTED (`is_not_trusted = 0` —
+  the twin matches what an upper environment enforces) or refuses by constraint name
+  (`twin.mint.constraintViolation`); a scenario, correction, or evidence entry owns the
+  data-side remedy. A corrections artifact still owns PII/Faker presentation realism on top
+  (`twin classify`).
 - **`--watch`** deferred behind the same reconcile loop (operator decision 2026-07-18).
 - **Composite/natural PKs** inherit the kernel's named v1 boundary.
 - **L3 joint synthesis** stays bounded by the kernel's F5b surface.

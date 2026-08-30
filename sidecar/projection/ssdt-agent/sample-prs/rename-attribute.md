@@ -18,7 +18,7 @@ attach one before merge.
   to new name `[MobileNumber]`. This entry is what makes the deploy a rename instead of a drop.
 
 ## Before promoting
-- A dev lead or an experienced developer should approve this: the running application must change,
+- A dev lead approves this: the running application must change,
   because every caller of the old column name — views, procedures, ORM mappings, reports, ETL — must
   move to `MobileNumber` to keep working.
 - Before each promotion, script the difference and confirm it reads

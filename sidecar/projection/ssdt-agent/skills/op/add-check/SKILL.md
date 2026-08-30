@@ -7,7 +7,7 @@ description: Use when the developer says "Total must be positive", "Status has t
 
 > **Default (provisional — prove before you classify).** One release, applied in place — the check
 > re-validates every existing row and, over clean data, trusts itself (`is_not_trusted = 0`); no data
-> is modified. A dev lead or an experienced developer reviews it: the running application must produce
+> is modified. A dev lead approves this: the running application must produce
 > conforming data or its writes are rejected. Prove zero violations on a copy first; a violating row
 > blocks the deploy until it is reconciled.
 
@@ -40,7 +40,7 @@ the check. See `../../_index/constraint-is-a-claim/SKILL.md`.
 
 ## How it flips (the specifics only)
 - every existing row satisfies the predicate → one release, in place; the check re-validates and trusts
-  itself. A dev lead or an experienced developer reviews it, because the running application must now
+  itself. A dev lead approves this, because the running application must now
   produce conforming data.
 - violating rows present → a pre-deploy step brings them into compliance first, then the same
   declarative add re-validates and trusts itself; without the reconcile the publish blocks (`Msg 547`).
@@ -78,9 +78,9 @@ instance for this op — with the live messages — is `../../../sample-prs/add-
 **ONE RELEASE, trusts itself.** The fragment this operation contributes:
 
 **Review & release**
-- A dev lead or an experienced developer reviews this: the running application must produce conforming
+- A dev lead approves this: the running application must produce conforming
   data, or its writes are rejected with error 547. When a pre-deploy step reconciles violating rows
-  first, a dev lead reviews it: existing data is modified.
+  first, the approval also weighs that existing data is modified.
 - Ships as one release, applied in place — the check re-validates every existing row in the publish and
   ends trusted. No data is modified unless a reconcile is needed.
 - Added scrutiny, when it applies: at production row counts the re-validation may block writes or run

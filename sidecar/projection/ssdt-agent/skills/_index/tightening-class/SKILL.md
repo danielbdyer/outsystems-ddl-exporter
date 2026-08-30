@@ -94,11 +94,19 @@ part of the change set, not an afterthought. Proven live; the captured run is
   Never combine the two (F2 — a model that tightens in the same release the pre-deploy tightens
   still trips the guard AND half-applies). Release 1's own `ALTER` fails `Msg 515` if a NULL or an
   over-length value remains, so the reconcile is part of Release 1, not an afterthought. Name both
-  releases in the pull request. The full graph is `../../../THE_DECISION_TREE.md`'s S5 SHIP
+  releases in the pull request. **And hold every other publish to that environment between
+  Release 1 and Release 2.** The model deliberately lags in that window, so ANY publish that
+  carries it — a second developer shipping an unrelated change included — regenerates the old
+  shape and reverts the tightening, with every check green. The revert was captured live on a
+  disposable copy (the drop face: one lagging-model publish re-created the dropped column,
+  backfilled from its default — `../../../sample-prs/compound/extract-to-lookup-program.md`).
+  The pull request's *Before promoting* section carries the hold as an imperative, and the
+  in-flight ledger row (`../../../estate/in-flight.md`) is the register the hold is checked
+  against. The full graph is `../../../THE_DECISION_TREE.md`'s S5 SHIP
   sub-machine; the concrete narrow and make-mandatory shapes are in `FINDINGS_AND_CHANGES.md`
   Part 4.
 
-  **A dev lead must review this: existing data is modified.** Added scrutiny raises that bar — this
+  **A dev lead approves this, weighing that existing data is modified.** Added scrutiny raises that bar — this
   table is large enough that the change may block writes or run long at production row counts, or
   this is the first time the operation has been done on this estate.
 
@@ -112,7 +120,7 @@ them. What each op still owns in its own SKILL:
 - **narrow** — the probe is `MAX(LEN(col))` + `COUNT(*) WHERE LEN(col) > <new>`; `MAX(LEN)` already
   fitting means Release 1's reconcile shortens nothing, but it never buys a clean single-phase on a
   populated table — the row-presence guard still forces the two releases.
-- **delete-attribute** — the values are irrecoverable; a principal must review this, since data is
+- **delete-attribute** — the values are irrecoverable; a dev lead approves this, with the strongest weigh-line, since data is
   removed and the removal cannot be undone even when the drop is mechanically one statement; the
   4-phase deprecation is its multi-phase shape (see `../multi-phase/SKILL.md`).
 

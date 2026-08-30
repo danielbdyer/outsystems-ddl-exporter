@@ -40,8 +40,8 @@ gospel. Where a standard doc and an actual op file disagree, that disagreement i
    a *finding*, not filler. **Test:** read a sample-pr as a dev lead in Pune / Porto / Portland; if you
    would have to ask a question before deciding, it fails the essence — name the question.
 2. **Verdict = a risk-driven call to action.** The first line says what the change does and the one
-   thing to confirm before it moves up, as an imperative to the reviewer — **not** a reviewer-rank ("a
-   dev lead must review" alone says nothing). **Test:** does the verdict tell the reviewer what to *do*,
+   thing to confirm before it moves up, as an imperative to the reviewer — **not** a bare role ("a
+   dev lead approves this" alone says nothing). **Test:** does the verdict tell the reviewer what to *do*,
    driven by the real risk?
 3. **Denotative register.** Every sentence points at a checkable referent — a count, an object, a
    message word-for-word, a type/state, or a thing the schema does — or it is cut. No storytelling, no
@@ -68,7 +68,7 @@ gospel. Where a standard doc and an actual op file disagree, that disagreement i
    does any remedy quietly add schema instead of handing off?
 8. **The skill is a high-water mark for the next agent.** Each op skill would lead an AI agent to author
    a PR that passes criteria 1–7: a SHIP terminal with a real receipt, pointers to the template and the
-   worked instance, review lines that pair *who reviews* with *the risk*, a plain body, the named trap,
+   worked instance, review lines that pair *the approval* with *the risk it weighs*, a plain body, the named trap,
    a prove-it, a verdict, the reasoning. **Test:** could an agent follow only this skill and produce a
    hyper-clear, correct PR?
 
@@ -98,7 +98,7 @@ gospel. Where a standard doc and an actual op file disagree, that disagreement i
 - A classification stated with no real receipt behind it — a guess dressed as fact.
 - An invented or inconsistent number (row count, Msg, length) no proof supports, or that contradicts the
   sample-pr's own *The data* section.
-- Register slips: storytelling; a trap-name in the record; a reviewer-rank verdict with no risk named;
+- Register slips: storytelling; a trap-name in the record; a bare-role verdict with no risk named;
   the agent saying "I"/"we" in the record; an idiom that won't translate; a sentence pointing at nothing
   checkable.
 - A PR section that is empty, generic, or reassuring instead of concrete — especially *Not checked /

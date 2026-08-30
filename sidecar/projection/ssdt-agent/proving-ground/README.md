@@ -4,7 +4,7 @@ This is the runbook for the proving loop. The proving-ground directory is a **ha
 self-contained sample project** (it is data, not a wrapper script) plus a **disposable copy of
 real-shaped data** on a local SQL Server container. Edit a `CREATE`, build a dacpac, and publish
 it against the disposable copy to watch what SSDT's publish engine actually does. **The publish
-result is the evidence:** how a change ships and who must review are read from what SSDT actually
+result is the evidence:** how a change ships and what the approving dev lead weighs are read from what SSDT actually
 does — the block, the guard it emits, the row counts — never from a recipe.
 
 Run these commands by hand — there is no orchestration script. The blocks below are the
@@ -161,7 +161,7 @@ sqlpackage /Action:Publish \
 - **Succeeds clean, no script** → ships as a single schema change, applied in place; no data is
   read or written.
 - **Blocked** (`BlockOnPossibleDataLoss` / NOT NULL on a populated table / truncation / orphan
-  FK / duplicate key) → the existing rows determine how it ships and who must review it. The block text and
+  FK / duplicate key) → the existing rows determine how it ships and what the approving dev lead weighs. The block text and
   row counts are the proof.
 
 > **Read the outcome from the TEXT, not `$?`.** A blocked publish does not reliably exit
@@ -246,8 +246,8 @@ The proving ground carries the deployment-script class folders the lifecycle rai
   reference seeds). No death certificate; `Retire: never`; proven by the silent redeploy.
 - `OneTime/` — **transient · one-time**. The header **is a death certificate** (a removal work item,
   or the phase that ends it). Swept on the deprecation train once prod-confirmed.
-- `AdHoc/` — **outside the DACPAC** (scale/lock or a true one-off). Principal review; the four
-  obligations (justify · idempotent-chunked-resumable · trace · reconcile).
+- `AdHoc/` — **outside the DACPAC** (scale/lock or a true one-off). The heaviest weigh-line; the
+  four obligations (justify · idempotent-chunked-resumable · trace · reconcile).
 
 Each folder's `README.md` states its contract; `Migrations/001_backfill_customer_region.sql` and
 `OneTime/Release_2026.07_email_normalize.sql` are the worked exemplars. Their `:r` includes in

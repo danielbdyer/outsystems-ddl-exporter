@@ -131,7 +131,10 @@ within their first session. Everything not on this list, this file only points t
    interleaves and lies. (`DECISIONS 2026-05-20`, test-failure capture protocol.)
 5. **FS3511 in Release builds**: no `let rec` inside a `task { }`, no tuple `let!`, no
    tuple-pattern `for`. Hoist helpers to module level; bind single values.
-   (`DECISIONS 2026-06-10`.)
+   (`DECISIONS 2026-06-10`.) Two more shapes that fail to reduce (2026-08-28): a `for` over a
+   generic `List<'T>` whose body awaits — use an index `while`/counter instead — and a
+   `try/with` wrapping loops that await — split into an unguarded `...Core` task plus a thin
+   wrapper whose `try` holds only `return! ...Core args`.
 6. **`[<Literal>]` only on CLR primitives.** `[<Literal>] decimal` is a cctor bomb that
    detonates at module load as `InvalidProgramException`. Use `let private x : decimal = …`.
 7. **`{ X.create … with … }` silently inherits constructor defaults** for every field the
@@ -176,6 +179,11 @@ within their first session. Everything not on this list, this file only points t
     "diverged" digest can both be right about the same two rows. When a proof reds on a cell that
     "looks equal", suspect the empty-string/NULL split or a collation fold before the code.
     (`DECISIONS 2026-07-17` chapter close; the estate/fidelity chapter.)
+15. **A stale RID output dir shadows a fresh build** (2026-08-28). `dotnet build` writes to
+    `bin/<cfg>/net9.0/`; an older `dotnet publish`/RID-specified build leaves a sibling
+    `net9.0/linux-x64/` tree that `build` never refreshes. Running the apphost from the stale
+    RID dir executes old dependency dlls with no error. Before trusting a "rebuilt" binary,
+    compare dll timestamps in the directory you are actually running from.
 
 ## 5 — The load-bearing commitments (standing law, one line each)
 

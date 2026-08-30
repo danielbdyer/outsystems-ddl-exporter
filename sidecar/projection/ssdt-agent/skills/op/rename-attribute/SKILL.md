@@ -7,7 +7,7 @@ description: Use when the developer says "rename the attribute", "change FirstNa
 
 > **Default (provisional — prove before you classify).** With a refactorlog entry
 > this ships as a single schema change, applied in place: a metadata `sp_rename` renames the column
-> and preserves its data. A dev lead or an experienced developer should review it — every caller of
+> and preserves its data. A dev lead approves this — every caller of
 > the old name (views, procedures, ORM mappings, reports, ETL) must change to keep working. Without
 > a refactorlog entry SSDT instead drops the old column and adds the new one, and every value in the
 > column is lost — stop and demand the refactorlog before this ships.
@@ -41,8 +41,7 @@ Cleanup** (§19.5). This is the identity-vs-name concern — see
 
 ## How it flips (the specifics only)
 - refactorlog entry present → delta is `sp_rename ... 'COLUMN'`, data preserved and applied in
-  place; every caller of the old name (views, procs, ORM mappings, reports, ETL) must change, so a
-  dev lead or an experienced developer reviews it
+  place; every caller of the old name (views, procs, ORM mappings, reports, ETL) must change, so a dev lead approves it
 - refactorlog entry missing → delta is `DROP COLUMN`+`ADD`, every value in the column is lost; stop
   and demand the refactorlog (see `../../_index/identity-and-refactorlog/SKILL.md`)
 - external consumers must keep the old name → a computed column carrying the old name holds it
@@ -60,7 +59,7 @@ came out as `sp_rename`, which renames the column in place and keeps every value
 that refactorlog entry been missing, SSDT would instead have dropped the old column and added a new
 one, losing everything in it — so reading the delta is what makes this safe rather than a hope. The
 real cost is that every caller of the old name has to move to the new one: views, procedures, ORM
-mappings, reports, ETL, so a dev lead or an experienced developer should review it. One question
+mappings, reports, ETL, so a dev lead approves this. One question
 before it ships — does anything outside this project still read the old name? If so, a
 computed column carrying the old name keeps it alive while those consumers move; if not, the rename
 is clean once the in-project callers are updated.
@@ -80,8 +79,7 @@ instance for this op — with both legs' live proof messages — is
 refactorlog entry.** The fragment this contributes:
 
 **Review & release**
-- A dev lead or an experienced developer should review this: the running application must change to
-  keep working, because every caller of the old column name (views, procedures, ORM mappings,
+- A dev lead approves this, weighing that the running application must change to keep working, because every caller of the old column name (views, procedures, ORM mappings,
   reports, ETL) must move to the new name.
 - Ships as a single schema change, applied in place: a metadata `sp_rename` renames the column and
   preserves its data. No data is read or written.

@@ -7,9 +7,9 @@ description: Use when the developer says "archive old orders", "move the histori
 
 > **Default (provisional — prove before you classify).** Ships across releases: the archive table is added,
 > then a batched post-deployment script moves the rows and the counts are reconciled, so the
-> running application keeps reading live data while the move is in flight. A dev lead must review
-> this: existing rows are moved out of the live table — a principal if the move cannot be undone or
-> the volume is large. Create destination → migrate (batched) → verify counts. Prove it on a
+> running application keeps reading live data while the move is in flight. A dev lead approves
+> this, weighing that existing rows are moved out of the live table — with the strongest
+> weigh-line if the move cannot be undone, and a named window if the volume is large. Create destination → migrate (batched) → verify counts. Prove it on a
 > disposable copy before classifying.
 
 > **The pull request.** `../../author-pr/SKILL.md` is the ten-section template every change fills;
@@ -43,10 +43,10 @@ archive both readable during the move) is the multi-phase concern — see
 
 ## How it flips (the specifics only)
 - new archive table + scripted move → ships across releases (additive archive table → batched
-  migrate → verify counts; see `../../_index/multi-phase/SKILL.md`), reviewed by a dev lead because
+  migrate → verify counts; see `../../_index/multi-phase/SKILL.md`); the approval weighs that
   it relocates existing data.
-- large volume (>1M rows) → batching is mandatory and a principal should review it: at production
-  row counts the move may block writes or run long, so schedule a window.
+- large volume (>1M rows) → batching is mandatory and the approval carries the added-scrutiny
+  line: at production row counts the move may block writes or run long, so schedule a window.
 - active queries must see only live data during the move → the coexistence obligation keeps this
   staged across releases.
 
@@ -64,8 +64,8 @@ added first, then a batched post-deployment script moves the rows across, then t
 reconciled. On a disposable copy of Dev the counts reconciled exactly — every row ends up
 either still live or in the archive, none dropped and none duplicated — and each batch commits, so
 the transaction log stays bounded. Because it's over a million rows, the move needs a maintenance
-window on the real table, and a principal should review it — the volume is large and existing data
-is relocated (a dev lead reviews the smaller case). One
+window on the real table, and the approving dev lead weighs the large volume alongside the
+relocated data (a smaller move is a lighter call). One
 thing to settle: once these rows are in the archive, does anything still need to read them as if
 they were live — a report, a screen, an export?
 
@@ -82,8 +82,7 @@ Fragments for the pull request (`../../author-pr/SKILL.md` is the template; the 
 `../../../sample-prs/archive-entity.md`), record register.
 
 **Review & release**
-- A dev lead must review this: existing rows are moved out of the live table. A principal must
-  review this instead when the move cannot be undone (a cross-database archive loses FK enforcement)
+- A dev lead approves this: existing rows are moved out of the live table. A dev lead approves this, with the strongest weigh-line instead when the move cannot be undone (a cross-database archive loses FK enforcement)
   or the volume is large.
 - Ships across releases: the archive table is added, then a batched post-deployment script moves the
   rows (`DELETE ... OUTPUT DELETED.* INTO archive.X`), then the counts are reconciled — so the

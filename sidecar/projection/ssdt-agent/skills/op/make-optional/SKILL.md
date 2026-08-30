@@ -6,8 +6,8 @@ description: Use when the developer says "make this attribute optional", "unchec
 # Make optional (NOT NULL → NULL)
 
 > **Default (provisional — prove before you classify).** Ships as a single schema change, applied in
-> place — no data is read or written. Any team member can review it when nothing downstream
-> assumes the column is always populated; a dev lead or an experienced developer should review it
+> place — no data is read or written. A dev lead approves this when nothing downstream
+> assumes the column is always populated; a dev lead approves this
 > when consumers must change to tolerate a NULL. A loosening never blocks the deployment.
 
 > **SHIP terminal: ONE RELEASE, in place.** Proven live on this branch (SQL Server 2022,
@@ -37,8 +37,8 @@ deployment blocks. None material at the deploy layer.
 ## How it flips (the specifics only)
 - any table state → ships in place as a single schema change; a loosening is never refused
 - downstream consumers assume the column is always populated → the running application must
-  change to tolerate a NULL, so a dev lead or an experienced developer should review — flag the
-  consumers (this changes who reviews, not how it ships)
+  change to tolerate a NULL, and the approval weighs that — flag the
+  consumers (this changes what the lead weighs, not how it ships)
 
 ## Prove it
 Strict publishes clean; the delta is a single `ALTER COLUMN ... NULL`; nothing is refused. The
@@ -67,9 +67,9 @@ terminal: **ONE RELEASE, in place.** The fragment this operation contributes, in
 
 **Review & release**
 - Ships as a single schema change, applied in place. No data is read or written.
-- Any team member can review this: the column is loosened and the running application is
-  unaffected. If a downstream consumer assumes the column is always populated, a dev lead or an
-  experienced developer should review this instead — the running application must change to
+- A dev lead approves this: the column is loosened and the running application is
+  unaffected — the lightest look. If a downstream consumer assumes the column is always
+  populated, the approval instead weighs that the running application must change to
   tolerate a NULL.
 
 **Verification** — run in each environment after deployment

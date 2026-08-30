@@ -6,8 +6,8 @@ description: Use when the developer says "add a Status lookup", "create a static
 # Create static / lookup entity (non-idempotent-seed + IDENTITY-lookup traps)
 
 > **Default (provisional — prove before you classify).** Ships as one release: the schema change, then a
-> post-deployment script that runs the idempotent seed after it lands. Any team member can review
-> this — the change is additive and the running application is unaffected. Prove the redeploy is
+> post-deployment script that runs the idempotent seed after it lands. A dev lead approves this
+> with the lightest look — the change is additive and the running application is unaffected. Prove the redeploy is
 > silent before the classification holds.
 
 > **SHIP terminal: ONE RELEASE (schema + post-deploy seed).** The declarative `CREATE TABLE`, then an
@@ -37,7 +37,7 @@ guarded-MERGE or explicit-ID reasoning here.
 
 ## How it flips (the specifics only)
 - fresh lookup, explicit IDs, guarded MERGE → ships as one release (the schema change, then the
-  post-deploy seed after it lands); any team member can review it — additive, the running application
+  post-deploy seed after it lands); a dev lead approves this — additive, the running application
   is unaffected.
 - lookup is an **FK target** for other entities → seed the lookup **before** its children
   (parents-first); still one release, but a missing parent row makes a child's foreign key block the
@@ -71,7 +71,7 @@ instance for this op is `../../../sample-prs/create-static-seed.md`. SHIP termin
 (schema + post-deploy seed).** The fragment this operation contributes:
 
 **Review & release**
-- Any team member can review this: the change is additive and the running application is unaffected.
+- A dev lead approves this: the change is additive and the running application is unaffected — the lightest look on this estate.
 - Ships as one release: the schema change, then a post-deployment script that runs the idempotent seed
   after it lands.
 - Added scrutiny: none — unless it holds more than a million reference rows (at production row counts

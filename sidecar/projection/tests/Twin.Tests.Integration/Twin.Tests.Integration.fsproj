@@ -40,6 +40,8 @@
     <Compile Include="SamplePrSeedTests.fs" />
     <Compile Include="SamplePrStructuralTests.fs" />
     <Compile Include="SamplePrRebuildTests.fs" />
+    <Compile Include="SamplePrInverseTests.fs" />
+    <Compile Include="SamplePrCompoundTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

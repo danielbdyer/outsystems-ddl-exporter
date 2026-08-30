@@ -32,7 +32,8 @@ silently dropped.
 ## Verdict
 <One line. What this does · the risk-driven call to action (Confirm <the thing> in each environment
  before promoting) · the one open item, or nothing. The call to action IS the review ask — not a
- role assignment ("a dev lead must review" says nothing; every PR is reviewed). Drawn from the risk
+ role assignment ("a dev lead approves this" alone says nothing; a dev lead approves every change —
+ what the lead weighs is the content). Drawn from the risk
  table in THE_RECORD_FORMS.md.>
 
 ## Intent
@@ -44,7 +45,7 @@ constraint: "<the developer's words>". <Name the work item, or: No work item sup
 
 ## Before promoting
 - <The risk-driven confirmations, one per environment, written as imperatives: what to run, what to
-  check, who to ask, before this change moves up a level. This is "who reviews" made concrete, and it
+  check, who to ask, before this change moves up a level. This is the weigh-line made concrete, and it
   follows the change through Dev → QA → UAT → Prod. For each open item, say who runs it — the author
   before merge, or the reviewer read-only in QA and UAT — so every item has an owner.>
 
@@ -182,6 +183,33 @@ change: the **Verdict**'s risk class, its **How it ships** shape (its SHIP termi
 **tried / did / realized** its proof produces, its **After deploy** query, its **Rollback**, and its
 standing **Not checked** items. Assemble the PR from those; the op owns the specifics, this skill owns
 the shape and the register.
+
+## The compound record — one pull request, several operations
+
+A pull request that carries a molecule — several operations in one release, or one program across
+several — writes the ten sections ONCE, at the pull request's grain, never once per atom. Worked
+instances: `../../sample-prs/compound/` (the additive batch, the serialized reshape pair, the full
+multi-phase program). How the sections stretch:
+
+- A one-line **atoms** header under the title names each operation (its op-slug) and its object,
+  so the reviewer sees the molecule's parts before the sections begin.
+- **What changes** enumerates every atom's edit; **The data** carries the counts each atom's
+  verdict turned on.
+- **How it ships** names the release train, one line per release: which atoms ride each release
+  and what forces any staging (read from each atom's SHIP terminal; the packing itself is
+  provisional until the combined delta publishes — `../prove-on-dacpac/SKILL.md`). For a
+  multi-release train, *Before promoting* carries the ordering imperatives and the
+  hold-other-publishes line for every lag window.
+- **What proving showed** reports the release-grain publishes — the combined delta's outcome per
+  release, in order — plus any atom-grain proof that decided a fork. A finding that only exists
+  at the release grain (a vetoed sibling, a seed claim over another atom's column, a stale
+  phase-bound script) is stated as such.
+- **Rollback** reverses the train in reverse order, and says which release is the commitment
+  step after which reversal is no longer lossless.
+
+Each atom's fragments (its verification query, its rollback line, its Not-checked items) still
+come from its own skill's `## On the record`; the compound record consolidates them without
+duplicating the reasoning.
 
 ## Hard rules
 

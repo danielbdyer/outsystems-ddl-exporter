@@ -5,7 +5,7 @@ description: Use when the developer says "change the default value", "new orders
 
 # Modify or remove a default
 
-> **Default (provisional — prove before you classify).** Any team member can review this: no existing row
+> **Default (provisional — prove before you classify).** A dev lead approves this: no existing row
 > values change — a default governs only future inserts. Ships as a single schema change, applied
 > in place: SSDT does a DROP-then-ADD for a change, or a plain DROP to remove it. Prove it on a
 > disposable copy before classifying.
@@ -34,8 +34,7 @@ that is a separate backfill (see `../add-default/SKILL.md` and
 `../../_index/idempotent-seed/SKILL.md`).
 
 ## How it flips (the specifics only)
-- modify / remove a default → ships as a single schema change, applied in place; any team member
-  can review it, in any data state — no existing row values change.
+- modify / remove a default → ships as a single schema change, applied in place; a dev lead approves this, in any data state — no existing row values change.
 - the developer also wants existing rows re-stamped to the new value → a separate op. It ships as
   one release: the schema change, then a post-deployment script that runs an idempotent UPDATE after
   it lands (see `../../_index/idempotent-seed/SKILL.md`).
@@ -65,7 +64,7 @@ instance for this op is `../../../sample-prs/modify-default.md`. SHIP terminal: 
 The fragment this operation contributes:
 
 **Review & release**
-- Any team member can review this: no existing data is touched — a default governs only future
+- A dev lead approves this: no existing data is touched — a default governs only future
   inserts.
 - Ships as a single schema change, applied in place: SSDT does a DROP-then-ADD for a modify, or a
   plain DROP for a remove. No table rebuild, no row updates.
