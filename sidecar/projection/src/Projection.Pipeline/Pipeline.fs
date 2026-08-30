@@ -587,7 +587,12 @@ module Compose =
                     let schemaFiles = SsdtDdlEmitter.schemaFiles ctx.EmittedCatalog
                     { outputs with SsdtBundle = SsdtBundle.composeWithSchemas schemaFiles rewritten manifest; Manifest = manifest }
                 | Error err ->
-                    invalidOp (sprintf "Compose.project: SsdtDdlEmitter.emitSlices: %A" err) }
+                    // schema-L3.3a — structurally unreachable: the emission
+                    // pre-flight (`projectFromChainWithState` running
+                    // `SsdtDdlEmitter.emissionRefusal` on the SAME overlay +
+                    // catalog) refused before this fold could start. Loud
+                    // defense, not a channel.
+                    invalidOp (sprintf "Compose.project: SsdtDdlEmitter.emitSlices refused past the pre-flight (unreachable): %A" err) }
           { Metadata = JsonEmitter.registeredMetadata
             Emit =
               fun ctx outputs ->
@@ -642,7 +647,7 @@ module Compose =
         (groups: TransformGroups)
         (versionedPolicy: VersionedPolicy option)
         (catalog: Catalog)
-        : Outputs * ComposeState =
+        : Microsoft.FSharp.Core.Result<Outputs * ComposeState, EmitError> =
         let filteredChain = filterChainByGroups groups chain
         use _ = Bench.scope "compose.project"
         let composed =
@@ -657,59 +662,85 @@ module Compose =
         // covers it; identity when `IncludePlatformAutoIndexes = true` (V1
         // parity default).
         let emittedCatalog = EmissionSeam.apply policy composedState.Catalog
-        // E1 (`DECISIONS 2026-06-04`) — the sibling-Π emit phase is the
-        // registry-driven `emitSteps` fold over a seed `Outputs`. Each step
-        // writes its one field; the SSDT step computes `decisionOverlay`
-        // (Wave-2 2.2 — decisions, never Policy; A18 holds) + `policyConflicts`
-        // (H-034) internally from the context. `registered ⇔ executed` for the
-        // emit stage holds because `RegisteredAllTransforms` reads the same
-        // `emitSteps`. Byte-identical to the prior hand-assembled `Outputs`.
-        let emitContext : EmitContext =
-            { EmittedCatalog  = emittedCatalog
-              ComposedState   = composedState
-              Profile         = profile
-              Folders         = folders
-              VersionedPolicy = versionedPolicy
-              Trail           = composed.Trail
-              PassEntries     = passEntries
-              // NM-38 — lift the Core bool to the SSDT typed Mode at the
-              // composition seam; `true` (default) ⇒ `Enabled` (byte-identical).
-              ConstraintRendering =
-                if policy.RenderConstraintsElegant then ConstraintFormatter.Enabled
-                else ConstraintFormatter.Disabled
-              // NM-70 — thread the identity-annotation gate to the SSDT emit
-              // step; `true` (default) ⇒ the `Projection.*` properties emit
-              // (byte-identical). The named-downgrade diagnostic is emitted at
-              // the `runWithConfigCore` diagnostics merge, not here.
-              EmitIdentityAnnotations = policy.EmitIdentityAnnotations
-              // Wave-3 3.4 — lift the operator's accepted-divergence set so the
-              // residual resolves against it (default-permissive ⇒ byte-identical).
-              ConfiguredTolerance = policy.ConfiguredTolerance }
-        let outputs =
-            emitSteps
-            |> List.fold (fun acc step -> step.Emit emitContext acc) (seedOutputs emitContext)
-        // NM-02 (2026-06-13) — the emission axes `EmitSchema` / `EmitDiagnostics`
-        // now gate real emit steps, mirroring the `EmitData` gate on the data
-        // bundle (line ~608). Every `EmitStep` still runs (so `registered ⇔
-        // executed` holds and `Manifest`/`Trail`/`PassEntries` stay populated as
-        // the §16 egress conduits); the gate clears the artifact fields AFTER the
-        // fold rather than skipping the step. The defaults (`EmissionPolicy.empty`
-        // = schema + diagnostics on) leave this identity — byte-identical default.
-        let schemaGated =
-            // `EmitSchema = false` ⇒ no CREATE/SSDT schema bundle. The `Manifest`
-            // value stays (a conduit, embedded in no file when SsdtBundle is empty).
-            if policy.EmitSchema then outputs
-            else { outputs with SsdtBundle = Map.empty }
-        let diagnosticsGated =
-            // `EmitDiagnostics = false` ⇒ no operational diagnostic artifacts
-            // (decision-log-derived remediation SQL / summary prose / suggest-config).
-            if policy.EmitDiagnostics then schemaGated
-            else
-                { schemaGated with
-                    RemediationSql    = ""
-                    SummaryText       = ""
-                    SuggestConfigJson = emptyJsonNode () }
-        diagnosticsGated, composedState
+        // schema-L3.3a — the emission pre-flight runs HERE, before any
+        // rendering: a refusal surfaces as a value (the compose seam names
+        // it `emitter.ssdt.*` via `EmitError.toValidationError`) instead of
+        // the SSDT emit step's `invalidOp` (now structurally-unreachable
+        // defense). Same predicates the bundle path always refused on —
+        // the refusal MOVES EARLIER and gains a name; no new refusal.
+        match SsdtDdlEmitter.emissionRefusal (DecisionOverlay.ofComposeState composedState) emittedCatalog with
+        | Some refusal -> Error refusal
+        | None ->
+            // E1 (`DECISIONS 2026-06-04`) — the sibling-Π emit phase is the
+            // registry-driven `emitSteps` fold over a seed `Outputs`. Each step
+            // writes its one field; the SSDT step computes `decisionOverlay`
+            // (Wave-2 2.2 — decisions, never Policy; A18 holds) + `policyConflicts`
+            // (H-034) internally from the context. `registered ⇔ executed` for the
+            // emit stage holds because `RegisteredAllTransforms` reads the same
+            // `emitSteps`. Byte-identical to the prior hand-assembled `Outputs`.
+            let emitContext : EmitContext =
+                { EmittedCatalog  = emittedCatalog
+                  ComposedState   = composedState
+                  Profile         = profile
+                  Folders         = folders
+                  VersionedPolicy = versionedPolicy
+                  Trail           = composed.Trail
+                  PassEntries     = passEntries
+                  // NM-38 — lift the Core bool to the SSDT typed Mode at the
+                  // composition seam; `true` (default) ⇒ `Enabled` (byte-identical).
+                  ConstraintRendering =
+                    if policy.RenderConstraintsElegant then ConstraintFormatter.Enabled
+                    else ConstraintFormatter.Disabled
+                  // NM-70 — thread the identity-annotation gate to the SSDT emit
+                  // step; `true` (default) ⇒ the `Projection.*` properties emit
+                  // (byte-identical). The named-downgrade diagnostic is emitted at
+                  // the `runWithConfigCore` diagnostics merge, not here.
+                  EmitIdentityAnnotations = policy.EmitIdentityAnnotations
+                  // Wave-3 3.4 — lift the operator's accepted-divergence set so the
+                  // residual resolves against it (default-permissive ⇒ byte-identical).
+                  ConfiguredTolerance = policy.ConfiguredTolerance }
+            let outputs =
+                emitSteps
+                |> List.fold (fun acc step -> step.Emit emitContext acc) (seedOutputs emitContext)
+            // NM-02 (2026-06-13) — the emission axes `EmitSchema` / `EmitDiagnostics`
+            // now gate real emit steps, mirroring the `EmitData` gate on the data
+            // bundle (line ~608). Every `EmitStep` still runs (so `registered ⇔
+            // executed` holds and `Manifest`/`Trail`/`PassEntries` stay populated as
+            // the §16 egress conduits); the gate clears the artifact fields AFTER the
+            // fold rather than skipping the step. The defaults (`EmissionPolicy.empty`
+            // = schema + diagnostics on) leave this identity — byte-identical default.
+            let schemaGated =
+                // `EmitSchema = false` ⇒ no CREATE/SSDT schema bundle. The `Manifest`
+                // value stays (a conduit, embedded in no file when SsdtBundle is empty).
+                if policy.EmitSchema then outputs
+                else { outputs with SsdtBundle = Map.empty }
+            let diagnosticsGated =
+                // `EmitDiagnostics = false` ⇒ no operational diagnostic artifacts
+                // (decision-log-derived remediation SQL / summary prose / suggest-config).
+                if policy.EmitDiagnostics then schemaGated
+                else
+                    { schemaGated with
+                        RemediationSql    = ""
+                        SummaryText       = ""
+                        SuggestConfigJson = emptyJsonNode () }
+            Ok (diagnosticsGated, composedState)
+
+    /// schema-L3.3a — the documented unwrap for the fixture-facing
+    /// `Outputs`-shaped surface (`project` / `projectWith` /
+    /// `projectWithState*`): their callers are gate-clean by construction
+    /// (fixtures, harnesses that assemble their own refusal posture); a
+    /// refusal reaching here is a defense, not a channel — the config-
+    /// driven production path rides the `*Checked` Result forms and
+    /// surfaces the NAMED `emitter.ssdt.*` ValidationError instead.
+    let private expectGateClean (r: Microsoft.FSharp.Core.Result<'a, EmitError>) : 'a =
+        match r with
+        | Ok v -> v
+        | Error e -> invalidOp (sprintf "Compose: emission pre-flight refused on the unchecked surface (drive the config path for the named refusal): %A" e)
+
+    /// schema-L3.3a — an emission refusal, named for the config-driven
+    /// Result path (`emitter.ssdt.*`).
+    let private emitRefusalErrors (e: EmitError) : ValidationError list =
+        [ EmitError.toValidationError e ]
 
     let private projectFromChain
         (chain: PassChainAdapter list)
@@ -725,6 +756,7 @@ module Compose =
             TransformGroups.empty
             None
             catalog
+        |> expectGateClean
         |> fst
 
     /// Production-shape project: routes through
@@ -771,6 +803,106 @@ module Compose =
     /// `LogicalTableEmission` chain step skips the pinned kinds so a physical-form
     /// `tableRenames` override survives into the emitted physical table.
     /// `Set.empty` is `projectWithState` (byte-identical default).
+    let projectWithStateWithPinsAndBootstrapLaneChecked
+        (logicalEmissionPins: Set<SsKey>)
+        (fullPolicy: Policy)
+        (profile: Profile)
+        (folders: EmissionFolders)
+        (groups: TransformGroups)
+        (migration: Projection.Targets.Data.MigrationDependencyContext)
+        (bootstrapLane: DataComposer.BootstrapLane)
+        (catalog: Catalog)
+        : Microsoft.FSharp.Core.Result<Outputs * ComposeState, EmitError> =
+        let chain = RegisteredTransforms.allChainStepsForWithPins logicalEmissionPins fullPolicy profile
+        // H-085 — stamp the manifest with a VersionedPolicy snapshot of
+        // the full policy that drove the chain when the operator
+        // supplied a non-default policy. `Policy.empty` callers (no
+        // operator opinion) produce no stamp — keeps `projectWithState
+        // Policy.empty` byte-identical to `project` for T1 determinism.
+        let versionedPolicy =
+            if fullPolicy = Policy.empty then None
+            else Some (versionPolicy fullPolicy)
+        match
+            projectFromChainWithState
+                chain
+                profile
+                fullPolicy.Emission
+                folders
+                groups
+                versionedPolicy
+                catalog
+            with
+        | Error e -> Error e
+        | Ok (outputs, finalState) ->
+            // AC-X1 — the data leg of the publication bundle. When the operator
+            // opts into data emission, render the idempotent CDC-aware seed scripts
+            // (static-entity populations + bootstrap) over the emitted catalog and
+            // add them to the bundle as `Data/seed.sql`. The scripts are MERGE
+            // (non-overwriting, CDC-silent on unchanged rows) so a fresh-blank DB or
+            // a re-run lands the same state. Off ⇒ `DataBundle` stays empty and the
+            // result is byte-identical to the schema-only bundle.
+            let decorated =
+                if not fullPolicy.Emission.EmitData then outputs
+                else
+                    use _ = Bench.scope "emit.dataBundle.compose"
+                    // Bootstrap-always (2026-06-14) — thread the hydrated Bootstrap
+                    // row source into the per-lane render so `Data/Bootstrap.sql`
+                    // carries content. `bootstrapRows = Map.empty` (the non-hydrated
+                    // path, all callers but the config-driven publish path) is
+                    // byte-identical to the prior `composeRenderedBundle`.
+                    // Migration-context wiring (2026-06-15) — the operator-curated
+                    // Migration lane rides the SAME seam; `MigrationDependency
+                    // Context.empty` (no migration file) is byte-identical to the
+                    // prior threading. The Bootstrap complement already excludes the
+                    // migration kinds (`hydrateBootstrapRowsExcluding`), so the
+                    // composer's `OverlappingEmitterCoverage` partition law holds.
+                    // The chain's `TopologicalOrderPass` already ran Kahn/Tarjan
+                    // over this exact catalog and stored the order. v7 slices
+                    // 4+5: this is the flow's ONE render-topo binding, decided
+                    // BY LANE — a Rows-lane publish upgrades the break choice to
+                    // the EVIDENCE-WEIGHTED family member (repair-norm-minimal);
+                    // a Prerendered-lane publish stays schema-minimal END TO END,
+                    // because its bootstrap scripts were drain-rendered before
+                    // evidence existed and the batch must agree with them by
+                    // construction (one resolution value per flow — the
+                    // pipelined publish's break choice is schema-only, NAMED).
+                    let composed =
+                        let topo =
+                            match bootstrapLane with
+                            | DataComposer.BootstrapLane.Prerendered _ ->
+                                renderTopologyFor Profile.empty finalState.Catalog finalState.TopologicalOrder
+                            | DataComposer.BootstrapLane.Rows _ ->
+                                renderTopologyFor profile finalState.Catalog finalState.TopologicalOrder
+                        DataComposer.composeRenderedBundleWithBootstrapLaneUsing topo fullPolicy finalState.Catalog profile migration bootstrapLane (finalState.UserRemap |> Option.defaultValue UserRemapContext.empty)
+                    match composed with
+                    | Ok bundle ->
+                        // The PER-LANE files (`Data/StaticSeeds.sql` /
+                        // `Data/MigrationData.sql` / `Data/Bootstrap.sql`) are the
+                        // operator-facing data artifacts — each lane that carries
+                        // content emits its own file (DECISIONS 2026-06-14, operator
+                        // decision: the per-lane files are the reviewed/applied
+                        // artifacts; the prior ≥2-lane gate existed only to avoid
+                        // byte-duplicating the fused file, which is no longer emitted).
+                        // The is-anything-there gate reads the LANES — the fused
+                        // cross-lane text is no longer materialized on this path
+                        // (it re-concatenated every per-kind string into a second
+                        // whole-estate copy; `composeRenderedFull` remains the
+                        // on-demand fused surface). An all-empty lane set ⇒ no
+                        // rows in scope ⇒ nothing to emit.
+                        let laneFiles = DataComposer.RenderedDataBundle.perLaneFiles bundle
+                        if Map.isEmpty laneFiles then outputs
+                        else { outputs with DataBundle = laneFiles }
+                    | Error err ->
+                        // Mirrors the SSDT-bundle invariant: a valid catalog never
+                        // fails the composer (the keyset is `Catalog.allKinds`).
+                        invalidOp (sprintf "Compose.projectWithState: DataEmissionComposer.composeRenderedBundle: %A" err)
+            Ok (decorated, finalState)
+
+    /// The legacy `Outputs * ComposeState` shape — the established surface
+    /// for fixture/harness callers (gate-clean by construction). The
+    /// config-driven production path rides the `Checked` form above and
+    /// surfaces refusals as NAMED ValidationErrors; a refusal here is the
+    /// documented defense unwrap (schema-L3.3a).
     let projectWithStateWithPinsAndBootstrapLane
         (logicalEmissionPins: Set<SsKey>)
         (fullPolicy: Policy)
@@ -781,87 +913,9 @@ module Compose =
         (bootstrapLane: DataComposer.BootstrapLane)
         (catalog: Catalog)
         : Outputs * ComposeState =
-        let chain = RegisteredTransforms.allChainStepsForWithPins logicalEmissionPins fullPolicy profile
-        // H-085 — stamp the manifest with a VersionedPolicy snapshot of
-        // the full policy that drove the chain when the operator
-        // supplied a non-default policy. `Policy.empty` callers (no
-        // operator opinion) produce no stamp — keeps `projectWithState
-        // Policy.empty` byte-identical to `project` for T1 determinism.
-        let versionedPolicy =
-            if fullPolicy = Policy.empty then None
-            else Some (versionPolicy fullPolicy)
-        let outputs, finalState =
-            projectFromChainWithState
-                chain
-                profile
-                fullPolicy.Emission
-                folders
-                groups
-                versionedPolicy
-                catalog
-        // AC-X1 — the data leg of the publication bundle. When the operator
-        // opts into data emission, render the idempotent CDC-aware seed scripts
-        // (static-entity populations + bootstrap) over the emitted catalog and
-        // add them to the bundle as `Data/seed.sql`. The scripts are MERGE
-        // (non-overwriting, CDC-silent on unchanged rows) so a fresh-blank DB or
-        // a re-run lands the same state. Off ⇒ `DataBundle` stays empty and the
-        // result is byte-identical to the schema-only bundle.
-        let decorated =
-            if not fullPolicy.Emission.EmitData then outputs
-            else
-                use _ = Bench.scope "emit.dataBundle.compose"
-                // Bootstrap-always (2026-06-14) — thread the hydrated Bootstrap
-                // row source into the per-lane render so `Data/Bootstrap.sql`
-                // carries content. `bootstrapRows = Map.empty` (the non-hydrated
-                // path, all callers but the config-driven publish path) is
-                // byte-identical to the prior `composeRenderedBundle`.
-                // Migration-context wiring (2026-06-15) — the operator-curated
-                // Migration lane rides the SAME seam; `MigrationDependency
-                // Context.empty` (no migration file) is byte-identical to the
-                // prior threading. The Bootstrap complement already excludes the
-                // migration kinds (`hydrateBootstrapRowsExcluding`), so the
-                // composer's `OverlappingEmitterCoverage` partition law holds.
-                // The chain's `TopologicalOrderPass` already ran Kahn/Tarjan
-                // over this exact catalog and stored the order. v7 slices
-                // 4+5: this is the flow's ONE render-topo binding, decided
-                // BY LANE — a Rows-lane publish upgrades the break choice to
-                // the EVIDENCE-WEIGHTED family member (repair-norm-minimal);
-                // a Prerendered-lane publish stays schema-minimal END TO END,
-                // because its bootstrap scripts were drain-rendered before
-                // evidence existed and the batch must agree with them by
-                // construction (one resolution value per flow — the
-                // pipelined publish's break choice is schema-only, NAMED).
-                let composed =
-                    let topo =
-                        match bootstrapLane with
-                        | DataComposer.BootstrapLane.Prerendered _ ->
-                            renderTopologyFor Profile.empty finalState.Catalog finalState.TopologicalOrder
-                        | DataComposer.BootstrapLane.Rows _ ->
-                            renderTopologyFor profile finalState.Catalog finalState.TopologicalOrder
-                    DataComposer.composeRenderedBundleWithBootstrapLaneUsing topo fullPolicy finalState.Catalog profile migration bootstrapLane (finalState.UserRemap |> Option.defaultValue UserRemapContext.empty)
-                match composed with
-                | Ok bundle ->
-                    // The PER-LANE files (`Data/StaticSeeds.sql` /
-                    // `Data/MigrationData.sql` / `Data/Bootstrap.sql`) are the
-                    // operator-facing data artifacts — each lane that carries
-                    // content emits its own file (DECISIONS 2026-06-14, operator
-                    // decision: the per-lane files are the reviewed/applied
-                    // artifacts; the prior ≥2-lane gate existed only to avoid
-                    // byte-duplicating the fused file, which is no longer emitted).
-                    // The is-anything-there gate reads the LANES — the fused
-                    // cross-lane text is no longer materialized on this path
-                    // (it re-concatenated every per-kind string into a second
-                    // whole-estate copy; `composeRenderedFull` remains the
-                    // on-demand fused surface). An all-empty lane set ⇒ no
-                    // rows in scope ⇒ nothing to emit.
-                    let laneFiles = DataComposer.RenderedDataBundle.perLaneFiles bundle
-                    if Map.isEmpty laneFiles then outputs
-                    else { outputs with DataBundle = laneFiles }
-                | Error err ->
-                    // Mirrors the SSDT-bundle invariant: a valid catalog never
-                    // fails the composer (the keyset is `Catalog.allKinds`).
-                    invalidOp (sprintf "Compose.projectWithState: DataEmissionComposer.composeRenderedBundle: %A" err)
-        decorated, finalState
+        projectWithStateWithPinsAndBootstrapLaneChecked
+            logicalEmissionPins fullPolicy profile folders groups migration bootstrapLane catalog
+        |> expectGateClean
 
     /// Rows-taking sibling of `projectWithStateWithPinsAndBootstrapLane` —
     /// the established call shape for callers whose Bootstrap rows drain
@@ -1725,175 +1779,178 @@ module Compose =
                     }
                 match boundR with
                 | Ok (policy, overrides, folders, groups) ->
-                    let outputs, finalState =
-                        projectWithStateWithPinsAndBootstrapLane pins policy profile folders groups migration bootstrapLane renamedCatalog
-                    // The staging companion's durable audit sextet rides the
-                    // bundle (`BridgeStaging/<id>/…`); empty ⇒ byte-identical.
-                    let outputs = { outputs with BridgeStaging = staging.Artifacts }
-                    // `emission.dacpac: true` — compile the .dacpac over the SAME
-                    // emitted catalog the SSDT step projected (the post-chain
-                    // catalog under the identical platform-auto-index filter —
-                    // the identical POLICY too, since reconciliation slice 2
-                    // collapsed the seam onto `policy.Emission`).
-                    // Conditional by operator opt-in; a DacFx failure fails the
-                    // run loud, never a silent bundle-without-package.
-                    let dacpacR : Result<byte[] option> =
-                        if not cfg.Emission.Dacpac then Result.success None
-                        else
-                            // F3 (audit 2026-06-17) — same bound emission seam as
-                            // the main path, so the dacpac arm cannot drift to a
-                            // different (unregistered) post-chain rewrite set.
-                            EmissionSeam.apply policy.Emission finalState.Catalog
-                            |> DacpacEmitter.emit
-                            |> Result.map Some
-                    match dacpacR with
-                    | Error errors -> Result.failure errors
-                    | Ok dacpac ->
-                    let outputs = { outputs with Dacpac = dacpac }
-                    // G3 (DECISIONS 2026-07-16) — the store-threaded run's
-                    // accumulated `.refactorlog`, computed HERE so it rides the
-                    // ATOMIC bundle write. The displacement derives over the
-                    // RENAMED catalog — the same pre-chain plane episodes record
-                    // (the hydration graft adds static ROWS only, so the rename
-                    // channels agree with the record phase's read-catalog plane;
-                    // the file⇔leg agreement is pinned by test). Deployed
-                    // vocabulary via `emitDeployed` (this run's S6.3 pins);
-                    // accumulation against the prior chain's fold (deduped by
-                    // `OperationKey`); rendered at the episode's `At`. Store-less
-                    // runs (`refactorCtx = None`) write nothing — byte-identical.
-                    let refactorLogR : Result<string option> =
-                        match refactorCtx with
-                        | None -> Result.success None
-                        | Some ctx ->
-                            match RefactorLogEmitter.emitDeployed (operatorRenamedKinds cfg catalog) (CatalogDiff.between ctx.Prior renamedCatalog) with
-                            | Error e ->
-                                Result.failureOf
-                                    (ValidationError.create
-                                        "pipeline.refactorLog.emitFailed"
-                                        (sprintf "The run's refactorlog displacement could not be emitted: %A" e))
-                            | Ok current ->
-                                let accumulated =
-                                    RefactorLogEmitter.accumulateArtifact ctx.PriorEntries current
-                                Result.success (Some (RefactorLogRender.ofEntriesAt ctx.At accumulated))
-                    match refactorLogR with
-                    | Error errors -> Result.failure errors
-                    | Ok refactorLog ->
-                    let outputs = { outputs with RefactorLog = refactorLog }
-                    // `emission.sqlproj: true` — drop a buildable SDK-style SSDT
-                    // project (the `.sqlproj` + its post-deploy) over the data
-                    // lanes the publish already emitted, so the operator's
-                    // `dotnet build`/`sqlpackage` path is one config flag, not a
-                    // manual assembly. Derived from the ACTUAL data-lane file set
-                    // (`outputs.DataBundle`), so the post-deploy `:r` includes can
-                    // never dangle. The Bootstrap lane is a SEPARATE post-publish
-                    // step: `None`'d out of the schema build, but NOT `:r`-included
-                    // by the post-deploy (operator runs it after publish).
-                    let outputs =
-                        if not cfg.Emission.Sqlproj then outputs
-                        else
-                            let dataLanes =
-                                outputs.DataBundle |> Map.toList |> List.map fst |> List.sort
-                            let postDeployLanes =
-                                dataLanes |> List.filter (fun p -> p <> "Data/Bootstrap.sql")
-                            let postDeploy =
-                                if List.isEmpty postDeployLanes then None
-                                else Some (PostDeployEmitter.renderIncludes postDeployLanes)
-                            let sqlproj =
-                                // The remediation script (`manifest.remediation.sql`) is a
-                                // bundle-root sibling the SDK's `**/*.sql` glob would compile
-                                // as schema — excluded from the Build so DacFx does not parse
-                                // its data-cleanup DML as a schema object (it is always emitted
-                                // to `outputDir`, so always excluded here).
-                                SqlprojEmitter.emit dataLanes [ ArtifactPath.remediation ]
-                                    (Option.isSome postDeploy) (Option.isSome refactorLog)
-                            { outputs with Sqlproj = Some sqlproj; PostDeploy = postDeploy }
-                    // PL-4 (S46/S47/S37/S49) — the FK lookup triple, the
-                    // per-reference resolutions, and the decision overlay
-                    // each derive ONCE here and thread to the three FK
-                    // diagnostics siblings (previously: three lookup
-                    // rebuilds, a fourth allKinds walk, per-reference
-                    // re-resolution at two sites, and two back-to-back
-                    // `ofComposeState` projections over the same state).
-                    // These derive over finalState.Catalog — the DIAGNOSTIC
-                    // plane's value; the emit step's interior lookups ride
-                    // its own EmittedCatalog value (K26: receipts match on
-                    // the VALUE, not the function).
-                    let fkLookups = SsdtDdlEmitter.FkEmissionLookups.ofCatalog finalState.Catalog
-                    let fkResolutions = SsdtDdlEmitter.fkResolutionsUsing fkLookups
-                    let decisionOverlay = DecisionOverlay.ofComposeState finalState
-                    let diagnostics =
-                        // A7 (no-silent-drop) — surface the inert module-filter
-                        // flags on the structured diagnostic stream.
-                        (ModuleFilterBinding.inertFlagNote cfg.Model
-                         |> Option.map (DiagnosticEntry.create "config:model" DiagnosticSeverity.Info "moduleFilter.flagsInert")
-                         |> Option.toList)
-                        // WP6 step 4 — data on + file-sourced model ⇒ a named
-                        // hydration skip (never silent emptiness). Config-
-                        // derived; the actual graft runs in the async caller
-                        // (`readAndHydrateConfigModel`).
-                        @ Hydration.diagnostics cfg
-                        @ SpecialCircumstancesDiagnostics.emit overrides finalState
-                        @ InactiveAttributeDiagnostics.emit profile
-                        @ FkSelectivityDiagnostics.emit profile    // H-025
-                        @ JointDependencyDiagnostics.emit profile   // H-026
-                        // Wave-2 slice 2.5(b) — the FK silent-drop witness over
-                        // the emitted catalog (slice-μ retired). Pure sibling of
-                        // the emitter port; A18 holds.
-                        @ SsdtDdlEmitter.foreignKeyDropDiagnosticsUsing fkLookups fkResolutions
-                        // 6.A.9 — the DECISION-driven FK-drop audit trail. A
-                        // tightening Decision that drops an FK the source
-                        // enforced is a safety change; surface one Warning per
-                        // dropped decision so it is never silent at emission.
-                        // (Reconciliation slice 1 narrows the claim: Warning
-                        // `decision.fkDropped` only when the source really
-                        // enforced it; Info `decision.fkNotIntroduced` for
-                        // logical-only references.)
-                        @ SsdtDdlEmitter.foreignKeyDecisionDropDiagnosticsUsing
-                            decisionOverlay fkLookups.AllKinds
-                        // Reconciliation slice 1 — the FK-name collision
-                        // tripwire (schema-scoped constraint-name uniqueness;
-                        // one Error per participating reference, never a
-                        // silent dedupe).
-                        @ SsdtDdlEmitter.foreignKeyNameCollisionDiagnosticsUsing
-                            decisionOverlay fkResolutions
-                        // WP-16 (DECISIONS 2026-07-16) — the TABLE-name collision
-                        // tripwire (schema-qualified CREATE TABLE identity; one
-                        // Error per participating kind, never a silent last-win).
-                        // Threads the already-computed AllKinds (no fourth walk).
-                        @ SsdtDdlEmitter.tableNameCollisionDiagnosticsUsing
-                            fkLookups.AllKinds
-                        // NM-70 (WP5) — the named downgrade. When the operator
-                        // omits the identity annotations, the `Projection.*`
-                        // extended properties are NOT written, so identity
-                        // recovery degrades to name-derived SsKeys (no
-                        // persisted SsKey to read back on roundtrip). One
-                        // Warning per run; never a silent suppression.
-                        @ (if policy.Emission.EmitIdentityAnnotations then []
-                           else
-                               [ DiagnosticEntry.create
-                                   "emitter:ssdtDdlEmitter"
-                                   DiagnosticSeverity.Warning
-                                   "emission.identityAnnotations.omitted"
-                                   "Identity annotations omitted: the Projection.SsKey / Projection.LogicalName extended properties were not emitted; identity recovery degrades to name-derived SsKeys (no persisted SsKey to read back on roundtrip)." ])
-                    match write cfg.Output.Dir outputs with
-                    // NM-34b (live) — `ReadCatalog = catalog`: the source model
-                    // the run READ (pre-rename), surfaced so the run boundary can
-                    // hash its canonical form into the live-path input digest.
-                    | Ok paths    ->
-                        // 2026-07-06 — the data-reality rollup: when the profiled
-                        // source data contradicts the declared model, ONE Warn
-                        // envelope carries the per-axis counts + the artifact
-                        // pointers (§12 at-scale law). The live board's notice
-                        // strip and the verdict panel read it, so the finding and
-                        // its remediation script are never a silent JSON-only count.
-                        ModelFidelity.dataViolationsPayload
-                            (Path.Combine(cfg.Output.Dir, ArtifactPath.remediation))
-                            (Path.Combine(cfg.Output.Dir, ArtifactPath.fidelityJson))
-                            outputs.Fidelity
-                        |> Option.iter (fun payload ->
-                            LogSink.emit (LogSink.envelope LogSink.Warn LogSink.Emit ModelFidelity.dataViolationsCode payload))
-                        Result.success ({ Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries; ReadCatalog = catalog }, finalState)
-                    | Error errors -> Result.failure errors
+                    match
+                        projectWithStateWithPinsAndBootstrapLaneChecked pins policy profile folders groups migration bootstrapLane renamedCatalog
+                        with
+                    | Error e -> Result.failure (emitRefusalErrors e)
+                    | Ok (outputs, finalState) ->
+                        // The staging companion's durable audit sextet rides the
+                        // bundle (`BridgeStaging/<id>/…`); empty ⇒ byte-identical.
+                        let outputs = { outputs with BridgeStaging = staging.Artifacts }
+                        // `emission.dacpac: true` — compile the .dacpac over the SAME
+                        // emitted catalog the SSDT step projected (the post-chain
+                        // catalog under the identical platform-auto-index filter —
+                        // the identical POLICY too, since reconciliation slice 2
+                        // collapsed the seam onto `policy.Emission`).
+                        // Conditional by operator opt-in; a DacFx failure fails the
+                        // run loud, never a silent bundle-without-package.
+                        let dacpacR : Result<byte[] option> =
+                            if not cfg.Emission.Dacpac then Result.success None
+                            else
+                                // F3 (audit 2026-06-17) — same bound emission seam as
+                                // the main path, so the dacpac arm cannot drift to a
+                                // different (unregistered) post-chain rewrite set.
+                                EmissionSeam.apply policy.Emission finalState.Catalog
+                                |> DacpacEmitter.emit
+                                |> Result.map Some
+                        match dacpacR with
+                        | Error errors -> Result.failure errors
+                        | Ok dacpac ->
+                        let outputs = { outputs with Dacpac = dacpac }
+                        // G3 (DECISIONS 2026-07-16) — the store-threaded run's
+                        // accumulated `.refactorlog`, computed HERE so it rides the
+                        // ATOMIC bundle write. The displacement derives over the
+                        // RENAMED catalog — the same pre-chain plane episodes record
+                        // (the hydration graft adds static ROWS only, so the rename
+                        // channels agree with the record phase's read-catalog plane;
+                        // the file⇔leg agreement is pinned by test). Deployed
+                        // vocabulary via `emitDeployed` (this run's S6.3 pins);
+                        // accumulation against the prior chain's fold (deduped by
+                        // `OperationKey`); rendered at the episode's `At`. Store-less
+                        // runs (`refactorCtx = None`) write nothing — byte-identical.
+                        let refactorLogR : Result<string option> =
+                            match refactorCtx with
+                            | None -> Result.success None
+                            | Some ctx ->
+                                match RefactorLogEmitter.emitDeployed (operatorRenamedKinds cfg catalog) (CatalogDiff.between ctx.Prior renamedCatalog) with
+                                | Error e ->
+                                    Result.failureOf
+                                        (ValidationError.create
+                                            "pipeline.refactorLog.emitFailed"
+                                            (sprintf "The run's refactorlog displacement could not be emitted: %A" e))
+                                | Ok current ->
+                                    let accumulated =
+                                        RefactorLogEmitter.accumulateArtifact ctx.PriorEntries current
+                                    Result.success (Some (RefactorLogRender.ofEntriesAt ctx.At accumulated))
+                        match refactorLogR with
+                        | Error errors -> Result.failure errors
+                        | Ok refactorLog ->
+                        let outputs = { outputs with RefactorLog = refactorLog }
+                        // `emission.sqlproj: true` — drop a buildable SDK-style SSDT
+                        // project (the `.sqlproj` + its post-deploy) over the data
+                        // lanes the publish already emitted, so the operator's
+                        // `dotnet build`/`sqlpackage` path is one config flag, not a
+                        // manual assembly. Derived from the ACTUAL data-lane file set
+                        // (`outputs.DataBundle`), so the post-deploy `:r` includes can
+                        // never dangle. The Bootstrap lane is a SEPARATE post-publish
+                        // step: `None`'d out of the schema build, but NOT `:r`-included
+                        // by the post-deploy (operator runs it after publish).
+                        let outputs =
+                            if not cfg.Emission.Sqlproj then outputs
+                            else
+                                let dataLanes =
+                                    outputs.DataBundle |> Map.toList |> List.map fst |> List.sort
+                                let postDeployLanes =
+                                    dataLanes |> List.filter (fun p -> p <> "Data/Bootstrap.sql")
+                                let postDeploy =
+                                    if List.isEmpty postDeployLanes then None
+                                    else Some (PostDeployEmitter.renderIncludes postDeployLanes)
+                                let sqlproj =
+                                    // The remediation script (`manifest.remediation.sql`) is a
+                                    // bundle-root sibling the SDK's `**/*.sql` glob would compile
+                                    // as schema — excluded from the Build so DacFx does not parse
+                                    // its data-cleanup DML as a schema object (it is always emitted
+                                    // to `outputDir`, so always excluded here).
+                                    SqlprojEmitter.emit dataLanes [ ArtifactPath.remediation ]
+                                        (Option.isSome postDeploy) (Option.isSome refactorLog)
+                                { outputs with Sqlproj = Some sqlproj; PostDeploy = postDeploy }
+                        // PL-4 (S46/S47/S37/S49) — the FK lookup triple, the
+                        // per-reference resolutions, and the decision overlay
+                        // each derive ONCE here and thread to the three FK
+                        // diagnostics siblings (previously: three lookup
+                        // rebuilds, a fourth allKinds walk, per-reference
+                        // re-resolution at two sites, and two back-to-back
+                        // `ofComposeState` projections over the same state).
+                        // These derive over finalState.Catalog — the DIAGNOSTIC
+                        // plane's value; the emit step's interior lookups ride
+                        // its own EmittedCatalog value (K26: receipts match on
+                        // the VALUE, not the function).
+                        let fkLookups = SsdtDdlEmitter.FkEmissionLookups.ofCatalog finalState.Catalog
+                        let fkResolutions = SsdtDdlEmitter.fkResolutionsUsing fkLookups
+                        let decisionOverlay = DecisionOverlay.ofComposeState finalState
+                        let diagnostics =
+                            // A7 (no-silent-drop) — surface the inert module-filter
+                            // flags on the structured diagnostic stream.
+                            (ModuleFilterBinding.inertFlagNote cfg.Model
+                             |> Option.map (DiagnosticEntry.create "config:model" DiagnosticSeverity.Info "moduleFilter.flagsInert")
+                             |> Option.toList)
+                            // WP6 step 4 — data on + file-sourced model ⇒ a named
+                            // hydration skip (never silent emptiness). Config-
+                            // derived; the actual graft runs in the async caller
+                            // (`readAndHydrateConfigModel`).
+                            @ Hydration.diagnostics cfg
+                            @ SpecialCircumstancesDiagnostics.emit overrides finalState
+                            @ InactiveAttributeDiagnostics.emit profile
+                            @ FkSelectivityDiagnostics.emit profile    // H-025
+                            @ JointDependencyDiagnostics.emit profile   // H-026
+                            // Wave-2 slice 2.5(b) — the FK silent-drop witness over
+                            // the emitted catalog (slice-μ retired). Pure sibling of
+                            // the emitter port; A18 holds.
+                            @ SsdtDdlEmitter.foreignKeyDropDiagnosticsUsing fkLookups fkResolutions
+                            // 6.A.9 — the DECISION-driven FK-drop audit trail. A
+                            // tightening Decision that drops an FK the source
+                            // enforced is a safety change; surface one Warning per
+                            // dropped decision so it is never silent at emission.
+                            // (Reconciliation slice 1 narrows the claim: Warning
+                            // `decision.fkDropped` only when the source really
+                            // enforced it; Info `decision.fkNotIntroduced` for
+                            // logical-only references.)
+                            @ SsdtDdlEmitter.foreignKeyDecisionDropDiagnosticsUsing
+                                decisionOverlay fkLookups.AllKinds
+                            // Reconciliation slice 1 — the FK-name collision
+                            // tripwire (schema-scoped constraint-name uniqueness;
+                            // one Error per participating reference, never a
+                            // silent dedupe).
+                            @ SsdtDdlEmitter.foreignKeyNameCollisionDiagnosticsUsing
+                                decisionOverlay fkResolutions
+                            // WP-16 (DECISIONS 2026-07-16) — the TABLE-name collision
+                            // tripwire (schema-qualified CREATE TABLE identity; one
+                            // Error per participating kind, never a silent last-win).
+                            // Threads the already-computed AllKinds (no fourth walk).
+                            @ SsdtDdlEmitter.tableNameCollisionDiagnosticsUsing
+                                fkLookups.AllKinds
+                            // NM-70 (WP5) — the named downgrade. When the operator
+                            // omits the identity annotations, the `Projection.*`
+                            // extended properties are NOT written, so identity
+                            // recovery degrades to name-derived SsKeys (no
+                            // persisted SsKey to read back on roundtrip). One
+                            // Warning per run; never a silent suppression.
+                            @ (if policy.Emission.EmitIdentityAnnotations then []
+                               else
+                                   [ DiagnosticEntry.create
+                                       "emitter:ssdtDdlEmitter"
+                                       DiagnosticSeverity.Warning
+                                       "emission.identityAnnotations.omitted"
+                                       "Identity annotations omitted: the Projection.SsKey / Projection.LogicalName extended properties were not emitted; identity recovery degrades to name-derived SsKeys (no persisted SsKey to read back on roundtrip)." ])
+                        match write cfg.Output.Dir outputs with
+                        // NM-34b (live) — `ReadCatalog = catalog`: the source model
+                        // the run READ (pre-rename), surfaced so the run boundary can
+                        // hash its canonical form into the live-path input digest.
+                        | Ok paths    ->
+                            // 2026-07-06 — the data-reality rollup: when the profiled
+                            // source data contradicts the declared model, ONE Warn
+                            // envelope carries the per-axis counts + the artifact
+                            // pointers (§12 at-scale law). The live board's notice
+                            // strip and the verdict panel read it, so the finding and
+                            // its remediation script are never a silent JSON-only count.
+                            ModelFidelity.dataViolationsPayload
+                                (Path.Combine(cfg.Output.Dir, ArtifactPath.remediation))
+                                (Path.Combine(cfg.Output.Dir, ArtifactPath.fidelityJson))
+                                outputs.Fidelity
+                            |> Option.iter (fun payload ->
+                                LogSink.emit (LogSink.envelope LogSink.Warn LogSink.Emit ModelFidelity.dataViolationsCode payload))
+                            Result.success ({ Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries; ReadCatalog = catalog }, finalState)
+                        | Error errors -> Result.failure errors
                 | Error errors -> Result.failure errors
 
     /// Full end-to-end driven by a parsed `Config`. Reads `Model.Path`,
@@ -2252,7 +2309,18 @@ module Compose =
         // `DataComposition` differs), which would otherwise perturb the
         // manifest under the no-opinion config.
         if shaping = Config.defaultConfig then
-            Result.success (project EmissionPolicy.empty catalog)
+            // schema-L3.3a (risk R3) — the short-circuit rides the CHECKED
+            // path too: a gate-tripping catalog under a default config gets
+            // the NAMED refusal, not the defense invalidOp. `Policy.empty`
+            // keeps the byte-identity (no VersionedPolicy stamp).
+            match
+                projectWithStateWithPinsAndBootstrapLaneChecked
+                    Set.empty Policy.empty Profile.empty EmissionFolders.empty TransformGroups.empty
+                    Projection.Targets.Data.MigrationDependencyContext.empty
+                    (DataComposer.BootstrapLane.Rows Map.empty) catalog
+                with
+            | Ok (outputs, _) -> Result.success outputs
+            | Error e -> Result.failure (emitRefusalErrors e)
         else
         let pins = physicalRenamePins shaping catalog
         match applyRenames shaping catalog with
@@ -2262,9 +2330,14 @@ module Compose =
             // `applyShapingToCatalog`, which threads the identical set).
             match bindShapingTriple shaping renamedCatalog with
             | Ok (policy, folders, groups) ->
-                let outputs, _ =
-                    projectWithStateWithPins pins policy Profile.empty folders groups renamedCatalog
-                Result.success outputs
+                match
+                    projectWithStateWithPinsAndBootstrapLaneChecked
+                        pins policy Profile.empty folders groups
+                        Projection.Targets.Data.MigrationDependencyContext.empty
+                        (DataComposer.BootstrapLane.Rows Map.empty) renamedCatalog
+                    with
+                | Ok (outputs, _) -> Result.success outputs
+                | Error e -> Result.failure (emitRefusalErrors e)
             | Error errors -> Result.failure errors
 
     /// Sibling of `projectWithConfig` that also returns the post-chain
@@ -2286,8 +2359,14 @@ module Compose =
         | Ok renamedCatalog ->
             match bindShapingTriple shaping renamedCatalog with
             | Ok (policy, folders, groups) ->
-                Result.success
-                    (projectWithStateWithPins pins policy Profile.empty folders groups renamedCatalog)
+                match
+                    projectWithStateWithPinsAndBootstrapLaneChecked
+                        pins policy Profile.empty folders groups
+                        Projection.Targets.Data.MigrationDependencyContext.empty
+                        (DataComposer.BootstrapLane.Rows Map.empty) renamedCatalog
+                    with
+                | Ok pair -> Result.success pair
+                | Error e -> Result.failure (emitRefusalErrors e)
             | Error errors -> Result.failure errors
 
     /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the overlay-aware sibling of

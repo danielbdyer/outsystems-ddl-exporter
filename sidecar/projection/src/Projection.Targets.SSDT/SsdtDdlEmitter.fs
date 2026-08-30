@@ -1153,24 +1153,15 @@ module SsdtDdlEmitter =
     let statements (catalog: Catalog) : seq<Statement> =
         statementsWith DecisionOverlay.empty catalog
 
-    /// NM-38 + NM-70 — overlay + constraint-rendering-mode +
-    /// identity-annotation-gate form of `emitSlices`. `renderMode` threads
-    /// the operator's `EmissionPolicy.RenderConstraintsElegant` axis to the
-    /// per-file `Render.toTextWith` post-processor; `emitIdentityAnnotations`
-    /// threads `EmissionPolicy.EmitIdentityAnnotations` (NM-70) — `true` ⇒
-    /// the `Projection.*` extended properties emit (byte-identical to
-    /// pre-NM-70 emission); `false` ⇒ they are suppressed (the named
-    /// downgrade, diagnostic emitted at the composition seam). Per A18, the
-    /// `Emitter<SsdtFile>` port stays `Catalog`-only — both are
-    /// realization-layer overlay choices resolved at the composition seam,
-    /// never read from `Policy` inside the emitter.
-    let emitSlicesWithRendering
-        (renderMode: ConstraintFormatter.Mode)
-        (emitIdentityAnnotations: bool)
-        (overlay: DecisionOverlay)
-        : Emitter<SsdtFile> = fun catalog ->
-        use _ = Bench.scope "emit.ssdt.emitSlices"
-        let modules = moduleByKindKey catalog
+    /// schema-L3.3a — the emission pre-flight: the five #669 gates,
+    /// extracted VERBATIM from `emitSlicesWithRendering` so the compose
+    /// seam and the flat-stream lanes ride the SAME refusals the bundle
+    /// path always had. Pure; `None` = clean. The bundle path delegates
+    /// here (zero behavior change); `Compose.projectFromChainWithState`
+    /// runs it BEFORE rendering so a refusal surfaces as a NAMED
+    /// `ValidationError` (`EmitError.toValidationError`) instead of an
+    /// `invalidOp`; `statementsChecked` gates the flat lanes.
+    let emissionRefusal (overlay: DecisionOverlay) (catalog: Catalog) : EmitError option =
         let lookups = FkEmissionLookups.ofCatalog catalog
         // DECISIONS 2026-07-18 (#669 B-3 / EF-17) — the composite-key gate,
         // NARROWED at schema-L3.2 (the `CompositePkFkUnreflected` closure):
@@ -1265,12 +1256,49 @@ module SsdtDdlEmitter =
                     | tokens ->
                         Some (EmitError.ComputedExpressionRefused (
                                 Name.value k.Name, Name.value a.Name, String.concat ", " tokens))))  // LINT-ALLOW: terminal comma-joined token list inside the ComputedExpressionRefused error payload — a free-text list of the unresolved identifiers for the operator; no typed AST applies to the refusal's human-readable token enumeration
-        match
-            compositeKeyRefusal
-            |> Option.orElse temporalRefusal
-            |> Option.orElse triggerRefusal
-            |> Option.orElse authoredDefaultRefusal
-            |> Option.orElse computedExprRefusal with
+        compositeKeyRefusal
+        |> Option.orElse temporalRefusal
+        |> Option.orElse triggerRefusal
+        |> Option.orElse authoredDefaultRefusal
+        |> Option.orElse computedExprRefusal
+
+    /// schema-L3.3a — gate-then-stream: the flat statement stream behind
+    /// the SAME pre-flight the bundle rides. Production text/deploy
+    /// realizations consume THIS; the ungated `statementsWith` remains for
+    /// gate-clean fixtures and harnesses that assemble their own refusal
+    /// posture.
+    let statementsChecked
+        (overlay: DecisionOverlay)
+        (catalog: Catalog)
+        : Microsoft.FSharp.Core.Result<seq<Statement>, EmitError> =
+        match emissionRefusal overlay catalog with
+        | Some e -> Error e
+        | None -> Ok (statementsWith overlay catalog)
+
+    /// NM-38 + NM-70 — overlay + constraint-rendering-mode +
+    /// identity-annotation-gate form of `emitSlices`. `renderMode` threads
+    /// the operator's `EmissionPolicy.RenderConstraintsElegant` axis to the
+    /// per-file `Render.toTextWith` post-processor; `emitIdentityAnnotations`
+    /// threads `EmissionPolicy.EmitIdentityAnnotations` (NM-70) — `true` ⇒
+    /// the `Projection.*` extended properties emit (byte-identical to
+    /// pre-NM-70 emission); `false` ⇒ they are suppressed (the named
+    /// downgrade, diagnostic emitted at the composition seam). Per A18, the
+    /// `Emitter<SsdtFile>` port stays `Catalog`-only — both are
+    /// realization-layer overlay choices resolved at the composition seam,
+    /// never read from `Policy` inside the emitter.
+    let emitSlicesWithRendering
+        (renderMode: ConstraintFormatter.Mode)
+        (emitIdentityAnnotations: bool)
+        (overlay: DecisionOverlay)
+        : Emitter<SsdtFile> = fun catalog ->
+        use _ = Bench.scope "emit.ssdt.emitSlices"
+        let modules = moduleByKindKey catalog
+        let lookups = FkEmissionLookups.ofCatalog catalog
+        // schema-L3.3a — the five #669 gates live in `emissionRefusal`
+        // (shared with the compose seam + the flat-stream lanes); the
+        // bundle path delegates. The `lookups` binding above serves the
+        // RENDER below only (the pre-flight builds its own).
+        match emissionRefusal overlay catalog with
         | Some refusal -> Error refusal
         | None ->
             // PL-4 (S54) — the per-(module, schema) first-kind decision derives

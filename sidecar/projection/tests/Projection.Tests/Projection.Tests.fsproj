@@ -91,6 +91,7 @@
     <Compile Include="RemediationEmitterTests.fs" />
     <Compile Include="SummaryFormatterTests.fs" />
     <Compile Include="ComposeAtomicWriteTests.fs" />
+    <Compile Include="ComposeEmitRefusalTests.fs" />
     <Compile Include="SqlTypeCorrespondenceTests.fs" />
     <Compile Include="SqlStorageTypeTests.fs" />
     <Compile Include="SqlLiteralTests.fs" />

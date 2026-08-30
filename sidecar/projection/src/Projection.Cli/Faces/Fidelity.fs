@@ -102,8 +102,16 @@ let private stageStandIn
     task {
         match mode with
         | StagingMode.Ddl ->
-            do! Deploy.executeBatch standIn (SsdtDdlEmitter.statements logical |> Render.toText)
-            return Result.success ()
+            // schema-L3.3a — the flat DDL lane rides the SAME emission
+            // pre-flight the bundle path always had: an unparseable
+            // trigger (or any #669 gate) refuses HERE with the named
+            // `emitter.ssdt.*` error instead of rendering a partial
+            // artifact behind the defense marker.
+            match SsdtDdlEmitter.statementsChecked DecisionOverlay.empty logical with
+            | Error e -> return Result.failure [ EmitError.toValidationError e ]
+            | Ok stmts ->
+                do! Deploy.executeBatch standIn (stmts |> Render.toText)
+                return Result.success ()
         | StagingMode.Dacfx ->
             match DacpacEmitter.emit logical with
             | Error es  -> return Result.failure es

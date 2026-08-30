@@ -33339,3 +33339,59 @@ codec legs round-trip + byte-identity + the estate leg-complete negative and
 keyless-target positive. Retirement mechanics per the checklist: `allKnown` 11 → 10;
 matrix regenerated same-commit — Schema's open cell reads `TriggerBodyUnparsedDropped`
 alone; footer `tolerances 10 (1 open)`.
+
+---
+
+## 2026-08-30 — schema-L3.3a: the emission refusal gains its NAME at the compose seam — BEHAVIORAL
+
+**The finding.** The five #669 pre-flight gates always refused the bundle path — but the
+refusal surfaced as `invalidOp` at the SSDT emit step, which `FullExportRun` caught
+generically as an aborted run under the wrong envelope code. The refusal existed;
+its NAME did not reach the operator.
+
+**The decision.** The gate block extracts VERBATIM to
+`SsdtDdlEmitter.emissionRefusal : DecisionOverlay -> Catalog -> EmitError option`
+(pure; the bundle path delegates — zero behavior change there).
+`Compose.projectFromChainWithState` runs it BEFORE any rendering and returns
+`Result<_, EmitError>`; the config-driven production path
+(`projectWithConfig` / `projectWithConfigAndState` / `runWithConfigCore` — and the
+`defaultConfig` short-circuit, risk R3, now gated too via the new
+`projectWithStateWithPinsAndBootstrapLaneChecked`) maps a refusal through the new
+`EmitError.toValidationError` into the NAMED `emitter.ssdt.*` family
+(`triggerUnparsed` / `compositeKeyReference` / `temporalKind` / `authoredDefault` /
+`computedExpression`; keyset-contract violations share `artifactKeyset`) — the
+convention `emitter.dacpac.statementUnrendered` established: static phrase +
+structured metadata through the generic error channel, NO Voice rows (the
+operator-register copy for the same facts lives on the estate board). The
+fixture-facing `Outputs`-shaped surface (`project`/`projectWithState*`) keeps its
+shape via ONE documented defense unwrap (`expectGateClean`). The SSDT emit step's
+`invalidOp` arm is now structurally unreachable and says so.
+
+**The theorem: gate-pass ⟹ render.** `tryParseTriggerDefinition` STRENGTHENS to the
+renderer's success domain (a first statement in the first batch of a `TSqlScript`) —
+a comments-only definition previously passed the gate and still hit the render
+marker; now the marker is unreachable from every gated entry, by construction. The
+two marker arms STAY as loud total-function defense for direct-render callers, but
+their text now names the gate (`emitter.ssdt.triggerUnparsed`), not the tolerance
+being retired at L3.3b.
+
+**The flat lanes, audited honestly.** `check fidelity`'s stand-in DDL staging — the
+one REAL production flat lane — rides the new `statementsChecked` (gate-then-stream).
+The wide-canary lanes (`Faces/Canary`, `Deploy.schemaWithStaticPopulation`) stay
+deliberately UNGATED with the reason written in place: their catalogs are ReadSide
+READBACKS (trigger bodies from `OBJECT_DEFINITION`, defaults from deployed
+constraints), so the #669 gates are vacuous on those lanes by construction.
+
+**BEHAVIORAL.** A publish refused by a pre-flight gate now reports
+`RunFailed [emitter.ssdt.<subject> + metadata]` instead of the generic aborted
+envelope — consumers of run.ndjson / printErrors see the named code. The refusal
+POPULATION is unchanged (same predicates, same gates); only the surfacing moves
+earlier and gains its name. No artifact is written on a refusal (the pre-flight
+precedes `Compose.write` — the atomicity witness pins it).
+
+**Witnesses.** `ComposeEmitRefusalTests` (3 arms: refusal — named code + metadata +
+NO artifact; agreement — a logical-name trigger publishes with its real CREATE
+TRIGGER and no marker; the gate-domain theorem over a corpus including the
+comments-only edge). `DacpacEmitterTests`' M2 pin re-anchored to the defense marker
+of the direct-render escape hatch. No tolerance change in this slice — the flip
+(L3.3b) is deliberately a separate, mechanically-tiny commit.

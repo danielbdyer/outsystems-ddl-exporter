@@ -908,7 +908,10 @@ and CheckDataRowsArgs =
 /// row grain, never on dacpac bytes (which embed a wall-clock — `BACKLOG.md`
 /// Slice ζ names that deferral).
 and [<RequireQualifiedAccess>] StagingMode =
-    /// Apply `SsdtDdlEmitter.statements` as a batch through `Deploy.executeBatch`.
+    /// Apply the flat DDL stream as a batch through `Deploy.executeBatch`
+    /// — behind the emission pre-flight (`SsdtDdlEmitter.statementsChecked`,
+    /// schema-L3.3a): a gate refusal surfaces as the named
+    /// `emitter.ssdt.*` error before anything renders.
     | Ddl
     /// Publish `DacpacEmitter.emit` through `Deploy.deployDacpac`.
     | Dacfx

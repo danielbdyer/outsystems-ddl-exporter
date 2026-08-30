@@ -114,6 +114,67 @@ type EmitError =
 /// constructor's invariant. Construction goes through
 /// `ArtifactByKind.create`; introspection goes through
 /// `ArtifactByKind.toMap`, `tryFind`, `keys`.
+/// schema-L3.3a — the emitter-family refusal codes. An `EmitError` that
+/// reaches the COMPOSE seam becomes a NAMED `ValidationError` (the
+/// `emitter.<realization>.<subject>` family `emitter.dacpac.statementUnrendered`
+/// established): static phrase + structured metadata, surfaced through the
+/// generic error channel. No Voice rows by convention — the operator-register
+/// copy for the same facts lives on the estate board (`emission.*` findings).
+[<RequireQualifiedAccess>]
+module EmitError =
+
+    /// Total projection to the named refusal. The five #669 pre-flight
+    /// gates carry their subjects; the keyset/coverage/render/lifecycle
+    /// variants (internal-contract violations, not operator rulings)
+    /// share the structural fallback code.
+    let toValidationError (e: EmitError) : ValidationError =
+        match e with
+        | TriggerUnrewrittenRefused (kind, trigger, reason) ->
+            ValidationError.createWithMetadata
+                "emitter.ssdt.triggerUnparsed"
+                "A trigger body cannot be carried into the published artifact; the publish refuses rather than dropping it."
+                (Map.ofList [ "kind", Some kind; "trigger", Some trigger; "reason", Some reason ])
+        | CompositeKeyReferenceRefused (owner, reference, target, keyColumns) ->
+            ValidationError.createWithMetadata
+                "emitter.ssdt.compositeKeyReference"
+                "A relationship cannot cover its target's composite key; the emitted foreign key would be rejected at deploy."
+                (Map.ofList [ "kind", Some owner; "reference", Some reference; "target", Some target; "keyColumns", Some (string keyColumns) ])
+        | TemporalKindRefused kind ->
+            ValidationError.createWithMetadata
+                "emitter.ssdt.temporalKind"
+                "A system-versioned entity cannot yet emit deployable DDL; the publish refuses rather than dropping the versioning."
+                (Map.ofList [ "kind", Some kind ])
+        | AuthoredDefaultRefused (kind, column, reason) ->
+            ValidationError.createWithMetadata
+                "emitter.ssdt.authoredDefault"
+                "An authored default is not a parseable value of its column's type; the publish refuses rather than deploying a first-insert failure."
+                (Map.ofList [ "kind", Some kind; "column", Some column; "reason", Some reason ])
+        | ComputedExpressionRefused (kind, column, tokens) ->
+            ValidationError.createWithMetadata
+                "emitter.ssdt.computedExpression"
+                "A computed expression carries identifiers that resolve to no column; the publish refuses rather than deploying a broken expression."
+                (Map.ofList [ "kind", Some kind; "column", Some column; "tokens", Some tokens ])
+        | KindNotProduced _ | UnexpectedKind _ | RenderFailed _
+        | OverlappingEmitterCoverage _ | NonComposableLifecycleChain _ ->
+            // Static variant token (no rendering in Core): the run log's
+            // structured channel carries the full typed error; this code's
+            // metadata names WHICH contract arm tripped.
+            let detail =
+                match e with
+                | KindNotProduced _ -> "kindNotProduced"
+                | UnexpectedKind _ -> "unexpectedKind"
+                | RenderFailed _ -> "renderFailed"
+                | OverlappingEmitterCoverage _ -> "overlappingEmitterCoverage"
+                | NonComposableLifecycleChain _ -> "nonComposableLifecycleChain"
+                | TriggerUnrewrittenRefused _ | CompositeKeyReferenceRefused _
+                | TemporalKindRefused _ | AuthoredDefaultRefused _ | ComputedExpressionRefused _ ->
+                    "emitError"   // unreachable: handled by the named arms above
+            ValidationError.createWithMetadata
+                "emitter.ssdt.artifactKeyset"
+                "The emitter violated its artifact-keyset contract (an internal invariant, not an operator ruling)."
+                (Map.ofList [ "detail", Some detail ])
+
+
 type ArtifactByKind<'element> = private ArtifactByKind of Map<SsKey, 'element>
 
 [<RequireQualifiedAccess>]

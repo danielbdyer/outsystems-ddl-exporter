@@ -1181,6 +1181,12 @@ module Deploy =
     /// schema-only canary when the source carries no static populations (the
     /// `InsertRow` stream is then empty). Closes the registered-but-unexecuted
     /// mismatch the E1–E4 isomorphism surfaced.
+    /// schema-L3.3a — deliberately UNGATED (`statements`, not
+    /// `statementsChecked`): every caller is a wide-canary harness whose
+    /// catalog is a ReadSide READBACK — its trigger bodies come from
+    /// `OBJECT_DEFINITION` (SQL Server's own parse), its defaults from
+    /// deployed constraints, so the #669 gates are vacuous by
+    /// construction on this lane.
     let schemaWithStaticPopulation (catalog: Catalog) : seq<Statement> =
         Seq.append
             (SsdtDdlEmitter.statements catalog)
