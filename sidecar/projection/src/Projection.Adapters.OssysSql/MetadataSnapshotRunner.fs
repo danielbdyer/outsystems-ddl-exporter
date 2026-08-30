@@ -424,10 +424,11 @@ module MetadataSnapshotRunner =
           IsNoCheck          : bool }
 
     /// `#FkColumns` rowset (matrix row 18). Per-FK column membership
-    /// (composite FK support). V2's existing Reference IR is
-    /// single-column per chapter 5.0; multi-column FKs (composite keys)
-    /// would consume this in a future IR refinement. Lifts at runner
-    /// layer.
+    /// (composite FK support). schema-L3.2 CASHED the chapter-5.0
+    /// deferral this note carried: `Reference.Legs` is the IR carrier,
+    /// and `toBundle` denormalizes each multi-leg group onto the
+    /// ordinal-1 reference — the read cost this rowset always paid now
+    /// lands in the model. Lifts at runner layer.
     type OssysFkColumnRow =
         { EntityId           : int
           FkObjectId         : int

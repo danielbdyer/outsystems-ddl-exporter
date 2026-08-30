@@ -239,7 +239,7 @@ table before continuing.
 | **CSV adapter for `ManualOverride` (UserMapLoader)** | 2026-05-11 (Chapter 4.2 close) | A real operator workflow demands the file-format pickup path. Pre-scope §3 names `Projection.Adapters.UserMap.UserMapLoader` (CSV: `SourceUserId,TargetUserId,Rationale`). Slice ε ships `ManualOverride` consuming a programmatic `Map<SourceUserId, TargetUserId>`; I/O adapter at the boundary is deferred. Mirrors the chapter 4.1.B slice ε NDJSON-adapter deferral — sibling chapter, same shape. | No I/O adapter today; ManualOverride works via programmatic construction. See `2026-05-11 — Chapter 4.2 close` entry. |
 | **`Attribute.Default` field + DEFAULT constraint emission (chapter 4.1.A slice 7-default)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter (chapter 3.2) surfaces default-constraint columns from `sys.default_constraints` (the rowset variant materializes default expressions per column). Pre-scope §8 slice 7 names the IR widening (`Attribute.Default : string option`) + emission of `CONSTRAINT [DF_<Table>_<Col>] DEFAULT (<expr>)`. **107+ Attribute literal-construction sites** would need updating with `Default = None` under the record-extension empirical-test discipline; deferred per IR-grows-under-evidence until the rowset adapter surfaces real defaults. | `Tolerance.IgnoreDefaultNames = false` per pre-scope §4 line 214 documents the comparator's current acceptance posture; no consumer demands the field today. Slice 7's identity portion (`Attribute.IsIdentity`) shipped at chapter 3.1/3.2; only the default-constraint portion is deferred. |
 | **Staged-bulk MERGE shape + `chooseMergeShape` selector for emitted seed scripts** | 2026-06-11 (The perf-harness verdicts — the MERGE cliff REFUTED) | Static populations ≳100k rows/kind, where the measured ~2.5k rows/sec single-MERGE execute slope or per-statement memory matters. Demoted from stage-0 correctness to armed-perf by the H1 in-harness refutation (the `MERGE … USING (VALUES …)` derived-table form executes at 10k rows on SQL Server 2022; the 1000-row TVC cap binds `INSERT … VALUES` only — COUNT(*)-verified, replicated on a second host). Any future cut here carries the DeleteScope-correctness witness (`WHEN NOT MATCHED BY SOURCE` cannot be naively chunked) and the before/after via `perf-harness.sh run seed-merge-execute`. | **Cashed out — 2026-06-25.** Shipped as `DataStagingPolicy` (`emission.dataStaging { mode, threshold, indexThreshold }` → Core) threaded to all three data lanes via the composer's `DataEmitOptions`; the generic staged rendering lives in the shared `StagedMerge` module (`Targets.Data`); `DataStagingPolicy.shouldStage` IS the `chooseMergeShape` selector. `indexThreshold = 100000` is MEASURED (clustered `#temp`-PK index wins ~33-37% at 100k/250k/500k, no crossover). DEPLOY-verified (`StagedMergeDeployE2ETests` 5/5). See `2026-06-25 — Staged-\`#temp\` MERGE completed across all 3 data lanes` entry below. |
-| **`Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A slice 8)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter surfaces description columns (`MS_Description` extended properties) from `sys.extended_properties`. Pre-scope §8 slice 8 names the IR widening (`Kind.Description : string option` + `Attribute.Description : string option`) + emission of `EXEC sys.sp_addextendedproperty @name=N'MS_Description', ...` statements per V1's `ExtendedPropertyScriptBuilder.cs:91-95`. **107+ Attribute literal-construction sites** + Kind literal-construction sites would need updating with `Description = None`; deferred per IR-grows-under-evidence until the rowset adapter surfaces real descriptions. | `Tolerance.IgnoreExtendedProperties = true` per pre-scope §4 line 213 documents the comparator's current acceptance posture; no consumer demands the field today. The V1↔V2 differential test treats extended-property absence as a deliberate divergence. |
+| **`Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A slice 8)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter surfaces description columns (`MS_Description` extended properties) from `sys.extended_properties`. Pre-scope §8 slice 8 names the IR widening (`Kind.Description : string option` + `Attribute.Description : string option`) + emission of `EXEC sys.sp_addextendedproperty @name=N'MS_Description', ...` statements per V1's `ExtendedPropertyScriptBuilder.cs:91-95`. **107+ Attribute literal-construction sites** + Kind literal-construction sites would need updating with `Description = None`; deferred per IR-grows-under-evidence until the rowset adapter surfaces real descriptions. | **Cashed out — trigger fired SILENTLY and the schema-L3 close (2026-08-30) caught the stale row** (the exact failure mode this index exists to prevent): `Attribute.Description` + `Kind.Description` landed in Core, `SsdtDdlEmitter.extendedPropertyStatementsWith` emits the `MS_Description` calls, and the tolerance this row cites (`CommentMetadataUnreflected`) was retired at chapter 4.1.A slice 8 (2026-05-17, gravestone in `Tolerance.fs`). The feared "107+ construction sites" dissolved under the smart-ctor default — the same mechanism that later absorbed the `Reference.Legs` widening. |
 | **Sub-unanimity consensus thresholds (`check estate`)** | 2026-07-15 (the estate chapter opens) | The operator asks for a per-axis apply threshold below unanimity. Until then: the estate decision is the meet over the evidence join (deciding on `Profile.merge` ≡ unanimous per-env decisions); consensus ratios live in `estate.json` only and never lead a rendered line (the blocking environment is named instead). | deferred (2026-07-15) |
 | **Relaxation expiry (calendar / run-count)** | 2026-07-15 (the estate chapter opens) | The operator asks for calendar (T-15 review) or run-count expiry on interim relaxations. Until then retirement is probe-only: every relaxation carries its reopen probe, and the probe reporting zero renders the retirement notice. | deferred (2026-07-15) |
 | **S8/O4 physical-residue sweep (unmanaged tables / columns / triggers / computed columns)** | 2026-07-15 (the estate chapter opens) | The first unexplained physical residue in a real estate run (an object on disk the model does not carry, surfaced outside the OSSYS read). Lands as S1′-shaped DECIDE findings via an `INFORMATION_SCHEMA` sweep beside the OSSYS read — the one place the estate mode deliberately looks past OSSYS. | **TABLE grain cashed 2026-08-15 (the data-sink chapter, S12) — in its stated shape**: `SinkResidue.sweep` probes `INFORMATION_SCHEMA.TABLES` (the `OSUSR_%` universe — a NAMED caveat: an arbitrarily-named external table is indistinguishable from a non-OutSystems table and stays out) beside the OSSYS read at `check estate`, subtracts the witnessed edition's claims (tombstones still claim), and the residue rides the claims plane as `Unclaimed` → `PhysicalUnclaimed` DECIDE findings. The finer grains the row also names (columns / triggers / computed columns) STAY deferred under the same trigger. See `2026-08-15 — sink S12` below. |
@@ -33422,3 +33422,41 @@ nothing was hand-marked (the M1 precedent, completed).
 
 Config migration note: `TriggerBodyUnparsedDropped` fails closed at `Tolerance.parse`;
 configs naming it must drop it.
+
+---
+
+## 2026-08-30 — schema-L3.4: THE SCHEMA-L3 PROGRAM CLOSES (the close-out coda)
+
+Four slices + this coda, commissioned as "get the Schema to Level 3 in the North Star
+generated output" and delivered as three GENUINE tolerance closures (never a retag —
+the ladder's named soft spot stayed untouched): the index option surface round-trips
+(L3.1), the composite foreign key is expressible end-to-end with the Msg-1776 latent
+failure killed (L3.2 + NM-28b named, per the operator's fold-in ruling), and the
+trigger-body drop became a NAMED compose-seam refusal with gate-pass ⟹ render as a
+theorem (L3.3a) — so the flip commit (L3.3b) was mechanically tiny, exactly as designed.
+**The matrix reads: Schema ✅ L3 · rungs L1/L2/L3 = 5/5/5 of 5 · tolerances 9 (0 open).**
+
+**The coda's truth-maintenance:**
+- The generator's scope-honesty prose was STALE on G4 (the operator's fold-in ruling
+  surfaced it): the cross-schema FK filter closed at E2 (`ForeignKeyReadback.classify`,
+  witness live) — the note now says the set of KNOWN unnamed silent drops is empty as
+  of this close, with the structural caveat retained because the CLAIM is structural.
+- `CanaryResidual`'s header re-anchored: the two structural application sites it named
+  are CLOSED gaps; `record`/`recordMany` keep their zero-production-call-site deferral
+  with the trigger restated (the first operator "which divergences fired?" question).
+- The `Kind.Description` Active-deferrals row — whose trigger had fired SILENTLY (the
+  exact failure mode the index exists to catch) — is cashed with the history named.
+- `MetadataSnapshotRunner`'s `#FkColumns` "no IR carrier yet" note rewritten: the
+  carrier exists; the read cost lands in the model.
+
+**Deferrals that survive this program, each with its trigger:** wiring the
+`CanaryResidual` observation points (above); the secondary-leg duplicate-constraint
+residual (L3.2's named residual; trigger: the first real estate carrying two model
+reference attributes over one deployed composite FK); the ungated wide-canary lanes
+stay ungated BY ARGUMENT (readback catalogs; written in place, not deferred).
+
+Close gates: `TEST_CONFIG=Release` fast solution-wide + the full Docker pool (the two
+named pre-existing reds and nothing else), verifiability 94+34, analyzers, matrix
+regen — recorded in this commit. The program rode PR #695 (Part 4 of its description);
+the fast pool crossed **5,000 executed tests** during L3.2 — the milestone the operator
+called, landed green.

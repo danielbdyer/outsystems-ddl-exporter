@@ -61,9 +61,12 @@ open tolerance to be retired from `Tolerance.fs`. The generator under-claims; it
 never over-claims.
 
 > **Witness/tolerance-present ≠ feature-complete.** L2 here is "no open *named*
-> tolerance on the axis." Silent drops with no named surface (the cross-schema FK
-> filter, debrief G4) are NOT auto-detected — they have no machine surface yet, and are
-> tracked in `DEBRIEF_2026_06_02` until a named diagnostic/witness lands. The 3-axis
+> tolerance on the axis." A silent drop with NO named surface would not be
+> auto-detected — the ladder's basis is the named set. The set of KNOWN unnamed
+> drops is empty as of 2026-08-30: the former example (the cross-schema FK filter,
+> debrief G4) closed at E2 (`ForeignKeyReadback.classify` — a named diagnostic per
+> unreadable coordinate), and the schema-L3 program swept the rest (NM-28b's
+> keyless-target drop now rides `emission.fkTargetWithoutPk`). The 3-axis
 > Decision adjunction (debrief G12) IS now witnessed — M1 (THE VECTOR Wave 1) routes
 > FK-trust + unique-promotion through the general `PhysicalSchema.diff` comparator,
 > so the Decision axis is honestly faithful, not asserted.

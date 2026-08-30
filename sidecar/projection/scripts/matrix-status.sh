@@ -44,10 +44,14 @@
 # its `)>]` close — the first-line-only grep this replaced undercounted Bucket
 # C (6 of the true 9) and counted the doc-comment decoy as a deferral.
 #
-# Scope honesty: L2 here is "no open *named* tolerance on the axis." Silent
-# drops with no named surface (e.g. the cross-schema FK filter, debrief G4) and
-# unwitnessed sub-axes are NOT auto-detected — they have no machine surface
-# yet. "Witness/tolerance-present ≠ feature-complete."
+# Scope honesty: L2 here is "no open *named* tolerance on the axis." A silent
+# drop with no named surface would NOT be auto-detected — the ladder's basis is
+# the named set. (The former example, the cross-schema FK filter — debrief G4 —
+# CLOSED at E2: `ForeignKeyReadback.classify` names every unreadable coordinate;
+# the schema-L3 program swept the remaining known silent drops, NM-28b included.
+# The set of KNOWN unnamed drops is empty as of 2026-08-30 — the caveat stays
+# because the claim is structural, not because an instance is known.)
+# "Witness/tolerance-present ≠ feature-complete."
 #
 # Pure bash + grep/awk; no dotnet required (mirrors scripts/verifiability-gate.sh
 # + scripts/lint-discipline.sh). Run at chapter close; wire into CI alongside the
@@ -249,9 +253,12 @@ open_count=$(printf '%s\n' "$ladder_tags" | awk '$3=="OpenGap"' | grep -c . || t
   echo "never over-claims."
   echo
   echo "> **Witness/tolerance-present ≠ feature-complete.** L2 here is \"no open *named*"
-  echo "> tolerance on the axis.\" Silent drops with no named surface (the cross-schema FK"
-  echo "> filter, debrief G4) are NOT auto-detected — they have no machine surface yet, and are"
-  echo "> tracked in \`DEBRIEF_2026_06_02\` until a named diagnostic/witness lands. The 3-axis"
+  echo "> tolerance on the axis.\" A silent drop with NO named surface would not be"
+  echo "> auto-detected — the ladder's basis is the named set. The set of KNOWN unnamed"
+  echo "> drops is empty as of 2026-08-30: the former example (the cross-schema FK filter,"
+  echo "> debrief G4) closed at E2 (\`ForeignKeyReadback.classify\` — a named diagnostic per"
+  echo "> unreadable coordinate), and the schema-L3 program swept the rest (NM-28b's"
+  echo "> keyless-target drop now rides \`emission.fkTargetWithoutPk\`). The 3-axis"
   echo "> Decision adjunction (debrief G12) IS now witnessed — M1 (THE VECTOR Wave 1) routes"
   echo "> FK-trust + unique-promotion through the general \`PhysicalSchema.diff\` comparator,"
   echo "> so the Decision axis is honestly faithful, not asserted."

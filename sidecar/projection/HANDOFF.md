@@ -1,4 +1,44 @@
-# Handoff addendum — 2026-08-30 (latest): THE ALIGNMENT PROGRAM IS CLOSED. All three chapters shipped on PR #695; the next program is the operator's to commission
+# Handoff addendum — 2026-08-30 (latest): SCHEMA ✅ L3 — the schema-L3 program delivered; the ladder reads 5/5/5 with zero open tolerances
+
+To the next agent.
+
+**Where you stand.** The operator commissioned "Schema to Level 3 in the North Star
+generated output" and the program delivered it the only honest way — three GENUINE
+tolerance closures, each with an M1-style two-arm witness (agreement + falsifiability),
+never a retag: schema-L3.1 (the index OPTION surface round-trips — `PhysicalIndex`
+widened 5→16 fields, `ReadSide.readIndexes` recovers filter/INCLUDE/storage options),
+schema-L3.2 (the composite FK expressible end-to-end — `Reference.Legs`, per-leg
+comparator/emitter/readback, the latent Msg-1776 deploy failure KILLED, NM-28b's
+keyless-target drop named on the board per the operator's fold-in ruling), schema-L3.3a
+(the #669 emission pre-flight extracted to `SsdtDdlEmitter.emissionRefusal`, threaded
+Result-shaped through the compose seam as the named `emitter.ssdt.*` family; gate-pass
+⟹ render is a theorem), and the flip (L3.3b) retiring `TriggerBodyUnparsedDropped`.
+**The generated matrix now reads `| Schema | ✅ | ✅ faithful | ✅ | — | ✅ L3 |` —
+rungs L1/L2/L3 = 5/5/5 of 5 · tolerances 9 (0 open), every survivor AcceptedFaithful.**
+The fast pool crossed **5,000 executed tests** during L3.2, green. All on PR #695
+(description Part 4); DECISIONS carries the five entries (schema-L3.1 … L3.4).
+
+**What you must not re-derive.** The retirement discipline held: no DU variant
+survives its closure (gravestones in `Tolerance.fs`); retired config tokens FAIL
+CLOSED (`ToleranceTests`' schema-L3 witness); `MatrixLadderTests` now asserts the L3
+state POSITIVELY. The known-red Docker set is still exactly
+{StagedMergeDeployE2ETests, T18CycleBreakCanaryTests} — still owed their own arc.
+Deferrals that survive, with triggers: `CanaryResidual.record` wiring (first "which
+divergences fired?" operator question); the secondary-leg duplicate-constraint
+residual (first real estate carrying it). The alignment program's own deferral index
+rows (X6, `CanaryVerdict.Aborted`, ruling HISTORY, SpineLedger, the Sink→Witness
+B-family, the consent-surface voice question — STILL AWAITING the operator) all stand.
+
+**What the next program could be** (the operator chooses): the operator-walk
+end-to-end estate fixture; the two owed Docker reds; the perf bottleneck sweep
+(`PERF_HARNESS.md`); or a fired deferral — check `TriggerProbes` and the index first.
+The books are balanced; the ladder is full.
+
+Hold the spine.
+
+---
+
+# Handoff addendum — 2026-08-30: THE ALIGNMENT PROGRAM IS CLOSED. All three chapters shipped on PR #695; the next program is the operator's to commission
 
 To the next agent.
 
