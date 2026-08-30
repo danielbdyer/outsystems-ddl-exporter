@@ -1997,7 +1997,13 @@ coupling, not adopted as convention. The data norm-conservation (T15) and the
 schema identity-conservation (A43) meet exactly at the refactorlog. Witness:
 `RefactorLogEmitter: a column rename produces a SqlSimpleColumn entry`
 (Designation changes, Identity conserved, emitted as sp_rename) + the
-AssignedBySink re-key canary (Reidentify). ⬚ the `‖rename‖_data = 0` canary.
+AssignedBySink re-key canary (Reidentify) + the corollary's STATIC half
+(align-III.7): `ChangeManifest.renameIsometryViolated` names a recorded
+rename-only edge that carries OBSERVED captures — the manifest itself can
+now say "data moved where sp_rename should have conserved it"
+(`ChangeManifestTests`; an unmeasured edge never violates — no claim
+without a measurement, align-III.6). ⬚ the LIVE deploy-time
+`‖rename‖_data = 0` canary (the 6.D.1 route).
 
 **Relationship to the prior catalog.** T16 is H-050 lifted to displacements;
 T14 subsumes A38; T15 generalizes the CDC-silence property (chapter 4.1.B) to

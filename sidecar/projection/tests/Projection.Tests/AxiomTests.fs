@@ -1108,10 +1108,16 @@ let ``A43: Identity is the conserved charge — Rename perturbs Designation, con
     // Rename: Designation changes, Identity (SsKey) conserved, realized as a
     // SqlSimpleColumn refactorlog entry (sp_rename) — the cross-plane
     // corollary ‖rename‖_data = 0 (data conserved) is why the refactorlog is
-    // FORCED, not adopted. The ‖rename‖_data=0 live canary is the ⬚ trigger.
+    // FORCED, not adopted. The corollary's STATIC half is resident
+    // (align-III.7): a recorded rename-only edge carrying observed captures
+    // is named a violation from the manifest alone. The LIVE deploy-time
+    // ‖rename‖_data=0 canary stays the ⬚ trigger (6.D.1 route).
     citationOf
         "tests/Projection.Tests/RefactorLogEmitterTests.fs"
         "RefactorLogEmitter: a column rename produces a SqlSimpleColumn entry"
+    citationOf
+        "tests/Projection.Tests/ChangeManifestTests.fs"
+        "align-III.7 (A43 static half): a rename-only edge carrying observed captures violates the rename isometry"
 
 // ===========================================================================
 // Group L — HORIZON H-001/H-002/H-003 (Cluster B) lifts

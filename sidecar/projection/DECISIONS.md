@@ -32618,3 +32618,36 @@ projection, so reports/manifests/eject surfaces are byte-identical). Laws:
 (measured-zero round-trip; NotObserved writes no flag — byte-compat witness; the
 three-generation unflagged read). `MigrationCanaryTests`' live Docker witnesses re-pinned
 onto the projection.
+
+---
+
+## 2026-08-30 — align-III.7: the rename-isometry gets its static half (`ChangeManifest.renameIsometryViolated`)
+
+**The finding (audit a5, S6 / A43's ⬚).** A43's cross-plane corollary — a faithful schema
+rename induces ZERO data moves, `‖emit(π_Rename δ)‖_data = 0`, because `sp_rename` conserves
+rows — was stated, derived, and witnessed on the EMISSION side (the refactorlog entry), but
+nothing ever CHECKED it against a recorded edge: a change-manifest could carry "1 rename,
+120 captures" and no surface named the contradiction. The corollary had a producer and no
+inspector.
+
+**The decision.** `ChangeManifest.renameIsometryViolated : ChangeManifest -> bool` — true
+exactly when the edge is rename-only (the five rename channels are the ONLY nonzero
+channels: renames > 0 ∧ renames = ‖δ‖) AND the CDC ruler counted captures
+(`CdcCaptureCount > 0`). Composes with align-III.6 at the norm boundary: an UNMEASURED
+edge folds to zero and never violates — no claim without a measurement; only an
+`Observed` positive count can indict. A pure data load (norm 0) and a mixed edge
+(renames < ‖δ‖) are out of scope by construction — data legitimately moves there.
+
+**Scope guard.** The predicate is an OBSERVATION, not a refusal — no verb gates on it in
+this slice (its first consumer decides the surface; the natural seats are the report
+movement section and the estate board). The LIVE deploy-time canary — catching the
+violation at emission time rather than in the record — remains A43's ⬚ on the 6.D.1
+route, unchanged.
+
+**The law.** A43's witness gains the static half: AXIOMS.md names
+`ChangeManifest.renameIsometryViolated` beside the RefactorLogEmitter witness, and the
+A43 axiom test cites `ChangeManifestTests`' new laws (violated on rename-only + observed
+captures; upheld on observed silence; never on an unmeasured edge; out of scope on mixed
+and idempotent edges). Matrix regenerated in the same commit.
+
+**Not behavioral** — a pure predicate with no caller yet.

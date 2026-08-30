@@ -142,3 +142,52 @@ let ``6.H.4: path length (sum of edge norms) exceeds net displacement under chur
     Assert.Equal(0, CatalogDiff.norm net)
     // The difference (2 - 0) is the timeline's churn.
     Assert.True(path > CatalogDiff.norm net)
+
+// ===========================================================================
+// align-III.7 — A43's STATIC half: the rename-isometry check a recorded edge
+// answers from its own manifest. `sp_rename` conserves rows, so a faithful
+// rename-only edge shows CDC-silence; observed captures on such an edge name
+// a violation. (The LIVE deploy-time canary stays A43's ⬚, 6.D.1 route.)
+// ===========================================================================
+
+[<Fact>]
+let ``align-III.7 (A43 static half): a rename-only edge carrying observed captures violates the rename isometry`` () =
+    // e0 → e1 is exactly one kind rename, yet the edge carries 120 observed
+    // captures — data moved where sp_rename should have conserved it.
+    let m = ChangeManifest.between e0 e1 |> mustOk
+    Assert.Equal(1, m.SchemaNorm)
+    Assert.True(ChangeManifest.renameIsometryViolated m)
+
+[<Fact>]
+let ``align-III.7: a rename-only edge with OBSERVED silence upholds the isometry`` () =
+    // The same rename with a real zero reading — CDC-silence proven, the
+    // faithful realization A43 derives.
+    let silent = Episode.create (coord 1 "1.1.0" 8) renamedCatalog Profile.empty (Some "reflog#1") (DataObservation.observed 0 None)
+    let m = ChangeManifest.between e0 silent |> mustOk
+    Assert.False(ChangeManifest.renameIsometryViolated m)
+
+[<Fact>]
+let ``align-III.7: an UNMEASURED rename-only edge never violates — no claim without a measurement`` () =
+    let unmeasured = Episode.create (coord 1 "1.1.0" 8) renamedCatalog Profile.empty (Some "reflog#1") DataObservation.NotObserved
+    let m = ChangeManifest.between e0 unmeasured |> mustOk
+    Assert.False(ChangeManifest.renameIsometryViolated m)
+
+[<Fact>]
+let ``align-III.7: a mixed edge with captures is not a rename-isometry violation — data legitimately moves`` () =
+    // customer renamed AND country removed: the edge is not rename-only
+    // (norm 2, renames 1), so captures carry no isometry claim.
+    let mixedModule = { salesModule with Kinds = [ renamedKind; order ] }
+    let mixedCatalog = IRBuilders.mkCatalog [ mixedModule ]
+    let toEp = Episode.create (coord 1 "1.1.0" 8) mixedCatalog Profile.empty None (DataObservation.observed 40 None)
+    let m = ChangeManifest.between e0 toEp |> mustOk
+    Assert.True(m.SchemaNorm > m.Channels.RenamedKinds)
+    Assert.False(ChangeManifest.renameIsometryViolated m)
+
+[<Fact>]
+let ``align-III.7: an idempotent edge with captures is not a rename-isometry violation — there is no rename to betray`` () =
+    // Same schema across the edge (norm 0) with observed captures: a pure
+    // data load, no isometry claim in scope.
+    let dataOnly = Episode.create (coord 3 "1.3.0" 22) renamedCatalog Profile.empty None (DataObservation.observed 50 None)
+    let m = ChangeManifest.between e1 dataOnly |> mustOk
+    Assert.Equal(0, m.SchemaNorm)
+    Assert.False(ChangeManifest.renameIsometryViolated m)
