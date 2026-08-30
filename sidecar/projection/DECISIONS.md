@@ -204,10 +204,10 @@ table before continuing.
 | **Per-run `--csv <dir>` override on a live flow** | 2026-07-10 (the csv-destination program) | An operator asks to snapshot an EXISTING live flow's data to files for one run without authoring a csv environment — i.e. the flag form of what `"access": "csv"` expresses durably. Cash-out shape: parse `--csv <dir>` in the flow arm of `Command.parse`, rewrite the resolved spec's `Destination` to `Csv dir` before `planMovement` (routing and the runner need nothing new — the destination arm already dispatches before direction). | deferred (2026-07-10) |
 | **Manual cycle-ordering override (V1 `CircularDependencyOptions` analogue)** | 2026-07-07 (weak-feedback resolver v5) | A real estate surfaces a cycle whose breakability is NOT inferable from schema (every edge non-nullable/cascade, but the operator knows the data arrives in a self-consistent staged order). Add as a registered `OperatorIntent Ordering` overlay keyed by SsKey, COMPOSING with the resolver — never V1's replace-it-entirely semantics. | deferred (2026-07-07; **shape sharpened 2026-07-18, v7 slice 4**: a third `ResolutionPolicy` case `Overlaid of pins * ResolutionPolicy` composing over any base — the config axis now exists, so the cash-out is one DU case + the overlay source) |
 | **`EmissionDataLaneOrder` Ruling-lever upgrade (Watch → Decide)** | 2026-07-18 (v7 slice 8 — the certificate on the three surfaces) | An operator asks to RULE the cycle from the board (accept-and-relax vs repair) rather than read the advisory. Upgrading moves the lane to DECIDE and re-reds every estate carrying a hard cycle whether or not anyone transfers those kinds — do not fire without that ask (the WATCH ⇔ no-lever law, `EstateFinding.leverFormOf`). | deferred (2026-07-18) |
-| **Composition primitive `fallback`** | 2026-05-13 (Composition vocabulary cash-out) | A second strategy returns "no decision" / Defer outcome and another picks up | 0 consumers (session 25) |
-| **Composition primitive `accumulate`** | 2026-05-13 (Composition vocabulary cash-out) | A second pass needs to consume multiple-strategy decisions at once | 0 consumers (session 25) |
-| **Composition primitive `wrap`** | 2026-05-13 (Composition vocabulary cash-out) | Per-strategy diagnostics emerge (likely tied to Diagnostics writer) | 0 consumers (session 25) |
-| **Composition primitive `lift`** | 2026-05-13 (Composition vocabulary cash-out) | A strategy reused across different IR granularities (e.g., Nullability rule on view columns) | 0 consumers (session 25) |
+| **Composition primitive `fallback`** | 2026-05-13 (Composition vocabulary cash-out) | A second strategy returns "no decision" / Defer outcome and another picks up | Unbuilt; absence machine-probed — `TriggerProbes` reds if built without this row cashing out (align-III.11) |
+| **Composition primitive `accumulate`** | 2026-05-13 (Composition vocabulary cash-out) | A second pass needs to consume multiple-strategy decisions at once | Unbuilt; absence machine-probed — `TriggerProbes` reds if built without this row cashing out (align-III.11) |
+| **Composition primitive `wrap`** | 2026-05-13 (Composition vocabulary cash-out) | Per-strategy diagnostics emerge (likely tied to Diagnostics writer) | Unbuilt; absence machine-probed — `TriggerProbes` reds if built without this row cashing out (align-III.11) |
+| **Composition primitive `lift`** | 2026-05-13 (Composition vocabulary cash-out) | A strategy reused across different IR granularities (e.g., Nullability rule on view columns) | Unbuilt; absence machine-probed — `TriggerProbes` reds if built without this row cashing out (align-III.11) |
 | **Strategy registry mechanism** | 2026-05-11 (Strategy layer: a named architectural vector) | N≥4–6 strategies make name-keyed lookup useful | 5 strategy modules (UniqueIndexRules / NullabilityRules / ForeignKeyRules / CategoricalUniquenessRules / CycleResolution); Composition is the primitive module, not a strategy. No caller demands lookup by name (session 25). **Note (2026-05-15):** the sibling *transform-registry* deferral (`DECISIONS 2026-05-06 → cashed out 2026-05-13`) re-opened under different consumer pressure as `Projection.Core.TransformRegistry` for skeleton/overlay separation (L3-CC-Transform-Totality; workstream A.4.7). That re-opening is **enumerative** (compile-time `Pass` totality), not **name-keyed lookup**, so it does NOT fire the strategy-registry-mechanism trigger here. The strategy-registry-mechanism deferral remains open under its original framing; the transform-registry shape and the strategy-registry shape are now structurally distinct. See `DECISIONS 2026-05-15 — Transform registry re-opened: skeleton-overlay separation as L3-CC-Transform-Totality`. |
 | **Diagnostics writer** | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | First downstream artifact gates on operator-channel telemetry | **Cashed out — session 14 commit 3 landed `Projection.Core/Diagnostics.fs`. UniqueIndex opportunity stream activated as first consumer (session 14 commit 5). Three-channel split (operator/auditor/developer) remains deferred until a real consumer demands differentiation.** |
 | **`RequireQualifiedAccess` retrofit** on `UniqueIndexKeepReason` / `ForeignKeyKeepReason` / similar | 2026-05-11 refinement 1 (Strategy-layer codification empirical verdict) | A DU's variants change shape (added/removed/renamed) — substantive structural modification, not interpretive resolution | `ForeignKeyKeepReason` got `MissingTarget` (session 19) and the unreachable-`DeleteRuleIgnored` interpretive resolution (session 19; `DECISIONS.md:5048` rule 13). Neither rose to "structural modification" warranting retrofit; trigger sharpened at session 25 to clarify the threshold. Today neither `UniqueIndexKeepReason` nor `ForeignKeyKeepReason` carry the attribute (session 25) |
@@ -244,6 +244,11 @@ table before continuing.
 | **Relaxation expiry (calendar / run-count)** | 2026-07-15 (the estate chapter opens) | The operator asks for calendar (T-15 review) or run-count expiry on interim relaxations. Until then retirement is probe-only: every relaxation carries its reopen probe, and the probe reporting zero renders the retirement notice. | deferred (2026-07-15) |
 | **S8/O4 physical-residue sweep (unmanaged tables / columns / triggers / computed columns)** | 2026-07-15 (the estate chapter opens) | The first unexplained physical residue in a real estate run (an object on disk the model does not carry, surfaced outside the OSSYS read). Lands as S1′-shaped DECIDE findings via an `INFORMATION_SCHEMA` sweep beside the OSSYS read — the one place the estate mode deliberately looks past OSSYS. | **TABLE grain cashed 2026-08-15 (the data-sink chapter, S12) — in its stated shape**: `SinkResidue.sweep` probes `INFORMATION_SCHEMA.TABLES` (the `OSUSR_%` universe — a NAMED caveat: an arbitrarily-named external table is indistinguishable from a non-OutSystems table and stays out) beside the OSSYS read at `check estate`, subtracts the witnessed edition's claims (tombstones still claim), and the residue rides the claims plane as `Unclaimed` → `PhysicalUnclaimed` DECIDE findings. The finer grains the row also names (columns / triggers / computed columns) STAY deferred under the same trigger. See `2026-08-15 — sink S12` below. |
 | **The nullability-binder relaxation-direction amendment** | 2026-07-15 (the estate chapter opens) | Wave A6 opens (the estate overlay emitter). `TighteningBinding.fromConfig` currently no-ops the whole `kind:"nullability"` intervention class (2026-06-22), which would make the overlay's `keepNullable` entries expressible-but-inert (the NM-69 class). At A6: either re-open the class for the RELAXATION direction only (keepNullable / allowMandatoryRelaxation bind; coercion stays dropped) with the amendment first-in-PR + an A44 enforcement test, or — if declined — scope the overlay to FK/unique/categorical and keep nullability forks as DECIDE findings. | **Cashed out — 2026-07-15, estate wave A6 (first-in-PR).** The relaxation direction is STRUCTURAL: `TighteningDirection` (`EvidenceDriven \| RelaxationOnly`) on both nullability and FK configs; budget-less `kind:"nullability"` entries bind `relaxationOnly` (budgeted entries stay dropped — coercion unchanged); per-reference `referenceOverrides` (`keepUntracked`) land the previously-inexpressible single-FK untrack; `DecisionOverlay.KeepNullable` (OperatorOverride outcomes only) reaches `SsdtDdlEmitter.columnDef` — the one lawful loosening. A44 enforcement test: `` `overlay: every emitted key binds through TighteningBinding and reaches emission` `` (TighteningBindingTests). See `2026-07-15 — The nullability-binder amendment lands` entry below. |
+| **§5.12 fork 1 — the prior `.refactorlog` at emit time** (engine input vs repo-merge concern) | 2026-06-01 (Wave-6 ontology §10, "decisions owed") | Chapter 6.F.1 opens (refactorlog-against-prior emission) — the fork gates it | Open; substance in the 2026-06-01 entry ("Decisions owed"). Indexed align-III.11 — was named-with-trigger inside the dated entry only |
+| **§5.12 fork 2 — the SSIS team's consumable** (dacpac / per-sprint changelog / machine-readable diff) | 2026-06-01 (Wave-6 ontology §10, "decisions owed") | Chapter 6.F.4 opens (the change-manifest emission wiring) — the fork gates it | Open; substance in the 2026-06-01 entry. Indexed align-III.11 |
+| **§5.12 fork 3 — eject provenance form** (frozen state + full refactorlog history vs state alone; P-PROV append-forever vs collapsible) | 2026-06-01 (Wave-6 ontology §10, "decisions owed") | The eject chapter opens — the fork decides its provenance packaging | Open; substance in the 2026-06-01 entry. Indexed align-III.11 |
+| **The permissions axis** (grants/roles/RLS as a projected axis: `Grant` IR facet, `GRANT` statements, a permission channel in `CatalogDiff`, readback) | 2026-06-16 (THE VECTOR Wave 5 honesty; carried in the matrix T-VI note) | A flow must PUBLISH grants — the eject is the named firing point (the A2 pre-flight gates but cannot project/diff/round-trip a permission decision) | Open; substance in the generated matrix's T-VI note + THE VECTOR Wave 5. Indexed align-III.11 — was heredoc-resident only |
+| **The atomic `BEGIN TRAN` estate-scale envelope** (M22 beyond LOCAL full-access databases) | 2026-06-16 (M22 lands `--atomic` scoped LOCAL) | P7b throughput survey passes at estate scale AND a direct-connect target class emerges (production ships via ADO/Octopus/SSDT; managed cloud is DML-only — the compensating channel M21/M23 is the standing arm) | Open; substance in the M21/M22/M23 entries + the matrix T-VI note. Indexed align-III.11 |
 
 **[UPDATE 2026-07-03 — reconciliation note: six zero-reader `ComposeState` fields
 now consumed].** These six items are not tracked as individual rows in this table
@@ -32756,3 +32761,41 @@ with the corrections: Live 94 (unchanged) / **C 9** / D 1 / Horizon 23 / **total
 parser correction, not a coverage change — the registry itself did not move.
 
 **Not behavioral** (scripts + comments + one generated artifact).
+
+---
+
+## 2026-08-30 — align-III.11: the machine-evaluable triggers get probes; the index recovers its strays
+
+**The finding (audit a10, F5/M6).** Every deferral trigger was prose, even where
+machine-evaluable today, and the Active-deferrals index — built after the transform
+registry's trigger FIRED SILENTLY (session 12) precisely to catch silent fires — was
+missing five members: the three §5.12 design forks lived only inside the 2026-06-01
+dated entry's "Decisions owed" paragraph, and the permissions-axis + atomic-envelope
+triggers lived in `matrix-status.sh`'s hand-written heredoc and the generated artifact.
+Meanwhile the four Composition-primitive rows carried the hand-stamped "0 consumers
+(session 25)" — the restated-count class, two months stale.
+
+**The decision.** `TriggerProbes.fs` (pure pool, beside `AxiomTests.fs`) evaluates the
+measurable trigger subset on every run — the contract: **a fired trigger is a red test,
+not a hoped-for scan**; a probe going red is cash-out pressure, never a probe edit alone:
+
+- **H-012** (SsKey active patterns): the variant may be arm-matched at < 3 sites outside
+  `Identity.fs` — the Skip's 2026-05-22 hand-run audit made continuous (1 site today).
+- **H-006/H-099 + H-011** (Bench thresholds): the probes parse `bench/baseline-canary.json`
+  on every run; no `pass.`-scoped label may exceed 50% of the recorded canary wall, and
+  the pass-scoped sum must stay ≤ 10s. The honest note rides in the class: today NO
+  pass-scoped label exists (the chain runs below the labeling grain), so the triggers
+  are machine-checked as unfired rather than hand-claimed; a re-recorded baseline
+  re-evaluates them.
+- **The four Composition primitives**: the machine half of each trigger is BUILT-SURFACE
+  ABSENCE — `fallback`/`accumulate`/`wrap`/`lift` remain undefined in
+  `Strategies/Composition.fs`; building one without the index cash-out reds the probe.
+  The demand-pressure half stays prose in the index; the probes never claim it.
+
+**The index motion.** Five rows appended (the three §5.12 forks, each pointing at its
+entry-resident substance and its gating chapter; the permissions axis with the eject as
+its named firing point; the atomic estate-scale envelope gated on P7b + a direct-connect
+target class), and the four Composition rows' status re-stated as "unbuilt;
+absence machine-probed" — the probe replaces the session-stamp.
+
+**Not behavioral** — probes + index rows.
