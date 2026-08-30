@@ -1,8 +1,23 @@
 namespace Projection.Core
 
-/// The estate finding vocabulary — the typed spine of `check estate`
+/// The estate finding vocabulary — the typed spine of `check environments`
 /// (`CHAPTER_ESTATE_OPEN.md`; `DECISIONS 2026-07-15 — The estate chapter
-/// opens`). Core-resident so every downstream projection of one finding
+/// opens`).
+///
+/// THE TWO-REGISTER RULE (ruled at the fidelity chapter close; written
+/// down here — the vocabulary's home — at align-III.18/X2): the CONCEPT
+/// register says "estate" (the coined domain word for the fleet: the
+/// `Estate*` type family, the `estate.*` codes, `PlanAction.CheckEstate`)
+/// and the OPERATOR surface says "environments" (the verb
+/// `projection check environments`, the artifacts `environments.json` /
+/// `environments.overlay.json` / `environments.probes.sql` /
+/// `environments.remediation.<env>.sql`; `check estate` remains an
+/// accepted spelling). Doc-comments that NAME AN ARTIFACT use the
+/// operator register — an operator told "review the block in
+/// environments.remediation.qa.sql" must find a doc trail that says the
+/// same thing.
+///
+/// Core-resident so every downstream projection of one finding
 /// (the report, the remediation blocks, the posture overlay, the reopen
 /// probes — the π-coherence family) keys on the same identity: the
 /// emitters in `Projection.Targets.*` compile below `Projection.Pipeline`
@@ -57,11 +72,11 @@ type EstateLeverForm =
     /// a complete imperative sentence.
     | Ruling of imperative: string
     /// The REPAIR lane's ending: "Review the block for <subject> (<phrase>)
-    /// in estate.remediation.<env>.sql." — minted beside the artifact; the
+    /// in environments.remediation.<env>.sql." — minted beside the artifact; the
     /// same readable label leads the block in the file.
     | ReviewBlock
     /// The RELAX lane's PROPOSED ending: "Merge the config edit for <subject>
-    /// (<phrase>) in estate.overlay.json." — the merge is an operator edit;
+    /// (<phrase>) in environments.overlay.json." — the merge is an operator edit;
     /// the engine never applies it.
     | MergeOverlayEntry
     /// No lever — WATCH advisories, and the ACTIVE posture lines whose
@@ -937,7 +952,7 @@ module PedigreeEntry =
             { Env = env; Standing = EvidenceStanding.Firm; Magnitude = magnitude; CapturedAtUtc = None })
 
 /// One interim relaxation — the typed value behind an
-/// `estate.overlay.json` entry and its `estate.probes.sql` probe (wave
+/// `environments.overlay.json` entry and its `environments.probes.sql` probe (wave
 /// A6). Core-resident so the OperationalDiagnostics emitter can consume
 /// it; π-coherent by construction — the overlay entry, the reopen probe,
 /// and the RELAX-lane finding all carry `Scope`. Expiry is deliberately

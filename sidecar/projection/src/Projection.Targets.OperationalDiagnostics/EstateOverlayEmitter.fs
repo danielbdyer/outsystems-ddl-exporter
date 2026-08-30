@@ -10,7 +10,7 @@ open System.Text.Json
 open System.Text.Json.Nodes
 open Projection.Core
 
-/// `estate.overlay.json` + `estate.probes.sql` — the interim posture's two
+/// `environments.overlay.json` + `environments.probes.sql` — the interim posture's two
 /// sibling projections (wave A6; π-coherence: both project the SAME
 /// `Relaxation` list the report's RELAX-lane proposals resolved to, keyed
 /// by the finding). The overlay entry's `value` is EXACTLY the

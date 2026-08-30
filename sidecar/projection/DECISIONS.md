@@ -32988,3 +32988,27 @@ witness-plane collision partner is X3's `SinkDisplacement.SinkRow`.
 
 **Grep-absence:** `EvidenceCache` survives only on Core's module, its consumers, the
 house-pattern prose, and the unrelated `estate.evidence.*` Voice family. Not behavioral.
+
+---
+
+## 2026-08-30 — align-III.18 (X2): the two-register rule is written down where the vocabulary lives; four dead artifact anchors re-point
+
+**The finding (audit a9, F3).** One instrument, two names split by stage — the concept
+register says "estate" (the `Estate*` type family, `estate.*` codes, the coined domain
+word for the fleet) and the operator surface says "environments" (the verb, the
+artifacts). The split was RULED (the accepted-spelling entry) but never written down at
+the vocabulary's home — and the lever-form contract, exactly where the two registers
+meet, still promised artifacts that do not exist: `EstateLeverForm.ReviewBlock` said
+"estate.remediation.<env>.sql", `MergeOverlayEntry` said "estate.overlay.json", the
+`Relaxation` doc said "estate.overlay.json … estate.probes.sql", and
+`EstateOverlayEmitter`'s header named both dead forms. An operator following the doc
+trail greps for files the engine never writes.
+
+**The decision.** `EstateFinding.fs`'s header now STATES the two-register rule (concept
+"estate" / surface "environments"; artifact-naming doc-comments use the operator
+register), and the four stale anchors re-point to the `environments.*` names the engine
+actually writes. The `Estate` type family is NOT renamed — 21 declarations, 8 codes, and
+the chapter's domain word are the concept register, per the audit's own
+anti-finding.
+
+**Doc-only; not behavioral.**
