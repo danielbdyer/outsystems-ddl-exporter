@@ -306,15 +306,48 @@ module SsdtDdlEmitter =
         // A retarget whose mapped attribute key does not resolve falls through to
         // None (the drop-witness path) — never a silent mis-target; the decision
         // pass resolves the key fail-closed before it ever reaches the overlay.
-        let targetKindOpt, targetColumnOpt =
+        // schema-L3.2 — leg resolution (the `CompositePkFkUnreflected`
+        // closure). A leg-bearing reference resolves EVERY leg's source
+        // column from the owning kind and target column from the target
+        // kind — nothing is derived from the target PK. Legs 2..n ride
+        // `ForeignKeyDef.AdditionalLegs`; the head leg (= `SourceAttribute`
+        // by the `Catalog.create` invariant) stays in the classic fields.
+        // A retargeted reference keeps the single-column bridge shape
+        // regardless of legs (a bridge attribute is single-column; the
+        // retarget-plus-composite combination is refused upstream by the
+        // arity gate). Any unresolvable leg ⇒ `None` — the whole FK rides
+        // the existing `foreignKeyDropDiagnostics` Warning path, never a
+        // partial constraint.
+        let targetKindOpt, targetColumnOpt, additionalLegsOpt =
             match Map.tryFind r.SsKey overlay.RetargetFk |> Option.bind (fun ak -> Map.tryFind ak attrOwnerByKey) with
             | Some (bridgeKind, bridgeAttr) ->
-                Some bridgeKind, Some (ColumnRealization.columnNameText bridgeAttr.Column)
+                Some bridgeKind, Some (ColumnRealization.columnNameText bridgeAttr.Column), Some []
             | None ->
-                Map.tryFind r.TargetKind targetByKey,
-                (Map.tryFind r.TargetKind pkAttrByKey |> Option.map (fun pk -> ColumnRealization.columnNameText pk.Column))
-        match sourceColumnOpt, targetKindOpt, targetColumnOpt with
-        | Some sourceColumn, Some target, Some targetColumn ->
+                match r.Legs with
+                | [] ->
+                    Map.tryFind r.TargetKind targetByKey,
+                    (Map.tryFind r.TargetKind pkAttrByKey |> Option.map (fun pk -> ColumnRealization.columnNameText pk.Column)),
+                    Some []
+                | legs ->
+                    match Map.tryFind r.TargetKind targetByKey with
+                    | None -> None, None, None
+                    | Some target ->
+                        let colIn (kind: Kind) (sk: SsKey) : string option =
+                            kind.Attributes
+                            |> List.tryFind (fun a -> a.SsKey = sk)
+                            |> Option.map (fun a -> ColumnRealization.columnNameText a.Column)
+                        let resolved =
+                            legs
+                            |> List.map (fun leg ->
+                                match colIn k leg.SourceAttribute, colIn target leg.TargetAttribute with
+                                | Some s, Some t -> Some { ForeignKeyLegDef.SourceColumn = s; TargetColumn = t }
+                                | _ -> None)
+                        if resolved |> List.exists Option.isNone then None, None, None
+                        else
+                            let all = resolved |> List.map Option.get
+                            Some target, Some all.Head.TargetColumn, Some all.Tail
+        match sourceColumnOpt, targetKindOpt, targetColumnOpt, additionalLegsOpt with
+        | Some sourceColumn, Some target, Some targetColumn, Some additionalLegs ->
             // V1 FK naming: `FK_<OwnerTable>_<TargetTable>_<SourceColumn>` — the
             // target segment names the EFFECTIVE target (the bridge table when the
             // reference is retargeted). Per pillar 7 four-question analysis: the
@@ -341,6 +374,9 @@ module SsdtDdlEmitter =
                     SourceColumn = sourceColumn
                     Target       = toTableId target
                     TargetColumn = targetColumn
+                    // schema-L3.2 — legs 2..n of a composite FK ([] for the
+                    // classic single-column shape and for retargets).
+                    AdditionalLegs = additionalLegs
                     OnDelete     = toReferenceActionSql r.OnDelete
                     // Slice 5.13.fk-features-emit (matrix rows 58 + 59).
                     // OnUpdate threads through to ScriptDom's
@@ -1136,14 +1172,18 @@ module SsdtDdlEmitter =
         use _ = Bench.scope "emit.ssdt.emitSlices"
         let modules = moduleByKindKey catalog
         let lookups = FkEmissionLookups.ofCatalog catalog
-        // DECISIONS 2026-07-18 (#669 B-3 / EF-17) — the composite-key gate.
-        // A deployable, non-overlay-dropped reference whose target kind
-        // declares a composite primary key cannot emit as a single-column
-        // foreign key: the truncated key is rejected at deploy (`Msg 1776`).
-        // The publish refuses here — a red board finding
-        // (`EmissionCompositePkFk`, the same predicate) and a refused
-        // publish are the same fact. The overlay's `DropFk` is the ruling's
-        // second arm: a dropped reference emits no constraint and passes.
+        // DECISIONS 2026-07-18 (#669 B-3 / EF-17) — the composite-key gate,
+        // NARROWED at schema-L3.2 (the `CompositePkFkUnreflected` closure):
+        // the predicate is now the shared `Reference.compositeArityMismatch`
+        // — a LEG-COMPLETE reference (arity = the target's PK arity) passes
+        // and EMITS the multi-leg constraint; a legless reference against a
+        // composite PK, or a leg list of the wrong width, still refuses
+        // (the truncated key would be rejected at deploy, `Msg 1776`). A red
+        // board finding (`EmissionCompositePkFk`, the SAME predicate) and a
+        // refused publish remain the same fact. The overlay's `DropFk` is
+        // the ruling's second arm: a dropped reference emits no constraint
+        // and passes. A retargeted composite reference also refuses (a
+        // bridge attribute is single-column; legs cannot retarget).
         let compositeKeyRefusal =
             lookups.AllKinds
             |> List.tryPick (fun k ->
@@ -1152,7 +1192,9 @@ module SsdtDdlEmitter =
                 |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
                 |> List.tryPick (fun r ->
                     match Map.tryFind r.TargetKind lookups.TargetByKey with
-                    | Some target when List.length (Kind.primaryKey target) > 1 ->
+                    | Some target when
+                        Reference.compositeArityMismatch target r
+                        || (not (List.isEmpty r.Legs) && Map.containsKey r.SsKey overlay.RetargetFk) ->
                         Some (EmitError.CompositeKeyReferenceRefused (
                                 Name.value k.Name,
                                 Name.value r.Name,

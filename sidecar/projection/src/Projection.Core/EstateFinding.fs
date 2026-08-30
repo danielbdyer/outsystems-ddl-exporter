@@ -196,10 +196,20 @@ type EstateFindingKind =
     /// CDC tracks a kind in some environments and not others — a cutover
     /// write feeds live consumers unevenly (O1, wave A4).
     | OperationalCdc
-    /// A relationship whose target entity has a composite primary key — the
-    /// emitted single-column foreign key would reference only the first key
-    /// column, which SQL Server rejects (the #669 WP-12 emission hazard).
+    /// A relationship whose target entity has a composite primary key and
+    /// whose leg evidence does not cover it — the emitted foreign key would
+    /// not match the target key, which SQL Server rejects (the #669 WP-12
+    /// emission hazard; narrowed at schema-L3.2: a LEG-COMPLETE composite
+    /// reference emits its multi-leg constraint and no longer fires this).
     | EmissionCompositePkFk
+    /// A relationship whose target entity has NO primary key — no SQL
+    /// foreign key can reference a keyless table, so the constraint is
+    /// dropped from emission and from the round-trip comparator. The
+    /// kind-grain heap finding (`EmissionNoPrimaryKey`) names the target;
+    /// this names the RELATIONSHIP the drop actually erases (NM-28b,
+    /// folded in at schema-L3.2 by operator ruling — the drop was the
+    /// schema plane's last unnamed silent erasure at this grain).
+    | EmissionFkTargetWithoutPk
     /// Two entities in different modules that emit to the same table name —
     /// they would collide in one published schema (#669 WP-16).
     | EmissionDuplicateName
@@ -318,6 +328,7 @@ module EstateFindingKind =
           EstateFindingKind.IdentitySynthesized
           EstateFindingKind.OperationalCdc
           EstateFindingKind.EmissionCompositePkFk
+          EstateFindingKind.EmissionFkTargetWithoutPk
           EstateFindingKind.EmissionDuplicateName
           EstateFindingKind.EmissionLongName
           EstateFindingKind.EmissionNoPrimaryKey
@@ -371,6 +382,7 @@ module EstateFindingKind =
         | EstateFindingKind.IdentitySynthesized      -> "identity.synthesized"
         | EstateFindingKind.OperationalCdc           -> "operational.cdc"
         | EstateFindingKind.EmissionCompositePkFk    -> "emission.compositePkFk"
+        | EstateFindingKind.EmissionFkTargetWithoutPk -> "emission.fkTargetWithoutPk"
         | EstateFindingKind.EmissionDuplicateName    -> "emission.duplicateName"
         | EstateFindingKind.EmissionLongName         -> "emission.longName"
         | EstateFindingKind.EmissionNoPrimaryKey     -> "emission.noPrimaryKey"
@@ -435,6 +447,7 @@ module EstateFindingKind =
         | EstateFindingKind.IdentitySynthesized      -> "key generated differently across environments"
         | EstateFindingKind.OperationalCdc           -> "CDC tracks this table unevenly"
         | EstateFindingKind.EmissionCompositePkFk    -> "targets a composite primary key"
+        | EstateFindingKind.EmissionFkTargetWithoutPk -> "references an entity with no primary key"
         | EstateFindingKind.EmissionDuplicateName    -> "a table name shared across modules"
         | EstateFindingKind.EmissionLongName         -> "an over-long identifier"
         | EstateFindingKind.EmissionNoPrimaryKey     -> "no primary key — emits as a heap"
@@ -501,6 +514,7 @@ module EstateFindingKind =
         | EstateFindingKind.PostureRetirable        -> EstateLane.Repair
         | EstateFindingKind.OperationalCdc
         | EstateFindingKind.EmissionCompositePkFk
+        | EstateFindingKind.EmissionFkTargetWithoutPk
         | EstateFindingKind.EmissionDuplicateName
         | EstateFindingKind.EmissionLongName        -> EstateLane.Decide
         // The cutover-board population wave (DECISIONS 2026-07-18; the #669
@@ -560,6 +574,7 @@ module EstateFindingKind =
         | EstateFindingKind.IdentitySynthesized     -> EstatePlane.Identity
         | EstateFindingKind.OperationalCdc          -> EstatePlane.Operational
         | EstateFindingKind.EmissionCompositePkFk
+        | EstateFindingKind.EmissionFkTargetWithoutPk
         | EstateFindingKind.EmissionDuplicateName
         | EstateFindingKind.EmissionLongName
         | EstateFindingKind.EmissionNoPrimaryKey
@@ -619,6 +634,8 @@ module EstateFindingKind =
             EstateLeverForm.Ruling "Rule the CDC plan for the tracked kinds."
         | EstateFindingKind.EmissionCompositePkFk ->
             EstateLeverForm.Ruling "Rule the relationship: model the target's full composite key, or drop the foreign key before publishing."
+        | EstateFindingKind.EmissionFkTargetWithoutPk ->
+            EstateLeverForm.Ruling "Rule the relationship: give the target entity a primary key, or accept that the relationship deploys unenforced."
         | EstateFindingKind.EmissionDuplicateName ->
             EstateLeverForm.Ruling "Rule the collision: rename or remap one entity so the emitted table names are distinct."
         | EstateFindingKind.EmissionLongName ->
@@ -737,7 +754,9 @@ module EstateFindingKind =
         | EstateFindingKind.OperationalCdc ->
             "Change tracking is on for Order in cloud-uat and off in cloud-dev — a cutover write feeds live consumers in cloud-uat alone."
         | EstateFindingKind.EmissionCompositePkFk ->
-            "Order.CustomerId → Customer targets a composite primary key — the emitted foreign key would reference only its first column, which SQL Server rejects at deploy."
+            "Order.CustomerId → Customer targets a composite primary key (2 columns) with 1 column of leg evidence — the emitted foreign key would not match the target key, which SQL Server rejects at deploy."
+        | EstateFindingKind.EmissionFkTargetWithoutPk ->
+            "Order.LogId → AuditLog references an entity with no primary key — no foreign key can be emitted, so the relationship deploys unenforced."
         | EstateFindingKind.EmissionDuplicateName ->
             "2 entities are named 'Customer' (in modules Sales and Billing) — they would collide as one emitted table."
         | EstateFindingKind.EmissionLongName ->
@@ -819,6 +838,7 @@ module EstateFindingKind =
         | EstateFindingKind.IdentitySynthesized
         | EstateFindingKind.OperationalCdc
         | EstateFindingKind.EmissionCompositePkFk
+        | EstateFindingKind.EmissionFkTargetWithoutPk
         | EstateFindingKind.EmissionDuplicateName
         | EstateFindingKind.EmissionLongName
         | EstateFindingKind.EmissionNoPrimaryKey

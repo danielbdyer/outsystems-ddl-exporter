@@ -184,6 +184,7 @@ module OssysRowsetReader =
     let private parseReferenceRowFor
         (kindKeysByEntityId: Map<int, SsKey>)
         (kindKeysByEntityName: Map<string, SsKey>)
+        (attributeKeysByAttrId: Map<int, SsKey>)
         (moduleName: string)
         (entityName: string)
         (attrRow: AttributeRow)
@@ -252,10 +253,33 @@ module OssysRowsetReader =
             // G14 — normalize the constraint-state pair through the guard so a
             // V1 rowset carrying the illegal `(hasFK=0 ∧ isNoCheck=1)` quadrant
             // (untrusted without a constraint) canonicalizes to vacuous-trust.
+            // schema-L3.2 — resolve the denormalized composite legs to
+            // SsKeys (both sides, via the bundle-wide attr-id map). A leg
+            // whose attr id is absent or unresolvable degrades the WHOLE
+            // reference to the legless shape — never a half-list. The
+            // degradation is not silent at the outcome grain: a legless
+            // reference against a composite-PK target refuses at the
+            // emitter's arity gate AND reds the estate board
+            // (`emission.compositePkFk`) — the same fact, loudly.
+            let legs =
+                match refRow.Legs with
+                | [] -> []
+                | legRows ->
+                    let resolved =
+                        legRows
+                        |> List.map (fun lr ->
+                            match lr.ParentAttrId |> Option.bind (fun i -> Map.tryFind i attributeKeysByAttrId),
+                                  lr.ReferencedAttrId |> Option.bind (fun i -> Map.tryFind i attributeKeysByAttrId) with
+                            | Some s, Some t -> Some ({ SourceAttribute = s; TargetAttribute = t } : ReferenceLeg)
+                            | _ -> None)
+                    if resolved |> List.exists Option.isNone then []
+                    else resolved |> List.map Option.get
             Result.success
                 ({ Reference.create rKey rName srcKey tgtKey with
                      OnDelete = rule
-                     OnUpdate = onUpdateRule }
+                     OnUpdate = onUpdateRule
+                     // rule 7 — the leg evidence, explicit.
+                     Legs = legs }
                  |> Reference.withConstraintState refRow.HasDbConstraint refRow.IsConstraintTrusted)
         | _ ->
             // Propagate underlying errors via `propagateOrFallback` —
@@ -290,6 +314,11 @@ module OssysRowsetReader =
             /// synthesized identity per `kindSsKeyFromRow`). Used by
             /// `parseReferenceRowFor` for cross-module FK resolution.
             KindKeysByEntityId : Map<int, SsKey>
+            /// schema-L3.2 — every attribute row's resolved SsKey, keyed
+            /// by V1 AttrId across the WHOLE bundle. `parseReferenceRowFor`
+            /// resolves composite-FK leg attr ids (both sides — the target
+            /// leg belongs to ANOTHER kind) through this map.
+            AttributeKeysByAttrId : Map<int, SsKey>
             /// Entity NAME → kind's resolved V2 SsKey, spanning every
             /// module in the bundle. The cross-module fallback for
             /// `parseReferenceRowFor` when the resolved `RefEntityId`
@@ -625,7 +654,7 @@ module OssysRowsetReader =
             |> List.collect (fun a ->
                 Map.tryFind a.AttrId ctx.ReferencesByAttr
                 |> Option.defaultValue []
-                |> List.map (parseReferenceRowFor ctx.KindKeysByEntityId ctx.KindKeysByEntityName moduleName kindRow.EntityName a))
+                |> List.map (parseReferenceRowFor ctx.KindKeysByEntityId ctx.KindKeysByEntityName ctx.AttributeKeysByAttrId moduleName kindRow.EntityName a))
         let foldedRefs = Result.aggregate refResults
         // Slice 5.13.ossys-rowsets-cluster — per-Kind index assembly
         // from `IndexesByEntity` × `IndexColumnsByIndex`. The JOIN
@@ -1003,9 +1032,26 @@ module OssysRowsetReader =
                 Map.tryFind k.EntityId kindKeysByEntityId
                 |> Option.map (fun key -> k.EntityName, key))
             |> Map.ofList
+        // schema-L3.2 — the bundle-wide AttrId → SsKey map for composite-FK
+        // leg resolution, built with the SAME resolution the kind walk uses
+        // (`attributeSsKeyFromRow`: GUID identity when present, synthesized
+        // otherwise), so a leg's recovered key always MATCHES the
+        // reconstructed attribute's key.
+        let attributeKeysByAttrId =
+            bundle.Modules
+            |> List.collect (fun m ->
+                Map.tryFind m.EspaceId kindsByEspace |> Option.defaultValue []
+                |> List.collect (fun k ->
+                    Map.tryFind k.EntityId attributesByEntity |> Option.defaultValue []
+                    |> List.choose (fun a ->
+                        match attributeSsKeyFromRow m.EspaceName k.EntityName a with
+                        | Ok key -> Some (a.AttrId, key)
+                        | Error _ -> None)))
+            |> Map.ofList
         let ctx : RowsetParseContext =
             { KindKeysByEntityId   = kindKeysByEntityId
               KindKeysByEntityName = kindKeysByEntityName
+              AttributeKeysByAttrId = attributeKeysByAttrId
               KindsByEspace        = kindsByEspace
               AttributesByEntity   = attributesByEntity
               ReferencesByAttr     = referencesByAttr

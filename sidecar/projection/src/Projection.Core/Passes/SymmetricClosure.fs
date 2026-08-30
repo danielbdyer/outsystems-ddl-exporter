@@ -78,7 +78,13 @@ module SymmetricClosure =
                   with
                     IsUserFk            = r.IsUserFk
                     OnUpdate            = r.OnUpdate
-                    ConstraintState     = r.ConstraintState }
+                    ConstraintState     = r.ConstraintState
+                    // schema-L3.2 — deliberately legless (rule 7, said out
+                    // loud): an inverse is a navigation edge minted from the
+                    // TARGET's PK; the original's composite legs describe the
+                    // forward constraint and do not invert into a navigation
+                    // edge.
+                    Legs                = [] }
 
     let private hasInverseAlready (refs: Reference list) (key: SsKey) : bool =
         refs |> List.exists (fun r -> r.SsKey = key)

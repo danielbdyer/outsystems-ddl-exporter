@@ -343,6 +343,13 @@ module CatalogCodec =
         wOpt jw "order" wIntVal a.Order
         jw.WriteEndObject()
 
+    /// schema-L3.2 — one composite-FK leg: both sides as SsKeys.
+    let private wReferenceLeg (jw: Utf8JsonWriter) (leg: ReferenceLeg) : unit =
+        jw.WriteStartObject()
+        wField jw "sourceAttribute" wSsKey leg.SourceAttribute
+        wField jw "targetAttribute" wSsKey leg.TargetAttribute
+        jw.WriteEndObject()
+
     let private wReference (jw: Utf8JsonWriter) (r: Reference) : unit =
         jw.WriteStartObject()
         wField jw "ssKey" wSsKey r.SsKey
@@ -357,6 +364,12 @@ module CatalogCodec =
         jw.WriteBoolean("hasDbConstraint", Reference.hasDbConstraint r)
         wOpt jw "onUpdate" wReferenceAction r.OnUpdate
         jw.WriteBoolean("isConstraintTrusted", Reference.isConstraintTrusted r)
+        // schema-L3.2 — the composite-FK legs, written ONLY when non-empty:
+        // a legless reference serializes byte-identically to the pre-lift
+        // wire (every existing store + T1 golden unchanged; no codecVersion
+        // bump — absent → [] is total via `listField`).
+        if not (List.isEmpty r.Legs) then
+            wList jw "legs" wReferenceLeg r.Legs
         jw.WriteEndObject()
 
     let private wIndex (jw: Utf8JsonWriter) (i: Index) : unit =
@@ -819,6 +832,14 @@ module CatalogCodec =
                     Order = order }
         }
 
+    /// schema-L3.2 — read one composite-FK leg.
+    let private readReferenceLeg (el: JsonElement) : Result<ReferenceLeg> =
+        result {
+            let! sourceAttribute = field el "sourceAttribute" readSsKey
+            let! targetAttribute = field el "targetAttribute" readSsKey
+            return { SourceAttribute = sourceAttribute; TargetAttribute = targetAttribute }
+        }
+
     let private readReference (el: JsonElement) : Result<Reference> =
         result {
             let! ssKey = field el "ssKey" readSsKey
@@ -830,6 +851,9 @@ module CatalogCodec =
             let! hasDbConstraint = field el "hasDbConstraint" asBool
             let! onUpdate = optField el "onUpdate" readReferenceAction
             let! isConstraintTrusted = field el "isConstraintTrusted" asBool
+            // schema-L3.2 — absent (every pre-lift store) reads as [] via
+            // `listField`'s missing→empty total default.
+            let! legs = listField el "legs" readReferenceLeg
             return
                 { Reference.create ssKey name sourceAttribute targetKind with
                     OnDelete = onDelete
@@ -837,7 +861,9 @@ module CatalogCodec =
                     OnUpdate = onUpdate
                     // M4 — reconstruct the DU from the legacy boolean pair
                     // (`ofLegacyBooleans` normalizes the illegal quadrant).
-                    ConstraintState = ConstraintState.ofLegacyBooleans hasDbConstraint isConstraintTrusted }
+                    ConstraintState = ConstraintState.ofLegacyBooleans hasDbConstraint isConstraintTrusted
+                    // rule 7 — explicit, not inherited.
+                    Legs = legs }
         }
 
     let private readIndex (el: JsonElement) : Result<Index> =

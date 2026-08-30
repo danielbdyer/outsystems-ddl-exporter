@@ -34,7 +34,6 @@ type ToleratedDivergenceGen =
                 ToleratedDivergence.HeaderCommentsOmitted
                 ToleratedDivergence.PostDeployForeignKeysSplit
                 ToleratedDivergence.StaticPopulationsUnreflected
-                ToleratedDivergence.CompositePkFkUnreflected
                 ToleratedDivergence.CharAnsiPaddingTolerated
                 ToleratedDivergence.DecimalScaleTolerated
                 ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
@@ -121,7 +120,11 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains ten variants (op
     // (filter / INCLUDE / storage flags / compression / data space), the
     // widened `PhysicalIndex` compares it, and the two-arm witness in
     // `IndexRoundtripTests` pins the closure.
-    Assert.Equal (11, Set.count ToleratedDivergence.allKnown)
+    // **schema-L3.2 (2026-08-30):** 10 — `CompositePkFkUnreflected` is
+    // RETIRED: `Reference.Legs` carries the full composite-FK column
+    // list end-to-end (adapter, ReadSide, comparator, emitter, codec,
+    // migrate facet); the shared arity gate refuses the legless residual.
+    Assert.Equal (10, Set.count ToleratedDivergence.allKnown)
 
 [<Fact>]
 let ``Tolerance.ofSet round-trips through divergences`` () =
@@ -245,7 +248,7 @@ let ``schema-L3: the retired Schema OpenGap tolerance tokens fail closed (the co
     // design — the gap is CLOSED, so accepting it is meaningless; the
     // operator drops the token (each retirement's DECISIONS entry carries
     // the migration note).
-    let retiredTokens = [ "IndexOptionsUnreflected" ]
+    let retiredTokens = [ "IndexOptionsUnreflected"; "CompositePkFkUnreflected" ]
     for token in retiredTokens do
         Assert.Equal<ToleratedDivergence option>(None, ToleratedDivergence.tryParse token)
         match Tolerance.parse [ token ] with

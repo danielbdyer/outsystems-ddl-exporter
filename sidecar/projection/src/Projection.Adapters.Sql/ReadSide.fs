@@ -135,6 +135,13 @@ module ReadSide =
             TargetTable  : string
             TargetColumn : string
             IsNotTrusted : bool
+            /// schema-L3.2 — the deployed constraint's name + this row's
+            /// 1-based leg ordinal (`fkc.constraint_column_id`), so
+            /// `attachReferences` can GROUP a multi-leg FK's rows into ONE
+            /// leg-bearing `Reference` (previously a deployed 2-leg FK read
+            /// back as two single-column references).
+            ConstraintName : string
+            Ordinal      : int
         }
 
     // E2 (debrief G4) — the cross-schema FK readback classifier
@@ -1250,8 +1257,50 @@ module ReadSide =
                 |> Reference.withConstraintState true (not fk.IsNotTrusted)
         }
 
+    /// schema-L3.2 — build ONE leg-bearing `Reference` from a multi-leg
+    /// constraint's ordinal-sorted rows. Every leg's source AND target
+    /// attribute SsKeys recover through the same persisted-identity path
+    /// `buildReference` uses; the reference SsKey mints from the CONSTRAINT
+    /// name (a composite constraint is not identified by any single source
+    /// column). Trust is constant across a constraint's rows (head row).
+    let private buildCompositeReference
+        (tableSsKeys: Map<string * string, string>)
+        (columnSsKeys: Map<string * string * string, string>)
+        (rows: FkRow list)
+        : Result<Reference> =
+        result {
+            let head = List.head rows
+            let! legs =
+                rows
+                |> List.map (fun fk ->
+                    result {
+                        let! srcAttrKey = recoverAttributeSsKey columnSsKeys fk.SourceSchema fk.SourceTable fk.SourceColumn
+                        let! tgtAttrKey = recoverAttributeSsKey columnSsKeys fk.TargetSchema fk.TargetTable fk.TargetColumn
+                        return { ReferenceLeg.SourceAttribute = srcAttrKey; TargetAttribute = tgtAttrKey }
+                    })
+                |> Result.aggregate
+            let! tgtKindKey = recoverKindSsKey tableSsKeys head.TargetSchema head.TargetTable
+            let! refKey =
+                SsKey.mint
+                    SynthesisConvention.ReadSideReference
+                    (sprintf "%s.%s.%s" head.SourceSchema head.SourceTable head.ConstraintName)
+            let! refName = Name.create (sprintf "FK_%s_%s" head.SourceTable head.SourceColumn)
+            return
+                { Reference.create refKey refName (List.head legs).SourceAttribute tgtKindKey with
+                    ConstraintState = ConstraintState.ofLegacyBooleans true (not head.IsNotTrusted)
+                    // rule 7 — the leg evidence, explicit.
+                    Legs = legs }
+        }
+
     /// Attach references to a Kind based on the FKs grouped by
     /// (schema, table) coordinates. Per session-31 Session B.
+    /// schema-L3.2 — rows group by CONSTRAINT NAME first: a single-leg
+    /// constraint takes the classic `buildReference` path verbatim
+    /// (`Legs = []`, byte-identical to the pre-lift readback); an n≥2
+    /// group mints ONE leg-bearing reference via
+    /// `buildCompositeReference` (previously it minted n single-column
+    /// references — the readback half of the `CompositePkFkUnreflected`
+    /// blindness).
     let private attachReferences
         (tableSsKeys: Map<string * string, string>)
         (columnSsKeys: Map<string * string * string, string>)
@@ -1262,7 +1311,14 @@ module ReadSide =
         | None -> Result.success k
         | Some fks ->
             result {
-                let! refs = fks |> List.map (buildReference tableSsKeys columnSsKeys) |> Result.aggregate
+                let! refs =
+                    fks
+                    |> List.groupBy (fun fk -> fk.ConstraintName)
+                    |> List.map (fun (_, rows) ->
+                        match rows |> List.sortBy (fun r -> r.Ordinal) with
+                        | [ single ] -> buildReference tableSsKeys columnSsKeys single
+                        | sorted -> buildCompositeReference tableSsKeys columnSsKeys sorted)
+                    |> Result.aggregate
                 return { k with References = refs }
             }
 
@@ -1578,7 +1634,7 @@ module ReadSide =
                  SELECT \
                     SCHEMA_NAME(t.schema_id), t.name, c.name, \
                     SCHEMA_NAME(rt.schema_id), rt.name, rc.name, \
-                    fk.is_not_trusted \
+                    fk.is_not_trusted, fk.name, fkc.constraint_column_id \
                  FROM sys.foreign_keys fk \
                  JOIN sys.foreign_key_columns fkc \
                    ON fkc.constraint_object_id = fk.object_id \
@@ -1589,7 +1645,7 @@ module ReadSide =
                  JOIN sys.columns rc \
                    ON rc.object_id = rt.object_id AND rc.column_id = fkc.referenced_column_id \
                  WHERE t.is_ms_shipped = 0 \
-                 ORDER BY SCHEMA_NAME(t.schema_id), t.name, c.column_id; \
+                 ORDER BY SCHEMA_NAME(t.schema_id), t.name, fk.name, fkc.constraint_column_id; \
                  SELECT \
                     SCHEMA_NAME(t.schema_id), t.name, c.name, \
                     CAST(ep.value AS NVARCHAR(MAX)) \
@@ -1672,7 +1728,11 @@ module ReadSide =
                               TargetSchema = c.TargetSchema
                               TargetTable  = c.TargetTable
                               TargetColumn = c.TargetColumn
-                              IsNotTrusted = c.IsNotTrusted })
+                              IsNotTrusted = c.IsNotTrusted
+                              // schema-L3.2 — system-nonnull columns, read
+                              // directly (classification covers coordinates).
+                              ConstraintName = reader.GetString 7
+                              Ordinal      = System.Convert.ToInt32(reader.GetValue 8) })
                     | ForeignKeyReadback.Unreadable (side, visible) ->
                         eprintfn "%s" (ForeignKeyReadback.describe side visible))
 

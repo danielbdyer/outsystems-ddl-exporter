@@ -194,7 +194,6 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
         | ToleratedDivergence.HeaderCommentsOmitted        -> ()
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> ()
         | ToleratedDivergence.StaticPopulationsUnreflected -> ()
-        | ToleratedDivergence.CompositePkFkUnreflected     -> ()
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> ()
         | ToleratedDivergence.DecimalScaleTolerated        -> ()
         | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad -> ()
@@ -223,7 +222,11 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
     // (ReadSide recovers the full index option surface; the widened
     // PhysicalIndex compares it; IndexRoundtripTests carries the two-arm
     // closure witness).
-    Assert.Equal(11, Set.count ToleratedDivergence.allKnown)
+    // **schema-L3.2 (2026-08-30):** 10 — CompositePkFkUnreflected RETIRED
+    // (Reference.Legs carries the full composite-FK column list; every
+    // lane populates, emits, and compares per leg; the arity gate refuses
+    // the legless residual).
+    Assert.Equal(10, Set.count ToleratedDivergence.allKnown)
 
 // ---------------------------------------------------------------------------
 // NM-70 (WP5) — the identity-annotation emit | omit gate.

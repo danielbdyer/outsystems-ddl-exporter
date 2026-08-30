@@ -593,7 +593,8 @@ module Estate =
                 | ReferenceFacet.OnUpdate -> "update rule"
                 | ReferenceFacet.UserFk -> "user relationship"
                 | ReferenceFacet.DbConstraint -> "enforcement"
-                | ReferenceFacet.Trust -> "trust")
+                | ReferenceFacet.Trust -> "trust"
+                | ReferenceFacet.Legs -> "key columns")
         let idxFacets (c: IndexChange) : string list =
             c.Facets |> Set.toList |> List.map (function
                 | IndexFacet.Columns -> "columns"
@@ -1253,12 +1254,19 @@ module Estate =
     /// The emitter renders a single-column foreign key that references only
     /// the target's first key column — SQL Server rejects it at deploy.
     let private emissionCompositePkFkFindings (target: Catalog) : Finding list =
+        // schema-L3.2 — the predicate is the SHARED
+        // `Reference.compositeArityMismatch`, the same one the emitter's
+        // composite-key gate refuses on: a red board finding and a refused
+        // publish stay the same fact by construction (DECISIONS 2026-07-18).
+        // A LEG-COMPLETE composite reference (arity = the target's PK arity)
+        // emits its multi-leg constraint and no longer fires this finding.
         Catalog.allKinds target
         |> List.collect (fun k ->
             k.References
+            |> List.filter Reference.isDeployable
             |> List.choose (fun r ->
                 match Catalog.tryFindKind r.TargetKind target with
-                | Some targetKind when List.length (Kind.primaryKey targetKind) > 1 ->
+                | Some targetKind when Reference.compositeArityMismatch targetKind r ->
                     let sourceCol =
                         k.Attributes
                         |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
@@ -1266,8 +1274,35 @@ module Estate =
                         |> Option.defaultValue "?"
                     let subject = sprintf "%s.%s → %s" (Name.value k.Name) sourceCol (Name.value targetKind.Name)
                     Some (emissionFinding EstateFindingKind.EmissionCompositePkFk subject
-                            (sprintf "%s targets a composite primary key (%s columns) — the emitted foreign key would reference only its first column, which SQL Server rejects at deploy."
-                                subject (humane (List.length (Kind.primaryKey targetKind)))))
+                            (sprintf "%s targets a composite primary key (%s columns) with %s of leg evidence — the emitted foreign key would not match the target key, which SQL Server rejects at deploy."
+                                subject
+                                (humane (List.length (Kind.primaryKey targetKind)))
+                                (sprintf "%d %s" (Reference.legArity r) (if Reference.legArity r = 1 then "column" else "columns"))))
+                | _ -> None))
+
+    /// NM-28b (folded in at schema-L3.2 by operator ruling): a relationship
+    /// whose target entity has NO primary key emits no foreign key at all —
+    /// no SQL FK can reference a keyless table — and the comparator drops it
+    /// too. The kind-grain heap finding names the target; this names the
+    /// RELATIONSHIP the drop erases, so the schema plane's last unnamed
+    /// silent drop at this grain is now on the board.
+    let private emissionFkTargetWithoutPkFindings (target: Catalog) : Finding list =
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            k.References
+            |> List.filter Reference.isDeployable
+            |> List.choose (fun r ->
+                match Catalog.tryFindKind r.TargetKind target with
+                | Some targetKind when List.isEmpty (Kind.primaryKey targetKind) ->
+                    let sourceCol =
+                        k.Attributes
+                        |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
+                        |> Option.map (fun a -> Name.value a.Name)
+                        |> Option.defaultValue "?"
+                    let subject = sprintf "%s.%s → %s" (Name.value k.Name) sourceCol (Name.value targetKind.Name)
+                    Some (emissionFinding EstateFindingKind.EmissionFkTargetWithoutPk subject
+                            (sprintf "%s references an entity with no primary key — no foreign key can be emitted, so the relationship deploys unenforced."
+                                subject))
                 | _ -> None))
 
     /// WP-16: two entities whose logical names collide across modules — one
@@ -1500,6 +1535,7 @@ module Estate =
     /// SSDT-fidelity dimension of the readiness report.
     let emissionFindingsForWith (renames: Projection.Core.Passes.TableRename.RenameSpec list) (target: Catalog) : Finding list =
         [ emissionCompositePkFkFindings target
+          emissionFkTargetWithoutPkFindings target
           emissionDuplicateNameFindings renames target
           emissionLongNameFindings target
           emissionNoPrimaryKeyFindings target

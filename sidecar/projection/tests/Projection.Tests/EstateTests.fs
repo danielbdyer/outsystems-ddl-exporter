@@ -1121,6 +1121,65 @@ let ``emission: a reference targeting a composite primary key is a WP-12 hazard 
     Assert.Empty(Estate.emissionFindingsFor sampleCatalog)
 
 [<Fact>]
+let ``emission: a LEG-COMPLETE composite reference does not fire compositePkFk (schema-L3.2 — the finding narrows with the emitter, one predicate)`` () =
+    // Same composite-PK fixture, but the Order→Customer reference now
+    // carries BOTH legs (Reference.Legs covers the 2-column PK) — the
+    // shared arity predicate passes, the emitter emits, the board is
+    // quiet. A red board finding and a refused publish stay the same fact.
+    let legComplete =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with
+                                        Attributes =
+                                            k.Attributes
+                                            |> List.map (fun a ->
+                                                if a.SsKey = customerTenantKey then { a with IsPrimaryKey = true } else a) }
+                                elif k.SsKey = orderKey then
+                                    { k with
+                                        References =
+                                            k.References
+                                            |> List.map (fun r ->
+                                                if r.TargetKind = customerKey then
+                                                    { r with
+                                                        Legs =
+                                                          [ { SourceAttribute = r.SourceAttribute; TargetAttribute = customerIdAttrKey }
+                                                            { SourceAttribute = orderIdAttrKey; TargetAttribute = customerTenantKey } ] }
+                                                else r) }
+                                else k) }) }
+    Assert.Empty(Estate.emissionFindingsFor legComplete)
+
+[<Fact>]
+let ``emission: an FK whose target has NO primary key fires fkTargetWithoutPk (NM-28b named — the relationship-grain drop is on the board)`` () =
+    // Strip Customer's PK entirely: the Order→Customer relationship can
+    // emit no constraint (and the target itself reds as a heap via the
+    // kind-grain finding) — the RELATIONSHIP-grain finding names the drop.
+    let pkless =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                if k.SsKey = customerKey then
+                                    { k with Attributes = k.Attributes |> List.map (fun a -> { a with IsPrimaryKey = false }) }
+                                else k) }) }
+    let findings = Estate.emissionFindingsFor pkless
+    let fkFinding = findings |> List.filter (fun f -> f.Kind = EstateFindingKind.EmissionFkTargetWithoutPk) |> List.exactlyOne
+    Assert.Equal(EstatePlane.Emission, fkFinding.Plane)
+    Assert.Equal(EstateLane.Decide, fkFinding.Lane)
+    Assert.Contains("references an entity with no primary key", fkFinding.Statement)
+    Assert.Contains("deploys unenforced", fkFinding.Statement)
+
+[<Fact>]
 let ``emission: the audit dimension rides its own report list, separate from convergence findings`` () =
     // A composite-PK-FK target is an EMISSION finding, never a convergence one:
     // the emission list carries it; Findings (cross-env divergence) stays clean

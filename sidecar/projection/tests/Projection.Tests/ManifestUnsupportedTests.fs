@@ -62,7 +62,6 @@ let ``Unsupported.compute names match current ToleratedDivergence variants`` () 
         Set.ofList
             [ "BooleanCanonicalizationTolerated"
               "CharAnsiPaddingTolerated"
-              "CompositePkFkUnreflected"
               "DateTimeTickPrecisionTolerated"
               "DecimalScaleTolerated"
               "FkTrustNotRestoredOnBulkLoad"

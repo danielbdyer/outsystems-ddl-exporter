@@ -107,22 +107,23 @@ type ToleratedDivergence =
     /// @ladder CharAnsiPaddingTolerated Data AcceptedFaithful
     | CharAnsiPaddingTolerated
 
-    /// NM-28 — a foreign key whose TARGET kind has a **composite** primary key
-    /// is reflected on only its FIRST leg. `PhysicalSchema.toPhysicalForeignKeys`
-    /// pairs the (single) FK source column against the target's first PK column;
-    /// the second-and-later legs are not emitted, so the canary's
-    /// `PhysicalSchema.ForeignKeys` set cannot observe drift in them. The cause
-    /// is structural, not a coding slip: V2's `Reference` IR is **single-column
-    /// per chapter 5.0** (`MetadataSnapshotRunner` `#FkColumns` note — the
-    /// multi-column source columns exist in `sys.foreign_key_columns` but have no
-    /// IR carrier yet), so there is no source column to pair the second target PK
-    /// leg against. Named here so the residual is *closed* (documented +
-    /// witnessed at construction), not silent. Retiring it: lift a composite-FK
-    /// IR (the deferred chapter-5.0 refinement) so a `Reference` carries its full
-    /// ordered (source, target) column list, then emit one `PhysicalForeignKey`
-    /// per leg and round-trip every leg.
-    /// @ladder CompositePkFkUnreflected Schema OpenGap
-    | CompositePkFkUnreflected
+    // `CompositePkFkUnreflected` was RETIRED at schema-L3.2 (2026-08-30): the
+    // chapter-5.0 single-column refinement is CASHED — `Reference.Legs`
+    // (`ReferenceLeg list`, SsKeys both sides, ordinal order) carries the
+    // full composite-FK column list; the OSSYS rowset lane denormalizes the
+    // always-captured `#FkColumns` groups onto the ordinal-1 reference;
+    // ReadSide groups `sys.foreign_key_columns` rows by constraint name into
+    // ONE leg-bearing reference; `toPhysicalForeignKeys` reflects one entry
+    // per leg; the SSDT emitter renders the multi-leg FOREIGN KEY (killing
+    // the latent Msg-1776 deploy failure); `ReferenceFacet.Legs` makes a leg
+    // change a real migrate diff. The legless-against-composite residual is
+    // refused by the SHARED arity predicate (`Reference.compositeArityMismatch`
+    // — the emitter gate and the estate board's `emission.compositePkFk`
+    // finding are the same fact). Witness: the two-arm canary in
+    // `CanaryRoundTripTests` (deploy + per-leg readback agreement; legs-
+    // stripped falsifiability) + `PhysicalSchemaForeignKeyTests`. No DU
+    // variant remains, per the dead-algebra-retirement precedent; the
+    // config token fails closed at `Tolerance.parse`.
 
     /// AC-D6 — a `decimal(p,s)` / `numeric(p,s)` column's stored value is a
     /// **numeric** quantity, so `1.0` and `1.00` are the **same stored
@@ -278,7 +279,6 @@ module ToleratedDivergence =
         | ToleratedDivergence.HeaderCommentsOmitted          -> ToleratedDivergence.HeaderCommentsOmitted
         | ToleratedDivergence.PostDeployForeignKeysSplit     -> ToleratedDivergence.PostDeployForeignKeysSplit
         | ToleratedDivergence.StaticPopulationsUnreflected   -> ToleratedDivergence.StaticPopulationsUnreflected
-        | ToleratedDivergence.CompositePkFkUnreflected       -> ToleratedDivergence.CompositePkFkUnreflected
         | ToleratedDivergence.CharAnsiPaddingTolerated       -> ToleratedDivergence.CharAnsiPaddingTolerated
         | ToleratedDivergence.DecimalScaleTolerated          -> ToleratedDivergence.DecimalScaleTolerated
         | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad   -> ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
@@ -304,7 +304,6 @@ module ToleratedDivergence =
                 coverage ToleratedDivergence.HeaderCommentsOmitted
                 coverage ToleratedDivergence.PostDeployForeignKeysSplit
                 coverage ToleratedDivergence.StaticPopulationsUnreflected
-                coverage ToleratedDivergence.CompositePkFkUnreflected
                 coverage ToleratedDivergence.CharAnsiPaddingTolerated
                 coverage ToleratedDivergence.DecimalScaleTolerated
                 coverage ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
@@ -324,7 +323,6 @@ module ToleratedDivergence =
         | ToleratedDivergence.HeaderCommentsOmitted        -> "HeaderCommentsOmitted"
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> "PostDeployForeignKeysSplit"
         | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
-        | ToleratedDivergence.CompositePkFkUnreflected     -> "CompositePkFkUnreflected"
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> "CharAnsiPaddingTolerated"
         | ToleratedDivergence.DecimalScaleTolerated        -> "DecimalScaleTolerated"
         | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad -> "FkTrustNotRestoredOnBulkLoad"

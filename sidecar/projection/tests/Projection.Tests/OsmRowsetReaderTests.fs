@@ -531,6 +531,7 @@ let private userAccountRefRow : OssysRowsetTypes.ReferenceRow =
         OnUpdate            = None
         ReflectedOnDelete   = None
         IsConstraintTrusted = true
+        Legs                = []
     }
 
 let private accountKindKey            = kindKey ["AppCore"; "Account"]
@@ -1617,7 +1618,8 @@ let ``a reference aimed at a dropped shadow's EntityId re-aims at the survivor (
                     HasDbConstraint     = true
                     OnUpdate            = None
                     ReflectedOnDelete   = None
-                    IsConstraintTrusted = true } ] }
+                    IsConstraintTrusted = true
+                    Legs                = [] } ] }
     let normalized, _ = OssysRowsetReader.normalizeBundle bundle
     let reference = Assert.Single(normalized.References)
     Assert.Equal(Some 11, reference.RefEntityId)

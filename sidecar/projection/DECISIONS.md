@@ -33271,3 +33271,71 @@ accepting it is meaningless. Drop the token.
 Not behavioral for clean estates: both canary halves recover identically, so a faithful
 round-trip's diff stays empty; only genuinely drifted option state (previously
 invisible) now surfaces.
+
+---
+
+## 2026-08-30 — schema-L3.2: the composite foreign key becomes expressible end-to-end (`CompositePkFkUnreflected` RETIRED; NM-28b named) — BEHAVIORAL
+
+**The finding.** The chapter-5.0 single-column `Reference` was the schema plane's last
+structural foreclosure: `#FkColumns` captured every leg of a deployed composite FK and
+threw them away at the IR boundary; `toPhysicalForeignKeys` reflected the first leg only;
+the SSDT emitter would render a single-column FK that SQL Server REJECTS at deploy
+(Msg 1776 — a correctness consequence the tolerance's comparator-only framing never
+named); ReadSide read one row per leg and minted N single-column references from one
+deployed constraint. The #669 gate refused every composite-target reference outright.
+
+**The closure.** `ReferenceLeg = {SourceAttribute; TargetAttribute}` (SsKeys both sides)
++ additive `Reference.Legs` (ctor default `[]`; head leg ≡ `SourceAttribute` by
+invariant; four `Catalog.create` codes: legHeadMismatch / legDuplicate /
+legDanglingSource / legDanglingTarget). Arity is deliberately NOT a construction
+invariant (a deployed FK may reference a unique key; broken estates must stay
+representable) — it is the ONE shared deployability predicate
+`Reference.compositeArityMismatch`, consumed by BOTH the emitter's composite-key gate
+(NARROWED: leg-complete references now EMIT; legless/wrong-arity still refuse) and the
+estate board's `emission.compositePkFk` finding (statement now carries carried-vs-
+required counts) — a red board finding and a refused publish stay the same fact by
+construction. Population: the rowset lane denormalizes the ordinal-1 `#FkColumns` group
+onto `ReferenceRow.Legs` and the reader resolves both sides through the new bundle-wide
+`AttributeKeysByAttrId` map; ReadSide groups `sys.foreign_key_columns` rows by
+CONSTRAINT NAME (new `FkRow.ConstraintName`/`Ordinal`) — a deployed 2-leg FK now reads
+back as ONE leg-bearing reference. Realization: `ForeignKeyDef.AdditionalLegs`;
+ScriptDom appends legs 2..n; a multi-leg constraint attaches at TABLE level (SQL
+grammar); `PhysicalSchemaReader` projects per leg, keeping the stream/catalog adjunction
+law exact. Comparator: one `PhysicalForeignKey` entry per leg, both sides resolved from
+the legs (nothing PK-derived); the legless arm is byte-identical. Migrate:
+`ReferenceFacet.Legs` registered (an unregistered field would be ERASED by the facet
+lens — the NM-16 failure class). Codec: `legs` written ONLY when non-empty (every
+pre-lift store and T1 golden byte-identical; no codecVersion bump), read total via
+`listField`'s missing→[] default.
+
+**NM-28b folded in (operator ruling).** A reference whose target has NO primary key
+emits no FK and the comparator drops it — the kind-grain heap finding named the target;
+the new `emission.fkTargetWithoutPk` DECIDE finding names the RELATIONSHIP, so the
+schema plane's last unnamed silent drop at this grain is on the board. The comparator
+itself stays a pure value; the board + the emitter's FK-drop Warning channel are the
+named surfaces.
+
+**BEHAVIORAL — the consumers enumerated.** (1) Emitted artifacts change for leg-bearing
+composite references: the multi-leg `FOREIGN KEY (a, b) REFERENCES t (x, y)` now renders
+where the gate previously refused the publish — deploys that failed become deploys that
+succeed. (2) The #669 refusal narrows (leg-complete passes; a retargeted composite
+refuses — a bridge attribute is single-column). (3) ReadSide readback of composite
+constraints changes shape: one leg-bearing reference instead of N single-column ones
+(consumers that counted references over composite estates see the honest count).
+(4) The estate board: leg-complete references stop redding `emission.compositePkFk`;
+keyless targets now red `emission.fkTargetWithoutPk`. (5) `Tolerance.parse` fails closed
+on the retired token — configs naming `CompositePkFkUnreflected` must drop it.
+Named residual (flagged, not landed): TWO model reference attributes covered by ONE
+deployed composite FK still mint duplicate single-column constraints (pre-existing);
+legs attach to the ordinal-1 reference only; the arity gate refuses that shape's deploy
+loudly. Trigger to fix: the first real estate carrying it.
+
+**Witnesses.** The two-arm Docker canary (`CanaryRoundTripTests` NM-28 closure: the
+2-leg deploy that USED to fail Msg-1776 deploys Ok; per-leg readback agreement through
+the general comparator; legs-stripped falsifiability DIVERGES) +
+`PhysicalSchemaForeignKeyTests` (per-leg reflection, the legless residual, the shared
+arity predicate's truth table) + the emitter render pin (multi-leg constraint text) +
+codec legs round-trip + byte-identity + the estate leg-complete negative and
+keyless-target positive. Retirement mechanics per the checklist: `allKnown` 11 → 10;
+matrix regenerated same-commit — Schema's open cell reads `TriggerBodyUnparsedDropped`
+alone; footer `tolerances 10 (1 open)`.

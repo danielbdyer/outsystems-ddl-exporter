@@ -925,11 +925,33 @@ module ConstraintState =
 /// flag at construction (per the V1 reference
 /// `ModelUserSchemaGraphFactory.GetSyntheticUserForeignKeys`); test
 /// fixtures and non-user-FK adapter sites default to `false`.
+/// One column pairing of a multi-column foreign key (schema-L3.2, the
+/// `CompositePkFkUnreflected` closure): the source (child) attribute and
+/// the target (parent) attribute it references, both as SsKeys (identity
+/// as a type; realization resolves SsKey → column name). Order within
+/// `Reference.Legs` is the constraint's ordinal order — load-bearing.
+type ReferenceLeg = {
+    SourceAttribute : SsKey
+    TargetAttribute : SsKey
+}
+
 type Reference = {
     SsKey           : SsKey
     Name            : Name
     SourceAttribute : SsKey
     TargetKind      : SsKey
+    /// The FULL ordered (source, target) column list of a composite
+    /// foreign key, when evidence supplies it (the deployed `#FkColumns`
+    /// rowset / `sys.foreign_key_columns`). `[]` (the ctor default) = no
+    /// leg evidence: the reference is the classic single-column shape,
+    /// paired against the target's first PK column at realization —
+    /// byte-identical to the pre-lift behavior. Non-empty ⇒ the head
+    /// leg's `SourceAttribute` EQUALS this reference's `SourceAttribute`
+    /// (a `Catalog.create` invariant) and realization derives NOTHING
+    /// from the target PK — every leg names both sides explicitly.
+    /// schema-L3.2 (the `CompositePkFkUnreflected` closure; the deferred
+    /// chapter-5.0 single-column refinement, cashed).
+    Legs            : ReferenceLeg list
     OnDelete        : ReferenceAction
     /// True iff this reference's `TargetKind` resolves to the
     /// platform user kind (the OSSYS-native users entity in V1's
@@ -1463,6 +1485,7 @@ module Reference =
             Name                = name
             SourceAttribute     = sourceAttribute
             TargetKind          = targetKind
+            Legs                = []
             OnDelete            = NoAction
             IsUserFk            = false
             OnUpdate            = None
@@ -1530,6 +1553,30 @@ module Reference =
     /// keep the full closure.
     let isDeployable (r: Reference) : bool =
         not (isInverse r)
+
+    /// The deployability arity of the reference (schema-L3.2): 1 when
+    /// legless (the classic single-column shape), else the leg count.
+    let legArity (r: Reference) : int =
+        match r.Legs with
+        | [] -> 1
+        | legs -> List.length legs
+
+    /// True iff this reference cannot emit a key-covering FOREIGN KEY
+    /// against `target` — the SQL Server Msg 1776 shape (the referencing
+    /// column list matches no candidate key). SHARED by the emitter's
+    /// composite-key refusal gate and the estate board's
+    /// `emission.compositePkFk` finding, so a red board finding and a
+    /// refused publish are the same fact by construction (DECISIONS
+    /// 2026-07-18). A leg-complete reference (arity = PK arity) EMITS;
+    /// a legless reference against a composite PK — or a leg list of
+    /// the wrong width — refuses. `pk = 0` (a no-PK target) is NOT this
+    /// predicate's concern: that is the NM-28b drop path, named by its
+    /// own diagnostic.
+    /// (Inlines the `IsPrimaryKey` filter rather than calling
+    /// `Kind.primaryKey` — `module Kind` compiles later in this file.)
+    let compositeArityMismatch (target: Kind) (r: Reference) : bool =
+        let pkArity = target.Attributes |> List.filter (fun a -> a.IsPrimaryKey) |> List.length
+        pkArity > 0 && legArity r <> pkArity && (pkArity > 1 || legArity r > 1)
 
 
 [<RequireQualifiedAccess>]
@@ -2068,6 +2115,13 @@ module Catalog =
             let refAcc = ResizeArray<ValidationError>()
             let idxAcc = ResizeArray<ValidationError>()
             let attrAcc = ResizeArray<ValidationError>()
+            // schema-L3.2 — the leg invariants need the TARGET kind's
+            // attribute-key set; built once here (one extra O(attrs) pass
+            // on the `ir.catalog.create` path, same complexity class).
+            let attrKeysByKindKey =
+                allKindList
+                |> List.map (fun k -> k.SsKey, k.Attributes |> List.map (fun a -> a.SsKey) |> Set.ofList)
+                |> Map.ofList
             for k in allKindList do
                 let attrKeys =
                     k.Attributes |> List.map (fun a -> a.SsKey) |> Set.ofList
@@ -2115,6 +2169,54 @@ module Catalog =
                     // theorem (`Reference.isConstraintStateConsistent` is now
                     // total `true`); the witness moved to the round-trip law in
                     // `ReferenceConstraintStateTests`.
+                    // schema-L3.2 — the composite-FK leg invariants (the
+                    // `CompositePkFkUnreflected` closure). Legs are evidence-
+                    // borne; when present they must cohere with the legacy
+                    // single-column field and with both kinds' attribute
+                    // sets. Arity-vs-target-PK is deliberately NOT checked
+                    // here — a deployed FK may reference a unique key, and
+                    // ReadSide-reconstructed catalogs must stay
+                    // constructible; arity is the deployability predicate
+                    // (`Reference.compositeArityMismatch`), enforced at the
+                    // emitter gate + the estate board.
+                    match r.Legs with
+                    | [] -> ()
+                    | legs ->
+                        if legs.Head.SourceAttribute <> r.SourceAttribute then
+                            refAcc.Add(
+                                ValidationError.create
+                                    "catalog.reference.legHeadMismatch"
+                                    (sprintf
+                                        "Reference %A on Kind %A carries Legs whose head SourceAttribute %A disagrees with the reference's SourceAttribute %A."
+                                        r.SsKey k.SsKey legs.Head.SourceAttribute r.SourceAttribute))
+                        let dupSrc = legs |> List.countBy (fun l -> l.SourceAttribute) |> List.exists (fun (_, n) -> n > 1)
+                        let dupTgt = legs |> List.countBy (fun l -> l.TargetAttribute) |> List.exists (fun (_, n) -> n > 1)
+                        if dupSrc || dupTgt then
+                            refAcc.Add(
+                                ValidationError.create
+                                    "catalog.reference.legDuplicate"
+                                    (sprintf
+                                        "Reference %A on Kind %A lists a column twice among its Legs (an FK cannot repeat a column on either side)."
+                                        r.SsKey k.SsKey))
+                        for leg in legs do
+                            if not (Set.contains leg.SourceAttribute attrKeys) then
+                                refAcc.Add(
+                                    ValidationError.create
+                                        "catalog.reference.legDanglingSource"
+                                        (sprintf
+                                            "Reference %A on Kind %A has a leg SourceAttribute %A absent from the kind's Attributes."
+                                            r.SsKey k.SsKey leg.SourceAttribute))
+                        match Map.tryFind r.TargetKind attrKeysByKindKey with
+                        | None -> ()   // danglingTarget already fired above
+                        | Some targetAttrKeys ->
+                            for leg in legs do
+                                if not (Set.contains leg.TargetAttribute targetAttrKeys) then
+                                    refAcc.Add(
+                                        ValidationError.create
+                                            "catalog.reference.legDanglingTarget"
+                                            (sprintf
+                                                "Reference %A on Kind %A has a leg TargetAttribute %A absent from target kind %A's Attributes."
+                                                r.SsKey k.SsKey leg.TargetAttribute r.TargetKind))
                 for idx in k.Indexes do
                     for col in idx.Columns do
                         if not (Set.contains col.Attribute attrKeys) then

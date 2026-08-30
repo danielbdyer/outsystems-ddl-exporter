@@ -787,59 +787,86 @@ module PhysicalSchema =
         (k: Kind)
         : PhysicalForeignKey list =
         k.References
-        |> List.choose (fun r ->
-            let sourceColumn =
-                k.Attributes
-                |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
+        |> List.collect (fun r ->
+            let srcSchema = SchemaName.value k.Physical.Schema
+            let srcTable = TableName.value k.Physical.Table
+            // THE VECTOR Wave 1 / M1 — the Decision-axis trust sub-axis.
+            // Untrusted iff the source FK is itself `WITH NOCHECK`
+            // (`r.IsConstraintTrusted = false`) OR a registered intervention
+            // decided NOCHECK (`overlay.NoCheckFk`). Computed once per
+            // reference, stamped on every leg entry.
+            let trusted = Reference.isConstraintTrusted r && not (Set.contains r.SsKey overlay.NoCheckFk)
+            let entry srcCol tgtSchema tgtTable tgtCol =
+                {
+                    SourceSchema = srcSchema
+                    SourceTable = srcTable
+                    SourceColumn = srcCol
+                    TargetSchema = tgtSchema
+                    TargetTable = tgtTable
+                    TargetColumn = tgtCol
+                    IsTrusted = trusted
+                }
+            let colOf (kind: Kind) (sk: SsKey) : string option =
+                kind.Attributes
+                |> List.tryFind (fun a -> a.SsKey = sk)
                 |> Option.map (fun a -> ColumnRealization.columnNameText a.Column)
-            // Effective target `(schema, table, column)`: the BRIDGE attribute's
-            // kind + column when the reference is retargeted (`overlay.RetargetFk`),
-            // else the parent kind's first PK column. Mirrors the SSDT emitter's
-            // `fkDef` so the source projection and read-back agree on the recovered
-            // target. Empty RetargetFk ⇒ the PK path (byte-identical). The composite
-            // target-PK tolerance (NM-28 `CompositePkFkUnreflected`) is unchanged:
-            // V2's single-column `Reference` IR pairs only the first PK leg.
-            let effectiveTarget =
-                match Map.tryFind r.SsKey overlay.RetargetFk |> Option.bind (fun ak -> Map.tryFind ak attrOwnerByKey) with
-                | Some (bridgeKind, bridgeCol) ->
-                    Some (SchemaName.value bridgeKind.Physical.Schema, TableName.value bridgeKind.Physical.Table, bridgeCol)
-                | None ->
-                    match Map.tryFind r.TargetKind kindByKey, Map.tryFind r.TargetKind targetPkColumnsByKey with
-                    | Some tk, Some (tgtPkFirst :: tgtPkRest) ->
-                        ignore tgtPkRest
-                        Some (SchemaName.value tk.Physical.Schema, TableName.value tk.Physical.Table, tgtPkFirst)
+            // Bridge retarget wins whole-reference (a bridge attribute is
+            // single-column; retarget-plus-legs is refused upstream by the
+            // arity gate — `Reference.compositeArityMismatch`).
+            match Map.tryFind r.SsKey overlay.RetargetFk |> Option.bind (fun ak -> Map.tryFind ak attrOwnerByKey) with
+            | Some (bridgeKind, bridgeCol) ->
+                match colOf k r.SourceAttribute with
+                | Some srcCol ->
+                    [ entry srcCol (SchemaName.value bridgeKind.Physical.Schema) (TableName.value bridgeKind.Physical.Table) bridgeCol ]
+                | None -> []
+            | None ->
+                match r.Legs with
+                | [] ->
+                    // Legless: exactly the pre-lift single entry — the source
+                    // column paired against the target's FIRST PK column.
+                    // Deployability against a composite PK is refused
+                    // upstream by the arity gate, so this arm reflecting one
+                    // leg is faithful to what would actually deploy.
+                    match colOf k r.SourceAttribute, Map.tryFind r.TargetKind kindByKey, Map.tryFind r.TargetKind targetPkColumnsByKey with
+                    | Some srcCol, Some tk, Some (tgtPkFirst :: _) ->
+                        [ entry srcCol (SchemaName.value tk.Physical.Schema) (TableName.value tk.Physical.Table) tgtPkFirst ]
                     | _ ->
-                        // Dropped: the source attribute is unresolvable, the target
-                        // kind is absent from the catalog, OR the target has NO
-                        // primary key (empty PK list). The first two are structural-
-                        // integrity gaps `Catalog.create` validates upstream; the
-                        // no-PK-target case has no FK to reflect by construction (a
-                        // SQL FK must reference a key). Surfacing these as a Core
-                        // diagnostic needs a diagnostics channel on `PhysicalSchema`
-                        // (today a pure set-of-tuples value) — FLAGGED as a larger
-                        // change (NM-28b), not landed here.
-                        None
-            match sourceColumn, effectiveTarget with
-            | Some srcCol, Some (tgtSchema, tgtTable, tgtCol) ->
-                Some
-                    {
-                        SourceSchema = SchemaName.value k.Physical.Schema
-                        SourceTable = TableName.value k.Physical.Table
-                        SourceColumn = srcCol
-                        TargetSchema = tgtSchema
-                        TargetTable = tgtTable
-                        TargetColumn = tgtCol
-                        // THE VECTOR Wave 1 / M1 — the Decision-axis trust
-                        // sub-axis. Untrusted iff the source FK is itself
-                        // `WITH NOCHECK` (`r.IsConstraintTrusted = false`,
-                        // recovered at `ReadSide.fs:1171`) OR a registered
-                        // intervention decided NOCHECK (`overlay.NoCheckFk`).
-                        // Mirrors the emitter's NOCHECK predicate
-                        // (`SsdtDdlEmitter.untrustedFkAlters`) so the source
-                        // projection and the read-back agree.
-                        IsTrusted = Reference.isConstraintTrusted r && not (Set.contains r.SsKey overlay.NoCheckFk)
-                    }
-            | _ -> None)
+                        // Dropped: unresolvable source attribute / absent
+                        // target kind (both `Catalog.create`-validated
+                        // upstream), or a target with NO primary key — the
+                        // NM-28b case: no SQL FK can reference a keyless
+                        // table. schema-L3.2 NAMED this drop: the estate
+                        // board's `emission.fkTargetWithoutPk` finding and
+                        // the emitter's FK-drop Warning diagnostics surface
+                        // it; this pure set-of-tuples projection stays
+                        // silent by design (the named surfaces are the
+                        // channel).
+                        []
+                | legs ->
+                    // schema-L3.2 (the `CompositePkFkUnreflected` closure) —
+                    // one `PhysicalForeignKey` entry per leg, BOTH sides
+                    // resolved explicitly from the leg's SsKeys; nothing is
+                    // derived from the target PK. A leg that does not
+                    // resolve drops the WHOLE reference's entries (never a
+                    // partial FK), mirroring the emitter's all-or-nothing
+                    // `fkDef` resolution.
+                    match Map.tryFind r.TargetKind kindByKey with
+                    | None -> []
+                    | Some tk ->
+                        let tgtSchema = SchemaName.value tk.Physical.Schema
+                        let tgtTable = TableName.value tk.Physical.Table
+                        let resolved =
+                            legs
+                            |> List.map (fun leg ->
+                                match colOf k leg.SourceAttribute, colOf tk leg.TargetAttribute with
+                                | Some s, Some t -> Some (s, t)
+                                | _ -> None)
+                        if resolved |> List.exists Option.isNone then []
+                        else
+                            resolved
+                            |> List.map (fun p ->
+                                let s, t = Option.get p
+                                entry s tgtSchema tgtTable t))
 
     /// Project a Catalog to its `PhysicalSchema` view under a
     /// `DecisionOverlay` — the set of `(schema, table, column, type, nullable,
@@ -868,10 +895,11 @@ module PhysicalSchema =
         let kindByKey =
             kinds |> List.map (fun k -> k.SsKey, k) |> Map.ofList
         // NM-28 — the FULL ordered PK column list per kind (declaration order),
-        // not just the first PK column. `toPhysicalForeignKeys` reflects only
-        // the first leg (single-column `Reference` IR) but now sees the whole
-        // list, so the composite case is named (`CompositePkFkUnreflected`)
-        // rather than silently collapsed at the map-build site.
+        // not just the first PK column. Since schema-L3.2 a leg-bearing
+        // reference reflects EVERY leg explicitly (`Reference.Legs`; the
+        // `CompositePkFkUnreflected` tolerance is RETIRED); the legless arm
+        // still pairs against the head of this list, faithful to the
+        // arity-gated single-column deploy shape.
         let targetPkColumnsByKey =
             kinds
             |> List.choose (fun k ->

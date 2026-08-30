@@ -1888,6 +1888,16 @@ module MetadataSnapshotRunner =
         // V2's per-attribute Reference IR is the natural carrier.
         let fkRealityByParentAttrId = fkRealityByParentAttrIdMap snapshot
 
+        // schema-L3.2 — the composite-FK leg groups: `#FkColumns` rows by
+        // FkObjectId, Ordinal-sorted. The rowset has ALWAYS captured these
+        // (matrix row 18); the IR carrier (`Reference.Legs`) now exists, so
+        // the read cost stops being thrown away at this boundary.
+        let fkColumnsByFkObjectId =
+            snapshot.ForeignKeyColumns
+            |> List.groupBy (fun c -> c.FkObjectId)
+            |> List.map (fun (fkId, cols) -> fkId, cols |> List.sortBy (fun c -> c.Ordinal))
+            |> Map.ofList
+
         let references =
             snapshot.References
             |> List.choose (fun r ->
@@ -1924,6 +1934,27 @@ module MetadataSnapshotRunner =
                         match fkOpt with
                         | Some fk -> not fk.IsNoCheck
                         | None    -> true
+                    // schema-L3.2 — attach the composite legs to the
+                    // ORDINAL-1 reference only (a reference row whose attr
+                    // is a LATER leg of the same deployed FK keeps today's
+                    // single-column shape — the pre-existing duplicate-
+                    // constraint emission for that rare shape is a NAMED
+                    // residual, flagged in the slice's DECISIONS entry, and
+                    // the arity gate refuses its deploy loudly downstream).
+                    let legs =
+                        match fkOpt with
+                        | Some fk ->
+                            match Map.tryFind fk.FkObjectId fkColumnsByFkObjectId with
+                            | Some (head :: _ as cols) when List.length cols >= 2 && head.ParentAttrId = Some r.AttrId ->
+                                cols
+                                |> List.map (fun c ->
+                                    ({ Ordinal          = c.Ordinal
+                                       ParentAttrId     = c.ParentAttrId
+                                       ReferencedAttrId = c.ReferencedAttrId
+                                       ParentColumn     = c.ParentColumn
+                                       ReferencedColumn = c.ReferencedColumn } : OssysRowsetTypes.ReferenceLegRow))
+                            | _ -> []
+                        | None -> []
                     Some
                         ({
                             AttrId              = r.AttrId
@@ -1934,6 +1965,7 @@ module MetadataSnapshotRunner =
                             OnUpdate            = onUpdate
                             ReflectedOnDelete   = onDelete
                             IsConstraintTrusted = isTrusted
+                            Legs                = legs
                         } : OssysRowsetTypes.ReferenceRow)
                 | _ -> None)
 

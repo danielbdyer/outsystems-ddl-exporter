@@ -606,6 +606,12 @@ module ScriptDomBuild =
         cons.Columns.Add(bracketed fk.SourceColumn)
         cons.ReferenceTableName <- schemaObjectFromTableId fk.Target
         cons.ReferencedTableColumns.Add(bracketed fk.TargetColumn)
+        // schema-L3.2 — composite legs: ScriptDom's Columns /
+        // ReferencedTableColumns are lists; legs 2..n append in
+        // constraint order.
+        for leg in fk.AdditionalLegs do
+            cons.Columns.Add(bracketed leg.SourceColumn)
+            cons.ReferencedTableColumns.Add(bracketed leg.TargetColumn)
         cons.DeleteAction <- toDeleteUpdateAction fk.OnDelete
         match fk.OnUpdate with
         | Some action -> cons.UpdateAction <- toDeleteUpdateAction action
@@ -623,6 +629,11 @@ module ScriptDomBuild =
         (tableConstraints: System.Collections.Generic.IList<ConstraintDefinition>)
         (fk: ForeignKeyDef)
         : unit =
+        // schema-L3.2 — a multi-leg (composite) FK cannot be a column-level
+        // constraint (SQL grammar); it attaches at table level.
+        if not (List.isEmpty fk.AdditionalLegs) then
+            tableConstraints.Add(foreignKeyConstraint fk)
+        else
         let target =
             colDefs
             |> Seq.tryFind (fun cd ->

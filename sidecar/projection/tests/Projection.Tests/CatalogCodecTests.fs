@@ -689,3 +689,45 @@ let ``align-III.16: a one-legged temporal period is a named codec refusal — PE
     Assert.Contains("\"periodEnd\": \"ValidTo\"", json)
     let halfPeriod = json.Replace("\"periodEnd\": \"ValidTo\",", "")
     expectError "period start without end" halfPeriod
+
+// ---------------------------------------------------------------------------
+// schema-L3.2 — composite-FK legs round-trip; legless stays byte-identical.
+// ---------------------------------------------------------------------------
+
+/// A two-kind catalog whose FK carries BOTH legs of the target's composite
+/// PK (`Reference.Legs`) — the schema-L3.2 wire-shape specimen.
+let private compositeLegCatalog () : Catalog =
+    let targetKey = key 80
+    let srcKey = key 81
+    let tgtId = key 82
+    let tgtTenant = key 83
+    let fkAttr = key 84
+    let fkAttr2 = key 85
+    let pkAttr (k: SsKey) (n: string) =
+        { Attribute.create k (nm n) PrimitiveType.Integer with IsPrimaryKey = true }
+    let target =
+        Kind.create targetKey (nm "Target") (tableId "dbo" "Target")
+            [ pkAttr tgtId "Id"; pkAttr tgtTenant "Tenant" ]
+    let src =
+        { Kind.create srcKey (nm "Src") (tableId "dbo" "Src")
+            [ Attribute.create (key 86) (nm "Id") PrimitiveType.Integer
+              Attribute.create fkAttr (nm "TargetId") PrimitiveType.Integer
+              Attribute.create fkAttr2 (nm "TargetTenant") PrimitiveType.Integer ] with
+            References =
+                [ { Reference.create (key 87) (nm "TargetFk") fkAttr targetKey with
+                      Legs =
+                        [ { SourceAttribute = fkAttr; TargetAttribute = tgtId }
+                          { SourceAttribute = fkAttr2; TargetAttribute = tgtTenant } ] } ] }
+    let m = { SsKey = key 1001; Name = nm "M"; Kinds = [ target; src ]; IsActive = true; ExtendedProperties = [] }
+    Catalog.create [ m ] [] |> Result.value
+
+[<Fact>]
+let ``schema-L3.2: a leg-bearing reference round-trips its Legs through the codec (byte-deterministic)`` () =
+    assertRoundTrips "composite-legs" (compositeLegCatalog ())
+
+[<Fact>]
+let ``schema-L3.2: a legless catalog serializes with NO legs property (byte-identity for every pre-lift store)`` () =
+    // The writer emits `legs` only when non-empty, so every existing
+    // serialized catalog and T1 golden is byte-identical to pre-lift.
+    let json = CatalogCodec.serialize (twoKindCatalog ())
+    Assert.DoesNotContain("\"legs\"", json)
