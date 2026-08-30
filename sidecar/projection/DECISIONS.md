@@ -32504,3 +32504,38 @@ Every "green"/"red" render is byte-identical (the display token is the same stri
 Laws: `CanaryVerdictTests` (token round-trip incl. NotRun-absent + unknown-token-safe);
 `RunLedgerTests` interior-vs-trailing SkippedLines; the existing readiness/RunHistory laws
 re-pinned onto the typed verdict.
+
+---
+
+## 2026-08-30 — align-III.4: the estate reading grain gets its FTC (`latest.json` demoted to cache-of-fold)
+
+**The finding (audit a5, S3).** The estate history stored STATE BESIDE ITS LEDGER with no
+law connecting them: `latest.json` was an independent copy written on every save, and
+`loadLatest` trusted it alone — a lost or torn pointer made the board claim "first recorded
+reading" while the per-run records still witnessed a baseline. The house shape for a state
+file next to an append-only series is the FTC (T13's form at the episode grain): state IS
+the fold of the series; any materialization is a cache.
+
+**The decision.** `EstateHistory.replay : HistoryRecord list -> HistoryRecord option` is the
+fold — each record already materializes its own fold state (the streak, the carried
+first-seen instants), so replay is the chronological last, tie-broken by run id for
+determinism. `loadAll` reads the recorded series (per-run records, each fail-closed exactly
+as `loadRun` reads it; a torn record file is skipped). The law
+**`loadLatest = replay ∘ loadAll`** is pinned three ways:
+
+- `save` writes the per-run record and then re-materializes `latest.json` AS the fold —
+  on the ordinary monotone path the incoming record is the fold's newest and the bytes are
+  identical to the prior behavior (the existing same-bytes test still passes verbatim);
+  under an out-of-order save the pointer now cannot regress; a previously torn pointer
+  heals at the next save.
+- `loadLatest` reads the cache when readable and otherwise RECOVERS via the fold — `None`
+  only when the store holds no readable reading at all, so "first recorded reading" is
+  again a statement of fact.
+- `EstateHistoryTests` carries the law (`loadLatest = replay(loadAll)` across empty → one →
+  two saves), the lost/torn-pointer recovery, the out-of-order no-regress witness, and
+  replay determinism (empty → None; equal-instant tie breaks by run id).
+
+**BEHAVIORAL:** a store whose `latest.json` is missing or torn but whose per-run records
+survive now yields the fold instead of `None` (the board diffs against the true baseline
+instead of resetting); a healthy store is byte-identical. No new axiom row — the FTC's
+axiom is T13; this is its reading-grain instance, witnessed in `EstateHistoryTests`.

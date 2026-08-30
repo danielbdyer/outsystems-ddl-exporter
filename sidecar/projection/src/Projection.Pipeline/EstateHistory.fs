@@ -43,7 +43,8 @@ module EstateHistory =
 
     // ------------------------------------------------------------------
     // Layout — the DECISIONS entry-4 shape, under the same store root the
-    // evidence rides: `estate/<runId>.estate.json` + `estate/latest.json`.
+    // evidence rides: `estate/<runId>.estate.json` (the recorded series)
+    // + `estate/latest.json` (a cache of the series' fold — see `replay`).
     // ------------------------------------------------------------------
 
     let private historyDir (root: string) : string =
@@ -109,6 +110,17 @@ module EstateHistory =
           Verdict = verdictText report.Verdict
           Streak = streak
           Findings = findings }
+
+    /// The FTC at the estate reading grain (align-III.4): the latest reading
+    /// IS the fold of the recorded series — each record already materializes
+    /// its own fold state (the streak, the carried first-seen instants), so
+    /// replay selects the chronological last, tie-broken by run id for
+    /// determinism. `latest.json` is a CACHE of this fold, never independent
+    /// state; the law `loadLatest = replay ∘ loadAll` is property-tested.
+    let replay (records: HistoryRecord list) : HistoryRecord option =
+        records
+        |> List.sortBy (fun r -> r.AtUtc, r.RunId)
+        |> List.tryLast
 
     /// The movement between a baseline reading and this run's report —
     /// closed / opened / remaining by `FindingKey`, and the oldest OPEN
@@ -248,16 +260,39 @@ module EstateHistory =
         File.WriteAllText(tmp, content)
         File.Move(tmp, path, overwrite = true)
 
-    /// Persist this run's reading — the per-run record AND `latest.json`
-    /// (the same bytes; the pointer IS a copy, so a torn pointer never
-    /// orphans the record). A failure is ADVISORY — a history write never
-    /// fails a read-only verb.
+    /// Every recorded reading in the store — each per-run record parsed
+    /// fail-closed (a torn record file is skipped, exactly the posture
+    /// `loadRun` takes on it by name), returned in replay order.
+    let loadAll (root: string) : HistoryRecord list =
+        try
+            let dir = historyDir root
+            if not (Directory.Exists dir) then []
+            else
+                Directory.GetFiles(dir, "*.estate.json")
+                |> Array.choose (fun path ->
+                    try tryParseRecord (File.ReadAllText path)
+                    with
+                    | :? IOException -> None
+                    | :? UnauthorizedAccessException -> None)
+                |> Array.toList
+                |> List.sortBy (fun r -> r.AtUtc, r.RunId)
+        with
+        | :? IOException -> []
+        | :? UnauthorizedAccessException -> []
+
+    /// Persist this run's reading — the per-run record, then `latest.json`
+    /// re-materialized as the FOLD of the whole recorded series (align-III.4:
+    /// the pointer is a cache of `replay ∘ loadAll`, so it cannot regress
+    /// under an out-of-order save and a previously torn pointer heals here).
+    /// On the ordinary monotone path the incoming record IS the fold's
+    /// newest, and the two files carry byte-identical content, as before.
+    /// A failure is ADVISORY — a history write never fails a read-only verb.
     let save (root: string) (record: HistoryRecord) : Result<unit> =
         try
             Directory.CreateDirectory(historyDir root) |> ignore
-            let text = recordJson record
-            writeAtomic (recordPath root record.RunId) text
-            writeAtomic (latestPath root) text
+            writeAtomic (recordPath root record.RunId) (recordJson record)
+            let fold = replay (loadAll root) |> Option.defaultValue record
+            writeAtomic (latestPath root) (recordJson fold)
             Result.success ()
         with
         | :? IOException as ex ->
@@ -265,16 +300,24 @@ module EstateHistory =
         | :? UnauthorizedAccessException as ex ->
             Result.failureOf (ValidationError.create "estate.history.writeFailed" ex.Message)
 
-    /// The latest recorded reading — `None` when absent or unreadable
-    /// (fail-closed; the board says "first recorded reading").
+    /// The latest recorded reading — the `latest.json` cache when it is
+    /// present and readable, else RECOVERED as the fold of the per-run
+    /// records (align-III.4: a lost or torn pointer no longer forgets a
+    /// baseline the records still witness). `None` only when the store
+    /// holds no readable reading at all (the board's "first recorded
+    /// reading" is then the truth, not a degraded guess).
     let loadLatest (root: string) : HistoryRecord option =
-        try
-            let path = latestPath root
-            if not (File.Exists path) then None
-            else tryParseRecord (File.ReadAllText path)
-        with
-        | :? IOException -> None
-        | :? UnauthorizedAccessException -> None
+        let cached =
+            try
+                let path = latestPath root
+                if not (File.Exists path) then None
+                else tryParseRecord (File.ReadAllText path)
+            with
+            | :? IOException -> None
+            | :? UnauthorizedAccessException -> None
+        match cached with
+        | Some r -> Some r
+        | None -> replay (loadAll root)
 
     /// A NAMED baseline reading (`--since @runId`) — `None` when the run
     /// was never recorded here or its record is unreadable; the face
