@@ -82,11 +82,40 @@ module SinkReadTests =
             Assert.Equal("sink.envUnknown", primaryCode (SinkRead.resolve "prod" None)))
 
     [<Fact>]
-    let ``two sources claiming one name is the named sink.envAmbiguous refusal`` () =
+    let ``align-III.15: two claimants whose latest captures TIE is the named sink.envAmbiguous refusal — the narrowed firing`` () =
         withTempStore (fun root ->
+            // Both witnessed at the same instant: nothing distinguishes the
+            // environment's current line — the one shape that still refuses.
             witnessNamed root t1 "server-a" "db" "uat" (snapshotA ()) |> ignore
             witnessNamed root t1 "server-b" "db" "uat" (snapshotA ()) |> ignore
             Assert.Equal("sink.envAmbiguous", primaryCode (SinkRead.resolve "uat" None)))
+
+    [<Fact>]
+    let ``align-III.15: a composite label resolves to its CURRENT member — the superseded sources ride the resolution by digest`` () =
+        withTempStore (fun root ->
+            // The environment was re-witnessed from a new connection (a new
+            // digest) four days later — the label is a composite; the read
+            // addresses the current line and NAMES what it superseded.
+            let older = witnessNamed root t1 "server-a" "db" "uat" (snapshotA ())
+            let current = witnessNamed root t2 "server-b" "db" "uat" (snapshotB ())
+            match SinkRead.resolve "uat" None with
+            | Error es -> Assert.Fail (sprintf "the composite label refused: %A" es)
+            | Ok r ->
+                Assert.Equal(current, r.Digest)
+                Assert.Equal(t2, r.CapturedAtUtc)
+                Assert.Equal<string list>([ older ], r.SupersededDigests)
+            // A pin addresses the CURRENT member's line.
+            match SinkRead.resolve "uat" (Some (ord 1)) with
+            | Error es -> Assert.Fail (sprintf "the pinned composite read refused: %A" es)
+            | Ok pinned -> Assert.Equal(current, pinned.Digest))
+
+    [<Fact>]
+    let ``align-III.15: a single-source label carries an empty superseded set — the pre-composite shape, byte-identical`` () =
+        withTempStore (fun root ->
+            witnessNamed root t1 "server-a" "db" "uat" (snapshotA ()) |> ignore
+            match SinkRead.resolve "uat" None with
+            | Error es -> Assert.Fail (sprintf "resolve refused: %A" es)
+            | Ok r -> Assert.Empty r.SupersededDigests)
 
     [<Fact>]
     let ``a pin outside the witnessed range is the named sink.syncNotFound refusal`` () =

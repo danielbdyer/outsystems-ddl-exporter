@@ -16,10 +16,12 @@ open Projection.Adapters.OssysSql
 ///
 /// Resolution is an env-label scan over the store's manifests (config-free
 /// and offline-true — R4): `projection sync <env>` stamped the label; this is
-/// where the name is spent. Zero claimants, two claimants, an out-of-range
-/// sync ordinal, and an unreadable snapshot are each their own named refusal
-/// (`sink.envUnknown` / `sink.envAmbiguous` / `sink.syncNotFound` /
-/// `sink.snapshotUnreadable`) — total decisions, never a silent fallback.
+/// where the name is spent. Zero claimants, a currency TIE among several
+/// claimants (align-III.15 — a multi-claimant label is otherwise a COMPOSITE
+/// that resolves to its current member), an out-of-range sync ordinal, and an
+/// unreadable snapshot are each their own named refusal (`sink.envUnknown` /
+/// `sink.envAmbiguous` / `sink.syncNotFound` / `sink.snapshotUnreadable`) —
+/// total decisions, never a silent fallback.
 [<RequireQualifiedAccess>]
 module SinkRead =
 
@@ -42,6 +44,14 @@ module SinkRead =
             Manifest      : SinkStore.Manifest
             SyncId        : SyncOrdinal
             CapturedAtUtc : DateTimeOffset
+            /// align-III.15 — the label's OTHER witnessed sources, when the
+            /// name is a composite (an environment re-witnessed across
+            /// connection changes, or deliberately spanning sources). The
+            /// resolution reads the CURRENT member (the unique latest
+            /// capture); these are the superseded/other members' digests,
+            /// oldest last. Empty for a single-source label — byte-identical
+            /// to the pre-III.15 shape everywhere it renders.
+            SupersededDigests : string list
         }
 
     let private fail (code: string) (msg: string) : Result<'a> =
@@ -58,15 +68,16 @@ module SinkRead =
             let claimants =
                 SinkStore.manifests root
                 |> List.filter (fun m -> m.EnvLabel = Some env)
-            match claimants with
-            | [] ->
-                fail "sink.envUnknown"
-                    (sprintf "sink ref: no witnessed environment is named '%s' — `projection sync %s` against its source stamps the name (the sync verb is the naming act)." env env)
-            | _ :: _ :: _ ->
-                let digests = claimants |> List.map (fun m -> m.ConnDigest) |> String.concat ", " // LINT-ALLOW: terminal error-message composition at the resolution boundary
-                fail "sink.envAmbiguous"
-                    (sprintf "sink ref: the name '%s' is claimed by %d witnessed sources (%s) — re-run `projection sync` with a distinct name so each source's label is unique." env (List.length claimants) digests)
-            | [ manifest ] ->
+            // align-III.15 — a label claimed by SEVERAL witnessed sources is a
+            // COMPOSITE environment (the common shape: one environment
+            // re-witnessed across a connection change, each edition its own
+            // digest), not automatically an error. The read addresses the
+            // CURRENT member — the unique latest capture; the others ride the
+            // resolution as its superseded set. GENUINE ambiguity narrows to
+            // a currency TIE (two members captured at the same instant —
+            // nothing distinguishes which line is the environment's present),
+            // and only that still refuses as `sink.envAmbiguous`.
+            let resolveOn (manifest: SinkStore.Manifest) (superseded: SinkStore.Manifest list) : Result<Resolved> =
                 let chosen = syncId |> Option.defaultValue manifest.LatestSyncId
                 // align-III.1: below-1 pins are unrepresentable (the ordinal
                 // VO), so the only out-of-range direction left is "past the
@@ -95,7 +106,22 @@ module SinkRead =
                           Digest = manifest.ConnDigest
                           Manifest = manifest
                           SyncId = chosen
-                          CapturedAtUtc = capturedAt }
+                          CapturedAtUtc = capturedAt
+                          SupersededDigests = superseded |> List.map (fun m -> m.ConnDigest) }
+            match claimants with
+            | [] ->
+                fail "sink.envUnknown"
+                    (sprintf "sink ref: no witnessed environment is named '%s' — `projection sync %s` against its source stamps the name (the sync verb is the naming act)." env env)
+            | [ manifest ] -> resolveOn manifest []
+            | many ->
+                let ordered = many |> List.sortByDescending (fun m -> m.CapturedAtUtc, m.ConnDigest)
+                match ordered with
+                | current :: (next :: _ as rest) when current.CapturedAtUtc > next.CapturedAtUtc ->
+                    resolveOn current rest
+                | _ ->
+                    let digests = many |> List.map (fun m -> m.ConnDigest) |> String.concat ", " // LINT-ALLOW: terminal error-message composition at the resolution boundary
+                    fail "sink.envAmbiguous"
+                        (sprintf "sink ref: the name '%s' is claimed by %d witnessed sources (%s) whose latest captures TIE — nothing distinguishes the environment's current line; re-witness one (`projection sync %s`) or re-run `projection sync` with a distinct name for the other." env (List.length many) digests env)
 
     /// Resolve a live CONNECTION STRING to its sink coordinate — the
     /// digest-based sibling of the env-label scan (R3's string side: the
@@ -136,7 +162,8 @@ module SinkRead =
                               Digest = digest
                               Manifest = manifest
                               SyncId = chosen
-                              CapturedAtUtc = manifest.CapturedAtUtc }
+                              CapturedAtUtc = manifest.CapturedAtUtc
+                              SupersededDigests = [] }
 
     /// Read the resolved witnessed state as a `Catalog` — the live pipeline
     /// minus the wire. `CatalogReader.parse` applies the same (idempotent)

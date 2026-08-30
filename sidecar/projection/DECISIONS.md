@@ -32905,3 +32905,33 @@ byte-identical for stores that never held a twin. The wire stays the tagged obje
 compare equal to their canonical case everywhere (grouping, display, persistence). Laws
 in `LifecycleStoreTests`: the parse table + idempotence, the `fromRef` canonical mint,
 and the tampered-store read-side canonicalization beside the surviving escape-hatch law.
+
+---
+
+## 2026-08-30 — align-III.15: a sink label can be a COMPOSITE — the read addresses its current member; ambiguity narrows to a currency tie
+
+**The finding (audit a1, F3's environment end).** `SinkRead.resolve` refused ANY label
+claimed by two witnessed sources (`sink.envAmbiguous`) — an environment was structurally
+exactly one (DataSource, InitialCatalog) digest. But the common multi-claimant shape is
+not a mistake: ONE environment re-witnessed across a connection change mints a NEW digest
+per edition, and the label honestly spans them. The only expressible outcome was refusal —
+foreclosure, not refinement: the operator had to rename history to read the present.
+
+**The decision.** A multi-claimant label is a composite. `resolve` addresses the
+**current member** — the unique latest `CapturedAtUtc` — and the resolution NAMES the
+rest: `Resolved.SupersededDigests` (additive field; empty for a single-source label, so
+the standing shape is byte-identical). A sync pin addresses the current member's line
+(prior members are prior editions whose ordinals belong to their own lines).
+`sink.envAmbiguous` narrows to GENUINE ambiguity — a currency TIE (two members captured
+at the same instant; nothing distinguishes the environment's present) — with the message
+naming the tie and both exits (re-witness one, or rename the other).
+
+**BEHAVIORAL:** previously-refused multi-claimant labels now resolve (to the current
+edition). The deliberate multi-DATABASE composite (one environment spanning live
+catalogs, union reads) remains future work — this slice gives the label its SET shape and
+the honest currency rule; the union-read consumer is X3-adjacent and lands with its own
+demand. Laws (`SinkReadTests`): the narrowed tie refusal (the old fixture, retitled — it
+was already a tie), the composite current-member resolution with the superseded set +
+pinned addressing, and the empty-set singleton.
+
+---

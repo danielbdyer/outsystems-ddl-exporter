@@ -465,7 +465,8 @@ let ``A49 three-way equivalence: pushdown ≡ filter∘live ≡ filter∘sink (s
                                                           Digest = digest
                                                           Manifest = manifest
                                                           SyncId = edition.Ordinal
-                                                          CapturedAtUtc = nowUtc }
+                                                          CapturedAtUtc = nowUtc
+                                                          SupersededDigests = [] }
                                                 | None -> Task.FromResult (Result.failureOf (ValidationError.create "test.manifestAbsent" "the witness persisted no manifest"))
                                             | other -> Task.FromResult (Result.failureOf (ValidationError.create "test.witnessRefused" (sprintf "%A" other)))
                                     let! sink = sinkRead
