@@ -32962,3 +32962,29 @@ plane, now stated once.
 emitter's output is unchanged). Laws: `CatalogCodecTests` round-trips the typed shape
 byte-stable and pins BOTH half-present refusals via wire surgery; the emitter/estate/
 reader suites re-pinned onto the pair shapes.
+
+---
+
+## 2026-08-30 — align-III.17 (X1): the workbench's row substrate is the FORECAST's evidence, not a second "EvidenceCache"
+
+**The finding (audit a9, F2/F4-adjacent).** TWO modules named `EvidenceCache` lived in one
+solution: Core's profile evidence cache — the NAMED HOUSE PATTERN (discover-once /
+derive-pure, CLAUDE.md §6) — and the Pipeline decision-workbench row substrate
+(THE_TRANSFER_MANIFEST slice 2), which is an INSTANCE of that pattern but a different
+thing: the substrate the `ForecastDelta` derivation reads, computed once at board build.
+The name-twin made "the EvidenceCache" ambiguous in every conversation about either.
+
+**The decision (one rename, blast radius counted).** The PIPELINE module renames to
+**`ForecastEvidence`** — the forecast's evidence: `ForecastEvidence.fs` (module +
+header naming the rename and the disambiguation), `ForecastEvidenceDockerTests.fs`,
+`ForecastEvidenceTests.fs` (pure), and every call site (`ActEvidence`, `ReviewNavigator`,
+`Faces/Transfer`, `ActConsentTests`, `ReviewNavigatorTests` incl. its fixture module).
+Blast radius: ~60 reference lines + two test-file renames. Core's `EvidenceCache` KEEPS
+its name — it IS the house pattern; the plan's X1 line assumed one entity, and the
+discovered twin narrows the rename to the Pipeline side, which is exactly the
+disambiguation the lexicon audit wanted. `SinkRows` inside the renamed module stays —
+it names the transfer WRITE-TARGET rows (sink meaning A, the legitimate sink); the
+witness-plane collision partner is X3's `SinkDisplacement.SinkRow`.
+
+**Grep-absence:** `EvidenceCache` survives only on Core's module, its consumers, the
+house-pattern prose, and the unrelated `estate.evidence.*` Voice family. Not behavioral.

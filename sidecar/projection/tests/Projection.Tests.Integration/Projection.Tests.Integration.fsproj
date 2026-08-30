@@ -45,7 +45,7 @@
     <Compile Include="ClonedModuleTransferDockerTests.fs" />
     <Compile Include="GoBoardDockerTests.fs" />
     <Compile Include="TriageWitnessDockerTests.fs" />
-    <Compile Include="EvidenceCacheDockerTests.fs" />
+    <Compile Include="ForecastEvidenceDockerTests.fs" />
     <!-- EstateFingerprintProbeDockerTests.fs: the estate evidence store's
          one-batch staleness probe witness (wave A2.5, 2026-07-15). -->
     <Compile Include="EstateFingerprintProbeDockerTests.fs" />

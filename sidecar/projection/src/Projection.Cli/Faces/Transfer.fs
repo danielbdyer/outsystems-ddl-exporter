@@ -1187,7 +1187,7 @@ let runCheckGo
                             |> List.map (sprintf "evidence: %s")
                         // THE DECISION TABLES (2026-07-10, the manifest program,
                         // slices 2-3): the row substrate read ONCE into the
-                        // EvidenceCache from these same connections; every
+                        // ForecastEvidence from these same connections; every
                         // answer's consequence computed over the FULL rowsets
                         // through the same Core match the run uses. ONE
                         // traversal builds the typed tables; the plain twin is
@@ -1203,9 +1203,9 @@ let runCheckGo
                                 let enriched =
                                     escapes
                                     |> List.map (fun e -> { e with CandidateReconcileColumns = PeerTransfer.candidateColumnsFor sinkContract e })
-                                let cache = (EvidenceCache.fill source sink sourceContract sinkContract enriched).GetAwaiter().GetResult()
+                                let cache = (ForecastEvidence.fill source sink sourceContract sinkContract enriched).GetAwaiter().GetResult()
                                 let loadSetSet = match loadSet with Some s -> s | None -> Set.empty
-                                let components = EvidenceCache.componentsOf sourceContract loadSetSet enriched
+                                let components = ForecastEvidence.componentsOf sourceContract loadSetSet enriched
                                 // `--review`: the workbench rides the SAME
                                 // substrate this board pass read — one
                                 // derivation, two surfaces (§4.4).
@@ -1228,7 +1228,7 @@ let runCheckGo
                                                ActSignoff = opts.ActSignoff }
                                 components
                                 |> List.collect (fun componentEdges ->
-                                    let per = EvidenceCache.perAnswerDeltas cache sourceContract loadSetSet reconciledKeys componentEdges Map.empty
+                                    let per = ForecastEvidence.perAnswerDeltas cache sourceContract loadSetSet reconciledKeys componentEdges Map.empty
                                     componentEdges
                                     |> List.map (fun e -> e.Target)
                                     |> List.distinct
@@ -1840,7 +1840,7 @@ let runCheckGo
                          // cannot pin: the sink populations a wipe consumes
                          // (MIN/MAX primary key + count) and the reconciled
                          // kinds' row substrate for the Match effect hashes
-                         // (`EvidenceCache.fill` over synthetic self-edges —
+                         // (`ForecastEvidence.fill` over synthetic self-edges —
                          // the same reader the workbench evidence uses).
                          let wipeKinds =
                              acts |> List.choose (function ActConsent.Act.Wipe t -> Some t | _ -> None)
@@ -1858,7 +1858,7 @@ let runCheckGo
                                              (ActEvidence.populationProbe cnn k).GetAwaiter().GetResult()
                                              |> Option.map (fun p -> t, p)))
                                      |> Map.ofList
-                         let matchCache : EvidenceCache.Cache option =
+                         let matchCache : ForecastEvidence.Cache option =
                              if Map.isEmpty reconcileColumns then None
                              else
                                  match (ConnectionSpec.openSpec SubstrateRole.Source "check-go-consent-source" sourceSpec).GetAwaiter().GetResult() with

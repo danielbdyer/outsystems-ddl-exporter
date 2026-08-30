@@ -161,7 +161,7 @@
     <Compile Include="NameAlignment.fs" />
     <Compile Include="PeerTransfer.fs" />
     <Compile Include="TransferImpact.fs" />
-    <Compile Include="EvidenceCache.fs" />
+    <Compile Include="ForecastEvidence.fs" />
     <!-- ActEvidence.fs: the act-fingerprint derivation (slices 4a/4b) -
          projects the dry-run plan + EvidenceCache match products + the
          population probes onto ActConsent fingerprints; its two IO seams

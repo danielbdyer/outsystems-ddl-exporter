@@ -10,7 +10,7 @@ namespace Projection.Cli
 // escaping reference is decided by comparison. The cursor walks the open
 // decisions; Space selects the next answer for the decision under the cursor
 // and the whole coupled component's consequences recompute — a pure lookup
-// over the slice-2 EvidenceCache, so the toggle is instant and honest (no IO
+// over the slice-2 ForecastEvidence, so the toggle is instant and honest (no IO
 // enters the reducer; there is no second forecast derivation). `w` writes the
 // selections to `projection.json` as the config vocabulary the engine already
 // honors, so the headless run and the interactive session read one truth.
@@ -60,8 +60,8 @@ module DecisionRows =
         (catalog: Catalog)
         (label: string)
         (selected: bool)
-        (answer: EvidenceCache.Answer)
-        (ev: EvidenceCache.AnswerEvidence)
+        (answer: ForecastEvidence.Answer)
+        (ev: ForecastEvidence.AnswerEvidence)
         : GoBoard.DecisionRow =
         let d = ev.Delta
         let uniqueness (col: Name) =
@@ -81,19 +81,19 @@ module DecisionRows =
                 |> Option.defaultValue (SsKey.rootOriginal k))
         let rowLabel, consequence =
             match answer with
-            | EvidenceCache.Answer.Reconcile col ->
+            | ForecastEvidence.Answer.Reconcile col ->
                 sprintf "reconciled by %s" (Name.value col),
                 sprintf "consequence: if %s is reconciled by %s, %s onto the %s rows the target already holds, and %s.%s"
                     label (Name.value col) (counted d.RowsRekeyed "row that points at it re-keys" "rows that point at it re-key") label (dropped col) (uniqueness col)
-            | EvidenceCache.Answer.StaticLookup col ->
+            | ForecastEvidence.Answer.StaticLookup col ->
                 sprintf "declared identical, matched by %s" (Name.value col),
                 sprintf "consequence: if %s is declared identical in both environments and matched by %s, the same %s and %s; a live run refuses if any %s row differs between the environments, is missing, or is extra.%s"
                     label (Name.value col) (counted d.RowsRekeyed "row re-keys" "rows re-key") (dropped col) label (uniqueness col)
-            | EvidenceCache.Answer.Pin _ ->
+            | ForecastEvidence.Answer.Pin _ ->
                 "re-keyed onto one chosen row",
                 sprintf "consequence: if every reference to %s is re-keyed onto one chosen %s row in the target, %s and none drop; the row must be chosen, and must exist in the target."
                     label label (counted d.RowsRekeyed "row that points at it re-keys" "rows that point at it re-key")
-            | EvidenceCache.Answer.Widen ->
+            | ForecastEvidence.Answer.Widen ->
                 "added to the transfer",
                 (let spawned =
                     match spawnedNames with
@@ -115,13 +115,13 @@ module DecisionRows =
     let tableFor
         (catalog: Catalog)
         (componentEdges: PeerTransfer.EscapingFk list)
-        (per: Map<EvidenceCache.Answer, EvidenceCache.AnswerEvidence>)
-        (selection: EvidenceCache.Answer option)
+        (per: Map<ForecastEvidence.Answer, ForecastEvidence.AnswerEvidence>)
+        (selection: ForecastEvidence.Answer option)
         (target: SsKey)
         : GoBoard.DecisionTable =
         let label = targetLabel componentEdges target
         let rows =
-            EvidenceCache.candidateAnswers componentEdges target
+            ForecastEvidence.candidateAnswers componentEdges target
             |> List.choose (fun a -> per |> Map.tryFind a |> Option.map (fun ev -> a, ev))
             |> List.map (fun (a, ev) -> rowFor catalog label (selection = Some a) a ev)
         { Target = label; Question = questionOf componentEdges target label; Rows = rows }
@@ -159,7 +159,7 @@ module ReviewNavigator =
           LoadSet         : Set<SsKey>
           Reconciled      : Set<SsKey>
           Components      : PeerTransfer.EscapingFk list list
-          Cache           : EvidenceCache.Cache
+          Cache           : ForecastEvidence.Cache
           /// the flow's CURRENT config lists — `w` appends, never clobbers.
           Tables          : string list
           Reconcile       : string list
@@ -176,7 +176,7 @@ module ReviewNavigator =
     type Model =
         { Nav         : Navigator.Model
           Bench       : Workbench
-          Decisions   : Map<SsKey, EvidenceCache.Answer>
+          Decisions   : Map<SsKey, ForecastEvidence.Answer>
           /// The blessed set as WRITTEN: token → the fingerprint on file.
           /// Initialized from the flow's act signoffs; a bless gesture adds
           /// the exact fingerprint captured at gesture time and writes
@@ -200,7 +200,7 @@ module ReviewNavigator =
     /// THE PAIRED SINGLE TRAVERSAL: one pass builds BOTH the `View` and the
     /// path→target index, so the cursor's domain meaning cannot drift from
     /// what is drawn. Pure.
-    let render (bench: Workbench) (decisions: Map<SsKey, EvidenceCache.Answer>) (blessings: Map<string, ActConsent.ActFingerprint>) : View.View * Map<int list, ReviewTarget> =
+    let render (bench: Workbench) (decisions: Map<SsKey, ForecastEvidence.Answer>) (blessings: Map<string, ActConsent.ActFingerprint>) : View.View * Map<int list, ReviewTarget> =
         let targets = orderedTargets bench
         let decided = targets |> List.filter (fun (_, t) -> decisions.ContainsKey t) |> List.length
         // an act is blessed when the fingerprint ON FILE equals the one this
@@ -217,7 +217,7 @@ module ReviewNavigator =
         // per-component evidence, computed once per render (pure cache lookups)
         let perByComponent =
             bench.Components
-            |> List.map (fun edges -> edges, EvidenceCache.perAnswerDeltas bench.Cache bench.Catalog bench.LoadSet bench.Reconciled edges decisions)
+            |> List.map (fun edges -> edges, ForecastEvidence.perAnswerDeltas bench.Cache bench.Catalog bench.LoadSet bench.Reconciled edges decisions)
         for (componentEdges, target) in targets do
             let per =
                 perByComponent
@@ -298,12 +298,12 @@ module ReviewNavigator =
         walk m.Nav.Path
 
     /// The next answer in the candidate cycle (undecided → the first).
-    let private cycleAnswer (bench: Workbench) (target: SsKey) (decisions: Map<SsKey, EvidenceCache.Answer>) : Map<SsKey, EvidenceCache.Answer> =
+    let private cycleAnswer (bench: Workbench) (target: SsKey) (decisions: Map<SsKey, ForecastEvidence.Answer>) : Map<SsKey, ForecastEvidence.Answer> =
         let componentEdges =
             bench.Components
             |> List.tryFind (fun edges -> edges |> List.exists (fun e -> e.Target = target))
             |> Option.defaultValue []
-        match EvidenceCache.candidateAnswers componentEdges target with
+        match ForecastEvidence.candidateAnswers componentEdges target with
         | [] -> decisions
         | candidates ->
             let next =
@@ -368,7 +368,7 @@ module ReviewNavigator =
     /// grammar). Returns the writable edits and, for what cannot be written
     /// without more information, the exact by-hand instruction (named, never
     /// silent).
-    let toConfigEdits (bench: Workbench) (decisions: Map<SsKey, EvidenceCache.Answer>) =
+    let toConfigEdits (bench: Workbench) (decisions: Map<SsKey, ForecastEvidence.Answer>) =
         let allEdges = List.concat bench.Components
         let labelOf t = DecisionRows.targetLabel allEdges t
         let reconciles =
@@ -376,18 +376,18 @@ module ReviewNavigator =
             |> Map.toList
             |> List.choose (fun (t, a) ->
                 match a with
-                | EvidenceCache.Answer.Reconcile col -> Some (sprintf "%s:%s" (labelOf t) (Name.value col))
+                | ForecastEvidence.Answer.Reconcile col -> Some (sprintf "%s:%s" (labelOf t) (Name.value col))
                 | _ -> None)
         let widens =
             decisions
             |> Map.toList
-            |> List.choose (fun (t, a) -> match a with EvidenceCache.Answer.Widen -> Some (labelOf t) | _ -> None)
+            |> List.choose (fun (t, a) -> match a with ForecastEvidence.Answer.Widen -> Some (labelOf t) | _ -> None)
         let statics =
             decisions
             |> Map.toList
             |> List.choose (fun (t, a) ->
                 match a with
-                | EvidenceCache.Answer.StaticLookup col ->
+                | ForecastEvidence.Answer.StaticLookup col ->
                     Some ({ Table = labelOf t
                             Relationship = SupportingScope.SupportingRelationship.StaticLookup (Name.value col)
                             Reason = "selected in the review workbench: the datasets are held identical" } : SupportingScope.SupportingScopeEntry)
@@ -397,7 +397,7 @@ module ReviewNavigator =
             |> Map.toList
             |> List.choose (fun (t, a) ->
                 match a with
-                | EvidenceCache.Answer.Pin _ ->
+                | ForecastEvidence.Answer.Pin _ ->
                     Some (sprintf "%s: a pinned row needs its key — author the reconcile entry \"%s:<column>:=<key>\" in %s by hand." (labelOf t) (labelOf t) bench.ConfigPath)
                 | _ -> None)
         reconciles, widens, statics, byHand
@@ -406,7 +406,7 @@ module ReviewNavigator =
     /// existing `reconcile` / `tables` / `supportingScope` — never clobber —
     /// and name what still needs the operator's hand. Impure; returns the
     /// lines the shell prints.
-    let persist (bench: Workbench) (decisions: Map<SsKey, EvidenceCache.Answer>) : string list =
+    let persist (bench: Workbench) (decisions: Map<SsKey, ForecastEvidence.Answer>) : string list =
         let reconciles, widens, statics, byHand = toConfigEdits bench decisions
         let write (field: string) (current: string list) (added: string list) =
             if List.isEmpty added then []
