@@ -104,9 +104,9 @@ let buildSummaryView (command: string) (code: int) : View.View =
     // needed) leads; the optional config edit follows.
     let nextAction = if edits > 0 then [ View.PanelRow.Next "projection suggest-config --apply" ] else []
     let cutover =
-        match RunLedger.configuredDir () with
+        match RunIndex.configuredDir () with
         | Some dir ->
-            let r = RunLedger.read dir |> RunLedger.readiness
+            let r = RunIndex.read dir |> RunIndex.readiness
             let gate = if r.Eligible then "ELIGIBLE" else "not yet"
             [ View.PanelRow.Gauge(
                 "cutover", r.ConsecutiveGreen, r.Threshold,
@@ -127,7 +127,7 @@ let renderSummary (command: string) (code: int) : unit =
 
 /// Build the cutover-readiness board `View` — hero answer first, then the R6
 /// meter, the canary-history dots, the run totals, the ledger note.
-let buildReadinessView (r: RunLedger.Readiness) (recent: CanaryVerdict list) (series: int list) (ledgerPath: string) : View.View =
+let buildReadinessView (r: RunIndex.Readiness) (recent: CanaryVerdict list) (series: int list) (indexPath: string) : View.View =
     let toGo = max 0 (r.Threshold - r.ConsecutiveGreen)
     let hero =
         if r.Eligible then
@@ -182,7 +182,7 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: CanaryVerdict list) (se
               sprintf "%d total %s %d with a round-trip verification %s last %s" r.TotalRuns Theme.dot r.CanaryRuns Theme.dot lastCanary,
               View.Neutral)
             View.Rule(Some "ledger", View.Neutral)
-            View.Note ledgerPath ]
+            View.Note indexPath ]
         // align-III.3 — the fail-closed reading names its interior skips
         // (a trailing torn line stays silent; interior corruption does not).
         @ (if r.SkippedLines > 0
@@ -191,12 +191,12 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: CanaryVerdict list) (se
 
 let renderReadinessBoardTo
     (console: IAnsiConsole)
-    (r: RunLedger.Readiness)
+    (r: RunIndex.Readiness)
     (recent: CanaryVerdict list)
     (series: int list)
-    (ledgerPath: string)
+    (indexPath: string)
     : unit =
-    View.write console (buildReadinessView r recent series ledgerPath)
+    View.write console (buildReadinessView r recent series indexPath)
 
 // --- the Setup readback as a View (§14 / Appendix A.6) ---------------------
 
@@ -376,12 +376,12 @@ let buildFlowMenuView (flows: (string * string * string * string) list) : View.V
           View.Note "the daily act is `projection <flow>` (preview by default; --go applies)."
           View.Table(headers, flows |> List.map row) ]
 
-let renderReadinessBoard (r: RunLedger.Readiness) (recent: CanaryVerdict list) (series: int list) (ledgerPath: string) : unit =
+let renderReadinessBoard (r: RunIndex.Readiness) (recent: CanaryVerdict list) (series: int list) (indexPath: string) : unit =
     // The board renders on every `readiness` (not just on a TTY). The factory
     // pins a width when piped (Spectre's auto-width collapses lines on a non-TTY)
     // and still strips color for the non-terminal sink.
     let console = View.consoleTo Console.Out
-    renderReadinessBoardTo console r recent series ledgerPath
+    renderReadinessBoardTo console r recent series indexPath
 
 // --- the answer surface — render any View to stdout (INSTRUMENT slice 1) ----
 

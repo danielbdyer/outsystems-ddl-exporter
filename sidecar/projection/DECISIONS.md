@@ -33058,3 +33058,23 @@ wire is byte-identical.
 **Grep-absence:** no `Projection.Pipeline.Environment` remains; the surviving
 `Environment` tokens in the renamed files are the JSON-key/function-name surface
 contracts and the doc note naming the rename. Not behavioral.
+
+---
+
+## 2026-08-30 — align-III.21 (X5): the run residue is an INDEX, not a third "ledger" (`RunIndex`)
+
+**The finding (audit a5/a9).** The flagship noun "ledger" was borne by three unrelated
+meanings: the `LedgerSpec` algebra (the real ledger — admission-disciplined, replayable),
+`RunLedger` (a thin JSONL run history), and `SpineLedger` (a per-run stage tracker). The
+III.3 micro-ruling already named the structure: `RunHistory` reads the richer per-run
+`Run` store and is the SOURCE; `RunLedger.read`/`append` is the thin durable JSONL INDEX
+(the residue); the readiness GAUGE is the one shared definition both reach.
+
+**The decision (one rename, executing the ruling).** `RunLedger` → **`RunIndex`**, with
+its vocabulary following coherently: `IndexRecord`, `IndexReading`, `indexPath`; files
+`RunIndex.fs` / `RunIndexTests.fs`. Surface contracts KEEP their names: the
+`PROJECTION_LEDGER_DIR` env var and the on-disk `runs.jsonl` (operator surface; a store
+written yesterday reads today). `SpineLedger` is out of scope (its own future slice if
+the overload still stings). Blast radius: 16 files, ~70 reference lines.
+
+**Grep-absence:** `\bRunLedger\b` = 0 outside the rename's own notes. Not behavioral.

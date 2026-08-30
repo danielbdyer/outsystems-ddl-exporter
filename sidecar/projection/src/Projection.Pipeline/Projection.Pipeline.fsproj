@@ -18,7 +18,7 @@
     <Compile Include="LogSink.fs" />
     <Compile Include="RunSpine.fs" />
     <Compile Include="EventProjection.fs" />
-    <Compile Include="RunLedger.fs" />
+    <Compile Include="RunIndex.fs" />
     <Compile Include="Run.fs" />
     <Compile Include="ConnectionSpec.fs" />
     <Compile Include="NoticeSink.fs" />

@@ -20,7 +20,7 @@ open System.Security.Cryptography
 /// Discriminating predicate: `load (save run) = run`, and `inputDigest`
 /// depends only on inputs, not wall-clock. This SUPPORTS persist / diff /
 /// query / migrate-inputs without completing any of them — it is the noun
-/// those verbs would operate on. `RunLedger.LedgerRecord` is its index
+/// those verbs would operate on. `RunIndex.IndexRecord` is its index
 /// projection (`toLedgerEntry`), so the run *subsumes* the ledger row.
 module Run =
 
@@ -263,7 +263,7 @@ module Run =
     let storeDir () : string option =
         match configuredDir () with
         | Some d -> Some d
-        | None -> RunLedger.configuredDir ()
+        | None -> RunIndex.configuredDir ()
 
     // R1d — the run-vs-run delta surface. The §7 units-of-measure
     // promotion FIRES here, scoped to this surface exactly as gated
@@ -336,8 +336,8 @@ module Run =
           BenchDeltas = deltas }
 
     /// Project the run onto its ledger index row — the run subsumes the
-    /// `RunLedger.LedgerRecord` (one source, the ledger is a derived view).
-    let toLedgerEntry (r: Run) : RunLedger.LedgerRecord =
+    /// `RunIndex.IndexRecord` (one source, the ledger is a derived view).
+    let toLedgerEntry (r: Run) : RunIndex.IndexRecord =
         { RunId = r.RunId; Ts = r.Ts; Command = r.Command; Outcome = r.Outcome
           Canary = r.Canary; Registered = r.Registered; Applied = r.Applied; Declined = r.Declined }
 

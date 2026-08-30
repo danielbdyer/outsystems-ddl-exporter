@@ -218,7 +218,7 @@ let ``shell: the run joins the cross-run ledger on every path (the full-export p
         let console = newConsole ()
         // the publish path (SelfBracketed) — the arm that used to skip the ledger
         Shell.executeOn console false false (goFrame "projection full-export") Shell.Bracket.SelfBracketed None (fun () -> 0) |> ignore
-        let records = RunLedger.read dir
+        let records = RunIndex.read dir
         Assert.Equal(1, List.length records)
         Assert.Equal("projection full-export", (List.head records).Command)
     finally

@@ -34,7 +34,7 @@
     <Compile Include="NoticeRoutingTests.fs" />
     <Compile Include="RunSpineTests.fs" />
     <Compile Include="StagedTests.fs" />
-    <Compile Include="RunLedgerTests.fs" />
+    <Compile Include="RunIndexTests.fs" />
     <Compile Include="RunTests.fs" />
     <Compile Include="SourceTests.fs" />
     <Compile Include="RefTests.fs" />

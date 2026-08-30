@@ -10,7 +10,7 @@ namespace Projection.Pipeline
 /// This is the durable realization the morphology named as missing ("no
 /// durable episode to integrate over — the FTC runs only in-memory"); it is
 /// distinct from `Core.Episode` (a single state-at-coordinate) and subsumes
-/// `RunLedger` (the ledger was a thin index of this). It composes `Run` +
+/// `RunIndex` (the ledger was a thin index of this). It composes `Run` +
 /// (at the verb layer) `Comparison` + `Ref`, so it earns its place now that
 /// they exist. It SUPPORTS evolution / promotion / trends without completing
 /// any of them.
@@ -45,5 +45,5 @@ module RunHistory =
 
     /// R6 readiness over the whole history (reuses the gauge; the history is
     /// the source the ledger was a thin view of).
-    let readiness (h: RunHistory) : RunLedger.Readiness =
-        h.Runs |> List.map Run.toLedgerEntry |> RunLedger.readiness
+    let readiness (h: RunHistory) : RunIndex.Readiness =
+        h.Runs |> List.map Run.toLedgerEntry |> RunIndex.readiness

@@ -158,7 +158,7 @@ let ``Run: list enumerates every persisted run`` () =
         try Directory.Delete(dir, true) with _ -> ()
 
 [<Fact>]
-let ``Run: toLedgerEntry projects the index row (subsumes LedgerRecord)`` () =
+let ``Run: toLedgerEntry projects the index row (subsumes IndexRecord)`` () =
     let e = Run.toLedgerEntry sample
     Assert.Equal(sample.RunId, e.RunId)
     Assert.Equal(sample.Canary, e.Canary)

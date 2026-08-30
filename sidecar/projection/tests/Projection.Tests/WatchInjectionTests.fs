@@ -50,7 +50,7 @@ let ``renderWatchOn shows the cutover timeline header from the ledger's canary h
     Environment.SetEnvironmentVariable("PROJECTION_LEDGER_DIR", dir)
     try
         for idx in 1..3 do
-            RunLedger.append dir
+            RunIndex.append dir
                 { RunId = sprintf "r%d" idx
                   Ts = DateTimeOffset(2026, 6, 17, 0, 0, idx, TimeSpan.Zero)
                   Command = "projection canary"

@@ -34,9 +34,9 @@ let ``RunHistory: canaryHistory is the green/red series, oldest first`` () =
 
 [<Fact>]
 let ``RunHistory: readiness over the history reuses the R6 gauge (subsumes the ledger)`` () =
-    let greens = [ for i in 1 .. RunLedger.R6Threshold -> run (sprintf "2026-%02d" i) (Some "green") 0 ]
+    let greens = [ for i in 1 .. RunIndex.R6Threshold -> run (sprintf "2026-%02d" i) (Some "green") 0 ]
     let r = RunHistory.ofRuns greens |> RunHistory.readiness
-    Assert.Equal(RunLedger.R6Threshold, r.ConsecutiveGreen)
+    Assert.Equal(RunIndex.R6Threshold, r.ConsecutiveGreen)
     Assert.True(r.Eligible)
 
 [<Fact>]
@@ -58,7 +58,7 @@ let ``R1: readiness over RunHistory ≡ readiness over the ledger projection of 
           run "2026-04" (Some "green") 2
           run "2026-05" (Some "green") 0 ]
     let viaHistory = RunHistory.ofRuns runs |> RunHistory.readiness
-    let viaLedger = RunLedger.readiness (runs |> List.map Run.toLedgerEntry)
+    let viaLedger = RunIndex.readiness (runs |> List.map Run.toLedgerEntry)
     Assert.Equal(viaLedger, viaHistory)
     Assert.Equal(2, viaHistory.ConsecutiveGreen)
     Assert.False(viaHistory.Eligible)

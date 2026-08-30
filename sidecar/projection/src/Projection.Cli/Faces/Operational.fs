@@ -219,7 +219,7 @@ let runEject (storePath: string) : int =
 /// gauge to stdout; one structured `summary.readiness` event to stderr so
 /// CI can branch on it. Read-only (no ledger append for the query itself).
 let runReadiness () : int =
-    match RunLedger.configuredDir () with
+    match RunIndex.configuredDir () with
     | None ->
         eprintfn "projection: no run ledger configured. Set PROJECTION_LEDGER_DIR to accumulate run history."
         4
@@ -234,9 +234,9 @@ let runReadiness () : int =
         // and touches no ledger (the documented no-append contract above), so it
         // declares the empty digest + no `LedgerRef`.
         RunEnvelope.bracket "projection check ready" ignore Map.empty (fun () -> "", []) (fun () ->
-            let reading = RunLedger.readReading dir
+            let reading = RunIndex.readReading dir
             let records = reading.Records
-            let r = RunLedger.readinessOf reading
+            let r = RunIndex.readinessOf reading
             let recent =
                 records |> List.map (fun e -> e.Canary) |> List.filter CanaryVerdict.ran |> List.rev |> List.truncate 16 |> List.rev
             // #14 — the changeset trend: registered transforms per run over the last 16
@@ -245,7 +245,7 @@ let runReadiness () : int =
             let series =
                 records |> List.map (fun e -> e.Registered) |> List.rev |> List.truncate 16 |> List.rev
             // Human channel — the themed cutover board (color on a TTY, plain piped).
-            TtyRenderer.renderReadinessBoard r recent series (RunLedger.ledgerPath dir)
+            TtyRenderer.renderReadinessBoard r recent series (RunIndex.indexPath dir)
             // Machine channel — one structured summary.readiness event (CI gates
             // on `eligible`).
             LogSink.emit
@@ -300,7 +300,7 @@ let runSetup (connRef: string option) : int =
         | v         -> Some v
     let view =
         TtyRenderer.buildSetupView
-            (RunLedger.configuredDir ())
+            (RunIndex.configuredDir ())
             (envOpt "PROJECTION_ALLOW_EXECUTE" = Some "1")
             (Watch.resolveDwellMs ())
             (envOpt "PROJECTION_BENCH_DIR")

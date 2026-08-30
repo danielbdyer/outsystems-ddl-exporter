@@ -21,7 +21,7 @@ open FsToolkit.ErrorHandling
 /// (`journal.ndjson` — the digest directory is the key, so no digest
 /// filename); fsync on append (the CaptureJournal durability posture); a
 /// torn TRAILING line is tolerated, an interior corrupt line refuses by
-/// name (`RunLedger`'s skip-malformed posture is exactly the silent
+/// name (`RunIndex`'s skip-malformed posture is exactly the silent
 /// forgetting a metadata ledger must never do); a regressing syncId refuses
 /// on the `Ledger.resumeAdmit` drift channel (`sink.journal.syncRegression`).
 /// No intent records: snapshots are idempotently re-derivable, so the

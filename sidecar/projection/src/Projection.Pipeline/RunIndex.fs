@@ -5,14 +5,21 @@ open System
 open System.IO
 open System.Text.Json
 
-/// Tier-4 reporting (`REPORTING_HORIZON.md` §3) — the cross-run ledger.
-/// Each completed run appends one compact record; the readiness gauge reads
-/// the history and answers the R6 cutover question ("how many consecutive
-/// green canaries; is the gate eligible?"). Persistence is **opt-in** via
-/// the `PROJECTION_LEDGER_DIR` env var (mirrors bench's `PROJECTION_BENCH_DIR`)
-/// so default runs — tests, the SessionEnd canary hook — don't accumulate a
-/// committed ledger; the operator sets it to start a run history.
-module RunLedger =
+/// Tier-4 reporting (`REPORTING_HORIZON.md` §3) — the thin durable JSONL
+/// INDEX of completed runs (renamed from `RunLedger` at align-III.21/X5,
+/// executing the III.3 micro-ruling: `RunHistory` reads the richer per-run
+/// `Run` store and is the SOURCE; this module's `read`/`append` is the
+/// residue index; the readiness GAUGE here is the one shared definition
+/// both reach. The old name overloaded the flagship "ledger" noun the
+/// `LedgerSpec` algebra owns — an index is not a ledger). Each completed
+/// run appends one compact record; the readiness gauge answers the R6
+/// cutover question ("how many consecutive green canaries; is the gate
+/// eligible?"). Persistence is **opt-in** via the `PROJECTION_LEDGER_DIR`
+/// env var (the VAR NAME and the on-disk `runs.jsonl` are operator surface
+/// contracts and keep their names) so default runs — tests, the SessionEnd
+/// canary hook — don't accumulate a committed index; the operator sets it
+/// to start a run history.
+module RunIndex =
 
     /// R6 governance gate (`DECISIONS 2026-05-22 — R6`): N=10 consecutive
     /// green canary runs (plus operator sign-off, which the gauge does not
@@ -23,7 +30,7 @@ module RunLedger =
     /// One ledger row — the run's verdict in the form the readiness gauge +
     /// a future `diff` consume. Compact by design (the full evidence lives in
     /// the run's `summary.runComplete`; this is the index).
-    type LedgerRecord = {
+    type IndexRecord = {
         RunId      : string
         /// Typed at align-III.1 (a5's typed-instants charge). The wire
         /// keeps the UTC `o` form; a malformed stored `ts` drops the line
@@ -47,7 +54,7 @@ module RunLedger =
         | null -> ""
         | s    -> s
 
-    let private toJsonLine (r: LedgerRecord) : string =
+    let private toJsonLine (r: IndexRecord) : string =
         use ms = new MemoryStream()
         (use jw = new Utf8JsonWriter(ms)
          jw.WriteStartObject()
@@ -64,7 +71,7 @@ module RunLedger =
          jw.WriteEndObject())
         Text.Encoding.UTF8.GetString(ms.ToArray())
 
-    let private parseLine (line: string) : LedgerRecord option =
+    let private parseLine (line: string) : IndexRecord option =
         try
             use doc = JsonDocument.Parse line
             let root = doc.RootElement
@@ -101,13 +108,13 @@ module RunLedger =
         | null | "" -> None
         | d         -> Some d
 
-    let ledgerPath (dir: string) : string = Path.Combine(dir, "runs.jsonl")
+    let indexPath (dir: string) : string = Path.Combine(dir, "runs.jsonl")
 
     /// Append one record (creates the dir on first write). JSONL — one
     /// self-describing line per run, append-only, `grep`/`jq`-able.
-    let append (dir: string) (record: LedgerRecord) : unit =
+    let append (dir: string) (record: IndexRecord) : unit =
         Directory.CreateDirectory dir |> ignore
-        File.AppendAllText(ledgerPath dir, toJsonLine record + "\n")
+        File.AppendAllText(indexPath dir, toJsonLine record + "\n")
 
     /// A fail-closed read of the JSONL ledger (align-III.3). A malformed
     /// TRAILING line is tolerated silently (a crash mid-append is normal —
@@ -116,10 +123,10 @@ module RunLedger =
     /// never silently dropped as before. Not a hard refuse — the ledger is
     /// opt-in and forward-compatible, so one corrupt interior line names
     /// itself rather than breaking the whole gauge.
-    type LedgerReading = { Records: LedgerRecord list; SkippedLines: int }
+    type IndexReading = { Records: IndexRecord list; SkippedLines: int }
 
-    let private readLines (dir: string) : LedgerReading =
-        let p = ledgerPath dir
+    let private readLines (dir: string) : IndexReading =
+        let p = indexPath dir
         if not (File.Exists p) then { Records = []; SkippedLines = 0 }
         else
             let raw = File.ReadAllLines p
@@ -140,11 +147,11 @@ module RunLedger =
     /// Read the full run history (chronological — append order). Malformed
     /// interior lines are counted (see `readReading`); the trailing torn line
     /// is tolerated.
-    let read (dir: string) : LedgerRecord list = (readLines dir).Records
+    let read (dir: string) : IndexRecord list = (readLines dir).Records
 
     /// Read the ledger WITH its skipped-interior-line count (the fail-closed
     /// reading the readiness board surfaces).
-    let readReading (dir: string) : LedgerReading = readLines dir
+    let readReading (dir: string) : IndexReading = readLines dir
 
     /// The R6 cutover-readiness gauge.
     type Readiness = {
@@ -167,7 +174,7 @@ module RunLedger =
     /// gate measures the *current* streak, not the historical best). Pure
     /// over already-parsed records, so `SkippedLines = 0`; `readinessOf`
     /// carries the reading's skip count through.
-    let readiness (records: LedgerRecord list) : Readiness =
+    let readiness (records: IndexRecord list) : Readiness =
         let canaryRuns = records |> List.map (fun r -> r.Canary) |> List.filter Projection.Core.CanaryVerdict.ran
         let consecutiveGreen =
             canaryRuns
@@ -187,5 +194,5 @@ module RunLedger =
 
     /// The gauge over a fail-closed reading — surfaces the reading's
     /// interior-skip count on `Readiness.SkippedLines`.
-    let readinessOf (reading: LedgerReading) : Readiness =
+    let readinessOf (reading: IndexReading) : Readiness =
         { readiness reading.Records with SkippedLines = reading.SkippedLines }
