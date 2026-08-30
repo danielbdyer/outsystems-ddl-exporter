@@ -1,5 +1,41 @@
 # AUDIT — Geometric alignment: each stage's vocabulary against its domain space
 
+> **DISPOSITIONED 2026-08-30 — THE ALIGNMENT PROGRAM executed this audit in full.**
+> Operator authorization 2026-08-16 ("spare no expense"); three chapters ran
+> consecutively on PR #695 under the master plan, every candidate arc landed or was
+> deferred by a NAMED trigger — nothing lapsed silently. The finding→slice map:
+>
+> - **Arcs 0+T (Chapter align-I, 11 slices)** — the fired `OverlayAxis` trigger resolved
+>   (`Identity` appended; `axisOfPolicyAxis` total), identity-plane passes reclassified,
+>   the `SynthesisConvention` registry + extension-marker lift, sequence-lane convergence,
+>   `ChainStep.Requires/Produces` + skeleton honesty, typed `AnnotationDetail`,
+>   `FiringSite`, the config-provenance rule (`Supplied<'T>` stays deferred — trigger:
+>   the first mis-wiring the rule table catches).
+> - **Arcs R+E (Chapter align-II, 14 slices)** — `OperatorRuling` carrier + keyed store,
+>   tightening provenance, per-subject index rulings, abstain honesty (the `KeepNullable`
+>   lie retired), FindingKey reception + the `rule` verb, `RowsetContract`, typed
+>   `BundleErasure`, `AcquisitionScope`, journal read-side decode, typed fingerprint
+>   readings, finding pedigree. Auto-application of rulings stays a named deferral.
+> - **Arcs S+L+H+X (Chapter align-III, 24 slices)** — typed state (`SyncOrdinal`, typed
+>   instants, `ChainAdmission`, `CanaryVerdict`, `EstateHistory.replay` FTC, the dead
+>   twin deleted, `DataObservation`, rename isometry); law residency (A44 resident,
+>   A45/T17/A47/A48 live, generator honesty, `TriggerProbes`, `L3-Eject` registered);
+>   grain (`PhysicalTableRef`/`SchemaBasis`, `Environment.parse`, composite sink labels,
+>   typed `TemporalConfig`); lexicon (`ForecastEvidence`, the two-register rule,
+>   `WitnessedRow` + the Witness- freeze, `Place`, `RunIndex`) and the a11 voice
+>   stage-2 sweep (the lazy plural is dead in src; the ratchet scans the full tree).
+> - **Still deferred, each with its named trigger** (the Active-deferrals index owns
+>   them): X6 statement-algebra rehome (second non-SSDT consumer);
+>   `CanaryVerdict.Aborted` (first started-but-unconcluded canary); append-only ruling
+>   HISTORY (first re-ruling consumer; `BasisAnchor.SinkEdition` widens then);
+>   `SpineLedger` rename (if the ledger-noun overload still stings); the full
+>   Sink→Witness B-family rename (L-effort, operator surface); the consent-surface
+>   voice ruling (AWAITING OPERATOR — WriteSignoff/ActConsent measure zero today).
+>
+> The workpapers (a1–a11) remain the finding-level ground truth; `DECISIONS.md` carries
+> every slice's entry. This banner is the disposition; the audit text below is frozen
+> as conducted.
+
 > **Conducted 2026-08-16** (operator commission, the session after the data-sink chapter
 > closed). Ten parallel read-only auditors, one per stage-plane; their full workpapers are
 > independent artifacts at `audits/alignment-2026-08-16/` (a1–a10) — this document is the

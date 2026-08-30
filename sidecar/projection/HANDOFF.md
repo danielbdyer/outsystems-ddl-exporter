@@ -1,4 +1,53 @@
-# Handoff addendum — 2026-08-16 (latest): alignment Chapters I AND II closed; Chapter III — State, Law, Grain & Lexicon — is YOUR program. Branch `claude/f-sharp-projection-data-sink-8lof4q`, PR #695
+# Handoff addendum — 2026-08-30 (latest): THE ALIGNMENT PROGRAM IS CLOSED. All three chapters shipped on PR #695; the next program is the operator's to commission
+
+To the next agent.
+
+**Where you stand.** The geometric-alignment program — three chapters, ~49 slices, one
+standing authorization — is COMPLETE. Chapter III (Arcs S+L+H+X, the largest) closed
+2026-08-30: typed state (`ChainAdmission` makes a tautological fingerprint unwritable;
+`CanaryVerdict` + the fail-closed `RunIndex` reading retire the string-literal R6 gate;
+`EstateHistory.replay` demotes `latest.json` to cache-of-fold; the `Lifecycle` dead twin
+is deleted; `DataObservation` splits measured-zero from unmeasured), resident law (the
+verifiability gate self-parses 94 live + 34 named-deferred, zero unclassified;
+`TriggerProbes` makes deferral triggers machine-evaluable), repaired grain
+(`PhysicalTableRef` retires the fabricated `dbo`; `Environment.parse` canonicalizes;
+composite sink labels resolve by digest-set currency; `TemporalConfig` is a typed pair),
+and the renamed lexicon (`ForecastEvidence`, `WitnessedRow` + the Witness- freeze,
+`Place`, `RunIndex`; the a11 voice sweep leaves ZERO lazy plurals in src, ratcheted by
+`VoiceRegisterTests` over the full tree). The audit synthesis now carries its
+DISPOSITIONED banner (the finding→slice map); `BACKLOG.md` carries the program's arc
+table; `V2_DRIVER.md` carries its axis row. Since the 2026-08-30 merge from main, the
+hook chain runs GREEN — commit normally, no `--no-verify`, ever.
+
+**What you must not re-derive.** Read, in order: `DECISIONS.md`'s last ~40 entries
+(align-III.0 through the program close — every slice's why), the Active-deferrals index
+at its top (every deferral has a NAMED trigger; `TriggerProbes` reds when a
+machine-evaluable one fires), and `CHAPTER_ALIGN_II_CLOSE.md` + the align-I close for
+the earlier chapters' witness maps. The gate ladder is unchanged: build → fast pool →
+focused Docker where touched → verifiability gate → matrix regen on AxiomTests touches
+→ analyzers on Core touches. The known-red Docker set is still exactly
+{StagedMergeDeployE2ETests, T18CycleBreakCanaryTests} — those two are OWED an arc, and
+they are the only reds you may accept without a hunt.
+
+**The one question awaiting the operator.** The a11 voice ruling excluded the consent
+surfaces (`WriteSignoff.fs`, `ActConsent.fs`) from the lazy-plural sweep pending an
+explicit ruling. Both files measure ZERO lazy plurals today, so the exclusion is
+jurisdictional, not protective — the standing question is whether the
+`VoiceRegisterTests` ratchet may simply include them. Ask; don't assume.
+
+**What the next program could be** (the operator chooses; none is authorized yet):
+the operator-walk end-to-end estate fixture (named at the estate close as the largest
+terminus item); the two owed Docker reds; the perf bottleneck sweep on
+`PERF_HARNESS.md`'s substrate (the program the alignment work interrupted); or a
+deferral whose trigger has fired — check `TriggerProbes` and the index first. Until a
+commission arrives, the books are balanced: PR #695 carries the whole narrative,
+every gate is green, and every remainder is named.
+
+Hold the spine.
+
+---
+
+# Handoff addendum — 2026-08-16: alignment Chapters I AND II closed; Chapter III — State, Law, Grain & Lexicon — is YOUR program. Branch `claude/f-sharp-projection-data-sink-8lof4q`, PR #695
 
 To the next agent.
 

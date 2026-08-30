@@ -249,6 +249,13 @@ table before continuing.
 | **§5.12 fork 3 — eject provenance form** (frozen state + full refactorlog history vs state alone; P-PROV append-forever vs collapsible) | 2026-06-01 (Wave-6 ontology §10, "decisions owed") | The eject chapter opens — the fork decides its provenance packaging | Open; substance in the 2026-06-01 entry. Indexed align-III.11 |
 | **The permissions axis** (grants/roles/RLS as a projected axis: `Grant` IR facet, `GRANT` statements, a permission channel in `CatalogDiff`, readback) | 2026-06-16 (THE VECTOR Wave 5 honesty; carried in the matrix T-VI note) | A flow must PUBLISH grants — the eject is the named firing point (the A2 pre-flight gates but cannot project/diff/round-trip a permission decision) | Open; substance in the generated matrix's T-VI note + THE VECTOR Wave 5. Indexed align-III.11 — was heredoc-resident only |
 | **The atomic `BEGIN TRAN` estate-scale envelope** (M22 beyond LOCAL full-access databases) | 2026-06-16 (M22 lands `--atomic` scoped LOCAL) | P7b throughput survey passes at estate scale AND a direct-connect target class emerges (production ships via ADO/Octopus/SSDT; managed cloud is DML-only — the compensating channel M21/M23 is the standing arm) | Open; substance in the M21/M22/M23 entries + the matrix T-VI note. Indexed align-III.11 |
+| **X6 — statement-algebra rehome (`Projection.Statements.Sql`)** | 2026-08-30 (align-III X-arc scoping) | A SECOND non-SSDT consumer of the `Statement` DU / `ScriptDomBuild` surface lands (today the SSDT target family is the only home; one consumer = no rehome). | Open; the algebra stays in `Targets.SSDT` until the trigger fires. |
+| **`CanaryVerdict.Aborted`** | 2026-08-30 (align-III.3 — the typed R6 gate) | The FIRST started-but-unconcluded canary observed in the envelope stream (today a canary is Green/Red/NotRun; an abort is unobservable and would misread as NotRun). | Open; the DU appends the variant when the trigger fires (wire token reserved). |
+| **Append-only ruling HISTORY beside the keyed `RulingStore`** | 2026-08-16 (align-II.1's design ruling, restated at the III close) | The FIRST re-ruling consumer (an operator or surface that must read a finding's PRIOR rulings, not just the current one). `BasisAnchor.SinkEdition` widens in the same slice. | Open; the keyed replace-by-key store is the operating shape. |
+| **`SpineLedger` rename (the last ledger-noun overload)** | 2026-08-30 (align-III.21/X5 — `RunIndex` executed; SpineLedger explicitly out of scope) | The ledger-noun overload measurably stings again (an agent or the operator misreads SpineLedger as a `LedgerSpec` instance). | Open; a per-run stage tracker, not an admission-disciplined ledger — the name is the residue. |
+| **The full Sink→Witness B-family rename (`SinkTable`/`SinkStore`/`SinkJournal`/`sink:` refs)** | 2026-08-30 (align-III.19/X3 — `WitnessedRow` + the Witness- freeze) | An operator-surface rename arc is commissioned (L-effort: the `sink:` refs and `sink.*` codes are operator vocabulary; the freeze covers NEW names only). | Open; new witness-plane names take `Witness-`/`Witnessed-`, never `Sink-`. |
+| **The consent-surface voice ruling (`WriteSignoff.fs` / `ActConsent.fs` in the lazy-plural ratchet)** | 2026-08-16 (a11 carve-out; measured at align-III.22) | AWAITING OPERATOR — one word either way. Both files measure ZERO lazy plurals today; the exclusion is jurisdictional (their copy is the operator's signature), not protective. | Open; the `VoiceRegisterTests` ratchet excludes both files until the ruling lands. |
+| **`Supplied<'T>` config-provenance wrapper** | 2026-08-16 (align-I.9 — the rule table shipped instead) | The FIRST mis-wiring the I.9 rule table catches (a config-taking pass whose stance the property test reveals as misclassified). | Open; the rule table + property test are the operating shape. |
 
 **[UPDATE 2026-07-03 — reconciliation note: six zero-reader `ComposeState` fields
 now consumed].** These six items are not tracked as individual rows in this table
@@ -33118,3 +33125,76 @@ jurisdictional, not protective — the open question for the operator at the pro
 is whether the ratchet may simply include them.
 
 **Not behavioral** beyond operator copy: no code path, wire byte, or exit code moves.
+
+---
+
+## 2026-08-30 — align-III.23: CHAPTER ALIGN-III CLOSES, and THE ALIGNMENT PROGRAM WITH IT (the eight-item ritual walked; the coda executed)
+
+Chapter III — State, Law, Grain & Lexicon (Arcs S+L+H+X) — is the program's third and
+final chapter. Twenty-four slices: the III.0 open; the S-track (III.1–III.7: typed
+ordinals/instants, `ChainAdmission` ledger honesty, the typed `CanaryVerdict` R6 gate
+with the fail-closed index reading, `EstateHistory.replay` FTC-at-the-reading-grain,
+the `Lifecycle` dead-twin deletion, `DataObservation`, the rename-isometry predicate);
+the L-track (III.8–III.12: A44 resident, A45/T17/A47/A48 live, generator honesty with
+the one named re-baseline, `TriggerProbes`, `L3-Eject` registered); the H-track
+(III.13–III.16: `PhysicalTableRef`/`SchemaBasis`, `Environment.parse`, composite sink
+labels by digest-set currency, typed `TemporalConfig`); the X-arc strictly last
+(X1–X5 landed one rename per commit; X6 deferred by its own trigger); and the a11
+voice stage-2 sweep (III.22). Mid-chapter, main's lint-debt retirement merged in — the
+hook chain has run GREEN since, and the program's one standing deviance (`--no-verify`
+with the named line) is RETIRED.
+
+**The eight-item chapter-close ritual:**
+1. *Active-deferrals index scan* — fired and cashed this chapter: the a11 stage-2
+   long-tail trigger (III.22); the III.3 micro-ruling's rename half (X5). Still
+   deferred, restated below with their triggers.
+2. *Contract-vs-implementation walk* — the verifiability gate self-parses the registry
+   at 94 live + 34 deferred (C=10, D=1), ZERO unclassified; `@ladder`/`@axis` tokens
+   validate at generation (exit 3 on drift); `TriggerProbes` makes four deferral
+   triggers machine-evaluable. The ladder reads L1 5/5 · L2 4/5 · L3 5/5 (Schema
+   L2-partial, three open tolerances — unchanged, named).
+3. *CLAUDE.md staleness check* — §1's restated "current program" sentence (the perf
+   sweep — stale since the sink chapter) replaced with a pointer to `HANDOFF.md`'s top
+   letter, honoring the rebuild's own rule; §4 survival rules re-verified (none moved
+   by this program); §6's `EvidenceCache`-pattern line verified CURRENT (X1 renamed
+   Pipeline's module precisely so Core's pattern exemplar keeps the name).
+4. *README staleness check* — `tests/README.md` names no classes this program renamed;
+   the assembly split holds; no edit.
+5. *HANDOFF scope* — the top letter rewritten as the program coda: the close, the keys,
+   the one AWAITING-OPERATOR question, the un-commissioned candidates. Prepend-only.
+6. *Fresh-eye walk* — the operator surfaces reworded this chapter (GoBoard verdicts,
+   Preflight refusals, transfer advisories, the summary buckets) re-read against
+   THE_VOICE's twelve rules; the counted forms read aloud clean; no `", not "`.
+7. *Operating-disciplines currency* — one new named discipline from this chapter's
+   errors: NEVER start the next slice's edits while the previous slice's background
+   pools run (the pool builds the racing tree; the verdict is void). Recovery pattern
+   recorded in the III.16/III.22 entries: finish to compiling, ONE fresh ladder gates
+   both, two-commit split with the DECISIONS carve.
+8. *V1-input-envelope walk* — not a V1-input chapter (vocabulary, carriage, law only);
+   skipped by class.
+
+**The program coda (executed this slice):** the audit synthesis carries its
+DISPOSITIONED banner (finding→slice map; the workpapers stay ground truth);
+`BACKLOG.md` gains the program arc table and the data-sink follow-ons row is updated
+(FS3511s cleared at align-I.1; the lint debt retired on main; the two Docker reds
+remain owed); `V2_DRIVER.md` gains the vocabulary/law-alignment axis row; PR #695's
+description refreshed a final time. Close gates: `TEST_CONFIG=Release` fast
+solution-wide + the full Docker pool (expect exactly the two named reds).
+
+**Still deferred, each with its named trigger (the index owns them):** X6
+statement-algebra rehome (`Projection.Statements.Sql`; trigger: the second non-SSDT
+statement consumer); `CanaryVerdict.Aborted` (trigger: the first started-but-
+unconcluded canary in the envelope stream); append-only ruling HISTORY (trigger: the
+first re-ruling consumer; `BasisAnchor.SinkEdition` widens then); `SpineLedger` rename
+(trigger: the ledger-noun overload measurably stinging after X5); the full
+Sink→Witness B-family rename (L-effort, operator surface; its own arc);
+`Supplied<'T>` (trigger: the first mis-wiring the I.9 rule table catches); ruling
+auto-application (trigger: operator demand for it, R3 scope guard).
+
+**AWAITING OPERATOR (restated from a11, now with the measurement):** may the
+`VoiceRegisterTests` full-tree ratchet INCLUDE the consent surfaces
+(`WriteSignoff.fs`, `ActConsent.fs`)? Both measure zero lazy plurals today; the
+exclusion is jurisdictional (their copy is the operator's signature), not protective.
+One word either way settles it.
+
+The program is closed. The books are balanced.

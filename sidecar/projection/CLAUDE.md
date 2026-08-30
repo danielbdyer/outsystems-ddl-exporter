@@ -37,8 +37,8 @@ test; every refusal named; silence reserved as the strongest guarantee (CDC-sile
 idempotent redeploy).
 
 V1 still owns the production write path (R6 dual-track); V2 emits-but-doesn't-ship until the
-per-pair cutover gates flip. The current program (see `HANDOFF.md`) is the before/after
-bottleneck sweep on the measurement substrate `PERF_HARNESS.md` designs.
+per-pair cutover gates flip. The current program lives in `HANDOFF.md`'s top letter — this
+file does not restate it.
 
 ## 2 — The reading order
 
