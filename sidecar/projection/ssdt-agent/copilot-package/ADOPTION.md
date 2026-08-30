@@ -39,6 +39,12 @@ hand.
    each machine: ask Copilot Chat "what governs schema changes in this repository?" and confirm
    `copilot-instructions.md` appears in the response's **References** list. No reference means
    the switch is off or the file did not load — fix that machine before relying on the workflow.
+   For a fleet: no first-party group policy force-enables this checkbox — Visual Studio's ADMX
+   "Copilot Settings" policies only disable features (Copilot SKUs, Copilot Free, Agent Mode) —
+   so a managed rollout flips it per user. The two levers to verify on the pilot laptop: whether
+   the checkbox rides a category-scoped `.vssettings` export (deployable via
+   `devenv /ResetSettings`), and where Visual Studio 2026's settings JSON stores it — if 2026
+   scopes it to the workspace, the setting can be committed to the repository itself.
 1. **Vendor the tree.** From the source repository, run
    `node sidecar/projection/ssdt-agent/scripts/ssdt-agent-package.mjs vendor <estate-repo-root>`
    — it copies the canonical tree to `ssdt-agent/` at the estate repository root and prunes the
@@ -154,7 +160,7 @@ and also writes the `.github/` and `.azuredevops/` files in place at the reposit
 `copilot-check` verifies both. The `packaging` gate runs it in the source repo's CI;
 `ssdt-agent/pipelines/ssdt-agent-check.yml` runs it on ADO.
 
-Bundle fingerprint: `047e6c5dbd9c` — a content hash over the generator and every source
+Bundle fingerprint: `38c1f02263bb` — a content hash over the generator and every source
 file. It changes exactly when regeneration is due, so a stale vendored bundle is detectable at a
 glance.
 
@@ -171,3 +177,8 @@ team's actual Visual Studio build. Confirm them on day one:
 - That `#prompt:` attaches the prompt files on the team's 2022 build.
 - Whether restricting each agent's tools is worth doing. This bundle leaves the tools unset (the
   default toolset), because Visual Studio's tool names vary by build.
+- How the step-0 custom-instructions switch deploys fleet-wide: whether it rides a
+  category-scoped `.vssettings` export on 2022 (toggle on a reference machine, export the
+  Copilot category, inspect the file), and whether Visual Studio 2026's settings JSON exposes
+  it with workspace scope (open the JSON after toggling and read the entry). No ADMX policy
+  covers it as of the 2026-03 admin-controls documentation.
