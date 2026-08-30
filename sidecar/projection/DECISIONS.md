@@ -32679,3 +32679,30 @@ cross-ref follows suit, and its §Lifecycle operationalization paragraph is re-p
 onto the episodic grain (the align-III.5 deletion had left it citing the deleted twin).
 
 **Not behavioral** — documentation residency + one new live gated fact (89 → 90 live).
+
+---
+
+## 2026-08-30 — align-III.9: four Skip-prose pointers become live M16 gates (A45 / T17 / A47 / A48; 90 → 94 live)
+
+**The finding (audit a6, L2).** Four adopted laws — A45 (espace invariance), T17 (row
+fidelity), A47 (staging-and-loading invariance), A48 (offline reconcile soundness) — sat
+in `AxiomTests.fs` as `[<Fact(Skip = …)>]` stubs whose own prose declared "the promotion
+trigger fired: EXECUTABLE WITNESSES are LIVE" and then named the witnesses in free text.
+A pointer that a human must read to discover the law is enforced was the exact
+"verified-once debt" M16 retired for citations — these four never got the lift.
+
+**The decision.** Each stub converts to a live `[<Fact>]` carrying `citationOf` gates
+over its named witnesses — the A46/T18/T19/A49 grammar, condensing the Skip-prose to a
+comment: A45 → the `EstateTests` N-cell invariance law; T17 → the two `RowFidelityTests`
+comparator laws + the `FidelityRowsDockerTests` live triangle; A47 → the four
+`ReverseLegCanaryTests` staging×loading arms (B5, P1-S1, P1-S4, P1-S3); A48 → the two
+`ProofManifestTests` codec/fail-closed laws + the `FidelityRowsDockerTests` P2-S3
+offline reconcile. M16 now fails the tree if any of the eleven cited witnesses drifts.
+
+**Ledger motion.** Live 90 → 94; the verifiability gate's advisory "deferral(s) name no
+bucket" WARN shrinks 8 → 4 (the four converted stubs were among the unclassified). The
+axiom-file Witness lines already said LIVE — no AXIOMS.md text motion; matrix regen in
+this commit carries the four class flips. Test names unchanged (the registry's identity
+is stable).
+
+**Not behavioral.**

@@ -1633,63 +1633,77 @@ let ``A44: the config is an isomorphic image of the movement space (expressible 
         "tests/Projection.Tests/MovementIsomorphismTests.fs"
         "A44 clause 3 — Direction is a pure function of (src, sink, origin), never a stored knob"
 
-[<Fact(Skip = "A45 LAW (adopted 2026-07-17 at the loop-closing chapter close) — espace \
-invariance across the environment lattice (estate chapter open, 2026-07-15). For any \
-authored model deployed at N espace cells, the OSSYS-read catalogs normalized to \
-logical shape are pairwise CatalogDiff-empty; a residue is a REAL estate divergence, \
-never an espace artifact. Lifts the shipped two-cell law (CROSS_ENVIRONMENT_READINESS \
-§2; the OssysComprehensiveFixtureTests two-DB canary) to the N-way estate `check \
-environments` compares. The promotion trigger fired at wave A1: the EXECUTABLE WITNESS \
-is LIVE — `EstateTests` — ``A45: N espace cells of one model produce zero estate \
-findings after toLogicalShape (espace invariance)`` runs three espace-variant cells + \
-an espace-variant target through Estate.compute and asserts zero findings. This entry \
-is the axiom-file pointer to that fact.")>]
-let ``A45: N espace cells of one model diff to zero after toLogicalShape (espace invariance)`` () = ()
+[<Fact>]
+let ``A45: N espace cells of one model diff to zero after toLogicalShape (espace invariance)`` () =
+    // A45 (adopted 2026-07-17): for any authored model deployed at N espace
+    // cells, the OSSYS-read catalogs normalized to logical shape are pairwise
+    // CatalogDiff-empty — a residue is a REAL estate divergence, never an
+    // espace artifact. Lifts the two-cell canary to the N-way estate compare.
+    // Live since wave A1; Skip-prose converted to the M16 gate at align-III.9.
+    citationOf
+        "tests/Projection.Tests/EstateTests.fs"
+        "A45: N espace cells of one model produce zero estate findings after toLogicalShape (espace invariance)"
 
-[<Fact(Skip = "T17 LAW (adopted 2026-07-17 at the loop-closing chapter close) — row \
-fidelity: Ingest_rows ∘ Transfer = ι modulo named row interventions, residual zero \
-(fidelity chapter open, 2026-07-15). Every source row not removed by the row-set \
-ledger satisfies canonical_target (κ (key r)) = canonical (ν (π (remapFks r))) at the \
-canonical row form over an SsKey/logical basis; every target row outside image(κ) ∪ \
-adds is a violation; every exception cites its ledger record. The data-plane sibling \
-of the soul adjunction. The promotion trigger fired: EXECUTABLE WITNESSES are LIVE — \
-`RowFidelityTests` carries the pure comparator laws (identical streams name nothing; a \
-flipped cell names its key and columns; the streaming lockstep's reference \
-`compareOrdered` law) and `FidelityRowsDockerTests` runs the live triangle — two \
-seeded databases in the two renditions prove byte-identity across the \
-physical-to-logical gap, and one flipped cell names its key. The strict form (no \
-intervention ledger) is B2's; the ledger-modulated form landed at B4b; the two digest \
-planes (client-canonical SHA256 authoritative; server HASHBYTES fast-path) agree per \
-SQL type at B3; B5's container proof runs the full triangle. This entry is the \
-axiom-file pointer to those facts.")>]
-let ``T17: transfer is byte-faithful modulo named row interventions (residual zero)`` () = ()
+[<Fact>]
+let ``T17: transfer is byte-faithful modulo named row interventions (residual zero)`` () =
+    // T17 (adopted 2026-07-17): Ingest_rows ∘ Transfer = ι modulo named row
+    // interventions, residual zero — the data-plane sibling of the soul
+    // adjunction. Strict form B2; ledger-modulated B4b; the two digest planes
+    // agree per SQL type at B3; B5 runs the container triangle. Live since
+    // the fidelity chapter; Skip-prose converted to the M16 gate at align-III.9.
+    // The pure comparator grain (identical streams name nothing; a flipped
+    // cell names its key and columns; the lockstep's reference law):
+    citationOf
+        "tests/Projection.Tests/RowFidelityTests.fs"
+        "compareOrdered: one flipped cell names its key and its differing column (T17's drill-down grain)"
+    citationOf
+        "tests/Projection.Tests/RowFidelityTests.fs"
+        "law: compareOrdered equals the set-based reference diff over ordered unique-keyed streams"
+    // The live triangle over real SQL Server (two renditions, one estate):
+    citationOf
+        "tests/Projection.Tests.Integration/FidelityRowsDockerTests.fs"
+        "T17 witness: two renditions of one estate prove byte-identical over live SQL; one flipped cell names its key and column"
 
-[<Fact(Skip = "A47 LAW (adopted 2026-07-20; the estate/fidelity chapter's Track-B proofs) — the \
-container fidelity proof's verdict is INVARIANT across the schema-staging axis (--stage \
-ddl|dacfx), the row-loading axis (--data transfer|lanes), and the target's derived identity \
-disposition (Structural / PreferPreservedKeys read from the flow.To archetype). The invariant \
-grain is the deployed schema + streamed rows (RowDigestFold, whole-table), never dacpac bytes. \
-T17 generalized from one build path to the product of the estate's real staging and loading \
-choices — the proof reproduces THIS operator's estate through the artifacts they ship. The \
-promotion trigger fired: EXECUTABLE WITNESSES are LIVE — `ReverseLegCanaryTests` runs B5 \
-(DDL×transfer), `P1-S1 DacFx-staged proof` (DacFx×transfer), `P1-S4 lanes proof` (DDL×lanes), \
-and `P1-S3 preserved-keys proof` (PreferPreservedKeys) each byte-identical, the orphan arms \
-red; `MovementSurfaceTests` pins the parse-time mode + policy resolution. This entry is the \
-axiom-file pointer to those facts.")>]
-let ``A47: the fidelity proof is staging-and-loading invariant (arbitrary-estate extraction)`` () = ()
+[<Fact>]
+let ``A47: the fidelity proof is staging-and-loading invariant (arbitrary-estate extraction)`` () =
+    // A47 (adopted 2026-07-20): the container fidelity proof's verdict is
+    // INVARIANT across the schema-staging axis (--stage ddl|dacfx), the
+    // row-loading axis (--data transfer|lanes), and the target's derived
+    // identity disposition (Structural / PreferPreservedKeys). The invariant
+    // grain is deployed schema + streamed rows (RowDigestFold), never dacpac
+    // bytes — T17 generalized to the product of the estate's real staging and
+    // loading choices. Live since Track B; Skip-prose converted to the M16
+    // gate at align-III.9. The four staging×loading arms:
+    citationOf
+        "tests/Projection.Tests.Integration/ReverseLegCanaryTests.fs"
+        "B5 container proof: the fidelity flow's engine walk — green on the faithful machine; an FK-orphan source row reads exit 5 with the row named missing"
+    citationOf
+        "tests/Projection.Tests.Integration/ReverseLegCanaryTests.fs"
+        "P1-S1 DacFx-staged proof: the fidelity flow proves byte-identical through a DacServices-published stand-in — green on the faithful machine; an FK-orphan reads exit 5"
+    citationOf
+        "tests/Projection.Tests.Integration/ReverseLegCanaryTests.fs"
+        "P1-S4 lanes proof: check fidelity --data lanes reproduces the source by APPLYING the emitted StaticSeeds+Bootstrap lanes (no transfer, no journal)"
+    citationOf
+        "tests/Projection.Tests.Integration/ReverseLegCanaryTests.fs"
+        "P1-S3 preserved-keys proof: the container proof under a FullRights (PreferPreservedKeys) policy proves byte-identical — source keys written directly, no remap"
 
-[<Fact(Skip = "A48 LAW (adopted 2026-07-20; the estate/fidelity chapter's Track-B proofs) — the \
-offline manifest reconcile is SOUND: `check fidelity --against <manifest> --target <ref>` (no \
-live source) agrees (exit 0) iff every kind's live-folded target digest equals the manifest's \
-recorded source RowDigestFold digest; a stale digest reconciles to a NAMED divergence (exit 5), \
-never phantom-green; an unreachable target or model-hash mismatch refuses (exit 6). The manifest \
-plane is RowDigestFold end-to-end, so a capture and a reconcile are two reads of one canonical \
-form. The promotion trigger fired: EXECUTABLE WITNESSES are LIVE — `ProofManifestTests` (pure) \
-round-trips the codec and fails closed on foreign version/plane/garbage; `FidelityRowsDockerTests` \
-`P2-S3 offline reconcile` captures a manifest then reconciles a byte-identical target (exit 0) \
-and a tampered target (exit 5) with the source torn down. This entry is the axiom-file pointer \
-to those facts.")>]
-let ``A48: offline manifest reconcile is sound (source-absent verification)`` () = ()
+[<Fact>]
+let ``A48: offline manifest reconcile is sound (source-absent verification)`` () =
+    // A48 (adopted 2026-07-20): `check fidelity --against <manifest>` with no
+    // live source agrees (exit 0) iff every kind's live-folded target digest
+    // equals the manifest's recorded RowDigestFold digest; a stale digest is
+    // a NAMED divergence (exit 5), never phantom-green; unreachable/model-hash
+    // mismatch refuses (exit 6). One canonical plane, two reads. Live since
+    // Track B; Skip-prose converted to the M16 gate at align-III.9.
+    citationOf
+        "tests/Projection.Tests/ProofManifestTests.fs"
+        "P2-S1: the manifest codec round-trips (deserialize (serialize m) = Some m, kinds canonically sorted)"
+    citationOf
+        "tests/Projection.Tests/ProofManifestTests.fs"
+        "P2-S1: a FOREIGN version fails closed (reconciles to nothing, never a false parse)"
+    citationOf
+        "tests/Projection.Tests.Integration/FidelityRowsDockerTests.fs"
+        "P2-S3 offline reconcile: --against proves a target byte-identical to a captured manifest with NO live source; a tampered cell reads exit 5"
 
 // ===========================================================================
 // Coverage summary (audit trail; verifiable by grep against this file)
