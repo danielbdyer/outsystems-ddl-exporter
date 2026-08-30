@@ -780,19 +780,22 @@ module ScriptDomBuild =
         match temporal with
         | None -> ()
         | Some tc ->
-            match tc.PeriodStart, tc.PeriodEnd with
-            | Some ps, Some pe ->
+            // align-III.16: the period is a PAIR or absent — the
+            // one-leg nonsense this match once had to refuse is now
+            // unrepresentable.
+            match tc.Period with
+            | Some p ->
                 let period = SystemTimePeriodDefinition()
-                period.StartTimeColumn <- bracketed (Name.value ps)
-                period.EndTimeColumn   <- bracketed (Name.value pe)
+                period.StartTimeColumn <- bracketed (Name.value p.Start)
+                period.EndTimeColumn   <- bracketed (Name.value p.End)
                 def.SystemTimePeriod <- period
-            | _ -> ()
+            | None -> ()
             let sv = SystemVersioningTableOption()
             sv.OptionState <- OptionState.On
-            match tc.HistorySchema, tc.HistoryTable with
-            | Some hs, Some ht ->
-                sv.HistoryTable <- schemaObjectName hs ht
-            | _ -> ()
+            match tc.HistoryTable with
+            | Some tid ->
+                sv.HistoryTable <- schemaObjectName (TableId.schemaText tid) (TableId.tableText tid)
+            | None -> ()
             match tc.Retention with
             | Infinite -> ()
             | Limited (value, unit) ->

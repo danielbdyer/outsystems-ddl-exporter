@@ -126,10 +126,8 @@ let ``L3-Boundary-NoSilentDrop: ExtendedProperties on Index (L3-S9)`` () =
 [<Fact>]
 let ``L3-Boundary-NoSilentDrop: ModalityMark.Temporal variant exists (L3-S4 family)`` () =
     let cfg : TemporalConfig =
-        { HistorySchema = None
-          HistoryTable  = None
-          PeriodStart   = None
-          PeriodEnd     = None
+        { HistoryTable  = None
+          Period        = None
           Retention     = Infinite }
     // Compile-time witness: Temporal is a constructible variant of
     // ModalityMark. The runtime test pins the variant + a degenerate

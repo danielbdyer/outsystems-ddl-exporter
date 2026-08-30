@@ -1466,9 +1466,9 @@ module Estate =
             |> List.tryPick (function ModalityMark.Temporal tc -> Some tc | _ -> None)
             |> Option.map (fun tc ->
                 let history =
-                    match tc.HistorySchema, tc.HistoryTable with
-                    | Some hs, Some ht -> sprintf " (history table %s.%s)" hs ht
-                    | _ -> ""
+                    match tc.HistoryTable with
+                    | Some tid -> sprintf " (history table %s.%s)" (TableId.schemaText tid) (TableId.tableText tid)
+                    | None -> ""
                 emissionFinding EstateFindingKind.EmissionTemporalDropped (Name.value k.Name)
                     (sprintf "%s is system-versioned%s — the emission cannot yet carry SYSTEM_VERSIONING, so the publish refuses rather than dropping it silently."
                         (Name.value k.Name) history)))

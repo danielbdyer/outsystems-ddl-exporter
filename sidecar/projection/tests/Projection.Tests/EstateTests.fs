@@ -1414,10 +1414,8 @@ let ``emission: a system-versioned kind is a DECIDE ruling — the board names t
     // emission cannot yet deploy period columns, so the publish refuses
     // (EmitError.TemporalKindRefused) and the board states the same fact.
     let temporalConfig : TemporalConfig =
-        { HistorySchema = Some "history"
-          HistoryTable  = Some "CUSTOMER_History"
-          PeriodStart   = None
-          PeriodEnd     = None
+        { HistoryTable  = Some (TableId.create "history" "CUSTOMER_History" |> Result.value)
+          Period        = None
           Retention     = Infinite }
     let withTemporal =
         { sampleCatalog with

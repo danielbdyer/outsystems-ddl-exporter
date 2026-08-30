@@ -702,12 +702,25 @@ module OssysRowsetReader =
                                 | "YEAR"  | "YEARS"  -> Limited (v, Years)
                                 | _                  -> Infinite
                             | _ -> Infinite
+                        // align-III.16: pair-or-absent at the lift. sys.* never
+                        // yields one leg of a pair for a system-versioned
+                        // table; if a torn rowset ever does, the half is
+                        // DROPPED here — exactly the emission the old
+                        // shape's consumers produced by re-refusing the
+                        // mismatch at every match site.
+                        let history =
+                            match tr.HistorySchema, tr.HistoryTable with
+                            | Some hs, Some ht -> TableId.create hs ht |> Result.toOption
+                            | _ -> None
+                        let period =
+                            match tr.PeriodStart |> Option.bind (Name.create >> Result.toOption),
+                                  tr.PeriodEnd   |> Option.bind (Name.create >> Result.toOption) with
+                            | Some ps, Some pe -> Some ({ Start = ps; End = pe } : TemporalPeriod)
+                            | _ -> None
                         yield Temporal
-                            { HistorySchema = tr.HistorySchema
-                              HistoryTable  = tr.HistoryTable
-                              PeriodStart   = tr.PeriodStart |> Option.bind (Name.create >> Result.toOption)
-                              PeriodEnd     = tr.PeriodEnd   |> Option.bind (Name.create >> Result.toOption)
-                              Retention     = retention }
+                            { HistoryTable = history
+                              Period       = period
+                              Retention    = retention }
                 ]
             Result.success
                 { SsKey       = k

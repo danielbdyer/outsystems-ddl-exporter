@@ -32935,3 +32935,30 @@ was already a tie), the composite current-member resolution with the superseded 
 pinned addressing, and the empty-set singleton.
 
 ---
+
+## 2026-08-30 — align-III.16: the temporal config states pairs as pairs (`TableId` history + `TemporalPeriod`)
+
+**The finding (audit a2, H4).** `TemporalConfig` carried four independent options —
+`HistorySchema`/`HistoryTable` and `PeriodStart`/`PeriodEnd` — making two flavors of
+nonsense representable: a history schema without its table (the emitter silently ignored
+the mismatched half at its pair-match) and a one-legged period (SQL Server's
+`PERIOD FOR SYSTEM_TIME` has no such form). Every consumer re-refused the nonsense by
+match; none could rely on the type.
+
+**The decision.** `TemporalConfig = { HistoryTable : TableId option; Period :
+TemporalPeriod option; Retention }` with `TemporalPeriod = { Start; End : Name }` — the
+history table is ONE physical coordinate, construction-validated through
+`TableId.create`, and the period is a pair or absent. The consumers simplify to what
+they always meant (`ScriptDomBuild`'s two pair-matches become single-option matches; the
+estate's temporal finding renders through the TableId). The WIRE is byte-identical —
+`CatalogCodec` keeps the four historical fields and projects them — and the READ pairs
+them fail-closed: half-present history (`codec.temporal.historyHalfPresent`) and a
+one-legged period (`codec.temporal.periodHalfPresent`) are codec refusals now, not
+values. The rowset lift (`OssysRowsetReader`) pairs at construction, dropping a torn
+half exactly as the old consumers' matches did — behavior-identical at the emission
+plane, now stated once.
+
+**Not behavioral** for every producible catalog (sys.* never yields half a pair; the
+emitter's output is unchanged). Laws: `CatalogCodecTests` round-trips the typed shape
+byte-stable and pins BOTH half-present refusals via wire surgery; the emitter/estate/
+reader suites re-pinned onto the pair shapes.

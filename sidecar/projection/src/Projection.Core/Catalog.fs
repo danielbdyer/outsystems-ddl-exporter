@@ -508,12 +508,23 @@ type TemporalRetention =
     /// `HISTORY_RETENTION_PERIOD = <n> <unit>`.
     | Limited of value: int * unit: TemporalRetentionUnit
 
+/// align-III.16 — the period is a PAIR or absent: SQL Server's
+/// `PERIOD FOR SYSTEM_TIME (start, end)` never has one leg, and the old
+/// two-independent-options shape made a start-without-end representable
+/// nonsense every consumer had to re-refuse by match.
+type TemporalPeriod = {
+    Start : Name
+    End   : Name
+}
+
 type TemporalConfig = {
-    HistorySchema : string option
-    HistoryTable  : string option
-    PeriodStart   : Name option
-    PeriodEnd     : Name option
-    Retention     : TemporalRetention
+    /// The history table as ONE physical coordinate (align-III.16 —
+    /// construction-validated through `TableId.create`; the old
+    /// schema/table independent options let presence disagree, and the
+    /// emitter silently ignored the mismatched half).
+    HistoryTable : TableId option
+    Period       : TemporalPeriod option
+    Retention    : TemporalRetention
 }
 
 

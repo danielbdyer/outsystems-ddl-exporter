@@ -134,10 +134,8 @@ let private richCatalog () : Catalog =
             SqlStorage = Some SqlStorageType.BigInt }
 
     let temporalConfig : TemporalConfig =
-        { HistorySchema = Some "history"
-          HistoryTable = Some "PatronHistory"
-          PeriodStart = Some (nm "ValidFrom")
-          PeriodEnd = Some (nm "ValidTo")
+        { HistoryTable = Some (tableId "history" "PatronHistory")
+          Period = Some { Start = nm "ValidFrom"; End = nm "ValidTo" }
           Retention = TemporalRetention.Limited (7, TemporalRetentionUnit.Years) }
 
     let staticPop : StaticRow =
@@ -331,10 +329,10 @@ let private allModalityMarks : ModalityMark list =
       ModalityMark.SoftDeletable
       ModalityMark.SystemOwned
       ModalityMark.Temporal
-          { HistorySchema = None; HistoryTable = None; PeriodStart = None; PeriodEnd = None
+          { HistoryTable = None; Period = None
             Retention = TemporalRetention.Infinite }
       ModalityMark.Temporal
-          { HistorySchema = Some "h"; HistoryTable = Some "t"; PeriodStart = Some (nm "f"); PeriodEnd = Some (nm "e")
+          { HistoryTable = Some (tableId "h" "t"); Period = Some { Start = nm "f"; End = nm "e" }
             Retention = TemporalRetention.Limited (30, TemporalRetentionUnit.Days) } ]
 
 [<Fact>]
@@ -351,7 +349,7 @@ let ``every TemporalRetentionUnit round-trips`` () =
     for u in allRetentionUnits do
         let m =
             ModalityMark.Temporal
-                { HistorySchema = None; HistoryTable = None; PeriodStart = None; PeriodEnd = None
+                { HistoryTable = None; Period = None
                   Retention = TemporalRetention.Limited (1, u) }
         let k = { kindOfAttr (baseAttr ()) with Modality = [ m ] }
         assertRoundTrips (sprintf "TemporalRetentionUnit %A" u) (catalogOf k)
@@ -671,3 +669,23 @@ let ``serialize is byte-deterministic for arbitrary valid catalogs`` () =
         let viaDecode = CatalogCodec.serialize (CatalogCodec.deserialize once |> Result.value)
         once = twice && once = viaDecode)
     |> Check.QuickThrowOnFailure
+
+// -- align-III.16: the temporal pair-or-absent codec refusals -------------------
+
+[<Fact>]
+let ``align-III.16: a half-present temporal history (schema without table) is a named codec refusal, never a silently-ignored value`` () =
+    // Serialize the rich catalog (its temporal kind carries the full
+    // history + period), then surgically drop ONE half of each pair —
+    // exactly the nonsense the retired four-option shape represented and
+    // every consumer re-refused by match.
+    let json = CatalogCodec.serialize (richCatalog ())
+    Assert.Contains("\"historyTable\": \"PatronHistory\"", json)
+    let halfHistory = json.Replace("\"historyTable\": \"PatronHistory\",", "")
+    expectError "history schema without table" halfHistory
+
+[<Fact>]
+let ``align-III.16: a one-legged temporal period is a named codec refusal — PERIOD FOR SYSTEM_TIME has no such form`` () =
+    let json = CatalogCodec.serialize (richCatalog ())
+    Assert.Contains("\"periodEnd\": \"ValidTo\"", json)
+    let halfPeriod = json.Replace("\"periodEnd\": \"ValidTo\",", "")
+    expectError "period start without end" halfPeriod

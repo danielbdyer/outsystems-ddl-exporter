@@ -1269,10 +1269,8 @@ let ``temporal gate: a system-versioned kind refuses the publish — system-vers
     // deploying a table whose system-versioning silently vanished. The
     // board's EmissionTemporalDropped finding states the same fact.
     let temporalConfig : TemporalConfig =
-        { HistorySchema = Some "history"
-          HistoryTable  = Some "CUSTOMER_History"
-          PeriodStart   = None
-          PeriodEnd     = None
+        { HistoryTable  = Some (TableId.create "history" "CUSTOMER_History" |> Result.value)
+          Period        = None
           Retention     = Infinite }
     let withTemporal =
         { compositeTargetCatalog with
