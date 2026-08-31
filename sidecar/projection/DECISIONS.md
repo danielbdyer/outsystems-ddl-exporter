@@ -256,6 +256,8 @@ table before continuing.
 | **The full Sink→Witness B-family rename (`SinkTable`/`SinkStore`/`SinkJournal`/`sink:` refs)** | 2026-08-30 (align-III.19/X3 — `WitnessedRow` + the Witness- freeze) | An operator-surface rename arc is commissioned (L-effort: the `sink:` refs and `sink.*` codes are operator vocabulary; the freeze covers NEW names only). | Open; new witness-plane names take `Witness-`/`Witnessed-`, never `Sink-`. |
 | **The consent-surface voice ruling (`WriteSignoff.fs` / `ActConsent.fs` in the lazy-plural ratchet)** | 2026-08-16 (a11 carve-out; measured at align-III.22) | AWAITING OPERATOR — one word either way. Both files measured ZERO lazy plurals; the exclusion was jurisdictional (their copy is the operator's signature), not protective. | **Cashed 2026-08-31 — the operator ruled "Approved": both files JOIN the ratchet.** The `excluded` list is deleted from `VoiceRegisterTests`; the freeze covers the whole src tree with no carve-outs. See `2026-08-31 — The consent-surface voice ruling lands` below. |
 | **`Supplied<'T>` config-provenance wrapper** | 2026-08-16 (align-I.9 — the rule table shipped instead) | The FIRST mis-wiring the I.9 rule table catches (a config-taking pass whose stance the property test reveals as misclassified). | Open; the rule table + property test are the operating shape. |
+| **WP-13 remainder — the in-cycle emission order (SCC-condensation + trailing-ALTER FK split)** | 2026-07-17 (the estate close deferred WP-12/13 to the walk); trigger FIRED 2026-08-31 (walk-4) | The terminus operator walk — FIRED: the probe confirmed the harm (the scaffold's linear apply fails on the in-cycle forward FK) and the §14 half landed (`fidelity.proof.applyFailed` named refusal). The emission-order fix stays on SSDT_REMEDIATION_HANDOFF Tier 4; its NEW trigger is that Tier-4 arc — and the probe's proof plane is its standing red-path witness (the fix cannot land silently). | Discharged-with-remainder; see `2026-08-31 — walk-4`. |
+| **WP-12 remainder — the secondary-leg duplicate-constraint residual** | 2026-08-30 (schema-L3.2's named residual); premise pinned 2026-08-31 (walk-4) | The first REAL estate carrying two model reference attributes over one deployed composite FK. The walk pinned the native-estate premise executable (zero multi-leg references on the fixture estate). | Open; the L3.2 machinery covers expressibility; only the duplicate-constraint minting awaits its estate. |
 
 **[UPDATE 2026-07-03 — reconciliation note: six zero-reader `ComposeState` fields
 now consumed].** These six items are not tracked as individual rows in this table
@@ -33651,3 +33653,55 @@ the real CLI faces. What remains for the program: the WP-12/13 probe arm
 
 Witnesses/gates: the walk test (13s; the full pipeline + container proof ride the
 warm container), fast pool green, verifiability unchanged, no Core touches.
+
+## 2026-08-31 — walk-4: THE WP-12/13 TRIGGER FIRES AND IS DISCHARGED (the probe arm)
+
+The 2026-07-17 deferral said: *"Trigger: the terminus operator walk on the fixture
+estate — if the walk trips either, it lands then; otherwise they stay sequenced on
+SSDT_REMEDIATION_HANDOFF Tier 4."* The walk ran; here is what it tripped and what
+it did not, each with its executable witness (the probe test in
+`OperatorWalkDockerTests`).
+
+**WP-13 — TRIPPED, exactly as predicted, and the small half LANDS.** The probe
+shapes a cell carrying an unresolved WEAK-LESS 2-cycle (Gamma ⇄ Delta, both FK
+columns NOT NULL — planted through the OSSYS metadata in the seed's own shapes, so
+the production read path mints the cycle). Observed, now pinned:
+
+- **The board plane**: `check environments` exits 5 with the
+  `emission.dataLaneOrder` DECIDE finding naming the members (Gamma, Delta) and
+  the cycle — the advisory the 2026-07-18 gate promised, live through the face.
+- **The proof plane**: `check fidelity` failed the scaffold's linear apply with
+  the server's own missing-referent error — the EXACT harm the 2026-07-17 entry
+  named ("fails the scaffold's linear apply with the server's own missing-referent
+  error"). But it escaped as a RAW `SqlException` stack trace out of
+  `runCheckFidelityFlow` — un-voiced, breaking §14 (a thing that would throw is
+  caught and stated). **That is the piece that lands now**: the face wraps the
+  scaffold/load leg; a server-side apply failure is a NAMED exit-6 refusal
+  (`fidelity.proof.applyFailed`, the server's message as substantiation, rendered
+  through the ordinary voiced error panel — "Stopped before any change was
+  applied"). The probe asserts both planes agree on the fact (the board carries
+  the members in full; the proof's elided panel line carries the server's
+  FK naming).
+- **The emission-order fix itself** (SCC-condensation order + the in-cycle FK
+  split into trailing ALTERs — the WP-13 remainder) **stays sequenced on Tier 4**,
+  now with a STANDING RED-PATH WITNESS instead of prose: when that fix lands, the
+  probe's proof plane flips from refusal to green and the test will demand
+  updating — the fix cannot land silently, and the gap cannot silently regress.
+
+**WP-12 — NOT tripped; the premise is now pinned executable.** The walk's estate
+is OutSystems-native-shaped: the probe asserts the OSSYS-read contract carries
+ZERO multi-leg references (`Reference.Legs` length ≤ 1 everywhere) — the exact
+premise the Tier-4 re-affirmation rests on. The schema-L3.2 machinery (composite
+legs expressible, `emitter.ssdt.compositeKeyReference` refusal, the shared-predicate
+estate finding) covers the day a real estate breaks that premise; the
+secondary-leg duplicate-constraint residual keeps its own trigger (the first real
+estate carrying two model refs over one deployed composite FK).
+
+**Index maintenance (close-ritual item 1, done in-slice):** the WP-12/13 row lived
+only inside the 2026-07-17 dated entry — it is NOW indexed in the Active-deferrals
+table with the discharge recorded, so the next silent firing has a place to be
+caught.
+
+Witnesses/gates: the probe test + the full walk green (15s together); the
+`ReverseLegCanaryTests` neighbor green (75s — the face change sits on its path);
+fast pool green; CLI-only src change (no Core, no analyzers, no matrix motion).

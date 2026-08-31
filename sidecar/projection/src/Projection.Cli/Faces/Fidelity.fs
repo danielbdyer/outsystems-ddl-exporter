@@ -313,7 +313,21 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
                                 None None args.SampleCap journalForCompare args.Corrections recorded
                         return proof |> Result.map (fun report -> outcome, report)
             })
-      match (work ()).GetAwaiter().GetResult() with
+      // The operator-walk WP-13 probe (2026-08-31): a scaffold or load leg
+      // that fails on the SERVER — e.g. an unresolved reference cycle's
+      // forward FK reference in the linear DDL apply — must land as a NAMED
+      // refusal, never an escaping stack trace (THE_VOICE §14: a thing that
+      // would throw is caught and stated). The server's own message is the
+      // substantiation; the code names the leg. The emission-order fix for
+      // the cycle itself (SCC condensation + the in-cycle FK split) stays
+      // sequenced on SSDT_REMEDIATION_HANDOFF Tier 4.
+      let workOutcome =
+          try (work ()).GetAwaiter().GetResult()
+          with :? Microsoft.Data.SqlClient.SqlException as ex ->
+              Result.failureOf
+                  (ValidationError.create "fidelity.proof.applyFailed"
+                      (sprintf "the proof's scaffold or load could not apply against the stand-in: %s" ex.Message))
+      match workOutcome with
       | Error errs ->
           printErrors Console.Error errs
           6

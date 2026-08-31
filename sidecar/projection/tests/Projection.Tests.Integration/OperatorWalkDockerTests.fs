@@ -100,8 +100,9 @@ module OperatorWalkFixtures =
 
     let cleanArtifacts () : unit =
         walkArtifacts |> List.iter (fun f -> if File.Exists f then File.Delete f)
-        let proofDir = Path.Combine("fidelity-proof", "opwalk")
-        if Directory.Exists proofDir then Directory.Delete(proofDir, true)
+        for flow in [ "opwalk"; "wp13" ] do
+            let proofDir = Path.Combine("fidelity-proof", flow)
+            if Directory.Exists proofDir then Directory.Delete(proofDir, true)
 
     /// One walk step: drive the REAL face, capture the board the operator
     /// would read (stdout), return the exit code with it.
@@ -381,6 +382,92 @@ type OperatorWalkDockerTests(fixture: EphemeralContainerFixture) =
                         try File.Delete cfgPath with _ -> ()
                         try if Directory.Exists outDir then Directory.Delete(outDir, true) with _ -> ()
                 })
+        finally
+            Environment.SetEnvironmentVariable("PROJECTION_ESTATE_DIR", priorStore)
+            OperatorWalkFixtures.cleanArtifacts ()
+            try Directory.Delete(storeRoot, true) with _ -> ()
+
+    /// WP-12/13 — the trigger discharge (DECISIONS 2026-07-17: *"Trigger: the
+    /// terminus operator walk on the fixture estate — if the walk trips
+    /// either, it lands then; otherwise they stay sequenced on
+    /// SSDT_REMEDIATION_HANDOFF Tier 4."*). The probe shapes a cell to carry
+    /// exactly WP-13's hazard (an unresolved weak-less cycle) and asserts the
+    /// walk's two planes surface it LOUD and AGREE — the
+    /// red-board-and-refused-publish-are-the-same-fact discipline extended to
+    /// the load order. WP-12's premise (a native estate mints no
+    /// composite-target FK legs) is pinned as an executable observation.
+    [<Fact>]
+    member _.``operator walk probe (WP-13): an unresolved weak-less cycle is LOUD on both walk planes — the board's DECIDE finding and the proof's refusal name the same fact`` () =
+        if not (PeerEstateHarness.skipIfNoDocker "OpWalkWp13") then () else
+        let storeRoot = Path.Combine(Path.GetTempPath(), "opwalk-wp13-" + Guid.NewGuid().ToString "N")
+        let priorStore = Environment.GetEnvironmentVariable "PROJECTION_ESTATE_DIR"
+        Environment.SetEnvironmentVariable("PROJECTION_ESTATE_DIR", storeRoot)
+        OperatorWalkFixtures.cleanArtifacts ()
+        try
+            TaskSync.run (fun () ->
+                fixture.WithEphemeralDatabase "OpWalkWp13" (fun cell cellConnStr ->
+                    task {
+                        do! Deploy.executeBatch cell (PeerEstateHarness.seedSource ())
+                        do! Deploy.executeBatch cell OperatorWalkFixtures.cycleCell
+                        let! contractR = PeerEstateHarness.contractOf cell
+                        let contract = PeerEstateHarness.value contractR
+
+                        // WP-12, observed on the walk's own estate: the
+                        // native-shaped OSSYS read mints no multi-leg
+                        // reference — the premise the Tier-4 re-affirmation
+                        // rests on, pinned executable.
+                        let multiLeg =
+                            Catalog.allKinds contract
+                            |> List.collect (fun k -> k.References)
+                            |> List.filter (fun r -> List.length r.Legs > 1)
+                        Assert.True(List.isEmpty multiLeg,
+                                    "WP-12 premise broken: a native-shaped estate minted a multi-leg reference")
+
+                        // Plane 1 — the BOARD: the DECIDE finding names the
+                        // cycle's members.
+                        let args =
+                            OperatorWalkFixtures.estateArgs cellConnStr [ "cell-a", cellConnStr ] None
+                        let exitBoard, board = OperatorWalkFixtures.checkEnvironments args
+                        Assert.True((exitBoard = 5), sprintf "the cycle-bearing estate expected exit 5, got %d; board:\n%s" exitBoard board)
+                        Assert.Contains("Gamma", board)
+                        Assert.Contains("Delta", board)
+                        Assert.Contains("cycle", board)
+
+                        // Plane 2 — the PROOF: the same estate refuses on the
+                        // walk's proof path (the scaffold's linear apply
+                        // and/or the ordered-load gate) — never a silent
+                        // partial load, and the refusal names the same fact.
+                        let fidelityArgs : CheckFidelityFlowArgs =
+                            { Flow = "wp13"
+                              FromLabel = "cell-a"
+                              SourceConn = cellConnStr
+                              SampleCap = 20
+                              AsJson = false
+                              Refresh = false
+                              Stage = StagingMode.Ddl
+                              Capture = None
+                              IdentityPolicy = IdentityPolicy.Structural
+                              Load = LoadMode.Transfer
+                              Corrections = []
+                              CorrectionReceipts = None }
+                        let exitProof, proofOut =
+                            OperatorWalkFixtures.captureAll (fun () ->
+                                Projection.Cli.Faces.Fidelity.runCheckFidelityFlow contract fidelityArgs)
+                        Assert.True((exitProof = 6),
+                                    sprintf "the proof over an unresolved cycle must refuse (exit 6), got %d; output:\n%s" exitProof proofOut)
+                        Assert.Contains("fidelity.proof.applyFailed", proofOut)
+                        // The voiced problem line elides at panel width, so the
+                        // full member names ride the BOARD plane (asserted
+                        // above); what survives here is the server's own
+                        // foreign-key naming — the constraint minted from the
+                        // cycle's members ('FK_Gamma_…' / the loadOrder token).
+                        let namesTheFact =
+                            [ "FK_Gamm"; "FK_Delt"; "loadOrderUnproven" ]
+                            |> List.exists (fun token -> proofOut.Contains token)
+                        Assert.True(namesTheFact,
+                                    sprintf "the proof's refusal does not name the cycle; output:\n%s" proofOut)
+                        return ()
+                    }))
         finally
             Environment.SetEnvironmentVariable("PROJECTION_ESTATE_DIR", priorStore)
             OperatorWalkFixtures.cleanArtifacts ()
