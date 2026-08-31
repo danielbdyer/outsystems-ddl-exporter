@@ -6,14 +6,16 @@ open Projection.Tests.IRBuilders
 open Projection.Tests.Fixtures
 
 // ---------------------------------------------------------------------------
-// NM-28 — `PhysicalSchema.toPhysicalForeignKeys` reflects a foreign key on the
-// FIRST leg of its target's primary key. For a single-column target PK the
-// reflection is complete and round-trips faithfully. For a COMPOSITE target PK
-// only the first leg is reflected — V2's `Reference` IR is single-column per
-// chapter 5.0, so there is no source column to pair the second target PK leg
-// against. That residual is the named, closed tolerance
-// `ToleratedDivergence.CompositePkFkUnreflected` (not a silent first-element
-// pick). These tests pin both the faithful single-PK case and the named gap.
+// NM-28 (CLOSED at schema-L3.2) — `PhysicalSchema.toPhysicalForeignKeys`
+// reflects a foreign key per LEG. A single-column reference reflects its one
+// leg (paired against the target's first PK column, exactly the pre-lift
+// shape). A LEG-BEARING composite reference (`Reference.Legs`) reflects one
+// `PhysicalForeignKey` entry per leg, both sides resolved explicitly — the
+// `CompositePkFkUnreflected` tolerance is RETIRED; the legless-against-
+// composite residual is refused upstream by the arity gate
+// (`Reference.compositeArityMismatch`, shared with the estate board).
+// These tests pin the faithful single-PK case, the per-leg reflection, the
+// legless residual's arity refusal, and the NM-28b named drop.
 // ---------------------------------------------------------------------------
 
 let private name (s: string) : Name = Name.create s |> Result.value
@@ -40,6 +42,7 @@ let private parentB   = attrKey ["P"; "B"]
 let private childKey  = kindKey ["Ch"]
 let private childId   = attrKey ["Ch"; "Id"]
 let private childFk   = attrKey ["Ch"; "ParentRef"]
+let private childFk2  = attrKey ["Ch"; "ParentRefB"]
 let private childRef  = refKey  ["Ch"; "Parent"]
 
 // -- Catalogs ---------------------------------------------------------------
@@ -80,18 +83,51 @@ let ``NM-28: a single-PK target FK reflects its one leg faithfully`` () =
     Assert.Equal ("A", fk.TargetColumn)
 
 [<Fact>]
-let ``NM-28: a composite-PK target FK reflects ONLY the first leg (CompositePkFkUnreflected)`` () =
+let ``NM-28 closure: a leg-bearing composite-FK reflects one PhysicalForeignKey per leg`` () =
+    // schema-L3.2 — the child carries a second FK column and the reference
+    // carries BOTH legs explicitly; the projection reflects both, in the
+    // target columns the legs name (nothing derived from the PK).
+    let child2 : Kind =
+        { Kind.create childKey (name "Child") (mkTableId "dbo" "CHILD")
+            [ attr childId "Id" true
+              attr childFk "ParentRef" false
+              attr childFk2 "ParentRefB" false ] with
+            References =
+                [ { Reference.create childRef (name "Parent") childFk parentKey with
+                      Legs =
+                        [ { SourceAttribute = childFk; TargetAttribute = parentA }
+                          { SourceAttribute = childFk2; TargetAttribute = parentB } ] } ] }
+    let catalog = Catalog.create [ mkModule (modKey "M") (name "M") [ compositePkParent; child2 ] ] [] |> mkOk
+    let fks = PhysicalSchema.ofCatalog catalog |> fun p -> p.ForeignKeys |> Set.toList
+    Assert.Equal (2, List.length fks)
+    Assert.Contains (fks, fun f -> f.SourceColumn = "PARENTREF" && f.TargetColumn = "A")
+    Assert.Contains (fks, fun f -> f.SourceColumn = "PARENTREFB" && f.TargetColumn = "B")
+
+[<Fact>]
+let ``NM-28 residual: a LEGLESS composite-PK target FK reflects its single first-leg pairing (the arity gate refuses its deploy)`` () =
     let phys = PhysicalSchema.ofCatalog (catalogWith compositePkParent)
     let fks = phys.ForeignKeys |> Set.toList
-    // Exactly one PhysicalForeignKey — the first PK leg (`A`). The second leg
-    // (`B`) is UNREFLECTED: the single-column Reference IR has no source column
-    // to pair it against. No entry mentions `B`.
+    // One entry, first PK leg — faithful to the arity-gated shape: this
+    // reference cannot DEPLOY (the emitter refuses; the board reds via the
+    // SAME predicate), so reflecting one leg reflects what would exist.
     let fk = Assert.Single fks
     Assert.Equal ("A", fk.TargetColumn)
     Assert.DoesNotContain (fks, fun f -> f.TargetColumn = "B")
-    // The residual is a named, known tolerance — not a silent collapse.
-    Assert.Contains (ToleratedDivergence.CompositePkFkUnreflected, ToleratedDivergence.allKnown)
-    Assert.Equal ("CompositePkFkUnreflected", ToleratedDivergence.name ToleratedDivergence.CompositePkFkUnreflected)
+
+[<Fact>]
+let ``schema-L3.2: compositeArityMismatch — legless-vs-composite refuses; leg-complete passes; single-PK passes`` () =
+    let legless = Reference.create childRef (name "Parent") childFk parentKey
+    let legComplete =
+        { legless with
+            Legs =
+                [ { SourceAttribute = childFk; TargetAttribute = parentA }
+                  { SourceAttribute = childFk2; TargetAttribute = parentB } ] }
+    Assert.True (Reference.compositeArityMismatch compositePkParent legless)
+    Assert.False (Reference.compositeArityMismatch compositePkParent legComplete)
+    Assert.False (Reference.compositeArityMismatch singlePkParent legless)
+    // A leg list of the WRONG width against a composite PK also refuses.
+    let oneLeg = { legless with Legs = [ { SourceAttribute = childFk; TargetAttribute = parentA } ] }
+    Assert.True (Reference.compositeArityMismatch compositePkParent oneLeg)
 
 [<Fact>]
 let ``NM-28b: an FK whose target has NO primary key is dropped (no PhysicalForeignKey)`` () =

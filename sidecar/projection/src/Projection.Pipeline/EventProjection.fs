@@ -32,6 +32,7 @@ module EventProjection =
         | Insertion  -> "insertion"
         | Tightening -> "tightening"
         | Ordering   -> "ordering"
+        | Identity   -> "identity"
 
     let private classificationTag (c: Classification) : string =
         match c with
@@ -82,7 +83,23 @@ module EventProjection =
         | CategoricalUniquenessDecision (id, outcome) ->
             let applied = match outcome with CategoricalUniquenessOutcome.SuggestUnique _ -> true | _ -> false
             Some (id, applied, CategoricalUniquenessOutcome.toDiagnosticString outcome)
-        | ClosureSkipped _ | Label _ -> None
+        // align-I.7: the identity plane's decisions reach the taxonomy.
+        // A matched user IS an applied identity resolution (unmatched
+        // users ride the DIAGNOSTICS channel, not the trail).
+        | UserMatchDecision leg ->
+            Some (UserMatchLeg.token leg, true, String.concat "" [ "matched-by-"; UserMatchLeg.token leg ])
+        // A cleared retarget applied; a blocked one declined — the
+        // rationale is the full evidence narration either way.
+        | BridgeRetargetTrailDecision decision ->
+            let applied =
+                match decision.Retargeting with
+                | BridgeReadiness.Ready | BridgeReadiness.ReadyWithWarnings _ -> true
+                | BridgeReadiness.Blocked _ -> false
+            Some (decision.RetargetId, applied, BridgeRetarget.evidenceNarration decision)
+        // A claim decision is an OBSERVATION of table ownership, not an
+        // enforce/decline choice — it rides the `transform.lineage` trail
+        // (S13), like the closure skips.
+        | ClosureSkipped _ | PhysicalClaimDecision _ | Label _ -> None
 
     /// Project one `LineageEvent`. Decision annotations promote to the
     /// `info`-level `transform.applied` / `transform.declined` narration;

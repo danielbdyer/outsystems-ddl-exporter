@@ -134,7 +134,7 @@ module CapabilitySurvey =
             | FlowSource.Model | FlowSource.Synthetic _ | FlowSource.NoData -> Set.empty
         | SubstrateRole.Sink ->
             // Slice B — route through the ARCHETYPE's derived grant
-            // (`Environment.effectiveArchetype` ∘ `Archetype.grant`) instead of
+            // (`Place.effectiveArchetype` ∘ `Archetype.grant`) instead of
             // the raw `Grant` facet. Byte-identical for every existing config:
             // an undeclared archetype is inferred from `grant`, and
             // `Archetype.grant ∘ Archetype.ofGrant = id`, so the derived grant
@@ -142,7 +142,7 @@ module CapabilitySurvey =
             // grant from the class (the archetype subsumes `Grant`).
             let targetGrant =
                 Map.tryFind flow.To config.Environments
-                |> Option.bind (fun e -> Environment.effectiveArchetype e |> Option.map Archetype.grant)
+                |> Option.bind (fun e -> Place.effectiveArchetype e |> Option.map Archetype.grant)
             sinkCapabilities targetGrant flow.From
 
     /// The (environment, role) bindings a flow exercises: its `to` is the Sink;
@@ -312,7 +312,7 @@ module CapabilitySurvey =
         let findingReports = reports |> List.filter (fun r -> not (List.isEmpty r.ArchetypeFindings))
         if List.isEmpty blockedReports && List.isEmpty findingReports then []
         else
-            [ yield "Advisory — capability survey found environment(s) that may not be able to do what this run asks (proceeding anyway; this is a warning, not a gate):"
+            [ yield "Advisory — the capability survey found environments that may not be able to do what this run asks (proceeding anyway; this is a warning, not a gate):"
               for r in blockedReports do
                   if not r.Reachable then
                       yield sprintf "  %s: unreachable" r.Name
@@ -330,7 +330,7 @@ module CapabilitySurvey =
     /// reconciliation, the CDC axis. A `Bundle` / `Docker` place has no live
     /// address — reported as not-connected (nothing to probe), never an error; a
     /// `Direct` place that will not resolve / open is connected-but-unreachable.
-    let private probeEnvironment (config: ProjectionConfig) (env: Projection.Pipeline.Environment) : Task<EnvironmentReport> =
+    let private probeEnvironment (config: ProjectionConfig) (env: Projection.Pipeline.Place) : Task<EnvironmentReport> =
         task {
             let required = requiredOf config env.Name
             let baseReport =

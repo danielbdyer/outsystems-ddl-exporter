@@ -36,18 +36,42 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 AX="$ROOT/tests/Projection.Tests/AxiomTests.fs"
 [ -f "$AX" ] || { echo "verifiability-gate: AxiomTests.fs not found at $AX" >&2; exit 2; }
 
-skips="$(grep -E '\[<Fact\(Skip' "$AX" || true)"
-live=$(grep -cE '^[[:space:]]*\[<Fact>\]' "$AX" || true)
-skip_total=$(printf '%s\n' "$skips" | grep -c . || true)
-skip_c=$(printf '%s\n' "$skips" | grep -cE 'Bucket C' || true)
-skip_d=$(printf '%s\n' "$skips" | grep -cE 'Bucket D' || true)
-phantom="$(printf '%s\n' "$skips" | grep -E 'Bucket A|Bucket B' || true)"
+# align-III.10 — honest parsing. The Skip attribute is MULTILINE (backslash-
+# continued strings) and the file's doc header carries a commented `[<Fact(Skip`
+# exemplar, so the counts derive from COMMENT-STRIPPED text with a state machine
+# reading each attribute to its `)>]` close. The first-line-only grep this
+# replaced undercounted Bucket C (a continuation-line token was invisible),
+# WARNed on fully-classified deferrals as "unclassified", and counted the doc
+# exemplar as a deferral. Phantom rule, narrowed to attribute grain: an attr is
+# a phantom iff it mentions Bucket A/B while declaring NO C/D — a C/D-classified
+# rationale may narrate its promotion target ("Promoted to Bucket A when …")
+# without being a claim.
+stripped_ax="$(grep -vE '^[[:space:]]*//' "$AX")"
+skip_rows="$(printf '%s\n' "$stripped_ax" | awk '
+  /\[<Fact\(Skip/ { inskip=1; buf="" }
+  inskip {
+    buf = buf $0 "\n"
+    if (/\)>\]/) { pending=1; inskip=0 }
+    next
+  }
+  pending && /``/ {
+    name=$0; sub(/^[^`]*``/, "", name); sub(/``.*$/, "", name)
+    kind = "UNCLASSIFIED"
+    if      (buf ~ /Skip = \"H-/) kind = "HORIZON"
+    else if (buf ~ /Bucket C/)    kind = "C"
+    else if (buf ~ /Bucket D/)    kind = "D"
+    phantom = ((buf ~ /Bucket A/ || buf ~ /Bucket B/) && buf !~ /Bucket [CD]/) ? "PHANTOM" : "-"
+    print kind "\t" phantom "\t" name
+    pending=0
+  }')"
+live=$(printf '%s\n' "$stripped_ax" | grep -cE '^[[:space:]]*\[<Fact>\]' || true)
+skip_total=$(printf '%s\n' "$skip_rows" | grep -c . || true)
+skip_c=$(printf '%s\n' "$skip_rows" | awk -F'\t' '$1=="C"' | grep -c . || true)
+skip_d=$(printf '%s\n' "$skip_rows" | awk -F'\t' '$1=="D"' | grep -c . || true)
+phantom="$(printf '%s\n' "$skip_rows" | awk -F'\t' '$2=="PHANTOM" {print $3}' || true)"
 
 # Axiom/theorem deferrals only (exempt H-NNN horizon-feature reservations).
-axiom_skips="$(printf '%s\n' "$skips" | grep -vE 'Skip = "H-' || true)"
-axiom_skip_total=$(printf '%s\n' "$axiom_skips" | grep -c . || true)
-axiom_classified=$(printf '%s\n' "$axiom_skips" | grep -cE 'Bucket [A-D]' || true)
-axiom_unclassified=$(( axiom_skip_total - axiom_classified ))
+axiom_unclassified=$(printf '%s\n' "$skip_rows" | awk -F'\t' '$1=="UNCLASSIFIED"' | grep -c . || true)
 
 echo "verifiability-gate — AxiomTests.fs: ${live} live (verified/convention) + ${skip_total} deferred (axiom buckets C=${skip_c}, D=${skip_d}; horizon stubs exempt)"
 

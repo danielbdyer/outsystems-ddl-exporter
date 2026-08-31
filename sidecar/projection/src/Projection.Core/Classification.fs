@@ -3,24 +3,29 @@ namespace Projection.Core
 /// Operator-intent axis (chapter A.4.7 slice α; per `DECISIONS 2026-05-15
 /// (late) — Pillar 9: harvest-dichotomy classification`).
 ///
-/// Four of the variants (`Selection | Emission | Insertion | Tightening`)
-/// correspond exactly to `Projection.Core.Policy.fs`'s DU axes; `Policy`
-/// IS operator intent reified at those axes. The fifth variant `Ordering`
-/// is the chapter A.4.7 open's Q9-trigger-fires worked example —
-/// `TopologicalOrderPass.SelfLoopPolicy` is operator-supplied (not
-/// topology-derived) but doesn't fit `Selection | Emission | Insertion |
-/// Tightening` (it controls ordering-policy semantics). Per Q9 reserved
-/// expansion: "with an opportunity to expand in case we truly find a
-/// fifth axis is warranted by real evidence." The structural equivalence
-/// weakens from `OverlayAxis = Policy DU axes exactly` to `OverlayAxis ⊃
-/// Policy DU axes` until consumer pressure forces the deferred-with-
-/// trigger `Policy.fs ↔ OverlayAxis` structural collapse refactor (per
-/// chapter A.4.7 open Out-of-scope clause).
+/// THE AXIS VOCABULARY IS THE OPERATOR OUTCOME SPACE (A50, the alignment
+/// program align-I.2): conflict detection, by-axis registry queries, the
+/// manifest's applied-transforms enumeration, and the policy DSL all
+/// quantify over this DU. Its relation to `Projection.Core.Policy.fs`'s
+/// decision channels is the TOTAL map `PolicyAxis.overlayAxisOf` below —
+/// every Policy channel has exactly one designated axis; `Ordering` is
+/// the one axis with an EMPTY Policy preimage (its operator lever is
+/// `TopologicalOrderPass.SelfLoopPolicy` config, outside `Policy`). The
+/// sixth variant `Identity` landed at align-I.2: `Policy` had grown
+/// `UserMatching` (chapter 4.2) and `BridgeRetarget` (the 2026-07 bridge
+/// arc) — operator-supplied identity-resolution channels shoehorned into
+/// `Selection` against its own contract — and the 2026-05-16 collapse
+/// deferral's trigger had FIRED unnoticed at `PolicyExpr.eval`'s
+/// `Override` arm (DECISIONS 2026-08-16, the alignment program opens:
+/// resolution = path (a)-lite, this vocabulary stays canonical, no
+/// structural type fusion).
 ///
 /// **Closed DU; further expansion requires the same trigger-fires
 /// discipline** (`DECISIONS 2026-05-13 — Active deferrals index`; real
 /// evidence of an operator-intent axis not subsumed by the existing
-/// five).
+/// six). SERIALIZATION ORDER IS LOAD-BEARING (T1): the DU tag order
+/// sorts durable applied-transforms enumerations — new variants APPEND,
+/// never insert.
 type OverlayAxis =
     /// Which kinds appear in the catalog (filtering, masking, inactive-
     /// records disposition). `VisibilityMask` is the canonical site.
@@ -46,6 +51,16 @@ type OverlayAxis =
     /// trigger. The registry-level site `SelfLoopHandling` lands at
     /// slice ε with `Classification = OperatorIntent Ordering`.
     | Ordering
+    /// How cross-environment identity resolution reroutes: user-FK value
+    /// remapping (`Policy.UserMatching` — ByEmail/BySsKey/ManualOverride/
+    /// FallbackToSystemUser) and bridge-entity FK retargeting
+    /// (`Policy.BridgeRetarget`). The alignment program's align-I.2
+    /// variant (A50's worked example): both channels are operator-supplied
+    /// identity decisions, neither affects WHICH kinds appear —
+    /// `UserFkReflowPass` / `BridgeRetargetPass` are the canonical sites
+    /// (reclassified from `Selection` at align-I.3). APPENDED after
+    /// `Ordering` per the T1 serialization-order rule above.
+    | Identity
 
 /// Operations on `OverlayAxis` — the canonical string codec for the five
 /// axes. `name` is the single source of truth (the closed-DU case name);
@@ -66,16 +81,81 @@ module OverlayAxis =
         | Insertion  -> "Insertion"
         | Tightening -> "Tightening"
         | Ordering   -> "Ordering"
+        | Identity   -> "Identity"
 
     /// Every known overlay axis (the closed set the round-trip ranges over).
     let allKnown : OverlayAxis list =
-        [ Selection; Emission; Insertion; Tightening; Ordering ]
+        [ Selection; Emission; Insertion; Tightening; Ordering; Identity ]
 
     /// Parse a token to its axis, or `None` for an unrecognized token.
     /// Derived from `name` so `name >> tryParse` is the identity on every
     /// known variant.
     let tryParse (token: string) : OverlayAxis option =
         allKnown |> List.tryFind (fun a -> name a = token)
+
+
+/// The `Policy` record's decision channels, ENUMERATED (A50; align-I.2).
+/// `Policy` is a record — six fields — so before this DU its channel set
+/// was not a value anywhere: nothing could quantify over "every decision
+/// channel the operator has," which is exactly how two channels
+/// (`UserMatching`, `BridgeRetarget`) landed with no axis designation.
+/// `[<RequireQualifiedAccess>]` because four case names deliberately
+/// mirror `OverlayAxis` cases.
+///
+/// **Expansion discipline, fifth step (added at align-I.2):** a new
+/// `Policy` field lands in the SAME commit with its `PolicyAxis` case,
+/// its `all` entry, and its `overlayAxisOf` arm — the A50 totality
+/// property pins the map, and `PolicyExpr.eval`'s Override arm projects
+/// through the preimage, so an undesignated channel cannot compile into
+/// the DSL.
+[<RequireQualifiedAccess>]
+type PolicyAxis =
+    | Selection
+    | Emission
+    | Insertion
+    | Tightening
+    | UserMatching
+    | BridgeRetarget
+
+/// Companion enumeration + the A50 total designation map (the
+/// `TransformGroup.all` / `WriteSignoff.allModes` single-source shape).
+[<RequireQualifiedAccess>]
+module PolicyAxis =
+
+    /// Every Policy decision channel — the one list the A50 totality
+    /// property, the DSL's Override projection, and the schema-facing
+    /// enumerations range over. Order mirrors the `Policy` record's
+    /// field order (documentation only; nothing durable sorts by it).
+    let all : PolicyAxis list =
+        [ PolicyAxis.Selection
+          PolicyAxis.Emission
+          PolicyAxis.Insertion
+          PolicyAxis.Tightening
+          PolicyAxis.UserMatching
+          PolicyAxis.BridgeRetarget ]
+
+    /// **A50 — the total designation.** Every Policy decision channel has
+    /// exactly one `OverlayAxis` home; a new `PolicyAxis` case fails to
+    /// compile until designated here. The two identity-resolution
+    /// channels designate `Identity` (the align-I.2 variant); the four
+    /// founding channels designate their namesakes.
+    let overlayAxisOf (a: PolicyAxis) : OverlayAxis =
+        match a with
+        | PolicyAxis.Selection      -> Selection
+        | PolicyAxis.Emission       -> Emission
+        | PolicyAxis.Insertion      -> Insertion
+        | PolicyAxis.Tightening     -> Tightening
+        | PolicyAxis.UserMatching   -> Identity
+        | PolicyAxis.BridgeRetarget -> Identity
+
+    /// The DERIVED inverse of the designation: which Policy channels an
+    /// overlay axis governs. `Ordering`'s preimage is EMPTY — its
+    /// operator lever (`TopologicalOrderPass.SelfLoopPolicy`) lives
+    /// outside `Policy` — which makes "Override(Ordering) projects
+    /// nothing" a THEOREM of the map rather than a hand-coded silent
+    /// case (the audit's a3-F1 fix). Never hand-write this list.
+    let preimageOf (axis: OverlayAxis) : PolicyAxis list =
+        all |> List.filter (fun a -> overlayAxisOf a = axis)
 
 
 /// Harvest-dichotomy classification (pillar 9; `DECISIONS 2026-05-15
@@ -106,6 +186,25 @@ module OverlayAxis =
 /// operator-intent pass as `DataIntent` leaks operator intent into the
 /// skeleton and the property fails. Slice α's per-pass classifications
 /// are the first opportunity to get the classification right.
+///
+/// **THE CONFIG-PROVENANCE RULE (align-I.9; audit a3-F5).** For a
+/// config-taking pass whose output lands in ARTIFACTS: if the config
+/// can carry operator OPINION (a selection, a rename, a toggle, a
+/// threshold the operator chooses), the pass classifies
+/// `OperatorIntent` on the opinion's axis — a default value the
+/// operator could have changed IS the operator's intent (the
+/// LogicalTableEmission precedent: default-on is a choice). A pass
+/// classifies `DataIntent` only when its config is SOURCE-DERIVED
+/// (a name correspondence read from the estate, witnessed
+/// adjudications, profiling evidence) — data about the data, not a
+/// choice about the outcome. ADVISORY analytics (Diagnostics-domain
+/// outputs that mutate no artifact) sit outside the rule's blast
+/// radius: their tuning thresholds shift commentary, never artifacts.
+/// The rule is PINNED per-factory by `ConfigProvenanceTests` (every
+/// chain pass has a stance row; a new pass cannot land without one);
+/// the `Supplied<'T> = SourceDerived | OperatorDeclared` provenance
+/// wrapper stays a NAMED DEFERRAL whose trigger is the first
+/// mis-wiring the rule table catches.
 type Classification =
     | DataIntent
     | OperatorIntent of OverlayAxis

@@ -102,6 +102,7 @@ let private mkConfig (overrides: Config.OverridesSection) : Config.Config =
             TransformGroups = []
         }
         Output      = { Dir = "out/" }
+        Sink        = Config.defaultSink
     }
 
 /// Write `content` to a fresh temp file, run `f` against its path, then

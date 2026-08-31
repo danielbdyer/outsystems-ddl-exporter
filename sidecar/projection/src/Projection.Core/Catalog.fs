@@ -37,6 +37,50 @@ module Name =
 /// it (a fourth source category would mean another reader and another set
 /// of axioms about its provenance).
 ///
+/// The OSSYS `Espace_Kind` marker, read ONCE (align-I.4). Three lanes
+/// previously open-coded the classification under TWO idioms — the sink
+/// claim assembly trimmed + lowercased while the rowset origin
+/// translation and the sink-displacement domain classifier compared
+/// un-trimmed — so a `" Extension"` value classified as an extension for
+/// claim assembly but NOT for origin or displacement. One total reading
+/// now rules **Trim + OrdinalIgnoreCase** (DECISIONS align-I.4:
+/// whitespace variants unify). The known vocabulary is the two witnessed
+/// OSSYS values (`"eSpace"` in the V1 test seed; `"Extension"` per
+/// DECISIONS 2026-05-19 rule 17); anything else is carried verbatim, and
+/// an absent column is its own named fact — never folded into a guess.
+[<RequireQualifiedAccess>]
+type EspaceKindReading =
+    /// `"eSpace"` — a normal (native) module.
+    | ESpace
+    /// `"Extension"` — an Integration-Studio extension module.
+    | Extension
+    /// The `Espace_Kind` column was absent/null — no marker witnessed.
+    | Unmarked
+    /// A marker outside the known vocabulary, preserved verbatim.
+    | Other of raw: string
+
+[<RequireQualifiedAccess>]
+module EspaceKindReading =
+
+    /// Total classifier over the raw optional column value — the single
+    /// site where the marker's comparison discipline lives.
+    let ofRaw (espaceKind: string option) : EspaceKindReading =
+        match espaceKind with
+        | None -> EspaceKindReading.Unmarked
+        | Some raw ->
+            let trimmed = raw.Trim()
+            if System.String.Equals(trimmed, "Extension", System.StringComparison.OrdinalIgnoreCase) then
+                EspaceKindReading.Extension
+            elif System.String.Equals(trimmed, "eSpace", System.StringComparison.OrdinalIgnoreCase) then
+                EspaceKindReading.ESpace
+            else
+                EspaceKindReading.Other raw
+
+    /// The one question all three consuming lanes ask of the marker.
+    let isExtension (espaceKind: string option) : bool =
+        ofRaw espaceKind = EspaceKindReading.Extension
+
+
 /// **Slice 4.6 — algebraic variant names (decouple V1 vocabulary from Core).**
 /// The variants name *what the kind's provenance IS* in V2's algebra, not
 /// the V1 product surface that observes it: `Native` (originated within the
@@ -227,11 +271,11 @@ module StaticRow =
     /// boundary (`ReadSide.materializeStream`) and the positional (quanta)
     /// realizations mint IDENTICAL identities for the same stream position:
     /// their outputs must agree at full-record grain, not just rendered
-    /// text. Total: `SsKey.synthesized` refuses only blank input, and the
+    /// text. Total: the mint refuses only blank input, and the
     /// composed text is non-blank for any inputs (the literal dots).
     let readsideIdentity (schemaText: string) (tableText: string) (rowIdx: int) : SsKey =
         let basisText = sprintf "%s.%s.%d" schemaText tableText rowIdx
-        match SsKey.synthesized "READSIDE_ROW" basisText with
+        match SsKey.mint SynthesisConvention.ReadSideRow basisText with
         | Ok k -> k
         | Error _ ->
             invalidOp (sprintf "StaticRow.readsideIdentity: unreachable blank basis '%s'" basisText)
@@ -464,12 +508,23 @@ type TemporalRetention =
     /// `HISTORY_RETENTION_PERIOD = <n> <unit>`.
     | Limited of value: int * unit: TemporalRetentionUnit
 
+/// align-III.16 — the period is a PAIR or absent: SQL Server's
+/// `PERIOD FOR SYSTEM_TIME (start, end)` never has one leg, and the old
+/// two-independent-options shape made a start-without-end representable
+/// nonsense every consumer had to re-refuse by match.
+type TemporalPeriod = {
+    Start : Name
+    End   : Name
+}
+
 type TemporalConfig = {
-    HistorySchema : string option
-    HistoryTable  : string option
-    PeriodStart   : Name option
-    PeriodEnd     : Name option
-    Retention     : TemporalRetention
+    /// The history table as ONE physical coordinate (align-III.16 —
+    /// construction-validated through `TableId.create`; the old
+    /// schema/table independent options let presence disagree, and the
+    /// emitter silently ignored the mismatched half).
+    HistoryTable : TableId option
+    Period       : TemporalPeriod option
+    Retention    : TemporalRetention
 }
 
 
@@ -870,11 +925,33 @@ module ConstraintState =
 /// flag at construction (per the V1 reference
 /// `ModelUserSchemaGraphFactory.GetSyntheticUserForeignKeys`); test
 /// fixtures and non-user-FK adapter sites default to `false`.
+/// One column pairing of a multi-column foreign key (schema-L3.2, the
+/// `CompositePkFkUnreflected` closure): the source (child) attribute and
+/// the target (parent) attribute it references, both as SsKeys (identity
+/// as a type; realization resolves SsKey → column name). Order within
+/// `Reference.Legs` is the constraint's ordinal order — load-bearing.
+type ReferenceLeg = {
+    SourceAttribute : SsKey
+    TargetAttribute : SsKey
+}
+
 type Reference = {
     SsKey           : SsKey
     Name            : Name
     SourceAttribute : SsKey
     TargetKind      : SsKey
+    /// The FULL ordered (source, target) column list of a composite
+    /// foreign key, when evidence supplies it (the deployed `#FkColumns`
+    /// rowset / `sys.foreign_key_columns`). `[]` (the ctor default) = no
+    /// leg evidence: the reference is the classic single-column shape,
+    /// paired against the target's first PK column at realization —
+    /// byte-identical to the pre-lift behavior. Non-empty ⇒ the head
+    /// leg's `SourceAttribute` EQUALS this reference's `SourceAttribute`
+    /// (a `Catalog.create` invariant) and realization derives NOTHING
+    /// from the target PK — every leg names both sides explicitly.
+    /// schema-L3.2 (the `CompositePkFkUnreflected` closure; the deferred
+    /// chapter-5.0 single-column refinement, cashed).
+    Legs            : ReferenceLeg list
     OnDelete        : ReferenceAction
     /// True iff this reference's `TargetKind` resolves to the
     /// platform user kind (the OSSYS-native users entity in V1's
@@ -1408,6 +1485,7 @@ module Reference =
             Name                = name
             SourceAttribute     = sourceAttribute
             TargetKind          = targetKind
+            Legs                = []
             OnDelete            = NoAction
             IsUserFk            = false
             OnUpdate            = None
@@ -1475,6 +1553,30 @@ module Reference =
     /// keep the full closure.
     let isDeployable (r: Reference) : bool =
         not (isInverse r)
+
+    /// The deployability arity of the reference (schema-L3.2): 1 when
+    /// legless (the classic single-column shape), else the leg count.
+    let legArity (r: Reference) : int =
+        match r.Legs with
+        | [] -> 1
+        | legs -> List.length legs
+
+    /// True iff this reference cannot emit a key-covering FOREIGN KEY
+    /// against `target` — the SQL Server Msg 1776 shape (the referencing
+    /// column list matches no candidate key). SHARED by the emitter's
+    /// composite-key refusal gate and the estate board's
+    /// `emission.compositePkFk` finding, so a red board finding and a
+    /// refused publish are the same fact by construction (DECISIONS
+    /// 2026-07-18). A leg-complete reference (arity = PK arity) EMITS;
+    /// a legless reference against a composite PK — or a leg list of
+    /// the wrong width — refuses. `pk = 0` (a no-PK target) is NOT this
+    /// predicate's concern: that is the NM-28b drop path, named by its
+    /// own diagnostic.
+    /// (Inlines the `IsPrimaryKey` filter rather than calling
+    /// `Kind.primaryKey` — `module Kind` compiles later in this file.)
+    let compositeArityMismatch (target: Kind) (r: Reference) : bool =
+        let pkArity = target.Attributes |> List.filter (fun a -> a.IsPrimaryKey) |> List.length
+        pkArity > 0 && legArity r <> pkArity && (pkArity > 1 || legArity r > 1)
 
 
 [<RequireQualifiedAccess>]
@@ -1961,7 +2063,7 @@ module Catalog =
     ///   5. Every `Index.Columns` entry exists on its owning
     ///      `Kind.Attributes`.
     ///
-    /// `tryFindKind`, `RawTextEmitter.fkDef`, and
+    /// `tryFindKind`, the since-retired `RawTextEmitter.fkDef`, and
     /// `PhysicalSchema.toPhysicalForeignKeys` previously each
     /// re-validated #3/#4 by silently dropping bad references. Per
     /// the discipline "invariants live with the type, not in the
@@ -2013,6 +2115,13 @@ module Catalog =
             let refAcc = ResizeArray<ValidationError>()
             let idxAcc = ResizeArray<ValidationError>()
             let attrAcc = ResizeArray<ValidationError>()
+            // schema-L3.2 — the leg invariants need the TARGET kind's
+            // attribute-key set; built once here (one extra O(attrs) pass
+            // on the `ir.catalog.create` path, same complexity class).
+            let attrKeysByKindKey =
+                allKindList
+                |> List.map (fun k -> k.SsKey, k.Attributes |> List.map (fun a -> a.SsKey) |> Set.ofList)
+                |> Map.ofList
             for k in allKindList do
                 let attrKeys =
                     k.Attributes |> List.map (fun a -> a.SsKey) |> Set.ofList
@@ -2060,6 +2169,54 @@ module Catalog =
                     // theorem (`Reference.isConstraintStateConsistent` is now
                     // total `true`); the witness moved to the round-trip law in
                     // `ReferenceConstraintStateTests`.
+                    // schema-L3.2 — the composite-FK leg invariants (the
+                    // `CompositePkFkUnreflected` closure). Legs are evidence-
+                    // borne; when present they must cohere with the legacy
+                    // single-column field and with both kinds' attribute
+                    // sets. Arity-vs-target-PK is deliberately NOT checked
+                    // here — a deployed FK may reference a unique key, and
+                    // ReadSide-reconstructed catalogs must stay
+                    // constructible; arity is the deployability predicate
+                    // (`Reference.compositeArityMismatch`), enforced at the
+                    // emitter gate + the estate board.
+                    match r.Legs with
+                    | [] -> ()
+                    | legs ->
+                        if legs.Head.SourceAttribute <> r.SourceAttribute then
+                            refAcc.Add(
+                                ValidationError.create
+                                    "catalog.reference.legHeadMismatch"
+                                    (sprintf
+                                        "Reference %A on Kind %A carries Legs whose head SourceAttribute %A disagrees with the reference's SourceAttribute %A."
+                                        r.SsKey k.SsKey legs.Head.SourceAttribute r.SourceAttribute))
+                        let dupSrc = legs |> List.countBy (fun l -> l.SourceAttribute) |> List.exists (fun (_, n) -> n > 1)
+                        let dupTgt = legs |> List.countBy (fun l -> l.TargetAttribute) |> List.exists (fun (_, n) -> n > 1)
+                        if dupSrc || dupTgt then
+                            refAcc.Add(
+                                ValidationError.create
+                                    "catalog.reference.legDuplicate"
+                                    (sprintf
+                                        "Reference %A on Kind %A lists a column twice among its Legs (an FK cannot repeat a column on either side)."
+                                        r.SsKey k.SsKey))
+                        for leg in legs do
+                            if not (Set.contains leg.SourceAttribute attrKeys) then
+                                refAcc.Add(
+                                    ValidationError.create
+                                        "catalog.reference.legDanglingSource"
+                                        (sprintf
+                                            "Reference %A on Kind %A has a leg SourceAttribute %A absent from the kind's Attributes."
+                                            r.SsKey k.SsKey leg.SourceAttribute))
+                        match Map.tryFind r.TargetKind attrKeysByKindKey with
+                        | None -> ()   // danglingTarget already fired above
+                        | Some targetAttrKeys ->
+                            for leg in legs do
+                                if not (Set.contains leg.TargetAttribute targetAttrKeys) then
+                                    refAcc.Add(
+                                        ValidationError.create
+                                            "catalog.reference.legDanglingTarget"
+                                            (sprintf
+                                                "Reference %A on Kind %A has a leg TargetAttribute %A absent from target kind %A's Attributes."
+                                                r.SsKey k.SsKey leg.TargetAttribute r.TargetKind))
                 for idx in k.Indexes do
                     for col in idx.Columns do
                         if not (Set.contains col.Attribute attrKeys) then
@@ -2071,13 +2228,20 @@ module Catalog =
                                         idx.SsKey k.SsKey col.Attribute))
             List.ofSeq refAcc, List.ofSeq idxAcc, List.ofSeq attrAcc
 
-        // Sequence SsKey disjointness (chapter A.0' slice δ). Sequences
-        // are top-level Catalog objects; their SsKeys must be unique
-        // across the catalog by A4. Disjointness from Kind SsKeys is
-        // not currently enforced — sequences and kinds are different
-        // schema-object kinds (SEQUENCE vs TABLE) and use disjoint
-        // SsKey-synthesis prefixes (`OS_SEQ_*` vs `OS_KIND_*`), so
-        // collisions are not structurally possible.
+        // Sequence SsKey disjointness (chapter A.0' slice δ; comment
+        // corrected at align-I.4 — it cited a rendered prefix the live
+        // path does not use). Sequences are top-level Catalog objects;
+        // their SsKeys must be unique across the catalog by A4.
+        // Disjointness from Kind SsKeys is STRUCTURAL, not textual:
+        // SsKey equality is over `(source, basisParts)`, and every
+        // sequence-grain convention (OssysSequence / OsSequence /
+        // ReadSideSequence — `SynthesisGrain.Sequence` in the A51
+        // registry) has a token distinct from every kind-grain
+        // convention's (A51 token injectivity), so a sequence key can
+        // never equal a kind key. Rendered text is NOT the mechanism —
+        // rendered identifiers may even alias across conventions
+        // (`OS_IDX ["LOGICAL"; x]` renders as `OS_IDX_LOGICAL_x`),
+        // harmlessly, because keying never reads the rendering.
         let sequenceDupes =
             sequences
             |> Validation.duplicateKeyErrors

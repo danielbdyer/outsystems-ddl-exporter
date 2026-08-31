@@ -34,7 +34,7 @@
     <Compile Include="NoticeRoutingTests.fs" />
     <Compile Include="RunSpineTests.fs" />
     <Compile Include="StagedTests.fs" />
-    <Compile Include="RunLedgerTests.fs" />
+    <Compile Include="RunIndexTests.fs" />
     <Compile Include="RunTests.fs" />
     <Compile Include="SourceTests.fs" />
     <Compile Include="RefTests.fs" />
@@ -91,6 +91,7 @@
     <Compile Include="RemediationEmitterTests.fs" />
     <Compile Include="SummaryFormatterTests.fs" />
     <Compile Include="ComposeAtomicWriteTests.fs" />
+    <Compile Include="ComposeEmitRefusalTests.fs" />
     <Compile Include="SqlTypeCorrespondenceTests.fs" />
     <Compile Include="SqlStorageTypeTests.fs" />
     <Compile Include="SqlLiteralTests.fs" />
@@ -101,6 +102,7 @@
     <Compile Include="LineageTests.fs" />
     <Compile Include="DiagnosticsTests.fs" />
     <Compile Include="AxiomTests.fs" />
+    <Compile Include="TriggerProbes.fs" />
     <Compile Include="ArtifactByKindTests.fs" />
     <Compile Include="CatalogDiffTests.fs" />
     <Compile Include="CatalogRiskTests.fs" />
@@ -150,6 +152,7 @@
     <Compile Include="VersionedPolicyTests.fs" />
     <Compile Include="ApprovalWorkflowTests.fs" />
     <Compile Include="ApprovalStoreTests.fs" />
+    <Compile Include="RulingStoreTests.fs" />
     <Compile Include="LifecycleStoreTests.fs" />
     <Compile Include="EjectRunTests.fs" />
     <Compile Include="EmissionModeTests.fs" />
@@ -174,7 +177,7 @@
     <Compile Include="WriteSignoffTests.fs" />
     <Compile Include="TransferImpactTests.fs" />
     <Compile Include="TransferTriageTests.fs" />
-    <Compile Include="EvidenceCacheTests.fs" />
+    <Compile Include="ForecastEvidenceTests.fs" />
     <Compile Include="ReviewNavigatorTests.fs" />
     <Compile Include="ActConsentTests.fs" />
     <Compile Include="CsvExportTests.fs" />
@@ -196,6 +199,7 @@
     <Compile Include="CompareTests.fs" />
     <Compile Include="ReadinessTests.fs" />
     <Compile Include="EstateTests.fs" />
+    <Compile Include="EstateSinkClaimsTests.fs" />
     <Compile Include="EstateRemediationTests.fs" />
     <Compile Include="EstateScopeGovernanceTests.fs" />
     <Compile Include="EstatePostureTests.fs" />
@@ -216,6 +220,7 @@
     <Compile Include="MultiEnvironmentPromotionTests.fs" />
     <Compile Include="TopologicalOrderTests.fs" />
     <Compile Include="VisibilityMaskTests.fs" />
+    <Compile Include="SelectionSuppressionTests.fs" />
     <Compile Include="NamingMorphismTests.fs" />
     <Compile Include="NormalizeStaticPopulationsTests.fs" />
     <Compile Include="SymmetricClosureTests.fs" />
@@ -234,6 +239,8 @@
     <Compile Include="OsmRowsetReaderTests.fs" />
     <Compile Include="ColumnRealitySourceSidePopulationTests.fs" />
     <Compile Include="ColumnRealityDivergenceTests.fs" />
+    <!-- BundleErasureTests.fs: A54 — toBundle's named erasures (align-II.8; the enumerable modulus). -->
+    <Compile Include="BundleErasureTests.fs" />
     <Compile Include="AdvisoryTuningTests.fs" />
     <Compile Include="FkRealityRowsetRoundTripTests.fs" />
     <Compile Include="ReferenceHasDbConstraintLivePathTests.fs" />
@@ -291,6 +298,7 @@
     <Compile Include="RegisteredTransformsTests.fs" />
     <Compile Include="PassChainAdapterComposeTests.fs" />
     <Compile Include="SkeletonPurityTests.fs" />
+    <Compile Include="ConfigProvenanceTests.fs" />
     <Compile Include="PillarNineTests.fs" />
     <Compile Include="RegisteredAllTransformsBidirectionalTests.fs" />
     <Compile Include="ArchitectureFitnessTests.fs" />
@@ -354,6 +362,18 @@
     <Compile Include="EndToEndPipelineTests.fs" />
     <Compile Include="PerfHarnessCatalogTests.fs" />
     <Compile Include="ProofManifestTests.fs" />
+    <Compile Include="MetadataSnapshotCapabilityTests.fs" />
+    <Compile Include="MetadataSnapshotCodecTests.fs" />
+    <Compile Include="SinkDisplacementTests.fs" />
+    <Compile Include="SyncOrdinalTests.fs" />
+    <Compile Include="CanaryVerdictTests.fs" />
+    <Compile Include="VoiceRegisterTests.fs" />
+    <Compile Include="SinkStoreTests.fs" />
+    <Compile Include="SinkReadTests.fs" />
+    <Compile Include="SinkDiffViewTests.fs" />
+    <Compile Include="PhysicalClaimTests.fs" />
+    <Compile Include="SinkFreshnessTests.fs" />
+    <Compile Include="SinkBindingTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

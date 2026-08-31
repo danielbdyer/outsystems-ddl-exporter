@@ -111,10 +111,10 @@ let ``View: Status drives the glyph — Bad shows the cross, no color needed`` (
 
 [<Fact>]
 let ``View: the board build carries its data into json (consumer round-trip)`` () =
-    let r : RunLedger.Readiness =
+    let r : RunIndex.Readiness =
         { TotalRuns = 10; CanaryRuns = 10; ConsecutiveGreen = 10
-          LastCanary = Some "green"; Threshold = 10; Eligible = true }
-    let v = TtyRenderer.buildReadinessView r [ "green"; "red"; "green" ] [] "/x/runs.jsonl"
+          LastCanary = Some Projection.Core.CanaryVerdict.Green; SkippedLines = 0; Threshold = 10; Eligible = true }
+    let v = TtyRenderer.buildReadinessView r [ Projection.Core.CanaryVerdict.Green; Projection.Core.CanaryVerdict.Red; Projection.Core.CanaryVerdict.Green ] [] "/x/runs.jsonl"
     let blocks = (json v).GetProperty("blocks").EnumerateArray() |> Seq.toList
     let kinds = blocks |> List.map (fun b -> nonNull (b.GetProperty("kind").GetString()))
     Assert.Contains("hero", kinds)
@@ -599,10 +599,10 @@ let ``View: a Spark renders the series as a sparkline (plain) and carries the ra
 
 [<Fact>]
 let ``View: the readiness board renders the changeset sparkline beside the dots (#14 consumer)`` () =
-    let r : RunLedger.Readiness =
+    let r : RunIndex.Readiness =
         { TotalRuns = 12; CanaryRuns = 12; ConsecutiveGreen = 5
-          LastCanary = Some "green"; Threshold = 10; Eligible = false }
-    let v = TtyRenderer.buildReadinessView r [ "green"; "green" ] [ 40; 22; 9; 3 ] "/x/runs.jsonl"
+          LastCanary = Some Projection.Core.CanaryVerdict.Green; SkippedLines = 0; Threshold = 10; Eligible = false }
+    let v = TtyRenderer.buildReadinessView r [ Projection.Core.CanaryVerdict.Green; Projection.Core.CanaryVerdict.Green ] [ 40; 22; 9; 3 ] "/x/runs.jsonl"
     let kinds =
         (json v).GetProperty("blocks").EnumerateArray()
         |> Seq.map (fun b -> nonNull (b.GetProperty("kind").GetString())) |> Seq.toList

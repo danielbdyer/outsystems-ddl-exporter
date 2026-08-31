@@ -155,14 +155,7 @@ WHEN NOT MATCHED BY TARGET THEN INSERT ([Id], [Name]) VALUES (s.[Id], s.[Name]);
     /// schema fingerprint still matches the baseline on disk and cannot).
     member private this.Fresh (label: string) : Task<Runs.MaterializeReport> =
         task {
-            let keep = set [ "dbo.Status.sql"; "dbo.Customer.sql"; "dbo.Order.sql"; "dbo.OrderLine.sql" ]
-            let tablesDir = System.IO.Path.Combine(fixture.Root, "Tables")
-            if System.IO.Directory.Exists tablesDir then
-                for file in System.IO.Directory.GetFiles(tablesDir, "*.sql") do
-                    let name = System.IO.Path.GetFileName file |> Option.ofObj |> Option.defaultValue ""
-                    if not (keep.Contains name) then
-                        try System.IO.File.Delete file with _ -> ()
-            for f in SamplePrBaseline.files do fixture.Rewrite (fst f) (snd f)
+            SamplePrBaseline.resetTables fixture.Root (fun rel content -> fixture.Rewrite rel content)
             fixture.Rewrite "Data/StaticSeeds.sql" baselineSeed
             do! SamplePrBaseline.dropTwinDatabase fixture.Config
             return! this.Converge label

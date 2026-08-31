@@ -184,6 +184,7 @@ module OssysRowsetReader =
     let private parseReferenceRowFor
         (kindKeysByEntityId: Map<int, SsKey>)
         (kindKeysByEntityName: Map<string, SsKey>)
+        (attributeKeysByAttrId: Map<int, SsKey>)
         (moduleName: string)
         (entityName: string)
         (attrRow: AttributeRow)
@@ -252,10 +253,33 @@ module OssysRowsetReader =
             // G14 — normalize the constraint-state pair through the guard so a
             // V1 rowset carrying the illegal `(hasFK=0 ∧ isNoCheck=1)` quadrant
             // (untrusted without a constraint) canonicalizes to vacuous-trust.
+            // schema-L3.2 — resolve the denormalized composite legs to
+            // SsKeys (both sides, via the bundle-wide attr-id map). A leg
+            // whose attr id is absent or unresolvable degrades the WHOLE
+            // reference to the legless shape — never a half-list. The
+            // degradation is not silent at the outcome grain: a legless
+            // reference against a composite-PK target refuses at the
+            // emitter's arity gate AND reds the estate board
+            // (`emission.compositePkFk`) — the same fact, loudly.
+            let legs =
+                match refRow.Legs with
+                | [] -> []
+                | legRows ->
+                    let resolved =
+                        legRows
+                        |> List.map (fun lr ->
+                            match lr.ParentAttrId |> Option.bind (fun i -> Map.tryFind i attributeKeysByAttrId),
+                                  lr.ReferencedAttrId |> Option.bind (fun i -> Map.tryFind i attributeKeysByAttrId) with
+                            | Some s, Some t -> Some ({ SourceAttribute = s; TargetAttribute = t } : ReferenceLeg)
+                            | _ -> None)
+                    if resolved |> List.exists Option.isNone then []
+                    else resolved |> List.map Option.get
             Result.success
                 ({ Reference.create rKey rName srcKey tgtKey with
                      OnDelete = rule
-                     OnUpdate = onUpdateRule }
+                     OnUpdate = onUpdateRule
+                     // rule 7 — the leg evidence, explicit.
+                     Legs = legs }
                  |> Reference.withConstraintState refRow.HasDbConstraint refRow.IsConstraintTrusted)
         | _ ->
             // Propagate underlying errors via `propagateOrFallback` —
@@ -290,6 +314,11 @@ module OssysRowsetReader =
             /// synthesized identity per `kindSsKeyFromRow`). Used by
             /// `parseReferenceRowFor` for cross-module FK resolution.
             KindKeysByEntityId : Map<int, SsKey>
+            /// schema-L3.2 — every attribute row's resolved SsKey, keyed
+            /// by V1 AttrId across the WHOLE bundle. `parseReferenceRowFor`
+            /// resolves composite-FK leg attr ids (both sides — the target
+            /// leg belongs to ANOTHER kind) through this map.
+            AttributeKeysByAttrId : Map<int, SsKey>
             /// Entity NAME → kind's resolved V2 SsKey, spanning every
             /// module in the bundle. The cross-module fallback for
             /// `parseReferenceRowFor` when the resolved `RefEntityId`
@@ -625,7 +654,7 @@ module OssysRowsetReader =
             |> List.collect (fun a ->
                 Map.tryFind a.AttrId ctx.ReferencesByAttr
                 |> Option.defaultValue []
-                |> List.map (parseReferenceRowFor ctx.KindKeysByEntityId ctx.KindKeysByEntityName moduleName kindRow.EntityName a))
+                |> List.map (parseReferenceRowFor ctx.KindKeysByEntityId ctx.KindKeysByEntityName ctx.AttributeKeysByAttrId moduleName kindRow.EntityName a))
         let foldedRefs = Result.aggregate refResults
         // Slice 5.13.ossys-rowsets-cluster — per-Kind index assembly
         // from `IndexesByEntity` × `IndexColumnsByIndex`. The JOIN
@@ -702,12 +731,25 @@ module OssysRowsetReader =
                                 | "YEAR"  | "YEARS"  -> Limited (v, Years)
                                 | _                  -> Infinite
                             | _ -> Infinite
+                        // align-III.16: pair-or-absent at the lift. sys.* never
+                        // yields one leg of a pair for a system-versioned
+                        // table; if a torn rowset ever does, the half is
+                        // DROPPED here — exactly the emission the old
+                        // shape's consumers produced by re-refusing the
+                        // mismatch at every match site.
+                        let history =
+                            match tr.HistorySchema, tr.HistoryTable with
+                            | Some hs, Some ht -> TableId.create hs ht |> Result.toOption
+                            | _ -> None
+                        let period =
+                            match tr.PeriodStart |> Option.bind (Name.create >> Result.toOption),
+                                  tr.PeriodEnd   |> Option.bind (Name.create >> Result.toOption) with
+                            | Some ps, Some pe -> Some ({ Start = ps; End = pe } : TemporalPeriod)
+                            | _ -> None
                         yield Temporal
-                            { HistorySchema = tr.HistorySchema
-                              HistoryTable  = tr.HistoryTable
-                              PeriodStart   = tr.PeriodStart |> Option.bind (Name.create >> Result.toOption)
-                              PeriodEnd     = tr.PeriodEnd   |> Option.bind (Name.create >> Result.toOption)
-                              Retention     = retention }
+                            { HistoryTable = history
+                              Period       = period
+                              Retention    = retention }
                 ]
             Result.success
                 { SsKey       = k
@@ -990,9 +1032,26 @@ module OssysRowsetReader =
                 Map.tryFind k.EntityId kindKeysByEntityId
                 |> Option.map (fun key -> k.EntityName, key))
             |> Map.ofList
+        // schema-L3.2 — the bundle-wide AttrId → SsKey map for composite-FK
+        // leg resolution, built with the SAME resolution the kind walk uses
+        // (`attributeSsKeyFromRow`: GUID identity when present, synthesized
+        // otherwise), so a leg's recovered key always MATCHES the
+        // reconstructed attribute's key.
+        let attributeKeysByAttrId =
+            bundle.Modules
+            |> List.collect (fun m ->
+                Map.tryFind m.EspaceId kindsByEspace |> Option.defaultValue []
+                |> List.collect (fun k ->
+                    Map.tryFind k.EntityId attributesByEntity |> Option.defaultValue []
+                    |> List.choose (fun a ->
+                        match attributeSsKeyFromRow m.EspaceName k.EntityName a with
+                        | Ok key -> Some (a.AttrId, key)
+                        | Error _ -> None)))
+            |> Map.ofList
         let ctx : RowsetParseContext =
             { KindKeysByEntityId   = kindKeysByEntityId
               KindKeysByEntityName = kindKeysByEntityName
+              AttributeKeysByAttrId = attributeKeysByAttrId
               KindsByEspace        = kindsByEspace
               AttributesByEntity   = attributesByEntity
               ReferencesByAttr     = referencesByAttr
@@ -1019,7 +1078,12 @@ module OssysRowsetReader =
                     if not r.IsCached then NoCache
                     elif Option.isSome r.CacheSize then Cache
                     else Unspecified
-                match SsKey.synthesized "OSSYS_SEQUENCE" (sprintf "%s.%s" r.Schema r.Name),
+                // align-I.5: the sequence identity converged — the rowset
+                // path mints through the declared OS_SEQ typed-segment
+                // helper (one convention, one segmentation, every lane).
+                // The prior OSSYS_SEQUENCE single-segment keys parse
+                // forever (legacy registry row).
+                match OssysTranslation.sequenceSsKey r.Schema r.Name,
                       Name.create r.Name with
                 | Ok sk, Ok nm ->
                     match Sequence.create sk nm r.Schema r.DataType r.StartValue r.Increment r.MinimumValue r.MaximumValue r.IsCycling cacheMode r.CacheSize with

@@ -1,4 +1,8 @@
 module Projection.Cli.Faces.Fidelity
+
+/// The register's plural discipline (align-III.1v; THE_VOICE §1 rule 3 + §12).
+let private counted (n: int) (one: string) (many: string) : string =
+    sprintf "%s %s" ((int64 n).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)) (if n = 1 then one else many)
 // LINT-ALLOW-FILE: CLI run-face operator-facing prose + Voice payload boxing at the terminal CLI boundary; the structural surface is the typed MovementSpec / RowFidelityReport / Voice catalog, BCL primitives only at this terminal text edge.
 
 // The row-fidelity face (`check data --rows` — T17, the fidelity chapter;
@@ -80,7 +84,7 @@ let private humaneRows (n: int64) : string =
     n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
 
 let private ageText (days: int) : string =
-    if days <= 0 then "today" else sprintf "%d day(s) ago" days
+    if days <= 0 then "today" else sprintf "%s ago" (counted days "day" "days")
 
 /// P1-S1 — stand the target's SCHEMA up on the per-run scratch via the chosen
 /// staging mode. `Ddl` applies the emitted statement batch (the executor's
@@ -98,8 +102,16 @@ let private stageStandIn
     task {
         match mode with
         | StagingMode.Ddl ->
-            do! Deploy.executeBatch standIn (SsdtDdlEmitter.statements logical |> Render.toText)
-            return Result.success ()
+            // schema-L3.3a — the flat DDL lane rides the SAME emission
+            // pre-flight the bundle path always had: an unparseable
+            // trigger (or any #669 gate) refuses HERE with the named
+            // `emitter.ssdt.*` error instead of rendering a partial
+            // artifact behind the defense marker.
+            match SsdtDdlEmitter.statementsChecked DecisionOverlay.empty logical with
+            | Error e -> return Result.failure [ EmitError.toValidationError e ]
+            | Ok stmts ->
+                do! Deploy.executeBatch standIn (stmts |> Render.toText)
+                return Result.success ()
         | StagingMode.Dacfx ->
             match DacpacEmitter.emit logical with
             | Error es  -> return Result.failure es
@@ -193,11 +205,11 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
             // with the stand-in's logical names — the rename-aware leg the LE-3
             // canaries prove, mirrored).
             let srcSub : Substrate =
-                { Environment = Projection.Core.Environment.Named args.FromLabel
+                { Environment = Projection.Core.Environment.parse args.FromLabel
                   Role = SubstrateRole.Source
                   ConnectionRef = ConnectionRef.Raw args.SourceConn }
             let sinkSub : Substrate =
-                { Environment = Projection.Core.Environment.Named "container stand-in"
+                { Environment = Projection.Core.Environment.parse "container stand-in"
                   Role = SubstrateRole.Sink
                   ConnectionRef = ConnectionRef.Raw scratchConn }
             match TransferConnections.create srcSub sinkSub false with
@@ -301,7 +313,21 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
                                 None None args.SampleCap journalForCompare args.Corrections recorded
                         return proof |> Result.map (fun report -> outcome, report)
             })
-      match (work ()).GetAwaiter().GetResult() with
+      // The operator-walk WP-13 probe (2026-08-31): a scaffold or load leg
+      // that fails on the SERVER — e.g. an unresolved reference cycle's
+      // forward FK reference in the linear DDL apply — must land as a NAMED
+      // refusal, never an escaping stack trace (THE_VOICE §14: a thing that
+      // would throw is caught and stated). The server's own message is the
+      // substantiation; the code names the leg. The emission-order fix for
+      // the cycle itself (SCC condensation + the in-cycle FK split) stays
+      // sequenced on SSDT_REMEDIATION_HANDOFF Tier 4.
+      let workOutcome =
+          try (work ()).GetAwaiter().GetResult()
+          with :? Microsoft.Data.SqlClient.SqlException as ex ->
+              Result.failureOf
+                  (ValidationError.create "fidelity.proof.applyFailed"
+                      (sprintf "the proof's scaffold or load could not apply against the stand-in: %s" ex.Message))
+      match workOutcome with
       | Error errs ->
           printErrors Console.Error errs
           6
@@ -339,7 +365,7 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
                    // The load's own named erasures — each dropped row surfaces in
                    // the compare as a missing row; the WHY is said here.
                    if not (List.isEmpty transferReport.SkippedReferences) then
-                       printfn "  The load dropped %d row(s) (a relationship pointed at an unmatched record) — each surfaces below as a missing row." (List.length transferReport.SkippedReferences)
+                       printfn "  The load dropped %s (a relationship pointed at an unmatched record) — each surfaces below as a missing row." (counted (List.length transferReport.SkippedReferences) "row" "rows")
                | LanesApplied ->
                    printfn "  The stand-in: a per-run container database carrying the target's shape (the model's logical rendition), loaded by APPLYING THE EMITTED DATA LANES (the live-hydrated StaticSeeds + Bootstrap MERGE scripts, IDENTITY_INSERT-bracketed — the operator's own hand-apply path), reaped after the proof.")
               FidelityCompareRun.render report |> List.iter (fun line -> printfn "%s" line)
@@ -362,7 +388,7 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
                match ProofManifest.write capturePath manifest with
                | Ok () ->
                    if not args.AsJson then
-                       printfn "  Proof manifest captured: %s — %d kind(s). Reconcile a target against it (no live source needed) with `check fidelity --against %s --target <ref>`." capturePath (List.length manifest.Kinds) capturePath
+                       printfn "  Proof manifest captured: %s — %s. Reconcile a target against it (no live source needed) with `check fidelity --against %s --target <ref>`." capturePath (counted (List.length manifest.Kinds) "table" "tables") capturePath
                | Error errs -> printErrors Console.Error errs
            | None -> ())
           // Cache the GREEN proof (wave B6) — the source fingerprints from the
@@ -406,7 +432,7 @@ let runCheckFidelityFlow (model: Catalog) (args: CheckFidelityFlowArgs) : int =
             o.["provenAtUtc"] <- System.Text.Json.Nodes.JsonValue.Create(cached.WrittenAtUtc.ToString "O")
             printfn "%s" (o.ToJsonString(System.Text.Json.JsonSerializerOptions(WriteIndented = true)))
         else
-            printfn "  Fidelity proof for flow '%s' — CACHED GREEN: %s row(s) proven byte-identical, unchanged since %s." args.Flow (humaneRows cached.RowsCompared) (ageText ageDays)
+            printfn "  Fidelity proof for flow '%s' — CACHED GREEN: %s %s proven byte-identical, unchanged since %s." args.Flow (humaneRows cached.RowsCompared) (if cached.RowsCompared = 1L then "row" else "rows") (ageText ageDays)
             printfn "  The model shape and the source's per-kind fingerprints have not moved since the proof ran; the container proof is skipped (an in-place edit is invisible to that check — re-prove with --refresh to be certain)."
             printfn "  Proof cache: %s — clear with --refresh, or delete the file." cachePathText
         0
@@ -481,7 +507,7 @@ let runFidelityAgainst (model: Catalog) (args: CheckFidelityAgainstArgs) : int =
                     if RowFidelityReport.agrees report then "fidelity.rows.matched" else "fidelity.rows.diverged"
                 TtyRenderer.renderVoicedTo Console.Out verdictCode payload
                 printfn ""
-                printfn "  Reconciled the target '%s' against the manifest captured from '%s' — per-kind pass/fail, NO live source. Escalate to `check data --rows` (both live) to name differing rows." args.TargetLabel manifest.SourceLabel
+                printfn "  The target '%s' is reconciled against the manifest captured from '%s' — each table passes or fails against the recorded proof; no live source is read. Run `check data --rows` against both live environments to name the differing rows." args.TargetLabel manifest.SourceLabel
                 FidelityCompareRun.render report |> List.iter (fun line -> printfn "%s" line)
             tryWriteArtifact "fidelity.rows.json" artifact
             if RowFidelityReport.agrees report then 0 else 5

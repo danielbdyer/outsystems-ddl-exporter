@@ -193,13 +193,10 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
         match variant with
         | ToleratedDivergence.HeaderCommentsOmitted        -> ()
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> ()
-        | ToleratedDivergence.IndexOptionsUnreflected           -> ()
         | ToleratedDivergence.StaticPopulationsUnreflected -> ()
-        | ToleratedDivergence.CompositePkFkUnreflected     -> ()
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> ()
         | ToleratedDivergence.DecimalScaleTolerated        -> ()
         | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad -> ()
-        | ToleratedDivergence.TriggerBodyUnparsedDropped   -> ()
         | ToleratedDivergence.BooleanCanonicalizationTolerated -> ()
         | ToleratedDivergence.DateTimeTickPrecisionTolerated -> ()
         | ToleratedDivergence.IntegerWidthNormalized       -> ()
@@ -220,7 +217,18 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
     // **WP-3 / F11 (2026-07-16):** 12 — EmptyTextNormalizedToNull RETIRED
     // (the option-grain cell carriers keep '' and NULL distinct end-to-end;
     // the erasure it named no longer exists to tolerate).
-    Assert.Equal(12, Set.count ToleratedDivergence.allKnown)
+    // **schema-L3.1 (2026-08-30):** 11 — IndexOptionsUnreflected RETIRED
+    // (ReadSide recovers the full index option surface; the widened
+    // PhysicalIndex compares it; IndexRoundtripTests carries the two-arm
+    // closure witness).
+    // **schema-L3.2 (2026-08-30):** 10 — CompositePkFkUnreflected RETIRED
+    // (Reference.Legs carries the full composite-FK column list; every
+    // lane populates, emits, and compares per leg; the arity gate refuses
+    // the legless residual).
+    // **schema-L3.3b (2026-08-30):** 9 — TriggerBodyUnparsedDropped
+    // RETIRED (the last Schema OpenGap): the publish refuses at the
+    // compose seam by name; the Schema axis reaches ✅ L3.
+    Assert.Equal(9, Set.count ToleratedDivergence.allKnown)
 
 // ---------------------------------------------------------------------------
 // NM-70 (WP5) — the identity-annotation emit | omit gate.

@@ -53,13 +53,15 @@ let ``A.4.7 slice ε: StrategyRegistrations.cycleResolution classifies as DataIn
     Assert.Equal(DataIntent, rt.Sites.[0].Classification)
 
 [<Fact>]
-let ``A.4.7 slice ε: StrategyRegistrations.all lists 5 strategy registrations`` () =
-    Assert.Equal(5, List.length StrategyRegistrations.all)
+let ``A.4.7 slice ε: StrategyRegistrations.all lists 6 strategy registrations`` () =
+    // The 6th is physicalClaimRules (the data-sink chapter S11 —
+    // table-ownership adjudication over journal-assembled claim sets).
+    Assert.Equal(6, List.length StrategyRegistrations.all)
 
 [<Fact>]
 let ``A.4.7 slice ε: StrategyRegistrations.all validates through TransformRegistry.create`` () =
     match TransformRegistry.create StrategyRegistrations.all with
-    | Ok entries -> Assert.Equal(5, List.length entries)
+    | Ok entries -> Assert.Equal(6, List.length entries)
     | Error es ->
         let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
         Assert.Fail(sprintf "Expected strategy registrations to validate; got errors: %s" codes)

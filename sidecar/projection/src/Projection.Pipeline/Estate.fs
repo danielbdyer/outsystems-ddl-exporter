@@ -104,6 +104,14 @@ module Estate =
             /// elsewhere) — the sortable/filterable signal carried to
             /// `environments.json`, from the centrality-dominant read.
             Difficulty : ReconciliationDifficulty option
+            /// align-II.12 (E4) — the typed record BEHIND the statement's
+            /// prose: per contributing environment, the evidence standing
+            /// (firm/advisory), the magnitude, and the capture instant.
+            /// `compute` fills it firm/this-run; the face's evidence stamp
+            /// (`withEvidence`) re-derives standing + instants from the
+            /// resolved provenance. Additive: the `Statement` bytes, the
+            /// lanes, and the verdict never move with it.
+            Pedigree : PedigreeEntry list
         }
 
     /// The impact rank — the largest consequence anywhere in the estate.
@@ -222,6 +230,14 @@ module Estate =
             /// coverage-honesty line (a clean verdict covers static content
             /// only when it was inspected).
             StaticInspected : bool
+            /// The recorded operator rulings this run received (align-II.5;
+            /// A53's reception) — loaded from the keyed ruling store by the
+            /// face and stamped; `compute` stays store-blind. Reception is
+            /// record + render ONLY: a ruling renders on its finding (the
+            /// lever's slot, answered) and never moves a lane, a verdict, or
+            /// the cutover ladder — applying a ruling to policy or model is
+            /// the named deferral (align-II.0 standing ruling).
+            Rulings : OperatorRuling<FindingKey> list
         }
 
     /// The movement between a recorded baseline reading and this run —
@@ -254,6 +270,15 @@ module Estate =
 
     let private humane64 (n: int64) : string =
         n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)
+
+    /// The register's plural discipline (align-III.1v; THE_VOICE §1 rule 3 +
+    /// §12): a count reads aloud — "1 row" / "4,210 rows" — with both forms
+    /// spelled at the site so verb agreement can ride the phrase.
+    let private counted (n: int) (one: string) (many: string) : string =
+        sprintf "%s %s" (humane n) (if n = 1 then one else many)
+
+    let private counted64 (n: int64) (one: string) (many: string) : string =
+        sprintf "%s %s" (humane64 n) (if n = 1L then one else many)
 
     /// The operator-facing name of a kind key, resolved against the catalog
     /// that carries it; the identity's display root when the catalog does not
@@ -341,6 +366,13 @@ module Estate =
             /// The emission audit groups duplicate table-name collisions by the
             /// EMITTED name (post-rename), so an authored rename clears the board.
             RenameSpecs : Projection.Core.Passes.TableRename.RenameSpec list
+            /// The ruling attribution the bound overrides carry (align-II.2's
+            /// un-severed reading; rendered at align-II.5): approver, instant,
+            /// and rationale per relaxed key, where the config names them.
+            /// Reference and attribute keys share one map — SsKeys are one
+            /// identity space. Empty when no override carries provenance;
+            /// the meter lines are then byte-identical to the pre-II.5 board.
+            Provenance : Map<SsKey, OverrideProvenance>
         }
 
     [<RequireQualifiedAccess>]
@@ -354,7 +386,8 @@ module Estate =
               PromotionOrder    = []
               RelaxedReferences = Set.empty
               RelaxedAttributes = Set.empty
-              RenameSpecs       = [] }
+              RenameSpecs       = []
+              Provenance        = Map.empty }
 
     /// The per-run STATIC ROW content the D10/D11 detectors read (wave A4β).
     /// The estate carries only statistical `Profile` in its operands, and the
@@ -422,6 +455,12 @@ module Estate =
             Fragment  : string
             Weight    : int64
             Signature : string option
+            /// The approval attribution the contribution's subject carries
+            /// (align-II.5 — today only the posture meter, whose bound
+            /// overrides name their approver): a trailing sentence the
+            /// grouped statement renders once per finding, never per
+            /// environment. `None` everywhere else.
+            Attribution : string option
         }
 
     // -- Schema-plane findings (one env against the target) -----------------
@@ -437,7 +476,7 @@ module Estate =
         (diff: CatalogDiff)
         : EnvContribution list =
         let contribution (kind: EstateFindingKind) (subject: string) (signature: string option) (fragment: string) (weight: int64) : EnvContribution =
-            { Kind = kind; Subject = subject; Reference = None; Env = env; Fragment = fragment; Weight = weight; Signature = signature }
+            { Kind = kind; Subject = subject; Reference = None; Env = env; Fragment = fragment; Weight = weight; Signature = signature; Attribution = None }
         // The direction classifier (T1, wave A3): a kind an environment
         // carries BEYOND the target is deployed-ahead drift (a ruling);
         // a kind the target declares that an environment has not received
@@ -554,7 +593,8 @@ module Estate =
                 | ReferenceFacet.OnUpdate -> "update rule"
                 | ReferenceFacet.UserFk -> "user relationship"
                 | ReferenceFacet.DbConstraint -> "enforcement"
-                | ReferenceFacet.Trust -> "trust")
+                | ReferenceFacet.Trust -> "trust"
+                | ReferenceFacet.Legs -> "key columns")
         let idxFacets (c: IndexChange) : string list =
             c.Facets |> Set.toList |> List.map (function
                 | IndexFacet.Columns -> "columns"
@@ -612,7 +652,7 @@ module Estate =
         let contribution (kind: EstateFindingKind) (fragment: string) (weight: int64) : EnvContribution option =
             Some
                 { Kind = kind; Subject = subject; Reference = Some v.Reference
-                  Env = env; Fragment = fragment; Weight = weight; Signature = None }
+                  Env = env; Fragment = fragment; Weight = weight; Signature = None; Attribution = None }
         let relaxedAttr () =
             match attrKeyFor v.Reference with
             | Some key -> Set.contains key posture.RelaxedAttributes
@@ -625,15 +665,15 @@ module Estate =
         | ModelFidelity.NotNullButNullsPresent _ when relaxedAttr () -> None
         | ModelFidelity.NotNullButNullsPresent n when n > bandFor posture subject ->
             contribution EstateFindingKind.DataNotNullPastBand
-                (sprintf "%s is required (NOT NULL); %s NULL row(s) in %s exceed the repair band — leave the column nullable until they are backfilled"
-                    subject (humane64 n) env) n
+                (sprintf "%s is required (NOT NULL); %s in %s %s the repair band — leave the column nullable until they are backfilled"
+                    subject (counted64 n "NULL row" "NULL rows") env (if n = 1L then "exceeds" else "exceed")) n
         | ModelFidelity.NotNullButNullsPresent n ->
             // Post-WP-3 (DECISIONS 2026-07-16): the empty string survives
             // distinct from NULL on every write path — it no longer folds into
             // the NULL count at ingestion, nor normalizes to NULL on publish.
             // The count is genuine NULLs only; the pre-WP-3 "includes empty
             // text" clause is retired with the erasure it described.
-            let count = if n > 0L then sprintf "%s NULL row(s)" (humane64 n) else "NULL rows"
+            let count = if n > 0L then counted64 n "NULL row" "NULL rows" else "NULL rows"
             contribution EstateFindingKind.DataNotNull
                 (sprintf "%s is required (NOT NULL); %s holds %s" subject env count) (max n 1L)
         | ModelFidelity.UniqueButDuplicatesPresent ->
@@ -650,15 +690,15 @@ module Estate =
             let trueOrphans = n - zeros
             if trueOrphans > bandFor posture subject then
                 contribution EstateFindingKind.DataOrphansPastBand
-                    (sprintf "%s has %s reference(s) to missing rows in %s, past the repair band — leave the relationship unenforced until they clear"
-                        subject (humane64 trueOrphans) env) trueOrphans
+                    (sprintf "%s has %s to missing rows in %s, past the repair band — leave the relationship unenforced until they clear"
+                        subject (counted64 trueOrphans "reference" "references") env) trueOrphans
             else
                 let sentinelClause =
                     if zeros > 0L then sprintf ", of which %s reference the unset value 0" (humane64 zeros)
                     else ""
                 contribution EstateFindingKind.DataOrphans
-                    (sprintf "%s has %s reference(s) to rows that do not exist in %s%s"
-                        subject (humane64 n) env sentinelClause) (max n 1L)
+                    (sprintf "%s has %s to rows that do not exist in %s%s"
+                        subject (counted64 n "reference" "references") env sentinelClause) (max n 1L)
         | ModelFidelity.LengthOrTypeOverflow (observed, declared) ->
             contribution EstateFindingKind.DataOverflow
                 (sprintf "%s holds values that exceed its column length setting — %s against a setting of %s — in %s"
@@ -716,7 +756,7 @@ module Estate =
                     |> Option.bind (kindRowCountIn profile)
                 let costClause =
                     match rows with
-                    | Some n when n > 0L -> sprintf " — re-trusting scans %s row(s)" (humane64 n)
+                    | Some n when n > 0L -> sprintf " — re-trusting scans %s" (counted64 n "row" "rows")
                     | _ -> ""
                 { Kind = EstateFindingKind.SchemaTrust
                   Subject = subject
@@ -726,7 +766,7 @@ module Estate =
                     sprintf "the relationship %s → %s is enforced WITH NOCHECK in %s (untrusted)%s"
                         subject targetName env costClause
                   Weight = rows |> Option.defaultValue 1L
-                  Signature = None }))
+                  Signature = None; Attribution = None }))
 
     /// The rowcount-asymmetry advisories (D12, wave A3): a kind whose
     /// environments' observed row counts diverge past the asymmetry factor
@@ -753,18 +793,18 @@ module Estate =
                         Subject = name
                         Reference = None
                         Env = maxEnv
-                        Fragment = sprintf "%s holds %s row(s) in %s" name (humane64 maxCount) maxEnv
+                        Fragment = sprintf "%s holds %s in %s" name (counted64 maxCount "row" "rows") maxEnv
                         Weight = maxCount
-                        Signature = None }
+                        Signature = None; Attribution = None }
                       { Kind = EstateFindingKind.DataAsymmetry
                         Subject = name
                         Reference = None
                         Env = minEnv
                         Fragment =
-                          sprintf "%s holds %s row(s) in %s — findings drawn from the smaller sample are advisory"
-                              name (humane64 minCount) minEnv
+                          sprintf "%s holds %s in %s — findings drawn from the smaller sample are advisory"
+                              name (counted64 minCount "row" "rows") minEnv
                         Weight = minCount
-                        Signature = None } ]
+                        Signature = None; Attribution = None } ]
                 else [])
 
     /// The natural-key candidacies (D15, wave A3): a non-key column whose
@@ -810,10 +850,10 @@ module Estate =
                           Reference = None
                           Env = env
                           Fragment =
-                            sprintf "%s has no duplicate in %s — %s of %s row(s) are distinct, so it could serve as a business key for matching"
-                                subject env (humane64 c.DistinctCount) (humane64 total)
+                            sprintf "%s has no duplicate in %s — %s of %s %s distinct, so it could serve as a business key for matching"
+                                subject env (humane64 c.DistinctCount) (counted64 total "row" "rows") (if total = 1L then "is" else "are")
                           Weight = total
-                          Signature = None })
+                          Signature = None; Attribution = None })
                 else []))
 
     /// The headroom floor (D13, wave A4): a primary key consuming at least
@@ -857,7 +897,7 @@ module Estate =
                                         sprintf "%s has reached %s of %s in %s — %d%% of the limit is used"
                                             subject (d.Max.ToString("N0", Globalization.CultureInfo.InvariantCulture)) capText env percent
                                       Weight = int64 percent
-                                      Signature = None }
+                                      Signature = None; Attribution = None }
                             else None))))
 
     /// D8 (wave A4): a date column's empty-of-meaning sentinels — a value that
@@ -903,10 +943,10 @@ module Estate =
                                   Reference = None
                                   Env = env
                                   Fragment =
-                                    sprintf "%s holds %s row(s) set to %s in %s — a stand-in for an empty date; a required-column reading is satisfied, but the dates carry no real value"
-                                        subject (humane64 sentinelCount) leadSentinel env
+                                    sprintf "%s holds %s set to %s in %s — a stand-in for an empty date; a required-column reading is satisfied, but the dates carry no real value"
+                                        subject (counted64 sentinelCount "row" "rows") leadSentinel env
                                   Weight = sentinelCount
-                                  Signature = None }
+                                  Signature = None; Attribution = None }
                         else None))))
 
     /// D6 (wave A4): values a single-column unique declaration keeps
@@ -946,10 +986,10 @@ module Estate =
                               Reference = None
                               Env = env
                               Fragment =
-                                sprintf "under a case-insensitive collation, %s collapses %s case-distinct value(s) into duplicates in %s — the unique declaration fails on unification"
-                                    subject (humane collapsedPairs) env
+                                sprintf "under a case-insensitive collation, %s collapses %s into duplicates in %s — the unique declaration fails on unification"
+                                    subject (counted collapsedPairs "case-distinct value" "case-distinct values") env
                               Weight = int64 collapsedPairs
-                              Signature = None }
+                              Signature = None; Attribution = None }
                     else None)))
 
     /// I3 (wave A4): identity provenance across the estate — kinds whose
@@ -985,10 +1025,10 @@ module Estate =
                       Reference = None
                       Env = env
                       Fragment =
-                        sprintf "%s kind(s) in %s number their rows differently than the target — the key is generated by the database in one and a fixed value in the other, so renames stay unstable until the identity is anchored"
-                            (humane mismatched) env
+                        sprintf "%s in %s %s rows differently than the target — the key is generated by the database in one and a fixed value in the other, so renames stay unstable until the identity is anchored"
+                            (counted mismatched "table" "tables") env (if mismatched = 1 then "numbers its" else "number their")
                       Weight = int64 mismatched
-                      Signature = None }
+                      Signature = None; Attribution = None }
             else None)
 
     /// The fourth comparison regime (DECISIONS 2026-07-18): deployed↔deployed
@@ -1030,7 +1070,7 @@ module Estate =
                     sprintf "%s exists in %s but not in %s, its upstream promotion source — a change reached %s without passing through %s"
                         kindName downstream upstream downstream upstream
                   Weight = 1L
-                  Signature = None }))
+                  Signature = None; Attribution = None }))
 
     /// O1 (wave A4): CDC parity — a kind tracked in some environments and
     /// not in other evidenced ones; a cutover write feeds live consumers
@@ -1065,7 +1105,7 @@ module Estate =
                             sprintf "Change tracking is on for %s in %s and off in %s — a cutover write feeds live consumers in %s alone"
                                 name env (envListText silent) env
                           Weight = 1L
-                          Signature = None }))
+                          Signature = None; Attribution = None }))
 
     /// The ACTIVE posture's lines (wave A6): every relaxation the loaded
     /// config carries renders — merged posture is config-fact, shown with
@@ -1081,9 +1121,27 @@ module Estate =
         (envNames: string list)
         (profilesByEnv: (string * Profile) list)
         : EnvContribution list =
+        // The approval attribution one relaxed key carries (align-II.2's
+        // un-severed provenance, rendered here at align-II.5): a trailing
+        // sentence the grouped statement appends once. `ApprovedAt` renders
+        // date-only — the meter is a daily-cadence surface; the config and
+        // the ruling store keep the full instant.
+        let attributionOf (key: SsKey) : string option =
+            Map.tryFind key posture.Provenance
+            |> Option.map (fun p ->
+                let onClause =
+                    match p.ApprovedAt with
+                    | Some at -> sprintf " on %s" (at.ToString("yyyy-MM-dd", Globalization.CultureInfo.InvariantCulture))
+                    | None -> ""
+                let whyClause =
+                    match p.Rationale with
+                    | Some why -> sprintf " — %s" (why.TrimEnd '.')
+                    | None -> ""
+                sprintf " Approved by %s%s%s." p.ApprovedBy onClause whyClause)
         let meterLines
             (kind: EstateFindingKind)
             (subject: string)
+            (attribution: string option)
             (activeFragment: string -> string -> string)   // env -> countText -> fragment
             (unobservedFragment: string -> string)         // env -> fragment
             (retirableFragment: string -> string)          // env -> fragment
@@ -1102,7 +1160,7 @@ module Estate =
                       Env = env
                       Fragment = retirableFragment env
                       Weight = 1L
-                      Signature = None })
+                      Signature = None; Attribution = attribution })
             else
                 let observedEnvs = observed |> List.map fst
                 let unobserved = envNames |> List.filter (fun e -> not (List.contains e observedEnvs))
@@ -1114,7 +1172,7 @@ module Estate =
                        Env = env
                        Fragment = activeFragment env (humane64 n)
                        Weight = max n 1L
-                       Signature = None }))
+                       Signature = None; Attribution = attribution }))
                 @ (unobserved
                    |> List.map (fun env ->
                        { Kind = kind
@@ -1123,7 +1181,7 @@ module Estate =
                          Env = env
                          Fragment = unobservedFragment env
                          Weight = 1L
-                         Signature = None }))
+                         Signature = None; Attribution = attribution }))
         let referenceLines =
             posture.RelaxedReferences
             |> Set.toList
@@ -1132,10 +1190,10 @@ module Estate =
                 | None -> []
                 | Some (kindName, attrName, targetName) ->
                     let subject = sprintf "%s.%s" kindName attrName
-                    meterLines EstateFindingKind.PostureActive subject
+                    meterLines EstateFindingKind.PostureActive subject (attributionOf refKey)
                         (fun env count ->
-                            sprintf "%s → %s is left unenforced for now; %s reference(s) still point to missing rows in %s"
-                                subject targetName count env)
+                            sprintf "%s → %s is left unenforced for now; %s %s still point to missing rows in %s"
+                                subject targetName count (if count = "1" then "reference" else "references") env)
                         (fun env ->
                             sprintf "%s → %s is left unenforced for now; the count is unobserved in %s"
                                 subject targetName env)
@@ -1156,15 +1214,15 @@ module Estate =
                 match display with
                 | None -> []
                 | Some subject ->
-                    meterLines EstateFindingKind.PostureActive subject
+                    meterLines EstateFindingKind.PostureActive subject (attributionOf attrKey)
                         (fun env count ->
-                            sprintf "%s is left nullable for now; %s row(s) are still NULL in %s"
-                                subject count env)
+                            sprintf "%s is left nullable for now; %s %s still NULL in %s"
+                                subject count (if count = "1" then "row is" else "rows are") env)
                         (fun env ->
                             sprintf "%s is left nullable for now; the count is unobserved in %s"
                                 subject env)
                         (fun env ->
-                            sprintf "%s has zero NULL row(s) in %s now — the column can be required (NOT NULL) again"
+                            sprintf "%s has zero NULL rows in %s now — the column can be required (NOT NULL) again"
                                 subject env)
                         (fun p -> Profile.tryFindColumn attrKey p |> Option.map (fun c -> c.NullCount)))
         referenceLines @ attributeLines
@@ -1189,18 +1247,26 @@ module Estate =
             | EstateLeverForm.Ruling imperative -> Some imperative
             | _ -> None
           Fork      = false
-          Difficulty = None }
+          Difficulty = None
+          Pedigree  = [] }
 
     /// WP-12: a relationship whose target entity has a COMPOSITE primary key.
     /// The emitter renders a single-column foreign key that references only
     /// the target's first key column — SQL Server rejects it at deploy.
     let private emissionCompositePkFkFindings (target: Catalog) : Finding list =
+        // schema-L3.2 — the predicate is the SHARED
+        // `Reference.compositeArityMismatch`, the same one the emitter's
+        // composite-key gate refuses on: a red board finding and a refused
+        // publish stay the same fact by construction (DECISIONS 2026-07-18).
+        // A LEG-COMPLETE composite reference (arity = the target's PK arity)
+        // emits its multi-leg constraint and no longer fires this finding.
         Catalog.allKinds target
         |> List.collect (fun k ->
             k.References
+            |> List.filter Reference.isDeployable
             |> List.choose (fun r ->
                 match Catalog.tryFindKind r.TargetKind target with
-                | Some targetKind when List.length (Kind.primaryKey targetKind) > 1 ->
+                | Some targetKind when Reference.compositeArityMismatch targetKind r ->
                     let sourceCol =
                         k.Attributes
                         |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
@@ -1208,8 +1274,35 @@ module Estate =
                         |> Option.defaultValue "?"
                     let subject = sprintf "%s.%s → %s" (Name.value k.Name) sourceCol (Name.value targetKind.Name)
                     Some (emissionFinding EstateFindingKind.EmissionCompositePkFk subject
-                            (sprintf "%s targets a composite primary key (%s columns) — the emitted foreign key would reference only its first column, which SQL Server rejects at deploy."
-                                subject (humane (List.length (Kind.primaryKey targetKind)))))
+                            (sprintf "%s targets a composite primary key (%s columns) with %s of leg evidence — the emitted foreign key would not match the target key, which SQL Server rejects at deploy."
+                                subject
+                                (humane (List.length (Kind.primaryKey targetKind)))
+                                (sprintf "%d %s" (Reference.legArity r) (if Reference.legArity r = 1 then "column" else "columns"))))
+                | _ -> None))
+
+    /// NM-28b (folded in at schema-L3.2 by operator ruling): a relationship
+    /// whose target entity has NO primary key emits no foreign key at all —
+    /// no SQL FK can reference a keyless table — and the comparator drops it
+    /// too. The kind-grain heap finding names the target; this names the
+    /// RELATIONSHIP the drop erases, so the schema plane's last unnamed
+    /// silent drop at this grain is now on the board.
+    let private emissionFkTargetWithoutPkFindings (target: Catalog) : Finding list =
+        Catalog.allKinds target
+        |> List.collect (fun k ->
+            k.References
+            |> List.filter Reference.isDeployable
+            |> List.choose (fun r ->
+                match Catalog.tryFindKind r.TargetKind target with
+                | Some targetKind when List.isEmpty (Kind.primaryKey targetKind) ->
+                    let sourceCol =
+                        k.Attributes
+                        |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
+                        |> Option.map (fun a -> Name.value a.Name)
+                        |> Option.defaultValue "?"
+                    let subject = sprintf "%s.%s → %s" (Name.value k.Name) sourceCol (Name.value targetKind.Name)
+                    Some (emissionFinding EstateFindingKind.EmissionFkTargetWithoutPk subject
+                            (sprintf "%s references an entity with no primary key — no foreign key can be emitted, so the relationship deploys unenforced."
+                                subject))
                 | _ -> None))
 
     /// WP-16: two entities whose logical names collide across modules — one
@@ -1410,9 +1503,9 @@ module Estate =
             |> List.tryPick (function ModalityMark.Temporal tc -> Some tc | _ -> None)
             |> Option.map (fun tc ->
                 let history =
-                    match tc.HistorySchema, tc.HistoryTable with
-                    | Some hs, Some ht -> sprintf " (history table %s.%s)" hs ht
-                    | _ -> ""
+                    match tc.HistoryTable with
+                    | Some tid -> sprintf " (history table %s.%s)" (TableId.schemaText tid) (TableId.tableText tid)
+                    | None -> ""
                 emissionFinding EstateFindingKind.EmissionTemporalDropped (Name.value k.Name)
                     (sprintf "%s is system-versioned%s — the emission cannot yet carry SYSTEM_VERSIONING, so the publish refuses rather than dropping it silently."
                         (Name.value k.Name) history)))
@@ -1444,6 +1537,7 @@ module Estate =
     /// SSDT-fidelity dimension of the readiness report.
     let emissionFindingsForWith (renames: Projection.Core.Passes.TableRename.RenameSpec list) (target: Catalog) : Finding list =
         [ emissionCompositePkFkFindings target
+          emissionFkTargetWithoutPkFindings target
           emissionDuplicateNameFindings renames target
           emissionLongNameFindings target
           emissionNoPrimaryKeyFindings target
@@ -1511,14 +1605,15 @@ module Estate =
                               Plane     = EstateFindingKind.planeOf kind
                               Envs      = envs |> List.map (fun e -> e, 1L)
                               Statement =
-                                sprintf "%s is NOT NULL in the deployed database(s) %s and nullable in the model — publishing the model's shape drops the constraint there."
-                                    subject (envListText envs)
+                                sprintf "%s is NOT NULL in the deployed %s %s and nullable in the model — publishing the model's shape drops the constraint there."
+                                    subject (if List.length envs = 1 then "database" else "databases") (envListText envs)
                               Lever     =
                                 match EstateFindingKind.leverFormOf kind with
                                 | EstateLeverForm.Ruling imperative -> Some imperative
                                 | _ -> None
                               Fork      = false
-                              Difficulty = None }))
+                              Difficulty = None
+                              Pedigree  = PedigreeEntry.ofEnvs (envs |> List.map (fun e -> e, 1L)) }))
         |> List.sortBy (fun f -> FindingKey.text f.Key)
 
     // -- D10 / D11: static-entity content + identity (wave A4β) ---------------
@@ -1576,10 +1671,10 @@ module Estate =
                                   Reference = None
                                   Env = env
                                   Fragment =
-                                    sprintf "%s in %s differs from the seed — %s row(s) missing, %s extra, %s value difference(s)"
-                                        name env (humane missing) (humane extra) (humane drift)
+                                    sprintf "%s in %s differs from the seed — %s missing, %s extra, %s"
+                                        name env (counted missing "row" "rows") (humane extra) (counted drift "value difference" "value differences")
                                   Weight = int64 (missing + extra + drift)
-                                  Signature = None })
+                                  Signature = None; Attribution = None })
             | _ -> [])
 
     /// D11 (`DataStaticIdentity`): an AUTONUMBER static entity (its PK an
@@ -1644,7 +1739,8 @@ module Estate =
                               // The surrogate map is the fork signature: two envs
                               // with different maps numbered the same rows
                               // differently — no single adoption resolves it.
-                              Signature = Some (m |> Map.toList |> List.map (fun (a, b) -> a + "=" + b) |> String.concat ",") })
+                              Signature = Some (m |> Map.toList |> List.map (fun (a, b) -> a + "=" + b) |> String.concat ",")
+                              Attribution = None })
             | _ -> [])
 
     /// The reference-graph context the difficulty read consumes, built ONCE from
@@ -1729,7 +1825,7 @@ module Estate =
                     sprintf " The relationship targets %s, which sits in a reference cycle — each reconciliation choice ripples, so this one needs a plan." targetName
                 elif inDeg >= ctx.HubInDegree then
                     ReconciliationDifficulty.High,
-                    sprintf " The relationship targets %s, referenced by %d relationship(s) across the model — each reconciliation choice ripples, so this one needs a plan." targetName inDeg
+                    sprintf " The relationship targets %s, referenced by %s across the model — each reconciliation choice ripples, so this one needs a plan." targetName (counted inDeg "relationship" "relationships")
                 else
                     ReconciliationDifficulty.Moderate,
                     sprintf " The relationship targets %s — reconcile each row against it." targetName
@@ -1883,7 +1979,7 @@ module Estate =
                             // sample-confidence caveat lives on the cross-environment
                             // conclusions (asymmetry / uniqueness), not here.
                             |> Option.map (fun c ->
-                                sprintf "satisfied in %s (%s row(s) observed)" env (humane64 c.RowCount))
+                                sprintf "satisfied in %s (%s observed)" env (counted64 c.RowCount "row" "rows"))
                 let clauses =
                     perEnv
                     |> List.choose (fun (env, _, _) ->
@@ -1967,6 +2063,11 @@ module Estate =
                         |> Option.map (fun ec -> difficultyOf difficultyCtx logicalTarget ec false)
                     else None
                 let difficultyClause = difficulty |> Option.map snd |> Option.defaultValue ""
+                // The approval attribution (align-II.5): a subject-level fact,
+                // rendered once per finding — the contributions each carry the
+                // same sentence, so the first is the finding's.
+                let attributionNote =
+                    perEnvRows |> List.tryPick (fun c -> c.Attribution) |> Option.defaultValue ""
                 // The one lever per line (waves A5 + A6), minted from the
                 // presentation contract's per-kind form: a ruling carries
                 // its own imperative; a block review names the primary
@@ -1989,10 +2090,11 @@ module Estate =
                       Lane = EstateFindingKind.laneOf kind
                       Plane = plane
                       Envs = perEnvRows |> List.map (fun c -> c.Env, c.Weight)
-                      Statement = (sprintf "%s%s.%s%s%s" body clean majorityNote difficultyClause forkNote).TrimEnd()
+                      Statement = (sprintf "%s%s.%s%s%s%s" body clean majorityNote difficultyClause attributionNote forkNote).TrimEnd()
                       Lever = lever
                       Fork = fork
-                      Difficulty = (difficulty |> Option.map fst) }
+                      Difficulty = (difficulty |> Option.map fst)
+                      Pedigree = PedigreeEntry.ofEnvs (perEnvRows |> List.map (fun c -> c.Env, c.Weight)) }
                 finding, (difficulty |> Option.map fst))
             // Impact-ranked, but reconciliation difficulty leads: the hardest
             // reconciliations surface first, ties broken by the largest count.
@@ -2021,7 +2123,8 @@ module Estate =
           Burndown = None
           Streak = 0
           Fidelity = FidelityClause.NotConfigured
-          StaticInspected = not (Map.isEmpty staticContent.ByEnv) }
+          StaticInspected = not (Map.isEmpty staticContent.ByEnv)
+          Rulings = [] }
 
     /// `computeWith` under no active posture and the default repair band —
     /// the zero-flag basis, and every pre-A6 call site verbatim.
@@ -2136,7 +2239,8 @@ module Estate =
               // (the registry's generic Ruling is the form; the flow rides here).
               Lever = Some (sprintf "Run: projection check fidelity %s." flow)
               Fork = false
-              Difficulty = None }
+              Difficulty = None
+              Pedigree = [] }
         let extra =
             match clause with
             | FidelityClause.NotConfigured
@@ -2146,10 +2250,10 @@ module Estate =
                     (sprintf "The fidelity proof for flow '%s' has not run against the current estate." flow) ]
             | FidelityClause.Stale (flow, ageDays) ->
                 [ proofFinding EstateFindingKind.ProofStale flow
-                    (sprintf "The fidelity proof for flow '%s' is %s day(s) old and the estate's evidence has moved since — the proof predates what this run can see." flow (humane ageDays)) ]
+                    (sprintf "The fidelity proof for flow '%s' is %s old and the estate's evidence has moved since — the proof predates what this run can see." flow (counted ageDays "day" "days")) ]
             | FidelityClause.Diverged (flow, diffs) ->
                 [ proofFinding EstateFindingKind.ProofDiverged flow
-                    (sprintf "The fidelity proof for flow '%s' reports %s differing row(s) — the load is not yet byte-faithful." flow (humane64 diffs)) ]
+                    (sprintf "The fidelity proof for flow '%s' reports %s — the load is not yet byte-faithful." flow (counted64 diffs "differing row" "differing rows")) ]
         let findings = report.Findings @ extra
         let verdict =
             if List.isEmpty findings then Verdict.Unified
@@ -2167,6 +2271,22 @@ module Estate =
         (provenance: Map<string, EvidenceProvenance>)
         (report: EstateReport)
         : EstateReport =
+        // align-II.12 — the pedigree's standing and capture instant derive
+        // from the SAME provenance partition the masthead confidence line
+        // draws (firm = live/re-profiled/content-verified cache; advisory
+        // = offline/absent). Statement bytes, lanes, and the verdict never
+        // move here — the pedigree is the typed record behind the prose.
+        let restamp (entry: PedigreeEntry) : PedigreeEntry =
+            match Map.tryFind entry.Env provenance with
+            | Some EvidenceProvenance.Live
+            | Some (EvidenceProvenance.Refreshed _)
+            | None -> entry
+            | Some (EvidenceProvenance.Cached (captured, _, _)) ->
+                { entry with CapturedAtUtc = Some captured }
+            | Some (EvidenceProvenance.Offline (captured, _)) ->
+                { entry with Standing = EvidenceStanding.Advisory; CapturedAtUtc = Some captured }
+            | Some EvidenceProvenance.Absent ->
+                { entry with Standing = EvidenceStanding.Advisory }
         { report with
             Evidence = store
             Bases =
@@ -2174,7 +2294,135 @@ module Estate =
                 |> List.map (fun b ->
                     match Map.tryFind b.Env provenance with
                     | Some p -> { b with Provenance = p }
-                    | None -> b) }
+                    | None -> b)
+            Findings =
+                report.Findings
+                |> List.map (fun f -> { f with Pedigree = f.Pedigree |> List.map restamp }) }
+
+    /// The sink's claim findings for one environment (the data-sink chapter,
+    /// S11b): the journal-assembled adjudication becomes DECIDE-lane board
+    /// findings. `Contested` carries the FORK witness — two live writers on
+    /// one table turn the estate verdict to Forked (exit 5), never a silent
+    /// pick; `TombstoneOnly` is the chapter's original incident (deleted
+    /// from the module, table intact, shape addressable through the sink's
+    /// witnessed editions); `Adopted` is lineage, not a finding; `Unclaimed`
+    /// is S12's residue sweep. Statements render through the strategy's ONE
+    /// renderer (`PhysicalClaimRules.toStructured`); levers mint from the
+    /// per-kind contract row exactly like every other finding.
+    let sinkClaimFindingsOf
+        (env: string)
+        (outcomes: (PhysicalClaimRules.ClaimSet * PhysicalClaimRules.PhysicalClaimOutcome) list)
+        : Finding list =
+        let leverOf (kind: EstateFindingKind) =
+            match EstateFindingKind.leverFormOf kind with
+            | EstateLeverForm.Ruling imperative -> Some imperative
+            | _ -> None
+        let clauseOf (field: string) (set: PhysicalClaimRules.ClaimSet) outcome =
+            PhysicalClaimRules.toStructured set outcome
+            |> List.tryFind (fst >> (=) field)
+            |> Option.map snd
+            |> Option.defaultValue ""
+        outcomes
+        |> List.choose (fun (set, outcome) ->
+            // align-III.13: the subject is the full physical address —
+            // byte-identical ("schema.table") for the standing posture; a
+            // multi-schema estate's findings now name the schema that was
+            // actually observed instead of a declared constant.
+            let subject = PhysicalClaimRules.PhysicalTableRef.text set.Ref
+            match outcome with
+            | PhysicalClaimRules.PhysicalClaimOutcome.Contested rivals ->
+                Some
+                    { Key = FindingKey.create EstateFindingKind.PhysicalClaimContested subject
+                      Kind = EstateFindingKind.PhysicalClaimContested
+                      Lane = EstateFindingKind.laneOf EstateFindingKind.PhysicalClaimContested
+                      Plane = EstateFindingKind.planeOf EstateFindingKind.PhysicalClaimContested
+                      Envs = [ env, int64 (List.length rivals) ]
+                      Statement =
+                        sprintf "%s carries %d live claims — %s — and a live writer is never silently outranked; the first rival is the ladder's recommendation."
+                            subject (List.length rivals) (clauseOf "rivals" set outcome)
+                      Lever = leverOf EstateFindingKind.PhysicalClaimContested
+                      Fork = true
+                      Difficulty = None
+                      Pedigree = PedigreeEntry.ofEnvs [ env, int64 (List.length rivals) ] }
+            | PhysicalClaimRules.PhysicalClaimOutcome.TombstoneOnly tombstones ->
+                Some
+                    { Key = FindingKey.create EstateFindingKind.PhysicalTombstoneOnly subject
+                      Kind = EstateFindingKind.PhysicalTombstoneOnly
+                      Lane = EstateFindingKind.laneOf EstateFindingKind.PhysicalTombstoneOnly
+                      Plane = EstateFindingKind.planeOf EstateFindingKind.PhysicalTombstoneOnly
+                      Envs = [ env, int64 (List.length tombstones) ]
+                      Statement =
+                        sprintf "%s is claimed only by deleted entities — %s — the table and its rows survive, and each shape stays addressable through the sink's witnessed editions."
+                            subject (clauseOf "tombstones" set outcome)
+                      Lever = leverOf EstateFindingKind.PhysicalTombstoneOnly
+                      Fork = false
+                      Difficulty = None
+                      Pedigree = PedigreeEntry.ofEnvs [ env, int64 (List.length tombstones) ] }
+            | PhysicalClaimRules.PhysicalClaimOutcome.Unclaimed ->
+                // S12 — the residue sweep's outcome: on disk with no
+                // metadata claim at all, outside the modeled estate.
+                Some
+                    { Key = FindingKey.create EstateFindingKind.PhysicalUnclaimed subject
+                      Kind = EstateFindingKind.PhysicalUnclaimed
+                      Lane = EstateFindingKind.laneOf EstateFindingKind.PhysicalUnclaimed
+                      Plane = EstateFindingKind.planeOf EstateFindingKind.PhysicalUnclaimed
+                      Envs = [ env, 1L ]
+                      Statement =
+                        sprintf "%s exists in the environment with no metadata claim — outside the modeled estate entirely."
+                            subject
+                      Lever = leverOf EstateFindingKind.PhysicalUnclaimed
+                      Fork = false
+                      Difficulty = None
+                      Pedigree = PedigreeEntry.ofEnvs [ env, 1L ] }
+            | PhysicalClaimRules.PhysicalClaimOutcome.Adopted _ ->
+                // S14 — the cross-cutover identity correspondence: a sole
+                // live claim over tombstoned lineage PROPOSES continuity
+                // (one physical table; delete-then-re-register). A DECIDE
+                // finding only — the ruling adopts or rejects; the tool
+                // never threads an identity on its own (the proposer can
+                // write nothing: no catalog reaches it, no SsKey leaves it).
+                // A clean sole adoption (no tombstones) proposes nothing.
+                PhysicalClaimRules.proposeCorrespondence set outcome
+                |> Option.map (fun p ->
+                    let fromText =
+                        PhysicalClaimRules.correspondenceClauses p
+                        |> List.tryFind (fst >> (=) "from") |> Option.map snd |> Option.defaultValue ""
+                    let toText =
+                        PhysicalClaimRules.correspondenceClauses p
+                        |> List.tryFind (fst >> (=) "to") |> Option.map snd |> Option.defaultValue ""
+                    { Key = FindingKey.create EstateFindingKind.IdentityCutoverCorrespondence subject
+                      Kind = EstateFindingKind.IdentityCutoverCorrespondence
+                      Lane = EstateFindingKind.laneOf EstateFindingKind.IdentityCutoverCorrespondence
+                      Plane = EstateFindingKind.planeOf EstateFindingKind.IdentityCutoverCorrespondence
+                      Envs = [ env, 1L ]
+                      Statement =
+                        sprintf "%s appears to continue as %s%s (one physical table %s; tombstone-then-registration) — confirm or reject the correspondence."
+                            fromText toText (if p.SameName then "" else " (renamed)") subject
+                      Lever = leverOf EstateFindingKind.IdentityCutoverCorrespondence
+                      Fork = false
+                      Difficulty = None
+                      Pedigree = PedigreeEntry.ofEnvs [ env, 1L ] }))
+
+    /// Stamp the sink's claim findings onto a computed report and re-derive
+    /// the verdict under the SAME formula (unified ⇔ nothing diverges;
+    /// forked ⇔ any fork witness; converging otherwise) — a Contested claim
+    /// forks the estate exactly like a cross-environment fork. Empty claims
+    /// (no sink rides, or every table adopted) is the identity, so a run
+    /// with no sink store is byte-identical.
+    let withSinkClaims
+        (claimsByEnv: (string * (PhysicalClaimRules.ClaimSet * PhysicalClaimRules.PhysicalClaimOutcome) list) list)
+        (report: EstateReport)
+        : EstateReport =
+        let sinkFindings =
+            claimsByEnv |> List.collect (fun (env, outcomes) -> sinkClaimFindingsOf env outcomes)
+        if List.isEmpty sinkFindings then report
+        else
+            let findings = report.Findings @ sinkFindings
+            let verdict =
+                if List.isEmpty findings then Verdict.Unified
+                elif findings |> List.exists (fun f -> f.Fork) then Verdict.Forked
+                else Verdict.Converging
+            { report with Findings = findings; Verdict = verdict }
 
     /// The estate is unified — the exit-0 predicate.
     let isUnified (report: EstateReport) : bool =
@@ -2188,6 +2436,54 @@ module Estate =
     let laneCounts (report: EstateReport) : (EstateLane * int) list =
         [ EstateLane.Decide; EstateLane.Repair; EstateLane.Relax; EstateLane.Watch ]
         |> List.map (fun lane -> lane, List.length (laneFindings lane report))
+
+    // ----------------------------------------------------------------------
+    // The ruling reception (align-II.5; A53). Record + render ONLY: the
+    // stamped rulings join their findings at render by key — no lane moves,
+    // no verdict re-derivation, and the cutover ladder still counts a ruled
+    // finding. Applying a ruling to policy or model is the named deferral
+    // (align-II.0 standing ruling; the align-II.6 verb records, the
+    // operator applies).
+    // ----------------------------------------------------------------------
+
+    /// The face's ruling stamp: the recorded operator rulings the keyed
+    /// store carries (`RulingStore.loadAll`). `compute` stays store-blind;
+    /// an empty stamp is the identity on every rendered surface.
+    let withRulings (rulings: OperatorRuling<FindingKey> list) (report: EstateReport) : EstateReport =
+        { report with Rulings = rulings }
+
+    /// The recorded ruling for one finding, when the stamped set carries
+    /// its key. A ruling keyed to no finding on this run renders nowhere —
+    /// the board never fabricates a row for judgment whose subject is gone.
+    let rulingFor (report: EstateReport) (f: Finding) : OperatorRuling<FindingKey> option =
+        report.Rulings |> List.tryFind (fun r -> r.Subject = f.Key)
+
+    /// One recorded ruling's board line — minted once so the plain lens,
+    /// the rich lens, and the JSON's readers say the same judgment. The
+    /// line REPLACES the lever on a ruled finding: the DECIDE question is
+    /// answered, and one line carries one move (THE_VOICE §8). Date-only
+    /// instant — the board is a daily-cadence surface; the ruling document
+    /// keeps the full instant.
+    let rulingText (r: OperatorRuling<FindingKey>) : string =
+        let verdictWord =
+            match r.Verdict with
+            | RulingVerdict.Confirmed -> "confirmed"
+            | RulingVerdict.Rejected -> "rejected"
+        let whyClause =
+            match r.Rationale with
+            | Some why -> sprintf " — %s" (why.TrimEnd '.')
+            | None -> ""
+        sprintf "The ruling stands: %s by %s on %s%s."
+            verdictWord r.By
+            (r.At.ToString("yyyy-MM-dd", Globalization.CultureInfo.InvariantCulture))
+            whyClause
+
+    /// The DECIDE findings still awaiting judgment — a recorded ruling
+    /// answers its finding, so the ACTION line skips it (the one next move
+    /// is never a question already answered).
+    let unruledDecide (report: EstateReport) : Finding list =
+        laneFindings EstateLane.Decide report
+        |> List.filter (fun f -> rulingFor report f |> Option.isNone)
 
     // ----------------------------------------------------------------------
     // The board — the rolled-up text projection (ten regions, fixed order;
@@ -2228,9 +2524,9 @@ module Estate =
     /// list is `environments.json`'s, searchable, never scrollable).
     let laneCap : int = 8
 
-    /// The humane capture-age clause ("today" / "N day(s) ago").
+    /// The humane capture-age clause ("today" / "N days ago").
     let private ageText (ageDays: int) : string =
-        if ageDays <= 0 then "today" else sprintf "%s day(s) ago" (humane ageDays)
+        if ageDays <= 0 then "today" else sprintf "%s ago" (counted ageDays "day" "days")
 
     /// The capped moved-kind enumeration — the first three named, the
     /// remainder counted (§12: cap the breadth, name the remainder).
@@ -2248,10 +2544,10 @@ module Estate =
         | EvidenceProvenance.Live ->
             "live data evidence, profiled this run"
         | EvidenceProvenance.Cached (_, age, kinds) ->
-            sprintf "evidence captured %s; fingerprints (row count, max key, and content hash) clean across %s kind(s) — the cache is content-verified fresh" (ageText age) (humane kinds)
+            sprintf "evidence captured %s; fingerprints (row count, max key, and content hash) clean across %s — the cache is content-verified fresh" (ageText age) (counted kinds "table" "tables")
         | EvidenceProvenance.Refreshed moved ->
-            sprintf "%s kind(s) moved since capture (%s) — re-profiled this run"
-                (humane (List.length moved)) (movedKindsText moved)
+            sprintf "%s moved since capture (%s) — re-profiled this run"
+                (counted (List.length moved) "table" "tables") (movedKindsText moved)
         | EvidenceProvenance.Offline (_, age) ->
             sprintf "offline evidence, captured %s and unprobed — every verdict standing on it is advisory" (ageText age)
         | EvidenceProvenance.Absent ->
@@ -2275,11 +2571,11 @@ module Estate =
                 | EvidenceProvenance.Absent -> false)
         match advisory with
         | [] ->
-            sprintf "Evidence confidence: all %s environment(s) stand on firm evidence (live, re-profiled, or content-verified cache)."
-                (humane (List.length firm))
+            sprintf "Evidence confidence: %s on firm evidence (live, re-profiled, or content-verified cache)."
+                (counted (List.length firm) "environment stands" "environments stand")
         | _ ->
-            sprintf "Evidence confidence: %s on firm evidence, %s advisory (%s) — verdicts leaning on the advisory environment(s) are advisory too."
-                (humane (List.length firm)) (humane (List.length advisory))
+            sprintf "Evidence confidence: %s on firm evidence, %s advisory (%s) — verdicts leaning on advisory evidence are advisory too."
+                (counted (List.length firm) "environment" "environments") (humane (List.length advisory))
                 (advisory |> List.map (fun b -> b.Env) |> String.concat ", ")
 
     /// The coverage-honesty line (THE_VOICE §14): the classes this run does not
@@ -2304,8 +2600,8 @@ module Estate =
     /// through the Voice catalog first, then these lines.
     let render (report: EstateReport) : string list =
         [ // MASTHEAD — the estate and its basis.
-          yield sprintf "ENVIRONMENTS — %s environment(s) against %s"
-                    (humane (List.length report.Bases)) (TargetOperand.basisText report.Target)
+          yield sprintf "ENVIRONMENTS — %s against %s"
+                    (counted (List.length report.Bases) "environment" "environments") (TargetOperand.basisText report.Target)
           for basis in report.Bases do
               yield sprintf "  %-14s %s" basis.Env (provenanceText basis)
           yield sprintf "  %s" (evidenceConfidenceLine report)
@@ -2325,14 +2621,14 @@ module Estate =
                | FidelityClause.NotConfigured ->
                    "  The fidelity clause is not configured; the verdict stands on the schema and data evidence."
                | FidelityClause.Green (flow, ageDays) ->
-                   let age = if ageDays <= 0 then "captured today" else sprintf "%s day(s) old" (humane ageDays)
+                   let age = if ageDays <= 0 then "captured today" else sprintf "%s old" (counted ageDays "day" "days")
                    sprintf "  The fidelity proof for flow '%s' is green — every row byte-identical (%s)." flow age
                | FidelityClause.Missing flow ->
                    sprintf "  The fidelity proof for flow '%s' has not run — it stands as a ruling below." flow
                | FidelityClause.Stale (flow, ageDays) ->
-                   sprintf "  The fidelity proof for flow '%s' is %s day(s) old and predates this run's evidence — it stands as a ruling below." flow (humane ageDays)
+                   sprintf "  The fidelity proof for flow '%s' is %s old and predates this run's evidence — it stands as a ruling below." flow (counted ageDays "day" "days")
                | FidelityClause.Diverged (flow, diffs) ->
-                   sprintf "  The fidelity proof for flow '%s' reports %s differing row(s) — it stands as a ruling below." flow (humane64 diffs))
+                   sprintf "  The fidelity proof for flow '%s' reports %s — it stands as a ruling below." flow (counted64 diffs "differing row" "differing rows"))
           // Coverage honesty (THE_VOICE §14 — a clean verdict never overstates
           // what it inspected), the one source `coverageLine` (the rich board
           // lens reads the same sentence).
@@ -2349,9 +2645,13 @@ module Estate =
                   let shown = fs |> List.truncate laneCap
                   for f in shown do
                       yield sprintf "  %s" f.Statement
-                      match f.Lever with
-                      | Some lever -> yield sprintf "      → %s" lever
-                      | None -> ()
+                      // A recorded ruling answers the finding's question —
+                      // it takes the lever's slot (align-II.5; one line,
+                      // one move).
+                      match rulingFor report f, f.Lever with
+                      | Some ruling, _ -> yield sprintf "      → %s" (rulingText ruling)
+                      | None, Some lever -> yield sprintf "      → %s" lever
+                      | None, None -> ()
                   let remainder = List.length fs - List.length shown
                   if remainder > 0 then
                       yield sprintf "  … and %s more — environments.json carries every finding." (humane remainder)
@@ -2362,9 +2662,10 @@ module Estate =
           yield "EMISSION — the schema this estate would publish, audited against database reality"
           for f in report.EmissionFindings |> List.truncate laneCap do
               yield sprintf "  %s" f.Statement
-              match f.Lever with
-              | Some lever -> yield sprintf "      → %s" lever
-              | None -> ()
+              match rulingFor report f, f.Lever with
+              | Some ruling, _ -> yield sprintf "      → %s" (rulingText ruling)
+              | None, Some lever -> yield sprintf "      → %s" lever
+              | None, None -> ()
           let emissionExtra = List.length report.EmissionFindings - laneCap
           if emissionExtra > 0 then
               yield sprintf "  … and %s more — environments.json carries every finding." (humane emissionExtra)
@@ -2414,11 +2715,11 @@ module Estate =
           | Some b, _ ->
               let sinceClause =
                   if b.SinceAgeDays <= 0 then "earlier today"
-                  else sprintf "%s day(s) ago" (humane b.SinceAgeDays)
+                  else sprintf "%s ago" (counted b.SinceAgeDays "day" "days")
               let oldestClause =
                   match b.OldestDays with
                   | Some days when b.Remaining + b.Opened > 0 ->
-                      sprintf " — the oldest open finding is %s day(s) old" (humane days)
+                      sprintf " — the oldest open finding is %s old" (counted days "day" "days")
                   | _ -> ""
               yield sprintf "BURNDOWN — since run %s (%s): %s closed, %s opened, %s remain%s."
                         b.SinceRunId sinceClause (humane b.Closed) (humane b.Opened) (humane b.Remaining) oldestClause
@@ -2427,17 +2728,17 @@ module Estate =
           | None, EvidenceStoreBasis.Disabled ->
               yield "BURNDOWN — the estate keeps no memory without a store; PROJECTION_ESTATE_DIR (or the ledger directory's estate child) enables the burndown."
           if report.Streak > 0 then
-              yield sprintf "  The estate has read unified for %s consecutive run(s)." (humane report.Streak)
+              yield sprintf "  The estate has read unified for %s." (counted report.Streak "consecutive run" "consecutive runs")
           yield ""
 
           // ARTIFACTS — the index: one line per artifact naming its role.
           yield "ARTIFACTS"
           yield "  environments.json — the full findings record: every board element, machine-readable."
           for file, blocks in report.Remediation do
-              yield sprintf "  %s — %s prepared repair block(s); the locating SELECT is active, every repair is commented." file (humane blocks)
+              yield sprintf "  %s — %s; the locating SELECT is active, every repair is commented." file (counted blocks "prepared repair block" "prepared repair blocks")
           match report.OverlayEntries with
           | Some entries when entries > 0 ->
-              yield sprintf "  environments.overlay.json — %s interim change(s) as config edits; each carries the probe that clears it. The merge is an operator edit; the engine never applies it." (humane entries)
+              yield sprintf "  environments.overlay.json — %s as config edits; each carries the probe that clears it. The merge is an operator edit; the engine never applies it." (counted entries "interim change" "interim changes")
               yield "  environments.probes.sql — every reopen probe, runnable as one batch; the posture's retirement meter."
           | _ -> ()
           yield ""
@@ -2455,14 +2756,18 @@ module Estate =
           yield ""
 
           // ACTION — the one next move; a holding estate names its streak.
+          // A ruled DECIDE finding is an answered question (align-II.5) —
+          // the action names the first UNRULED one, and a fully-ruled queue
+          // says so instead of asking again.
           let action =
-              match laneFindings EstateLane.Decide report with
-              | f :: _ -> sprintf "Next: rule the first DECIDE finding — %s" (FindingKey.readableLabel f.Key)
-              | [] ->
+              match unruledDecide report, laneFindings EstateLane.Decide report with
+              | f :: _, _ -> sprintf "Next: rule the first DECIDE finding — %s" (FindingKey.readableLabel f.Key)
+              | [], _ :: _ -> "Next: every DECIDE finding carries its ruling — carry the rulings into the model and config, then re-run."
+              | [], [] ->
                   match laneFindings EstateLane.Repair report with
                   | f :: _ -> sprintf "Next: review the first REPAIR finding — %s" (FindingKey.readableLabel f.Key)
                   | [] when report.Streak > 1 ->
-                      sprintf "Next: the estate holds — %s consecutive unified run(s); re-run on the publish cadence." (humane report.Streak)
+                      sprintf "Next: the estate holds — %s; re-run on the publish cadence." (counted report.Streak "consecutive unified run" "consecutive unified runs")
                   | [] -> "Next: the estate holds; re-run on the publish cadence."
           yield action ]
 
@@ -2593,6 +2898,20 @@ module Estate =
             (match f.Lever with
              | Some lever -> o.["lever"] <- JsonValue.Create lever
              | None -> ())
+            // The recorded ruling (align-II.5): the machine sibling carries
+            // the judgment beside the lever — a reader sees both the
+            // question's imperative and its recorded answer.
+            (match rulingFor report f with
+             | Some r ->
+                 let ruling = JsonObject()
+                 ruling.["verdict"] <- JsonValue.Create(RulingVerdict.token r.Verdict)
+                 ruling.["by"] <- JsonValue.Create r.By
+                 ruling.["at"] <- JsonValue.Create(r.At.ToString("O", Globalization.CultureInfo.InvariantCulture))
+                 (match r.Rationale with
+                  | Some why -> ruling.["rationale"] <- JsonValue.Create why
+                  | None -> ())
+                 o.["ruling"] <- ruling
+             | None -> ())
             if f.Fork then o.["fork"] <- JsonValue.Create true
             // The reconciliation-difficulty signal (data-repair findings) — the
             // sortable/filterable field a downstream consumer keys on.
@@ -2608,6 +2927,19 @@ module Estate =
                 e.["weight"] <- JsonValue.Create weight
                 perEnv.Add e
             o.["environments"] <- perEnv
+            // align-II.12 — the typed record behind the statement.
+            if not (List.isEmpty f.Pedigree) then
+                let pedigree = JsonArray()
+                for entry in f.Pedigree do
+                    let e = JsonObject()
+                    e.["env"] <- JsonValue.Create entry.Env
+                    e.["standing"] <- JsonValue.Create(match entry.Standing with EvidenceStanding.Firm -> "firm" | EvidenceStanding.Advisory -> "advisory")
+                    e.["magnitude"] <- JsonValue.Create entry.Magnitude
+                    (match entry.CapturedAtUtc with
+                     | Some at -> e.["capturedAtUtc"] <- JsonValue.Create(at.ToString("O", Globalization.CultureInfo.InvariantCulture))
+                     | None -> ())
+                    pedigree.Add e
+                o.["pedigree"] <- pedigree
             findings.Add o
         root.["findings"] <- findings
         // The emission-audit dimension (Phase 1): target-shape fidelity, its
@@ -2622,6 +2954,17 @@ module Estate =
             o.["statement"] <- JsonValue.Create f.Statement
             (match f.Lever with
              | Some lever -> o.["lever"] <- JsonValue.Create lever
+             | None -> ())
+            (match rulingFor report f with
+             | Some r ->
+                 let ruling = JsonObject()
+                 ruling.["verdict"] <- JsonValue.Create(RulingVerdict.token r.Verdict)
+                 ruling.["by"] <- JsonValue.Create r.By
+                 ruling.["at"] <- JsonValue.Create(r.At.ToString("O", Globalization.CultureInfo.InvariantCulture))
+                 (match r.Rationale with
+                  | Some why -> ruling.["rationale"] <- JsonValue.Create why
+                  | None -> ())
+                 o.["ruling"] <- ruling
              | None -> ())
             emission.Add o
         root.["emission"] <- emission

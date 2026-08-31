@@ -300,4 +300,5 @@ module DataLoadPlan =
                 "Surface non-nullable same-COMPONENT FKs (unresolved components only — v7 slice 3) as `UnbreakableCycleFk` so realizations refuse to execute an unsatisfiable plan. Structural; total decisions, named skips."
               TransformSite.operatorIntent "identitySubstitution" Insertion
                 "Apply the operator-supplied `SurrogateRemapContext` to FK values in raw rows, producing post-substitution rows in target identity space. Every FK column whose target is in the remap is re-pointed (Source surrogate → assigned-side surrogate); rows whose targeted FK has no matched assigned counterpart are dropped (skip-and-diagnose). This is the canonical OperatorIntent Insertion site for the entire data-load family — realizations (StaticSeedsEmitter, MigrationDependenciesEmitter, BootstrapEmitter, Transfer.runReconciling) consume the post-substitution plan and classify entirely DataIntent. Empty remap → identity over rows (skeleton-purity preserved)." ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }

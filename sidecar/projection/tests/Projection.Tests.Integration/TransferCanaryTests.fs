@@ -398,6 +398,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                 }))
 
     [<Fact>]
+    // @axis Data roundtrip
     member this.``data canary: multi-table FK chain round-trips with empty PhysicalSchema diff`` () =
         this.RoundTrips "XferTwo" TransferCanaryFixtures.twoTableDdl TransferCanaryFixtures.twoTableSeed
 

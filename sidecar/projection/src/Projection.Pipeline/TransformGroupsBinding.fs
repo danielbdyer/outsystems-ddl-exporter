@@ -103,13 +103,13 @@ module RegisteredTransformTags =
     /// This is INTENTIONALLY partial, NOT a bijection. `TransformGroup`
     /// and `OverlayAxis` are distinct concepts (Classification.fs: a
     /// group names *which preset*; an axis names *whose intent*). The
-    /// `UserReflow` group is the worked counter-example: `UserFkReflowPass`
-    /// classifies its `OperatorIntent` site on the *Selection* axis
-    /// ("re-direction reads more naturally as Selection"), yet the
-    /// operator-toggle preset it belongs to is `UserReflow`. So the
-    /// `UserReflow` group is NOT axis-derivable; it stays a hand `passTags`
-    /// row keyed by the pass name. The reverse-coverage guard
-    /// (`TransformGroupsBindingTests`) therefore scopes to the
+    /// `Identity` axis is the worked counter-example (align-I.3): BOTH
+    /// `UserFkReflowPass` and `BridgeRetargetPass` classify their
+    /// `OperatorIntent` sites on the Identity axis, yet they belong to
+    /// two DISTINCT operator-toggle presets (`UserReflow`,
+    /// `BridgeRetarget`) — the axis cannot pick the group, so both stay
+    /// hand `passTags` rows keyed by pass name. The reverse-coverage
+    /// guard (`TransformGroupsBindingTests`) therefore scopes to the
     /// axis-derivable groups — it catches the dominant silent-always-run
     /// risk (a new `OperatorIntent Tightening` pass added without a
     /// `passTags` row) without over-firing on the group-less axes.
@@ -119,7 +119,12 @@ module RegisteredTransformTags =
         | Selection
         | Emission
         | Insertion
-        | Ordering -> None
+        | Ordering
+        // Identity (align-I.2) is PERMANENTLY not group-derivable: two
+        // distinct operator presets (UserReflow, BridgeRetarget) share the
+        // axis, so the axis cannot pick the group — both stay hand
+        // `passTags` rows.
+        | Identity -> None
 
     /// Look up a pass's tags by name. `Set.empty` for passes not in
     /// the map (untagged passes always run).
@@ -131,8 +136,9 @@ module RegisteredTransformTags =
     /// The reverse-coverage guard now closes the axis-derivable half via
     /// `groupForAxis` (above): any pass whose `Sites` carry `OperatorIntent`
     /// on an axis that maps to a `TransformGroup` MUST be tagged with that
-    /// group. The `UserReflow` group is not axis-derivable (see `groupForAxis`)
-    /// and stays a hand row guarded by the forward coverage test.
+    /// group. The `UserReflow` and `BridgeRetarget` groups are not
+    /// axis-derivable (see `groupForAxis` — their passes share the Identity
+    /// axis) and stay hand rows guarded by the forward coverage test.
     let tagsFor (name: string) : Set<TransformGroup> =
         match Map.tryFind name passTags with
         | Some s -> s

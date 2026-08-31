@@ -18,10 +18,11 @@ open Projection.Adapters.Osm  // LINT-ALLOW: intentional adapter composition —
 /// surface: V1 layers `IDbConnectionFactory` + `IDbCommandExecutor` +
 /// per-processor abstractions over a generic V1-domain pipeline; V2 ships
 /// a direct `SqlConnection`-receiving function because V2's runner is the
-/// canary's offline-extraction surface — it walks the carbon-copied SQL's
-/// 22 result sets, parses the first 5 into typed F# records mirroring V1's
-/// DTOs, and assembles a `OssysRowsetTypes.RowsetBundle` consumable by V2's
-/// existing `CatalogReader.parse` JSON / rowset adapter.
+/// canary's offline-extraction surface — it walks the script's
+/// `ExpectedResultSets` result sets (the count lives on that constant
+/// alone), parses the V2-consumed rowsets into typed F# records mirroring
+/// V1's DTOs, and assembles a `OssysRowsetTypes.RowsetBundle` consumable
+/// by V2's existing `CatalogReader.parse` JSON / rowset adapter.
 ///
 /// **Chapter 5.0 slice γ.** The canary's bootstrap+extract flow:
 ///   1. Caller deploys `MetadataExtractionSql.readEdgeCaseSeed()` against
@@ -31,12 +32,11 @@ open Projection.Adapters.Osm  // LINT-ALLOW: intentional adapter composition —
 ///      `SqlConnection` to that database + the V1 parameters.
 ///   3. This module reads `MetadataExtractionSql.read()` (the rowsets SQL),
 ///      executes it via `SqlCommand`, and walks `DbDataReader.NextResultAsync`
-///      to enumerate all 22 result sets.
-///   4. The first 5 result sets (Modules / Entities / Attributes /
-///      References / PhysicalTables) parse into typed F# records; the
-///      remaining 17 are skipped (the SQL still emits them but V2's
-///      current consumption surface is the narrow 4-rowset
-///      `OssysRowsetTypes.RowsetBundle`).
+///      to enumerate all `ExpectedResultSets` result sets.
+///   4. The V2-consumed result sets (logical metadata, physical
+///      reflection, sequences/temporal, the capability vector) parse into
+///      typed F# records; the V1-SUNSET JSON-aggregation tail is skipped
+///      (the SQL still emits those sets in order).
 ///   5. Slice δ composes the typed records into the `RowsetBundle` via
 ///      JOIN logic (PhysicalTables → KindRow.DbSchema; ForeignKey reality
 ///      → ReferenceRow.DeleteRuleCode / HasDbConstraint).
@@ -77,6 +77,110 @@ module MetadataSnapshotRunner =
             OnlyActiveAttributes = false
             EntityFilterJson     = None
         }
+
+    /// align-II.9 (E2; audit a1) — one axis a scoped acquisition narrowed
+    /// on. Each axis names the `SnapshotParameters` knob that fired it;
+    /// the ATTRIBUTE axis is A49's named residual — the pure narrowing
+    /// seam cannot express it, so it always pays the wire.
+    [<RequireQualifiedAccess>]
+    type ScopeAxis =
+        /// `ModuleNames` non-empty — narrowed to named modules.
+        | Modules
+        /// `IncludeSystem = false` — system modules excluded.
+        | System
+        /// `IncludeInactive = false` — inactive entities excluded.
+        | Lifecycle
+        /// `OnlyActiveAttributes = true` — inactive attributes excluded
+        /// (A49's named residual: never sink-servable).
+        | AttributeActivity
+        /// `EntityFilterJson` present — narrowed to named entities.
+        | EntityFilter
+
+    /// align-II.9 — HOW an acquisition was scoped, as a value: total (the
+    /// show-me-everything shape) or narrowed on the named axes. Stamped on
+    /// every `MetadataSnapshot`; persisted by the codec as an OPTIONAL
+    /// field defaulting `Total` — honest by the totality gate's own
+    /// invariant (only total acquisitions were ever witnessed), so old
+    /// stored snapshots read back truthfully with no version bump.
+    [<RequireQualifiedAccess>]
+    type AcquisitionScope =
+        | Total
+        | Scoped of axes: ScopeAxis list
+
+    [<RequireQualifiedAccess>]
+    module ScopeAxis =
+
+        /// Every axis, in canonical (declaration) order — the order
+        /// `AcquisitionScope.ofParameters` emits and the codec persists.
+        let all : ScopeAxis list =
+            [ ScopeAxis.Modules; ScopeAxis.System; ScopeAxis.Lifecycle
+              ScopeAxis.AttributeActivity; ScopeAxis.EntityFilter ]
+
+        /// Wire token (the codec's closed vocabulary).
+        let token (a: ScopeAxis) : string =
+            match a with
+            | ScopeAxis.Modules           -> "modules"
+            | ScopeAxis.System            -> "system"
+            | ScopeAxis.Lifecycle         -> "lifecycle"
+            | ScopeAxis.AttributeActivity -> "attributeActivity"
+            | ScopeAxis.EntityFilter      -> "entityFilter"
+
+        let tryParse (t: string) : ScopeAxis option =
+            all |> List.tryFind (fun a -> token a = t)
+
+    [<RequireQualifiedAccess>]
+    module AcquisitionScope =
+
+        /// The ONE classifier: the scope an acquisition ran under, read
+        /// from its parameters. Emits axes in canonical order; the empty
+        /// axis list IS `Total` (never `Scoped []` — the constructor
+        /// discipline below keeps the two states distinct).
+        let ofParameters (p: SnapshotParameters) : AcquisitionScope =
+            let axes =
+                [ if not (List.isEmpty p.ModuleNames) then ScopeAxis.Modules
+                  if not p.IncludeSystem then ScopeAxis.System
+                  if not p.IncludeInactive then ScopeAxis.Lifecycle
+                  if p.OnlyActiveAttributes then ScopeAxis.AttributeActivity
+                  if Option.isSome p.EntityFilterJson then ScopeAxis.EntityFilter ]
+            match axes with
+            | [] -> AcquisitionScope.Total
+            | axes -> AcquisitionScope.Scoped axes
+
+        /// Whether a state witnessed under `held` can serve a read
+        /// requested under `requested` through the pure narrowing seam
+        /// (A49's three-way law): a TOTAL held state serves any request
+        /// narrowed on the module/system/lifecycle/entity axes (narrowing
+        /// commutes across the wire); the ATTRIBUTE axis is the law's
+        /// named residual — it always pays the wire. A scoped held state
+        /// serves only its identical scope (nothing witnesses scoped
+        /// today — the totality gate — so the arm is the honest
+        /// future-proof, never a guess).
+        let serves (held: AcquisitionScope) (requested: AcquisitionScope) : bool =
+            match held, requested with
+            | AcquisitionScope.Total, AcquisitionScope.Total -> true
+            | AcquisitionScope.Total, AcquisitionScope.Scoped axes ->
+                not (List.contains ScopeAxis.AttributeActivity axes)
+            | AcquisitionScope.Scoped h, r -> AcquisitionScope.Scoped h = r
+
+        /// Wire token: `total`, or `scoped:` + the axis tokens joined by
+        /// `+` in canonical order.
+        let token (s: AcquisitionScope) : string =
+            match s with
+            | AcquisitionScope.Total -> "total"
+            | AcquisitionScope.Scoped axes ->
+                "scoped:" + (axes |> List.map ScopeAxis.token |> String.concat "+")  // LINT-ALLOW: closed-vocabulary wire token minted at the codec boundary — a fixed discriminator prefix + validated axis tokens; the inverse tryParse round-trips it
+
+        /// The token's inverse — fail-closed: an unknown discriminator or
+        /// axis token, or an empty axis list, is `None` (a malformed
+        /// stored scope never silently reads as any particular scope).
+        let tryParse (raw: string) : AcquisitionScope option =
+            if raw = "total" then Some AcquisitionScope.Total
+            elif raw.StartsWith "scoped:" then
+                let parts = raw.Substring("scoped:".Length).Split '+' |> Array.toList
+                let axes = parts |> List.map ScopeAxis.tryParse
+                if List.isEmpty parts || axes |> List.exists Option.isNone then None
+                else Some (AcquisitionScope.Scoped (axes |> List.choose id))
+            else None
 
     /// Per-rowset progress observation. Invoked by `runAsync` after each
     /// rowset's parse completes (or skip completes, for the 18 V2-skipped
@@ -320,10 +424,11 @@ module MetadataSnapshotRunner =
           IsNoCheck          : bool }
 
     /// `#FkColumns` rowset (matrix row 18). Per-FK column membership
-    /// (composite FK support). V2's existing Reference IR is
-    /// single-column per chapter 5.0; multi-column FKs (composite keys)
-    /// would consume this in a future IR refinement. Lifts at runner
-    /// layer.
+    /// (composite FK support). schema-L3.2 CASHED the chapter-5.0
+    /// deferral this note carried: `Reference.Legs` is the IR carrier,
+    /// and `toBundle` denormalizes each multi-leg group onto the
+    /// ordinal-1 reference — the read cost this rowset always paid now
+    /// lands in the model. Lifts at runner layer.
     type OssysFkColumnRow =
         { EntityId           : int
           FkObjectId         : int
@@ -375,6 +480,35 @@ module MetadataSnapshotRunner =
           RetentionValue : int option
           RetentionUnit  : string option }
 
+    /// Rowset 26 — the capability vector (the data-sink chapter, S2
+    /// 2026-08-15). The script's @Has* COL_LENGTH probes, finally
+    /// returned: which optional `ossys_Entity_Attr` columns THIS estate's
+    /// platform version exposes, plus which entity-description column the
+    /// extraction chose. One row per run; the sink persists it with every
+    /// witnessed snapshot so ossys-schema drift is data (the journal's
+    /// ShapeChanged transition), never surprise. `toBundle` deliberately
+    /// ignores it — the vector informs the sink, never the Catalog.
+    type OssysCapabilityRow =
+        { HasDataType           : bool
+          HasType               : bool
+          HasPrecision          : bool
+          HasScale              : bool
+          HasDecimals           : bool
+          HasOriginalName       : bool
+          HasExternalColumnType : bool
+          HasPhysicalColumnName : bool
+          HasDatabaseName       : bool
+          HasIsIdentifier       : bool
+          HasRefEntityId        : bool
+          HasIsAutoNumber       : bool
+          HasDefaultValue       : bool
+          HasDeleteRule         : bool
+          HasOriginalType       : bool
+          HasAttrSsKey          : bool
+          HasLength             : bool
+          HasOrderNum           : bool
+          HasEntityDescription  : bool }
+
     /// Aggregate snapshot — the 5 originally-lifted rowsets plus the 8
     /// new physical-reflection rowsets (slice 5.13.ossys-rowsets-cluster).
     /// `toBundle` projects this into V2's `OssysRowsetTypes.RowsetBundle`,
@@ -397,6 +531,18 @@ module MetadataSnapshotRunner =
             Triggers           : OssysTriggerRow list
             Sequences          : OssysSequenceRow list
             Temporal           : OssysTemporalRow list
+            /// Rowset 26 — one row in practice (a list for uniformity
+            /// with every other rowset field). Sink-plane evidence only;
+            /// `toBundle` ignores it by design (capability-invariance is
+            /// property-tested).
+            Capabilities       : OssysCapabilityRow list
+            /// align-II.9 (E2) — HOW this acquisition was scoped, stamped
+            /// by `runAsync` from its own parameters (the one classifier).
+            /// The codec persists it as an OPTIONAL field defaulting
+            /// `Total` — old stored snapshots read back truthfully by the
+            /// totality gate's own invariant (only total acquisitions were
+            /// ever witnessed).
+            Scope              : AcquisitionScope
         }
 
     // -------------------------------------------------------------------
@@ -532,8 +678,8 @@ module MetadataSnapshotRunner =
         }
 
     /// Skip the current result set without parsing any rows. Used for the
-    /// 17 result sets V2 doesn't yet consume; `NextResultAsync` advances
-    /// past them.
+    /// Drained rowsets (`RowsetContract` — the V1-SUNSET JSON aggregation
+    /// tail); `NextResultAsync` advances past them.
     let private skipResultSet (reader: SqlDataReader) : Task<unit> =
         task {
             let mutable hasMore = true
@@ -741,28 +887,117 @@ module MetadataSnapshotRunner =
           RetentionValue = readIntOpt    r 5
           RetentionUnit  = readStringOpt r 6 }
 
-    /// Number of user-visible result sets the carbon-copied OSSYS rowsets
-    /// script emits. V1's documentation describes 22 user-visible rowsets
-    /// (rowsets 0..21); the canary's empirical walk observes **23** —
-    /// the script includes a leading validation/sanity-check projection
-    /// that V1's per-processor walk doesn't enumerate but V2's
-    /// `NextResultAsync` loop does. **Truth is the canary** (R6 split-brain:
-    /// the canary is V2's load-bearing forcing function); the constant
-    /// pins what V2 actually observes against the carbon-copied SQL.
-    /// The post-loop assertion in `runAsync` surfaces SQL-contract drift
-    /// (e.g., a V1 trunk refactor drops a rowset) as `ResultSetMissing`
-    /// instead of silently accepting partial data. Matrix row 35.
-    /// **25 as of the extraction fork** (DECISIONS 2026-07-18; #669
-    /// EF-22 + EF-23): the appended `sys.sequences` and temporal-
-    /// configuration rowsets join the walk.
-    [<Literal>]
-    let ExpectedResultSets = 25
+    let private mapCapabilityRow (r: RowAtRest) : OssysCapabilityRow =
+        { HasDataType           = readBool r 0
+          HasType               = readBool r 1
+          HasPrecision          = readBool r 2
+          HasScale              = readBool r 3
+          HasDecimals           = readBool r 4
+          HasOriginalName       = readBool r 5
+          HasExternalColumnType = readBool r 6
+          HasPhysicalColumnName = readBool r 7
+          HasDatabaseName       = readBool r 8
+          HasIsIdentifier       = readBool r 9
+          HasRefEntityId        = readBool r 10
+          HasIsAutoNumber       = readBool r 11
+          HasDefaultValue       = readBool r 12
+          HasDeleteRule         = readBool r 13
+          HasOriginalType       = readBool r 14
+          HasAttrSsKey          = readBool r 15
+          HasLength             = readBool r 16
+          HasOrderNum           = readBool r 17
+          HasEntityDescription  = readBool r 18 }
+
+    /// align-II.7 (E5; audit a1) — what happens to one wire rowset: V2
+    /// parses it into a named `MetadataSnapshot` field, or drains it
+    /// unread for a named reason. The parsed/drained split is a VALUE,
+    /// never a comment.
+    [<RequireQualifiedAccess>]
+    type RowsetDisposition =
+        /// Parsed into the named `MetadataSnapshot` field.
+        | Parsed of target: string
+        /// Advanced past unread, for the named reason.
+        | Drained of reason: string
+
+    /// One wire rowset the carbon-copied script emits: its zero-based
+    /// wire ordinal, the walk/progress name, the leading column its
+    /// SELECT projects (the cheap drift tripwire — a reordered or
+    /// reshaped SELECT trips it BEFORE a mapper misreads shifted
+    /// ordinals into wrong-but-parseable values), and its disposition.
+    type RowsetContractEntry =
+        { Ordinal       : int
+          Name          : string
+          LeadingColumn : string
+          Disposition   : RowsetDisposition }
+
+    /// align-II.7 — THE ROWSET CONTRACT: every result set the carbon-copied
+    /// OSSYS rowsets script emits, in wire order. The walk derives from
+    /// this table (`ExpectedResultSets` is its length; the progress labels
+    /// are its names; each read/skip asserts its ordinal + leading
+    /// column), so the count, the order, the names, and the parsed/drained
+    /// split live in ONE place — the count-comments this table replaced
+    /// had drifted twice (a stale "17 skipped", a stale "rowset 26" for a
+    /// zero-based 25). Truth is the canary (R6 split-brain): the live
+    /// walk verifies every row of this table on each extraction, and the
+    /// append-only evolution law (new rowsets join at the END) is the
+    /// same law the progress canary pins.
+    [<RequireQualifiedAccess>]
+    module RowsetContract =
+
+        /// The V1-SUNSET drain reason — the ten JSON-aggregation helpers
+        /// V2 never consumes (the typed rowsets carry the same facts;
+        /// the session-context flag opts out of building them server-side).
+        let private v1SunsetJson = "V1-SUNSET JSON aggregation; the typed rowsets carry the same facts"
+
+        let all : RowsetContractEntry list =
+            [ { Ordinal = 0;  Name = "modules";         LeadingColumn = "EspaceId";    Disposition = RowsetDisposition.Parsed "Modules" }
+              { Ordinal = 1;  Name = "entities";        LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "Entities" }
+              { Ordinal = 2;  Name = "attributes";      LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Parsed "Attributes" }
+              { Ordinal = 3;  Name = "references";      LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Parsed "References" }
+              { Ordinal = 4;  Name = "physicalTables";  LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "PhysicalTables" }
+              { Ordinal = 5;  Name = "columnReality";   LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Parsed "ColumnReality" }
+              { Ordinal = 6;  Name = "columnChecks";    LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Parsed "ColumnChecks" }
+              { Ordinal = 7;  Name = "attrCheckJson";   LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 8;  Name = "physColsPresent"; LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Parsed "PhysColsPresent" }
+              { Ordinal = 9;  Name = "allIdx";          LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "Indexes" }
+              { Ordinal = 10; Name = "idxColsMapped";   LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "IndexColumns" }
+              { Ordinal = 11; Name = "fkReality";       LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "ForeignKeysReality" }
+              { Ordinal = 12; Name = "fkColumns";       LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "ForeignKeyColumns" }
+              { Ordinal = 13; Name = "fkAttrMap";       LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 14; Name = "attrHasFK";       LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 15; Name = "fkColumnsJson";   LeadingColumn = "FkObjectId";  Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 16; Name = "fkAttrJson";      LeadingColumn = "AttrId";      Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 17; Name = "triggers";        LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "Triggers" }
+              { Ordinal = 18; Name = "attrJson";        LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 19; Name = "relJson";         LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 20; Name = "idxJson";         LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 21; Name = "triggerJson";     LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 22; Name = "moduleJson";      LeadingColumn = "module.name"; Disposition = RowsetDisposition.Drained v1SunsetJson }
+              { Ordinal = 23; Name = "sequences";       LeadingColumn = "SchemaName";  Disposition = RowsetDisposition.Parsed "Sequences" }
+              { Ordinal = 24; Name = "temporal";        LeadingColumn = "EntityId";    Disposition = RowsetDisposition.Parsed "Temporal" }
+              { Ordinal = 25; Name = "capabilities";    LeadingColumn = "HasDataType"; Disposition = RowsetDisposition.Parsed "Capabilities" } ]
+
+        /// The contract row for a walk name — the walk cites entries by
+        /// name; an unknown name is an impossible-state guard (the walk
+        /// and the table ship in one file, and the live canary exercises
+        /// every citation).
+        let byName (name: string) : RowsetContractEntry =
+            match all |> List.tryFind (fun e -> e.Name = name) with
+            | Some e -> e
+            | None -> invalidArg (nameof name) (sprintf "'%s' is not a rowset the contract names" name)
+
+    /// The number of result sets the script emits — the length of the
+    /// rowset contract (align-II.7: the count lives on the table alone;
+    /// the post-loop assertion surfaces a dropped rowset as
+    /// `ResultSetMissing`, and each read/skip asserts its own position +
+    /// leading column as `RowsetContractDrift`). Matrix row 35.
+    let ExpectedResultSets = List.length RowsetContract.all
 
     /// Execute the carbon-copied rowsets SQL against `cnn` (already open)
     /// with the supplied parameters + options. Walks all
-    /// `ExpectedResultSets` result sets; parses the first 5 into typed
-    /// records and skips the remaining. Returns a `MetadataSnapshot`
-    /// carrying the 5 V2-relevant rowsets.
+    /// `ExpectedResultSets` result sets; parses every V2-consumed rowset
+    /// into typed records and skips the V1-SUNSET JSON-aggregation tail.
+    /// Returns the full `MetadataSnapshot`.
     ///
     /// **Determinism.** The SQL script is deterministic by construction
     /// (V1's pillar 1 / T1 commitment); parameter inputs + database state
@@ -784,16 +1019,17 @@ module MetadataSnapshotRunner =
         task {
             use _ = Bench.scope "adapter.osm.extract"
             try
-                // This runner ingests the TYPED rowsets and drains the JSON
-                // aggregate rowsets unread (result sets 7, 13–16, 18–22) —
-                // opt out of BUILDING them server-side. The flag rides
-                // SESSION context (not a command parameter) so the script
-                // stays byte-identical with the V1 donor and a context-less
-                // caller gets the historical full build; all 23 rowsets are
-                // still returned in order with their columns (the skipped
-                // ones empty), so `ExpectedResultSets` and the reader walk
-                // are untouched. Pool-reset clears session context, so the
-                // flag never leaks to another logical connection.
+                // This runner ingests the TYPED rowsets and drains the
+                // JSON-aggregation rowsets unread (`RowsetContract` — the
+                // Drained entries) — opt out of BUILDING them server-side.
+                // The flag rides SESSION context (not a command parameter)
+                // so the script stays byte-identical with the V1 donor and
+                // a context-less caller gets the historical full build;
+                // every rowset is still returned in order with its columns
+                // (the drained ones empty), so `ExpectedResultSets` and the
+                // reader walk are untouched. Pool-reset clears session
+                // context, so the flag never leaks to another logical
+                // connection.
                 use flagCommand = new SqlCommand("EXEC sp_set_session_context @key = N'OsmSkipJsonRowsets', @value = 1;", cnn)
                 let! _ = flagCommand.ExecuteNonQueryAsync()
                 let script = MetadataExtractionSql.read()
@@ -873,18 +1109,28 @@ module MetadataSnapshotRunner =
                 // into a closure helper that keeps the per-rowset
                 // surface to ~1 line each.
                 //
-                // `read name mapper` advances to the next rowset, parses
-                // every row via the typed mapper, reports the rowcount
-                // for progress observation. Symmetric `skip name`
-                // advances + skips + reports rowcount=0 for the V1-SUNSET
-                // JSON-aggregation tail (#AttrCheckJson, #FkAttrMap,
-                // #AttrHasFK, #FkColumnsJson, #FkAttrJson, #AttrJson,
-                // #RelJson, #IdxJson, #TriggerJson, #ModuleJson).
+                // align-II.7 — the walk verifies THE ROWSET CONTRACT per
+                // rowset: `read`/`skip` cite their contract row by name,
+                // and `expect` asserts the wire position and the leading
+                // column before any row is parsed — drift trips HERE,
+                // located, never as a mapper misreading shifted ordinals.
+                let expect (entry: RowsetContractEntry) : unit =
+                    let position = observedResultSets - 1
+                    if position <> entry.Ordinal then
+                        raise (RowsetContractException (entry.Name,
+                                sprintf "expected at wire ordinal %d, observed at %d" entry.Ordinal position))
+                    if reader.FieldCount > 0 then
+                        let observed = reader.GetName 0
+                        if observed <> entry.LeadingColumn then
+                            raise (RowsetContractException (entry.Name,
+                                    sprintf "leads with column '%s'; the contract pins '%s'" observed entry.LeadingColumn))
                 let read (name: string) (mapper: RowAtRest -> 'T) : Task<'T list> =
                     task {
                         use _ = Bench.scope "adapter.osm.extract.rowset"
                         use _ = Bench.scope (sprintf "adapter.osm.extract.rowset.%s" name)
+                        let entry = RowsetContract.byName name
                         let! _ = advanceNext ()
+                        expect entry
                         let! rows = readResultSet name reader mapper
                         report name rows.Length
                         return rows
@@ -893,33 +1139,35 @@ module MetadataSnapshotRunner =
                     task {
                         use _ = Bench.scope "adapter.osm.extract.rowset"
                         use _ = Bench.scope (sprintf "adapter.osm.extract.rowset.%s" name)
+                        let entry = RowsetContract.byName name
                         let! _ = advanceNext ()
+                        expect entry
                         do! skipResultSet reader
                         report name 0
                     }
 
-                // Rowset 0 — modules (no advance; reader opens here).
+                // The contract's first row — modules (no advance; the
+                // reader opens already-positioned on it).
                 let! modules =
                     task {
                         use _ = Bench.scope "adapter.osm.extract.rowset"
                         use _ = Bench.scope "adapter.osm.extract.rowset.modules"
+                        expect (RowsetContract.byName "modules")
                         let! rows = readResultSet "modules" reader mapModuleRow
                         report "modules" rows.Length
                         return rows
                     }
 
-                // Rowsets 1–4 — already-lifted V2-consumed surface.
+                // The identity spine — the first parsed run of the contract.
                 let! entities       = read "entities"       mapEntityRow
                 let! attributes     = read "attributes"     mapAttributeRow
                 let! references     = read "references"     mapReferenceRow
                 let! physicalTables = read "physicalTables" mapPhysicalTableRow
 
-                // Rowsets 5–18 — physical-reflection lifts (slice
-                // 5.13.ossys-rowsets-cluster). #AttrCheckJson (rowset
-                // 7), #FkAttrMap, #AttrHasFK, #FkColumnsJson,
-                // #FkAttrJson (rowsets 13–16) are V1-SUNSET JSON
-                // helpers V2 doesn't consume; skipped with the same
-                // report-shape so progress count stays accurate.
+                // The physical-reflection run (slice
+                // 5.13.ossys-rowsets-cluster), Drained entries skipped
+                // with the same report-shape so the progress count stays
+                // accurate — which is which lives on `RowsetContract`.
                 let! columnReality   = read "columnReality"   mapColumnRealityRow
                 let! columnChecks    = read "columnChecks"    mapColumnCheckRow
                 do! skip "attrCheckJson"
@@ -933,24 +1181,30 @@ module MetadataSnapshotRunner =
                 do! skip "fkColumnsJson"
                 do! skip "fkAttrJson"
 
-                // Rowset 17 — triggers (matrix row 23).
+                // Triggers (matrix row 23).
                 let! triggers = read "triggers" mapTriggerRow
 
-                // Rowsets 18–22 — V1-SUNSET JSON aggregation tail.
+                // The V1-SUNSET JSON aggregation tail — all Drained.
                 do! skip "attrJson"
                 do! skip "relJson"
                 do! skip "idxJson"
                 do! skip "triggerJson"
                 do! skip "moduleJson"
 
-                // Rowsets 24 + 25 — sequences + temporal configuration
-                // (the extraction fork; DECISIONS 2026-07-18; #669
-                // EF-22 + EF-23). Appended at the script's end.
+                // Sequences + temporal configuration (the extraction
+                // fork; DECISIONS 2026-07-18; #669 EF-22 + EF-23).
+                // Appended at the script's end.
                 let! sequences = read "sequences" mapSequenceRow
                 let! temporal  = read "temporal"  mapTemporalRow
 
+                // The capability vector, the contract's last row (the
+                // data-sink chapter, S2 2026-08-15): the @Has* COL_LENGTH
+                // probes, finally returned. Sink-plane evidence;
+                // `toBundle` ignores it by design.
+                let! capabilities = read "capabilities" mapCapabilityRow
+
                 // Drain any trailing rowsets the SQL might emit beyond
-                // the documented 23. Per matrix row 35: a SQL-contract
+                // the contract. Per matrix row 35: a SQL-contract
                 // drift adds rowsets here; the contract check below
                 // surfaces the structural drift before the IR-build
                 // path silently absorbs it. Today this loop should be
@@ -993,6 +1247,8 @@ module MetadataSnapshotRunner =
                         Triggers           = triggers
                         Sequences          = sequences
                         Temporal           = temporal
+                        Capabilities       = capabilities
+                        Scope              = AcquisitionScope.ofParameters parameters
                     }
             with
             | ex ->
@@ -1277,7 +1533,7 @@ module MetadataSnapshotRunner =
                 [ { DiagnosticEntry.create
                       "adapter:OSSYS" DiagnosticSeverity.Info
                       "adapter.ossys.columnReality.nullabilityDivergence"
-                      (sprintf "%d column(s) diverge on nullability between the logical OSSYS model and the deployed schema (%d logical-mandatory over deployed-nullable, %d logical-nullable over deployed NOT NULL; e.g. %s). A mandatory attribute is validated by the platform at run time only (database constraints are created for primary keys and references), so logical-mandatory over deployed-nullable is the platform's own deployment shape. A deployed NOT NULL is preserved in the emitted schema (decision 2); a logical-mandatory declaration over a deployed-nullable column emits NOT NULL from the model — a tightening — and the rows that contradict it are itemized in fidelity.json with per-column recommendations (the backfill block, or a keepNullable entry past the repair band)."
+                      (sprintf "%d columns diverge on nullability between the logical OSSYS model and the deployed schema (%d logical-mandatory over deployed-nullable, %d logical-nullable over deployed NOT NULL; e.g. %s). A mandatory attribute is validated by the platform at run time only (database constraints are created for primary keys and references), so logical-mandatory over deployed-nullable is the platform's own deployment shape. A deployed NOT NULL is preserved in the emitted schema (decision 2); a logical-mandatory declaration over a deployed-nullable column emits NOT NULL from the model — a tightening — and the rows that contradict it are itemized in fidelity.json with per-column recommendations (the backfill block, or a keepNullable entry past the repair band)."
                           (List.length diverged)
                           (List.length mandatoryButNullable)
                           (List.length nullableButNotNull)
@@ -1393,7 +1649,7 @@ module MetadataSnapshotRunner =
                     [ { DiagnosticEntry.create
                           "adapter:OSSYS" DiagnosticSeverity.Warning
                           "adapter.ossys.primaryKey.divergence"
-                          (sprintf "Entity %s (id %d): Is_Identifier marks attribute(s) %s but ossys_Entity.PrimaryKey_SS_Key names %O. The engine carries the explicit attribute flag; remediate the source or confirm which is authoritative."
+                          (sprintf "Entity %s (id %d): Is_Identifier marks attributes %s but ossys_Entity.PrimaryKey_SS_Key names %O. The engine carries the explicit attribute flag; remediate the source or confirm which is authoritative."
                               e.EntityName e.EntityId
                               (flagged |> List.map (fun a -> a.AttrName) |> String.concat ", ")
                               pkKey)
@@ -1404,7 +1660,90 @@ module MetadataSnapshotRunner =
                                     "flaggedAttributes", (flagged |> List.map (fun a -> a.AttrName) |> String.concat ",")
                                     "primaryKeySsKey", string pkKey ] } ])
 
-    let toBundle (snapshot: MetadataSnapshot) : OssysRowsetTypes.RowsetBundle =
+    /// align-II.8 (E1; audit a1; A54) — one NAMED erasure of the bundle
+    /// projection: what `toBundle` folds, assumes, or drops, as a value.
+    /// The adjunction's modulus at this seam is enumerable — nothing is
+    /// lost in silence. Closed; a new fold or assumption in `toBundle`
+    /// lands WITH its variant (the A54 constant-modulus law pins the set).
+    [<RequireQualifiedAccess>]
+    type BundleErasure =
+        /// A parsed rowset's axes fold into a narrower bundle carrier (or
+        /// none): the rowset (its `RowsetContract` name) and what the fold
+        /// keeps or loses. Constant — these folds are the projection's
+        /// design, present on every bundle.
+        | FoldedRowset of rowset: string * detail: string
+        /// A reference row dropped at the join — its target entity name or
+        /// its owning attribute did not resolve, so no `ReferenceRow`
+        /// carries it (data-dependent; the dropped row's attribute id
+        /// locates it).
+        | UnjoinedReference of attrId: int
+        /// An entity with no physical-table row — its schema is assumed
+        /// `dbo` (data-dependent).
+        | AssumedSchema of entityId: int * entityName: string
+        /// An attribute with no declared data type — assumed `Text`
+        /// (data-dependent).
+        | AssumedDataType of attrId: int * attrName: string
+        /// The capability vector informs the sink plane only — the bundle
+        /// is capability-invariant BY DESIGN (the data-sink chapter, S2),
+        /// stated as a value rather than a comment.
+        | CapabilityInvariant
+
+    [<RequireQualifiedAccess>]
+    module BundleErasure =
+
+        /// Stable routing code per case (`<domain>.<subject>.<problem>`).
+        let code (e: BundleErasure) : string =
+            match e with
+            | BundleErasure.FoldedRowset _       -> "adapter.ossys.bundleErasure.foldedRowset"
+            | BundleErasure.UnjoinedReference _  -> "adapter.ossys.bundleErasure.unjoinedReference"
+            | BundleErasure.AssumedSchema _      -> "adapter.ossys.bundleErasure.assumedSchema"
+            | BundleErasure.AssumedDataType _    -> "adapter.ossys.bundleErasure.assumedDataType"
+            | BundleErasure.CapabilityInvariant  -> "adapter.ossys.bundleErasure.capabilityInvariant"
+
+        /// The located sentence (one mint; the notice rollup and the tests
+        /// read the same copy).
+        let describe (e: BundleErasure) : string =
+            match e with
+            | BundleErasure.FoldedRowset (rowset, detail) ->
+                sprintf "the '%s' rowset folds at the bundle projection: %s." rowset detail
+            | BundleErasure.UnjoinedReference attrId ->
+                sprintf "the reference on attribute id %d did not join (its target entity name or owning attribute is unresolved) — no reference row carries it." attrId
+            | BundleErasure.AssumedSchema (entityId, entityName) ->
+                sprintf "entity %s (id %d) has no physical-table row — its schema is assumed 'dbo'." entityName entityId
+            | BundleErasure.AssumedDataType (attrId, attrName) ->
+                sprintf "attribute %s (id %d) declares no data type — assumed 'Text'." attrName attrId
+            | BundleErasure.CapabilityInvariant ->
+                "the capability vector informs the sink plane only — the bundle is capability-invariant by design."
+
+        /// The notice-rollup projection: the constant by-design folds ride
+        /// as Info (recorded on the detail artifact, never a warning wall);
+        /// the data-dependent assumptions and drops warn (a shape surprise
+        /// the operator should see).
+        let toDiagnostic (e: BundleErasure) : DiagnosticEntry =
+            let severity =
+                match e with
+                | BundleErasure.FoldedRowset _
+                | BundleErasure.CapabilityInvariant -> DiagnosticSeverity.Info
+                | BundleErasure.UnjoinedReference _
+                | BundleErasure.AssumedSchema _
+                | BundleErasure.AssumedDataType _ -> DiagnosticSeverity.Warning
+            DiagnosticEntry.create "adapter:OSSYS" severity (code e) (describe e)
+
+    /// The constant modulus — the folds every bundle projection performs
+    /// by design, independent of the data (A54's enumerable half; the
+    /// data-dependent erasures join per shape).
+    let private constantErasures : BundleErasure list =
+        [ BundleErasure.FoldedRowset ("physColsPresent",
+            "the presence set is witnessed and persisted raw at the sink; no bundle field carries it")
+          BundleErasure.FoldedRowset ("fkReality",
+            "per-FK reflection folds to four per-reference scalars (HasDbConstraint, OnUpdate, ReflectedOnDelete, IsConstraintTrusted)")
+          BundleErasure.FoldedRowset ("columnReality",
+            "deployed reflection folds onto per-attribute facets (computed, default name, collation, storage, nullability, persisted)")
+          BundleErasure.FoldedRowset ("entities",
+            "Data_Kind's string domain folds to IsStatic (staticEntity alone reads true)")
+          BundleErasure.CapabilityInvariant ]
+
+    let toBundle (snapshot: MetadataSnapshot) : OssysRowsetTypes.RowsetBundle * BundleErasure list =
         use _ = Bench.scope "adapter.osm.extract.toBundle"
         let physicalByEntity =
             snapshot.PhysicalTables
@@ -1550,6 +1889,16 @@ module MetadataSnapshotRunner =
         // V2's per-attribute Reference IR is the natural carrier.
         let fkRealityByParentAttrId = fkRealityByParentAttrIdMap snapshot
 
+        // schema-L3.2 — the composite-FK leg groups: `#FkColumns` rows by
+        // FkObjectId, Ordinal-sorted. The rowset has ALWAYS captured these
+        // (matrix row 18); the IR carrier (`Reference.Legs`) now exists, so
+        // the read cost stops being thrown away at this boundary.
+        let fkColumnsByFkObjectId =
+            snapshot.ForeignKeyColumns
+            |> List.groupBy (fun c -> c.FkObjectId)
+            |> List.map (fun (fkId, cols) -> fkId, cols |> List.sortBy (fun c -> c.Ordinal))
+            |> Map.ofList
+
         let references =
             snapshot.References
             |> List.choose (fun r ->
@@ -1586,6 +1935,27 @@ module MetadataSnapshotRunner =
                         match fkOpt with
                         | Some fk -> not fk.IsNoCheck
                         | None    -> true
+                    // schema-L3.2 — attach the composite legs to the
+                    // ORDINAL-1 reference only (a reference row whose attr
+                    // is a LATER leg of the same deployed FK keeps today's
+                    // single-column shape — the pre-existing duplicate-
+                    // constraint emission for that rare shape is a NAMED
+                    // residual, flagged in the slice's DECISIONS entry, and
+                    // the arity gate refuses its deploy loudly downstream).
+                    let legs =
+                        match fkOpt with
+                        | Some fk ->
+                            match Map.tryFind fk.FkObjectId fkColumnsByFkObjectId with
+                            | Some (head :: _ as cols) when List.length cols >= 2 && head.ParentAttrId = Some r.AttrId ->
+                                cols
+                                |> List.map (fun c ->
+                                    ({ Ordinal          = c.Ordinal
+                                       ParentAttrId     = c.ParentAttrId
+                                       ReferencedAttrId = c.ReferencedAttrId
+                                       ParentColumn     = c.ParentColumn
+                                       ReferencedColumn = c.ReferencedColumn } : OssysRowsetTypes.ReferenceLegRow))
+                            | _ -> []
+                        | None -> []
                     Some
                         ({
                             AttrId              = r.AttrId
@@ -1596,6 +1966,7 @@ module MetadataSnapshotRunner =
                             OnUpdate            = onUpdate
                             ReflectedOnDelete   = onDelete
                             IsConstraintTrusted = isTrusted
+                            Legs                = legs
                         } : OssysRowsetTypes.ReferenceRow)
                 | _ -> None)
 
@@ -1708,6 +2079,29 @@ module MetadataSnapshotRunner =
                     RetentionUnit  = t.RetentionUnit
                 } : OssysRowsetTypes.TemporalRow))
 
+        // align-II.8 (A54) — the data-dependent erasures, collected on the
+        // SAME predicates the projections above decide with (an assumption
+        // or a drop fires exactly when its shape occurs; deterministic
+        // order — constants first, then entity/attribute/reference order).
+        let assumedSchemas =
+            snapshot.Entities
+            |> List.choose (fun e ->
+                if Map.containsKey e.EntityId physicalByEntity then None
+                else Some (BundleErasure.AssumedSchema (e.EntityId, e.EntityName)))
+        let assumedDataTypes =
+            snapshot.Attributes
+            |> List.choose (fun a ->
+                match a.DataType with
+                | Some _ -> None
+                | None -> Some (BundleErasure.AssumedDataType (a.AttrId, a.AttrName)))
+        let unjoinedReferences =
+            snapshot.References
+            |> List.choose (fun r ->
+                match r.RefEntityName, Map.tryFind r.AttrId attributeById with
+                | Some _, Some _ -> None
+                | _ -> Some (BundleErasure.UnjoinedReference r.AttrId))
+        let erasures =
+            constantErasures @ assumedSchemas @ assumedDataTypes @ unjoinedReferences
         {
             Modules      = modules
             Kinds        = kinds
@@ -1719,4 +2113,5 @@ module MetadataSnapshotRunner =
             ColumnChecks = columnChecks
             Sequences    = sequences
             Temporal     = temporal
-        }
+        },
+        erasures

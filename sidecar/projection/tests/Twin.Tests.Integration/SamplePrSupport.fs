@@ -202,6 +202,23 @@ module SamplePrBaseline =
           "Tables/dbo.Order.sql", order
           "Tables/dbo.OrderLine.sql", orderLine ]
 
+    /// Reset the estate's `Tables/` directory to the baseline file set: delete
+    /// any stray fact-added `.sql` (e.g. a unique-index file), then rewrite
+    /// every baseline file. Synchronous BY DESIGN — hoisted out of the ten
+    /// per-class `Fresh` task CEs, whose two `for` loops (one carrying
+    /// `try/with`) ahead of the awaits were FS3511 state machines Release
+    /// builds refused (survival rule 5's family; align-I.1). The task CEs keep
+    /// only awaits; this owns the file walk. One definition, ten consumers.
+    let resetTables (root: string) (rewrite: string -> string -> unit) : unit =
+        let keep = set [ "dbo.Status.sql"; "dbo.Customer.sql"; "dbo.Order.sql"; "dbo.OrderLine.sql" ]
+        let tablesDir = System.IO.Path.Combine(root, "Tables")
+        if System.IO.Directory.Exists tablesDir then
+            for file in System.IO.Directory.GetFiles(tablesDir, "*.sql") do
+                let name = System.IO.Path.GetFileName file |> Option.ofObj |> Option.defaultValue ""
+                if not (keep.Contains name) then
+                    try System.IO.File.Delete file with _ -> ()
+        for f in files do rewrite (fst f) (snd f)
+
     /// Drop the twin database (clearing pooled connections first) so the next
     /// `Runs.up` rebuilds a pristine schema. Ensures the container is running
     /// so the very first fact — which starts before any converge — succeeds.

@@ -53,6 +53,12 @@ module ConfigSchema =
         if desc <> "" then o["description"] <- JsonValue.Create desc
         o
 
+    let private number (desc: string) : JsonObject =
+        let o = JsonObject()
+        o["type"] <- JsonValue.Create "number"
+        if desc <> "" then o["description"] <- JsonValue.Create desc
+        o
+
     let private enumOf (desc: string) (values: string list) : JsonObject =
         let o = JsonObject()
         o["type"] <- JsonValue.Create "string"
@@ -178,9 +184,52 @@ module ConfigSchema =
                                 "acknowledgedImpact", str ""
                                 "approvedBy", str ""
                                 "date", str "" ]) ]
+        // align-II.2 — the ruling attribution an override row may carry.
+        // Optional everywhere; `approvedBy` anchors the attribution (the
+        // binder refuses attribution fields without an approver, a
+        // malformed `approvedAt`, and an unknown `finding` key — each by
+        // name).
+        // (A function, not a shared list — JsonNode values are single-parent,
+        // so each attaching object mints fresh nodes.)
+        let provenanceFields () =
+            [ "approvedBy", str "who approved this override (the attribution anchor)"
+              "approvedAt", str "when (ISO-8601 round-trip form; parsed fail-closed)"
+              "rationale", str "why — carried onto the estate posture un-severed"
+              "finding", str "the finding key this override answers (<kind-token>:<subject>)" ]
         props["policy"] <-
             objectOf "tightening + transform-group toggles" []
                 [ "insertion", str "e.g. SchemaOnly"
+                  "tightening",
+                      objectOf "operator tightening interventions (align-II.2: override rows carry optional ruling attribution)" []
+                          [ "interventions",
+                                arrayOf "one entry per intervention kind"
+                                    (objectOf "" [ "kind"; "id" ]
+                                        ([ "kind", enumOf "" [ "nullability"; "uniqueIndex"; "foreignKey"; "categoricalUniqueness" ]
+                                           "id", str "stable intervention id"
+                                           "nullBudget", number "nullability: permitted null fraction [0,1]"
+                                           "allowMandatoryRelaxation", boolean "nullability"
+                                           "overrides",
+                                               arrayOf "nullability per-attribute overrides"
+                                                   (objectOf "" [ "attributeRef"; "action" ]
+                                                       ([ "attributeRef", str "Module.Entity.Attribute or Schema.Table.Column"
+                                                          "action", enumOf "" [ "keepNullable" ] ] @ provenanceFields ()))
+                                           "enforceSingleColumnUnique", boolean "uniqueIndex"
+                                           "enforceMultiColumnUnique", boolean "uniqueIndex"
+                                           "applyUniquePromotions", boolean "uniqueIndex: apply (true) vs advise-only (default)"
+                                           "indexOverrides",
+                                               arrayOf "uniqueIndex per-index promotion rulings (consulted before the blanket flag; align-II.3)"
+                                                   (objectOf "" [ "indexRef"; "action" ]
+                                                       ([ "indexRef", str "Module.Entity.IndexName"
+                                                          "action", enumOf "" [ "adoptPromotion"; "refusePromotion" ] ] @ provenanceFields ()))
+                                           "enableCreation", boolean "foreignKey"
+                                           "allowCrossSchema", boolean "foreignKey"
+                                           "allowNoCheckCreation", boolean "foreignKey"
+                                           "referenceOverrides",
+                                               arrayOf "foreignKey per-reference overrides"
+                                                   (objectOf "" [ "referenceRef"; "action" ]
+                                                       ([ "referenceRef", str "the anchoring attribute (logical or physical form)"
+                                                          "action", enumOf "" [ "keepUntracked" ] ] @ provenanceFields ()))
+                                           "minDistinctCountForUniqueness", integer "categoricalUniqueness" ])) ]
                   "transformGroups",
                       arrayOf "opt-in/out of registered pass groups"
                           (objectOf "" [ "name"; "enabled" ]
@@ -190,6 +239,22 @@ module ConfigSchema =
             objectOf "" []
                 [ "provider", enumOf "" [ "live"; "fixture" ]
                   "maxConcurrency", integer "" ]
+        // The sink freshness section (the data-sink chapter, S8). The policy
+        // enum DERIVES from `Config.SinkPolicy.all` — the same list the
+        // parser accepts — so schema and parser cannot drift (A44).
+        let sinkPolicies = Config.SinkPolicy.all |> List.map Config.SinkPolicy.label
+        props["sink"] <-
+            let o =
+                objectOf "the sink freshness posture (reuse axis only — witnessing is gated by store presence, never by policy)" []
+                    [ "policy", enumOf "off (default: every model read pays the wire) | auto (reuse the witnessed state while the ossys fingerprints match) | pinned (reuse without probing; --refresh overrides)" sinkPolicies ]
+            let perEnv = JsonObject()
+            perEnv["type"] <- JsonValue.Create "object"
+            perEnv["description"] <- JsonValue.Create "per-environment policy refinements, keyed by the label `projection sync <env>` stamped"
+            perEnv["additionalProperties"] <- enumOf "" sinkPolicies
+            (match o["properties"] with
+             | :? JsonObject as p -> p["perEnvironment"] <- perEnv
+             | _ -> ())
+            o
         props["output"] <- objectOf "" [ "dir" ] [ "dir", str "where emitted artifacts land" ]
         root["properties"] <- props
         root["additionalProperties"] <- JsonValue.Create true

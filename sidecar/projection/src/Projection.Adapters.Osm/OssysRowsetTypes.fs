@@ -210,6 +210,19 @@ module OssysRowsetTypes =
     /// attribute's module. Cross-module FK references are a
     /// documented deferral (DECISIONS Active deferrals index —
     /// "Cross-module FK IR refinement").
+    /// schema-L3.2 — one leg of the backing composite FK, denormalized
+    /// from `#FkColumns` (matrix row 18) onto the ordinal-1 reference at
+    /// `MetadataSnapshotRunner.toBundle`. Attr ids resolve to SsKeys at
+    /// the reader (`RowsetParseContext.AttributeKeysByAttrId`).
+    type ReferenceLegRow =
+        {
+            Ordinal          : int
+            ParentAttrId     : int option
+            ReferencedAttrId : int option
+            ParentColumn     : string
+            ReferencedColumn : string
+        }
+
     type ReferenceRow =
         {
             AttrId          : int
@@ -257,6 +270,12 @@ module OssysRowsetTypes =
             /// emission shape. Cross-catalog and JSON-path references
             /// default to `true`.
             IsConstraintTrusted : bool
+            /// schema-L3.2 — the ordered legs of the backing composite FK.
+            /// `[]` (the near-universal case) = single-column. Non-empty
+            /// only on the ordinal-1 reference of a deployed multi-column
+            /// FK (`#FkColumns` group ≥ 2), per this record's own
+            /// per-reference-completeness denormalization convention.
+            Legs : ReferenceLegRow list
         }
 
     /// V1 rowset bundle — the in-memory carrier

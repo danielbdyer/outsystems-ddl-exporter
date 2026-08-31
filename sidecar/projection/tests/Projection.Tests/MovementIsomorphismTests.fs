@@ -35,7 +35,7 @@ let private commit  : FlowRunOpts = { preview with Go = true }
 // The constructed-valid generator of directional variants (the declarative-
 // test-inputs + constructed-valid-generator discipline). We draw
 // `(srcRendition, sinkRendition, scope, origin, commit)` from the CLOSED
-// alphabets and BUILD a valid `Environment`-set + `Flow` + `ProjectionConfig`,
+// alphabets and BUILD a valid `Place`-set + `Flow` + `ProjectionConfig`,
 // rather than generate-and-filter. The sink rendition is drawn consistent with
 // the chosen direction so validity is constructed, not rejected.
 // ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ let private allOriginDraws : OriginDraw list =
     [ OriginDraw.Model; OriginDraw.NoData; OriginDraw.Synthetic; OriginDraw.FromEnv ]
 
 /// A direct (live) environment with a chosen rendition — the up-leg endpoints.
-let private directEnv (name: string) (grant: Grant option) (rendition: Rendition option) : Environment =
+let private directEnv (name: string) (grant: Grant option) (rendition: Rendition option) : Place =
     { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN"))
       Grant = grant; Store = None; Rendition = rendition; Archetype = None; AtomicDeploy = None; Revert = None }
 
@@ -272,7 +272,7 @@ let ``A44 clause 1 — renderEnvironment ∘ parseEnvironment = id on every reac
               let env = { Name = "e"; Access = access; Grant = grant; Store = store; Rendition = rendition; Archetype = archetype; AtomicDeploy = None; Revert = None }
               let cfg = { ProjectionConfig.empty with Environments = Map.ofList [ "e", env ] }
               match ProjectionConfig.parse (ProjectionConfig.render cfg) with
-              | Ok back -> Assert.Equal<Environment>(env, Map.find "e" back.Environments)
+              | Ok back -> Assert.Equal<Place>(env, Map.find "e" back.Environments)
               | Error es -> Assert.Fail(sprintf "round-trip failed for %A: %A" env es)
 
 [<Fact>]
@@ -317,7 +317,7 @@ let ``A44 clause 1 — renderFlow ∘ parseFlow = id on every from × scope × s
 /// flow's origin + the two endpoints' renditions — no stored field consulted.
 let private directionOracle (cfg: ProjectionConfig) (flow: Flow) : MovementDirection =
     let renditionOf name =
-        Map.tryFind name cfg.Environments |> Option.bind (fun (e: Environment) -> e.Rendition)
+        Map.tryFind name cfg.Environments |> Option.bind (fun (e: Place) -> e.Rendition)
     let isDirect name =
         match Map.tryFind name cfg.Environments with
         | Some e -> (match e.Access with Access.Direct _ -> true | _ -> false)
@@ -568,12 +568,12 @@ let ``A44 clause 1 — a csv environment (access + out) round-trips (parse ∘ r
     // The csv destination is a movement-vocabulary citizen: an `access: csv`
     // environment renders and re-parses to the same environment (expressible
     // ⇔ reachable), so the export target is fully config-addressable.
-    let csvEnv : Environment =
+    let csvEnv : Place =
         { Name = "csvout"; Access = Access.Csv "exports/golden"
           Grant = None; Store = None; Rendition = None; Archetype = None; AtomicDeploy = None; Revert = None }
     let cfg = { ProjectionConfig.empty with Environments = Map.ofList [ "csvout", csvEnv ] }
     match ProjectionConfig.parse (ProjectionConfig.render cfg) with
-    | Ok back -> Assert.Equal<Environment>(csvEnv, Map.find "csvout" back.Environments)
+    | Ok back -> Assert.Equal<Place>(csvEnv, Map.find "csvout" back.Environments)
     | Error es -> Assert.Fail(sprintf "csv environment round-trip failed: %A" es)
 
 [<Fact>]

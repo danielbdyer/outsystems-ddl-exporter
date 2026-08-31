@@ -284,21 +284,22 @@ let ``Overlay-exercise (Ordering axis): TopologicalOrderPass.registeredWith Trea
     Assert.NotEmpty result.Trail
 
 [<Fact>]
-let ``Overlay-exercise (Selection axis): UserFkReflowPass under non-empty UserMatchingStrategy classifies events as OperatorIntent Selection`` () =
-    // UserFkReflowPass's Sites classify as `OperatorIntent Selection`
-    // (per pre-scope IDENTITY axis — operator chooses how to match
-    // source/target Users). Setting Policy.UserMatching to a
-    // non-FallbackToSystemUser strategy exercises the axis.
+let ``Overlay-exercise (Identity axis): UserFkReflowPass under non-empty UserMatchingStrategy classifies events as OperatorIntent Identity`` () =
+    // UserFkReflowPass's Sites classify as `OperatorIntent Identity`
+    // (align-I.3 — the pre-scope had already NAMED this the IDENTITY
+    // axis: the operator rules how source/target Users resolve).
+    // Setting Policy.UserMatching to a non-FallbackToSystemUser
+    // strategy exercises the axis.
     let policy =
         { Policy.empty with UserMatching = ByEmail }
     let metadata = RegisteredTransform.toMetadata (UserFkReflowPass.registered policy Profile.empty)
-    let selectionSites =
+    let identityAxisSites =
         metadata.Sites
         |> List.filter (fun s ->
             match s.Classification with
-            | OperatorIntent Selection -> true
+            | OperatorIntent OverlayAxis.Identity -> true
             | _ -> false)
-    Assert.NotEmpty selectionSites
+    Assert.NotEmpty identityAxisSites
 
 // ---------------------------------------------------------------------------
 // Coverage view consistency — `TransformRegistry.skeletonView` +
@@ -590,3 +591,63 @@ let ``the BridgeRowStagingSeam registration set equals its executed set (registe
     let registered = BridgeRowStagingSeam.metadata |> List.map (fun m -> m.Name) |> Set.ofList
     Assert.Equal<Set<string>>(executed, registered)
     Assert.NotEmpty BridgeRowStagingSeam.executedNames
+
+
+// ---------------------------------------------------------------------------
+// align-I.8 — FiringSite legs. WHERE an entry substantively fires is a
+// registry fact, not a comment: the two chain stand-ins name their real
+// execution sites; dormant code lives in `RegisteredTransforms.dormant`
+// (never `all`), so registered ⇔ executed stays exact while dormancy is
+// enumerable.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``align-I.8: no entry in the live registry is Dormant (dormant rows live in RegisteredTransforms.dormant only)`` () =
+    for entry in RegisteredAllTransforms.all do
+        match entry.Firing with
+        | FiringSite.Dormant trigger ->
+            Assert.Fail(sprintf "'%s' is Dormant ('%s') yet registered in `all` — dormant rows belong in RegisteredTransforms.dormant" entry.Name trigger)
+        | FiringSite.AtBinding | FiringSite.AtSeam _ | FiringSite.OnSinkRead -> ()
+
+[<Fact>]
+let ``align-I.8: the seam-fired and sink-read-fired stand-ins are exactly the two named entries`` () =
+    let atSeam =
+        RegisteredAllTransforms.all
+        |> List.choose (fun e ->
+            match e.Firing with
+            | FiringSite.AtSeam seam -> Some (e.Name, seam)
+            | _ -> None)
+    Assert.Equal<(string * string) list>([ "selectionSuppression", "applyModuleFilter" ], atSeam)
+    let onSinkRead =
+        RegisteredAllTransforms.all
+        |> List.choose (fun e ->
+            match e.Firing with
+            | FiringSite.OnSinkRead -> Some e.Name
+            | _ -> None)
+    Assert.Equal<string list>([ "physicalClaims" ], onSinkRead)
+
+[<Fact>]
+let ``align-I.8: the dormant registry carries the F12 row, by name, with its firing trigger`` () =
+    let dormant = RegisteredTransforms.dormant
+    Assert.Equal(1, List.length dormant)
+    let row = List.head dormant
+    Assert.Equal("selectionFilterCatalog", row.Name)
+    match row.Firing with
+    | FiringSite.Dormant trigger -> Assert.Contains("SelectionPolicy.filterCatalog", trigger)
+    | other -> Assert.Fail(sprintf "expected Dormant, got %A" other)
+    // Dormant ∩ live = ∅ — the biconditional's exactness is preserved.
+    let liveNames = RegisteredAllTransforms.all |> List.map (fun e -> e.Name) |> Set.ofList
+    Assert.False(Set.contains row.Name liveNames)
+
+[<Fact>]
+let ``align-I.8: the registry digest is sensitive to the Firing axis`` () =
+    // Relational, not pinned: flipping one entry's firing site moves the
+    // digest — the manifest seals WHERE things fire, not just what.
+    let baseline = RegisteredTransforms.all
+    let perturbed =
+        match baseline with
+        | first :: rest -> { first with Firing = FiringSite.AtSeam "perturbation" } :: rest
+        | [] -> []
+    Assert.NotEqual<string>(
+        TransformRegistry.digest baseline,
+        TransformRegistry.digest perturbed)

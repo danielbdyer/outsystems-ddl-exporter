@@ -18,10 +18,12 @@ open Projection.Tests.Fixtures   // mkName, mkTableId
 // substring appears in `SsdtDdlEmitter.statements |> Render.toText`
 // (IndexOnDiskMetadataTests / SsdtDdlEmitterTests). A malformed `WITH (...)`
 // clause — or `DATA_COMPRESSION = PAGE` appearing in a COMMENT, or a `DISABLE`
-// that no-ops — passes every one of those. And the PhysicalSchema round-trip
-// canary is structurally blind to all of it (it compares only owner / name /
-// uniqueness / key columns; the storage options are the named
-// `ToleratedDivergence.IndexOptionsUnreflected` residual).
+// that no-ops — passes every one of those. Since schema-L3.1 the
+// PhysicalSchema round-trip canary compares the option surface too (the
+// `IndexOptionsUnreflected` tolerance is RETIRED; `IndexRoundtripTests`
+// carries the two-arm closure witness) — this suite remains the
+// finer-grained per-option catalog-view probe: it names WHICH option
+// diverged directly from `sys.indexes`, where the canary names the index.
 //
 // This deploys the REAL emitted schema DDL and reads each option back from
 // sys.indexes / sys.index_columns / sys.partitions / sys.stats — the deployed

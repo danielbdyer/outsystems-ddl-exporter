@@ -80,7 +80,7 @@ module RunEnvelope =
             // `Run.inputDigest` + the recorded episode's `LedgerRef`; a
             // content-less verb returns `("", [])`. Evaluated defensively — a
             // capture throw degrades to the empty digest, never masking outcome.
-            match RunLedger.configuredDir () with
+            match RunIndex.configuredDir () with
             | Some dir ->
                 (try
                     let bench : Bench.Run =

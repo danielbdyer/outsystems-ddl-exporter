@@ -149,13 +149,13 @@ module Shell =
     /// the readiness gauge reads the canary streak; opt-in via
     /// `PROJECTION_LEDGER_DIR`).
     let private appendLedger (frame: Frame) (code: int) : unit =
-        match RunLedger.configuredDir () with
+        match RunIndex.configuredDir () with
         | Some dir ->
             let registered, applied, declined = LogSink.transformCounts ()
             try
-                RunLedger.append dir
+                RunIndex.append dir
                     { RunId      = LogSink.runId ()
-                      Ts         = System.DateTime.UtcNow.ToString("o")  // LINT-ALLOW: wall-clock timestamp at the operator-shell IO boundary (ISO-8601 round-trip o format)
+                      Ts         = System.DateTimeOffset.UtcNow  // wall-clock at the operator-shell IO boundary; the codec writes the UTC `o` form
                       Command    = frame.Command
                       Outcome    = (if code = 0 then "succeeded" else "failed")
                       Canary     = LogSink.canaryVerdict ()

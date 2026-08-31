@@ -14,6 +14,9 @@
     <Compile Include="ConnectionResolver.fs" />
     <Compile Include="AsyncStream.fs" />
     <Compile Include="LiveProfiler.fs" />
+    <!-- TableFingerprint.fs (sink S8): the table-shaped staleness probe both
+         fingerprint consumers stand on — extracted at the second consumer. -->
+    <Compile Include="TableFingerprint.fs" />
     <!-- EvidenceFingerprint.fs: the estate evidence store's one-batch
          staleness probe (COUNT_BIG + MAX(pk) per kind; 2026-07-15). -->
     <Compile Include="EvidenceFingerprint.fs" />

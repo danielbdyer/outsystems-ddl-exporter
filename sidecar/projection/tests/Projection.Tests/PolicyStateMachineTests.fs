@@ -59,14 +59,16 @@ let private apply (op: PolicyOp) (p: Policy) : Policy =
 // ---------------------------------------------------------------------------
 // Apply an operation to the model (Map<OverlayAxis, bool>).
 // `Reset` clears all touched axes. Every Set* operation marks its
-// axis touched; UserMatching is its own axis but lives under
-// "OverlayAxis ⊃ Policy axes" — we track it via a synthetic key
-// since OverlayAxis doesn't currently name UserMatching.
+// axis touched. UserMatching keeps its own synthetic key: its
+// designated OverlayAxis is `Identity` (A50's total map, align-I.2),
+// but that axis is SHARED with Policy.BridgeRetarget — the model
+// tracks which POLICY CHANNEL was touched, which the shared axis
+// cannot distinguish.
 // ---------------------------------------------------------------------------
 
 type private ModelKey =
     | Axis of OverlayAxis
-    | UserMatchingKey  // Policy.UserMatching has no OverlayAxis counterpart
+    | UserMatchingKey  // Policy.UserMatching's designated axis (Identity, per A50) is shared with BridgeRetarget — key the channel, not the axis
 
 let private applyModel (op: PolicyOp) (m: Map<ModelKey, bool>) : Map<ModelKey, bool> =
     match op with

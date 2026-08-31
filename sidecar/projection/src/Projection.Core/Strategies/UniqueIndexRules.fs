@@ -42,8 +42,16 @@ type UniqueIndexKeepReason =
     /// operator default): the dev team's declared indexes are authoritative,
     /// so a profile-driven tightening is surfaced as advice and NOT applied
     /// unless the operator opts in with `applyUniquePromotions: true`
-    /// (operator directive 2026-07-18).
-    | PromotionAdvisedNotApplied
+    /// (operator directive 2026-07-18). align-II.3 (a4-4): the advisory
+    /// CARRIES the evidence that fed it — the adoption lever anchors to
+    /// what the operator actually reviewed, and a later adoption against
+    /// different data is detectable rather than silent.
+    | PromotionAdvisedNotApplied of evidence: UniqueIndexEvidence
+    /// The index was a valid promotion candidate and the OPERATOR REFUSED
+    /// it by name (align-II.3: a per-index `RefusePromotion` override) —
+    /// distinct from advise-pending: this is a recorded per-subject
+    /// ruling, not an un-adjudicated advisory.
+    | PromotionRefusedByOperator of evidence: UniqueIndexEvidence
 
 
 /// The outcome of a single (index, intervention) decision.
@@ -123,7 +131,12 @@ module UniqueIndexKeepReason =
         | DataHasDuplicates -> StructuredString.tag "DataHasDuplicates"
         | EvidenceMissing -> StructuredString.tag "EvidenceMissing"
         | NoCandidateProfiled -> StructuredString.tag "NoCandidateProfiled"
-        | PromotionAdvisedNotApplied -> StructuredString.tag "PromotionAdvisedNotApplied"
+        | PromotionAdvisedNotApplied evidence ->
+            StructuredString.create "PromotionAdvisedNotApplied"
+                [ "evidence", UniqueIndexEvidence.toDiagnosticString evidence ]
+        | PromotionRefusedByOperator evidence ->
+            StructuredString.create "PromotionRefusedByOperator"
+                [ "evidence", UniqueIndexEvidence.toDiagnosticString evidence ]
 
     let toDiagnosticString (r: UniqueIndexKeepReason) : string =
         toStructured r |> StructuredString.render
@@ -162,19 +175,18 @@ module UniqueIndexRules =
     let private isComposite (index: Index) : bool =
         List.length index.Columns >= 2
 
-    /// Look up profile evidence for a single-column unique candidate.
-    /// Returns:
-    ///   - `Some true`  if the probe succeeded and showed no duplicates.
-    ///   - `Some false` if the probe succeeded and showed duplicates.
-    ///   - `None`       if no probe succeeded (or no candidate
-    ///                  profiled).
-    let private singleColumnProbe (attributeKey: SsKey) (profile: Profile) : (bool * int64) option =
-        match Profile.tryFindUnique attributeKey profile with
-        | Some candidate when ProbeStatus.isReliable candidate.ProbeStatus ->
+    /// Look up profile evidence for a single-column unique candidate
+    /// (align-II.4b: returns the collapse-free `ProbeReading` — the
+    /// prior option folded "probe ran but was unreliable" into "no
+    /// candidate profiled", making `EvidenceMissing` unproducible while
+    /// its operator copy and consumers were live).
+    let private singleColumnProbe (attributeKey: SsKey) (profile: Profile) : ProbeReading<bool * int64> =
+        Profile.tryFindUnique attributeKey profile
+        |> ProbeReading.ofCandidate
+            (fun candidate -> candidate.ProbeStatus)
             // RowCount isn't on UniqueCandidateProfile in V2's IR;
             // the probe's SampleSize is the available proxy.
-            Some (not candidate.HasDuplicate, candidate.ProbeStatus.SampleSize)
-        | _ -> None
+            (fun candidate -> not candidate.HasDuplicate, candidate.ProbeStatus.SampleSize)
 
     /// Look up profile evidence for a composite unique candidate.
     /// V2's CompositeUniqueCandidateProfile carries `ProbeStatus`
@@ -183,17 +195,17 @@ module UniqueIndexRules =
         (kindKey: SsKey)
         (attributeKeys: SsKey list)
         (profile: Profile)
-        : bool option =
+        : ProbeReading<bool> =
         let attributeKeySet = Set.ofList attributeKeys
         let matching =
             profile.CompositeUniqueCandidates
             |> List.tryFind (fun c ->
                 c.KindKey = kindKey
                 && Set.ofList c.AttributeKeys = attributeKeySet)
-        match matching with
-        | Some candidate when ProbeStatus.isReliable candidate.ProbeStatus ->
-            Some (not candidate.HasDuplicate)
-        | _ -> None
+        matching
+        |> ProbeReading.ofCandidate
+            (fun candidate -> candidate.ProbeStatus)
+            (fun candidate -> not candidate.HasDuplicate)
 
     /// Decide a single (index, intervention) pair for the given kind.
     /// Order of evaluation:
@@ -205,8 +217,11 @@ module UniqueIndexRules =
     ///      - probe succeeded + duplicates absent ⇒ EnforceUnique.
     ///      - probe succeeded + duplicates present ⇒
     ///        DoNotEnforce(DataHasDuplicates).
-    ///      - probe missing (no candidate profiled or probe failed)
-    ///        ⇒ DoNotEnforce(EvidenceMissing | NoCandidateProfiled).
+    ///      - no candidate profiled ⇒ DoNotEnforce(NoCandidateProfiled)
+    ///        ("run the profiler"); a probe RAN but was unreliable ⇒
+    ///        DoNotEnforce(EvidenceMissing) ("your probe failed —
+    ///        investigate"). align-II.4b made the second arm producible
+    ///        — it had been dead vocabulary with live consumers.
     let evaluate
         (interventionId: string)
         (config: UniqueIndexTighteningConfig)
@@ -237,17 +252,31 @@ module UniqueIndexRules =
                 // (EnforceUnique) only when `ApplyProfilePromotions` is set,
                 // else surfaced ADVISE-ONLY (`PromotionAdvisedNotApplied`) so
                 // the dev team's declared indexes stay authoritative.
+                // align-II.3: the per-index override is consulted FIRST
+                // (the nullability hierarchy's step-1 shape) — adopting ONE
+                // promotion while refusing another is expressible; the
+                // blanket ApplyProfilePromotions flag is the fallback.
                 let promoteOrAdvise (evidence: UniqueIndexEvidence) : UniqueIndexOutcome =
-                    if config.ApplyProfilePromotions then UniqueIndexOutcome.EnforceUnique evidence
-                    else UniqueIndexOutcome.DoNotEnforce PromotionAdvisedNotApplied
+                    let overrideFor =
+                        config.Overrides
+                        |> List.tryFind (fun o -> o.IndexKey = index.SsKey)
+                        |> Option.map (fun o -> o.Action)
+                    match overrideFor with
+                    | Some UniqueIndexOverrideAction.AdoptPromotion -> UniqueIndexOutcome.EnforceUnique evidence
+                    | Some UniqueIndexOverrideAction.RefusePromotion -> UniqueIndexOutcome.DoNotEnforce (PromotionRefusedByOperator evidence)
+                    | None ->
+                        if config.ApplyProfilePromotions then UniqueIndexOutcome.EnforceUnique evidence
+                        else UniqueIndexOutcome.DoNotEnforce (PromotionAdvisedNotApplied evidence)
                 let columnKeys = index.Columns |> List.map (fun c -> c.Attribute)
                 if isComposite index then
                     match compositeProbe kind.SsKey columnKeys profile with
-                    | Some true ->
+                    | ProbeReading.Reliable true ->
                         mkDecision (promoteOrAdvise CompositeNoDuplicates)
-                    | Some false ->
+                    | ProbeReading.Reliable false ->
                         mkDecision (UniqueIndexOutcome.DoNotEnforce DataHasDuplicates)
-                    | None ->
+                    | ProbeReading.Unreliable _ ->
+                        mkDecision (UniqueIndexOutcome.DoNotEnforce EvidenceMissing)
+                    | ProbeReading.NotProfiled ->
                         mkDecision (UniqueIndexOutcome.DoNotEnforce NoCandidateProfiled)
                 else
                     // Single-column path. The index has exactly one
@@ -258,11 +287,13 @@ module UniqueIndexRules =
                         mkDecision (UniqueIndexOutcome.DoNotEnforce NoCandidateProfiled)
                     | columnKey :: _ ->
                         match singleColumnProbe columnKey profile with
-                        | Some (true, rowCount) ->
+                        | ProbeReading.Reliable (true, rowCount) ->
                             mkDecision (promoteOrAdvise (SingleColumnNoDuplicates rowCount))
-                        | Some (false, _) ->
+                        | ProbeReading.Reliable (false, _) ->
                             mkDecision (UniqueIndexOutcome.DoNotEnforce DataHasDuplicates)
-                        | None ->
+                        | ProbeReading.Unreliable _ ->
+                            mkDecision (UniqueIndexOutcome.DoNotEnforce EvidenceMissing)
+                        | ProbeReading.NotProfiled ->
                             mkDecision (UniqueIndexOutcome.DoNotEnforce NoCandidateProfiled)
 
 

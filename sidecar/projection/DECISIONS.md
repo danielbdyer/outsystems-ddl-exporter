@@ -204,10 +204,10 @@ table before continuing.
 | **Per-run `--csv <dir>` override on a live flow** | 2026-07-10 (the csv-destination program) | An operator asks to snapshot an EXISTING live flow's data to files for one run without authoring a csv environment — i.e. the flag form of what `"access": "csv"` expresses durably. Cash-out shape: parse `--csv <dir>` in the flow arm of `Command.parse`, rewrite the resolved spec's `Destination` to `Csv dir` before `planMovement` (routing and the runner need nothing new — the destination arm already dispatches before direction). | deferred (2026-07-10) |
 | **Manual cycle-ordering override (V1 `CircularDependencyOptions` analogue)** | 2026-07-07 (weak-feedback resolver v5) | A real estate surfaces a cycle whose breakability is NOT inferable from schema (every edge non-nullable/cascade, but the operator knows the data arrives in a self-consistent staged order). Add as a registered `OperatorIntent Ordering` overlay keyed by SsKey, COMPOSING with the resolver — never V1's replace-it-entirely semantics. | deferred (2026-07-07; **shape sharpened 2026-07-18, v7 slice 4**: a third `ResolutionPolicy` case `Overlaid of pins * ResolutionPolicy` composing over any base — the config axis now exists, so the cash-out is one DU case + the overlay source) |
 | **`EmissionDataLaneOrder` Ruling-lever upgrade (Watch → Decide)** | 2026-07-18 (v7 slice 8 — the certificate on the three surfaces) | An operator asks to RULE the cycle from the board (accept-and-relax vs repair) rather than read the advisory. Upgrading moves the lane to DECIDE and re-reds every estate carrying a hard cycle whether or not anyone transfers those kinds — do not fire without that ask (the WATCH ⇔ no-lever law, `EstateFinding.leverFormOf`). | deferred (2026-07-18) |
-| **Composition primitive `fallback`** | 2026-05-13 (Composition vocabulary cash-out) | A second strategy returns "no decision" / Defer outcome and another picks up | 0 consumers (session 25) |
-| **Composition primitive `accumulate`** | 2026-05-13 (Composition vocabulary cash-out) | A second pass needs to consume multiple-strategy decisions at once | 0 consumers (session 25) |
-| **Composition primitive `wrap`** | 2026-05-13 (Composition vocabulary cash-out) | Per-strategy diagnostics emerge (likely tied to Diagnostics writer) | 0 consumers (session 25) |
-| **Composition primitive `lift`** | 2026-05-13 (Composition vocabulary cash-out) | A strategy reused across different IR granularities (e.g., Nullability rule on view columns) | 0 consumers (session 25) |
+| **Composition primitive `fallback`** | 2026-05-13 (Composition vocabulary cash-out) | A second strategy returns "no decision" / Defer outcome and another picks up | Unbuilt; absence machine-probed — `TriggerProbes` reds if built without this row cashing out (align-III.11) |
+| **Composition primitive `accumulate`** | 2026-05-13 (Composition vocabulary cash-out) | A second pass needs to consume multiple-strategy decisions at once | Unbuilt; absence machine-probed — `TriggerProbes` reds if built without this row cashing out (align-III.11) |
+| **Composition primitive `wrap`** | 2026-05-13 (Composition vocabulary cash-out) | Per-strategy diagnostics emerge (likely tied to Diagnostics writer) | Unbuilt; absence machine-probed — `TriggerProbes` reds if built without this row cashing out (align-III.11) |
+| **Composition primitive `lift`** | 2026-05-13 (Composition vocabulary cash-out) | A strategy reused across different IR granularities (e.g., Nullability rule on view columns) | Unbuilt; absence machine-probed — `TriggerProbes` reds if built without this row cashing out (align-III.11) |
 | **Strategy registry mechanism** | 2026-05-11 (Strategy layer: a named architectural vector) | N≥4–6 strategies make name-keyed lookup useful | 5 strategy modules (UniqueIndexRules / NullabilityRules / ForeignKeyRules / CategoricalUniquenessRules / CycleResolution); Composition is the primitive module, not a strategy. No caller demands lookup by name (session 25). **Note (2026-05-15):** the sibling *transform-registry* deferral (`DECISIONS 2026-05-06 → cashed out 2026-05-13`) re-opened under different consumer pressure as `Projection.Core.TransformRegistry` for skeleton/overlay separation (L3-CC-Transform-Totality; workstream A.4.7). That re-opening is **enumerative** (compile-time `Pass` totality), not **name-keyed lookup**, so it does NOT fire the strategy-registry-mechanism trigger here. The strategy-registry-mechanism deferral remains open under its original framing; the transform-registry shape and the strategy-registry shape are now structurally distinct. See `DECISIONS 2026-05-15 — Transform registry re-opened: skeleton-overlay separation as L3-CC-Transform-Totality`. |
 | **Diagnostics writer** | 2026-05-06 (Diagnostics live in a writer parallel to Lineage) | First downstream artifact gates on operator-channel telemetry | **Cashed out — session 14 commit 3 landed `Projection.Core/Diagnostics.fs`. UniqueIndex opportunity stream activated as first consumer (session 14 commit 5). Three-channel split (operator/auditor/developer) remains deferred until a real consumer demands differentiation.** |
 | **`RequireQualifiedAccess` retrofit** on `UniqueIndexKeepReason` / `ForeignKeyKeepReason` / similar | 2026-05-11 refinement 1 (Strategy-layer codification empirical verdict) | A DU's variants change shape (added/removed/renamed) — substantive structural modification, not interpretive resolution | `ForeignKeyKeepReason` got `MissingTarget` (session 19) and the unreachable-`DeleteRuleIgnored` interpretive resolution (session 19; `DECISIONS.md:5048` rule 13). Neither rose to "structural modification" warranting retrofit; trigger sharpened at session 25 to clarify the threshold. Today neither `UniqueIndexKeepReason` nor `ForeignKeyKeepReason` carry the attribute (session 25) |
@@ -226,7 +226,7 @@ table before continuing.
 | **`LiveOssysConnection` variant of `SnapshotSource` + cluster (multi-env + UAT-users + user-reflow strategy + extraction-time knobs)** | 2026-05-17 (OSSYS adapter parse signature) | V2 needs to operate without V1's chain in the loop entirely (real DB-touching variant) | Reserved in `SnapshotSource` DU (`CatalogReader.fs:58-62`); chapter-3+ when canary's deployment-validation arc materializes (session 25). **Updated 2026-05-19 (chapter B.4 rescope):** the operator's V1 managed-environment remote HEAD owns the live OSSYS path today; V2 picks this up under a follow-up chapter when the managed-environment access path is available, which also lights the functional-equivalence arm of Phase B's exit gate (the structural arm closes in chapter B.4 against `SnapshotJson` / `SnapshotRowsets`). **Updated 2026-05-19 (axis-survey supplement):** this chapter also absorbs axis 10 (user reflow strategy + `ManualOverride` CSV-loader; `Policy.UserMatchingStrategy` DU + `ManualOverride` already exist structurally at `Policy.fs:323+343`; missing the CSV file-format adapter at `Projection.Adapters.UserMap.UserMapLoader` per the chapter-4.2 deferral) + axis 14 (sampling threshold + command timeout + sampling cap — V1 has these on SqlOptions). The V1 managed-environment HEAD has multi-env + UAT-users + user-reflow-strategy + extraction-time-knobs all done together; V2 picks the cluster up as a unit. |
 | **Static-seed parent-handling behavior** (dispersed from struck DynamicDataSection) | 2026-05-19 (axis-survey supplement) | A real operator workflow surfaces with FK-parent handling requirements that diverge from V2's static-seed-emitter default. V1's `StaticSeedParentHandlingMode` enum (`Include` / etc.) lived under V1's `DynamicData` config umbrella — V2 stripped the umbrella per the conflation strike. If a workflow demands operator-configurable parent handling, the static-seed emitter gains an `Options` parameter at that slice time. Today V2's behavior is hardcoded. | Not an operator-overlay axis (not surfaced through Policy DU); internal-to-emitter. Surfaces under concrete operator demand. See `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` entry below. |
 | **`Spectre.Console` TtyRenderer + dual-channel `--json-out` routing micro-chapter** | 2026-05-20 (logging-format implementation gap audit) | Operator runs the CLI + reports NDJSON-only stderr emission as unfriendly for interactive runs (verbatim from `docs/logging-format.md` §15.3 post-chapter framing). Substrate sketched in §15.1 (two-channel diagram) + §15.3 (`Projection.Cli/TtyRenderer.fs` F# adapter shape). The micro-chapter pairs with the `data-twin` CLI verb row above — both operator-facing UX-layer surfaces over established structural substrate. | Deferred at 2026-05-20. Slice 6.5 ships the channel-1-only `LogSink` (the structural commitment); channel-2 TtyRenderer is the optional layer on top. Per the contract: "Channel 2 (`--pretty`) is a quality-of-life feature on top of the structural commitment, never a substitute for it." See `DECISIONS 2026-05-20 (logging-format implementation gap audit)` entry below. |
-| **Standalone `projection extract` + `projection profile` CLI subcommands** | 2026-05-19 (chapter B.4 rescope — chapter-mid scope change) | A concrete operator-paced workflow surfaces that needs catalog-extract or profile-attach as a stand-alone step independent of `full-export` (e.g., a CI lane that materializes the snapshot without emitting; a profile-cache refresh job). The chapter-B.4-open's slice plan named both subcommands at slices 6 + 7; the rescope drops them after operator framing produced no workflow demand independent of full-export. | Deferred at chapter B.4 (2026-05-19). Today `full-export` is the only operator-touchable CLI subcommand. Reserved code paths in the logging-format contract still name `extract.*` + `profile.*` event categories (these fire from `full-export`'s orchestration); promoting them to standalone subcommands requires only a CLI surface (no Core change). See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below. |
+| **Standalone `projection extract` + `projection profile` CLI subcommands** | 2026-05-19 (chapter B.4 rescope — chapter-mid scope change) | A concrete operator-paced workflow surfaces that needs catalog-extract or profile-attach as a stand-alone step independent of `full-export` (e.g., a CI lane that materializes the snapshot without emitting; a profile-cache refresh job). The chapter-B.4-open's slice plan named both subcommands at slices 6 + 7; the rescope drops them after operator framing produced no workflow demand independent of full-export. | **Cashed out in two halves, both under fired triggers, neither under the deferred names (precision: the halves have different histories).** The *profile* half shipped with the synthetic-data program as `projection profile <env> --out` (THE_SYNTHETIC_DATA_DESIGN §2.2 — the durable Profile artifact; the trigger's "profile-cache refresh job" shape). The *extract* half's trigger — "a CI lane that materializes the snapshot without emitting" — fired at the data-sink chapter and cashed 2026-08-15 as **`projection sync <env>`** (slice S6): a forced total witnessed read that materializes the raw `MetadataSnapshot` into the sink store, journals the displacements, and stamps the environment label, emitting nothing. Deliberately NOT named `extract`: the verb's meaning is the sink's naming act (pillar 8), and the reserved `extract.*` event categories keep firing from `full-export`'s orchestration unchanged. See `2026-08-15 — sink S6` entry below. Originally: deferred at chapter B.4 (2026-05-19), when `full-export` was the only operator-touchable subcommand. |
 | **Multi-environment configuration (DEV / TEST / UAT / PROD) + UAT-users logic** | 2026-05-19 (chapter B.4 rescope) | V2 brings the operator's V1 managed-environment remote HEAD into V2's tree — both components are fully done in V1 today; the V2 carbon-copy path is gated on access to the V1 implementation. Pairs with the `LiveOssysConnection` deferral above (live OSSYS connectivity is the bridge that lets multi-environment / UAT-users be exercised end-to-end). | Deferred at chapter B.4. Today `full-export` uses a single-environment config shape; multi-environment + UAT-users carbon-copy lands when V1 remote HEAD is available. See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below. |
 | **`data-twin` CLI verb wrapping `DockerImageEmitter`** | 2026-05-19 (chapter B.4 rescope) | Operator's dev-team workflow surfaces concretely (one-click `docker pull` + `docker run` to stand up a SQL Server replica seeded from the projected schema). The substrate already shipped at chapter 3.x close — `DockerImageEmitter.emit : Catalog -> Result<DockerImageContext>` produces `{ Dockerfile; DacpacBytes; EntrypointScript; Readme }` ready for `docker build .`. The verb is a CLI wrapper over the existing emitter. | **Trigger fired + cashed out 2026-07-18 (the Twin)** — the per-developer local Docker SQL Server demand surfaced as an operator request; realized as the standalone Twin bounded context (`THE_TWIN.md`; `twin up` — a persistent managed container + DacFx publish of the ejected SSDT estate + K1-pooled synthetic mint) rather than a `projection` verb, per the post-eject portability requirement. The baked-image variant (`twin bake` over `DockerImageEmitter`) remains the packaging follow-on, trigger unchanged. Originally: deferred at chapter B.4. Surfaces under its own small chapter when the operator-paced dev-team workflow demands it; sequencing after the V1 managed-environment material lands so the verb is designed against the full operator-paced workflow context. The DACPAC binary emission lives under this verb (NOT under `full-export`'s output set per the rescope). See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below and `CHAPTER_3_X_CLOSE.md` for the DockerImageEmitter substrate. |
 | **`MetadataContractOverrides` wiring into V2 `MetadataSnapshotRunner` mappers** | 2026-05-19 (slice B.4.5.metadata-contract-overrides) | A real V1-source drift event surfaces a strict column in V2 production extraction producing NULL where V2's mapper expects non-NULL. Today V2 has zero direct wiring carry-over from V1 (V1's sole consumer `AttributeJsonResultSetProcessor.IsColumnOptional("AttributeJson", "AttributesJson")` reads the V1-SUNSET `attrJson` rowset that V2 skips at `MetadataSnapshotRunner.fs:778`). Per IR-grows-under-evidence: pick the relaxable column on real drift, not speculatively. | Mechanism shipped at slice 5 (`MetadataContractOverrides.fs`); structurally available + tested; wiring deferred. Cash-out shape: thread `MetadataContractOverrides` through `runAndParse` as a parameter; introduce `readStringRelaxable resultSet column ordinal overrides` helper that consults `isColumnOptional` and dispatches to `readString` or `readStringOpt`; refactor the affected mapper to use the helper. See `DECISIONS 2026-05-19 (slice B.4.5.metadata-contract-overrides)` entry below. |
@@ -239,11 +239,25 @@ table before continuing.
 | **CSV adapter for `ManualOverride` (UserMapLoader)** | 2026-05-11 (Chapter 4.2 close) | A real operator workflow demands the file-format pickup path. Pre-scope §3 names `Projection.Adapters.UserMap.UserMapLoader` (CSV: `SourceUserId,TargetUserId,Rationale`). Slice ε ships `ManualOverride` consuming a programmatic `Map<SourceUserId, TargetUserId>`; I/O adapter at the boundary is deferred. Mirrors the chapter 4.1.B slice ε NDJSON-adapter deferral — sibling chapter, same shape. | No I/O adapter today; ManualOverride works via programmatic construction. See `2026-05-11 — Chapter 4.2 close` entry. |
 | **`Attribute.Default` field + DEFAULT constraint emission (chapter 4.1.A slice 7-default)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter (chapter 3.2) surfaces default-constraint columns from `sys.default_constraints` (the rowset variant materializes default expressions per column). Pre-scope §8 slice 7 names the IR widening (`Attribute.Default : string option`) + emission of `CONSTRAINT [DF_<Table>_<Col>] DEFAULT (<expr>)`. **107+ Attribute literal-construction sites** would need updating with `Default = None` under the record-extension empirical-test discipline; deferred per IR-grows-under-evidence until the rowset adapter surfaces real defaults. | `Tolerance.IgnoreDefaultNames = false` per pre-scope §4 line 214 documents the comparator's current acceptance posture; no consumer demands the field today. Slice 7's identity portion (`Attribute.IsIdentity`) shipped at chapter 3.1/3.2; only the default-constraint portion is deferred. |
 | **Staged-bulk MERGE shape + `chooseMergeShape` selector for emitted seed scripts** | 2026-06-11 (The perf-harness verdicts — the MERGE cliff REFUTED) | Static populations ≳100k rows/kind, where the measured ~2.5k rows/sec single-MERGE execute slope or per-statement memory matters. Demoted from stage-0 correctness to armed-perf by the H1 in-harness refutation (the `MERGE … USING (VALUES …)` derived-table form executes at 10k rows on SQL Server 2022; the 1000-row TVC cap binds `INSERT … VALUES` only — COUNT(*)-verified, replicated on a second host). Any future cut here carries the DeleteScope-correctness witness (`WHEN NOT MATCHED BY SOURCE` cannot be naively chunked) and the before/after via `perf-harness.sh run seed-merge-execute`. | **Cashed out — 2026-06-25.** Shipped as `DataStagingPolicy` (`emission.dataStaging { mode, threshold, indexThreshold }` → Core) threaded to all three data lanes via the composer's `DataEmitOptions`; the generic staged rendering lives in the shared `StagedMerge` module (`Targets.Data`); `DataStagingPolicy.shouldStage` IS the `chooseMergeShape` selector. `indexThreshold = 100000` is MEASURED (clustered `#temp`-PK index wins ~33-37% at 100k/250k/500k, no crossover). DEPLOY-verified (`StagedMergeDeployE2ETests` 5/5). See `2026-06-25 — Staged-\`#temp\` MERGE completed across all 3 data lanes` entry below. |
-| **`Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A slice 8)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter surfaces description columns (`MS_Description` extended properties) from `sys.extended_properties`. Pre-scope §8 slice 8 names the IR widening (`Kind.Description : string option` + `Attribute.Description : string option`) + emission of `EXEC sys.sp_addextendedproperty @name=N'MS_Description', ...` statements per V1's `ExtendedPropertyScriptBuilder.cs:91-95`. **107+ Attribute literal-construction sites** + Kind literal-construction sites would need updating with `Description = None`; deferred per IR-grows-under-evidence until the rowset adapter surfaces real descriptions. | `Tolerance.IgnoreExtendedProperties = true` per pre-scope §4 line 213 documents the comparator's current acceptance posture; no consumer demands the field today. The V1↔V2 differential test treats extended-property absence as a deliberate divergence. |
+| **`Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A slice 8)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter surfaces description columns (`MS_Description` extended properties) from `sys.extended_properties`. Pre-scope §8 slice 8 names the IR widening (`Kind.Description : string option` + `Attribute.Description : string option`) + emission of `EXEC sys.sp_addextendedproperty @name=N'MS_Description', ...` statements per V1's `ExtendedPropertyScriptBuilder.cs:91-95`. **107+ Attribute literal-construction sites** + Kind literal-construction sites would need updating with `Description = None`; deferred per IR-grows-under-evidence until the rowset adapter surfaces real descriptions. | **Cashed out — trigger fired SILENTLY and the schema-L3 close (2026-08-30) caught the stale row** (the exact failure mode this index exists to prevent): `Attribute.Description` + `Kind.Description` landed in Core, `SsdtDdlEmitter.extendedPropertyStatementsWith` emits the `MS_Description` calls, and the tolerance this row cites (`CommentMetadataUnreflected`) was retired at chapter 4.1.A slice 8 (2026-05-17, gravestone in `Tolerance.fs`). The feared "107+ construction sites" dissolved under the smart-ctor default — the same mechanism that later absorbed the `Reference.Legs` widening. |
 | **Sub-unanimity consensus thresholds (`check estate`)** | 2026-07-15 (the estate chapter opens) | The operator asks for a per-axis apply threshold below unanimity. Until then: the estate decision is the meet over the evidence join (deciding on `Profile.merge` ≡ unanimous per-env decisions); consensus ratios live in `estate.json` only and never lead a rendered line (the blocking environment is named instead). | deferred (2026-07-15) |
 | **Relaxation expiry (calendar / run-count)** | 2026-07-15 (the estate chapter opens) | The operator asks for calendar (T-15 review) or run-count expiry on interim relaxations. Until then retirement is probe-only: every relaxation carries its reopen probe, and the probe reporting zero renders the retirement notice. | deferred (2026-07-15) |
-| **S8/O4 physical-residue sweep (unmanaged tables / columns / triggers / computed columns)** | 2026-07-15 (the estate chapter opens) | The first unexplained physical residue in a real estate run (an object on disk the model does not carry, surfaced outside the OSSYS read). Lands as S1′-shaped DECIDE findings via an `INFORMATION_SCHEMA` sweep beside the OSSYS read — the one place the estate mode deliberately looks past OSSYS. | deferred (2026-07-15) |
+| **S8/O4 physical-residue sweep (unmanaged tables / columns / triggers / computed columns)** | 2026-07-15 (the estate chapter opens) | The first unexplained physical residue in a real estate run (an object on disk the model does not carry, surfaced outside the OSSYS read). Lands as S1′-shaped DECIDE findings via an `INFORMATION_SCHEMA` sweep beside the OSSYS read — the one place the estate mode deliberately looks past OSSYS. | **TABLE grain cashed 2026-08-15 (the data-sink chapter, S12) — in its stated shape**: `SinkResidue.sweep` probes `INFORMATION_SCHEMA.TABLES` (the `OSUSR_%` universe — a NAMED caveat: an arbitrarily-named external table is indistinguishable from a non-OutSystems table and stays out) beside the OSSYS read at `check estate`, subtracts the witnessed edition's claims (tombstones still claim), and the residue rides the claims plane as `Unclaimed` → `PhysicalUnclaimed` DECIDE findings. The finer grains the row also names (columns / triggers / computed columns) STAY deferred under the same trigger. See `2026-08-15 — sink S12` below. |
 | **The nullability-binder relaxation-direction amendment** | 2026-07-15 (the estate chapter opens) | Wave A6 opens (the estate overlay emitter). `TighteningBinding.fromConfig` currently no-ops the whole `kind:"nullability"` intervention class (2026-06-22), which would make the overlay's `keepNullable` entries expressible-but-inert (the NM-69 class). At A6: either re-open the class for the RELAXATION direction only (keepNullable / allowMandatoryRelaxation bind; coercion stays dropped) with the amendment first-in-PR + an A44 enforcement test, or — if declined — scope the overlay to FK/unique/categorical and keep nullability forks as DECIDE findings. | **Cashed out — 2026-07-15, estate wave A6 (first-in-PR).** The relaxation direction is STRUCTURAL: `TighteningDirection` (`EvidenceDriven \| RelaxationOnly`) on both nullability and FK configs; budget-less `kind:"nullability"` entries bind `relaxationOnly` (budgeted entries stay dropped — coercion unchanged); per-reference `referenceOverrides` (`keepUntracked`) land the previously-inexpressible single-FK untrack; `DecisionOverlay.KeepNullable` (OperatorOverride outcomes only) reaches `SsdtDdlEmitter.columnDef` — the one lawful loosening. A44 enforcement test: `` `overlay: every emitted key binds through TighteningBinding and reaches emission` `` (TighteningBindingTests). See `2026-07-15 — The nullability-binder amendment lands` entry below. |
+| **§5.12 fork 1 — the prior `.refactorlog` at emit time** (engine input vs repo-merge concern) | 2026-06-01 (Wave-6 ontology §10, "decisions owed") | Chapter 6.F.1 opens (refactorlog-against-prior emission) — the fork gates it | Open; substance in the 2026-06-01 entry ("Decisions owed"). Indexed align-III.11 — was named-with-trigger inside the dated entry only |
+| **§5.12 fork 2 — the SSIS team's consumable** (dacpac / per-sprint changelog / machine-readable diff) | 2026-06-01 (Wave-6 ontology §10, "decisions owed") | Chapter 6.F.4 opens (the change-manifest emission wiring) — the fork gates it | Open; substance in the 2026-06-01 entry. Indexed align-III.11 |
+| **§5.12 fork 3 — eject provenance form** (frozen state + full refactorlog history vs state alone; P-PROV append-forever vs collapsible) | 2026-06-01 (Wave-6 ontology §10, "decisions owed") | The eject chapter opens — the fork decides its provenance packaging | Open; substance in the 2026-06-01 entry. Indexed align-III.11 |
+| **The permissions axis** (grants/roles/RLS as a projected axis: `Grant` IR facet, `GRANT` statements, a permission channel in `CatalogDiff`, readback) | 2026-06-16 (THE VECTOR Wave 5 honesty; carried in the matrix T-VI note) | A flow must PUBLISH grants — the eject is the named firing point (the A2 pre-flight gates but cannot project/diff/round-trip a permission decision) | Open; substance in the generated matrix's T-VI note + THE VECTOR Wave 5. Indexed align-III.11 — was heredoc-resident only |
+| **The atomic `BEGIN TRAN` estate-scale envelope** (M22 beyond LOCAL full-access databases) | 2026-06-16 (M22 lands `--atomic` scoped LOCAL) | P7b throughput survey passes at estate scale AND a direct-connect target class emerges (production ships via ADO/Octopus/SSDT; managed cloud is DML-only — the compensating channel M21/M23 is the standing arm) | Open; substance in the M21/M22/M23 entries + the matrix T-VI note. Indexed align-III.11 |
+| **X6 — statement-algebra rehome (`Projection.Statements.Sql`)** | 2026-08-30 (align-III X-arc scoping) | A SECOND non-SSDT consumer of the `Statement` DU / `ScriptDomBuild` surface lands (today the SSDT target family is the only home; one consumer = no rehome). | Open; the algebra stays in `Targets.SSDT` until the trigger fires. |
+| **`CanaryVerdict.Aborted`** | 2026-08-30 (align-III.3 — the typed R6 gate) | The FIRST started-but-unconcluded canary observed in the envelope stream (today a canary is Green/Red/NotRun; an abort is unobservable and would misread as NotRun). | Open; the DU appends the variant when the trigger fires (wire token reserved). |
+| **Append-only ruling HISTORY beside the keyed `RulingStore`** | 2026-08-16 (align-II.1's design ruling, restated at the III close) | The FIRST re-ruling consumer (an operator or surface that must read a finding's PRIOR rulings, not just the current one). `BasisAnchor.SinkEdition` widens in the same slice. | Open; the keyed replace-by-key store is the operating shape. |
+| **`SpineLedger` rename (the last ledger-noun overload)** | 2026-08-30 (align-III.21/X5 — `RunIndex` executed; SpineLedger explicitly out of scope) | The ledger-noun overload measurably stings again (an agent or the operator misreads SpineLedger as a `LedgerSpec` instance). | Open; a per-run stage tracker, not an admission-disciplined ledger — the name is the residue. |
+| **The full Sink→Witness B-family rename (`SinkTable`/`SinkStore`/`SinkJournal`/`sink:` refs)** | 2026-08-30 (align-III.19/X3 — `WitnessedRow` + the Witness- freeze) | An operator-surface rename arc is commissioned (L-effort: the `sink:` refs and `sink.*` codes are operator vocabulary; the freeze covers NEW names only). | Open; new witness-plane names take `Witness-`/`Witnessed-`, never `Sink-`. |
+| **The consent-surface voice ruling (`WriteSignoff.fs` / `ActConsent.fs` in the lazy-plural ratchet)** | 2026-08-16 (a11 carve-out; measured at align-III.22) | AWAITING OPERATOR — one word either way. Both files measured ZERO lazy plurals; the exclusion was jurisdictional (their copy is the operator's signature), not protective. | **Cashed 2026-08-31 — the operator ruled "Approved": both files JOIN the ratchet.** The `excluded` list is deleted from `VoiceRegisterTests`; the freeze covers the whole src tree with no carve-outs. See `2026-08-31 — The consent-surface voice ruling lands` below. |
+| **`Supplied<'T>` config-provenance wrapper** | 2026-08-16 (align-I.9 — the rule table shipped instead) | The FIRST mis-wiring the I.9 rule table catches (a config-taking pass whose stance the property test reveals as misclassified). | Open; the rule table + property test are the operating shape. |
+| **WP-13 remainder — the in-cycle emission order (SCC-condensation + trailing-ALTER FK split)** | 2026-07-17 (the estate close deferred WP-12/13 to the walk); trigger FIRED 2026-08-31 (walk-4) | The terminus operator walk — FIRED: the probe confirmed the harm (the scaffold's linear apply fails on the in-cycle forward FK) and the §14 half landed (`fidelity.proof.applyFailed` named refusal). The emission-order fix stays on SSDT_REMEDIATION_HANDOFF Tier 4; its NEW trigger is that Tier-4 arc — and the probe's proof plane is its standing red-path witness (the fix cannot land silently). | Discharged-with-remainder; see `2026-08-31 — walk-4`. |
+| **WP-12 remainder — the secondary-leg duplicate-constraint residual** | 2026-08-30 (schema-L3.2's named residual); premise pinned 2026-08-31 (walk-4) | The first REAL estate carrying two model reference attributes over one deployed composite FK. The walk pinned the native-estate premise executable (zero multi-leg references on the fixture estate). | Open; the L3.2 machinery covers expressibility; only the duplicate-constraint minting awaits its estate. |
 
 **[UPDATE 2026-07-03 — reconciliation note: six zero-reader `ComposeState` fields
 now consumed].** These six items are not tracked as individual rows in this table
@@ -30909,3 +30923,2834 @@ omits, and a `hierarchyid`-bearing view neither refuses the read-back nor recons
 kind. `TwinViewLoopTests` stays green (the view stays published; base tables mint).
 Charter note in `THE_TWIN.md` §6 data-flow. **Re-open trigger:** a need to mint *into* an
 updatable single-table view (none today; estate views are read models).
+
+---
+
+## 2026-08-15 — The data sink chapter opens (THE_DATA_SINK adopted; the acquisition grain gets its ledger)
+
+Operator approval of the execution master plan (plan-mode review over three reconnaissance
+briefs plus a design pass). `THE_DATA_SINK.md` flips from first-draft charter to ADOPTED with
+three inline amendments; `CHAPTER_SINK_OPEN.md` carries the strategic frame and the wave map
+(S0 → S16); axiom candidates A49 + T19 land with their `AxiomTests.fs` Bucket-C stubs in the
+opening commit. The rulings, each operator-decided this date:
+
+- **Pillar-8 naming: "sink."** The concept, the modules (`SinkStore` / `SinkJournal` /
+  `SinkDisplacement` / `SinkSyncRun`), the ref scheme (`sink:<env>[@<syncId>]`), the store
+  child (`<store>/sink/`), the error-code family (`sink.*`), and the verb (`projection
+  sync`). Considered: *mirror* (DBA resonance), *store* (house resonance — rejected as
+  overloaded: the estate store, the episode store, and the evidence store already carry it).
+  The operator's own term wins; it is also the data-engineering term for a durable
+  destination of a sync.
+- **The persisted grain is `MetadataSnapshot`, not `RowsetBundle`.** `toBundle`
+  (`MetadataSnapshotRunner.fs`) is lossy — `PhysColsPresent`, `#FkReality`, `#FkColumns`
+  never reach the bundle; `ColumnReality`'s independent axes fold; raw `Data_Kind` collapses
+  to `IsStatic` — so the bundle is not the source-shaped witness. Persisting the snapshot
+  makes `toBundle` a replayable pure projection (future bundle evolution re-derives from old
+  witnesses), lets the divergence diagnostics replay from the store, and removes the need
+  for any `SnapshotSource` DU change: a sink read is load → `toBundle` → `normalizeBundle` →
+  `parse (SnapshotRowsets …)`. The codec (`MetadataSnapshotCodec`, codecVersion 1) lives in
+  `Projection.Adapters.OssysSql` beside the types (`Targets.Json` references Core only and
+  cannot see them).
+- **Witness depth: every live OSSYS read.** One internal, advisory call in
+  `LiveModelRead.fromConnectionWith` after the runner succeeds — the single funnel all seven
+  production acquisition sites flow through (including the Twin's evidence import,
+  `Twin.Runtime/EvidenceImport.fs`, named here so a `sink/<twin-digest>` directory never
+  reads as a surprise). Store disabled ⇒ named live-only no-op; a store write failure is
+  advisory and never fails a read. `LiveModelRead` already writes notice artifacts on every
+  live read; the sink snapshot is a second artifact on an existing write seam.
+- **The totality gate.** Only `defaultParameters`-shaped acquisitions (all modules,
+  `IncludeSystem = 1`, `IncludeInactive = 1`, `OnlyActiveAttributes = 0`, no entity filter)
+  become sink states and journal entries; a scoped read skips witnessing with a named
+  reason. A scoped read diffed against a total predecessor would fabricate removals — the
+  gate is what keeps the journal a ledger rather than a log of query shapes.
+- **Store keying: `connDigest16`, label in the manifest.** SHA-256 (first 16 hex, lowercase)
+  over the normalized (DataSource, InitialCatalog) pair — credential rotation must not fork
+  the store. The passive hook writes `EnvLabel = None`; `projection sync <env>` stamps the
+  label — the sync verb is the act that makes an environment addressable by name. Ref
+  resolution (`sink:<env>`) scans manifests for the label, config-free and offline-true; two
+  manifests claiming one label refuse by name (`sink.envAmbiguous`).
+- **Freshness policy ≠ witness gate.** `sink.policy = off | auto | pinned` (the
+  `bridgeRowStaging[].cache` vocabulary at its second instance) governs the reuse/probe axis
+  only; witnessing is gated by store presence + totality. One lever, one meaning; an
+  operator who wants no witnessing disables the store.
+- **Exit codes: none new.** `sink.journal.syncRegression` → 9 (the fail-loud family, the
+  `transfer.resume.sourceDrift` sibling), placed before a generic `sink.*` → 2 arm;
+  `sink.writeFailed` → 1 falls out of the existing `.writeFailed` rule; a no-store `sync`
+  refuses at 2 (config-shape, the `estate.history.sinceNoStore` precedent).
+- **Deferrals cited as NOT firing.** `ICatalogReader` (Position B → A): a sink read is a
+  *variant* of the OSSYS source — with the grain ruling it is not even a `SnapshotSource`
+  variant, just a persisted producer of the existing rowset path — so the second-source
+  trigger stays unfired. `LiveOssysConnection` (reserved variant): untouched; the sink is
+  the complement (operating without the *source* in the loop, not without V1's chain).
+- **One plan correction recorded (R1).** The witness hook compiles at
+  `Projection.Pipeline.fsproj` position ~25 (`LiveModelRead.fs`); `EstateStoreLocation.fs`
+  compiled at ~52. `EstateStoreLocation.fs` opens only `System`, so it MOVES UP to directly
+  after `NoticeSink.fs`, and the sink modules insert between it and `LiveModelRead.fs`, each
+  entry carrying the house compile-order rationale comment (lands at slice S4a).
+- **Fixture posture.** The 14-consumer `ossys-edge-case.seed.sql` is never edited; a second
+  embedded resource (`ossys-lifecycle.seed.sql`) carries the tombstone / extension-pair /
+  contested / orphan scenarios, authored fresh (no V1 carbon-copy ⇒ no ADMIRE row); pure
+  `MetadataSnapshot` builders land in `Projection.Tests.Support` so claim adjudication is
+  pure-pool property-tested and Docker holds one end-to-end witness per scenario.
+
+Chapter-open findings (named, not fixed): the lint guardrail red on the inherited tree (82
+unmarked violations across five rules in the 2026-07-22..25 arc files, landed against a red
+gate via direct pushes — this chapter self-enforces a zero-new-violations delta gate plus a
+manual perf-gate per commit, uses the explicit-deviance hatch named per commit, and owes the
+82-site disposition as a standing follow-on); the three Docker-touching files resident in the
+pure pool with summary-invisible soft-skips; the dual sequence-SsKey synthesis conventions;
+the EstateHistory double-`estate` nesting; the absence of ConfigSchema regen tooling. Each is
+listed in `CHAPTER_SINK_OPEN.md` §3 with its disposition.
+
+## 2026-08-15 — sink S6: `projection sync <env>` lands (the naming verb; the standalone-extract deferral cashes)
+
+The sink's operator verb, end to end on the one dispatch plane: `Intent.Sync` →
+`planSync` (env positional-first per the `profile` convention; `resolveLiveConn`;
+`--format json` machine lens) → `PlanAction.SyncEnvironment` carrying a `SyncArgs`
+record from birth (the CheckGoArgs lesson) → `Faces/Sync.fs` → `SinkSyncRun.run`
+(Pipeline). Three dispositions worth recording beyond the plan:
+
+1. **One funnel, structurally pinned.** `SinkSyncRun` performs NO acquisition of its
+   own — it calls `LiveModelRead.fromConnectionWith SinkSyncRun.acquisitionParameters`
+   (the witness persists *inside* the funnel, exactly as every passive read does) and
+   then reads the store back for the report. `acquisitionParameters` is defined as
+   `MetadataSnapshotRunner.defaultParameters` and a pure-pool test pins the equality
+   plus `SinkStore.isTotalAcquisition` — A49's structural pin, cite-able when the
+   axiom promotes at S9. The verb differs from a passive read in exactly one act:
+   `SinkStore.nameEnvironment` stamps the operator's label onto the manifest.
+2. **No second notice artifact.** The plan sketched `notices/sink-sync/<runId>.json`;
+   dropped — the sync's read IS a funnel read, so the existing LiveModelRead notice
+   artifact (and the S5 witness-warning channel inside it) already covers the run.
+   A verb-specific notice file would be a second artifact saying the same thing.
+3. **No `sync.started` code.** The face is a `Shell.Go` run with no stage stream;
+   a started-code with no emitting mechanism would be copy for a phantom event (the
+   totality test's own posture). The voiced set is exactly `sync.completed` (§3),
+   `sync.unchanged` (§6 — the metadata plane's CDC-silence rendered as one quiet
+   line, displacement count = 0 as the evidence field), and `sink.storeDisabled`
+   (§14, remedy named), registered in both totality lists in the same commit (R9).
+
+Exit codes land as ruled at chapter open: `sink.journal.syncRegression` → 9 tested
+BEFORE the generic `sink.` → 2 arm (ordering pinned by test); `sink.writeFailed`
+already lands on the write axis (1). The Active-deferrals row "Standalone
+`projection extract` + `projection profile`" flips to cashed-out with the two-halves
+history stated precisely (R10): the profile half predates this chapter; the extract
+half cashes here as `sync`, deliberately not named `extract`. Docker witnesses:
+`SinkSyncVerbTests` drives sync → Silent → mutate → sync over the lifecycle seed
+under a per-test temp store and pins the no-store refusal by code.
+
+**Mid-slice finding (audit during the work):** two Docker transfer-leg tests are red
+on the inherited tree — `StagedMergeDeployE2ETests` (emitted script lost the `#fk_`
+deferred-FK staging table its assert expects) and `T18CycleBreakCanaryTests` (Phase-2
+MERGE hits `FK_T18_ALPHA_BETA` because the deferral is absent). Verified pre-existing
+by reproducing both against the pre-chapter commit `34d4967` in a clean worktree on a
+freshly restarted container (NOT survival-rule-2 memory decay — that was probed first
+and eliminated). The last reshaping of that path is the 2026-07-21..25
+bridge-retargeting arc, the same direct-push arc behind the 82-site lint finding. Out
+of the sink chapter's scope (the sink never touches the transfer leg); standing
+follow-on owed beside the 82-site disposition; recorded in `CHAPTER_SINK_OPEN.md` §3.
+
+## 2026-08-15 — sink S7: sink refs land (`sink:<env>[@<syncId>]`; K2 total parity proven)
+
+The witnessed states become addressable operands on the one revision algebra:
+`Ref.Sink` parses the `sink:` scheme (a non-numeric `@`-tail stays part of the LABEL —
+labels are opaque operator strings — so a malformed pin fails downstream as
+`sink.envUnknown` naming the whole text, never a silent misroute to a file ref);
+`SinkRead.resolve` is the manifest env-label scan (R4 — config-free, offline-true;
+`sink.envUnknown` / `sink.envAmbiguous` / `sink.syncNotFound` / `sink.snapshotUnreadable`,
+each → the config-shape exit 2 through the standing generic `sink.` arm);
+`Source.ofSink` is the port verb (ReadCatalog only — a witnessed state carries no live
+data to probe, so `AcquireProfile = None` structurally, exactly like a snapshot file).
+The read is the live pipeline minus the wire: snapshot → `toBundle` →
+`CatalogReader.parse (SnapshotRowsets …)` — parse's own idempotent normalization does
+the normalizing (the explicit `normalizeBundle` call in `LiveModelRead` exists only to
+SURFACE erasure notices at acquisition time; a sink read replays an acquisition whose
+notices were already surfaced, so the parse is the whole story). **K2 lands as its
+stated law**: `SinkRefParityTests` proves total `Assert.Equal<Catalog>` between the
+live read and the sink read of the state it witnessed — latest AND pinned (after the
+estate moves, `sink:uat@1` still reproduces edition 1; the new latest equals the new
+live read; the same operands resolve through `Ref.resolveCatalog`).
+
+Judgment calls, recorded:
+
+1. **`bothOssys` → `bothEspaceSafe` over `espaceSafe : Ref -> bool`** (pillar-8
+   rename, not an addition): the concept was always "both operands carry native
+   espace-safe identity", and a sink ref carries it by construction (the sink persists
+   the same rowsets the ossys read parses — K2 is the proof). File/json/`@runId`
+   operands stay OUT of `espaceSafe` (an authored model is not GUARANTEED native);
+   `live:` stays out (ReadSide synthesizes SsKeys). `diff sink:e@1 sink:e@2` therefore
+   normalizes to the logical shape like an ossys pair — the temporal diff S13 makes an
+   operator workflow.
+2. **The mandatory freshness line** (`sink.evidenceAge`, §5) renders at the
+   diff/compare faces for every `sink:` operand BEFORE any verdict — the
+   `estate.evidence.offline` posture at the sink's grain. A pinned edition's age comes
+   from ITS journal line's capture time, not the manifest's latest (the line must
+   describe the edition the read actually rides); the journal-unreadable fallback is
+   the manifest time (age is advisory; the read itself stays fail-closed).
+3. **`ModelResolution` gains `SinkWitness` via `chooseOriginWith offline sinkEnv …`**:
+   online, the sink is the LAST fallback (live > file > sink — no existing resolution
+   changes shape); `--offline` pins away from the wire (sink preferred, file allowed —
+   a file is already offline-true — live forbidden; nothing offline-true configured =
+   `model.offline.noSource`). The two-arg `chooseOrigin` delegates to the full form
+   (one selection law, property-pinned). The verb-level `--offline` flag and
+   estate/emit threading are S13's, as planned.
+4. **`SinkStore.fs` de-binarized**: the S4b digest-basis separator had landed as a raw
+   NUL byte in the source text, making the file invisible to ripgrep and binary to
+   diff tooling; replaced with the `"\u0000"` escape (spelled out) — same one-character string, same
+   digests (the digest laws pin it), text source again.
+5. **The witness persists the snapshot RAW (wire order), not canonicalized — K2's own
+   correction.** The first parity run failed on kind ORDER: the store held
+   `SinkDisplacement.canonical` (key-sorted rowsets) while the live parse receives the
+   rowsets in wire order and preserves it, so the two catalogs' lists disagreed. The
+   fix is the charter's own language — the SOURCE-SHAPED witness: persist exactly what
+   the wire yielded, so a sink read replays THE acquisition (same rows, same order,
+   same parse), not an equivalent of it. Canonical order remains the DIFF algebra's
+   internal normal form only: `diff` is Map-keyed (order-blind — CDC-silence and the
+   Unchanged gate are unaffected), and `applyAll`/`Ledger.replay` produce canonical
+   states, so T19's replay law is stated at canonical grain
+   (`canonical (loadSnapshotAt latest) = replay chain` — the S5 witness suite's
+   step 5 restated accordingly). No store-compat concern: no pre-S7 store exists
+   outside tests.
+
+## 2026-08-15 — sink S8: the freshness axis (TableFingerprint extraction; sink config section; the decision table)
+
+**R2, now RULED where it operates** (chapter-open codification made binding): `sink.policy`
+governs the REUSE axis only — `off | auto | pinned` (the `bridgeRowStaging[].cache`
+vocabulary at its second instance, per-environment refinable) decide whether a model read
+may serve the witnessed state instead of paying the wire. Witnessing is gated by store
+presence + acquisition totality, NEVER by policy: an operator who wants no witnessing
+disables the store. One lever, one meaning.
+
+The pieces, and the judgment calls in them:
+
+1. **`TableFingerprint` extracted at the second consumer** (`Projection.Adapters.Sql`,
+   compiled before `EvidenceFingerprint`): the table-shaped staleness probe (one
+   UNION ALL round-trip of row count / canonical MAX(pk) / order-independent content
+   checksum) with the estate's Catalog-shaped `EvidenceFingerprint.probe` now a thin
+   Kind→target caller. The estate's emitted SQL is BYTE-IDENTICAL through the extraction
+   (pinned as text in `SinkFreshnessTests`); bench label + failure code are the caller's
+   (`estate.fingerprint.probe`/`estate.evidence.probeFailed` kept; the sink names
+   `sink.fingerprint.probe`/`sink.probeFailed`).
+2. **The three bellwethers probe star-form**: `dbo.ossys_Espace` / `ossys_Entity` /
+   `ossys_Entity_Attr` with `CHECKSUM_AGG(BINARY_CHECKSUM(*))` — no column inventory is
+   assumed for a platform table, and the star form skips noncomparable columns
+   server-side (an ntext/image OML column can never fail the batch). Single-column `ID`
+   MAX on all three.
+3. **Recorded at witness time, by the hook** (`LiveModelRead`): the capture-time probe
+   runs ONLY when the read is total AND a store rides (no store ⇒ no round-trip bought
+   for nothing); a probe failure records `[]` — `auto` then always reads live. The
+   manifest gains `sourceFingerprints` (older manifests read as `[]` — total parser).
+4. **CDC-silence re-anchors the bellwethers**: an Unchanged witness whose probe MOVED
+   while the projected state did not (a mutation in a column the 26 rowsets never read)
+   rewrites ONLY the manifest's fingerprints — otherwise `auto` would degenerate into
+   always-live for such estates. A failed probe never clobbers good recordings.
+5. **The decision table is pure and its miss taxonomy CLOSED**
+   (`SinkFreshness.decide`): `RefreshForced` (the operator's one-run override — beats
+   even a pin, and names the decision under every policy) > `PolicyOff` >
+   pinned-reuse-without-probing > auto's ladder (`NoWitnessedState` /
+   `FingerprintAbsent` / `ProbeFailed` / `FingerprintMoved [targets]` — movement names
+   its movers). Every miss reads live; freshness only ever degrades toward the wire,
+   never toward stale reuse.
+6. **Config**: `sink: { policy, perEnvironment }` in the SHAPING view;
+   `SinkPolicy.all` drives the GENERATED schema enum (both the `policy` field and the
+   `perEnvironment` value type — A44 both directions, binder-tested);
+   `projection.schema.json` regenerated (the byte-drift test is the mechanism);
+   CONFIG_REFERENCE rows added. The `Config.overlay` section-granularity pick gains the
+   `Sink` arm (the field-count trap audited at every construction site).
+7. **The decision table's production consumer is S13** (offline/sink-backed operation
+   wires it into the verbs), as the approved plan stages it — the mechanism, its config,
+   and its laws land here; the read-path wiring lands with the operation that needs it.
+
+## 2026-08-15 — sink S9: selection becomes a pure, witnessed pass (A49 promotes to LIVE)
+
+The chapter's ideological center lands: **acquisition is total; selection is pure.** The
+lifecycle axes (`includeSystemModules` / `includeInactiveModules`) that
+`ModuleFilter.apply` had dropped SILENTLY inside its Result channel — rows the
+acquisition had already paid for, erased with no lineage — are now a registered pass.
+
+- **One drop semantic, two channels.** `ModuleFilter.lifecycleFilter` (the former
+  Step 2, extracted verbatim; `isSystemModule` made public) is THE definition: `apply`
+  keeps dropping silently on the Result channel (behavior-identical — the pushdown ≡
+  filter law pins it), and `Passes/SelectionSuppression.fs` (the `VisibilityMask`
+  shape, `OperatorIntent Selection`) emits one `Removed` lineage event per suppressed
+  kind. `RemovalReason` widened with the two marker variants (`LifecycleInactive`,
+  `SystemOwnedModule`); attribution order = the historical arm order (system wins).
+  `RemovalReason` compiles AFTER `ModuleFilter`, so the shared carrier speaks in keys
+  (`LifecycleRemoval`) and the pass maps keys to reasons.
+- **The seam interleaves, exactly.** `ModuleFilter.apply` decomposes into
+  `applySelection` (names; Result refusals stay here) → lifecycle → `applyEntityFilters`
+  (entities + the cross-scope prune + the emptiness refusals); `apply` recomposes the
+  three so the monolith's step order is preserved to the letter. The Pipeline's
+  `applyModuleFilter` runs the SAME composition with the registered pass in the
+  lifecycle slot and PROJECTS its trail onto the operator channel
+  (`EventProjection.ofLineageTrail` → LogSink) — the erasure is witnessed where it
+  happens.
+- **Registered in `chainSteps`** (22nd pass, identity default — byte-identical chain;
+  the `VisibilityMask` registration posture: metadata registered config-invariant, the
+  real axes execute at the seam). The three registry count pins move 26→27 / 21→22
+  with this lineage. `Policy.fs`'s F12 dormant-trigger comment now points at
+  SelectionSuppression as the worked example (F12's own trigger has NOT fired).
+- **A49 promotes to LIVE.** The three-way commuting law extends the pushdown ≡ filter
+  law IN PLACE (`OssysExtractionCanaryTests`): pushdown ≡ filter∘live ≡ filter∘sink
+  over the edge-case seed, with the sink leg witnessed into an EXPLICIT temp store
+  (no env vars — R7) and `OnlyActiveAttributes` held equal across all three legs at
+  its total setting (the axis stays the file's NAMED RESIDUAL; the historical two-leg
+  law keeps exercising the held-equal-at-true form). The AxiomTests stub flips to four
+  `citationOf` witnesses (the three-way law, the sync verb's structural pin, the
+  two-channel equality, the totality gate); AXIOMS.md A49 status → LIVE; matrix
+  regenerated. Also proven in passing: two consecutive total acquisitions of one
+  estate parse to EQUAL catalogs (the three-way law compares across acquisitions —
+  T1's determinism claim carrying real weight).
+- **Delta-lint comparator refined (procedural note):** the S9 `Lineage.fs` insertion
+  shifted eight pre-existing LINT-ALLOW entries' line numbers, so the delta gate now
+  compares with line numbers normalized (file + rationale substance) — zero new
+  violations remains the bar; the baseline recording (`825671c`) is unchanged.
+
+## 2026-08-15 — sink S10: the journal FTC goes live (T19 promotes; the erasure-witness inequality is executable)
+
+- **T19 promotes to LIVE** with one amendment inherited from S7's K2 ruling: the store
+  persists the snapshot RAW (wire order), so the replay equality is stated at CANONICAL
+  grain — `fold ⊕ genesis (journal) = canonical(latest)` (the fold's states are canonical
+  by construction; the raw at-rest form is the parity guarantee, the canonical form the
+  algebra's). Witnesses: an enumerated chain family (duplicates exercising mid-chain
+  CDC-silence; reorderings exercising non-monotone estates) plus an FsCheck chain law,
+  both through `Ledger.replay` over the SinkJournal LedgerSpec instance; the standing
+  CDC-silence and syncId-regression witnesses join the citation set.
+- **`SinkDiffView.catalogDiffOf`** (Pipeline): the Catalog-grain view of a displacement
+  window — parse both editions through the exact sink-read pipeline, `CatalogDiff.between`.
+  A derived VIEW over the journal, never a second truth. **The erasure-witness inequality
+  is executable and HELD on first run** over the mutation family (tombstone, logical
+  rename, removal, addition, sequence addition): `CatalogDiff.norm(view) ≤
+  SinkDisplacement.norm(journal)` — every catalog-visible change is carried by at least
+  one rowset-row displacement; the view can understate the journal (the named erasures),
+  never invent. S13's `diff sink:e@a sink:e@b` stands on this.
+- **R6 closed (second half):** the sink diff legs ride the ROWSET path exclusively
+  (`toBundle → parse SnapshotRowsets`), whose sequence identity is the
+  `OSSYS_SEQUENCE "schema.name"` synthesis — the `OS_SEQ` composite lives only on the
+  V1-json path no sink leg takes. Pinned: a sequence present in both editions carries one
+  identity and zero sequence channel counts.
+- **A builder fact recorded:** `OssysSnapshotBuilders.fullyPopulated` deliberately does
+  NOT parse (`catalog.reference.danglingTarget` — it is codec/displacement-oriented), so
+  the view laws run over a hand-built parseable edition family; the T19 chain laws keep
+  `fullyPopulated` (replay never parses). A parse-true builder family is a named follow-on
+  if a future law needs FsCheck at the catalog grain.
+
+## 2026-08-15 — sink S11a: physical-claim adjudication (the "latest edition" question, ruled)
+
+The claims half of S11 lands (S11a); the estate-face plumbing + Voice codes are S11b —
+the slice split so every commit stays green and complete (the codes land WITH the face
+that renders them, never as phantom copy).
+
+- **`Strategies/PhysicalClaimRules.fs`** (Core, the strategies window before Lineage.fs):
+  the total adjudication ladder over journal-assembled claim sets. **One ruling made
+  here, deviating from the plan's one-line sketch and DEFERRING to the S1 seed's staged
+  intent + the house center:** the plan sketched tier ordering (eSpace > extension >
+  tombstone, journal-order tie-break) as the ADOPTION rule; landed instead as — a sole
+  live claim adopts (tombstones ride as `outranked` lineage: the cutover's happy path);
+  **two or more LIVE claims are Contested, ALWAYS** — two live writers on one table are
+  never silently ranked into an adoption (the exact silent-pick the house forbids;
+  Contested participates in Fork → exit 5). The ladder still ORDERS the rivals (tier,
+  then the LATER first-witnessed sync — the sink's temporal dimension — then row id) so
+  the finding leads with the recommendation. The seed's Carrier pair (both active) is
+  the staged witness: under the sketch it would have silently adopted the eSpace claim.
+- **`SinkClaims.fs`** (Pipeline): claim sets assemble FROM THE JOURNAL + the witnessed
+  edition, never the Catalog (the Catalog has already lost losing claims — CatalogReader
+  keeps one kind per table). Tombstones ride (the sink is total); the extension flag
+  reads the module's case-insensitive 'Extension' kind + `Is_External`; each claim
+  carries its first-witnessed sync. Key-basis honesty: `EntityId` is the in-set
+  discriminator (always present); `EntityKey : SsKey option` carries the native GUID
+  when supplied.
+- **`EstateFindingKind` +4** (all nine contract rows each, same commit):
+  `PhysicalClaimContested` (Decide/Identity/Ruling), `PhysicalTombstoneOnly`
+  (Decide/Identity/Ruling), `PhysicalUnclaimed` (Decide/Schema/Ruling),
+  `IdentityCutoverCorrespondence` (Decide/Identity/Ruling — never auto-adopted). All
+  four land `NotYetDetected` (honesty: the detectors light up at S11b/S12/S14), and the
+  coverage law AMENDED accordingly: NotYetDetected is now DECLARED per-kind (a closed
+  set in the test) rather than emission-plane-implied — a kind cannot claim
+  NotYetDetected without a declaration, and a flipped detector must retire its
+  declaration in the same commit.
+- **Registry counts move** (26→28 total across two slices' pins; strategies 5→6;
+  Identity-domain entries 3→4; the completeness trio 18→19) — each pin updated with its
+  lineage comment. `physicalClaimRules` registers `DataIntent` (the ladder is
+  algorithm-internal; a genuine multi-live contest REFUSES to pick, which is exactly why
+  it is not operator intent).
+- **The Docker witness** (`SinkClaimsSeedTests`, lifecycle seed): Order → sole adoption;
+  Invoice → TombstoneOnly with the tombstoned entity's attribute shape RECOVERABLE from
+  the witnessed edition (the chapter's original incident, proven live); Shipment → the
+  live extension re-registration adopts over the tombstoned original; Carrier →
+  Contested, eSpace-led recommendation; the orphan table assembles no set (S12's sweep).
+
+## 2026-08-15 — sink S11b: the claims reach the board (check estate; the detectors go live)
+
+- **`Estate.sinkClaimFindingsOf` + `Estate.withSinkClaims`** — the post-compute stamping
+  combinator (the `withEvidence`/`withRemediation` idiom, so `computeWith`'s signature and
+  every existing caller stay untouched): Contested and TombstoneOnly mint DECIDE-lane
+  findings with their contract rows (statements through the strategy's ONE renderer,
+  levers from the per-kind form); **Contested carries the Fork witness**, and the verdict
+  re-derives under the SAME formula — a contested table forks the estate (exit 5) exactly
+  like a cross-environment fork. Empty claims (or all-adopted) is the identity: a run
+  with no sink store is byte-identical, pinned by test.
+- **The face wiring** (`runCheckEstate`): each estate environment's NAME resolves against
+  the sink's manifests (`SinkRead.resolve` — the label `projection sync <env>` stamped);
+  a witnessed source contributes its journal-assembled claims; an absent store or an
+  unstamped name degrades to nothing (the sink is ADVISORY evidence). The claim notices
+  (`sink.claimContested` / `sink.tombstoneOnly`, §5) render with the provenance block,
+  before the verdict stands on them; the board's DECIDE lane carries each ruling.
+- **The detectors flip Active** (Contested + TombstoneOnly) and the coverage law's
+  declared set retires them in the same commit, per its own rule; PhysicalUnclaimed (S12)
+  and IdentityCutoverCorrespondence (S14) remain declared.
+- **Deferred, named:** `AnnotationDetail.PhysicalClaimDecision` + `PhysicalClaimPass`
+  (the plan's S11 sketch) move to S13 — their real execution site is the sink-backed
+  MODEL READ (annotating adopted claims onto the catalog's lineage as it is read);
+  landing an unexecuted registered pass at S11 would be phantom registration, the exact
+  thing pillar 9 forbids. The estate face consumes outcomes directly; the lineage
+  annotation joins where a lineage-bearing read exists.
+
+## 2026-08-15 — sink S12: the residue sweep (present-but-unclaimed goes live)
+
+- **`SinkResidue.fs`** (Pipeline): the S8/O4 deferral's TABLE grain, cashed in its
+  stated shape — `INFORMATION_SCHEMA.TABLES` beside the OSSYS read (the one place the
+  estate deliberately looks past OSSYS), the `OSUSR_%` universe (the named caveat: an
+  arbitrarily-named external table stays out — indistinguishable from a non-OutSystems
+  table; its claim, when one exists, adjudicates normally), minus the witnessed
+  edition's claims (a tombstone still claims its table until DbCleaner). The residue
+  rides the SAME outcome plane as every claim decision: assemble-empty sets the
+  adjudicator maps to `Unclaimed` by construction, so `sinkClaimFindingsOf` mints
+  `PhysicalUnclaimed` DECIDE findings through the one builder.
+- **The face**: the sweep runs per sink-named environment on its live connection,
+  beside the claims assembly; `--offline` skips it (the static-probe posture) and a
+  probe failure degrades to no residue (advisory-silent). Voice `sink.unclaimed` (§5)
+  joins the claim notices; the detector flips Active and the declared set retires it
+  (only the S14 correspondence proposer remains declared).
+- **The Docker witness**: over the lifecycle seed, the sweep finds EXACTLY the orphan
+  (`OSUSR_FUL_ARCHIVE`) — the four claimed tables, tombstones included, are not
+  residue — and the orphan adjudicates `Unclaimed`.
+- The finer residue grains (columns / triggers / computed columns) stay deferred under
+  the row's own trigger.
+
+## 2026-08-15 — sink S13: offline operation (the policy is the lever; the pay-once path lands)
+
+- **The config policy IS the offline lever — no new verb flag.** `sink.policy = pinned`
+  makes the model read offline-true (serve the witnessed edition, never probe, never pay
+  the wire; the mandatory `sink.evidenceAge` line names the staleness); `auto` is the
+  pay-once fast path (three-bellwether probe → confirmed reuse; one cheap round-trip
+  against the 26-rowset read it saves); `--refresh` beats even a pin for one run; `off`
+  (the default) is byte-identical to the standing wire read. One lever, one meaning —
+  the offline story the plan sketched as a `--offline` flag collapses into the policy
+  vocabulary S8 already ruled (R2's reuse axis, now consumed by its first real reader).
+- **The fast path is licensed by A49 and GATED by its named residual.** Serving a total
+  witnessed state and narrowing through `applyModuleFilter` is the law's `filter∘sink`
+  leg — module/entity/lifecycle scoping rides the fast path untouched. The ATTRIBUTE
+  axis (`model.onlyActiveAttributes`, default **true**) is the law's named residual (the
+  three-way canary holds it equal at total): the pure seam cannot yet express it, so an
+  attribute-narrowed read always pays the wire — `readConfigModelWith` gates on the
+  flag, never a silent divergence. Consequence, stated plainly in CONFIG_REFERENCE: the
+  sink serves total-shaped model reads only; a config that wants sink-served reads sets
+  `onlyActiveAttributes: false`. (An attribute-suppression pass would widen
+  sink-servability to the config default — deferred under the S9 residual's trigger.)
+- **The claims-annotation pass lands at its real execution site** (the S11b deferral,
+  cashed): `AnnotationDetail.PhysicalClaimDecision` + `Passes/PhysicalClaimPass.fs`,
+  registered in `chainSteps` with the identity default (`registered []`) and run with
+  journal-assembled adjudications at the sink-backed model read — the trail projects
+  onto the operator channel exactly like the selection seam's. Classification is
+  **DataIntent** (annotating WITNESSED adjudications is evidence-carriage, not operator
+  opinion), so the pass joins the skeleton view: the A.4.7' pin moves ten → eleven with
+  the rationale in place, and the skeleton baseline stays byte-unchanged (identity
+  default; the purity property keeps proving zero OperatorIntent events).
+- **R3's string side, proven live**: `SinkRead.resolveByConnectionString` derives the
+  digest from `SqlConnectionStringBuilder`'s DataSource + InitialCatalog — the same
+  normalized pair the witness hook reads off the open connection — and the offline
+  witness only serves because the two sides agree (the pinned read resolves the state
+  the hook persisted). Digest parity is also pinned pure against
+  `SinkStore.connDigest16` directly.
+- **The Docker witness** (`SinkOfflineReadTests`): pinned-miss pays the wire and
+  witnesses sync 1; the estate mutates; the pin serves sync 1 K2-honestly (catalog
+  EQUALS the live read's, manifest unmoved — no wire paid; stale BY CHOICE); refresh
+  beats the pin, sees the tombstone, witnesses sync 2; auto confirms and reuses sync 2;
+  and the two editions yield the temporal diff two `live:` reads can't legitimately
+  give (`SinkDiffView` norm > 0 on the activity flip).
+- **Named residuals**: the estate face's per-environment catalogs still read live under
+  `--offline` (serving THEM from the sink is the same fast path applied at the estate's
+  env grain — it binds where env names exist, `SinkSection.effective (Some env)`); the
+  shaping-view model read carries no environment name, so per-env refinements do not
+  bind there (stated in the code; the standing policy governs).
+
+## 2026-08-15 — sink S14: the cross-cutover identity correspondence (proposed, never adopted)
+
+- **The proposer is a pure reading of the adjudication** — `PhysicalClaimRules.
+  proposeCorrespondence`, total over every outcome: ONLY the Adopted-over-tombstones
+  shape proposes (a contest has no adjudicated continuation — it is its own finding; a
+  tombstone-only table has nothing live to continue INTO; a clean sole adoption has no
+  cutover to correspond across). `From` is the LATEST-witnessed tombstone (the edition
+  nearest the cutover); `To` is the sole live claim; `SameName` carries the
+  corroborating signal (the shared physical table is the primary continuity carrier —
+  a RENAMED continuation still proposes, and the finding says "(renamed)").
+  Property-pinned: a proposal exists IFF the adjudication is Adopted over ≥1 tombstone.
+- **Never auto-adopted, structurally**: no catalog reaches the proposer and no `SsKey`
+  leaves it — the proposal carries the two CLAIMS (with their native keys as evidence)
+  into an `IdentityCutoverCorrespondence` DECIDE finding whose lever is the Ruling
+  ("nothing is adopted without the ruling", pinned by test). The plan's "SsKey
+  continuity via existing DerivedFrom/V1Mapped variants" cashes as: the vocabulary a
+  ruled continuity would thread ALREADY EXISTS — the closed `DerivationReason` set
+  widens at the ruling's implementation (a named follow-on), not at the proposal. The
+  detector flips Active and the declared NotYetDetected set empties — every kind in the
+  estate vocabulary is detector-backed today, and the coverage law keeps the next
+  vocabulary-first kind honest.
+- **The finding never forks**: the correspondence is the happy path's paperwork (the
+  re-registration IS adopted for the catalog's lineage; the identity question rides the
+  DECIDE lane) — `withSinkClaims` converges a unified estate on it, never forks it.
+  Voice `sink.cutoverCorrespondence` (§5) joins the claim notices at the face.
+- **The live witness rides the seed**: the lifecycle seed's Shipment pair (tombstoned
+  original + live extension re-registration on one table) proposes with `From` = the
+  tombstone, `To` = the re-registration, `SameName` — the chapter's original incident
+  now carries its identity-continuity proposal end-to-end from a real acquisition.
+
+## 2026-08-16 — sink S15: the eject carries the sink; the Twin imports through it (K10 cashed)
+
+- **The eject carries the sink's terminal states.** `EjectPackage` gains `SinkStates`
+  (per witnessed source: digest, env label, latest sync, journal length, capture time)
+  through the `withSinkClaims` idiom — `fromChain` stays pure and sink-blind (stamps
+  `[]`); the FACE collects from the configured store (`EjectRun.sinkTerminalStates`,
+  store-gated: no store, no states — the pre-sink eject is byte-identical) and stamps.
+  `eject.sinkCarried` (§13 resultative) names the carriage only when states ride — the
+  status quo ante needs no line. After the eject there is no upstream to re-derive
+  from; the package now NAMES the metadata editions and displacement journals that
+  survive it.
+- **The Twin's post-eject rendition map**: `EvidenceSource` gains `catalogRef` — a
+  `sink:<env>[@<syncId>]` ref that supplies the PHYSICAL rendition's catalog (the
+  logical-names-over-physical-realizations map the live OSSYS read would have given;
+  K2 parity makes it THE same catalog) while the DATA still profiles over `ConnRef`'s
+  live connection. Closed by parse law (A44): physical rendition only
+  (`twin.config.evidence.catalogRefLogical` — a logical source's names are the
+  estate's own), sink scheme only (`twin.config.evidence.catalogRefScheme`). The
+  import-time arm keeps the refusal total if a config arrives by another door.
+- **The Docker witness** (`TwinSinkCatalogImportTests`): lifecycle seed → witness
+  stamped `cutover` → `catalogRef: "sink:cutover"` imports dbo.Order's evidence with
+  the catalog from the witnessed edition and the profile from the live data
+  connection (columns evidenced > 0; the rich pack lands); `sink:ghost` refuses
+  `sink.envUnknown` — never a silent empty pack.
+- **Scope note**: the eject remains an in-memory package + self-verification (no
+  bundle-directory writer exists to extend); the sink's durable form ALREADY lives
+  under the store the package names — carrying the states (not copying the files) is
+  the honest grain. A future bundle-writer slice would serialize `SinkStates`
+  alongside the episodes; named residual, no trigger armed.
+
+## 2026-08-16 — The data-sink chapter CLOSES (the eight-item ritual walked; K1–K10 witnessed)
+
+**The ritual walk and the witness map live in `CHAPTER_SINK_CLOSE.md`** — this entry
+codifies what the close makes standing law, and names what is owed.
+
+**Codifications (the chapter's disciplines, now precedent):**
+
+1. **Raw-at-rest** (the K2-parity discipline, ruled at S7): a persisted acquisition is
+   stored EXACTLY as acquired (wire order); canonical form exists only inside the diff
+   algebra. A store that normalizes at rest cannot replay THE acquisition, and total
+   parity laws (K2) become unprovable. The pattern generalizes to any future
+   acquisition-grain ledger.
+2. **The policy is the lever — one lever, one meaning** (R2 ruled at open, consumed at
+   S8/S13): a freshness policy governs the probe/reuse axis ONLY; capability gates
+   (store presence, acquisition totality) are their own levers. The offline story
+   needed no new flag because the vocabulary already meant the right thing.
+3. **The inherited-red-gate delta gate**: when a repo gate is red on inherited debt,
+   the chapter self-enforces the gate's SUBSTANCE as a per-commit substance-normalized
+   diff against a recorded baseline (zero new violations), with the deviance hatch
+   named in every commit message. Performance-of-compliance (rushing markers onto 82
+   sites) was refused at open; the delta gate held across all seventeen commits.
+4. **Evidence-carriage passes are DataIntent and skeleton-resident**: annotating
+   witnessed adjudications (`PhysicalClaimPass`) is data-intention with an identity
+   chain-default — the skeleton grows without byte-shift, and the purity property
+   keeps proving the boundary (S13's ruling; the A.4.7' pin moved 10 → 11 with it).
+5. **FS3511's family gains a member** (found by the close's Release sweep, fixed this
+   commit): `use` + a subsequent await (`match!`/`let!`) nested inside an outer
+   `match!` arm — and even a flat `let!` whose CONTINUATION carries heavy match/if
+   trees or later awaits — can defeat static compilation. The reliable shape: the
+   task CE holds the awaits and `use`s only; every decision tree hoists to a plain
+   function. Two chapter-owned machines fixed (`SinkSyncRun.run` → `reportOf` +
+   `syncOpened`; `SinkLifecycleSeedTests` → `assertCatalogShapes`), both re-proven
+   live in the Debug pool. Survival rule 5 already pointed here; the sweep is why
+   the close runs Release. **Standing follow-on (the third from the July arcs)**:
+   eleven pre-existing FS3511s in the Twin's `SamplePr*` Integration files
+   (`2a84ae0`/`1078209` et al.) block the solution-wide Release build; the pure
+   pool's Release run goes through its own dependency closure until they are
+   dispositioned.
+
+**Named audit candidates and residuals (owed, with owners):**
+
+- **`JsonCodecKernel` extraction to Core** — the second consumer exists
+  (`MetadataSnapshotCodec`'s local decode helpers carbon-copy the kernel's shape with
+  its LINT-ALLOW rationale); extraction fires at the third consumer or the next codec
+  slice, whichever lands first.
+- **ADMIRE: no entry for this chapter, by ruling** — new construction end to end: the
+  lifecycle seed was authored fresh, the snapshot builders promoted from this repo's
+  own test idiom, the capability probes ride V2's own rowsets script. Nothing was
+  carbon-copied from V1, so the editorial-inheritance ledger correctly stays silent.
+- **The 82-site lint disposition** (open §3) and **the two transfer-leg Docker reds**
+  (`StagedMergeDeployE2ETests`, `T18CycleBreakCanaryTests` — both reproduced at the
+  pre-chapter commit) remain the standing follow-ons from the 2026-07-21..25
+  direct-push arc. Neither moved this chapter (delta-gate-proven); both need their own
+  owner and arc.
+- **Per-slice residuals**, each named in its slice's entry: estate-offline env
+  catalogs from the sink (S13); the attribute-axis suppression pass (S9/S13); finer
+  residue grains (S12); the eject bundle-writer (S15); the EstateHistory
+  double-nesting and the ConfigSchema regen verb (open non-goals, unchanged).
+
+**The chapter in one line:** the OSSYS metadata plane — the one plane with no durable
+form and no ledger — now witnesses every total read, journals every displacement as
+the fourth `LedgerSpec` instance, serves offline reads and temporal diffs from its
+witnessed editions, adjudicates physical claims with the temporal dimension only it
+can supply, and rides the eject; A49 and T19 are live law; the operator's original
+incident (the tombstoned entity whose table survived) is a proven, recoverable,
+named state instead of a mystery.
+
+## 2026-08-16 — The geometric-alignment audit (ten planes; findings are CANDIDATES, nothing ruled)
+
+Operator-commissioned, same day as the sink close: ten parallel read-only auditors
+mapped each stage's core vocabulary against its domain space (relational / semantic /
+state / hierarchical dimensions; ontic / epistemic / teleological reification axes;
+the M1–M7 misalignment taxonomy, with anti-findings mandatory). **Workpapers:**
+`audits/alignment-2026-08-16/a1–a10` (independent committed artifacts). **Synthesis:**
+`AUDIT_2026_08_16_GEOMETRIC_ALIGNMENT.md` — the convergence map, the candidate
+reified-primitive arcs (0/R/E/T/S/L/H/X), and the certified anti-findings.
+
+- **The one-paragraph verdict:** ontic/outcome vocabularies strong; foreclosure surface
+  small and mostly conscious; the systematic debt is EPISTEMIC (M6 in every workpaper —
+  knowledge held in prose/strings/convention where house precedent types it); the
+  teleological debt concentrates in the missing `OperatorRuling` carrier (found
+  independently by two auditors at 5–6 re-inventions) and the frozen `OverlayAxis`
+  vocabulary (its documented collapse trigger already fired unnoticed).
+- **Correctness-adjacent, flagged for earliest attention:** mislabeled identity-plane
+  interventions blinding `ConflictDetector`; three-per-lane synthesized sequence
+  identities making sink↔live diffs misreport every sequence; skeleton dependents
+  computing over `TopologicalOrder.empty`.
+- **Ruling posture:** this entry records that the audit occurred and rules NOTHING.
+  Findings become work only through operator adjudication; each adopted arc opens in
+  the house rhythm (charter frame, same-commit laws, per-slice gates, close ritual).
+  No code changed under the audit; no trigger fires from it.
+
+## 2026-08-16 — THE ALIGNMENT PROGRAM OPENS (operator authorization; Chapter I of three)
+
+The operator adjudicated the audit the same day it landed: **full execution of all eight
+arcs**, "spare no expense," via the approved master plan (plan-mode review with three
+recorded rulings). `CHAPTER_ALIGN_I_OPEN.md` is Chapter I's frame; A50 lands as a
+Bucket-C candidate this commit.
+
+**Operator rulings (2026-08-16, plan-mode questions):**
+
+1. **Three chapters, run consecutively** under this one authorization — I (Arcs 0+T,
+   "The Teleology Chapter"), II (Arcs R+E, "The Ruling & the Epistemics"), III (Arcs
+   S+L+H+X, "State, Law, Grain & Lexicon") — each with its own open/close ritual, no
+   pauses between.
+2. **July debt**: the eleven `SamplePr*` FS3511s fold in as align-I.1 (they block the
+   solution-wide Release build every close ritual wants); the 82 lint sites and the two
+   transfer-leg Docker reds stay OUT — their own future arcs.
+3. **Delivery**: keep stacking on PR #695 (one narrative, charter → sink → audit →
+   alignment); description refreshed at each chapter close; commit prefix
+   `align-<I|II|III>.<n>`.
+
+**The fired trigger, acknowledged and resolved (the audit's a3-F1).** The 2026-05-16
+deferral ("the Policy.fs ↔ OverlayAxis structural collapse … deferred to whichever
+consumer first needs to consult both vocabularies at one call site") FIRED at
+`PolicyExpr.eval`'s `Override` arm and went unnoticed — the arm consults both
+vocabularies and maps `Override(Ordering, _)` to `Policy.empty` as a silent no-op, while
+Policy grew `UserMatching` and `BridgeRetarget` with no axis counterpart. **Resolution =
+path (a)-lite**: `OverlayAxis` stays the canonical intent vocabulary and gains
+`Identity` (align-I.2, appended AFTER `Ordering` — DU order is T1-load-bearing for the
+durable applied-transforms sort); the total `axisOfPolicyAxis` map in Core is the
+consult-both answer; `Override` becomes total-or-named-refusal; NO structural type
+fusion (the collapse refactor is retired as unnecessary, not re-deferred). A50 is the
+law this becomes.
+
+**Standing program rules (all three chapters):** behavioral slices carry their DECISIONS
+entry with the change; new DU variants append when DU order is serialization-load-bearing;
+the "Witness-" naming freeze applies to new witness-plane names from Chapter II onward
+(the X-arc's measured cut then has a fixed target); the known-red Docker set stays exactly
+the two named transfer-leg tests; delta-lint stays 82 = 82 substance-normalized per commit.
+The I.5 sequence convergence carries an escape hatch (ship the registry alone, defer
+convergence by named trigger) — if pulled, this entry gains the trigger row.
+
+## 2026-08-16 — align-I.3: the identity plane names itself (three sites reclassify Selection → Identity) [BEHAVIORAL]
+
+**Ruling.** The three identity-plane `OperatorIntent` sites reclassify from `Selection` to
+`Identity` (the axis align-I.2 minted): `UserFkReflowPass` (the slice-α "refinement
+candidate" note resolves — the refinement lands as Identity, not Insertion),
+`BridgeRetargetPass` (its stated justification was "the same axis UserFkReflowPass lands
+on" — it moves with its anchor), and `Reconciliation.registeredMetadata`'s `matchByRule`
+site (its stated justification was "mirroring the forward UserFkReflowPass" — same). All
+three answer *which identity does this reference resolve through*, not *which kinds does
+the catalog surface*; the audit (a3-F2) showed the mislabel blinded `ConflictDetector`:
+the Selection exemption at `unreachableTransforms` swallowed identity-plane work on
+Selection-removed kinds, and `axisOfCode` could not name their diagnostics.
+
+**Behavioral consequences, named.**
+1. **New conflicts CAN surface (the point).** Identity-plane events on Selection-removed
+   kinds now flag `UnreachableTransform`; `axisOfCode` gains the `userFkReflow.` /
+   `bridgeRetarget.` prefixes → `Identity`, so an SsKey-carrying identity diagnostic on a
+   removed kind flags `AxisContradiction (Identity, …)`. No `transferReconciliation.*`
+   diagnostic codes exist, so no third prefix lands (rule: prefixes map codes that exist).
+2. **Durable axis strings move for FUTURE writes only.** `Episode.AppliedTransforms`
+   rows and manifest `appliedTransforms` entries attributed to these passes record
+   `identity` where they recorded `selection`; the SSDT manifest's `registry.digest`
+   value moves (classification enters the digest — relational tests only, no pinned
+   literal, no committed golden carries the old string). Persisted episodes are witness
+   records: previously-written `selection` rows stay true to what that run did and parse
+   forever; the `identity` codec token landed at align-I.2. No re-key, no migration.
+3. **Consumers enumerated**: `ConflictDetector` (narrows), `ManifestEmitter`
+   (appliedTransforms + digest), `Episode.withProvenance`/`LifecycleStore` (future rows),
+   `EventProjection.classificationTag` (`operatorIntent:identity` on these passes' events),
+   `TransformGroupsBinding.groupForAxis` (Identity → None, ruled at I.2 — both presets
+   stay hand `passTags` rows).
+
+**What does NOT move.** True Selection stays Selection: `VisibilityMask`,
+`SelectionSuppression` (A49's lifecycle axes), and the `removedBySelectionPolicy` /
+self-contradiction exemptions in `ConflictDetector` — those exemptions now cover ONLY
+kind-surfacing selection, which is the narrowing the audit asked for. `Domain.Identity`
+(the *what-it-touches* partition) is untouched — this entry moves the *whose-intent* axis.
+Historical entries (2026-05-16 slice α classification, A.4.7 close) record what was ruled
+then and are not rewritten; this entry supersedes.
+
+## 2026-08-16 — align-I.4: the synthesis conventions become a registry; the extension marker is read once [BEHAVIORAL: marker unification]
+
+**The registry (a2-A2-1).** `SsKey.Synthesized`'s `source` axis carried exactly the load
+`DerivationReason` was closed for (2026-06-27: "a typo can no longer mint a
+silently-different identity") yet stayed a free string whose vocabulary lived only in
+greps. `SynthesisConvention` closes it: **23 variants** (the audit said nineteen and listed
+twenty, missing the lowercase `migration`; the pre-registry grep said 21, missing the two
+multi-line ReadSide mints; A51's own first execution then caught `READSIDE_ATTR` +
+`READSIDE_REF` — the registry is the corrected, counted, law-swept truth), each with `token`/`tryParse` (the DerivationReason codec shape) and two
+total maps — `grain` (Module/Kind/Attribute/Reference/Index/Trigger/Sequence/Check/Row)
+and `readerFamily` (OsmModel/OssysRowset/ReadSide/SyntheticData/MigrationRows/
+GoldenSlice/TwinScenario). `SsKey.mint`/`SsKey.mintComposite` are the typed constructors;
+all 24 production mint expressions (9 files) route through them; the free-string
+constructors remain for TEST-local conventions. **Wire format byte-identical** — `token`
+preserves every literal verbatim. A51 (LIVE, same commit) pins injectivity + round-trip +
+an M16-style comment-stripped sweep: zero free-string mints under `src/`.
+
+**What the registry makes queryable.** The sequence grain has THREE conventions across
+THREE reader families (`OsSequence`/`OssysSequence`/`ReadSideSequence`) — align-I.5's
+convergence target is now a registry fact, not a grep. `OsSequence` (the declared OSSYS
+helper) has zero live callers today; the live rowset path mints `OssysSequence`
+single-segment dot-joined — the segmentation breach the audit named stays VISIBLE in the
+registry until I.5 resolves it.
+
+**`Catalog.create` disjointness comment corrected.** It justified sequence/kind key
+disjointness via "disjoint prefixes (`OS_SEQ_*` vs `OS_KIND_*`)" — citing a prefix the
+live path does not use, and naming the wrong mechanism. The true mechanism: SsKey
+equality is STRUCTURAL over `(source, basisParts)`; distinct registry tokens (A51) make
+cross-convention keys unequal by construction. Rendered text may even alias across
+conventions (`OS_IDX ["LOGICAL"; x]` renders `OS_IDX_LOGICAL_x`) — harmlessly, because
+keying never reads the rendering.
+
+**BEHAVIORAL — the extension marker reads once (Trim + OrdinalIgnoreCase ruled).**
+`EspaceKindReading` (Core, beside `Origin`): `ESpace | Extension | Unmarked | Other of
+raw`, total over the raw optional column. Three lanes previously open-coded the
+classification under TWO idioms — SinkClaims trimmed + lowercased; OssysTranslation's
+`parseOriginFromRowset` and SinkDisplacement's `isExtensionModule` compared un-trimmed —
+so a `" Extension"` value classified as an extension for claim assembly but NOT for
+origin classification or displacement domains. Ruled: **whitespace variants unify** — a
+trimmed case-insensitive match is the reading in all three lanes. Consumers enumerated:
+`parseOriginFromRowset` (Origin three-way), `SinkClaims.assemble` (extension-espace claim
+sets), `SinkDisplacement.isExtensionModule` (domain classifier). No committed fixture
+carries a whitespace-variant marker, so goldens are unmoved; the unification is a
+live-estate robustness fix.
+
+## 2026-08-16 — align-I.5: the sequence identity converges (one mint, OS_SEQ two-segment; legacy tokens parse forever) [BEHAVIORAL]
+
+**Ruling.** A physical sequence's identity is the OBJECT's, not the reader's. The three
+sequence-grain conventions collapse to ONE live mint: `OsSequence` — `OS_SEQ ["schema";
+"name"]`, the declared typed-segment discipline of `OssysTranslation.sequenceSsKey`, which
+gains its FIRST live caller (the audit had noted it declared-but-uncalled). The rowset
+reader (previously `OSSYS_SEQUENCE "schema.name"` — a single dot-joined segment, breaching
+the chapter-3.6 slice-δ typed-segment discipline) and ReadSide (previously
+`READSIDE_SEQUENCE "schema.name"`) both now mint the OS_SEQ convention. `OssysSequence`
+and `ReadSideSequence` become LEGACY-PARSE-ONLY registry rows: stored keys parse forever;
+new production mints are refused by A51's legacy sweep (prong 4, added this slice).
+
+**Why (the audit's correctness-adjacent defect #2).** Sequences have NO persisted-identity
+channel (no `V2.SsKey` extended property — ReadSide always re-synthesizes) and NO rename
+channel — so per-lane conventions made one physical sequence carry three non-equal
+identities, and any cross-lane diff (sink-derived vs live-rowset vs ReadSide-derived
+catalog) fabricated an add+remove pair per sequence. With one convention + one
+segmentation, cross-lane sequence identity is equal by construction.
+
+**Behavioral consequences, named.**
+1. **One-time re-key for sequence-bearing estates.** Persisted episodes,
+   `catalog.snapshot.json`, and the live-path `Run.inputDigest` re-key ONCE — old
+   `OSSYS_SEQUENCE`/`READSIDE_SEQUENCE` keys still parse (registry rows stay), and the
+   next diff against a freshly-read catalog reads those sequences as removed+added one
+   time. Nothing round-trips through SQL Server; the sink stores raw rowsets pre-mint —
+   sink snapshots/journals/goldens/refactorlog/evidence packs unmoved.
+2. **Cross-lane sequence diffs stop fabricating add+remove** — the fix itself; the
+   SinkDiffView R6 sequence-identity invariant strengthens from "holds within the sink
+   legs" to "holds across sink ↔ live ↔ ReadSide legs".
+3. Consumers enumerated: `CatalogCodec`/`LifecycleStore` (episode keys), `Run.inputDigest`,
+   `CatalogDiff` sequence channels, `SinkDiffView`/sink-backed read legs.
+
+**Rider declined (named).** Extending `synthesizedRenameWarnings` to sequences stays OUT:
+sequences still have no rename channel, and the convergence removes the misdiff the
+warning would have hedged. Re-open trigger: a real sequence-rename workflow lands.
+
+## 2026-08-16 — align-I.6: chain preconditions become products; the skeleton stops computing over zero edges [BEHAVIORAL]
+
+**Ruling (a3-F2).** `ChainStep` gains `Requires : ChainProduct list` / `Produces :
+ChainProduct option` over a closed product vocabulary (`ChainProduct = Topology |
+ProfileEvidence` — named intermediate products with real downstream consumers, not a
+ComposeState field inventory). Chain assembly now honors the dependency structure:
+- The FULL chain **asserts** satisfiability (zero exclusions — a mis-wired chain is a
+  structural bug that fails loud at assembly, not silently at run).
+- The SKELETON assembly returns a NAMED exclusion cascade: a step whose requirement no
+  kept step produces is excluded WITH its reason. The four zero-edge topology dependents
+  (`centrality`, `boundedContext`, `schemaComplexity`, `cascadeShockZones`) leave the
+  skeleton with their producer (`topologicalOrder`, excluded for its OperatorIntent
+  Ordering site) — SkeletonPurityTests' pass pin moves ELEVEN → SEVEN, and each exclusion
+  is voiced as a `skeleton.stepExcluded` Info diagnostic on the run itself.
+- The profile split point becomes producer-derived (`Produces = Some Topology`), retiring
+  the `"topologicalOrder"` string key at `chainStepsSplitWithPins`.
+
+**BEHAVIORAL.** `--skeleton-only` loses the four silently-degenerate analytics:
+previously the skeleton KEPT the topology dependents while excluding their producer, so
+the lifts' `TopologicalOrder.empty` default made every skeleton centrality / context /
+complexity / shock-zone result a zero-edge computation presented as analysis — the exact
+bug class the full chain fixed in the `registered None` era, reconstructed by
+construction, invisible to skeleton-purity (which only asserts zero OperatorIntent
+events). Now those results are absent-with-a-name rather than present-and-wrong. The
+topology lifts keep their defensive default for direct unit-test callers, re-documented:
+an ASSEMBLED chain can no longer reach it (A52).
+
+**`runSkeletonWith profile` (the second limb).** DataIntent's definition is parameterized
+over profile ("reachable from `Project(catalog, Policy.empty, profile)`"), but the
+implemented skeleton offered only the profile-empty point. `runSkeletonWith` /
+`projectSkeletonWith` surface the free variable; `runSkeleton` = `runSkeletonWith
+Profile.empty` (byte-identical baseline). The evidence-informed operator-free posture —
+"what does the data alone say?" — is now a nameable run, and skeleton purity is pinned
+across profiles (zero OperatorIntent events for ANY profile: the profile is DataIntent's
+own free variable, not operator opinion).
+
+**Law.** A52 (LIVE, same commit): assembled chains satisfy their product preconditions —
+full-chain zero exclusions asserted; skeleton exclusions named and exact; no assembled
+step computes over a defaulted product. Consumers enumerated: `--skeleton-only` emit
+(sections), SkeletonPurityTests (pin), `chainStepsSplitWithPins` (derived split), the
+acquisition-overlapped runner (semantics unchanged; prefix profile-invariance property
+still pinned).
+
+## 2026-08-16 — align-I.7: the identity plane's decisions become typed lineage citizens (the Label escape hatch gains its trigger)
+
+**Ruling (a3-F4).** The two youngest operator-intent passes shipped production decisions
+through `AnnotationDetail.Label` — `"userFkReflow.matched-by-<strategy>"` and
+`"bridgeRetarget.<narration>"` (a rich typed `BridgeRetargetDecision` flattened to one
+string at the trail grain) — so `EventProjection.decisionOf` returned `None` and the
+applied/declined egress taxonomy structurally could not see the two riskiest intervention
+families. Both promote to typed variants: `UserMatchDecision of UserMatchLeg` (the five
+strategy legs, closed) and `BridgeRetargetTrailDecision of BridgeRetargetDecision` (the
+FULL verdict — per-check block/warn facts + three readiness verdicts — rides the trail).
+
+**Byte discipline.** `AnnotationDetail.toDiagnosticString` renders both variants
+byte-identically to the prior labels, so trail-diff consumers are unmoved. The egress
+CHANGES (the point): matched users project `transform.applied` (a match IS an applied
+identity resolution; unmatched users ride the diagnostics channel); cleared retargets
+project `transform.applied`, blocked ones `transform.declined` with the evidence
+narration as rationale. Log-stream consumers see these at Info where they previously fell
+to the debug `transform.lineage` tier.
+
+**The decision SET lands on ComposeState.** `BridgeRetargetPass` now outputs
+`(clearedMap, decisions)`; `ComposeState.BridgeRetargetDecisions` carries every declared
+retarget's verdict (cleared AND blocked) beside the cleared-only map, so downstream
+consumers read verdicts without re-parsing the trail. Field-count protocol walked:
+`ComposeState.initial` is the sole full construction; `with`-helpers safe.
+
+**`Label` gains its promotion trigger.** The docstring's self-contradiction ("production
+MUST use typed variants" AND "designated for passes whose shape hasn't been earned")
+resolves: a production pass may ride `Label` ONLY with a DECISIONS deferral naming its
+typed-shape promotion trigger — and the trigger is AN EGRESS CONSUMER THAT NEEDS THE
+DECISION (the taxonomy, trail diffing, or the explain drill-down). This slice is the
+worked example: both riders promoted at exactly that trigger.
+
+## 2026-08-16 — align-I.8: WHERE a transform fires becomes a registry fact (FiringSite; the F12 dormancy reified)
+
+**Ruling (a3's seam-execution finding).** `RegisteredTransformMetadata` gains `Firing :
+FiringSite` — `AtBinding | AtSeam of seamName | OnSinkRead | Dormant of trigger`. The
+plan's sketch said `InChain`; the honest name is `AtBinding` (adapters fire at the read
+stage and emitters at the emit stage — "in chain" was pass-parochial). Previously the two
+chain stand-ins' real execution sites were comment-carried ("the Pipeline's
+applyModuleFilter seam executes it with the operator's real axes"); now
+`selectionSuppression` carries `AtSeam "applyModuleFilter"` and `physicalClaims` carries
+`OnSinkRead`, and the bidirectional tests iterate per-site (the exact stand-in sets are
+pinned).
+
+**Dormancy is a value.** `RegisteredTransforms.dormant` (never in `all` — registered ⇔
+executed stays exact) carries the F12 row: `selectionFilterCatalog` with `Firing =
+Dormant <trigger>`. The Policy.fs comment that guarded F12 now points at the registry
+row; the deferral index enumerates dormant code instead of a comment hunting it. The
+count-pin choreography holds (RegisteredTransforms 29 unchanged — dormant is a separate
+list).
+
+**The digest seals the axis.** `TransformRegistry.digest` gains a `firing=` segment
+(free-text payloads length-prefixed per NM-60). The digest VALUE moves once — named here;
+no pinned digest literal or committed golden exists (relational tests only, extended with
+a Firing-perturbation sensitivity check).
+
+Fan-out walked compiler-driven (FS0764): 24 production metadata literals + toMetadata +
+the two metadata smart constructors default `AtBinding`; five test fixtures patched.
+
+## 2026-08-16 — align-I.9: the config-provenance rule is stated once and pinned per factory
+
+**The rule (a3-F5; canonical text lives on the `Classification` DU docstring).** For a
+config-taking pass whose output lands in ARTIFACTS: config that can carry operator
+OPINION ⇒ `OperatorIntent` on the opinion's axis — a default the operator could have
+changed IS the operator's intent (the LogicalTableEmission default-on precedent
+generalizes). `DataIntent` only for SOURCE-DERIVED config (a name correspondence read
+from the estate, witnessed adjudications, profiling evidence — data about the data).
+ADVISORY analytics (Diagnostics-domain outputs that mutate no artifact) sit OUTSIDE the
+rule's blast radius: their tuning thresholds (AdvisoryTuning — the audit's fourth
+inconsistent stance) shift commentary, never artifacts, so the analytics stay DataIntent.
+The four previously-inconsistent prose answers collapse to this one rule.
+
+**Enforcement.** `ConfigProvenanceTests` pins a stance row per chain pass (name + ruled
+classifications + why): the completeness test asserts table names = chain names EXACTLY
+(a new pass cannot land without a ruling), and the drift test asserts each factory's
+registered site classifications equal its ruled stance, failing by name with the ruling's
+why-text.
+
+**Named deferral.** `Supplied<'T> = SourceDerived of 'T | OperatorDeclared of 'T` — the
+provenance wrapper that would let `registered` DERIVE classification and make
+skeleton-purity sound against mis-wiring instead of sound-by-convention — stays deferred.
+TRIGGER: the first mis-wiring the rule table catches (equivalently: the first
+operator-authored NamingMorphism, the seam the table's namingMorphism row names).
+
+## 2026-08-16 — CHAPTER ALIGN-I CLOSES (the Teleology Chapter; eleven slices, three laws, the eight-item ritual walked)
+
+Chapter I of the alignment program closes same-day: I.0–I.9 landed (`482c0e6..ffeaf4c`),
+all on PR #695 per the stacking ruling. The witness map, the behavioral-change ledger,
+the ritual walk, and the anti-findings live in `CHAPTER_ALIGN_I_CLOSE.md` — the one-line
+summary: the three correctness-adjacent audit defects are DEAD (ConflictDetector
+un-blinded at I.3; the sequence identity converged at I.5; the skeleton stopped computing
+zero-edge analytics at I.6), the teleology arc landed typed (decisions I.7, firing sites
+I.8, the provenance rule I.9), and three laws went LIVE same-commit (A50 outcome-space
+enumerability, A51 synthesis-convention closure, A52 chain-precondition satisfiability;
+84 → 87 live).
+
+**Ritual highlights.** Fired-and-resolved: the 2026-05-16 collapse trigger (path
+(a)-lite), the Label promotion trigger (named AND exercised in one chapter), the F12
+dormancy comment (now a registry value). Newly deferred, named: `Supplied<'T>` (trigger:
+the first mis-wiring ConfigProvenanceTests catches); the sequence rename-warning rider
+(trigger: a real sequence-rename workflow). CLAUDE.md §4 re-verified, no additions
+(the one candidate trap is compiler-loud, not silent). Close verification:
+`TEST_CONFIG=Release` fast SOLUTION-WIDE (the I.1 dividend), full Docker pool with the
+known-red set exactly the two named transfer-leg tests, verifiability 87 live, matrix
+current, delta-lint 82 = 82 at every commit, analyzers 0/0, perf-gate clean solo.
+
+**Chapter II — "The Ruling & the Epistemics" (Arcs R + E) opens immediately** per the
+consecutive-chapters ruling; the master plan's fourteen-slice spine governs; II.0
+expands it. The II.1 design ruling stands as planned: the ruling store is a keyed
+replace-by-key store under `<store>/rulings/` (the ApprovalStore shape + atomic idiom),
+NOT a fifth LedgerSpec — append-only ruling HISTORY stays deferred past III.2's
+ChainAdmission with the `BasisAnchor.SinkEdition` widen as its trigger.
+
+## 2026-08-16 — CHAPTER ALIGN-II OPENS (the Ruling & the Epistemics; Arcs R + E, fourteen slices)
+
+Chapter II opens immediately per the consecutive-chapters ruling. The frame is
+`CHAPTER_ALIGN_II_OPEN.md` (judgment axes; the wave map with the serial E-track
+constraint — II.7→II.8→II.9 touch ONE adapter file; II.12 last for the EstateFinding
+collision with II.5); the primary workpapers are a4 (ruling dialects), a1 + a7
+(epistemic debt), a8 (the verb checklist) — the Chapter-I handoff letter's a4/a5/a6
+cite was wrong and is corrected in this commit (drift in the index is a first-class
+defect). A53 lands as the Bucket-C ruling-law stub (promotes at II.5 with estate
+reception); matrix regenerated (deferred C = 7).
+
+**Standing rulings restated for the chapter:** the ruling store is KEYED
+replace-by-key under `<store>/rulings/` (ApprovalStore shape), NOT a fifth LedgerSpec
+(history deferred past III.2, `BasisAnchor.SinkEdition` trigger); record + render ONLY
+(auto-application a named deferral); the "Witness-" naming freeze is ACTIVE from this
+chapter; exemplary consent surfaces untouched; II.4 is the chapter's named BEHAVIORAL
+slice (trail lineage becomes epistemically true; applied/declined SETS byte-identical).
+
+## 2026-08-16 — align-II.1: the OperatorRuling carrier + the keyed ruling store
+
+**The carrier (a4; A53 candidate).** `OperatorRuling<'subject>` lands in Core:
+{Subject; Verdict (Confirmed | Rejected — the plan's sketch omitted the verdict field;
+a ruling IS a verdict, so it carries one); Basis : BasisAnchor option (Digest |
+Fingerprint | FindingKey | EvidenceDigest — what the operator JUDGED, so reopen probes
+can compare); By; At : DateTimeOffset (boundary-supplied — Core reads no clock);
+Rationale option; Reopen : ReopenCondition option (OnEvidenceChange | After instant —
+minimal, expands under evidence)}. Placement: after `EstateFinding.fs`, NOT the plan's
+"after Coordinates.fs" sketch — the anchor carries the TYPED `FindingKey` (identity as
+a type beats file position; named here per the workpaper-beats-plan rule).
+
+**The store (the II.0 standing ruling, executed).** `RulingStore` (Pipeline): keyed
+replace-by-key, one JSON file per key under `<store>/rulings/<sha256-16 of key
+text>.json` (digest filenames — the SinkStore precedent — with the full key INSIDE the
+document); fail-closed load (missing file → Ok None — the safe first-run default; a
+present-but-malformed file → ParseFailure, NEVER silently empty); atomic write (tmp +
+File.Move overwrite — the EstateHistory idiom); deterministic bytes (re-saving an
+unchanged ruling is byte-stable, T1); typed-AST JSON both directions (Utf8JsonWriter /
+JsonDocument, PRJ001). `loadAll` fail-closes on the FIRST malformed file, naming it —
+a partial ruling read would silently lose operator judgment. NOT a LedgerSpec (the
+standing ruling); append-only history stays deferred past III.2.
+
+**Wire round-trip with zero new Core surface.** The stored key text reconstructs
+through the EXISTING `EstateFindingKind.ofToken` + `FindingKey.create` (create
+concatenates identically, so parse ∘ text = id); verdict/basis/reopen tokens are
+closed-vocabulary strings the store owns.
+
+Laws landed live with the slice (A53 stays Bucket-C until II.5 reception): store
+round-trip over every anchor/verdict/optional-field combination; replace-by-key (the
+second save wins); missing → Ok None; malformed → ParseFailure; byte-determinism.
+
+## 2026-08-16 — align-II.2: tightening overrides carry their ruling attribution; the estate posture stops severing it
+
+**The gap (a4).** An override row said WHAT (`keepNullable` / `keepUntracked`) but never
+WHO/WHEN/WHY/AGAINST-WHICH-FINDING — and `EstatePosture.activeOf` severed even the row
+identity down to bare key-sets. Operator judgment was applied but unattributable.
+
+**Landed.** `OverrideProvenance = {ApprovedBy; ApprovedAt: DateTimeOffset option;
+Rationale option; Finding: FindingKey option}` (Core, beside the override records);
+`Provenance : OverrideProvenance option` on `TighteningOverride` + `ForeignKeyOverride`
+(28 construction sites walked compiler-driven, `Provenance = None`). Config rows gain the
+four optional keys (`approvedBy/approvedAt/rationale/finding` — raw textual grain);
+`TighteningBinding.bindProvenance` threads them fail-closed: attribution without an
+approver refuses (`provenance.approverMissing`), a malformed instant refuses
+(`provenance.approvedAt.malformed`), an unknown finding key refuses
+(`provenance.finding.unknown`) — never a silently-dropped attribution. A bare row binds
+`None` — the pre-provenance shape, byte-identical downstream (DecisionOverlay read-sets
+unmoved; the full fast pool is the witness).
+
+**The hoist (second consumer).** `FindingKey.tryParse` lands on Core (`tryParse (text k)
+= Some k` by construction); RulingStore's private duplicate retires onto it.
+
+**The posture sibling.** `EstatePosture.activeWithProvenance` returns the relaxation keys
+WITH their attribution; `activeOf` stays the bare-key reading (consumers byte-identical).
+The II.5 reception is the sibling's named consumer.
+
+**The schema.** `policy.tightening` was schema-UNDOCUMENTED entirely; it enters
+`projection.schema.json` now (interventions + both override grains + the provenance
+fields; enums closed). Regenerated via the generator (+150 lines; the byte-drift test
+holds); one generator lesson banked — JsonNode values are single-parent, so shared
+field lists must be functions minting fresh nodes.
+
+## 2026-08-16 — align-II.3: per-subject index rulings; the advisory keeps its evidence; proposals gain identity
+
+**The grain (a4-4 + a4-7 + the plan's own line).** Three moves, one theme — rulings
+attach at the SUBJECT's grain, not the policy's:
+
+1. **Per-index promotion rulings.** `UniqueIndexOverride {IndexKey; Action
+   (AdoptPromotion | RefusePromotion); Provenance}` on `UniqueIndexTighteningConfig`,
+   consulted BEFORE the blanket `ApplyProfilePromotions` flag (the nullability
+   hierarchy's step-1 shape) — adopting ONE promotion while refusing another is
+   expressible in one config. A refusal is the NEW `PromotionRefusedByOperator`
+   keep-reason (an adjudicated state, Info; the SummaryFormatter counts it with the
+   CARRIED lane, not the advisory backlog). Config: `indexOverrides` on the uniqueIndex
+   intervention (`Module.Entity.IndexName` refs; adopt/refuse enum; the align-II.2
+   provenance fields ride along); binding refuses unknown actions, malformed refs, and
+   unresolvable indexes by name; schema regenerated.
+
+2. **The advisory keeps its evidence (a4-4).** `PromotionAdvisedNotApplied` carries
+   `UniqueIndexEvidence` — the recommendation's basis is no longer dropped at exactly
+   the recommendation boundary; a later adoption anchors to what the operator actually
+   reviewed. (FS0025 fan-out walked: rules renderer, pass diagnostic arms, summary
+   split, three test pins.)
+
+3. **Proposals have identity (a4-7).** `SuggestedConfig.proposalKey` — sha256-16 over
+   length-prefixed (Path, Value), NM-60-injective, DERIVED (the record is the identity
+   basis; notes are not identity). `ApprovalRegistry.ByProposal` keys records by
+   `(policyDigest, proposalKey)`; `isProposalSuppressed` = this proposal rejected ∨
+   whole policy rejected (the coarse grain subsumes). `SuggestConfigEmitter` filters
+   per-proposal — HORIZON's "suppressed for this key" is now the sentence the code
+   implements. The ApprovalStore wire is UNCHANGED this slice (ByProposal is in-memory
+   registry algebra; its durable home rides the II.5/II.6 wiring where the verb writes
+   — a named same-chapter deferral, not a silent one).
+
+Seven-plus-two laws live: adopt-one/refuse-one/sibling-follows-flag, the
+evidence-carrying advisory, proposalKey determinism + distinctness, per-proposal
+suppression beside a surviving sibling, whole-policy subsumption, and the two binding
+refusals.
+
+## 2026-08-16 — align-II.4: the abstain becomes first-class (one outcome, one spelling, no lies) [BEHAVIORAL]
+
+**The finding (a4-2).** "The intervention states no opinion; the declared shape carries"
+is ONE teleological outcome the domain owns — and it had three spellings, one of them
+FALSE: nullability's RelaxationOnly blanket recorded `KeepNullable NoTighteningSignal`
+about columns that stay NOT NULL (false in the lineage — the one plane whose whole job is
+to not lie); FK disguised it as an EVIDENCE variant of the positive outcome
+(`EnforceConstraint DeclaredShapeCarried`), so `enforces` answered true for a decision
+that creates nothing and emitters special-cased the lie back out; unique-index spelled it
+`ApplyProfilePromotions=false` (addressed at align-II.3).
+
+**Landed.** `NullabilityOutcome.DeclaredShapeCarried` + `ForeignKeyOutcome.
+DeclaredShapeCarried` — per-strategy first-class abstains (the PhysicalClaimRules
+standard: when the domain has N outcomes, the DU has N cases). The FK evidence-disguise
+variant RETIRES; `enforces` regains its stated meaning (false for the abstain, with the
+law pinned); the ForeignKeyPass identity special-case now keys on the outcome; the
+SummaryFormatter buckets the abstain NOWHERE (previously the FK disguise mis-bucketed it
+into ForeignKey counts — a mis-summary, now impossible).
+
+**Behavioral consequences, named.** (1) Trail annotation strings change for the two
+abstain shapes: nullability's `KeepNullable { reason = NoTighteningSignal }` blanket
+becomes `DeclaredShapeCarried`; FK's `EnforceConstraint { evidence = DeclaredShapeCarried }`
+becomes the outcome-grain `DeclaredShapeCarried` (same greppable token, honest grain).
+(2) SummaryFormatter's ForeignKey bucket count DROPS by the abstain count on
+relaxation-only runs (it was counting non-creations as creations). (3) The
+`DecisionOverlay` read-sets are BYTE-IDENTICAL (it reads only the EnforceNotNull/override
+and DropFk/NoCheckFk sets — the overlay-identity law re-pinned on the new outcome).
+(4) EventProjection: both strategies' decision arms are unchanged this slice (the typed
+AnnotationDetail arms match on outcome DUs structurally; the abstain falls where the old
+spellings fell). Consumers enumerated: trail/audit readers, SummaryFormatter,
+DecisionOverlay, ForeignKeyPass diagnostics.
+
+**Scope note (re-scope named).** The plan's II.4 bundled the probe-reading trichotomy
+(a4-3: `ProbeReading = NotProfiled | Unreliable | Reliable`) and the four-way
+`ForeignKeyReadback.Unreadable` (a4-8). Those land as the NEXT slice (align-II.4b) —
+one-commit-one-coherent-change; the abstain reshape is this commit's whole story.
+
+## 2026-08-16 — align-II.4b: the probe trichotomy reads once (the dead token lives); the readback classification rides typed [BEHAVIORAL]
+
+**a4-3 — `ProbeReading`.** "No candidate was ever profiled" ≠ "a probe ran and came back
+unreliable" ≠ "reliable evidence" — one trichotomy the three strategies spelled three
+ways, one spelling DEAD: UniqueIndex's probe helpers collapsed unreliable→None, so
+`evaluate` could only ever emit `NoCandidateProfiled` while `EvidenceMissing` had live
+operator copy, live SummaryFormatter arms, and direct test constructions — dead
+vocabulary with live consumers, the precise inverse of the house's declared-unproduced
+honesty pattern. `ProbeReading<'r> = NotProfiled | Unreliable of ProbeStatus | Reliable
+of 'r` lands in Core beside `ProbeStatus` with the one collapse-free classifier
+(`ofCandidate`); the UniqueIndex probes return it, and **an unreliable probe now reads
+`EvidenceMissing`** — the operator advice separates "run the profiler" from "your probe
+failed — investigate". FK's probe consult routes through the same reading with its fold
+onto `EvidenceMissing` made EXPLICIT and named at the consumer (byte-identical behavior;
+the FK-side reason split awaits operator-copy demand — a named deferral).
+CategoricalUniqueness already reified both (the reference dialect) and is untouched.
+
+**BEHAVIORAL:** a unique-index candidate whose probe RAN but was unreliable now decides
+`DoNotEnforce EvidenceMissing` (previously `NoCandidateProfiled`) — trail strings and the
+already-live distinct operator copy (`tightening.uniqueIndex.evidenceMissing`) now fire
+for it; the one behavioral test pin moved with the change, saying why.
+
+**a4-8 — the readback.** `ForeignKeyReadback.Unreadable of reason: string` interned a
+COMPUTED four-way classification into prose inside a Core DU. Now `Unreadable of side:
+LostSide (BothSchemas | ParentSchema | ReferencedSchema) * visible: FkVisible` with the
+sentence minted by `describe` (byte-identical copy; the ResolutionReason/describe
+precedent) — aggregation by cause/side reads the value, not a sentence. ReadSide's
+consumer projects through `describe`; the tests pin the typed side AND the copy.
+
+## 2026-08-16 — align-II.5: estate reception — rulings render on their findings (A53 LIVE; record + render only)
+
+**The reception (a4's charge; K9's demand).** The estate face loads the keyed ruling
+store (`RulingStore.loadAll` under the SAME estate evidence root) and stamps the report
+(`Estate.withRulings` — `compute` stays store-blind, the established face-stamp shape). A
+recorded ruling renders ON its finding in the lever's slot: the DECIDE question is
+answered, and one line carries one move (THE_VOICE §8) — the one-mint copy
+(`Estate.rulingText`, "The ruling stands: confirmed by … on … — …") feeds the plain lens,
+the rich lens, and (as a structured `ruling` object beside the lever) `environments.json`.
+The ACTION line names the first UNRULED finding; a fully-ruled queue says so instead of
+asking again. A confirmed/rejected S14 correspondence is now recordable and renderable
+end-to-end — the K9 witness lives in `EstateSinkClaimsTests`.
+
+**Record + render ONLY (the scope guard, held).** Reception moves NOTHING but the
+rendering: lanes, the verdict formula, and the cutover ladder read the same values ruled
+or unruled — an operator-confirmed `EmissionDeployedNotNullLoosened` still blocks the
+ladder until the model/config actually moves. Applying a ruling is the named deferral
+(align-II.0 standing ruling); the align-II.6 verb records through the same carrier.
+
+**The degradation posture (a deliberate ruling).** An unreadable/malformed ruling store
+does NOT abort the estate check: rulings are a judgment overlay, never a verdict operand
+(record + render only ⇒ no verdict ever stands on them), so the face degrades NAMED —
+`estate.rulings.unreadable` on stderr with the located cause, the board renders unruled,
+the run proceeds, and the judgment stays intact on disk. This mirrors the face's
+evidence-degradation philosophy while honoring the store's fail-closed read (loadAll
+still refuses partial reads; the face never renders a partial ruling set as if whole).
+Contrast: an unreadable ENVIRONMENT still exits 6 — operands and overlays differ.
+
+**The posture meter receives the un-severed provenance (align-II.2's named consumer).**
+The face's posture binding now reads `EstatePosture.activeWithProvenance`; `Estate.Posture`
+gains `Provenance : Map<SsKey, OverrideProvenance>`, and the PostureActive/PostureRetirable
+meter lines append the attribution once per finding ("Approved by … on … — …", date-only —
+the meter is a daily-cadence surface; the config keeps the full instant). A provenance-less
+posture renders byte-identical to the pre-II.5 board.
+
+**A53 → LIVE (Bucket C → A; 88 live / C=6 / D=1).** The axiom gates the corpus via M16
+citations: store round-trip over every anchor/optional shape, malformed refusal,
+replace-by-key, pending-by-absence, reception rendering, and the K9 correspondence ruling.
+AXIOMS.md restated; matrix regenerated in this commit.
+
+**Voice.** One new code, complete in this slice: `estate.rulings.unreadable` (copy + `all`
++ the three VoiceTotality lists — in-scope, emittable, render-call-site).
+
+Additive throughout: a store with no `rulings/` directory and a config with no provenance
+fields render byte-identical boards; no goldens moved.
+
+## 2026-08-16 — align-II.6: the ruling verb — `projection rule` records through the carrier (the 10-step checklist walked)
+
+**The verb (a8's charge; A53's enforcement sentence made literal).**
+`projection rule <finding-key> (--confirm | --reject) --by <name> [--rationale <text>]
+[--format json]` records an `OperatorRuling<FindingKey>` in the keyed ruling store under
+the SAME estate root the board reads, and renders the judgment back through the one-mint
+board copy (`Estate.rulingText`) — the verb's echo and the board's line are one sentence.
+The checklist, walked: Intent.Rule + PlanAction.RecordRuling/RuleArgs (MovementSpec,
+reified-record-from-birth) → parse arm → `planRule` (plan) → `reservedFlowVerbs` + "rule"
+(NM-10 auto-covers the flow-name collision) → `Faces/Rule.fs` → Program dispatch + usage →
+`rule.recorded` Voice copy + `all` + DocSection §13 → the three VoiceTotality lists →
+CliExit (`rule.*` → 2; `rule.writeFailed` rides the write axis 1) → ConfigSchema: NO new
+config key (the verb is store-backed, not config-backed) — step 10 verified empty.
+
+**Plan-time key parsing (a deliberate tightening).** The finding key parses AT PLAN time
+(`FindingKey.tryParse`): judgment is never recorded against a token the vocabulary does
+not recognize — `cli.rule.keyUnknown` names the token. Exactly one verdict flag
+(`cli.rule.noVerdict` / `cli.rule.bothVerdicts`); the author is MANDATORY (`--by`,
+`cli.rule.noBy` — the approve/WriteSignoff convention: judgment is never
+ambient-attributed, so no Environment.UserName default); a blank rationale refuses
+(`cli.rule.rationaleBlank` — omit the flag instead).
+
+**Scope guard, held.** Record + render ONLY: the verb persists and echoes; no policy or
+model application (align-II.0 standing ruling). The success copy says so ("recorded …
+renders it on the finding at the next check"), and the follow-up action names the board.
+
+**Two named deferrals (unchanged triggers).**
+- *EvidenceDigest basis*: the ruling anchors `Basis = FindingKey` (self-anchor). Anchoring
+  to a per-finding evidence digest awaits the first `ReopenCondition.OnEvidenceChange`
+  consumer — a reopen compare needs a comparable per-finding evidence identity, which the
+  estate does not yet mint (fingerprints are per (env, kind), not per finding).
+- *ApprovalStore ByProposal wire* (from align-II.3): does NOT ride this verb — `rule` is
+  FindingKey-grain; per-proposal suggest-config rejection persists at proposal-key grain.
+  Trigger stands: the first operator flow needing a rejected proposal durable across runs.
+
+Gates: the verb suites 310/0 (MovementSurface + VoiceTotality + AxiomTests with the added
+A53 citation); matrix regen no-drift; delta-lint 82=82; fast + perf per the ladder.
+
+## 2026-08-16 — align-II.7: the rowset contract — the 26-set walk derives from one table (E-track opens)
+
+**a1's charge.** The acquisition walk's shape knowledge lived in comments, and the
+comments had drifted twice: `skipResultSet`'s doc said "17 result sets V2 doesn't
+consume" (there are ten), and the walk's tail said "Rowset 26" for a zero-based
+ordinal 25 — count-comments over the one seam where a silent shift mis-keys every
+downstream identity. `RowsetContract.all` is now the ONE place the wire shape lives:
+26 entries, each `{Ordinal; Name; LeadingColumn; Disposition}` with
+`RowsetDisposition = Parsed of target | Drained of reason` (ten V1-SUNSET JSON
+aggregations drain, named; sixteen parse, each naming its `MetadataSnapshot` field).
+`ExpectedResultSets = List.length RowsetContract.all` — the count-pin literal (and its
+`[<Literal>]`, unconsumed as an attribute argument) retired.
+
+**The walk verifies the contract per rowset.** `read`/`skip` cite their contract row
+by name; `expect` asserts the wire position AND the leading column (`reader.GetName 0`
+— metadata, legal under SequentialAccess) BEFORE any row parses. Drift now trips as
+`MetadataExtractionError.RowsetContractDrift (rowset, detail)` — located, on its own
+code (`adapter.ossysSql.rowsetContractDrift`) — instead of a mapper misreading shifted
+ordinals into wrong-but-parseable values. The count check (`ResultSetMissing`) stays
+as the post-loop net; the per-set tripwire fires first and names the set.
+
+**Laws.** The table's coherence is pinned pure (ordinals 0..N-1 in list order; names
+distinct; every drain reasoned; `byName` total over the table and refusing outside
+it) and the parsed⇔snapshot totality is BIDIRECTIONAL via reflection: the parsed
+targets are exactly the `MetadataSnapshot` record's fields — a field added without
+its wire row fails, and a ghost target fails. The live canaries (the pure pool's
+Docker-gated extraction suite + the Integration SequentialAccess suite) verify the
+table against the real wire on every run — the leading-column pins passed live on
+first contact.
+
+**Stale-prose kill.** The `ExpectedResultSets` count-history block (22→23→25→26 with
+the "leading validation projection" tale) is replaced by the contract table + its
+append-only evolution law (new rowsets join at the END — the same law the progress
+canary pins on "capabilities" last).
+
+Additive: wire behavior is byte-identical on a conforming script; the only new
+behavior is a NAMED refusal where a drifted script previously mis-parsed.
+
+## 2026-08-16 — align-II.8: typed erasures — toBundle returns what it loses (A54 LIVE)
+
+**a1's charge; the adjunction's modulus made enumerable.** The bundle projection
+performed five classes of silent loss the audit verified: PhysColsPresent never reaches
+the bundle; FK reflection folds to four per-reference scalars; ColumnReality's axes
+collapse onto per-attribute facets; Data_Kind's string domain folds to `IsStatic`; a
+schema defaults to `dbo` when the physical join misses; a data type defaults to `Text`;
+a reference that fails its join drops row-silently; the capability vector is ignored by
+design. Now: `toBundle : MetadataSnapshot -> RowsetBundle * BundleErasure list` — the
+closed DU `FoldedRowset of rowset * detail | UnjoinedReference of attrId | AssumedSchema
+| AssumedDataType | CapabilityInvariant`, with the CONSTANT modulus (four folds +
+capability-invariance) on every projection and the data-dependent cases firing exactly
+when their shape occurs, collected on the SAME predicates the projection decides with.
+Every `FoldedRowset` cites a `RowsetContract` name — II.7's wire vocabulary and II.8's
+erasure record are one language (law-pinned).
+
+**The tuple is deliberate (not a sibling wrapper).** A bare-`RowsetBundle` `toBundle`
+would HIDE information — the audit's exact finding — so the pair forces every consumer
+to dispose of the record visibly: the live read (`LiveModelRead`) appends it to the
+existing notice-rollup concat seam (by-design folds as Info on the detail artifact;
+assumptions/drops as Warnings); the two sink REPLAY paths (`SinkRead`/`SinkDiffView`)
+drop it BY NAME with the S7 raw-at-rest citation (witness-time notices already
+surfaced; a replay re-projects the same facts); tests take `fst`.
+
+**A54 LIVE** (89 live / C=6 / D=1; matrix regenerated this commit): constant-modulus
+law, exactly-when firing per case, the drop-count reconciliation (`|snapshot.References|
+= |bundle.References| + |unjoined|`), code/sentence/severity totality, the
+contract-name-citation law, and capability-invariance (the S2 pin, unchanged).
+
+Verified at scale: the armed comprehensive canary (`PROJECTION_RUN_COMPREHENSIVE_CANARY=1`,
+the 300-table fixture) ran the reshaped projection end-to-end green.
+
+## 2026-08-16 — align-II.9: AcquisitionScope — how a read was scoped becomes a value (the E-track adapter trio closes)
+
+**a1's charge.** "Was this read total?" lived as a structural equality against
+`defaultParameters`, the S13 fast-path residual lived as a bare `OnlyActiveAttributes`
+special-case, and a gated skip said "scoped" without saying HOW. Now `AcquisitionScope =
+Total | Scoped of ScopeAxis list` (`ScopeAxis = Modules | System | Lifecycle |
+AttributeActivity | EntityFilter`) with ONE classifier (`ofParameters`) reading the
+parameters; `runAsync` stamps every `MetadataSnapshot` with its scope; the totality gate
+READS THE TYPE (`isTotalAcquisition = (ofParameters p = Total)` — equivalence with the
+retired structural equality law-pinned over the whole 32-shape space); the witness skip
+carries the firing axes (`WitnessOutcome.SkippedScoped of ScopeAxis list` — the FS0025
+fan-out was two wildcard sites); and the S13 fast-path gate compares SCOPE SUBSUMPTION
+(`AcquisitionScope.serves held requested`): a held-Total state serves any request
+without the ATTRIBUTE axis — A49's named residual is now a named axis — and behavior is
+IDENTICAL to the special-case it replaces (law: `serves Total (ofParameters p) = not
+p.OnlyActiveAttributes` over the whole space).
+
+**The codec field (R12, held).** `scope` is an OPTIONAL 17th field defaulting `Total` —
+NO codecVersion bump, no forced re-witnessing: a pre-II.9 stored snapshot (no key) reads
+back `Total`, which is TRUE by the totality gate's own invariant (only total acquisitions
+were ever witnessed). A present token round-trips; a malformed one fail-closes on its own
+code (`sink.codec.scopeMalformed`), the token named. Byte-note: newly-written snapshots
+gain the key; the witness diffs CONTENT, so CDC-silence semantics are untouched.
+
+**Two domain rulings surfaced by the laws themselves (test-first honesty).**
+- The DISPLACEMENT algebra is rowset-grain and its domain is totality-gated snapshots:
+  `fullyPopulated` stays `Scope = Total` (the T19/FTC laws quantify over the algebra's
+  real domain), and the codec's non-default coverage is the explicit R12 scoped
+  round-trip law instead.
+- The II.7 parsed⇔fields bidirectional law now subtracts `Scope` as the ONE declared
+  non-rowset metadata field — a second metadata field must join that declaration
+  deliberately or the law fails.
+
+Additive throughout: wire reads, witness outcomes, and the fast-path decision are
+behavior-identical on every existing shape; the only new surface is the named vocabulary.
+
+## 2026-08-16 — align-II.10: the journal read-side — the decode is the render's inverse; readings and first-witness instants stop lying
+
+**a1/a5's charge, three seams:**
+
+**1. `parseLine` decodes the domain classification.** `renderLine` recorded every
+`DomainTransition` (token + payloads); `parseLine` restored `Domain = None` — the
+round-trip LOST the classification the witness recorded, and every journal consumer saw
+an unclassified displacement. Now the decode is the render's full inverse: all twelve
+domain tokens restore with their payloads (rehomed espace ids, claim-change tables,
+superseded table, retyped facets), an unknown token or malformed payload fail-closes on
+`sink.journal.corruptLine` (a corrupt classification never silently reads as
+unclassified), and `parseLine ∘ renderLine = id` is a live law beside T19 walking every
+case. Replay/admission are Domain-blind, so healthy stores are byte-identical.
+
+**2. `JournalReading = Read | Unreadable of cause`.** Both claim-assembly sites collapsed
+an unreadable ledger to `[]` (`Result.defaultValue`) — claims silently assembled over
+nothing. The estate face now prints the located cause as an advisory
+(`sink.journal.unreadable`; the sink contribution for that environment stands down,
+named); the sink-served model read emits one Warn envelope on the machine channel. A
+readable ledger is byte-identical.
+
+**3. `FirstWitnessedSync = SinceGenesis | AtSync of int | Unknown`.** The assembly's
+"defensive fallback" fabricated sync 1 for a claim with NO appearance line — an instant
+nothing witnessed, rendered indistinguishably from the real genesis. The trichotomy keeps
+the adjudication ladder ORDER-STABLE (Unknown ranks exactly where the fabrication sat —
+missing provenance never rewards recency) while the rendering stops lying: healthy
+readings keep their ordinal bytes ("@sync 1", "@sync 3"); Unknown renders "@sync ?".
+BEHAVIORAL only for gappy/reconciled ledgers (the fabricated "1" becomes "?"); healthy
+journals are byte-identical (law-pinned).
+
+Consumers enumerated: the ladder rank (two sites), the one claim renderer (`claimText`),
+the correspondence tombstone sort, `SinkClaims.assemble`, the two test claim builders.
+
+## 2026-08-16 — align-II.11: typed fingerprint readings — three explicit fields; a miss names its axes
+
+**a7's charge.** The freshness bellwethers interned three measurements (row count, max
+key, content checksum) into one packed `count|maxPk|content` string at PROBE time; the
+manifest persisted the token; comparison was string equality; and a miss could name WHICH
+TABLE moved but never WHICH AXIS. Now `SinkStore.FingerprintReading` carries the three
+explicit fields; the manifest persists them as fields (codec idiom, absent as null);
+`SinkFreshness.probe` returns typed readings; comparison is field-wise
+(`FingerprintReading.movedAxes` — trivial per-axis equality); and
+`Miss.FingerprintMoved of (target * FingerprintAxis list) list` names the movement — an
+in-place UPDATE now reads as `Content` moved with rows/max-key HELD (the survival-rule-15
+story, visible at the decision instead of buried in a checksum). An absent current
+reading moves every axis (nothing confirms any of them).
+
+**Wire compatibility (no re-witnessing).** The packed form survives as
+`FingerprintReading.packed` (the display + legacy wire) with `tryParsePacked` its
+law-pinned inverse: a pre-II.11 manifest's packed `fingerprint` strings read straight
+into typed readings; an entry neither wire explains is skipped (the safe direction —
+`auto` reads live for it). The manifest codec pair is exposed pure
+(`manifestJsonText`/`tryParseManifestText`) so the wire laws are executable.
+
+Consumers: the decision table (field-wise now), the witness recording (typed through
+`witnessWith`), the Integration witness canary (pins the UPDATE-moves-Content-only axis
+live), `SinkFreshness.render` (= packed ∘ readingOf — byte-identical display).
+
+## 2026-08-16 — align-II.12: the finding pedigree — the typed record behind the prose (the E-track closes)
+
+**a7's charge.** A finding's evidentiary basis lived only in its composed `Statement`
+prose: which environments contributed, at what magnitude, under what evidence standing,
+captured when — all interned in a sentence. Now `Finding.Pedigree : PedigreeEntry list`
+(Core: `{Env; Standing: EvidenceStanding (Firm | Advisory); Magnitude; CapturedAtUtc
+option}`) carries the typed record ADDITIVELY: `compute` fills firm/this-run (store-blind
+as ever); the face's evidence stamp (`withEvidence`) re-derives standing and capture
+instants from the SAME provenance partition the masthead confidence line draws (live/
+re-profiled/content-verified = Firm; offline/absent = Advisory). Law-pinned: the stamp
+moves NO statement byte, no lane count, no verdict — the pedigree is the record BEHIND
+the prose, never a second prose. `environments.json` projects it per finding
+(`pedigree: [{env, standing, magnitude, capturedAtUtc?}]`).
+
+**`Relaxation.Evidence` typed.** The overlay's evidence was a bare `(env, count)` pair
+list; it is now the finding's own `PedigreeEntry list` — the overlay note renders
+byte-identical text (law-pinned), and the standing/instant ride wherever the relaxation
+travels.
+
+**Statement stays composed (named deferral).** The full Statement-as-projection (prose
+derived from the pedigree instead of composed beside it) is deferred with its trigger:
+the first consumer needing statement re-rendering from stored pedigree (the III-era
+environments.json reader). The `TargetErasure` rider (A37 promotion) also stays deferred
+— it belongs with the III-era law work, not this chapter's tail.
+
+The E-track (II.7–II.12) closes: the wire contract, the erasure record, the scope value,
+the journal's full inverse + reading + first-witness trichotomy, the axis-bearing
+fingerprint readings, and the pedigree — six epistemic seams, each now a value.
+
+## 2026-08-16 — align-II.13: Chapter II closes (the Ruling & the Epistemics — both charges discharged)
+
+Fourteen slices, `1f17d47..` this close. **Arc R:** operator judgment is a VALUE with a
+carrier (`OperatorRuling`, II.1), a keyed fail-closed durable home (`RulingStore`, II.1),
+config attribution un-severed to the surfaces (II.2), per-subject grain (index rulings +
+proposal identity, II.3), honest outcomes beneath it (first-class abstain; the probe
+trichotomy, II.4/II.4b), a receiving surface (the estate DECIDE lane renders rulings on
+their findings, II.5 — A53 LIVE), and a recording verb (`projection rule`, II.6 — the
+10-step checklist walked). Record + render ONLY throughout — auto-application stays the
+named deferral. **Arc E:** six epistemic seams became values — the wire contract (II.7,
+`RowsetContract` + the located drift refusal), the erasure record (II.8, `BundleErasure`
+— A54 LIVE), the acquisition scope (II.9, `AcquisitionScope`/`ScopeAxis`; the totality
+gate reads the type; the S13 gate compares subsumption), the journal's full inverse +
+named readings + first-witness trichotomy (II.10), axis-bearing fingerprint readings
+(II.11), and the finding pedigree (II.12).
+
+Close ritual walked (CHAPTER_ALIGN_II_CLOSE.md): claims⇔witnesses total; Release fast
+solution-wide PASSED; full Docker PASSED with exactly the two named reds (confirmed
+against the failed-tests list); delta-lint 82=82 across all fourteen slices; law census
+89 live (A53 + A54 promoted) / C=6 / D=1, zero phantoms; deferrals banked with triggers;
+docs current; anti-findings held (exemplary consent surfaces untouched; zero golden
+re-records — every slice byte-identical on healthy inputs by design).
+
+Chapter III (State, Law, Grain & Lexicon — Arcs S+L+H+X, ~24 slices) is next under the
+same standing authorization; III.0 opens it.
+
+## 2026-08-16 — align-III.0: Chapter III opens (State, Law, Grain & Lexicon — the program's final chapter)
+
+`CHAPTER_ALIGN_III_OPEN.md` frames the four charges (S: state honesty — ChainAdmission,
+typed instants, the FTC reading grain, the dead twin, DataObservation, rename-isometry;
+L: law honesty — A44 resident, four Skip-prose promotions to 93 live, generator truth
+with ONE named re-baseline, TriggerProbes, L3-Eject; H: grain carriers —
+PhysicalTableRef test-FIRST, Environment.parse total, env-digest sets, typed temporal;
+X: the lexicon, strictly last, one rename per commit), the wave map with the named
+IIIa/IIIb seam after III.12, the inherited standing rulings, and seven acceptance laws
+the close will witness. No new axiom stub at open — this chapter's laws either already
+sit as Skip-prose residents (A45/T17/A47/A48, promoted at III.9) or mint at their slice
+with the same-commit discipline (III.7's rename-isometry; III.12's L3-Eject Bucket-C).
+The II.1 deferred ruling-history trigger (`BasisAnchor.SinkEdition`) is scheduled: it
+fires at III.2 with ChainAdmission.
+
+## 2026-08-16 — align-III.1: SyncOrdinal + SinkEdition; every stored instant parses fail-closed (the MinValue lie retires)
+
+The S-track opens with the a5 workpaper's two smallest-grain findings: the sink
+ledger's edition ordinal was a bare `int` (absence a magic 0; a stored 0 readable),
+and four stored instants were raw text or silently fabricated (`ApprovedAt : string`,
+`Ts : string`, and the LifecycleStore/ApprovalStore `at` decodes defaulting
+`DateTimeOffset.MinValue` — an approval or episode "dated" year 1).
+
+**SyncOrdinal + SinkEdition (Core, before OperatorRuling.fs).** `SyncOrdinal` is a
+private VO: 1-based (`genesis`), `create` fail-closed below 1, `next` minting
+genesis-from-nothing / predecessor-plus-one, absence always `SyncOrdinal option` —
+never 0. Typed across the sink plane: `JournalLine.SyncId/PrevSyncId` (+ the
+LedgerSpec fingerprint), `Manifest.LatestSyncId`, `snapshotPath`/`loadSnapshotAt`,
+`SinkRead` (identityOf/Resolved/resolve/resolveByConnectionString/readEnv),
+`Source.ofSink`, `Ref.Sink`, `ModelResolution.SinkWitness`,
+`SinkFreshness.Decision.ReuseSink`, `SinkSyncRun.SyncOutcome`,
+`EjectRun.SinkTerminalState`, `SinkClaims`, `FirstWitnessedSync.AtSync`. The magic-0
+absence encoding retired at all three witness sites (`previousOrdinal`,
+`lastSyncId`, the admitChain seed are options now — the two journal-line fabrication
+sites SIMPLIFIED: `PrevSyncId = previousOrdinal` directly). `SinkEdition =
+{ ConnDigest; Ordinal }` is the a5 carrier, minted with its first consumer:
+`WitnessOutcome.Persisted/Unchanged` now name WHICH edition landed / still stands
+(zero render blast — LiveModelRead surfaces only `Failed`). align-III.2's
+`BasisAnchor.SinkEdition` widen consumes it next, as scheduled at II.1.
+
+**Typed instants.** (a) LifecycleStore coordinate `at`: missing/malformed → hard
+`ParseFailure` (was a MinValue-dated episode). (b) ApprovalStore record `at`: the
+identical fix — the a5-uncited same-lie rider, named here. (c)
+`DataCorrectionReceipt.ApprovedAt` + `ApprovedDataCorrection.ApprovedAt` →
+`DateTimeOffset option`: the config decode mints fail-closed
+(`pipeline.config.emission.dataCorrections.approvedAt`, the II.2 provenance posture);
+the store read parses with `AssumeUniversal` (a pre-III.1 stored date-only
+"2026-07-23" reads as the UTC instant DETERMINISTICALLY — host-local parsing would
+fork the value by machine; malformed text is a hard ParseFailure); the store write
+canonicalizes to the round-trip "O" form (a raw-text approvedAt re-persists
+value-identical, byte-canonicalized). (d) `Run.Ts` + `RunLedger.LedgerRecord.Ts` →
+`DateTimeOffset`: the wire keeps the UTC `o` form byte-identical
+(`UtcDateTime.ToString("o")` — every ts either store ever wrote was UTC); a torn `ts`
+refuses the record (Run: load → None; RunLedger: the line drops through the standing
+lenient posture — align-III.3 owns naming the skips). (e) Determinism rider:
+`TighteningBinding`'s approvedAt parse moves RoundtripKind → `AssumeUniversal` for
+the same one-config-one-instant guarantee; explicit offsets pass through unchanged.
+
+**BEHAVIORAL — malformed stored values only.** A journal line naming sync ≤ 0 is
+`sink.journal.corruptLine` (was readable data); a manifest naming latestSyncId ≤ 0
+reads as absent (fail-closed family); a `sink:<env>@0` / `@-n` pin is a malformed
+pin — it stays label text (the grammar's existing malformed-pin rule) and refuses
+downstream as `sink.envUnknown` (was `sink.syncNotFound`); `resolve` drops its
+`chosen < 1` clause (unrepresentable). Healthy stores, healthy configs, healthy
+renders: byte-identical (ordinal messages render through `SyncOrdinal.text` — same
+bytes; the sync face's JSON/Voice payloads box `SyncOrdinal.value` — same ints).
+Laws: SyncOrdinalTests (create/next/order/edition-text) + fail-closed instant laws
+beside each store's existing decode laws (LifecycleStore ×3, ApprovalStore, RunLedger,
+Run, Config, TighteningBinding, SinkStore corrupt-line + manifest-absent, Ref grammar
+non-positive-pin).
+
+## 2026-08-16 — align-III.1v: the Voice register audit + stage-1 repair (operator directive)
+
+Mid-Chapter-III operator directive: *"audit the new Voice entries we are publishing …
+and are seeing in these Inspect FidelityRows outcomes … we most certainly are not
+aligned with THE_VOICE.md right now."* The audit (workpaper
+`audits/alignment-2026-08-16/a11-voice-register.md`) CONFIRMED five violation classes;
+the largest — the lazy plural `row(s)`/`kind(s)`/`difference(s)` — stood at 282 sites
+across ~40 files, unbanned by §2.2 and therefore unenforced, even though the house had
+already refused the form once (`EstateTests` pins `DoesNotContain("difference(s)")`).
+
+**The ratchet (this slice).** THE_VOICE.md §2.2 gains the lazy-plural ban + two §11
+calibration rows; a `counted n one many` helper (the `humane` sibling — both forms
+spelled at the site, verb agreement riding the phrase) lands beside each surface's
+`humane`; the register's HEART is repaired to zero occurrences — Voice.fs (every copy),
+EstateFinding.fs (the finding exemplars), Estate.fs (the finding grammar, mastheads,
+burndown, runbook), EstateBoardView.fs, TtyRenderer.fs, GoBoardView.fs,
+ReviewNavigator.fs, Faces/Fidelity.fs, Program.fs — and `VoiceRegisterTests` freezes
+those nine files at zero (the executable ratchet; the source-scan idiom).
+
+**The named-surface repairs.** `fidelity.rows.matched/diverged` lead with the exact
+referent ("between the source and the target" — the coined "physical-to-logical gap"
+figure retired from the statement); "this proof claims strict byte-identity" now
+ASSERTS ("the proof is strict byte-identity"); the tolerance note keeps the config's
+own tokens but frames them plainly; the reconcile lead is stative ("The target 'x' is
+reconciled against the manifest…"), the `NO` caps-shout and the `per-kind pass/fail`
+fragment retired, the escalation now an object-naming imperative. `kind(s)` on
+operator surfaces became **tables** (§2.1: the boundary translates, always).
+align-III.1's own decode messages gained their articles ("the coordinate is missing
+its 'at' instant") and the config refusal its provision imperative ("supply an
+ISO-8601 instant"); `estate.rulings.unreadable` went stative. Inspect's `at` field,
+the board mastheads (`ROWS —`, lane labels), and `@sync` payload fields were audited
+and HELD with citations (substantiation-layer placement, rule 3).
+
+**BEHAVIORAL: operator-facing copy bytes only** — no decision, wire format, or
+artifact changes; every moved test pin moved with this entry as its why. **Stage 2
+(named deferral, trigger = the next voice slice or III.23, whichever first):** the
+long tail — Faces/Transfer.fs (~60 sites), TransferRun.fs, the emitters
+(Remediation/Summary/DecisionLog/ApplyRunbook/BatchSplitter), TransferImpactView,
+Compare/Readiness/PeerTransfer/ModelFidelity/GoBoard, ModuleFilter, the Core passes —
+after which `VoiceRegisterTests`' frozen list widens to the full src tree. The
+exemplary consent surfaces (WriteSignoff/ActConsent) carry the same class; they stay
+untouched pending an explicit operator ruling (the standing anti-finding rule holds
+until then).
+
+## 2026-08-16 — align-III.2: ledger honesty — ChainAdmission retires the tautology; the sink journal verifies its PrevSyncId chain
+
+The S-track's ledger-honesty charge. The audit (a5) named a tautology: the sink
+journal's `LedgerSpec.FingerprintOf = fun line -> line.SyncId` made `resumeAdmit`'s
+comparison `line.SyncId = line.SyncId` — always `Ok`, the drift arm unreachable, the
+REAL check a hand-rolled `SyncId < lastSync` guard beside it. The episode grain
+instantiated no `LedgerSpec` at all (its ResumeAdmit hand-rolled in
+`EpisodicLifecycle.append`).
+
+**ChainAdmission (Core, `Ledger.fs`).** The resume discipline is now a VALUE on the
+spec — `ChainAdmission<'entry,'fp> = WitnessRecompute of fingerprintOf | Monotone of
+ordinalOf | Linkage of (identityOf * predecessorOf)` — inspected by a new pure
+`Ledger.admitChain`, so a grain can no longer fake a fingerprint that recomputes to
+itself. `LedgerSpec.FingerprintOf` is retired; its `'fp` constraint widens `equality →
+comparison` (Monotone/Linkage order chains). `admitChain` handles the pure arms
+(`Monotone` strict-increase; `Linkage` GROUPED — entries sharing an identity are one
+sync group, group N+1 must name group N as predecessor and strictly exceed it, the
+first group claims none) and refuses a `WitnessRecompute` chain `RecomputeRequiresSource`
+(a recompute grain has no offline whole-chain admission — its fingerprints recompute
+from the live source, per entry, via the unchanged `resumeAdmit`). `entryOf` now takes
+the projection directly (`fingerprintOf`, not the spec), decoupling the write-stamp from
+the resume discipline. Refusals are the typed `ChainRefusal` (OrdinalRegression /
+BrokenLink / RecomputeRequiresSource).
+
+**The three grains declare their discipline.** SinkJournal → `Linkage (SyncId,
+PrevSyncId)`; its `admitChain` delegates to `Ledger.admitChain` (no hand-rolled fold,
+no self-compare) and maps `ChainRefusal` → `sink.journal.syncRegression` (regression) /
+`sink.journal.brokenChain` (NEW — a broken predecessor link). CaptureJournal →
+`WitnessRecompute fingerprintOf` (the recompute stays per-chunk at the boundary).
+EpisodicLifecycle → a real `ledgerSpec` (`Monotone` over the schema-plane ordinal,
+state = Catalog, ⊕ = replace); `append` reads the spec's one ordinal projection and a
+new `EpisodicLifecycle.admitChain` runs the whole-chain law through the shared substrate.
+
+**BEHAVIORAL — a genuinely broken sink chain now refuses.** Before: a monotone journal
+whose sync group named the WRONG predecessor was admitted silently (the tautology never
+looked at PrevSyncId). Now it refuses `sink.journal.brokenChain` (CliExit → 9, the drift
+family). A healthy store (every witness writes each sync's lines linking to the prior
+sync) is byte-identical — the witness already produces well-linked chains, so no
+existing store's admission changes. The regression refusal is unchanged
+(`syncRegression`, order-checked before linkage).
+
+**BasisAnchor.SinkEdition widen (the II.1-deferred trigger, FIRED here).** `BasisAnchor`
+gains `SinkEdition of SinkEdition` — a ruling may now anchor to a witnessed edition
+(digest × ordinal), the substrate a reopen-on-edition-change probe and an append-only
+ruling history stand on. `RulingStore`'s codec round-trips it field-wise (connDigest +
+ordinal, the ordinal re-minting fail-closed). This is a CARRIER completion (reify
+eagerly — the ruling's evidence-identity vocabulary was incomplete while editions became
+first-class at III.1); the append-only ruling HISTORY STORE the widen unblocks is a
+verb/feature, deferred to its first consumer (re-ruling preservation) per "verbs at the
+second consumer".
+
+**T19 doc fix.** The enforcement sentence is now TRUE: `SinkJournal` instantiates
+`LedgerSpec` with `Admission = Linkage`, admission IS `Ledger.admitChain`, and the
+linkage verifies PrevSyncId for real (the T19 citation set gains the brokenChain law).
+No matrix motion (T19 was already live; a citation added to a live axiom leaves the
+counts). Laws: `LedgerTests` ChainAdmission suite (Monotone/Linkage/WitnessRecompute-
+offline); `SinkStoreTests` brokenChain; `EpisodeTests` episode-grain admitChain;
+`RulingStoreTests` SinkEdition round-trip; `CliExitTests` brokenChain → 9.
+
+## 2026-08-16 — align-III.3: the R6 gate reads a value — CanaryVerdict retires the "green"/"red" literals; the ledger loads fail-closed
+
+**Amendment to the §5 R6 + cutover-ladder commitment (written FIRST, per the
+break-a-load-bearing-commitment discipline).** R6's POLICY is unchanged: V2's per-pair
+cutover still gates on N=10 consecutive GREEN canaries + operator sign-off. What changes
+is the ENCODING of a canary's verdict, not the gate. The audit (a5) found the verdict
+lived as the bare string `"green"` / `"red"` in TWO independent sites — `Run.Canary` and
+`RunLedger.LedgerRecord.Canary`, both `string option` — and the eligibility test
+(`last = Some "green"`) plus the streak count (`takeWhile (= "green")`) compared literals
+a typo in either site could silently break. align-III.3 lifts the verdict to a Core
+value.
+
+**CanaryVerdict (Core).** `Green | Red | NotRun`. `NotRun` replaces the prior `None` (no
+canary leg — pending by absence, distinct from a recorded `Red`; the gauge skips it,
+never resets the streak on it). The wire is byte-identical: `tokenOpt` writes `"green"` /
+`"red"` and NO token for `NotRun` (absent/null, exactly as `None`), and `ofTokenOpt` reads
+them back, an unknown token reading `NotRun` (the ledger's forward-compatible safe
+direction — a future verdict never reads as a false green/red). The gauge's logic is
+unchanged (`filter ran`, `takeWhile isGreen`, `last = Some Green`), so readiness over any
+existing store is identical.
+
+**Aborted DEFERRED (a plan-sketch trim, discipline-governed).** The III-open sketch named
+a fourth variant `Aborted` (a canary that began but reached no verdict). It has NO
+producer today: `canary.started` is Voice copy only — it is never accumulated into the
+`LogSink` envelope stream `canaryVerdict()` reads, so nothing can distinguish
+started-but-unconcluded from `NotRun`. Per "IR grows under evidence / zero-consumer
+symmetry-builds get deleted", `Aborted` is a NAMED DEFERRAL. **Re-open trigger:** the
+first run to journal a started-but-unconcluded canary signal into the sink envelope
+stream. The three shipped variants fully deliver the slice's value — the gate reads a
+value, not a literal.
+
+**RunLedger fail-closed loader.** The JSONL ledger `read` was `List.choose parseLine` —
+it silently dropped EVERY malformed line, interior corruption and trailing-torn alike. Now
+`readLines` distinguishes: a malformed TRAILING line is tolerated silently (a crash
+mid-append is normal), an INTERIOR malformed line is COUNTED as `SkippedLines` and surfaced
+on `Readiness` (a new field) and on the readiness board when > 0. Not a hard refuse — the
+ledger is opt-in and forward-compatible, so one bad interior line names itself rather than
+either vanishing silently or breaking the whole gauge.
+
+**RunHistory subsumption (micro-ruling, already structural).** `RunHistory` already reads
+the richer per-run `Run` store and delegates readiness to the ONE gauge
+(`RunLedger.readiness` over `Run.toLedgerEntry` projections); its module doc already
+states it "subsumes RunLedger". The ruling names it explicit: `RunLedger.read`/`append` is
+the thin durable JSONL INDEX (the residue), `RunHistory` is the source, and the readiness
+GAUGE is the single shared definition both reach. The X-arc's X5 (RunLedger residue rename)
+shrinks to a rename — no logic moves.
+
+**BEHAVIORAL:** an interior-corrupt ledger line is now counted + surfaced (was silently
+dropped); a healthy ledger and a trailing-torn ledger are byte-identical in behavior.
+Every "green"/"red" render is byte-identical (the display token is the same string).
+Laws: `CanaryVerdictTests` (token round-trip incl. NotRun-absent + unknown-token-safe);
+`RunLedgerTests` interior-vs-trailing SkippedLines; the existing readiness/RunHistory laws
+re-pinned onto the typed verdict.
+
+---
+
+## 2026-08-30 — align-III.4: the estate reading grain gets its FTC (`latest.json` demoted to cache-of-fold)
+
+**The finding (audit a5, S3).** The estate history stored STATE BESIDE ITS LEDGER with no
+law connecting them: `latest.json` was an independent copy written on every save, and
+`loadLatest` trusted it alone — a lost or torn pointer made the board claim "first recorded
+reading" while the per-run records still witnessed a baseline. The house shape for a state
+file next to an append-only series is the FTC (T13's form at the episode grain): state IS
+the fold of the series; any materialization is a cache.
+
+**The decision.** `EstateHistory.replay : HistoryRecord list -> HistoryRecord option` is the
+fold — each record already materializes its own fold state (the streak, the carried
+first-seen instants), so replay is the chronological last, tie-broken by run id for
+determinism. `loadAll` reads the recorded series (per-run records, each fail-closed exactly
+as `loadRun` reads it; a torn record file is skipped). The law
+**`loadLatest = replay ∘ loadAll`** is pinned three ways:
+
+- `save` writes the per-run record and then re-materializes `latest.json` AS the fold —
+  on the ordinary monotone path the incoming record is the fold's newest and the bytes are
+  identical to the prior behavior (the existing same-bytes test still passes verbatim);
+  under an out-of-order save the pointer now cannot regress; a previously torn pointer
+  heals at the next save.
+- `loadLatest` reads the cache when readable and otherwise RECOVERS via the fold — `None`
+  only when the store holds no readable reading at all, so "first recorded reading" is
+  again a statement of fact.
+- `EstateHistoryTests` carries the law (`loadLatest = replay(loadAll)` across empty → one →
+  two saves), the lost/torn-pointer recovery, the out-of-order no-regress witness, and
+  replay determinism (empty → None; equal-instant tie breaks by run id).
+
+**BEHAVIORAL:** a store whose `latest.json` is missing or torn but whose per-run records
+survive now yields the fold instead of `None` (the board diffs against the true baseline
+instead of resetting); a healthy store is byte-identical. No new axiom row — the FTC's
+axiom is T13; this is its reading-grain instance, witnessed in `EstateHistoryTests`.
+
+---
+
+## 2026-08-30 — align-III.5: the schema-only `Lifecycle`/`CatalogSnapshot` dead twin is deleted (the episodic grain stands alone)
+
+**The finding (audit a5, S4).** Two carriers of the same temporal law lived side by side:
+the schema-only, in-memory `Lifecycle` over `CatalogSnapshot`s (never serialized, no
+production consumer — kept alive solely by its own tests) and the durable multi-plane
+`EpisodicLifecycle` over `Episode`s (the grain `LifecycleStore` persists and every
+production caller reads). The dead-algebra retirement precedent (2026-06-04) applies:
+zero-consumer symmetry-builds get deleted.
+
+**The decision.** `Lifecycle.fs` now hosts only the living value objects (`Version`,
+`Timeline` — used across ReportRun / MigrationRun / LifecycleStore / Pipeline / the faces);
+`CatalogSnapshot`, `Lifecycle`, and its module are GONE. The one API the dead twin had that
+the living grain lacked is PORTED, not lost: **`EpisodicLifecycle.replayTo`** — L3-L1's
+materialized fetch (recover the schema stored at a `Version`, refusing absent versions by
+name, `episodicLifecycle.version.notFound`) — lands beside its diff-fold peer
+`reconstructLatestSchema`, mirroring the fetch/derive pairing the twin documented.
+
+**The law port.** `LifecycleTests.fs` re-targets wholesale onto `EpisodicLifecycle` +
+`Episode.ofSchema` (the exact carrier `CatalogSnapshot` collapsed into). The axiom-cited
+test names are UNCHANGED — `A-Lifecycle-1 (L3-L1)` ×2, `A-Lifecycle-2 (L3-L2)` ×2,
+`A-Lifecycle-3 (L3-L3)`, the `Time round-trip (replay): replayTo genesis …` matrix witness,
+6.A.11/H-007 reconstruction, 6.H.3 netDiff ×3, P4 ×3, NM-45 ×2, E4 — so the AxiomTests
+citations and the NORTH_STAR Time cell hold with zero motion (matrix regen byte-stable).
+Refusal-code pins move to the episodic surface's own codes
+(`episodicLifecycle.append.nonMonotonic`, `episodicLifecycle.version.notFound`).
+
+**Doc re-points in the same commit.** AXIOMS.md §A-Lifecycle preamble + A-Lifecycle-1 text
+(episodic carrier; the stale "awaits the compose operator" parenthetical corrected), T13's
+witness line (`reconstructLatestSchema`), and T13's 2026-06-01 **Latent** note flipped to
+**Resolved** (the durable substrate shipped as `Episode`+`LifecycleStore`; the in-memory
+twin it was measured against is deleted). `THE_USE_CASE_ONTOLOGY.md` §Accumulate names the
+`Episode` append + `reconstructLatestSchema`. `ArtifactByKind`/`Episode` doc comments drop
+the twin references.
+
+**Not behavioral.** No production caller invoked the deleted API; no wire format moves.
+The only new production code is `replayTo` (pure fetch). Verification: build + analyzers
+clean; fast pool; matrix byte-stable.
+
+---
+
+## 2026-08-30 — align-III.6: `DataObservation` becomes a DU — measured-zero ≠ unmeasured
+
+**The finding (audit a5, S5).** The data-plane observation on an `Episode` was
+`{ CdcCaptureCount : int; CdcHandle : string option }` with `empty = { 0; None }` — folding
+two different facts onto one value: **CDC-silence** (the ruler ran and read zero — an
+idempotent redeploy's strongest guarantee, T15's isometry at rest) and **no measurement**
+(a schema-only record; nobody looked). The codebase's own gestalt names silence as a
+guarantee; a type that cannot state "the ruler ran" cannot carry it.
+
+**The decision.** `DataObservation = NotObserved | Observed of captureCount * handle option`
+(`[<RequireQualifiedAccess>]`). `observed` is the measuring producer (zero is a real
+reading); `captureCount` is the norm projection (an unmeasured plane contributes zero — it
+cannot claim movement it never measured — with the doc naming the fold); `handle`/`ran`
+complete the module. `empty`/`create` are RETIRED — every production site re-declared
+itself: the four schema-only record sites (`Episode.ofSchema`, `MigrationRun.recordVerified`'s
+schema leg, both `Pipeline` store-leg priors) are `NotObserved`; the two measuring sites
+(`MigrationRun` post−baseline, `Pipeline` cdcDelta) are `observed` — including a measured
+DELTA OF ZERO, which now survives as `Observed 0`.
+
+**The codec (presence flag; three generations, one total reader).** `LifecycleStore`
+writes `Observed` with `"cdcObserved": true` before the count; `NotObserved` writes the
+exact pre-III.6 "empty" bytes (count 0, null handle, NO flag) — schema-only stores are
+byte-identical. Reading: a flag decides outright; unflagged bytes (pre-III.6 stores) read
+a POSITIVE count as the measurement it always unambiguously was, and a ZERO count as
+`NotObserved` — the safe direction (never a fabricated measurement). **The named cost:** a
+genuinely-measured-zero episode stored BEFORE this slice re-reads as `NotObserved` — the
+old bytes cannot carry the distinction; that loss is exactly the debt being retired, and
+the safe direction under it.
+
+**BEHAVIORAL:** stores holding measured episodes gain the flag on next write (the one
+expected byte motion; `ChangeManifest.CdcCaptureCount` stays `int` via the named norm
+projection, so reports/manifests/eject surfaces are byte-identical). Laws:
+`EpisodeTests` (Observed 0 ≠ NotObserved; both project zero), `LifecycleStoreTests`
+(measured-zero round-trip; NotObserved writes no flag — byte-compat witness; the
+three-generation unflagged read). `MigrationCanaryTests`' live Docker witnesses re-pinned
+onto the projection.
+
+---
+
+## 2026-08-30 — align-III.7: the rename-isometry gets its static half (`ChangeManifest.renameIsometryViolated`)
+
+**The finding (audit a5, S6 / A43's ⬚).** A43's cross-plane corollary — a faithful schema
+rename induces ZERO data moves, `‖emit(π_Rename δ)‖_data = 0`, because `sp_rename` conserves
+rows — was stated, derived, and witnessed on the EMISSION side (the refactorlog entry), but
+nothing ever CHECKED it against a recorded edge: a change-manifest could carry "1 rename,
+120 captures" and no surface named the contradiction. The corollary had a producer and no
+inspector.
+
+**The decision.** `ChangeManifest.renameIsometryViolated : ChangeManifest -> bool` — true
+exactly when the edge is rename-only (the five rename channels are the ONLY nonzero
+channels: renames > 0 ∧ renames = ‖δ‖) AND the CDC ruler counted captures
+(`CdcCaptureCount > 0`). Composes with align-III.6 at the norm boundary: an UNMEASURED
+edge folds to zero and never violates — no claim without a measurement; only an
+`Observed` positive count can indict. A pure data load (norm 0) and a mixed edge
+(renames < ‖δ‖) are out of scope by construction — data legitimately moves there.
+
+**Scope guard.** The predicate is an OBSERVATION, not a refusal — no verb gates on it in
+this slice (its first consumer decides the surface; the natural seats are the report
+movement section and the estate board). The LIVE deploy-time canary — catching the
+violation at emission time rather than in the record — remains A43's ⬚ on the 6.D.1
+route, unchanged.
+
+**The law.** A43's witness gains the static half: AXIOMS.md names
+`ChangeManifest.renameIsometryViolated` beside the RefactorLogEmitter witness, and the
+A43 axiom test cites `ChangeManifestTests`' new laws (violated on rename-only + observed
+captures; upheld on observed silence; never on an unmeasured edge; out of scope on mixed
+and idempotent edges). Matrix regenerated in the same commit.
+
+**Not behavioral** — a pure predicate with no caller yet.
+
+---
+
+## 2026-08-30 — align-III.8: A44 is resident; the axiom headline stops lying
+
+**The finding (audit a6/a9, L1).** The numbered system had a hole and a stale headline.
+`A44` — the config⟷movement isomorphism (`expressible ⇔ reachable`) — was chartered in
+`THE_CONFIG_CONTROL_PLANE.md` §2 (2026-06-08) as "A44 candidate", its canary went fully
+live with residual-∅ two days later (S6), and A45–A54 were then numbered AROUND the hole
+for two months while `AXIOMS.md` never seated it. Meanwhile the headline still declared
+"The current count is A1–A43 generating T1–T16" — five axioms and three theorems stale —
+and `PRODUCT_AXIOMS.md`'s cross-reference repeated it.
+
+**The decision.** A44 gets its resident section in `AXIOMS.md` (the three clauses —
+faithful `parse ∘ render = id`; total/spanning with the residual-∅ strongest form;
+direction derived, never stored — with the T16 iso-ladder framing and the charter
+provenance) placed in numbering order before A45, and a LIVE gated pointer in
+`AxiomTests.fs` (M16 `citationOf` over the four load-bearing `MovementIsomorphismTests`
+laws: clause-1 faithfulness, both clause-2 spanning directions, clause-3
+direction-purity) — born in exactly the form III.9 will lift the neighboring Skip-prose
+stubs into. The headline now enumerates the real lineage (A44 charter; estate/fidelity
+A45–A48 + T17–T18; sink A49 + T19; alignment A50–A54), states **A1–A54 generating
+T1–T19**, and — per the CLAUDE.md rule that restated counts are bugs — names the
+executable registry as the count's authority in the same breath. `PRODUCT_AXIOMS.md`'s
+cross-ref follows suit, and its §Lifecycle operationalization paragraph is re-pointed
+onto the episodic grain (the align-III.5 deletion had left it citing the deleted twin).
+
+**Not behavioral** — documentation residency + one new live gated fact (89 → 90 live).
+
+---
+
+## 2026-08-30 — align-III.9: four Skip-prose pointers become live M16 gates (A45 / T17 / A47 / A48; 90 → 94 live)
+
+**The finding (audit a6, L2).** Four adopted laws — A45 (espace invariance), T17 (row
+fidelity), A47 (staging-and-loading invariance), A48 (offline reconcile soundness) — sat
+in `AxiomTests.fs` as `[<Fact(Skip = …)>]` stubs whose own prose declared "the promotion
+trigger fired: EXECUTABLE WITNESSES are LIVE" and then named the witnesses in free text.
+A pointer that a human must read to discover the law is enforced was the exact
+"verified-once debt" M16 retired for citations — these four never got the lift.
+
+**The decision.** Each stub converts to a live `[<Fact>]` carrying `citationOf` gates
+over its named witnesses — the A46/T18/T19/A49 grammar, condensing the Skip-prose to a
+comment: A45 → the `EstateTests` N-cell invariance law; T17 → the two `RowFidelityTests`
+comparator laws + the `FidelityRowsDockerTests` live triangle; A47 → the four
+`ReverseLegCanaryTests` staging×loading arms (B5, P1-S1, P1-S4, P1-S3); A48 → the two
+`ProofManifestTests` codec/fail-closed laws + the `FidelityRowsDockerTests` P2-S3
+offline reconcile. M16 now fails the tree if any of the eleven cited witnesses drifts.
+
+**Ledger motion.** Live 90 → 94; the verifiability gate's advisory "deferral(s) name no
+bucket" WARN shrinks 8 → 4 (the four converted stubs were among the unclassified). The
+axiom-file Witness lines already said LIVE — no AXIOMS.md text motion; matrix regen in
+this commit carries the four class flips. Test names unchanged (the registry's identity
+is stable).
+
+**Not behavioral.**
+
+---
+
+## 2026-08-30 — align-III.10: the matrix generator tells the truth about its own inputs (C 6→9; the decoy retired; `@axis` self-declaration)
+
+**The finding (audit a6, L3).** The self-verification meta-cell had four honesty gaps of
+its own:
+
+1. **Single-line bucket parsing.** Both `matrix-status.sh` and `verifiability-gate.sh`
+   grepped only the FIRST line of each `[<Fact(Skip …)>]` attribute; a `Bucket C` token on
+   a backslash-continuation line was invisible. The published Bucket-C count was 6; the
+   true count is **9** (A21, A27, T2, T5–T10). The gate's "unclassified deferral" WARN
+   (lately 4) was entirely parse artifact — every axiom/theorem deferral IS classified.
+2. **The decoy.** The file's own doc header carries a commented `[<Fact(Skip` exemplar;
+   the bare grep counted it as a deferral (34 vs the xUnit-ground-truth 33 — the matrix
+   total was off by one).
+3. **A hand-maintained bucket summary.** The tail comment block still declared "52
+   entries, A1–A41 + T1–T11" — the registry had more than doubled. The exact
+   restated-count defect CLAUDE.md §8 names.
+4. **Hard-coded witness names + unvalidated tags.** The ladder's ten witness names lived
+   verbatim in the SCRIPT (a rename opened the cell with no pointer back), and an
+   `@ladder` tag with a typo'd axis/disposition token silently detached its tolerance
+   from the L2 check — an over-claim path.
+
+**The decisions.**
+
+- Both scripts parse COMMENT-STRIPPED text with a state machine reading each Skip
+  attribute to its `)>]` close, taking the entry's name from the following backticked
+  line. The phantom rule narrows to attribute grain: phantom ⇔ mentions Bucket A/B while
+  declaring NO C/D (A21's "Promoted to Bucket A when …" promotion narrative is not a
+  claim).
+- The per-bucket entry lists are now GENERATED into the matrix from the attributes' own
+  `Bucket` tokens; the hand summary block in `AxiomTests.fs` is replaced by a pointer to
+  the generated surface. A new Horizon-stub row makes the 127 total reconcile against
+  xUnit's own count by inspection.
+- `@ladder` tokens are validated: axis ∈ {Schema, Data, Identity, Time, Decision},
+  disposition ∈ {OpenGap, AcceptedFaithful}; drift exits 3 by name.
+- The ten ladder witnesses SELF-DECLARE via `// @axis <Axis> <roundtrip|migrate>` tags
+  riding directly above their names (six test files touched, comments only). The
+  generator discovers the name from the tag — a rename travels with the test, a deletion
+  opens the cell (under-claim), and two claimants for one cell exit 3 (ambiguity is not
+  coverage). Discovery reproduced the prior ladder verdicts exactly (L1 5/5 · L2 4/5 ·
+  L3 5/5 — Schema's three open tolerances unchanged).
+
+**The ONE named re-baseline (risk R6).** `NORTH_STAR.matrix.generated.md` re-records
+with the corrections: Live 94 (unchanged) / **C 9** / D 1 / Horizon 23 / **total 127**
+(was 94/6/1/—/128), plus the generated deferred-entry lists. Every count motion is a
+parser correction, not a coverage change — the registry itself did not move.
+
+**Not behavioral** (scripts + comments + one generated artifact).
+
+---
+
+## 2026-08-30 — align-III.11: the machine-evaluable triggers get probes; the index recovers its strays
+
+**The finding (audit a10, F5/M6).** Every deferral trigger was prose, even where
+machine-evaluable today, and the Active-deferrals index — built after the transform
+registry's trigger FIRED SILENTLY (session 12) precisely to catch silent fires — was
+missing five members: the three §5.12 design forks lived only inside the 2026-06-01
+dated entry's "Decisions owed" paragraph, and the permissions-axis + atomic-envelope
+triggers lived in `matrix-status.sh`'s hand-written heredoc and the generated artifact.
+Meanwhile the four Composition-primitive rows carried the hand-stamped "0 consumers
+(session 25)" — the restated-count class, two months stale.
+
+**The decision.** `TriggerProbes.fs` (pure pool, beside `AxiomTests.fs`) evaluates the
+measurable trigger subset on every run — the contract: **a fired trigger is a red test,
+not a hoped-for scan**; a probe going red is cash-out pressure, never a probe edit alone:
+
+- **H-012** (SsKey active patterns): the variant may be arm-matched at < 3 sites outside
+  `Identity.fs` — the Skip's 2026-05-22 hand-run audit made continuous (1 site today).
+- **H-006/H-099 + H-011** (Bench thresholds): the probes parse `bench/baseline-canary.json`
+  on every run; no `pass.`-scoped label may exceed 50% of the recorded canary wall, and
+  the pass-scoped sum must stay ≤ 10s. The honest note rides in the class: today NO
+  pass-scoped label exists (the chain runs below the labeling grain), so the triggers
+  are machine-checked as unfired rather than hand-claimed; a re-recorded baseline
+  re-evaluates them.
+- **The four Composition primitives**: the machine half of each trigger is BUILT-SURFACE
+  ABSENCE — `fallback`/`accumulate`/`wrap`/`lift` remain undefined in
+  `Strategies/Composition.fs`; building one without the index cash-out reds the probe.
+  The demand-pressure half stays prose in the index; the probes never claim it.
+
+**The index motion.** Five rows appended (the three §5.12 forks, each pointing at its
+entry-resident substance and its gating chapter; the permissions axis with the eject as
+its named firing point; the atomic estate-scale envelope gated on P7b + a direct-connect
+target class), and the four Composition rows' status re-stated as "unbuilt;
+absence machine-probed" — the probe replaces the session-stamp.
+
+**Not behavioral** — probes + index rows.
+
+---
+
+## 2026-08-30 — align-III.12: the eject enters the executable registry; L3's first amendment; A35 re-anchored (the L-track closes)
+
+**L3-Eject (audit a10, F8).** The eject — the audit synthesis's "outcome that cannot be
+partially right" — had neither law nor stub nor deferral row: the engine's entire
+provenance discipline converges on one terminal delivery no surface named. It now has
+both registry forms: `PRODUCT_AXIOMS.md` Group C carries **L3-Eject (candidate)** — the
+terminal package must REPLAY (`reconstructLatestSchema(genesis, exported chain)` = frozen
+state; the terminal `ChangeManifest` series complete; publication REFUSED if the chain
+does not replay) — and `AxiomTests.fs` carries its Bucket-C stub (C 9 → 10) whose
+promotion trigger is the §5.12 fork-3 resolution / the eject chapter's dependent slice,
+at which point the witness gates `EjectRun`'s publication path. The substrate is already
+live (T13, T19, `admitChain`); only the gate is deferred — and now the deferral is
+IN the registry like every other outcome.
+
+**L3-CC2 amended (audit a10, F4 — PRODUCT_AXIOMS' first amendment).** The original pinned
+one uniform pass signature; A41's registry legitimately carries six output shapes while
+the PROTECTED OUTCOME — every transformation enumerated, classified, dual-writer-run,
+registry-composed — holds everywhere. A conformance check written from the original's
+letter would have rejected the shipped system. Restated outcome-first in place; the
+original preserved under V2 Amendments (no longer "None today"), with the governing rule
+the amendment sets: **L3 laws quantify over outcomes; realizations appear as witnesses.**
+
+**A35 re-anchored (audit a6, F6).** A35's normative worked example cited the retired
+`RawTextEmitter.statements`; a fresh agent grepping the axiom's anchor found comments
+only. Re-pointed to the live canonical form `SsdtDdlEmitter.statements`, and the three
+stale code doc-comments (Catalog.fs, Lineage.fs, TopologicalOrder.fs) now name the
+retirement instead of implying a live module.
+
+**In passing (same currency class):** PRODUCT_AXIOMS' A-Lifecycle-4 paragraph still said
+the compose operator "does not exist today" — promoted/SHIPPED 2026-06-01; corrected.
+
+**Not behavioral.** Registry motion: C 9 → 10 (matrix + gate move in this commit).
+*— The L-track (III.8–III.12) closes here; the named IIIa/IIIb seam passes unexercised
+(no split needed).*
+
+---
+
+## 2026-08-30 — align-III.13: the claims plane addresses reality at its own grain (`PhysicalTableRef` + `SchemaBasis`)
+
+**The finding (audit a1, F3).** The adjudication plane was pinched at the table end of the
+containment tower: `SinkClaims.assemble` grouped rival claims by TABLE NAME alone and
+declared `Schema = "dbo"` as a constant on every set — while the snapshot in hand carried
+each entity's OBSERVED schema through the physical-table rowset, joined for exactly this
+purpose elsewhere. `SinkResidue.sweep` subtracted claimed NAMES from a probed
+(schema, table) universe, discarding the schema it had just read. A multi-schema estate
+mis-grouped rivals into one false contest or stamped `dbo` onto a non-dbo table's DECIDE
+finding; a cross-schema name collision silently suppressed residue. The declared constant
+sat at the same grain as the sweep's observed reading — two epistemic standings, one
+unmarked string field.
+
+**The decision.** Core mints the address at reality's grain:
+`PhysicalTableRef = { Catalog : string option; Schema : SchemaBasis; Table }` with
+`SchemaBasis = Observed | Assumed` — the basis is epistemic standing, not location, so
+the grouping/subtraction KEY folds case and ignores the basis while record equality
+still distinguishes them. `Catalog` is `None` under the standing single-catalog posture
+(the field makes a multi-catalog address EXPRESSIBLE, not common). `ClaimSet` and
+`CorrespondenceProposal` carry the ref; `assemble` reads each entity's observed schema
+from the physical-table join and falls back to `Assumed "dbo"` — the honest name for the
+retired constant; the residue sweep subtracts on the full address (its probe reads
+INFORMATION_SCHEMA, so its refs are Observed by construction); the S13 annotation pass
+keys and renders through the ref.
+
+**BEHAVIORAL on multi-schema estates only:** same-name tables in different schemas now
+form separate claim sets (independent adoptions instead of a false Contested) and
+cross-schema residue is no longer suppressed. For the standing dbo posture everything is
+byte-identical — the finding subjects and rendered addresses keep the exact
+"schema.table" text (pinned by test). Laws (`PhysicalClaimTests`, test-FIRST per the
+plan's specimen requirement): the two-schema specimen (two sets, observed bases,
+independent adoptions), the no-physical-row `Assumed "dbo"` reading with byte-identical
+render, the cross-schema residue subtraction, and the key/text algebra (case-folded,
+basis-blind identity; catalog-prefixed display only when a catalog is present).
+
+---
+
+## 2026-08-30 — align-III.14: one canonical crossing for environment labels (`Environment.parse`)
+
+**The finding (audit a8, H2).** `Environment` had five cases and no parse: every
+label→Environment crossing minted its own reading. `Substrate.fromRef` wrote
+`Named label` ALWAYS — `fromRef role "DEV" …` produced `Named "DEV"`, a semantic twin of
+`Dev` that compares unequal, groups separately, and renders identically; the CLI's
+`OperatorConsole.parseEnvironment` carried the one real canonicalization table (Trim +
+case-fold over the four stage names) in the WRONG LAYER; the fidelity face minted `Named`
+raw; and the lifecycle store's read side reconstructed whatever tag was persisted, so a
+store written by a `fromRef`-path run could hold the twin durably.
+
+**The decision.** Core gains **`Environment.parse : string -> Environment`** — total,
+canonicalizing (the four stage names resolve case-insensitively to their canonical cases;
+anything else is the trimmed `Named` escape hatch), idempotent through `name`
+(`parse (name (parse s)) = parse s`). Every crossing routes through it: `Substrate.fromRef`
+(the twin is no longer mintable there), `OperatorConsole.parseEnvironment` (now a
+delegation — the stage table lives in Core), the fidelity face's two mints, and the
+lifecycle store's `Named` READ arm — a persisted `Named "DEV"` loads as `Dev`
+(read-side canonicalization; the genuine escape-hatch label is untouched).
+
+**Migration note.** No store rewrite: canonicalization happens at load, and the next
+save writes the canonical tag — a one-time, per-store re-key of exactly the twin values,
+byte-identical for stores that never held a twin. The wire stays the tagged object
+(`kind`/`name`), so `Named "staging"` still round-trips unambiguously.
+
+**BEHAVIORAL** only for label spellings that previously produced the twin: they now
+compare equal to their canonical case everywhere (grouping, display, persistence). Laws
+in `LifecycleStoreTests`: the parse table + idempotence, the `fromRef` canonical mint,
+and the tampered-store read-side canonicalization beside the surviving escape-hatch law.
+
+---
+
+## 2026-08-30 — align-III.15: a sink label can be a COMPOSITE — the read addresses its current member; ambiguity narrows to a currency tie
+
+**The finding (audit a1, F3's environment end).** `SinkRead.resolve` refused ANY label
+claimed by two witnessed sources (`sink.envAmbiguous`) — an environment was structurally
+exactly one (DataSource, InitialCatalog) digest. But the common multi-claimant shape is
+not a mistake: ONE environment re-witnessed across a connection change mints a NEW digest
+per edition, and the label honestly spans them. The only expressible outcome was refusal —
+foreclosure, not refinement: the operator had to rename history to read the present.
+
+**The decision.** A multi-claimant label is a composite. `resolve` addresses the
+**current member** — the unique latest `CapturedAtUtc` — and the resolution NAMES the
+rest: `Resolved.SupersededDigests` (additive field; empty for a single-source label, so
+the standing shape is byte-identical). A sync pin addresses the current member's line
+(prior members are prior editions whose ordinals belong to their own lines).
+`sink.envAmbiguous` narrows to GENUINE ambiguity — a currency TIE (two members captured
+at the same instant; nothing distinguishes the environment's present) — with the message
+naming the tie and both exits (re-witness one, or rename the other).
+
+**BEHAVIORAL:** previously-refused multi-claimant labels now resolve (to the current
+edition). The deliberate multi-DATABASE composite (one environment spanning live
+catalogs, union reads) remains future work — this slice gives the label its SET shape and
+the honest currency rule; the union-read consumer is X3-adjacent and lands with its own
+demand. Laws (`SinkReadTests`): the narrowed tie refusal (the old fixture, retitled — it
+was already a tie), the composite current-member resolution with the superseded set +
+pinned addressing, and the empty-set singleton.
+
+---
+
+## 2026-08-30 — align-III.16: the temporal config states pairs as pairs (`TableId` history + `TemporalPeriod`)
+
+**The finding (audit a2, H4).** `TemporalConfig` carried four independent options —
+`HistorySchema`/`HistoryTable` and `PeriodStart`/`PeriodEnd` — making two flavors of
+nonsense representable: a history schema without its table (the emitter silently ignored
+the mismatched half at its pair-match) and a one-legged period (SQL Server's
+`PERIOD FOR SYSTEM_TIME` has no such form). Every consumer re-refused the nonsense by
+match; none could rely on the type.
+
+**The decision.** `TemporalConfig = { HistoryTable : TableId option; Period :
+TemporalPeriod option; Retention }` with `TemporalPeriod = { Start; End : Name }` — the
+history table is ONE physical coordinate, construction-validated through
+`TableId.create`, and the period is a pair or absent. The consumers simplify to what
+they always meant (`ScriptDomBuild`'s two pair-matches become single-option matches; the
+estate's temporal finding renders through the TableId). The WIRE is byte-identical —
+`CatalogCodec` keeps the four historical fields and projects them — and the READ pairs
+them fail-closed: half-present history (`codec.temporal.historyHalfPresent`) and a
+one-legged period (`codec.temporal.periodHalfPresent`) are codec refusals now, not
+values. The rowset lift (`OssysRowsetReader`) pairs at construction, dropping a torn
+half exactly as the old consumers' matches did — behavior-identical at the emission
+plane, now stated once.
+
+**Not behavioral** for every producible catalog (sys.* never yields half a pair; the
+emitter's output is unchanged). Laws: `CatalogCodecTests` round-trips the typed shape
+byte-stable and pins BOTH half-present refusals via wire surgery; the emitter/estate/
+reader suites re-pinned onto the pair shapes.
+
+---
+
+## 2026-08-30 — align-III.17 (X1): the workbench's row substrate is the FORECAST's evidence, not a second "EvidenceCache"
+
+**The finding (audit a9, F2/F4-adjacent).** TWO modules named `EvidenceCache` lived in one
+solution: Core's profile evidence cache — the NAMED HOUSE PATTERN (discover-once /
+derive-pure, CLAUDE.md §6) — and the Pipeline decision-workbench row substrate
+(THE_TRANSFER_MANIFEST slice 2), which is an INSTANCE of that pattern but a different
+thing: the substrate the `ForecastDelta` derivation reads, computed once at board build.
+The name-twin made "the EvidenceCache" ambiguous in every conversation about either.
+
+**The decision (one rename, blast radius counted).** The PIPELINE module renames to
+**`ForecastEvidence`** — the forecast's evidence: `ForecastEvidence.fs` (module +
+header naming the rename and the disambiguation), `ForecastEvidenceDockerTests.fs`,
+`ForecastEvidenceTests.fs` (pure), and every call site (`ActEvidence`, `ReviewNavigator`,
+`Faces/Transfer`, `ActConsentTests`, `ReviewNavigatorTests` incl. its fixture module).
+Blast radius: ~60 reference lines + two test-file renames. Core's `EvidenceCache` KEEPS
+its name — it IS the house pattern; the plan's X1 line assumed one entity, and the
+discovered twin narrows the rename to the Pipeline side, which is exactly the
+disambiguation the lexicon audit wanted. `SinkRows` inside the renamed module stays —
+it names the transfer WRITE-TARGET rows (sink meaning A, the legitimate sink); the
+witness-plane collision partner is X3's `SinkDisplacement.SinkRow`.
+
+**Grep-absence:** `EvidenceCache` survives only on Core's module, its consumers, the
+house-pattern prose, and the unrelated `estate.evidence.*` Voice family. Not behavioral.
+
+---
+
+## 2026-08-30 — align-III.18 (X2): the two-register rule is written down where the vocabulary lives; four dead artifact anchors re-point
+
+**The finding (audit a9, F3).** One instrument, two names split by stage — the concept
+register says "estate" (the `Estate*` type family, `estate.*` codes, the coined domain
+word for the fleet) and the operator surface says "environments" (the verb, the
+artifacts). The split was RULED (the accepted-spelling entry) but never written down at
+the vocabulary's home — and the lever-form contract, exactly where the two registers
+meet, still promised artifacts that do not exist: `EstateLeverForm.ReviewBlock` said
+"estate.remediation.<env>.sql", `MergeOverlayEntry` said "estate.overlay.json", the
+`Relaxation` doc said "estate.overlay.json … estate.probes.sql", and
+`EstateOverlayEmitter`'s header named both dead forms. An operator following the doc
+trail greps for files the engine never writes.
+
+**The decision.** `EstateFinding.fs`'s header now STATES the two-register rule (concept
+"estate" / surface "environments"; artifact-naming doc-comments use the operator
+register), and the four stale anchors re-point to the `environments.*` names the engine
+actually writes. The `Estate` type family is NOT renamed — 21 declarations, 8 codes, and
+the chapter's domain word are the concept register, per the audit's own
+anti-finding.
+
+**Doc-only; not behavioral.**
+
+---
+
+## 2026-08-30 — align-III.19 (X3): the witness-plane row is `WitnessedRow`; the "Witness-" freeze is written down
+
+**The finding (audit a9, F4).** "Sink" was tri-modal in one assembly — the transfer
+write-target (meaning A, the legitimate sink), the witnessed OSSYS metadata mirror
+(meaning B), and an event receiver — with the specimen collision `SinkDisplacement.SinkRow`
+(meaning B) vs the workbench's `SinkRows` (meaning A) one letter apart on different planes.
+
+**The decision (the measured cut; one rename).** `SinkDisplacement.SinkRow` →
+**`WitnessedRow`** — the displacement's before/after image carrier is the WITNESS plane's
+row, and now says so (~96 reference lines across SinkDisplacement/SinkJournal/SinkClaims +
+SinkStoreTests/PhysicalClaimTests; wire-safe — the DU name never reaches bytes, the
+journal's table tokens come from `SinkTable.token`). The FREEZE rides the type's doc,
+standing from Chapter II onward: new witness-plane names take `Witness-`/`Witnessed-`,
+never `Sink-`. The surviving `Sink*` names on the plane (`SinkTable`, `SinkStore`,
+`SinkJournal`, the `sink:` refs and `sink.*` codes) are the operator-visible chapter
+vocabulary — the full B-family rename is L-effort touching the operator surface and rides
+until it earns its own arc (the audit's own scoping).
+
+**Grep-absence:** `\bSinkRow\b` = 0 in src+tests. Not behavioral.
+
+---
+
+## 2026-08-30 — align-III.20 (X4): the configured place wears its own word (`Place`)
+
+**The finding (audit a9, F5).** Three types named `Environment` were live in one
+compilation: Core's cutover-rotation identity DU (`Dev|Qa|Uat|Prod|Named` — Episode-
+embedded), the Pipeline CONFIG RECORD (`{Name; Access; Grant; Store; Rendition;
+Archetype; AtomicDeploy; Revert}`), and the BCL's `System.Environment`. The Pipeline
+record's own doc called it "A named place" and its module said "place" 29× — the domain
+word existed; the type didn't wear it. Every CLI seam wrote full paths to pick a winner,
+and the typed-tree analyzer documents the collision as a constraint it engineered around.
+
+**The decision (one rename).** The Pipeline record renames to **`Place`** (+ its
+companion module — `Place.effectiveArchetype`). Core's `Environment` DU KEEPS its name
+(the older rotation identity), `System.Environment` is the BCL's, and the JSON key
+`environments` plus the parse/render function names (`parseEnvironment` /
+`renderEnvironment` — pinned by the A44 clause-1 law name) are surface contracts and
+stay. Blast radius: MovementSurface + CapabilitySurvey + four test files; the config
+wire is byte-identical.
+
+**Grep-absence:** no `Projection.Pipeline.Environment` remains; the surviving
+`Environment` tokens in the renamed files are the JSON-key/function-name surface
+contracts and the doc note naming the rename. Not behavioral.
+
+---
+
+## 2026-08-30 — align-III.21 (X5): the run residue is an INDEX, not a third "ledger" (`RunIndex`)
+
+**The finding (audit a5/a9).** The flagship noun "ledger" was borne by three unrelated
+meanings: the `LedgerSpec` algebra (the real ledger — admission-disciplined, replayable),
+`RunLedger` (a thin JSONL run history), and `SpineLedger` (a per-run stage tracker). The
+III.3 micro-ruling already named the structure: `RunHistory` reads the richer per-run
+`Run` store and is the SOURCE; `RunLedger.read`/`append` is the thin durable JSONL INDEX
+(the residue); the readiness GAUGE is the one shared definition both reach.
+
+**The decision (one rename, executing the ruling).** `RunLedger` → **`RunIndex`**, with
+its vocabulary following coherently: `IndexRecord`, `IndexReading`, `indexPath`; files
+`RunIndex.fs` / `RunIndexTests.fs`. Surface contracts KEEP their names: the
+`PROJECTION_LEDGER_DIR` env var and the on-disk `runs.jsonl` (operator surface; a store
+written yesterday reads today). `SpineLedger` is out of scope (its own future slice if
+the overload still stings). Blast radius: 16 files, ~70 reference lines.
+
+**Grep-absence:** `\bRunLedger\b` = 0 outside the rename's own notes. Not behavioral.
+
+---
+
+## 2026-08-30 — align-III.22: the lazy plural dies in src (a11 stage 2, the long tail)
+
+**The charge (a11's stage-2 deferral, trigger fired).** The align-III.1v ratchet froze
+nine repaired surfaces at zero `(s)`; the deferral's own terms widened the freeze to the
+full src tree "when the transfer/emitter long tail is repaired." This slice repaired it:
+~163 sites across Cli faces, Core passes, Adapters, Targets emitters, and Pipeline runs,
+swept to **zero live occurrences in every production string** — and the enumeration
+surfaced a second morphology family the stage-1 net never listed: `(ies)` / `(es)`
+(`identity(ies)`, `entr(ies)`, `batch(es)`, `entity(ies)`), same lazy suffix, same ban.
+
+**The mechanics (the readable-aloud discipline, §1 rule 3 + §2.2).** Where a count is in
+hand, the counted form: per-surface `counted`/`counted64` helpers (Transfer.fs,
+TransferRun.fs) or the inline `sprintf "%d %s" n (if n = 1 then … else …)` for tail
+files. Where the verb conjugates, the ARG carries it (`"source identity has no target
+match"` / `"source identities have no target match"`); where a pronoun agrees, the whole
+clause switches (GoBoard's green-unverified verdict: "1 finding below remains unverified
+— the board could not read it" / "N findings … read them"; Preflight's tightening
+refusal: "1 column carries NULLs … tightens it" / "N columns carry NULLs … tightens
+them", and the "First:" enumerator appears only when there IS a second). Where no count
+exists, the plural-neutral rewrite ("add the proposed reconcile entries to the flow").
+Six test pins moved with the copy (RemediationEmitter ×4, TransferImpact ×2,
+GoBoardDocker ×1 — the stale `(s)` pins were themselves sweep findings).
+
+**The ratchet (VoiceRegisterTests, widened).** The frozen nine-file list is retired; the
+law now scans EVERY `src/**/*.fs`: comment lines skipped (doc-comments may name the
+banned form), only double-quoted string spans inspected (code like `sb.Append(s)` never
+trips), suffix family `(s)|(es)|(ies)|(en)`, with a >300-file floor so a broken root
+resolution cannot pass vacuously.
+
+**The consent carve-out (standing, and now measured).** `WriteSignoff.fs` and
+`ActConsent.fs` stay EXCLUDED from the ratchet — the a11 ruling reserves their copy for
+the operator's own signature, and no agent sweep touches them absent an explicit ruling.
+Measured this slice: both files hold ZERO lazy plurals today, so the exclusion is
+jurisdictional, not protective — the open question for the operator at the program close
+is whether the ratchet may simply include them.
+
+**Not behavioral** beyond operator copy: no code path, wire byte, or exit code moves.
+
+---
+
+## 2026-08-30 — align-III.23: CHAPTER ALIGN-III CLOSES, and THE ALIGNMENT PROGRAM WITH IT (the eight-item ritual walked; the coda executed)
+
+Chapter III — State, Law, Grain & Lexicon (Arcs S+L+H+X) — is the program's third and
+final chapter. Twenty-four slices: the III.0 open; the S-track (III.1–III.7: typed
+ordinals/instants, `ChainAdmission` ledger honesty, the typed `CanaryVerdict` R6 gate
+with the fail-closed index reading, `EstateHistory.replay` FTC-at-the-reading-grain,
+the `Lifecycle` dead-twin deletion, `DataObservation`, the rename-isometry predicate);
+the L-track (III.8–III.12: A44 resident, A45/T17/A47/A48 live, generator honesty with
+the one named re-baseline, `TriggerProbes`, `L3-Eject` registered); the H-track
+(III.13–III.16: `PhysicalTableRef`/`SchemaBasis`, `Environment.parse`, composite sink
+labels by digest-set currency, typed `TemporalConfig`); the X-arc strictly last
+(X1–X5 landed one rename per commit; X6 deferred by its own trigger); and the a11
+voice stage-2 sweep (III.22). Mid-chapter, main's lint-debt retirement merged in — the
+hook chain has run GREEN since, and the program's one standing deviance (`--no-verify`
+with the named line) is RETIRED.
+
+**The eight-item chapter-close ritual:**
+1. *Active-deferrals index scan* — fired and cashed this chapter: the a11 stage-2
+   long-tail trigger (III.22); the III.3 micro-ruling's rename half (X5). Still
+   deferred, restated below with their triggers.
+2. *Contract-vs-implementation walk* — the verifiability gate self-parses the registry
+   at 94 live + 34 deferred (C=10, D=1), ZERO unclassified; `@ladder`/`@axis` tokens
+   validate at generation (exit 3 on drift); `TriggerProbes` makes four deferral
+   triggers machine-evaluable. The ladder reads L1 5/5 · L2 4/5 · L3 5/5 (Schema
+   L2-partial, three open tolerances — unchanged, named).
+3. *CLAUDE.md staleness check* — §1's restated "current program" sentence (the perf
+   sweep — stale since the sink chapter) replaced with a pointer to `HANDOFF.md`'s top
+   letter, honoring the rebuild's own rule; §4 survival rules re-verified (none moved
+   by this program); §6's `EvidenceCache`-pattern line verified CURRENT (X1 renamed
+   Pipeline's module precisely so Core's pattern exemplar keeps the name).
+4. *README staleness check* — `tests/README.md` names no classes this program renamed;
+   the assembly split holds; no edit.
+5. *HANDOFF scope* — the top letter rewritten as the program coda: the close, the keys,
+   the one AWAITING-OPERATOR question, the un-commissioned candidates. Prepend-only.
+6. *Fresh-eye walk* — the operator surfaces reworded this chapter (GoBoard verdicts,
+   Preflight refusals, transfer advisories, the summary buckets) re-read against
+   THE_VOICE's twelve rules; the counted forms read aloud clean; no `", not "`.
+7. *Operating-disciplines currency* — one new named discipline from this chapter's
+   errors: NEVER start the next slice's edits while the previous slice's background
+   pools run (the pool builds the racing tree; the verdict is void). Recovery pattern
+   recorded in the III.16/III.22 entries: finish to compiling, ONE fresh ladder gates
+   both, two-commit split with the DECISIONS carve.
+8. *V1-input-envelope walk* — not a V1-input chapter (vocabulary, carriage, law only);
+   skipped by class.
+
+**The program coda (executed this slice):** the audit synthesis carries its
+DISPOSITIONED banner (finding→slice map; the workpapers stay ground truth);
+`BACKLOG.md` gains the program arc table and the data-sink follow-ons row is updated
+(FS3511s cleared at align-I.1; the lint debt retired on main; the two Docker reds
+remain owed); `V2_DRIVER.md` gains the vocabulary/law-alignment axis row; PR #695's
+description refreshed a final time. Close gates: `TEST_CONFIG=Release` fast
+solution-wide + the full Docker pool (expect exactly the two named reds).
+
+**Still deferred, each with its named trigger (the index owns them):** X6
+statement-algebra rehome (`Projection.Statements.Sql`; trigger: the second non-SSDT
+statement consumer); `CanaryVerdict.Aborted` (trigger: the first started-but-
+unconcluded canary in the envelope stream); append-only ruling HISTORY (trigger: the
+first re-ruling consumer; `BasisAnchor.SinkEdition` widens then); `SpineLedger` rename
+(trigger: the ledger-noun overload measurably stinging after X5); the full
+Sink→Witness B-family rename (L-effort, operator surface; its own arc);
+`Supplied<'T>` (trigger: the first mis-wiring the I.9 rule table catches); ruling
+auto-application (trigger: operator demand for it, R3 scope guard).
+
+**AWAITING OPERATOR (restated from a11, now with the measurement):** may the
+`VoiceRegisterTests` full-tree ratchet INCLUDE the consent surfaces
+(`WriteSignoff.fs`, `ActConsent.fs`)? Both measure zero lazy plurals today; the
+exclusion is jurisdictional (their copy is the operator's signature), not protective.
+One word either way settles it.
+
+The program is closed. The books are balanced.
+
+---
+
+## 2026-08-30 — schema-L3.1: the index OPTION surface round-trips (`IndexOptionsUnreflected` RETIRED)
+
+**THE SCHEMA-L3 PROGRAM OPENS** (operator commission 2026-08-30: "Let's plan to get the
+Schema to Level 3 in the North Star generated output!"; plan approved the same day; the
+operator additionally ruled the two adjacent silent drops — NM-28b and debrief-G4 — FOLD
+IN rather than defer). Ground: both Schema `@axis` witnesses already exist and pass; the
+axis caps at L2-partial solely on the three `@ladder … Schema OpenGap` tags in
+`Tolerance.fs`. The program is three genuine closures + a coda; retagging
+`AcceptedFaithful` (the ladder's named soft spot) is forbidden — every closure lands
+with an M1-style two-arm witness. Slices: L3.1 index options (this entry) → L3.2
+composite-FK + NM-28b → L3.3a the named compose-seam refusal → L3.3b the flip →
+L3.4 close-out.
+
+**The finding.** The tolerance's own text: the index option surface — filter predicate,
+INCLUDE columns, FILLFACTOR / PAD_INDEX / lock flags / STATISTICS_NORECOMPUTE /
+IGNORE_DUP_KEY / disabled state / DATA_COMPRESSION / data space — was
+"symmetric-but-lost on BOTH halves of the canary": the IR, the OSSYS adapter, the codec,
+and the SSDT emitter all carried it in full; only `ReadSide.readIndexes` (which excluded
+`is_included_column` rows and read no option columns) and the 5-field `PhysicalIndex`
+were narrow, so option drift was invisible to the round-trip by construction.
+
+**The closure (comparator + readback only; zero IR/emitter change).**
+- `ReadSide.readIndexes` reads the full surface (`sys.indexes` option columns +
+  `is_included_column`/`partition_ordinal` + `sys.stats.no_recompute` +
+  `sys.partitions.data_compression` (partition 1) + `sys.data_spaces` name/type);
+  `attachIndexes` reconstructs every option field EXPLICITLY (the `{ Index.create …
+  with }` site previously inherited every option default silently — survival rule 7's
+  exact failure shape, now named in place). Key columns filter `key_ordinal > 0`;
+  INCLUDE columns route to `Index.IncludedColumns`; partition-only columns feed the
+  partition-scheme data-space recovery.
+- `PhysicalIndex` widens 5 → 16 fields with effective-value encodings symmetric on both
+  halves: the filter compares whitespace/bracket/paren-stripped + lowercased (SQL Server
+  canonicalizes `filter_definition`; a wrapping difference is not a divergence, a
+  predicate change is); INCLUDE compares as a sorted set; `fill_factor 0` ≡ `None`;
+  compression/data-space compare as the EFFECTIVE physical value ("NONE"/"PRIMARY" when
+  nothing is declared — an explicit server-default and an omitted clause are physically
+  indistinguishable). One documented residual, named in the docstring and NOT a
+  tolerance: a partition scheme's column binding is compared only as far as both sides
+  recover it. `renderDiff` names non-default options; a default-only index renders
+  byte-identically to the pre-widening form.
+
+**The two-arm witness** (`IndexRoundtripTests`, the M1 pattern): the fixture gains a
+filtered covering index (`INCLUDE` + `WHERE` + `FILLFACTOR = 80` + `PAD_INDEX = ON`)
+and IGNORE_DUP_KEY on the unique index; AGREEMENT — the wide canary's diff stays empty
+with the recovered options asserted non-vacuously (filter/include/fillfactor/pad/
+ignore_dup_key each pinned); FALSIFIABILITY — an option-stripped projection of the SAME
+readback DIVERGES on the index axis (before this slice those two projections were
+equal: the blindness, demonstrated).
+
+**Retirement mechanics** (the NM-17/M1/EmptyText checklist): variant + `@ladder` tag
+deleted, gravestone in place, coverage/allKnown/name arms dropped, `allKnown` 12 → 11;
+matrix regenerated same-commit — Schema's open cell now reads `CompositePkFkUnreflected,
+TriggerBodyUnparsedDropped`, footer `tolerances 11 (2 open)`. Pins moved:
+MatrixLadderTests D1 re-anchored (named tolerance → CompositePkFkUnreflected + a
+DoesNotContain on the retired name; "3 open" → "2 open" with the history line);
+ToleranceTests count + fixtures + the NEW `schema-L3` retired-token fail-closed test;
+ManifestUnsupportedTests set; SsdtExtendedPropertyEmissionTests arm; provenance fixtures
+(ModelFidelity/LifecycleStore/ChangeManifest/ReportRun) re-pointed to
+`PostDeployForeignKeysSplit`; MultiEnvironmentPromotionTests ladder examples →
+`CharAnsiPaddingTolerated`. `IndexPhysicalMetadataDeployE2ETests` re-scoped in its
+header: it remains the per-option catalog-view probe (names WHICH option diverged);
+the canary now names the index.
+
+**Config migration note (fail-closed, witnessed):** a per-environment tolerance config
+still naming `IndexOptionsUnreflected` now errors by design — the gap is closed;
+accepting it is meaningless. Drop the token.
+
+Not behavioral for clean estates: both canary halves recover identically, so a faithful
+round-trip's diff stays empty; only genuinely drifted option state (previously
+invisible) now surfaces.
+
+---
+
+## 2026-08-30 — schema-L3.2: the composite foreign key becomes expressible end-to-end (`CompositePkFkUnreflected` RETIRED; NM-28b named) — BEHAVIORAL
+
+**The finding.** The chapter-5.0 single-column `Reference` was the schema plane's last
+structural foreclosure: `#FkColumns` captured every leg of a deployed composite FK and
+threw them away at the IR boundary; `toPhysicalForeignKeys` reflected the first leg only;
+the SSDT emitter would render a single-column FK that SQL Server REJECTS at deploy
+(Msg 1776 — a correctness consequence the tolerance's comparator-only framing never
+named); ReadSide read one row per leg and minted N single-column references from one
+deployed constraint. The #669 gate refused every composite-target reference outright.
+
+**The closure.** `ReferenceLeg = {SourceAttribute; TargetAttribute}` (SsKeys both sides)
++ additive `Reference.Legs` (ctor default `[]`; head leg ≡ `SourceAttribute` by
+invariant; four `Catalog.create` codes: legHeadMismatch / legDuplicate /
+legDanglingSource / legDanglingTarget). Arity is deliberately NOT a construction
+invariant (a deployed FK may reference a unique key; broken estates must stay
+representable) — it is the ONE shared deployability predicate
+`Reference.compositeArityMismatch`, consumed by BOTH the emitter's composite-key gate
+(NARROWED: leg-complete references now EMIT; legless/wrong-arity still refuse) and the
+estate board's `emission.compositePkFk` finding (statement now carries carried-vs-
+required counts) — a red board finding and a refused publish stay the same fact by
+construction. Population: the rowset lane denormalizes the ordinal-1 `#FkColumns` group
+onto `ReferenceRow.Legs` and the reader resolves both sides through the new bundle-wide
+`AttributeKeysByAttrId` map; ReadSide groups `sys.foreign_key_columns` rows by
+CONSTRAINT NAME (new `FkRow.ConstraintName`/`Ordinal`) — a deployed 2-leg FK now reads
+back as ONE leg-bearing reference. Realization: `ForeignKeyDef.AdditionalLegs`;
+ScriptDom appends legs 2..n; a multi-leg constraint attaches at TABLE level (SQL
+grammar); `PhysicalSchemaReader` projects per leg, keeping the stream/catalog adjunction
+law exact. Comparator: one `PhysicalForeignKey` entry per leg, both sides resolved from
+the legs (nothing PK-derived); the legless arm is byte-identical. Migrate:
+`ReferenceFacet.Legs` registered (an unregistered field would be ERASED by the facet
+lens — the NM-16 failure class). Codec: `legs` written ONLY when non-empty (every
+pre-lift store and T1 golden byte-identical; no codecVersion bump), read total via
+`listField`'s missing→[] default.
+
+**NM-28b folded in (operator ruling).** A reference whose target has NO primary key
+emits no FK and the comparator drops it — the kind-grain heap finding named the target;
+the new `emission.fkTargetWithoutPk` DECIDE finding names the RELATIONSHIP, so the
+schema plane's last unnamed silent drop at this grain is on the board. The comparator
+itself stays a pure value; the board + the emitter's FK-drop Warning channel are the
+named surfaces.
+
+**BEHAVIORAL — the consumers enumerated.** (1) Emitted artifacts change for leg-bearing
+composite references: the multi-leg `FOREIGN KEY (a, b) REFERENCES t (x, y)` now renders
+where the gate previously refused the publish — deploys that failed become deploys that
+succeed. (2) The #669 refusal narrows (leg-complete passes; a retargeted composite
+refuses — a bridge attribute is single-column). (3) ReadSide readback of composite
+constraints changes shape: one leg-bearing reference instead of N single-column ones
+(consumers that counted references over composite estates see the honest count).
+(4) The estate board: leg-complete references stop redding `emission.compositePkFk`;
+keyless targets now red `emission.fkTargetWithoutPk`. (5) `Tolerance.parse` fails closed
+on the retired token — configs naming `CompositePkFkUnreflected` must drop it.
+Named residual (flagged, not landed): TWO model reference attributes covered by ONE
+deployed composite FK still mint duplicate single-column constraints (pre-existing);
+legs attach to the ordinal-1 reference only; the arity gate refuses that shape's deploy
+loudly. Trigger to fix: the first real estate carrying it.
+
+**Witnesses.** The two-arm Docker canary (`CanaryRoundTripTests` NM-28 closure: the
+2-leg deploy that USED to fail Msg-1776 deploys Ok; per-leg readback agreement through
+the general comparator; legs-stripped falsifiability DIVERGES) +
+`PhysicalSchemaForeignKeyTests` (per-leg reflection, the legless residual, the shared
+arity predicate's truth table) + the emitter render pin (multi-leg constraint text) +
+codec legs round-trip + byte-identity + the estate leg-complete negative and
+keyless-target positive. Retirement mechanics per the checklist: `allKnown` 11 → 10;
+matrix regenerated same-commit — Schema's open cell reads `TriggerBodyUnparsedDropped`
+alone; footer `tolerances 10 (1 open)`.
+
+---
+
+## 2026-08-30 — schema-L3.3a: the emission refusal gains its NAME at the compose seam — BEHAVIORAL
+
+**The finding.** The five #669 pre-flight gates always refused the bundle path — but the
+refusal surfaced as `invalidOp` at the SSDT emit step, which `FullExportRun` caught
+generically as an aborted run under the wrong envelope code. The refusal existed;
+its NAME did not reach the operator.
+
+**The decision.** The gate block extracts VERBATIM to
+`SsdtDdlEmitter.emissionRefusal : DecisionOverlay -> Catalog -> EmitError option`
+(pure; the bundle path delegates — zero behavior change there).
+`Compose.projectFromChainWithState` runs it BEFORE any rendering and returns
+`Result<_, EmitError>`; the config-driven production path
+(`projectWithConfig` / `projectWithConfigAndState` / `runWithConfigCore` — and the
+`defaultConfig` short-circuit, risk R3, now gated too via the new
+`projectWithStateWithPinsAndBootstrapLaneChecked`) maps a refusal through the new
+`EmitError.toValidationError` into the NAMED `emitter.ssdt.*` family
+(`triggerUnparsed` / `compositeKeyReference` / `temporalKind` / `authoredDefault` /
+`computedExpression`; keyset-contract violations share `artifactKeyset`) — the
+convention `emitter.dacpac.statementUnrendered` established: static phrase +
+structured metadata through the generic error channel, NO Voice rows (the
+operator-register copy for the same facts lives on the estate board). The
+fixture-facing `Outputs`-shaped surface (`project`/`projectWithState*`) keeps its
+shape via ONE documented defense unwrap (`expectGateClean`). The SSDT emit step's
+`invalidOp` arm is now structurally unreachable and says so.
+
+**The theorem: gate-pass ⟹ render.** `tryParseTriggerDefinition` STRENGTHENS to the
+renderer's success domain (a first statement in the first batch of a `TSqlScript`) —
+a comments-only definition previously passed the gate and still hit the render
+marker; now the marker is unreachable from every gated entry, by construction. The
+two marker arms STAY as loud total-function defense for direct-render callers, but
+their text now names the gate (`emitter.ssdt.triggerUnparsed`), not the tolerance
+being retired at L3.3b.
+
+**The flat lanes, audited honestly.** `check fidelity`'s stand-in DDL staging — the
+one REAL production flat lane — rides the new `statementsChecked` (gate-then-stream).
+The wide-canary lanes (`Faces/Canary`, `Deploy.schemaWithStaticPopulation`) stay
+deliberately UNGATED with the reason written in place: their catalogs are ReadSide
+READBACKS (trigger bodies from `OBJECT_DEFINITION`, defaults from deployed
+constraints), so the #669 gates are vacuous on those lanes by construction.
+
+**BEHAVIORAL.** A publish refused by a pre-flight gate now reports
+`RunFailed [emitter.ssdt.<subject> + metadata]` instead of the generic aborted
+envelope — consumers of run.ndjson / printErrors see the named code. The refusal
+POPULATION is unchanged (same predicates, same gates); only the surfacing moves
+earlier and gains its name. No artifact is written on a refusal (the pre-flight
+precedes `Compose.write` — the atomicity witness pins it).
+
+**Witnesses.** `ComposeEmitRefusalTests` (3 arms: refusal — named code + metadata +
+NO artifact; agreement — a logical-name trigger publishes with its real CREATE
+TRIGGER and no marker; the gate-domain theorem over a corpus including the
+comments-only edge). `DacpacEmitterTests`' M2 pin re-anchored to the defense marker
+of the direct-render escape hatch. No tolerance change in this slice — the flip
+(L3.3b) is deliberately a separate, mechanically-tiny commit.
+
+---
+
+## 2026-08-30 — schema-L3.3b: THE FLIP — Schema reaches ✅ L3 (`TriggerBodyUnparsedDropped` RETIRED; zero open tolerances)
+
+The mechanically-tiny commit the program built toward. `TriggerBodyUnparsedDropped` —
+the LAST `@ladder … Schema OpenGap` — retires by the docstring's own second path
+("refuse at emit when it cannot parse, mirroring the `.dacpac` path"): schema-L3.3a
+made the refusal NAMED (`emitter.ssdt.triggerUnparsed`), early (before any render),
+theorem-backed (gate-pass ⟹ render), and lane-complete. No faithful trigger is ever
+dropped from the text; a gated publish refuses by name with no artifact written.
+
+Retirement mechanics per the checklist: variant + tag deleted with the gravestone;
+coverage/allKnown/name arms dropped; `allKnown` 10 → 9 (every survivor
+AcceptedFaithful); the M2 tolerance pin inverted into the fail-closed token witness;
+MatrixLadderTests' D1 pin — which spent its life naming Schema's CURRENT open
+tolerance — now asserts the L3 state POSITIVELY, with the discriminating control
+retained; ManifestUnsupportedTests / SsdtExtendedPropertyEmissionTests trimmed.
+
+**The generated matrix now reads:**
+`| **Schema** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |` — **rungs L1/L2/L3 = 5/5/5 of 5 ·
+tolerances 9 (0 open)**. Every axis of the round-trip ladder is at L3; every erasure
+that remains is AcceptedFaithful with its own witness. The generator auto-flipped —
+nothing was hand-marked (the M1 precedent, completed).
+
+Config migration note: `TriggerBodyUnparsedDropped` fails closed at `Tolerance.parse`;
+configs naming it must drop it.
+
+---
+
+## 2026-08-30 — schema-L3.4: THE SCHEMA-L3 PROGRAM CLOSES (the close-out coda)
+
+Four slices + this coda, commissioned as "get the Schema to Level 3 in the North Star
+generated output" and delivered as three GENUINE tolerance closures (never a retag —
+the ladder's named soft spot stayed untouched): the index option surface round-trips
+(L3.1), the composite foreign key is expressible end-to-end with the Msg-1776 latent
+failure killed (L3.2 + NM-28b named, per the operator's fold-in ruling), and the
+trigger-body drop became a NAMED compose-seam refusal with gate-pass ⟹ render as a
+theorem (L3.3a) — so the flip commit (L3.3b) was mechanically tiny, exactly as designed.
+**The matrix reads: Schema ✅ L3 · rungs L1/L2/L3 = 5/5/5 of 5 · tolerances 9 (0 open).**
+
+**The coda's truth-maintenance:**
+- The generator's scope-honesty prose was STALE on G4 (the operator's fold-in ruling
+  surfaced it): the cross-schema FK filter closed at E2 (`ForeignKeyReadback.classify`,
+  witness live) — the note now says the set of KNOWN unnamed silent drops is empty as
+  of this close, with the structural caveat retained because the CLAIM is structural.
+- `CanaryResidual`'s header re-anchored: the two structural application sites it named
+  are CLOSED gaps; `record`/`recordMany` keep their zero-production-call-site deferral
+  with the trigger restated (the first operator "which divergences fired?" question).
+- The `Kind.Description` Active-deferrals row — whose trigger had fired SILENTLY (the
+  exact failure mode the index exists to catch) — is cashed with the history named.
+- `MetadataSnapshotRunner`'s `#FkColumns` "no IR carrier yet" note rewritten: the
+  carrier exists; the read cost lands in the model.
+
+**Deferrals that survive this program, each with its trigger:** wiring the
+`CanaryResidual` observation points (above); the secondary-leg duplicate-constraint
+residual (L3.2's named residual; trigger: the first real estate carrying two model
+reference attributes over one deployed composite FK); the ungated wide-canary lanes
+stay ungated BY ARGUMENT (readback catalogs; written in place, not deferred).
+
+Close gates: `TEST_CONFIG=Release` fast solution-wide + the full Docker pool (the two
+named pre-existing reds and nothing else), verifiability 94+34, analyzers, matrix
+regen — recorded in this commit. The program rode PR #695 (Part 4 of its description);
+the fast pool crossed **5,000 executed tests** during L3.2 — the milestone the operator
+called, landed green.
+
+## 2026-08-31 — The consent-surface voice ruling lands: the ratchet covers the whole src tree
+
+**Operator ruling (2026-08-31, one word as promised): "Approved" — the two consent
+surfaces join the lazy-plural ratchet.** `Projection.Pipeline/WriteSignoff.fs` and
+`Projection.Core/ActConsent.fs` had been excluded from the `VoiceRegisterTests`
+full-src freeze since align-III.22 under the a11 carve-out: their copy is the
+operator's signature (the sign-off labels, the consent phrases), so an agent-run style
+gate did not annex them on its own initiative. Both files measured ZERO lazy plurals
+at the carve-out and still measure zero at the ruling — the question was purely
+jurisdictional, and the operator settled it: the ratchet guards them too.
+
+**What changed:** the `excluded` list and its filter are DELETED from
+`VoiceRegisterTests.fs` (the ratchet now enumerates `src/**/*.fs` with no
+carve-outs); the header comment records the ruling and its date. No production string
+moved — the freeze simply extends its jurisdiction. Future edits to the consent
+surfaces' copy are still the operator's to author (that discipline is unchanged);
+the ratchet only guarantees whatever is authored carries no lazy plural.
+
+**Index row cashed** (the a11 carve-out row above). This was the last AWAITING-OPERATOR
+item from the alignment program.
+
+## 2026-08-31 — THE OPERATOR-WALK PROGRAM OPENS: walk-1 drives `runCheckEstate` for the first time
+
+**Commission.** The operator (2026-08-31): *"The operator-walk fixture is the one I
+want"* — the terminus item named at the estate close (`HANDOFF` 2026-07-17: *"The
+ideation §12 walk on a LIVE multi-env estate, every artifact produced and
+cross-referenced… also WP-12/13's trigger"*). The program delivers the §12 loop
+(`CUTOVER_RECONCILIATION_IDEATION.md:749-755`) END-TO-END through the REAL CLI faces
+over the two-cell live estate: check → remediate → burndown → publish → prove →
+the board reads the proof. Five slices (walk-1 … walk-5); plan in the session plan
+file; rails unchanged (PR #695, gains Part 5 at close).
+
+**The strategic frame (the chapter-open discipline, scoped to a program).** The axis
+advanced is **multi-environment promotion / estate convergence** (`V2_DRIVER.md`
+per-axis stakes: *"per-env policy divergence not caught until second env deploys"*)
+— the walk is that axis's LIVE instantiation: the A45 espace-invariance claim, the
+estate meet, the burndown, and the fidelity proof, all through the operator's own
+verbs. The property the program makes hold: **the §12 loop is one witnessed fact**,
+not five separately-proven seams. The V1 capability V2 takes ownership of: the
+multi-environment consensus reporting V1 did with physical-name keying
+(`MultiEnvironmentConstraintConsensus.cs`), done here identity-safely and driven to
+convergence. NOTE (agent-verified 2026-08-31): the July estate/fidelity chapter never
+added its V2_DRIVER axis row or BACKLOG arc table — walk-5 owes both.
+
+**walk-1 lands: the face's first drive.** `OperatorWalkDockerTests` (Integration;
+the Docker collection) — the FIRST test anywhere to call `runCheckEstate` (every
+prior estate witness sat at the engine seam, `Estate.computeWith`; the face's only
+caller was `Program.fs`'s dispatch). One walk, four phases over
+`PeerEstateHarness.run2Cell` + a temp `PROJECTION_ESTATE_DIR` (the B6 idiom):
+
+1. **First contact is NOT pristine — by the estate's own honesty.** The edge-case
+   seed ships `StockMovement.SupplierId` enforced WITH NOCHECK in every cell; the
+   walk's first `check environments` exits 5 with exactly that REPAIR finding in
+   both cells (the board's odd-one-out copy names "the target may be the one
+   behind"), and records the estate's first reading. The plan's R1 risk (asserting
+   a pristine-unified baseline) was WRONG in the right direction — the fixture
+   estate carries real texture, and the walk starts by finding it.
+2. **The operator's remediation step, mechanized as §12 describes it** (the E7
+   executor verb was never built — deliberately not built here either): the test
+   reads EACH cell's `environments.remediation.<env>.sql`, extracts the re-trust
+   block by its FindingKey (`schema.trust:StockMovement.SupplierId`), asserts each
+   block names ITS OWN cell's physical table (`OSUSR_INV_MOVEMENT` vs the
+   espace-shifted `OSUSR_XINV_MOVEMENT` — RT-12 provenance made load-bearing), and
+   executes the uncommented repair against its cell.
+3. **Convergence:** exit 0, burndown `1 closed · 0 opened · 0 remain`, streak
+   `1 consecutive unified run` — the finding closed BY KEY across two readings.
+4. **The planted divergence** (cell-b only: a D10 static-content label drift on
+   Country, a NOCHECK'd relationship, and the FK orphan it admits — orphans enter
+   real estates exactly this way): exit 5; `environments.remediation.cell-b.sql`
+   stages `data.staticContent:Country` (a real alignment MERGE) and
+   `data.orphans:Customer.CityId`; the operator-safety contract is pinned LIVE
+   (every mutating repair line commented; the locating SELECT active; no secret in
+   the provenance header); the burndown's opened side is non-zero.
+
+**Register note.** The face renders the RICH board — panel titles in the operator
+register (`─environments─`, `BURNDOWN — movement since the recorded baseline`,
+`N closed · M opened · K remain`), not the engine render's plain `ENVIRONMENTS` /
+`N closed, M opened` forms the engine witnesses pin. The walk asserts the rich
+copy; both renders stay covered (each by its own witness).
+
+**Witnesses.** Docker — the walk test (phases above; 9s on the warm container —
+the estate loop is CHEAP, which is itself an E2 claim verified). Pure pools
+untouched. Gates: build; fast pool green; focus green ×2 (walk + the
+`PeerWitnessDockerTests` neighbor); verifiability 94 live + 34 deferred (C=10,
+D=1) unchanged; no Core/Tolerance/Axiom touches (no matrix motion, no analyzers
+run owed).
+
+## 2026-08-31 — walk-2: the §12 MIDDLE is walked (remediate → burndown → streak)
+
+The owed middle of the loop — named at the estate close as *"the FULLER §12 middle —
+remediate → burndown → publish between the two"* — lands its remediation half. The
+walk test grows phases 5–6 (green phases never rewritten):
+
+- **Phase 5 — the operator's mid-walk remediation, mechanized.** Cell-b's three
+  staged blocks are taken FROM THE ARTIFACT by FindingKey and applied in the order
+  the estate itself demands: the orphan DELETE first (`data.orphans:Customer.CityId`),
+  then the D10 alignment MERGE (`data.staticContent:Country` — the real multi-line
+  batch, prose guidance lines dropped, surrogate PK untouched), then the re-trust
+  (`schema.trust:Customer.CityId` — WITH CHECK re-validates, which is exactly why
+  the orphan had to leave first; Msg 547 otherwise). The block-extraction helpers
+  follow the emitter's FIXED block layout (title / key / one statement line / the
+  ACTIVE locating SELECT / commented repairs) — structure-aware, never regex-lucky.
+- **Phase 6 — the burndown closes what the walk repaired.** Exit 0; the movement
+  reads `N closed · 0 opened · 0 remain` (N ≥ 1 pinned by regex — the fixture may
+  grow); the unified streak restarts at 1 from the diverged reading.
+
+**Evidence-plane note (verified in the walk, worth naming):** the three repairs
+close through three DIFFERENT evidence paths, and all three self-correct without
+`--refresh` — the trust state rides the CATALOG (re-read live every check), the
+orphan rides the PROFILE (the DELETE moves the kind's fingerprint, so the pay-once
+store re-profiles exactly that kind), and the static content rides the LIVE static
+probe (never cached). E2's pay-once discipline and the burndown's honesty hold
+simultaneously; no repair class is fingerprint-invisible.
+
+Witnesses/gates: the walk test (10s), fast pool green, no Core touches.
+
+## 2026-08-31 — walk-3: THE LOOP CLOSES — publish, prove, and the board reads the proof
+
+The walk test grows phases 7–9; **every §12 line is now walked over one live estate
+in one cwd, in one witness (13s on the warm container)**:
+
+- **Phase 7 — the ordinary pipeline (R6: emits, doesn't ship).** A minimal
+  `projection.json` (model.ossys = cell-a's RAW conn — the D9 pass-through
+  exercised through the REAL config loader) drives `runFullExport` into a temp
+  bundle dir: exit 0; the bundle carries SQL artifacts AND `apply-runbook.md` —
+  **ideation §12 F7 is LANDED** (`ApplyRunbookEmitter`, wave B6), correcting this
+  program's own exploration report which had marked it absent. The publish leg is
+  deliberately the BUNDLE, not a live write: the walk needs no consent gate
+  because the walk never ships — the R6 doctrine in test form.
+- **Phase 8 — the fidelity proof (B5).** `runCheckFidelityFlow` over cell-a's own
+  OSSYS-read contract: the container proof stages the logical rendition, loads
+  from the live cell via the journaled transfer, compares — green; both proof
+  records written (`fidelity.rows.json` + the flow-scoped
+  `fidelity-proof/opwalk/fidelity.rows.json`, the RT-10 read path).
+- **Phase 9 — the board reads the proof (RT-10).** The closing `check
+  environments` runs with `readiness.estate.fidelityFlow = opwalk`: the fidelity
+  clause folds **`green — flow 'opwalk', every row byte-identical`** into the
+  masthead, the verdict stays unified, and the streak carries to
+  `2 consecutive unified runs`. The staleness rule held as designed: the estate's
+  cached evidence (captured at the phase-6 repairs) predates the proof, and a
+  bare live re-read does not trip Stale.
+
+The §12 middle the estate close named as owed — *"remediate → burndown → publish
+between the two loops now proven"* — is DELIVERED: one witness drives check →
+remediate → burndown → publish → prove → the board reads the proof, all through
+the real CLI faces. What remains for the program: the WP-12/13 probe arm
+(walk-4) and the close bookkeeping (walk-5).
+
+Witnesses/gates: the walk test (13s; the full pipeline + container proof ride the
+warm container), fast pool green, verifiability unchanged, no Core touches.
+
+## 2026-08-31 — walk-4: THE WP-12/13 TRIGGER FIRES AND IS DISCHARGED (the probe arm)
+
+The 2026-07-17 deferral said: *"Trigger: the terminus operator walk on the fixture
+estate — if the walk trips either, it lands then; otherwise they stay sequenced on
+SSDT_REMEDIATION_HANDOFF Tier 4."* The walk ran; here is what it tripped and what
+it did not, each with its executable witness (the probe test in
+`OperatorWalkDockerTests`).
+
+**WP-13 — TRIPPED, exactly as predicted, and the small half LANDS.** The probe
+shapes a cell carrying an unresolved WEAK-LESS 2-cycle (Gamma ⇄ Delta, both FK
+columns NOT NULL — planted through the OSSYS metadata in the seed's own shapes, so
+the production read path mints the cycle). Observed, now pinned:
+
+- **The board plane**: `check environments` exits 5 with the
+  `emission.dataLaneOrder` DECIDE finding naming the members (Gamma, Delta) and
+  the cycle — the advisory the 2026-07-18 gate promised, live through the face.
+- **The proof plane**: `check fidelity` failed the scaffold's linear apply with
+  the server's own missing-referent error — the EXACT harm the 2026-07-17 entry
+  named ("fails the scaffold's linear apply with the server's own missing-referent
+  error"). But it escaped as a RAW `SqlException` stack trace out of
+  `runCheckFidelityFlow` — un-voiced, breaking §14 (a thing that would throw is
+  caught and stated). **That is the piece that lands now**: the face wraps the
+  scaffold/load leg; a server-side apply failure is a NAMED exit-6 refusal
+  (`fidelity.proof.applyFailed`, the server's message as substantiation, rendered
+  through the ordinary voiced error panel — "Stopped before any change was
+  applied"). The probe asserts both planes agree on the fact (the board carries
+  the members in full; the proof's elided panel line carries the server's
+  FK naming).
+- **The emission-order fix itself** (SCC-condensation order + the in-cycle FK
+  split into trailing ALTERs — the WP-13 remainder) **stays sequenced on Tier 4**,
+  now with a STANDING RED-PATH WITNESS instead of prose: when that fix lands, the
+  probe's proof plane flips from refusal to green and the test will demand
+  updating — the fix cannot land silently, and the gap cannot silently regress.
+
+**WP-12 — NOT tripped; the premise is now pinned executable.** The walk's estate
+is OutSystems-native-shaped: the probe asserts the OSSYS-read contract carries
+ZERO multi-leg references (`Reference.Legs` length ≤ 1 everywhere) — the exact
+premise the Tier-4 re-affirmation rests on. The schema-L3.2 machinery (composite
+legs expressible, `emitter.ssdt.compositeKeyReference` refusal, the shared-predicate
+estate finding) covers the day a real estate breaks that premise; the
+secondary-leg duplicate-constraint residual keeps its own trigger (the first real
+estate carrying two model refs over one deployed composite FK).
+
+**Index maintenance (close-ritual item 1, done in-slice):** the WP-12/13 row lived
+only inside the 2026-07-17 dated entry — it is NOW indexed in the Active-deferrals
+table with the discharge recorded, so the next silent firing has a place to be
+caught.
+
+Witnesses/gates: the probe test + the full walk green (15s together); the
+`ReverseLegCanaryTests` neighbor green (75s — the face change sits on its path);
+fast pool green; CLI-only src change (no Core, no analyzers, no matrix motion).
+
+## 2026-08-31 — walk-5: THE OPERATOR-WALK PROGRAM CLOSES (the coda)
+
+Five slices, commissioned as *"the operator-walk fixture"* and delivered as the §12
+loop walked END-TO-END as one witnessed fact: the face's first drive (walk-1), the
+remediate→burndown middle (walk-2), publish→prove→the-board-reads-the-proof
+(walk-3), the WP-12/13 trigger discharge (walk-4), this coda (walk-5). Everything
+rides `OperatorWalkDockerTests` — two tests, ~25s together on the warm container,
+driving the REAL CLI faces over live OSSYS cells.
+
+**The §12 ledger** (E1–E9/F1–F9, verified against code this program — recorded here
+so the ideation's ease items have one current home; the exploration pass's one
+error is corrected: F7 IS landed):
+
+- LANDED and now WALKED: E2 pay-once evidence · E4 the one-lever line
+  (label-addressed; "block 7" ordinals never existed — the FindingKey IS the
+  address) · E5 keyed blocks · E8 burndown+streak · F4 proof cache · F7 the
+  apply-runbook (`ApplyRunbookEmitter`, in every bundle) · RT-10.
+- LANDED (witnessed elsewhere): E1 `init` scaffolding (residue: `fidelityFlow` not
+  scaffolded) · E3 the rich board (residue: no `--env`/`--only`/`--module` flags)
+  · E6 overlay EMISSION · E9 envelopes · F1 flow-form defaults · F5 business-key
+  naming · F8 named degradation.
+- PARTIAL: F2 (the proof headline exists; the "N excepted · 0 residual" count-first
+  phrasing does not) · F9 (RT-10 is the mechanical gate; no separate ledger gate).
+- ABSENT, left deliberately as commission-on-demand ease items (no triggers):
+  E7 the `remediate` executor verb (the walk mechanizes the operator's own
+  copy-run step — building the verb is its own consent-sensitive item) · E6's
+  merge preview/apply · F3 the fidelity stage-board spine · F6 re-proof scoping ·
+  F1's `check data --rows` defaults. The BACKLOG arc table carries the list.
+
+**Close bookkeeping executed** (the ritual, scoped to a program): the BACKLOG arc
+table for the estate/fidelity + walk arc (the July chapter predated the arc-table
+discipline — truth-maintenance done); the V2_DRIVER axis row (estate convergence &
+the operator walk — Shipped); the Active-deferrals index current (WP rows added at
+walk-4; the consent-surface row cashed 2026-08-31); HANDOFF's top letter
+superseded (and its stale AWAITING-OPERATOR line corrected); PR #695's description
+gains Part 5. No tolerance, axiom, or matrix motion anywhere in the program — the
+ladder stands exactly as schema-L3 left it (Schema ✅ L3 · 5/5/5 · 9, 0 open).
+
+**Program gates:** the full Docker pool read against the TRX — **340 passed,
+exactly the two named pre-existing reds** ({StagedMergeDeployE2ETests,
+T18CycleBreakCanaryTests} — still owed their own arc) **and nothing else**;
+`TEST_CONFIG=Release` fast solution-wide **5,017/5,017** — after fixing, in-slice,
+two FS3511s the 2026-08-31 merge from main brought in (`SamplePrInverseTests.Fresh`
+/ `SamplePrCompoundTests.Fresh` in Twin.Tests.Integration: `for`+`try/with` inside
+a task — the align-I.1 debt class re-introduced; the non-awaiting reset prep is
+hoisted to a plain `ResetFiles` member per survival rule 5, behavior-preserving);
+the walk class + `PeerWitness` + `ReverseLeg` neighbors green focused;
+verifiability 94+34 unchanged; the hook chain green at every commit.

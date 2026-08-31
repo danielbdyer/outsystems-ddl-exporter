@@ -21,6 +21,12 @@ let private mustResultOk (r: Result<'a>) : 'a =
 let private nameOf (s: string) : Name = Name.create s |> mustResultOk
 let private ver (o: int) (lbl: string) : Version = Version.create o lbl |> mustResultOk
 let private tl (name: string) : Timeline = Timeline.create name |> mustResultOk
+/// align-III.1: expected-ordinal literal for asserts (patterns can't call functions).
+let private ord (n: int) : SyncOrdinal =
+    match SyncOrdinal.create n with
+    | Ok o -> o
+    | Error m -> failwith m
+
 let private at (iso: string) : DateTimeOffset = DateTimeOffset.Parse(iso, System.Globalization.CultureInfo.InvariantCulture)
 
 // A genesis schema (the sample catalog) evolving through one table rename
@@ -35,8 +41,8 @@ let private coord1 = EpisodeCoordinate.create (ver 1 "1.1.0") Environment.Dev (a
 let private coord2 = EpisodeCoordinate.create (ver 2 "1.2.0") Environment.Dev (at "2026-06-15T09:00:00+00:00")
 
 let private e0 : Episode = Episode.ofSchema coord0 sampleCatalog
-let private e1 : Episode = Episode.create coord1 targetCatalog Profile.empty (Some "refactorlog#1") (DataObservation.create 10 None)
-let private e2 : Episode = Episode.create coord2 targetCatalog Profile.empty (Some "refactorlog#2") (DataObservation.create 20 None)
+let private e1 : Episode = Episode.create coord1 targetCatalog Profile.empty (Some "refactorlog#1") (DataObservation.observed 10 None)
+let private e2 : Episode = Episode.create coord2 targetCatalog Profile.empty (Some "refactorlog#2") (DataObservation.observed 20 None)
 
 let private threeEpisodeChain : EpisodicLifecycle =
     EpisodicLifecycle.genesis (tl "eject-dev") e0
@@ -88,6 +94,38 @@ let ``AC-X6: eject round-trips through the durable store`` () =
     finally
         if System.IO.File.Exists path then System.IO.File.Delete path
 
+// -- the sink rides the eject (the data-sink chapter, S15/K10) ----------------
+
+[<Fact>]
+let ``K10: the sink's terminal states ride the package via the stamping combinator; empty is the identity`` () =
+    let pkg =
+        match EjectRun.fromChain threeEpisodeChain with
+        | Ok p -> p
+        | Error e -> Assert.Fail(sprintf "%A" e); Unchecked.defaultof<EjectPackage>
+    // The assembly is pure and sink-blind: fromChain stamps no states
+    // (the face collects from the configured store and stamps).
+    Assert.Empty pkg.SinkStates
+    // Empty stamping is the identity — a pre-sink eject is byte-identical.
+    Assert.Equal(pkg, EjectRun.withSinkStates [] pkg)
+    // States ride the package intact.
+    let state : SinkTerminalState =
+        { Digest = "abc123"
+          EnvLabel = Some "uat"
+          LatestSyncId = ord 4
+          JournalEntries = 17
+          CapturedAtUtc = at "2026-08-15T12:00:00+00:00" }
+    let stamped = EjectRun.withSinkStates [ state ] pkg
+    Assert.Equal<SinkTerminalState list>([ state ], stamped.SinkStates)
+    // Stamping touches nothing else: the package still self-verifies.
+    Assert.True(EjectRun.isFaithful stamped)
+
+[<Fact>]
+let ``K10: with no sink store configured, the collector reports no states (the pre-sink eject, named)`` () =
+    // R7 — the test environment carries no store env vars by default, so
+    // the collector's store-gated arm is the one that runs here.
+    Assert.True(System.String.IsNullOrEmpty(System.Environment.GetEnvironmentVariable "PROJECTION_ESTATE_DIR"))
+    Assert.Empty(EjectRun.sinkTerminalStates ())
+
 // -- ReportRun (THE_CLI.md §8 / F4) — the migration-team change bundle -------
 
 [<Fact>]
@@ -137,7 +175,7 @@ let ``ReportRun: a genesis-only timeline reports no change since genesis`` () =
 // each only when non-empty (a strict, skeleton-only edge stays silent).
 
 let private provenanceE1 : Episode =
-    Episode.create coord1 targetCatalog Profile.empty (Some "refactorlog#1") (DataObservation.create 10 None)
+    Episode.create coord1 targetCatalog Profile.empty (Some "refactorlog#1") (DataObservation.observed 10 None)
     |> Episode.withProvenance
         (Tolerance.strict |> Tolerance.withDivergence ToleratedDivergence.HeaderCommentsOmitted)
         [ customer.SsKey, Some OverlayAxis.Emission; order.SsKey, None ]

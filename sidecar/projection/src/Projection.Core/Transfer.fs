@@ -64,6 +64,24 @@ module Environment =
         | Environment.Prod    -> "PROD"
         | Environment.Named n -> n
 
+    /// align-III.14 — the ONE total, canonicalizing parse. The four
+    /// canonical stage names resolve case-insensitively to their canonical
+    /// cases (`parse "dev" = Dev`; a `Named "DEV"` that means `Dev` is no
+    /// longer mintable through any parse route), anything else is the
+    /// trimmed `Named` escape hatch. Idempotent through `name`:
+    /// `parse (name (parse s)) = parse s` — so a persisted coordinate
+    /// canonicalizes once and stays put. Every label→Environment crossing
+    /// (Substrate.fromRef, the CLI parses, the store read-side) routes
+    /// through here.
+    let parse (label: string) : Environment =
+        let trimmed = label.Trim()
+        match trimmed.ToUpperInvariant() with
+        | "DEV"  -> Environment.Dev
+        | "QA"   -> Environment.Qa
+        | "UAT"  -> Environment.Uat
+        | "PROD" -> Environment.Prod
+        | _      -> Environment.Named trimmed
+
 /// A *reference* to where a substrate's credentials live — never the
 /// secret (D9). Either an environment-variable name or a file path the
 /// operator supplies out of band — or, since 2026-07-06, the already-
@@ -98,7 +116,9 @@ type Substrate =
 [<RequireQualifiedAccess>]
 module Substrate =
     let fromRef (role: SubstrateRole) (label: string) (connRef: ConnectionRef) : Substrate =
-        { Environment = Environment.Named label; Role = role; ConnectionRef = connRef }
+        // align-III.14: the label parses canonically — `fromRef role "DEV" …`
+        // now carries `Dev`, never a `Named "DEV"` twin of it.
+        { Environment = Environment.parse label; Role = role; ConnectionRef = connRef }
 
 /// The connection set a Transfer binds: which substrate is the data
 /// `Source`, which is the write `Sink`, and which substrates are profiled

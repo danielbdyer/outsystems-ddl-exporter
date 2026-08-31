@@ -122,14 +122,15 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 
 > **`kind: "nullability"` is disabled** (DECISIONS 2026-06-22). Config-driven nullable→NOT NULL coercion is the team's modeling decision, not the tool's — a nullability intervention is *accepted but creates no intervention* (a no-op; the run is not refused). Null-density is still profiled as a **statistic** (informational / synthetics). Declare a column mandatory in the OutSystems model instead.
 
-### `profiler` · `output`
+### `profiler` · `output` · `sink`
 
 | Section | Keys | Default |
 |---|---|---|
 | `profiler` | `provider` `"fixture"` \| `"live"` (live profiles the source DB via `PROJECTION_MSSQL_CONN_STR` — D9, never the config — so tightening has null-density evidence); `maxConcurrency` int `4` — bounded parallelism for live profile capture (per-kind discovery on its own pooled connection; `1` = strictly serial; keep low — past ~4 the win flattens and can invert) | `{ provider: "fixture" }` |
 | `output` | `dir` | `out/` |
+| `sink` | `policy` `"off"` \| `"auto"` \| `"pinned"` — the sink FRESHNESS posture (the data-sink chapter; R2: this lever governs the reuse axis only, NEVER witnessing — the witness is gated by store presence + acquisition totality, so disable the store to disable witnessing). `"off"` (default): every model read pays the wire, byte-identical standing behavior. `"auto"`: reuse the witnessed sink state while the three ossys bellwethers (`dbo.ossys_Espace` / `ossys_Entity` / `ossys_Entity_Attr` — row count \| max ID \| content checksum, recorded at witness time) still match; any movement reads live, which witnesses the fresh state. `"pinned"`: reuse WITHOUT probing (offline-true; the mandatory freshness line names the age); `--refresh` overrides even a pin for one run. The sink serves TOTAL-shaped model reads only: `model.onlyActiveAttributes` must be `false` (it defaults `true`) or every read pays the wire regardless of policy — the attribute axis is A49's named residual (the module/entity axes narrow purely on either side; the attribute axis does not yet). `perEnvironment` — an object mapping environment labels (as stamped by `projection sync <env>`) to per-env policy refinements under the same vocabulary; an unlisted environment rides `policy` | `{ policy: "off" }` |
 
-**Parser refusals** (`pipeline.config.*`): `jsonInvalid`, `fileNotFound`, `fileReadError`, `missingProperty`, `modelNoSource` (none of `model.env` / `model.ossys` / `model.path`), `typeMismatch`, `nullProperty`, `nullArrayElement`, `credentialPropertyForbidden` (D9), `renameSourceAmbiguous`, `renameSourceMissing`.
+**Parser refusals** (`pipeline.config.*`): `jsonInvalid`, `fileNotFound`, `fileReadError`, `missingProperty`, `modelNoSource` (none of `model.env` / `model.ossys` / `model.path`), `typeMismatch`, `nullProperty`, `nullArrayElement`, `credentialPropertyForbidden` (D9), `renameSourceAmbiguous`, `renameSourceMissing`, `sink.policyUnknown` / `sink.perEnvironmentShape` / `sink.shape` (the sink section's closed vocabulary and shape).
 
 **`model.env` resolution refusals** (`cli.config.*`, movement surface): `modelEnvAndOssys` (`env` + `ossys` both set — two ways to name the one live source), `modelEnvUnknown` (`env` names an environment absent from `environments`), `modelEnvNotDirect` (`env` names a `bundle`/`docker` place with no live OSSYS connection to read).
 

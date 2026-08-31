@@ -37,8 +37,8 @@ module private RunTestCatalogs =
 /// predicate: load(save(run)) = run, and inputDigest depends only on inputs.
 
 let private sample : Run.Run =
-    { RunId = "01ABCDEF"; Ts = "2026-06-05T00:00:00Z"; Command = "projection canary"
-      InputDigest = "deadbeef"; Outcome = "succeeded"; Canary = Some "green"
+    { RunId = "01ABCDEF"; Ts = System.DateTimeOffset(2026, 6, 5, 0, 0, 0, System.TimeSpan.Zero); Command = "projection canary"
+      InputDigest = "deadbeef"; Outcome = "succeeded"; Canary = CanaryVerdict.Green
       Registered = 42; Applied = 3; Declined = 1
       Events = [ """{"code":"config.runStart"}"""; """{"code":"summary.runComplete"}""" ]
       Artifacts = Map.ofList [ "catalog.json", """{"modules":[]}"""; "summary.txt", "all green" ]
@@ -149,16 +149,16 @@ let ``Run: list enumerates every persisted run`` () =
     let dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
     try
         Run.save dir sample
-        Run.save dir { sample with RunId = "01ZZZZ"; Canary = Some "red" }
+        Run.save dir { sample with RunId = "01ZZZZ"; Canary = CanaryVerdict.Red }
         let runs = Run.list dir
         Assert.Equal(2, List.length runs)
         Assert.Contains(runs, fun r -> r.RunId = "01ABCDEF")
-        Assert.Contains(runs, fun r -> r.RunId = "01ZZZZ" && r.Canary = Some "red")
+        Assert.Contains(runs, fun r -> r.RunId = "01ZZZZ" && r.Canary = CanaryVerdict.Red)
     finally
         try Directory.Delete(dir, true) with _ -> ()
 
 [<Fact>]
-let ``Run: toLedgerEntry projects the index row (subsumes LedgerRecord)`` () =
+let ``Run: toLedgerEntry projects the index row (subsumes IndexRecord)`` () =
     let e = Run.toLedgerEntry sample
     Assert.Equal(sample.RunId, e.RunId)
     Assert.Equal(sample.Canary, e.Canary)
@@ -334,3 +334,16 @@ let ``Run: capture builds a Run from the live LogSink state + the artifact tree`
     Assert.Equal<Map<string, string>>(artifacts, run.Artifacts)   // the tree is carried
     Assert.NotEmpty(run.RunId)
     Assert.NotEmpty(run.Events)                     // the Info event is in the trail
+
+[<Fact>]
+let ``align-III.1: a stored run with a torn ts refuses to load (fail-closed within the reader's option posture)`` () =
+    let dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.Guid.NewGuid().ToString("N"))
+    try
+        Run.save dir sample
+        let path = Run.runPath dir sample.RunId
+        System.IO.File.WriteAllText(
+            path,
+            System.IO.File.ReadAllText(path).Replace("\"ts\": \"2026-06-05T00:00:00.0000000Z\"", "\"ts\": \"not-an-instant\""))
+        Assert.True((Run.load dir sample.RunId).IsNone)
+    finally
+        if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)

@@ -49,9 +49,10 @@ let private inScopeCodes : Set<string> =
           // refusal and the generic located stop
           "migrate.inexpressible"; "migrate.stopped"
           // the eject face: the §13 package line, the §6 self-verification
-          // pair, and the §14 located store finding
+          // pair, the §14 located store finding, and the sink-carried line
+          // (the data-sink chapter, S15/K10)
           "eject.packaged"; "eject.verified"; "eject.unverified"
-          "eject.storeUnreadable"
+          "eject.storeUnreadable"; "eject.sinkCarried"
           // the verify-data face: the §6 data-fidelity verdict pair
           "verifyData.matched"; "verifyData.diverged"
           // the §4 move verdicts — the transfer / migrate faces (register
@@ -75,8 +76,24 @@ let private inScopeCodes : Set<string> =
           // the estate evidence-provenance notices (wave A2.5 — the pay-once
           // store says which basis each environment's verdicts stand on)
           "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
+          // the ruling store's named degradation (align-II.5 — an unreadable
+          // store renders the board unruled, the cause on stderr)
+          "estate.rulings.unreadable"
+          // the ruling verb's durable-record verdict (align-II.6; A53)
+          "rule.recorded"
           // the row-fidelity proof pair (check data --rows — T17, wave B2)
           "fidelity.rows.matched"; "fidelity.rows.diverged"
+          // the sink sync face's verdict pair + the store refusal
+          // (projection sync — the data-sink chapter, S6)
+          "sync.completed"; "sync.unchanged"; "sink.storeDisabled"
+          // the sink operand's mandatory freshness line (sink refs — S7;
+          // S13 also emits it as a LogSink envelope from the model read's
+          // sink-served path — the line rides EVERY sink-backed answer)
+          "sink.evidenceAge"
+          // the sink's estate claim notices (check estate — S11b + S12 +
+          // the S14 correspondence proposals)
+          "sink.claimContested"; "sink.tombstoneOnly"; "sink.unclaimed"
+          "sink.cutoverCorrespondence"
           // the operator shell's §5 preview frame (Shell.execute, render-only)
           "shell.previewFrame"
           // the dispatch prologue's voiced notes (runPlan, render-only)
@@ -131,9 +148,10 @@ let private knownEmittableCodes : Set<string> =
           "drift.none"; "drift.diverged"
           // the migrate family's shared stop channel
           "migrate.inexpressible"; "migrate.stopped"
-          // the eject face's package + self-verification + store finding
+          // the eject face's package + self-verification + store finding +
+          // the sink-carried line (S15/K10)
           "eject.packaged"; "eject.verified"; "eject.unverified"
-          "eject.storeUnreadable"
+          "eject.storeUnreadable"; "eject.sinkCarried"
           // the verify-data face's verdict pair
           "verifyData.matched"; "verifyData.diverged"
           // the §4 transfer / migrate move verdicts (recon #11)
@@ -156,9 +174,26 @@ let private knownEmittableCodes : Set<string> =
           // the estate evidence-provenance notices — render-synthesized at the
           // same face from the report's stamped `EvidenceProvenance`
           "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
+          // the ruling store's named degradation — render-synthesized at the
+          // same face when `RulingStore.loadAll` fail-closes (align-II.5)
+          "estate.rulings.unreadable"
+          // the ruling verb's durable-record verdict — render-synthesized at
+          // `runRule` (align-II.6; A53)
+          "rule.recorded"
           // the row-fidelity proof pair — render-synthesized at the
           // `check data --rows` face (`runCheckDataRows`)
           "fidelity.rows.matched"; "fidelity.rows.diverged"
+          // the sink sync face's verdict pair + the store refusal —
+          // render-synthesized at `runSync` (the data-sink chapter, S6)
+          "sync.completed"; "sync.unchanged"; "sink.storeDisabled"
+          // the sink operand's freshness line — render-synthesized at the
+          // diff/compare faces when a `sink:` ref rides (S7)
+          "sink.evidenceAge"
+          // the sink's estate claim notices — render-synthesized at
+          // `runCheckEstate` when a sink-named environment carries them
+          // (S11b + S12 + the S14 correspondence proposals)
+          "sink.claimContested"; "sink.tombstoneOnly"; "sink.unclaimed"
+          "sink.cutoverCorrespondence"
           // the operator shell's preview frame — render-synthesized (like the
           // watch.* frames), consumed at `Shell.execute`'s static open
           "shell.previewFrame"
@@ -306,6 +341,8 @@ let private renderVoicedCallSiteCodes : Set<string> =
           "estate.unified"; "estate.diverged"; "estate.forked"
           "estate.overlay"; "estate.envUnreadable"
           "estate.evidence.cached"; "estate.evidence.stale"; "estate.evidence.offline"
+          "estate.rulings.unreadable"
+          "rule.recorded"
           "fidelity.rows.matched"; "fidelity.rows.diverged"
           "eject.storeUnreadable"; "eject.packaged"; "eject.verified"; "eject.unverified"
           "migrate.inexpressible"; "migrate.stopped"

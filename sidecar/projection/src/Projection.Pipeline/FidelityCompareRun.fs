@@ -941,15 +941,15 @@ module FidelityCompareRun =
           | receipts ->
               let changed = receipts |> List.sumBy (fun r -> r.RowsChanged)
               let excluded = receipts |> List.sumBy (fun r -> r.RowsExcluded)
-              yield sprintf "  Interventions: approved data corrections replayed onto the source before comparing — %s correction(s), %s row(s) changed, %s excluded; every difference cites its receipt."
+              yield sprintf "  Interventions: approved data corrections replayed onto the source before comparing — %s corrections, %s rows changed, %s excluded; every difference cites its receipt."
                         (humane64 (int64 (List.length receipts))) (humane64 changed) (humane64 excluded)
           for verdict in report.Kinds do
               if KindRowVerdict.agrees verdict then
-                  yield sprintf "  %s — %s row(s), byte-identical." verdict.KindName (humane64 verdict.Source.Count)
+                  yield sprintf "  %s — %s rows, byte-identical." verdict.KindName (humane64 verdict.Source.Count)
               else
                   match verdict.NamingSkipped with
                   | Some reason ->
-                      yield sprintf "  %s — the digests differ (source %s row(s), target %s); the rows stay unnamed: %s."
+                      yield sprintf "  %s — the digests differ (source %s rows, target %s); the rows stay unnamed: %s."
                                 verdict.KindName (humane64 verdict.Source.Count) (humane64 verdict.Target.Count) reason
                   | None ->
                       let named =
@@ -960,7 +960,7 @@ module FidelityCompareRun =
                       let tail =
                           if remainder > 0L then sprintf "; and %s more — fidelity.rows.json carries every digest" (humane64 remainder)
                           else ""
-                      yield sprintf "  %s — %s difference(s) across %s source row(s): %s%s."
+                      yield sprintf "  %s — %s differences across %s source rows: %s%s."
                                 verdict.KindName (humane64 verdict.DifferenceTotal) (humane64 verdict.Source.Count)
                                 (String.concat "; " named) tail ]
 

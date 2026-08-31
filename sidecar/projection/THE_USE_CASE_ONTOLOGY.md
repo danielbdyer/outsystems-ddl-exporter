@@ -683,11 +683,11 @@ surrogate / tolerance columns; (d) the **gated DELETE** clause.
   provenance (CDC log is the data-leg provenance record).
 
 #### Accumulate (provenance / time)
-- **Physical realization.** Two parallel append operations per cycle: append the `CatalogSnapshot` to
+- **Physical realization.** Two parallel append operations per cycle: append the `Episode` to
   the timeline (`LifecycleStore`); append new refactorlog entries (deduped by `OperationKey`). On a
   fresh deploy, DacFx replays the entire refactorlog before computing the schema diff. State snapshots
   serialize via `CatalogCodec` (total / deterministic / re-validating). `CatalogDiff.compose` is the
-  `+`; `reconstructLatest` is the FTC fold.
+  `+`; `reconstructLatestSchema` is the FTC fold.
 - **Substrate constraint.** The refactorlog is **never deleted** (fresh-deploy correctness needs the
   full history); new entries deduped against the prior; the codec round-trip must be **total over the
   IR** (a missed DU variant is a silent erasure at the persistence boundary); CDC capture rows are

@@ -149,7 +149,7 @@ let ``shell: under pretty, stdout narration defers and flushes after the verdict
     try
         let console = newConsole ()
         Shell.executeOn console true true (goFrame "projection full-export") Shell.Bracket.SelfBracketed (Some (Spines.publishWith false false)) (fun () ->
-            printfn "42 artifact(s) written to ./dist/full-export."
+            printfn "42 artifacts written to ./dist/full-export."
             LogSink.emit (LogSink.envelope LogSink.Info LogSink.Extract "extract.started" Map.empty)
             LogSink.recordStageEvent "extract" 3L LogSink.Succeeded
             LogSink.recordStageStart "profile"
@@ -159,9 +159,9 @@ let ``shell: under pretty, stdout narration defers and flushes after the verdict
             0)
         |> ignore
         // The narration reached the real stdout — deferred, never lost...
-        Assert.Contains("42 artifact(s) written", captured.ToString())
+        Assert.Contains("42 artifacts written", captured.ToString())
         // ...and never the box surface (the board + panel own that console).
-        Assert.DoesNotContain("42 artifact(s) written", console.Output)
+        Assert.DoesNotContain("42 artifacts written", console.Output)
     finally
         Console.SetOut priorOut
         Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", null)
@@ -218,7 +218,7 @@ let ``shell: the run joins the cross-run ledger on every path (the full-export p
         let console = newConsole ()
         // the publish path (SelfBracketed) — the arm that used to skip the ledger
         Shell.executeOn console false false (goFrame "projection full-export") Shell.Bracket.SelfBracketed None (fun () -> 0) |> ignore
-        let records = RunLedger.read dir
+        let records = RunIndex.read dir
         Assert.Equal(1, List.length records)
         Assert.Equal("projection full-export", (List.head records).Command)
     finally
@@ -306,7 +306,7 @@ let ``echo-the-fix: a suggestedConfig-bearing envelope ticks the board's live te
     // the teaser renders through the catalog (one register)
     let console = new TestConsole()
     console.Write(Watch.toRenderableWith [] 0 None b2)
-    Assert.Contains("2 optional configuration recommendation(s) gathered", console.Output)
+    Assert.Contains("2 optional configuration recommendations gathered", console.Output)
 
 [<Fact>]
 let ``stat view: the aggregates table names category, code, and count, most-frequent first`` () =

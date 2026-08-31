@@ -486,7 +486,7 @@ let ``override: KeepUntracked outranks even the source-backed carve-out`` () =
     // wins outright.
     let backedRef = orderRef |> Reference.withConstraintState true true
     let cfg = ForeignKeyTighteningConfig.relaxationOnly
-                [ { ReferenceKey = backedRef.SsKey; Action = KeepUntracked } ]
+                [ { ReferenceKey = backedRef.SsKey; Action = KeepUntracked; Provenance = None } ]
     let decision = decide cfg sampleCatalog order backedRef Profile.empty
     Assert.Equal(
         ForeignKeyOutcome.DoNotEnforce ForeignKeyKeepReason.OperatorUntracked,
@@ -496,7 +496,7 @@ let ``override: KeepUntracked outranks even the source-backed carve-out`` () =
 let ``override: KeepUntracked is absolute under the evidence-driven direction too`` () =
     let cfg =
         { mkConfig true true true with
-            Overrides = [ { ReferenceKey = orderRef.SsKey; Action = KeepUntracked } ] }
+            Overrides = [ { ReferenceKey = orderRef.SsKey; Action = KeepUntracked; Provenance = None } ] }
     let profile =
         { Profile.empty with
             ForeignKeys = [ mkReality orderRef.SsKey false 0L Succeeded ] }
@@ -513,8 +513,11 @@ let ``direction: a relaxation-only intervention carries the declared shape for e
     // NoCheckFk). Under EvidenceDriven the same evidence-free shape
     // reads DoNotEnforce(EvidenceMissing).
     let cfg = ForeignKeyTighteningConfig.relaxationOnly
-                [ { ReferenceKey = ssKey "SomeOtherReference"; Action = KeepUntracked } ]
+                [ { ReferenceKey = ssKey "SomeOtherReference"; Action = KeepUntracked; Provenance = None } ]
     let decision = decide cfg sampleCatalog order orderRef Profile.empty
     Assert.Equal(
-        ForeignKeyOutcome.EnforceConstraint DeclaredShapeCarried,
+        ForeignKeyOutcome.DeclaredShapeCarried,
         decision.Outcome)
+    // align-II.4: the abstain no longer answers `enforces` true — the
+    // predicate's stated meaning holds.
+    Assert.False(ForeignKeyRules.enforces decision)

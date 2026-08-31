@@ -8,9 +8,11 @@ open Projection.Targets.SSDT
 
 // ---------------------------------------------------------------------------
 // E1 (debrief G3) — non-PK index structure is reflected in PhysicalSchema and
-// survives the emit → deploy → ReadSide round-trip. Retires the prior
-// `Tolerance.IndexesUnreflected` (index *structure* is now compared; index
-// *options* remain the narrower `IndexOptionsUnreflected` residual).
+// survives the emit → deploy → ReadSide round-trip. Retired the prior
+// `Tolerance.IndexesUnreflected` (structure), and schema-L3.1 closed the
+// narrower `IndexOptionsUnreflected` too: the OPTION surface (filter /
+// INCLUDE / storage flags) is now recovered, compared, and witnessed here
+// by the two-arm closure (agreement + falsifiability) below.
 //
 // The wide canary deploys the source DDL, reads it back, runs V2's emitter,
 // deploys + reads back again, and diffs on `PhysicalSchema` — which now carries
@@ -25,8 +27,11 @@ let private skipIfNoDocker (label: string) : bool =
         printfn "SKIP %s: Docker daemon not reachable." label
         false
 
-/// One table with a PK, a UNIQUE single-column index, and a non-unique
-/// two-column index — all INT columns so the column axis round-trips cleanly
+/// One table with a PK, a UNIQUE single-column index (carrying
+/// IGNORE_DUP_KEY), a non-unique two-column index, and — schema-L3.1, the
+/// `IndexOptionsUnreflected` closure witness — a filtered covering index
+/// with INCLUDE + FILLFACTOR + PAD_INDEX, so the OPTION surface round-trips
+/// non-vacuously. All INT columns so the column axis round-trips cleanly
 /// (V2 emits Text as NVARCHAR(MAX); ints avoid the known length tolerance).
 let private widgetDdl : string =
     "CREATE TABLE [dbo].[OSUSR_E1_WIDGET] ( \
@@ -34,8 +39,10 @@ let private widgetDdl : string =
        [CODE] INT NOT NULL, \
        [REGION] INT NOT NULL \
      ); \
-     CREATE UNIQUE INDEX [UX_WIDGET_CODE] ON [dbo].[OSUSR_E1_WIDGET] ([CODE]); \
-     CREATE INDEX [IX_WIDGET_REGION_CODE] ON [dbo].[OSUSR_E1_WIDGET] ([REGION], [CODE]);"
+     CREATE UNIQUE INDEX [UX_WIDGET_CODE] ON [dbo].[OSUSR_E1_WIDGET] ([CODE]) WITH (IGNORE_DUP_KEY = ON); \
+     CREATE INDEX [IX_WIDGET_REGION_CODE] ON [dbo].[OSUSR_E1_WIDGET] ([REGION], [CODE]); \
+     CREATE UNIQUE INDEX [UX_WIDGET_REGION] ON [dbo].[OSUSR_E1_WIDGET] ([REGION]) \
+       INCLUDE ([CODE]) WHERE [REGION] > 0 WITH (FILLFACTOR = 80, PAD_INDEX = ON);"
 
 [<Fact>]
 let ``E1: a UNIQUE/filtered index survives emit/deploy/ReadSide and is reflected in PhysicalSchema`` () =
@@ -74,10 +81,59 @@ let ``E1: a UNIQUE/filtered index survives emit/deploy/ReadSide and is reflected
         Assert.Equal("[REGION:ASC][CODE:ASC]", ix.KeyColumns)
     | other -> failwithf "expected exactly one IX_OSUSR_E1_WIDGET_REGION_CODE index, got %A" other
 
-    // Survives emit/deploy/ReadSide: the index axis (and every other) round-trips.
+    // schema-L3.1, AGREEMENT arm (non-vacuous): the OPTION surface is
+    // recovered — the filtered covering index carries its filter, INCLUDE,
+    // FILLFACTOR, and PAD_INDEX through readback and projection, and the
+    // IGNORE_DUP_KEY unique index carries its flag. A recovery that silently
+    // defaulted any of these would fail here before the diff could pass
+    // vacuously.
+    match byName "UIX_OSUSR_E1_WIDGET_REGION" with
+    | [ fx ] ->
+        Assert.True(fx.IsUnique)
+        Assert.Equal("region>0", fx.Filter)
+        Assert.Equal("[CODE]", fx.IncludedColumns)
+        Assert.Equal(Some 80, fx.FillFactor)
+        Assert.True(fx.IsPadded, "PAD_INDEX did not survive readback")
+    | other -> failwithf "expected exactly one UIX_OSUSR_E1_WIDGET_REGION index, got %A" other
+    match byName "UIX_OSUSR_E1_WIDGET_CODE" with
+    | [ ux ] -> Assert.True(ux.IgnoreDuplicateKey, "IGNORE_DUP_KEY did not survive readback")
+    | other -> failwithf "expected exactly one UIX_OSUSR_E1_WIDGET_CODE index, got %A" other
+
+    // Survives emit/deploy/ReadSide: the index axis (and every other) round-trips —
+    // and since schema-L3.1 the index-axis comparison INCLUDES the options.
     Assert.True(
         List.isEmpty report.Diff.MissingIndexes && List.isEmpty report.Diff.ExtraIndexes,
         sprintf "index round-trip diff non-empty:\n%s" (PhysicalSchema.renderDiff report.Diff))
     Assert.True(
         PhysicalSchema.isEqual report.Diff,
         sprintf "wide-canary diff non-empty:\n%s" (PhysicalSchema.renderDiff report.Diff))
+
+    // schema-L3.1, FALSIFIABILITY arm (the M1 two-arm pattern): strip the
+    // options from the read-back catalog and the projection DIVERGES against
+    // the faithful one — proving the comparator now SEES option drift, the
+    // exact blindness the retired `IndexOptionsUnreflected` tolerance named
+    // ("symmetric-but-lost on both halves"). Before the widening these two
+    // projections were EQUAL.
+    let blind =
+        report.Source
+        |> Catalog.mapKinds (fun k ->
+            { k with
+                Indexes =
+                    k.Indexes
+                    |> List.map (fun idx ->
+                        { idx with
+                            Filter = None
+                            IncludedColumns = []
+                            FillFactor = None
+                            IsPadded = false
+                            AllowRowLocks = true
+                            AllowPageLocks = true
+                            NoRecomputeStatistics = false
+                            IgnoreDuplicateKey = false
+                            IsDisabled = false
+                            DataCompression = None
+                            DataSpace = None }) })
+    let blindDiff = PhysicalSchema.diff (PhysicalSchema.ofCatalog blind) (PhysicalSchema.ofCatalog report.Source)
+    Assert.False(
+        List.isEmpty blindDiff.MissingIndexes && List.isEmpty blindDiff.ExtraIndexes,
+        "an option-stripped projection should DIVERGE on the index axis — the widened comparator failed to see option drift")

@@ -115,14 +115,16 @@ let private snapshot () : MetadataSnapshotRunner.MetadataSnapshot =
       PhysColsPresent = []; Indexes = []; IndexColumns = []
       ForeignKeysReality = [ fkRealityRow 5000 (Some "CASCADE") ]
       ForeignKeyColumns  = [ fkColumnRow 201 5000 ]
-      Triggers = [] }
+      Triggers = []
+      Capabilities = []
+      Scope = MetadataSnapshotRunner.AcquisitionScope.Total }
 
 let private referenceByAttrId (bundle: OssysRowsetTypes.RowsetBundle) (attrId: int) : OssysRowsetTypes.ReferenceRow =
     bundle.References |> List.find (fun r -> r.AttrId = attrId)
 
 [<Fact>]
 let ``WP-1b: toBundle carries the reflected delete action on a backed reference, None on a logical-only one`` () =
-    let bundle = MetadataSnapshotRunner.toBundle (snapshot ())
+    let bundle = fst (MetadataSnapshotRunner.toBundle (snapshot ()))
     Assert.Equal(Some "CASCADE", (referenceByAttrId bundle 201).ReflectedOnDelete)
     Assert.Equal(None, (referenceByAttrId bundle 301).ReflectedOnDelete)
 

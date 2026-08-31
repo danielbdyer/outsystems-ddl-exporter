@@ -531,6 +531,7 @@ let private userAccountRefRow : OssysRowsetTypes.ReferenceRow =
         OnUpdate            = None
         ReflectedOnDelete   = None
         IsConstraintTrusted = true
+        Legs                = []
     }
 
 let private accountKindKey            = kindKey ["AppCore"; "Account"]
@@ -1617,7 +1618,8 @@ let ``a reference aimed at a dropped shadow's EntityId re-aims at the survivor (
                     HasDbConstraint     = true
                     OnUpdate            = None
                     ReflectedOnDelete   = None
-                    IsConstraintTrusted = true } ] }
+                    IsConstraintTrusted = true
+                    Legs                = [] } ] }
     let normalized, _ = OssysRowsetReader.normalizeBundle bundle
     let reference = Assert.Single(normalized.References)
     Assert.Equal(Some 11, reference.RefEntityId)
@@ -1720,10 +1722,10 @@ let ``rowset 25: a temporal row lifts into ModalityMark.Temporal with history, p
         match tc with
         | None -> Assert.Fail "expected ModalityMark.Temporal on the system-versioned kind"
         | Some t ->
-            Assert.Equal(Some "history", t.HistorySchema)
-            Assert.Equal(Some "USER_History", t.HistoryTable)
-            Assert.Equal(Some "SysStartTime", t.PeriodStart |> Option.map Name.value)
-            Assert.Equal(Some "SysEndTime",   t.PeriodEnd   |> Option.map Name.value)
+            Assert.Equal(Some "history", t.HistoryTable |> Option.map TableId.schemaText)
+            Assert.Equal(Some "USER_History", t.HistoryTable |> Option.map TableId.tableText)
+            Assert.Equal(Some "SysStartTime", t.Period |> Option.map (fun p -> Name.value p.Start))
+            Assert.Equal(Some "SysEndTime",   t.Period |> Option.map (fun p -> Name.value p.End))
             Assert.Equal(Limited (6, Months), t.Retention)
 
 [<Fact>]

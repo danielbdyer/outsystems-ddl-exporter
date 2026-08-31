@@ -237,7 +237,9 @@ module PeerTransfer =
         let advisoryDrift (label: string) (keys: Set<SsKey>) (action: string) =
             if not (Set.isEmpty keys) then
                 let names = keys |> Set.toList |> List.map (kindNameIn src) |> String.concat ", "
-                advisory.Add (sprintf "%s differ(s) on: %s — %s" label names action)
+                // Every label this helper receives is a plural noun ("indexes",
+                // "foreign-key constraints"), so the bare plural verb agrees.
+                advisory.Add (sprintf "%s differ on: %s — %s" label names action)
         let scopedKeys (m: Map<SsKey, 'a>) : Set<SsKey> =
             m |> Map.filter (fun k _ -> inScope k) |> Map.toSeq |> Seq.map fst |> Set.ofSeq
         let fkDrift    = scopedKeys (CatalogDiff.referenceDiffs diff)
@@ -280,7 +282,7 @@ module PeerTransfer =
         else
             Result.failureOf
                 (ValidationError.create "transfer.peer.shapeDivergence"
-                    (sprintf "the source and sink models are not one shape over the transferred set (%d blocking divergence(s)): %s"
+                    (sprintf "the source and sink models are not one shape over the transferred set (%d blocking divergences): %s"
                         verdict.Blocking.Length
                         (String.concat " " verdict.Blocking)))
 
@@ -387,7 +389,7 @@ module PeerTransfer =
         if execute && not (List.isEmpty escapes) then
             Result.failureOf
                 (ValidationError.create "transfer.peer.subsetFkEscapes"
-                    (sprintf "%d relationship(s) escape the declared table subset; each needs a strategy before a live run (their rows would keep SOURCE-environment references — --allow-drops does not cover this): %s"
+                    (sprintf "%d relationships escape the declared table subset; each needs a strategy before a live run (their rows would keep SOURCE-environment references — --allow-drops does not cover this): %s"
                         escapes.Length
                         (String.concat " " (narrateEscapes escapes))))
         else Result.success ()
@@ -535,7 +537,7 @@ module PeerTransfer =
                 let uniq = if sinkUnique then "sink-unique" else "NOT sink-unique (duplicate values tiebreak to the oldest sink row)"
                 let sample =
                     if size = 0 then "no non-null source values to sample"
-                    else sprintf "%d/%d sampled source value(s) found in the sink" hits size
+                    else sprintf "%d/%s found in the sink" hits (sprintf "%d %s" size (if size = 1 then "sampled source value" else "sampled source values"))
                 let strength =
                     if size = 0 then "unproven"
                     elif hits < size then "PARTIAL — the unmatched source rows would halt a live reconcile"

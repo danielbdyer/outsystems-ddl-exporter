@@ -90,6 +90,37 @@ module ProbeStatus =
           Outcome       = AmbiguousMapping }
 
 
+
+/// align-II.4b (a4-3) — the ONE reading of a profile probe's epistemic
+/// state, unifying the trichotomy three strategies spelled three ways:
+/// "no candidate was ever profiled" is NOT "a probe ran and came back
+/// unreliable" is NOT "reliable evidence". The strategy probe helpers
+/// return this instead of collapsing to option — the collapse site was
+/// erasing "a probe was attempted and failed", exactly the fact that
+/// separates the operator advice "run the profiler" from "your probe
+/// failed — investigate".
+[<RequireQualifiedAccess>]
+type ProbeReading<'r> =
+    | NotProfiled
+    | Unreliable of status: ProbeStatus
+    | Reliable of reading: 'r
+
+[<RequireQualifiedAccess>]
+module ProbeReading =
+
+    /// Read an optional profiled candidate through its probe status —
+    /// the collapse-free classifier the strategy probes share.
+    let ofCandidate
+        (statusOf: 'c -> ProbeStatus)
+        (readingOf: 'c -> 'r)
+        (candidate: 'c option)
+        : ProbeReading<'r> =
+        match candidate with
+        | None -> ProbeReading.NotProfiled
+        | Some c when ProbeStatus.isReliable (statusOf c) -> ProbeReading.Reliable (readingOf c)
+        | Some c -> ProbeReading.Unreliable (statusOf c)
+
+
 /// Per-column data-quality observation. Keyed by the Attribute's `SsKey`
 /// so consumers look up by identity (A4), not by physical coordinate. The
 /// Profiling Adapter performs (schema, table, column) → `SsKey` resolution

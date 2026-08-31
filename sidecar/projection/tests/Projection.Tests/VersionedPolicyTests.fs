@@ -265,7 +265,7 @@ let ``H-085: changed is false when policy is the same`` () =
 
 [<Fact>]
 let ``digest: two nullability configs differing only in direction digest differently`` () =
-    let overrides = [ { AttributeKey = testKey "Attr"; Action = OverrideAction.KeepNullable } ]
+    let overrides = [ { AttributeKey = testKey "Attr"; Action = OverrideAction.KeepNullable; Provenance = None } ]
     let evidence =
         NullabilityTighteningConfig.create 0.0m false overrides |> Result.value
     let relaxation = NullabilityTighteningConfig.relaxationOnly false overrides
@@ -278,7 +278,7 @@ let ``digest: two foreignKey configs differing only in a reference override dige
     let bare = ForeignKeyTighteningConfig.relaxationOnly []
     let withOverride =
         ForeignKeyTighteningConfig.relaxationOnly
-            [ { ReferenceKey = testKey "Ref"; Action = KeepUntracked } ]
+            [ { ReferenceKey = testKey "Ref"; Action = KeepUntracked; Provenance = None } ]
     let p1 = { Policy.empty with Tightening = { Interventions = [ ForeignKey ("i", bare) ] } }
     let p2 = { Policy.empty with Tightening = { Interventions = [ ForeignKey ("i", withOverride) ] } }
     Assert.NotEqual<string>(VersionedPolicy.digestOf p1, VersionedPolicy.digestOf p2)

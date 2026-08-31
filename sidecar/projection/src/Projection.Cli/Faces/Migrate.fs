@@ -75,7 +75,7 @@ let migratePreviewSurface (artifacts: MigrationArtifacts) : Surface.Surface =
             [ View.Field("tables", sprintf "%s added · %s dropped · %s renamed" (h c.AddedKinds) (h c.RemovedKinds) (h c.RenamedKinds), View.Neutral)
               View.Field("columns", sprintf "%s added · %s dropped · %s renamed · %s changed" (h c.AddedAttributes) (h c.RemovedAttributes) (h c.RenamedAttributes) (h c.ChangedAttributes), View.Neutral) ]
             @ (if List.isEmpty renames then [] else [ View.Lane("⟲", "rename", View.Ok, renames) ])
-            @ [ View.Field("to run", sprintf "%s statement(s) · %s rename(s) recorded" (h (List.length artifacts.SchemaStatements)) (h (List.length artifacts.RefactorLog)), View.Neutral) ]
+            @ [ View.Field("to run", sprintf "%s %s · %s %s recorded" (h (List.length artifacts.SchemaStatements)) (if List.length artifacts.SchemaStatements = 1 then "statement" else "statements") (h (List.length artifacts.RefactorLog)) (if List.length artifacts.RefactorLog = 1 then "rename" else "renames"), View.Neutral) ]
           Action         = Some(View.Action "Apply against the target database with --execute.") }
 
 /// Voice the §5 declared-loss gate for undeclared destructive removals — the
@@ -83,7 +83,7 @@ let migratePreviewSurface (artifacts: MigrationArtifacts) : Surface.Surface =
 /// and the approval lever lead, the named removals ride in the substantiation.
 let renderUndeclaredDropGate (violations: SchemaLoss list) : unit =
     let tokens = violations |> List.map Migration.lossToken |> String.concat ", "
-    let detail = sprintf "%d removal(s) await approval: %s" (List.length violations) tokens
+    let detail = sprintf "%s await approval: %s" (sprintf "%d %s" (List.length violations) (if (List.length violations) = 1 then "removal" else "removals")) tokens
     TtyRenderer.renderGate "projection migrate"
         (Preflight.refusalOf [ ValidationError.create "migrate.undeclaredDestructiveChange" detail ])
 
@@ -190,7 +190,7 @@ let reportMigrationError (e: MigrationError) : int =
         TtyRenderer.renderGate "projection migrate"
             (Preflight.refusalOf
                 [ ValidationError.create "migrate.cdcTrackedSink"
-                    (sprintf "%d table(s) are CDC-tracked; --allow-cdc accepts the capture." (List.length tracked)) ])
+                    (sprintf "%s are CDC-tracked; --allow-cdc accepts the capture." (sprintf "%d %s" (List.length tracked) (if (List.length tracked) = 1 then "table" else "tables"))) ])
         9
     | RefusedByCdcUnverifiable msg ->
         // NM-54 — the CDC probe could not run; an unverifiable CDC state is
@@ -219,7 +219,7 @@ let reportMigrationError (e: MigrationError) : int =
         TtyRenderer.renderGate "projection migrate"
             (Preflight.refusalOf
                 [ ValidationError.create "migrate.executionRolledBack"
-                    (sprintf "the migration was rolled back to its original state (%d rename(s) reverted): %s" n msg) ])
+                    (sprintf "the migration was rolled back to its original state (%s reverted): %s" (sprintf "%d %s" n (if n = 1 then "rename" else "renames")) msg) ])
         9
     | PartialWriteUnrecovered (msg, residual) ->
         // M21 — the loudest honest outcome: a non-rename residual could not be
@@ -318,7 +318,7 @@ let tighteningPreflight
                     LogSink.emit (EventProjection.tighteningRelaxedEnvelope keys)
                     // LINT-ALLOW: register-clean operator acknowledgment at the boundary.
                     eprintfn
-                        "projection migrate: relaxed %d column(s) to nullable to fit the data; the model still declares NOT NULL — remediate the source and re-tighten."
+                        "projection migrate: relaxed %d columns to nullable to fit the data; the model still declares NOT NULL — remediate the source and re-tighten."
                         (Set.count keys)
                     Ok (Preflight.relaxTightening keys target)
                 let halt () : Result<Catalog, int> =
@@ -395,9 +395,9 @@ let private runMigrateExecuteLeg
                 match recorded with
                 | Ok (o, Some chain) ->
                     let detail =
-                        sprintf "%d statement(s) applied; recorded to %s (%d episode(s) on timeline %s)."
-                            (List.length o.Artifacts.SchemaStatements) store
-                            (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
+                        sprintf "%s applied; recorded to %s (%s on timeline %s)."
+                            (sprintf "%d %s" (List.length o.Artifacts.SchemaStatements) (if List.length o.Artifacts.SchemaStatements = 1 then "statement" else "statements")) store
+                            (sprintf "%d %s" (EpisodicLifecycle.episodes chain |> List.length) (if (EpisodicLifecycle.episodes chain |> List.length) = 1 then "episode" else "episodes")) (Timeline.name tl)
                     TtyRenderer.renderVoicedTo Console.Out "migrate.applied" (Map.ofList [ "detail", box detail ] : Voice.Payload)
                     return 0
                 | Ok (_, None) ->
@@ -409,8 +409,9 @@ let private runMigrateExecuteLeg
             match outcome with
             | Ok (o, cdcDelta) when o.Verified ->
                 let detail =
-                    sprintf "%d statement(s) applied; %d row(s) captured."
-                        (List.length o.Artifacts.SchemaStatements) cdcDelta
+                    sprintf "%s applied; %s captured."
+                        (sprintf "%d %s" (List.length o.Artifacts.SchemaStatements) (if List.length o.Artifacts.SchemaStatements = 1 then "statement" else "statements"))
+                        (sprintf "%d %s" cdcDelta (if cdcDelta = 1 then "row" else "rows"))
                 TtyRenderer.renderVoicedTo Console.Out "migrate.applied" (Map.ofList [ "detail", box detail ] : Voice.Payload)
                 eprintfn "projection migrate: note — no --lifecycle-store supplied; no episode persisted (the next diff has no prior to load)."
                 return 0
@@ -524,10 +525,10 @@ let private runMigrateWithDataLeg
                         sinkSourceA target reconciliation store tl env at None dataSource sink
                 match recorded with
                 | Ok (o, chain) ->
-                    printfn "Schema applied and data loaded — %d table(s) transferred; recorded to %s (%d row(s) captured; %d episode(s) on timeline %s)."
-                        (List.length o.Transfer.Kinds) store
-                        (EpisodicLifecycle.latest chain).Data.CdcCaptureCount
-                        (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
+                    printfn "Schema applied and data loaded — %s transferred; recorded to %s (%s captured; %s on timeline %s)."
+                        (sprintf "%d %s" (List.length o.Transfer.Kinds) (if List.length o.Transfer.Kinds = 1 then "table" else "tables")) store
+                        (sprintf "%d %s" (Projection.Core.DataObservation.captureCount (EpisodicLifecycle.latest chain).Data) (if Projection.Core.DataObservation.captureCount (EpisodicLifecycle.latest chain).Data = 1 then "row" else "rows"))
+                        (sprintf "%d %s" (EpisodicLifecycle.episodes chain |> List.length) (if (EpisodicLifecycle.episodes chain |> List.length) = 1 then "episode" else "episodes")) (Timeline.name tl)
                     return 0
                 | Error e -> return reportMigrationError e
         | None ->
@@ -536,8 +537,8 @@ let private runMigrateWithDataLeg
                     sinkSourceA target reconciliation dataSource sink
             match outcome with
             | Ok o when o.Schema.Verified ->
-                printfn "Schema verified and data loaded — %d table(s) transferred."
-                    (List.length o.Transfer.Kinds)
+                printfn "Schema verified and data loaded — %s transferred."
+                    (sprintf "%d %s" (List.length o.Transfer.Kinds) (if List.length o.Transfer.Kinds = 1 then "table" else "tables"))
                 return 0
             | Ok _ ->
                 Console.Error.WriteLine "The schema changes were applied, but the read-back does not match the model. The data load was skipped."

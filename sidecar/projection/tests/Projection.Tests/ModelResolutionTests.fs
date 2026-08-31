@@ -8,6 +8,12 @@ open Projection.Pipeline
 // Live OSSYS is primary when configured; the osm_model.json file is the
 // optional fallback; neither is a named refusal. Pure selection law.
 
+/// align-III.1: expected-ordinal literal for asserts (patterns can't call functions).
+let private ord (n: int) : SyncOrdinal =
+    match SyncOrdinal.create n with
+    | Ok o -> o
+    | Error m -> failwith m
+
 [<Fact>]
 let ``primary: live OSSYS wins when configured`` () =
     match ModelResolution.chooseOrigin (Some "env:OSSYS_CONN") (Some "model.json") with
@@ -31,3 +37,43 @@ let ``neither source configured is a named refusal`` () =
     match ModelResolution.chooseOrigin None None with
     | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "model.noSource")
     | Ok o -> Assert.Fail(sprintf "expected refusal, got %A" o)
+
+// The data-sink chapter, S7 — the full selection (`chooseOriginWith`): the
+// sink env is the LAST online fallback (no existing resolution changes
+// shape), and --offline pins away from the wire (sink preferred, file
+// allowed, live forbidden; nothing offline-true configured is its own named
+// refusal).
+
+[<Fact>]
+let ``online: the sink env serves only when nothing live or authored is configured`` () =
+    match ModelResolution.chooseOriginWith false (Some ("uat", None)) (Some "env:OSSYS_CONN") (Some "model.json") with
+    | Ok (ModelResolution.LiveOssys _) -> ()
+    | other -> Assert.Fail(sprintf "expected live to keep primacy, got %A" other)
+    match ModelResolution.chooseOriginWith false (Some ("uat", None)) None (Some "model.json") with
+    | Ok (ModelResolution.ModelFile _) -> ()
+    | other -> Assert.Fail(sprintf "expected the file to keep its fallback slot, got %A" other)
+    match ModelResolution.chooseOriginWith false (Some ("uat", Some (ord 3))) None None with
+    | Ok (ModelResolution.SinkWitness ("uat", Some o)) when o = ord 3 -> ()
+    | other -> Assert.Fail(sprintf "expected the sink as last fallback, got %A" other)
+
+[<Fact>]
+let ``offline: the sink is preferred, the file serves, live never resolves`` () =
+    match ModelResolution.chooseOriginWith true (Some ("uat", None)) (Some "env:OSSYS_CONN") (Some "model.json") with
+    | Ok (ModelResolution.SinkWitness ("uat", None)) -> ()
+    | other -> Assert.Fail(sprintf "expected the sink under --offline, got %A" other)
+    match ModelResolution.chooseOriginWith true None (Some "env:OSSYS_CONN") (Some "model.json") with
+    | Ok (ModelResolution.ModelFile "model.json") -> ()
+    | other -> Assert.Fail(sprintf "expected the file (already offline-true), got %A" other)
+
+[<Fact>]
+let ``offline with nothing offline-true configured is its own named refusal`` () =
+    match ModelResolution.chooseOriginWith true None (Some "env:OSSYS_CONN") None with
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "model.offline.noSource")
+    | Ok o -> Assert.Fail(sprintf "expected the offline refusal, got %A" o)
+
+[<Fact>]
+let ``the two-source form is the full form under (offline=false, no sink) — one selection law`` () =
+    match ModelResolution.chooseOrigin (Some "c") (Some "f"),
+          ModelResolution.chooseOriginWith false None (Some "c") (Some "f") with
+    | Ok a, Ok b -> Assert.Equal(a, b)
+    | a, b -> Assert.Fail(sprintf "expected agreement, got %A vs %A" a b)

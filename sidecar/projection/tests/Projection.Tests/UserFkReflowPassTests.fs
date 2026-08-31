@@ -92,8 +92,10 @@ let ``ByEmail: matched user emits one Annotated lineage event`` () =
     let event = List.head result.Trail
     Assert.Equal<string> ("userFkReflow", event.PassName)
     match event.TransformKind with
-    | Annotated (Label label) -> Assert.Equal<string> ("userFkReflow.matched-by-ByEmail", label)
-    | other                   -> Assert.Fail (sprintf "expected Annotated (Label _), got %A" other)
+    | Annotated (UserMatchDecision leg) ->
+        Assert.Equal (UserMatchLeg.ByEmail, leg)
+        Assert.Equal<string> ("userFkReflow.matched-by-ByEmail", AnnotationDetail.toDiagnosticString (UserMatchDecision leg))
+    | other -> Assert.Fail (sprintf "expected Annotated (UserMatchDecision _), got %A" other)
 
 [<Fact>]
 let ``ByEmail: matched user emits zero diagnostics`` () =
@@ -259,7 +261,7 @@ let ``BySsKey: one source + matching SsKey target yields one mapping`` () =
     Assert.True (Set.isEmpty ctx.Unmatched)
 
 [<Fact>]
-let ``BySsKey: emits matched-by-BySsKey lineage label`` () =
+let ``BySsKey: emits the typed matched-by-BySsKey decision`` () =
     let sharedKey = mkSsKey ["U"; "GUID-1"]
     let source =
         UserAttributes.create (SourceUserId.ofInt 1) sharedKey None
@@ -269,8 +271,10 @@ let ``BySsKey: emits matched-by-BySsKey lineage label`` () =
         UserFkReflowPass.discover (srcs [ source ]) (tgts [ target ]) BySsKey
     let event = List.head result.Trail
     match event.TransformKind with
-    | Annotated (Label label) -> Assert.Equal<string> ("userFkReflow.matched-by-BySsKey", label)
-    | other                   -> Assert.Fail (sprintf "expected Annotated (Label _), got %A" other)
+    | Annotated (UserMatchDecision leg) ->
+        Assert.Equal (UserMatchLeg.BySsKey, leg)
+        Assert.Equal<string> ("userFkReflow.matched-by-BySsKey", AnnotationDetail.toDiagnosticString (UserMatchDecision leg))
+    | other -> Assert.Fail (sprintf "expected Annotated (UserMatchDecision _), got %A" other)
 
 [<Fact>]
 let ``BySsKey: source SsKey absent from target yields SsKeyDidNotMatch diagnostic`` () =
@@ -305,7 +309,7 @@ let ``ManualOverride: source in override map yields one mapping`` () =
     Assert.True (Set.isEmpty ctx.Unmatched)
 
 [<Fact>]
-let ``ManualOverride: emits matched-by-ManualOverride lineage label`` () =
+let ``ManualOverride: emits the typed matched-by-ManualOverride decision`` () =
     let source = mkSourceUser 1 ["U"; "S1"] None
     let overrideMap =
         Map.ofList [ SourceUserId.ofInt 1, TargetUserId.ofInt 100 ]
@@ -314,8 +318,10 @@ let ``ManualOverride: emits matched-by-ManualOverride lineage label`` () =
             (srcs [ source ]) UserPopulation.empty
             (ManualOverride overrideMap)
     match (List.head result.Trail).TransformKind with
-    | Annotated (Label label) -> Assert.Equal<string> ("userFkReflow.matched-by-ManualOverride", label)
-    | other                   -> Assert.Fail (sprintf "expected Annotated (Label _), got %A" other)
+    | Annotated (UserMatchDecision leg) ->
+        Assert.Equal (UserMatchLeg.ManualOverride, leg)
+        Assert.Equal<string> ("userFkReflow.matched-by-ManualOverride", AnnotationDetail.toDiagnosticString (UserMatchDecision leg))
+    | other -> Assert.Fail (sprintf "expected Annotated (UserMatchDecision _), got %A" other)
 
 [<Fact>]
 let ``ManualOverride: source absent from map yields OverrideMissing diagnostic`` () =
@@ -334,7 +340,7 @@ let ``ManualOverride: source absent from map yields OverrideMissing diagnostic``
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``FallbackToSystemUser: primary match yields matched-by-FallbackToSystemUser.primary label`` () =
+let ``FallbackToSystemUser: primary match yields the typed FallbackPrimary decision`` () =
     let source = mkSourceUser 1 ["U"; "S1"] (Some "alice@example.com")
     let target = mkTargetUser 100 ["U"; "T100"] (Some "alice@example.com")
     let fallback = TargetUserId.ofInt 999
@@ -346,11 +352,13 @@ let ``FallbackToSystemUser: primary match yields matched-by-FallbackToSystemUser
     // Primary matched → target = 100 (not the fallback).
     Assert.Equal<TargetUserId option> (Some (TargetUserId.ofInt 100), Map.tryFind (SourceUserId.ofInt 1) ctx.Mapping)
     match (List.head result.Trail).TransformKind with
-    | Annotated (Label label) -> Assert.Equal<string> ("userFkReflow.matched-by-FallbackToSystemUser.primary", label)
-    | other                   -> Assert.Fail (sprintf "expected primary label, got %A" other)
+    | Annotated (UserMatchDecision leg) ->
+        Assert.Equal (UserMatchLeg.FallbackPrimary, leg)
+        Assert.Equal<string> ("userFkReflow.matched-by-FallbackToSystemUser.primary", AnnotationDetail.toDiagnosticString (UserMatchDecision leg))
+    | other -> Assert.Fail (sprintf "expected Annotated (UserMatchDecision _), got %A" other)
 
 [<Fact>]
-let ``FallbackToSystemUser: primary miss yields fallback match + matched-by-FallbackToSystemUser.fallback label`` () =
+let ``FallbackToSystemUser: primary miss yields the typed FallbackFallback decision`` () =
     // Source has no email match in target population → primary
     // ByEmail fails → fallback target is applied.
     let source = mkSourceUser 1 ["U"; "S1"] (Some "alice@example.com")
@@ -363,8 +371,10 @@ let ``FallbackToSystemUser: primary miss yields fallback match + matched-by-Fall
     // Fallback applied → target = 999.
     Assert.Equal<TargetUserId option> (Some (TargetUserId.ofInt 999), Map.tryFind (SourceUserId.ofInt 1) ctx.Mapping)
     match (List.head result.Trail).TransformKind with
-    | Annotated (Label label) -> Assert.Equal<string> ("userFkReflow.matched-by-FallbackToSystemUser.fallback", label)
-    | other                   -> Assert.Fail (sprintf "expected fallback label, got %A" other)
+    | Annotated (UserMatchDecision leg) ->
+        Assert.Equal (UserMatchLeg.FallbackFallback, leg)
+        Assert.Equal<string> ("userFkReflow.matched-by-FallbackToSystemUser.fallback", AnnotationDetail.toDiagnosticString (UserMatchDecision leg))
+    | other -> Assert.Fail (sprintf "expected Annotated (UserMatchDecision _), got %A" other)
 
 [<Fact>]
 let ``FallbackToSystemUser: structurally guarantees Set.isEmpty Unmatched (safety net)`` () =

@@ -75,7 +75,7 @@ let ``5.13.remediation: nullability conflict emits 3 options for offending attri
     Assert.Contains("SELECT * FROM [dbo].[OSUSR_S1S_CUSTOMER] WHERE [NAME] IS NULL;", sql)
     Assert.Contains("-- UPDATE [dbo].[OSUSR_S1S_CUSTOMER] SET [NAME] = <DEFAULT> WHERE [NAME] IS NULL;", sql)
     Assert.Contains("-- DELETE FROM [dbo].[OSUSR_S1S_CUSTOMER] WHERE [NAME] IS NULL;", sql)
-    Assert.Contains("Reason: Mandatory column has 42 null(s)", sql)
+    Assert.Contains("Reason: Mandatory column has 42 nulls", sql)
     Assert.Contains("intervention: nullability-budget", sql)
 
 [<Fact>]
@@ -95,7 +95,7 @@ let ``5.13.remediation: FK orphan finding emits SELECT NOT IN + commented UPDATE
     let sql =
         RemediationEmitter.emit sampleCatalog emptyNullability emptyUniqueIndex fk
     Assert.Contains("SELECT * FROM [dbo].[OSUSR_S1S_ORDER] WHERE [CUSTOMER_ID] IS NOT NULL;", sql)
-    Assert.Contains("Reason: Reference has 7 orphan row(s)", sql)
+    Assert.Contains("Reason: Reference has 7 orphan rows", sql)
 
 [<Fact>]
 let ``5.13.remediation: FK EnforceConstraint does not produce remediation`` () =
@@ -190,7 +190,7 @@ let ``data reality: nulls in a NOT NULL column emit the 3 options with the obser
         RemediationEmitter.emitWith sampleCatalog emptyNullability emptyUniqueIndex emptyForeignKey
             [ finding "Customer" "Name" (RemediationEmitter.NullsInNotNullColumn 5L) ]
     Assert.Contains("data reality: nulls in a NOT NULL column", sql)
-    Assert.Contains("5 null value(s) observed", sql)
+    Assert.Contains("5 null values observed", sql)
     Assert.Contains("SELECT * FROM [dbo].[OSUSR_S1S_CUSTOMER] WHERE [NAME] IS NULL;", sql)
     Assert.Contains("-- UPDATE [dbo].[OSUSR_S1S_CUSTOMER] SET [NAME] = <DEFAULT> WHERE [NAME] IS NULL;", sql)
     Assert.Contains("-- DELETE FROM [dbo].[OSUSR_S1S_CUSTOMER] WHERE [NAME] IS NULL;", sql)
@@ -202,7 +202,7 @@ let ``data reality: an orphaned reference resolves the target table + PK to conc
         RemediationEmitter.emitWith sampleCatalog emptyNullability emptyUniqueIndex emptyForeignKey
             [ finding "Order" "CustomerId" (RemediationEmitter.OrphanedReference 7L) ]
     Assert.Contains("data reality: relationship values without a matching record", sql)
-    Assert.Contains("7 source row(s) reference a target record that does not exist", sql)
+    Assert.Contains("7 source rows reference a target record that does not exist", sql)
     // The target resolves through the catalog — the concrete Customer PK, no placeholders.
     Assert.Contains("NOT IN (SELECT [ID] FROM [dbo].[OSUSR_S1S_CUSTOMER])", sql)
     Assert.DoesNotContain("<TargetTable>", sql)

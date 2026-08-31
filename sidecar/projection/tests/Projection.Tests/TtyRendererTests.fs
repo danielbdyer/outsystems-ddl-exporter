@@ -92,7 +92,7 @@ let ``Tier-3: the data-reality finding rides the panel with the remediation next
         renderToString "projection publish" 0 (fun () ->
             LogSink.emit (LogSink.envelope LogSink.Warn LogSink.Emit ModelFidelity.dataViolationsCode payload))
     Assert.Contains("data reality", text)
-    Assert.Contains("7 violation(s) across 4 table(s)", text)
+    Assert.Contains("7 violations across 4 tables", text)
     Assert.Contains("review ./dist/full-export/manifest.remediation.sql", text)
 
 [<Fact>]
@@ -100,7 +100,7 @@ let ``Tier-3: a run with no data-reality finding shows no data-reality row`` () 
     let text = renderToString "projection publish" 0 (fun () -> ())
     Assert.DoesNotContain("data reality", text)
 
-let private renderBoard (r: RunLedger.Readiness) (recent: string list) : string =
+let private renderBoard (r: RunIndex.Readiness) (recent: string list) : string =
     use sw = new StringWriter()
     let console =
         AnsiConsole.Create(
@@ -109,14 +109,14 @@ let private renderBoard (r: RunLedger.Readiness) (recent: string list) : string 
                 ColorSystem = ColorSystemSupport.NoColors,
                 Out = AnsiConsoleOutput(sw)))
     console.Profile.Width <- 200
-    TtyRenderer.renderReadinessBoardTo console r recent [] "/x/runs.jsonl"
+    TtyRenderer.renderReadinessBoardTo console r (recent |> List.map (fun s -> CanaryVerdict.ofTokenOpt (Some s))) [] "/x/runs.jsonl"
     sw.ToString()
 
 [<Fact>]
 let ``Tier-4 board: leads with ELIGIBLE + full meter + history dots`` () =
-    let r : RunLedger.Readiness =
+    let r : RunIndex.Readiness =
         { TotalRuns = 12; CanaryRuns = 12; ConsecutiveGreen = 10
-          LastCanary = Some "green"; Threshold = 10; Eligible = true }
+          LastCanary = Some CanaryVerdict.Green; SkippedLines = 0; Threshold = 10; Eligible = true }
     let text = renderBoard r [ "green"; "green"; "red"; "green" ]
     Assert.Contains("ELIGIBLE", text)
     Assert.Contains("10 / 10 green", text)
@@ -125,9 +125,9 @@ let ``Tier-4 board: leads with ELIGIBLE + full meter + history dots`` () =
 
 [<Fact>]
 let ``Tier-4 board: NOT YET names the runs-to-go`` () =
-    let r : RunLedger.Readiness =
+    let r : RunIndex.Readiness =
         { TotalRuns = 8; CanaryRuns = 8; ConsecutiveGreen = 7
-          LastCanary = Some "green"; Threshold = 10; Eligible = false }
+          LastCanary = Some CanaryVerdict.Green; SkippedLines = 0; Threshold = 10; Eligible = false }
     let text = renderBoard r [ "green"; "red"; "green" ]
     Assert.Contains("NOT YET", text)
     Assert.Contains("3 green run", text)   // 10 - 7 = 3 to go
@@ -139,36 +139,36 @@ let ``Tier-4 board: NOT YET names the runs-to-go`` () =
 let ``Tier-4 board: the lever names a broken streak as the single blocking item`` () =
     // The most recent canary diverged → the honest one lever is restoring a green
     // check, not the raw distance (§8 — one lever, named, with the next move).
-    let r : RunLedger.Readiness =
+    let r : RunIndex.Readiness =
         { TotalRuns = 9; CanaryRuns = 9; ConsecutiveGreen = 0
-          LastCanary = Some "red"; Threshold = 10; Eligible = false }
+          LastCanary = Some CanaryVerdict.Red; SkippedLines = 0; Threshold = 10; Eligible = false }
     let text = renderBoard r [ "green"; "green"; "red" ]
     Assert.Contains("The lever", text)
     Assert.Contains("diverged", text)
 
 [<Fact>]
 let ``Tier-4 board: an eligible board names no lever (nothing in the way)`` () =
-    let r : RunLedger.Readiness =
+    let r : RunIndex.Readiness =
         { TotalRuns = 12; CanaryRuns = 12; ConsecutiveGreen = 10
-          LastCanary = Some "green"; Threshold = 10; Eligible = true }
+          LastCanary = Some CanaryVerdict.Green; SkippedLines = 0; Threshold = 10; Eligible = true }
     let text = renderBoard r [ "green"; "green"; "green" ]
     Assert.DoesNotContain("The lever", text)
 
 [<Fact>]
 let ``Tier-4 board: the timeline reads the recent checks in words and names the present run`` () =
-    let r : RunLedger.Readiness =
+    let r : RunIndex.Readiness =
         { TotalRuns = 11; CanaryRuns = 11; ConsecutiveGreen = 6
-          LastCanary = Some "green"; Threshold = 10; Eligible = false }
+          LastCanary = Some CanaryVerdict.Green; SkippedLines = 0; Threshold = 10; Eligible = false }
     let text = renderBoard r [ "green"; "green"; "red"; "green"; "green"; "green" ]
-    Assert.Contains("the last 6 check(s)", text)
+    Assert.Contains("the last 6 checks", text)
     Assert.Contains("1 diverged", text)
     Assert.Contains("run 11, the present one", text)
 
 [<Fact>]
 let ``Tier-4 board: an all-green timeline says so plainly`` () =
-    let r : RunLedger.Readiness =
+    let r : RunIndex.Readiness =
         { TotalRuns = 5; CanaryRuns = 5; ConsecutiveGreen = 5
-          LastCanary = Some "green"; Threshold = 10; Eligible = false }
+          LastCanary = Some CanaryVerdict.Green; SkippedLines = 0; Threshold = 10; Eligible = false }
     let text = renderBoard r [ "green"; "green"; "green" ]
     Assert.Contains("all passed", text)
 

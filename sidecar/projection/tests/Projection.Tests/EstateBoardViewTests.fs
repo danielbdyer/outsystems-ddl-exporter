@@ -31,7 +31,8 @@ let private divergedReport : Estate.EstateReport =
           Statement = "Status numbers 'Approved' as 3 in cloud-dev and 7 in cloud-uat."
           Lever = Some "Rule the seed: pin explicit key values in the model."
           Fork = true
-          Difficulty = None }
+          Difficulty = None
+          Pedigree = PedigreeEntry.ofEnvs [ "cloud-dev", 3L; "cloud-uat", 7L ] }
     let repair : Estate.Finding =
         { Key = FindingKey.create EstateFindingKind.DataNotNull "Customer.Email"
           Kind = EstateFindingKind.DataNotNull
@@ -41,7 +42,8 @@ let private divergedReport : Estate.EstateReport =
           Statement = "Customer.Email declares NOT NULL; cloud-uat holds 4,120 NULL rows."
           Lever = Some "Review block 2 of environments.remediation.cloud-uat.sql."
           Fork = false
-          Difficulty = None }
+          Difficulty = None
+          Pedigree = PedigreeEntry.ofEnvs [ "cloud-uat", 4120L ] }
     { Target = Estate.TargetOperand.AgreedEnv "cloud-dev"
       Bases =
         [ { Env = "cloud-dev"; DataEvidenceAvailable = true; Provenance = Estate.EvidenceProvenance.Live }
@@ -56,7 +58,8 @@ let private divergedReport : Estate.EstateReport =
       Burndown = None
       Streak = 0
       Fidelity = Estate.FidelityClause.Green ("cloud-uat-load", 2)
-      StaticInspected = true }
+      StaticInspected = true
+      Rulings = [] }
 
 /// A unified estate: no findings, a store, a streak — the empty state is a full
 /// surface (RT-13).
@@ -73,7 +76,7 @@ let ``ofReport: the masthead names each environment and its evidence provenance`
     Assert.Contains("cloud-dev", out)
     Assert.Contains("live data evidence, profiled this run", out)
     Assert.Contains("cloud-uat", out)
-    Assert.Contains("fingerprints (row count, max key, and content hash) clean across 214 kind(s)", out)
+    Assert.Contains("fingerprints (row count, max key, and content hash) clean across 214 tables", out)
 
 [<Fact>]
 let ``ofReport: the DECIDE fork's statement and the REPAIR finding's lever both render`` () =
@@ -84,6 +87,28 @@ let ``ofReport: the DECIDE fork's statement and the REPAIR finding's lever both 
     // The lever is the one child of its finding's disclosure — revealed at the
     // calm default depth.
     Assert.Contains("Review block 2 of environments.remediation.cloud-uat.sql.", out)
+
+[<Fact>]
+let ``ofReport: a recorded ruling renders on its finding in the lever's slot — the rich lens reads the same one-mint copy (align-II.5)`` () =
+    // The DECIDE fork carries a recorded ruling; the REPAIR finding stays
+    // levered. The ruling line is `Estate.rulingText`'s copy verbatim (one
+    // mint, two lenses), and the ACTION region stops asking the answered
+    // question — the fully-ruled queue says so.
+    let ruling : OperatorRuling<FindingKey> =
+        { Subject = FindingKey.create EstateFindingKind.DataStaticIdentity "Status"
+          Verdict = RulingVerdict.Confirmed
+          Basis = Some (BasisAnchor.FindingKey (FindingKey.create EstateFindingKind.DataStaticIdentity "Status"))
+          By = "dana"
+          At = System.DateTimeOffset(2026, 8, 16, 9, 0, 0, System.TimeSpan.Zero)
+          Rationale = Some "the dev numbering is the seed"
+          Reopen = None }
+    let out = render (divergedReport |> Estate.withRulings [ ruling ])
+    Assert.Contains("The ruling stands: confirmed by dana on 2026-08-16 — the dev numbering is the seed.", out)
+    // The ruled finding's lever imperative no longer renders; the unruled
+    // REPAIR finding's lever still does.
+    Assert.DoesNotContain("Rule the seed: pin explicit key values in the model.", out)
+    Assert.Contains("Review block 2 of environments.remediation.cloud-uat.sql.", out)
+    Assert.Contains("Every DECIDE finding carries its ruling", out)
 
 [<Fact>]
 let ``ofReport: the matrix renders each environment's per-plane counts`` () =
@@ -102,7 +127,7 @@ let ``ofReport: the fidelity clause and a remediation artifact ride the board`` 
 let ``ofReport: a unified estate renders a full surface — empty lanes named, the streak stated`` () =
     let out = render unifiedReport
     Assert.Contains("Nothing awaits a ruling.", out)   // the empty DECIDE lane, named
-    Assert.Contains("4 consecutive unified run(s)", out)
+    Assert.Contains("4 consecutive unified runs", out)
     // The one next move, for a holding estate.
     Assert.Contains("The estate holds", out)
 

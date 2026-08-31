@@ -76,6 +76,63 @@ module TighteningBinding =
                     "overrideAction.unknown"
                     (sprintf "Override action '%s' is unknown. Valid: 'keepNullable'." other))
 
+    /// align-II.2 — bind the optional ruling attribution on an override
+    /// row. The instant parses fail-closed (a malformed `approvedAt` is a
+    /// named refusal, never a silently-dropped attribution); the finding
+    /// key reconstructs through `FindingKey.tryParse` (unknown kind
+    /// tokens refuse by name). A row with NO attribution fields binds
+    /// `None` — the pre-provenance shape, byte-identical downstream.
+    let private bindProvenance
+        (context: string)
+        (approvedBy: string option)
+        (approvedAt: string option)
+        (rationale: string option)
+        (finding: string option)
+        : Result<OverrideProvenance option> =
+        match approvedBy, approvedAt, rationale, finding with
+        | None, None, None, None -> Result.success None
+        | None, _, _, _ ->
+            Result.failureOf (
+                bindError
+                    "provenance.approverMissing"
+                    (sprintf "Override '%s' carries attribution fields but no 'approvedBy' — the approver is the attribution's anchor." context))
+        | Some by, atOpt, rationaleOpt, findingOpt ->
+            result {
+                let! at =
+                    match atOpt with
+                    | None -> Result.success None
+                    | Some raw ->
+                        // align-III.1 determinism rider: a zoneless form
+                        // anchors to UTC (`AssumeUniversal`) instead of the
+                        // host's local offset — the same config must not
+                        // parse to two instants on two machines. Explicit
+                        // offsets pass through unchanged.
+                        match System.DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal) with
+                        | true, dto -> Result.success (Some dto)
+                        | false, _ ->
+                            Result.failureOf (
+                                bindError
+                                    "provenance.approvedAt.malformed"
+                                    (sprintf "Override '%s' carries a malformed 'approvedAt' instant '%s' (ISO-8601 round-trip form required)." context raw))
+                let! findingKey =
+                    match findingOpt with
+                    | None -> Result.success None
+                    | Some raw ->
+                        match FindingKey.tryParse raw with
+                        | Some k -> Result.success (Some k)
+                        | None ->
+                            Result.failureOf (
+                                bindError
+                                    "provenance.finding.unknown"
+                                    (sprintf "Override '%s' names finding '%s', which parses to no known finding kind." context raw))
+                return
+                    Some
+                        { ApprovedBy = by
+                          ApprovedAt = at
+                          Rationale = rationaleOpt
+                          Finding = findingKey }
+            }
+
     let private bindOverride
         (catalog: Catalog)
         (entry: Config.TighteningAttributeOverride)
@@ -83,9 +140,11 @@ module TighteningBinding =
         result {
             let! ssKey  = resolveAttributeRef catalog entry.AttributeRef
             let! action = parseOverrideAction entry.Action
+            let! provenance = bindProvenance entry.AttributeRef entry.ApprovedBy entry.ApprovedAt entry.Rationale entry.Finding
             return {
                 AttributeKey = ssKey
                 Action       = action
+                Provenance   = provenance
             }
         }
 
@@ -115,19 +174,74 @@ module TighteningBinding =
             return TighteningIntervention.Nullability (entry.Id, config)
         }
 
+    /// align-II.3 — resolve one per-index promotion ruling: the
+    /// `Module.Entity.IndexName` ref against the catalog (refusing by
+    /// name when no such index exists), the closed action vocabulary,
+    /// and the optional ruling attribution (align-II.2's binder).
+    let private bindIndexOverride
+        (catalog: Catalog)
+        (entry: Config.TighteningIndexOverride)
+        : Result<UniqueIndexOverride> =
+        result {
+            let! action =
+                match entry.Action with
+                | "adoptPromotion" -> Result.success UniqueIndexOverrideAction.AdoptPromotion
+                | "refusePromotion" -> Result.success UniqueIndexOverrideAction.RefusePromotion
+                | other ->
+                    Result.failureOf (
+                        bindError
+                            "indexOverrideAction.unknown"
+                            (sprintf "Index-override action '%s' is unknown. Valid: 'adoptPromotion', 'refusePromotion'." other))
+            let! indexKey =
+                let parts = entry.IndexRef.Split('.')
+                if parts.Length <> 3 then
+                    Result.failureOf (
+                        bindError
+                            "indexRef.malformed"
+                            (sprintf "Index ref '%s' must be Module.Entity.IndexName." entry.IndexRef))
+                else
+                    let found =
+                        Catalog.allKinds catalog
+                        |> List.tryPick (fun k ->
+                            k.Indexes
+                            |> List.tryFind (fun ix -> Name.value ix.Name = parts.[2])
+                            |> Option.filter (fun _ ->
+                                match CatalogResolution.tryKindByLogical catalog parts.[0] parts.[1] with
+                                | Some ownerKey -> ownerKey = k.SsKey
+                                | None -> false)
+                            |> Option.map (fun ix -> ix.SsKey))
+                    match found with
+                    | Some key -> Result.success key
+                    | None ->
+                        Result.failureOf (
+                            bindError
+                                "indexRef.noIndex"
+                                (sprintf "Index ref '%s' resolves to no index on the loaded catalog." entry.IndexRef))
+            let! provenance = bindProvenance entry.IndexRef entry.ApprovedBy entry.ApprovedAt entry.Rationale entry.Finding
+            return { IndexKey = indexKey; Action = action; Provenance = provenance }
+        }
+
     let private bindUniqueIndex
+        (catalog: Catalog)
         (entry: Config.TighteningInterventionEntry)
         : Result<TighteningIntervention> =
         // Advise-only by default (operator directive 2026-07-18): a
         // profile-driven promotion is APPLIED only on an explicit
         // `applyUniquePromotions: true`; otherwise the candidate is surfaced
         // as advice and the dev team's declared indexes stay authoritative.
-        let config : UniqueIndexTighteningConfig =
-            UniqueIndexTighteningConfig.createWith
-                (defaultArg entry.EnforceSingleColumnUnique true)
-                (defaultArg entry.EnforceMultiColumnUnique true)
-                (defaultArg entry.ApplyUniquePromotions false)
-        Result.success (TighteningIntervention.UniqueIndex (entry.Id, config))
+        result {
+            let! overrides =
+                entry.IndexOverrides
+                |> List.map (bindIndexOverride catalog)
+                |> Result.aggregate
+            let config : UniqueIndexTighteningConfig =
+                UniqueIndexTighteningConfig.createWithOverrides
+                    (defaultArg entry.EnforceSingleColumnUnique true)
+                    (defaultArg entry.EnforceMultiColumnUnique true)
+                    (defaultArg entry.ApplyUniquePromotions false)
+                    overrides
+            return TighteningIntervention.UniqueIndex (entry.Id, config)
+        }
 
     let private parseReferenceOverrideAction
         (raw: string)
@@ -158,8 +272,9 @@ module TighteningBinding =
                     k.References
                     |> List.tryFind (fun r -> r.SourceAttribute = attrKey)
                     |> Option.map (fun r -> r.SsKey))
+            let! provenance = bindProvenance entry.ReferenceRef entry.ApprovedBy entry.ApprovedAt entry.Rationale entry.Finding
             match referenceKey with
-            | Some key -> return { ReferenceKey = key; Action = action }
+            | Some key -> return { ReferenceKey = key; Action = action; Provenance = provenance }
             | None ->
                 return!
                     Result.failureOf (
@@ -226,7 +341,7 @@ module TighteningBinding =
         : Result<TighteningIntervention> =
         match entry.Kind with
         | "nullability"           -> bindNullability catalog entry
-        | "uniqueIndex"           -> bindUniqueIndex entry
+        | "uniqueIndex"           -> bindUniqueIndex catalog entry
         | "foreignKey"            -> bindForeignKey catalog entry
         | "categoricalUniqueness" -> bindCategoricalUniqueness entry
         | other ->

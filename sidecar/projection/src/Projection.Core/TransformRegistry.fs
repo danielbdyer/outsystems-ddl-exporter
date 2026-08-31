@@ -122,12 +122,40 @@ type RegisteredTransform<'In, 'Out when 'Out : equality> = {
 /// what the totality coverage property test (slice θ) enumerates.
 /// Pass-module consumers invoke `<PassName>.registered.Run`
 /// directly on the typed export.
+/// WHERE a registered transformation substantively fires (align-I.8;
+/// the audit's seam-execution finding). `TransformStatus` says whether
+/// an entry is live; `FiringSite` says where its REAL execution lives —
+/// previously comment-carried ("the Pipeline's applyModuleFilter seam
+/// executes it with the operator's real axes"), now a queryable fact
+/// the bidirectional tests iterate per-site and the digest seals.
+[<RequireQualifiedAccess>]
+type FiringSite =
+    /// The entry's `StageBinding` executes it directly with the
+    /// registered config (a chain pass in the fold, an adapter at the
+    /// read stage, an emitter at the emit stage). The plan's sketch
+    /// said `InChain`; the honest name covers every binding.
+    | AtBinding
+    /// Registered in the chain as an identity stand-in; the substantive
+    /// execution happens at the NAMED seam with the operator's real
+    /// config (registered ⇔ executed holds via the stand-in).
+    | AtSeam of seamName: string
+    /// Fires when a sink-backed model read parses an edition (the
+    /// journal-assembled adjudications annotate at parse time).
+    | OnSinkRead
+    /// Registered but NOT invoked by any live path; the trigger names
+    /// the condition under which it must gain a real firing site.
+    /// Dormant entries live in `RegisteredTransforms.dormant` — never
+    /// in `all` — so registered ⇔ executed stays exact while the
+    /// deferral index enumerates them.
+    | Dormant of trigger: string
+
 type RegisteredTransformMetadata = {
     Name : string
     Domain : Domain
     StageBinding : StageBinding
     Sites : TransformSite list
     Status : TransformStatus
+    Firing : FiringSite
 }
 
 [<RequireQualifiedAccess>]
@@ -142,7 +170,11 @@ module RegisteredTransform =
           Domain = rt.Domain
           StageBinding = rt.StageBinding
           Sites = rt.Sites
-          Status = rt.Status }
+          Status = rt.Status
+          // The binding fires the typed shell directly; the two chain
+          // stand-ins (seam-fired, sink-read-fired) override at their
+          // ChainStep definition (align-I.8).
+          Firing = FiringSite.AtBinding }
 
 /// Smart-constructors for the typed `TransformSite` value. Per pillar 9
 /// the classification (DataIntent vs OperatorIntent OverlayAxis) is the
@@ -211,7 +243,8 @@ module RegisteredTransformMetadata =
           Domain = domain
           StageBinding = Emitter
           Sites = sites
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }
 
     /// Construct adapter-stage metadata. The `StageBinding = Adapter`
     /// binding is fixed; sibling to `emitter`. The CatalogReader
@@ -226,7 +259,8 @@ module RegisteredTransformMetadata =
           Domain = domain
           StageBinding = Adapter
           Sites = sites
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }
 
 [<RequireQualifiedAccess>]
 module TransformRegistry =
@@ -473,13 +507,12 @@ module TransformRegistry =
         | Emitter -> "Emitter"
         | Pipeline -> "Pipeline"
 
+    /// Delegates to the ONE canonical codec (`OverlayAxis.name`) — this was
+    /// a private duplicate of the token map until align-I.2's `Identity`
+    /// variant forced every projection site to declare itself; the digest's
+    /// tokens are unchanged (same names, same source of truth).
     let private overlayAxisName (a: OverlayAxis) : string =
-        match a with
-        | Selection -> "Selection"
-        | Emission -> "Emission"
-        | Insertion -> "Insertion"
-        | Tightening -> "Tightening"
-        | Ordering -> "Ordering"
+        OverlayAxis.name a
 
     let private classificationName (c: Classification) : string =
         match c with
@@ -517,10 +550,13 @@ module TransformRegistry =
     /// `registry.digest` field.
     ///
     /// Property: any change to Name / Domain / StageBinding / Sites
-    /// (SiteName, Classification, Rationale) / Status changes the
-    /// digest; reorderings do not (the sort by Name normalizes input
+    /// (SiteName, Classification, Rationale) / Status / Firing changes
+    /// the digest; reorderings do not (the sort by Name normalizes input
     /// order). The 5th bidirectional property test asserts the round-
-    /// trip stability + perturbation sensitivity per A41.
+    /// trip stability + perturbation sensitivity per A41. (align-I.8
+    /// added the `firing=` segment — the digest VALUE moved once,
+    /// named in the slice's DECISIONS entry; free-text payloads are
+    /// length-prefixed per NM-60.)
     ///
     /// **NM-60 — tamper-evidence: the variable-length free-text fields are
     /// LENGTH-PREFIXED, not appended raw.** `Name`, `SiteName`, `Rationale`, and
@@ -549,6 +585,16 @@ module TransformRegistry =
             buffer.Append(stageName entry.StageBinding) |> ignore
             buffer.Append("|status=") |> ignore
             appendLenPrefixed buffer (statusName entry.Status)
+            buffer.Append("|firing=") |> ignore
+            (match entry.Firing with
+             | FiringSite.AtBinding -> buffer.Append("AtBinding") |> ignore
+             | FiringSite.OnSinkRead -> buffer.Append("OnSinkRead") |> ignore
+             | FiringSite.AtSeam seam ->
+                 buffer.Append("AtSeam:") |> ignore
+                 appendLenPrefixed buffer seam
+             | FiringSite.Dormant trigger ->
+                 buffer.Append("Dormant:") |> ignore
+                 appendLenPrefixed buffer trigger)
             buffer.Append("|sites=[") |> ignore
             for site in entry.Sites do
                 buffer.Append('{') |> ignore

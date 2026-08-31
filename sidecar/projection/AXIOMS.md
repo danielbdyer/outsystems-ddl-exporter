@@ -22,8 +22,15 @@ generating ten theorems (T1–T10). V2 has extended the system: A6, A12,
 A17, A18, A24, and T1 carry amendments (recorded under "V2 Amendments"
 below); A32, A33, A34, A35, A36, A39, A40, A41, A42, and T11 are new;
 the Wave-6 Change Algebra (2026-06-01) added theorems T12–T16 and axiom
-A43 (see "The Change Algebra — T12–T16 + A43"). The current count is
-**A1–A43 generating T1–T16** with six amended originals. The axioms are grouped into eight thematic clusters; the
+A43 (see "The Change Algebra — T12–T16 + A43"); A44 (the config⟷movement
+isomorphism) was chartered in `THE_CONFIG_CONTROL_PLANE.md` (2026-06-08)
+and is resident below; the estate/fidelity chapter (2026-07) added
+A45–A48 + T17–T18; the data-sink chapter (2026-08-15) added A49 + T19;
+the alignment program (2026-08-16) added A50–A54. The current count is
+**A1–A54 generating T1–T19** with six amended originals — but do not
+trust restated counts, including this one: the executable registry
+(`AxiomTests.fs` + `scripts/verifiability-gate.sh`) is the authority.
+The axioms are grouped into eight thematic clusters; the
 theorems cluster by what falls out of the construction. Code and tests
 cite the **amended** form when both exist; the original form is the
 historical lineage of the amendment.
@@ -255,16 +262,19 @@ identical content produce the same hash; the second is a no-op.
 
 ### A-Lifecycle-1..4 — the temporal axis (operationalized 2026-05-31, §5.3)
 
-A `Lifecycle` is a monotone chain of `CatalogSnapshot`s along one `Timeline`
-(`src/Projection.Core/Lifecycle.fs`). It is the **outer envelope** over
+An `EpisodicLifecycle` is a monotone chain of `Episode`s along one `Timeline`
+(`src/Projection.Core/Episode.fs`; the schema-only `Lifecycle`/`CatalogSnapshot`
+twin these laws were first authored against was deleted at align-III.5 — the
+durable multi-plane grain subsumed it). It is the **outer envelope** over
 `Project` — the inner kernel `Catalog × Policy × Profile` is untouched
 (A6-amended / A17). These underwrite `PRODUCT_AXIOMS.md` Group Lifecycle
 (L3-L1 / L3-L2 / L3-L3).
 
-**A-Lifecycle-1 (↔ L3-L1). Schema evolution is replayable.** `replayTo`
-recovers the Catalog stored at any `Version` (materialized form; the
-diff-replay reconstruction `fold applyDiff C₀` awaits the `CatalogDiff`
-compose operator — H-007).
+**A-Lifecycle-1 (↔ L3-L1). Schema evolution is replayable.**
+`EpisodicLifecycle.replayTo` recovers the schema stored at any `Version`
+(the materialized fetch; its diff-fold peer `reconstructLatestSchema`
+*derives* the latest from the per-edge deltas — 6.A.11 / H-007 — and agrees
+with the fetch modulo the captured surface).
 
   *Property test.* `` ``A-Lifecycle-1 (L3-L1): replayTo recovers the snapshotted catalog`` `` (`LifecycleTests.fs`).
 
@@ -1295,11 +1305,13 @@ strengthens to *statement-stream determinism* — identical Catalog
 produces identical Statement sequence; `Render.toText` produces
 identical bytes from identical streams.
 
-**Worked example.** `RawTextEmitter.statements : Catalog ->
-seq<Statement>` is the canonical form. `Render.toText : seq<Statement>
--> string` produces .sql text. `Deploy.executeStream : SqlConnection
--> seq<Statement> -> Task<unit>` produces the deployed target
-database. Both consume the same stream; both witness the same
+**Worked example** *(re-pointed align-III.12 — the original example,
+`RawTextEmitter.statements`, was retired with its module; the axiom's
+normative anchor follows the living code)*. `SsdtDdlEmitter.statements :
+Catalog -> seq<Statement>` is the canonical form. `Render.toText :
+seq<Statement> -> string` produces .sql text. `Deploy.executeStream :
+SqlConnection -> seq<Statement> -> Task<unit>` produces the deployed
+target database. Both consume the same stream; both witness the same
 algebra; T1 holds at the stream level.
 
 **Implications.** A18 (Π consumes Catalog × Profile, never Policy)
@@ -1518,8 +1530,10 @@ each module's primary public surface is its `.registered` /
 
 ```fsharp
 type StageBinding   = Adapter | Pass | OrderingPolicy | Emitter | Pipeline
-type OverlayAxis    = Selection | Emission | Insertion | Tightening | Ordering
-                      // = Policy DU axes + Ordering (Q9-trigger-fires worked example)
+type OverlayAxis    = Selection | Emission | Insertion | Tightening | Ordering | Identity
+                      // the operator outcome space; related to Policy's six decision
+                      // channels by the TOTAL map PolicyAxis.overlayAxisOf (A50, align-I.2 —
+                      // Ordering's preimage is empty; Identity's is {UserMatching, BridgeRetarget})
 type Classification = DataIntent | OperatorIntent of OverlayAxis
 type TransformSite  = { SiteName : string ; Classification : Classification ; Rationale : string }
 type TransformStatus = Active | NotImplementedInV2 of rationale: string
@@ -1905,8 +1919,8 @@ B` + `applyDiff threads the passed-in catalog … (no-cheat)`.
 
 **T13 — evolution over time (Chasles along the timeline).**
 `replay(t) = genesis ⊕ (δ₀ + … + δ_t)` = `fold ⊕`. Composition of deltas IS
-the schema/data history. Witness: `Lifecycle.reconstructLatest` (fold
-applyDiff). The `compose : Delta → Delta → Delta` operator (diff∘diff) is **SHIPPED**
+the schema/data history. Witness: `EpisodicLifecycle.reconstructLatestSchema`
+(fold applyDiff). The `compose : Delta → Delta → Delta` operator (diff∘diff) is **SHIPPED**
 as `CatalogDiff.compose` (6.H.3, 2026-06-01); A-Lifecycle-4 promoted to Bucket A.
 **M12 (THE VECTOR Wave 2, SHIPPED):** the groupoid INVERSE
 `CatalogDiff.inverse d = between (target d) (source d)` completes the partial
@@ -1926,13 +1940,13 @@ the `MigrationCanaryTests` M21 canaries on real SQL Server (T13 citations). The
 unreachable) stays deferred — gated on the managed-login long-transaction grant
 survey + P7b throughput; per the J5 managed-env evidence the compensating channel
 is the buildable arm.
-**Latent (2026-06-01 morphology research):** `reconstructLatest` runs only over
-**in-memory values in tests** — there is **no durable episode** to integrate
-over (`CatalogSnapshot` is schema-only, single-plane, never serialized). The
-FTC is proven, the substrate absent. `CatalogDiff.compose` + `Lifecycle.netDiff`
-are SHIPPED (6.H.3); the **remaining** activation is the durable multi-plane
-`Episode` + `LifecycleStore` (`EXECUTION_PLAN.md` 6.H.1–6.H.2; `WAVE_6_MORPHOLOGY.md`
-§4 F1–F2).
+**Resolved (the 2026-06-01 latent note, closed align-III.5):** the durable
+multi-plane substrate the morphology research found absent SHIPPED as
+`Episode` + `LifecycleStore` (6.H.1–6.H.2), and the schema-only in-memory
+twin (`Lifecycle`/`CatalogSnapshot`) it was measured against is now DELETED —
+the FTC fold (`reconstructLatestSchema`), the integral (`netSchemaDiff`,
+6.H.3), and the fetch (`replayTo`) all live on the durable episodic grain,
+with the ported laws in `LifecycleTests.fs`.
 
 **T14 — channel decomposition (orthogonality as a direct sum).**
 `δ = ⊕_c π_c(δ)`, `π_c ∘ π_{c'} = 0` (c≠c'), `Σ_c π_c = id`, `‖δ‖ = Σ_c ‖π_c δ‖`.
@@ -1992,7 +2006,13 @@ coupling, not adopted as convention. The data norm-conservation (T15) and the
 schema identity-conservation (A43) meet exactly at the refactorlog. Witness:
 `RefactorLogEmitter: a column rename produces a SqlSimpleColumn entry`
 (Designation changes, Identity conserved, emitted as sp_rename) + the
-AssignedBySink re-key canary (Reidentify). ⬚ the `‖rename‖_data = 0` canary.
+AssignedBySink re-key canary (Reidentify) + the corollary's STATIC half
+(align-III.7): `ChangeManifest.renameIsometryViolated` names a recorded
+rename-only edge that carries OBSERVED captures — the manifest itself can
+now say "data moved where sp_rename should have conserved it"
+(`ChangeManifestTests`; an unmeasured edge never violates — no claim
+without a measurement, align-III.6). ⬚ the LIVE deploy-time
+`‖rename‖_data = 0` canary (the 6.D.1 route).
 
 **Relationship to the prior catalog.** T16 is H-050 lifted to displacements;
 T14 subsumes A38; T15 generalizes the CDC-silence property (chapter 4.1.B) to
@@ -2074,6 +2094,35 @@ scaffolding lands at Stage 0 Tier 1 (S0.F) before chapter 3.1
 opens.** Future chapters that surface new amendment candidates
 append to this section at chapter open with TBD bodies; the
 scaffolding grows monotonically with the chapter pre-scopes.
+
+## A44 — the config is an isomorphic image of the movement space (`expressible ⇔ reachable`; adopted from THE_CONFIG_CONTROL_PLANE §2, resident align-III.8)
+
+**Statement.** The operator config and the engine's resolved `MovementSpec` form a total,
+faithful, direction-derived correspondence `Φ = resolveFlowSpec`, in three clauses:
+
+1. **Faithful (Φ is a function; `parse ∘ render = id`).** Every config resolves to exactly
+   one `MovementSpec`; rendering a spec and re-parsing it is the identity on the movement
+   config DOM — the operator's control surface cannot drift from what the engine consumes.
+2. **Total / spanning (`reachable ⇔ expressible`).** Every model-bearing `PlanAction` the
+   engine can execute has a config pre-image, and every parse-accepted flow resolves to a
+   real action or a NAMED refusal. The named residual set is **∅** (`residualActions =
+   Set.empty` since 2026-06-10 S6) — the strongest form of the statement.
+3. **Direction is derived, never stored.** `direction : (source rendition, sink rendition,
+   scope) → {A→B, B→A, A→A, mint→A, eject}` is a pure function of the endpoints — a
+   stored direction knob is unrepresentable.
+
+This is the movement-space instance of T16 / the iso-ladder: where T16's witness is
+`Ingestion ∘ Projection = id` on states, A44's witness is `render ∘ resolve = id` on the
+config⟷spec pair — the adjunction lifted to the operator's control surface. History and
+the directional 16-variant table: `THE_CONFIG_CONTROL_PLANE.md` §2–§3 (the law was
+chartered there 2026-06-08 as "A44 candidate" and its canary closed to residual-∅ on
+2026-06-10; this section makes it RESIDENT in the numbered system — the A44 slot it
+always named).
+
+**Witness.** LIVE — `MovementIsomorphismTests.fs` (the A44 isomorphism canary: the
+`A44 clause 1/2/3` law family — faithfulness round-trips per config block, the
+residual-∅ spanning witness, and direction-purity). Gated in `AxiomTests.fs` via M16
+citations.
 
 ## A45 — espace invariance across the environment lattice (estate chapter open, 2026-07-15; adopted 2026-07-17)
 
@@ -2241,3 +2290,221 @@ foreign version / foreign plane / garbage document fails closed to a named `Erro
 then reconcile a byte-identical target (exit 0) and a tampered target (exit 5) — both decided
 from the manifest + the target alone, the source torn down. `AxiomTests.fs` carries the
 axiom-file pointer to those facts.
+
+## A49 — acquisition is total; selection is pure (the data sink chapter open, 2026-08-15)
+
+*Status: LIVE (promoted at slice S9, 2026-08-15 — the `SelectionSuppression` pass landed
+(one drop semantic shared with `ModuleFilter.apply`, two channels), the three-way
+equivalence witness runs in `OssysExtractionCanaryTests`, and the sync path's total
+binding is structurally pinned in `SinkStoreTests`).*
+
+**Statement.** The engine's acquisition of the OSSYS metadata plane carries no operator
+Selection: the sync path binds `MetadataSnapshotRunner.defaultParameters` exactly (all
+modules, `IncludeSystem = true`, `IncludeInactive = true`, `OnlyActiveAttributes = false`,
+no entity filter), and Selection is a pure, registered pass over the acquired value.
+Module/entity selection commutes across the three legs:
+
+    pushdown(scope) ∘ live ≡ SelectionSuppression(scope) ∘ live ≡ SelectionSuppression(scope) ∘ sink
+
+The SQL pushdown remains a latency optimization for interactive scoped reads, licensed by
+this equivalence — never the definition of the model. The attribute-activity axis
+(`OnlyActiveAttributes`) is a NAMED RESIDUAL: it has no in-memory sibling seam (the
+extraction canary's own scope note), so the law binds it equal across legs until a
+suppression sibling lands; the sync path is unconditionally total on it.
+
+**Enforcement.** The sync path constructs `defaultParameters` literally (structural assert:
+the sync verb's parameters equal `MetadataSnapshotRunner.defaultParameters`); the witness
+hook's totality gate refuses journal entry to any scoped acquisition; `SelectionSuppression`
+registers as `OperatorIntent Selection` in `chainSteps`, so the registered ⇔ executed sweep
+covers it.
+
+**Property test.** (at promotion) the three-way extension of the pushdown ≡
+`ModuleFilter.apply` law in `OssysExtractionCanaryTests`, plus the sync-parameters
+structural assert.
+
+## T19 — the sink journal replays: fold = latest at acquisition grain (the data sink chapter open, 2026-08-15)
+
+*Status: LIVE (promoted at slice S10, 2026-08-15 — enumerated + FsCheck chain laws replay
+through `Ledger.replay` over the SinkJournal LedgerSpec instance; the erasure-witness
+inequality is executable in `SinkDiffViewTests`. One amendment at promotion, from S7's K2
+ruling: the store persists the snapshot RAW (wire order), so the replay equality is stated
+at CANONICAL grain — `canonical(latest) = fold` — the fold's states being canonical by
+construction.)*
+
+**Statement.** The sink journal is the acquisition grain's ledger (S8's fourth instance,
+after the chunk, episode, and marker grains): folding `applyDisplacement` over the journal's
+verified entries from the genesis snapshot reproduces the latest witnessed snapshot at
+canonical grain,
+
+    fold ⊕ genesis (journal) = canonical(latest)        (the FTC at acquisition grain)
+
+with the displacement stream TOTAL over row identities (every row-identity delta yields
+exactly one record carrying its after-image fragment; the domain transition vocabulary is a
+classification over total row-grain carriers, never a filter), a zero-displacement sync
+appending nothing (the metadata plane's CDC-silence), and a chain that regresses OR breaks
+its `PrevSyncId` linkage refused by name (align-III.2 — the `Linkage` admission verifies the
+sync chain for real, retiring the tautology that made the drift arm unreachable). The
+derived Catalog view is bounded by the journal — `CatalogDiff.norm (between (parse b₁)
+(parse b₂)) ≤ |entries(sync)|` — and a strict inequality is accounted for by named erasures
+(the erasure witness, executable).
+
+**Enforcement.** `SinkJournal` instantiates `Ledger.LedgerSpec` (Genesis / Apply /
+Admission = `Linkage`), so replay IS `Ledger.replay` and chain admission IS
+`Ledger.admitChain` — the linkage reads each line's SyncId as its group identity and
+PrevSyncId as the predecessor it claims, so a sync that does not link to the one before
+refuses `sink.journal.brokenChain` and a regression refuses `sink.journal.syncRegression`
+(align-III.2 — the enforcement sentence is now TRUE; previously `FingerprintOf = SyncId`
+made `resumeAdmit` compare `SyncId = SyncId`, the real check a hand guard beside it). Fsync
+append; a torn trailing line tolerated, an interior corrupt line thrown.
+
+**Property test.** (at promotion) FsCheck snapshot chains through `Ledger.replay`; the
+erasure-witness inequality; the zero-displacement silence law.
+
+## A50 — the operator outcome space is enumerable (the alignment program, Chapter I open, 2026-08-16)
+
+*Status: LIVE (promoted at align-I.2, same day — `OverlayAxis.Identity` appended (DU order
+is T1-load-bearing), `PolicyAxis` enumerates the six Policy decision channels,
+`PolicyAxis.overlayAxisOf` is the total designation, and `PolicyExpr.eval`'s Override arm
+projects through the DERIVED preimage — Override(Ordering)'s no-op is now the map's
+theorem, and Override(Identity) reaches both identity channels).*
+
+**Statement.** Every operator decision channel is a value of the axis vocabulary:
+`axisOfPolicyAxis : PolicyAxis → OverlayAxis` is TOTAL — every Policy axis has a designated
+OverlayAxis — and the axis vocabulary expands only by the trigger discipline (a new Policy
+channel cannot land without an axis ruling). Consequently conflict detection, by-axis
+registry queries, the manifest's applied-transforms enumeration, and the policy DSL all
+quantify over the REAL operator outcome space, and `PolicyExpr.Override` is total over the
+axis set or refuses by name — never a silent no-op. (The audit found the prior stated
+relation `OverlayAxis ⊃ Policy DU axes` false in both directions: Policy grew
+`UserMatching` + `BridgeRetarget` with no axis counterpart while `Override(Ordering)`
+silently evaluated to `Policy.empty` — the documented collapse trigger had fired unnoticed
+at `PolicyExpr.eval`.)
+
+**Enforcement.** (at promotion) the total map lives in Core beside the DU (the
+`WriteSignoff.allModes` single-source shape); the DU expansion discipline (DECISIONS
+2026-05-16, four steps) governs every widening; `Override`'s arms are exhaustive over the
+axis set with any unaddressable axis a named refusal.
+
+**Property test.** (at promotion) "every Policy axis has a designated OverlayAxis" +
+`Override` totality-or-named-refusal.
+
+## A51 — synthesis conventions are a closed registry (align-I.4, 2026-08-16)
+
+*Status: LIVE (landed with the registry in the same commit). Amended at align-I.5, same
+day: the sequence grain CONVERGED — `OsSequence` (`OS_SEQ ["schema"; "name"]`, the typed
+two-segment discipline) is the one live sequence mint on every lane; `OssysSequence` and
+`ReadSideSequence` are legacy-parse-only rows (stored keys parse forever; new production
+mints refused by the law's legacy sweep, prong 4). A sequence has no persisted-key channel
+and no rename channel, so identity converges at the CONVENTION or not at all.*
+
+**Statement.** Every production-minted `Synthesized` identity carries a convention from
+the closed `SynthesisConvention` registry: `token` is injective (distinct conventions ⇒
+distinct wire tokens), `tryParse ∘ token = Some` for every registered convention, and no
+production mint site supplies a free-string convention — `SsKey.mint` /
+`SsKey.mintComposite` are the production constructors; the free-string siblings serve
+test-local conventions only. Each convention declares its **grain** and **reader family**,
+so cross-lane identity splits are enumerable facts rather than greps (the sequence grain's
+three conventions across three reader families is align-I.5's named convergence target), a
+typo cannot mint a silently-different identity, and `Catalog.create`'s sequence/kind key
+disjointness is a theorem of structural `(source, basisParts)` equality plus token
+distinctness — not a comment about rendered prefixes (rendered identifiers may alias
+across conventions, harmlessly, because keying never reads the rendering). A convention
+the estate has ever minted is never deleted: superseded rows become **legacy-parse-only**
+(`legacyParseOnly`), keeping every persisted key readable while the legacy sweep refuses
+new mints.
+
+**Enforcement.** The registry lives beside `DerivationReason` in `Identity.fs` — the same
+closure discipline, applied to the convention axis; new conventions are added THERE, never
+as free strings. The wire tokens are byte-identical to the pre-registry literals
+(including the lowercase `"migration"`), so the SsKey codec and every persisted key are
+unmoved.
+
+**Property test.** `AxiomTests.fs` ``A51: synthesis conventions are a closed registry
+(token injective; round-trip; zero free-string production mints)`` — injectivity +
+round-trip + registry count over `SynthesisConvention.all`, plus the M16-style
+comment-stripped source sweep asserting zero free-string `synthesized`/
+`synthesizedComposite` literal mints under `src/` (corpus-floor-guarded against a
+vacuous pass).
+
+## A52 — chain assemblies satisfy their product preconditions (align-I.6, 2026-08-16)
+
+*Status: LIVE (landed with the vocabulary in the same commit).*
+
+**Statement.** Every `ChainStep` declares the intermediate products it requires and the one
+it produces (`ChainProduct` — a closed vocabulary of the chain's dependency structure:
+`Topology`, `ProfileEvidence`). Chain assembly honors the declarations in execution order:
+the FULL chain is totally satisfiable and ASSERTS it (zero exclusions — a mis-wired chain
+fails loud at assembly, never computes over a defaulted product at run); a NARROWED
+assembly (the skeleton) excludes each unsatisfiable step BY NAME with the missing product,
+and the exclusion cascades with the producer (the four topology dependents leave the
+skeleton with `topologicalOrder`). Exclusions are voiced on the run as
+`skeleton.stepExcluded` diagnostics — absent-with-a-name, never present-and-degenerate.
+The profile split point is producer-derived (`Produces = Some Topology`), not a string
+key. The skeleton itself is profile-parameterized (`runSkeletonWith` — DataIntent's
+definition is "reachable from `Project(catalog, Policy.empty, profile)`", so the profile
+is the baseline's own free variable and skeleton purity holds at every profile point).
+
+**Enforcement.** `ChainStep.assemble` (forward-walk cascade) + `ChainStep.assertSatisfiable`
+(the full-chain assert, applied at `allChainStepsFor` / `allChainStepsForWithPins`);
+`RegisteredTransforms.skeletonAssembly` returns the named exclusions the skeleton runner
+voices. The topology lifts' `TopologicalOrder.empty` fallback survives ONLY for direct
+unit-test callers — assembled chains cannot reach it.
+
+**Property test.** `SkeletonPurityTests.fs` — the seven-pass pin, the exact four-exclusion
+pin, the voiced-diagnostics pin, the full-chain zero-exclusion assert, and profile-
+parameterized purity.
+
+## A53 — the operator ruling is a carrier (align-II open, 2026-08-16)
+
+*Status: LIVE (promoted at align-II.5 — the carrier landed at II.1, the estate
+reception at II.5; the `projection rule` verb records through the same carrier
+at II.6).*
+
+**Statement.** Operator judgment on a finding is a VALUE, not a config
+side-effect: `OperatorRuling<'anchor>` carries subject, basis anchor (`Digest |
+Fingerprint | FindingKey | EvidenceDigest`), who, when, rationale, and reopen
+condition. The ruling store is keyed replace-by-key (fail-closed load; atomic write;
+the ApprovalStore shape); a ruling ANCHORS to the evidence it judged, so a
+confirmed/rejected correspondence (K9's demand) is recordable and renderable
+end-to-end; rulings are received on the estate DECIDE lane and never auto-apply
+policy (record + render only — application is a named deferral).
+
+**Enforcement.** The store laws are live facts (round-trip over every anchor and
+optional-field shape; replace-by-key; missing = pending-by-absence; a malformed
+document is a named `ParseFailure`, never silently unruled — `RulingStoreTests`).
+Reception renders the ruling on its finding in the lever's slot (one-mint copy,
+both board lenses and `environments.json`) and moves NOTHING else — lanes,
+verdict, and the cutover ladder read the same values ruled or unruled
+(`EstateTests` reception laws; `EstateSinkClaimsTests` K9 end-to-end). An
+unreadable ruling store degrades NAMED (`estate.rulings.unreadable`): the board
+renders unruled with the cause on stderr, and the recorded judgment stays intact
+on disk.
+
+**Property test.** `AxiomTests` A53 gates the corpus via M16 citations: store
+round-trip, malformed-store refusal, replace-by-key, pending-by-absence,
+reception rendering, and the K9 correspondence ruling.
+
+## A54 — the bundle projection's erasures are enumerable (align-II.8, 2026-08-16)
+
+*Status: LIVE (landed with the vocabulary in the same commit).*
+
+**Statement.** `toBundle : MetadataSnapshot -> RowsetBundle * BundleErasure list` — the
+acquisition-to-bundle projection RETURNS what it loses. The erasure vocabulary is a
+closed DU (`FoldedRowset of rowset * detail | UnjoinedReference of attrId |
+AssumedSchema of entityId * name | AssumedDataType of attrId * name |
+CapabilityInvariant`); the CONSTANT modulus (the by-design folds — physColsPresent,
+fkReality's four-scalar projection, columnReality's facet collapse, Data_Kind's fold to
+IsStatic — plus capability-invariance) is present on every projection, and the
+data-dependent assumptions/drops fire exactly when their shape occurs. Every
+`FoldedRowset` cites a `RowsetContract` name (one wire vocabulary, A54 ∘ the II.7
+contract). The live read surfaces the record on the notice rollup (by-design folds as
+Info; assumptions and drops as Warnings); the sink replay paths drop it BY NAME (the S7
+raw-at-rest posture — witness-time notices already surfaced).
+
+**Enforcement.** The tuple return forces every consumer to dispose of the erasure
+record visibly; the modulus, the exactly-when-firing laws, the projection-reconciling
+drop count, and the code/sentence/severity totality are live facts
+(`BundleErasureTests`); capability-invariance stays pinned in
+`MetadataSnapshotCapabilityTests`.
+
+**Property test.** `AxiomTests` A54 gates the corpus via M16 citations.

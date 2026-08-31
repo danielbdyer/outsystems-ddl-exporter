@@ -33,6 +33,11 @@ open Projection.Cli
 [<InlineData("slice.apply.insufficientGrant", 7)>]
 // -- exit 9: refused, fail-loud — CDC-tracked sink ---------------------------
 [<InlineData("slice.apply.cdcTrackedSink", 9)>]
+// -- the sink family (projection sync; the data-sink chapter, S6) ------------
+[<InlineData("sink.storeDisabled", 2)>]              // config-shape: no store root
+[<InlineData("sink.writeFailed", 1)>]                // the write axis wins first
+[<InlineData("sink.journal.syncRegression", 9)>]     // the journal's drift channel
+[<InlineData("sink.journal.brokenChain", 9)>]        // align-III.2 — a broken predecessor link, same drift channel
 let ``CliExit.classifyCode maps each CLI refusal code to its axis exit`` (code: string) (expected: int) =
     Assert.Equal(expected, CliExit.classifyCode code)
 
@@ -84,6 +89,16 @@ let ``CliExit specific axes win over the generic slice-parse bucket (order)`` ()
     Assert.Equal(9, CliExit.classifyCode "slice.apply.cdcTrackedSink")
     // A plain slice-parse code still lands in the bucket.
     Assert.Equal(2, CliExit.classifyCode "slice.root")
+
+[<Fact>]
+let ``CliExit sink.journal.syncRegression wins over the generic sink. bucket (order)`` () =
+    // The drift channel is the fail-loud 9 (the resumeAdmit convention); a
+    // generic sink refusal is config-shaped input (2). The specific arm must
+    // be tested first or the regression would silently soften to 2.
+    Assert.Equal(9, CliExit.classifyCode "sink.journal.syncRegression")
+    Assert.Equal(2, CliExit.classifyCode "sink.storeDisabled")
+    // And the write axis still catches the sink's write failures before both.
+    Assert.Equal(1, CliExit.classifyCode "sink.writeFailed")
 
 [<Fact>]
 let ``CliExit.classify keys off the primary (first) error, matching Preflight.refusalOf`` () =

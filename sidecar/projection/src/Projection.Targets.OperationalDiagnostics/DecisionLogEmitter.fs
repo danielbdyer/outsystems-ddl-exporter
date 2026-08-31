@@ -152,7 +152,7 @@ module internal DiagnosticDocument =
                     DiagnosticSeverity.Warning
                     "emit.decisionLog.catalogLevelEntriesShed"
                     (sprintf
-                        "%d catalog-level diagnostic(s) (SsKey = None) could not be projected into the per-kind decision log and were shed at the per-kind seam. The catalog-level artifact bucket ships at slice δ; this witness names the loss until then."
+                        "%d catalog-level diagnostics (SsKey = None) could not be projected into the per-kind decision log and were shed at the per-kind seam. The catalog-level artifact bucket ships at slice δ; this witness names the loss until then."
                         (List.length shed))
                   with
                     SsKey = None

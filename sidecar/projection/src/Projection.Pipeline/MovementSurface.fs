@@ -177,10 +177,10 @@ module CapabilityProfile =
               ResumeCheckpoint = ResumeKind.ClientJournal
               WipeStrategy     = WipeKind.ChildFirstDelete }
 
-/// A named place (THE_CLI.md §4.1): its reach (`Access`) and, for a target,
+/// A named place (THE_CLI.md §4.1; renamed from `Environment` at align-III.20/X4 — the record wears its own documented word, dissolving the three-way collision with Core's rotation-identity `Environment` DU and the BCL's `System.Environment`; the JSON key `environments` is a surface contract and stays): its reach (`Access`) and, for a target,
 /// its permission (`Grant`). D9 holds — a `Direct`/`Bundle` address is a
 /// reference or a folder, never an inline secret.
-type Environment =
+type Place =
     {
         Name   : string
         Access : Access
@@ -200,7 +200,7 @@ type Environment =
         /// declared-only (NOT eagerly inferred) so existing configs render
         /// byte-identically and `parse ∘ render = id` holds without parse-time
         /// inference diverging; consumers DEFAULT it from `Grant` via
-        /// `Environment.effectiveArchetype`. Nothing branches on it until Slices
+        /// `Place.effectiveArchetype`. Nothing branches on it until Slices
         /// B/C/S — Slice A is byte-identical by construction.
         Archetype : Archetype option
         /// M22 — opt OUT of the atomic schema-deploy envelope for this place
@@ -214,7 +214,7 @@ type Environment =
     }
 
 [<RequireQualifiedAccess>]
-module Environment =
+module Place =
 
     /// The EFFECTIVE archetype of a place — its declared `Archetype`, else
     /// inferred from the `Grant` facet (`SchemaAndData → FullRights`,
@@ -222,7 +222,7 @@ module Environment =
     /// names (DATABASE_ARCHETYPES.md §6.1) done LAZILY at read time, so the stored
     /// field stays declared-only (byte-identical render) while consumers still see
     /// a class for any grant-bearing place. This is what Slices B/C/S read.
-    let effectiveArchetype (env: Environment) : Archetype option =
+    let effectiveArchetype (env: Place) : Archetype option =
         match env.Archetype with
         | Some a -> Some a
         | None   -> env.Grant |> Option.map Archetype.ofGrant
@@ -288,7 +288,7 @@ type ReadinessSpec =
 type ProjectionConfig =
     {
         /// THE_CLI.md §4.1 — named places with access/grant.
-        Environments : Map<string, Environment>
+        Environments : Map<string, Place>
         /// THE_CLI.md §4.2 — named source→target Move recipes.
         Flows        : Map<string, Flow>
         /// The authored `osm_model.json` file — the model **fallback** (kept
@@ -628,7 +628,7 @@ module ProjectionConfig =
         | "manageddml" | "managed-dml" | "managed" | "dml" -> Result.success Archetype.ManagedDml
         | other -> Result.failureOf (err "cli.config.envArchetypeUnknown" (sprintf "environment '%s' archetype '%s' is not full-rights | managed-dml." envName other))
 
-    let private parseEnvironment (name: string) (el: JsonElement) : Result<Environment> =
+    let private parseEnvironment (name: string) (el: JsonElement) : Result<Place> =
         if el.ValueKind <> JsonValueKind.Object then
             Result.failureOf (err "cli.config.envShape" (sprintf "environment '%s' must be a JSON object." name))
         else
@@ -1042,7 +1042,7 @@ module ProjectionConfig =
     /// expressible ⇔ reachable). THE_CLI.md §3.
     let reservedFlowVerbs : Set<string> =
         set [ "check"; "explain"; "seal"; "report"; "profile"; "synth-correct"; "init"; "diff"; "compare"
-              "revert"; "slice-extract"; "slice-apply"; "slice-reset"; "slice-run" ]
+              "revert"; "slice-extract"; "slice-apply"; "slice-reset"; "slice-run"; "sync"; "rule" ]
 
     let parse (json: string) : Result<ProjectionConfig> =
         if String.IsNullOrWhiteSpace json then Result.success empty
@@ -1263,11 +1263,11 @@ module ProjectionConfig =
         | Strategy.Replace -> "replace"
         | Strategy.Fresh   -> "fresh"
 
-    /// Render one `Environment` to its `JsonObject` — the dual of
+    /// Render one `Place` to its `JsonObject` — the dual of
     /// `parseEnvironment`. `access` + its companion (`out` for bundle, `conn`
     /// for direct; docker is bare) reconstruct the reach; `grant`/`store`/
     /// `rendition` carry the optional facets only when present.
-    let renderEnvironment (env: Environment) : JsonObject =
+    let renderEnvironment (env: Place) : JsonObject =
         let o = JsonObject()
         (match env.Access with
          | Access.Bundle (out, conn) ->
@@ -1942,7 +1942,7 @@ module Command =
     /// the landed partial, and the runner wiring waits on the rendering design
     /// (documented in `THE_DATA_PRODUCERS.md` §6 LE-1 + `CONFIRMED_BACKLOG` J3).
     let reverseLegOf (cfg: ProjectionConfig) (flow: Flow) : ReverseLeg option =
-        let liveConnOf (envName: string) : (Environment * string) option =
+        let liveConnOf (envName: string) : (Place * string) option =
             match Map.tryFind envName cfg.Environments with
             | Some env ->
                 match env.Access with
@@ -2055,9 +2055,9 @@ module Command =
                 // `FullRights` (IDENTITY_INSERT + CREATE TABLE) ⇒ PreferPreservedKeys
                 // + sink-resident resume; `ManagedDml` / undeclared ⇒ `structural`
                 // (byte-identical). The two engine bits are projected here, the one
-                // site that sees both the sink `Environment` and `CapabilityProfile`.
+                // site that sees both the sink `Place` and `CapabilityProfile`.
                 let sinkCapability : SinkLoadCapability =
-                    match Environment.effectiveArchetype toEnv with
+                    match Place.effectiveArchetype toEnv with
                     | Some archetype ->
                         let profile = CapabilityProfile.``of`` archetype
                         { IdentityPolicy =
@@ -2078,7 +2078,7 @@ module Command =
                 // direct full-access sink, OFF otherwise; the env `atomicDeploy`
                 // config overrides the default; `--no-atomic` overrides per run.
                 let atomicDefault =
-                    match toEnv.Access, Environment.effectiveArchetype toEnv with
+                    match toEnv.Access, Place.effectiveArchetype toEnv with
                     | Access.Direct _, Some Archetype.FullRights -> true
                     | _ -> false
                 let atomicResolved = (toEnv.AtomicDeploy |> Option.defaultValue atomicDefault) && not opts.NoAtomic
@@ -2592,7 +2592,7 @@ module Command =
                      // ManagedDml target ⇒ `Structural` (the pre-P1-S3 default). So
                      // the container proof reproduces the cutover's identity handling.
                      let identityPolicy : IdentityPolicy =
-                         match Map.tryFind flow.To cfg.Environments |> Option.bind Environment.effectiveArchetype with
+                         match Map.tryFind flow.To cfg.Environments |> Option.bind Place.effectiveArchetype with
                          | Some archetype when (CapabilityProfile.``of`` archetype).IdentityInsert -> IdentityPolicy.PreferPreservedKeys
                          | _ -> IdentityPolicy.Structural
                      let modelOssys = cfg.Shaping.Model.Ossys
@@ -2701,6 +2701,73 @@ module Command =
                     | Error es -> PlanAction.Refused (6, List.head es)
         { Notes = []; Action = action }
 
+    /// Route a `sync` verb tail (the data-sink chapter, S6): `sync <env>
+    /// [--format json]` — the env is positional-first (the `profile`
+    /// convention); it resolves to its live connection; the run is a forced
+    /// total witnessed read + displacement report + the env-label stamp.
+    let planSync (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let envArg = match args with | first :: _ when not (first.StartsWith "--") -> Some first | _ -> None
+        let action =
+            match envArg with
+            | None ->
+                PlanAction.Refused (2, err "cli.sync.noEnv" "projection sync: name a source environment (sync <env>).")
+            | Some envRaw ->
+                match resolveLiveConn cfg envRaw with
+                | Ok conn ->
+                    PlanAction.SyncEnvironment
+                        { EnvLabel = envRaw
+                          ConnSpec = conn
+                          AsJson = (valueOf "--format" = Some "json") }
+                | Error es -> PlanAction.Refused (6, List.head es)
+        { Notes = []; Action = action }
+
+    /// Route a `rule` verb tail (align-II.6; A53): `rule <finding-key>
+    /// (--confirm | --reject) --by <name> [--rationale <text>] [--format
+    /// json]` — record an operator ruling on one estate finding, keyed by
+    /// the cross-artifact finding key the board and environments.json
+    /// print. The key parses at plan time (a malformed or unknown token is
+    /// a named refusal — judgment is never recorded against a key the
+    /// vocabulary does not recognize); the verdict is exactly one of
+    /// --confirm/--reject; the author is mandatory (--by — the approve
+    /// convention: judgment is never ambient-attributed). Record + render
+    /// ONLY (the align-II.0 standing ruling).
+    let planRule (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let keyArg = match args with | first :: _ when not (first.StartsWith "--") -> Some first | _ -> None
+        let action =
+            match keyArg with
+            | None ->
+                PlanAction.Refused (2, err "cli.rule.noKey" "projection rule: name the finding to rule (rule <finding-key> — the key printed in environments.json, e.g. schema.presence:Customer).")
+            | Some raw ->
+                match FindingKey.tryParse raw with
+                | None ->
+                    PlanAction.Refused (2, err "cli.rule.keyUnknown" (sprintf "projection rule: '%s' is not a finding key — the form is <kind-token>:<subject> as printed in environments.json (e.g. identity.cutoverCorrespondence:dbo.OSUSR_APP_SHIPMENT)." raw))
+                | Some key ->
+                    match List.contains "--confirm" args, List.contains "--reject" args with
+                    | true, true ->
+                        PlanAction.Refused (2, err "cli.rule.bothVerdicts" "projection rule: --confirm and --reject are one choice — pass exactly one.")
+                    | false, false ->
+                        PlanAction.Refused (2, err "cli.rule.noVerdict" "projection rule: state the verdict — --confirm or --reject.")
+                    | confirmed, _ ->
+                        match valueOf "--by" with
+                        | None ->
+                            PlanAction.Refused (2, err "cli.rule.noBy" "projection rule: name who rules (--by <name>) — a ruling always carries its author.")
+                        | Some by when String.IsNullOrWhiteSpace by ->
+                            PlanAction.Refused (2, err "cli.rule.noBy" "projection rule: name who rules (--by <name>) — a ruling always carries its author.")
+                        | Some by ->
+                            match valueOf "--rationale" with
+                            | Some r when String.IsNullOrWhiteSpace r ->
+                                PlanAction.Refused (2, err "cli.rule.rationaleBlank" "projection rule: a supplied --rationale cannot be blank — omit the flag instead.")
+                            | rationale ->
+                                PlanAction.RecordRuling
+                                    { Key = key
+                                      Verdict = if confirmed then RulingVerdict.Confirmed else RulingVerdict.Rejected
+                                      By = by
+                                      Rationale = rationale
+                                      AsJson = (valueOf "--format" = Some "json") }
+        { Notes = []; Action = action }
+
     /// Route a `synth-correct` verb tail (FUZZING §2.2, slice F0c-I/O):
     /// `synth-correct --out <path>` proposes a first-draft blessed-correction
     /// artifact from the CONFIGURED model's catalog (the proposer types PII by
@@ -2752,6 +2819,12 @@ module Command =
         | "revert" :: rest  -> Result.success (Intent.Revert rest)
         | "profile" :: rest -> Result.success (Intent.Profile rest)
         | "synth-correct" :: rest -> Result.success (Intent.SynthCorrect rest)
+        // `sync <env>` — the sink's naming verb (S6): forced total
+        // witnessed read + displacement report + the env-label stamp.
+        | "sync" :: rest -> Result.success (Intent.Sync rest)
+        // `rule <finding-key>` — record an operator ruling on one estate
+        // finding (align-II.6; A53). Record + render only.
+        | "rule" :: rest -> Result.success (Intent.Rule rest)
         // Slice data-portability verbs (recon #3) — formerly dispatched on a raw
         // `argv.[0]` match in `Program.main`, now first-class typed intents on the
         // one dispatch plane. `slice-reset` is `slice-apply` under `reset = true`.
@@ -2820,6 +2893,8 @@ module Command =
         | Intent.Revert args       -> planRevert cfg args
         | Intent.Profile args      -> planProfile cfg args
         | Intent.SynthCorrect args -> planSynthCorrect cfg args
+        | Intent.Sync args         -> planSync cfg args
+        | Intent.Rule args         -> planRule args
         | Intent.SliceExtract args         -> { Notes = []; Action = PlanAction.RunSliceExtract args }
         | Intent.SliceApply (reset, args)  -> { Notes = []; Action = PlanAction.RunSliceApply (reset, args) }
         | Intent.SliceFlow args            -> { Notes = []; Action = PlanAction.RunSliceFlow args }

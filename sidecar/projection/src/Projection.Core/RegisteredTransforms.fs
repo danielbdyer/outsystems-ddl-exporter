@@ -65,6 +65,8 @@ module RegisteredTransforms =
     /// `state.Catalog`).
     let private catalogStep (rt: RegisteredTransform<Catalog, Catalog>) : ChainStep =
         { Metadata = RegisteredTransform.toMetadata rt
+          Requires = []
+          Produces = None
           Build    = fun _ _ -> PassChainAdapter.liftCatalogPass rt }
 
     /// Config-invariant decision pass reading `state.Catalog`.
@@ -73,24 +75,32 @@ module RegisteredTransforms =
         (writeBack: 'D -> ComposeState -> ComposeState)
         : ChainStep =
         { Metadata = RegisteredTransform.toMetadata rt
+          Requires = []
+          Produces = None
           Build    = fun _ _ -> PassChainAdapter.liftDecisionPass rt writeBack }
 
-    /// Config-invariant decision pass reading the pre-computed topology.
+    /// Config-invariant decision pass reading the pre-computed topology
+    /// (align-I.6: declares the Topology product precondition — assembly
+    /// excludes it, by name, when the producer is absent).
     let private topologyStep
         (rt: RegisteredTransform<TopologicalOrder, 'D>)
         (writeBack: 'D -> ComposeState -> ComposeState)
         : ChainStep =
         { Metadata = RegisteredTransform.toMetadata rt
+          Requires = [ ChainProduct.Topology ]
+          Produces = None
           Build    = fun _ _ -> PassChainAdapter.liftTopologyPass rt writeBack }
 
     /// Profile-aware decision pass — metadata projects from the
     /// `Profile.empty` factory (config-invariant); `Build` threads the
-    /// caller's profile.
+    /// caller's profile (the declared ProfileEvidence requirement).
     let private profileDecisionStep
         (registeredFor: Profile -> RegisteredTransform<Catalog, 'D>)
         (writeBack: 'D -> ComposeState -> ComposeState)
         : ChainStep =
         { Metadata = RegisteredTransform.toMetadata (registeredFor Profile.empty)
+          Requires = [ ChainProduct.ProfileEvidence ]
+          Produces = None
           Build    = fun _ profile -> PassChainAdapter.liftDecisionPass (registeredFor profile) writeBack }
 
     /// Policy + Profile-aware decision pass (the four tightening passes +
@@ -101,7 +111,20 @@ module RegisteredTransforms =
         (writeBack: 'D -> ComposeState -> ComposeState)
         : ChainStep =
         { Metadata = RegisteredTransform.toMetadata (registeredFor Policy.empty Profile.empty)
+          Requires = [ ChainProduct.ProfileEvidence ]
+          Produces = None
           Build    = fun policy profile -> PassChainAdapter.liftDecisionPass (registeredFor policy profile) writeBack }
+
+    /// Mark a step as the producer of a chain product (align-I.6) — the
+    /// declaration `assemble` / the derived split read.
+    let private producing (product: ChainProduct) (step: ChainStep) : ChainStep =
+        { step with Produces = Some product }
+
+    /// Override a chain stand-in's firing site (align-I.8): the entry
+    /// registers in the chain with an identity config, and the NAMED
+    /// site executes it substantively with the operator's real config.
+    let private firedAt (site: FiringSite) (step: ChainStep) : ChainStep =
+        { step with Metadata = { step.Metadata with Firing = site } }
 
     /// **The single source of truth for the Core pass chain**, in
     /// EXECUTION order (canonical). Both the metadata registry (`all`)
@@ -119,13 +142,26 @@ module RegisteredTransforms =
     let chainStepsWithPins (logicalEmissionPins: Set<SsKey>) : ChainStep list =
         [ catalogStep CanonicalizeIdentity.registered
           catalogStep (VisibilityMask.registered emptyMask)
+          // S9 (the data-sink chapter) — the lifecycle-selection pass, the
+          // Selection-axis sibling of VisibilityMask. The chain default is
+          // the no-suppression identity (byte-identical); the Pipeline's
+          // applyModuleFilter seam executes it with the operator's real
+          // axes, so registered ⇔ executed holds for the one pass.
+          firedAt (FiringSite.AtSeam "applyModuleFilter")
+              (catalogStep (SelectionSuppression.registered SelectionSuppression.identity))
+          // S13 (the data-sink chapter) — the claims-annotation pass. The
+          // chain default annotates nothing (byte-identical); the
+          // sink-backed model read executes it with the journal-assembled
+          // adjudications.
+          firedAt FiringSite.OnSinkRead
+              (catalogStep (PhysicalClaimPass.registered []))
           catalogStep (NamingMorphism.registered identityMorphism)
           catalogStep NormalizeStaticPopulations.registered
           catalogStep SymmetricClosure.registered
           catalogStep (LogicalTableEmission.registeredWithPins logicalEmissionPins LogicalTableEmission.Enabled)
           catalogStep (LogicalColumnEmission.registered LogicalColumnEmission.Enabled)
           catalogStep (TableRename.registered [])
-          decisionStep TopologicalOrderPass.registered ComposeState.withTopologicalOrder
+          producing ChainProduct.Topology (decisionStep TopologicalOrderPass.registered ComposeState.withTopologicalOrder)
           topologyStep CentralityPass.registered ComposeState.withCentralityRanking
           topologyStep BoundedContextPass.registered ComposeState.withBoundedContexts
           profileDecisionStep ProfileAnomalyPass.registered ComposeState.withProfileAnomalies
@@ -133,6 +169,8 @@ module RegisteredTransforms =
           // topology from ComposeState at apply-time (not baked at
           // registration), so it uses the catalog-topology lift directly.
           { Metadata = RegisteredTransform.toMetadata (SchemaComplexityPass.registered None)
+            Requires = [ ChainProduct.Topology ]
+            Produces = None
             Build    =
                 fun _ _ ->
                     PassChainAdapter.liftCatalogTopologyPass
@@ -147,6 +185,8 @@ module RegisteredTransforms =
           // `topology.cascadeShock` Warning diagnostics flow to the same
           // decision-log / diagnostics surface as the other analytics passes.
           { Metadata = RegisteredTransform.toMetadata TopologicalOrderPass.cascadeShockRegistered
+            Requires = [ ChainProduct.Topology ]
+            Produces = None
             Build    =
                 fun _ _ ->
                     PassChainAdapter.liftCatalogTopologyPass
@@ -159,7 +199,11 @@ module RegisteredTransforms =
           tighteningStep ForeignKeyPass.registered ComposeState.withForeignKeyDecisions
           tighteningStep CategoricalUniquenessPass.registered ComposeState.withCategoricalUniquenessDecisions
           tighteningStep UserFkReflowPass.registered ComposeState.withUserRemap
-          tighteningStep BridgeRetargetPass.registered ComposeState.withBridgeRetargets ]
+          tighteningStep BridgeRetargetPass.registered
+              (fun (retargetMap, decisions) state ->
+                  state
+                  |> ComposeState.withBridgeRetargets retargetMap
+                  |> ComposeState.withBridgeRetargetDecisions decisions) ]
 
     /// The canonical chain — no physical-rename pins (byte-identical default).
     let chainSteps : ChainStep list = chainStepsWithPins Set.empty
@@ -177,8 +221,12 @@ module RegisteredTransforms =
     /// registry.
     let chainStepsSplitWithPins (logicalEmissionPins: Set<SsKey>) : ChainStep list * ChainStep list =
         let all = chainStepsWithPins logicalEmissionPins
+        // align-I.6: the split point is PRODUCER-DERIVED — the step that
+        // produces the Topology product ends the prefix (the prior
+        // "topologicalOrder" string key is retired; renaming the pass can
+        // no longer silently break the two-phase runner).
         let topoIx =
-            all |> List.findIndex (fun s -> s.Metadata.Name = "topologicalOrder")
+            all |> List.findIndex (fun s -> s.Produces = Some ChainProduct.Topology)
         List.splitAt (topoIx + 1) all
 
     /// The full Core metadata registry — every chain step's metadata
@@ -188,12 +236,42 @@ module RegisteredTransforms =
     let all : RegisteredTransformMetadata list =
         (chainSteps |> List.map ChainStep.metadata) @ StrategyRegistrations.all
 
+    /// DORMANT registrations (align-I.8): code that exists with operator
+    /// intent but NO live invocation path. Dormant rows live HERE, never
+    /// in `all` — registered ⇔ executed stays exact — and each carries
+    /// its firing trigger so the deferral index enumerates them instead
+    /// of a comment guarding them. The F12 audit row is the founding
+    /// member: `SelectionPolicy.filterCatalog` (Policy.fs), a
+    /// Selection-axis Catalog→Catalog pruning with no pipeline wiring;
+    /// its worked registration example is SelectionSuppression (S9).
+    let dormant : RegisteredTransformMetadata list =
+        [ { Name = "selectionFilterCatalog"
+            Domain = Schema
+            StageBinding = Pass
+            Sites =
+              [ { SiteName = "filterCatalog"
+                  Classification = OperatorIntent Selection
+                  Rationale = "Prune the catalog to the kinds SelectionPolicy admits (a Selection-axis Catalog -> Catalog mutation). DORMANT per the F12 audit row: no live path invokes it; ModuleFilter/SelectionSuppression own live selection today." } ]
+            Status = Active
+            Firing =
+              FiringSite.Dormant
+                "the day a live path invokes SelectionPolicy.filterCatalog it moves to `all`, binds execution and registration together in a test (mirror SelectionSuppression, S9), and emits one Removed lineage event per suppression" } ]
+
+    /// The full chain's supplied products: acquisition supplies the
+    /// profiling evidence from outside the chain (align-I.6).
+    let private fullChainSupplied : Set<ChainProduct> =
+        Set.ofList [ ChainProduct.ProfileEvidence ]
+
     /// The execution chain threaded with a caller-supplied `Policy` +
     /// `Profile` through every step's `Build`. Catalog-rewriting +
     /// config-invariant steps ignore both; the profile / tightening
-    /// steps capture them.
+    /// steps capture them. Satisfiability is ASSERTED (align-I.6; A52):
+    /// the canonical chain has zero unmet product preconditions, so no
+    /// step can compute over a defaulted product.
     let allChainStepsFor (policy: Policy) (profile: Profile) : PassChainAdapter list =
-        chainSteps |> List.map (ChainStep.build policy profile)
+        chainSteps
+        |> ChainStep.assertSatisfiable fullChainSupplied
+        |> List.map (ChainStep.build policy profile)
 
     /// The execution chain with operator physical-rename pins (S6.3) — the
     /// `LogicalTableEmission` step skips the pinned kinds so a physical-form
@@ -204,7 +282,9 @@ module RegisteredTransforms =
         (policy: Policy)
         (profile: Profile)
         : PassChainAdapter list =
-        chainStepsWithPins logicalEmissionPins |> List.map (ChainStep.build policy profile)
+        chainStepsWithPins logicalEmissionPins
+        |> ChainStep.assertSatisfiable fullChainSupplied
+        |> List.map (ChainStep.build policy profile)
 
     /// The execution chain with skeleton-friendly empty defaults —
     /// byte-identical to the prior hand-written `allChainSteps`
@@ -212,16 +292,37 @@ module RegisteredTransforms =
     let allChainSteps : PassChainAdapter list =
         allChainStepsFor Policy.empty Profile.empty
 
-    /// `allChainSteps` filtered to entries whose metadata is in
-    /// `TransformRegistry.skeletonView` (every Site classifies as
-    /// `DataIntent`). Consumed by `Compose.runSkeleton` to produce the
-    /// baseline reachable from `Project(catalog, Policy.empty, profile)`
-    /// without operator opinion. Join key is `Name`.
-    let skeletonChainSteps : PassChainAdapter list =
+    /// The skeleton assembly at ChainStep grain (align-I.6): the
+    /// skeletonView filter (every Site classifies `DataIntent`) followed
+    /// by the product-precondition cascade. The four topology dependents
+    /// (centrality, boundedContext, schemaComplexity, cascadeShockZones)
+    /// leave WITH their excluded producer — previously they stayed and
+    /// silently computed over `TopologicalOrder.empty` (the a3-F2
+    /// zero-edge defect). Exclusions are returned BY NAME; the skeleton
+    /// runner voices each as a `skeleton.stepExcluded` diagnostic.
+    /// ProfileEvidence IS supplied — the profile is DataIntent's own
+    /// free variable (`runSkeletonWith`), not operator opinion.
+    let skeletonAssembly : ChainStep list * ChainExclusion list =
         let skeletonPassNames =
             TransformRegistry.skeletonView all
             |> List.filter (fun rt -> rt.StageBinding = Pass)
             |> List.map (fun rt -> rt.Name)
             |> Set.ofList
-        allChainSteps
-        |> List.filter (fun adapter -> Set.contains adapter.Name skeletonPassNames)
+        chainSteps
+        |> List.filter (fun step -> Set.contains step.Metadata.Name skeletonPassNames)
+        |> ChainStep.assemble (Set.ofList [ ChainProduct.ProfileEvidence ])
+
+    /// The skeleton execution chain for a caller-supplied profile
+    /// (align-I.6: DataIntent's definition is parameterized over
+    /// profile — "reachable from `Project(catalog, Policy.empty,
+    /// profile)`"; this surfaces the free variable the prior
+    /// profile-empty-only surface hardcoded). Policy is always
+    /// `Policy.empty` — the skeleton is operator-free by definition.
+    let skeletonChainStepsFor (profile: Profile) : PassChainAdapter list =
+        fst skeletonAssembly |> List.map (ChainStep.build Policy.empty profile)
+
+    /// The profile-empty skeleton chain — byte-identical baseline of the
+    /// prior `skeletonChainSteps` surface, minus the four zero-edge
+    /// analytics the precondition cascade now excludes by name.
+    let skeletonChainSteps : PassChainAdapter list =
+        skeletonChainStepsFor Profile.empty

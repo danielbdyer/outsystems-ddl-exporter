@@ -29,8 +29,8 @@ namespace Projection.Core
 /// faithfulness rung in `NORTH_STAR.matrix.generated.md`. `Axis` is one
 /// of the five round-trip axes (Schema / Data / Identity / Time /
 /// Decision); `Disposition` is `OpenGap` (a closeable fidelity debt that
-/// caps the axis at L2-partial — e.g. `IndexOptionsUnreflected`, retired when
-/// the round-trip preserves it) or `AcceptedFaithful` (a representation-
+/// caps the axis at L2-partial — e.g. the since-retired `FkTrustUnreflected`,
+/// deleted when the round-trip preserved it) or `AcceptedFaithful` (a representation-
 /// only equivalence or an erasure covered by a separate witness, which
 /// does not reduce faithfulness). The honesty mechanism: retiring a
 /// variant deletes its tag, so the generator auto-flips the axis — no one
@@ -58,21 +58,19 @@ type ToleratedDivergence =
     /// @ladder PostDeployForeignKeysSplit Schema AcceptedFaithful
     | PostDeployForeignKeysSplit
 
-    /// E1 (debrief G3) — non-PK index *structure* (owner + name +
-    /// uniqueness + ordered key columns) IS now reflected in
-    /// `PhysicalSchema.Indexes` and compared on the round-trip (retiring the
-    /// prior `IndexOptionsUnreflected`, which said indexes were invisible
-    /// entirely). What remains unreflected is the index *options*: the
-    /// filter predicate (filtered indexes), INCLUDE columns (covering
-    /// indexes), and the storage options (FILLFACTOR / PAD_INDEX / lock
-    /// flags / DATA_COMPRESSION). `ReadSide.readIndexes` recovers none of
-    /// these (it excludes `is_included_column` and reads no option columns),
-    /// so they are symmetric-but-lost on both halves of the canary. Named
-    /// here so the residual is *closed* (documented), not silent. Retiring
-    /// it: extend `readIndexes` to recover the options + widen
-    /// `PhysicalIndex` + ensure V2 emit preserves them round-trip.
-    /// @ladder IndexOptionsUnreflected Schema OpenGap
-    | IndexOptionsUnreflected
+    // `IndexOptionsUnreflected` was RETIRED at schema-L3.1 (2026-08-30): the
+    // index OPTION surface — filter predicate, INCLUDE columns, FILLFACTOR /
+    // PAD_INDEX / lock flags / STATISTICS_NORECOMPUTE / IGNORE_DUP_KEY /
+    // disabled state / DATA_COMPRESSION / data space — is now recovered by
+    // `ReadSide.readIndexes` (+ `sys.stats` / `sys.partitions` /
+    // `sys.data_spaces`), carried on the widened `PhysicalIndex`, and
+    // compared on the round-trip. The gap's exact prior shape ("symmetric-
+    // but-lost on both halves of the canary") is pinned by the two-arm
+    // witness in `IndexRoundtripTests` (agreement: a filtered covering
+    // index with storage options round-trips empty-diff; falsifiability:
+    // an option-stripped projection DIVERGES against the same readback).
+    // No DU variant remains, per the dead-algebra-retirement precedent;
+    // the config token now fails closed at `Tolerance.parse`.
 
     // NM-16's four kind-facet tolerances (KindTriggersUnreflectedInDiff /
     // KindChecksUnreflectedInDiff / KindModalityUnreflectedInDiff /
@@ -109,22 +107,23 @@ type ToleratedDivergence =
     /// @ladder CharAnsiPaddingTolerated Data AcceptedFaithful
     | CharAnsiPaddingTolerated
 
-    /// NM-28 — a foreign key whose TARGET kind has a **composite** primary key
-    /// is reflected on only its FIRST leg. `PhysicalSchema.toPhysicalForeignKeys`
-    /// pairs the (single) FK source column against the target's first PK column;
-    /// the second-and-later legs are not emitted, so the canary's
-    /// `PhysicalSchema.ForeignKeys` set cannot observe drift in them. The cause
-    /// is structural, not a coding slip: V2's `Reference` IR is **single-column
-    /// per chapter 5.0** (`MetadataSnapshotRunner` `#FkColumns` note — the
-    /// multi-column source columns exist in `sys.foreign_key_columns` but have no
-    /// IR carrier yet), so there is no source column to pair the second target PK
-    /// leg against. Named here so the residual is *closed* (documented +
-    /// witnessed at construction), not silent. Retiring it: lift a composite-FK
-    /// IR (the deferred chapter-5.0 refinement) so a `Reference` carries its full
-    /// ordered (source, target) column list, then emit one `PhysicalForeignKey`
-    /// per leg and round-trip every leg.
-    /// @ladder CompositePkFkUnreflected Schema OpenGap
-    | CompositePkFkUnreflected
+    // `CompositePkFkUnreflected` was RETIRED at schema-L3.2 (2026-08-30): the
+    // chapter-5.0 single-column refinement is CASHED — `Reference.Legs`
+    // (`ReferenceLeg list`, SsKeys both sides, ordinal order) carries the
+    // full composite-FK column list; the OSSYS rowset lane denormalizes the
+    // always-captured `#FkColumns` groups onto the ordinal-1 reference;
+    // ReadSide groups `sys.foreign_key_columns` rows by constraint name into
+    // ONE leg-bearing reference; `toPhysicalForeignKeys` reflects one entry
+    // per leg; the SSDT emitter renders the multi-leg FOREIGN KEY (killing
+    // the latent Msg-1776 deploy failure); `ReferenceFacet.Legs` makes a leg
+    // change a real migrate diff. The legless-against-composite residual is
+    // refused by the SHARED arity predicate (`Reference.compositeArityMismatch`
+    // — the emitter gate and the estate board's `emission.compositePkFk`
+    // finding are the same fact). Witness: the two-arm canary in
+    // `CanaryRoundTripTests` (deploy + per-leg readback agreement; legs-
+    // stripped falsifiability) + `PhysicalSchemaForeignKeyTests`. No DU
+    // variant remains, per the dead-algebra-retirement precedent; the
+    // config token fails closed at `Tolerance.parse`.
 
     /// AC-D6 — a `decimal(p,s)` / `numeric(p,s)` column's stored value is a
     /// **numeric** quantity, so `1.0` and `1.00` are the **same stored
@@ -192,21 +191,23 @@ type ToleratedDivergence =
     /// @ladder FkTrustNotRestoredOnBulkLoad Decision AcceptedFaithful
     | FkTrustNotRestoredOnBulkLoad
 
-    /// M2 (THE VECTOR, Wave 0 honesty) — a `Statement.CreateTrigger` whose
-    /// definition body fails to parse (`ScriptDomBuild.tryParseTriggerBody`
-    /// returns `None`, H-019) is dropped from the SSDT **text** artifact at
-    /// `Render.fs` / `ScriptDomGenerate.fs`. The drop was a bare `()` justified
-    /// by appeal to "the canary roundtrip surfaces regressions" — but no such
-    /// detector covers the text path, so the erasure was **silent**, the one
-    /// thing the named-erasure law forbids absolutely. (The `.dacpac` path
-    /// already refuses + names the dropped object, NM-24; only the text path was
-    /// silent — the asymmetry this variant closes.) Named here so the erasure is
-    /// *closed*; the render site now emits an in-band marker comment naming this
-    /// tolerance instead of vanishing. **Retiring it:** emit a trigger whose body
-    /// round-trips, or refuse at emit when it cannot parse (mirroring the
-    /// `.dacpac` path), so no faithful trigger is ever dropped from the text.
-    /// @ladder TriggerBodyUnparsedDropped Schema OpenGap
-    | TriggerBodyUnparsedDropped
+    // `TriggerBodyUnparsedDropped` was RETIRED at schema-L3.3b (2026-08-30),
+    // taking the docstring's own second retirement path: the publish
+    // REFUSES at emit when a trigger body cannot parse, mirroring the
+    // `.dacpac` path — schema-L3.3a moved the #669 pre-flight to the
+    // compose seam (`SsdtDdlEmitter.emissionRefusal` → the named
+    // `emitter.ssdt.triggerUnparsed`), strengthened the gate to the
+    // renderer's success domain (gate-pass ⟹ render, the comments-only
+    // edge included), and gated the one production flat lane
+    // (`statementsChecked`). No faithful trigger is ever dropped from the
+    // text: a gated publish refuses BY NAME with no artifact written; the
+    // render marker survives only as loud defense for ungated direct
+    // callers. Witness: `ComposeEmitRefusalTests` (refusal + agreement +
+    // gate-domain corpus). This was the LAST Schema OpenGap — deleting
+    // this tag flips the generated matrix's Schema axis to ✅ L3
+    // (L1/L2/L3 = 5/5/5). No DU variant remains, per the dead-algebra-
+    // retirement precedent; the config token fails closed at
+    // `Tolerance.parse`.
 
     /// T17/B4b — the row-fidelity comparator's canonical cell form renders a
     /// model `Boolean` attribute as `"true"`/`"false"` REGARDLESS of the
@@ -279,13 +280,10 @@ module ToleratedDivergence =
         function
         | ToleratedDivergence.HeaderCommentsOmitted          -> ToleratedDivergence.HeaderCommentsOmitted
         | ToleratedDivergence.PostDeployForeignKeysSplit     -> ToleratedDivergence.PostDeployForeignKeysSplit
-        | ToleratedDivergence.IndexOptionsUnreflected             -> ToleratedDivergence.IndexOptionsUnreflected
         | ToleratedDivergence.StaticPopulationsUnreflected   -> ToleratedDivergence.StaticPopulationsUnreflected
-        | ToleratedDivergence.CompositePkFkUnreflected       -> ToleratedDivergence.CompositePkFkUnreflected
         | ToleratedDivergence.CharAnsiPaddingTolerated       -> ToleratedDivergence.CharAnsiPaddingTolerated
         | ToleratedDivergence.DecimalScaleTolerated          -> ToleratedDivergence.DecimalScaleTolerated
         | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad   -> ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
-        | ToleratedDivergence.TriggerBodyUnparsedDropped     -> ToleratedDivergence.TriggerBodyUnparsedDropped
         | ToleratedDivergence.BooleanCanonicalizationTolerated -> ToleratedDivergence.BooleanCanonicalizationTolerated
         | ToleratedDivergence.DateTimeTickPrecisionTolerated -> ToleratedDivergence.DateTimeTickPrecisionTolerated
         | ToleratedDivergence.IntegerWidthNormalized         -> ToleratedDivergence.IntegerWidthNormalized
@@ -306,13 +304,10 @@ module ToleratedDivergence =
             [
                 coverage ToleratedDivergence.HeaderCommentsOmitted
                 coverage ToleratedDivergence.PostDeployForeignKeysSplit
-                coverage ToleratedDivergence.IndexOptionsUnreflected
                 coverage ToleratedDivergence.StaticPopulationsUnreflected
-                coverage ToleratedDivergence.CompositePkFkUnreflected
                 coverage ToleratedDivergence.CharAnsiPaddingTolerated
                 coverage ToleratedDivergence.DecimalScaleTolerated
                 coverage ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
-                coverage ToleratedDivergence.TriggerBodyUnparsedDropped
                 coverage ToleratedDivergence.BooleanCanonicalizationTolerated
                 coverage ToleratedDivergence.DateTimeTickPrecisionTolerated
                 coverage ToleratedDivergence.IntegerWidthNormalized
@@ -327,13 +322,10 @@ module ToleratedDivergence =
         match d with
         | ToleratedDivergence.HeaderCommentsOmitted        -> "HeaderCommentsOmitted"
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> "PostDeployForeignKeysSplit"
-        | ToleratedDivergence.IndexOptionsUnreflected           -> "IndexOptionsUnreflected"
         | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
-        | ToleratedDivergence.CompositePkFkUnreflected     -> "CompositePkFkUnreflected"
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> "CharAnsiPaddingTolerated"
         | ToleratedDivergence.DecimalScaleTolerated        -> "DecimalScaleTolerated"
         | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad -> "FkTrustNotRestoredOnBulkLoad"
-        | ToleratedDivergence.TriggerBodyUnparsedDropped   -> "TriggerBodyUnparsedDropped"
         | ToleratedDivergence.BooleanCanonicalizationTolerated -> "BooleanCanonicalizationTolerated"
         | ToleratedDivergence.DateTimeTickPrecisionTolerated -> "DateTimeTickPrecisionTolerated"
         | ToleratedDivergence.IntegerWidthNormalized       -> "IntegerWidthNormalized"
@@ -393,8 +385,8 @@ module Tolerance =
 
     /// Construct from an explicit set. Use when a per-environment
     /// configuration carries its own subset (e.g., DEV accepts
-    /// HeaderCommentsOmitted + IndexOptionsUnreflected; STAGING accepts
-    /// only IndexOptionsUnreflected; PROD accepts none).
+    /// HeaderCommentsOmitted + CharAnsiPaddingTolerated; STAGING accepts
+    /// only CharAnsiPaddingTolerated; PROD accepts none).
     let ofSet (divergences: Set<ToleratedDivergence>) : Tolerance =
         Tolerance divergences
 

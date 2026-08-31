@@ -98,15 +98,24 @@ let runCheckEstate (args: CheckEstateArgs) : int =
             |> Result.bind (fun bound ->
                 RenameBinding.fromConfig args.TableRenames
                 |> Result.map (fun renameSpecs ->
-                    let relaxedRefs, relaxedAttrs = EstatePosture.activeOf bound
+                    // The UN-severed reading (align-II.2 → II.5): the relaxed
+                    // keys WITH the ruling attribution each override row
+                    // carries — the posture meter renders who approved the
+                    // relaxation, when the config names them.
+                    let refsProv, attrsProv = EstatePosture.activeWithProvenance bound
+                    let provenanceByKey =
+                        refsProv @ attrsProv
+                        |> List.choose (fun (key, p) -> p |> Option.map (fun pv -> key, pv))
+                        |> Map.ofList
                     ({ RepairBand = args.RepairBand |> Option.defaultValue Estate.repairBandDefault
                        RepairBandByEntity = args.RepairBandByEntity
                        DecisionFloor = args.DecisionFloor |> Option.defaultValue Estate.decisionFloor
                        AsymmetryFactor = args.AsymmetryFactor |> Option.defaultValue Estate.asymmetryFactor
                        PromotionOrder = args.PromotionOrder
-                       RelaxedReferences = relaxedRefs
-                       RelaxedAttributes = relaxedAttrs
-                       RenameSpecs = renameSpecs } : Estate.Posture)))
+                       RelaxedReferences = refsProv |> List.map fst |> Set.ofList
+                       RelaxedAttributes = attrsProv |> List.map fst |> Set.ofList
+                       RenameSpecs = renameSpecs
+                       Provenance = provenanceByKey } : Estate.Posture)))
         let postureErrors = match postureBinding with Error errs -> errs | Ok _ -> []
         if not (List.isEmpty postureErrors) then
             printErrors Console.Error postureErrors
@@ -378,7 +387,83 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                         if estateMovedAfterProof then Estate.FidelityClause.Stale (flow, ageDays)
                         elif not proof.Agrees then Estate.FidelityClause.Diverged (flow, proof.DifferenceTotal)
                         else Estate.FidelityClause.Green (flow, ageDays)
-            let stamped = stampedArtifacts |> Estate.withFidelity fidelityClause
+            // The sink's claim findings (the data-sink chapter, S11b): when a
+            // sink store rides and an environment's name resolves to a
+            // witnessed source (`projection sync <env>` stamped it), the
+            // journal-assembled claims join the board — Contested carries the
+            // Fork witness (exit 5), TombstoneOnly names the recoverable
+            // deleted estate. An absent store or an unstamped name degrades
+            // to nothing: the sink is ADVISORY evidence, and a run with no
+            // sink is byte-identical.
+            let sinkClaimsByEnv =
+                envs
+                |> List.choose (fun (label, _) ->
+                    match SinkRead.resolve label None with
+                    | Ok resolved ->
+                        match SinkStore.loadSnapshotAt resolved.Root resolved.Digest resolved.SyncId with
+                        | Some snapshot ->
+                            // align-II.10 — an unreadable ledger is a NAMED
+                            // degradation, never a silent empty claim set:
+                            // the cause prints as an advisory and the sink
+                            // contribution for this environment stands down.
+                            let reading =
+                                SinkJournal.JournalReading.ofLoad
+                                    (SinkJournal.load (SinkStore.journalPath resolved.Root resolved.Digest))
+                            (match reading with
+                             | SinkJournal.JournalReading.Unreadable cause ->
+                                 printErrors Console.Error
+                                     [ ValidationError.create "sink.journal.unreadable"
+                                         (sprintf "check environments: the sink journal for %s could not be read — %s. The sink's claim findings stand down this run; the ledger file is untouched on disk." label cause) ]
+                             | SinkJournal.JournalReading.Read _ -> ())
+                            let journal = SinkJournal.JournalReading.lines reading
+                            let claims = SinkClaims.adjudicateAll snapshot journal
+                            // S12 — the residue sweep beside the OSSYS read:
+                            // the environment's OSUSR universe minus the
+                            // witnessed edition's claims, ridden as
+                            // assemble-empty sets the adjudicator maps to
+                            // Unclaimed. Live-only (--offline skips it, like
+                            // the static probe); a probe failure degrades to
+                            // no residue (advisory-silent).
+                            let residue =
+                                match args.Evidence with
+                                | EstateEvidenceMode.Offline -> []
+                                | _ ->
+                                    match args.Confirm |> List.tryFind (fun (l, _) -> l = label) with
+                                    | None -> []
+                                    | Some (_, refStr) ->
+                                        try
+                                            use cnn = new Microsoft.Data.SqlClient.SqlConnection(Source.resolveConn refStr)
+                                            cnn.OpenAsync().GetAwaiter().GetResult()
+                                            match (SinkResidue.sweep cnn snapshot).GetAwaiter().GetResult() with
+                                            | Ok sets -> sets |> List.map (fun s -> s, PhysicalClaimRules.adjudicate s)
+                                            | Error _ -> []
+                                        with _ -> []
+                            Some (label, claims @ residue)
+                        | None -> None
+                    | Error _ -> None)
+            // The recorded rulings (align-II.5; A53's reception): the keyed
+            // store under the SAME estate root carries operator judgment;
+            // the board renders each ruling on its finding. Reception is
+            // record + render only — no lane, verdict, or ladder movement
+            // (application is the named deferral). A malformed store is a
+            // NAMED degradation to an unruled render: the judgment stays
+            // intact on disk, and no verdict ever stood on it, so the run
+            // proceeds with the cause on stderr.
+            let rulings =
+                match store with
+                | None -> []
+                | Some root ->
+                    match RulingStore.loadAll root with
+                    | Ok rs -> rs
+                    | Error e ->
+                        TtyRenderer.renderVoicedTo Console.Error "estate.rulings.unreadable"
+                            (Map.ofList [ "cause", box (RulingStore.describe e) ])
+                        []
+            let stamped =
+                stampedArtifacts
+                |> Estate.withSinkClaims sinkClaimsByEnv
+                |> Estate.withFidelity fidelityClause
+                |> Estate.withRulings rulings
             // The burndown (wave A7): this run's reading chains from the
             // LATEST recorded one (first-seen carry + the streak), while the
             // displayed movement diffs against the operator's baseline — the
@@ -450,6 +535,32 @@ let runCheckEstate (args: CheckEstateArgs) : int =
                      TtyRenderer.renderVoicedTo Console.Out "estate.overlay"
                          (Map.ofList [ "relaxations", box entries ])
                  | _ -> ())
+                // The sink's claim notices (S11b) — said with the provenance
+                // block, before the verdict stands on them: per environment,
+                // the contested and tombstone-only table counts the sink's
+                // journal-assembled claims contributed to the board.
+                for basis in report.Bases do
+                    let claimCount (kind: EstateFindingKind) =
+                        report.Findings
+                        |> List.filter (fun f ->
+                            f.Kind = kind && f.Envs |> List.exists (fun (e, _) -> e = basis.Env))
+                        |> List.length
+                    let contested = claimCount EstateFindingKind.PhysicalClaimContested
+                    if contested > 0 then
+                        TtyRenderer.renderVoicedTo Console.Out "sink.claimContested"
+                            (Map.ofList [ "env", box basis.Env; "tables", box contested ])
+                    let tombstoneOnly = claimCount EstateFindingKind.PhysicalTombstoneOnly
+                    if tombstoneOnly > 0 then
+                        TtyRenderer.renderVoicedTo Console.Out "sink.tombstoneOnly"
+                            (Map.ofList [ "env", box basis.Env; "tables", box tombstoneOnly ])
+                    let unclaimed = claimCount EstateFindingKind.PhysicalUnclaimed
+                    if unclaimed > 0 then
+                        TtyRenderer.renderVoicedTo Console.Out "sink.unclaimed"
+                            (Map.ofList [ "env", box basis.Env; "tables", box unclaimed ])
+                    let correspondence = claimCount EstateFindingKind.IdentityCutoverCorrespondence
+                    if correspondence > 0 then
+                        TtyRenderer.renderVoicedTo Console.Out "sink.cutoverCorrespondence"
+                            (Map.ofList [ "env", box basis.Env; "tables", box correspondence ])
                 let laneCount lane =
                     Estate.laneCounts report
                     |> List.tryFind (fun (l, _) -> l = lane)

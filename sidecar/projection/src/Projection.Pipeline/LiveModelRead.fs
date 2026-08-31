@@ -126,14 +126,50 @@ module LiveModelRead =
             match! MetadataSnapshotRunner.runAsyncWithOptions cnn parameters options with
             | Error es -> return Result.failure es
             | Ok snapshot ->
+                // The sink witness (S5; CHAPTER_SINK_OPEN.md — witness
+                // depth: every live OSSYS read). Store presence and the
+                // totality gate live inside `SinkStore.witness`; the call
+                // is ADVISORY by construction — a store write failure
+                // surfaces through the same notice rollup as every other
+                // finding on this read, and no outcome ever fails the
+                // read. A second artifact on this function's existing
+                // write seam (the notice artifacts below). Quiet on
+                // success: the sync verb (S6) is the surface that REPORTS
+                // witness outcomes; ambient reads witness silently.
+                // The freshness bellwethers (S8): probed only when the read
+                // is total AND a store rides (else the round-trip would buy
+                // nothing); a probe failure yields [] and the witness
+                // records no fingerprints — `auto` then reads live (the
+                // safe direction), never a failed read.
+                let! sinkFingerprints =
+                    if SinkStore.isTotalAcquisition parameters
+                       && (EstateStoreLocation.storeDir ()).IsSome
+                    then SinkFreshness.probe cnn
+                    else System.Threading.Tasks.Task.FromResult []
+                let witnessNotices =
+                    match SinkStore.witness System.DateTimeOffset.UtcNow cnn.DataSource cnn.Database sinkFingerprints parameters snapshot with
+                    | SinkStore.WitnessOutcome.Failed (code, message) ->
+                        [ DiagnosticEntry.create
+                            "sink:witness" DiagnosticSeverity.Warning code
+                            (sprintf "the sink witness could not persist this read's snapshot: %s — the read proceeds; the store is advisory" message) ]
+                    | SinkStore.WitnessOutcome.Persisted _
+                    | SinkStore.WitnessOutcome.Unchanged _
+                    | SinkStore.WitnessOutcome.SkippedScoped _
+                    | SinkStore.WitnessOutcome.Disabled _ -> []
                 // The bundle normalization (2026-07-07, the live partial-
                 // transfer program): inactive-shadow duplicate-kind
                 // resolution + the entity-less module skip, each a NAMED
                 // erasure. `CatalogReader.parse` re-applies the (idempotent)
                 // normalization internally; calling it here is what lets the
                 // live read surface the erasure notices.
+                // align-II.8 (A54) — the bundle projection returns its NAMED
+                // erasures beside the bundle (the folds by design as Info,
+                // the data-dependent assumptions/drops as Warnings); they
+                // join the same notice rollup the normalization erasures
+                // ride, so nothing the projection loses stays silent.
+                let projected, bundleErasures = MetadataSnapshotRunner.toBundle snapshot
                 let bundle, erasureNotices =
-                    OssysRowsetReader.normalizeBundle (MetadataSnapshotRunner.toBundle snapshot)
+                    OssysRowsetReader.normalizeBundle projected
                 // F9 (audit 2026-06-17) — surface, never silently discard, every
                 // logical-vs-deployed `#ColumnReality` divergence the snapshot
                 // carries (the adapter keeps the LOGICAL value; the operator is
@@ -160,7 +196,9 @@ module LiveModelRead =
                      // reflected/reality value; the operator is told the model
                      // diverged).
                      @ MetadataSnapshotRunner.deleteRuleDivergences snapshot
-                     @ erasureNotices)
+                     @ (bundleErasures |> List.map MetadataSnapshotRunner.BundleErasure.toDiagnostic)
+                     @ erasureNotices
+                     @ witnessNotices)
                 // Slice 4 — under a pushed scope, prune reference rows
                 // whose target entity the server-side narrowing excluded
                 // (the cross-scope edges). `ModuleFilter.apply` applies

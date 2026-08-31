@@ -33,9 +33,9 @@ let private coord o lbl day = EpisodeCoordinate.create (ver o lbl) Environment.D
 
 let private e0 = Episode.ofSchema (coord 0 "1.0.0" 1) sampleCatalog
 let private e1 =
-    Episode.create (coord 1 "1.1.0" 8) renamedCatalog Profile.empty (Some "reflog#1") (DataObservation.create 120 (Some "lsn:0x10"))
+    Episode.create (coord 1 "1.1.0" 8) renamedCatalog Profile.empty (Some "reflog#1") (DataObservation.observed 120 (Some "lsn:0x10"))
 let private e2 =
-    Episode.create (coord 2 "1.2.0" 15) sampleCatalog Profile.empty (Some "reflog#2") (DataObservation.create 95 None)
+    Episode.create (coord 2 "1.2.0" 15) sampleCatalog Profile.empty (Some "reflog#2") (DataObservation.observed 95 None)
 
 let private chain : EpisodicLifecycle =
     EpisodicLifecycle.genesis (tl "dev") e0
@@ -63,7 +63,7 @@ let ``6.H.4: change-manifest records the displacement (move counts + refactorlog
 [<Fact>]
 let ``6.H.4: an idempotent edge (no schema change) has norm 0`` () =
     // E1 → an episode with the same schema: zero schema displacement.
-    let e1b = Episode.create (coord 3 "1.3.0" 22) renamedCatalog Profile.empty None (DataObservation.create 0 None)
+    let e1b = Episode.create (coord 3 "1.3.0" 22) renamedCatalog Profile.empty None (DataObservation.NotObserved)
     let m = ChangeManifest.between e1 e1b |> mustOk
     Assert.Equal(0, m.SchemaNorm)
     Assert.Equal(None, m.RefactorLogRef)
@@ -94,7 +94,7 @@ let ``6.H.4: a genesis-only lifecycle has an empty change-manifest series`` () =
 let private tolerances : Tolerance =
     Tolerance.strict
     |> Tolerance.withDivergence ToleratedDivergence.HeaderCommentsOmitted
-    |> Tolerance.withDivergence ToleratedDivergence.IndexOptionsUnreflected
+    |> Tolerance.withDivergence ToleratedDivergence.PostDeployForeignKeysSplit
 
 let private appliedTransforms : (SsKey * OverlayAxis option) list =
     [ customerKey, Some Tightening
@@ -109,7 +109,7 @@ let ``6.H.4: the manifest surfaces the To-episode tolerance residual (named, sor
     // The residual is the To-episode's accepted-divergence set as a name-sorted
     // list — the equivalence under which this edge's displacement was faithful.
     Assert.Equal<ToleratedDivergence list>(
-        [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.IndexOptionsUnreflected ],
+        [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.PostDeployForeignKeysSplit ],
         m.ToleranceResidual)
 
 [<Fact>]
@@ -142,3 +142,52 @@ let ``6.H.4: path length (sum of edge norms) exceeds net displacement under chur
     Assert.Equal(0, CatalogDiff.norm net)
     // The difference (2 - 0) is the timeline's churn.
     Assert.True(path > CatalogDiff.norm net)
+
+// ===========================================================================
+// align-III.7 — A43's STATIC half: the rename-isometry check a recorded edge
+// answers from its own manifest. `sp_rename` conserves rows, so a faithful
+// rename-only edge shows CDC-silence; observed captures on such an edge name
+// a violation. (The LIVE deploy-time canary stays A43's ⬚, 6.D.1 route.)
+// ===========================================================================
+
+[<Fact>]
+let ``align-III.7 (A43 static half): a rename-only edge carrying observed captures violates the rename isometry`` () =
+    // e0 → e1 is exactly one kind rename, yet the edge carries 120 observed
+    // captures — data moved where sp_rename should have conserved it.
+    let m = ChangeManifest.between e0 e1 |> mustOk
+    Assert.Equal(1, m.SchemaNorm)
+    Assert.True(ChangeManifest.renameIsometryViolated m)
+
+[<Fact>]
+let ``align-III.7: a rename-only edge with OBSERVED silence upholds the isometry`` () =
+    // The same rename with a real zero reading — CDC-silence proven, the
+    // faithful realization A43 derives.
+    let silent = Episode.create (coord 1 "1.1.0" 8) renamedCatalog Profile.empty (Some "reflog#1") (DataObservation.observed 0 None)
+    let m = ChangeManifest.between e0 silent |> mustOk
+    Assert.False(ChangeManifest.renameIsometryViolated m)
+
+[<Fact>]
+let ``align-III.7: an UNMEASURED rename-only edge never violates — no claim without a measurement`` () =
+    let unmeasured = Episode.create (coord 1 "1.1.0" 8) renamedCatalog Profile.empty (Some "reflog#1") DataObservation.NotObserved
+    let m = ChangeManifest.between e0 unmeasured |> mustOk
+    Assert.False(ChangeManifest.renameIsometryViolated m)
+
+[<Fact>]
+let ``align-III.7: a mixed edge with captures is not a rename-isometry violation — data legitimately moves`` () =
+    // customer renamed AND country removed: the edge is not rename-only
+    // (norm 2, renames 1), so captures carry no isometry claim.
+    let mixedModule = { salesModule with Kinds = [ renamedKind; order ] }
+    let mixedCatalog = IRBuilders.mkCatalog [ mixedModule ]
+    let toEp = Episode.create (coord 1 "1.1.0" 8) mixedCatalog Profile.empty None (DataObservation.observed 40 None)
+    let m = ChangeManifest.between e0 toEp |> mustOk
+    Assert.True(m.SchemaNorm > m.Channels.RenamedKinds)
+    Assert.False(ChangeManifest.renameIsometryViolated m)
+
+[<Fact>]
+let ``align-III.7: an idempotent edge with captures is not a rename-isometry violation — there is no rename to betray`` () =
+    // Same schema across the edge (norm 0) with observed captures: a pure
+    // data load, no isometry claim in scope.
+    let dataOnly = Episode.create (coord 3 "1.3.0" 22) renamedCatalog Profile.empty None (DataObservation.observed 50 None)
+    let m = ChangeManifest.between e1 dataOnly |> mustOk
+    Assert.Equal(0, m.SchemaNorm)
+    Assert.False(ChangeManifest.renameIsometryViolated m)

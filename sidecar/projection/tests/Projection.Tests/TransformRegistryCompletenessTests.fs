@@ -161,14 +161,15 @@ let ``L3-CC-Transform-Totality: skeleton-view passes emit zero OperatorIntent Li
 [<Fact>]
 let ``L3-CC-Transform-Totality: every distinct OverlayAxis used has at least one registered overlay`` () =
     let axesPresent = TransformRegistry.overlayAxes allRegistrations
-    // Selection (VisibilityMask + UserFkReflowPass); Tightening (4
-    // intervention passes + 4 strategies); Emission (TableRename);
-    // Ordering (TopologicalOrderPass.selfLoopHandling — Q9-trigger-
-    // fires worked example). Insertion has no registered consumer at
+    // Selection (VisibilityMask); Identity (UserFkReflowPass —
+    // reclassified align-I.3); Tightening (4 intervention passes + 4
+    // strategies); Emission (TableRename); Ordering
+    // (TopologicalOrderPass.selfLoopHandling — Q9-trigger-fires
+    // worked example). Insertion has no registered consumer at
     // chapter A.4.7 close — forward signal: chapter 4.x adds an
-    // Insertion-axis pass and this assertion gains a fourth
+    // Insertion-axis pass and this assertion gains a sixth
     // expected axis.
-    let expected = Set.ofList [ Selection; Tightening; Emission; Ordering ]
+    let expected = Set.ofList [ Selection; Tightening; Emission; Ordering; OverlayAxis.Identity ]
     Assert.Equal<Set<OverlayAxis>>(expected, axesPresent)
 
 [<Fact>]
@@ -203,8 +204,12 @@ let ``L3-CC-Transform-Totality: TableRename overlay produces OperatorIntent Emis
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``L3-CC-Transform-Totality: aggregated registry covers all 12 passes + 1 adapter + 5 strategies = 18 entries`` () =
-    Assert.Equal(18, List.length allRegistrations)
+let ``L3-CC-Transform-Totality: aggregated registry covers all 12 passes + 1 adapter + 6 strategies = 19 entries`` () =
+    // The 6th strategy is physicalClaimRules (the data-sink chapter S11).
+    // (The aggregate here is the LIVE executable chain's registry view —
+    // identity-default chain passes like selectionSuppression /
+    // physicalClaims ride chainSteps, counted in RegisteredTransformsTests.)
+    Assert.Equal(19, List.length allRegistrations)
 
 [<Fact>]
 let ``L3-CC-Transform-Totality: every expected pass / adapter / strategy name is present in the registry`` () =
@@ -232,6 +237,7 @@ let ``L3-CC-Transform-Totality: every expected pass / adapter / strategy name is
             "foreignKeyRules"
             "categoricalUniquenessRules"
             "cycleResolution"
+            "physicalClaimRules"
         ]
     Assert.Equal<Set<string>>(expected, names)
 
@@ -280,7 +286,7 @@ let ``NM-42: every hand-listed pass / strategy is a step in the live RegisteredT
 [<Fact>]
 let ``L3-CC-Transform-Totality: aggregated registry validates through TransformRegistry.create (uniqueness + rationale + status invariants)`` () =
     match TransformRegistry.create allRegistrations with
-    | Ok entries -> Assert.Equal(18, List.length entries)
+    | Ok entries -> Assert.Equal(19, List.length entries)
     | Error es ->
         let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
         Assert.Fail(sprintf "Expected aggregated registry to validate; got errors: %s" codes)
@@ -339,7 +345,8 @@ let ``L3-CC-Transform-Totality intentional-fail probe: misclassified DataIntent 
               { SiteName = "actualOperatorIntent"
                 Classification = OperatorIntent Selection
                 Rationale = "actual filter that operator supplied" } ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }
     let skeleton = TransformRegistry.skeletonView [ counterfactual ]
     Assert.Empty skeleton  // counterfactual excluded — the leak surfaces structurally
 
@@ -356,7 +363,8 @@ let ``L3-CC-Transform-Totality intentional-fail probe: empty-Rationale entry rej
             [ { SiteName = "site"
                 Classification = DataIntent
                 Rationale = "" } ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }
     match TransformRegistry.create [ counterfactual ] with
     | Ok _ -> Assert.Fail "Expected empty-Rationale rejection."
     | Error es ->
@@ -376,7 +384,8 @@ let ``L3-CC-Transform-Totality intentional-fail probe: NotImplementedInV2 with e
             [ { SiteName = "site"
                 Classification = DataIntent
                 Rationale = "harvest analysis present" } ]
-          Status = NotImplementedInV2 "" }
+          Status = NotImplementedInV2 ""
+          Firing = FiringSite.AtBinding }
     match TransformRegistry.create [ counterfactual ] with
     | Ok _ -> Assert.Fail "Expected empty-NotImplementedInV2-rationale rejection."
     | Error es ->

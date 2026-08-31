@@ -64,3 +64,53 @@ let ``3.2: emit equals emitWith empty (byte-identical default wrapper)`` () =
     let viaWrapper = (SuggestConfigEmitter.emit diags).ToJsonString()
     let viaEmpty = (SuggestConfigEmitter.emitWith ApprovalRegistry.empty "" diags).ToJsonString()
     Assert.Equal(viaWrapper, viaEmpty)
+
+// ---------------------------------------------------------------------------
+// align-II.3 (a4-7) — per-proposal suppression: rejecting one nudge while
+// its sibling surfaces. The proposal's identity derives from (Path, Value).
+// ---------------------------------------------------------------------------
+
+let private secondSuggestingDiagnostic () : DiagnosticEntry =
+    let sc =
+        match SuggestedConfig.create "tightening.allowMandatoryRelaxation" "true" with
+        | Ok s -> s | Error e -> failwithf "%A" e
+    { DiagnosticEntry.create "test" DiagnosticSeverity.Info "test.suggest2" "hint2"
+      with SuggestedConfig = Some sc }
+
+[<Fact>]
+let ``align-II.3: SuggestedConfig.proposalKey is deterministic and distinct per (Path, Value)`` () =
+    let a = match SuggestedConfig.create "p.one" "1" with Ok s -> s | Error e -> failwithf "%A" e
+    let a2 = match SuggestedConfig.createWithNote "p.one" "1" "different note" with Ok s -> s | Error e -> failwithf "%A" e
+    let b = match SuggestedConfig.create "p.one" "2" with Ok s -> s | Error e -> failwithf "%A" e
+    Assert.Equal(SuggestedConfig.proposalKey a, SuggestedConfig.proposalKey a2)   // note is not identity
+    Assert.NotEqual<string>(SuggestedConfig.proposalKey a, SuggestedConfig.proposalKey b)
+
+[<Fact>]
+let ``align-II.3: a rejected proposal is suppressed while its sibling surfaces (per-proposal grain)`` () =
+    let digest = "digestY"
+    let rejectedKey =
+        match SuggestedConfig.create "tightening.nullBudget" "0.05" with
+        | Ok s -> SuggestedConfig.proposalKey s | Error e -> failwithf "%A" e
+    let registry =
+        ApprovalRegistry.empty
+        |> ApprovalRegistry.recordProposal
+            rejectedKey
+            (ApprovalWorkflow.pending testTime digest |> ApprovalWorkflow.reject "alice" (Some "not this one") testTime)
+    let node =
+        SuggestConfigEmitter.emitWith registry digest
+            [ suggestingDiagnostic (); secondSuggestingDiagnostic () ]
+    Assert.Equal(1, editCount node)
+    // Whole-policy rejection still subsumes every proposal.
+    Assert.True(ApprovalRegistry.isProposalSuppressed digest rejectedKey registry)
+    Assert.False(ApprovalRegistry.isProposalSuppressed digest "another-key" registry)
+
+[<Fact>]
+let ``align-II.3: whole-policy rejection subsumes every proposal (the coarse grain still holds)`` () =
+    let digest = "digestZ"
+    let registry = rejectedRegistry digest
+    let anyKey =
+        match SuggestedConfig.create "any.path" "1" with
+        | Ok s -> SuggestedConfig.proposalKey s | Error e -> failwithf "%A" e
+    Assert.True(ApprovalRegistry.isProposalSuppressed digest anyKey registry)
+    let node = SuggestConfigEmitter.emitWith registry digest [ suggestingDiagnostic () ]
+    Assert.Equal(0, editCount node)

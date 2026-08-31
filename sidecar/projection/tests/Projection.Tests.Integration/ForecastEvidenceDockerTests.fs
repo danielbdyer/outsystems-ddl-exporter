@@ -60,7 +60,7 @@ module private EvidenceCacheFixtures =
     let nm (s: string) : Name = Name.create s |> Result.value
 
 [<Xunit.Collection("Docker-SqlServer")>]
-type EvidenceCacheDockerTests(fixture: EphemeralContainerFixture) =
+type ForecastEvidenceDockerTests(fixture: EphemeralContainerFixture) =
     interface IClassFixture<EphemeralContainerFixture>
 
     [<Fact>]
@@ -87,12 +87,12 @@ type EvidenceCacheDockerTests(fixture: EphemeralContainerFixture) =
                         use snkCnn = new SqlConnection(snk.EngineConnStr)
                         do! srcCnn.OpenAsync()
                         do! snkCnn.OpenAsync()
-                        let! cache = EvidenceCache.fill srcCnn snkCnn srcContract sinkContract escapes
+                        let! cache = ForecastEvidence.fill srcCnn snkCnn srcContract sinkContract escapes
                         let selections =
                             Map.ofList
-                                [ customer.SsKey, EvidenceCache.Answer.Reconcile (EvidenceCacheFixtures.nm "Email")
-                                  category.SsKey, EvidenceCache.Answer.Reconcile (EvidenceCacheFixtures.nm "Name") ]
-                        let coupled = EvidenceCache.componentDeltas cache srcContract loadSet Set.empty escapes selections
+                                [ customer.SsKey, ForecastEvidence.Answer.Reconcile (EvidenceCacheFixtures.nm "Email")
+                                  category.SsKey, ForecastEvidence.Answer.Reconcile (EvidenceCacheFixtures.nm "Name") ]
+                        let coupled = ForecastEvidence.componentDeltas cache srcContract loadSet Set.empty escapes selections
                         // Customer: alice's two orders re-key; bob's order drops.
                         Assert.Equal(2, coupled.[customer.SsKey].Delta.RowsRekeyed)
                         Assert.Equal(1, coupled.[customer.SsKey].Delta.RowsDropped)
@@ -127,8 +127,8 @@ type EvidenceCacheDockerTests(fixture: EphemeralContainerFixture) =
 
                         // -- the coupling, live: toggle Customer to Pin ----------
                         let released =
-                            EvidenceCache.componentDeltas cache srcContract loadSet Set.empty escapes
-                                (Map.add customer.SsKey (EvidenceCache.Answer.Pin None) selections)
+                            ForecastEvidence.componentDeltas cache srcContract loadSet Set.empty escapes
+                                (Map.add customer.SsKey (ForecastEvidence.Answer.Pin None) selections)
                         Assert.Equal(3, released.[category.SsKey].Delta.RowsRekeyed)
                         return ()
                     }))

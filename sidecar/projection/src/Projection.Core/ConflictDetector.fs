@@ -64,16 +64,21 @@ module ConflictDetector =
     /// Map a diagnostic code's top-prefix to its `OverlayAxis`. Returns
     /// `None` for codes that do not name a policy axis (e.g.
     /// `profiling.*`, `topology.*` — these route to non-policy concerns).
+    /// The identity plane (align-I.3) emits codes under its pass names
+    /// (`userFkReflow.*`, `bridgeRetarget.*`), not under an `identity.`
+    /// namespace — the map names the prefixes that exist.
     let private axisOfCode (code: string) : OverlayAxis option =
-        if   code.StartsWith "selection."   then Some Selection
-        elif code.StartsWith "tightening."  then Some Tightening
-        elif code.StartsWith "emission."    then Some Emission
-        elif code.StartsWith "insertion."   then Some Insertion
+        if   code.StartsWith "selection."      then Some Selection
+        elif code.StartsWith "tightening."     then Some Tightening
+        elif code.StartsWith "emission."       then Some Emission
+        elif code.StartsWith "insertion."      then Some Insertion
+        elif code.StartsWith "userFkReflow."   then Some OverlayAxis.Identity
+        elif code.StartsWith "bridgeRetarget." then Some OverlayAxis.Identity
         else None
 
     /// Detect `AxisContradiction` conflicts. The gate is two-pronged:
     ///   1. The diagnostic code names a policy axis (selection / tightening
-    ///      / emission / insertion).
+    ///      / emission / insertion / the identity-plane pass prefixes).
     ///   2. The diagnostic carries an `SsKey` that the Selection axis has
     ///      already removed — i.e. the diagnostic acted on a kind the
     ///      catalog never surfaces, so the axis's effect was wasted.

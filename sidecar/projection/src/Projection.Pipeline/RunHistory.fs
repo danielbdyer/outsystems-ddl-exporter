@@ -10,7 +10,7 @@ namespace Projection.Pipeline
 /// This is the durable realization the morphology named as missing ("no
 /// durable episode to integrate over — the FTC runs only in-memory"); it is
 /// distinct from `Core.Episode` (a single state-at-coordinate) and subsumes
-/// `RunLedger` (the ledger was a thin index of this). It composes `Run` +
+/// `RunIndex` (the ledger was a thin index of this). It composes `Run` +
 /// (at the verb layer) `Comparison` + `Ref`, so it earns its place now that
 /// they exist. It SUPPORTS evolution / promotion / trends without completing
 /// any of them.
@@ -37,11 +37,13 @@ module RunHistory =
     let trend (metric: Run.Run -> int) (h: RunHistory) : int list =
         h.Runs |> List.map metric
 
-    /// The canary verdict history (green / red), oldest first — the dots.
-    let canaryHistory (h: RunHistory) : string list =
-        h.Runs |> List.choose (fun r -> r.Canary)
+    /// The canary verdict history (the runs that ran a canary — Green / Red),
+    /// oldest first — the dots. Typed at align-III.3; `NotRun` runs are
+    /// dropped (they carry no dot).
+    let canaryHistory (h: RunHistory) : Projection.Core.CanaryVerdict list =
+        h.Runs |> List.map (fun r -> r.Canary) |> List.filter Projection.Core.CanaryVerdict.ran
 
     /// R6 readiness over the whole history (reuses the gauge; the history is
     /// the source the ledger was a thin view of).
-    let readiness (h: RunHistory) : RunLedger.Readiness =
-        h.Runs |> List.map Run.toLedgerEntry |> RunLedger.readiness
+    let readiness (h: RunHistory) : RunIndex.Readiness =
+        h.Runs |> List.map Run.toLedgerEntry |> RunIndex.readiness

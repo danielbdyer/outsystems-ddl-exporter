@@ -27,6 +27,7 @@
     <Compile Include="TwinMintLoopTests.fs" />
     <Compile Include="TwinViewLoopTests.fs" />
     <Compile Include="TwinEvidenceLoopTests.fs" />
+    <Compile Include="TwinSinkCatalogImportTests.fs" />
     <Compile Include="SamplePrSupport.fs" />
     <Compile Include="SamplePrMakeMandatoryTests.fs" />
     <Compile Include="SamplePrTighteningTests.fs" />

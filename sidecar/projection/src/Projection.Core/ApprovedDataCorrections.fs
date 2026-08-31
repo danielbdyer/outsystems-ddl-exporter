@@ -85,7 +85,10 @@ type ApprovedDataCorrection =
       /// Extra reference probes for `NoConfiguredReferenceMatches`.
       ConfiguredProbes    : ConfiguredReferenceProbe list
       ApprovedBy          : string option
-      ApprovedAt          : string option }
+      /// Typed at align-III.1: the config decode mints it fail-closed
+      /// (a malformed `approvedAt` is a named config refusal), so the
+      /// receipt inherits a real instant, never raw text.
+      ApprovedAt          : System.DateTimeOffset option }
 
 /// The engine's output: the corrected row map and the count-bearing receipts.
 type CorrectionOutcome =
@@ -523,4 +526,5 @@ module ApprovedDataCorrections =
                 "Fail-closed guard evaluation over acquired row evidence (null / coverage / reference / finding-count probes). Pure over the row map + catalog; no operator opinion beyond which guards the correction declares."
               TransformSite.dataIntent "correctionReceipts"
                 "Emit count-bearing correction receipts (rows matched / changed / excluded, guard results, before/after digest) threaded onto the episode + row-fidelity proof — the intervention ledger that bounds the byte-identity-with-noted-exceptions claim." ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }

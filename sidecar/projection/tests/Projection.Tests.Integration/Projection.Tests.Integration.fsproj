@@ -44,8 +44,9 @@
     <Compile Include="PeerWitnessDockerTests.fs" />
     <Compile Include="ClonedModuleTransferDockerTests.fs" />
     <Compile Include="GoBoardDockerTests.fs" />
+    <Compile Include="OperatorWalkDockerTests.fs" />
     <Compile Include="TriageWitnessDockerTests.fs" />
-    <Compile Include="EvidenceCacheDockerTests.fs" />
+    <Compile Include="ForecastEvidenceDockerTests.fs" />
     <!-- EstateFingerprintProbeDockerTests.fs: the estate evidence store's
          one-batch staleness probe witness (wave A2.5, 2026-07-15). -->
     <Compile Include="EstateFingerprintProbeDockerTests.fs" />
@@ -87,6 +88,12 @@
     <Compile Include="SyntheticCanaryTests.fs" />
     <Compile Include="CentralityVolumeCanaryTests.fs" />
     <Compile Include="ModelResolutionDockerTests.fs" />
+    <Compile Include="SinkLifecycleSeedTests.fs" />
+    <Compile Include="SinkWitnessTests.fs" />
+    <Compile Include="SinkSyncVerbTests.fs" />
+    <Compile Include="SinkRefParityTests.fs" />
+    <Compile Include="SinkClaimsSeedTests.fs" />
+    <Compile Include="SinkOfflineReadTests.fs" />
     <Compile Include="T18CycleBreakCanaryTests.fs" />
   </ItemGroup>
 
