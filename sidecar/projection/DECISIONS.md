@@ -33616,3 +33616,38 @@ probe (never cached). E2's pay-once discipline and the burndown's honesty hold
 simultaneously; no repair class is fingerprint-invisible.
 
 Witnesses/gates: the walk test (10s), fast pool green, no Core touches.
+
+## 2026-08-31 — walk-3: THE LOOP CLOSES — publish, prove, and the board reads the proof
+
+The walk test grows phases 7–9; **every §12 line is now walked over one live estate
+in one cwd, in one witness (13s on the warm container)**:
+
+- **Phase 7 — the ordinary pipeline (R6: emits, doesn't ship).** A minimal
+  `projection.json` (model.ossys = cell-a's RAW conn — the D9 pass-through
+  exercised through the REAL config loader) drives `runFullExport` into a temp
+  bundle dir: exit 0; the bundle carries SQL artifacts AND `apply-runbook.md` —
+  **ideation §12 F7 is LANDED** (`ApplyRunbookEmitter`, wave B6), correcting this
+  program's own exploration report which had marked it absent. The publish leg is
+  deliberately the BUNDLE, not a live write: the walk needs no consent gate
+  because the walk never ships — the R6 doctrine in test form.
+- **Phase 8 — the fidelity proof (B5).** `runCheckFidelityFlow` over cell-a's own
+  OSSYS-read contract: the container proof stages the logical rendition, loads
+  from the live cell via the journaled transfer, compares — green; both proof
+  records written (`fidelity.rows.json` + the flow-scoped
+  `fidelity-proof/opwalk/fidelity.rows.json`, the RT-10 read path).
+- **Phase 9 — the board reads the proof (RT-10).** The closing `check
+  environments` runs with `readiness.estate.fidelityFlow = opwalk`: the fidelity
+  clause folds **`green — flow 'opwalk', every row byte-identical`** into the
+  masthead, the verdict stays unified, and the streak carries to
+  `2 consecutive unified runs`. The staleness rule held as designed: the estate's
+  cached evidence (captured at the phase-6 repairs) predates the proof, and a
+  bare live re-read does not trip Stale.
+
+The §12 middle the estate close named as owed — *"remediate → burndown → publish
+between the two loops now proven"* — is DELIVERED: one witness drives check →
+remediate → burndown → publish → prove → the board reads the proof, all through
+the real CLI faces. What remains for the program: the WP-12/13 probe arm
+(walk-4) and the close bookkeeping (walk-5).
+
+Witnesses/gates: the walk test (13s; the full pipeline + container proof ride the
+warm container), fast pool green, verifiability unchanged, no Core touches.

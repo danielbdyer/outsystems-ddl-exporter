@@ -24,6 +24,7 @@ namespace Projection.Tests
 open System
 open System.IO
 open Xunit
+open Projection.Core
 open Projection.Pipeline
 
 module OperatorWalkFixtures =
@@ -94,10 +95,13 @@ module OperatorWalkFixtures =
           "environments.remediation.cell-a.sql"
           "environments.remediation.cell-b.sql"
           "environments.overlay.json"
-          "environments.probes.sql" ]
+          "environments.probes.sql"
+          "fidelity.rows.json" ]
 
     let cleanArtifacts () : unit =
         walkArtifacts |> List.iter (fun f -> if File.Exists f then File.Delete f)
+        let proofDir = Path.Combine("fidelity-proof", "opwalk")
+        if Directory.Exists proofDir then Directory.Delete(proofDir, true)
 
     /// One walk step: drive the REAL face, capture the board the operator
     /// would read (stdout), return the exit code with it.
@@ -142,6 +146,48 @@ module OperatorWalkFixtures =
             let t = s.TrimStart()
             not (t.StartsWith "align ") && not (t.StartsWith "rows present"))
         |> String.concat "\n"
+
+    /// Capture BOTH consoles (a refusal voices to stderr; the board to
+    /// stdout) — the WP-13 probe asserts across the two.
+    let captureAll (f: unit -> int) : int * string =
+        let priorOut = Console.Out
+        let priorErr = Console.Error
+        use sw = new StringWriter()
+        Console.SetOut sw
+        Console.SetError sw
+        try
+            let exit = f ()
+            exit, sw.ToString()
+        finally
+            Console.SetOut priorOut
+            Console.SetError priorErr
+
+    /// The WP-13 probe cell: two AppCore entities in a WEAK-LESS 2-cycle —
+    /// both FK columns NOT NULL (no nullable edge for the resolver to break),
+    /// physical DDL + the OSSYS metadata rows in the seed's own shapes (the
+    /// `bt<EspaceSsKey>*<EntitySsKey>` reference binding, PK/attr key
+    /// conventions copied from the edge-case seed).
+    let cycleCell : string =
+        "CREATE TABLE [dbo].[OSUSR_DEF_GAMMA] ( \
+             [ID] INT IDENTITY(1,1) NOT NULL, [DELTAID] INT NOT NULL, \
+             CONSTRAINT [PK_Gamma_Id] PRIMARY KEY CLUSTERED ([ID])); \
+         CREATE TABLE [dbo].[OSUSR_DEF_DELTA] ( \
+             [ID] INT IDENTITY(1,1) NOT NULL, [GAMMAID] INT NOT NULL, \
+             CONSTRAINT [PK_Delta_Id] PRIMARY KEY CLUSTERED ([ID])); \
+         ALTER TABLE [dbo].[OSUSR_DEF_GAMMA] ADD CONSTRAINT [FK_OSUSR_DEF_GAMMA_OSUSR_DEF_DELTA] FOREIGN KEY ([DELTAID]) REFERENCES [dbo].[OSUSR_DEF_DELTA]([ID]); \
+         ALTER TABLE [dbo].[OSUSR_DEF_DELTA] ADD CONSTRAINT [FK_OSUSR_DEF_DELTA_OSUSR_DEF_GAMMA] FOREIGN KEY ([GAMMAID]) REFERENCES [dbo].[OSUSR_DEF_GAMMA]([ID]); \
+         INSERT INTO [dbo].[ossys_Entity] \
+             ([Id], [Name], [Physical_Table_Name], [Espace_Id], [Is_Active], [Is_System], [Is_External], [Data_Kind], [PrimaryKey_SS_Key], [SS_Key], [Description]) \
+         VALUES \
+             (9000, N'Gamma', N'OSUSR_DEF_GAMMA', 100, 1, 0, 0, N'entity', 'aaaaaaaa-0000-0000-0000-000000000090', 'bbbbbbbb-0000-0000-0000-000000000090', N'WP-13 probe: cycle member'), \
+             (9001, N'Delta', N'OSUSR_DEF_DELTA', 100, 1, 0, 0, N'entity', 'aaaaaaaa-0000-0000-0000-000000000091', 'bbbbbbbb-0000-0000-0000-000000000091', N'WP-13 probe: cycle member'); \
+         INSERT INTO [dbo].[ossys_Entity_Attr] \
+             ([Id], [Entity_Id], [Name], [SS_Key], [Data_Type], [Length], [Precision], [Scale], [Default_Value], [Is_Mandatory], [Is_Active], [Is_AutoNumber], [Is_Identifier], [Referenced_Entity_Id], [Original_Name], [External_Column_Type], [Delete_Rule], [Physical_Column_Name], [Database_Name], [Type], [Legacy_Type], [Decimals], [Original_Type], [Description], [Order_Num]) \
+         VALUES \
+             (90001, 9000, N'Id', 'cccccccc-0000-0000-0000-000000000090', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 1, 1, NULL, NULL, NULL, NULL, N'ID', NULL, NULL, NULL, NULL, NULL, NULL, 1), \
+             (90002, 9000, N'DeltaId', 'cccccccc-0000-0000-0000-000000000092', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 0, 0, NULL, NULL, NULL, N'Protect', N'DELTAID', NULL, N'bt11111111-1111-1111-1111-111111111111*bbbbbbbb-0000-0000-0000-000000000091', NULL, NULL, NULL, NULL, 10), \
+             (90003, 9001, N'Id', 'cccccccc-0000-0000-0000-000000000091', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 1, 1, NULL, NULL, NULL, NULL, N'ID', NULL, NULL, NULL, NULL, NULL, NULL, 1), \
+             (90004, 9001, N'GammaId', 'cccccccc-0000-0000-0000-000000000093', N'Identifier', NULL, NULL, NULL, NULL, 1, 1, 0, 0, NULL, NULL, NULL, N'Protect', N'GAMMAID', NULL, N'bt11111111-1111-1111-1111-111111111111*bbbbbbbb-0000-0000-0000-000000000090', NULL, NULL, NULL, NULL, 10);"
 
 /// The walk itself. Each phase asserts what the OPERATOR would see — exit
 /// codes, the rendered board, the artifacts on disk — never engine internals;
@@ -272,7 +318,68 @@ type OperatorWalkDockerTests(fixture: EphemeralContainerFixture) =
                     Assert.True((exit3 = 0), sprintf "post-remediation walk expected exit 0 (unified), got %d; board:\n%s" exit3 board3)
                     Assert.Matches(@"[1-9]\d* closed · 0 opened · 0 remain", board3)
                     Assert.Contains("1 consecutive unified run", board3)
-                    return ()
+
+                    // Phase 7 — the ordinary pipeline (R6: emits, doesn't
+                    // ship): the config-driven bundle publish over cell-a's
+                    // live OSSYS model, through the REAL loader and the REAL
+                    // face. The bundle carries its own apply story
+                    // (`apply-runbook.md` — ideation §12 F7).
+                    let cfgPath =
+                        Path.Combine(Path.GetTempPath(), sprintf "opwalk-config-%s.json" (Guid.NewGuid().ToString "N"))
+                    let outDir =
+                        Path.Combine(Path.GetTempPath(), sprintf "opwalk-bundle-%s" (Guid.NewGuid().ToString "N"))
+                    File.WriteAllText(cfgPath,
+                        sprintf """{ "model": { "ossys": "%s" }, "output": { "dir": "%s" } }"""
+                            (srcConnStr.Replace("\\", "\\\\")) (outDir.Replace("\\", "\\\\")))
+                    try
+                        let exitPub =
+                            Projection.Cli.Faces.Export.runFullExport
+                                cfgPath (Some outDir) LogSink.Verbosity.Quiet Set.empty None None
+                        Assert.True((exitPub = 0), sprintf "bundle publish expected exit 0, got %d" exitPub)
+                        let bundleFiles =
+                            Directory.EnumerateFiles(outDir, "*", SearchOption.AllDirectories) |> Seq.toList
+                        Assert.True(bundleFiles.Length > 0, "the publish emitted an empty bundle")
+                        Assert.True(bundleFiles |> List.exists (fun p -> Path.GetFileName p = "apply-runbook.md"),
+                                    "the bundle carries no apply-runbook.md (ideation §12 F7)")
+                        Assert.True(bundleFiles |> List.exists (fun p -> Path.GetExtension p = ".sql"),
+                                    "the bundle carries no SQL artifact")
+
+                        // Phase 8 — the fidelity proof (B5): the flow's
+                        // container proof stages the model, loads from cell-a,
+                        // and compares — every row byte-identical.
+                        let fidelityArgs : CheckFidelityFlowArgs =
+                            { Flow = "opwalk"
+                              FromLabel = "cell-a"
+                              SourceConn = srcConnStr
+                              SampleCap = 20
+                              AsJson = false
+                              Refresh = false
+                              Stage = StagingMode.Ddl
+                              Capture = None
+                              IdentityPolicy = IdentityPolicy.Structural
+                              Load = LoadMode.Transfer
+                              Corrections = []
+                              CorrectionReceipts = None }
+                        let exitFid =
+                            Projection.Cli.Faces.Fidelity.runCheckFidelityFlow _srcContract fidelityArgs
+                        Assert.True((exitFid = 0), "the fidelity proof did not read green")
+                        Assert.True(File.Exists "fidelity.rows.json", "the proof record was not written")
+                        Assert.True(File.Exists (Path.Combine("fidelity-proof", "opwalk", "fidelity.rows.json")),
+                                    "the flow-scoped proof copy (the RT-10 read path) was not written")
+
+                        // Phase 9 — the loop closes: the board reads the proof
+                        // (RT-10) and the streak carries. Every §12 line has
+                        // now been walked over one live estate in one cwd.
+                        let argsWithFlow =
+                            { args with FidelityFlow = Some "opwalk" }
+                        let exit4, board4 = OperatorWalkFixtures.checkEnvironments argsWithFlow
+                        Assert.True((exit4 = 0), sprintf "the closing walk expected exit 0, got %d; board:\n%s" exit4 board4)
+                        Assert.Contains("green — flow 'opwalk', every row byte-identical", board4)
+                        Assert.Contains("2 consecutive unified runs", board4)
+                        return ()
+                    finally
+                        try File.Delete cfgPath with _ -> ()
+                        try if Directory.Exists outDir then Directory.Delete(outDir, true) with _ -> ()
                 })
         finally
             Environment.SetEnvironmentVariable("PROJECTION_ESTATE_DIR", priorStore)
