@@ -1,4 +1,59 @@
-# Handoff addendum — 2026-08-30 (latest): SCHEMA ✅ L3 — the schema-L3 program delivered; the ladder reads 5/5/5 with zero open tolerances
+# Handoff addendum — 2026-08-31 (latest): THE OPERATOR WALK IS WALKED — the §12 terminus delivered; the WP-12/13 trigger discharged
+
+To the next agent.
+
+**Where you stand.** The operator chose the terminus: *"The operator-walk fixture is
+the one I want."* THE OPERATOR-WALK PROGRAM (walk-1 … walk-5, DECISIONS 2026-08-31)
+delivered the ideation §12 loop END-TO-END as one witnessed fact —
+`OperatorWalkDockerTests` (Integration), the FIRST test ever to drive
+`runCheckEstate`, walks a live two-cell estate through the REAL faces: first contact
+finds the estate's OWN finding (the seed ships an untrusted relationship), repairs it
+FROM the keyed remediation artifact per cell, converges (burndown `1 closed`, streak);
+diverges cell-b (D10 label drift + NOCHECK + the orphan it admits), stages the keyed
+blocks, applies them in dependency order (orphan out before WITH CHECK), re-converges;
+publishes the bundle through the real config loader (`apply-runbook.md` included — §12
+F7 is LANDED, whatever an earlier survey said); proves row fidelity (B5, green); and
+the closing check folds the proof onto the board (RT-10:
+`green — flow 'opwalk', every row byte-identical`, streak 2). ~25s warm, both tests.
+
+**The WP-12/13 trigger FIRED and is discharged** (walk-4; the probe test): WP-13's
+harm confirmed live (an unresolved weak-less cycle fails the scaffold's linear apply
+with the server's own missing-referent error; the board's `emission.dataLaneOrder`
+DECIDE finding names the same fact) — the §14 half LANDED
+(`fidelity.proof.applyFailed`: the face now catches the server failure and refuses
+by name, exit 6, instead of leaking a raw SqlException); the emission-order fix (SCC
+condensation + trailing-ALTER FK split) stays on SSDT_REMEDIATION_HANDOFF Tier 4
+with the probe as its STANDING RED-PATH WITNESS. WP-12 did not trip; its premise
+(zero multi-leg references on a native estate) is pinned executable. Both are in the
+Active-deferrals index now.
+
+**Also cashed this window:** the consent-surface voice ruling — the operator ruled
+"Approved" (2026-08-31): `WriteSignoff.fs`/`ActConsent.fs` JOIN the lazy-plural
+ratchet; the `excluded` list is deleted; the freeze covers the whole src tree. (The
+letter below says that question was still awaiting the operator — it no longer is.)
+And the close's truth-maintenance: the estate/fidelity + walk arc table is in
+`BACKLOG.md` (the July chapter predated the discipline), the estate-convergence axis
+row is in `V2_DRIVER.md`, PR #695's description carries Part 5.
+
+**What you must not re-derive.** The walk's §12 ledger lives in the walk-5 close
+entry — the remaining ease items (E7 remediate verb, E6 merge preview, F3 spine, F6
+scoping, F2 headline, the E1/E3/F1 residues) are commission-on-demand, no triggers.
+The known-red Docker set is still exactly {StagedMergeDeployE2ETests,
+T18CycleBreakCanaryTests} — still owed their own arc. The walk class shares their
+collection: read full-pool verdicts against the TRX (rule 12). Artifacts are
+cwd-relative BY DESIGN (RT-10 reads `fidelity-proof/<flow>/` relatively) — the walk
+tests clean up in `finally`; keep that hygiene if you extend them.
+
+**What the next program could be** (the operator chooses): the two owed Docker reds
+(the last standing follow-on); the perf bottleneck sweep (`PERF_HARNESS.md`); the
+§12 ease tail (pick from the walk-5 ledger); or a fired deferral — check
+`TriggerProbes` and the index first. The loop is closed; the books are balanced.
+
+Hold the spine.
+
+---
+
+# Handoff addendum — 2026-08-30: SCHEMA ✅ L3 — the schema-L3 program delivered; the ladder reads 5/5/5 with zero open tolerances
 
 To the next agent.
 

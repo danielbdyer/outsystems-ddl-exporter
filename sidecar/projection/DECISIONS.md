@@ -33705,3 +33705,52 @@ caught.
 Witnesses/gates: the probe test + the full walk green (15s together); the
 `ReverseLegCanaryTests` neighbor green (75s — the face change sits on its path);
 fast pool green; CLI-only src change (no Core, no analyzers, no matrix motion).
+
+## 2026-08-31 — walk-5: THE OPERATOR-WALK PROGRAM CLOSES (the coda)
+
+Five slices, commissioned as *"the operator-walk fixture"* and delivered as the §12
+loop walked END-TO-END as one witnessed fact: the face's first drive (walk-1), the
+remediate→burndown middle (walk-2), publish→prove→the-board-reads-the-proof
+(walk-3), the WP-12/13 trigger discharge (walk-4), this coda (walk-5). Everything
+rides `OperatorWalkDockerTests` — two tests, ~25s together on the warm container,
+driving the REAL CLI faces over live OSSYS cells.
+
+**The §12 ledger** (E1–E9/F1–F9, verified against code this program — recorded here
+so the ideation's ease items have one current home; the exploration pass's one
+error is corrected: F7 IS landed):
+
+- LANDED and now WALKED: E2 pay-once evidence · E4 the one-lever line
+  (label-addressed; "block 7" ordinals never existed — the FindingKey IS the
+  address) · E5 keyed blocks · E8 burndown+streak · F4 proof cache · F7 the
+  apply-runbook (`ApplyRunbookEmitter`, in every bundle) · RT-10.
+- LANDED (witnessed elsewhere): E1 `init` scaffolding (residue: `fidelityFlow` not
+  scaffolded) · E3 the rich board (residue: no `--env`/`--only`/`--module` flags)
+  · E6 overlay EMISSION · E9 envelopes · F1 flow-form defaults · F5 business-key
+  naming · F8 named degradation.
+- PARTIAL: F2 (the proof headline exists; the "N excepted · 0 residual" count-first
+  phrasing does not) · F9 (RT-10 is the mechanical gate; no separate ledger gate).
+- ABSENT, left deliberately as commission-on-demand ease items (no triggers):
+  E7 the `remediate` executor verb (the walk mechanizes the operator's own
+  copy-run step — building the verb is its own consent-sensitive item) · E6's
+  merge preview/apply · F3 the fidelity stage-board spine · F6 re-proof scoping ·
+  F1's `check data --rows` defaults. The BACKLOG arc table carries the list.
+
+**Close bookkeeping executed** (the ritual, scoped to a program): the BACKLOG arc
+table for the estate/fidelity + walk arc (the July chapter predated the arc-table
+discipline — truth-maintenance done); the V2_DRIVER axis row (estate convergence &
+the operator walk — Shipped); the Active-deferrals index current (WP rows added at
+walk-4; the consent-surface row cashed 2026-08-31); HANDOFF's top letter
+superseded (and its stale AWAITING-OPERATOR line corrected); PR #695's description
+gains Part 5. No tolerance, axiom, or matrix motion anywhere in the program — the
+ladder stands exactly as schema-L3 left it (Schema ✅ L3 · 5/5/5 · 9, 0 open).
+
+**Program gates:** the full Docker pool read against the TRX — **340 passed,
+exactly the two named pre-existing reds** ({StagedMergeDeployE2ETests,
+T18CycleBreakCanaryTests} — still owed their own arc) **and nothing else**;
+`TEST_CONFIG=Release` fast solution-wide **5,017/5,017** — after fixing, in-slice,
+two FS3511s the 2026-08-31 merge from main brought in (`SamplePrInverseTests.Fresh`
+/ `SamplePrCompoundTests.Fresh` in Twin.Tests.Integration: `for`+`try/with` inside
+a task — the align-I.1 debt class re-introduced; the non-awaiting reset prep is
+hoisted to a plain `ResetFiles` member per survival rule 5, behavior-preserving);
+the walk class + `PeerWitness` + `ReverseLeg` neighbors green focused;
+verifiability 94+34 unchanged; the hook chain green at every commit.
