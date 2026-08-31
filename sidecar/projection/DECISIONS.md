@@ -33521,3 +33521,69 @@ the ratchet only guarantees whatever is authored carries no lazy plural.
 
 **Index row cashed** (the a11 carve-out row above). This was the last AWAITING-OPERATOR
 item from the alignment program.
+
+## 2026-08-31 — THE OPERATOR-WALK PROGRAM OPENS: walk-1 drives `runCheckEstate` for the first time
+
+**Commission.** The operator (2026-08-31): *"The operator-walk fixture is the one I
+want"* — the terminus item named at the estate close (`HANDOFF` 2026-07-17: *"The
+ideation §12 walk on a LIVE multi-env estate, every artifact produced and
+cross-referenced… also WP-12/13's trigger"*). The program delivers the §12 loop
+(`CUTOVER_RECONCILIATION_IDEATION.md:749-755`) END-TO-END through the REAL CLI faces
+over the two-cell live estate: check → remediate → burndown → publish → prove →
+the board reads the proof. Five slices (walk-1 … walk-5); plan in the session plan
+file; rails unchanged (PR #695, gains Part 5 at close).
+
+**The strategic frame (the chapter-open discipline, scoped to a program).** The axis
+advanced is **multi-environment promotion / estate convergence** (`V2_DRIVER.md`
+per-axis stakes: *"per-env policy divergence not caught until second env deploys"*)
+— the walk is that axis's LIVE instantiation: the A45 espace-invariance claim, the
+estate meet, the burndown, and the fidelity proof, all through the operator's own
+verbs. The property the program makes hold: **the §12 loop is one witnessed fact**,
+not five separately-proven seams. The V1 capability V2 takes ownership of: the
+multi-environment consensus reporting V1 did with physical-name keying
+(`MultiEnvironmentConstraintConsensus.cs`), done here identity-safely and driven to
+convergence. NOTE (agent-verified 2026-08-31): the July estate/fidelity chapter never
+added its V2_DRIVER axis row or BACKLOG arc table — walk-5 owes both.
+
+**walk-1 lands: the face's first drive.** `OperatorWalkDockerTests` (Integration;
+the Docker collection) — the FIRST test anywhere to call `runCheckEstate` (every
+prior estate witness sat at the engine seam, `Estate.computeWith`; the face's only
+caller was `Program.fs`'s dispatch). One walk, four phases over
+`PeerEstateHarness.run2Cell` + a temp `PROJECTION_ESTATE_DIR` (the B6 idiom):
+
+1. **First contact is NOT pristine — by the estate's own honesty.** The edge-case
+   seed ships `StockMovement.SupplierId` enforced WITH NOCHECK in every cell; the
+   walk's first `check environments` exits 5 with exactly that REPAIR finding in
+   both cells (the board's odd-one-out copy names "the target may be the one
+   behind"), and records the estate's first reading. The plan's R1 risk (asserting
+   a pristine-unified baseline) was WRONG in the right direction — the fixture
+   estate carries real texture, and the walk starts by finding it.
+2. **The operator's remediation step, mechanized as §12 describes it** (the E7
+   executor verb was never built — deliberately not built here either): the test
+   reads EACH cell's `environments.remediation.<env>.sql`, extracts the re-trust
+   block by its FindingKey (`schema.trust:StockMovement.SupplierId`), asserts each
+   block names ITS OWN cell's physical table (`OSUSR_INV_MOVEMENT` vs the
+   espace-shifted `OSUSR_XINV_MOVEMENT` — RT-12 provenance made load-bearing), and
+   executes the uncommented repair against its cell.
+3. **Convergence:** exit 0, burndown `1 closed · 0 opened · 0 remain`, streak
+   `1 consecutive unified run` — the finding closed BY KEY across two readings.
+4. **The planted divergence** (cell-b only: a D10 static-content label drift on
+   Country, a NOCHECK'd relationship, and the FK orphan it admits — orphans enter
+   real estates exactly this way): exit 5; `environments.remediation.cell-b.sql`
+   stages `data.staticContent:Country` (a real alignment MERGE) and
+   `data.orphans:Customer.CityId`; the operator-safety contract is pinned LIVE
+   (every mutating repair line commented; the locating SELECT active; no secret in
+   the provenance header); the burndown's opened side is non-zero.
+
+**Register note.** The face renders the RICH board — panel titles in the operator
+register (`─environments─`, `BURNDOWN — movement since the recorded baseline`,
+`N closed · M opened · K remain`), not the engine render's plain `ENVIRONMENTS` /
+`N closed, M opened` forms the engine witnesses pin. The walk asserts the rich
+copy; both renders stay covered (each by its own witness).
+
+**Witnesses.** Docker — the walk test (phases above; 9s on the warm container —
+the estate loop is CHEAP, which is itself an E2 claim verified). Pure pools
+untouched. Gates: build; fast pool green; focus green ×2 (walk + the
+`PeerWitnessDockerTests` neighbor); verifiability 94 live + 34 deferred (C=10,
+D=1) unchanged; no Core/Tolerance/Axiom touches (no matrix motion, no analyzers
+run owed).
