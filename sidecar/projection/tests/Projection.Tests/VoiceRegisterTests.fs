@@ -7,11 +7,13 @@ module Projection.Tests.VoiceRegisterTests
 // widened the freeze from the nine stage-1 files to the FULL src tree:
 // every string literal in every production file holds zero occurrences.
 //
-// Two consent surfaces are EXCLUDED pending an explicit operator ruling
-// (the a11 ruling's carve-out: WriteSignoff/ActConsent are exemplary
-// surfaces whose copy the operator signs; their register does not move
-// on an agent's initiative): `Projection.Pipeline/WriteSignoff.fs`,
-// `Projection.Core/ActConsent.fs`.
+// The two consent surfaces (`Projection.Pipeline/WriteSignoff.fs`,
+// `Projection.Core/ActConsent.fs`) were excluded pending an operator
+// ruling — their copy is the operator's signature, so the freeze did not
+// annex them on an agent's initiative. The operator ruled 2026-08-31:
+// INCLUDE them (both measured zero at the time of the ruling; the
+// question was jurisdictional, and the ratchet now guards the whole src
+// tree with no carve-outs). DECISIONS 2026-08-31.
 //
 // Scan discipline: comment lines are skipped (doc-comments may NAME the
 // banned form — "never \"table(s)\"" — without violating it), and only
@@ -25,11 +27,6 @@ open Xunit
 
 let private srcRoot = Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src")
 
-/// Consent surfaces excluded from the freeze (operator ruling pending).
-let private excluded : string list =
-    [ Path.Combine("Projection.Pipeline", "WriteSignoff.fs")
-      Path.Combine("Projection.Core", "ActConsent.fs") ]
-
 let private stringSpans = Regex("\"(?:[^\"\\\\]|\\\\.)*\"", RegexOptions.Compiled)
 let private lazyPlural  = Regex(@"\w\((s|es|ies|en)\)", RegexOptions.Compiled)
 
@@ -37,9 +34,6 @@ let private lazyPlural  = Regex(@"\w\((s|es|ies|en)\)", RegexOptions.Compiled)
 let ``THE_VOICE 2-2: the lazy plural is banned — every production string in src holds zero occurrences (the align-III-22 ratchet)`` () =
     let files =
         Directory.EnumerateFiles(srcRoot, "*.fs", SearchOption.AllDirectories)
-        |> Seq.filter (fun p ->
-            let rel = Path.GetRelativePath(srcRoot, p)
-            excluded |> List.forall (fun ex -> rel <> ex))
         |> Seq.toList
     Assert.True(files.Length > 300, sprintf "the ratchet found only %d src files — the root resolution is broken" files.Length)
     let offenders =

@@ -254,7 +254,7 @@ table before continuing.
 | **Append-only ruling HISTORY beside the keyed `RulingStore`** | 2026-08-16 (align-II.1's design ruling, restated at the III close) | The FIRST re-ruling consumer (an operator or surface that must read a finding's PRIOR rulings, not just the current one). `BasisAnchor.SinkEdition` widens in the same slice. | Open; the keyed replace-by-key store is the operating shape. |
 | **`SpineLedger` rename (the last ledger-noun overload)** | 2026-08-30 (align-III.21/X5 — `RunIndex` executed; SpineLedger explicitly out of scope) | The ledger-noun overload measurably stings again (an agent or the operator misreads SpineLedger as a `LedgerSpec` instance). | Open; a per-run stage tracker, not an admission-disciplined ledger — the name is the residue. |
 | **The full Sink→Witness B-family rename (`SinkTable`/`SinkStore`/`SinkJournal`/`sink:` refs)** | 2026-08-30 (align-III.19/X3 — `WitnessedRow` + the Witness- freeze) | An operator-surface rename arc is commissioned (L-effort: the `sink:` refs and `sink.*` codes are operator vocabulary; the freeze covers NEW names only). | Open; new witness-plane names take `Witness-`/`Witnessed-`, never `Sink-`. |
-| **The consent-surface voice ruling (`WriteSignoff.fs` / `ActConsent.fs` in the lazy-plural ratchet)** | 2026-08-16 (a11 carve-out; measured at align-III.22) | AWAITING OPERATOR — one word either way. Both files measure ZERO lazy plurals today; the exclusion is jurisdictional (their copy is the operator's signature), not protective. | Open; the `VoiceRegisterTests` ratchet excludes both files until the ruling lands. |
+| **The consent-surface voice ruling (`WriteSignoff.fs` / `ActConsent.fs` in the lazy-plural ratchet)** | 2026-08-16 (a11 carve-out; measured at align-III.22) | AWAITING OPERATOR — one word either way. Both files measured ZERO lazy plurals; the exclusion was jurisdictional (their copy is the operator's signature), not protective. | **Cashed 2026-08-31 — the operator ruled "Approved": both files JOIN the ratchet.** The `excluded` list is deleted from `VoiceRegisterTests`; the freeze covers the whole src tree with no carve-outs. See `2026-08-31 — The consent-surface voice ruling lands` below. |
 | **`Supplied<'T>` config-provenance wrapper** | 2026-08-16 (align-I.9 — the rule table shipped instead) | The FIRST mis-wiring the I.9 rule table catches (a config-taking pass whose stance the property test reveals as misclassified). | Open; the rule table + property test are the operating shape. |
 
 **[UPDATE 2026-07-03 — reconciliation note: six zero-reader `ComposeState` fields
@@ -33500,3 +33500,24 @@ named pre-existing reds and nothing else), verifiability 94+34, analyzers, matri
 regen — recorded in this commit. The program rode PR #695 (Part 4 of its description);
 the fast pool crossed **5,000 executed tests** during L3.2 — the milestone the operator
 called, landed green.
+
+## 2026-08-31 — The consent-surface voice ruling lands: the ratchet covers the whole src tree
+
+**Operator ruling (2026-08-31, one word as promised): "Approved" — the two consent
+surfaces join the lazy-plural ratchet.** `Projection.Pipeline/WriteSignoff.fs` and
+`Projection.Core/ActConsent.fs` had been excluded from the `VoiceRegisterTests`
+full-src freeze since align-III.22 under the a11 carve-out: their copy is the
+operator's signature (the sign-off labels, the consent phrases), so an agent-run style
+gate did not annex them on its own initiative. Both files measured ZERO lazy plurals
+at the carve-out and still measure zero at the ruling — the question was purely
+jurisdictional, and the operator settled it: the ratchet guards them too.
+
+**What changed:** the `excluded` list and its filter are DELETED from
+`VoiceRegisterTests.fs` (the ratchet now enumerates `src/**/*.fs` with no
+carve-outs); the header comment records the ruling and its date. No production string
+moved — the freeze simply extends its jurisdiction. Future edits to the consent
+surfaces' copy are still the operator's to author (that discipline is unchanged);
+the ratchet only guarantees whatever is authored carries no lazy plural.
+
+**Index row cashed** (the a11 carve-out row above). This was the last AWAITING-OPERATOR
+item from the alignment program.
