@@ -33587,3 +33587,32 @@ untouched. Gates: build; fast pool green; focus green ×2 (walk + the
 `PeerWitnessDockerTests` neighbor); verifiability 94 live + 34 deferred (C=10,
 D=1) unchanged; no Core/Tolerance/Axiom touches (no matrix motion, no analyzers
 run owed).
+
+## 2026-08-31 — walk-2: the §12 MIDDLE is walked (remediate → burndown → streak)
+
+The owed middle of the loop — named at the estate close as *"the FULLER §12 middle —
+remediate → burndown → publish between the two"* — lands its remediation half. The
+walk test grows phases 5–6 (green phases never rewritten):
+
+- **Phase 5 — the operator's mid-walk remediation, mechanized.** Cell-b's three
+  staged blocks are taken FROM THE ARTIFACT by FindingKey and applied in the order
+  the estate itself demands: the orphan DELETE first (`data.orphans:Customer.CityId`),
+  then the D10 alignment MERGE (`data.staticContent:Country` — the real multi-line
+  batch, prose guidance lines dropped, surrogate PK untouched), then the re-trust
+  (`schema.trust:Customer.CityId` — WITH CHECK re-validates, which is exactly why
+  the orphan had to leave first; Msg 547 otherwise). The block-extraction helpers
+  follow the emitter's FIXED block layout (title / key / one statement line / the
+  ACTIVE locating SELECT / commented repairs) — structure-aware, never regex-lucky.
+- **Phase 6 — the burndown closes what the walk repaired.** Exit 0; the movement
+  reads `N closed · 0 opened · 0 remain` (N ≥ 1 pinned by regex — the fixture may
+  grow); the unified streak restarts at 1 from the diverged reading.
+
+**Evidence-plane note (verified in the walk, worth naming):** the three repairs
+close through three DIFFERENT evidence paths, and all three self-correct without
+`--refresh` — the trust state rides the CATALOG (re-read live every check), the
+orphan rides the PROFILE (the DELETE moves the kind's fingerprint, so the pay-once
+store re-profiles exactly that kind), and the static content rides the LIVE static
+probe (never cached). E2's pay-once discipline and the burndown's honesty hold
+simultaneously; no repair class is fingerprint-invisible.
+
+Witnesses/gates: the walk test (10s), fast pool green, no Core touches.

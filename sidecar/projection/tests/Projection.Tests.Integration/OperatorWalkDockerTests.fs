@@ -106,26 +106,42 @@ module OperatorWalkFixtures =
 
     /// The operator's remediation step, mechanized exactly as §12 describes it
     /// (the E7 executor verb was never built — the operator reads the block,
-    /// uncomments the repair they choose, and runs it): take one block's
-    /// commented repair lines (between its `-- key:` line and the next block
-    /// header), strip the comment prefix, and keep the single-line executable
-    /// statements — the prose guidance lines carry no leading SQL verb. The
-    /// D10 alignment MERGE is multi-line and gets its own extraction when the
-    /// walk applies it.
-    let singleLineRepairsOfBlock (artifact: string) (key: string) : string list =
+    /// uncomments the repair they choose, and runs it). One block's layout is
+    /// fixed by the emitter: `-- Block:` title, `-- key:`, ONE commented
+    /// statement line, the ACTIVE locating SELECT, then the commented repair
+    /// lines. This takes the repair lines of the named block, uncommented.
+    let repairLinesOfBlock (artifact: string) (key: string) : string list =
         let lines = artifact.Replace("\r\n", "\n").Split('\n') |> Array.toList
         let rec dropUntilKey (remaining: string list) =
             match remaining with
             | [] -> []
             | (l: string) :: rest when l.StartsWith("-- key: " + key) -> rest
             | _ :: rest -> dropUntilKey rest
-        dropUntilKey lines
-        |> List.takeWhile (fun l -> not (l.StartsWith "-- Block:"))
-        |> List.filter (fun l -> l.StartsWith "-- ")
-        |> List.map (fun l -> l.Substring 3)
+        match dropUntilKey lines with
+        | [] -> []
+        | _statementLine :: rest ->
+            rest
+            |> List.skipWhile (fun l -> not (l.StartsWith "-- "))   // the active Locate line(s)
+            |> List.takeWhile (fun l -> not (l.StartsWith "-- Block:"))
+            |> List.filter (fun l -> l.StartsWith "-- ")
+            |> List.map (fun l -> l.Substring 3)
+
+    /// Single-statement repairs (re-trust, orphan DELETE): the executable
+    /// lines carry a leading SQL verb; prose guidance lines do not.
+    let singleLineRepairsOfBlock (artifact: string) (key: string) : string list =
+        repairLinesOfBlock artifact key
         |> List.filter (fun s ->
             let t = s.TrimStart()
             t.StartsWith "UPDATE " || t.StartsWith "DELETE " || t.StartsWith "ALTER ")
+
+    /// The D10 alignment MERGE (multi-line): drop the block's two prose
+    /// guidance lines — what remains is the MERGE batch the operator runs.
+    let mergeRepairOfBlock (artifact: string) (key: string) : string =
+        repairLinesOfBlock artifact key
+        |> List.filter (fun s ->
+            let t = s.TrimStart()
+            not (t.StartsWith "align ") && not (t.StartsWith "rows present"))
+        |> String.concat "\n"
 
 /// The walk itself. Each phase asserts what the OPERATOR would see — exit
 /// codes, the rendered board, the artifacts on disk — never engine internals;
@@ -228,6 +244,34 @@ type OperatorWalkDockerTests(fixture: EphemeralContainerFixture) =
                     // unified baseline (opened > 0 — never the vacuous zero).
                     Assert.Contains("BURNDOWN — movement since the recorded baseline", board2)
                     Assert.Matches(@"[1-9]\d* opened", board2)
+
+                    // Phase 5 — the mid-walk remediation (§12's middle step):
+                    // cell-b's three staged blocks, applied in the order the
+                    // estate itself demands — the orphan must leave BEFORE
+                    // WITH CHECK can re-validate the relationship (Msg 547
+                    // otherwise). The operator reads that order off the
+                    // board; the walk mechanizes the same judgment.
+                    let orphanRepairs =
+                        OperatorWalkFixtures.singleLineRepairsOfBlock remediation "data.orphans:Customer.CityId"
+                        |> List.filter (fun s -> s.TrimStart().StartsWith "DELETE ")
+                    let trustRepairs =
+                        OperatorWalkFixtures.singleLineRepairsOfBlock remediation "schema.trust:Customer.CityId"
+                    let mergeRepair =
+                        OperatorWalkFixtures.mergeRepairOfBlock remediation "data.staticContent:Country"
+                    Assert.True(not (List.isEmpty orphanRepairs), "the orphan block staged no executable DELETE")
+                    Assert.True(not (List.isEmpty trustRepairs), "the re-trust block was not staged for cell-b")
+                    Assert.Contains("MERGE", mergeRepair)
+                    do! Deploy.executeBatch sink (String.concat "\n" orphanRepairs)
+                    do! Deploy.executeBatch sink mergeRepair
+                    do! Deploy.executeBatch sink (String.concat "\n" trustRepairs)
+
+                    // Phase 6 — the burndown closes what the walk repaired:
+                    // unified again, every opened finding closed BY KEY, the
+                    // streak restarts from the diverged reading.
+                    let exit3, board3 = OperatorWalkFixtures.checkEnvironments args
+                    Assert.True((exit3 = 0), sprintf "post-remediation walk expected exit 0 (unified), got %d; board:\n%s" exit3 board3)
+                    Assert.Matches(@"[1-9]\d* closed · 0 opened · 0 remain", board3)
+                    Assert.Contains("1 consecutive unified run", board3)
                     return ()
                 })
         finally
