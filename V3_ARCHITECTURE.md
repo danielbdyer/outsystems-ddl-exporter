@@ -25,14 +25,14 @@ budgets · §7 kernel types · §8 verbs · §9 knowledge · §10 substrate and 
 B numbers · C operations · D v2 ledger · E v1 ledger · F reading list.
 
 **The answer.** v3 is a *change engine*. The unit of work is no longer a model to be projected;
-it is a change to be proven. A small F# kernel reads a schema from wherever it lives (an
+it is a change to be proven. A small C# kernel reads a schema from wherever it lives (an
 OutSystems metamodel, a live SQL Server, an SSDT project or dacpac), profiles the data beneath
 it, computes the change between two states, proves that change against a real-shaped
 disposable copy by letting DacFx publish it, and writes the record a reviewer can approve by
 reading. The knowledge tree that already exists (the operation catalog, the shared reasoning,
 the record forms) becomes the product's front door. The synthetic substrate (the Twin) becomes
 the thing every proof runs on. Everything is sized to what has a consumer today: about a
-fifth of v2's source (a quarter if the OutSystems metamodel reader stays, §16), a sixth of its
+quarter of v2's source, written in C# with v2's F# as the specification (§6.6), a fifth of its
 tests, a twelfth of the repository's hand-written prose, and one CLI.
 
 **Why this and not more of v2.** This repository discovered the right idea three times and then
@@ -59,11 +59,15 @@ capability ladders, the Voice/View presentation layer, the perf-gate hooks, the 
 with 566 exemptions, the chapter/handoff/decision ritual, and every document that restates
 what the code or a generated artifact already says.
 
-**What v3 changes.** One repository layout instead of a trunk and a sidecar. One CLI instead of
-two plus a script pack. Personas become phases. Docs become generated status plus a short,
+**What v3 changes.** C# instead of F#, with v2's F# kept as the specification the port is
+checked against (§6.6). One repository layout instead of a trunk and a sidecar. One CLI instead
+of two plus a script pack. Personas become phases. Docs become generated status plus a short,
 hand-written spine. Agent sessions get a write budget.
 
-The rest of this document earns those sentences.
+The rest of this document earns those sentences. Its companion, `V3_INSTRUCTION_ARCHITECTURE.md`,
+designs the documents and the agent-facing surfaces (every file, its reader and its moment; the
+values register; the hooks, permissions and session protocols; the mechanisms that keep the prose
+true) and should be read after §15.
 
 ---
 
@@ -93,7 +97,7 @@ Three ratios matter more than the totals.
   pools (89 files, 28,444 lines) cannot run without Docker and, per v2's own survival rule 12,
   skip themselves in a way that is indistinguishable from passing at summary level.
 - **Ceremony to logic, v2:** `NullabilityRules.fs` is 308 lines; the decision it makes is about
-  40 of them. Across `src/` there are 566 lint exemptions, 272 benchmark scopes, 619 qualified-
+  40 of them. Across `src/` there are 566 lint exemptions, 279 benchmark scopes, 619 qualified-
   access attributes, and 338 hand-built error sites (occurrence counts, `grep -rao … | wc -l`).
   Twenty-four files exceed 1,000 lines and twelve exceed 1,500; the largest two are 3,414 and
   3,402.
@@ -592,7 +596,7 @@ author, review, gate, substrate, watch, remember, and none of it needs a torsor.
 
 **(c) Ceremony outgrew logic.** `NullabilityRules.fs` is 308 lines for a decision that fits in
 40; the rest is `toStructured`/`toDiagnosticString` renderers for every DU. Across `src/`:
-566 lint exemptions each carrying a four-question rationale, 272 benchmark scopes, 619
+566 lint exemptions each carrying a four-question rationale, 279 benchmark scopes, 619
 `RequireQualifiedAccess` attributes, 338 hand-built error sites, a `Lineage<Diagnostics<'a>>`
 double writer with its own computation-expression builders and a "writer-fidelity" law, a
 transform registry that exists so that `registered ⇔ executed` can be a property test rather
@@ -779,8 +783,9 @@ tree, and the knowledge tree itself under 11,000; agent sessions have a write bu
 
 ### 5.6 Three corollaries
 
-**One language, one solution, one CLI.** F# stays: closed unions and ScriptDom interop are the
-right tools, and the tree's proof scripts can be F# once the engine is the thing they call.
+**One language, one solution, one CLI.** C#, with v2's F# kept as the specification the port is
+checked against (§6.6): closed hierarchies encode the unions, ScriptDom and DacFx are C# libraries,
+and the tree's proof scripts become verbs of the engine they used to call.
 v1's C# is frozen as a reference implementation until v3 passes the parity oracle, then
 archived. Twin's verbs fold into the one CLI as `twin` subcommands; the JavaScript scripts
 become verbs.
@@ -811,36 +816,36 @@ parity oracle retires them.
   ARCHITECTURE.md           this document's §6–§10, kept current by the rule in §15
   DECISIONS.md              one line per decision: date · decision · link to PR; no prose
   LAWS.md                   GENERATED from tests: the law list with each test's name and status
-  global.json               .NET SDK pin (rollForward: latestPatch, not disable)
+  global.json               .NET SDK pin: the current LTS feature band (rollForward: latestPatch, not disable)
   Estate.sln
 
-  kernel/                   F# library. Pure. No I/O, no clock, no Task. ~7,000 lines.
-    Schema.fs               the state: Schema · Table · Column · Reference · Index · Check · Trigger · Sequence
-    Identity.fs             Key (stable identity) and Name (display); the rename map
-    SqlType.fs              storage types, literals, identifiers (from v2's SqlStorageType/SqlLiteral/SqlIdentifier)
-    Evidence.fs             Profile: per-column facts, per-reference orphans, per-index duplicates, distributions
-    Decide.fs               the tightening tables: nullability · foreign key · unique (pure functions)
-    Delta.fs                the change: ChannelDiff per channel + rename map + facet changes
-    Order.fs                topological order with an explicit cycle policy
-    Statement.fs            the typed SQL statement DU (from v2, verbatim)
-    Synth.fs                σ : Evidence → rows (from v2's SyntheticData, corrections folded in)
-    Record.fs               the ten-section record as a type, with its render
+  kernel/                   C# library. Pure. No I/O, no clock, no Task. ≤ 11,000 lines (§6.6).
+    Schema.cs               the state: Schema · Table · Column · Reference · Index · Check · Trigger · Sequence
+    Identity.cs             Key (stable identity) and Name (display); the rename map
+    SqlType.cs              storage types, literals, identifiers (from v2's SqlStorageType/SqlLiteral/SqlIdentifier)
+    Evidence.cs             Profile: per-column facts, per-reference orphans, per-index duplicates, distributions
+    Decide.cs               the tightening tables: nullability · foreign key · unique (pure functions)
+    Delta.cs                the change: ChannelDiff per channel + rename map + facet changes
+    Order.cs                topological order with an explicit cycle policy
+    Statement.cs            the typed SQL statement DU (from v2, verbatim)
+    Synth.cs                σ : Evidence → rows (from v2's SyntheticData, corrections folded in)
+    Record.cs               the ten-section record as a type, with its render
 
-  io/                       F# library. Everything that touches a disk, a socket, or a clock. ~12,000 lines.
-    Ossys.fs                the OSSYS rowsets: the SQL contract + 22 handlers → Schema (from v2's Adapters.OssysSql/Osm)
-    SqlServer.fs            read-side (INFORMATION_SCHEMA/sys.*) → Schema; profiler probes → Evidence; fingerprints
-    Ssdt.fs                 read an SSDT project or a dacpac → Schema (DacFx TSqlModel); write the bundle
-    Render.fs               Statement → text through ScriptDom (from v2's ScriptDomBuild + Render, verbatim)
-    Emit.fs                 Schema → bundle: per-table .sql, seeds, refactorlog, sqlproj, manifest, runbook
-    Publish.fs              DacFx publish (Strict | Permissive) → Verdict; read the generated script's guards
-    Twin.fs                 container lifecycle · bake/restore · mint orchestration · trust gate (from Twin.Runtime)
-    Move.fs                 [cutover wing] transfer: ingest · plan · phase-1 · phase-2 · revert (from TransferRun, reduced)
+  io/                       C# library. Everything that touches a disk, a socket, or a clock. ≤ 17,000 lines.
+    Ossys.cs                the OSSYS rowsets: the SQL contract + 22 handlers → Schema (from v2's Adapters.OssysSql/Osm)
+    SqlServer.cs            read-side (INFORMATION_SCHEMA/sys.*) → Schema; profiler probes → Evidence; fingerprints
+    Ssdt.cs                 read an SSDT project or a dacpac → Schema (DacFx TSqlModel); write the bundle
+    Render.cs               Statement → text through ScriptDom (from v2's ScriptDomBuild + Render, verbatim)
+    Emit.cs                 Schema → bundle: per-table .sql, seeds, refactorlog, Verify/ queries; a .sqlproj only on --init
+    Publish.cs              DacFx publish (Strict | Permissive) → Verdict; read the generated script's guards
+    Twin.cs                 container lifecycle · bake/restore · mint orchestration · trust gate (from Twin.Runtime)
+    Move.cs                 [cutover wing] transfer: ingest · plan · phase-1 · phase-2 · revert (from TransferRun, reduced)
 
-  cli/                      one executable: `estate`. ~2,000 lines. Verbs in §8.
-  knowledge/                the ssdt-agent tree, trimmed: ops/ · shared/ · review/ · record/ · findings/ · ledgers/
+  cli/                      one executable: `estate`. ≤ 2,000 lines. Verbs in §8.
+  knowledge/                the ssdt-agent tree, trimmed: authoring.md · reviewing.md · record.md · ops/ · shared/ · findings.md · samples/ · ledgers/ · handbook/ · copilot/ (§9)
   ci/                       proof lane · bake lane · PR gate (GitHub Actions + Azure DevOps templates)
   tests/
-    Kernel.Tests            property tests on the pure kernel (FsCheck) + the twelve laws
+    Kernel.Tests            property tests on the pure kernel (CsCheck) + the twelve laws
     Io.Tests                integration against SQL Server (Docker or LocalDB), serial
     Golden/                 the golden schema + its emitted bundle; the 41 proven changes
   archive/
@@ -856,8 +861,9 @@ the absence of a capability, not by an analyzer.
 Two dependency laws are kept from v2, because they were cheap, they survived, and they are
 tests rather than doctrine. The first is v2's "pure core" (`Projection.Core` has no I/O, no
 clock, no `Task`; enforced by a 142-line typed-tree analyzer plugin). v3 enforces it as a test
-that asserts the kernel project's package references are exactly `FSharp.Core`, plus a grep
-test for `System.IO`, `System.Net`, `DateTime.Now`, `Random`, and `Task` in `kernel/`. The
+that asserts the kernel project's package references are the BCL and
+`System.Collections.Immutable` only, plus the banned-API analyzer's list (`BannedSymbols.txt`)
+forbidding `System.IO`, `System.Net`, `DateTime.Now`, `Random`, and `Task` in `kernel/`. The
 second is the Twin's kernel manifest (`Twin.Core → Projection.Core` only, enforced by
 `BoundaryTests.fs`). v3's form: `io/` does not reference `cli/`, and nothing references
 `knowledge/` or `ci/` except by reading files. Both tests live beside the twelve laws (§13).
@@ -877,7 +883,7 @@ second is the Twin's kernel manifest (`Twin.Core → Projection.Core` only, enfo
                            kernel/  Schema · Identity · SqlType · Evidence · Decide · Delta · Order · Statement · Synth · Record
 
    external:  ScriptDom (Render, Ssdt)   DacFx (Ssdt, Publish, Twin)   Microsoft.Data.SqlClient (SqlServer, Twin, Move)
-              Testcontainers (tests only)   Bogus (Synth realization, io side)   FsCheck (tests only)
+              Testcontainers (tests only)   Bogus (Synth realization, io side)   CsCheck (tests only)
 ```
 
 Compare v2: fifteen projects, with `Projection.Pipeline` (40,564 lines) sitting between the
@@ -972,8 +978,9 @@ planning pass summed its own floors to ~28,400 with the reader in and the Twin c
 separately; this table lands at ~24,000 without the reader and ~27,500 with it. The gap between
 the two passes is real deletion, not optimism: the readback type folded into a function, the
 manifest gone, the migration emitter reduced to a preview, the estate board reduced to a table.
-The three decisions that move the total are the OSSYS reader (±3,600), the Move wing (0 or
-≤ 3,000), and nothing else; `Render` keeps all 26 statement kinds on purpose, because v3 still
+These floors are in F# notation, the language of the specification; §6.6 restates them for the
+C# the team will build. The three decisions that move the total are the OSSYS reader (±3,600),
+the Move wing (0 or ≤ 3,000), and nothing else; `Render` keeps all 26 statement kinds on purpose, because v3 still
 emits (the bundle for the Twin, the seeds, the refactorlog, and the drift report in file terms),
 and a statement stream that can express the whole repository is what makes law 3 possible.
 
@@ -999,6 +1006,133 @@ test: `wc -l` per package against this table, failing above the ceiling, so that
 
 The archive keeps everything. Nothing is destroyed. The working tree stops carrying it.
 
+### 6.6 The C# encoding
+
+v3 is built in C#, not F#. The team that will maintain it maintains C#; the review §2.3 asks
+for is a review of code as well as of records; and an engine nobody on the team can read is
+what v2 became. v2's F# is not thrown away. It is the specification v3 is ported from, its
+tests are the first thing ported, and the kernel types in §7 are shown in F# because it is the
+most compact notation for a type and the one the specification is written in. The encoding into
+C# is mechanical. This section gives its rules, so a reader of §7 can write the C# without
+asking, and gives the budget in the language that will actually be counted.
+
+**What F# was buying, and the C# form of each.**
+
+| F# benefit the design relies on | Where it matters | C# form |
+|---|---|---|
+| closed unions with exhaustive matching | `Statement` (26 cases), `NullabilityDecision`, `Reader`, `Shipping`, `CyclePolicy`, the `Refusal` codes, `SqlType` | an abstract record with a private constructor and nested sealed derived records, so nothing outside the file can add a case, plus one `Match` method whose signature takes a delegate per case. Exhaustiveness moves from the compiler's pattern check to the method signature. Hand-written for unions under eight cases; generated (`dunet`, or a forty-line in-repo source generator) for `Statement` |
+| immutable records with structural equality and copy-with | every kernel type; laws 1, 6, 7; `Delta.between` | C# records. One trap: record equality over a collection compares the reference, which would silently break law 1 and every delta comparison. The kernel gets one `Seq<T>` (a readonly struct over `ImmutableArray<T>` with element-wise equality and ordinal-sorted construction, about eighty lines), and every kernel list is a `Seq<T>` |
+| smart constructors, no nulls | `Key`, `Name`, `Refusal` | `readonly record struct` with a private constructor and static factories returning `Result<T, Refusal>`, an in-repo type of about sixty lines rather than a library. Nullable reference types on, warnings as errors; `Option` is not missed. No LanguageExt or similar: making C# imitate F# defeats the reason for the switch |
+| purity by construction; compile-order acyclicity | the kernel; the dependency laws | the kernel project references the BCL and `System.Collections.Immutable` only; `Microsoft.CodeAnalysis.BannedApiAnalyzers` with a `BannedSymbols.txt` forbids `System.IO`, `System.Net`, `DateTime.Now`, `Random`, and `Task` in `kernel/`; a NetArchTest-style test pins the direction between the four projects. C# permits cycles inside a project that F#'s file order does not; the test is the substitute |
+| decision tables as pattern matches | `Decide` | `switch` expressions with tuple and property patterns. This ports almost verbatim, and a reviewer who knows SQL and C# can read `Decide.Nullability` against the tightening-class skill, which is what "the record is the product" needs: the engine that produces the record has to be legible to the people who approve records |
+| property-based tests | the twelve laws | CsCheck (or FsCheck's C# API); the law names and `LAWS.md` are unchanged |
+
+**Two of §7's types, encoded.** The statement stream as a closed hierarchy:
+
+```csharp
+public abstract record Statement
+{
+    private Statement() { }                                    // the set of cases is closed
+
+    public sealed record CreateTable(Table Table) : Statement;
+    public sealed record AddForeignKey(Name Table, Reference Reference) : Statement;
+    public sealed record AlterColumn(Name Table, Column Before, Column After) : Statement;
+    // ... one nested sealed record per v2 case, twenty-six in all
+
+    public T Match<T>(Func<CreateTable, T> createTable,
+                      Func<AddForeignKey, T> addForeignKey,
+                      Func<AlterColumn, T> alterColumn /* , ... */) => this switch
+    {
+        CreateTable s   => createTable(s),
+        AddForeignKey s => addForeignKey(s),
+        AlterColumn s   => alterColumn(s),
+        _               => throw new UnreachableException(),  // provably: the constructor is private
+    };
+}
+```
+
+And §7.5's nullability table, arm for arm:
+
+```csharp
+public static NullabilityDecision Nullability(Policy p, Table t, Column c, ColumnEvidence? ev)
+{
+    if (p.Overrides.KeepsNullable(c.Key)) return new KeepNullable(KeepReason.OperatorOverride);
+    if (t.PrimaryKey.Contains(c.Name))    return new EnforceNotNull(NullEvidence.PrimaryKey);
+    if (!c.Nullable)                      return new EnforceNotNull(NullEvidence.PhysicallyNotNull);
+    if (!c.Mandatory)                     return new KeepNullable(KeepReason.NoSignal);
+    return ev switch
+    {
+        null                                        => new EnforceNotNull(NullEvidence.MandatoryNoProfile),
+        { Nulls: 0 }                                => new EnforceNotNull(new MandatoryNoNulls(ev.Rows)),
+        var e when e.Nulls <= e.Rows * p.NullBudget => new EnforceNotNull(new MandatoryWithinBudget(e.Nulls, e.Rows, p.NullBudget)),
+        var e when p.AllowMandatoryRelaxation       => new KeepNullable(new RelaxedUnderEvidence(e.Nulls, e.Rows, p.NullBudget)),
+        var e                                       => new AskOperator(new MandatoryButNullsBeyondBudget(e.Nulls, e.Rows, p.NullBudget)),
+    };
+}
+```
+
+Cases that carry no data (`PrimaryKey`, `NoSignal`) are singletons on their hierarchy; cases
+that carry data are nested records. One C# trap replaces an F# one: a `with` expression on a
+record copies fields and bypasses any validating factory, so an invariant that spans fields (a
+primary key names existing columns; a reference's columns exist on both tables) is checked by
+`Schema.Create` and by the laws, never by a setter, and the value types (`Key`, `Name`) expose
+no settable field for `with` to reach. The F# in §7.5 and this C# are the same table; the test
+that pins it (v1's mode × signal matrix, §12.2) runs against either.
+
+**Where C# is better, not merely equal.** DacFx, ScriptDom, and System.Text.Json are C#
+libraries. v2's `ScriptDomBuild` is 2,834 lines of setting properties on ScriptDom objects
+through F# mutation syntax; it gets shorter in C#. v2's 932 hand-written codec lines existed
+because System.Text.Json could not see F# unions; with `[JsonDerivedType]` on the closed
+hierarchies and a source-generated serializer context, `io/Json` roughly halves. `io/Publish`
+loses the interop friction around DacFx's progress events. Visual Studio's analyzers run in
+the editor the team already uses. And v1's trunk becomes a donor again in the places §12 names:
+the SSDT-project lens, the remediation builder, the order validator, the ScriptDom fixtures.
+
+**The budget, in C#.** Records and hierarchies run longer than unions and inference. The
+multipliers below are estimates against §6.4's floors: 1.4× for the kernel, 1.15× for io
+(interop shrinkage offsets boilerplate), 1.2× for the CLI, 1.25× for tests.
+
+| Package | F# floor (§6.4) | C# budget |
+|---|---:|---:|
+| `kernel/` | ~7,700 | **≤ 11,000** |
+| `io/` without the OSSYS reader | ~14,100 | **≤ 17,000** |
+| `io/Ossys` (optional, §16) | ~3,600 | ≤ 4,500 |
+| `cli/` | ~1,500 | **≤ 2,000** |
+| dependency laws | 150 | 150 |
+| **code total** | **~24,000** | **≈ 30,000 (≤ 31,000); ≈ 34,000 with the reader** |
+| tests | ~19,500 | ≤ 25,000 |
+| docs, knowledge, generated surfaces | as §6.5 | unchanged |
+
+Thirty thousand lines of C# is a quarter of v2's source and under two-fifths of v1's 78,461
+lines of C#, for a tool that does what neither did. The budget is enforced the same way (§6.4):
+a test over `wc -l` per package that fails above the ceiling.
+
+**No F# island.** It is tempting to keep the proven pieces (the statement builders, σ, the
+Twin's check) as F# libraries under a C# kernel. That produces the shape v2 died of: a corner
+of the codebase one person understands, which then becomes the corner nobody touches and
+everybody routes around. Everything is ported. v2's F# is the specification: step 1 of §14.2
+ports its kernel tests first, then the types, then the functions, with the byte-level parity
+oracle (§14.1) unchanged because it never cared what language produced the bytes. σ gets one
+extra fixture, v2's minted rows at a fixed seed, so a port that drifts is caught by law 11 on
+the first run.
+
+**Determinism has to be designed in, because nothing in C# nudges toward it.** F#'s structural
+equality and ordered maps gave v2 stable output for free. In C#: every kernel collection is a
+`Seq<T>` sorted at construction with ordinal comparers (v2's canonicalize pass, as a
+constructor); no emitter iterates a `Dictionary`; no `GetHashCode` of a string reaches an
+output; `Random` is banned from the kernel and σ takes its generator as a parameter. Laws 1 and
+11 land in step 1, before any emitter exists, so that the first emitter is born under them.
+
+**Toolchain, stated once.** .NET 10, the current LTS (.NET 9 is a standard-term release and
+leaves support in November 2026; both prior generations pin 9.0.314 with roll-forward disabled),
+with `global.json` pinned to a feature band and `rollForward: latestPatch`; `<Nullable>`
+enabled and `<TreatWarningsAsErrors>` on in every project; `<ImplicitUsings>` off in `kernel/`;
+the banned-API analyzer in `kernel/` and `io/`; `sealed` by default on classes; records for
+aggregates, `readonly record struct` for values; xUnit, CsCheck, and NetArchTest in `tests/`;
+`dunet` if the team prefers generated `Match` methods to hand-written ones; no other package in
+the kernel. The list is short on purpose and a new dependency is a decision line in
+`DECISIONS.md`.
+
 ---
 
 ## 7. The kernel, in types
@@ -1007,6 +1141,10 @@ This section is the design. The types below are meant to compile; where a v2 typ
 verbatim, it says so and does not repeat it. Where v3 departs from v2, the departure is
 explained in the line after the type. Field counts are deliberate: `Attribute` in v2 has
 twenty fields; `Column` here has eleven, and each of the nine removed is accounted for.
+
+The types are written in F# because it is the most compact notation for a type and because
+v2's F# is the specification v3 is ported from. v3 itself is C# (§6.6); the encoding of every
+type below follows §6.6's rules mechanically, and §6.6 shows two of them worked.
 
 ### 7.1 `Identity.fs` — one key, one name
 
@@ -1384,8 +1522,8 @@ the true verb, numbers as numbers.
 
 ## 8. The verbs, end to end
 
-One executable, `estate`. Twelve verbs. Every verb is `parse → io → render`, prints Markdown by
-default and JSON with `--json`, and exits with one of nine codes shared across all verbs:
+One executable, `estate`. Thirteen verbs. Every verb is `parse → io → render`, prints Markdown by
+default and JSON with `--json`, and exits with one of ten codes shared across all verbs:
 
 | Exit | Meaning |
 |---:|---|
@@ -1395,9 +1533,10 @@ default and JSON with `--json`, and exits with one of nine codes shared across a
 | 3 | **blocked** — the publish guard refused; this is a finding, not a failure (`prove` only) |
 | 4 | target unreachable (SQL Server, Docker, LocalDB) |
 | 5 | divergence found (`check`, `diff --fail-on-change`) |
-| 6 | configuration refused (unknown key, credential inline, collision) |
+| 6 | configuration refused (unknown key, credential inline, toolchain pin mismatch) |
 | 7 | build failed |
 | 9 | refused by name (a `Refusal` the kernel raised; the code is printed) |
+| 130 | interrupted (Ctrl-C or `--timeout`); the cleanup ran and the state is as before |
 
 These are the `ssdt-agent` tree's `prove.mjs` codes and the Twin's codes, merged; v2's
 `projection` CLI used a different nine and its `--json` had a `View` AST. There is one table
@@ -1502,10 +1641,13 @@ estate emit --schema schema.json [--decisions decisions.json] [--renames refacto
    explicit IDs, `WHEN MATCHED AND value-differs`, null-safe), phase-1/phase-2 for deferred
    nullable FK legs, under `Data/Seeds/<Folder>/<table>.sql`, included from
    `Script.PostDeployment.sql`.
-6. `<Project>.sqlproj` (Microsoft.Build.Sql SDK style), `<Project>.refactorlog` from
-   `Delta.Renames` when `--renames` or a prior schema is given, `manifest.json` (tables, files,
-   six predicates: static, external, temporal, trigger, untrusted-FK, heap), and the record's
-   "after deploy" queries as `Verify/*.sql`.
+6. `<Project>.refactorlog` from `Delta.Renames` when `--renames` or a prior schema is given,
+   and the record's "after deploy" queries as `Verify/*.sql`. A `.sqlproj` is written only by
+   `emit --init` for a project that does not exist yet, in the classic format (the one the
+   team's Visual Studio opens; `ADOPTION.md` records that the 2026 build carries only the
+   classic format), and an existing project's format is never changed: the format is a row in
+   `ledgers/toolchain.md` beside the DacFx pin. There is no manifest and no runbook; the
+   record's sections carry what those files used to.
 
 The bundle *is* the estate repository's layout. `estate emit` against the current
 repository's own `read --from ssdt` must be a no-op (byte-identical), which is the law
@@ -1670,12 +1812,27 @@ second resume mechanism, slices, and the go board. If the reverse leg at 200 mil
 genuinely needs the streaming realization, that decision is §16's, made with numbers from a
 real run, not inherited.
 
-### 8.12 What is gone from the verb surface
+### 8.12 `estate doctor` — can this machine do the work?
+
+```
+estate doctor [--install] [--json]
+```
+
+One line: `READY` or `DEGRADED`, then the SDK, the DacFx pin against `ledgers/toolchain.md`,
+the substrate found (Docker or LocalDB, with the SQL Server version), the Twin artifact's
+fingerprint and age, and the estate checkout's posture. Every `DEGRADED` item carries its
+remedy (`--install` for the SDK and the local tool; `twin up`; `twin restore`). It is the
+SessionStart hook's whole body, the first thing every entry file says to run, and the thing a
+session quotes before claiming a tool is missing. It sweeps disposable databases and
+containers older than a day (the crash-cleanup guarantee) and prints what it swept. The
+companion document's §9.2 gives the line's exact shape.
+
+### 8.13 What is gone from the verb surface
 
 v2's `projection` had, per its own `THE_CLI.md`: `<flow> --go`, `check` (eight subcommands),
 `diff`, `compare`, `explain` (five), `seal` (two), `report`, `synth-correct`, `inspect`,
 `init`, `revert`, `setup`, four `slice-*` verbs, and a deprecated `--watch`; plus the Twin's
-ten; plus five scripts. v3's ten verbs cover the six post-eject workflows and the cutover wing.
+ten; plus five scripts. v3's thirteen verbs cover the six post-eject workflows and the cutover wing.
 Named flows in config (`projection <flow>`) are gone: a flow was a saved argument list, and a
 saved argument list is a shell script or a CI step, which is where v3 puts it.
 
@@ -1718,10 +1875,10 @@ register lint fold into `record.md` (one page beside the template, as the review
 
 | Removed | Lines | Why |
 |---|---:|---|
-| `ENABLEMENT_PROGRAM.md`, `ASSESSMENT_2026_08_24.md`, `ARCHITECTURE_REVIEW_2026_08_28.md`, `PHASE_2_CURRICULUM.md`, `HANDOFF_SESSION_2026_08_26.md`, `ACCELERANT_PLAN.md`, `CONNECTORS.md`, `PORTABILITY.md`, `PROVING_PATH_WINDOWS.md` | ~2,500 | program history; archived with v2; the review itself said this literature "no schema-change session will ever read" |
+| `ENABLEMENT_PROGRAM.md`, `ASSESSMENT_2026_08_24.md`, `ARCHITECTURE_REVIEW_2026_08_28.md`, `PHASE_2_CURRICULUM.md`, `HANDOFF_SESSION_2026_08_26.md`, `ACCELERANT_PLAN.md`, `CONNECTORS.md`, `PROVING_PATH_WINDOWS.md` (`PORTABILITY.md` is kept and moves to `knowledge/`) | ~2,400 | program history; archived with v2; the review itself said this literature "no schema-change session will ever read" |
 | `self-test/` (protocol, 983-line prompt matrix, rubrics, golden runs) | ~2,400 | the nightly proof lane over the sample records discharges the regression duty; conversation quality is judged in the pilot, not by a rubric an agent can game from adjacent files |
 | 38 of the 50 `sample-prs/` (46 top-level, four compound) | ~2,800 | a gallery where a dozen teach the same shapes; the 45 remain as *data* for the proof lane (§10), not as prose |
-| `scripts/*.mjs` | 1,875 | `prove.mjs` → `estate prove`; `bake.mjs` → `estate twin bake/restore`; `inflight-check.mjs` → `estate check inflight` (a 40-line verb over `ledgers/in-flight.md`); `ssdt-agent-gates.mjs` → three tests in `Io.Tests` (citations resolve; op count = sample-record count = proof-lane facts; register rules hold on `samples/`); `ssdt-agent-package.mjs` → `estate knowledge package` (generate the Copilot bundle and `.claude/` pointers) |
+| `scripts/*.mjs` | 1,875 | `prove.mjs` → `estate prove`; `bake.mjs` → `estate twin bake/restore`; `inflight-check.mjs` → `estate check inflight` (~80 lines: it takes the touched tables from the delta, not from regexing the SQL, and normalises schema, brackets and case against `ledgers/in-flight.md`); `ssdt-agent-gates.mjs` → three tests in `Io.Tests` (citations resolve; op count = sample-record count = proof-lane facts; register rules hold on `samples/`); `ssdt-agent-package.mjs` → `estate knowledge package` (generate the Copilot bundle and `.claude/` pointers) |
 | `proving-ground/` as a hand-authored SSDT project | ~1,300 | the golden schema in `tests/Golden/` is the proving ground; `estate emit` produces the project; the Twin fills it |
 | `THE_DECISION_TREE.md` as a separate document | 215 | it *is* `authoring.md`'s spine; the state machine and its guards move there verbatim |
 
@@ -2094,8 +2251,9 @@ the archaeology, and never again.
 | 12 | **the substrate carries no literal** — the committed shape tier contains no captured value; `twin evidence verify` refuses one that does | `Io.Tests` | Twin law 3 |
 
 Two more are dependency laws, tested by xUnit but about the tree rather than the domain: **the
-kernel cannot do I/O** (its package references are exactly `FSharp.Core`; no `System.IO`,
-`System.Net`, `DateTime.Now`, `Random`, or `Task` appears in `kernel/`), and **dependencies
+kernel cannot do I/O** (its package references are the BCL and `System.Collections.Immutable`
+only; the banned-API analyzer forbids `System.IO`, `System.Net`, `DateTime.Now`, `Random`, and
+`Task` in `kernel/`), and **dependencies
 point one way** (`io/` does not reference `cli/`; nothing references `knowledge/` or `ci/`).
 These are v2's pure-core analyzer and the Twin's kernel manifest, kept as tests.
 
@@ -2139,8 +2297,8 @@ produce the schema v1's `model.edge-case.json` describes.
 
 | Step | What moves | What proves it | What the team gets |
 |---|---|---|---|
-| 0 | Freeze. Tag `4e844fc` as `v2-final`. Move `sidecar/projection` to `archive/v2/` and the C# trunk to `archive/v1/`, both still building under their own solutions. Write `archive/INDEX.md`: one line per v2 document, its date, its status (provenance / superseded / knowledge moved to `knowledge/`). | both archived solutions build; CI keeps running v2's proof lane against the archive until step 6 | nothing changes for them yet |
-| 1 | `kernel/`: `Identity`, `SqlType`, `Schema`, `Statement` (verbatim), `Delta`, `Order`, `Decide`, `Evidence`, `Synth`, `Record`. Port the decision tables and σ from v2 with their property tests; write the twelve laws' kernel halves. | laws 1, 4, 5, 6, 7, 11 (kernel halves); the tightening matrix test from v1 as a table | — |
+| 0 | Freeze. Tag `4e844fc` as `v2-final`. Move `sidecar/projection` to `archive/v2/` and the C# trunk to `archive/v1/`, both still building under their own solutions. Write `archive/INDEX.md`: one line per v2 document, its date, its status (provenance / superseded / knowledge moved to `knowledge/`), and archive the 179 documents as one compressed bundle beside the index so that search tools find the index and not a specification v3 replaced; the code stays buildable. | both archived solutions build; CI keeps running v2's proof lane against the archive until step 6 | nothing changes for them yet |
+| 1 | `kernel/`: `Identity`, `SqlType`, `Schema`, `Statement` (verbatim), `Delta`, `Order`, `Decide`, `Evidence`, `Synth`, `Record`. Port v2's kernel tests to C# first (they are the specification; `CatalogDiffTests` alone is 54 facts), then the types, then the functions. Port the decision tables and σ with their property tests, and add σ's golden fixture (v2's minted rows at one seed) so a drifting port fails law 11 on day one; write the twelve laws' kernel halves. | laws 1, 4, 5, 6, 7, 11 (kernel halves); the tightening matrix test from v1 as a table | — |
 | 2 | `io/Render` (verbatim from `ScriptDomBuild`+`Render`) and `io/Emit`; `estate emit`; `estate diff`. | oracle 1 (byte-identity against v2's emitter on the golden); law 3 on the estate | a bundle they can diff against their repository |
 | 3 | `io/Ssdt` (DacFx `TSqlModel` read), `io/SqlServer` (read-side + profiler), `io/Ossys` (if it survives §16's first decision); `estate read`, `estate profile`, `estate decide`. | oracle 3; oracle 4; law 2 | `check drift` becomes possible |
 | 4 | `io/Publish`; `estate prove`. Retire `prove.mjs`. | oracle 2 (the 45 verdicts); laws 8, 9, 10 | **the verdict as a verb** — the pilot can run |
@@ -2184,11 +2342,14 @@ the archive.
 This document does not estimate sessions. v2's history shows why: 183 commits in 55 days added
 54,000 lines of source and 40,000 of documents, and effort estimates in that history were
 consistently wrong in the direction of "more got built than was planned." The honest statement
-is the size of the target (§6.4: ~24,000 lines of code, ~19,000 of tests) and the size of the
+is the size of the target (§6.6: ~30,000 lines of C#, ~25,000 of tests) and the size of the
 donor (the modules named in §6.4's left column, ~63,000 lines, of which about a third is kept
 close to verbatim). Most of the work is deletion and re-plumbing, not invention. The one
 genuinely new module is `io/Ssdt` (read an SSDT project through DacFx), and the Twin already
-does most of it in `EstateModel.fs`.
+does most of it in `EstateModel.fs`. The language changes too: v3 is C# and v2's F# is the
+specification it is ported from (§6.6). The port is mechanical for most of the kernel, because
+v2's code is already mostly data and pure functions; the two places it is not (σ's determinism
+and the statement builders' completeness) are covered by law 11's golden fixture and by law 2.
 
 ---
 
@@ -2214,7 +2375,8 @@ sized against. A session (human or agent) working on v3 may write:
   the paragraph that became false;
 - **the ledgers** (`operations.md`, `row-tiers.md`, `in-flight.md`, `refusals.md`,
   `toolchain.md`, `reviewers.md`, `cdc-tracked.md`), which are append-only tables with a fixed
-  shape.
+  shape and live in the estate repository; the engine holds only their formats and seeds them
+  empty once.
 
 A session may not write: a new top-level document; a chapter open or close; a handoff letter;
 a status section in a README; an axiom; a pillar; a named failure mode; a "survival rule";
@@ -2250,6 +2412,9 @@ past 120 lines is a finding to split, not a skill to keep.
 - The archive index — written once at step 0 and never touched.
 - The Copilot bundle and the `.claude/` pointers — from `knowledge/` by `estate knowledge
   package`; checked in, fingerprinted, never hand-edited, and excluded from every line count.
+- The document inventory (`DOCS.md`) — from `ci/docs.manifest.json`, the file that lists every
+  document with its reader, its moment and its budget; the test that the tree equals the
+  manifest is what turns this section's write budget from a rule into a gate (companion §10).
 
 A generated file is never edited by hand. A hand-written file never restates what a generated
 one says. `README.md` is the one hand-written surface that says where everything is, and its
@@ -2257,8 +2422,11 @@ budget is 150 lines.
 
 ### 15.5 What an agent session reads first
 
-`README.md` (150 lines), `ARCHITECTURE.md` (this document's §6–§10, ~600 lines),
-`knowledge/README.md` (one page), and the open pull requests. Under 1,000 lines before code.
+`AGENTS.md` (120 lines, imported by `CLAUDE.md`), `NEXT.md` (40), the README of the package
+being changed (80), and the one line `estate doctor` prints. Under 300 lines before code.
+`ARCHITECTURE.md` and `VALUES.md` are read when the change is architectural, not at every
+session; `knowledge/README.md` when the change is to the domain. The companion document's §9
+gives the session protocols in full.
 v2's Tier 1 reading order was "~40 minutes," five documents, one of them a 1,172-line ontology;
 its `CLAUDE.md` had fifteen survival rules because the environment had fifteen ways to hurt a
 session. v3's environment has fewer ways: one solution, `dotnet build` and `dotnet test`, one
@@ -2284,6 +2452,9 @@ way. Each item names what it moves and the default this document has assumed, so
 document is complete under stated assumptions and no section waits on an answer.
 
 ### 16.1 Decisions only the operator can make
+
+One decision is already made and recorded rather than listed: the language is C#, with v2's F#
+as the specification (§6.6).
 
 1. **Pin the pipeline's DacFx and run the one `is_not_trusted` check.** A declarative foreign-key
    add read *untrusted* on DacFx 162.5.57 (the engine the Twin corpus runs in-process) and lands
@@ -2495,7 +2666,7 @@ places where a v2 document or an ingestion pass said something else.
 | root docs | `readme.md` 1,162 · `AGENTS.md` 253 · guardrails 48 · `tasks.md` 264 · editorial 659 · templated rules 2,948 | `wc -l` |
 | `docs/` · `handbook/` · `ssdt-playbook/` · `notes/` | 23,945 · 8,980 · 8,265 · 31,364 | `find … -name '*.md' \| xargs cat \| wc -l` |
 | v2 files over 1,500 lines | 12 (`Pipeline.fs` 3,414 · `TransferRun.fs` 3,402 · `ScriptDomBuild.fs` 2,834 · `MovementSurface.fs` 2,825 · `Estate.fs` 2,633 · `Cli/Faces/Transfer.fs` 2,233 · `Config.fs` 2,189 · `Catalog.fs` 2,095 · `ReadSide.fs` 1,973 · `MetadataSnapshotRunner.fs` 1,722 · `Voice.fs` 1,602 · `SsdtDdlEmitter.fs` 1,552); 24 over 1,000 | `wc -l \| awk '$1>=1000'` |
-| v2 ceremony counts, `src/` (occurrences) | 566 `LINT-ALLOW` · 272 `Bench.scope` · 619 `RequireQualifiedAccess` · 338 `ValidationError.create` · 75 smart `create` ctors · 15 `toStructured` + 20 `toDiagnosticString` defs | `grep -rao '<pattern>' --include=*.fs . \| wc -l` (line-based `grep -rn` gives 552/279/616: some lines carry two) |
+| v2 ceremony counts, `src/` (occurrences) | 566 `LINT-ALLOW` · 279 `Bench.scope` · 619 `RequireQualifiedAccess` · 338 `ValidationError.create` · 75 smart `create` ctors · 15 `toStructured` + 20 `toDiagnosticString` defs | `grep -rao '<pattern>' --include=*.fs . \| wc -l` (line-based `grep -rn` gives 552/279/616: some lines carry two) |
 | pass chain length | 21 steps in `RegisteredTransforms.chainStepsWithPins` (22 with the cascade-shock advisory counted separately) | direct read |
 | advisory passes with the manifest as sole outside consumer | 4 (`QueryHints`, `SchemaComplexity`, `CascadeShockZones`, `ProfileAnomalies`); `CentralityRanking` also feeds `SyntheticVolume.byCentrality` (`Twin.Runtime/Mint.fs`, `Pipeline/SyntheticLoadRun.fs`); `BoundedContexts` feeds one default-off flag | `grep -rn byCentrality\|clusterFksByContext` |
 | `ssdt-agent/sample-prs` | 50 files: 46 top-level + 4 in `compound/` | `find`, `ls` |
@@ -2671,7 +2842,7 @@ names where the surviving capability lives (§6, §7, §8).
 | `Passes/UserFkReflowPass.fs`; `UserRemap.fs`; `UserIdentity.fs` | 378; 200; 217 | the UAT re-key | RETIRE-AFTER-EJECT | `Move`, if ported |
 | `Lineage.fs`; `LineageBuffer.fs`; `RemovalReason` | 485; 106; — | every pass's return type | DELETE | a function returns `Finding list` |
 | `Diagnostics.fs` (entry + writer + `DiagnosticLattice`) | 624 | the entry type is right; the writer threads a log through a chain v3 lacks; the lattice's only consumers are its own tests | KEEP-SIMPLIFIED | `Finding`; no writer |
-| `Bench.fs`; `PinnedWriting.fs` | 360; 157 | 272 `Bench.scope` sites and one gate script whose verdict is void under concurrent load | DELETE | the scale lane measures wall-clock |
+| `Bench.fs`; `PinnedWriting.fs` | 360; 157 | 279 `Bench.scope` sites and one gate script whose verdict is void under concurrent load | DELETE | the scale lane measures wall-clock |
 | `Projection.Analyzers/NoUnsafeTimeInCoreAnalyzer.fs` | 142 | makes purity a build fact | KEEP | the dependency laws (§13) |
 | `ArtifactByKind.fs` | 195 | T11 only matters with two sibling emitters | DELETE | `Map<Table, Artifact>` |
 | `RawValueCodec.fs` | 201 | the scalar encode/decode boundary | KEEP | `SqlType` |
@@ -2783,7 +2954,7 @@ names where the surviving capability lives (§6, §7, §8).
 
 | Module | Lines | Consumers / evidence | Verdict | v3 |
 |---|---:|---|---|---|
-| `Program.fs` (39 verbs) | 691 | operators | KEEP-SIMPLIFIED | twelve verbs, ~200 |
+| `Program.fs` (39 verbs) | 691 | operators | KEEP-SIMPLIFIED | thirteen verbs, ~200 |
 | `Faces/Transfer.fs`; `Faces/Migrate.fs`; `Faces/Fidelity.fs` | 2,233; 668; 487 | the finite half of the job; `Transfer.fs` is the sixth-largest file in the repository | RETIRE-AFTER-EJECT | nothing |
 | `Faces/Estate.fs` + `EstateBoardView`, `GoBoardView`, `TransferImpactView`, `TransferPlanView` | 1,509 | boards | KEEP-SIMPLIFIED (Estate only) | the `check environments` table |
 | `Faces/Canary`, `Diff`, `Emit` | ~470 | verbs v3 keeps | KEEP-SIMPLIFIED | `prove`, `diff`, `emit` |
