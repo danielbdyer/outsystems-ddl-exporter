@@ -2935,7 +2935,7 @@ names where the surviving capability lives (§6, §7, §8).
 | `Deploy.fs` + `DeployParallelism`/`Feasibility`/`ConnectionString` | 1,303 + 458 | the heart of `prove`; one of two proving mechanisms (§10.2) | KEEP-SIMPLIFIED | `io/Publish`, ~850 |
 | `Preflight.fs` | 856 | the CDC-readiness gate is permanent; the rest is migrate-era | KEEP-SIMPLIFIED | ~200 |
 | `MigrationRun.fs`; `FullExportRun.fs` | 1,000; 326 | Octopus migrates; nothing is exported | RETIRE-AFTER-EJECT | nothing |
-| `RunSpine.fs`; `Run.fs`; `RunLedger.fs`; `RunHistory.fs`; `RunEnvelope.fs` | 470; 357; 134; 47; 101 | a compiler-checked stage arc for 46 run kinds; v3 has twelve verbs | DELETE | the pull request is the record |
+| `RunSpine.fs`; `Run.fs`; `RunLedger.fs`; `RunHistory.fs`; `RunEnvelope.fs` | 470; 357; 134; 47; 101 | a compiler-checked stage arc for 46 run kinds; v3 has thirteen verbs | DELETE | the pull request is the record |
 | `LifecycleStore.fs`; `EjectRun.fs`; `ApprovalStore.fs`; `ReportRun.fs` | 611; 60; 153; 200 | `seal`, `seal approve`, `report` | RETIRE-AFTER-EJECT | git tags and the changelog |
 | `EventProjection.fs`; `LogSink.fs`; `NoticeSink.fs`; `BenchSink.fs` | 284; 1,104; 73; 75 | NDJSON events for a board; `LogSink.fs` is the ninth-largest file in the repository | DELETE | a progress line |
 | `Hydration.fs`; `Source.fs`; `LiveModelRead.fs`; `ModelResolution.fs`; `CatalogResolution.fs`; `ScopedRead.fs`; `CatalogRendition.fs` | 1,205 | model acquisition | KEEP-SIMPLIFIED | `estate read` |
