@@ -1,10 +1,16 @@
 namespace Projection.Core
 
+// The position/timeline value objects the episodic chain is built on
+// (`EpisodicLifecycle`, `Episode.fs`). The schema-only `Lifecycle`/
+// `CatalogSnapshot` twin that once lived beside them was deleted at
+// align-III.5 — the durable multi-plane `Episode` grain subsumed it
+// (its laws ported onto `EpisodicLifecycle` in `LifecycleTests.fs`).
+
 /// An ordinal position in a timeline's history, paired with a human
 /// label. Per PRJ001 the position is an **ordinal, not a clock** — Core
-/// holds no time. The ordinal totally orders the snapshots in a
-/// `Lifecycle`; the label is presentation (a SemVer string, a deploy
-/// tag). Smart constructor per the structural-commitment-via-
+/// holds no time. The ordinal totally orders the episodes in an
+/// `EpisodicLifecycle`; the label is presentation (a SemVer string, a
+/// deploy tag). Smart constructor per the structural-commitment-via-
 /// construction-validation principle.
 type Version = private Version of ordinal: int * label: string
 
@@ -25,7 +31,7 @@ module Version =
     let label (Version (_, l)) : string = l
 
 /// The named history along which a `Catalog` evolves (e.g. "dev",
-/// "uat"). Per L3-L3 (per-timeline independence) each `Lifecycle`
+/// "uat"). Per L3-L3 (per-timeline independence) each `EpisodicLifecycle`
 /// carries exactly one `Timeline`; histories on distinct timelines are
 /// independent by construction.
 type Timeline = private Timeline of string
@@ -39,155 +45,3 @@ module Timeline =
         | es -> Result.failure es
 
     let name (Timeline n) : string = n
-
-/// A `Catalog` captured at a `Version` — one point in a `Lifecycle`'s
-/// history.
-type CatalogSnapshot = { Version: Version; Catalog: Catalog }
-
-/// A monotone chain of `CatalogSnapshot`s along one `Timeline`. The
-/// list head is C₀ (genesis, lowest ordinal); `append` keeps the chain
-/// strictly increasing in ordinal (L3-L2, monotonic history).
-///
-/// Lifecycle is the **outer envelope** over `Project`, not a fourth
-/// `ProjectionInput` field (A6 amended / A17: the inner kernel stays
-/// `Catalog × Policy × Profile`). It maps over a *chain* of `Project`
-/// invocations and feeds each per-edge `CatalogDiff` to the existing
-/// `RefactorLogEmitter`.
-type Lifecycle = private Lifecycle of LifecycleData
-
-and LifecycleData =
-    {
-        Timeline  : Timeline
-        Snapshots : CatalogSnapshot list
-    }
-
-[<RequireQualifiedAccess>]
-module Lifecycle =
-
-    /// Open a timeline at its genesis snapshot (C₀). Total — a single
-    /// snapshot is trivially monotone.
-    let genesis (timeline: Timeline) (snapshot: CatalogSnapshot) : Lifecycle =
-        Lifecycle { Timeline = timeline; Snapshots = [ snapshot ] }
-
-    let timeline (Lifecycle data) : Timeline = data.Timeline
-    let snapshots (Lifecycle data) : CatalogSnapshot list = data.Snapshots
-
-    /// The genesis snapshot C₀ (the chain head).
-    let head (Lifecycle data) : CatalogSnapshot = List.head data.Snapshots
-
-    /// The most recent snapshot (the chain tail).
-    let latest (Lifecycle data) : CatalogSnapshot = List.last data.Snapshots
-
-    /// Append the next snapshot, enforcing L3-L2 (monotonic history):
-    /// the new version's ordinal must strictly exceed the latest. A
-    /// non-monotone append fails rather than silently reordering — prior
-    /// history is never altered.
-    let append (snapshot: CatalogSnapshot) (lifecycle: Lifecycle) : Result<Lifecycle> =
-        let (Lifecycle data) = lifecycle
-        let lastOrdinal = Version.ordinal (List.last data.Snapshots).Version
-        let nextOrdinal = Version.ordinal snapshot.Version
-        if nextOrdinal > lastOrdinal then
-            Result.success (Lifecycle { data with Snapshots = data.Snapshots @ [ snapshot ] })
-        else
-            Result.failureOf (
-                ValidationError.createWithMetadata
-                    "lifecycle.append.nonMonotonic"
-                    "Appended version ordinal must strictly exceed the latest snapshot's ordinal."
-                    (Map.ofList [ "nextOrdinal", Some (string nextOrdinal); "lastOrdinal", Some (string lastOrdinal) ]))
-
-    /// The per-edge `CatalogDiff` chain: `[between C₀ C₁; between C₁ C₂;
-    /// …]`. Folds `CatalogDiff.between` over consecutive snapshots — the
-    /// formal substrate for refactor-log composition across time. A
-    /// genesis-only lifecycle has no edges, so the chain is empty.
-    /// Threads the Π-side `EmitError` (`between`'s error type).
-    let evolutionChain (lifecycle: Lifecycle) : Result<CatalogDiff list, EmitError> =
-        let (Lifecycle data) = lifecycle
-        data.Snapshots
-        |> List.pairwise
-        |> List.map (fun (prior, next) -> CatalogDiff.between prior.Catalog next.Catalog)
-        |> Ok
-
-    /// L3-L1 (replayability) in materialized form: recover the `Catalog`
-    /// stored at a `Version`. Lookup is by ordinal (the position's
-    /// identity); an absent version fails. This is the exact *fetch* — it
-    /// returns the stored snapshot byte-for-byte (including facets the diff
-    /// does not capture: references, indexes, sequences). Its diff-fold peer
-    /// is `reconstructLatest` (6.A.11 / H-007), which *derives* the catalog
-    /// from the deltas and agrees with the fetch modulo the captured surface.
-    let replayTo (version: Version) (lifecycle: Lifecycle) : Result<Catalog> =
-        let (Lifecycle data) = lifecycle
-        let target = Version.ordinal version
-        match data.Snapshots |> List.tryFind (fun s -> Version.ordinal s.Version = target) with
-        | Some s -> Result.success s.Catalog
-        | None ->
-            Result.failureOf (
-                ValidationError.createWithMetadata
-                    "lifecycle.version.notFound"
-                    "No snapshot exists at the requested version."
-                    (Map.ofList [ "ordinal", Some (string target) ]))
-
-    /// 6.A.11 (H-007) — L3-L1 replayability as a real *reconstruction*, not a
-    /// fetch: fold `CatalogDiff.applyDiff` over the evolution chain from
-    /// genesis (C₀), rebuilding the latest snapshot's `Catalog` from the
-    /// per-edge deltas. Where `replayTo` returns the stored snapshot,
-    /// `reconstructLatest` *derives* it — the evolution algebra in action
-    /// (`fold applyDiff C₀ [between C₀ C₁; …]`). The chain-level round-trip
-    /// law: the reconstruction agrees with the stored latest snapshot modulo
-    /// the diff's captured surface — `between (latest).Catalog
-    /// (reconstructLatest) |> CatalogDiff.isEmpty`. A genesis-only lifecycle
-    /// has no edges, so the fold reconstructs C₀ itself. Threads the Π-side
-    /// `EmitError` (`between`'s error type).
-    let reconstructLatest (lifecycle: Lifecycle) : Result<Catalog, EmitError> =
-        let (Lifecycle data) = lifecycle
-        let genesisCatalog = (List.head data.Snapshots).Catalog
-        match evolutionChain lifecycle with
-        | Ok diffs -> Ok (List.fold CatalogDiff.applyDiff genesisCatalog diffs)
-        | Error e  -> Error e
-
-    /// 6.H.3 — the net displacement from genesis to latest: the integral ∫δ as
-    /// a single delta (the FTC's companion to `reconstructLatest`'s fold-⊕).
-    /// Computed by **folding `CatalogDiff.compose` over the `evolutionChain`**
-    /// (`P4`: the production consumer of the groupoid composition `⊕`). The
-    /// functor law (`CatalogDiff.compose` docstring) guarantees the fold equals
-    /// the direct `between genesis latest`: composability holds along a monotone
-    /// chain (each edge's target IS the next edge's source), and both groupings
-    /// recompute `between genesis latest`. A genesis-only lifecycle (empty
-    /// chain) has no edges to compose, so the net displacement is the self-diff
-    /// at genesis (`between C₀ C₀`, the empty delta). NM-45 — the `None` branch
-    /// of the fold is structurally unreachable for a well-formed monotone chain
-    /// (each edge meets the next on the captured surface by construction); it now
-    /// surfaces `EmitError.NonComposableLifecycleChain` rather than silently
-    /// substituting the direct `between` that the fold was meant to corroborate.
-    /// `applyDiff (netDiff lc) genesis ≈ latest` (modulo the captured surface).
-    /// Threads the Π-side `EmitError`.
-    let netDiff (lifecycle: Lifecycle) : Result<CatalogDiff, EmitError> =
-        let (Lifecycle data) = lifecycle
-        let genesisCatalog = (List.head data.Snapshots).Catalog
-        let latestCatalog = (List.last data.Snapshots).Catalog
-        let directNetDiff () = Ok (CatalogDiff.between genesisCatalog latestCatalog)
-        match evolutionChain lifecycle with
-        | Error e -> Error e
-        | Ok []   -> directNetDiff ()
-        | Ok (d0 :: rest) ->
-            // Fold the groupoid composition across the chain — the production
-            // exercise of CatalogDiff.compose. By the functor law the folded
-            // delta equals `between genesis latest`; `None` is unreachable on a
-            // monotone chain and is now a NAMED refusal (NM-45), not a silent
-            // fallback to the direct diff `compose` was meant to corroborate.
-            let composed =
-                rest
-                |> List.fold
-                    (fun acc d ->
-                        match acc with
-                        | None      -> None
-                        | Some accD -> CatalogDiff.compose accD d)
-                    (Some d0)
-            match composed with
-            | Some net -> Ok net
-            | None     ->
-                Error (
-                    NonComposableLifecycleChain
-                        "Lifecycle.netDiff: an evolution-chain edge does not meet \
-                         the next on the captured surface — the chain is not \
-                         monotone (CatalogDiff.compose returned None, unreachable \
-                         by construction for a well-formed lifecycle).")

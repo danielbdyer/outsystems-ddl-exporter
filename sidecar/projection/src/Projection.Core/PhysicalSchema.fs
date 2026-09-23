@@ -45,11 +45,11 @@ namespace Projection.Core
 /// **What's NOT compared.** SsKey identity, Module structure,
 /// Origin / Modality marks, static populations. Non-PK index
 /// *structure* IS compared as of E1 (see `PhysicalIndex` / the
-/// `Indexes` axis); index *options* (filter / included columns /
-/// storage flags) remain a named residual
-/// (`ToleratedDivergence.IndexOptionsUnreflected`). These excluded
-/// axes are V2-IR-only or option-level details SQL Server's catalog
-/// does not recover symmetrically.
+/// `Indexes` axis), and as of schema-L3.1 the index *options* too
+/// (filter predicate, INCLUDE columns, the storage flags) — the
+/// `IndexOptionsUnreflected` tolerance is RETIRED; the excluded
+/// axes that remain are V2-IR-only concepts SQL Server's catalog
+/// has no physical form for.
 type PhysicalColumn =
     {
         Schema : string
@@ -117,19 +117,30 @@ type PhysicalAnnotation =
         Payload : string
     }
 
-/// A non-PK index in physical-schema coordinates (E1 / debrief G3).
-/// Compares the index's *structural identity* — owner, name, uniqueness,
-/// and ordered key columns — which is exactly the surface `ReadSide`
-/// reconstructs (`readIndexes`: `i.name`, `i.is_unique`, key columns +
-/// `is_descending_key` in `key_ordinal` order; PKs excluded). Both halves
-/// of the canary read back through the same `ReadSide`, so this axis stays
-/// symmetric and surfaces a *genuine* index drop/reshape (a UNIQUE index V2
-/// failed to emit, a key-column reorder) without false positives.
+/// A non-PK index in physical-schema coordinates (E1 / debrief G3;
+/// widened at schema-L3.1). Compares the index's *structural identity* —
+/// owner, name, uniqueness, ordered key columns — AND its *options*: the
+/// filter predicate, the INCLUDE column set, and the storage flags
+/// (FILLFACTOR / PAD_INDEX / lock flags / STATISTICS_NORECOMPUTE /
+/// IGNORE_DUP_KEY / disabled state / DATA_COMPRESSION / data space).
+/// `ReadSide.readIndexes` recovers the full surface from `sys.indexes` ⋈
+/// `sys.index_columns` (+ `sys.stats`, `sys.partitions`,
+/// `sys.data_spaces`); both halves of the canary read back through the
+/// same `ReadSide`, so the axis stays symmetric — the schema-L3.1 closure
+/// of `IndexOptionsUnreflected` (previously the options were
+/// symmetric-but-LOST on both halves, so drift in them was invisible).
 ///
-/// **Deliberately NOT compared:** included columns, the filter predicate,
-/// and the storage options (FILLFACTOR / lock flags / compression) — these
-/// are recovered by neither side today, so they're a named residual
-/// (`ToleratedDivergence.IndexOptionsUnreflected`), not a silent drop.
+/// **Normalization (phantom-diff protection):** `Filter` is compared
+/// whitespace/bracket/paren-stripped and lowercased (SQL Server
+/// canonicalizes `filter_definition`; the source string may differ only
+/// in wrapping); `IncludedColumns` is compared as a SORTED set (INCLUDE
+/// order is not physically significant). `DataCompression`/`DataSpace`
+/// carry the EFFECTIVE physical value (`"NONE"`/`"PRIMARY"` when the IR
+/// declares nothing — an explicit server-default and an omitted clause
+/// are physically indistinguishable). The one documented residual: a
+/// partition scheme's COLUMN BINDING is compared by the encoded name+cols
+/// projection only as far as both sides recover it — named here, not a
+/// tolerance.
 type PhysicalIndex =
     {
         Schema : string
@@ -139,6 +150,24 @@ type PhysicalIndex =
         /// Ordered key columns, encoded `[col:ASC][col2:DESC]`. Order is
         /// load-bearing — a different key order is a different index.
         KeyColumns : string
+        /// Normalized filter predicate (`""` = unfiltered). See the type
+        /// docstring for the normalization.
+        Filter : string
+        /// INCLUDE columns as a sorted `[a][b]` encoding (`""` = none).
+        IncludedColumns : string
+        /// FILLFACTOR (`None` = server default; readback maps `0` → `None`).
+        FillFactor : int option
+        IsPadded : bool
+        AllowRowLocks : bool
+        AllowPageLocks : bool
+        NoRecomputeStatistics : bool
+        IgnoreDuplicateKey : bool
+        IsDisabled : bool
+        /// Effective compression: `NONE` / `ROW` / `PAGE`.
+        DataCompression : string
+        /// Effective data space (`PRIMARY` when unspecified); a partition
+        /// scheme encodes `name(col1,col2)`.
+        DataSpace : string
     }
 
 /// A foreign-key relationship in physical-schema coordinates. Per
@@ -251,12 +280,13 @@ type PhysicalSchema =
         /// in `ofCatalog`; recovered from `sys.triggers` / `sys.check_constraints`
         /// / `sys.sequences` / `sys.extended_properties` by ReadSide.
         Annotations : Set<PhysicalAnnotation>
-        /// E1 (debrief G3) — non-PK indexes (owner + name + uniqueness +
-        /// ordered key columns). Populated from `Kind.Indexes` in `ofCatalog`;
-        /// recovered from `sys.indexes` ⋈ `sys.index_columns` by ReadSide's
-        /// `readIndexes` + `attachIndexes`. Retires the prior
-        /// `Tolerance.IndexOptionsUnreflected` (index *structure* is now compared;
-        /// index *options* remain a named residual).
+        /// E1 (debrief G3; widened schema-L3.1) — non-PK indexes: structure
+        /// (owner + name + uniqueness + ordered key columns) AND options
+        /// (filter / INCLUDE / storage flags / compression / data space).
+        /// Populated from `Kind.Indexes` in `ofCatalog`; recovered from
+        /// `sys.indexes` ⋈ `sys.index_columns` (+ stats/partitions/
+        /// data_spaces) by ReadSide's `readIndexes` + `attachIndexes`.
+        /// The option widening RETIRED `Tolerance.IndexOptionsUnreflected`.
         Indexes : Set<PhysicalIndex>
     }
 
@@ -567,6 +597,18 @@ module PhysicalSchema =
     /// read leg recovers `sys.indexes.is_unique`), routing the unique-promotion
     /// decision through the general comparator (retires
     /// `ToleratedDivergence.UniquePromotionUnreflected`).
+    /// schema-L3.1 — normalize a filter predicate for the comparison
+    /// surface: SQL Server canonicalizes `filter_definition` (extra parens,
+    /// brackets, spacing), so the raw source string and the stored form can
+    /// differ without a semantic difference. Stripping whitespace, parens,
+    /// and brackets + lowercasing keeps a REAL predicate change divergent
+    /// while wrapping variance folds away. Deliberately aggressive — the
+    /// physical surface compares meaning-at-this-grain, not bytes.
+    let private normalizePredicate (s: string) : string =
+        (s |> String.filter (fun c ->
+            not (System.Char.IsWhiteSpace c || c = '(' || c = ')' || c = '[' || c = ']')))
+            .ToLowerInvariant()
+
     let private toPhysicalIndexes (overlay: DecisionOverlay) (k: Kind) : PhysicalIndex list =
         let schemaStr = SchemaName.value k.Physical.Schema
         let tableStr = TableName.value k.Physical.Table
@@ -589,12 +631,45 @@ module PhysicalSchema =
                     let dir = match ic.Direction with | Ascending -> "ASC" | Descending -> "DESC"
                     System.String.Concat("[", colName, ":", dir, "]"))
                 |> String.concat ""
+            // schema-L3.1 — the option surface (the IndexOptionsUnreflected
+            // closure). Effective-value encodings match `attachIndexes`'s
+            // recovery exactly (None ≡ the server default on both sides).
+            let includedEncoded =
+                idx.IncludedColumns
+                |> List.map (fun sk ->
+                    Map.tryFind sk colNameByKey |> Option.defaultValue "<unresolved>")
+                |> List.sort
+                |> List.map (sprintf "[%s]")
+                |> String.concat ""
+            let compressionEffective =
+                match idx.DataCompression with
+                | Option.None -> "NONE"
+                | Some DataCompressionLevel.None -> "NONE"
+                | Some DataCompressionLevel.Row -> "ROW"
+                | Some DataCompressionLevel.Page -> "PAGE"
+            let dataSpaceEffective =
+                match idx.DataSpace with
+                | Option.None -> "PRIMARY"
+                | Some (DataSpace.Filegroup name) -> name
+                | Some (DataSpace.PartitionScheme (name, cols)) ->
+                    sprintf "%s(%s)" name (String.concat "," cols)
             {
                 Schema = schemaStr
                 Table = tableStr
                 Name = Map.find idx.SsKey emittedNames
                 IsUnique = IndexUniqueness.isUnique idx.Uniqueness || Set.contains idx.SsKey overlay.EnforceUnique
                 KeyColumns = keyColumns
+                Filter = idx.Filter |> Option.map normalizePredicate |> Option.defaultValue ""
+                IncludedColumns = includedEncoded
+                FillFactor = idx.FillFactor
+                IsPadded = idx.IsPadded
+                AllowRowLocks = idx.AllowRowLocks
+                AllowPageLocks = idx.AllowPageLocks
+                NoRecomputeStatistics = idx.NoRecomputeStatistics
+                IgnoreDuplicateKey = idx.IgnoreDuplicateKey
+                IsDisabled = idx.IsDisabled
+                DataCompression = compressionEffective
+                DataSpace = dataSpaceEffective
             })
 
     /// Project the Catalog's sequences into annotations. Sequence shape
@@ -712,59 +787,86 @@ module PhysicalSchema =
         (k: Kind)
         : PhysicalForeignKey list =
         k.References
-        |> List.choose (fun r ->
-            let sourceColumn =
-                k.Attributes
-                |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
+        |> List.collect (fun r ->
+            let srcSchema = SchemaName.value k.Physical.Schema
+            let srcTable = TableName.value k.Physical.Table
+            // THE VECTOR Wave 1 / M1 — the Decision-axis trust sub-axis.
+            // Untrusted iff the source FK is itself `WITH NOCHECK`
+            // (`r.IsConstraintTrusted = false`) OR a registered intervention
+            // decided NOCHECK (`overlay.NoCheckFk`). Computed once per
+            // reference, stamped on every leg entry.
+            let trusted = Reference.isConstraintTrusted r && not (Set.contains r.SsKey overlay.NoCheckFk)
+            let entry srcCol tgtSchema tgtTable tgtCol =
+                {
+                    SourceSchema = srcSchema
+                    SourceTable = srcTable
+                    SourceColumn = srcCol
+                    TargetSchema = tgtSchema
+                    TargetTable = tgtTable
+                    TargetColumn = tgtCol
+                    IsTrusted = trusted
+                }
+            let colOf (kind: Kind) (sk: SsKey) : string option =
+                kind.Attributes
+                |> List.tryFind (fun a -> a.SsKey = sk)
                 |> Option.map (fun a -> ColumnRealization.columnNameText a.Column)
-            // Effective target `(schema, table, column)`: the BRIDGE attribute's
-            // kind + column when the reference is retargeted (`overlay.RetargetFk`),
-            // else the parent kind's first PK column. Mirrors the SSDT emitter's
-            // `fkDef` so the source projection and read-back agree on the recovered
-            // target. Empty RetargetFk ⇒ the PK path (byte-identical). The composite
-            // target-PK tolerance (NM-28 `CompositePkFkUnreflected`) is unchanged:
-            // V2's single-column `Reference` IR pairs only the first PK leg.
-            let effectiveTarget =
-                match Map.tryFind r.SsKey overlay.RetargetFk |> Option.bind (fun ak -> Map.tryFind ak attrOwnerByKey) with
-                | Some (bridgeKind, bridgeCol) ->
-                    Some (SchemaName.value bridgeKind.Physical.Schema, TableName.value bridgeKind.Physical.Table, bridgeCol)
-                | None ->
-                    match Map.tryFind r.TargetKind kindByKey, Map.tryFind r.TargetKind targetPkColumnsByKey with
-                    | Some tk, Some (tgtPkFirst :: tgtPkRest) ->
-                        ignore tgtPkRest
-                        Some (SchemaName.value tk.Physical.Schema, TableName.value tk.Physical.Table, tgtPkFirst)
+            // Bridge retarget wins whole-reference (a bridge attribute is
+            // single-column; retarget-plus-legs is refused upstream by the
+            // arity gate — `Reference.compositeArityMismatch`).
+            match Map.tryFind r.SsKey overlay.RetargetFk |> Option.bind (fun ak -> Map.tryFind ak attrOwnerByKey) with
+            | Some (bridgeKind, bridgeCol) ->
+                match colOf k r.SourceAttribute with
+                | Some srcCol ->
+                    [ entry srcCol (SchemaName.value bridgeKind.Physical.Schema) (TableName.value bridgeKind.Physical.Table) bridgeCol ]
+                | None -> []
+            | None ->
+                match r.Legs with
+                | [] ->
+                    // Legless: exactly the pre-lift single entry — the source
+                    // column paired against the target's FIRST PK column.
+                    // Deployability against a composite PK is refused
+                    // upstream by the arity gate, so this arm reflecting one
+                    // leg is faithful to what would actually deploy.
+                    match colOf k r.SourceAttribute, Map.tryFind r.TargetKind kindByKey, Map.tryFind r.TargetKind targetPkColumnsByKey with
+                    | Some srcCol, Some tk, Some (tgtPkFirst :: _) ->
+                        [ entry srcCol (SchemaName.value tk.Physical.Schema) (TableName.value tk.Physical.Table) tgtPkFirst ]
                     | _ ->
-                        // Dropped: the source attribute is unresolvable, the target
-                        // kind is absent from the catalog, OR the target has NO
-                        // primary key (empty PK list). The first two are structural-
-                        // integrity gaps `Catalog.create` validates upstream; the
-                        // no-PK-target case has no FK to reflect by construction (a
-                        // SQL FK must reference a key). Surfacing these as a Core
-                        // diagnostic needs a diagnostics channel on `PhysicalSchema`
-                        // (today a pure set-of-tuples value) — FLAGGED as a larger
-                        // change (NM-28b), not landed here.
-                        None
-            match sourceColumn, effectiveTarget with
-            | Some srcCol, Some (tgtSchema, tgtTable, tgtCol) ->
-                Some
-                    {
-                        SourceSchema = SchemaName.value k.Physical.Schema
-                        SourceTable = TableName.value k.Physical.Table
-                        SourceColumn = srcCol
-                        TargetSchema = tgtSchema
-                        TargetTable = tgtTable
-                        TargetColumn = tgtCol
-                        // THE VECTOR Wave 1 / M1 — the Decision-axis trust
-                        // sub-axis. Untrusted iff the source FK is itself
-                        // `WITH NOCHECK` (`r.IsConstraintTrusted = false`,
-                        // recovered at `ReadSide.fs:1171`) OR a registered
-                        // intervention decided NOCHECK (`overlay.NoCheckFk`).
-                        // Mirrors the emitter's NOCHECK predicate
-                        // (`SsdtDdlEmitter.untrustedFkAlters`) so the source
-                        // projection and the read-back agree.
-                        IsTrusted = Reference.isConstraintTrusted r && not (Set.contains r.SsKey overlay.NoCheckFk)
-                    }
-            | _ -> None)
+                        // Dropped: unresolvable source attribute / absent
+                        // target kind (both `Catalog.create`-validated
+                        // upstream), or a target with NO primary key — the
+                        // NM-28b case: no SQL FK can reference a keyless
+                        // table. schema-L3.2 NAMED this drop: the estate
+                        // board's `emission.fkTargetWithoutPk` finding and
+                        // the emitter's FK-drop Warning diagnostics surface
+                        // it; this pure set-of-tuples projection stays
+                        // silent by design (the named surfaces are the
+                        // channel).
+                        []
+                | legs ->
+                    // schema-L3.2 (the `CompositePkFkUnreflected` closure) —
+                    // one `PhysicalForeignKey` entry per leg, BOTH sides
+                    // resolved explicitly from the leg's SsKeys; nothing is
+                    // derived from the target PK. A leg that does not
+                    // resolve drops the WHOLE reference's entries (never a
+                    // partial FK), mirroring the emitter's all-or-nothing
+                    // `fkDef` resolution.
+                    match Map.tryFind r.TargetKind kindByKey with
+                    | None -> []
+                    | Some tk ->
+                        let tgtSchema = SchemaName.value tk.Physical.Schema
+                        let tgtTable = TableName.value tk.Physical.Table
+                        let resolved =
+                            legs
+                            |> List.map (fun leg ->
+                                match colOf k leg.SourceAttribute, colOf tk leg.TargetAttribute with
+                                | Some s, Some t -> Some (s, t)
+                                | _ -> None)
+                        if resolved |> List.exists Option.isNone then []
+                        else
+                            resolved
+                            |> List.map (fun p ->
+                                let s, t = Option.get p
+                                entry s tgtSchema tgtTable t))
 
     /// Project a Catalog to its `PhysicalSchema` view under a
     /// `DecisionOverlay` — the set of `(schema, table, column, type, nullable,
@@ -793,10 +895,11 @@ module PhysicalSchema =
         let kindByKey =
             kinds |> List.map (fun k -> k.SsKey, k) |> Map.ofList
         // NM-28 — the FULL ordered PK column list per kind (declaration order),
-        // not just the first PK column. `toPhysicalForeignKeys` reflects only
-        // the first leg (single-column `Reference` IR) but now sees the whole
-        // list, so the composite case is named (`CompositePkFkUnreflected`)
-        // rather than silently collapsed at the map-build site.
+        // not just the first PK column. Since schema-L3.2 a leg-bearing
+        // reference reflects EVERY leg explicitly (`Reference.Legs`; the
+        // `CompositePkFkUnreflected` tolerance is RETIRED); the legless arm
+        // still pairs against the head of this list, faithful to the
+        // arity-gated single-column deploy shape.
         let targetPkColumnsByKey =
             kinds
             |> List.choose (fun k ->
@@ -990,8 +1093,24 @@ module PhysicalSchema =
             sprintf "  %s %s on %s = %s" kind a.Name a.Owner
                 (a.Payload.Substring(0, min 60 a.Payload.Length))
         let renderIndex (i: PhysicalIndex) : string =
-            sprintf "  %sindex %s on [%s].[%s] %s"
+            // schema-L3.1 — non-default options render so an option-grain
+            // divergence names itself in the diff; a default-only index
+            // renders exactly as before the widening.
+            let opts =
+                [ if i.Filter <> "" then yield sprintf "filter=%s" i.Filter
+                  if i.IncludedColumns <> "" then yield sprintf "include=%s" i.IncludedColumns
+                  match i.FillFactor with Some f -> yield sprintf "fillfactor=%d" f | None -> ()
+                  if i.IsPadded then yield "pad_index"
+                  if not i.AllowRowLocks then yield "allow_row_locks=off"
+                  if not i.AllowPageLocks then yield "allow_page_locks=off"
+                  if i.NoRecomputeStatistics then yield "statistics_norecompute"
+                  if i.IgnoreDuplicateKey then yield "ignore_dup_key"
+                  if i.IsDisabled then yield "disabled"
+                  if i.DataCompression <> "NONE" then yield sprintf "compression=%s" i.DataCompression
+                  if i.DataSpace <> "PRIMARY" then yield sprintf "on=%s" i.DataSpace ]
+            sprintf "  %sindex %s on [%s].[%s] %s%s"
                 (if i.IsUnique then "unique " else "") i.Name i.Schema i.Table i.KeyColumns
+                (if List.isEmpty opts then "" else " {" + String.concat " " opts + "}")
         let block (label: string) (renderer: 'a -> string) (xs: 'a list) : string =
             if List.isEmpty xs then sprintf "%s:\n  (none)" label
             else

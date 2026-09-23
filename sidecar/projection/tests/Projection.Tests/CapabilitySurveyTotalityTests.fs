@@ -24,7 +24,7 @@ open type Projection.Pipeline.CapabilitySurvey.Capability
 // publish to a schema+data target (Sink ALTER/CREATE TABLE). Together these
 // reach all five capabilities — the "in-scope" surface the totality holds the
 // catalog to (the analog of Voice's `inScopeCodes`).
-let private env (name: string) (grant: Grant option) : Projection.Pipeline.Environment =
+let private env (name: string) (grant: Grant option) : Projection.Pipeline.Place =
     { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None; Rendition = None; Archetype = None; AtomicDeploy = None; Revert = None }
 
 let private flow (name: string) (from: FlowSource) (toEnv: string) : Flow =

@@ -63,7 +63,18 @@
     <Compile Include="Lifecycle.fs" />
     <Compile Include="Tolerance.fs" />
     <Compile Include="EstateFinding.fs" />
+    <!-- SyncOrdinal.fs: the sink edition ordinal VO + SinkEdition carrier
+         (align-III.1; a5's S-VO charge). Before PhysicalClaimRules.fs
+         (FirstWitnessedSync.AtSync carries it) and OperatorRuling.fs
+         (align-III.2 widens BasisAnchor with SinkEdition). -->
+    <Compile Include="SyncOrdinal.fs" />
+    <!-- OperatorRuling.fs: the ruling carrier (align-II.1; A53). After
+         EstateFinding.fs because BasisAnchor carries the typed FindingKey. -->
+    <Compile Include="OperatorRuling.fs" />
     <Compile Include="CanaryResidual.fs" />
+    <!-- CanaryVerdict.fs: the R6 gate's typed verdict (align-III.3) —
+         retires the "green"/"red" string pair the run + ledger carried. -->
+    <Compile Include="CanaryVerdict.fs" />
     <Compile Include="UserIdentity.fs" />
     <Compile Include="Profile.fs" />
     <!-- SamplingPolicy.fs: the operator's evidence-tiering policy (per-kind
@@ -120,6 +131,10 @@
     <Compile Include="Strategies/ForeignKeyRules.fs" />
     <Compile Include="Strategies/ForeignKeyReadback.fs" />
     <Compile Include="Strategies/CategoricalUniquenessRules.fs" />
+    <!-- Strategies/PhysicalClaimRules.fs (sink S11): physical-table ownership
+         adjudication over journal-assembled claim sets. In the strategies
+         window BEFORE Lineage.fs (AnnotationDetail will reference outcomes). -->
+    <Compile Include="Strategies/PhysicalClaimRules.fs" />
     <!-- H-071 through H-076 result types — compiled before ComposeState
          so ComposeState can carry them as optional evidence fields.
          Pattern mirrors TopologicalOrder.fs / TopologicalOrderPass.fs. -->
@@ -198,6 +213,14 @@
     <Compile Include="Strategies/Composition.fs" />
     <Compile Include="Passes/CanonicalizeIdentity.fs" />
     <Compile Include="Passes/VisibilityMask.fs" />
+    <!-- Passes/SelectionSuppression.fs (sink S9): the lifecycle-selection axes
+         on the lineage channel — one drop semantic (ModuleFilter.lifecycleFilter),
+         two channels. After ModuleFilter + Lineage; the VisibilityMask shape. -->
+    <Compile Include="Passes/SelectionSuppression.fs" />
+    <!-- Passes/PhysicalClaimPass.fs (sink S13): the claims machinery's
+         lineage half — non-trivial table-ownership decisions annotated
+         onto kinds as a sink-backed read parses the witnessed edition. -->
+    <Compile Include="Passes/PhysicalClaimPass.fs" />
     <Compile Include="Passes/NamingMorphism.fs" />
     <Compile Include="Passes/NormalizeStaticPopulations.fs" />
     <Compile Include="Passes/SymmetricClosure.fs" />

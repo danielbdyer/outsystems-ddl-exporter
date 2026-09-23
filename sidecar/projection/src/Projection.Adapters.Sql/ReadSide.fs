@@ -64,15 +64,15 @@ module ReadSide =
     let private reconstructedModuleName : string = "Reconstructed"
 
     let private moduleSsKey () : Result<SsKey> =
-        SsKey.synthesized "READSIDE_MOD" reconstructedModuleName
+        SsKey.mint SynthesisConvention.ReadSideModule reconstructedModuleName
 
     let private kindSsKey (schema: string) (table: string) : Result<SsKey> =
-        SsKey.synthesized "READSIDE_KIND" (sprintf "%s.%s" schema table)
+        SsKey.mint SynthesisConvention.ReadSideKind (sprintf "%s.%s" schema table)
 
     let private attributeSsKey
         (schema: string) (table: string) (column: string) : Result<SsKey> =
-        SsKey.synthesized
-            "READSIDE_ATTR"
+        SsKey.mint
+            SynthesisConvention.ReadSideAttribute
             (sprintf "%s.%s.%s" schema table column)
 
     /// Recover an attribute's SsKey from the persisted COLUMN-level
@@ -135,6 +135,13 @@ module ReadSide =
             TargetTable  : string
             TargetColumn : string
             IsNotTrusted : bool
+            /// schema-L3.2 — the deployed constraint's name + this row's
+            /// 1-based leg ordinal (`fkc.constraint_column_id`), so
+            /// `attachReferences` can GROUP a multi-leg FK's rows into ONE
+            /// leg-bearing `Reference` (previously a deployed 2-leg FK read
+            /// back as two single-column references).
+            ConstraintName : string
+            Ordinal      : int
         }
 
     // E2 (debrief G4) — the cross-schema FK readback classifier
@@ -143,12 +150,20 @@ module ReadSide =
     // call sites below reference it from `Projection.Core` (opened above); the
     // DB-free test (`ForeignKeyReadbackTests`) follows it home.
 
-    /// One key column of a reflected non-PK index (`sys.indexes ⋈
+    /// One column of a reflected non-PK index (`sys.indexes ⋈
     /// sys.index_columns`), within a `(schema, table)` group: the owning
     /// index's name + uniqueness, the participating column, its sort
-    /// direction, and its 1-based position in the index key. 6.A.5 —
-    /// `attachIndexes` groups these by `IndexName` and rebuilds each
-    /// `Index` in `KeyOrdinal` order.
+    /// direction, and its 1-based position in the index key (0 for an
+    /// INCLUDE or partition-only column). 6.A.5 — `attachIndexes` groups
+    /// these by `IndexName` and rebuilds each `Index` in `KeyOrdinal`
+    /// order. schema-L3.1 (the `IndexOptionsUnreflected` closure): the
+    /// per-INDEX option surface rides every row of its group (constant
+    /// within a group; `attachIndexes` reads it off the head row) —
+    /// filter predicate, FILLFACTOR/PAD_INDEX, lock flags,
+    /// STATISTICS_NORECOMPUTE (via `sys.stats`), IGNORE_DUP_KEY,
+    /// disabled state, DATA_COMPRESSION (partition 1), and the data
+    /// space (`sys.data_spaces` name + type, partition columns via
+    /// `partition_ordinal`).
     type private IndexColumnRow =
         {
             IndexName    : string
@@ -156,6 +171,19 @@ module ReadSide =
             ColumnName   : string
             IsDescending : bool
             KeyOrdinal   : int
+            IsIncluded   : bool
+            PartitionOrdinal : int
+            FilterDefinition : string option
+            FillFactor   : int
+            IsPadded     : bool
+            AllowRowLocks : bool
+            AllowPageLocks : bool
+            IgnoreDupKey : bool
+            IsDisabled   : bool
+            NoRecompute  : bool
+            DataCompressionCode : int
+            DataSpaceName : string
+            DataSpaceType : string
         }
 
     /// One reflected `sys.sequences` row: the full sequence shape recovered
@@ -355,9 +383,15 @@ module ReadSide =
     /// ordinal so `attachIndexes` rebuilds each index's key-column list in
     /// declaration order. PK-backing indexes (`is_primary_key = 1`) are
     /// excluded — the PK is modeled on the attributes (`IsPrimaryKey`), not
-    /// as an `Index`. Heaps (`type = 0`) and INCLUDE (non-key) columns are
-    /// excluded (V2 `Index.Columns` is key-only). Single round-trip,
-    /// mirroring `readCheckConstraints`.
+    /// as an `Index`. Heaps (`type = 0`) are excluded. schema-L3.1 (the
+    /// `IndexOptionsUnreflected` closure): INCLUDE columns are now READ
+    /// (`is_included_column` flags them; `attachIndexes` routes them to
+    /// `Index.IncludedColumns`, key columns stay `key_ordinal > 0`), and
+    /// the per-index option surface rides each row — filter predicate,
+    /// FILLFACTOR/PAD_INDEX, lock flags, IGNORE_DUP_KEY, disabled state,
+    /// STATISTICS_NORECOMPUTE (`sys.stats`), DATA_COMPRESSION
+    /// (`sys.partitions`, partition 1), data space (`sys.data_spaces`).
+    /// Single round-trip, mirroring `readCheckConstraints`.
     let private readIndexes (cnn: SqlConnection)
         : Task<Map<string * string, IndexColumnRow list>> =
         task {
@@ -365,16 +399,26 @@ module ReadSide =
             use cmd = cnn.CreateCommand()
             cmd.CommandText <-
                 "SELECT SCHEMA_NAME(t.schema_id), t.name, i.name, i.is_unique, \
-                        c.name, ic.is_descending_key, ic.key_ordinal \
+                        c.name, ic.is_descending_key, ic.key_ordinal, \
+                        ic.is_included_column, ic.partition_ordinal, \
+                        i.filter_definition, i.fill_factor, i.is_padded, \
+                        i.allow_row_locks, i.allow_page_locks, i.ignore_dup_key, i.is_disabled, \
+                        ISNULL(s.no_recompute, 0), ISNULL(p.data_compression, 0), \
+                        ISNULL(ds.name, 'PRIMARY'), ISNULL(ds.type, 'FG') \
                  FROM sys.indexes i \
                  JOIN sys.tables t ON t.object_id = i.object_id \
                  JOIN sys.index_columns ic \
                    ON ic.object_id = i.object_id AND ic.index_id = i.index_id \
                  JOIN sys.columns c \
                    ON c.object_id = ic.object_id AND c.column_id = ic.column_id \
+                 LEFT JOIN sys.stats s \
+                   ON s.object_id = i.object_id AND s.stats_id = i.index_id \
+                 LEFT JOIN sys.partitions p \
+                   ON p.object_id = i.object_id AND p.index_id = i.index_id AND p.partition_number = 1 \
+                 LEFT JOIN sys.data_spaces ds ON ds.data_space_id = i.data_space_id \
                  WHERE i.is_primary_key = 0 AND i.type > 0 AND i.name IS NOT NULL \
-                   AND ic.is_included_column = 0 AND t.is_ms_shipped = 0 \
-                 ORDER BY SCHEMA_NAME(t.schema_id), t.name, i.name, ic.key_ordinal"
+                   AND t.is_ms_shipped = 0 \
+                 ORDER BY SCHEMA_NAME(t.schema_id), t.name, i.name, ic.key_ordinal, ic.index_column_id"
             use! reader = cmd.ExecuteReaderAsync()
             let acc = System.Collections.Generic.Dictionary<string * string, ResizeArray<IndexColumnRow>>()
             do! drainRows reader (fun reader ->
@@ -384,7 +428,20 @@ module ReadSide =
                           IsUnique     = reader.GetBoolean 3
                           ColumnName   = reader.GetString 4
                           IsDescending = reader.GetBoolean 5
-                          KeyOrdinal   = System.Convert.ToInt32(reader.GetValue 6) }
+                          KeyOrdinal   = System.Convert.ToInt32(reader.GetValue 6)
+                          IsIncluded   = reader.GetBoolean 7
+                          PartitionOrdinal = System.Convert.ToInt32(reader.GetValue 8)
+                          FilterDefinition = (if reader.IsDBNull 9 then None else Some (reader.GetString 9))
+                          FillFactor   = System.Convert.ToInt32(reader.GetValue 10)
+                          IsPadded     = reader.GetBoolean 11
+                          AllowRowLocks  = reader.GetBoolean 12
+                          AllowPageLocks = reader.GetBoolean 13
+                          IgnoreDupKey = reader.GetBoolean 14
+                          IsDisabled   = reader.GetBoolean 15
+                          NoRecompute  = reader.GetBoolean 16
+                          DataCompressionCode = System.Convert.ToInt32(reader.GetValue 17)
+                          DataSpaceName = reader.GetString 18
+                          DataSpaceType = reader.GetString 19 }
                     match acc.TryGetValue key with
                     | true, lst -> lst.Add entry
                     | false, _ ->
@@ -1205,8 +1262,8 @@ module ReadSide =
             // against the reconstructed target Kind in PhysicalSchema.
             let! tgtKindKey = recoverKindSsKey tableSsKeys fk.TargetSchema fk.TargetTable
             let! refKey =
-                SsKey.synthesized
-                    "READSIDE_REF"
+                SsKey.mint
+                    SynthesisConvention.ReadSideReference
                     (sprintf "%s.%s.%s" fk.SourceSchema fk.SourceTable fk.SourceColumn)
             let! refName = Name.create (sprintf "FK_%s_%s" fk.SourceTable fk.SourceColumn)
             // Slice 5.13.fk-features-emit — smart-constructor migration.
@@ -1230,8 +1287,50 @@ module ReadSide =
                 |> Reference.withConstraintState true (not fk.IsNotTrusted)
         }
 
+    /// schema-L3.2 — build ONE leg-bearing `Reference` from a multi-leg
+    /// constraint's ordinal-sorted rows. Every leg's source AND target
+    /// attribute SsKeys recover through the same persisted-identity path
+    /// `buildReference` uses; the reference SsKey mints from the CONSTRAINT
+    /// name (a composite constraint is not identified by any single source
+    /// column). Trust is constant across a constraint's rows (head row).
+    let private buildCompositeReference
+        (tableSsKeys: Map<string * string, string>)
+        (columnSsKeys: Map<string * string * string, string>)
+        (rows: FkRow list)
+        : Result<Reference> =
+        result {
+            let head = List.head rows
+            let! legs =
+                rows
+                |> List.map (fun fk ->
+                    result {
+                        let! srcAttrKey = recoverAttributeSsKey columnSsKeys fk.SourceSchema fk.SourceTable fk.SourceColumn
+                        let! tgtAttrKey = recoverAttributeSsKey columnSsKeys fk.TargetSchema fk.TargetTable fk.TargetColumn
+                        return { ReferenceLeg.SourceAttribute = srcAttrKey; TargetAttribute = tgtAttrKey }
+                    })
+                |> Result.aggregate
+            let! tgtKindKey = recoverKindSsKey tableSsKeys head.TargetSchema head.TargetTable
+            let! refKey =
+                SsKey.mint
+                    SynthesisConvention.ReadSideReference
+                    (sprintf "%s.%s.%s" head.SourceSchema head.SourceTable head.ConstraintName)
+            let! refName = Name.create (sprintf "FK_%s_%s" head.SourceTable head.SourceColumn)
+            return
+                { Reference.create refKey refName (List.head legs).SourceAttribute tgtKindKey with
+                    ConstraintState = ConstraintState.ofLegacyBooleans true (not head.IsNotTrusted)
+                    // rule 7 — the leg evidence, explicit.
+                    Legs = legs }
+        }
+
     /// Attach references to a Kind based on the FKs grouped by
     /// (schema, table) coordinates. Per session-31 Session B.
+    /// schema-L3.2 — rows group by CONSTRAINT NAME first: a single-leg
+    /// constraint takes the classic `buildReference` path verbatim
+    /// (`Legs = []`, byte-identical to the pre-lift readback); an n≥2
+    /// group mints ONE leg-bearing reference via
+    /// `buildCompositeReference` (previously it minted n single-column
+    /// references — the readback half of the `CompositePkFkUnreflected`
+    /// blindness).
     let private attachReferences
         (tableSsKeys: Map<string * string, string>)
         (columnSsKeys: Map<string * string * string, string>)
@@ -1242,7 +1341,14 @@ module ReadSide =
         | None -> Result.success k
         | Some fks ->
             result {
-                let! refs = fks |> List.map (buildReference tableSsKeys columnSsKeys) |> Result.aggregate
+                let! refs =
+                    fks
+                    |> List.groupBy (fun fk -> fk.ConstraintName)
+                    |> List.map (fun (_, rows) ->
+                        match rows |> List.sortBy (fun r -> r.Ordinal) with
+                        | [ single ] -> buildReference tableSsKeys columnSsKeys single
+                        | sorted -> buildCompositeReference tableSsKeys columnSsKeys sorted)
+                    |> Result.aggregate
                 return { k with References = refs }
             }
 
@@ -1331,7 +1437,7 @@ module ReadSide =
             Map.tryFind (schema, table) triggers
             |> Option.defaultValue []
             |> List.choose (fun (name, disabled, body) ->
-                match SsKey.synthesized "READSIDE_TRIGGER" (sprintf "%s.%s.%s" schema table name),
+                match SsKey.mint SynthesisConvention.ReadSideTrigger (sprintf "%s.%s.%s" schema table name),
                       Name.create name with
                 | Ok sk, Ok nm ->
                     match Trigger.create sk nm disabled body with
@@ -1342,7 +1448,7 @@ module ReadSide =
             Map.tryFind (schema, table) checks
             |> Option.defaultValue []
             |> List.choose (fun (name, definition, notTrusted) ->
-                match SsKey.synthesized "READSIDE_CHECK" (sprintf "%s.%s.%s" schema table name) with
+                match SsKey.mint SynthesisConvention.ReadSideCheck (sprintf "%s.%s.%s" schema table name) with
                 | Ok sk ->
                     let nm = match Name.create name with | Ok n -> Some n | Error _ -> None
                     match ColumnCheck.create sk nm definition notTrusted with
@@ -1387,25 +1493,78 @@ module ReadSide =
                 rows
                 |> List.groupBy (fun r -> r.IndexName)
                 |> List.choose (fun (indexName, cols) ->
-                    let keyColumns =
+                    // schema-L3.1 — the group now carries three column roles:
+                    // key columns (`key_ordinal > 0`, not INCLUDE), INCLUDE
+                    // columns, and partition-only columns (`partition_ordinal
+                    // > 0` with neither of the above — consumed only by the
+                    // partition-scheme data-space recovery below).
+                    let keyRows =
                         cols
+                        |> List.filter (fun r -> not r.IsIncluded && r.KeyOrdinal > 0)
+                        |> List.sortBy (fun r -> r.KeyOrdinal)
+                    let includedRows =
+                        cols |> List.filter (fun r -> r.IsIncluded) |> List.sortBy (fun r -> r.ColumnName)
+                    let keyColumns =
+                        keyRows
                         |> List.choose (fun r ->
                             Map.tryFind r.ColumnName ssKeyByColumn
                             |> Option.map (fun sk ->
                                 IndexColumn.create sk (if r.IsDescending then Descending else Ascending)))
-                    // Skip an index whose key columns don't all resolve (a
-                    // computed-column or partition key the attribute set
-                    // doesn't carry) rather than emit a partial index.
-                    if List.length keyColumns <> List.length cols then None
+                    let includedKeys =
+                        includedRows |> List.choose (fun r -> Map.tryFind r.ColumnName ssKeyByColumn)
+                    // Skip an index whose key or INCLUDE columns don't all
+                    // resolve (a computed-column the attribute set doesn't
+                    // carry) rather than emit a partial index.
+                    if List.length keyColumns <> List.length keyRows
+                       || List.length includedKeys <> List.length includedRows then None
                     else
-                        match SsKey.synthesized "READSIDE_IDX" (sprintf "%s.%s.%s" (TableId.schemaText k.Physical) (TableId.tableText k.Physical) indexName),
+                        match SsKey.mint SynthesisConvention.ReadSideIndex (sprintf "%s.%s.%s" (TableId.schemaText k.Physical) (TableId.tableText k.Physical) indexName),
                               Name.create indexName with
                         | Ok sk, Ok nm ->
                             // ReadSide query at readIndexes excludes PKs (`is_primary_key = 0`),
                             // so PrimaryKey is unreachable here; project IsUnique via
                             // ofLegacyBooleans with isPK = false to reach the typed surface.
                             let isU = cols |> List.exists (fun r -> r.IsUnique)
-                            Some { Index.create sk nm keyColumns with Uniqueness = IndexUniqueness.ofLegacyBooleans isU false }
+                            let head = List.head cols
+                            let dataSpace =
+                                match head.DataSpaceType.Trim(), head.DataSpaceName with
+                                | _, "PRIMARY" -> None   // the default filegroup ≡ no explicit ON clause
+                                | "PS", name ->
+                                    let partitionCols =
+                                        cols
+                                        |> List.filter (fun r -> r.PartitionOrdinal > 0)
+                                        |> List.sortBy (fun r -> r.PartitionOrdinal)
+                                        |> List.map (fun r -> r.ColumnName)
+                                    Some (DataSpace.PartitionScheme (name, partitionCols))
+                                | _, name -> Some (DataSpace.Filegroup name)
+                            // schema-L3.1 — the full option surface, every
+                            // field explicit (survival rule 7: this `with`
+                            // block previously inherited every option
+                            // default silently — the exact blindness the
+                            // retired IndexOptionsUnreflected named).
+                            Some { Index.create sk nm keyColumns with
+                                     Uniqueness = IndexUniqueness.ofLegacyBooleans isU false
+                                     Filter = head.FilterDefinition
+                                     IncludedColumns = includedKeys
+                                     FillFactor = (if head.FillFactor = 0 then None else Some head.FillFactor)
+                                     IsPadded = head.IsPadded
+                                     AllowRowLocks = head.AllowRowLocks
+                                     AllowPageLocks = head.AllowPageLocks
+                                     NoRecomputeStatistics = head.NoRecompute
+                                     IgnoreDuplicateKey = head.IgnoreDupKey
+                                     IsDisabled = head.IsDisabled
+                                     DataCompression =
+                                        // sys.partitions codes: 0=NONE, 1=ROW, 2=PAGE.
+                                        // 0 reads as Option.None (no explicit clause) —
+                                        // physically identical, and the projection maps
+                                        // both to the effective "NONE". Columnstore
+                                        // codes (3+) cannot arise here (`type > 0`
+                                        // rowstore indexes on OSUSR estates).
+                                        (match head.DataCompressionCode with
+                                         | 1 -> Some DataCompressionLevel.Row
+                                         | 2 -> Some DataCompressionLevel.Page
+                                         | _ -> None)
+                                     DataSpace = dataSpace }
                         | _ -> None)
             { k with Indexes = recovered }
 
@@ -1418,7 +1577,12 @@ module ReadSide =
                 if not r.IsCached then NoCache
                 elif Option.isSome r.CacheSize then Cache
                 else Unspecified
-            match SsKey.synthesized "READSIDE_SEQUENCE" (sprintf "%s.%s" r.Schema r.Name),
+            // align-I.5: the sequence identity converged — ReadSide mints
+            // the SAME OS_SEQ two-segment identity as the rowset/JSON
+            // lanes, because a sequence has no persisted-key channel and
+            // its identity is the object's, not the reader's. The prior
+            // READSIDE_SEQUENCE keys parse forever (legacy registry row).
+            match SsKey.mintComposite SynthesisConvention.OsSequence [ r.Schema; r.Name ],
                   Name.create r.Name with
             | Ok sk, Ok nm ->
                 match Sequence.create sk nm r.Schema r.DataType r.StartValue r.Increment r.MinimumValue r.MaximumValue r.IsCycling cacheMode r.CacheSize with
@@ -1510,7 +1674,7 @@ module ReadSide =
                  SELECT \
                     SCHEMA_NAME(t.schema_id), t.name, c.name, \
                     SCHEMA_NAME(rt.schema_id), rt.name, rc.name, \
-                    fk.is_not_trusted \
+                    fk.is_not_trusted, fk.name, fkc.constraint_column_id \
                  FROM sys.foreign_keys fk \
                  JOIN sys.foreign_key_columns fkc \
                    ON fkc.constraint_object_id = fk.object_id \
@@ -1521,7 +1685,7 @@ module ReadSide =
                  JOIN sys.columns rc \
                    ON rc.object_id = rt.object_id AND rc.column_id = fkc.referenced_column_id \
                  WHERE t.is_ms_shipped = 0 \
-                 ORDER BY SCHEMA_NAME(t.schema_id), t.name, c.column_id; \
+                 ORDER BY SCHEMA_NAME(t.schema_id), t.name, fk.name, fkc.constraint_column_id; \
                  SELECT \
                     SCHEMA_NAME(t.schema_id), t.name, c.name, \
                     CAST(ep.value AS NVARCHAR(MAX)) \
@@ -1604,8 +1768,13 @@ module ReadSide =
                               TargetSchema = c.TargetSchema
                               TargetTable  = c.TargetTable
                               TargetColumn = c.TargetColumn
-                              IsNotTrusted = c.IsNotTrusted })
-                    | ForeignKeyReadback.Unreadable reason -> eprintfn "%s" reason)
+                              IsNotTrusted = c.IsNotTrusted
+                              // schema-L3.2 — system-nonnull columns, read
+                              // directly (classification covers coordinates).
+                              ConstraintName = reader.GetString 7
+                              Ordinal      = System.Convert.ToInt32(reader.GetValue 8) })
+                    | ForeignKeyReadback.Unreadable (side, visible) ->
+                        eprintfn "%s" (ForeignKeyReadback.describe side visible))
 
             // Result set 5: V2.LogicalName extended properties
             // (slice D.1.b). Column 2 (sys.columns.name) is NULL for

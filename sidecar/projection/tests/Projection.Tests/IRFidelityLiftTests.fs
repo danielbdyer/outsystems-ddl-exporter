@@ -328,15 +328,13 @@ let ``L3-S9 extendedProperties: JSON path lifts entity.extendedProperties[] into
 [<Fact>]
 let ``L3-S4 temporal: ModalityMark.Temporal carries the temporal config`` () =
     let cfg : TemporalConfig =
-        { HistorySchema = Some "history"
-          HistoryTable  = Some "OSUSR_X_USER_History"
-          PeriodStart   = Some (mkName' "ValidFrom")
-          PeriodEnd     = Some (mkName' "ValidTo")
+        { HistoryTable  = Some (TableId.create "history" "OSUSR_X_USER_History" |> Result.value)
+          Period        = Some { Start = mkName' "ValidFrom"; End = mkName' "ValidTo" }
           Retention     = Limited (90, Days) }
     let mark = Temporal cfg
     match mark with
     | Temporal extracted ->
-        Assert.Equal(Some "history", extracted.HistorySchema)
+        Assert.Equal(Some "history", extracted.HistoryTable |> Option.map TableId.schemaText)
         match extracted.Retention with
         | Limited (90, Days) -> ()
         | other -> Assert.Fail(sprintf "Expected Limited(90, Days); got %A" other)
@@ -345,10 +343,8 @@ let ``L3-S4 temporal: ModalityMark.Temporal carries the temporal config`` () =
 [<Fact>]
 let ``L3-S4 temporal: Infinite retention round-trips through ModalityMark`` () =
     let cfg : TemporalConfig =
-        { HistorySchema = None
-          HistoryTable  = None
-          PeriodStart   = None
-          PeriodEnd     = None
+        { HistoryTable  = None
+          Period        = None
           Retention     = Infinite }
     let kind =
         Kind.create

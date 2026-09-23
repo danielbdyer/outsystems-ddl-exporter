@@ -261,6 +261,19 @@ module Source =
     let ofOssys (conn: string) : Source =
         ofOssysWith MetadataSnapshotRunner.defaultParameters conn
 
+    /// The sink source (the data-sink chapter, S7) — a WITNESSED state read
+    /// back as a catalog: `sink:<env>[@<syncId>]` resolves by manifest
+    /// env-label scan and replays snapshot → `toBundle` → parse (the live
+    /// pipeline minus the wire; K2 demands total parity with the live read it
+    /// replays). ReadCatalog only: a witnessed state carries no live data to
+    /// probe, so `AcquireProfile = None` — asking a sink for data evidence is
+    /// structurally impossible, exactly like a snapshot file.
+    let ofSink (env: string) (syncId: SyncOrdinal option) : Source =
+        { Identity       = SinkRead.identityOf env syncId
+          Capabilities   = Set.ofList [ ReadCatalog ]
+          ReadCatalog    = (fun () -> SinkRead.readEnv env syncId)
+          AcquireProfile = None }
+
     /// Enrich a source with the `Profile` capability (the live / profilable
     /// form). The capability is the presence of the function — cf.
     /// `Comparison.Apply`. The live-connection adapter calls this to declare

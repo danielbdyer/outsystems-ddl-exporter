@@ -67,7 +67,7 @@ let runFullExport
             FullExportRun.execute configPath outputOverride verbosity mutedCategories, None
     match outcome with
     | FullExportRun.RunOutcome.Succeeded (report, effectiveOutput) ->
-        printfn "%d artifact(s) written to %s." report.Paths.Length effectiveOutput
+        printfn "%s written to %s." (sprintf "%d %s" report.Paths.Length (if report.Paths.Length = 1 then "artifact" else "artifacts")) effectiveOutput
         // Under pretty the boxed board + verdict panel own the console (§13 / the
         // operator-shell charter): the per-file enumeration — hundreds of lines on
         // a full estate — would land raw against the board's teardown (the named
@@ -80,10 +80,10 @@ let runFullExport
                 printfn "  %s (%d bytes)" p info.Length)
         storeLeg
         |> Option.iter (fun leg ->
-            printfn "This run recorded — episode %d on timeline %s; %d refactorlog entr(ies) accumulated."
+            printfn "This run recorded — episode %d on timeline %s; %s accumulated."
                 (EpisodicLifecycle.episodes leg.Chain |> List.length)
                 (Timeline.name (EpisodicLifecycle.timeline leg.Chain))
-                (List.length leg.AccumulatedRefactorLog))
+                (sprintf "%d %s" (List.length leg.AccumulatedRefactorLog) (if List.length leg.AccumulatedRefactorLog = 1 then "refactorlog entry" else "refactorlog entries")))
     | FullExportRun.RunOutcome.ConfigInvalid _ ->
         // config.validationFailed envelopes already emitted by `execute`.
         ()

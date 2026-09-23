@@ -298,6 +298,62 @@ let ``H-034: multiple conflicts are all returned`` () =
     Assert.Equal(2, conflicts.Length)
 
 // ---------------------------------------------------------------------------
+// H-034 × align-I.3: the identity plane is visible to the detector.
+// Before the reclassification the identity passes carried
+// `OperatorIntent Selection`, so the removal exemption swallowed their
+// work on Selection-removed kinds and `axisOfCode` could not name
+// their diagnostics. These tests are the un-blinding, executable.
+// ---------------------------------------------------------------------------
+
+let private identityEvent (passName: string) (key: SsKey) : LineageEvent =
+    { PassName       = passName
+      PassVersion    = 1
+      SsKey          = key
+      TransformKind  = Touched
+      Classification = OperatorIntent OverlayAxis.Identity }
+
+[<Fact>]
+let ``H-034 (align-I.3): identity-plane event on a Selection-removed kind IS UnreachableTransform (the exemption narrowed)`` () =
+    let events =
+        [ removalEvent  "visibilityMask" customerKey
+          identityEvent "bridgeRetarget" customerKey ]
+    let conflicts = ConflictDetector.detectConflicts events []
+    Assert.Single(conflicts) |> ignore
+    match conflicts.[0] with
+    | UnreachableTransform (passName, ssKey) ->
+        Assert.Equal("bridgeRetarget", passName)
+        Assert.Equal(customerKey, ssKey)
+    | other ->
+        Assert.Fail(sprintf "Expected UnreachableTransform, got %A" other)
+
+[<Fact>]
+let ``H-034 (align-I.3): userFkReflow diagnostic on a Selection-removed kind is an Identity AxisContradiction`` () =
+    let events = [ removalEvent "visibilityMask" customerKey ]
+    let diag = warningDiag "userFkReflow.emailDidNotMatch"
+                           customerKey
+                           "source user email did not match any target user"
+    let conflicts = ConflictDetector.detectConflicts events [diag]
+    Assert.Single(conflicts) |> ignore
+    match conflicts.[0] with
+    | AxisContradiction (axis, key, code, _) ->
+        Assert.Equal(OverlayAxis.Identity, axis)
+        Assert.Equal(customerKey, key)
+        Assert.Equal(diag.Code, code)
+    | other ->
+        Assert.Fail(sprintf "Expected AxisContradiction, got %A" other)
+
+[<Fact>]
+let ``H-034 (align-I.3): bridgeRetarget diagnostic on a VISIBLE kind is NOT a conflict (the two-pronged gate holds)`` () =
+    // The prefix maps to the Identity axis, but the second prong —
+    // Selection-removal evidence — still gates: working identity-plane
+    // diagnostics on visible kinds are the pass's success path.
+    let diag = warningDiag "bridgeRetarget.blocked"
+                           orderKey
+                           "retarget blocked on readiness evidence"
+    let conflicts = ConflictDetector.detectConflicts [] [diag]
+    Assert.Empty(conflicts)
+
+// ---------------------------------------------------------------------------
 // H-035: Policy regression property tests — axis isolation.
 //
 // The core claim: changing policy axis X does NOT affect what the other

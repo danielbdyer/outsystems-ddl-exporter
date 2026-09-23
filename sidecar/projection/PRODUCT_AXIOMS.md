@@ -353,6 +353,13 @@ The axioms are grouped by **core concern** (the operator's mental partition of V
   *Failure mode.* V1 archived too early; rollback impossible.
   *Tier.* 1.
 
+**L3-Eject (candidate; named align-III.12). The terminal package reconstructs.** At eject — the one outcome that cannot be partially right, after which there is no upstream to re-derive from — the shipped package must REPLAY: `reconstructLatestSchema(genesis, exported chain)` reproduces the frozen state, the terminal `ChangeManifest` series is complete over the exported edges, and **publication is refused if the chain does not replay**. The engine's whole provenance discipline converges on this single delivery.
+
+  *Underwriting (current).* T13 (the FTC fold) + T19 (journal replay) + `EpisodicLifecycle.admitChain` (align-III.2) are the replay substrate; `EjectRun` is the assembly seam. Candidate — not yet operational as a gate.
+  *Failure mode.* An eject bundle whose history does not reproduce its state ships silently; the operator discovers the break after the upstream is gone.
+  *Tier.* 1 (when operational).
+  *Registry.* `AxiomTests.fs` carries the Bucket-C stub (align-III.12); trigger: the eject-deliverable fork resolves (§5.12 fork 3, Active-deferrals index) / the eject chapter's dependent slice opens.
+
 ---
 
 ## Group CC — Cross-cutting (L3-CC1 through L3-CC6)
@@ -363,11 +370,12 @@ The axioms are grouped by **core concern** (the operator's mental partition of V
   *Failure mode.* An emitter could be added that silently drops a kind from its output. (Cannot happen with current structural enforcement.)
   *Tier.* 1.
 
-**L3-CC2. Pass contract is universal.** Every pass has the signature `Catalog -> Policy -> Profile -> Lineage<'output>` or `Catalog -> Policy -> Profile -> Lineage<Diagnostics<'output>>`. A18-amended: no pass consumes Policy from inside its implementation.
+**L3-CC2 (amended align-III.12; outcome-first). The transformation contract is universal.** Every transformation site is enumerated as a `RegisteredTransform`, classified `DataIntent` or `OperatorIntent of OverlayAxis`, runs inside the dual writer (lineage + diagnostics), and is folded by the registry-driven composer — `registered ⇔ executed` (A41-amended is the underwriting). The uniform signature the original stated (`Catalog -> Policy -> Profile -> Lineage<'output>`) is an **example realization**, not the law: the registry's heterogeneous `RegisteredTransform<'In,'Out>` legitimately carries six output shapes while satisfying the outcome. A18-amended still binds: no transformation consumes `Policy` from inside its implementation.
 
-  *Underwriting.* Pass return-type codification (DECISIONS 2026-05-13).
-  *Failure mode.* A pass could be added that doesn't emit lineage; audit trail incomplete.
+  *Underwriting.* A41-amended (`RegisteredAllTransformsBidirectionalTests`) + the pass return-type codification (DECISIONS 2026-05-13) as the founding example realization.
+  *Failure mode.* A transformation could be added outside the registry (unclassified, lineage-less, invisible to the composer); the audit trail and the pillar-9 dichotomy break.
   *Tier.* 1.
+  *(Original form preserved under V2 Amendments below — L3's first amendment.)*
 
 **L3-CC3. Lineage is monotonic under composition.** When passes compose (A then B then C), the Lineage from the composition is `A.lineage ++ B.lineage ++ C.lineage` — earliest-first concatenation. No reordering, no loss, no duplication.
 
@@ -453,25 +461,38 @@ Plus ~10 Tier-2 candidates from the audit's gap-hunt (Q1-Q30; see `AUDIT_2026_05
 
 ## Group Lifecycle — Operationalized (2026-05-31, §5.3)
 
-`AXIOMS.md` A6-amended names Lifecycle as one of V2's three substantive aggregates (Catalog + Policy + Lifecycle). The temporal axis is **operationalized** as of §5.3 (`src/Projection.Core/Lifecycle.fs`): `Version` / `Timeline` value objects, the monotone `Lifecycle` snapshot chain, `evolutionChain` (fold `CatalogDiff.between`), and `replayTo`. Lifecycle is an **outer envelope** over `Project`, not a fourth `ProjectionInput` field (A6-amended / A17).
+`AXIOMS.md` A6-amended names Lifecycle as one of V2's three substantive aggregates (Catalog + Policy + Lifecycle). The temporal axis is **operationalized** on the durable episodic grain (`src/Projection.Core/Episode.fs`; the `Version` / `Timeline` value objects live in `Lifecycle.fs`): the monotone `EpisodicLifecycle` chain, `schemaEvolutionChain` (fold `CatalogDiff.between`), and `replayTo` (the schema-only `Lifecycle`/`CatalogSnapshot` twin these were first built as was deleted at align-III.5). Lifecycle is an **outer envelope** over `Project`, not a fourth `ProjectionInput` field (A6-amended / A17).
 
 - **L3-L1.** Schema evolution is replayable: any snapshotted Catalog C_i is recoverable from its `Version` via `Lifecycle.replayTo` (materialized form; the diff-replay reconstruction form `fold applyDiff C₀` lands with the `CatalogDiff` compose operator, H-007). *Witness:* `LifecycleTests.fs` `` ``A-Lifecycle-1 (L3-L1): replayTo recovers the snapshotted catalog`` ``; `AxiomTests.fs` A-Lifecycle-1.
 - **L3-L2.** Refactor-log history is monotonic: `Lifecycle.append` requires a strictly-increasing `Version` ordinal; a non-monotone append fails rather than reordering, so prior history is never altered. *Witness:* `LifecycleTests.fs` `` ``A-Lifecycle-2 (L3-L2): append advances latest and never alters prior history`` ``; `AxiomTests.fs` A-Lifecycle-2.
 - **L3-L3.** Per-environment timeline is independent: each `Lifecycle` carries exactly one `Timeline`; histories on distinct timelines are independent values. *Witness:* `LifecycleTests.fs` `` ``A-Lifecycle-3 (L3-L3): timelines are independent histories`` ``; `AxiomTests.fs` A-Lifecycle-3.
 
-A fourth axiom — **A-Lifecycle-4** (evolutionChain composition is associative) — is **named but not yet operational** (Bucket C): it requires a `CatalogDiff` compose operator (diff∘diff) that does not exist today. It promotes when H-007 (the SchemaDelta category) lands.
+A fourth axiom — **A-Lifecycle-4** (evolutionChain composition is associative) — **promoted to Bucket A** when the `CatalogDiff.compose` operator (diff∘diff) SHIPPED (6.H.3, 2026-06-01; see AXIOMS.md T13). This paragraph's earlier "does not exist today" reading is history, corrected align-III.12.
 
 ---
 
 ## V2 Amendments
 
-(Reserved for amended originals. Pattern mirrors `AXIOMS.md`'s V2 Amendments section.) None today. The first amendment lands when an L3 axiom is renamed, narrowed, or split as a consequence of campaign execution.
+(Reserved for amended originals. Pattern mirrors `AXIOMS.md`'s V2 Amendments section.)
+
+**L3-CC2 — amended 2026-08-30 (align-III.12; the first L3 amendment).** Original form:
+"Pass contract is universal. Every pass has the signature `Catalog -> Policy -> Profile ->
+Lineage<'output>` or `Catalog -> Policy -> Profile -> Lineage<Diagnostics<'output>>`.
+A18-amended: no pass consumes Policy from inside its implementation." **Why amended:** the
+original pinned an implementation SHAPE the legitimate realization outgrew — A41's
+registry carries heterogeneous `RegisteredTransform<'In,'Out>` sites with six output
+types, every one enumerated, classified, dual-writer-run, and composer-folded; a
+conformance check written from the original's letter would reject the shipped system
+while its outcome holds everywhere. The amended form (in place above) quantifies over
+the OUTCOME — enumerated, classified, lineage-carrying, registry-composed — and demotes
+the uniform signature to an example realization. The governing rule this amendment sets:
+**L3 laws quantify over outcomes; realizations appear as witnesses.**
 
 ---
 
 ## Cross-references
 
-- `AXIOMS.md` — L2 formal-system axioms (A1–A43 + T1–T16) that underwrite this surface.
+- `AXIOMS.md` — L2 formal-system axioms (A1–A54 + T1–T19; the executable registry in `AxiomTests.fs` is the count's authority) that underwrite this surface.
 - `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` — coverage map (which L3 axioms are Bucket A/B/C/D), campaigns to address Bucket D, methodology.
 - `V2_PRODUCTION_CUTOVER.md` — cutover plan; campaigns from the audit operationalize as Phase A workstreams here.
 - `VISION.md` — strategic frame; the *why* of the cutover.

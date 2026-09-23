@@ -20,7 +20,7 @@ open System.Security.Cryptography
 /// Discriminating predicate: `load (save run) = run`, and `inputDigest`
 /// depends only on inputs, not wall-clock. This SUPPORTS persist / diff /
 /// query / migrate-inputs without completing any of them — it is the noun
-/// those verbs would operate on. `RunLedger.LedgerRecord` is its index
+/// those verbs would operate on. `RunIndex.IndexRecord` is its index
 /// projection (`toLedgerEntry`), so the run *subsumes* the ledger row.
 module Run =
 
@@ -41,13 +41,20 @@ module Run =
 
     type Run = {
         RunId       : string
-        Ts          : string
+        /// The run's wall-clock instant — typed at align-III.1 (a5's
+        /// typed-instants charge). The wire keeps the UTC `o` form the
+        /// capture always wrote; the parse is fail-closed (a torn `ts`
+        /// refuses the record, never fabricates an empty instant).
+        Ts          : DateTimeOffset
         Command     : string
         /// Content hash of the run's inputs (config + source catalog) —
         /// stable across wall-clock; same inputs → same digest.
         InputDigest : string
         Outcome     : string
-        Canary      : string option
+        /// The round-trip canary's verdict — typed at align-III.3
+        /// (`CanaryVerdict`). The wire keeps the `"green"`/`"red"` token
+        /// (absent for `NotRun`), byte-identical to the prior `string option`.
+        Canary      : Projection.Core.CanaryVerdict
         Registered  : int
         Applied     : int
         Declined    : int
@@ -81,11 +88,13 @@ module Run =
     let private toJson (r: Run) : string =
         let o = JsonObject()
         o.["runId"]       <- JsonValue.Create r.RunId
-        o.["ts"]          <- JsonValue.Create r.Ts
+        // The UTC `o` form ("…Z") — byte-identical to every ts the store
+        // ever carried (capture always stamped UTC).
+        o.["ts"]          <- JsonValue.Create (r.Ts.UtcDateTime.ToString("o", System.Globalization.CultureInfo.InvariantCulture))
         o.["command"]     <- JsonValue.Create r.Command
         o.["inputDigest"] <- JsonValue.Create r.InputDigest
         o.["outcome"]     <- JsonValue.Create r.Outcome
-        (match r.Canary with Some c -> o.["canary"] <- JsonValue.Create c | None -> ())
+        (match Projection.Core.CanaryVerdict.tokenOpt r.Canary with Some c -> o.["canary"] <- JsonValue.Create c | None -> ())
         o.["registered"]  <- JsonValue.Create r.Registered
         o.["applied"]     <- JsonValue.Create r.Applied
         o.["declined"]    <- JsonValue.Create r.Declined
@@ -147,7 +156,8 @@ module Run =
                 if root.TryGetProperty(name, &v) && v.ValueKind = JsonValueKind.Number then v.GetInt32() else 0
             let canary =
                 let mutable v = Unchecked.defaultof<JsonElement>
-                if root.TryGetProperty("canary", &v) && v.ValueKind = JsonValueKind.String then Some (nz (v.GetString())) else None
+                let token = if root.TryGetProperty("canary", &v) && v.ValueKind = JsonValueKind.String then Some (nz (v.GetString())) else None
+                Projection.Core.CanaryVerdict.ofTokenOpt token
             let events =
                 let mutable v = Unchecked.defaultof<JsonElement>
                 if root.TryGetProperty("events", &v) && v.ValueKind = JsonValueKind.Array
@@ -203,13 +213,20 @@ module Run =
                         | _ -> DateTime.MinValue
                     Some ({ CapturedAtUtc = capturedAt; Tag = estr v "tag"; Stats = stats } : Projection.Core.Bench.Run)
                 else None
-            Some {
-                RunId = str "runId"; Ts = str "ts"; Command = str "command"
-                InputDigest = str "inputDigest"; Outcome = str "outcome"; Canary = canary
-                Registered = i "registered"; Applied = i "applied"; Declined = i "declined"
-                Events = events; Artifacts = artifacts
-                Ledgers = ledgers; Bench = bench
-            }
+            // align-III.1 — the instant parses FAIL-CLOSED within this
+            // reader's existing posture (malformed run.json → None): a torn
+            // `ts` refuses the record instead of loading it with a
+            // fabricated empty instant.
+            match DateTimeOffset.TryParse(str "ts", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal) with
+            | false, _ -> None
+            | true, ts ->
+                Some {
+                    RunId = str "runId"; Ts = ts; Command = str "command"
+                    InputDigest = str "inputDigest"; Outcome = str "outcome"; Canary = canary
+                    Registered = i "registered"; Applied = i "applied"; Declined = i "declined"
+                    Events = events; Artifacts = artifacts
+                    Ledgers = ledgers; Bench = bench
+                }
         with :? System.Text.Json.JsonException -> None   // malformed run JSON → None; a fatal propagates
 
     // --- the store (opt-in via PROJECTION_RUNS_DIR) ------------------------
@@ -246,7 +263,7 @@ module Run =
     let storeDir () : string option =
         match configuredDir () with
         | Some d -> Some d
-        | None -> RunLedger.configuredDir ()
+        | None -> RunIndex.configuredDir ()
 
     // R1d — the run-vs-run delta surface. The §7 units-of-measure
     // promotion FIRES here, scoped to this surface exactly as gated
@@ -274,7 +291,7 @@ module Run =
             RunIds      : string * string
             Commands    : string * string
             Outcomes    : string * string
-            Canaries    : string option * string option
+            Canaries    : Projection.Core.CanaryVerdict * Projection.Core.CanaryVerdict
             Registered  : int
             Applied     : int
             Declined    : int
@@ -319,8 +336,8 @@ module Run =
           BenchDeltas = deltas }
 
     /// Project the run onto its ledger index row — the run subsumes the
-    /// `RunLedger.LedgerRecord` (one source, the ledger is a derived view).
-    let toLedgerEntry (r: Run) : RunLedger.LedgerRecord =
+    /// `RunIndex.IndexRecord` (one source, the ledger is a derived view).
+    let toLedgerEntry (r: Run) : RunIndex.IndexRecord =
         { RunId = r.RunId; Ts = r.Ts; Command = r.Command; Outcome = r.Outcome
           Canary = r.Canary; Registered = r.Registered; Applied = r.Applied; Declined = r.Declined }
 
@@ -341,7 +358,7 @@ module Run =
         : Run =
         let registered, applied, declined = LogSink.transformCounts ()
         { RunId       = LogSink.runId ()
-          Ts          = DateTime.UtcNow.ToString("o")  // LINT-ALLOW: wall-clock timestamp at the run-record IO boundary (ISO-8601 round-trip o format)
+          Ts          = DateTimeOffset.UtcNow  // wall-clock at the run-record IO boundary; serialized in the UTC `o` form
           Command     = command
           InputDigest = inputDigest
           Outcome     = (if code = 0 then "succeeded" else "failed")

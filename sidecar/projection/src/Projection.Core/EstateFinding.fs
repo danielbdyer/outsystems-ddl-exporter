@@ -1,8 +1,23 @@
 namespace Projection.Core
 
-/// The estate finding vocabulary — the typed spine of `check estate`
+/// The estate finding vocabulary — the typed spine of `check environments`
 /// (`CHAPTER_ESTATE_OPEN.md`; `DECISIONS 2026-07-15 — The estate chapter
-/// opens`). Core-resident so every downstream projection of one finding
+/// opens`).
+///
+/// THE TWO-REGISTER RULE (ruled at the fidelity chapter close; written
+/// down here — the vocabulary's home — at align-III.18/X2): the CONCEPT
+/// register says "estate" (the coined domain word for the fleet: the
+/// `Estate*` type family, the `estate.*` codes, `PlanAction.CheckEstate`)
+/// and the OPERATOR surface says "environments" (the verb
+/// `projection check environments`, the artifacts `environments.json` /
+/// `environments.overlay.json` / `environments.probes.sql` /
+/// `environments.remediation.<env>.sql`; `check estate` remains an
+/// accepted spelling). Doc-comments that NAME AN ARTIFACT use the
+/// operator register — an operator told "review the block in
+/// environments.remediation.qa.sql" must find a doc trail that says the
+/// same thing.
+///
+/// Core-resident so every downstream projection of one finding
 /// (the report, the remediation blocks, the posture overlay, the reopen
 /// probes — the π-coherence family) keys on the same identity: the
 /// emitters in `Projection.Targets.*` compile below `Projection.Pipeline`
@@ -57,11 +72,11 @@ type EstateLeverForm =
     /// a complete imperative sentence.
     | Ruling of imperative: string
     /// The REPAIR lane's ending: "Review the block for <subject> (<phrase>)
-    /// in estate.remediation.<env>.sql." — minted beside the artifact; the
+    /// in environments.remediation.<env>.sql." — minted beside the artifact; the
     /// same readable label leads the block in the file.
     | ReviewBlock
     /// The RELAX lane's PROPOSED ending: "Merge the config edit for <subject>
-    /// (<phrase>) in estate.overlay.json." — the merge is an operator edit;
+    /// (<phrase>) in environments.overlay.json." — the merge is an operator edit;
     /// the engine never applies it.
     | MergeOverlayEntry
     /// No lever — WATCH advisories, and the ACTIVE posture lines whose
@@ -181,10 +196,20 @@ type EstateFindingKind =
     /// CDC tracks a kind in some environments and not others — a cutover
     /// write feeds live consumers unevenly (O1, wave A4).
     | OperationalCdc
-    /// A relationship whose target entity has a composite primary key — the
-    /// emitted single-column foreign key would reference only the first key
-    /// column, which SQL Server rejects (the #669 WP-12 emission hazard).
+    /// A relationship whose target entity has a composite primary key and
+    /// whose leg evidence does not cover it — the emitted foreign key would
+    /// not match the target key, which SQL Server rejects (the #669 WP-12
+    /// emission hazard; narrowed at schema-L3.2: a LEG-COMPLETE composite
+    /// reference emits its multi-leg constraint and no longer fires this).
     | EmissionCompositePkFk
+    /// A relationship whose target entity has NO primary key — no SQL
+    /// foreign key can reference a keyless table, so the constraint is
+    /// dropped from emission and from the round-trip comparator. The
+    /// kind-grain heap finding (`EmissionNoPrimaryKey`) names the target;
+    /// this names the RELATIONSHIP the drop actually erases (NM-28b,
+    /// folded in at schema-L3.2 by operator ruling — the drop was the
+    /// schema plane's last unnamed silent erasure at this grain).
+    | EmissionFkTargetWithoutPk
     /// Two entities in different modules that emit to the same table name —
     /// they would collide in one published schema (#669 WP-16).
     | EmissionDuplicateName
@@ -248,6 +273,25 @@ type EstateFindingKind =
     /// The fidelity proof reports differing rows — the load is not yet
     /// byte-faithful; the verdict cannot read Unified over a red proof (RT-10).
     | ProofDiverged
+    /// Two or more LIVE metadata claims on one physical table — two live
+    /// writers are never silently ranked into an adoption; the operator
+    /// rules which edition owns the table (the data-sink chapter, S11;
+    /// `PhysicalClaimRules` — the rivals arrive ladder-ordered so the
+    /// finding leads with the recommendation).
+    | PhysicalClaimContested
+    /// A physical table whose only metadata claims are tombstones
+    /// (`Is_Active = 0`; the table survives until DbCleaner) — the estate
+    /// the operator deleted is still addressable through the sink's
+    /// witnessed editions (S11; the chapter's original incident).
+    | PhysicalTombstoneOnly
+    /// A physical table present in the environment with NO metadata claim
+    /// at all — outside the modeled estate entirely (S12's residue sweep
+    /// against sys.tables).
+    | PhysicalUnclaimed
+    /// A post-cutover identity correspondence proposal: journal + claims
+    /// evidence says two SS_Keys are editions of one entity across the
+    /// cutover (S14). DECIDE only — a correspondence is NEVER auto-adopted.
+    | IdentityCutoverCorrespondence
 
 [<RequireQualifiedAccess>]
 module EstateFindingKind =
@@ -284,6 +328,7 @@ module EstateFindingKind =
           EstateFindingKind.IdentitySynthesized
           EstateFindingKind.OperationalCdc
           EstateFindingKind.EmissionCompositePkFk
+          EstateFindingKind.EmissionFkTargetWithoutPk
           EstateFindingKind.EmissionDuplicateName
           EstateFindingKind.EmissionLongName
           EstateFindingKind.EmissionNoPrimaryKey
@@ -299,7 +344,11 @@ module EstateFindingKind =
           EstateFindingKind.DataStaticIdentity
           EstateFindingKind.ProofMissing
           EstateFindingKind.ProofStale
-          EstateFindingKind.ProofDiverged ]
+          EstateFindingKind.ProofDiverged
+          EstateFindingKind.PhysicalClaimContested
+          EstateFindingKind.PhysicalTombstoneOnly
+          EstateFindingKind.PhysicalUnclaimed
+          EstateFindingKind.IdentityCutoverCorrespondence ]
 
     /// The stable machine token (the `FindingKey` prefix and the
     /// `estate.json` discriminator). Never operator-facing on its own.
@@ -333,6 +382,7 @@ module EstateFindingKind =
         | EstateFindingKind.IdentitySynthesized      -> "identity.synthesized"
         | EstateFindingKind.OperationalCdc           -> "operational.cdc"
         | EstateFindingKind.EmissionCompositePkFk    -> "emission.compositePkFk"
+        | EstateFindingKind.EmissionFkTargetWithoutPk -> "emission.fkTargetWithoutPk"
         | EstateFindingKind.EmissionDuplicateName    -> "emission.duplicateName"
         | EstateFindingKind.EmissionLongName         -> "emission.longName"
         | EstateFindingKind.EmissionNoPrimaryKey     -> "emission.noPrimaryKey"
@@ -349,6 +399,10 @@ module EstateFindingKind =
         | EstateFindingKind.ProofMissing             -> "proof.missing"
         | EstateFindingKind.ProofStale               -> "proof.stale"
         | EstateFindingKind.ProofDiverged            -> "proof.diverged"
+        | EstateFindingKind.PhysicalClaimContested   -> "physical.claimContested"
+        | EstateFindingKind.PhysicalTombstoneOnly    -> "physical.tombstoneOnly"
+        | EstateFindingKind.PhysicalUnclaimed        -> "physical.unclaimed"
+        | EstateFindingKind.IdentityCutoverCorrespondence -> "identity.cutoverCorrespondence"
 
     /// The machine token's inverse — the kind a stored `token` names, or
     /// `None` for an unknown token. Derived from `all`, so it cannot drift
@@ -393,6 +447,7 @@ module EstateFindingKind =
         | EstateFindingKind.IdentitySynthesized      -> "key generated differently across environments"
         | EstateFindingKind.OperationalCdc           -> "CDC tracks this table unevenly"
         | EstateFindingKind.EmissionCompositePkFk    -> "targets a composite primary key"
+        | EstateFindingKind.EmissionFkTargetWithoutPk -> "references an entity with no primary key"
         | EstateFindingKind.EmissionDuplicateName    -> "a table name shared across modules"
         | EstateFindingKind.EmissionLongName         -> "an over-long identifier"
         | EstateFindingKind.EmissionNoPrimaryKey     -> "no primary key — emits as a heap"
@@ -409,6 +464,10 @@ module EstateFindingKind =
         | EstateFindingKind.ProofMissing             -> "the fidelity proof has not run"
         | EstateFindingKind.ProofStale               -> "the fidelity proof predates the evidence"
         | EstateFindingKind.ProofDiverged            -> "the fidelity proof found differing rows"
+        | EstateFindingKind.PhysicalClaimContested   -> "two claims on one table"
+        | EstateFindingKind.PhysicalTombstoneOnly    -> "only deleted entities claim this table"
+        | EstateFindingKind.PhysicalUnclaimed        -> "a table no entity claims"
+        | EstateFindingKind.IdentityCutoverCorrespondence -> "a proposed identity correspondence"
 
     /// The disposition lane a kind presents in (Appendix A). The direction
     /// classifier (wave A3) splits presence: a kind an environment carries
@@ -455,6 +514,7 @@ module EstateFindingKind =
         | EstateFindingKind.PostureRetirable        -> EstateLane.Repair
         | EstateFindingKind.OperationalCdc
         | EstateFindingKind.EmissionCompositePkFk
+        | EstateFindingKind.EmissionFkTargetWithoutPk
         | EstateFindingKind.EmissionDuplicateName
         | EstateFindingKind.EmissionLongName        -> EstateLane.Decide
         // The cutover-board population wave (DECISIONS 2026-07-18; the #669
@@ -478,6 +538,10 @@ module EstateFindingKind =
         | EstateFindingKind.ProofMissing
         | EstateFindingKind.ProofStale
         | EstateFindingKind.ProofDiverged           -> EstateLane.Decide
+        | EstateFindingKind.PhysicalClaimContested  -> EstateLane.Decide
+        | EstateFindingKind.PhysicalTombstoneOnly   -> EstateLane.Decide
+        | EstateFindingKind.PhysicalUnclaimed       -> EstateLane.Decide
+        | EstateFindingKind.IdentityCutoverCorrespondence -> EstateLane.Decide
 
     /// The plane a kind lives on.
     let planeOf (kind: EstateFindingKind) : EstatePlane =
@@ -510,6 +574,7 @@ module EstateFindingKind =
         | EstateFindingKind.IdentitySynthesized     -> EstatePlane.Identity
         | EstateFindingKind.OperationalCdc          -> EstatePlane.Operational
         | EstateFindingKind.EmissionCompositePkFk
+        | EstateFindingKind.EmissionFkTargetWithoutPk
         | EstateFindingKind.EmissionDuplicateName
         | EstateFindingKind.EmissionLongName
         | EstateFindingKind.EmissionNoPrimaryKey
@@ -529,6 +594,10 @@ module EstateFindingKind =
         | EstateFindingKind.ProofMissing
         | EstateFindingKind.ProofStale
         | EstateFindingKind.ProofDiverged           -> EstatePlane.Operational
+        | EstateFindingKind.PhysicalClaimContested  -> EstatePlane.Identity
+        | EstateFindingKind.PhysicalTombstoneOnly   -> EstatePlane.Identity
+        | EstateFindingKind.PhysicalUnclaimed       -> EstatePlane.Schema
+        | EstateFindingKind.IdentityCutoverCorrespondence -> EstatePlane.Identity
 
     /// The presentation contract's lever form per kind (Appendix A, wave
     /// A6 — the contract table held to the code). The board mints the
@@ -565,6 +634,8 @@ module EstateFindingKind =
             EstateLeverForm.Ruling "Rule the CDC plan for the tracked kinds."
         | EstateFindingKind.EmissionCompositePkFk ->
             EstateLeverForm.Ruling "Rule the relationship: model the target's full composite key, or drop the foreign key before publishing."
+        | EstateFindingKind.EmissionFkTargetWithoutPk ->
+            EstateLeverForm.Ruling "Rule the relationship: give the target entity a primary key, or accept that the relationship deploys unenforced."
         | EstateFindingKind.EmissionDuplicateName ->
             EstateLeverForm.Ruling "Rule the collision: rename or remap one entity so the emitted table names are distinct."
         | EstateFindingKind.EmissionLongName ->
@@ -587,6 +658,14 @@ module EstateFindingKind =
         | EstateFindingKind.ProofStale
         | EstateFindingKind.ProofDiverged ->
             EstateLeverForm.Ruling "Run the configured fidelity flow (projection check fidelity), then re-run the board."
+        | EstateFindingKind.PhysicalClaimContested ->
+            EstateLeverForm.Ruling "Rule which edition owns the table: keep one claimant's registration and retire the rival's, then re-run projection sync."
+        | EstateFindingKind.PhysicalTombstoneOnly ->
+            EstateLeverForm.Ruling "Rule the table's fate: re-register the entity (Integration Studio) to reclaim it, or schedule the drop — its shape stays addressable through the sink's witnessed editions either way."
+        | EstateFindingKind.PhysicalUnclaimed ->
+            EstateLeverForm.Ruling "Rule the residue: adopt the table into the modeled estate, or schedule its retirement."
+        | EstateFindingKind.IdentityCutoverCorrespondence ->
+            EstateLeverForm.Ruling "Rule the correspondence: confirm the two identities are one entity across the cutover, or reject the proposal — nothing is adopted without the ruling."
         | EstateFindingKind.SchemaTrust
         | EstateFindingKind.DataNotNull
         | EstateFindingKind.DataUnique
@@ -629,7 +708,7 @@ module EstateFindingKind =
         | EstateFindingKind.SchemaRename ->
             "Customer is named CustomerAccount in cloud-uat."
         | EstateFindingKind.SchemaAttributes ->
-            "cloud-uat's Customer has 2 column(s) that differ from cloud-dev."
+            "cloud-uat's Customer has 2 columns that differ from cloud-dev."
         | EstateFindingKind.SchemaReferences ->
             "cloud-qa's Order has 1 relationship that differs from cloud-dev."
         | EstateFindingKind.SchemaIndexes ->
@@ -643,39 +722,41 @@ module EstateFindingKind =
         | EstateFindingKind.SchemaActivity ->
             "Customer is active in cloud-dev and inactive in cloud-uat — the two shapes disagree about its life."
         | EstateFindingKind.SchemaTrust ->
-            "The relationship Order.CustomerId → Customer is enforced WITH NOCHECK in cloud-qa (untrusted) — re-trusting scans 12,400,000 row(s)."
+            "The relationship Order.CustomerId → Customer is enforced WITH NOCHECK in cloud-qa (untrusted) — re-trusting scans 12,400,000 rows."
         | EstateFindingKind.DataNotNull ->
-            "Customer.Email is required (NOT NULL); cloud-uat holds 4,120 row(s) that are NULL."
+            "Customer.Email is required (NOT NULL); cloud-uat holds 4,120 rows that are NULL."
         | EstateFindingKind.DataUnique ->
             "Customer.Code must be unique; cloud-dev holds duplicate values."
         | EstateFindingKind.DataOrphans ->
-            "Order.CustomerId in cloud-uat has 3,214,000 row(s) that reference a Customer that does not exist, of which 3,101,000 use the unset value 0."
+            "Order.CustomerId in cloud-uat has 3,214,000 rows that reference a Customer that does not exist, of which 3,101,000 use the unset value 0."
         | EstateFindingKind.DataOverflow ->
             "Customer.Notes holds values up to 4,812 characters in cloud-uat, but its column length setting is 2,000."
         | EstateFindingKind.DataAsymmetry ->
-            "cloud-uat's OrderLine holds 10,400,000 row(s) and cloud-dev's holds 12,000 — findings drawn from cloud-dev's smaller sample are advisory."
+            "cloud-uat's OrderLine holds 10,400,000 rows and cloud-dev's holds 12,000 — findings drawn from cloud-dev's smaller sample are advisory."
         | EstateFindingKind.DataUniquenessCandidate ->
-            "Customer.LegacyCode has no duplicate in any environment — every one of 214,000 row(s) is distinct, so it could serve as a business key for matching."
+            "Customer.LegacyCode has no duplicate in any environment — every one of 214,000 rows is distinct, so it could serve as a business key for matching."
         | EstateFindingKind.DataHeadroom ->
             "Order.Id has reached 1,340,000,000 of the 2,147,483,647 its INT column allows in cloud-uat — 62% of the limit is used."
         | EstateFindingKind.DataDateSentinel ->
-            "Order.ShippedOn holds 812,000 row(s) set to 1900-01-01 in cloud-uat — the platform's stand-in for an empty date; a required-column reading is satisfied, but the dates carry no real value."
+            "Order.ShippedOn holds 812,000 rows set to 1900-01-01 in cloud-uat — the platform's stand-in for an empty date; a required-column reading is satisfied, but the dates carry no real value."
         | EstateFindingKind.DataCollationCollision ->
-            "Under cloud-dev's text sorting, Customer.Code has 240 value(s) that differ only by letter case and would become duplicates — the unique index fails on unification."
+            "Under cloud-dev's text sorting, Customer.Code has 240 values that differ only by letter case and would become duplicates — the unique index fails on unification."
         | EstateFindingKind.DataOrphansPastBand ->
-            "Order.CustomerId has 113,000 reference(s) to missing Customer rows in cloud-uat — too many to clear before cutover; leave the relationship unenforced until they clear."
+            "Order.CustomerId has 113,000 references to missing Customer rows in cloud-uat — too many to clear before cutover; leave the relationship unenforced until they clear."
         | EstateFindingKind.DataNotNullPastBand ->
-            "Customer.Email has 4,200,000 NULL row(s) in cloud-uat — too many to fill before cutover; leave the column nullable until they are backfilled."
+            "Customer.Email has 4,200,000 NULL rows in cloud-uat — too many to fill before cutover; leave the column nullable until they are backfilled."
         | EstateFindingKind.PostureActive ->
-            "Order.CustomerId → Customer is left unenforced for now; 113,000 reference(s) still point to missing rows in cloud-uat."
+            "Order.CustomerId → Customer is left unenforced for now; 113,000 references still point to missing rows in cloud-uat."
         | EstateFindingKind.PostureRetirable ->
-            "Order.CustomerId → Customer has zero missing reference(s) in cloud-uat — the relationship can be enforced again."
+            "Order.CustomerId → Customer has zero missing references in cloud-uat — the relationship can be enforced again."
         | EstateFindingKind.IdentitySynthesized ->
             "Status.Id is generated by the database in cloud-qa and carried as a fixed value in cloud-dev — the same table numbers its rows differently, so renames stay unstable until the identity is anchored."
         | EstateFindingKind.OperationalCdc ->
             "Change tracking is on for Order in cloud-uat and off in cloud-dev — a cutover write feeds live consumers in cloud-uat alone."
         | EstateFindingKind.EmissionCompositePkFk ->
-            "Order.CustomerId → Customer targets a composite primary key — the emitted foreign key would reference only its first column, which SQL Server rejects at deploy."
+            "Order.CustomerId → Customer targets a composite primary key (2 columns) with 1 column of leg evidence — the emitted foreign key would not match the target key, which SQL Server rejects at deploy."
+        | EstateFindingKind.EmissionFkTargetWithoutPk ->
+            "Order.LogId → AuditLog references an entity with no primary key — no foreign key can be emitted, so the relationship deploys unenforced."
         | EstateFindingKind.EmissionDuplicateName ->
             "2 entities are named 'Customer' (in modules Sales and Billing) — they would collide as one emitted table."
         | EstateFindingKind.EmissionLongName ->
@@ -699,15 +780,23 @@ module EstateFindingKind =
         | EstateFindingKind.EmissionTemporalDropped ->
             "Order is system-versioned at the source, with history in Order_History — the emitted table carries no system-versioning, so version history stops at cutover."
         | EstateFindingKind.DataStaticContent ->
-            "Country's rows in cloud-uat differ from the model's seed: 2 row(s) missing, 1 extra, 3 value difference(s) — matched by business key."
+            "Country's rows in cloud-uat differ from the model's seed: 2 rows missing, 1 extra, 3 value differences — matched by business key."
         | EstateFindingKind.DataStaticIdentity ->
             "Status assigns different key numbers to the same rows per environment — 'Approved' is 3 in cloud-dev and 7 in cloud-qa — so every reference to it means something different per environment."
         | EstateFindingKind.ProofMissing ->
             "The fidelity proof for flow 'uat-load' has not run against the current estate."
         | EstateFindingKind.ProofStale ->
-            "The fidelity proof for flow 'uat-load' is 9 day(s) old and the estate's evidence has moved since — the proof predates what this run can see."
+            "The fidelity proof for flow 'uat-load' is 9 days old and the estate's evidence has moved since — the proof predates what this run can see."
         | EstateFindingKind.ProofDiverged ->
-            "The fidelity proof for flow 'uat-load' reports 3 differing row(s) — the load is not yet byte-faithful."
+            "The fidelity proof for flow 'uat-load' reports 3 differing rows — the load is not yet byte-faithful."
+        | EstateFindingKind.PhysicalClaimContested ->
+            "OSUSR_FUL_CARRIER carries two live claims — Fulfillment.Carrier and FulfillmentExtension.Carrier — and a live writer is never silently outranked."
+        | EstateFindingKind.PhysicalTombstoneOnly ->
+            "OSUSR_FUL_INVOICE is claimed only by the deleted entity Fulfillment.Invoice (tombstoned sync 2) — the table and its rows survive, and the entity's shape is addressable at sink:uat@1."
+        | EstateFindingKind.PhysicalUnclaimed ->
+            "OSUSR_FUL_ARCHIVE exists in the environment with no metadata claim — outside the modeled estate entirely."
+        | EstateFindingKind.IdentityCutoverCorrespondence ->
+            "Fulfillment.Shipment appears to continue as FulfillmentExtension.Shipment (one physical table, tombstone-then-registration across syncs 2..3) — confirm or reject the correspondence."
 
     /// Whether the estate check runs a detector for a kind today (Appendix
     /// A, DECISIONS 2026-07-18 — the derived coverage line). Total, so the
@@ -749,6 +838,7 @@ module EstateFindingKind =
         | EstateFindingKind.IdentitySynthesized
         | EstateFindingKind.OperationalCdc
         | EstateFindingKind.EmissionCompositePkFk
+        | EstateFindingKind.EmissionFkTargetWithoutPk
         | EstateFindingKind.EmissionDuplicateName
         | EstateFindingKind.EmissionLongName
         | EstateFindingKind.EmissionNoPrimaryKey
@@ -764,6 +854,15 @@ module EstateFindingKind =
         | EstateFindingKind.ProofMissing
         | EstateFindingKind.ProofStale
         | EstateFindingKind.ProofDiverged -> DetectionStatus.Active
+        // The data-sink chapter's DECIDE vocabulary: the claims detectors
+        // went LIVE at S11b (the estate face assembles journal claims for
+        // every sink-named environment); the residue sweep flipped at S12
+        // and the correspondence proposer at S14 — the chapter's whole
+        // vocabulary is detector-backed.
+        | EstateFindingKind.PhysicalClaimContested
+        | EstateFindingKind.PhysicalTombstoneOnly
+        | EstateFindingKind.PhysicalUnclaimed
+        | EstateFindingKind.IdentityCutoverCorrespondence -> DetectionStatus.Active
 
 /// The stable cross-artifact identity of one finding — the board, the
 /// burndown, the remediation block IDs, the overlay entries, and the reopen
@@ -788,6 +887,22 @@ module FindingKey =
 
     /// The key's stable text — the token every artifact carries verbatim.
     let text (FindingKey t) : string = t
+
+    /// Parse a stored key text back to the typed key (align-II.2 — hoisted
+    /// at the second consumer: RulingStore and TighteningBinding both
+    /// reconstruct persisted keys). `None` for a malformed token (no
+    /// discriminator, unknown kind, blank subject); `create` concatenates
+    /// identically, so `tryParse (text k) = Some k`.
+    let tryParse (raw: string) : FindingKey option =
+        let i = raw.IndexOf ':'
+        if i <= 0 then None
+        else
+            match EstateFindingKind.ofToken (raw.Substring(0, i)) with
+            | None -> None
+            | Some kind ->
+                let subject = raw.Substring(i + 1)
+                if System.String.IsNullOrWhiteSpace subject then None
+                else Some (create kind subject)
 
     /// The logical subject the key names (the `Entity` or `Entity.Column`
     /// after the kind discriminator) — the plain half an operator reads.
@@ -822,8 +937,42 @@ type RelaxationAction =
     /// budget-less nullability intervention).
     | KeepNullable of attributeRef: string
 
+/// align-II.12 (E4; audit a7) — the standing one environment's evidence
+/// arrived under: FIRM (live, re-profiled, or a content-verified cache)
+/// or ADVISORY (offline reuse, or no evidence at all). The same partition
+/// the estate masthead's confidence line draws, as a value on the finding.
+[<RequireQualifiedAccess>]
+type EvidenceStanding =
+    | Firm
+    | Advisory
+
+/// One environment's contribution to a finding, PEDIGREED (align-II.12):
+/// the standing its evidence arrived under, the magnitude it contributed
+/// (the same count the statement renders), and when that evidence was
+/// captured (`None` = this run, live). Additive — the `Statement` is
+/// untouched; the pedigree is the typed record BEHIND the prose.
+type PedigreeEntry =
+    {
+        Env           : string
+        Standing      : EvidenceStanding
+        Magnitude     : int64
+        CapturedAtUtc : System.DateTimeOffset option
+    }
+
+[<RequireQualifiedAccess>]
+module PedigreeEntry =
+
+    /// The compute-time default: every contribution enters FIRM and
+    /// this-run (`compute` is store-blind; the face's evidence stamp
+    /// re-derives standing and capture instants from the resolved
+    /// provenance).
+    let ofEnvs (envs: (string * int64) list) : PedigreeEntry list =
+        envs
+        |> List.map (fun (env, magnitude) ->
+            { Env = env; Standing = EvidenceStanding.Firm; Magnitude = magnitude; CapturedAtUtc = None })
+
 /// One interim relaxation — the typed value behind an
-/// `estate.overlay.json` entry and its `estate.probes.sql` probe (wave
+/// `environments.overlay.json` entry and its `environments.probes.sql` probe (wave
 /// A6). Core-resident so the OperationalDiagnostics emitter can consume
 /// it; π-coherent by construction — the overlay entry, the reopen probe,
 /// and the RELAX-lane finding all carry `Scope`. Expiry is deliberately
@@ -835,9 +984,11 @@ type Relaxation =
         Scope       : FindingKey
         /// The config edit the overlay suggests (never applies).
         Action      : RelaxationAction
-        /// The per-environment counts that forced it (the finding's
-        /// evidence, carried onto the overlay entry's note).
-        Evidence    : (string * int64) list
+        /// The pedigreed per-environment evidence that forced it (the
+        /// finding's own pedigree — standing, magnitude, capture instant —
+        /// carried onto the overlay entry's note; align-II.12 typed what
+        /// was a bare (env, count) pair).
+        Evidence    : PedigreeEntry list
         /// The reopen probe — one runnable SELECT whose zero retires the
         /// relaxation (the Active-deferrals discipline applied to data:
         /// every relaxation carries its re-tighten trigger, executably).

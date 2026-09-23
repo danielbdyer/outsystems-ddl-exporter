@@ -531,6 +531,13 @@ module Config =
     type TighteningAttributeOverride = {
         AttributeRef : string
         Action       : string
+        // align-II.2 — optional ruling attribution (raw textual grain;
+        // the binder parses the instant fail-closed and the finding key
+        // through FindingKey.tryParse).
+        ApprovedBy   : string option
+        ApprovedAt   : string option
+        Rationale    : string option
+        Finding      : string option
     }
 
     /// One row of the per-reference override table inside a `foreignKey`
@@ -544,6 +551,26 @@ module Config =
     type TighteningReferenceOverride = {
         ReferenceRef : string
         Action       : string
+        // align-II.2 — optional ruling attribution (see the attribute row).
+        ApprovedBy   : string option
+        ApprovedAt   : string option
+        Rationale    : string option
+        Finding      : string option
+    }
+
+    /// One row of the per-index override table inside a `uniqueIndex`
+    /// intervention (align-II.3). `IndexRef` names the index by its
+    /// logical owner + index name (`Module.Entity.IndexName`); the
+    /// binder resolves it against the loaded catalog and refuses by
+    /// name when no such index exists. Carries the same optional ruling
+    /// attribution as the other override grains (align-II.2).
+    type TighteningIndexOverride = {
+        IndexRef   : string
+        Action     : string
+        ApprovedBy : string option
+        ApprovedAt : string option
+        Rationale  : string option
+        Finding    : string option
     }
 
     /// One operator-supplied tightening intervention. The `Kind` field
@@ -568,6 +595,9 @@ module Config =
         /// surfaces the candidate as advice; `true` applies the tightening.
         /// (operator directive 2026-07-18 — no silent promotion beyond source.)
         ApplyUniquePromotions        : bool option
+        /// align-II.3 — per-index promotion rulings (adopt/refuse ONE
+        /// candidate), consulted before the blanket flag.
+        IndexOverrides               : TighteningIndexOverride list
         // ForeignKey fields (WP-1d: `allowCrossCatalog` /
         // `treatMissingDeleteRuleAsIgnore` retired — inert knobs)
         EnableCreation               : bool option
@@ -609,6 +639,62 @@ module Config =
         Dir : string
     }
 
+    /// The sink's freshness/reuse posture (the data-sink chapter, S8 — the
+    /// `BridgeStagingCachePolicy` vocabulary at its second instance; R2:
+    /// this lever governs the REUSE axis only, never witnessing — the
+    /// witness is gated by store presence + acquisition totality, so an
+    /// operator who wants no witnessing disables the store, not this).
+    /// `Off` (default): every model read pays the wire (current behavior,
+    /// byte-identical). `Auto`: reuse the witnessed state when the three
+    /// ossys fingerprint targets still match the manifest's recording; any
+    /// movement reads live (which witnesses the fresh state). `Pinned`:
+    /// reuse WITHOUT probing (offline-true; the operator accepts staleness
+    /// and the mandatory freshness line says so); `--refresh` overrides
+    /// even a pin for one run.
+    [<RequireQualifiedAccess>]
+    type SinkPolicy =
+        | Off
+        | Auto
+        | Pinned
+
+    [<RequireQualifiedAccess>]
+    module SinkPolicy =
+
+        /// Every policy, in schema order — the generated-schema enum derives
+        /// from THIS list (never restated; the `TransformGroup.all` idiom).
+        let all : SinkPolicy list = [ SinkPolicy.Off; SinkPolicy.Auto; SinkPolicy.Pinned ]
+
+        let label (p: SinkPolicy) : string =
+            match p with
+            | SinkPolicy.Off -> "off"
+            | SinkPolicy.Auto -> "auto"
+            | SinkPolicy.Pinned -> "pinned"
+
+        let parse (raw: string) : SinkPolicy option =
+            all |> List.tryFind (fun p -> label p = raw)
+
+    /// `sink` — the sink freshness section. `PerEnvironment` refines the
+    /// standing policy for named environments (the label `projection sync`
+    /// stamped); an environment not listed rides `Policy`.
+    type SinkSection = {
+        Policy         : SinkPolicy
+        PerEnvironment : (string * SinkPolicy) list
+    }
+
+    [<RequireQualifiedAccess>]
+    module SinkSection =
+
+        /// The effective policy for one environment — the per-env refinement
+        /// when named, the standing policy otherwise. Total.
+        let effective (env: string option) (section: SinkSection) : SinkPolicy =
+            match env with
+            | None -> section.Policy
+            | Some name ->
+                section.PerEnvironment
+                |> List.tryFind (fun (n, _) -> n = name)
+                |> Option.map snd
+                |> Option.defaultValue section.Policy
+
     type Config = {
         Model        : ModelSection
         Profile      : ProfileSection
@@ -617,6 +703,7 @@ module Config =
         Emission     : EmissionSection
         Policy       : PolicySection
         Output       : OutputSection
+        Sink         : SinkSection
     }
 
     /// The single derivation of `DataComposition` from the config's data-lane
@@ -713,6 +800,13 @@ module Config =
         Dir = "out/"
     }
 
+    /// The sink freshness default — `off`: every model read pays the wire
+    /// (byte-identical standing behavior); witnessing is unaffected (R2).
+    let defaultSink : SinkSection = {
+        Policy         = SinkPolicy.Off
+        PerEnvironment = []
+    }
+
     /// A no-source `ModelSection` — the lenient default when the `model`
     /// section is absent (or present without `path`/`ossys`). The strict
     /// parser refuses this (`modelNoSource`); the lenient parser (used by the
@@ -748,6 +842,7 @@ module Config =
         Emission    = defaultEmission
         Policy      = defaultPolicy
         Output      = defaultOutput
+        Sink        = defaultSink
     }
 
     /// THE_CONFIG_CONTROL_PLANE §4/§7 (S6.4 — operator decision 2, "Global +
@@ -769,7 +864,8 @@ module Config =
           Overrides   = pick (fun c -> c.Overrides)
           Emission    = pick (fun c -> c.Emission)
           Policy      = pick (fun c -> c.Policy)
-          Output      = pick (fun c -> c.Output) }
+          Output      = pick (fun c -> c.Output)
+          Sink        = pick (fun c -> c.Sink) }
 
     // -----------------------------------------------------------------------
     // Error helpers — `pipeline.config.<problem>` dot-namespace.
@@ -1733,6 +1829,22 @@ module Config =
                     match el.TryGetProperty "referencedEntity" with
                     | true, r when r.ValueKind = JsonValueKind.Object -> dcEntity r "referencedEntity" |> Result.map Some
                     | _ -> Result.success None
+                // align-III.1 — the decision instant mints FAIL-CLOSED at the
+                // config boundary (the II.2 `provenance.approvedAt.malformed`
+                // posture): a zoneless form ("2026-07-23") anchors to UTC via
+                // `AssumeUniversal` (deterministic across hosts); malformed
+                // text is a named refusal, never raw text riding into the
+                // receipt ledger.
+                let! approvedAt =
+                    match dcStr el "approvedAt" with
+                    | None -> Result.success None
+                    | Some raw ->
+                        match DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal) with
+                        | true, dto -> Result.success (Some dto)
+                        | _ ->
+                            Result.failureOf
+                                (configError "emission.dataCorrections.approvedAt"
+                                    (sprintf "correction '%s' carries a malformed 'approvedAt' instant '%s' — supply an ISO-8601 instant." id raw))
                 return
                     { Id = id
                       SourceRemediationId = dcStr el "sourceRemediationId"
@@ -1746,7 +1858,7 @@ module Config =
                       ReferencedEntity = referencedEntity
                       ConfiguredProbes = probes
                       ApprovedBy = dcStr el "approvedBy"
-                      ApprovedAt = dcStr el "approvedAt" } }
+                      ApprovedAt = approvedAt } }
 
     let private parseDataCorrections (emission: JsonElement) : Result<ApprovedDataCorrection list> =
         match tryGetProperty emission "dataCorrections" with
@@ -1935,7 +2047,17 @@ module Config =
         result {
             let! ref = getString element "attributeRef"
             let! action = getString element "action"
-            return { AttributeRef = ref; Action = action }
+            let! approvedBy = getOptionalString element "approvedBy"
+            let! approvedAt = getOptionalString element "approvedAt"
+            let! rationale = getOptionalString element "rationale"
+            let! finding = getOptionalString element "finding"
+            return
+                { AttributeRef = ref
+                  Action = action
+                  ApprovedBy = approvedBy
+                  ApprovedAt = approvedAt
+                  Rationale = rationale
+                  Finding = finding }
         }
 
     let private parseTighteningOverrides (element: JsonElement) : Result<TighteningAttributeOverride list> =
@@ -1950,11 +2072,54 @@ module Config =
             Result.failureOf (
                 configError "typeMismatch" "tightening intervention 'overrides' must be an array.")
 
+    let private parseTighteningIndexOverride (element: JsonElement) : Result<TighteningIndexOverride> =
+        result {
+            let! ref = getString element "indexRef"
+            let! action = getString element "action"
+            let! approvedBy = getOptionalString element "approvedBy"
+            let! approvedAt = getOptionalString element "approvedAt"
+            let! rationale = getOptionalString element "rationale"
+            let! finding = getOptionalString element "finding"
+            return
+                { IndexRef = ref
+                  Action = action
+                  ApprovedBy = approvedBy
+                  ApprovedAt = approvedAt
+                  Rationale = rationale
+                  Finding = finding }
+        }
+
+    /// The `indexOverrides` array on a `uniqueIndex` intervention
+    /// (align-II.3) — a third override grain with its own key, so the
+    /// attribute / reference / index grains never share a shape
+    /// ambiguously.
+    let private parseTighteningIndexOverrides (element: JsonElement) : Result<TighteningIndexOverride list> =
+        match element.TryGetProperty("indexOverrides") with
+        | false, _ -> Result.success []
+        | true, v when v.ValueKind = JsonValueKind.Array ->
+            v.EnumerateArray()
+            |> Seq.toList
+            |> List.map parseTighteningIndexOverride
+            |> Result.aggregate
+        | _ ->
+            Result.failureOf (
+                configError "typeMismatch" "tightening intervention 'indexOverrides' must be an array.")
+
     let private parseTighteningReferenceOverride (element: JsonElement) : Result<TighteningReferenceOverride> =
         result {
             let! ref = getString element "referenceRef"
             let! action = getString element "action"
-            return { ReferenceRef = ref; Action = action }
+            let! approvedBy = getOptionalString element "approvedBy"
+            let! approvedAt = getOptionalString element "approvedAt"
+            let! rationale = getOptionalString element "rationale"
+            let! finding = getOptionalString element "finding"
+            return
+                { ReferenceRef = ref
+                  Action = action
+                  ApprovedBy = approvedBy
+                  ApprovedAt = approvedAt
+                  Rationale = rationale
+                  Finding = finding }
         }
 
     /// The `referenceOverrides` array on a `foreignKey` intervention
@@ -1983,6 +2148,7 @@ module Config =
             let! ensSc = getOptionalBool element "enforceSingleColumnUnique"
             let! ensMc = getOptionalBool element "enforceMultiColumnUnique"
             let! applyUniquePromotions = getOptionalBool element "applyUniquePromotions"
+            let! indexOverrides = parseTighteningIndexOverrides element
             let! enable = getOptionalBool element "enableCreation"
             let! crossSchema = getOptionalBool element "allowCrossSchema"
             // WP-1d: `allowCrossCatalog` / `treatMissingDeleteRuleAsIgnore`
@@ -1999,6 +2165,7 @@ module Config =
                 EnforceSingleColumnUnique = ensSc
                 EnforceMultiColumnUnique = ensMc
                 ApplyUniquePromotions = applyUniquePromotions
+                IndexOverrides = indexOverrides
                 EnableCreation = enable
                 AllowCrossSchema = crossSchema
                 AllowNoCheckCreation = nocheck
@@ -2082,6 +2249,57 @@ module Config =
             | Ok None -> Result.success defaultOutput
             | Ok (Some d) -> Result.success { Dir = d }
 
+    /// `sink` — the sink freshness section (the data-sink chapter, S8).
+    /// `policy` is the closed off|auto|pinned vocabulary (A44: an
+    /// unrecognized value is a NAMED refusal listing the known set, never a
+    /// silent default); `perEnvironment` maps environment labels to policy
+    /// refinements under the same vocabulary. Absent ⇒ `defaultSink` (off).
+    let private parseSinkPolicyValue (context: string) (raw: string) : Result<SinkPolicy> =
+        match SinkPolicy.parse raw with
+        | Some p -> Result.success p
+        | None ->
+            Result.failureOf (configError "sink.policyUnknown"
+                (sprintf "%s '%s' is not recognized. Known: off | auto | pinned." context raw))
+
+    let private parseSink (root: JsonElement) : Result<SinkSection> =
+        match tryGetProperty root "sink" with
+        | None -> Result.success defaultSink
+        | Some element when element.ValueKind = JsonValueKind.Object ->
+            validation {
+                let! policy =
+                    match getOptionalString element "policy" with
+                    | Error es -> Error es
+                    | Ok None -> Result.success defaultSink.Policy
+                    | Ok (Some raw) -> parseSinkPolicyValue "sink.policy" raw
+                and! perEnvironment =
+                    match tryGetProperty element "perEnvironment" with
+                    | None -> Result.success []
+                    | Some pe when pe.ValueKind = JsonValueKind.Object ->
+                        let parsed =
+                            [ for prop in pe.EnumerateObject() ->
+                                if prop.Value.ValueKind = JsonValueKind.String then
+                                    match Option.ofObj (prop.Value.GetString()) with
+                                    | Some raw ->
+                                        parseSinkPolicyValue
+                                            (sprintf "sink.perEnvironment['%s']" prop.Name) raw
+                                        |> Result.map (fun p -> prop.Name, p)
+                                    | None ->
+                                        Result.failureOf (configError "sink.policyUnknown"
+                                            (sprintf "sink.perEnvironment['%s'] must be a policy string. Known: off | auto | pinned." prop.Name))
+                                else
+                                    Result.failureOf (configError "sink.policyUnknown"
+                                        (sprintf "sink.perEnvironment['%s'] must be a policy string. Known: off | auto | pinned." prop.Name)) ]
+                        let errors = parsed |> List.collect (function Error es -> es | Ok _ -> [])
+                        if not (List.isEmpty errors) then Result.failure errors
+                        else Result.success (parsed |> List.choose (function Ok p -> Some p | _ -> None))
+                    | Some _ ->
+                        Result.failureOf (configError "sink.perEnvironmentShape"
+                            "sink.perEnvironment must be an object mapping environment labels to policy strings.")
+                return { Policy = policy; PerEnvironment = perEnvironment }
+            }
+        | Some _ ->
+            Result.failureOf (configError "sink.shape" "sink must be an object with an optional 'policy' and 'perEnvironment'.")
+
     // -----------------------------------------------------------------------
     // Top-level parser
     // -----------------------------------------------------------------------
@@ -2107,6 +2325,7 @@ module Config =
                 and! emission  = parseEmission root
                 and! policy    = parsePolicy root
                 and! output    = parseOutput root
+                and! sink      = parseSink root
                 return {
                     Model       = model
                     Profile     = profile
@@ -2115,6 +2334,7 @@ module Config =
                     Emission    = emission
                     Policy      = policy
                     Output      = output
+                    Sink        = sink
                 }
             }
 

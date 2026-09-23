@@ -27,6 +27,15 @@ open Projection.Cli.Faces.Common
 // operator's headline Dev→UAT User re-key shape).
 // ----------------------------------------------------------------------
 
+/// align-III.22 (THE_VOICE §2.2): the counted plural — "1 table" / "3
+/// tables", never "table(s)". The transfer face's local form of the
+/// register helper (the Voice.fs / Estate.fs siblings).
+let private counted (n: int) (one: string) (many: string) : string =
+    sprintf "%d %s" n (if n = 1 then one else many)
+
+let private counted64 (n: int64) (one: string) (many: string) : string =
+    sprintf "%d %s" n (if n = 1L then one else many)
+
 let dispositionName (d: IdentityDisposition) : string =
     match d with
     | IdentityDisposition.ReconciledByRule    -> "re-keyed by rule"
@@ -96,28 +105,28 @@ let narrateTransferReportWithScope (report: Transfer.TransferReport) (scopeGroup
         | [] -> None
         | _  -> Some (View.Disclosure (headline, status, rows |> List.map View.Note))
     let blocks : View.View list =
-        [ yield View.Field ("load plan", sprintf "%d table(s) touched" touched.Length, View.Neutral)
+        [ yield View.Field ("load plan", sprintf "%s touched" (counted touched.Length "table" "tables"), View.Neutral)
           yield View.Table (planHeaders, touched |> List.map planRow)
           if not (List.isEmpty untouched) then
-              yield View.Note (sprintf "%d other modeled table(s): no rows to move, not reconciled — untouched." untouched.Length)
+              yield View.Note (sprintf "%s: no rows to move, not reconciled — untouched." (counted untouched.Length "other modeled table" "other modeled tables"))
           match section View.Bad
-                    (sprintf "%d relationship cycle(s) cannot be broken — the load cannot run as planned" report.UnbreakableCycleFks.Length)
+                    (sprintf "%s cannot be broken — the load cannot run as planned" (counted report.UnbreakableCycleFks.Length "relationship cycle" "relationship cycles"))
                     (report.UnbreakableCycleFks |> List.map (fun u -> sprintf "%s.%s -> %s" (nm u.Kind) (Name.value u.Column) (nm u.Target))) with
           | Some v -> yield v | None -> ()
           match section View.Warn
-                    (sprintf "%d identity(ies) unmatched — source records with no match in the target" report.UnmatchedIdentities.Length)
+                    (sprintf "%s unmatched — source records with no match in the target" (counted report.UnmatchedIdentities.Length "identity" "identities"))
                     (report.UnmatchedIdentities |> List.map (fun (k, s) -> sprintf "%s source '%s'" (nm k) (SourceKey.value s))) with
           | Some v -> yield v | None -> ()
           match section View.Warn
-                    (sprintf "%d source record(s) had a non-unique reconcile key — the first binding was kept" report.AmbiguousIdentities.Length)
+                    (sprintf "%s had a non-unique reconcile key — the first binding was kept" (counted report.AmbiguousIdentities.Length "source record" "source records"))
                     (report.AmbiguousIdentities |> List.map (fun (k, s) -> sprintf "%s source '%s'" (nm k) (SourceKey.value s))) with
           | Some v -> yield v | None -> ()
           match section View.Warn
-                    (sprintf "%d target record(s) shared a reconcile key with an older record — the oldest was kept (supply an override if the wrong one won)" report.AmbiguousTargetMatchKeys.Length)
+                    (sprintf "%s shared a reconcile key with an older record — the oldest was kept (supply an override if the wrong one won)" (counted report.AmbiguousTargetMatchKeys.Length "target record" "target records"))
                     (report.AmbiguousTargetMatchKeys |> List.map (fun (k, a) -> sprintf "%s target '%s' (displaced)" (nm k) (AssignedKey.value a))) with
           | Some v -> yield v | None -> ()
           match section View.Bad
-                    (sprintf "%d row(s) dropped — a relationship points to an unmatched record" report.SkippedReferences.Length)
+                    (sprintf "%s dropped — a relationship points to an unmatched record" (counted report.SkippedReferences.Length "row" "rows"))
                     (report.SkippedReferences |> List.map (fun (owner, r) -> sprintf "%s.%s -> %s (unmatched source '%s')" (nm owner) (Name.value r.Column) (nm r.Target) (SourceKey.value r.UnresolvedSource))) with
           | Some v -> yield v | None -> ()
           // NM-53 — a resumable G10 no-op re-run replays the prior run's drop
@@ -125,7 +134,7 @@ let narrateTransferReportWithScope (report: Transfer.TransferReport) (scopeGroup
           // the re-run is not silently clean.
           match report.ReplayedPriorDrops with
           | Some n when n > 0 ->
-              yield View.Note (sprintf "already complete; prior run dropped %d row(s) — re-surfacing that verdict (exact references not replayed)." n)
+              yield View.Note (sprintf "already complete; prior run dropped %s — re-surfacing that verdict (exact references not replayed)." (counted n "row" "rows"))
           | _ -> ()
           // The guarantee tree — when the flow declared a supporting scope, the
           // invariants that governed this run (the same lens `check go` shows).
@@ -749,7 +758,7 @@ let runPeerTransfer
     // information the operator reviews before authorizing a live write —
     // stderr-only advisories silently vanish from a redirected preview.
     if not (List.isEmpty advisories) then
-        printfn "%d shape advisory(ies) — real divergence that does not block a data load:" advisories.Length
+        printfn "%s — real divergence that does not block a data load:" (counted advisories.Length "shape advisory" "shape advisories")
         advisories |> List.iter (fun line -> printfn "  %s" line)
 
     // Gate 2 — FK edges escaping the declared subset. A preview narrates the
@@ -760,7 +769,7 @@ let runPeerTransfer
         | Some s -> PeerTransfer.escapingFks sourceContract s reconciledKeys
         | None -> []
     if not (List.isEmpty escapes) then
-        printfn "%d relationship(s) escape the declared table subset:" escapes.Length
+        printfn "%s escape the declared table subset:" (counted escapes.Length "relationship" "relationships")
         PeerTransfer.narrateEscapes escapes |> List.iter (fun line -> printfn "  %s" line)
     match PeerTransfer.subsetFkGate executeRequested escapes with
     | Error errors ->
@@ -851,9 +860,9 @@ let runRevertScript (scriptPath: string) (envLabel: string) (connSpec: string) (
         statements
         |> List.groupBy tableOf
         |> List.map (fun (t, ss) -> t, ss |> List.sumBy keyCountOf)
-    printfn "Revert '%s' against %s — %d statement(s) over %d table(s):" scriptPath envLabel statements.Length summary.Length
+    printfn "Revert '%s' against %s — %s over %s:" scriptPath envLabel (counted statements.Length "statement" "statements") (counted summary.Length "table" "tables")
     for (t, keys) in summary do
-        printfn "  %-60s %d row(s) to delete" t keys
+        printfn "  %-60s %s to delete" t (counted keys "row" "rows")
     let executeGated =
         goRequested && System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1"
     if goRequested && not executeGated then
@@ -905,9 +914,9 @@ let runRevertScript (scriptPath: string) (envLabel: string) (connSpec: string) (
                 if total = 0 then
                     printfn "Nothing to revert — the captured rows are already absent (a prior revert, or the sink was cleared)."
                 else
-                    printfn "Reverted — %d row(s) deleted:" total
+                    printfn "Reverted — %s deleted:" (counted total "row" "rows")
                     for KeyValue (t, n) in perTable do
-                        printfn "  %-60s %d row(s)" t n
+                        printfn "  %-60s %s" t (counted n "row" "rows")
                 dumpBench "revert"
                 0
             with ex ->
@@ -1053,8 +1062,8 @@ let runCheckGo
                 (match loadSet with
                  | Some s ->
                      match scopeDesugar.ExtraTables with
-                     | [] -> sprintf "%d table(s) declared; all resolve." (Set.count s)
-                     | extra -> sprintf "%d payload table(s) + %d brought in by supporting scope; all resolve." (List.length opts.Tables) (List.length extra)
+                     | [] -> sprintf "%s declared; all resolve." (counted (Set.count s) "table" "tables")
+                     | extra -> sprintf "%s + %d brought in by supporting scope; all resolve." (counted (List.length opts.Tables) "payload table" "payload tables") (List.length extra)
                  | None -> "no subset declared — the whole modeled estate transfers.")))
         // -- reconcile strategy resolution ----------------------------------
         let reconcileResolution =
@@ -1073,7 +1082,7 @@ let runCheckGo
             (GoBoard.Status.Green
                 (match Map.count reconciliation with
                  | 0 -> "no reconcile rules declared yet."
-                 | n -> sprintf "%d reconcile rule(s) resolve against the sink." n)))
+                 | n -> sprintf "%s resolve against the sink." (counted n "reconcile rule" "reconcile rules"))))
         // -- supporting scope: the declared business intent, verified --------
         (if not (List.isEmpty opts.SupportingScope) then
             let payloadSet =
@@ -1126,7 +1135,7 @@ let runCheckGo
             match contradictions, unaccounted with
             | [], [] ->
                 items.Add (GoBoard.scopeItem "supporting scope"
-                    (GoBoard.Status.Green (sprintf "%d supporting table(s) declared with intent; every one is borne out by a relationship, and no escaping reference is unaccounted." (List.length opts.SupportingScope)))
+                    (GoBoard.Status.Green (sprintf "%s declared with intent; every one is borne out by a relationship, and no escaping reference is unaccounted." (counted (List.length opts.SupportingScope) "supporting table" "supporting tables")))
                     groups
                     []
                     confirmedLines)
@@ -1137,7 +1146,7 @@ let runCheckGo
                         yield sprintf "  -> %s" remedy
                       yield! unaccountedStrings ]
                 items.Add (GoBoard.scopeItem "supporting scope"
-                    (GoBoard.Status.Red (sprintf "%d declared intent(s) the graph contradicts, %d escaping reference(s) unaccounted." (List.length cs) (List.length un), "correct the entr(ies) named below, or classify the unaccounted reference(s); then re-run."))
+                    (GoBoard.Status.Red (sprintf "%s the graph contradicts, %s unaccounted." (counted (List.length cs) "declared intent" "declared intents") (counted (List.length un) "escaping reference" "escaping references"), "correct the entries named below, or classify the unaccounted references; then re-run."))
                     groups
                     unaccountedStrings
                     detail))
@@ -1153,11 +1162,11 @@ let runCheckGo
             | tiers -> sprintf " Matched: %s." (String.concat ", " tiers)
         if not (List.isEmpty shape.Blocking) then
             items.Add (GoBoard.itemWith "shape"
-                (GoBoard.Status.Red (sprintf "%d blocking schema divergence(s) over the transferred set.%s" shape.Blocking.Length provenClause, "align the models (deploy the same version to both environments) or narrow the subset; then re-run."))
+                (GoBoard.Status.Red (sprintf "%s over the transferred set.%s" (counted shape.Blocking.Length "blocking schema divergence" "blocking schema divergences") provenClause, "align the models (deploy the same version to both environments) or narrow the subset; then re-run."))
                 shape.Blocking)
         elif not (List.isEmpty shape.Advisory) then
             items.Add (GoBoard.itemWith "shape"
-                (GoBoard.Status.Advisory (sprintf "one insertable shape over the transferred set — %d advisory difference(s), none blocks a data load.%s" shape.Advisory.Length provenClause))
+                (GoBoard.Status.Advisory (sprintf "one insertable shape over the transferred set — %s, none blocks a data load.%s" (counted shape.Advisory.Length "advisory difference" "advisory differences") provenClause))
                 shape.Advisory)
         else
             items.Add (GoBoard.item "shape" (GoBoard.Status.Green (sprintf "the two models are one shape over the transferred set.%s" provenClause)))
@@ -1187,7 +1196,7 @@ let runCheckGo
                             |> List.map (sprintf "evidence: %s")
                         // THE DECISION TABLES (2026-07-10, the manifest program,
                         // slices 2-3): the row substrate read ONCE into the
-                        // EvidenceCache from these same connections; every
+                        // ForecastEvidence from these same connections; every
                         // answer's consequence computed over the FULL rowsets
                         // through the same Core match the run uses. ONE
                         // traversal builds the typed tables; the plain twin is
@@ -1203,9 +1212,9 @@ let runCheckGo
                                 let enriched =
                                     escapes
                                     |> List.map (fun e -> { e with CandidateReconcileColumns = PeerTransfer.candidateColumnsFor sinkContract e })
-                                let cache = (EvidenceCache.fill source sink sourceContract sinkContract enriched).GetAwaiter().GetResult()
+                                let cache = (ForecastEvidence.fill source sink sourceContract sinkContract enriched).GetAwaiter().GetResult()
                                 let loadSetSet = match loadSet with Some s -> s | None -> Set.empty
-                                let components = EvidenceCache.componentsOf sourceContract loadSetSet enriched
+                                let components = ForecastEvidence.componentsOf sourceContract loadSetSet enriched
                                 // `--review`: the workbench rides the SAME
                                 // substrate this board pass read — one
                                 // derivation, two surfaces (§4.4).
@@ -1228,7 +1237,7 @@ let runCheckGo
                                                ActSignoff = opts.ActSignoff }
                                 components
                                 |> List.collect (fun componentEdges ->
-                                    let per = EvidenceCache.perAnswerDeltas cache sourceContract loadSetSet reconciledKeys componentEdges Map.empty
+                                    let per = ForecastEvidence.perAnswerDeltas cache sourceContract loadSetSet reconciledKeys componentEdges Map.empty
                                     componentEdges
                                     |> List.map (fun e -> e.Target)
                                     |> List.distinct
@@ -1249,7 +1258,7 @@ let runCheckGo
                                 | rows -> rows |> List.map (fun r -> r.Consequence))
                         probeLines @ consequenceLines, decisionTables
             items.Add (GoBoard.decisionsItem "relationships"
-                (GoBoard.Status.Red (sprintf "%d OUTBOUND reference(s) escape the transferred set — each row would carry a foreign key to a table not being transferred; each needs a decision." escapes.Length, "add the proposed reconcile entr(ies) to the flow, or widen `tables`; then re-run."))
+                (GoBoard.Status.Red (sprintf "%s escape the transferred set — each row would carry a foreign key to a table not being transferred; each needs a decision." (counted escapes.Length "OUTBOUND reference" "OUTBOUND references"), "add the proposed reconcile entries to the flow, or widen `tables`; then re-run."))
                 decisionTables
                 (PeerTransfer.narrateEscapes escapes @ evidenceLines))
         else
@@ -1266,7 +1275,7 @@ let runCheckGo
             items.Add
                 (GoBoard.itemWith "foreign refs"
                     (GoBoard.Status.Advisory
-                        (sprintf "%d out-of-contract reference(s) are declared environment-stable in `foreignRefs`; their targets lie outside the acquired contract, so the run loads the source key unchanged and their alignment across the two environments is unverified. Confirm each target holds the same identity in both environments before authorizing the run." (List.length opts.ForeignRefs)))
+                        (sprintf "%s are declared environment-stable in `foreignRefs`; their targets lie outside the acquired contract, so the run loads the source key unchanged and their alignment across the two environments is unverified. Confirm each target holds the same identity in both environments before authorizing the run." (counted (List.length opts.ForeignRefs) "out-of-contract reference" "out-of-contract references")))
                     (opts.ForeignRefs |> List.map (sprintf "declared stable, alignment unverified: %s"))
                  |> GoBoard.asUnverified))
         // -- load order (the EFFECTIVE transfer graph, 2026-07-07) -----------
@@ -1466,12 +1475,12 @@ let runCheckGo
                           if reconciled then
                               yield
                                   (if drift = 0 then "matched to existing target rows, no insert"
-                                   else sprintf "matched to existing target rows, no insert; %d column(s) differ on matched rows (see match drift)" drift)
-                          if not (Set.isEmpty k.DeferredFkColumns) then yield sprintf "%d FK column(s) re-point in phase 2" (Set.count k.DeferredFkColumns)
+                                   else sprintf "matched to existing target rows, no insert; %s differ on matched rows (see match drift)" (counted drift "column" "columns"))
+                          if not (Set.isEmpty k.DeferredFkColumns) then yield sprintf "%s re-point in phase 2" (counted (Set.count k.DeferredFkColumns) "FK column" "FK columns")
                           if drops > 0 then
                               yield
-                                  (if wiped then sprintf "%d row(s) drop (unmatched reference) — wiped but NOT re-inserted" drops
-                                   else sprintf "%d row(s) drop (unmatched reference)" drops)
+                                  (if wiped then sprintf "%s drop (unmatched reference) — wiped but NOT re-inserted" (counted drops "row" "rows")
+                                   else sprintf "%s drop (unmatched reference)" (counted drops "row" "rows"))
                           if wiped && Option.isNone beforeN then yield "wiped first (count unprobed)" ]
                         |> String.concat "; "
                     let line : GoBoard.ForecastLine =
@@ -1498,7 +1507,7 @@ let runCheckGo
                           match sinkProbes |> Map.tryFind k.Kind with
                           | Some (Some n, (_ :: _ as sample)) when n > 0L ->
                               yield ""
-                              yield sprintf "wipe preview — %s (first %d of %d row(s) the wipe deletes):" (physicalIn sinkContract k.Kind) sample.Length n
+                              yield sprintf "wipe preview — %s (first %d of %s the wipe deletes):" (physicalIn sinkContract k.Kind) sample.Length (counted64 n "row" "rows")
                               for line in sample do yield sprintf "  %s" line
                           | _ -> () ]
                 // `detail` is the plain/JSON twin (the aligned strings + previews),
@@ -1513,15 +1522,15 @@ let runCheckGo
                 // read as "every fact proven" over a sink the board could not read.
                 let unprobed = forecastLines |> List.filter (fun l -> Option.isNone l.Before) |> List.length
                 let baseHeadline =
-                    sprintf "dry run complete — %d row(s) into %d declared table(s)%s; before → after below."
-                        (report.Kinds |> List.sumBy (fun k -> k.RowsIngested))
-                        (declaredKinds |> List.filter (fun k -> k.RowsIngested > 0) |> List.length)
+                    sprintf "dry run complete — %s into %s%s; before → after below."
+                        (counted (report.Kinds |> List.sumBy (fun k -> k.RowsIngested)) "row" "rows")
+                        (counted (declaredKinds |> List.filter (fun k -> k.RowsIngested > 0) |> List.length) "declared table" "declared tables")
                         (match broughtKinds |> List.choose lineFor |> List.length with
                          | 0 -> ""
-                         | n -> sprintf ", %d table(s) brought along by relationships" n)
+                         | n -> sprintf ", %s brought along by relationships" (counted n "table" "tables"))
                 let forecastStatus =
                     if unprobed > 0
-                    then GoBoard.Status.Advisory (baseHeadline + sprintf " The current row count could not be read for %d table(s), shown as `?`; their after-count is projected from the plan, not measured. Re-run the board when the sink is reachable to measure it." unprobed)
+                    then GoBoard.Status.Advisory (baseHeadline + sprintf " The current row count could not be read for %s, shown as `?`; their after-count is projected from the plan, not measured. Re-run the board when the sink is reachable to measure it." (counted unprobed "table" "tables"))
                     else GoBoard.Status.Green baseHeadline
                 let forecastItm =
                     GoBoard.forecastItem "forecast"
@@ -1669,10 +1678,10 @@ let runCheckGo
                         let jsonPath = System.IO.Path.Combine ("go-board", sprintf "%s.impact.json" flowName)
                         System.IO.File.WriteAllText (htmlPath, TransferImpactView.toHtmlTriaged sinkContract units impact)
                         System.IO.File.WriteAllText (jsonPath, TransferImpactView.toJsonTriaged sinkContract units impact)
-                        let truncNote = if List.isEmpty truncated then "" else sprintf " (capped at %d row(s): %s)" impactCap (String.concat ", " truncated)
+                        let truncNote = if List.isEmpty truncated then "" else sprintf " (capped at %s: %s)" (counted impactCap "row" "rows") (String.concat ", " truncated)
                         let openCount = units |> List.filter (fun u -> not (TransferTriage.isSettled u.Triage)) |> List.length
                         items.Add (GoBoard.item "impact"
-                            (GoBoard.Status.Advisory (sprintf "--impact: written to %s (+ .json twin) — %d unit(s), of which %d are open and %d settled; +%d added, -%d deleted, ~%d changed, %d unchanged%s." htmlPath (List.length units) openCount (List.length units - openCount) impact.Totals.Added impact.Totals.Deleted impact.Totals.Changed impact.Totals.Unchanged truncNote)))
+                            (GoBoard.Status.Advisory (sprintf "--impact: written to %s (+ .json twin) — %s, of which %d are open and %d settled; +%d added, -%d deleted, ~%d changed, %d unchanged%s." htmlPath (counted (List.length units) "unit" "units") openCount (List.length units - openCount) impact.Totals.Added impact.Totals.Deleted impact.Totals.Changed impact.Totals.Unchanged truncNote)))
                 // MATCH DRIFT (2026-07-08): reconcile matches IDENTITY and
                 // never rewrites data — target values are KEPT — so matched
                 // pairs whose columns differ are surfaced, with the
@@ -1699,12 +1708,12 @@ let runCheckGo
                                     |> List.tryFind (fun k -> k.Kind = d.Kind)
                                     |> Option.map (fun k -> k.RowsMatched)
                                     |> Option.defaultValue 0
-                                yield sprintf "%s.%s differs on %d of %d matched row(s):" (nm d.Kind) (Name.value d.Column) d.DifferingPairs matched
+                                yield sprintf "%s.%s differs on %d of %s:" (nm d.Kind) (Name.value d.Column) d.DifferingPairs (counted matched "matched row" "matched rows")
                                 for (ak, srcV, sinkV) in d.Samples do
                                     yield sprintf "  target key %s: source '%s' vs target '%s'" (AssignedKey.value ak) srcV sinkV
                                 yield sprintf "  -> expected audit drift? add \"%s\" to the flow's reconcileIgnore. Genuine content divergence needs a data decision — the transfer will not resolve it." (Name.value d.Column) ]
                         items.Add (GoBoard.itemWith "match drift"
-                            (GoBoard.Status.Advisory (sprintf "%d column(s) differ between matched source/target rows — target values are KEPT (reconcile matches identity; it never rewrites data)." ds.Length))
+                            (GoBoard.Status.Advisory (sprintf "%s differ between matched source/target rows — target values are KEPT (reconcile matches identity; it never rewrites data)." (counted ds.Length "column" "columns")))
                             detailLines)
                 // THE STATIC-LOOKUP IDENTITY (2026-07-09, the guarantee-hardening
                 // program): a `static-lookup` entry asserts the two environments hold
@@ -1717,21 +1726,21 @@ let runCheckGo
                     match report.StaticLookupDivergences with
                     | [] ->
                         items.Add (GoBoard.item "static lookup"
-                            (GoBoard.Status.Green (sprintf "%d static-lookup table(s) hold the identical dataset across the environments — matched by business key, every non-key column agrees, no extra or missing rows." (Set.count staticLookupKeys))))
+                            (GoBoard.Status.Green (sprintf "%s hold the identical dataset across the environments — matched by business key, every non-key column agrees, no extra or missing rows." (counted (Set.count staticLookupKeys) "static-lookup table" "static-lookup tables"))))
                     | divs ->
                         let detailLines =
                             [ for d in divs do
                                 yield sprintf "%s:" (nm d.Kind)
                                 for cd in d.ColumnDrifts do
-                                    yield sprintf "  column %s differs on %d matched row(s):" (Name.value cd.Column) cd.DifferingPairs
+                                    yield sprintf "  column %s differs on %s:" (Name.value cd.Column) (counted cd.DifferingPairs "matched row" "matched rows")
                                     for (ak, srcV, sinkV) in cd.Samples do
                                         yield sprintf "    key %s: source '%s' vs target '%s'" (AssignedKey.value ak) srcV sinkV
                                 if not (List.isEmpty d.ExtraOnTarget) then
-                                    yield sprintf "  %d row(s) on the target the source does not hold (extra): %s" d.ExtraOnTarget.Length (d.ExtraOnTarget |> List.truncate 5 |> String.concat ", ")
+                                    yield sprintf "  %s on the target the source does not hold (extra): %s" (counted d.ExtraOnTarget.Length "row" "rows") (d.ExtraOnTarget |> List.truncate 5 |> String.concat ", ")
                                 if not (List.isEmpty d.MissingOnTarget) then
-                                    yield sprintf "  %d row(s) the source holds but the target lacks (missing): %s" d.MissingOnTarget.Length (d.MissingOnTarget |> List.truncate 5 |> String.concat ", ") ]
+                                    yield sprintf "  %s the source holds but the target lacks (missing): %s" (counted d.MissingOnTarget.Length "row" "rows") (d.MissingOnTarget |> List.truncate 5 |> String.concat ", ") ]
                         items.Add (GoBoard.itemWith "static lookup"
-                            (GoBoard.Status.Red (sprintf "%d static-lookup table(s) are NOT identical across the environments — a lookup declared identical has diverged (value drift / extra / missing rows)." divs.Length, "reconcile the reference data so the environments match, or reclassify the table as existing-reference (matched, not asserted-identical); then re-run."))
+                            (GoBoard.Status.Red (sprintf "%s are NOT identical across the environments — a lookup declared identical has diverged (value drift / extra / missing rows)." (counted divs.Length "static-lookup table" "static-lookup tables"), "reconcile the reference data so the environments match, or reclassify the table as existing-reference (matched, not asserted-identical); then re-run."))
                             detailLines)
                 // THE PLANNED SQL (`--sql`, 2026-07-07): the dry run's plan
                 // rendered as the text realization's T-SQL and written
@@ -1756,7 +1765,7 @@ let runCheckGo
                                 (GoBoard.Status.Advisory (sprintf "written to %s — the wipe (if any), phase-1 inserts, then phase-2 FK re-points; AssignedBySink keys mint at run time." path)))
                 if not (List.isEmpty report.UnbreakableCycleFks) then
                     items.Add (GoBoard.itemWith "cycles"
-                        (GoBoard.Status.Red (sprintf "%d relationship cycle(s) cannot be broken — the load cannot run as planned." report.UnbreakableCycleFks.Length, "make the cycle's FK columns nullable, or exclude the affected kinds."))
+                        (GoBoard.Status.Red (sprintf "%s cannot be broken — the load cannot run as planned." (counted report.UnbreakableCycleFks.Length "relationship cycle" "relationship cycles"), "make the cycle's FK columns nullable, or exclude the affected kinds."))
                         (report.UnbreakableCycleFks |> List.map (fun u -> sprintf "%s.%s -> %s" (nm u.Kind) (Name.value u.Column) (nm u.Target))))
                 if not (List.isEmpty report.UnmatchedIdentities) then
                     // Full rows (2026-07-08): the operator reads the actual
@@ -1769,7 +1778,7 @@ let runCheckGo
                         then report.UnmatchedRows |> List.map (fun (k, row) -> sprintf "%s: %s" (nm k) (rowText row))
                         else report.UnmatchedIdentities |> List.map (fun (k, s) -> sprintf "%s source '%s'" (nm k) (SourceKey.value s))
                     items.Add (GoBoard.itemWith "identities"
-                        (GoBoard.Status.Red (sprintf "%d source identit(ies) have no target match — a live run halts before any write." report.UnmatchedIdentities.Length, "remediate the user-map / reconcile data, or accept the loss with --allow-drops at run time."))
+                        (GoBoard.Status.Red (sprintf "%s — a live run halts before any write." (counted report.UnmatchedIdentities.Length "source identity has no target match" "source identities have no target match"), "remediate the user-map / reconcile data, or accept the loss with --allow-drops at run time."))
                         detail)
                 elif not (Map.isEmpty reconciliation) then
                     items.Add (GoBoard.item "identities" (GoBoard.Status.Green "every reconciled source identity matches a target row."))
@@ -1788,7 +1797,7 @@ let runCheckGo
                             report.SkippedReferences |> List.truncate 5
                             |> List.map (fun (owner, r) -> sprintf "%s.%s -> %s (source '%s')" (nm owner) (Name.value r.Column) (nm r.Target) (SourceKey.value r.UnresolvedSource))
                     items.Add (GoBoard.itemWith "drops"
-                        (GoBoard.Status.Red (sprintf "%d row(s) would drop — a relationship points at an unmatched record (shown first %d in full)." report.SkippedReferences.Length (min 5 report.SkippedReferences.Length), "fix the referenced data, or accept with --allow-drops at run time."))
+                        (GoBoard.Status.Red (sprintf "%s would drop — a relationship points at an unmatched record (shown first %d in full)." (counted report.SkippedReferences.Length "row" "rows") (min 5 report.SkippedReferences.Length), "fix the referenced data, or accept with --allow-drops at run time."))
                         detail)
                 // The reconcile-key ambiguity that also exits 9 (2026-07-10): the
                 // board previously rendered only cycles / identities / drops, so a
@@ -1805,13 +1814,13 @@ let runCheckGo
                 if not (List.isEmpty report.AmbiguousIdentities) then
                     items.Add (GoBoard.itemWith "ambiguous source keys"
                         (GoBoard.Status.Red
-                            (sprintf "%d source record(s) share a reconcile key — only the first binding is kept, and the rest lose their identity and drop from the load." report.AmbiguousIdentities.Length,
+                            (sprintf "%s share a reconcile key — only the first binding is kept, and the rest lose their identity and drop from the load." (counted report.AmbiguousIdentities.Length "source record" "source records"),
                              "make the source reconcile column unique per row, or approve the loss with --allow-drops at run time."))
                         (report.AmbiguousIdentities |> List.truncate 5 |> List.map (fun (k, s) -> sprintf "%s source '%s'" (nm k) (SourceKey.value s))))
                 if not (List.isEmpty report.AmbiguousTargetMatchKeys) then
                     items.Add (GoBoard.itemWith "ambiguous target keys"
                         (GoBoard.Status.Red
-                            (sprintf "%d target record(s) share a reconcile key with an older row — the oldest is kept and every reference re-keys onto it, displacing the rest." report.AmbiguousTargetMatchKeys.Length,
+                            (sprintf "%s share a reconcile key with an older row — the oldest is kept and every reference re-keys onto it, displacing the rest." (counted report.AmbiguousTargetMatchKeys.Length "target record" "target records"),
                              "pin the intended winner with a ManualOverride (`Module.Entity:Column:=<key>`), or approve the loss with --allow-drops at run time."))
                         (report.AmbiguousTargetMatchKeys |> List.truncate 5 |> List.map (fun (k, a) -> sprintf "%s target '%s' (displaced)" (nm k) (AssignedKey.value a))))
                 // -- THE PER-ACT CONSENT LEDGER (slice 4a, narrate-only) ------
@@ -1840,7 +1849,7 @@ let runCheckGo
                          // cannot pin: the sink populations a wipe consumes
                          // (MIN/MAX primary key + count) and the reconciled
                          // kinds' row substrate for the Match effect hashes
-                         // (`EvidenceCache.fill` over synthetic self-edges —
+                         // (`ForecastEvidence.fill` over synthetic self-edges —
                          // the same reader the workbench evidence uses).
                          let wipeKinds =
                              acts |> List.choose (function ActConsent.Act.Wipe t -> Some t | _ -> None)
@@ -1858,7 +1867,7 @@ let runCheckGo
                                              (ActEvidence.populationProbe cnn k).GetAwaiter().GetResult()
                                              |> Option.map (fun p -> t, p)))
                                      |> Map.ofList
-                         let matchCache : EvidenceCache.Cache option =
+                         let matchCache : ForecastEvidence.Cache option =
                              if Map.isEmpty reconcileColumns then None
                              else
                                  match (ConnectionSpec.openSpec SubstrateRole.Source "check-go-consent-source" sourceSpec).GetAwaiter().GetResult() with
@@ -1905,11 +1914,11 @@ let runCheckGo
                              |> List.map (fun b -> sprintf "STALE    %s — the flow blesses this act, but this run does not perform it; the entry approves nothing and can be removed." b.Act)
                          let headline =
                              if openCount = 0 && List.isEmpty staleLines then
-                                 sprintf "every act this run performs is blessed at its current fingerprint (%d act(s))." acts.Length
+                                 sprintf "every act this run performs is blessed at its current fingerprint (%s)." (counted acts.Length "act" "acts")
                              elif openCount = 0 then
-                                 sprintf "every act this run performs is blessed at its current fingerprint (%d act(s)); %d recorded blessing(s) name acts this run does not perform." acts.Length staleLines.Length
+                                 sprintf "every act this run performs is blessed at its current fingerprint (%s); %s name acts this run does not perform." (counted acts.Length "act" "acts") (counted staleLines.Length "recorded blessing" "recorded blessings")
                              else
-                                 sprintf "this run performs %d distinct act(s); %d blessed at the current fingerprint, %d awaiting a blessing. The ledger below names each act, what it does, and the exact fingerprint a blessing binds to." acts.Length blessedCount openCount
+                                 sprintf "this run performs %s; %d blessed at the current fingerprint, %d awaiting a blessing. The ledger below names each act, what it does, and the exact fingerprint a blessing binds to." (counted acts.Length "distinct act" "distinct acts") blessedCount openCount
                          consentNarration <- Some (headline, (verdicts |> List.collect snd) @ staleLines)
                          // `--review`: the consent ledger rides the workbench —
                          // the acts attach to the bench the relationships branch
@@ -1957,7 +1966,7 @@ let runCheckGo
                  items.Add (GoBoard.item "cdc" (GoBoard.Status.Green "the sink tracks no tables with CDC."))
              | Ok tracked ->
                  items.Add (GoBoard.itemWith "cdc"
-                     (GoBoard.Status.Red (sprintf "the sink is CDC-tracked (%d table(s)) — a live run refuses without consent." tracked.Length, "run --go with --allow-cdc (the capture will see the load), or disable capture on the sink."))
+                     (GoBoard.Status.Red (sprintf "the sink is CDC-tracked (%s) — a live run refuses without consent." (counted tracked.Length "table" "tables"), "run --go with --allow-cdc (the capture will see the load), or disable capture on the sink."))
                      (tracked |> List.truncate 5)))
             // The PLANNED-WRITE grant evaluation (2026-07-07): the same
             // planned writes the engine's G2 gate enforces, evaluated per
@@ -1990,11 +1999,11 @@ let runCheckGo
                      items.Add (GoBoard.item "grant"
                          (GoBoard.Status.Green
                              (sprintf
-                                 "the sink principal covers the planned writes (%d table(s), database or object scope) and SELECT on the touched set — table-level DENYs would show here."
-                                 (plannedWrites |> List.map (fun w -> w.Schema, w.Table) |> List.distinct |> List.length))))
+                                 "the sink principal covers the planned writes (%s, database or object scope) and SELECT on the touched set — table-level DENYs would show here."
+                                 (counted (plannedWrites |> List.map (fun w -> w.Schema, w.Table) |> List.distinct |> List.length) "table" "tables"))))
                  | violations ->
                      items.Add (GoBoard.itemWith "grant"
-                         (GoBoard.Status.Red ("the sink principal does not cover the planned writes.", "grant the missing permission(s) — database scope or per-table object scope both satisfy the gate; then re-run."))
+                         (GoBoard.Status.Red ("the sink principal does not cover the planned writes.", "grant the missing permissions — database scope or per-table object scope both satisfy the gate; then re-run."))
                          (violations |> List.truncate 10)))
             // Pinned owners (2026-07-06, the single-owner program): every
             // `Table:=<key>` / `Table:Column:=<key>` rule names a sink row
@@ -2026,7 +2035,7 @@ let runCheckGo
                                 let n = probeCount sink (sprintf "SELECT COUNT_BIG(*) FROM [%s].[%s] WHERE [%s] = %s;" (TableId.schemaText k.Physical) (TableId.tableText k.Physical) (ColumnRealization.columnNameText pk.Column) (renderKey key))
                                 if n = 0 then Some (sprintf "%s := '%s' — no such row in the sink" (Name.value k.Name) key) else None)
                 if List.isEmpty missing then
-                    items.Add (GoBoard.item "pinned owners" (GoBoard.Status.Green (sprintf "%d pinned owner(s) exist in the sink." pinnedOwners.Length)))
+                    items.Add (GoBoard.item "pinned owners" (GoBoard.Status.Green (sprintf "%s exist in the sink." (counted pinnedOwners.Length "pinned owner" "pinned owners"))))
                 else
                     items.Add (GoBoard.itemWith "pinned owners"
                         (GoBoard.Status.Red ("a pinned owner names a sink row that does not exist — every re-keyed reference would dangle.", "create the row in the sink, or fix the pinned key; then re-run."))
@@ -2040,7 +2049,7 @@ let runCheckGo
                 subsetKinds
                 |> List.choose (fun k ->
                     let n = probeCount sink (sprintf "SELECT COUNT_BIG(*) FROM [%s].[%s];" (TableId.schemaText k.Physical) (TableId.tableText k.Physical))
-                    if n > 0 then Some (sprintf "%s: %d row(s)" (Name.value k.Name) n) else None)
+                    if n > 0 then Some (sprintf "%s: %s" (Name.value k.Name) (counted64 n "row" "rows")) else None)
             (match opts.Emission, populated with
              | EmissionMode.Incremental, (_ :: _) ->
                  items.Add (GoBoard.itemWith "re-run"
@@ -2071,12 +2080,12 @@ let runCheckGo
                              |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
                              |> Option.bind (fun a ->
                                  let n = probeCount sink (sprintf "SELECT COUNT_BIG(*) FROM [%s].[%s] WHERE [%s] IS NOT NULL;" (TableId.schemaText child.Physical) (TableId.tableText child.Physical) (ColumnRealization.columnNameText a.Column))
-                                 if n > 0L then Some (sprintf "%s has %d row(s) whose %s points at %s (in the transferred set) — the wipe of %s would orphan them" (Name.value child.Name) n (Name.value a.Name) (kindName r.TargetKind) (kindName r.TargetKind)) else None)))
+                                 if n > 0L then Some (sprintf "%s has %s whose %s points at %s (in the transferred set) — the wipe of %s would orphan them" (Name.value child.Name) (counted64 n "row" "rows") (Name.value a.Name) (kindName r.TargetKind) (kindName r.TargetKind)) else None)))
                  if List.isEmpty blockers then
                      items.Add (GoBoard.item "re-run" (GoBoard.Status.Green "strategy replace: the transferred set wipes child-first and reloads — idempotent; no other sink table references it, so nothing blocks the wipe."))
                  else
                      items.Add (GoBoard.itemWith "re-run"
-                         (GoBoard.Status.Red ("a sink table OUTSIDE the transfer references a table INSIDE it — the replace-wipe would fail (FK 547) because deleting the referenced rows orphans the outside rows.", "add the referencing table(s) to the flow's `tables`, or clear their referencing rows on the sink first; then re-run."))
+                         (GoBoard.Status.Red ("a sink table OUTSIDE the transfer references a table INSIDE it — the replace-wipe would fail (FK 547) because deleting the referenced rows orphans the outside rows.", "add the referencing tables to the flow's `tables`, or clear their referencing rows on the sink first; then re-run."))
                          blockers)
              | _ ->
                  items.Add (GoBoard.item "re-run" (GoBoard.Status.Green "the transferred set is empty on the sink — first load; both strategies behave identically.")))

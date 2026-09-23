@@ -21,8 +21,9 @@ module Projection.Tests.PillarNineTests
 // What this file adds:
 //   - Property-based skeleton-purity sweep across permutations of the
 //     sample catalog (FsCheck).
-//   - Overlay-exercise tests for ALL four registered `OverlayAxis`
-//     values (Selection, Emission, Tightening, Ordering) — completing
+//   - Overlay-exercise tests for ALL five registered `OverlayAxis`
+//     values (Selection, Emission, Tightening, Ordering, Identity —
+//     the fifth landed at align-I.3's reclassification) — completing
 //     the bidirectional contract per HORIZON H-052.
 //   - Coverage assertion: the set of axes named by
 //     `TransformRegistry.overlayAxes` is fully exercised by this file.
@@ -171,16 +172,39 @@ let ``H-052 overlay-exercise: Ordering axis is named at the TopologicalOrderPass
         |> Set.ofList
     Assert.DoesNotContain(topo.Name, skeletonNames)
 
+[<Fact>]
+let ``H-052 overlay-exercise: Identity axis fires when UserFkReflowPass matches at least one source user`` () =
+    // align-I.3: the identity plane names itself. `FallbackToSystemUser`
+    // structurally guarantees every source user matches (the safety-net
+    // catches every miss), so one source user + zero target users is
+    // the minimal fixture that fires a matched `Annotated` event
+    // carrying `OperatorIntent Identity`.
+    let policy =
+        { Policy.empty with
+            UserMatching = FallbackToSystemUser (TargetUserId.ofInt 999, ByEmail) }
+    let sourceUser =
+        UserAttributes.create
+            (SourceUserId.ofInt 1)
+            (SsKey.synthesizedComposite "OS_TEST" [ "h052"; "identityUser" ] |> Result.value)
+            None
+    let profile =
+        { Profile.empty with
+            SourceUsers = UserPopulation.create [ sourceUser ] }
+    let rt = UserFkReflowPass.registered policy profile
+    let result = rt.Run sampleCatalog
+    let axes = axesPresent result.Trail
+    Assert.Contains(OverlayAxis.Identity, axes)
+
 // ---------------------------------------------------------------------------
-// Coverage closure: the four exercised axes above EQUAL the full set
+// Coverage closure: the five exercised axes above EQUAL the full set
 // of axes named by `TransformRegistry.overlayAxes` over the canonical
-// registry. If a fifth `OperatorIntent _` axis lands in the registry
+// registry. If a sixth `OperatorIntent _` axis lands in the registry
 // without an overlay-exercise test, this assertion fails.
 // ---------------------------------------------------------------------------
 
 [<Fact>]
 let ``H-052 overlay-exercise coverage: every registry-known OverlayAxis has a corresponding overlay-exercise test above`` () =
-    let exercised = Set.ofList [ Selection; Emission; Tightening; Ordering ]
+    let exercised = Set.ofList [ Selection; Emission; Tightening; Ordering; OverlayAxis.Identity ]
     let registryAxes = TransformRegistry.overlayAxes allRegistrations
     Assert.Equal<Set<OverlayAxis>>(registryAxes, exercised)
 

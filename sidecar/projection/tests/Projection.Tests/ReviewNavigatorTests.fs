@@ -1,7 +1,7 @@
 module Projection.Tests.ReviewNavigatorTests
 
 // THE REVIEW WORKBENCH (2026-07-10, the manifest program, slice 3): pure
-// witnesses over the same coupled fixture the EvidenceCache tests pin —
+// witnesses over the same coupled fixture the ForecastEvidence tests pin —
 // Deal references Buyer and Tag; Tag references Realm. The laws under test:
 // the reducer is TOTAL over every key; Space cycles the decision under the
 // cursor and the COUPLED sibling's counts recompute in the rendered rows;
@@ -70,7 +70,7 @@ let private catalog : Catalog =
 let private row (kind: string) (values: (string * string) list) : StaticRow =
     { Identifier = kKey kind; Values = values |> List.map (fun (c, v) -> nm c, Some v) |> Map.ofList }
 
-let private cache : EvidenceCache.Cache =
+let private cache : ForecastEvidence.Cache =
     { SourceRows =
         Map.ofList
             [ kKey "Buyer", [ row "Buyer" [ "Id", "1"; "Email", "alice@x" ]; row "Buyer" [ "Id", "2"; "Email", "bob@x" ] ]
@@ -95,7 +95,7 @@ let private bench : ReviewNavigator.Workbench =
       Catalog = catalog
       LoadSet = loadSet
       Reconciled = Set.empty
-      Components = EvidenceCache.componentsOf catalog loadSet edges
+      Components = ForecastEvidence.componentsOf catalog loadSet edges
       Cache = cache
       Tables = [ "Trade.Deal" ]
       Reconcile = []
@@ -161,7 +161,7 @@ let ``review: selecting an answer on one edge recomputes its coupled sibling —
     let tree0, _ = ReviewNavigator.render bench Map.empty Map.empty
     // Buyer reconciled by Email (bob unmatched): deal 11 drops, and Tag's
     // reconcile row must now read 2, not 3.
-    let treeSelected, _ = ReviewNavigator.render bench (Map.ofList [ kKey "Buyer", EvidenceCache.Answer.Reconcile (nm "Email") ]) Map.empty
+    let treeSelected, _ = ReviewNavigator.render bench (Map.ofList [ kKey "Buyer", ForecastEvidence.Answer.Reconcile (nm "Email") ]) Map.empty
     let textOf (v: View.View) = (View.toJson v).ToJsonString()
     Assert.NotEqual<string>(textOf tree0, textOf treeSelected)
     Assert.Contains("\"2\"", textOf treeSelected)
@@ -181,8 +181,8 @@ let ``review: q with unsaved selections asks once, then quits; q clean quits at 
 let ``review: the write gesture materializes only the vocabulary the engine already honors`` () =
     let decisions =
         Map.ofList
-            [ kKey "Buyer", EvidenceCache.Answer.Reconcile (nm "Email")
-              kKey "Tag", EvidenceCache.Answer.Widen ]
+            [ kKey "Buyer", ForecastEvidence.Answer.Reconcile (nm "Email")
+              kKey "Tag", ForecastEvidence.Answer.Widen ]
     let reconciles, widens, statics, byHand = ReviewNavigator.toConfigEdits bench decisions
     Assert.Equal<string list>([ "Trade.Buyer:Email" ], reconciles)
     Assert.Equal<string list>([ "Trade.Tag" ], widens)
@@ -190,7 +190,7 @@ let ``review: the write gesture materializes only the vocabulary the engine alre
     Assert.Empty(byHand)
     // a pinned selection cannot be written without its key: the instruction is
     // named, never silent.
-    let withPin = Map.add (kKey "Buyer") (EvidenceCache.Answer.Pin None) decisions
+    let withPin = Map.add (kKey "Buyer") (ForecastEvidence.Answer.Pin None) decisions
     let _, _, _, byHand2 = ReviewNavigator.toConfigEdits bench withPin
     Assert.Single(byHand2) |> ignore
     Assert.Contains("by hand", List.head byHand2)
@@ -205,15 +205,15 @@ let ``review: cycling wraps through every candidate answer and returns to the fi
     match ReviewNavigator.targetAt atDecision with
     | Some (ReviewTarget.Edge target) ->
         let componentEdges = bench.Components |> List.find (fun es -> es |> List.exists (fun e -> e.Target = target))
-        let candidates = EvidenceCache.candidateAnswers componentEdges target
+        let candidates = ForecastEvidence.candidateAnswers componentEdges target
         // from undecided, N presses land on the Nth candidate; one more wraps
         // back to the first.
         let afterLast =
             (atDecision, [ 1 .. candidates.Length ])
             ||> List.fold (fun m _ -> ReviewNavigator.step ConsoleKey.Spacebar m)
-        Assert.Equal<EvidenceCache.Answer option>(Some (List.last candidates), afterLast.Decisions |> Map.tryFind target)
+        Assert.Equal<ForecastEvidence.Answer option>(Some (List.last candidates), afterLast.Decisions |> Map.tryFind target)
         let wrapped = ReviewNavigator.step ConsoleKey.Spacebar afterLast
-        Assert.Equal<EvidenceCache.Answer option>(Some (List.head candidates), wrapped.Decisions |> Map.tryFind target)
+        Assert.Equal<ForecastEvidence.Answer option>(Some (List.head candidates), wrapped.Decisions |> Map.tryFind target)
     | _ -> failwith "the cursor never reached a decision block"
 // -- the consent ledger in the workbench (2026-07-10, slice 4a) --------------
 

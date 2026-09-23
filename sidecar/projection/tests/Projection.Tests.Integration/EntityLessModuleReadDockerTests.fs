@@ -46,7 +46,7 @@ type EntityLessModuleReadDockerTests(fixture: EphemeralContainerFixture) =
                     | Ok s -> s
                     | Error errors -> failwithf "extraction failed: %A" errors
                 let bundle, notices =
-                    OssysRowsetReader.normalizeBundle (MetadataSnapshotRunner.toBundle snapshot)
+                    OssysRowsetReader.normalizeBundle (fst (MetadataSnapshotRunner.toBundle snapshot))
                 // The erasure is NAMED — exactly one notice, naming the
                 // skipped module.
                 let notice = Assert.Single(notices)
@@ -97,7 +97,7 @@ type EntityLessModuleReadDockerTests(fixture: EphemeralContainerFixture) =
                     | Ok s -> s
                     | Error errors -> failwithf "extraction failed: %A" errors
                 let bundle, notices =
-                    OssysRowsetReader.normalizeBundle (MetadataSnapshotRunner.toBundle snapshot)
+                    OssysRowsetReader.normalizeBundle (fst (MetadataSnapshotRunner.toBundle snapshot))
                 // The shadow drop is NAMED, and dropping AppCoreOld's only
                 // entity makes the module itself entity-less — both erasures
                 // surface.

@@ -608,6 +608,12 @@ module ScriptDomBuild =
         cons.Columns.Add(bracketed fk.SourceColumn)
         cons.ReferenceTableName <- schemaObjectFromTableId fk.Target
         cons.ReferencedTableColumns.Add(bracketed fk.TargetColumn)
+        // schema-L3.2 — composite legs: ScriptDom's Columns /
+        // ReferencedTableColumns are lists; legs 2..n append in
+        // constraint order.
+        for leg in fk.AdditionalLegs do
+            cons.Columns.Add(bracketed leg.SourceColumn)
+            cons.ReferencedTableColumns.Add(bracketed leg.TargetColumn)
         cons.DeleteAction <- toDeleteUpdateAction fk.OnDelete
         match fk.OnUpdate with
         | Some action -> cons.UpdateAction <- toDeleteUpdateAction action
@@ -625,6 +631,11 @@ module ScriptDomBuild =
         (tableConstraints: System.Collections.Generic.IList<ConstraintDefinition>)
         (fk: ForeignKeyDef)
         : unit =
+        // schema-L3.2 — a multi-leg (composite) FK cannot be a column-level
+        // constraint (SQL grammar); it attaches at table level.
+        if not (List.isEmpty fk.AdditionalLegs) then
+            tableConstraints.Add(foreignKeyConstraint fk)
+        else
         let target =
             colDefs
             |> Seq.tryFind (fun cd ->
@@ -782,19 +793,22 @@ module ScriptDomBuild =
         match temporal with
         | None -> ()
         | Some tc ->
-            match tc.PeriodStart, tc.PeriodEnd with
-            | Some ps, Some pe ->
+            // align-III.16: the period is a PAIR or absent — the
+            // one-leg nonsense this match once had to refuse is now
+            // unrepresentable.
+            match tc.Period with
+            | Some p ->
                 let period = SystemTimePeriodDefinition()
-                period.StartTimeColumn <- bracketed (Name.value ps)
-                period.EndTimeColumn   <- bracketed (Name.value pe)
+                period.StartTimeColumn <- bracketed (Name.value p.Start)
+                period.EndTimeColumn   <- bracketed (Name.value p.End)
                 def.SystemTimePeriod <- period
-            | _ -> ()
+            | None -> ()
             let sv = SystemVersioningTableOption()
             sv.OptionState <- OptionState.On
-            match tc.HistorySchema, tc.HistoryTable with
-            | Some hs, Some ht ->
-                sv.HistoryTable <- schemaObjectName hs ht
-            | _ -> ()
+            match tc.HistoryTable with
+            | Some tid ->
+                sv.HistoryTable <- schemaObjectName (TableId.schemaText tid) (TableId.tableText tid)
+            | None -> ()
             match tc.Retention with
             | Infinite -> ()
             | Limited (value, unit) ->

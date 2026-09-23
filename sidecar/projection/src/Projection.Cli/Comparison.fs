@@ -79,6 +79,7 @@ let private referenceFacetText (f: ReferenceFacet) : string =
     | ReferenceFacet.UserFk          -> "user fk"
     | ReferenceFacet.DbConstraint    -> "db constraint"
     | ReferenceFacet.Trust           -> "trust"
+    | ReferenceFacet.Legs            -> "key columns"
 
 /// One index facet, in plain words.
 let private indexFacetText (f: IndexFacet) : string =
@@ -185,6 +186,7 @@ let private referenceEvidence (resolveSrc: SsKey -> string) (resolveTgt: SsKey -
     | ReferenceFacet.UserFk          -> sprintf "user fk %s → %s" (yesNo s.IsUserFk) (yesNo t.IsUserFk)
     | ReferenceFacet.DbConstraint    -> sprintf "db constraint %s → %s" (yesNo (Reference.hasDbConstraint s)) (yesNo (Reference.hasDbConstraint t))
     | ReferenceFacet.Trust           -> sprintf "trust %s → %s" (yesNo (Reference.isConstraintTrusted s)) (yesNo (Reference.isConstraintTrusted t))
+    | ReferenceFacet.Legs            -> sprintf "key columns %d → %d" (Reference.legArity s) (Reference.legArity t)
 
 let private decimalOpt (o: decimal option) : string = match o with Some n -> string n | None -> "—"
 

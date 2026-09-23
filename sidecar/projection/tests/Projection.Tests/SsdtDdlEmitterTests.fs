@@ -1263,16 +1263,57 @@ let ``composite-key gate: the overlay's dropped reference passes, and no foreign
     Assert.DoesNotContain ("FOREIGN KEY", body)
 
 [<Fact>]
+let ``composite-key closure (schema-L3.2): a leg-complete reference PASSES the gate and emits the multi-leg FOREIGN KEY`` () =
+    // The narrowed gate (`Reference.compositeArityMismatch`): a reference
+    // whose Legs cover the target's composite PK emits — the Msg-1776
+    // refusal now applies only to the legless/wrong-arity residual.
+    let secondPk = attrKey ["A"; "AKind"; "Tenant"]
+    let bFk2 = attrKey ["B"; "BKind"; "ATenant"]
+    let legRef =
+        { Reference.create fkFeaturesCrossRef (mkName "AKind") fkFeaturesBFkAttr fkFeaturesAKey with
+            ConstraintState = ConstraintState.TrustedConstraint
+            Legs =
+              [ { SourceAttribute = fkFeaturesBFkAttr; TargetAttribute = fkFeaturesAIdAttr }
+                { SourceAttribute = bFk2; TargetAttribute = secondPk } ] }
+    let bKind =
+        { Kind.create
+            fkFeaturesBKey
+            (mkName "BKind")
+            (mkTableId "dbo" "OSUSR_B_BKIND")
+            [ { Attribute.create fkFeaturesBIdAttr (mkName "Id") Integer with
+                    Column = ColumnRealization.create ("ID") (false) |> Result.value
+                    IsPrimaryKey = true
+                    IsMandatory  = true }
+              { Attribute.create fkFeaturesBFkAttr (mkName "AId") Integer with
+                    Column = ColumnRealization.create ("A_ID") (false) |> Result.value
+                    IsMandatory  = true }
+              { Attribute.create bFk2 (mkName "ATenant") Integer with
+                    Column = ColumnRealization.create ("A_TENANT") (false) |> Result.value
+                    IsMandatory  = true } ]
+          with References = [ legRef ]; Indexes = [] }
+    let catalog : Catalog =
+        {
+            Modules =
+                [ { SsKey = modKey "A"; Name = mkName "A"; Kinds = [ compositeTargetAKind ]; IsActive = true; ExtendedProperties = [] }
+                  { SsKey = modKey "B"; Name = mkName "B"; Kinds = [ bKind ]; IsActive = true; ExtendedProperties = [] } ]
+            Sequences = []
+        }
+    let artifact = SsdtDdlEmitter.emitSlices (enrich catalog) |> mustOk
+    let body = (ArtifactByKind.toMap artifact |> Map.find fkFeaturesBKey).Body
+    // The multi-leg render pin: both source columns and both target
+    // columns, in constraint order, in ONE constraint.
+    Assert.Contains ("FOREIGN KEY ([A_ID], [A_TENANT])", body)
+    Assert.Contains ("REFERENCES [dbo].[OSUSR_A_AKIND] ([ID], [TENANT])", body)
+
+[<Fact>]
 let ``temporal gate: a system-versioned kind refuses the publish — system-versioning never drops silently (#669 EF-23)`` () =
     // The emission cannot yet render the period columns' GENERATED ALWAYS
     // clauses, so a kind carrying ModalityMark.Temporal refuses rather than
     // deploying a table whose system-versioning silently vanished. The
     // board's EmissionTemporalDropped finding states the same fact.
     let temporalConfig : TemporalConfig =
-        { HistorySchema = Some "history"
-          HistoryTable  = Some "CUSTOMER_History"
-          PeriodStart   = None
-          PeriodEnd     = None
+        { HistoryTable  = Some (TableId.create "history" "CUSTOMER_History" |> Result.value)
+          Period        = None
           Retention     = Infinite }
     let withTemporal =
         { compositeTargetCatalog with

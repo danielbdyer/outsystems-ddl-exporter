@@ -132,6 +132,10 @@ let runCanaryCdcSilence (sourceDdlPath: string) : int =
         let work =
             Deploy.runWideCanaryWithCdcSilence
                 (fun cnn -> Deploy.executeBatch cnn sourceDdl)
+                // schema-L3.3a — deliberately the UNGATED stream: the canary
+                // emits from a ReadSide READBACK catalog (trigger bodies from
+                // OBJECT_DEFINITION, defaults from deployed constraints), so
+                // the #669 gates are vacuous on this lane by construction.
                 SsdtDdlEmitter.statements
                 enableCdc
                 redeploy

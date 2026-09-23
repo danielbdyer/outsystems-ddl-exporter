@@ -7,11 +7,14 @@ namespace Projection.Pipeline
 //   discover-once pattern's imperative core, isolated and pure-pool-tested).
 //   SQL-text + accumulation boundary.
 
-// THE EVIDENCE CACHE (2026-07-10, the manifest program, slice 2 —
-// THE_TRANSFER_MANIFEST.md §4.2-§4.5): the row substrate behind the decision
-// workbench, read ONCE per board build from the same connections the
-// authoritative dry run uses, and the PURE derivation of every answer
-// archetype's exact consequence over it.
+// THE FORECAST EVIDENCE (2026-07-10, the manifest program, slice 2 —
+// THE_TRANSFER_MANIFEST.md §4.2-§4.5; renamed from "EvidenceCache" at
+// align-III.17/X1 — the name collided with the HOUSE PATTERN of the same
+// name (Core's profile evidence cache, CLAUDE.md §6) while naming a
+// different thing: this is the FORECAST's evidence — the row substrate
+// behind the decision workbench, read ONCE per board build from the same
+// connections the authoritative dry run uses, and the PURE derivation of
+// every answer archetype's exact consequence over it.
 //
 // The load-bearing decision (§4.2): every archetype's `ForecastDelta` is
 // computed once, authoritatively, at board build — matches run through the
@@ -27,7 +30,8 @@ namespace Projection.Pipeline
 // state, so holding them fixed is honest.
 //
 // Discover-once / derive-pure (the house `EvidenceCache` pattern, named in
-// CLAUDE.md §6). The one IO seam is `fill`; everything beneath it is pure.
+// CLAUDE.md §6 — the pattern keeps its name on Core's profile cache; this
+// module is one more INSTANCE of it, no longer its name-twin). The one IO seam is `fill`; everything beneath it is pure.
 //
 // Memory bound: the cache holds FULL rows only for the escape-TARGET kinds
 // (the reconcile candidates — reference-sized tables), and exactly TWO
@@ -39,7 +43,7 @@ open Microsoft.Data.SqlClient
 open Projection.Core
 
 [<RequireQualifiedAccess>]
-module EvidenceCache =
+module ForecastEvidence =
 
     // -- the cache -------------------------------------------------------------
 

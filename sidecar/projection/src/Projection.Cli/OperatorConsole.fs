@@ -116,13 +116,8 @@ let withRun (command: string) (body: unit -> int) : int =
         None
         body
 
+/// align-III.14: delegates to Core's one total, canonicalizing
+/// `Environment.parse` — this ad-hoc copy of the stage-name table was the
+/// canonicalization logic living in the wrong layer.
 let parseEnvironment (defaultLabel: string) (label: string option) : Projection.Core.Environment =
-    match label with
-    | None -> Projection.Core.Environment.Named defaultLabel
-    | Some s ->
-        match s.Trim().ToUpperInvariant() with
-        | "DEV"  -> Projection.Core.Environment.Dev
-        | "QA"   -> Projection.Core.Environment.Qa
-        | "UAT"  -> Projection.Core.Environment.Uat
-        | "PROD" -> Projection.Core.Environment.Prod
-        | _      -> Projection.Core.Environment.Named (s.Trim())
+    Projection.Core.Environment.parse (defaultArg label defaultLabel)

@@ -92,13 +92,47 @@ let private assertAllClassifiedAs
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``A.4.7 slice α: OverlayAxis carries five variants (Selection / Emission / Insertion / Tightening / Ordering)`` () =
+let ``A.4.7 slice α: OverlayAxis carries six variants (Selection / Emission / Insertion / Tightening / Ordering / Identity)`` () =
     // The fifth variant Ordering is chapter A.4.7 open's Q9-trigger-fires
-    // worked example. Constructing each variant by name is the compile-time
-    // witness; this test fails to compile if a variant is removed or
-    // renamed.
-    let axes : OverlayAxis list = [ Selection; Emission; Insertion; Tightening; Ordering ]
-    Assert.Equal(5, axes.Length)
+    // worked example; the sixth, Identity, is the alignment program's
+    // align-I.2 expansion (A50's worked example — the two Policy identity
+    // channels needed an axis home). Constructing each variant by name is
+    // the compile-time witness; this test fails to compile if a variant is
+    // removed or renamed. ORDER MATTERS (T1): variants append, and this
+    // list mirrors declaration order so a reorder is visible here.
+    let axes : OverlayAxis list = [ Selection; Emission; Insertion; Tightening; Ordering; Identity ]
+    Assert.Equal(6, axes.Length)
+    Assert.Equal<OverlayAxis list>(OverlayAxis.allKnown, axes)
+
+// ---------------------------------------------------------------------------
+// A50 — the operator outcome space is enumerable (align-I.2).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``A50: every Policy decision channel has a designated OverlayAxis (axisOfPolicyAxis is total)`` () =
+    // Totality is structural (`overlayAxisOf` is an exhaustive match), so
+    // the assertable substance is the designation itself: the four founding
+    // channels map to their namesakes; both identity-resolution channels
+    // map to Identity. A new Policy channel cannot land in the DSL without
+    // an arm here (FS0025) — the expansion discipline's fifth step.
+    Assert.Equal(6, List.length PolicyAxis.all)
+    Assert.Equal(Selection,  PolicyAxis.overlayAxisOf PolicyAxis.Selection)
+    Assert.Equal(Emission,   PolicyAxis.overlayAxisOf PolicyAxis.Emission)
+    Assert.Equal(Insertion,  PolicyAxis.overlayAxisOf PolicyAxis.Insertion)
+    Assert.Equal(Tightening, PolicyAxis.overlayAxisOf PolicyAxis.Tightening)
+    Assert.Equal(Identity,   PolicyAxis.overlayAxisOf PolicyAxis.UserMatching)
+    Assert.Equal(Identity,   PolicyAxis.overlayAxisOf PolicyAxis.BridgeRetarget)
+
+[<Fact>]
+let ``A50: the preimages partition the Policy channels — Ordering's is EMPTY (its lever lives outside Policy)`` () =
+    // The derived inverse: every channel appears in exactly one axis
+    // preimage (partition), and Ordering's preimage is empty — which makes
+    // Override(Ordering)'s no-op the map's theorem, never a silent case.
+    let covered = OverlayAxis.allKnown |> List.collect PolicyAxis.preimageOf
+    Assert.Equal<PolicyAxis list>(PolicyAxis.all, covered |> List.sortBy (fun a -> PolicyAxis.all |> List.findIndex ((=) a)))
+    Assert.Equal(6, List.length covered)
+    Assert.Empty(PolicyAxis.preimageOf Ordering)
+    Assert.Equal<PolicyAxis list>([ PolicyAxis.UserMatching; PolicyAxis.BridgeRetarget ], PolicyAxis.preimageOf Identity)
 
 [<Fact>]
 let ``A.4.7 slice α: Classification carries DataIntent and OperatorIntent of OverlayAxis`` () =

@@ -141,13 +141,13 @@ let ``an empty posture renders the said-empty probes comment, never an empty fil
 let ``activeOf reads exactly the bound posture — relaxation-only nullability overrides and FK keepUntracked overrides`` () =
     let nullCfg =
         NullabilityTighteningConfig.relaxationOnly false
-            [ { AttributeKey = customerNameKey; Action = OverrideAction.KeepNullable } ]
+            [ { AttributeKey = customerNameKey; Action = OverrideAction.KeepNullable; Provenance = None } ]
     let fkCfg =
         ForeignKeyTighteningConfig.relaxationOnly
-            [ { ReferenceKey = orderRefToCustomer; Action = ForeignKeyOverrideAction.KeepUntracked } ]
+            [ { ReferenceKey = orderRefToCustomer; Action = ForeignKeyOverrideAction.KeepUntracked; Provenance = None } ]
     let evidenceDrivenNull =
         NullabilityTighteningConfig.create 0.0m false
-            [ { AttributeKey = customerTenantKey; Action = OverrideAction.KeepNullable } ]
+            [ { AttributeKey = customerTenantKey; Action = OverrideAction.KeepNullable; Provenance = None } ]
         |> Result.value
     let refs, attrs =
         EstatePosture.activeOf
@@ -159,3 +159,31 @@ let ``activeOf reads exactly the bound posture — relaxation-only nullability o
                   TighteningIntervention.Nullability ("evidence", evidenceDrivenNull) ] }
     Assert.Equal<Set<SsKey>>(Set.singleton orderRefToCustomer, refs)
     Assert.Equal<Set<SsKey>>(Set.singleton customerNameKey, attrs)
+
+[<Fact>]
+let ``align-II.2: activeWithProvenance surfaces the ruling attribution UN-severed while activeOf stays the bare-key reading`` () =
+    // The severing the audit named: activeOf projects overrides to bare
+    // key-sets, dropping who/when/why/which-finding. The sibling carries
+    // the attribution; the bare reading is byte-identical for its
+    // existing consumers.
+    let attrKey = SsKey.synthesizedComposite "OS_TEST" [ "posture"; "attr" ] |> Result.value
+    let provenance : OverrideProvenance =
+        { ApprovedBy = "dan"
+          ApprovedAt = None
+          Rationale = Some "accepted band"
+          Finding = Some (FindingKey.create EstateFindingKind.DataNotNullPastBand "User.MiddleName") }
+    let policy : TighteningPolicy =
+        { Interventions =
+            [ TighteningIntervention.Nullability
+                ("estate-interim",
+                 NullabilityTighteningConfig.relaxationOnly false
+                    [ { AttributeKey = attrKey; Action = OverrideAction.KeepNullable; Provenance = Some provenance } ]) ] }
+    let refs, attrs = EstatePosture.activeWithProvenance policy
+    Assert.Empty refs
+    let key, prov = List.exactlyOne attrs
+    Assert.Equal(attrKey, key)
+    Assert.Equal(Some provenance, prov)
+    // The bare reading is unmoved.
+    let bareRefs, bareAttrs = EstatePosture.activeOf policy
+    Assert.Empty bareRefs
+    Assert.Equal<Set<SsKey>>(Set.singleton attrKey, bareAttrs)

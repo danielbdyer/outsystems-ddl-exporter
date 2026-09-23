@@ -127,7 +127,7 @@ let ``one substrate: the stamped report renders the artifact index line and carr
     let report = reportFor dirty |> Estate.withRemediation [ "environments.remediation.cloud-uat.sql", 1 ]
     let lines = Estate.render report
     Assert.Contains(lines, fun (l: string) ->
-        l.Contains "environments.remediation.cloud-uat.sql — 1 prepared repair block(s)")
+        l.Contains "environments.remediation.cloud-uat.sql — 1 prepared repair block")
     let json = Estate.toJsonString report
     Assert.Contains("\"file\": \"environments.remediation.cloud-uat.sql\"", json)
     Assert.Contains("\"blocks\": 1", json)

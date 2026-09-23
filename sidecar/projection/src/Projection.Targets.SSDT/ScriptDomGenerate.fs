@@ -205,8 +205,21 @@ module ScriptDomGenerate =
             if not (isNull (box errors)) && errors.Count > 0 then
                 let e = errors.[0]
                 Error (sprintf "line %d: %s" e.Line e.Message)
-            elif Option.ofObj fragment |> Option.isSome then Ok ()
-            else Error "trigger definition did not parse"
+            else
+                // schema-L3.3a — the gate's success domain is STRENGTHENED to
+                // the renderer's (`ScriptDomBuild.tryParseTriggerBody` demands
+                // a first statement in the first batch of a `TSqlScript`): a
+                // comments-only or statement-free definition previously PASSED
+                // the gate and still hit the render marker. gate-pass ⟹
+                // render-Some is now a theorem, not a hope — the marker arm is
+                // unreachable from any gated entry.
+                match Option.ofObj fragment with
+                | Some (:? Microsoft.SqlServer.TransactSql.ScriptDom.TSqlScript as script) when
+                    script.Batches.Count > 0 && script.Batches.[0].Statements.Count > 0 -> Ok ()
+                | Some (:? Microsoft.SqlServer.TransactSql.ScriptDom.TSqlScript) ->
+                    Error "trigger definition contains no statement"
+                | Some _ -> Error "trigger definition is not a T-SQL script"
+                | None -> Error "trigger definition did not parse"
 
     let private ossysResiduePattern =
         System.Text.RegularExpressions.Regex(
@@ -406,15 +419,15 @@ module ScriptDomGenerate =
                 | None ->
                     // `Blank` / `Comment` are handled explicitly above, so the
                     // only statement reaching this `None` is a `CreateTrigger`
-                    // whose body failed to parse (H-019). M2 (THE VECTOR, Wave
-                    // 0): the prior bare `()` was a SILENT drop — the named-
-                    // erasure law forbids it. Emit an in-band marker comment
-                    // naming the closed tolerance
-                    // `ToleratedDivergence.TriggerBodyUnparsedDropped` (Schema
-                    // OpenGap) so this text path matches `Render.toSql` and the
-                    // `.dacpac` refusal (NM-24). Static phrase only.
+                    // whose body failed to parse (H-019). schema-L3.3a —
+                    // UNREACHABLE from every gated entry (see the sibling arm
+                    // in `Render.toText`): the emission pre-flight refuses
+                    // BEFORE rendering with `emitter.ssdt.triggerUnparsed`.
+                    // Loud total-function defense for direct-render callers;
+                    // the marker names the gate, not a tolerance. Static
+                    // phrase only.
                     match stmt with
                     | CreateTrigger _ ->
-                        sb.Append(commentLine "ToleratedDivergence.TriggerBodyUnparsedDropped: a CreateTrigger body failed to parse and was omitted from this SSDT text artifact (the .dacpac path refuses outright, NM-24).") |> ignore
+                        sb.Append(commentLine "projection defense: a CreateTrigger body failed to parse at render — unreachable behind the emit gate (emitter.ssdt.triggerUnparsed); this artifact is partial.") |> ignore
                     | _ -> ()
         sb.ToString()

@@ -29,9 +29,32 @@ module ForeignKeyReadback =
             IsNotTrusted : bool
         }
 
+    /// align-II.4b (a4-8) — WHICH side's schema was lost, typed. The
+    /// four-way distinction `classify` always computed but interned
+    /// into prose; a consumer aggregating "N FKs skipped for missing
+    /// VIEW DEFINITION on the parent side" reads the value, not a
+    /// sentence.
+    type LostSide =
+        | BothSchemas
+        | ParentSchema
+        | ReferencedSchema
+
+    /// The endpoint coordinates as read, with unreadable segments shown
+    /// as `<unreadable>` — the visible half of an unreadable row (what
+    /// the operator greps for to locate the grant).
+    type FkVisible =
+        {
+            Source : string
+            Target : string
+        }
+
     type Classification =
         | Reconstructable of FkCoordinates
-        | Unreadable of reason: string
+        /// align-II.4b: the computed classification rides TYPED; the
+        /// operator sentence is minted by `describe` (the
+        /// ResolutionReason/describe precedent — copy ownership at the
+        /// projection, aggregation on the value).
+        | Unreadable of side: LostSide * visible: FkVisible
 
     let private norm (o: string option) : string option =
         o |> Option.map (fun (s: string) -> s.Trim()) |> Option.filter (fun s -> s <> "")
@@ -57,14 +80,28 @@ module ForeignKeyReadback =
             let show (o: string option) = norm o |> Option.defaultValue "<unreadable>"
             let src = System.String.Concat(show sourceSchema, ".", show sourceTable, ".", show sourceColumn)
             let tgt = System.String.Concat(show targetSchema, ".", show targetTable, ".", show targetColumn)
-            let which =
+            let side =
                 match nSrcSchema, nTgtSchema with
-                | None, None -> "both endpoints' schemas"
-                | None, _ -> "the parent schema"
-                | _, None -> "the referenced schema"
-                | _ -> "a coordinate"
-            Unreadable
-                (System.String.Concat(
-                    "readside.foreignKeys: cross-schema FK ", src, " -> ", tgt,
-                    " skipped — ", which,
-                    " unreadable (NULL SCHEMA_NAME: dropped schema, or missing VIEW DEFINITION grant on a least-privilege account)"))
+                | None, None -> BothSchemas
+                | None, _ -> ParentSchema
+                // The remaining arm: the source schema read fine, so the
+                // loss is on the referenced side (a non-schema coordinate
+                // NULL also lands here — the schema pair is the classifier's
+                // named axis; the visible string shows exactly which
+                // segment read `<unreadable>`).
+                | _, _ -> ReferencedSchema
+            Unreadable (side, { Source = src; Target = tgt })
+
+    /// The operator sentence for an unreadable row — byte-identical to
+    /// the prose the DU payload used to intern (align-II.4b moved the
+    /// classification onto the value; this projection owns the copy).
+    let describe (side: LostSide) (visible: FkVisible) : string =
+        let which =
+            match side with
+            | BothSchemas -> "both endpoints' schemas"
+            | ParentSchema -> "the parent schema"
+            | ReferencedSchema -> "the referenced schema"
+        System.String.Concat(
+            "readside.foreignKeys: cross-schema FK ", visible.Source, " -> ", visible.Target,
+            " skipped — ", which,
+            " unreadable (NULL SCHEMA_NAME: dropped schema, or missing VIEW DEFINITION grant on a least-privilege account)")

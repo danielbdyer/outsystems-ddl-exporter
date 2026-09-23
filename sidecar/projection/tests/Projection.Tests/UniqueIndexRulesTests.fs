@@ -174,10 +174,11 @@ let ``single-column: probe succeeded + duplicates present ⇒ DoNotEnforce(DataH
 [<Fact>]
 let ``single-column: probe unreliable ⇒ DoNotEnforce(NoCandidateProfiled)`` () =
     // V2's collapsed-mode default: missing/unreliable evidence does not
-    // tighten. The "no reliable candidate" branch produces
-    // NoCandidateProfiled (the rules module collapses the "no probe" and
-    // "unreliable probe" cases into the same keep reason — there's no
-    // observable difference at the decision level).
+    // tighten. align-II.4b (a4-3): an UNRELIABLE probe is no longer
+    // collapsed into "no candidate profiled" — a probe RAN and failed,
+    // and the decision says so (EvidenceMissing: "your probe failed —
+    // investigate", vs NoCandidateProfiled: "run the profiler"). The
+    // dead token lives.
     let index = indexFixture "OS_IDX_Single_Unreliable" [ customerNameKey ] false
     let cfg = mkConfig true false
     let profile =
@@ -185,7 +186,7 @@ let ``single-column: probe unreliable ⇒ DoNotEnforce(NoCandidateProfiled)`` ()
             UniqueCandidates = [ mkSingleCandidateUnreliable customerNameKey ] }
     let decision = decide cfg customer index profile
     Assert.Equal(
-        UniqueIndexOutcome.DoNotEnforce NoCandidateProfiled,
+        UniqueIndexOutcome.DoNotEnforce EvidenceMissing,
         decision.Outcome)
 
 [<Fact>]
@@ -314,9 +315,9 @@ let ``advise-only: a clean single-column candidate is PromotionAdvisedNotApplied
     let profile =
         { Profile.empty with UniqueCandidates = [ mkSingleCandidate customerNameKey false 250L ] }
     let decision = decide (mkAdvise true false) customer index profile
-    Assert.Equal(
-        UniqueIndexOutcome.DoNotEnforce PromotionAdvisedNotApplied,
-        decision.Outcome)
+    (match decision.Outcome with
+     | UniqueIndexOutcome.DoNotEnforce (PromotionAdvisedNotApplied _) -> ()
+     | other -> failwithf "expected PromotionAdvisedNotApplied (with its evidence), got %A" other)
     // Crucially, it does NOT enforce — emission stays faithful to the model.
     Assert.False(UniqueIndexRules.enforces decision)
 
@@ -328,9 +329,9 @@ let ``advise-only: a clean composite candidate is PromotionAdvisedNotApplied, no
             CompositeUniqueCandidates =
                 [ mkCompositeCandidate customerKey [ customerNameKey; customerTenantKey ] false ] }
     let decision = decide (mkAdvise false true) customer index profile
-    Assert.Equal(
-        UniqueIndexOutcome.DoNotEnforce PromotionAdvisedNotApplied,
-        decision.Outcome)
+    (match decision.Outcome with
+     | UniqueIndexOutcome.DoNotEnforce (PromotionAdvisedNotApplied UniqueIndexEvidence.CompositeNoDuplicates) -> ()
+     | other -> failwithf "expected PromotionAdvisedNotApplied CompositeNoDuplicates, got %A" other)
 
 [<Fact>]
 let ``advise-only: a declared-unique index still enforces (carried is authoritative, unaffected by the flag)`` () =
@@ -444,7 +445,7 @@ let ``outcome: UniqueIndexKeepReason variants round-trip`` () =
     Assert.Equal<UniqueIndexKeepReason>(DataHasDuplicates, DataHasDuplicates)
     Assert.Equal<UniqueIndexKeepReason>(EvidenceMissing, EvidenceMissing)
     Assert.Equal<UniqueIndexKeepReason>(NoCandidateProfiled, NoCandidateProfiled)
-    Assert.Equal<UniqueIndexKeepReason>(PromotionAdvisedNotApplied, PromotionAdvisedNotApplied)
+    Assert.Equal<UniqueIndexKeepReason>(PromotionAdvisedNotApplied UniqueIndexEvidence.CompositeNoDuplicates, PromotionAdvisedNotApplied UniqueIndexEvidence.CompositeNoDuplicates)
 
 [<Fact>]
 let ``outcome: UniqueIndexOutcome variants round-trip`` () =
@@ -454,3 +455,75 @@ let ``outcome: UniqueIndexOutcome variants round-trip`` () =
     Assert.Equal<UniqueIndexOutcome>(
         UniqueIndexOutcome.DoNotEnforce PolicyDisabled,
         UniqueIndexOutcome.DoNotEnforce PolicyDisabled)
+
+// ---------------------------------------------------------------------------
+// align-II.3 — per-index promotion rulings: adopting ONE promotion while
+// refusing another is expressible; the override is consulted BEFORE the
+// blanket ApplyProfilePromotions flag (the nullability step-1 shape).
+// ---------------------------------------------------------------------------
+
+let private withIndexOverride (action: UniqueIndexOverrideAction) (indexKey: SsKey) (config: UniqueIndexTighteningConfig) : UniqueIndexTighteningConfig =
+    { config with Overrides = [ { IndexKey = indexKey; Action = action; Provenance = None } ] }
+
+[<Fact>]
+let ``align-II.3: AdoptPromotion applies ONE candidate even when the blanket flag is off`` () =
+    let index = indexFixture "OS_IDX_AdoptOne" [ customerNameKey ] false
+    let profile =
+        { Profile.empty with
+            UniqueCandidates = [ mkSingleCandidate customerNameKey false 250L ] }
+    let config = mkAdvise true false |> withIndexOverride UniqueIndexOverrideAction.AdoptPromotion index.SsKey
+    let decision = decide config customer index profile
+    match decision.Outcome with
+    | UniqueIndexOutcome.EnforceUnique _ -> ()
+    | other -> failwithf "expected the per-index adoption to enforce, got %A" other
+
+[<Fact>]
+let ``align-II.3: RefusePromotion refuses ONE candidate even when the blanket flag is on — the recorded rejection`` () =
+    let index = indexFixture "OS_IDX_RefuseOne" [ customerNameKey ] false
+    let profile =
+        { Profile.empty with
+            UniqueCandidates = [ mkSingleCandidate customerNameKey false 250L ] }
+    let config =
+        UniqueIndexTighteningConfig.createWith true false true
+        |> withIndexOverride UniqueIndexOverrideAction.RefusePromotion index.SsKey
+    let decision = decide config customer index profile
+    match decision.Outcome with
+    | UniqueIndexOutcome.DoNotEnforce (PromotionRefusedByOperator _) -> ()
+    | other -> failwithf "expected PromotionRefusedByOperator, got %A" other
+    Assert.False(UniqueIndexRules.enforces decision)
+
+[<Fact>]
+let ``align-II.3: an un-ruled sibling still follows the blanket flag beside a per-index ruling`` () =
+    // The grain claim itself: one index adopted by ruling, the sibling
+    // advise-only under the blanket-off default — in ONE config.
+    let ruled = indexFixture "OS_IDX_Ruled" [ customerNameKey ] false
+    let sibling = indexFixture "OS_IDX_Sibling" [ customerTenantKey ] false
+    let profile =
+        { Profile.empty with
+            UniqueCandidates =
+                [ mkSingleCandidate customerNameKey false 250L
+                  mkSingleCandidate customerTenantKey false 250L ] }
+    let config = mkAdvise true false |> withIndexOverride UniqueIndexOverrideAction.AdoptPromotion ruled.SsKey
+    (match (decide config customer ruled profile).Outcome with
+     | UniqueIndexOutcome.EnforceUnique _ -> ()
+     | other -> failwithf "ruled index: expected enforcement, got %A" other)
+    (match (decide config customer sibling profile).Outcome with
+     | UniqueIndexOutcome.DoNotEnforce (PromotionAdvisedNotApplied _) -> ()
+     | other -> failwithf "sibling index: expected the advisory, got %A" other)
+
+[<Fact>]
+let ``align-II.3: the advisory outcome CARRIES the evidence that fed it (a4-4)`` () =
+    let index = indexFixture "OS_IDX_EvidenceKept" [ customerNameKey ] false
+    let profile =
+        { Profile.empty with
+            UniqueCandidates = [ mkSingleCandidate customerNameKey false 250L ] }
+    let decision = decide (mkAdvise true false) customer index profile
+    match decision.Outcome with
+    | UniqueIndexOutcome.DoNotEnforce (PromotionAdvisedNotApplied evidence) ->
+        // The adoption lever anchors to what the operator actually
+        // reviewed — the evidence is no longer dropped at exactly the
+        // recommendation boundary.
+        match evidence with
+        | UniqueIndexEvidence.SingleColumnNoDuplicates _ -> ()
+        | other -> failwithf "expected the single-column evidence, got %A" other
+    | other -> failwithf "expected the evidence-carrying advisory, got %A" other

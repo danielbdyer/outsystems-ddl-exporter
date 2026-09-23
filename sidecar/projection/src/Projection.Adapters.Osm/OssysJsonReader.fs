@@ -265,7 +265,12 @@ module OssysJsonReader =
                             // M4 — the JSON source carries only hasDbConstraint;
                             // trust defaults to true (a reflected FK is trusted
                             // unless IsNoCheck), normalized via the DU constructor.
-                            ConstraintState = ConstraintState.ofLegacyBooleans hasDbConstraint true })
+                            ConstraintState = ConstraintState.ofLegacyBooleans hasDbConstraint true
+                            // schema-L3.2 (rule 7, said out loud): the ctor's
+                            // `Legs = []` default is CORRECT inheritance here —
+                            // `osm_model.json` carries no FK-column data, so the
+                            // JSON lane has no leg evidence to supply.
+                            Legs            = [] })
                 | _ ->
                     // Propagate underlying errors via
                     // `propagateOrFallback` — uniform with the four

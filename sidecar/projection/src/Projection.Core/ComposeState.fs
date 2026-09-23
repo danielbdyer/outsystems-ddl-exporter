@@ -51,6 +51,11 @@ type ComposeState = {
     /// emitter + PhysicalSchema round-trip exactly like `DropFk` / `NoCheckFk` — a
     /// policy-derived decision kept out of the source IR (A18).
     BridgeRetargets : Map<SsKey, SsKey> option
+    /// The FULL typed bridge-retarget decision set (align-I.7) — every
+    /// declared retarget's verdict (cleared AND blocked), beside the
+    /// cleared-only map above. Downstream consumers read decisions
+    /// without re-parsing the trail.
+    BridgeRetargetDecisions : BridgeRetargetDecision list option
 }
 
 [<RequireQualifiedAccess>]
@@ -72,7 +77,8 @@ module ComposeState =
           SchemaComplexity = None
           QueryHints = None
           CascadeShockZones = None
-          BridgeRetargets = None }
+          BridgeRetargets = None
+          BridgeRetargetDecisions = None }
 
     let withCatalog (catalog: Catalog) (state: ComposeState) : ComposeState =
         { state with Catalog = catalog }
@@ -122,3 +128,6 @@ module ComposeState =
     /// emission).
     let withBridgeRetargets (value: Map<SsKey, SsKey>) (state: ComposeState) : ComposeState =
         { state with BridgeRetargets = Some value }
+
+    let withBridgeRetargetDecisions (value: BridgeRetargetDecision list) (state: ComposeState) : ComposeState =
+        { state with BridgeRetargetDecisions = Some value }

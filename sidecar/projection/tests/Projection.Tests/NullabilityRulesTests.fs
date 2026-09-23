@@ -35,7 +35,7 @@ let ``override: a KeepNullable override on a PK attribute still keeps it nullabl
     let pkAttr = customer.Attributes |> List.find (fun a -> a.IsPrimaryKey)
     let cfg =
         mkConfig 0.0m false
-            [ { AttributeKey = pkAttr.SsKey; Action = OverrideAction.KeepNullable } ]
+            [ { AttributeKey = pkAttr.SsKey; Action = OverrideAction.KeepNullable; Provenance = None } ]
     let decision = decideOnFixture pkAttr cfg
     match decision.Outcome with
     | NullabilityOutcome.KeepNullable OperatorOverride -> ()
@@ -49,7 +49,7 @@ let ``override: a KeepNullable override on a physically-NOT-NULL column still ke
         |> List.find (fun a -> a.SsKey = customerTenantKey)
     let cfg =
         mkConfig 0.0m false
-            [ { AttributeKey = tenantAttr.SsKey; Action = OverrideAction.KeepNullable } ]
+            [ { AttributeKey = tenantAttr.SsKey; Action = OverrideAction.KeepNullable; Provenance = None } ]
     let decision = decideOnFixture tenantAttr cfg
     match decision.Outcome with
     | NullabilityOutcome.KeepNullable OperatorOverride -> ()
@@ -61,7 +61,7 @@ let ``override: an unrelated override does NOT bypass other signals`` () =
     let unrelated = attrKey ["Unrelated"]
     let cfg =
         mkConfig 0.0m false
-            [ { AttributeKey = unrelated; Action = OverrideAction.KeepNullable } ]
+            [ { AttributeKey = unrelated; Action = OverrideAction.KeepNullable; Provenance = None } ]
     let decision = decideOnFixture pkAttr cfg
     Assert.Equal(NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey, decision.Outcome)
 
@@ -307,7 +307,7 @@ let ``mandatory: override takes precedence over IsMandatory`` () =
     let attr = mkMandatoryAttr "OS_ATTR_M_Override" true
     let cfg =
         mkConfig 0.0m false
-            [ { AttributeKey = attr.SsKey; Action = OverrideAction.KeepNullable } ]
+            [ { AttributeKey = attr.SsKey; Action = OverrideAction.KeepNullable; Provenance = None } ]
     let decision = NullabilityRules.evaluate "test" cfg attr Profile.empty
     Assert.Equal(NullabilityOutcome.KeepNullable OperatorOverride, decision.Outcome)
 
@@ -327,21 +327,24 @@ let ``mandatory: requiresApproval helper fires for the conflict outcome`` () =
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``direction: a relaxation-only intervention never tightens — a mandatory column with zero nulls reads NoTighteningSignal`` () =
+let ``direction: a relaxation-only intervention never tightens — a mandatory column with zero nulls is the honest abstain`` () =
     // Under EvidenceDriven this exact shape reads EnforceNotNull
     // (LogicalMandatoryNoProfile) — the coercion the amendment must not
-    // re-enable. RelaxationOnly reads it as no signal at all.
+    // re-enable. RelaxationOnly states no opinion at all — and since
+    // align-II.4 the trail says exactly that (DeclaredShapeCarried),
+    // instead of falsely recording "keep nullable" about a column that
+    // stays NOT NULL.
     let attr = mkMandatoryAttr "OS_ATTR_RO_Clean" true
     let cfg = NullabilityTighteningConfig.relaxationOnly false []
     let decision = NullabilityRules.evaluate "test" cfg attr Profile.empty
-    Assert.Equal(NullabilityOutcome.KeepNullable NoTighteningSignal, decision.Outcome)
+    Assert.Equal(NullabilityOutcome.DeclaredShapeCarried, decision.Outcome)
 
 [<Fact>]
 let ``direction: a relaxation-only intervention acts exactly at its overrides — KeepNullable(OperatorOverride)`` () =
     let attr = mkMandatoryAttr "OS_ATTR_RO_Override" true
     let cfg =
         NullabilityTighteningConfig.relaxationOnly false
-            [ { AttributeKey = attr.SsKey; Action = OverrideAction.KeepNullable } ]
+            [ { AttributeKey = attr.SsKey; Action = OverrideAction.KeepNullable; Provenance = None } ]
     let decision = NullabilityRules.evaluate "test" cfg attr Profile.empty
     Assert.Equal(NullabilityOutcome.KeepNullable OperatorOverride, decision.Outcome)
 
@@ -355,4 +358,4 @@ let ``direction: relaxation-only never lifts to operator approval, whatever the 
     let profile = { Profile.empty with Columns = [ mkColProfile attr.SsKey 100L 12L ] }
     let cfg = NullabilityTighteningConfig.relaxationOnly false []
     let decision = NullabilityRules.evaluate "test" cfg attr profile
-    Assert.Equal(NullabilityOutcome.KeepNullable NoTighteningSignal, decision.Outcome)
+    Assert.Equal(NullabilityOutcome.DeclaredShapeCarried, decision.Outcome)

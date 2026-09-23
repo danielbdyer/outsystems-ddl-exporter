@@ -617,6 +617,197 @@
           "type": "string",
           "description": "e.g. SchemaOnly"
         },
+        "tightening": {
+          "type": "object",
+          "description": "operator tightening interventions (align-II.2: override rows carry optional ruling attribution)",
+          "properties": {
+            "interventions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "nullability",
+                      "uniqueIndex",
+                      "foreignKey",
+                      "categoricalUniqueness"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "description": "stable intervention id"
+                  },
+                  "nullBudget": {
+                    "type": "number",
+                    "description": "nullability: permitted null fraction [0,1]"
+                  },
+                  "allowMandatoryRelaxation": {
+                    "type": "boolean",
+                    "description": "nullability"
+                  },
+                  "overrides": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "attributeRef": {
+                          "type": "string",
+                          "description": "Module.Entity.Attribute or Schema.Table.Column"
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "keepNullable"
+                          ]
+                        },
+                        "approvedBy": {
+                          "type": "string",
+                          "description": "who approved this override (the attribution anchor)"
+                        },
+                        "approvedAt": {
+                          "type": "string",
+                          "description": "when (ISO-8601 round-trip form; parsed fail-closed)"
+                        },
+                        "rationale": {
+                          "type": "string",
+                          "description": "why \u2014 carried onto the estate posture un-severed"
+                        },
+                        "finding": {
+                          "type": "string",
+                          "description": "the finding key this override answers (\u003Ckind-token\u003E:\u003Csubject\u003E)"
+                        }
+                      },
+                      "required": [
+                        "attributeRef",
+                        "action"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "description": "nullability per-attribute overrides"
+                  },
+                  "enforceSingleColumnUnique": {
+                    "type": "boolean",
+                    "description": "uniqueIndex"
+                  },
+                  "enforceMultiColumnUnique": {
+                    "type": "boolean",
+                    "description": "uniqueIndex"
+                  },
+                  "applyUniquePromotions": {
+                    "type": "boolean",
+                    "description": "uniqueIndex: apply (true) vs advise-only (default)"
+                  },
+                  "indexOverrides": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "indexRef": {
+                          "type": "string",
+                          "description": "Module.Entity.IndexName"
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "adoptPromotion",
+                            "refusePromotion"
+                          ]
+                        },
+                        "approvedBy": {
+                          "type": "string",
+                          "description": "who approved this override (the attribution anchor)"
+                        },
+                        "approvedAt": {
+                          "type": "string",
+                          "description": "when (ISO-8601 round-trip form; parsed fail-closed)"
+                        },
+                        "rationale": {
+                          "type": "string",
+                          "description": "why \u2014 carried onto the estate posture un-severed"
+                        },
+                        "finding": {
+                          "type": "string",
+                          "description": "the finding key this override answers (\u003Ckind-token\u003E:\u003Csubject\u003E)"
+                        }
+                      },
+                      "required": [
+                        "indexRef",
+                        "action"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "description": "uniqueIndex per-index promotion rulings (consulted before the blanket flag; align-II.3)"
+                  },
+                  "enableCreation": {
+                    "type": "boolean",
+                    "description": "foreignKey"
+                  },
+                  "allowCrossSchema": {
+                    "type": "boolean",
+                    "description": "foreignKey"
+                  },
+                  "allowNoCheckCreation": {
+                    "type": "boolean",
+                    "description": "foreignKey"
+                  },
+                  "referenceOverrides": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "referenceRef": {
+                          "type": "string",
+                          "description": "the anchoring attribute (logical or physical form)"
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "keepUntracked"
+                          ]
+                        },
+                        "approvedBy": {
+                          "type": "string",
+                          "description": "who approved this override (the attribution anchor)"
+                        },
+                        "approvedAt": {
+                          "type": "string",
+                          "description": "when (ISO-8601 round-trip form; parsed fail-closed)"
+                        },
+                        "rationale": {
+                          "type": "string",
+                          "description": "why \u2014 carried onto the estate posture un-severed"
+                        },
+                        "finding": {
+                          "type": "string",
+                          "description": "the finding key this override answers (\u003Ckind-token\u003E:\u003Csubject\u003E)"
+                        }
+                      },
+                      "required": [
+                        "referenceRef",
+                        "action"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "description": "foreignKey per-reference overrides"
+                  },
+                  "minDistinctCountForUniqueness": {
+                    "type": "integer",
+                    "description": "categoricalUniqueness"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": true
+              },
+              "description": "one entry per intervention kind"
+            }
+          },
+          "additionalProperties": true
+        },
         "transformGroups": {
           "type": "array",
           "items": {
@@ -658,6 +849,34 @@
         },
         "maxConcurrency": {
           "type": "integer"
+        }
+      },
+      "additionalProperties": true
+    },
+    "sink": {
+      "type": "object",
+      "description": "the sink freshness posture (reuse axis only \u2014 witnessing is gated by store presence, never by policy)",
+      "properties": {
+        "policy": {
+          "type": "string",
+          "enum": [
+            "off",
+            "auto",
+            "pinned"
+          ],
+          "description": "off (default: every model read pays the wire) | auto (reuse the witnessed state while the ossys fingerprints match) | pinned (reuse without probing; --refresh overrides)"
+        },
+        "perEnvironment": {
+          "type": "object",
+          "description": "per-environment policy refinements, keyed by the label \u0060projection sync \u003Cenv\u003E\u0060 stamped",
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "off",
+              "auto",
+              "pinned"
+            ]
+          }
         }
       },
       "additionalProperties": true

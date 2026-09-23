@@ -179,7 +179,7 @@ type RefactorLogPublishCanaryTests(fixture: EphemeralContainerFixture) =
                     Environment.Dev
                     (DateTimeOffset(2026, 7, 15, 9, 0, 0, TimeSpan.Zero))
             let genesis =
-                Episode.create coordinate (RefactorCanary.priorSchemaUserUnderClientKeys ()) Profile.empty None DataObservation.empty
+                Episode.create coordinate (RefactorCanary.priorSchemaUserUnderClientKeys ()) Profile.empty None DataObservation.NotObserved
             (match LifecycleStore.save store (EpisodicLifecycle.genesis tl genesis) with
              | Microsoft.FSharp.Core.Result.Ok () -> ()
              | Microsoft.FSharp.Core.Result.Error e -> failwithf "store seed failed: %A" e)

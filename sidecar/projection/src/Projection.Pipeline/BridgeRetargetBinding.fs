@@ -199,7 +199,7 @@ module BridgeRetargetBinding =
                             if List.isEmpty dups then Result.success (Map.ofList pairs)
                             else
                                 err "pipeline.config.bridgeRetargetEvidence.duplicateId"
-                                    (String.concat "" [ "bridge retarget evidence has duplicate id(s): "; String.concat ", " dups ]))  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
+                                    (String.concat "" [ "bridge retarget evidence has duplicate ids: "; String.concat ", " dups ]))  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
                     | _ ->
                         err "pipeline.config.bridgeRetargetEvidence.retargetsNotArray"
                             "the bridge retarget evidence file's 'retargets' must be an array"
@@ -418,7 +418,7 @@ module BridgeRetargetBinding =
             Result.success (Map.fold (fun m k v -> Map.add k v m) fileEvidence derived)
         else
             err "pipeline.config.bridgeRetargetEvidence.sourceConflict"
-                (String.concat "" [ "retarget id(s) carry BOTH file evidence (`overrides.bridgeRetargetEvidence`) and staging-derived evidence (`overrides.bridgeRowStaging`): "; String.concat ", " overlap; " — remove one source; competing accounts of the same data facts are refused" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
+                (String.concat "" [ "retarget ids carry BOTH file evidence (`overrides.bridgeRetargetEvidence`) and staging-derived evidence (`overrides.bridgeRowStaging`): "; String.concat ", " overlap; " — remove one source; competing accounts of the same data facts are refused" ])  // LINT-ALLOW: terminal refusal-text composition at the ValidationError boundary; segments are typed values, String.concat is the irreducible primitive for this free-text operator message — the TransformRegistry precedent
 
     /// Bind `overrides.bridgeRetargets` into the typed `BridgeRetargetPolicy`,
     /// reading the DATA-half evidence from `overrides.bridgeRetargetEvidence.path`

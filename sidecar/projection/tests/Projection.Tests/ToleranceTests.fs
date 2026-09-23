@@ -33,13 +33,10 @@ type ToleratedDivergenceGen =
             [
                 ToleratedDivergence.HeaderCommentsOmitted
                 ToleratedDivergence.PostDeployForeignKeysSplit
-                ToleratedDivergence.IndexOptionsUnreflected
                 ToleratedDivergence.StaticPopulationsUnreflected
-                ToleratedDivergence.CompositePkFkUnreflected
                 ToleratedDivergence.CharAnsiPaddingTolerated
                 ToleratedDivergence.DecimalScaleTolerated
                 ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
-                ToleratedDivergence.TriggerBodyUnparsedDropped
                 ToleratedDivergence.BooleanCanonicalizationTolerated
                 ToleratedDivergence.DateTimeTickPrecisionTolerated
                 ToleratedDivergence.IntegerWidthNormalized
@@ -117,11 +114,25 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains ten variants (op
     // end-to-end (None = NULL out-of-band; `Some ""` renders `N''` and
     // survives transfer), so the erasure the tolerance named no longer
     // exists to tolerate.
-    Assert.Equal (12, Set.count ToleratedDivergence.allKnown)
+    // **schema-L3.1 (2026-08-30):** 11 — `IndexOptionsUnreflected` is
+    // RETIRED: `ReadSide.readIndexes` recovers the full option surface
+    // (filter / INCLUDE / storage flags / compression / data space), the
+    // widened `PhysicalIndex` compares it, and the two-arm witness in
+    // `IndexRoundtripTests` pins the closure.
+    // **schema-L3.2 (2026-08-30):** 10 — `CompositePkFkUnreflected` is
+    // RETIRED: `Reference.Legs` carries the full composite-FK column
+    // list end-to-end (adapter, ReadSide, comparator, emitter, codec,
+    // migrate facet); the shared arity gate refuses the legless residual.
+    // **schema-L3.3b (2026-08-30):** 9 — `TriggerBodyUnparsedDropped` is
+    // RETIRED (the LAST Schema OpenGap; the ladder flips to ✅ L3): the
+    // publish refuses at the compose seam by name
+    // (`emitter.ssdt.triggerUnparsed`); gate-pass ⟹ render is a theorem;
+    // no faithful trigger is ever dropped from the text.
+    Assert.Equal (9, Set.count ToleratedDivergence.allKnown)
 
 [<Fact>]
 let ``Tolerance.ofSet round-trips through divergences`` () =
-    let s = Set.ofList [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.IndexOptionsUnreflected ]
+    let s = Set.ofList [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.PostDeployForeignKeysSplit ]
     let t = Tolerance.ofSet s
     Assert.Equal<Set<ToleratedDivergence>> (s, Tolerance.divergences t)
 
@@ -129,7 +140,7 @@ let ``Tolerance.ofSet round-trips through divergences`` () =
 let ``Tolerance.withDivergence on strict yields a singleton tolerance`` () =
     let t = Tolerance.strict |> Tolerance.withDivergence ToleratedDivergence.HeaderCommentsOmitted
     Assert.True (Tolerance.tolerates ToleratedDivergence.HeaderCommentsOmitted t)
-    Assert.False (Tolerance.tolerates ToleratedDivergence.IndexOptionsUnreflected t)
+    Assert.False (Tolerance.tolerates ToleratedDivergence.PostDeployForeignKeysSplit t)
     Assert.Equal (1, Set.count (Tolerance.divergences t))
 
 [<Fact>]
@@ -228,11 +239,25 @@ let ``3.4: empty config parses to strict (safe default); blank tokens are skippe
     match Tolerance.parse [] with
     | Ok t -> Assert.True(Tolerance.isStrict t)
     | Error e -> Assert.Fail(sprintf "%A" e)
-    match Tolerance.parse [ "  "; "IndexOptionsUnreflected"; "" ] with
+    match Tolerance.parse [ "  "; "CharAnsiPaddingTolerated"; "" ] with
     | Ok t ->
-        Assert.True(Tolerance.tolerates ToleratedDivergence.IndexOptionsUnreflected t)
+        Assert.True(Tolerance.tolerates ToleratedDivergence.CharAnsiPaddingTolerated t)
         Assert.Equal(1, Set.count (Tolerance.divergences t))
     | Error e -> Assert.Fail(sprintf "%A" e)
+
+[<Fact>]
+let ``schema-L3: the retired Schema OpenGap tolerance tokens fail closed (the config migration note made executable)`` () =
+    // Grows as the schema-L3 program retires each Schema OpenGap: a
+    // per-environment config still naming a retired token now errors by
+    // design — the gap is CLOSED, so accepting it is meaningless; the
+    // operator drops the token (each retirement's DECISIONS entry carries
+    // the migration note).
+    let retiredTokens = [ "IndexOptionsUnreflected"; "CompositePkFkUnreflected"; "TriggerBodyUnparsedDropped" ]
+    for token in retiredTokens do
+        Assert.Equal<ToleratedDivergence option>(None, ToleratedDivergence.tryParse token)
+        match Tolerance.parse [ token ] with
+        | Ok t -> Assert.Fail(sprintf "retired token %s must fail closed; got Ok %A" token (Tolerance.divergences t))
+        | Error (UnknownDivergence t) -> Assert.Equal(token, t)
 
 [<Fact>]
 let ``3.4: DEV tolerating HeaderCommentsOmitted passes the divergence; PROD strict fails it`` () =
@@ -315,14 +340,15 @@ let ``AC-D6: a representation-tolerant environment passes Char/Decimal divergenc
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``M2: the trigger-body tolerance is named, parseable, and in allKnown`` () =
-    // DISCRIMINATING: must be in the closed set AND round-trip through the
-    // operator-facing token surface (name ⇒ tryParse). A mislabeled-but-wrong
-    // implementation that dropped it from `allKnown`/`name` would fail here.
-    let d = ToleratedDivergence.TriggerBodyUnparsedDropped
-    Assert.True(Set.contains d ToleratedDivergence.allKnown, sprintf "%A must be in allKnown" d)
-    Assert.Equal<ToleratedDivergence option>(Some d, ToleratedDivergence.tryParse (ToleratedDivergence.name d))
-    Assert.Equal("TriggerBodyUnparsedDropped", ToleratedDivergence.name d)
+let ``M2 closure: the trigger-body tolerance is RETIRED — the token fails closed and the refusal is the named gate`` () =
+    // schema-L3.3b — the inverse of the pin this test replaced: the M2
+    // tolerance no longer exists to name (the publish refuses at the
+    // compose seam with `emitter.ssdt.triggerUnparsed`; the closure
+    // witness is `ComposeEmitRefusalTests`). The token fails closed like
+    // every retired tolerance's.
+    Assert.Equal<ToleratedDivergence option>(None, ToleratedDivergence.tryParse "TriggerBodyUnparsedDropped")
+    let liveNames = ToleratedDivergence.allKnown |> Set.toList |> List.map ToleratedDivergence.name |> Set.ofList
+    Assert.False(Set.contains "TriggerBodyUnparsedDropped" liveNames)
 
 // ---------------------------------------------------------------------------
 // matchedResidual — the per-run residual the canary collector resolves

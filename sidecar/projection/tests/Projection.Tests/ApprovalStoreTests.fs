@@ -92,3 +92,25 @@ let ``3.2: re-saving an unchanged registry is byte-stable (T1 determinism)`` () 
             ApprovalStore.save path1 registry |> ignore
             ApprovalStore.save path2 registry |> ignore
             Assert.Equal(System.IO.File.ReadAllText path1, System.IO.File.ReadAllText path2)))
+
+[<Fact>]
+let ``align-III.1: a malformed or missing 'at' instant is a ParseFailure — never a MinValue-dated approval`` () =
+    withTempFile (fun path ->
+        let registry = ApprovalRegistry.empty |> ApprovalRegistry.record (approvedRecord "digestA" "alice" None)
+        ApprovalStore.save path registry |> ignore
+        let saved = System.IO.File.ReadAllText path
+        // The writer's default encoder escapes '+' inside the stored "O"
+        // form (the II.5 lesson), so the tampers match the `at` VALUE by
+        // shape, not by exact bytes.
+        let atValue = System.Text.RegularExpressions.Regex("\"at\": \"([^\"]*)\"")
+        Assert.True(atValue.IsMatch saved)
+        // (a) Malformed value.
+        System.IO.File.WriteAllText(path, atValue.Replace(saved, "\"at\": \"not-an-instant\""))
+        (match ApprovalStore.load path with
+         | Error (ParseFailure _) -> ()
+         | other -> Assert.Fail(sprintf "expected ParseFailure on the malformed instant, got %A" other))
+        // (b) Missing field (key renamed — the JSON stays well-formed).
+        System.IO.File.WriteAllText(path, atValue.Replace(saved, "\"atRenamed\": \"$1\""))
+        (match ApprovalStore.load path with
+         | Error (ParseFailure _) -> ()
+         | other -> Assert.Fail(sprintf "expected ParseFailure on the missing instant, got %A" other)))

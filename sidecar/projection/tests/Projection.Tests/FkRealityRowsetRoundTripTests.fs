@@ -146,7 +146,8 @@ let private fkReferenceRow
       HasDbConstraint     = true
       OnUpdate            = onUpdate
       ReflectedOnDelete   = None
-      IsConstraintTrusted = isConstraintTrusted }
+      IsConstraintTrusted = isConstraintTrusted
+      Legs                = [] }
 
 let private buildBundle (refRow: OssysRowsetTypes.ReferenceRow) : OssysRowsetTypes.RowsetBundle =
     { OssysRowsetTypes.RowsetBundle.empty with

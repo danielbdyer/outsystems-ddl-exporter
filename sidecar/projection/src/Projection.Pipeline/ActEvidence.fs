@@ -6,7 +6,7 @@ namespace Projection.Pipeline
 
 // THE ACT FINGERPRINT DERIVATION (2026-07-10, the transfer-manifest program,
 // slices 4a/4b — THE_TRANSFER_MANIFEST.md §6.3): the bridge from the typed
-// evidence in hand (the dry-run `DataLoadPlan`, the slice-2 `EvidenceCache`
+// evidence in hand (the dry-run `DataLoadPlan`, the slice-2 `ForecastEvidence` (renamed X1)
 // match products, the sink population probes) to each act's
 // `ActConsent.ActFingerprint`. The derivation (`fingerprintsOf`) is a pure
 // PROJECTION of substrate read once elsewhere; the two named IO seams at the
@@ -91,7 +91,7 @@ module ActEvidence =
     /// different consent). A composite-column match has no single-column
     /// substrate here — `None`, narrated as unread.
     let rec private matchSubstrate
-        (cache: EvidenceCache.Cache option)
+        (cache: ForecastEvidence.Cache option)
         (catalog: Catalog)
         (target: SsKey)
         (strategy: ReconciliationStrategy)
@@ -100,7 +100,7 @@ module ActEvidence =
         | ReconciliationStrategy.MatchByColumn col ->
             cache
             |> Option.map (fun c ->
-                let pairs, unmatched, counts = EvidenceCache.matchProducts c catalog target col
+                let pairs, unmatched, counts = ForecastEvidence.matchProducts c catalog target col
                 ("reconcile:" + Name.value col), pairs, unmatched, counts, List.length pairs)
         | ReconciliationStrategy.ManualOverride map ->
             let pairs =
@@ -134,7 +134,7 @@ module ActEvidence =
         (nameOf: SsKey -> string)
         (catalog: Catalog)
         (plan: DataLoadPlan)
-        (cache: EvidenceCache.Cache option)
+        (cache: ForecastEvidence.Cache option)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         (probes: Map<SsKey, PopulationProbe>)
         (acts: ActConsent.Act list)
@@ -217,7 +217,7 @@ module ActEvidence =
 
     /// The reconciled kinds' row substrate for the Match effect hashes: one
     /// synthetic self-edge per (kind, match column) through
-    /// `EvidenceCache.fill` — the same reader the workbench evidence uses, so
+    /// `ForecastEvidence.fill` — the same reader the workbench evidence uses, so
     /// the pairs a Match fingerprint hashes are the pairs the forecast
     /// matched. `None` when there is nothing to read or the read fails.
     let fillMatchCache
@@ -226,7 +226,7 @@ module ActEvidence =
         (sourceContract: Catalog)
         (sinkContract: Catalog)
         (reconcileColumns: Map<SsKey, Name>)
-        : Task<EvidenceCache.Cache option> =
+        : Task<ForecastEvidence.Cache option> =
         if Map.isEmpty reconcileColumns then Task.FromResult None
         else
             let selfEdges =
@@ -242,7 +242,7 @@ module ActEvidence =
                           PeerTransfer.CandidateReconcileColumns = [ c ] }))
             task {
                 try
-                    let! cache = EvidenceCache.fill source sink sourceContract sinkContract selfEdges
+                    let! cache = ForecastEvidence.fill source sink sourceContract sinkContract selfEdges
                     return Some cache
                 with _ -> return None
             }

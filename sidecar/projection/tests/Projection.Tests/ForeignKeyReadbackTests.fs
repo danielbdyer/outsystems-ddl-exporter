@@ -26,13 +26,13 @@ let ``E2: a fully-resolved FK row reconstructs, carrying its coordinates and tru
         Assert.Equal("Orders", c.SourceTable)
         Assert.Equal("Customers", c.TargetTable)
         Assert.False(c.IsNotTrusted)
-    | FK.Unreadable reason -> failwithf "expected Reconstructable, got Unreadable: %s" reason
+    | FK.Unreadable (side, visible) -> failwithf "expected Reconstructable, got Unreadable: %s" (FK.describe side visible)
 
 [<Fact>]
 let ``E2: the trust flag rides through reconstruction`` () =
     match FK.classify (Some "dbo") (Some "O") (Some "c") (Some "dbo") (Some "C") (Some "Id") true with
     | FK.Reconstructable c -> Assert.True(c.IsNotTrusted)
-    | FK.Unreadable reason -> failwithf "expected Reconstructable, got Unreadable: %s" reason
+    | FK.Unreadable (side, visible) -> failwithf "expected Reconstructable, got Unreadable: %s" (FK.describe side visible)
 
 [<Fact>]
 let ``E2: an unreadable cross-schema FK surfaces a diagnostic, not a silent drop`` () =
@@ -43,19 +43,24 @@ let ``E2: an unreadable cross-schema FK surfaces a diagnostic, not a silent drop
         FK.classify (Some "dbo") (Some "Orders") (Some "CustomerId")
                     None (Some "Customers") (Some "Id") false
     match classification with
-    | FK.Unreadable reason ->
+    | FK.Unreadable (side, visible) ->
+        // align-II.4b: the classification rides TYPED (aggregation on the
+        // value); the sentence is the describe projection's, byte-identical
+        // to the prose the DU used to intern.
+        Assert.Equal(FK.ReferencedSchema, side)
+        Assert.Equal("dbo.Orders.CustomerId", visible.Source)
+        let reason = FK.describe side visible
         Assert.Contains("referenced schema", reason)
         Assert.Contains("VIEW DEFINITION", reason)
-        // The diagnostic names the visible source endpoint so the operator
-        // can locate the FK (discriminating: a bare "skipped" would pass a
-        // weaker assertion).
         Assert.Contains("dbo.Orders.CustomerId", reason)
     | FK.Reconstructable _ -> failwith "expected Unreadable for a NULL referenced schema"
 
 [<Fact>]
 let ``E2: a NULL parent schema names the parent side`` () =
     match FK.classify None (Some "Orders") (Some "CustomerId") (Some "dbo") (Some "Customers") (Some "Id") false with
-    | FK.Unreadable reason -> Assert.Contains("parent schema", reason)
+    | FK.Unreadable (side, visible) ->
+        Assert.Equal(FK.ParentSchema, side)
+        Assert.Contains("parent schema", FK.describe side visible)
     | FK.Reconstructable _ -> failwith "expected Unreadable for a NULL parent schema"
 
 [<Fact>]

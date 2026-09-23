@@ -6,16 +6,21 @@ open Projection.Pipeline
 /// The temporal base — the durable run timeline. Discriminating predicate:
 /// trend / canaryHistory / readiness are all projections of one run sequence.
 
-let private run (ts: string) (canary: string option) (declined: int) : Run.Run =
-    { RunId = ts; Ts = ts; Command = "projection canary"; InputDigest = "d"
-      Outcome = "succeeded"; Canary = canary; Registered = 42; Applied = 0; Declined = declined
+/// align-III.1: `Ts` is a typed instant now — the label doubles as the
+/// RunId (identity asserts read it) and mints a month-graded instant.
+let private tsOf (label: string) : System.DateTimeOffset =
+    System.DateTimeOffset.Parse(label + "-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture)
+
+let private run (label: string) (canary: string option) (declined: int) : Run.Run =
+    { RunId = label; Ts = tsOf label; Command = "projection canary"; InputDigest = "d"
+      Outcome = "succeeded"; Canary = Projection.Core.CanaryVerdict.ofTokenOpt canary; Registered = 42; Applied = 0; Declined = declined
       Events = []; Artifacts = Map.empty
       Ledgers = []; Bench = None }
 
 [<Fact>]
 let ``RunHistory: ofRuns sorts chronologically (oldest first)`` () =
     let h = RunHistory.ofRuns [ run "2026-03" None 0; run "2026-01" None 0; run "2026-02" None 0 ]
-    Assert.Equal<string list>([ "2026-01"; "2026-02"; "2026-03" ], h.Runs |> List.map (fun r -> r.Ts))
+    Assert.Equal<string list>([ "2026-01"; "2026-02"; "2026-03" ], h.Runs |> List.map (fun r -> r.RunId))
 
 [<Fact>]
 let ``RunHistory: trend maps a metric over the timeline`` () =
@@ -25,20 +30,20 @@ let ``RunHistory: trend maps a metric over the timeline`` () =
 [<Fact>]
 let ``RunHistory: canaryHistory is the green/red series, oldest first`` () =
     let h = RunHistory.ofRuns [ run "2026-01" (Some "green") 0; run "2026-02" None 0; run "2026-03" (Some "red") 0 ]
-    Assert.Equal<string list>([ "green"; "red" ], RunHistory.canaryHistory h)   // None skipped
+    Assert.Equal<Projection.Core.CanaryVerdict list>([ Projection.Core.CanaryVerdict.Green; Projection.Core.CanaryVerdict.Red ], RunHistory.canaryHistory h)   // NotRun skipped
 
 [<Fact>]
 let ``RunHistory: readiness over the history reuses the R6 gauge (subsumes the ledger)`` () =
-    let greens = [ for i in 1 .. RunLedger.R6Threshold -> run (sprintf "2026-%02d" i) (Some "green") 0 ]
+    let greens = [ for i in 1 .. RunIndex.R6Threshold -> run (sprintf "2026-%02d" i) (Some "green") 0 ]
     let r = RunHistory.ofRuns greens |> RunHistory.readiness
-    Assert.Equal(RunLedger.R6Threshold, r.ConsecutiveGreen)
+    Assert.Equal(RunIndex.R6Threshold, r.ConsecutiveGreen)
     Assert.True(r.Eligible)
 
 [<Fact>]
 let ``RunHistory: latest is the most recent run`` () =
     let h = RunHistory.ofRuns [ run "2026-01" None 0; run "2026-03" (Some "green") 0; run "2026-02" None 0 ]
     match RunHistory.latest h with
-    | Some r -> Assert.Equal("2026-03", r.Ts)
+    | Some r -> Assert.Equal("2026-03", r.RunId)
     | None   -> Assert.Fail "expected a latest run"
 
 [<Fact>]
@@ -53,7 +58,7 @@ let ``R1: readiness over RunHistory ≡ readiness over the ledger projection of 
           run "2026-04" (Some "green") 2
           run "2026-05" (Some "green") 0 ]
     let viaHistory = RunHistory.ofRuns runs |> RunHistory.readiness
-    let viaLedger = RunLedger.readiness (runs |> List.map Run.toLedgerEntry)
+    let viaLedger = RunIndex.readiness (runs |> List.map Run.toLedgerEntry)
     Assert.Equal(viaLedger, viaHistory)
     Assert.Equal(2, viaHistory.ConsecutiveGreen)
     Assert.False(viaHistory.Eligible)

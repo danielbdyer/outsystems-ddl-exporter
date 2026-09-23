@@ -391,6 +391,23 @@ type TighteningDirection =
 type TighteningOverride = {
     AttributeKey : SsKey
     Action       : OverrideAction
+    /// align-II.2 — who approved this override, when, why, and which
+    /// finding it answers. `None` = a pre-provenance config row; the
+    /// estate posture surfaces the provenance UN-severed
+    /// (`EstatePosture.activeWithProvenance`).
+    Provenance   : OverrideProvenance option
+}
+
+/// align-II.2 (a4) — the provenance an operator override carries: the
+/// ruling attribution that was previously unrecordable (an override row
+/// said WHAT but never WHO/WHEN/WHY/AGAINST-WHICH-FINDING). All fields
+/// beyond the approver are optional; the binder parses instants
+/// fail-closed and finding keys through `FindingKey.tryParse`.
+and OverrideProvenance = {
+    ApprovedBy : string
+    ApprovedAt : System.DateTimeOffset option
+    Rationale  : string option
+    Finding    : FindingKey option
 }
 
 /// What an override does. V2 starts with the single action V1 actually
@@ -439,6 +456,25 @@ type NullabilityTighteningConfig = {
 /// `TighteningOptions.Uniqueness` shape verbatim (two boolean toggles —
 /// no NullBudget, no Overrides — V1's UniqueIndex configuration is
 /// minimal; the V1↔V2 admire (ADMIRE.md 2026-05-10) confirms this).
+/// align-II.3 — one per-index promotion ruling: adopt or refuse a
+/// profile-driven uniqueness promotion for ONE index, consulted before
+/// the blanket `ApplyProfilePromotions` flag (the nullability override
+/// hierarchy's step-1 shape). Carries the same optional ruling
+/// attribution the tightening override rows carry (align-II.2).
+type UniqueIndexOverride = {
+    IndexKey   : SsKey
+    Action     : UniqueIndexOverrideAction
+    Provenance : OverrideProvenance option
+}
+
+and [<RequireQualifiedAccess>] UniqueIndexOverrideAction =
+    /// Apply this one promotion even when the blanket flag is off.
+    | AdoptPromotion
+    /// Refuse this one promotion even when the blanket flag is on —
+    /// the recorded per-subject rejection (distinct from un-adjudicated
+    /// advice).
+    | RefusePromotion
+
 type UniqueIndexTighteningConfig = {
     /// Should single-column unique constraints be enforced?
     /// V1's `UniquenessOptions.EnforceSingleColumnUnique`.
@@ -458,6 +494,10 @@ type UniqueIndexTighteningConfig = {
     /// directive 2026-07-18). `AlreadyUnique` (carried) is unaffected — a
     /// declared unique always enforces regardless of this flag.
     ApplyProfilePromotions : bool
+    /// align-II.3 — per-index promotion rulings, consulted BEFORE the
+    /// blanket flag. Empty = every candidate follows the flag (the
+    /// pre-override shape, byte-identical).
+    Overrides : UniqueIndexOverride list
 }
 
 
@@ -511,6 +551,8 @@ type ForeignKeyOverrideAction =
 type ForeignKeyOverride = {
     ReferenceKey : SsKey
     Action       : ForeignKeyOverrideAction
+    /// align-II.2 — ruling attribution (see `OverrideProvenance`).
+    Provenance   : OverrideProvenance option
 }
 
 type ForeignKeyTighteningConfig = {
@@ -669,10 +711,13 @@ type UserMatchingStrategy =
     | FallbackToSystemUser of fallback: TargetUserId * primary: UserMatchingStrategy
 
 
-/// The five-axis policy aggregate (A12 amended 2026-05-09 four-axis;
-/// extended at chapter 4.2 slice α to add `UserMatching` per pre-scope
-/// §2). Each axis is its own structured value; the five are composed
-/// in a single record. Changing one axis does not constrain the
+/// The six-channel policy aggregate (A12 amended 2026-05-09 four-axis;
+/// extended at chapter 4.2 slice α with `UserMatching` and at the
+/// 2026-07 bridge arc with `BridgeRetarget`). Each decision channel is
+/// its own structured value, composed in a single record; the channel
+/// set is ENUMERATED as `PolicyAxis.all` and every channel carries an
+/// A50 designation (`PolicyAxis.overlayAxisOf` — align-I.2). Changing
+/// one channel does not constrain the
 /// others. `Policy.empty` is the no-policy default — schema-only
 /// emission, every kind selected, no insertion semantics, no
 /// tightening interventions, default `ByEmail` user matching — and is
@@ -735,15 +780,23 @@ module SelectionPolicy =
     /// continue to operate on the full catalog (per A33: sort/order
     /// passes see all kinds, emission filters afterwards).
     ///
-    /// F12 (audit 2026-06-17) — DORMANT, unregistered. This is a
+    /// F12 (audit 2026-06-17; REIFIED at align-I.8) — DORMANT. This is a
     /// `Catalog → Catalog` operator-intent mutation (a Selection-axis
-    /// pruning) with NO pipeline wiring today, so it does not yet need a
-    /// `RegisteredAllTransforms` entry. TRIGGER: the day a live path invokes
-    /// this, it MUST register as `OperatorIntent (OverlayAxis Selection)` and
-    /// bind execution↔registration in a test (mirror `LogicalTableEmission` /
-    /// the F2 `filterPlatformAutoIndexes` lift) — a selection that silently
-    /// drops kinds is the exact untracked-operator-intent pattern the sweep
-    /// hunts.
+    /// pruning) with NO pipeline wiring today. Its dormancy is now a
+    /// REGISTRY VALUE, not a comment: `RegisteredTransforms.dormant`
+    /// carries the `selectionFilterCatalog` row with
+    /// `Firing = FiringSite.Dormant <trigger>` — the deferral index
+    /// enumerates it, and the bidirectional tests pin that dormant rows
+    /// never enter `all`. TRIGGER (as the row states): the day a live
+    /// path invokes this, it moves to `all`, binds execution ⇔
+    /// registration in a test, and emits one Removed lineage event per
+    /// suppression. The WORKED EXAMPLE for that registration is
+    /// `Passes/SelectionSuppression.fs` (the data-sink chapter, S9): the
+    /// lifecycle-selection axes that used to erase silently inside
+    /// `ModuleFilter.apply` landed as a registered Selection-axis pass with
+    /// one `Removed` lineage event per suppression — mirror it when this
+    /// trigger fires. (This function's own trigger has NOT fired: it
+    /// remains unwired.)
     let filterCatalog (policy: SelectionPolicy) (c: Catalog) : Catalog =
         c
         |> Lens.over CatalogLenses.modules (
@@ -997,7 +1050,8 @@ module UniqueIndexTighteningConfig =
     let empty : UniqueIndexTighteningConfig =
         { EnforceSingleColumnUnique = false
           EnforceMultiColumnUnique  = false
-          ApplyProfilePromotions    = false }
+          ApplyProfilePromotions    = false
+          Overrides                 = [] }
 
     /// Construct a `UniqueIndexTighteningConfig`. No validation
     /// required — the fields are booleans with no out-of-range
@@ -1012,7 +1066,8 @@ module UniqueIndexTighteningConfig =
         use _ = Bench.scope "ir.policy.uniqueIndex.create"
         { EnforceSingleColumnUnique = enforceSingleColumnUnique
           EnforceMultiColumnUnique  = enforceMultiColumnUnique
-          ApplyProfilePromotions    = true }
+          ApplyProfilePromotions    = true
+          Overrides                 = [] }
 
     /// Construct with an explicit `ApplyProfilePromotions` — the form the
     /// operator binder uses (advise-only by default; apply on opt-in).
@@ -1023,7 +1078,21 @@ module UniqueIndexTighteningConfig =
         : UniqueIndexTighteningConfig =
         { EnforceSingleColumnUnique = enforceSingleColumnUnique
           EnforceMultiColumnUnique  = enforceMultiColumnUnique
-          ApplyProfilePromotions    = applyProfilePromotions }
+          ApplyProfilePromotions    = applyProfilePromotions
+          Overrides                 = [] }
+
+    /// align-II.3 — the override-carrying form: per-index promotion
+    /// rulings consulted before the blanket flag.
+    let createWithOverrides
+        (enforceSingleColumnUnique: bool)
+        (enforceMultiColumnUnique: bool)
+        (applyProfilePromotions: bool)
+        (overrides: UniqueIndexOverride list)
+        : UniqueIndexTighteningConfig =
+        { EnforceSingleColumnUnique = enforceSingleColumnUnique
+          EnforceMultiColumnUnique  = enforceMultiColumnUnique
+          ApplyProfilePromotions    = applyProfilePromotions
+          Overrides                 = overrides }
 
 
 [<RequireQualifiedAccess>]

@@ -743,7 +743,7 @@ module ProfileDerivation =
                                                 Name.value reference.Name,
                                                 "' has ",
                                                 sortedOrphans.Length.ToString System.Globalization.CultureInfo.InvariantCulture,
-                                                " orphan source row(s); sampled ",
+                                                " orphan source rows; sampled ",
                                                 sampled.Length.ToString System.Globalization.CultureInfo.InvariantCulture,
                                                 ".")
                                           SsKey    = Some reference.SsKey

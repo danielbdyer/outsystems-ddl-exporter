@@ -50,7 +50,9 @@ type OrderingMode =
 
 /// How `TopologicalOrderPass` treats a kind's reference to itself
 /// during dependency-graph construction. Per session-36 audit
-/// (Agent 4 #6 — "RawTextEmitter re-implements topological sort"):
+/// (Agent 4 #6 — "RawTextEmitter re-implements topological sort";
+/// that emitter is since retired — the emission seam lives in
+/// SsdtDdlEmitter today, on this pass's ordering):
 /// the emitter and the pass diverged on this axis (the pass treated
 /// self-edges as 1-node SCCs; the emitter skipped them since SQL
 /// Server allows inline self-FK constraints in CREATE TABLE).

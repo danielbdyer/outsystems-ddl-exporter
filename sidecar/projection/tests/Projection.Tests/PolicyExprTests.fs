@@ -150,9 +150,28 @@ let ``H-016: Override Emission extracts only Emission axis`` () =
     Assert.Equal(Policy.empty.Insertion, result.Insertion)
 
 [<Fact>]
-let ``H-016: Override Ordering produces Policy.empty`` () =
+let ``A50: Override Ordering produces Policy.empty BECAUSE its Policy preimage is empty — the map's theorem, not a silent arm`` () =
+    // Before align-I.2 this behavior was a hand-coded `| Ordering ->
+    // Policy.empty` (the fired collapse trigger's silent no-op); now the
+    // Override arm folds `PolicyAxis.preimageOf axis`, so this equality is
+    // derived from the A50 designation map.
     let expr = PolicyExpr.Override (Ordering, PolicyExpr.ofPolicy (Policy.empty |> withInsertNew))
     Assert.Equal(Policy.empty, PolicyExpr.eval expr)
+    Assert.Empty(PolicyAxis.preimageOf Ordering)
+
+[<Fact>]
+let ``A50: Override Identity extracts BOTH identity channels (UserMatching + BridgeRetarget) and nothing else`` () =
+    let plans : BridgeRetargetPolicy = { Plans = [] }
+    let p =
+        { Policy.empty with
+            UserMatching = UserMatchingStrategy.BySsKey
+            BridgeRetarget = plans }
+        |> withInsertNew
+    let result = PolicyExpr.eval (PolicyExpr.Override (Identity, PolicyExpr.ofPolicy p))
+    Assert.Equal(UserMatchingStrategy.BySsKey, result.UserMatching)
+    Assert.Equal<BridgeRetargetPolicy>(p.BridgeRetarget, result.BridgeRetarget)
+    Assert.Equal(Policy.empty.Insertion, result.Insertion)
+    Assert.Equal(Policy.empty.Selection, result.Selection)
 
 // ---------------------------------------------------------------------------
 // H-016: simplify

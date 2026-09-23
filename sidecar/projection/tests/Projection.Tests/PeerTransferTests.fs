@@ -406,7 +406,7 @@ let ``GoBoard: an unverified finding never reds the board but the verdict names 
     // The plain render carries the [note] mark and the verdict names what remains unverified.
     let text = GoBoard.render board |> String.concat "\n"
     Assert.Contains("[note] forecast", text)
-    Assert.Contains("1 finding(s) below remain unverified", text)
+    Assert.Contains("1 finding below remains unverified", text)
     Assert.Contains("PROJECTION_ALLOW_EXECUTE=1 projection golden --go", text)
     // The JSON twin carries the distinct verdict + the count + the per-item flag.
     let json = GoBoard.toJsonString board

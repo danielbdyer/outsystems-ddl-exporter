@@ -543,8 +543,8 @@ module TopologicalOrderPass =
                       // broken to resolve them.
                       Cycles       = resolution.ResolvedDiagnostics
                       Diagnostics  = [
-                          sprintf "topologicalOrder v%d: %d cycle(s) auto-resolved via Weak-edge removal"
-                              version resolution.ResolvedDiagnostics.Length
+                          sprintf "topologicalOrder v%d: %s auto-resolved via Weak-edge removal"
+                              version (sprintf "%d %s" resolution.ResolvedDiagnostics.Length (if resolution.ResolvedDiagnostics.Length = 1 then "cycle" else "cycles"))
                       ] }
                 else
                     // Defensive: removing the resolver's chosen edges

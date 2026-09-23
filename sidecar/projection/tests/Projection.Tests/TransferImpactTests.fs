@@ -251,7 +251,7 @@ let ``toHtml renders the summary matrix grouped by role and the relational-inten
 let ``toHtml renders the 1:1 confirmation panel, clean when identical`` () =
     let html = TransferImpactView.toHtml catalog (scaledImpact "identical (1/1 by Name)")
     Assert.Contains("the 1:1 confirmation", html)
-    Assert.Contains("1 of 1 reference table(s) verified", html)
+    Assert.Contains("1 of 1 reference table verified", html)
     Assert.Contains("class=\"verdict v-ok\"", html)                // clean verdict, teal
     Assert.DoesNotContain("class=\"cf drift\"", html)              // no drift row
 
@@ -260,7 +260,7 @@ let ``toHtml pulls a drifted static-lookup into the confirmation panel as drift`
     let html = TransferImpactView.toHtml catalog (scaledImpact "drift: 1 col drift on Lisbon")
     Assert.Contains("class=\"verdict v-drift\"", html)             // drift verdict, red
     Assert.Contains("class=\"cf drift\"", html)                    // the drift confirmation cell
-    Assert.Contains("0 of 1 reference table(s) verified", html)
+    Assert.Contains("0 of 1 reference table verified", html)
 
 [<Fact>]
 let ``toJson summary array carries the role, guarantee, and verdict per table`` () =

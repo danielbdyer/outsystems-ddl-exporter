@@ -70,15 +70,15 @@ module OssysTranslation =
     // display projection.
 
     let moduleSsKey (moduleName: string) : Result<SsKey> =
-        SsKey.synthesized "OS_MOD" moduleName
+        SsKey.mint SynthesisConvention.OsModule moduleName
 
     let kindSsKey (moduleName: string) (entityName: string) : Result<SsKey> =
-        SsKey.synthesizedComposite "OS_KIND" [ moduleName; entityName ]
+        SsKey.mintComposite SynthesisConvention.OsKind [ moduleName; entityName ]
 
     let attributeSsKey
         (moduleName: string) (entityName: string) (attrName: string)
         : Result<SsKey> =
-        SsKey.synthesizedComposite "OS_ATTR" [ moduleName; entityName; attrName ]
+        SsKey.mintComposite SynthesisConvention.OsAttribute [ moduleName; entityName; attrName ]
 
     /// Reference SsKey synthesis (session 19). The reference identifies
     /// by its source coordinate — `<srcModule>_<srcEntity>_<viaAttr>`
@@ -87,7 +87,7 @@ module OssysTranslation =
     let referenceSsKey
         (sourceModuleName: string) (sourceEntityName: string) (viaAttrName: string)
         : Result<SsKey> =
-        SsKey.synthesizedComposite "OS_REF" [ sourceModuleName; sourceEntityName; viaAttrName ]
+        SsKey.mintComposite SynthesisConvention.OsReference [ sourceModuleName; sourceEntityName; viaAttrName ]
 
     /// Index SsKey synthesis (session 22). Indexes identify by their
     /// V1 IndexName, scoped to the entity. V1's `IndexName` is unique
@@ -96,7 +96,7 @@ module OssysTranslation =
     let indexSsKey
         (moduleName: string) (entityName: string) (indexName: string)
         : Result<SsKey> =
-        SsKey.synthesizedComposite "OS_IDX" [ moduleName; entityName; indexName ]
+        SsKey.mintComposite SynthesisConvention.OsIndex [ moduleName; entityName; indexName ]
 
     /// Trigger SsKey synthesis (chapter A.0' slice γ). Triggers
     /// identify by their V1 name scoped to the entity they fire on
@@ -105,7 +105,7 @@ module OssysTranslation =
     let triggerSsKey
         (moduleName: string) (entityName: string) (triggerName: string)
         : Result<SsKey> =
-        SsKey.synthesizedComposite "OS_TRG" [ moduleName; entityName; triggerName ]
+        SsKey.mintComposite SynthesisConvention.OsTrigger [ moduleName; entityName; triggerName ]
 
     /// Sequence SsKey synthesis (chapter A.0' slice δ). Sequences
     /// identify by schema + name (a sequence is a top-level
@@ -114,7 +114,7 @@ module OssysTranslation =
     let sequenceSsKey
         (schemaName: string) (sequenceName: string)
         : Result<SsKey> =
-        SsKey.synthesizedComposite "OS_SEQ" [ schemaName; sequenceName ]
+        SsKey.mintComposite SynthesisConvention.OsSequence [ schemaName; sequenceName ]
 
     /// ColumnCheck SsKey synthesis (chapter A.0' slice ε). CHECK
     /// constraints identify by their declared name scoped to the
@@ -125,7 +125,7 @@ module OssysTranslation =
     let columnCheckSsKey
         (moduleName: string) (entityName: string) (checkName: string)
         : Result<SsKey> =
-        SsKey.synthesizedComposite "OS_CHK" [ moduleName; entityName; checkName ]
+        SsKey.mintComposite SynthesisConvention.OsCheck [ moduleName; entityName; checkName ]
 
     // -----------------------------------------------------------------------
     // JSON helpers — light wrappers over System.Text.Json.JsonElement.
@@ -512,9 +512,10 @@ module OssysTranslation =
     ///   - `isExternal: true` AND EspaceKind = "Extension" → ExternalIndirect
     ///   - `isExternal: true` otherwise                  → ExternalDirect
     ///
-    /// Case-insensitive comparison on the marker (V1's column is
-    /// nvarchar(50); historical samples have varied in capitalization
-    /// across V1 versions). Null EspaceKind on an external entity
+    /// The marker reads through Core's `EspaceKindReading` (align-I.4:
+    /// Trim + OrdinalIgnoreCase — V1's column is nvarchar(50); historical
+    /// samples have varied in capitalization across V1 versions, and
+    /// whitespace variants unify by ruling). Null EspaceKind on an external entity
     /// resolves to ExternalDirect — the absence of an IS marker
     /// witnesses the absence of an IS step.
     ///
@@ -527,13 +528,11 @@ module OssysTranslation =
         (isExternal: bool) (espaceKind: string option) : Origin =
         if not isExternal then Native
         else
-            let isIsExtension =
-                match espaceKind with
-                | Some kind ->
-                    System.String.Equals(kind, "Extension", System.StringComparison.OrdinalIgnoreCase)
-                | None -> false
-            if isIsExtension then ExternalIndirect
-            else ExternalDirect
+            match EspaceKindReading.ofRaw espaceKind with
+            | EspaceKindReading.Extension -> ExternalIndirect
+            | EspaceKindReading.ESpace
+            | EspaceKindReading.Unmarked
+            | EspaceKindReading.Other _ -> ExternalDirect
 
     /// Extract a Reference from a V1 attribute that carries
     /// `isReference: 1` plus its `refEntity_*` and

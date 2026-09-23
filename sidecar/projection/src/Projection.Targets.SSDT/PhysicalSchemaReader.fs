@@ -68,15 +68,22 @@ module PhysicalSchemaReader =
             : PhysicalForeignKey list =
         let srcSchemaStr, srcTableStr = TableId.qualifiedParts table
         fks
-        |> List.map (fun fk ->
+        |> List.collect (fun fk ->
             let tgtSchemaStr, tgtTableStr = TableId.qualifiedParts fk.Target
+            // schema-L3.2 — one entry per leg (head leg = the classic
+            // fields; `AdditionalLegs` follow), keeping the adjunction law
+            // `ofCatalog c = ofStatementStream (statements c)` exact now
+            // that the catalog side reflects every leg.
+            (fk.SourceColumn, fk.TargetColumn)
+            :: (fk.AdditionalLegs |> List.map (fun leg -> leg.SourceColumn, leg.TargetColumn))
+            |> List.map (fun (srcCol, tgtCol) ->
             {
                 SourceSchema = srcSchemaStr
                 SourceTable = srcTableStr
-                SourceColumn = fk.SourceColumn
+                SourceColumn = srcCol
                 TargetSchema = tgtSchemaStr
                 TargetTable = tgtTableStr
-                TargetColumn = fk.TargetColumn
+                TargetColumn = tgtCol
                 // THE VECTOR Wave 1 / M1 — the Decision-axis trust sub-axis. The
                 // emitter writes `ForeignKeyDef.IsConstraintTrusted = r
                 // .IsConstraintTrusted` (the source FK's own trust); the
@@ -87,7 +94,7 @@ module PhysicalSchemaReader =
                 // exact on the FK axis (`AdjunctionLawTests`). The overlay-aware
                 // trust round-trip is witnessed through the live ReadSide canary.
                 IsTrusted = fk.IsConstraintTrusted
-            })
+            }))
 
     /// Project a typed `seq<Statement>` to a `PhysicalSchema`.
     ///

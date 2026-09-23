@@ -317,7 +317,7 @@ let ``V1 #8: an override produces KeepNullable(OperatorOverride) regardless of o
     let cfg =
         NullabilityTighteningConfig.create
             0.0m false
-            [ { AttributeKey = mandatoryAttributeKey; Action = OverrideAction.KeepNullable } ]
+            [ { AttributeKey = mandatoryAttributeKey; Action = OverrideAction.KeepNullable; Provenance = None } ]
         |> Result.value
     let lineage = nullRun catalog (policyWith cfg) profile
     let decision = decisionFor mandatoryAttributeKey lineage

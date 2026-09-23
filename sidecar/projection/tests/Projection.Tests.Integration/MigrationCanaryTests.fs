@@ -169,6 +169,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                 }))
 
     [<Fact>]
+    // @axis Schema migrate
     member _.``migrate A B canary: one execute evolves A→B across three channels; B reproduces B, data survives, re-run is idempotent`` () =
         if not (Deploy.Docker.ensureRunning ()) then () else
         TaskSync.run (fun () ->
@@ -293,6 +294,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     // -- the data-transfer composition (cross-substrate: schema + data) ------
 
     [<Fact>]
+    // @axis Data migrate
     member _.``migrate canary: executeWithData migrates the sink schema then loads rows from the source`` () =
         if not (Deploy.Docker.ensureRunning ()) then () else
         TaskSync.run (fun () ->
@@ -837,13 +839,13 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                                         Assert.Equal("3", count)
                                         // The recorded episode carries the MEASURED capture count.
                                         let recorded = EpisodicLifecycle.latest chain
-                                        Assert.True(recorded.Data.CdcCaptureCount > 0, "the recorded observation must be non-empty (data moved)")
-                                        Assert.Equal(3, recorded.Data.CdcCaptureCount)
+                                        Assert.True(DataObservation.captureCount recorded.Data > 0, "the recorded observation must be non-empty (data moved)")
+                                        Assert.Equal(3, DataObservation.captureCount recorded.Data)
                                         // …and it round-trips through the durable store.
                                         match LifecycleStore.load storePath with
                                         | Error e -> Assert.Fail(sprintf "store reload failed: %A" e)
                                         | Ok reloaded ->
-                                            Assert.Equal(3, (EpisodicLifecycle.latest reloaded).Data.CdcCaptureCount)
+                                            Assert.Equal(3, DataObservation.captureCount (EpisodicLifecycle.latest reloaded).Data)
                             })
                     }))
         finally
@@ -1108,7 +1110,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                                 | None -> Assert.Fail("a store was supplied; an episode must be recorded")
                                 | Some leg ->
                                     let recorded = EpisodicLifecycle.latest leg.Chain
-                                    Assert.Equal(2, recorded.Data.CdcCaptureCount)   // the episode carries the MEASURED count.
+                                    Assert.Equal(2, DataObservation.captureCount recorded.Data)   // the episode carries the MEASURED count.
                             // LEG 2 — idempotent re-load: CDC-silent, non-overwriting.
                             let! second = Compose.loadSeedAndRecord Deploy.cdcCaptureTotal Deploy.executeBatch catalog seed conn None tl Environment.Dev at
                             match second with
@@ -1214,7 +1216,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                                 | None -> Assert.Fail("a store was supplied; an episode must be recorded")
                                 | Some leg ->
                                     let recorded = EpisodicLifecycle.latest leg.Chain
-                                    Assert.Equal(4, recorded.Data.CdcCaptureCount)
+                                    Assert.Equal(4, DataObservation.captureCount recorded.Data)
                             // LEG 2 — idempotent leveled re-load: CDC-silent, non-overwriting.
                             let! second = Compose.loadLeveledSeedAndRecord Deploy.cdcCaptureTotal (Deploy.executeLeveledSeed perDbConn) catalog plan conn None tl Environment.Dev at
                             match second with
@@ -1357,6 +1359,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     // sole remaining line: declaring you accept the narrowing does NOT let you
     // apply NOT NULL while NULL rows physically remain.
     [<Fact>]
+    // @axis Decision migrate
     member _.``G9: migrate refuses a NOT-NULL tightening on NULL-bearing data via a pre-flight, before any ALTER`` () =
         if not (Deploy.Docker.ensureRunning ()) then () else
         TaskSync.run (fun () ->
@@ -1449,6 +1452,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     //    and the A→B diff is a pure widening (same kind SsKeys, same names).
 
     [<Fact>]
+    // @axis Identity migrate
     member _.``AC-X2: one-command migrate-with-data re-keys Order FKs to the Sink's email-matched identity (fails for Map.empty)`` () =
         if not (Deploy.Docker.ensureRunning ()) then () else
         let reKeyDdlA =

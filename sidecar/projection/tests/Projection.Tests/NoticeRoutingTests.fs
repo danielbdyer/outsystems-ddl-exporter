@@ -123,8 +123,8 @@ let ``the rollup copy reads as one calm line naming families, and points at the 
             Assert.Contains("214", t)
             // Count-first, concrete family labels (2026-07-06 full-voice audit) —
             // and the internal compound "model-reality" never reaches the surface.
-            Assert.Contains("180 nullability difference(s)", t)
-            Assert.Contains("34 identity-flag difference(s)", t)
+            Assert.Contains("180 nullability differences", t)
+            Assert.Contains("34 identity-flag differences", t)
             Assert.Contains("no action is required", t)
             Assert.DoesNotContain("model-reality", t)
         | other -> Assert.Fail(sprintf "expected a Note statement, got %A" other)

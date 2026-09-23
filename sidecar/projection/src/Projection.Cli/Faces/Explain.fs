@@ -141,7 +141,7 @@ let runSuggestConfig (configPath: string) (applyTo: string option) : int =
                 printfn "  %s no actionable config edits — nothing to apply" Theme.ok
                 0
             else
-                printfn "  %d config edit(s) suggested, by impact:" (List.length merged)
+                printfn "  %s suggested, by impact:" (sprintf "%d %s" (List.length merged) (if (List.length merged) = 1 then "config edit" else "config edits"))
                 printfn ""
                 for s in merged do
                     printfn "  %s %s = %s   (%d node%s)"

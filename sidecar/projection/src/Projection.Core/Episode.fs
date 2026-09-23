@@ -31,25 +31,54 @@ module EpisodeCoordinate =
 /// `Profile` is a per-run *input* (substrate for tightening), co-recorded
 /// in-memory on the `Episode` but never persisted — persisting it would be the
 /// speculative-`RowDiff`-value trap §12.4 warns against.
+/// The data-plane measurement co-recorded on an `Episode` (align-III.6):
+/// either the CDC ruler genuinely ran (`Observed` — a measured capture
+/// count, zero included, plus the optional provenance handle) or no
+/// measurement was taken at all (`NotObserved` — a schema-only record).
+/// **Measured-zero ≠ unmeasured**: an idempotent redeploy's CDC-silence
+/// (observed zero captures — the strongest guarantee) is a different fact
+/// from "no one looked", and the DU keeps them apart where the retired
+/// `{ CdcCaptureCount = 0 }` record folded both onto the same value.
+[<RequireQualifiedAccess>]
 type DataObservation =
-    {
-        CdcCaptureCount : int
-        CdcHandle       : string option
-    }
+    | NotObserved
+    | Observed of captureCount: int * handle: string option
 
 [<RequireQualifiedAccess>]
 module DataObservation =
 
-    /// No data movement observed (a schema-only episode, or genesis).
-    let empty : DataObservation = { CdcCaptureCount = 0; CdcHandle = None }
+    /// The measuring producer — the CDC ruler ran and read `captureCount`
+    /// (zero is a real reading: CDC-silence, T15's isometry at rest).
+    let observed (captureCount: int) (handle: string option) : DataObservation =
+        DataObservation.Observed (captureCount, handle)
 
-    let create (captureCount: int) (handle: string option) : DataObservation =
-        { CdcCaptureCount = captureCount; CdcHandle = handle }
+    /// The norm projection: an unmeasured plane contributes zero
+    /// displacement — it cannot CLAIM movement it never measured — and a
+    /// measured plane contributes its reading. The DU, not this fold,
+    /// carries the measured-zero vs unmeasured distinction; take the fold
+    /// only where a norm is being summed or displayed.
+    let captureCount (d: DataObservation) : int =
+        match d with
+        | DataObservation.NotObserved -> 0
+        | DataObservation.Observed (c, _) -> c
+
+    /// The provenance handle (an LSN, a capture-instance token) — only a
+    /// real measurement can carry one.
+    let handle (d: DataObservation) : string option =
+        match d with
+        | DataObservation.NotObserved -> None
+        | DataObservation.Observed (_, h) -> h
+
+    /// Whether the CDC ruler ran at all.
+    let ran (d: DataObservation) : bool =
+        match d with
+        | DataObservation.NotObserved -> false
+        | DataObservation.Observed _ -> true
 
 
 /// A multi-plane snapshot at one `Version`: the point at which the calculus
-/// integrates. Where `CatalogSnapshot` (`Lifecycle.fs`) is schema-only and
-/// single-plane, an `Episode` *co-records* the five concerns at one release
+/// integrates. Where the retired schema-only `CatalogSnapshot` twin recorded
+/// one plane (deleted at align-III.5), an `Episode` *co-records* the five concerns at one release
 /// coordinate — Schema (the `Catalog`), Data (the CDC observation), Identity
 /// (carried inside the `Catalog`'s `SsKey`s), Time (the `Coordinate`), and the
 /// emitted refactorlog reference (Decision). This co-recording is what makes
@@ -121,7 +150,7 @@ module Episode =
     /// no accepted divergence, no applied overlay) — the genesis shape and the
     /// durable-faithful shape (see `durableProjection`).
     let ofSchema (coordinate: EpisodeCoordinate) (schema: Catalog) : Episode =
-        create coordinate schema Profile.empty None DataObservation.empty
+        create coordinate schema Profile.empty None DataObservation.NotObserved
 
     /// Thread the provenance planes onto an episode — the per-run tolerance
     /// residual (the canary's accepted-divergence set) and the §5.5
@@ -189,20 +218,31 @@ module EpisodicLifecycle =
     let head (EpisodicLifecycle data) : Episode = List.head data.Episodes
     let latest (EpisodicLifecycle data) : Episode = List.last data.Episodes
 
+    /// The schema-plane ordinal that totally orders the chain (L3-L2) — the
+    /// one projection the grain's admission discipline reads, declared once.
+    let private episodeOrdinal (e: Episode) : int = Version.ordinal (Episode.version e)
+
+    /// The episode grain's `LedgerSpec` instance (align-III.2 — the grain
+    /// finally NAMES its discipline as a value, retiring the hand-rolled
+    /// ResumeAdmit). State is the schema plane; ⊕ replaces (each episode
+    /// carries FULL state, so replay reproduces the latest snapshot); the
+    /// resume discipline is `Monotone` over the schema-plane ordinal — card
+    /// L3's honest structural check, never a faked recompute. The write
+    /// witness (B'≡B) is `WriteAdmit` at `MigrationRun.recordVerified`; this
+    /// spec is the RESUME side, and `admitChain` is its whole-chain law.
+    let ledgerSpec : LedgerSpec<Catalog, Episode, int> =
+        { Genesis   = { Modules = []; Sequences = [] }
+          Apply     = fun _ episode -> episode.Schema
+          Admission = ChainAdmission.Monotone episodeOrdinal }
+
     /// Append the next episode, enforcing L3-L2 (monotonic history) on the
-    /// schema-plane `Version` ordinal — the same rule `Lifecycle.append` holds.
-    /// A non-monotone append fails rather than silently reordering.
-    ///
-    /// This check IS the episode grain's **ResumeAdmit** (R3 / RI-3, card
-    /// L3): re-run over every edge when the store reloads a chain, it
-    /// verifies chain STRUCTURE — ordinal monotonicity — and nothing more.
-    /// The grain's write witness (B'≡B, `MigrationRun.recordVerified`)
-    /// cannot be re-verified at load (no B' exists to re-deploy), and this
-    /// contract does not pretend to.
+    /// ordinal `ledgerSpec` declares. A non-monotone append fails rather than
+    /// silently reordering. This is the incremental face of the grain's
+    /// `Monotone` ResumeAdmit; `admitChain` is its whole-chain face.
     let append (episode: Episode) (lifecycle: EpisodicLifecycle) : Result<EpisodicLifecycle> =
         let (EpisodicLifecycle data) = lifecycle
-        let lastOrdinal = Version.ordinal (Episode.version (List.last data.Episodes))
-        let nextOrdinal = Version.ordinal (Episode.version episode)
+        let lastOrdinal = episodeOrdinal (List.last data.Episodes)
+        let nextOrdinal = episodeOrdinal episode
         if nextOrdinal > lastOrdinal then
             Result.success (EpisodicLifecycle { data with Episodes = data.Episodes @ [ episode ] })
         else
@@ -212,15 +252,42 @@ module EpisodicLifecycle =
                     "Appended episode version ordinal must strictly exceed the latest episode's ordinal."
                     (Map.ofList [ "nextOrdinal", Some (string nextOrdinal); "lastOrdinal", Some (string lastOrdinal) ]))
 
+    /// Admit a whole reloaded episode chain through the shared ledger
+    /// substrate (`Ledger.admitChain ledgerSpec`) — the grain's `Monotone`
+    /// discipline verified end-to-end, the same order `append` holds edge by
+    /// edge. A regression refuses as the typed `ChainRefusal`.
+    let admitChain (chain: Episode list) : Result<Verified<Episode> list, ChainRefusal<int>> =
+        Ledger.admitChain ledgerSpec chain
+
     /// The schema-plane diff chain `[between E₀.Schema E₁.Schema; …]` — the
-    /// per-edge displacement along the timeline (the same fold `Lifecycle`
-    /// runs, projected onto `Episode.Schema`). Genesis-only ⇒ empty chain.
+    /// per-edge displacement along the timeline, projected onto
+    /// `Episode.Schema`. Genesis-only ⇒ empty chain.
     let schemaEvolutionChain (lifecycle: EpisodicLifecycle) : Result<CatalogDiff list, EmitError> =
         let (EpisodicLifecycle data) = lifecycle
         data.Episodes
         |> List.pairwise
         |> List.map (fun (prior, next) -> CatalogDiff.between prior.Schema next.Schema)
         |> Ok
+
+    /// L3-L1 (replayability) in materialized form: recover the schema stored
+    /// at a `Version`. Lookup is by ordinal (the position's identity); an
+    /// absent version fails by name. This is the exact *fetch* — it returns
+    /// the stored episode's schema byte-for-byte (including facets the diff
+    /// does not capture: references, indexes, sequences). Its diff-fold peer
+    /// is `reconstructLatestSchema` (6.A.11 / H-007), which *derives* the
+    /// latest from the deltas and agrees with the fetch modulo the captured
+    /// surface. Ported from the retired schema-only twin at align-III.5.
+    let replayTo (version: Version) (lifecycle: EpisodicLifecycle) : Result<Catalog> =
+        let (EpisodicLifecycle data) = lifecycle
+        let target = Version.ordinal version
+        match data.Episodes |> List.tryFind (fun e -> episodeOrdinal e = target) with
+        | Some e -> Result.success e.Schema
+        | None ->
+            Result.failureOf (
+                ValidationError.createWithMetadata
+                    "episodicLifecycle.version.notFound"
+                    "No episode exists at the requested version."
+                    (Map.ofList [ "ordinal", Some (string target) ]))
 
     /// The FTC over the durable chain: `fold applyDiff E₀.Schema [δ₀; δ₁; …]`,
     /// reconstructing the latest schema from genesis + the per-edge deltas. The
@@ -241,7 +308,7 @@ module EpisodicLifecycle =
         | Error e  -> Error e
 
     /// The net schema displacement genesis → latest (the integral ∫δ as a single
-    /// delta; `Lifecycle.netDiff`'s episodic peer). `P4`: computed by **folding
+    /// delta — 6.H.3's production form). `P4`: computed by **folding
     /// `CatalogDiff.compose` over the `schemaEvolutionChain`** — the production
     /// consumer of the groupoid composition `⊕` on the episodic plane. The
     /// functor law guarantees the fold equals the direct `between E₀.Schema

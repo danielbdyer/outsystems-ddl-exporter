@@ -57,7 +57,7 @@ let ``CapabilityProfile — the derived Grant is a projection of the archetype (
 
 // --- the lazy default: declared wins, else inferred from grant, else None -----
 
-let private envWith (grant: Grant option) (archetype: Archetype option) : Environment =
+let private envWith (grant: Grant option) (archetype: Archetype option) : Place =
     { Name = "e"; Access = Access.Direct (ConnectionRef.EnvVar "E_CONN")
       Grant = grant; Store = None; Rendition = None; Archetype = archetype; AtomicDeploy = None; Revert = None }
 
@@ -66,16 +66,16 @@ let ``effectiveArchetype — a declared archetype wins over the grant inference`
     // grant DataOnly would infer ManagedDml, but the explicit declaration is FullRights.
     Assert.Equal<Archetype option>(
         Some Archetype.FullRights,
-        Environment.effectiveArchetype (envWith (Some Grant.DataOnly) (Some Archetype.FullRights)))
+        Place.effectiveArchetype (envWith (Some Grant.DataOnly) (Some Archetype.FullRights)))
 
 [<Fact>]
 let ``effectiveArchetype — an undeclared archetype is inferred from the grant`` () =
-    Assert.Equal<Archetype option>(Some Archetype.FullRights, Environment.effectiveArchetype (envWith (Some Grant.SchemaAndData) None))
-    Assert.Equal<Archetype option>(Some Archetype.ManagedDml, Environment.effectiveArchetype (envWith (Some Grant.DataOnly) None))
+    Assert.Equal<Archetype option>(Some Archetype.FullRights, Place.effectiveArchetype (envWith (Some Grant.SchemaAndData) None))
+    Assert.Equal<Archetype option>(Some Archetype.ManagedDml, Place.effectiveArchetype (envWith (Some Grant.DataOnly) None))
 
 [<Fact>]
 let ``effectiveArchetype — no grant and no declared archetype is no class (None → None)`` () =
-    Assert.Equal<Archetype option>(None, Environment.effectiveArchetype (envWith None None))
+    Assert.Equal<Archetype option>(None, Place.effectiveArchetype (envWith None None))
 
 // --- byte-identical render: an undeclared archetype emits no field ------------
 

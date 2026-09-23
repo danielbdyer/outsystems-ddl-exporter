@@ -601,7 +601,7 @@ module ComprehensiveCanaryTests =
                 match snapshotResult with
                 | Error errors -> Task.FromResult (Result.failure errors)
                 | Ok snapshot ->
-                    let bundle = MetadataSnapshotRunner.toBundle snapshot
+                    let bundle = fst (MetadataSnapshotRunner.toBundle snapshot)
                     CatalogReader.parse (CatalogReader.SnapshotRowsets bundle)
             let! readSideCatalog = ReadSide.read cnn
             return ossysCatalog, readSideCatalog
@@ -959,7 +959,7 @@ module ComprehensiveCanaryTests =
                     match snapshotResult with
                     | Error errors -> return Result.failure errors
                     | Ok snapshot ->
-                        let bundle = MetadataSnapshotRunner.toBundle snapshot
+                        let bundle = fst (MetadataSnapshotRunner.toBundle snapshot)
                         return! CatalogReader.parse (CatalogReader.SnapshotRowsets bundle)
                 })
                 |> fun t -> t.GetAwaiter().GetResult()

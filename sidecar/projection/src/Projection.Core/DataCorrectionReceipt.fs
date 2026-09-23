@@ -221,7 +221,11 @@ type DataCorrectionReceipt =
       /// `None` when no evidence columns were configured.
       EvidenceDigest      : string option
       ApprovedBy          : string option
-      ApprovedAt          : string option }
+      /// The operator's decision instant — typed at align-III.1 (the a5
+      /// typed-instants charge): stores parse it fail-closed, so a receipt
+      /// never carries a decision time that cannot answer "when did we
+      /// approve?" with instant arithmetic.
+      ApprovedAt          : System.DateTimeOffset option }
 
 [<RequireQualifiedAccess>]
 module DataCorrectionReceipt =

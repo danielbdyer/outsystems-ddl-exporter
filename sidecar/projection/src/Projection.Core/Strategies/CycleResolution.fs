@@ -207,8 +207,8 @@ module CycleResolution =
         match step.Reason with
         | ResolutionReason.AutoResolved objective ->
             let baseText =
-                sprintf "auto-resolved: %d weak (nullable) FK edge(s) deferred to phase 2 (%s)"
-                    step.EdgesToBreak.Length
+                sprintf "auto-resolved: %s deferred to phase 2 (%s)"
+                    (sprintf "%d %s" step.EdgesToBreak.Length (if step.EdgesToBreak.Length = 1 then "weak (nullable) FK edge" else "weak (nullable) FK edges"))
                     (step.EdgesToBreak |> List.sort |> List.truncate 3 |> List.map edgeText |> String.concat "; ")
             match objective with
             | BreakObjective.MinimalBreakSet _ | BreakObjective.GreedyWalk -> baseText

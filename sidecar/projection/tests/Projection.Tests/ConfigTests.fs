@@ -787,3 +787,17 @@ let ``Config.parse: a configured probe missing referencingAttribute fails FAIL-C
               "derivation": { "kind": "excludeRows" },
               "configuredProbes": [ { "entity": { "module": "M", "entity": "Audit" } } ] } ]"""
     Assert.True(Config.parse json |> mustFail |> hasCode "pipeline.config.emission.dataCorrections.probe.referencingAttribute")
+
+[<Fact>]
+let ``align-III.1: a data correction's malformed approvedAt refuses by name; a date-only form parses as the UTC instant`` () =
+    // The decision instant mints FAIL-CLOSED at the config boundary (the
+    // II.2 provenance posture): malformed text is a named refusal, and a
+    // zoneless date anchors to UTC deterministically across hosts.
+    let malformed =
+        withCorrections """[ { "id": "c", "subject": { "module": "M", "entity": "E", "attribute": "A" }, "derivation": { "kind": "excludeRows" }, "approvedBy": "dan", "approvedAt": "yesterday-ish" } ]"""
+    Assert.True(Config.parse malformed |> mustFail |> hasCode "pipeline.config.emission.dataCorrections.approvedAt")
+    let dateOnly =
+        withCorrections """[ { "id": "c", "subject": { "module": "M", "entity": "E", "attribute": "A" }, "derivation": { "kind": "excludeRows" }, "approvedBy": "dan", "approvedAt": "2026-07-23" } ]"""
+    let cfg = Config.parse dateOnly |> mustOk
+    let c = List.exactlyOne cfg.Emission.DataCorrections
+    Assert.Equal(Some (System.DateTimeOffset(2026, 7, 23, 0, 0, 0, System.TimeSpan.Zero)), c.ApprovedAt)

@@ -150,6 +150,21 @@ module DiagnosticEntry =
 [<RequireQualifiedAccess>]
 module SuggestedConfig =
 
+    /// align-II.3 (a4-7) — the proposal's IDENTITY: a deterministic
+    /// digest of (Path, Value), length-prefixed per NM-60 so the
+    /// encoding is injective. Two suggestions proposing the same edit
+    /// share a key (rejection covers both); distinct edits get distinct
+    /// keys — the per-proposal ruling grain HORIZON's contract names.
+    /// Derived, never stored on the record (the record IS the identity
+    /// basis).
+    let proposalKey (s: SuggestedConfig) : string =
+        let buffer = System.Text.StringBuilder()  // instance-local mutation; sealed at the hash below
+        buffer.Append(string s.Path.Length).Append(':').Append(s.Path) |> ignore
+        buffer.Append(string s.Value.Length).Append(':').Append(s.Value) |> ignore
+        let bytes = System.Text.Encoding.UTF8.GetBytes(buffer.ToString())
+        let hash = System.Security.Cryptography.SHA256.HashData(bytes)
+        System.Convert.ToHexString(hash).ToLowerInvariant().Substring(0, 16)
+
     /// Build a `SuggestedConfig` with a path + value. Rejects blank
     /// `path` with `ValidationError "suggestedConfig.path.empty"`.
     let create (path: string) (value: string) : Result<SuggestedConfig> =

@@ -103,6 +103,7 @@ let private programmaticUserCatalog : Catalog =
     { Modules = [ userModule ]; Sequences = [] }
 
 [<Fact>]
+// @axis Schema roundtrip
 let ``M3: V2-internal closure — programmatic Catalog round-trips through emit / deploy / read with empty PhysicalSchema diff`` () =
     if skipIfNoDocker "v2-closure" then
         let source = programmaticUserCatalog
@@ -902,6 +903,7 @@ let ``Wave 5: column Projection.SsKey persistence — ReadSide recovers OssysOri
 // ---------------------------------------------------------------------
 
 [<Fact>]
+// @axis Identity roundtrip
 let ``Identity round-trip: reload preserves SsKey across emit / deploy / ReadSide`` () =
     if skipIfNoDocker "identity-reload-preserves-sskey" then
         let acctKey = SsKey.ossysOriginal (System.Guid.Parse "33333333-3333-3333-3333-333333333333")
@@ -937,6 +939,7 @@ let ``Identity round-trip: reload preserves SsKey across emit / deploy / ReadSid
 // ---------------------------------------------------------------------
 
 [<Fact>]
+// @axis Decision roundtrip
 let ``decision adjunction: emitted-then-read-back schema reproduces the DecisionOverlay`` () =
     if skipIfNoDocker "decision-adjunction-roundtrip" then
         let mkAttr (k: SsKey) (col: string) (isPk: bool) (nullable: bool) : Attribute =
@@ -1071,3 +1074,82 @@ let ``M1 (decision-readback adjunction): NoCheckFk + EnforceUnique survive emit 
         let blind = PhysicalSchema.diff (PhysicalSchema.ofCatalog catalog) readbackPhys
         Assert.NotEmpty (blind.MissingForeignKeys @ blind.ExtraForeignKeys)
         Assert.NotEmpty (blind.MissingIndexes @ blind.ExtraIndexes)
+
+[<Fact>]
+let ``NM-28 closure (composite-FK adjunction): a 2-leg FK against a composite-PK target deploys, reads back, and diffs empty`` () =
+    if skipIfNoDocker "nm28-composite-fk-closure" then
+        // schema-L3.2 — the `CompositePkFkUnreflected` retirement witness.
+        // Source: Parent with a COMPOSITE PK (Id, Tenant); Child with a
+        // 2-leg reference (ParentId → Id, ParentTenant → Tenant) carried
+        // explicitly on `Reference.Legs`. Pre-closure this exact deploy
+        // FAILED (Msg 1776: the emitted single-column FK matched no
+        // candidate key) — the deploy-Ok assertion alone is the kill.
+        let parentKey = ssKeySafe "OS_KIND_NM28_Parent"
+        let childKey = ssKeySafe "OS_KIND_NM28_Child"
+        let parentIdKey = ssKeySafe "OS_ATTR_NM28_Parent_Id"
+        let parentTenantKey = ssKeySafe "OS_ATTR_NM28_Parent_Tenant"
+        let childIdKey = ssKeySafe "OS_ATTR_NM28_Child_Id"
+        let childPidKey = ssKeySafe "OS_ATTR_NM28_Child_ParentId"
+        let childPtenKey = ssKeySafe "OS_ATTR_NM28_Child_ParentTenant"
+        let refKeyV = ssKeySafe "OS_REF_NM28_Child_Parent"
+        let mkAttr (k: SsKey) (col: string) (isPk: bool) : Attribute =
+            { Attribute.create k (nameSafe col) Integer with
+                Column = ColumnRealization.create (col.ToUpperInvariant()) (not isPk) |> Result.value
+                IsPrimaryKey = isPk; IsMandatory = isPk }
+        let parent =
+            Kind.create parentKey (nameSafe "Parent")
+                (mkTableId "dbo" "OSUSR_NM28_PARENT")
+                [ mkAttr parentIdKey "Id" true
+                  mkAttr parentTenantKey "Tenant" true ]
+        let child =
+            { Kind.create childKey (nameSafe "Child")
+                (mkTableId "dbo" "OSUSR_NM28_CHILD")
+                [ mkAttr childIdKey "Id" true
+                  mkAttr childPidKey "ParentId" false
+                  mkAttr childPtenKey "ParentTenant" false ]
+              with
+                References =
+                    [ { Reference.create refKeyV (nameSafe "Parent") childPidKey parentKey with
+                          Legs =
+                            [ { SourceAttribute = childPidKey; TargetAttribute = parentIdKey }
+                              { SourceAttribute = childPtenKey; TargetAttribute = parentTenantKey } ] } ] }
+        let catalog =
+            match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_NM28"; Name = nameSafe "NM28Mod"; Kinds = [ parent; child ]; IsActive = true; ExtendedProperties = [] } ] [] with
+            | Ok c -> c | Error e -> failwithf "catalog %A" e
+
+        let sql = SsdtDdlEmitter.statements catalog |> Render.toText
+        let rt = (Deploy.runWithReadback sql).GetAwaiter().GetResult()
+        // The Msg-1776 kill: pre-closure the single-column FK against the
+        // composite PK failed this deploy.
+        Assert.True(rt.Report.Ok, sprintf "deploy: %A" rt.Report.Errors)
+        let readback =
+            match rt.Reconstructed with
+            | Some c -> c
+            | None -> failwith "deploy produced no reconstructed catalog"
+        let readbackPhys = PhysicalSchema.ofCatalog readback
+
+        // Positive anchor — the read-back carries BOTH legs (non-vacuous):
+        // ReadSide's constraint-grouped readback minted ONE leg-bearing
+        // reference whose projection reflects two column-level entries.
+        let fks = readbackPhys.ForeignKeys |> Set.toList
+        Assert.Equal(2, List.length fks)
+        Assert.Contains(fks, fun f -> f.TargetColumn = "ID")
+        Assert.Contains(fks, fun f -> f.TargetColumn = "TENANT")
+
+        // (1) AGREEMENT — the leg-aware source projection equals the
+        //     read-back on the FK axis through the general comparator.
+        let agree = PhysicalSchema.diff (PhysicalSchema.ofCatalog catalog) readbackPhys
+        Assert.Empty agree.MissingForeignKeys
+        Assert.Empty agree.ExtraForeignKeys
+
+        // (2) FALSIFIABILITY — strip the legs and the SAME readback
+        //     DIVERGES on the FK axis (the blind projection reflects one
+        //     first-leg pairing; the readback carries two). Before this
+        //     slice these two projections were EQUAL — the blindness the
+        //     retired `CompositePkFkUnreflected` tolerance named.
+        let blindCatalog =
+            catalog
+            |> Catalog.mapKinds (fun k ->
+                { k with References = k.References |> List.map (fun r -> { r with Legs = [] }) })
+        let blind = PhysicalSchema.diff (PhysicalSchema.ofCatalog blindCatalog) readbackPhys
+        Assert.NotEmpty (blind.MissingForeignKeys @ blind.ExtraForeignKeys)

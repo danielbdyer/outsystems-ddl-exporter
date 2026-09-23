@@ -27,6 +27,16 @@ type RemovalReason =
     | OriginPredicate of origin: Origin
     | ExplicitKeyList
     | ModalityPredicate of mark: ModalityMark
+    /// The kind (or its whole module) is lifecycle-inactive and the
+    /// operator's scope excludes inactive metadata (`SelectionSuppression`,
+    /// the data-sink chapter S9 — the axis that used to erase silently
+    /// inside `ModuleFilter.apply`'s Result channel). Marker variant: the
+    /// suppressed key rides the event's own `SsKey`.
+    | LifecycleInactive
+    /// Every kind of the module is `ModalityMark.SystemOwned` and the
+    /// operator's scope excludes system modules (`SelectionSuppression`,
+    /// S9). Marker variant, same rationale.
+    | SystemOwnedModule
 
 /// Companion module for `RemovalReason`. Provides the rendering-
 /// boundary projection: typed payload → diagnostic string. Strings
@@ -37,8 +47,9 @@ type RemovalReason =
 module RemovalReason =
 
     /// Render the typed reason as a stable diagnostic string. Used by
-    /// boundary consumers (RawTextEmitter comments, future audit
-    /// readers) that need a flat presentation form. Returns the same
+    /// boundary consumers (emitter header comments — SsdtDdlEmitter
+    /// today — and audit readers) that need a flat presentation form.
+    /// Returns the same
     /// strings the prior `Removed of string` payload carried, so this
     /// is a structural seam, not a behavior change:
     ///   - `OriginPredicate Origin.Native`    → `"origin=Native"`
@@ -57,6 +68,10 @@ module RemovalReason =
             "explicit-key-list"
         | ModalityPredicate mark ->
             String.concat "" [ "modality="; ModalityMark.toDiagnosticString mark ]  // LINT-ALLOW: terminal diagnostic projection; typed `RemovalReason` DU IS the structure
+        | LifecycleInactive ->
+            "lifecycle-inactive"
+        | SystemOwnedModule ->
+            "system-owned-module"
 
 
 /// Reason a `SymmetricClosure` pass step skipped attaching an inverse
@@ -106,6 +121,33 @@ module SymmetricClosureSkipReason =
 /// size O(N) events × O(1) per-event payload — same asymptotic shape
 /// as the prior string-detail form, with no per-event string
 /// allocation.
+/// The strategy leg that resolved one user-remap match (align-I.7 —
+/// the typed lift of the prior `"matched-by-<label>"` narration).
+/// The fallback composite names WHICH arm landed: `FallbackPrimary`
+/// (the inner strategy matched) vs `FallbackFallback` (the safety-net
+/// caught a miss — structurally guaranteeing zero unmatched users).
+[<RequireQualifiedAccess>]
+type UserMatchLeg =
+    | ByEmail
+    | BySsKey
+    | ManualOverride
+    | FallbackPrimary
+    | FallbackFallback
+
+/// Companion — the narration token each leg has always rendered
+/// (byte-identical to the pre-align-I.7 label suffixes, so trail
+/// consumers diff cleanly).
+[<RequireQualifiedAccess>]
+module UserMatchLeg =
+
+    let token (leg: UserMatchLeg) : string =
+        match leg with
+        | UserMatchLeg.ByEmail          -> "ByEmail"
+        | UserMatchLeg.BySsKey          -> "BySsKey"
+        | UserMatchLeg.ManualOverride   -> "ManualOverride"
+        | UserMatchLeg.FallbackPrimary  -> "FallbackToSystemUser.primary"
+        | UserMatchLeg.FallbackFallback -> "FallbackToSystemUser.fallback"
+
 type AnnotationDetail =
     /// One Nullability pass decision: `interventionId` names the
     /// registered intervention; `outcome` is the typed decision.
@@ -120,13 +162,34 @@ type AnnotationDetail =
     /// reason given. Pairs with `Created` events (one per inverse
     /// successfully attached).
     | ClosureSkipped of reason: SymmetricClosureSkipReason
+    /// One physical-claim adjudication (the data-sink chapter, S13):
+    /// the table's ownership decision, annotated onto the kind as a
+    /// sink-backed read parses it — the adopted-over-outranked,
+    /// contested, and tombstone-only decisions ride the trail; the
+    /// trivial sole adoption (no rivals) annotates nothing.
+    | PhysicalClaimDecision of table: string * outcome: PhysicalClaimRules.PhysicalClaimOutcome
+    /// One user-remap match decision (align-I.7 — the typed lift of the
+    /// prior `"userFkReflow.matched-by-<strategy>"` label). The SOURCE
+    /// user's identity rides the LineageEvent's SsKey; the payload names
+    /// the strategy leg that resolved the match. Applied/declined egress
+    /// and trail diffing now SEE the identity plane's decisions.
+    | UserMatchDecision of leg: UserMatchLeg
+    /// One bridge-retarget readiness decision (align-I.7 — the typed
+    /// lift of the prior `"bridgeRetarget.<narration>"` label). The
+    /// declared reference's key rides the LineageEvent's SsKey; the
+    /// payload is the FULL typed verdict (per-check block/warn facts +
+    /// the three readiness verdicts), no longer flattened at the trail.
+    | BridgeRetargetTrailDecision of decision: BridgeRetargetDecision
     /// **Free-form label.** Used by writer-monad-laws tests, the
-    /// `Composition.fanOut` synthetic-decision test, and any future
-    /// pass whose typed annotation shape hasn't yet been earned.
-    /// Production pass drivers MUST use one of the typed variants
-    /// above; the typed-payload discipline (chapter 3.6) holds for
-    /// production code. Tests and migration-bridges read this variant
-    /// as opaque.
+    /// `Composition.fanOut` synthetic-decision test, and migration
+    /// bridges — TESTS read this variant as opaque. Production pass
+    /// drivers MUST use one of the typed variants above; a production
+    /// pass may ride `Label` ONLY with a DECISIONS deferral naming its
+    /// typed-shape promotion trigger (align-I.7 codified the trigger
+    /// after both youngest operator-intent passes shipped production
+    /// decisions through this escape hatch: the trigger is AN EGRESS
+    /// CONSUMER THAT NEEDS THE DECISION — the applied/declined
+    /// taxonomy, trail diffing, or the explain drill-down).
     | Label of label: string
 
 /// Companion module for `AnnotationDetail`. Provides the rendering-
@@ -153,6 +216,16 @@ module AnnotationDetail =
             String.concat "" [ id; " -> "; CategoricalUniquenessOutcome.toDiagnosticString outcome ]  // LINT-ALLOW: terminal diagnostic projection
         | ClosureSkipped reason ->
             SymmetricClosureSkipReason.toDiagnosticString reason
+        | PhysicalClaimDecision (table, outcome) ->
+            String.concat "" [ table; " -> "; PhysicalClaimRules.token outcome ]  // LINT-ALLOW: terminal diagnostic projection; typed `AnnotationDetail` DU IS the structure
+        | UserMatchDecision leg ->
+            // Byte-identical to the pre-align-I.7 label form, so trail
+            // consumers diff cleanly across the typed lift.
+            String.concat "" [ "userFkReflow.matched-by-"; UserMatchLeg.token leg ]  // LINT-ALLOW: terminal diagnostic projection; typed `AnnotationDetail` DU IS the structure
+        | BridgeRetargetTrailDecision decision ->
+            // Byte-identical to the pre-align-I.7 label form (the full
+            // evidence narration keeps its stable greppable prefix).
+            String.concat "" [ "bridgeRetarget."; BridgeRetarget.evidenceNarration decision ]  // LINT-ALLOW: terminal diagnostic projection; typed `AnnotationDetail` DU IS the structure
         | Label label ->
             label
 

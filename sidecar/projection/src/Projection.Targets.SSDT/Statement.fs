@@ -115,12 +115,28 @@ type ColumnCheckDef =
 
 type ReferenceActionSql = NoActionSql | CascadeSql | SetNullSql
 
+/// schema-L3.2 — one additional leg of a composite foreign key, in
+/// realization coordinates (resolved column names).
+type ForeignKeyLegDef =
+    {
+        SourceColumn : string
+        TargetColumn : string
+    }
+
 type ForeignKeyDef =
     {
         Name : string
         SourceColumn : string
         Target : TableId
         TargetColumn : string
+        /// Legs 2..n of a composite FK, in constraint order
+        /// (schema-L3.2 — the `CompositePkFkUnreflected` closure).
+        /// `SourceColumn`/`TargetColumn` above stay the FIRST leg, so
+        /// `[]` = the classic single-column shape and every existing
+        /// consumer is byte-identical. Non-empty ⇒ the constraint
+        /// attaches at TABLE level (SQL grammar forbids a multi-column
+        /// FK as a column-level constraint).
+        AdditionalLegs : ForeignKeyLegDef list
         OnDelete : ReferenceActionSql
         /// Optional ON UPDATE referential action (slice
         /// 5.13.fk-features-emit; matrix row 58). `None` = unstated;

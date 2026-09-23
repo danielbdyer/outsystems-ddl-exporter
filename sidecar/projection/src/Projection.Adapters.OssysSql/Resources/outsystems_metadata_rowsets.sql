@@ -1301,3 +1301,33 @@ LEFT JOIN sys.periods pr ON pr.object_id = t.object_id AND pr.period_type = 1
 LEFT JOIN sys.columns cs ON cs.object_id = t.object_id AND cs.column_id = pr.start_column_id
 LEFT JOIN sys.columns ce ON ce.object_id = t.object_id AND ce.column_id = pr.end_column_id
 ORDER BY pt.EntityId;
+
+-- Rowset 26 — the capability vector (the data-sink chapter, S2 2026-08-15;
+-- CHAPTER_SINK_OPEN.md). The @Has* COL_LENGTH probes above were computed on
+-- every run and never returned to the caller; the sink's witnessed snapshots
+-- persist them so ossys-schema drift across platform versions is data (the
+-- journal's ShapeChanged transition), never surprise. One row of named bits:
+-- the eighteen ossys_Entity_Attr column probes plus the entity-description
+-- column choice. Appended per the append-only rowset evolution (the 24/25
+-- precedent); the result-set contract bumps 25 → 26 in lockstep
+-- (MetadataSnapshotRunner.ExpectedResultSets).
+SELECT
+  @HasDataType           AS HasDataType,
+  @HasType               AS HasType,
+  @HasPrecision          AS HasPrecision,
+  @HasScale              AS HasScale,
+  @HasDecimals           AS HasDecimals,
+  @HasOriginalName       AS HasOriginalName,
+  @HasExternalColumnType AS HasExternalColumnType,
+  @HasPhysicalColumnName AS HasPhysicalColumnName,
+  @HasDatabaseName       AS HasDatabaseName,
+  @HasIsIdentifier       AS HasIsIdentifier,
+  @HasRefEntityId        AS HasRefEntityId,
+  @HasIsAutoNumber       AS HasIsAutoNumber,
+  @HasDefaultValue       AS HasDefaultValue,
+  @HasDeleteRule         AS HasDeleteRule,
+  @HasOriginalType       AS HasOriginalType,
+  @HasSSKey              AS HasAttrSsKey,
+  @HasLength             AS HasLength,
+  @HasOrderNum           AS HasOrderNum,
+  CAST(CASE WHEN @EntityDescriptionColumn IS NOT NULL THEN 1 ELSE 0 END AS bit) AS HasEntityDescription;

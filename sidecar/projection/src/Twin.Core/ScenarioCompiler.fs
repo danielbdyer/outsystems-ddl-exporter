@@ -301,7 +301,7 @@ module ScenarioCompiler =
                                 Result.failureOf (pinMissingMandatory scenario pin.Table (ColumnRealization.columnNameText a.Column))
                             | [] ->
                                 let identifier =
-                                    SsKey.synthesizedComposite "TWIN_PIN" [ TableCoordinate.key pin.Table; pkRaw; string i ]
+                                    SsKey.mintComposite SynthesisConvention.TwinPin [ TableCoordinate.key pin.Table; pkRaw; string i ]
                                     |> function Ok k -> k | Error _ -> kind.SsKey
                                 Result.success
                                     (pkRaw,

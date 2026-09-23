@@ -336,7 +336,7 @@ let ``ModelFidelity: withAcceptedDivergences stamps a resolved tolerance residua
 let ``ModelFidelity: the accepted-divergences section renders the tolerance residual`` () =
     let report =
         ModelFidelity.compose "ACME" fixtureCatalog Profile.empty { Decisions = [] }
-            [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.IndexOptionsUnreflected ]
+            [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.PostDeployForeignKeysSplit ]
     let lines = ModelFidelity.render report
     Assert.Contains(lines, fun l -> l.Contains "ACCEPTED DIVERGENCES" && l.Contains "2")
     Assert.Contains(lines, fun l -> l.Contains "HeaderCommentsOmitted")

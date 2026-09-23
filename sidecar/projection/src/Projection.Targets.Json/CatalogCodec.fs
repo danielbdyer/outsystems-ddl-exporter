@@ -264,12 +264,15 @@ module CatalogCodec =
 
     // -- Tier 2 -----------------------------------------------------------
 
+    // align-III.16: the WIRE keeps the four historical fields byte-identical
+    // (historySchema/historyTable/periodStart/periodEnd) — the typed pair and
+    // the TableId are the in-memory truth; the codec projects them.
     let private wTemporalConfig (jw: Utf8JsonWriter) (c: TemporalConfig) : unit =
         jw.WriteStartObject()
-        wOpt jw "historySchema" wStrVal c.HistorySchema
-        wOpt jw "historyTable" wStrVal c.HistoryTable
-        wOpt jw "periodStart" wName c.PeriodStart
-        wOpt jw "periodEnd" wName c.PeriodEnd
+        wOpt jw "historySchema" wStrVal (c.HistoryTable |> Option.map TableId.schemaText)
+        wOpt jw "historyTable" wStrVal (c.HistoryTable |> Option.map TableId.tableText)
+        wOpt jw "periodStart" wName (c.Period |> Option.map (fun p -> p.Start))
+        wOpt jw "periodEnd" wName (c.Period |> Option.map (fun p -> p.End))
         wField jw "retention" wTemporalRetention c.Retention
         jw.WriteEndObject()
 
@@ -342,6 +345,13 @@ module CatalogCodec =
         wOpt jw "order" wIntVal a.Order
         jw.WriteEndObject()
 
+    /// schema-L3.2 — one composite-FK leg: both sides as SsKeys.
+    let private wReferenceLeg (jw: Utf8JsonWriter) (leg: ReferenceLeg) : unit =
+        jw.WriteStartObject()
+        wField jw "sourceAttribute" wSsKey leg.SourceAttribute
+        wField jw "targetAttribute" wSsKey leg.TargetAttribute
+        jw.WriteEndObject()
+
     let private wReference (jw: Utf8JsonWriter) (r: Reference) : unit =
         jw.WriteStartObject()
         wField jw "ssKey" wSsKey r.SsKey
@@ -356,6 +366,12 @@ module CatalogCodec =
         jw.WriteBoolean("hasDbConstraint", Reference.hasDbConstraint r)
         wOpt jw "onUpdate" wReferenceAction r.OnUpdate
         jw.WriteBoolean("isConstraintTrusted", Reference.isConstraintTrusted r)
+        // schema-L3.2 — the composite-FK legs, written ONLY when non-empty:
+        // a legless reference serializes byte-identically to the pre-lift
+        // wire (every existing store + T1 golden unchanged; no codecVersion
+        // bump — absent → [] is total via `listField`).
+        if not (List.isEmpty r.Legs) then
+            wList jw "legs" wReferenceLeg r.Legs
         jw.WriteEndObject()
 
     let private wIndex (jw: Utf8JsonWriter) (i: Index) : unit =
@@ -704,6 +720,11 @@ module CatalogCodec =
             return { Identifier = identifier; Values = Map.ofList pairs }
         }
 
+    /// align-III.16 — the read PAIRS the wire's four historical fields into
+    /// the typed shapes, fail-closed on the half-present nonsense the old
+    /// record represented and every consumer silently ignored: a history
+    /// schema without its table (or vice versa) and a one-legged period are
+    /// codec refusals now, not values.
     let private readTemporalConfig (el: JsonElement) : Result<TemporalConfig> =
         result {
             let! historySchema = optField el "historySchema" asString
@@ -711,11 +732,19 @@ module CatalogCodec =
             let! periodStart = optField el "periodStart" readName
             let! periodEnd = optField el "periodEnd" readName
             let! retention = field el "retention" readTemporalRetention
+            let! history =
+                match historySchema, historyTable with
+                | None, None -> Result.success None
+                | Some hs, Some ht -> TableId.create hs ht |> Result.map Some
+                | _ -> fail "codec.temporal.historyHalfPresent" "a temporal history table needs BOTH historySchema and historyTable — one without the other names no coordinate"
+            let! period =
+                match periodStart, periodEnd with
+                | None, None -> Result.success None
+                | Some ps, Some pe -> Result.success (Some { Start = ps; End = pe })
+                | _ -> fail "codec.temporal.periodHalfPresent" "a temporal period needs BOTH periodStart and periodEnd — SQL Server's PERIOD FOR SYSTEM_TIME has no one-legged form"
             return
-                { HistorySchema = historySchema
-                  HistoryTable = historyTable
-                  PeriodStart = periodStart
-                  PeriodEnd = periodEnd
+                { HistoryTable = history
+                  Period = period
                   Retention = retention }
         }
 
@@ -807,6 +836,14 @@ module CatalogCodec =
                     Order = order }
         }
 
+    /// schema-L3.2 — read one composite-FK leg.
+    let private readReferenceLeg (el: JsonElement) : Result<ReferenceLeg> =
+        result {
+            let! sourceAttribute = field el "sourceAttribute" readSsKey
+            let! targetAttribute = field el "targetAttribute" readSsKey
+            return { SourceAttribute = sourceAttribute; TargetAttribute = targetAttribute }
+        }
+
     let private readReference (el: JsonElement) : Result<Reference> =
         result {
             let! ssKey = field el "ssKey" readSsKey
@@ -818,6 +855,9 @@ module CatalogCodec =
             let! hasDbConstraint = field el "hasDbConstraint" asBool
             let! onUpdate = optField el "onUpdate" readReferenceAction
             let! isConstraintTrusted = field el "isConstraintTrusted" asBool
+            // schema-L3.2 — absent (every pre-lift store) reads as [] via
+            // `listField`'s missing→empty total default.
+            let! legs = listField el "legs" readReferenceLeg
             return
                 { Reference.create ssKey name sourceAttribute targetKind with
                     OnDelete = onDelete
@@ -825,7 +865,9 @@ module CatalogCodec =
                     OnUpdate = onUpdate
                     // M4 — reconstruct the DU from the legacy boolean pair
                     // (`ofLegacyBooleans` normalizes the illegal quadrant).
-                    ConstraintState = ConstraintState.ofLegacyBooleans hasDbConstraint isConstraintTrusted }
+                    ConstraintState = ConstraintState.ofLegacyBooleans hasDbConstraint isConstraintTrusted
+                    // rule 7 — explicit, not inherited.
+                    Legs = legs }
         }
 
     let private readIndex (el: JsonElement) : Result<Index> =

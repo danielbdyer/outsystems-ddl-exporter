@@ -129,16 +129,22 @@ type SamplePrCompoundTests (fixture: SamplePrCompoundFixture) =
             | Error es -> return failwithf "%s: up refused: %A" label (es |> List.map (fun e -> e.Code, e.Message))
         }
 
+    /// The non-awaiting reset prep, hoisted OUT of the task (FS3511:
+    /// `for` + `try/with` inside a resumable state machine fail to reduce
+    /// in Release builds — CLAUDE.md survival rule 5, the align-I.1 class).
+    member private _.ResetFiles () : unit =
+        let keep = set [ "dbo.Status.sql"; "dbo.Customer.sql"; "dbo.Order.sql"; "dbo.OrderLine.sql" ]
+        let tablesDir = System.IO.Path.Combine(fixture.Root, "Tables")
+        if System.IO.Directory.Exists tablesDir then
+            for file in System.IO.Directory.GetFiles(tablesDir, "*.sql") do
+                let name = System.IO.Path.GetFileName file |> Option.ofObj |> Option.defaultValue ""
+                if not (keep.Contains name) then
+                    try System.IO.File.Delete file with _ -> ()
+        for f in SamplePrBaseline.files do fixture.Rewrite (fst f) (snd f)
+
     member private this.Fresh (label: string) : Task<Runs.MaterializeReport> =
         task {
-            let keep = set [ "dbo.Status.sql"; "dbo.Customer.sql"; "dbo.Order.sql"; "dbo.OrderLine.sql" ]
-            let tablesDir = System.IO.Path.Combine(fixture.Root, "Tables")
-            if System.IO.Directory.Exists tablesDir then
-                for file in System.IO.Directory.GetFiles(tablesDir, "*.sql") do
-                    let name = System.IO.Path.GetFileName file |> Option.ofObj |> Option.defaultValue ""
-                    if not (keep.Contains name) then
-                        try System.IO.File.Delete file with _ -> ()
-            for f in SamplePrBaseline.files do fixture.Rewrite (fst f) (snd f)
+            this.ResetFiles ()
             do! SamplePrBaseline.dropTwinDatabase fixture.Config
             return! this.Converge label
         }

@@ -760,4 +760,5 @@ module DataEmissionComposer =
                 "Slice ι cash-out — concatenate ALL Phase-1 MERGEs (across all kinds + all emitters, in topological order) before ANY Phase-2 UPDATE. The ordering is structural (deploy-correctness for multi-kind FK cycles); no operator opinion enters. DataIntent — the topology is the source of truth."
               TransformSite.dataIntent "partitionAssertion"
                 "Slice θ cash-out — every kind's populated coverage comes from at most one sibling emitter under a given `DataComposition`; overlap surfaces as `EmitError.OverlappingEmitterCoverage`. The partition check is structural fidelity (not configurable); fires deterministically on first overlap in catalog order." ]
-          Status = Active }
+          Status = Active
+          Firing = FiringSite.AtBinding }

@@ -222,11 +222,11 @@ module Compare =
                       yield "  Ready. The schemas already match and no data dealbreaker is present."
                   else
                       yield
-                          sprintf "  Ready. %s schema change(s) bring the target into agreement; no data dealbreaker is present."
+                          sprintf "  Ready. %s schema changes bring the target into agreement; no data dealbreaker is present."
                               (humane schemaN)
               else
                   yield
-                      sprintf "  Paused. %s data dealbreaker(s) block the move; the source data contradicts the target's declared model."
+                      sprintf "  Paused. %s data dealbreakers block the move; the source data contradicts the target's declared model."
                           (humane rollup.Total)
 
           // Section 1 — the schema delta (what the target must change to match).
@@ -241,7 +241,7 @@ module Compare =
                       c.RemovedKinds + c.RemovedAttributes + c.RemovedReferences
                       + c.RemovedIndexes + c.RemovedSequences
                   yield
-                      sprintf "  SCHEMA DELTA (changes the target needs to match the source)   %s total · %s removal(s)"
+                      sprintf "  SCHEMA DELTA (changes the target needs to match the source)   %s total · %s removals"
                           (humane schemaN) (humane removed)
                   yield
                       sprintf "      tables        %s added · %s dropped · %s renamed"
@@ -260,8 +260,8 @@ module Compare =
               yield "  DATA DEALBREAKERS — the source data satisfies every constraint the target declares."
           else
               yield
-                  sprintf "  DATA DEALBREAKERS (the source data versus the target's declared model)   %s total · %s entity(ies)"
-                      (humane rollup.Total) (humane rollup.Entities)
+                  sprintf "  DATA DEALBREAKERS (the source data versus the target's declared model)   %s total · %s"
+                      (humane rollup.Total) (sprintf "%s %s" (humane rollup.Entities) (if rollup.Entities = 1 then "entity" else "entities"))
               for cat in rollup.Categories do
                   if cat.Count > 0 then
                       yield

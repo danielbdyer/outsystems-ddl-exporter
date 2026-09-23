@@ -18,13 +18,16 @@ namespace Projection.Core
 ///     checkable, and the `Verified<_>` token records that it held.
 ///   - `ResumeAdmit` — at resume time, the external witness is gone (no
 ///     B′ to re-deploy; no completed write to observe). What CAN be checked
-///     is the stored fingerprint against a **recomputation from the live
-///     source** — equality admits, disagreement is drift, and drift refuses
-///     by name (`transfer.resume.sourceDrift`'s shape, generalized), never
-///     a silent re-run over changed data.
-/// A snapshot-chain instance whose resume check is ordinal monotonicity
-/// (the episode store) says so honestly — it verifies chain STRUCTURE, not
-/// the write witness (see `LifecycleStore`, card L3).
+///     is the grain's declared `ChainAdmission` discipline — a recomputation
+///     from the live source (drift refuses by name), ordinal monotonicity, or
+///     grouped predecessor linkage — never a silent re-run over changed data.
+/// **The discipline is a VALUE on the spec (`ChainAdmission`, align-III.2),
+/// not a `FingerprintOf` a grain can quietly make recompute to itself** — the
+/// tautology the sink journal carried until a5-F* named it. A snapshot-chain
+/// instance whose resume check is ordinal monotonicity (the episode store)
+/// declares `Monotone` and says so honestly — it verifies chain STRUCTURE,
+/// not the write witness (see `LifecycleStore`, card L3); the sink journal
+/// declares `Linkage` and verifies its `PrevSyncId` chain for real.
 type LedgerEntry<'entry, 'fp> =
     {
         /// The entry's position in the chain (chunk index; episode ordinal).
@@ -55,17 +58,61 @@ type LedgerDrift<'fp> =
         Recomputed : 'fp
     }
 
+/// How a ledger grain admits its stored chain at RESUME — the discipline
+/// declared once on the spec, as a value `Ledger.admitChain` inspects, never
+/// a tautology hidden in a fingerprint that recomputes to the very value it
+/// is compared against. (The sink journal carried exactly that tautology:
+/// `FingerprintOf = line.SyncId`, so `resumeAdmit line.SyncId …` compared
+/// `SyncId = SyncId` — always `Ok`, the drift arm unreachable, the real
+/// check a hand guard beside it. align-III.2 retires it.) The three arms are
+/// the three disciplines the engine's real ledgers operate:
+///   - **`WitnessRecompute`** — the fingerprint is recomputed AT THE BOUNDARY
+///     from the live source and compared to the recorded one (the capture
+///     journal: first/last PK + row count from the ReadSide stream). Only
+///     this arm needs I/O, so only it admits per-entry via `resumeAdmit`; a
+///     recompute chain CANNOT be admitted offline (`admitChain` refuses it by
+///     name). The projection it carries is the write-time stamp.
+///   - **`Monotone`** — each entry's ordinal strictly exceeds the prior; a
+///     snapshot chain re-derives its states, so structural order is the whole
+///     check (the episode store — card L3's honest ResumeAdmit).
+///   - **`Linkage`** — GROUPED linkage: entries sharing an identity are one
+///     group; group N+1 must name group N's identity as its predecessor and
+///     strictly exceed it, and the first group claims no predecessor (the
+///     sink journal: a sync's lines share `SyncId` + `PrevSyncId`, and each
+///     sync must link to the one before). A broken link refuses by name.
+[<RequireQualifiedAccess>]
+type ChainAdmission<'entry, 'fp when 'fp : comparison> =
+    | WitnessRecompute of fingerprintOf: ('entry -> 'fp)
+    | Monotone of ordinalOf: ('entry -> 'fp)
+    | Linkage of identityOf: ('entry -> 'fp) * predecessorOf: ('entry -> 'fp option)
+
+/// A chain admission's named refusal — the drift `Ledger.admitChain` returns.
+/// Core keeps it typed and instance-neutral; each grain maps it onto its own
+/// named refusal (the sink journal: `sink.journal.syncRegression` /
+/// `sink.journal.brokenChain`).
+[<RequireQualifiedAccess>]
+type ChainRefusal<'fp> =
+    /// A `Monotone`/`Linkage` chain went backward: the entry at `position`
+    /// carries `ordinal`, not strictly above the prior group's `priorOrdinal`.
+    | OrdinalRegression of position: int * ordinal: 'fp * priorOrdinal: 'fp
+    /// A `Linkage` chain broke: the entry at `position` claims predecessor
+    /// `claimed`, but the established predecessor is `expected`.
+    | BrokenLink of position: int * claimed: 'fp option * expected: 'fp option
+    /// A `WitnessRecompute` chain cannot be admitted offline — its
+    /// fingerprints recompute from the live source, per entry (`resumeAdmit`).
+    | RecomputeRequiresSource
+
 /// The pure chain algebra of one ledger grain — record-of-functions, per
 /// the house preference for data over dispatch. `Apply` is ⊕ at this
-/// grain; `Genesis` its unit; `FingerprintOf` what write-time stamps and
-/// resume-time recomputes. The journal (chunk grain), the episode store
-/// (episode grain), and the G10 progress marker (the degenerate
-/// single-entry grain) are its instances.
-type LedgerSpec<'state, 'entry, 'fp when 'fp : equality> =
+/// grain; `Genesis` its unit; `Admission` the RESUME discipline (declared,
+/// never faked — align-III.2). The journal (chunk grain), the episode store
+/// (episode grain), the sink journal (acquisition grain), and the G10
+/// progress marker (the degenerate single-entry grain) are its instances.
+type LedgerSpec<'state, 'entry, 'fp when 'fp : comparison> =
     {
-        Genesis       : 'state
-        Apply         : 'state -> 'entry -> 'state
-        FingerprintOf : 'entry -> 'fp
+        Genesis   : 'state
+        Apply     : 'state -> 'entry -> 'state
+        Admission : ChainAdmission<'entry, 'fp>
     }
 
 [<RequireQualifiedAccess>]
@@ -77,11 +124,14 @@ module Verified =
 [<RequireQualifiedAccess>]
 module Ledger =
 
-    /// Stamp a new entry into chain form at write time: the position and
-    /// the spec's fingerprint, recorded beside the entry so resume can
-    /// recompute against it.
-    let entryOf (spec: LedgerSpec<'s, 'e, 'fp>) (position: int) (entry: 'e) : LedgerEntry<'e, 'fp> =
-        { Position = position; Fingerprint = spec.FingerprintOf entry; Entry = entry }
+    /// Stamp an entry into chain form at write time (the `WitnessRecompute`
+    /// grains' recorded fingerprint, recomputed against at resume).
+    /// `fingerprintOf` is the grain's projection — the same function its
+    /// `ChainAdmission.WitnessRecompute` carries; taken directly, so the
+    /// stamp stays a pure position + fingerprint pairing independent of the
+    /// resume discipline.
+    let entryOf (fingerprintOf: 'e -> 'fp) (position: int) (entry: 'e) : LedgerEntry<'e, 'fp> =
+        { Position = position; Fingerprint = fingerprintOf entry; Entry = entry }
 
     /// **WriteAdmit** — the external-witness arm. The grain's verifier
     /// decides (`'err` stays the grain's own error algebra); a passing
@@ -104,6 +154,61 @@ module Ledger =
             Ok (Verified recorded.Entry)
         else
             Error { Position = recorded.Position; Recorded = recorded.Fingerprint; Recomputed = recomputed }
+
+    /// Admit a WHOLE stored chain at resume by the spec's declared
+    /// discipline — the pure counterpart to per-entry `resumeAdmit`, and the
+    /// admission path for the grains that reload their chain from at-rest
+    /// storage (the sink journal, the episode store). A `Monotone` chain must
+    /// strictly increase; a `Linkage` chain must have each sync group name the
+    /// prior group as its predecessor and strictly exceed it, the first group
+    /// claiming none; a `WitnessRecompute` chain CANNOT be admitted offline
+    /// (its fingerprints recompute from the live source — that is
+    /// `resumeAdmit`, per entry, at the boundary). Only an admitted chain
+    /// yields `Verified` tokens, so `replay` over the result is structurally
+    /// sound — and the refusal is the typed `ChainRefusal`, never a silent
+    /// re-run over a broken chain.
+    let admitChain (spec: LedgerSpec<'s, 'e, 'fp>) (entries: 'e list) : Result<Verified<'e> list, ChainRefusal<'fp>> =
+        match spec.Admission with
+        | ChainAdmission.WitnessRecompute _ -> Error ChainRefusal.RecomputeRequiresSource
+        | ChainAdmission.Monotone ordinalOf ->
+            let rec loop pos prior acc rest =
+                match rest with
+                | [] -> Ok (List.rev acc)
+                | entry :: tail ->
+                    let o = ordinalOf entry
+                    match prior with
+                    | Some p when o <= p -> Error (ChainRefusal.OrdinalRegression (pos, o, p))
+                    | _ -> loop (pos + 1) (Some o) (Verified entry :: acc) tail
+            loop 0 None [] entries
+        | ChainAdmission.Linkage (identityOf, predecessorOf) ->
+            // GROUPED linkage: entries sharing an identity are one group.
+            // `currentId` is the group being read; `priorDistinct` is the
+            // group before it (the predecessor every line in `currentId`
+            // must name).
+            let rec loop pos priorDistinct currentId acc rest =
+                match rest with
+                | [] -> Ok (List.rev acc)
+                | entry :: tail ->
+                    let id = identityOf entry
+                    let pred = predecessorOf entry
+                    match currentId with
+                    | Some cur when id = cur ->
+                        // a continuation line of the current group — it carries
+                        // the group's own predecessor claim, re-verified so an
+                        // interior inconsistency cannot slip through.
+                        if pred <> priorDistinct then Error (ChainRefusal.BrokenLink (pos, pred, priorDistinct))
+                        else loop (pos + 1) priorDistinct currentId (Verified entry :: acc) tail
+                    | Some cur ->
+                        // a new group: strictly above the prior group AND naming
+                        // it as the predecessor.
+                        if id <= cur then Error (ChainRefusal.OrdinalRegression (pos, id, cur))
+                        elif pred <> Some cur then Error (ChainRefusal.BrokenLink (pos, pred, Some cur))
+                        else loop (pos + 1) (Some cur) (Some id) (Verified entry :: acc) tail
+                    | None ->
+                        // the first group claims no predecessor.
+                        if pred <> None then Error (ChainRefusal.BrokenLink (pos, pred, None))
+                        else loop (pos + 1) None (Some id) (Verified entry :: acc) tail
+            loop 0 None None [] entries
 
     /// The FTC at this grain (`CONSTELLATION.md` §5.1): fold ⊕ over
     /// verified entries from genesis — the partial sums reconstruct the

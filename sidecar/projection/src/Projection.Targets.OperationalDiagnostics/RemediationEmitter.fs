@@ -179,8 +179,10 @@ module RemediationEmitter =
         let subject = sprintf "%s.%s" (Name.value kind.Name) (Name.value attr.Name)
         let reason  =
             sprintf
-                "Mandatory column has %d null(s) in %d row(s); budget %M exceeded."
-                nullCount rowCount budget
+                "Mandatory column has %s in %s; budget %M exceeded."
+                (sprintf "%d %s" nullCount (if nullCount = 1L then "null" else "nulls"))
+                (sprintf "%d %s" rowCount (if rowCount = 1L then "row" else "rows"))
+                budget
         writeHeader sb subject interventionId reason
         let selectStmt = sprintf "SELECT * FROM %s WHERE %s IS NULL;" table column
         let updateStmt = sprintf "UPDATE %s SET %s = <DEFAULT> WHERE %s IS NULL;" table column column
@@ -211,8 +213,8 @@ module RemediationEmitter =
                 (Name.value sourceKind.Name) (Name.value attr.Name) (Name.value reference.Name)
         let reason  =
             sprintf
-                "Reference has %d orphan row(s) — values without a matching target."
-                orphanCount
+                "Reference has %s — values without a matching target."
+                (sprintf "%d %s" orphanCount (if orphanCount = 1 then "orphan row" else "orphan rows"))
         writeHeader sb subject interventionId reason
         let selectStmt = sprintf "SELECT * FROM %s WHERE %s IS NOT NULL;" table column
         let updateStmt = sprintf "UPDATE %s SET %s = <VALID_TARGET_KEY> WHERE %s NOT IN (SELECT <TargetPK> FROM <TargetTable>);" table column column
@@ -233,7 +235,7 @@ module RemediationEmitter =
         let table     = qualifiedTable kind
         let indexName = Name.value idx.Name
         let subject   = sprintf "%s.%s (unique index)" (Name.value kind.Name) indexName
-        let reason    = sprintf "Unique-index candidate '%s' shows duplicate row(s)." indexName
+        let reason    = sprintf "Unique-index candidate '%s' shows duplicate rows." indexName
         writeHeader sb subject interventionId reason
         let keyColumns =
             idx.Columns
@@ -286,7 +288,7 @@ module RemediationEmitter =
         let column = brackets (ColumnRealization.columnNameText attr.Column)
         let reason =
             if nullCount > 0L then
-                sprintf "Declared NOT NULL; %d null value(s) observed in the source data. A data load fails on this column until the nulls are repaired." nullCount
+                sprintf "Declared NOT NULL; %s observed in the source data. A data load fails on this column until the nulls are repaired." (sprintf "%d %s" nullCount (if nullCount = 1 then "null value" else "null values"))
             else
                 "Declared NOT NULL; null values observed in the source data (count unknown). A data load fails on this column until the nulls are repaired."
         writeRealityHeader sb (subjectOf kind attr) "nulls in a NOT NULL column" reason
@@ -338,7 +340,7 @@ module RemediationEmitter =
                 | [ pk ] -> Some (qualifiedTable targetKind, brackets (ColumnRealization.columnNameText pk.Column))
                 | _      -> None)
         let reason =
-            sprintf "%d source row(s) reference a target record that does not exist. A data load fails on the relationship until the rows are re-pointed or removed." orphanCount
+            sprintf "%s reference a target record that does not exist. A data load fails on the relationship until the rows are re-pointed or removed." (sprintf "%d %s" orphanCount (if orphanCount = 1 then "source row" else "source rows"))
         writeRealityHeader sb (subjectOf kind attr) "relationship values without a matching record" reason
         let selectStmt, updateStmt, deleteStmt =
             match target with
@@ -365,7 +367,7 @@ module RemediationEmitter =
         let table  = qualifiedTable kind
         let column = brackets (ColumnRealization.columnNameText attr.Column)
         let reason =
-            sprintf "Values up to %s character(s) observed; the declared cap is %s. A data load truncates or fails until the values fit (or the declared length widens)." observed declared
+            sprintf "Values up to %s characters observed; the declared cap is %s. A data load truncates or fails until the values fit (or the declared length widens)." observed declared
         writeRealityHeader sb (subjectOf kind attr) "values past the declared length" reason
         let selectStmt = sprintf "SELECT * FROM %s WHERE LEN(%s) > %s;" table column declared
         let updateStmt = sprintf "UPDATE %s SET %s = LEFT(%s, %s) WHERE LEN(%s) > %s;" table column column declared column declared

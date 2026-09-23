@@ -20,6 +20,10 @@ open Projection.Tests.Fixtures
 //   - ROUND-TRIP + FAIL-CLOSED: load after save returns the reading; the
 //     per-run record and latest.json carry the same bytes; a torn record
 //     reads as no baseline, never a half-truth.
+//   - THE FTC AT THE READING GRAIN (align-III.4): the latest reading is the
+//     fold of the recorded series — `loadLatest = replay ∘ loadAll`;
+//     latest.json is a cache of that fold (recoverable when lost or torn,
+//     unable to regress under an out-of-order save).
 // ---------------------------------------------------------------------------
 
 let private t0 = DateTimeOffset(2026, 7, 10, 8, 0, 0, TimeSpan.Zero)
@@ -161,3 +165,51 @@ let ``history: an absent or torn record reads as no baseline — fail-closed, ne
         Directory.CreateDirectory(Path.Combine(root, "estate")) |> ignore
         File.WriteAllText(EstateHistory.latestPath root, "{ \"runId\": \"x\", \"findings\": [ { \"key\": 42 } ] }")
         Assert.Equal(None, EstateHistory.loadLatest root))
+
+// -- the FTC at the reading grain (align-III.4) ----------------------------------
+
+[<Fact>]
+let ``align-III.4 FTC: the latest reading is the fold of the recorded series — loadLatest = replay(loadAll)`` () =
+    withTempStore (fun root ->
+        Assert.Equal(EstateHistory.replay (EstateHistory.loadAll root), EstateHistory.loadLatest root)
+        let first = EstateHistory.recordOf t0 "run-a" None (dirtyReport ())
+        (match EstateHistory.save root first with Ok () -> () | Error es -> failwithf "%A" es)
+        Assert.Equal(EstateHistory.replay (EstateHistory.loadAll root), EstateHistory.loadLatest root)
+        let second = EstateHistory.recordOf t1 "run-b" (Some first) (halfRepairedReport ())
+        (match EstateHistory.save root second with Ok () -> () | Error es -> failwithf "%A" es)
+        Assert.Equal(EstateHistory.replay (EstateHistory.loadAll root), EstateHistory.loadLatest root)
+        Assert.Equal(Some second, EstateHistory.loadLatest root))
+
+[<Fact>]
+let ``align-III.4: a lost or torn latest pointer is recovered from the fold — the records still witness the baseline`` () =
+    withTempStore (fun root ->
+        let first = EstateHistory.recordOf t0 "run-a" None (dirtyReport ())
+        let second = EstateHistory.recordOf t1 "run-b" (Some first) (halfRepairedReport ())
+        (match EstateHistory.save root first with Ok () -> () | Error es -> failwithf "%A" es)
+        (match EstateHistory.save root second with Ok () -> () | Error es -> failwithf "%A" es)
+        // Lost: the cache file disappears; the fold still answers.
+        File.Delete(EstateHistory.latestPath root)
+        Assert.Equal(Some second, EstateHistory.loadLatest root)
+        // Torn: the cache is unreadable; the fold still answers.
+        File.WriteAllText(EstateHistory.latestPath root, "{ torn")
+        Assert.Equal(Some second, EstateHistory.loadLatest root))
+
+[<Fact>]
+let ``align-III.4: an out-of-order save cannot regress the pointer — latest.json is the fold, not the last write`` () =
+    withTempStore (fun root ->
+        let newer = EstateHistory.recordOf t1 "run-b" None (halfRepairedReport ())
+        let older = EstateHistory.recordOf t0 "run-a" None (dirtyReport ())
+        (match EstateHistory.save root newer with Ok () -> () | Error es -> failwithf "%A" es)
+        (match EstateHistory.save root older with Ok () -> () | Error es -> failwithf "%A" es)
+        Assert.Equal(Some newer, EstateHistory.loadLatest root)
+        Assert.Equal(Some older, EstateHistory.loadRun root "run-a"))
+
+[<Fact>]
+let ``align-III.4: replay is deterministic — chronological last wins; an equal-instant tie breaks by run id; empty folds to None`` () =
+    let a = EstateHistory.recordOf t0 "run-a" None (dirtyReport ())
+    let b = EstateHistory.recordOf t0 "run-b" None (dirtyReport ())
+    let c = EstateHistory.recordOf t1 "run-c" None (unifiedReport ())
+    Assert.Equal(None, EstateHistory.replay [])
+    Assert.Equal(Some c, EstateHistory.replay [ c; a; b ])
+    Assert.Equal(Some b, EstateHistory.replay [ b; a ])
+    Assert.Equal(Some b, EstateHistory.replay [ a; b ])

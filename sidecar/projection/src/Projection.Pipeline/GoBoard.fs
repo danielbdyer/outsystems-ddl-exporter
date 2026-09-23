@@ -315,8 +315,15 @@ module GoBoard =
           yield ""
           if isGreen b then
               if hasUnverified b then
-                  yield sprintf "  VERDICT — GREEN. Every gate passes; %d finding(s) below remain unverified — the board could not read them against the live environments. Read the note line(s) that name what is unverified, then execute with: PROJECTION_ALLOW_EXECUTE=1 projection %s --go" (unverifiedCount b) b.Flow
+                  let n = unverifiedCount b
+                  yield
+                      sprintf
+                          "  VERDICT — GREEN. Every gate passes; %s against the live environments. Read the %s what is unverified, then execute with: PROJECTION_ALLOW_EXECUTE=1 projection %s --go"
+                          (if n = 1 then sprintf "%d finding below remains unverified — the board could not read it" n
+                           else sprintf "%d findings below remain unverified — the board could not read them" n)
+                          (if n = 1 then "note line that names" else "note lines that name")
+                          b.Flow
               else
                   yield sprintf "  VERDICT — GREEN. Every gate passes. Execute with: PROJECTION_ALLOW_EXECUTE=1 projection %s --go" b.Flow
           else
-              yield sprintf "  VERDICT — RED. %d open decision(s) / blocking fault(s) — resolve every [STOP] line above, then re-run `projection check go %s` until green." (redCount b) b.Flow ]
+              yield sprintf "  VERDICT — RED. %d open decisions / blocking faults — resolve every [STOP] line above, then re-run `projection check go %s` until green." (redCount b) b.Flow ]

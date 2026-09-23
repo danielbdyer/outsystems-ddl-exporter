@@ -164,7 +164,7 @@ module SyntheticLoadRun =
             | (bad :: _) as unresolved ->
                 Result.failureOf
                     (ValidationError.create "synthetic.correction.unresolvedCoordinate"
-                        (sprintf "%d blessed Faker coordinate(s) name a location not in the model (e.g. %s/%s/%s); re-point them or update the artifact." (List.length unresolved) bad.Module bad.Entity bad.Attribute))
+                        (sprintf "%s name a location not in the model (e.g. %s/%s/%s); re-point them or update the artifact." (sprintf "%d %s" (List.length unresolved) (if (List.length unresolved) = 1 then "blessed Faker coordinate" else "blessed Faker coordinates")) bad.Module bad.Entity bad.Attribute))
             | [] ->
                 let baseConfig = Correction.applyToConfig catalog correction config
                 let effectiveConfig =

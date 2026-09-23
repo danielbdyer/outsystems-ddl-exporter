@@ -4,44 +4,69 @@
 
 # NORTH STAR — Matrix Status (generated)
 
-_Derived from `tests/Projection.Tests/AxiomTests.fs` + `src/Projection.Core/Tolerance.fs` (the `@ladder` tags) + the test tree. The §1 bullseye, self-reported at the **ladder level**._
+_Derived from `tests/Projection.Tests/AxiomTests.fs` + `src/Projection.Core/Tolerance.fs` (the `@ladder` tags) + the test tree's `@axis` witness tags. The §1 bullseye, self-reported at the **ladder level**._
 
 ## T-II — Executable-axiom totality (L2 formal axioms)
 
 | Class | Meaning | Count |
 |---|---|---:|
-| Live | verified ("verified by …") or convention-enforced `[<Fact>]` | 82 |
-| Deferred C | weakness — `[<Fact(Skip … Bucket C …)>]` | 6 |
+| Live | verified ("verified by …") or convention-enforced `[<Fact>]` | 94 |
+| Deferred C | weakness — `[<Fact(Skip … Bucket C …)>]` | 10 |
 | Deferred D | unnamed/unbacked — `[<Fact(Skip … Bucket D …)>]` | 1 |
-| **total axiom entries** | | **120** |
+| Horizon stubs | future-feature reservations (`Skip = "H-…"`; bucket-exempt) | 23 |
+| **total axiom entries** | | **128** |
 
 **Verifiability gate: `PASS`** — no deferral claims verified (no phantom Bucket-A/B); every deferral names its bucket.
+
+### Deferred entries (generated from the Skip attributes' own `Bucket` tokens; align-III.10)
+
+**Bucket C (weakness, promotion trigger named in each Skip):**
+
+- `A21: refresh is idempotent`
+- `A27: pointer swap is atomic`
+- `T2: coproduct preservation`
+- `T5: lineage compositionality`
+- `T6: refresh idempotence`
+- `T7: snapshot deduplication`
+- `T8: structural diffability`
+- `T9: refactor freedom under rename`
+- `T10: boundary honesty`
+- `L3-Eject: the terminal package reconstructs — publication refused if the chain does not replay`
+
+**Bucket D (unnamed/unbacked):**
+
+- `T3: free construction`
 
 ## T-I — Round-trip ladder (the §1 bullseye matrix)
 
 Each axis carries three rungs, each derived from the proof — never hand-asserted.
-**L1** = a round-trip witness test exists. **L2** = no *open* named tolerance sits
-on the axis (an `@ladder … OpenGap` variant in `Tolerance.fs` caps the axis at
-L2-partial; retiring the variant in code auto-flips it). **L3** = a `migrate A B`
-witness covers the axis. The **Ladder** column is the honest weakest-rung summary.
+**L1** = a `// @axis <Axis> roundtrip`-tagged witness test exists. **L2** = no *open*
+named tolerance sits on the axis (an `@ladder … OpenGap` variant in `Tolerance.fs`
+caps the axis at L2-partial; retiring the variant in code auto-flips it). **L3** = a
+`// @axis <Axis> migrate`-tagged witness covers the axis. The **Ladder** column is
+the honest weakest-rung summary.
 
 | Axis | L1 witness | L2 faithful | L3 composed | Open tolerances | Ladder |
 |---|:--:|:--:|:--:|---|---|
-| **Schema** | ✅ | ◑ L2-partial | ✅ | `IndexOptionsUnreflected`, `CompositePkFkUnreflected`, `TriggerBodyUnparsedDropped` | ◑ L2-partial |
+| **Schema** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Data** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Identity** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Time** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Decision** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 
-**Rungs reached: L1 5/5 · L2 4/5 · L3 5/5.** Tolerance set:
-12 named, of which **3 open** (`OpenGap`). A cell cannot be
-hand-marked: L1/L3 require the witness test to exist; L2 requires the open tolerance
-to be retired from `Tolerance.fs`. The generator under-claims; it never over-claims.
+**Rungs reached: L1 5/5 · L2 5/5 · L3 5/5.** Tolerance set:
+9 named, of which **0 open** (`OpenGap`). A cell cannot be
+hand-marked: L1/L3 require the `@axis`-tagged witness test to exist; L2 requires the
+open tolerance to be retired from `Tolerance.fs`. The generator under-claims; it
+never over-claims.
 
 > **Witness/tolerance-present ≠ feature-complete.** L2 here is "no open *named*
-> tolerance on the axis." Silent drops with no named surface (the cross-schema FK
-> filter, debrief G4) are NOT auto-detected — they have no machine surface yet, and are
-> tracked in `DEBRIEF_2026_06_02` until a named diagnostic/witness lands. The 3-axis
+> tolerance on the axis." A silent drop with NO named surface would not be
+> auto-detected — the ladder's basis is the named set. The set of KNOWN unnamed
+> drops is empty as of 2026-08-30: the former example (the cross-schema FK filter,
+> debrief G4) closed at E2 (`ForeignKeyReadback.classify` — a named diagnostic per
+> unreadable coordinate), and the schema-L3 program swept the rest (NM-28b's
+> keyless-target drop now rides `emission.fkTargetWithoutPk`). The 3-axis
 > Decision adjunction (debrief G12) IS now witnessed — M1 (THE VECTOR Wave 1) routes
 > FK-trust + unique-promotion through the general `PhysicalSchema.diff` comparator,
 > so the Decision axis is honestly faithful, not asserted.
@@ -70,4 +95,4 @@ to be retired from `Tolerance.fs`. The generator under-claims; it never over-cla
 > eject). Both are out-of-ladder by construction (a non-round-trip dimension is a category
 > error in a round-trip `ToleratedDivergence`), named here per THE VECTOR Wave 5 honesty.
 
-_Self-reported · gate=PASS · L2 axioms live/C/D=82/6/1 · rungs L1/L2/L3=5/4/5 of 5 · tolerances 12 (3 open)_
+_Self-reported · gate=PASS · L2 axioms live/C/D=94/10/1 · rungs L1/L2/L3=5/5/5 of 5 · tolerances 9 (0 open)_

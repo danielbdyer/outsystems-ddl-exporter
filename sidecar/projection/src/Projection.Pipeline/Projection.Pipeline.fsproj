@@ -18,15 +18,58 @@
     <Compile Include="LogSink.fs" />
     <Compile Include="RunSpine.fs" />
     <Compile Include="EventProjection.fs" />
-    <Compile Include="RunLedger.fs" />
+    <Compile Include="RunIndex.fs" />
     <Compile Include="Run.fs" />
     <Compile Include="ConnectionSpec.fs" />
     <Compile Include="NoticeSink.fs" />
+    <!-- EstateStoreLocation.fs: MOVED UP from the estate cluster (sink
+         chapter S4a, 2026-08-15 — the R1 plan correction in DECISIONS
+         "The data sink chapter opens"). The witness hook inside
+         LiveModelRead.fs resolves the store root internally, so the
+         location rule must compile BEFORE it. Safe move: the module
+         opens only System; its estate-cluster consumers all compile
+         later. -->
+    <Compile Include="EstateStoreLocation.fs" />
+    <!-- SinkDisplacement.fs: the sink's pure displacement algebra (S4a) —
+         diff/apply over witnessed MetadataSnapshots. Before LiveModelRead.fs
+         so the witness hook can journal displacements; needs only Core
+         (AttributeFacet) + Adapters.OssysSql (the snapshot records). -->
+    <Compile Include="SinkDisplacement.fs" />
+    <!-- SinkJournal.fs / SinkStore.fs (S4b): the acquisition grain's
+         ledger (the fourth LedgerSpec instance) and its durable home.
+         Before LiveModelRead.fs — the witness hook calls SinkStore. -->
+    <Compile Include="SinkJournal.fs" />
+    <Compile Include="SinkStore.fs" />
+    <!-- SinkFreshness.fs (S8): the three ossys freshness bellwethers, their
+         probe/rendering, and the pure off|auto|pinned (plus refresh) decision
+         table. After SinkStore (Manifest) and Config (SinkPolicy); before
+         LiveModelRead (the hook probes at capture time). -->
+    <Compile Include="SinkFreshness.fs" />
     <Compile Include="LiveModelRead.fs" />
+    <!-- SinkRead.fs (S7): sink:<env>[@syncId] resolution (manifest env-label
+         scan) + the sink→Catalog read (toBundle → parse — the live pipeline
+         minus the wire). After SinkStore (the scan) and LiveModelRead (the
+         docstring's parity referent); before Source.fs (ofSink calls it). -->
+    <Compile Include="SinkRead.fs" />
+    <!-- SinkDiffView.fs (S10): the Catalog-grain view of a displacement
+         window — parse both editions, CatalogDiff.between. A derived view
+         over the journal, bounded by the erasure-witness inequality. -->
+    <Compile Include="SinkDiffView.fs" />
+    <!-- SinkClaims.fs (S11): journal-assembled claim sets + adjudication
+         (the Catalog has already lost losing claims — evidence assembles
+         at the acquisition grain). -->
+    <Compile Include="SinkClaims.fs" />
+    <!-- SinkResidue.fs (S12): the physical-residue sweep beside the OSSYS
+         read — INFORMATION_SCHEMA universe minus the witnessed edition's
+         claims, ridden as assemble-empty claim sets (Unclaimed). -->
+    <Compile Include="SinkResidue.fs" />
     <Compile Include="Source.fs" />
     <Compile Include="Ref.fs" />
     <Compile Include="RunHistory.fs" />
     <Compile Include="ApprovalStore.fs" />
+    <!-- RulingStore.fs: the keyed operator-ruling store (align-II.1; A53).
+         Replace-by-key under <store>/rulings/; NOT a LedgerSpec. -->
+    <Compile Include="RulingStore.fs" />
     <Compile Include="LifecycleStore.fs" />
     <Compile Include="RenameBinding.fs" />
     <Compile Include="ModuleFilterBinding.fs" />
@@ -49,7 +92,8 @@
          retarget scope + mandatory-coverage guard, fail-closed). -->
     <Compile Include="BridgeRowStagingBinding.fs" />
     <Compile Include="DeployFeasibility.fs" />
-    <Compile Include="EstateStoreLocation.fs" />
+    <!-- EstateStoreLocation.fs moved up beside NoticeSink.fs (sink S4a);
+         BridgeStagingCache keeps compiling after it unchanged. -->
     <Compile Include="BridgeStagingCache.fs" />
     <Compile Include="Hydration.fs" />
     <Compile Include="ModelFidelity.fs" />
@@ -117,7 +161,7 @@
     <Compile Include="NameAlignment.fs" />
     <Compile Include="PeerTransfer.fs" />
     <Compile Include="TransferImpact.fs" />
-    <Compile Include="EvidenceCache.fs" />
+    <Compile Include="ForecastEvidence.fs" />
     <!-- ActEvidence.fs: the act-fingerprint derivation (slices 4a/4b) -
          projects the dry-run plan + EvidenceCache match products + the
          population probes onto ActConsent fingerprints; its two IO seams
@@ -141,6 +185,10 @@
     <Compile Include="FakerRealization.fs" />
     <Compile Include="SyntheticLoadRun.fs" />
     <Compile Include="ProfileCaptureRun.fs" />
+    <!-- SinkSyncRun.fs (S6): the sync verb's run — the forced total
+         witnessed read + displacement report; after ProfileCaptureRun as
+         its structural sibling (both are verb-run I/O front ends). -->
+    <Compile Include="SinkSyncRun.fs" />
     <Compile Include="CorrectionProposeRun.fs" />
     <Compile Include="SliceExtractRun.fs" />
     <Compile Include="SliceApplyRun.fs" />

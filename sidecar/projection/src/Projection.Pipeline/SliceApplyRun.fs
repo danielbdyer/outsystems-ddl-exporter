@@ -48,13 +48,13 @@ module SliceApplyRun =
                 if not (List.isEmpty badCols) then
                     Result.failureOf
                         (ValidationError.create "slice.schemaParity"
-                            (sprintf "entity '%s': target schema lacks column(s) %s."
+                            (sprintf "entity '%s': target schema lacks columns %s."
                                 e.Entity (badCols |> List.map Name.value |> String.concat ", ")))
                 else
                     let rows =
                         e.Rows
                         |> List.mapi (fun i row ->
-                            { Identifier = SsKey.synthesizedComposite "GOLDEN" [ e.Entity; string i ] |> Result.value
+                            { Identifier = SsKey.mintComposite SynthesisConvention.GoldenRow [ e.Entity; string i ] |> Result.value
                               Values = row })
                     Ok (kind.SsKey, rows)
         golden.Entities

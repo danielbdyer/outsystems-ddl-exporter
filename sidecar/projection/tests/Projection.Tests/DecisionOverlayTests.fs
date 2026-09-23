@@ -193,7 +193,7 @@ let ``KeepNullable: the declared-shape-carried FK decision is identity — neith
     let kRef = key "CarriedRef"
     let state =
         stateWith [] []
-            [ fkDecision kRef (ForeignKeyOutcome.EnforceConstraint DeclaredShapeCarried) ]
+            [ fkDecision kRef ForeignKeyOutcome.DeclaredShapeCarried ]
     let overlay = DecisionOverlay.ofComposeState state
     Assert.Empty(overlay.DropFk)
     Assert.Empty(overlay.NoCheckFk)

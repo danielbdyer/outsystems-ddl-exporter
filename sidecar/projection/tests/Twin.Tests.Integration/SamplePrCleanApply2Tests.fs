@@ -166,14 +166,7 @@ WITH (SYSTEM_VERSIONING = ON (HISTORY_TABLE = [dbo].[Rate_History]));
     /// the class order-independent (identical to the first clean-apply wave).
     member private this.Fresh (label: string) : Task<Runs.MaterializeReport> =
         task {
-            let keep = set [ "dbo.Status.sql"; "dbo.Customer.sql"; "dbo.Order.sql"; "dbo.OrderLine.sql" ]
-            let tablesDir = System.IO.Path.Combine(fixture.Root, "Tables")
-            if System.IO.Directory.Exists tablesDir then
-                for file in System.IO.Directory.GetFiles(tablesDir, "*.sql") do
-                    let name = System.IO.Path.GetFileName file |> Option.ofObj |> Option.defaultValue ""
-                    if not (keep.Contains name) then
-                        try System.IO.File.Delete file with _ -> ()
-            for f in SamplePrBaseline.files do fixture.Rewrite (fst f) (snd f)
+            SamplePrBaseline.resetTables fixture.Root (fun rel content -> fixture.Rewrite rel content)
             do! SamplePrBaseline.dropTwinDatabase fixture.Config
             return! this.Converge label
         }

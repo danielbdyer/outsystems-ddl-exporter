@@ -57,13 +57,13 @@ let ``CapabilitySurvey.Capability.all is Reads plus every write action; permissi
 
 // --- the flow-shape derivation (requiredBy) --------------------------------
 
-let private env (name: string) (grant: Grant option) : Projection.Pipeline.Environment =
+let private env (name: string) (grant: Grant option) : Projection.Pipeline.Place =
     { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None; Rendition = None; Archetype = None; AtomicDeploy = None; Revert = None }
 
 let private flow (name: string) (from: FlowSource) (toEnv: string) : Flow =
     { Name = name; From = from; To = toEnv; Rekey = None; Tables = []; Reconcile = []; ReconcileIgnore = []; ForeignRefs = []; Alignment = AlignmentMode.BySsKey; AlignMap = Map.empty; SupportingScope = []; Signoff = []; ActSignoff = []; Scope = None; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; WithReferenced = false; Journal = None }
 
-let private cfgWith (envs: Projection.Pipeline.Environment list) (flows: Flow list) : ProjectionConfig =
+let private cfgWith (envs: Projection.Pipeline.Place list) (flows: Flow list) : ProjectionConfig =
     { ProjectionConfig.empty with
         Environments = envs |> List.map (fun e -> e.Name, e) |> Map.ofList
         Flows        = flows |> List.map (fun f -> f.Name, f) |> Map.ofList }
@@ -228,7 +228,7 @@ let ``advisoryLines: the advisory reads the SAME blocked predicate the verb's ga
 
 // --- Slice B — the survey VERIFIES the archetype (A44; the J5 covenant) -------
 
-let private envArch (name: string) (archetype: Archetype option) : Projection.Pipeline.Environment =
+let private envArch (name: string) (archetype: Archetype option) : Projection.Pipeline.Place =
     { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = None; Store = None; Rendition = None; Archetype = archetype; AtomicDeploy = None; Revert = None }
 
 /// A database-scope `GrantEvidence` from a permission-name list (object-key "").

@@ -331,7 +331,7 @@ module ModelFidelity =
         if nullCount > band then
             { Interpretation = interpretation
               Action =
-                sprintf "Keep the column nullable until the backfill — %s NULL row(s) exceed the repair band (%s). Merge the keepNullable entry for %s."
+                sprintf "Keep the column nullable until the backfill — %s NULL rows exceed the repair band (%s). Merge the keepNullable entry for %s."
                     (humaneBand nullCount) (humaneBand band) (attributeRef3 moduleName ec)
               Lever = EditConfig (keepNullableEdit moduleName ec nullCount) }
         else
@@ -376,13 +376,13 @@ module ModelFidelity =
         if orphanCount > band then
             { Interpretation = interpretation
               Action =
-                sprintf "Keep the relationship untracked until the references clear — %s orphan row(s) exceed the repair band (%s). Merge the keepUntracked entry for %s."
+                sprintf "Keep the relationship untracked until the references clear — %s orphan rows exceed the repair band (%s). Merge the keepUntracked entry for %s."
                     (humaneBand orphanCount) (humaneBand band) (attributeRef3 moduleName ec)
               Lever = EditConfig (keepUntrackedEdit moduleName ec orphanCount) }
         else
             { Interpretation = interpretation
               Action =
-                "Review the block in manifest.remediation.sql: point the row(s) at existing targets, clear the reference, or delete them."
+                "Review the block in manifest.remediation.sql: point the rows at existing targets, clear the reference, or delete them."
               Lever = ReviewRemediation }
 
     /// The overflow recommendation: a width RULING (the estate board's D4
@@ -802,17 +802,17 @@ module ModelFidelity =
         match c with
         | NotNullCategory ->
             [ if repairs > 0 then
-                yield sprintf "review the backfill block(s) in manifest.remediation.sql (%s column(s))" (humane repairs)
+                yield sprintf "review the backfill blocks in manifest.remediation.sql (%s %s)" (humane repairs) (if repairs = 1 then "column" else "columns")
               if relaxes > 0 then
-                yield sprintf "keep %s column(s) nullable via keepNullable entries (past the repair band)" (humane relaxes) ]
+                yield sprintf "keep %s %s nullable via keepNullable entries (past the repair band)" (humane relaxes) (if relaxes = 1 then "column" else "columns")]
             |> joinArms "Review the backfill blocks in manifest.remediation.sql, or keep past-band columns nullable via keepNullable entries."
         | UniqueCategory ->
             "Review each declared key before any cleanup: confirm the business key, then correct the declaration or schedule the deduplication."
         | OrphanCategory ->
             [ if repairs > 0 then
-                yield sprintf "review the orphan block(s) in manifest.remediation.sql (%s relationship(s))" (humane repairs)
+                yield sprintf "review the orphan blocks in manifest.remediation.sql (%s %s)" (humane repairs) (if repairs = 1 then "relationship" else "relationships")
               if relaxes > 0 then
-                yield sprintf "keep %s relationship(s) untracked via keepUntracked entries (past the repair band)" (humane relaxes) ]
+                yield sprintf "keep %s %s untracked via keepUntracked entries (past the repair band)" (humane relaxes) (if relaxes = 1 then "relationship" else "relationships")]
             |> joinArms "Review the orphan blocks in manifest.remediation.sql, or keep past-band relationships untracked via keepUntracked entries."
         | OverflowCategory ->
             "Rule each width: declare the wider envelope in the model, or truncate the rows to the declaration — the ruling precedes any repair."
@@ -825,7 +825,7 @@ module ModelFidelity =
         let dv = dataViolationRollup report
         [ // The masthead — estate, scale.
           yield
-              sprintf "MODEL FIDELITY — %s (%s module(s), %s entity(ies))"
+              sprintf "MODEL FIDELITY — %s (%s modules, %s entities)"
                   report.Estate (humane report.ModuleCount) (humane report.EntityCount)
 
           // Section 1 — data violations (the headline; count-first).
@@ -833,8 +833,8 @@ module ModelFidelity =
               yield "  DATA VIOLATIONS — the source data is consistent with every declared constraint."
           else
               yield
-                  sprintf "  DATA VIOLATIONS (source data versus declared model)   %s total · %s entity(ies)"
-                      (humane dv.Total) (humane dv.Entities)
+                  sprintf "  DATA VIOLATIONS (source data versus declared model)   %s total · %s"
+                      (humane dv.Total) (sprintf "%s %s" (humane dv.Entities) (if dv.Entities = 1 then "entity" else "entities"))
               for cat in dv.Categories do
                   if cat.Count > 0 then
                       let entities = entityList 5 cat.Violations

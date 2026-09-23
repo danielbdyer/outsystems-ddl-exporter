@@ -202,10 +202,11 @@ module ForeignKeyPass =
             None
         | ForeignKeyOutcome.EnforceConstraint (NoEvidenceObstacle _) ->
             None
-        | ForeignKeyOutcome.EnforceConstraint DeclaredShapeCarried ->
-            // A relaxation-only intervention states no opinion for this
-            // reference — the declared shape emits untouched; nothing
-            // observer-relevant happened (DECISIONS 2026-07-15).
+        | ForeignKeyOutcome.DeclaredShapeCarried ->
+            // align-II.4: the abstain at OUTCOME grain — a relaxation-only
+            // intervention states no opinion for this reference; the
+            // declared shape emits untouched; nothing observer-relevant
+            // happened (DECISIONS 2026-07-15).
             None
         | ForeignKeyOutcome.DoNotEnforce ForeignKeyKeepReason.OperatorUntracked ->
             // The operator's explicit interim posture — a chosen state,
@@ -220,8 +221,8 @@ module ForeignKeyPass =
                     DiagnosticSeverity.Warning
                     "tightening.foreignKey.scriptWithNoCheck"
                     (sprintf
-                        "Foreign-key constraint scripted with NOCHECK because %d orphan row(s) were observed and operator policy allows it. Row-validation is deferred; remediate orphan rows before re-enabling enforcement."
-                        orphanCount)
+                        "Foreign-key constraint scripted with NOCHECK because %s were observed and operator policy allows it. Row-validation is deferred; remediate orphan rows before re-enabling enforcement."
+                        (sprintf "%d %s" orphanCount (if orphanCount = 1 then "orphan row" else "orphan rows")))
                     None)
         | ForeignKeyOutcome.EnforceConstraint NoCheckWithoutEvidence ->
             // Accepted divergence (DECISIONS 2026-07-21): a resolvable
@@ -249,8 +250,8 @@ module ForeignKeyPass =
                     "tightening.foreignKey.dataHasOrphans"
                     (Message.foreignKeyNotCreated
                         (sprintf
-                            "Profile observed %d orphan row(s); remediate the data or enable AllowNoCheckCreation before enforcement can proceed."
-                            orphanCount))
+                            "Profile observed %s; remediate the data or enable AllowNoCheckCreation before enforcement can proceed."
+                            (sprintf "%d %s" orphanCount (if orphanCount = 1 then "orphan row" else "orphan rows"))))
                     None)
         | ForeignKeyOutcome.DoNotEnforce CrossSchemaBlocked ->
             Some (mkEntry

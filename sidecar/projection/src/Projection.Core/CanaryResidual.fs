@@ -5,10 +5,17 @@ namespace Projection.Core
 /// source-deploy readback against the deployed target (or the V2 emit against
 /// the V1 emit during the dual-track window); along the way it *consumes*
 /// named `ToleratedDivergence`s at scattered application sites — the
-/// empty-text → NULL normalization (`SqlLiteral.ofRaw`), the char-ANSI-padding
-/// / decimal-scale predicate (`ScriptDomBuild.perColumnChangeDetection`), and
-/// the index-options / composite-FK structural residual
-/// (`PhysicalSchema.toPhysicalForeignKeys` / `toPhysicalIndexes`). Until now no
+/// char-ANSI-padding / decimal-scale predicate
+/// (`ScriptDomBuild.perColumnChangeDetection`) and the row-fidelity
+/// canonical-form erasures. (schema-L3 close, 2026-08-30: the two
+/// structural sites this header originally named —
+/// `toPhysicalForeignKeys` / `toPhysicalIndexes` — no longer consume any
+/// tolerance: their gaps CLOSED at schema-L3.1/L3.2; the survivors are
+/// all AcceptedFaithful, observed at the data-comparison sites.
+/// `record`/`recordMany` still have ZERO production call sites — wiring
+/// the surviving observation points remains the deferral, trigger
+/// unchanged: the first operator question "which divergences actually
+/// fired on this run?".) Until now no
 /// surface collected *which* of those fired on a given run, so
 /// `Episode.withProvenance`'s tolerance set was always the `Tolerance.strict`
 /// placeholder and the Model Fidelity Report's ACCEPTED DIVERGENCES section was

@@ -17,7 +17,7 @@ let runEmit (shaping: Config.Config) (catalog: Catalog) (outputDir: string) : in
     let exitCode =
         match Compose.runFromCatalogWith shaping catalog outputDir with
         | Ok paths ->
-            printfn "%d artifact(s) written to %s." paths.Length outputDir
+            printfn "%s written to %s." (sprintf "%d %s" paths.Length (if paths.Length = 1 then "artifact" else "artifacts")) outputDir
             paths
             |> List.iter (fun p ->
                 let info = FileInfo p
@@ -43,8 +43,8 @@ let runEmitSkeletonOnly (catalog: Catalog) (outputDir: string) : int =
         match Compose.runSkeletonOnlyFromCatalog catalog outputDir with
         | Ok paths ->
             printfn
-                "%d skeleton-only artifact(s) written to %s."
-                paths.Length
+                "%s written to %s."
+                (sprintf "%d %s" paths.Length (if paths.Length = 1 then "skeleton-only artifact" else "skeleton-only artifacts"))
                 outputDir
             paths
             |> List.iter (fun p ->
@@ -65,7 +65,7 @@ let runEmitManifestOnly (shaping: Config.Config) (catalog: Catalog) (outputDir: 
     let exitCode =
         match Compose.runManifestOnlyFromCatalogWith shaping catalog outputDir with
         | Ok paths ->
-            printfn "%d manifest artifact(s) written to %s." paths.Length outputDir
+            printfn "%s written to %s." (sprintf "%d %s" paths.Length (if paths.Length = 1 then "manifest artifact" else "manifest artifacts")) outputDir
             paths
             |> List.iter (fun p ->
                 let info = FileInfo p

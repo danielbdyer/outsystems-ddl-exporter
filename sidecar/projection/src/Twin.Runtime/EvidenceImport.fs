@@ -159,9 +159,29 @@ module EvidenceImport =
                 use cnn = cnn
                 let! catalogResult =
                     task {
-                        match source.Rendition with
-                        | Logical -> return! ReadSide.readSchema cnn
-                        | Physical -> return! LiveModelRead.fromConnection cnn
+                        match source.Rendition, source.CatalogRef with
+                        | Logical, _ -> return! ReadSide.readSchema cnn
+                        | Physical, None -> return! LiveModelRead.fromConnection cnn
+                        | Physical, Some sinkRef ->
+                            // The post-eject rendition map (S15/K10): the
+                            // witnessed edition supplies the CATALOG — the
+                            // logical-name map over physical realizations
+                            // the live OSSYS read would have given (K2
+                            // parity), minus the upstream that no longer
+                            // exists. The DATA still profiles over THIS
+                            // source's live connection below.
+                            match Projection.Pipeline.Ref.parse sinkRef with
+                            | Projection.Pipeline.Ref.Sink (env, syncId) -> return! SinkRead.readEnv env syncId
+                            | _ ->
+                                // Config parsing refuses non-sink refs; this
+                                // arm keeps the import total if a config
+                                // arrives by another door.
+                                return
+                                    Result.failureOf
+                                        (ValidationError.createWithMetadata
+                                            "twin.evidence.catalogRefScheme"
+                                            "catalogRef must be a sink ref (sink:<env>[@<syncId>])."
+                                            (Map.ofList [ "source", Some source.Name; "value", Some sinkRef ]))
                     }
                 match catalogResult with
                 | Error es -> return Result.failure es

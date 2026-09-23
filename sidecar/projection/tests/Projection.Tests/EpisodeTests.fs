@@ -41,7 +41,7 @@ let private coord1 = EpisodeCoordinate.create (ver 1 "1.1.0") Environment.Dev (a
 
 let private e0 : Episode = Episode.ofSchema coord0 sampleCatalog
 let private e1 : Episode =
-    Episode.create coord1 targetCatalog Profile.empty (Some "refactorlog#1") (DataObservation.create 42 (Some "lsn:0x0A"))
+    Episode.create coord1 targetCatalog Profile.empty (Some "refactorlog#1") (DataObservation.observed 42 (Some "lsn:0x0A"))
 
 let private devGenesis : EpisodicLifecycle = EpisodicLifecycle.genesis (tl "dev") e0
 let private devChain : EpisodicLifecycle = EpisodicLifecycle.append e1 devGenesis |> mustResultOk
@@ -54,9 +54,10 @@ let private devChain : EpisodicLifecycle = EpisodicLifecycle.append e1 devGenesi
 let ``6.H.1: episode co-records schema + profile + refactorlog + cdc-handle at one Version`` () =
     // Schema plane.
     Assert.Equal<Catalog>(targetCatalog, Episode.schema e1)
-    // Data plane (the CDC observation — count + handle).
-    Assert.Equal(42, e1.Data.CdcCaptureCount)
-    Assert.Equal(Some "lsn:0x0A", e1.Data.CdcHandle)
+    // Data plane (the CDC observation — a real measurement, count + handle).
+    Assert.Equal(DataObservation.observed 42 (Some "lsn:0x0A"), e1.Data)
+    Assert.Equal(42, DataObservation.captureCount e1.Data)
+    Assert.Equal(Some "lsn:0x0A", DataObservation.handle e1.Data)
     // Decision plane (the emitted refactorlog reference).
     Assert.Equal(Some "refactorlog#1", e1.RefactorLogRef)
     // Time plane (the (Environment × Version × At) coordinate).
@@ -65,10 +66,12 @@ let ``6.H.1: episode co-records schema + profile + refactorlog + cdc-handle at o
     Assert.Equal(at "2026-06-08T09:00:00+00:00", (Episode.coordinate e1).At)
 
 [<Fact>]
-let ``6.H.1: ofSchema is the minimal-evidence shape (empty profile, no data movement, no refactorlog)`` () =
+let ``6.H.1: ofSchema is the minimal-evidence shape (empty profile, no data observation, no refactorlog)`` () =
     Assert.Equal<Profile>(Profile.empty, e0.Profile)
-    Assert.Equal(0, e0.Data.CdcCaptureCount)
-    Assert.Equal(None, e0.Data.CdcHandle)
+    // align-III.6: a schema-only episode is NOT OBSERVED — no CDC ruler ran;
+    // this is not the same fact as a measured zero.
+    Assert.Equal(DataObservation.NotObserved, e0.Data)
+    Assert.False(DataObservation.ran e0.Data)
     Assert.Equal(None, e0.RefactorLogRef)
 
 [<Fact>]
@@ -85,6 +88,21 @@ let ``6.H.1: durableProjection drops the in-memory Profile, preserving every oth
 // ===========================================================================
 // EpisodicLifecycle — monotone chain
 // ===========================================================================
+
+[<Fact>]
+let ``align-III.2: the episode grain names its discipline — admitChain runs Monotone through the shared ledger substrate`` () =
+    // The grain finally instantiates a LedgerSpec (Monotone over the
+    // schema-plane ordinal); admitChain admits a strictly-increasing chain
+    // and refuses a regression as the typed ChainRefusal — the same order
+    // `append` holds edge by edge.
+    match EpisodicLifecycle.admitChain [ e0; e1 ] with
+    | Ok verified -> Assert.Equal(2, List.length verified)
+    | Error r -> failwithf "a monotone episode chain must admit; refused %A" r
+    match EpisodicLifecycle.admitChain [ e1; e0 ] with
+    | Ok _ -> failwith "a regressing episode chain must never admit"
+    | Error (ChainRefusal.OrdinalRegression (pos, ordinal, prior)) ->
+        Assert.Equal(1, pos); Assert.Equal(0, ordinal); Assert.Equal(1, prior)
+    | Error other -> failwithf "expected OrdinalRegression, got %A" other
 
 [<Fact>]
 let ``EpisodicLifecycle.append enforces monotonic history (L3-L2)`` () =
@@ -139,3 +157,17 @@ let ``Episode.withProvenance carries a canary-resolved tolerance residual (close
     Assert.True(Tolerance.tolerates ToleratedDivergence.CharAnsiPaddingTolerated withProv.Tolerances)
     // The genesis episode itself stays strict (the honest no-canary base case).
     Assert.True(Tolerance.isStrict e0.Tolerances)
+
+[<Fact>]
+let ``align-III.6: measured-zero is not unmeasured — Observed 0 and NotObserved are distinct facts`` () =
+    // CDC-silence (an idempotent redeploy: the ruler RAN and read zero) is
+    // the strongest guarantee; "no one looked" claims nothing. The retired
+    // record folded both onto { CdcCaptureCount = 0 }.
+    let silence = DataObservation.observed 0 None
+    Assert.NotEqual<DataObservation>(DataObservation.NotObserved, silence)
+    Assert.True(DataObservation.ran silence)
+    Assert.False(DataObservation.ran DataObservation.NotObserved)
+    // Both project zero onto the norm — the DU, not the fold, carries the fact.
+    Assert.Equal(0, DataObservation.captureCount silence)
+    Assert.Equal(0, DataObservation.captureCount DataObservation.NotObserved)
+    Assert.Equal(None, DataObservation.handle DataObservation.NotObserved)

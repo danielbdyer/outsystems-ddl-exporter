@@ -212,7 +212,7 @@ module FidelityRowsDockerTests =
           ReferencedEntity = None
           ConfiguredProbes = []
           ApprovedBy = Some "operator"
-          ApprovedAt = Some "2026-07-23" }
+          ApprovedAt = Some (System.DateTimeOffset(2026, 7, 23, 0, 0, 0, System.TimeSpan.Zero)) }
 
     [<Fact>]
     let ``fidelity replay: a corrected target proves byte-identical when the correction replays onto the source; raw source reds; a tampered receipt count reds by name`` () =

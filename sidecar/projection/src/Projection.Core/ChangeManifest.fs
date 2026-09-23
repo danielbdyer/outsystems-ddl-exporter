@@ -59,7 +59,7 @@ module ChangeManifest =
               Channels = CatalogDiff.channelCounts diff
               SchemaNorm = CatalogDiff.norm diff
               RefactorLogRef = toEpisode.RefactorLogRef
-              CdcCaptureCount = toEpisode.Data.CdcCaptureCount
+              CdcCaptureCount = DataObservation.captureCount toEpisode.Data
               // The tolerance residual is the named-divergence list the To-
               // episode's canary accepted on this edge — `Set` rendered to a
               // name-sorted list for T1 byte-determinism. `Tolerance.strict`
@@ -73,6 +73,25 @@ module ChangeManifest =
               // artifact overlay enumeration, threaded through unchanged
               // (already (SsKey × OverlayAxis option)-sorted at its source).
               AppliedTransforms = toEpisode.AppliedTransforms }
+
+    /// A43's STATIC half (align-III.7): the rename-isometry check a RECORDED
+    /// edge answers from its own manifest. A rename-only displacement (the
+    /// rename channels are the only nonzero channels) is data-preserving BY
+    /// DERIVATION — `sp_rename` conserves the rows, so a faithful realization
+    /// shows CDC-silence (`‖emit(π_Rename δ)‖_data = 0`, A43's cross-plane
+    /// corollary). An edge whose schema moves are renames alone yet whose CDC
+    /// ruler counted captures has MOVED data it should have renamed in place:
+    /// the isometry is violated. An unmeasured edge (`CdcCaptureCount` folds
+    /// `NotObserved` to 0 — align-III.6) never violates: no claim without a
+    /// measurement. The LIVE deploy-time canary remains A43's ⬚ (6.D.1 route).
+    let renameIsometryViolated (manifest: ChangeManifest) : bool =
+        let c = manifest.Channels
+        let renameMoves =
+            c.RenamedKinds + c.RenamedAttributes + c.RenamedReferences
+            + c.RenamedIndexes + c.RenamedSequences
+        renameMoves > 0
+        && renameMoves = manifest.SchemaNorm
+        && manifest.CdcCaptureCount > 0
 
     /// The change-manifest **series**: one manifest per edge across an
     /// `EpisodicLifecycle` — the sprint-by-sprint record of what each release

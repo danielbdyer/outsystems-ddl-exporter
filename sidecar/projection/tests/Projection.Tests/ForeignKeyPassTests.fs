@@ -155,7 +155,8 @@ let ``one intervention: lineage event detail names the intervention id and an ou
             // Outcome is one of the two ForeignKeyOutcome variants.
             match outcome with
             | ForeignKeyOutcome.EnforceConstraint _
-            | ForeignKeyOutcome.DoNotEnforce _ -> ()
+            | ForeignKeyOutcome.DoNotEnforce _
+            | ForeignKeyOutcome.DeclaredShapeCarried -> ()
         | other ->
             Assert.Fail(sprintf "Expected Annotated (ForeignKeyDecision _), got %A" other))
 

@@ -1,4 +1,310 @@
-# Handoff addendum — 2026-07-18 (latest): the v7 cycle-resolution arc shipped whole — measured-minimal breaks, the unforgeable certificate, per-component precision, the evidence-weighted render binding, the exact repair set, T18 + A46 as law, the condensation, and the one-Voice certificate. Branch `claude/topological-v7-cycle-algebra`, PR #674
+# Handoff addendum — 2026-08-31 (latest): THE OPERATOR WALK IS WALKED — the §12 terminus delivered; the WP-12/13 trigger discharged
+
+To the next agent.
+
+**Where you stand.** The operator chose the terminus: *"The operator-walk fixture is
+the one I want."* THE OPERATOR-WALK PROGRAM (walk-1 … walk-5, DECISIONS 2026-08-31)
+delivered the ideation §12 loop END-TO-END as one witnessed fact —
+`OperatorWalkDockerTests` (Integration), the FIRST test ever to drive
+`runCheckEstate`, walks a live two-cell estate through the REAL faces: first contact
+finds the estate's OWN finding (the seed ships an untrusted relationship), repairs it
+FROM the keyed remediation artifact per cell, converges (burndown `1 closed`, streak);
+diverges cell-b (D10 label drift + NOCHECK + the orphan it admits), stages the keyed
+blocks, applies them in dependency order (orphan out before WITH CHECK), re-converges;
+publishes the bundle through the real config loader (`apply-runbook.md` included — §12
+F7 is LANDED, whatever an earlier survey said); proves row fidelity (B5, green); and
+the closing check folds the proof onto the board (RT-10:
+`green — flow 'opwalk', every row byte-identical`, streak 2). ~25s warm, both tests.
+
+**The WP-12/13 trigger FIRED and is discharged** (walk-4; the probe test): WP-13's
+harm confirmed live (an unresolved weak-less cycle fails the scaffold's linear apply
+with the server's own missing-referent error; the board's `emission.dataLaneOrder`
+DECIDE finding names the same fact) — the §14 half LANDED
+(`fidelity.proof.applyFailed`: the face now catches the server failure and refuses
+by name, exit 6, instead of leaking a raw SqlException); the emission-order fix (SCC
+condensation + trailing-ALTER FK split) stays on SSDT_REMEDIATION_HANDOFF Tier 4
+with the probe as its STANDING RED-PATH WITNESS. WP-12 did not trip; its premise
+(zero multi-leg references on a native estate) is pinned executable. Both are in the
+Active-deferrals index now.
+
+**Also cashed this window:** the consent-surface voice ruling — the operator ruled
+"Approved" (2026-08-31): `WriteSignoff.fs`/`ActConsent.fs` JOIN the lazy-plural
+ratchet; the `excluded` list is deleted; the freeze covers the whole src tree. (The
+letter below says that question was still awaiting the operator — it no longer is.)
+And the close's truth-maintenance: the estate/fidelity + walk arc table is in
+`BACKLOG.md` (the July chapter predated the discipline), the estate-convergence axis
+row is in `V2_DRIVER.md`, PR #695's description carries Part 5.
+
+**What you must not re-derive.** The walk's §12 ledger lives in the walk-5 close
+entry — the remaining ease items (E7 remediate verb, E6 merge preview, F3 spine, F6
+scoping, F2 headline, the E1/E3/F1 residues) are commission-on-demand, no triggers.
+The known-red Docker set is still exactly {StagedMergeDeployE2ETests,
+T18CycleBreakCanaryTests} — still owed their own arc. The walk class shares their
+collection: read full-pool verdicts against the TRX (rule 12). Artifacts are
+cwd-relative BY DESIGN (RT-10 reads `fidelity-proof/<flow>/` relatively) — the walk
+tests clean up in `finally`; keep that hygiene if you extend them.
+
+**What the next program could be** (the operator chooses): the two owed Docker reds
+(the last standing follow-on); the perf bottleneck sweep (`PERF_HARNESS.md`); the
+§12 ease tail (pick from the walk-5 ledger); or a fired deferral — check
+`TriggerProbes` and the index first. The loop is closed; the books are balanced.
+
+Hold the spine.
+
+---
+
+# Handoff addendum — 2026-08-30: SCHEMA ✅ L3 — the schema-L3 program delivered; the ladder reads 5/5/5 with zero open tolerances
+
+To the next agent.
+
+**Where you stand.** The operator commissioned "Schema to Level 3 in the North Star
+generated output" and the program delivered it the only honest way — three GENUINE
+tolerance closures, each with an M1-style two-arm witness (agreement + falsifiability),
+never a retag: schema-L3.1 (the index OPTION surface round-trips — `PhysicalIndex`
+widened 5→16 fields, `ReadSide.readIndexes` recovers filter/INCLUDE/storage options),
+schema-L3.2 (the composite FK expressible end-to-end — `Reference.Legs`, per-leg
+comparator/emitter/readback, the latent Msg-1776 deploy failure KILLED, NM-28b's
+keyless-target drop named on the board per the operator's fold-in ruling), schema-L3.3a
+(the #669 emission pre-flight extracted to `SsdtDdlEmitter.emissionRefusal`, threaded
+Result-shaped through the compose seam as the named `emitter.ssdt.*` family; gate-pass
+⟹ render is a theorem), and the flip (L3.3b) retiring `TriggerBodyUnparsedDropped`.
+**The generated matrix now reads `| Schema | ✅ | ✅ faithful | ✅ | — | ✅ L3 |` —
+rungs L1/L2/L3 = 5/5/5 of 5 · tolerances 9 (0 open), every survivor AcceptedFaithful.**
+The fast pool crossed **5,000 executed tests** during L3.2, green. All on PR #695
+(description Part 4); DECISIONS carries the five entries (schema-L3.1 … L3.4).
+
+**What you must not re-derive.** The retirement discipline held: no DU variant
+survives its closure (gravestones in `Tolerance.fs`); retired config tokens FAIL
+CLOSED (`ToleranceTests`' schema-L3 witness); `MatrixLadderTests` now asserts the L3
+state POSITIVELY. The known-red Docker set is still exactly
+{StagedMergeDeployE2ETests, T18CycleBreakCanaryTests} — still owed their own arc.
+Deferrals that survive, with triggers: `CanaryResidual.record` wiring (first "which
+divergences fired?" operator question); the secondary-leg duplicate-constraint
+residual (first real estate carrying it). The alignment program's own deferral index
+rows (X6, `CanaryVerdict.Aborted`, ruling HISTORY, SpineLedger, the Sink→Witness
+B-family, the consent-surface voice question — STILL AWAITING the operator) all stand.
+
+**What the next program could be** (the operator chooses): the operator-walk
+end-to-end estate fixture; the two owed Docker reds; the perf bottleneck sweep
+(`PERF_HARNESS.md`); or a fired deferral — check `TriggerProbes` and the index first.
+The books are balanced; the ladder is full.
+
+Hold the spine.
+
+---
+
+# Handoff addendum — 2026-08-30: THE ALIGNMENT PROGRAM IS CLOSED. All three chapters shipped on PR #695; the next program is the operator's to commission
+
+To the next agent.
+
+**Where you stand.** The geometric-alignment program — three chapters, ~49 slices, one
+standing authorization — is COMPLETE. Chapter III (Arcs S+L+H+X, the largest) closed
+2026-08-30: typed state (`ChainAdmission` makes a tautological fingerprint unwritable;
+`CanaryVerdict` + the fail-closed `RunIndex` reading retire the string-literal R6 gate;
+`EstateHistory.replay` demotes `latest.json` to cache-of-fold; the `Lifecycle` dead twin
+is deleted; `DataObservation` splits measured-zero from unmeasured), resident law (the
+verifiability gate self-parses 94 live + 34 named-deferred, zero unclassified;
+`TriggerProbes` makes deferral triggers machine-evaluable), repaired grain
+(`PhysicalTableRef` retires the fabricated `dbo`; `Environment.parse` canonicalizes;
+composite sink labels resolve by digest-set currency; `TemporalConfig` is a typed pair),
+and the renamed lexicon (`ForecastEvidence`, `WitnessedRow` + the Witness- freeze,
+`Place`, `RunIndex`; the a11 voice sweep leaves ZERO lazy plurals in src, ratcheted by
+`VoiceRegisterTests` over the full tree). The audit synthesis now carries its
+DISPOSITIONED banner (the finding→slice map); `BACKLOG.md` carries the program's arc
+table; `V2_DRIVER.md` carries its axis row. Since the 2026-08-30 merge from main, the
+hook chain runs GREEN — commit normally, no `--no-verify`, ever.
+
+**What you must not re-derive.** Read, in order: `DECISIONS.md`'s last ~40 entries
+(align-III.0 through the program close — every slice's why), the Active-deferrals index
+at its top (every deferral has a NAMED trigger; `TriggerProbes` reds when a
+machine-evaluable one fires), and `CHAPTER_ALIGN_II_CLOSE.md` + the align-I close for
+the earlier chapters' witness maps. The gate ladder is unchanged: build → fast pool →
+focused Docker where touched → verifiability gate → matrix regen on AxiomTests touches
+→ analyzers on Core touches. The known-red Docker set is still exactly
+{StagedMergeDeployE2ETests, T18CycleBreakCanaryTests} — those two are OWED an arc, and
+they are the only reds you may accept without a hunt.
+
+**The one question awaiting the operator.** The a11 voice ruling excluded the consent
+surfaces (`WriteSignoff.fs`, `ActConsent.fs`) from the lazy-plural sweep pending an
+explicit ruling. Both files measure ZERO lazy plurals today, so the exclusion is
+jurisdictional, not protective — the standing question is whether the
+`VoiceRegisterTests` ratchet may simply include them. Ask; don't assume.
+
+**What the next program could be** (the operator chooses; none is authorized yet):
+the operator-walk end-to-end estate fixture (named at the estate close as the largest
+terminus item); the two owed Docker reds; the perf bottleneck sweep on
+`PERF_HARNESS.md`'s substrate (the program the alignment work interrupted); or a
+deferral whose trigger has fired — check `TriggerProbes` and the index first. Until a
+commission arrives, the books are balanced: PR #695 carries the whole narrative,
+every gate is green, and every remainder is named.
+
+Hold the spine.
+
+---
+
+# Handoff addendum — 2026-08-16: alignment Chapters I AND II closed; Chapter III — State, Law, Grain & Lexicon — is YOUR program. Branch `claude/f-sharp-projection-data-sink-8lof4q`, PR #695
+
+To the next agent.
+
+**Where you stand.** The geometric-alignment program is two thirds done, under the one
+standing operator authorization (three chapters, run CONSECUTIVELY, no pauses; the
+rulings live in DECISIONS "THE ALIGNMENT PROGRAM OPENS"). Chapter II (Arcs R + E,
+fourteen slices, `1f17d47..` the close commit) discharged both charges: the ruling
+plane is LIVE end-to-end — `OperatorRuling` (Core) → `RulingStore` (keyed, fail-closed,
+atomic; `<store>/rulings/`) → estate reception (rulings render on their findings; the
+K9 correspondence records end-to-end; A53) → the `projection rule` verb (the 10-step
+checklist; record + render ONLY, auto-application stays the named deferral) — and six
+epistemic seams are values: `RowsetContract` (the 26-set walk derives from one table;
+drift refuses located), `BundleErasure` (A54 — `toBundle` returns what it loses),
+`AcquisitionScope`/`ScopeAxis` (the totality gate reads the type; the S13 fast-path
+gate compares subsumption), the journal's full inverse + `JournalReading` +
+`FirstWitnessedSync` trichotomy, typed fingerprint readings (a miss names its axes),
+and the finding `Pedigree`. Read `CHAPTER_ALIGN_II_CLOSE.md` — §1 claims⇔witnesses,
+§2 the behavioral ledger, §4 what you inherit.
+
+**Your program: Chapter III — "State, Law, Grain & Lexicon" (Arcs S+L+H+X, ~24
+slices).** The master plan is `/root/.claude/plans/yes-let-s-iterate-on-enumerated-pascal.md`
+(if the scratch path is gone: the spine is in the DECISIONS program-open entry and the
+audit synthesis; ground truth a5/a10/a2/a9 + the audit's correctness section). Open
+with III.0, then the S-track (III.1 SyncOrdinal VO + typed instants → III.2 ledger
+honesty/ChainAdmission — where the deferred ruling HISTORY's `BasisAnchor.SinkEdition`
+widen fires → III.3 the R6 gate CanaryVerdict → III.4 EstateHistory.replay → III.5
+dead-twin deletion → III.6 DataObservation → III.7 rename-isometry), the L-track
+(III.8–III.12: A44 resident, four Skip-prose promotions, generator honesty with ONE
+matrix re-baseline, TriggerProbes, L3-Eject), the H-track (III.13 PhysicalTableRef
+test-FIRST, III.14 Environment.parse AFTER III.5, III.15 env-digest set, III.16
+temporal config), and the X-arc STRICTLY LAST (one rename per commit; X6 optional).
+III.23 is the program close: the audit gains its DISPOSITIONED banner, BACKLOG +
+V2_DRIVER rows, this file's final letter, CLAUDE.md currency, the last PR refresh.
+Named seam after III.12 if the chapter drags (IIIa/IIIb split).
+
+**What will bite you first.** (1) The gate ladder is per-commit and non-negotiable —
+delta-lint's baseline chain lives in the scratchpad (`ii12-nolines.txt` is current;
+rebuild from `scripts/lint-discipline.sh | grep '^\[' | sed 's/:[0-9]*:/:/' | sort` if
+gone) and 82=82 substance-normalized is the bar; `--no-verify` names the pre-existing
+red lint gate every commit. (2) Docker focus runs the INTEGRATION assembly only
+(survival rule 14) — pure suites re-run via `dotnet test --filter` on the fsproj.
+(3) A batch of connection failures = the warm container died (rule 2) —
+`scripts/warm-sql.sh restart`, never a regression hunt. (4) The known-red Docker set
+is exactly {StagedMergeDeployE2ETests, T18CycleBreakCanaryTests} — confirm against the
+failed-tests LIST, not the count (rule 12). (5) New DU variants APPEND when order is
+serialization-load-bearing; count fields at every `{ X with }` reconstruction (rule 7).
+(6) AxiomTests touches regenerate the matrix in the SAME commit; the verifiability
+gate self-parses (89 live / C=6 / D=1 as of this close).
+
+---
+
+# Handoff addendum — 2026-08-16 (superseded): alignment Chapter I closed (the Teleology Chapter); Chapter II — the Ruling & the Epistemics. Branch `claude/f-sharp-projection-data-sink-8lof4q`, PR #695
+
+To the next agent.
+
+**Where you stand.** The geometric-alignment program is one third done, under one
+standing operator authorization ("make a masterful plan to get it done, spare no
+expense" — three chapters, run CONSECUTIVELY, no pauses between; the rulings are in
+DECISIONS "THE ALIGNMENT PROGRAM OPENS"). Chapter I (Arcs 0 + T, eleven slices,
+`482c0e6..ffeaf4c`) landed the correctness trio and the teleology arc: A50 (the
+operator outcome space is enumerable — `PolicyAxis.overlayAxisOf` total, Override
+never a silent no-op), A51 (synthesis conventions are a closed 23-row registry;
+mints are typo-proof; the sequence identity CONVERGED on `OS_SEQ` two-segment), A52
+(chain assemblies satisfy product preconditions; the skeleton names its four
+exclusions instead of shipping zero-edge analytics), plus typed identity-plane
+decisions (I.7), the FiringSite axis with F12's dormancy as a registry value (I.8),
+and the config-provenance rule pinned per factory (I.9). Read
+`CHAPTER_ALIGN_I_CLOSE.md` — §1 is the claim/witness map, §3 the ritual walk, §4 the
+anti-findings.
+
+**Your program: Chapter II — "The Ruling & the Epistemics" (Arcs R + E, fourteen
+slices).** The master plan is `/root/.claude/plans/yes-let-s-iterate-on-enumerated-pascal.md`
+(if that scratch path is gone, the plan's Chapter II spine is reproduced in the
+DECISIONS program-open entry and the audit synthesis §6); the finding-level ground
+truth is `AUDIT_2026_08_16_GEOMETRIC_ALIGNMENT.md` + `audits/alignment-2026-08-16/`
+(a4 — the ruling dialects; a1 + a7 — the epistemic
+debt; a8 — the verb checklist: Chapter II's primary workpapers). Open with II.0 (frame + ruling-law Bucket-C stub + matrix), then the R-track:
+II.1 the `OperatorRuling<'anchor>` carrier — and hold the STANDING DESIGN RULING: the
+ruling store is a keyed replace-by-key store under `<store>/rulings/` (the
+`ApprovalStore` fail-closed-load + atomic-write shape), NOT a fifth `LedgerSpec`;
+append-only ruling HISTORY is deferred past III.2 with `BasisAnchor.SinkEdition` as
+its widen trigger. Then II.2 tightening provenance (config schema optional
+approvedBy/approvedAt/rationale/finding; `EstatePosture` STOPS severing Relaxation's
+Scope/Evidence/ReopenProbe), II.3 per-subject index rulings, II.4 abstain honesty
+(BEHAVIORAL for trail consumers — DECISIONS first), II.5 estate reception (ruling law
+LIVE), II.6 the `projection rule <finding-key> (--confirm|--reject)` verb — record +
+render ONLY, the 10-step verb checklist, auto-application stays a named deferral.
+E-track: II.7 RowsetContract → II.8 typed erasures (`toBundle` gains `BundleErasure
+list`; the LiveModelRead rollup concat seam takes it with no new plumbing) → II.9
+`AcquisitionScope` (optional codec field defaulting Total — NO version bump; the
+totality gate's own invariant makes old snapshots honest) — those three touch one
+adapter file, run them SERIAL; then II.10 journal read-side, II.11 typed fingerprint
+readings, II.12 finding pedigree LAST (EstateFinding collision with II.5), II.13
+close ritual.
+
+**Standing rules that will bite you if forgotten:** the "Witness-" naming freeze
+applies to NEW witness-plane names from Chapter II onward (X-arc's measured cut needs
+a fixed target); behavioral slices carry their DECISIONS entry WITH the change;
+delta-lint must hold 82 = 82 substance-normalized every commit (`--no-verify` with
+the named deviance line); the known-red Docker set is exactly
+{StagedMergeDeployE2ETests, T18CycleBreakCanaryTests}; commits are
+`sidecar/projection: align-II.<n> — <name>`; push every slice; refresh the PR
+description at the chapter close. Bare `Identity` in EXPRESSION position resolves to
+`Domain.Identity` (declared later) — qualify `OverlayAxis.Identity` (patterns with a
+known scrutinee type are fine unqualified). The A51 sweep will catch any free-string
+mint you add under src/; route through `SsKey.mint`.
+
+---
+
+# Handoff addendum — 2026-08-16 (superseded): the data-sink chapter closed whole — the OSSYS metadata plane has its ledger. Branch `claude/f-sharp-projection-data-sink-8lof4q`, PR #695
+
+To the next agent.
+
+**Where you stand.** The data-sink chapter opened 2026-08-15 and closed 2026-08-16 —
+seventeen commits, S0 → S16, every slice green on the full gate ladder at its own
+commit. The acquisition-grain gap named in `THE_DATA_SINK.md` is closed: every total
+live OSSYS read witnesses a `MetadataSnapshot` into `<store>/sink/<connDigest16>/`
+(raw-at-rest — the K2 ruling), the journal is the fourth `LedgerSpec` instance with
+T19's FTC and the erasure-witness inequality live, `projection sync <env>` is the
+naming act, `sink:<env>[@syncId]` refs serve reads at TOTAL catalog parity, physical
+claims adjudicate contested-always with the temporal dimension only the journal
+supplies, the residue sweep finds present-but-unclaimed tables, offline operation is
+the config policy itself (`sink.policy` — pinned is offline-true; the pay-once auto
+path probes three bellwethers), the cutover identity correspondence is PROPOSED and
+never adopted, and the eject carries the terminal sink states while the Twin imports
+through a `catalogRef` sink ref. A49 and T19 are live law. Read
+`CHAPTER_SINK_CLOSE.md` first — its §2 is the K1–K10 witness map, its §3 the ritual
+walk, its §5 what remains.
+
+**What to pick up, in order of leverage:**
+
+1. **The July-arc debt now has three named members and deserves its own arc**: the
+   82-site lint disposition (open §3; per-site pillar-7 judgment, never bulk markers),
+   the two transfer-leg Docker reds (`StagedMergeDeployE2ETests`,
+   `T18CycleBreakCanaryTests` — the >threshold FK-deferral path through the staged
+   merge, reproduced at the pre-chapter commit), and the eleven `SamplePr*` FS3511s
+   that block a solution-wide Release build (this chapter's close found them; the
+   hoist pattern in `SinkSyncRun.reportOf`/`syncOpened` is the worked fix). Restoring
+   those three gates to green is one coherent restoration arc — take it whole rather
+   than nibbling.
+2. **The chapter's own residuals fire on their triggers** (each in its slice's
+   DECISIONS entry): estate-offline env catalogs served from the sink (the fast path
+   at the env grain — `SinkSection.effective (Some env)` already binds); the
+   attribute-axis suppression pass (widens sink-servability to the config default —
+   the one axis A49's law still holds equal); finer residue grains; the eject
+   bundle-writer; `JsonCodecKernel` extraction at the third consumer.
+3. **The standing program before this chapter** — the before/after bottleneck sweep
+   on `PERF_HARNESS.md`'s substrate — is unchanged by the sink work and still the
+   destination program (`CONSTELLATION_BACKLOG.md` sequences it).
+
+**What will bite you if you skip the close docs**: the sink fast path serves
+TOTAL-shaped model reads only (`model.onlyActiveAttributes = false`; the default
+`true` pays the wire — CONFIG_REFERENCE's sink row says why); `test.sh focus` runs
+the Integration assembly ONLY (survival rule 14, new); a heavy decision tree inside
+a `task { }` is an FS3511 in Release — hoist it (survival rule 5's family, worked
+examples in this chapter's close commit).
+
+Hold the spine. The books balance; the sink counts what the estate says.
+
+---
+
+# Handoff addendum — 2026-07-18: the v7 cycle-resolution arc shipped whole — measured-minimal breaks, the unforgeable certificate, per-component precision, the evidence-weighted render binding, the exact repair set, T18 + A46 as law, the condensation, and the one-Voice certificate. Branch `claude/topological-v7-cycle-algebra`, PR #674
 
 To the next agent.
 

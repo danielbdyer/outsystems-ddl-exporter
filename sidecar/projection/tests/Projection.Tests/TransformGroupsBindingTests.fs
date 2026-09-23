@@ -43,6 +43,7 @@ let private mkConfig (entries: Config.TransformGroupEntry list) : Config.Config 
             TransformGroups = entries
         }
         Output      = { Dir = "out/" }
+        Sink        = Config.defaultSink
     }
 
 let private hasErrorCode (code: string) (errs: ValidationError list) : bool =

@@ -174,9 +174,9 @@ module BatchSplitter =
             // (2026-05-09): operators see WHY ScriptDom couldn't
             // parse the input; the canary continues with the
             // permissive fallback.
-            eprintfn "  [BatchSplitter] LOUD-FALLBACK: ScriptDom rejected input (%d parse error(s)); falling back to line-fold splitter." errors.Length
+            eprintfn "  [BatchSplitter] LOUD-FALLBACK: ScriptDom rejected input (%s); falling back to line-fold splitter." (sprintf "%d %s" errors.Length (if errors.Length = 1 then "parse error" else "parse errors"))
             for e in errors |> List.truncate 5 do
                 eprintfn "    [%d:%d] error %d: %s" e.Line e.Column e.Number e.Message
             if errors.Length > 5 then
-                eprintfn "    ... and %d more parse error(s)." (errors.Length - 5)
+                eprintfn "    ... and %s." (sprintf "%d more parse %s" (errors.Length - 5) (if errors.Length - 5 = 1 then "error" else "errors"))
             fallbackSegments

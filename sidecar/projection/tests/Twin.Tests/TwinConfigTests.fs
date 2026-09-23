@@ -112,6 +112,39 @@ let ``an unknown rendition refuses with the expected tokens`` () =
                  "evidence": { "sources": [ { "name": "uat", "rendition": "cloudy", "conn": "env:A", "tables": ["dbo.C"] } ] } }"""
     Assert.Contains("twin.config.type", codes r)
 
+// -- the post-eject rendition map (the data-sink chapter, S15/K10) ------------
+
+[<Fact>]
+let ``catalogRef parses on a physical source — the sink supplies the rendition map post-eject`` () =
+    let r =
+        TwinConfig.parse
+            """{ "estate": { "tables": "T/*.sql" },
+                 "evidence": { "sources": [ { "name": "cutover", "rendition": "physical", "conn": "env:A",
+                   "catalogRef": "sink:uat@2", "tables": ["dbo.Order"] } ] } }"""
+    match r with
+    | Ok cfg ->
+        let source = cfg.Evidence.Sources |> List.exactlyOne
+        Assert.Equal(Some "sink:uat@2", source.CatalogRef)
+    | Error es -> failwithf "expected the sink catalogRef to parse, got %A" (es |> List.map (fun e -> e.Code))
+
+[<Fact>]
+let ``catalogRef on a logical source refuses — the logical rendition's names are the estate's own`` () =
+    let r =
+        TwinConfig.parse
+            """{ "estate": { "tables": "T/*.sql" },
+                 "evidence": { "sources": [ { "name": "uat", "rendition": "logical", "conn": "env:A",
+                   "catalogRef": "sink:uat", "tables": ["dbo.Order"] } ] } }"""
+    Assert.Contains("twin.config.evidence.catalogRefLogical", codes r)
+
+[<Fact>]
+let ``catalogRef is closed to the sink scheme — a non-sink ref refuses`` () =
+    let r =
+        TwinConfig.parse
+            """{ "estate": { "tables": "T/*.sql" },
+                 "evidence": { "sources": [ { "name": "cutover", "rendition": "physical", "conn": "env:A",
+                   "catalogRef": "file:catalog.json", "tables": ["dbo.Order"] } ] } }"""
+    Assert.Contains("twin.config.evidence.catalogRefScheme", codes r)
+
 [<Fact>]
 let ``a scenario parses with tables, columns, perParent, and pins`` () =
     let json =

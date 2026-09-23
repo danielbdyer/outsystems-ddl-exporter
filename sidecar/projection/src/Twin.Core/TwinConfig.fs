@@ -47,6 +47,14 @@ type EvidenceSource = {
     /// Optional per-source sampled-row cap (feeds `SamplingPolicy`;
     /// counts stay exact under any cap).
     SampleRows : int option
+    /// The post-eject rendition map (the data-sink chapter, S15/K10): a
+    /// `sink:<env>[@<syncId>]` witnessed-state ref that supplies the
+    /// PHYSICAL rendition's catalog — logical names over physical
+    /// realizations — when no live OSSYS exists to read (the upstream is
+    /// gone; its witnessed editions survive). The DATA still profiles
+    /// over `ConnRef`'s live connection. Physical rendition only; the
+    /// logical rendition's names ARE the estate's (no map to substitute).
+    CatalogRef : string option
 }
 
 type EstateSection = {
@@ -344,7 +352,7 @@ module TwinConfig =
 
     let private parseSource (path: string) (el: JsonElement) : Result<EvidenceSource> =
         if el.ValueKind <> JsonValueKind.Object then Result.failureOf (wrongType "an object" path) else
-        let closed = checkClosed path [ "name"; "rendition"; "conn"; "tables"; "sampleRows" ] el
+        let closed = checkClosed path [ "name"; "rendition"; "conn"; "tables"; "sampleRows"; "catalogRef" ] el
         let name =
             match tryProp "name" el with
             | Some v -> readString (child path "name") v
@@ -373,11 +381,32 @@ module TwinConfig =
             match tryProp "sampleRows" el with
             | Some v -> readInt (child path "sampleRows") 1 System.Int32.MaxValue v |> Result.map Some
             | None -> Result.success None
-        match name, rendition, conn, tables, sampleRows, closed with
-        | Ok n, Ok r, Ok c, Ok t, Ok s, [] ->
-            Result.success { Name = n; Rendition = r; ConnRef = c; Tables = t; SampleRows = s }
-        | nR, rR, cR, tR, sR, closedErrors ->
-            Result.failure (Result.errors nR @ Result.errors rR @ Result.errors cR @ Result.errors tR @ Result.errors sR @ closedErrors)
+        let catalogRef =
+            match tryProp "catalogRef" el with
+            | Some v -> readString (child path "catalogRef") v |> Result.map Some
+            | None -> Result.success None
+        // The catalog substitution is CLOSED to the sink (A44: what the key
+        // expresses is exactly what the import can reach): a `sink:` ref on
+        // a PHYSICAL source. The logical rendition's names are the estate's
+        // own — there is no rendition map to substitute.
+        let catalogRefLaws =
+            match catalogRef, rendition with
+            | Ok (Some r), _ when not (r.StartsWith "sink:") ->
+                [ ValidationError.createWithMetadata
+                    "twin.config.evidence.catalogRefScheme"
+                    "catalogRef names the witnessed-state catalog substitute, and only a sink ref can be one. Use sink:<env> (optionally sink:<env>@<syncId>)."
+                    (Map.ofList [ "path", Some (child path "catalogRef"); "value", Some r ]) ]
+            | Ok (Some _), Ok Logical ->
+                [ ValidationError.createWithMetadata
+                    "twin.config.evidence.catalogRefLogical"
+                    "catalogRef substitutes the PHYSICAL rendition's catalog (the logical-name map over physical realizations). A logical source's names are the estate's own — remove catalogRef or set rendition to physical."
+                    (Map.ofList [ "path", Some (child path "catalogRef") ]) ]
+            | _ -> []
+        match name, rendition, conn, tables, sampleRows, catalogRef, closed @ catalogRefLaws with
+        | Ok n, Ok r, Ok c, Ok t, Ok s, Ok cr, [] ->
+            Result.success { Name = n; Rendition = r; ConnRef = c; Tables = t; SampleRows = s; CatalogRef = cr }
+        | nR, rR, cR, tR, sR, crR, closedErrors ->
+            Result.failure (Result.errors nR @ Result.errors rR @ Result.errors cR @ Result.errors tR @ Result.errors sR @ Result.errors crR @ closedErrors)
 
     /// Law 4 — collision refusal: no table claimed by two sources.
     let private sourceCollisions (path: string) (sources: EvidenceSource list) : ValidationError list =

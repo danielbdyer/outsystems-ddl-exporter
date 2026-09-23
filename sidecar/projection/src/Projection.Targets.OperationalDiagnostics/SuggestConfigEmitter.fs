@@ -127,7 +127,15 @@ module SuggestConfigEmitter =
         : JsonNode =
         let suggestions =
             if ApprovalRegistry.isSuppressed policyDigest approvals then []
-            else collect diagnostics
+            else
+                // align-II.3 (a4-7): per-proposal suppression — a rejected
+                // nudge stays suppressed while its siblings surface. The
+                // proposal's identity is derived from (Path, Value), so the
+                // diagnostic producers model nothing new.
+                collect diagnostics
+                |> List.filter (fun s ->
+                    let key = SuggestedConfig.proposalKey { Path = s.Path; Value = s.Value; Note = s.Note }
+                    not (ApprovalRegistry.isProposalSuppressed policyDigest key approvals))
         JsonWriting.writeToNode (fun writer ->
             writer.WriteStartObject()
             writer.WritePropertyName("suggestedEdits")

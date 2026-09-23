@@ -358,4 +358,9 @@ module CaptureJournal =
                 |> Array.iter (fun pair ->
                     if pair.Length = 2 then PackedSurrogateRemap.capture kind pair[0] pair[1] acc)
                 acc
-          FingerprintOf = fingerprintOf }
+          // align-III.2 — the chunk grain admits by WITNESS RECOMPUTE: at
+          // resume the first/last source PK + row count are recomputed from
+          // the live ReadSide stream and compared to the recorded fingerprint
+          // (`resumeAdmit`, per chunk, at the boundary). The projection it
+          // carries is that recorded stamp.
+          Admission = ChainAdmission.WitnessRecompute fingerprintOf }

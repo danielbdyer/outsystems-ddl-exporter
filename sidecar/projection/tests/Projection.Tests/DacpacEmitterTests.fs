@@ -160,28 +160,30 @@ let ``NM-24: DacpacEmitter.emit still succeeds for a catalog whose trigger body 
     Assert.NotEmpty bytes
 
 // ---------------------------------------------------------------------------
-// M2 (THE VECTOR, Wave 0 honesty) — the SSDT TEXT path is the sibling of the
-// NM-24 .dacpac refusal. The .dacpac path REFUSES an unparseable CreateTrigger;
-// the text path cannot refuse (`Render.toText` is a total fold to a string), so
-// it names the drop IN-BAND. The formerly-silent bare `()` at Render.fs /
-// ScriptDomGenerate.fs is now an honest marker comment naming the closed
-// tolerance `ToleratedDivergence.TriggerBodyUnparsedDropped` — a dropped trigger
-// leaves a trace in the script instead of vanishing.
+// M2 (THE VECTOR, Wave 0 honesty; re-anchored at schema-L3.3a) — the SSDT
+// TEXT path now REFUSES at the compose seam (`SsdtDdlEmitter.emissionRefusal`
+// → `emitter.ssdt.triggerUnparsed`; `ComposeEmitRefusalTests` is that
+// witness), so an unparseable trigger never reaches a gated render. This test
+// pins the DEFENSE MARKER of the direct-`Render.toText` escape hatch: a
+// caller that bypasses the gate still gets a loud in-band trace, never a
+// silent drop.
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``M2: an unparseable CreateTrigger is named in-band in the SSDT text, not silently dropped`` () =
+let ``M2: a direct ungated render of an unparseable CreateTrigger carries the defense marker, not a silent drop`` () =
     // Same unparseable body as the NM-24 .dacpac witness; here through the text
-    // render fold. Pre-M2 this produced an empty emission (the silent drop).
+    // render fold DIRECTLY (bypassing the gate). Pre-M2 this produced an empty
+    // emission (the silent drop).
     let unparseable = Render.toText [ Statement.CreateTrigger "THIS IS NOT VALID TSQL @@ )(" ]
-    Assert.Contains("TriggerBodyUnparsedDropped", unparseable)
+    Assert.Contains("projection defense", unparseable)
+    Assert.Contains("emitter.ssdt.triggerUnparsed", unparseable)
     // DISCRIMINATING: a well-formed trigger renders its real CREATE TRIGGER and
     // carries NO marker — so the test is not trivially always-true.
     let parseable =
         Render.toText
             [ Statement.CreateTrigger
                 "CREATE TRIGGER [dbo].[trgWidget] ON [dbo].[WIDGET] AFTER INSERT AS BEGIN SET NOCOUNT ON END" ]
-    Assert.DoesNotContain("TriggerBodyUnparsedDropped", parseable)
+    Assert.DoesNotContain("projection defense", parseable)
 
 // ---------------------------------------------------------------------------
 // Content-equality via DacFx round-trip — slice α T1 amendment for binary

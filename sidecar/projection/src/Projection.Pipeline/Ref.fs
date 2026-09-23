@@ -21,15 +21,38 @@ module Ref =
         | RunArtifact of runId: string
         | Live of conn: string
         | Ossys of conn: string
+        /// A witnessed sink state (the data-sink chapter, S7):
+        /// `sink:<env>[@<syncId>]` — the environment name `projection sync`
+        /// stamped, optionally pinned to a sync ordinal (latest otherwise).
+        | Sink of env: string * syncId: SyncOrdinal option
 
     /// Parse a reference string — the revision syntax (cf. a git revision:
     /// `HEAD` / `<sha>` / `<path>`). `@<id>` is a stored run; `live:<conn>` a
-    /// live connection; `json:<…>` an inline model; anything else is a file.
+    /// live connection; `json:<…>` an inline model; `sink:<env>[@<syncId>]` a
+    /// witnessed sink state; anything else is a file.
     let parse (s: string) : Ref =
         if s.StartsWith("@") then RunArtifact(s.Substring(1))
         elif s.StartsWith("live:") then Live(s.Substring(5))
         elif s.StartsWith("ossys:") then Ossys(s.Substring(6))
         elif s.StartsWith("json:") then Json(s.Substring(5))
+        elif s.StartsWith("sink:") then
+            // `sink:<env>@<n>` pins an edition; a non-numeric tail stays part
+            // of the LABEL (labels are opaque operator strings), so a
+            // malformed pin fails downstream as the named `sink.envUnknown`
+            // naming the whole text — total parse, never a silent misroute.
+            // align-III.1: a NON-POSITIVE numeric tail is a malformed pin too
+            // (no such edition can exist — the ordinal VO), so it takes the
+            // same label-text route as a non-numeric tail.
+            let body = s.Substring(5)
+            match body.LastIndexOf '@' with
+            | -1 -> Sink(body, None)
+            | i ->
+                match System.Int32.TryParse(body.Substring(i + 1)) with
+                | true, n ->
+                    match SyncOrdinal.create n with
+                    | Ok o -> Sink(body.Substring(0, i), Some o)
+                    | Error _ -> Sink(body, None)
+                | false, _ -> Sink(body, None)
         else File s
 
     /// Human-readable identity of a ref (for diff/explain headers, logs).
@@ -40,13 +63,28 @@ module Ref =
         | RunArtifact id -> "@" + id  // LINT-ALLOW: terminal Ref-identity tag; string identity at the boundary
         | Live c -> "live:" + c  // LINT-ALLOW: terminal Ref-identity tag; string identity at the boundary
         | Ossys c -> "ossys:" + c  // LINT-ALLOW: terminal Ref-identity tag; string identity at the boundary
+        | Sink (env, syncId) -> SinkRead.identityOf env syncId
 
-    /// Both operands are OSSYS-sourced (`ossys:`) ⇒ a cross-environment compare
-    /// is espace-SAFE by identity (native GUID), and the caller should normalize
-    /// to the logical shape (`Readiness.toLogicalShape`) to drop the
-    /// realization-name artifacts `CatalogDiff` compares (CROSS_ENVIRONMENT_READINESS.md).
-    let bothOssys (a: Ref) (b: Ref) : bool =
-        match a, b with Ossys _, Ossys _ -> true | _ -> false
+    /// The operand carries NATIVE (OssysOriginal GUID) identity, stable across
+    /// OutSystems environments — so a compare keyed on it is espace-SAFE
+    /// (CROSS_ENVIRONMENT_READINESS.md). True for an `ossys:` live model read
+    /// and for a `sink:` witnessed state (the sink persists the same rowsets
+    /// the ossys read parses — identical identity by construction, K2). A
+    /// file/json model or a `@runId` is not GUARANTEED native (authored models
+    /// vary), and a `live:` physical read synthesizes SsKeys — both stay out.
+    let espaceSafe (r: Ref) : bool =
+        match r with
+        | Ossys _ | Sink _ -> true
+        | File _ | Json _ | RunArtifact _ | Live _ -> false
+
+    /// Both operands carry espace-safe native identity ⇒ a cross-environment
+    /// compare is meaningful, and the caller should normalize to the logical
+    /// shape (`Readiness.toLogicalShape`) to drop the realization-name
+    /// artifacts `CatalogDiff` compares. Generalizes the former `bothOssys`
+    /// (S7: a sink ref is espace-safe too, so `diff ossys:A sink:B` and
+    /// `diff sink:e@1 sink:e@2` normalize the same way).
+    let bothEspaceSafe (a: Ref) (b: Ref) : bool =
+        espaceSafe a && espaceSafe b
 
     /// Both operands are physical `live:` reads ⇒ a cross-environment compare is
     /// espace-UNSAFE: `ReadSide` synthesizes SsKeys from the physical name, so the
@@ -88,6 +126,12 @@ module Ref =
                 // SsKey at kind AND attribute grain, the espace-safe identity for
                 // cross-environment readiness (CROSS_ENVIRONMENT_READINESS.md).
                 return! Source.read (Source.ofOssys conn)
+            | Sink (env, syncId) ->
+                // The witnessed-state adapter (`Source.ofSink`) resolves the
+                // environment name against the sink store's manifests and
+                // replays snapshot → bundle → parse — offline-true, native
+                // GUID identity (the data-sink chapter, S7).
+                return! Source.read (Source.ofSink env syncId)
         }
 
     /// Resolve a reference to its capability-typed `Source` — the catalog read
@@ -104,6 +148,7 @@ module Ref =
             | Json json -> return Result.success (Source.ofJson json)
             | Live conn -> return Result.success (Source.ofLive conn)
             | Ossys conn -> return Result.success (Source.ofOssys conn)
+            | Sink (env, syncId) -> return Result.success (Source.ofSink env syncId)
             | RunArtifact runId ->
                 match Run.configuredDir () with
                 | None -> return fail "ref.noRunsDir" "set PROJECTION_RUNS_DIR to resolve @runId references"

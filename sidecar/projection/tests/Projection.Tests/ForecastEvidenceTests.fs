@@ -1,4 +1,4 @@
-module Projection.Tests.EvidenceCacheTests
+module Projection.Tests.ForecastEvidenceTests
 
 // THE EVIDENCE CACHE (2026-07-10, the manifest program, slice 2 —
 // THE_TRANSFER_MANIFEST.md §4.2-§4.5): pure witnesses over a hand-built
@@ -83,7 +83,7 @@ let private row (kind: string) (values: (string * string) list) : StaticRow =
 /// Source Buyer 2 (bob) has NO sink match; every Tag matches. Deal 11
 /// references the unmatched buyer, so it drops and its (resolvable) Tag
 /// reference is moot.
-let private cache : EvidenceCache.Cache =
+let private cache : ForecastEvidence.Cache =
     { SourceRows =
         Map.ofList
             [ kKey "Buyer", [ row "Buyer" [ "Id", "1"; "Email", "alice@x" ]; row "Buyer" [ "Id", "2"; "Email", "bob@x" ] ]
@@ -105,19 +105,19 @@ let private loadSet = Set.ofList [ kKey "Deal" ]
 
 let private edges = PeerTransfer.escapingFks catalog loadSet Set.empty
 
-let private evidenceFor (selections: (string * EvidenceCache.Answer) list) (target: string) : EvidenceCache.AnswerEvidence =
+let private evidenceFor (selections: (string * ForecastEvidence.Answer) list) (target: string) : ForecastEvidence.AnswerEvidence =
     let sel = selections |> List.map (fun (k, a) -> kKey k, a) |> Map.ofList
-    (EvidenceCache.componentDeltas cache catalog loadSet Set.empty edges sel).[kKey target]
+    (ForecastEvidence.componentDeltas cache catalog loadSet Set.empty edges sel).[kKey target]
 
 [<Fact>]
 let ``evidence: the two escaping edges are one coupled component (Deal references both targets)`` () =
-    let components = EvidenceCache.componentsOf catalog loadSet edges
+    let components = ForecastEvidence.componentsOf catalog loadSet edges
     Assert.Equal(1, List.length components)
     Assert.Equal(2, components |> List.head |> List.length)
 
 [<Fact>]
 let ``evidence: a reconcile delta is exact over the full rowsets — matched pairs, unmatched values, and the uniqueness fact`` () =
-    let ev = evidenceFor [ "Buyer", EvidenceCache.Answer.Reconcile (nm "Email"); "Tag", EvidenceCache.Answer.Reconcile (nm "Label") ] "Buyer"
+    let ev = evidenceFor [ "Buyer", ForecastEvidence.Answer.Reconcile (nm "Email"); "Tag", ForecastEvidence.Answer.Reconcile (nm "Label") ] "Buyer"
     // deals 10 and 12 re-key through alice; deal 11 references the unmatched bob
     Assert.Equal(2, ev.Delta.RowsRekeyed)
     Assert.Equal(1, ev.Delta.RowsDropped)
@@ -129,22 +129,22 @@ let ``evidence: a reconcile delta is exact over the full rowsets — matched pai
 let ``evidence: the component recomputes as a unit — a sibling's unresolved reference shrinks this target's re-key count (§4.3)`` () =
     // Buyer reconciled: deal 11 drops on the unmatched buyer, so only 2 of
     // Tag's 3 references land.
-    let coupled = evidenceFor [ "Buyer", EvidenceCache.Answer.Reconcile (nm "Email"); "Tag", EvidenceCache.Answer.Reconcile (nm "Label") ] "Tag"
+    let coupled = evidenceFor [ "Buyer", ForecastEvidence.Answer.Reconcile (nm "Email"); "Tag", ForecastEvidence.Answer.Reconcile (nm "Label") ] "Tag"
     Assert.Equal(2, coupled.Delta.RowsRekeyed)
     Assert.Equal(0, coupled.Delta.RowsDropped)
     // Buyer pinned instead: every deal survives, and Tag re-keys all 3.
-    let released = evidenceFor [ "Buyer", EvidenceCache.Answer.Pin None; "Tag", EvidenceCache.Answer.Reconcile (nm "Label") ] "Tag"
+    let released = evidenceFor [ "Buyer", ForecastEvidence.Answer.Pin None; "Tag", ForecastEvidence.Answer.Reconcile (nm "Label") ] "Tag"
     Assert.Equal(3, released.Delta.RowsRekeyed)
 
 [<Fact>]
 let ``evidence: pin re-keys every non-blank reference and drops none — exact without choosing the anchor`` () =
-    let ev = evidenceFor [ "Buyer", EvidenceCache.Answer.Pin None; "Tag", EvidenceCache.Answer.Reconcile (nm "Label") ] "Buyer"
+    let ev = evidenceFor [ "Buyer", ForecastEvidence.Answer.Pin None; "Tag", ForecastEvidence.Answer.Reconcile (nm "Label") ] "Buyer"
     Assert.Equal(3, ev.Delta.RowsRekeyed)
     Assert.Equal(0, ev.Delta.RowsDropped)
 
 [<Fact>]
 let ``evidence: widen spawns exactly the newly-escaping targets (the fixpoint §4.5)`` () =
-    let ev = evidenceFor [ "Buyer", EvidenceCache.Answer.Reconcile (nm "Email"); "Tag", EvidenceCache.Answer.Widen ] "Tag"
+    let ev = evidenceFor [ "Buyer", ForecastEvidence.Answer.Reconcile (nm "Email"); "Tag", ForecastEvidence.Answer.Widen ] "Tag"
     Assert.Equal(2, ev.Delta.RowsEnteringScope)
     Assert.Equal(1, ev.Delta.TablesTouched)
     Assert.Equal<SsKey list>([ kKey "Realm" ], ev.Delta.SpawnedKeys)
@@ -158,25 +158,25 @@ let ``evidence: a blank reference neither re-keys nor drops`` () =
                 cache.References
                 |> Map.add (kKey "Deal", nm "TagId") [ "10", "1"; "11", "2"; "12", "2"; "13", "" ]
                 |> Map.add (kKey "Deal", nm "BuyerId") [ "10", "1"; "11", "2"; "12", "1"; "13", "1" ] }
-    let sel = Map.ofList [ kKey "Buyer", EvidenceCache.Answer.Pin None; kKey "Tag", EvidenceCache.Answer.Reconcile (nm "Label") ]
-    let ev = (EvidenceCache.componentDeltas withBlank catalog loadSet Set.empty edges sel).[kKey "Tag"]
+    let sel = Map.ofList [ kKey "Buyer", ForecastEvidence.Answer.Pin None; kKey "Tag", ForecastEvidence.Answer.Reconcile (nm "Label") ]
+    let ev = (ForecastEvidence.componentDeltas withBlank catalog loadSet Set.empty edges sel).[kKey "Tag"]
     // deal 13's blank TagId is neither re-keyed nor dropped; the other 3 land.
     Assert.Equal(3, ev.Delta.RowsRekeyed)
     Assert.Equal(0, ev.Delta.RowsDropped)
 
 [<Fact>]
 let ``evidence: perAnswerDeltas carries a real delta for every candidate answer at equal fidelity`` () =
-    let per = EvidenceCache.perAnswerDeltas cache catalog loadSet Set.empty edges Map.empty
+    let per = ForecastEvidence.perAnswerDeltas cache catalog loadSet Set.empty edges Map.empty
     let buyerAnswers = per.[kKey "Buyer"]
     // one Reconcile per candidate column, the unchosen Pin, Widen, and the
     // static-lookup twin — all present, none a placeholder.
-    Assert.True(buyerAnswers |> Map.containsKey (EvidenceCache.Answer.Reconcile (nm "Email")))
-    Assert.True(buyerAnswers |> Map.containsKey (EvidenceCache.Answer.Pin None))
-    Assert.True(buyerAnswers |> Map.containsKey EvidenceCache.Answer.Widen)
-    Assert.True(buyerAnswers |> Map.containsKey (EvidenceCache.Answer.StaticLookup (nm "Email")))
+    Assert.True(buyerAnswers |> Map.containsKey (ForecastEvidence.Answer.Reconcile (nm "Email")))
+    Assert.True(buyerAnswers |> Map.containsKey (ForecastEvidence.Answer.Pin None))
+    Assert.True(buyerAnswers |> Map.containsKey ForecastEvidence.Answer.Widen)
+    Assert.True(buyerAnswers |> Map.containsKey (ForecastEvidence.Answer.StaticLookup (nm "Email")))
     // the static-lookup twin matches by the same mechanics: identical counts.
-    let rec_ = buyerAnswers.[EvidenceCache.Answer.Reconcile (nm "Email")]
-    let stat = buyerAnswers.[EvidenceCache.Answer.StaticLookup (nm "Email")]
+    let rec_ = buyerAnswers.[ForecastEvidence.Answer.Reconcile (nm "Email")]
+    let stat = buyerAnswers.[ForecastEvidence.Answer.StaticLookup (nm "Email")]
     Assert.Equal(rec_.Delta.RowsRekeyed, stat.Delta.RowsRekeyed)
     Assert.Equal(rec_.Delta.RowsDropped, stat.Delta.RowsDropped)
 
@@ -189,8 +189,8 @@ let ``evidence: determinism — permuted cache row order yields identical eviden
     // NOTE: sink rows stay PK-ascending — `reconcileKindWith` documents the
     // oldest-row-wins tiebreaker over PK-ascending sink input; the cache fill
     // reads them in table order and the derivation never re-sorts them.
-    let a = EvidenceCache.perAnswerDeltas cache catalog loadSet Set.empty edges Map.empty
-    let b = EvidenceCache.perAnswerDeltas permuted catalog loadSet Set.empty edges Map.empty
-    let deltasOf (m: Map<SsKey, Map<EvidenceCache.Answer, EvidenceCache.AnswerEvidence>>) =
+    let a = ForecastEvidence.perAnswerDeltas cache catalog loadSet Set.empty edges Map.empty
+    let b = ForecastEvidence.perAnswerDeltas permuted catalog loadSet Set.empty edges Map.empty
+    let deltasOf (m: Map<SsKey, Map<ForecastEvidence.Answer, ForecastEvidence.AnswerEvidence>>) =
         m |> Map.map (fun _ answers -> answers |> Map.map (fun _ ev -> ev.Delta))
-    Assert.Equal<Map<SsKey, Map<EvidenceCache.Answer, EvidenceCache.ForecastDelta>>>(deltasOf a, deltasOf b)
+    Assert.Equal<Map<SsKey, Map<ForecastEvidence.Answer, ForecastEvidence.ForecastDelta>>>(deltasOf a, deltasOf b)

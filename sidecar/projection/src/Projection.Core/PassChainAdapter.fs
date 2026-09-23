@@ -60,8 +60,11 @@ module PassChainAdapter =
     /// `Catalog`) from ComposeState. Used by Cluster D graph-analytics
     /// passes (CentralityPass, BoundedContextPass) whose input is the
     /// pre-computed topology. Falls back to `TopologicalOrder.empty`
-    /// when topology has not yet been computed (e.g., in unit tests
-    /// that don't run the topological-order pass first).
+    /// ONLY for direct unit-test callers that don't run the
+    /// topological-order pass first — an ASSEMBLED chain can no longer
+    /// reach this default (align-I.6: the step declares `Requires =
+    /// [ChainProduct.Topology]` and assembly excludes it, by name, when
+    /// the producer is absent; A52).
     let liftTopologyPass
         (rt: RegisteredTransform<TopologicalOrder, 'Decision>)
         (writeBack: 'Decision -> ComposeState -> ComposeState)
@@ -80,7 +83,8 @@ module PassChainAdapter =
     /// pre-computed `state.TopologicalOrder` from ComposeState (e.g.
     /// SchemaComplexityPass, whose metrics span the FK graph *and* IR
     /// attribute statistics). Falls back to `TopologicalOrder.empty`
-    /// when topology has not yet been computed. Unlike `liftDecisionPass`,
+    /// only for direct unit-test callers — assembled chains cannot
+    /// reach the default (align-I.6; A52). Unlike `liftDecisionPass`,
     /// the topology is read from ComposeState at apply-time rather than
     /// baked in at registration — so the pass sees the chain's real
     /// topology (the prior `registered None` wiring computed every metric
@@ -136,6 +140,34 @@ module PassChainAdapter =
         Pass.composeAll metered state
 
 
+/// A named intermediate product a chain step writes into `ComposeState`
+/// for LATER steps to consume (align-I.6; audit a3-F2). The vocabulary
+/// is the chain's dependency structure, not a ComposeState field
+/// inventory — a product is named only when at least one downstream
+/// step requires it, so assembly can validate satisfiability and name
+/// what an exclusion cascades to.
+[<RequireQualifiedAccess>]
+type ChainProduct =
+    /// The FK-graph topological order (`ComposeState.TopologicalOrder`)
+    /// — produced by `topologicalOrder`; required by the four
+    /// graph-analytics dependents (centrality, boundedContext,
+    /// schemaComplexity, cascadeShockZones).
+    | Topology
+    /// Profiling evidence (`Profile`) — supplied by ACQUISITION, not
+    /// produced by any chain step; required by the profile-consuming
+    /// decision/tightening steps. Declared so an assembly states what
+    /// it supplies and the profile-invariant prefix is derivable.
+    | ProfileEvidence
+
+/// One named exclusion from a chain assembly (align-I.6): the step and
+/// the product requirement no kept step (nor the assembly's supplied
+/// set) satisfies. Exclusions are the honest voice of a narrowed
+/// assembly — absent-with-a-name, never present-and-degenerate.
+type ChainExclusion = {
+    StepName : string
+    Missing  : ChainProduct
+}
+
 /// A single registered pass-chain step — the **single definition site**
 /// the "registry drives the run" refactor (`DECISIONS 2026-06-04`)
 /// establishes. Each step pairs the pillar-9 classification surface
@@ -148,8 +180,16 @@ module PassChainAdapter =
 /// the `Build` closure lifts IS what runs, and `Metadata` is the
 /// `RegisteredTransform.toMetadata` of the same pass factory. One
 /// `ChainStep` per pass; adding a pass is one entry, not three.
+///
+/// **Product preconditions (align-I.6).** `Requires` names the
+/// `ChainProduct`s the step reads; `Produces` names the one it writes
+/// (if any). Assembly validates satisfiability in execution order —
+/// the full chain asserts zero exclusions; narrowed assemblies (the
+/// skeleton) return the named exclusion cascade (A52).
 type ChainStep = {
     Metadata : RegisteredTransformMetadata
+    Requires : ChainProduct list
+    Produces : ChainProduct option
     Build    : Policy -> Profile -> PassChainAdapter
 }
 
@@ -160,3 +200,48 @@ module ChainStep =
 
     let build (policy: Policy) (profile: Profile) (step: ChainStep) : PassChainAdapter =
         step.Build policy profile
+
+    /// Assemble a chain honoring product preconditions (align-I.6;
+    /// A52). Walks `steps` in execution order, keeping a step iff every
+    /// `Requires` entry is satisfied by `supplied` or by a KEPT earlier
+    /// step's `Produces`. A dropped producer cascades to its dependents
+    /// — the forward walk realizes the cascade because products only
+    /// flow forward. Each exclusion is returned BY NAME with the
+    /// missing product; nothing is silently defaulted.
+    let assemble
+        (supplied: Set<ChainProduct>)
+        (steps: ChainStep list)
+        : ChainStep list * ChainExclusion list =
+        let kept, excluded, _ =
+            steps
+            |> List.fold
+                (fun (kept, excluded, available) step ->
+                    match step.Requires |> List.tryFind (fun p -> not (Set.contains p available)) with
+                    | Some missing ->
+                        (kept, { StepName = step.Metadata.Name; Missing = missing } :: excluded, available)
+                    | None ->
+                        let available' =
+                            match step.Produces with
+                            | Some p -> Set.add p available
+                            | None -> available
+                        (step :: kept, excluded, available'))
+                ([], [], supplied)
+        (List.rev kept, List.rev excluded)
+
+    /// Assert-only satisfiability for the FULL chain (align-I.6; A52):
+    /// a canonical chain with an unmet product precondition is a
+    /// structural mis-wiring — fail loud at assembly, naming every
+    /// exclusion, rather than letting a step compute over a defaulted
+    /// product at run time.
+    let assertSatisfiable
+        (supplied: Set<ChainProduct>)
+        (steps: ChainStep list)
+        : ChainStep list =
+        match assemble supplied steps with
+        | kept, [] -> kept
+        | _, exclusions ->
+            let detail =
+                exclusions
+                |> List.map (fun e -> sprintf "%s (missing %A)" e.StepName e.Missing)
+                |> String.concat ", "
+            invalidOp (sprintf "chain assembly mis-wired — unmet product preconditions: %s" detail)

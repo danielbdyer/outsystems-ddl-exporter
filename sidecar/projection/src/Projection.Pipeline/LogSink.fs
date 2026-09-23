@@ -771,16 +771,17 @@ module LogSink =
             state.Value.Envelopes
             |> Seq.tryPick (fun e -> if e.Code = code then Some e.Payload else None))
 
-    /// Tier-4 ledger — the run's canary verdict derived from the accumulated
-    /// `canary.*` events: `Some "red"` if any `canary.divergence` fired,
-    /// else `Some "green"` if a `canary.diffEmpty` fired, else `None` (the
-    /// run had no canary leg). Both codes are Info/Error → always accumulated.
-    let canaryVerdict () : string option =
+    /// Tier-4 ledger — the run's canary verdict (typed at align-III.3)
+    /// derived from the accumulated `canary.*` events: `Red` if any
+    /// `canary.divergence` fired, else `Green` if a `canary.diffEmpty` fired,
+    /// else `NotRun` (the run had no canary leg). Both codes are Info/Error →
+    /// always accumulated.
+    let canaryVerdict () : CanaryVerdict =
         lock lockObj (fun () ->
             let s = state.Value
-            if s.Envelopes |> Seq.exists (fun e -> e.Code = "canary.divergence") then Some "red"
-            elif s.Envelopes |> Seq.exists (fun e -> e.Code = "canary.diffEmpty") then Some "green"
-            else None)
+            if s.Envelopes |> Seq.exists (fun e -> e.Code = "canary.divergence") then CanaryVerdict.Red
+            elif s.Envelopes |> Seq.exists (fun e -> e.Code = "canary.diffEmpty") then CanaryVerdict.Green
+            else CanaryVerdict.NotRun)
 
     /// Tier-4 ledger — `(registered, applied, declined)` transform counts
     /// (verbosity-independent; see the §10 transformSummary counters).

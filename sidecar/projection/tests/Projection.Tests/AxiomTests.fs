@@ -1108,10 +1108,16 @@ let ``A43: Identity is the conserved charge — Rename perturbs Designation, con
     // Rename: Designation changes, Identity (SsKey) conserved, realized as a
     // SqlSimpleColumn refactorlog entry (sp_rename) — the cross-plane
     // corollary ‖rename‖_data = 0 (data conserved) is why the refactorlog is
-    // FORCED, not adopted. The ‖rename‖_data=0 live canary is the ⬚ trigger.
+    // FORCED, not adopted. The corollary's STATIC half is resident
+    // (align-III.7): a recorded rename-only edge carrying observed captures
+    // is named a violation from the manifest alone. The LIVE deploy-time
+    // ‖rename‖_data=0 canary stays the ⬚ trigger (6.D.1 route).
     citationOf
         "tests/Projection.Tests/RefactorLogEmitterTests.fs"
         "RefactorLogEmitter: a column rename produces a SqlSimpleColumn entry"
+    citationOf
+        "tests/Projection.Tests/ChangeManifestTests.fs"
+        "align-III.7 (A43 static half): a rename-only edge carrying observed captures violates the rename isometry"
 
 // ===========================================================================
 // Group L — HORIZON H-001/H-002/H-003 (Cluster B) lifts
@@ -1603,101 +1609,131 @@ static product algebra (Pass.product / `&&&`) once anticipated this but was \
 retired 2026-06-04 (unused); rebuild it when the trigger eventually fires.")>]
 let ``H-099: remote pass execution (perf trigger unfired)`` () = ()
 
-[<Fact(Skip = "A45 LAW (adopted 2026-07-17 at the loop-closing chapter close) — espace \
-invariance across the environment lattice (estate chapter open, 2026-07-15). For any \
-authored model deployed at N espace cells, the OSSYS-read catalogs normalized to \
-logical shape are pairwise CatalogDiff-empty; a residue is a REAL estate divergence, \
-never an espace artifact. Lifts the shipped two-cell law (CROSS_ENVIRONMENT_READINESS \
-§2; the OssysComprehensiveFixtureTests two-DB canary) to the N-way estate `check \
-environments` compares. The promotion trigger fired at wave A1: the EXECUTABLE WITNESS \
-is LIVE — `EstateTests` — ``A45: N espace cells of one model produce zero estate \
-findings after toLogicalShape (espace invariance)`` runs three espace-variant cells + \
-an espace-variant target through Estate.compute and asserts zero findings. This entry \
-is the axiom-file pointer to that fact.")>]
-let ``A45: N espace cells of one model diff to zero after toLogicalShape (espace invariance)`` () = ()
+[<Fact>]
+let ``A44: the config is an isomorphic image of the movement space (expressible ⇔ reachable)`` () =
+    // align-III.8 — A44 RESIDENT. Chartered in THE_CONFIG_CONTROL_PLANE §2
+    // (2026-06-08, "A44 candidate"); its isomorphism canary closed to
+    // residual-∅ on 2026-06-10 (S6) and has been live ever since — this
+    // entry seats the law in the numbered registry it always named.
+    // Clause 1 (faithful): parse ∘ render = id on the movement config DOM.
+    citationOf
+        "tests/Projection.Tests/MovementIsomorphismTests.fs"
+        "A44 clause 1 — parse ∘ render = id on the movement config DOM (faithfulness)"
+    // Clause 2 (total/spanning, the strongest form): the named residual is ∅ —
+    // every model-bearing action is flow-reachable, and every parse-accepted
+    // flow resolves to a real action or a NAMED refusal.
+    citationOf
+        "tests/Projection.Tests/MovementIsomorphismTests.fs"
+        "A44 clause 2 — the residual is ∅: mustReach spans the whole model-bearing surface (the strongest A44 statement)"
+    citationOf
+        "tests/Projection.Tests/MovementIsomorphismTests.fs"
+        "A44 clause 2 — expressible ⇒ reachable: every parse-accepted flow resolves to a real action or a NAMED refusal"
+    // Clause 3: direction is a pure function of the endpoints, never a knob.
+    citationOf
+        "tests/Projection.Tests/MovementIsomorphismTests.fs"
+        "A44 clause 3 — Direction is a pure function of (src, sink, origin), never a stored knob"
 
-[<Fact(Skip = "T17 LAW (adopted 2026-07-17 at the loop-closing chapter close) — row \
-fidelity: Ingest_rows ∘ Transfer = ι modulo named row interventions, residual zero \
-(fidelity chapter open, 2026-07-15). Every source row not removed by the row-set \
-ledger satisfies canonical_target (κ (key r)) = canonical (ν (π (remapFks r))) at the \
-canonical row form over an SsKey/logical basis; every target row outside image(κ) ∪ \
-adds is a violation; every exception cites its ledger record. The data-plane sibling \
-of the soul adjunction. The promotion trigger fired: EXECUTABLE WITNESSES are LIVE — \
-`RowFidelityTests` carries the pure comparator laws (identical streams name nothing; a \
-flipped cell names its key and columns; the streaming lockstep's reference \
-`compareOrdered` law) and `FidelityRowsDockerTests` runs the live triangle — two \
-seeded databases in the two renditions prove byte-identity across the \
-physical-to-logical gap, and one flipped cell names its key. The strict form (no \
-intervention ledger) is B2's; the ledger-modulated form landed at B4b; the two digest \
-planes (client-canonical SHA256 authoritative; server HASHBYTES fast-path) agree per \
-SQL type at B3; B5's container proof runs the full triangle. This entry is the \
-axiom-file pointer to those facts.")>]
-let ``T17: transfer is byte-faithful modulo named row interventions (residual zero)`` () = ()
+[<Fact>]
+let ``A45: N espace cells of one model diff to zero after toLogicalShape (espace invariance)`` () =
+    // A45 (adopted 2026-07-17): for any authored model deployed at N espace
+    // cells, the OSSYS-read catalogs normalized to logical shape are pairwise
+    // CatalogDiff-empty — a residue is a REAL estate divergence, never an
+    // espace artifact. Lifts the two-cell canary to the N-way estate compare.
+    // Live since wave A1; Skip-prose converted to the M16 gate at align-III.9.
+    citationOf
+        "tests/Projection.Tests/EstateTests.fs"
+        "A45: N espace cells of one model produce zero estate findings after toLogicalShape (espace invariance)"
 
-[<Fact(Skip = "A47 LAW (adopted 2026-07-20; the estate/fidelity chapter's Track-B proofs) — the \
-container fidelity proof's verdict is INVARIANT across the schema-staging axis (--stage \
-ddl|dacfx), the row-loading axis (--data transfer|lanes), and the target's derived identity \
-disposition (Structural / PreferPreservedKeys read from the flow.To archetype). The invariant \
-grain is the deployed schema + streamed rows (RowDigestFold, whole-table), never dacpac bytes. \
-T17 generalized from one build path to the product of the estate's real staging and loading \
-choices — the proof reproduces THIS operator's estate through the artifacts they ship. The \
-promotion trigger fired: EXECUTABLE WITNESSES are LIVE — `ReverseLegCanaryTests` runs B5 \
-(DDL×transfer), `P1-S1 DacFx-staged proof` (DacFx×transfer), `P1-S4 lanes proof` (DDL×lanes), \
-and `P1-S3 preserved-keys proof` (PreferPreservedKeys) each byte-identical, the orphan arms \
-red; `MovementSurfaceTests` pins the parse-time mode + policy resolution. This entry is the \
-axiom-file pointer to those facts.")>]
-let ``A47: the fidelity proof is staging-and-loading invariant (arbitrary-estate extraction)`` () = ()
+[<Fact>]
+let ``T17: transfer is byte-faithful modulo named row interventions (residual zero)`` () =
+    // T17 (adopted 2026-07-17): Ingest_rows ∘ Transfer = ι modulo named row
+    // interventions, residual zero — the data-plane sibling of the soul
+    // adjunction. Strict form B2; ledger-modulated B4b; the two digest planes
+    // agree per SQL type at B3; B5 runs the container triangle. Live since
+    // the fidelity chapter; Skip-prose converted to the M16 gate at align-III.9.
+    // The pure comparator grain (identical streams name nothing; a flipped
+    // cell names its key and columns; the lockstep's reference law):
+    citationOf
+        "tests/Projection.Tests/RowFidelityTests.fs"
+        "compareOrdered: one flipped cell names its key and its differing column (T17's drill-down grain)"
+    citationOf
+        "tests/Projection.Tests/RowFidelityTests.fs"
+        "law: compareOrdered equals the set-based reference diff over ordered unique-keyed streams"
+    // The live triangle over real SQL Server (two renditions, one estate):
+    citationOf
+        "tests/Projection.Tests.Integration/FidelityRowsDockerTests.fs"
+        "T17 witness: two renditions of one estate prove byte-identical over live SQL; one flipped cell names its key and column"
 
-[<Fact(Skip = "A48 LAW (adopted 2026-07-20; the estate/fidelity chapter's Track-B proofs) — the \
-offline manifest reconcile is SOUND: `check fidelity --against <manifest> --target <ref>` (no \
-live source) agrees (exit 0) iff every kind's live-folded target digest equals the manifest's \
-recorded source RowDigestFold digest; a stale digest reconciles to a NAMED divergence (exit 5), \
-never phantom-green; an unreachable target or model-hash mismatch refuses (exit 6). The manifest \
-plane is RowDigestFold end-to-end, so a capture and a reconcile are two reads of one canonical \
-form. The promotion trigger fired: EXECUTABLE WITNESSES are LIVE — `ProofManifestTests` (pure) \
-round-trips the codec and fails closed on foreign version/plane/garbage; `FidelityRowsDockerTests` \
-`P2-S3 offline reconcile` captures a manifest then reconciles a byte-identical target (exit 0) \
-and a tampered target (exit 5) with the source torn down. This entry is the axiom-file pointer \
-to those facts.")>]
-let ``A48: offline manifest reconcile is sound (source-absent verification)`` () = ()
+[<Fact>]
+let ``A47: the fidelity proof is staging-and-loading invariant (arbitrary-estate extraction)`` () =
+    // A47 (adopted 2026-07-20): the container fidelity proof's verdict is
+    // INVARIANT across the schema-staging axis (--stage ddl|dacfx), the
+    // row-loading axis (--data transfer|lanes), and the target's derived
+    // identity disposition (Structural / PreferPreservedKeys). The invariant
+    // grain is deployed schema + streamed rows (RowDigestFold), never dacpac
+    // bytes — T17 generalized to the product of the estate's real staging and
+    // loading choices. Live since Track B; Skip-prose converted to the M16
+    // gate at align-III.9. The four staging×loading arms:
+    citationOf
+        "tests/Projection.Tests.Integration/ReverseLegCanaryTests.fs"
+        "B5 container proof: the fidelity flow's engine walk — green on the faithful machine; an FK-orphan source row reads exit 5 with the row named missing"
+    citationOf
+        "tests/Projection.Tests.Integration/ReverseLegCanaryTests.fs"
+        "P1-S1 DacFx-staged proof: the fidelity flow proves byte-identical through a DacServices-published stand-in — green on the faithful machine; an FK-orphan reads exit 5"
+    citationOf
+        "tests/Projection.Tests.Integration/ReverseLegCanaryTests.fs"
+        "P1-S4 lanes proof: check fidelity --data lanes reproduces the source by APPLYING the emitted StaticSeeds+Bootstrap lanes (no transfer, no journal)"
+    citationOf
+        "tests/Projection.Tests.Integration/ReverseLegCanaryTests.fs"
+        "P1-S3 preserved-keys proof: the container proof under a FullRights (PreferPreservedKeys) policy proves byte-identical — source keys written directly, no remap"
+
+[<Fact>]
+let ``A48: offline manifest reconcile is sound (source-absent verification)`` () =
+    // A48 (adopted 2026-07-20): `check fidelity --against <manifest>` with no
+    // live source agrees (exit 0) iff every kind's live-folded target digest
+    // equals the manifest's recorded RowDigestFold digest; a stale digest is
+    // a NAMED divergence (exit 5), never phantom-green; unreachable/model-hash
+    // mismatch refuses (exit 6). One canonical plane, two reads. Live since
+    // Track B; Skip-prose converted to the M16 gate at align-III.9.
+    citationOf
+        "tests/Projection.Tests/ProofManifestTests.fs"
+        "P2-S1: the manifest codec round-trips (deserialize (serialize m) = Some m, kinds canonically sorted)"
+    citationOf
+        "tests/Projection.Tests/ProofManifestTests.fs"
+        "P2-S1: a FOREIGN version fails closed (reconciles to nothing, never a false parse)"
+    citationOf
+        "tests/Projection.Tests.Integration/FidelityRowsDockerTests.fs"
+        "P2-S3 offline reconcile: --against proves a target byte-identical to a captured manifest with NO live source; a tampered cell reads exit 5"
+
+[<Fact(Skip = "L3-Eject LAW (candidate; named align-III.12) — the terminal package \
+reconstructs — Bucket C. At eject (the one outcome that cannot be partially right; \
+no upstream remains to re-derive from) the shipped package must REPLAY: \
+reconstructLatestSchema(genesis, exported chain) reproduces the frozen state, the \
+terminal ChangeManifest series is complete over the exported edges, and publication \
+is REFUSED if the chain does not replay. Substrate already live: T13 (the FTC fold), \
+T19 (journal replay), EpisodicLifecycle.admitChain (align-III.2); EjectRun is the \
+assembly seam. Promotion trigger: the eject-deliverable fork resolves (§5.12 fork 3, \
+Active-deferrals index — frozen state + full refactorlog history vs state alone) / \
+the eject chapter's dependent slice opens; the witness then gates EjectRun's \
+publication path on the replay. PRODUCT_AXIOMS.md Group C carries the L3 statement.")>]
+let ``L3-Eject: the terminal package reconstructs — publication refused if the chain does not replay`` () = ()
 
 // ===========================================================================
-// Coverage summary (audit trail; verifiable by grep against this file)
+// Coverage summary — GENERATED, not maintained here (align-III.10)
 // ===========================================================================
 //
-//   Bucket A (verified + structural):     A1, A2, A4, A6, A12, A15, A18,
-//                                          A23, A24, A25, A26, A32, A34,
-//                                          A41, A46 + T1, T4, T11, T18
-//                                          (17 axioms + 4 theorems)
+// The hand-maintained per-bucket roll-up that lived at this spot drifted to
+// "52 entries, A1–A41 + T1–T11" while the registry more than doubled — the
+// exact restated-count defect CLAUDE.md §8 names. The summary is now a
+// GENERATED projection of this file's own Skip attributes:
+// `scripts/matrix-status.sh` parses every `[<Fact(Skip …)>]` (multiline-aware,
+// comment-stripped) and writes the per-bucket entry lists + counts to
+// `NORTH_STAR.matrix.generated.md`; `scripts/verifiability-gate.sh` enforces
+// the honesty rules on the same parse (no phantom Bucket-A/B claim; every
+// axiom/theorem deferral names C or D).
 //
-//   Bucket B (convention-enforced):       A3, A5, A7–A11, A13, A14, A16,
-//                                          A17, A19, A20, A22, A28, A29,
-//                                          A30, A31, A33, A35, A36, A39,
-//                                          A40
-//                                          (22 axioms)
-//
-//   Bucket C (weakly covered):            A21, A27 + T2, T5, T6, T7, T8,
-//                                          T9, T10
-//                                          (2 axioms + 7 theorems)
-//
-//   Bucket D (unnamed gap):               T3
-//                                          (1 theorem)
-//
-//   Total: 41 axioms (A1–A41) + 11 theorems (T1–T11) = 52 entries.
-//
-// **Promotion path.** A Skip-stubbed axiom flips to `[<Fact>]` when its
-// trigger fires:
-//   - **A21:** when a frozen-catalog canary lands with byte-identity assertion
-//   - **A27:** when SnapshotStore integration tests assert atomicity property
-//   - **T2:** when a canary fixture forces the disjoint-modules coproduct shape
-//   - **T3–T10:** kept as `Skip` because each is either derived (T5, T6, T9, T10),
-//     out-of-Core (T7, T8), or pure categorical (T3); explicit re-derivation
-//     tests would be ceremony with no marginal lift.
-//
-// **Discipline.** The Skip rationale names the bucket AND the promotion
-// trigger. Adding a new axiom or theorem adds a new entry here in the
-// same commit; chapter-close ritual audits this file's coverage delta
-// against AXIOMS.md.
+// **Discipline (unchanged).** A Skip rationale names its bucket AND its
+// promotion trigger in the attribute itself — the parse reads exactly that.
 
 // ===========================================================================
 // T18 + A46 — the v7 cycle-resolution algebra (2026-07-18)
@@ -1718,3 +1754,228 @@ let ``A46: refusal completeness — one ordering predicate on three surfaces, ce
     citationOf "tests/Projection.Tests/EstateTests.fs" "A46: refusal completeness — one predicate on three surfaces (resolver ⟺ gate ⟺ board), certificate carried (#669 v7)"
     citationOf "tests/Projection.Tests/CycleResolutionTests.fs" "v7 I3 refusal precision: the exact resolver refuses exactly when the strong-only subgraph is cyclic"
     citationOf "tests/Projection.Tests/CycleResolutionTests.fs" "A46 lemma — refusal invariance: SchemaMinimal and any weighted member refuse exactly the same SCCs"
+
+// ===========================================================================
+// A49 + T19 — the data sink chapter (2026-08-15) — candidates at chapter open
+// ===========================================================================
+
+[<Fact>]
+let ``T19: the sink journal replays — fold applyDisplacement from genesis = latest (FTC at acquisition grain)`` () =
+    // Promoted at S10 (the data-sink chapter): the chain laws replay
+    // arbitrary witnessed chains through Ledger.replay over the SinkJournal
+    // LedgerSpec instance (the fourth instance); CDC-silence appends
+    // nothing; a regressing syncId refuses on the drift channel; and the
+    // derived Catalog view is bounded by the journal (the erasure-witness
+    // inequality) — the view can understate the journal, never invent.
+    // (Replay equality is stated at CANONICAL grain: the store persists the
+    // snapshot raw/wire-ordered per S7's K2 ruling; the fold's states are
+    // canonical by construction.)
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "T19 chain law: witnessing any snapshot chain, the journal replays to the latest canonical state"
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "T19 chain law (FsCheck): random two-to-four-edition chains replay to the latest canonical state"
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "a second unchanged witness is Unchanged and appends nothing (CDC-silence at the store)"
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "journal: a regressing syncId refuses on the drift channel (sink.journal.syncRegression)"
+    // align-III.2 — the enforcement widened from a hand guard to the honest
+    // `Linkage` admission: a broken PrevSyncId link refuses by name too.
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "align-III.2: a broken predecessor link refuses on the chain channel (sink.journal.brokenChain)"
+    citationOf "tests/Projection.Tests/SinkDiffViewTests.fs" "erasure witness: the view's norm never exceeds the journal's displacement count (per mutation)"
+    citationOf "tests/Projection.Tests/SinkDisplacementTests.fs" "CDC-silence at acquisition grain: diff a a = []"
+
+[<Fact>]
+let ``A49: acquisition is total; selection is pure (the three-way commuting law)`` () =
+    // Promoted at S9 (the data-sink chapter): the SelectionSuppression pass
+    // landed (one drop semantic, two channels — the lifecycle axes that used
+    // to erase silently inside ModuleFilter.apply now carry lineage), the
+    // sync path's total binding is structurally pinned, and the pushdown
+    // equivalence law holds in its three-way form. The OnlyActiveAttributes
+    // axis stays the extraction canary's NAMED RESIDUAL (held equal across
+    // all legs, never compensated post-hoc).
+    citationOf "tests/Projection.Tests/OssysExtractionCanaryTests.fs" "A49 three-way equivalence: pushdown ≡ filter∘live ≡ filter∘sink (selection is pure; acquisition is total)"
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "A49 pin: the sync verb acquires with defaultParameters exactly (total acquisition, structurally)"
+    citationOf "tests/Projection.Tests/SelectionSuppressionTests.fs" "one drop semantic, two channels: the pass equals apply's lifecycle arm and names every suppression"
+    citationOf "tests/Projection.Tests/SinkStoreTests.fs" "totality gate: only a defaultParameters-shaped read witnesses; each scoped axis skips by name"
+
+[<Fact>]
+let ``A50: the operator outcome space is enumerable (axisOfPolicyAxis total)`` () =
+    // Promoted at align-I.2 (the alignment program, same day as the
+    // candidate): `OverlayAxis` gained `Identity` (APPENDED — DU order is
+    // T1-load-bearing for the durable applied-transforms sort),
+    // `PolicyAxis` enumerates the six Policy decision channels, and
+    // `PolicyAxis.overlayAxisOf` is the total designation whose DERIVED
+    // preimage now drives `PolicyExpr.eval`'s Override arm — so
+    // Override(Ordering) = Policy.empty is the map's theorem (empty
+    // preimage) instead of the fired collapse trigger's silent no-op, and
+    // Override(Identity) projects both identity channels.
+    citationOf "tests/Projection.Tests/ClassificationCarryThroughTests.fs" "A50: every Policy decision channel has a designated OverlayAxis (axisOfPolicyAxis is total)"
+    citationOf "tests/Projection.Tests/ClassificationCarryThroughTests.fs" "A50: the preimages partition the Policy channels — Ordering's is EMPTY (its lever lives outside Policy)"
+    citationOf "tests/Projection.Tests/PolicyExprTests.fs" "A50: Override Ordering produces Policy.empty BECAUSE its Policy preimage is empty — the map's theorem, not a silent arm"
+    citationOf "tests/Projection.Tests/PolicyExprTests.fs" "A50: Override Identity extracts BOTH identity channels (UserMatching + BridgeRetarget) and nothing else"
+
+// ===========================================================================
+// A51 — synthesis conventions are a closed registry (align-I.4, 2026-08-16)
+// ===========================================================================
+
+[<Fact>]
+let ``A51: synthesis conventions are a closed registry (token injective; round-trip; zero free-string production mints)`` () =
+    // (1) Token injectivity — distinct conventions mint distinct wire
+    // tokens, so cross-convention keys are unequal by construction and
+    // `Catalog.create`'s sequence/kind disjointness is a theorem.
+    let tokens = SynthesisConvention.all |> List.map SynthesisConvention.token
+    Assert.Equal(List.length tokens, tokens |> List.distinct |> List.length)
+    // (2) Round-trip — every registered token parses back to its
+    // convention (the DerivationReason codec discipline).
+    for c in SynthesisConvention.all do
+        Assert.Equal(Some c, SynthesisConvention.tryParse (SynthesisConvention.token c))
+    // (2b) The registry is the audited corpus, counted: 23 conventions.
+    // The count corrected TWICE on the way in (a2-A2-1 said nineteen and
+    // listed twenty, missing the lowercase "migration"; the first
+    // single-line grep said 21, missing the two multi-line ReadSide
+    // mints THIS sweep then caught — READSIDE_ATTR + READSIDE_REF). The
+    // pin moves only with a DECISIONS-named registry amendment.
+    Assert.Equal(23, List.length SynthesisConvention.all)
+    // (2c) align-I.5 resolved the convergence target: the sequence grain
+    // still REGISTERS three conventions (stored keys parse forever), but
+    // exactly one is mintable — OsSequence; the other two are
+    // legacy-parse-only.
+    let sequenceConventions =
+        SynthesisConvention.all
+        |> List.filter (fun c -> SynthesisConvention.grain c = SynthesisGrain.Sequence)
+    Assert.Equal(3, List.length sequenceConventions)
+    let mintableSequence =
+        sequenceConventions |> List.filter (fun c -> not (SynthesisConvention.legacyParseOnly c))
+    Assert.Equal<SynthesisConvention list>([ SynthesisConvention.OsSequence ], mintableSequence)
+    // (3) Zero free-string production mints — the M16-style
+    // comment-stripped sweep over src/. Production sites route through
+    // `SsKey.mint` / `SsKey.mintComposite`; a literal-token call under
+    // src/ is a registry bypass and fails here by name.
+    let srcRoot = Path.Combine(projectionRoot, "src")
+    let sourceFiles =
+        Directory.GetFiles(srcRoot, "*.fs", SearchOption.AllDirectories)
+        |> Array.filter (fun f ->
+            let sep = string Path.DirectorySeparatorChar
+            not (f.Contains(sep + "obj" + sep)) && not (f.Contains(sep + "bin" + sep)))
+    // Corpus-floor guard: the sweep must actually see the production tree
+    // (a path drift would otherwise vacuously pass with zero files).
+    Assert.True(
+        sourceFiles.Length >= 200,
+        sprintf "A51 sweep saw only %d src files — corpus floor breached (vacuous-pass guard)" sourceFiles.Length)
+    let mintLiteral = Regex("synthesized(?:Composite)?\\s+\"([^\"]+)\"")
+    let offenders =
+        [ for file in sourceFiles do
+            let source =
+                File.ReadAllLines file
+                |> Array.map (fun line -> if line.TrimStart().StartsWith("//") then "" else line)
+                |> String.concat "\n"
+            for m in mintLiteral.Matches(source) -> (Path.GetFileName file, m.Groups.[1].Value) ]
+    Assert.True(
+        List.isEmpty offenders,
+        sprintf
+            "A51: free-string synthesis mints under src/ (route through SsKey.mint / SsKey.mintComposite, adding the convention to the registry if new):\n%s"
+            (offenders |> List.map (fun (f, t) -> sprintf "  %s: \"%s\"" f t) |> String.concat "\n"))
+    // (4) Legacy conventions are parse-only (align-I.5): no production
+    // site mints a legacy row. The registry's own definition site
+    // (Identity.fs) is the single allowed mention.
+    let legacyNames =
+        SynthesisConvention.all
+        |> List.filter SynthesisConvention.legacyParseOnly
+        |> List.map (fun c -> sprintf "%A" c)
+    Assert.NotEmpty legacyNames
+    let legacyMention = Regex("SynthesisConvention\.(" + String.concat "|" legacyNames + ")\b")
+    let legacyOffenders =
+        [ for file in sourceFiles do
+            if Path.GetFileName file <> "Identity.fs" then
+                let source =
+                    File.ReadAllLines file
+                    |> Array.map (fun line -> if line.TrimStart().StartsWith("//") then "" else line)
+                    |> String.concat "\n"
+                for m in legacyMention.Matches(source) -> (Path.GetFileName file, m.Value) ]
+    Assert.True(
+        List.isEmpty legacyOffenders,
+        sprintf
+            "A51: legacy-parse-only conventions minted/referenced under src/ (stored keys parse; new mints are forbidden — use the converged convention):\n%s"
+            (legacyOffenders |> List.map (fun (f, t) -> sprintf "  %s: %s" f t) |> String.concat "\n"))
+
+// ===========================================================================
+// A52 — chain assemblies satisfy their product preconditions (align-I.6)
+// ===========================================================================
+
+[<Fact>]
+let ``A52: chain assemblies satisfy product preconditions (full chain asserts; skeleton excludes by name)`` () =
+    citationOf
+        "tests/Projection.Tests/SkeletonPurityTests.fs"
+        "align-I.6 (A52): the skeleton assembly names exactly the four topology-dependent exclusions"
+    citationOf
+        "tests/Projection.Tests/SkeletonPurityTests.fs"
+        "align-I.6 (A52): runSkeleton voices each exclusion as a skeleton.stepExcluded diagnostic"
+    citationOf
+        "tests/Projection.Tests/SkeletonPurityTests.fs"
+        "align-I.6 (A52): the full chain asserts satisfiable — zero exclusions with ProfileEvidence supplied"
+    citationOf
+        "tests/Projection.Tests/SkeletonPurityTests.fs"
+        "align-I.6: runSkeletonWith a non-empty profile still emits zero OperatorIntent events (the profile is DataIntent's free variable)"
+    // Structural half, inline: the canonical chain assembles with zero
+    // exclusions given the acquisition-supplied ProfileEvidence…
+    let kept, exclusions =
+        ChainStep.assemble
+            (Set.ofList [ ChainProduct.ProfileEvidence ])
+            RegisteredTransforms.chainSteps
+    Assert.Empty exclusions
+    Assert.Equal(List.length RegisteredTransforms.chainSteps, List.length kept)
+    // …the split point is producer-derived (the Topology producer ends
+    // the prefix; the string key is retired)…
+    let prefix, suffix = RegisteredTransforms.chainStepsSplitWithPins Set.empty
+    Assert.Equal(Some ChainProduct.Topology, (List.last prefix).Produces)
+    Assert.True(suffix |> List.forall (fun s -> s.Produces <> Some ChainProduct.Topology))
+    // …and no suffix-less dependency exists: every step requiring
+    // Topology sits AFTER the producer in the canonical order.
+    let names = RegisteredTransforms.chainSteps |> List.map (fun s -> s.Metadata.Name)
+    let producerIx = names |> List.findIndex (fun n -> n = (List.last prefix).Metadata.Name)
+    RegisteredTransforms.chainSteps
+    |> List.iteri (fun ix step ->
+        if step.Requires |> List.contains ChainProduct.Topology then
+            Assert.True(ix > producerIx, sprintf "'%s' requires Topology but precedes its producer" step.Metadata.Name))
+
+// ===========================================================================
+// A53 — the operator ruling is a carrier (align-II; promoted at align-II.5)
+// ===========================================================================
+
+[<Fact>]
+let ``A53: the operator ruling is a carrier — keyed, anchored, fail-closed, and received on its finding (record + render only)`` () =
+    // Promoted at align-II.5 (the estate reception): the OperatorRuling
+    // carrier (align-II.1) is keyed by FindingKey and anchored by
+    // BasisAnchor; the keyed store round-trips, replaces by key, and
+    // fail-closes on a malformed document (recorded judgment is never
+    // silently unruled); the estate DECIDE lane renders each ruling on its
+    // finding — the K9 correspondence is recordable and renderable
+    // end-to-end — and reception moves NOTHING else (lanes, verdict, and
+    // the cutover ladder stand; application is the named deferral,
+    // align-II.0 standing ruling; the align-II.6 verb records through the
+    // same carrier).
+    citationOf "tests/Projection.Tests/RulingStoreTests.fs" "A53 store law: a ruling round-trips through save + load for every anchor and optional-field shape"
+    citationOf "tests/Projection.Tests/RulingStoreTests.fs" "A53 store law: a malformed document is a ParseFailure — never silently unruled"
+    citationOf "tests/Projection.Tests/RulingStoreTests.fs" "A53 store law: replace-by-key — the second ruling for a key WINS and the first is gone"
+    citationOf "tests/Projection.Tests/RulingStoreTests.fs" "A53 store law: a missing ruling is Ok None (pending-by-absence), not an error"
+    citationOf "tests/Projection.Tests/EstateTests.fs" "reception: a recorded ruling renders on its finding in the lever's slot — lanes, verdict, and ladder stand (record + render only)"
+    citationOf "tests/Projection.Tests/EstateSinkClaimsTests.fs" "K9 end-to-end (align-II.5): a confirmed S14 correspondence ruling renders on its finding — recorded judgment, no adoption"
+    citationOf "tests/Projection.Tests/MovementSurfaceTests.fs" "rule <key> --confirm --by routes to RecordRuling carrying the parsed key and verdict"
+
+// ===========================================================================
+// A54 — the bundle projection's erasures are enumerable (align-II.8)
+// ===========================================================================
+
+[<Fact>]
+let ``A54: the bundle projection's erasures are enumerable — toBundle returns what it loses (constant modulus + exactly-when firing)`` () =
+    // Landed live with the vocabulary (align-II.8): the projection's
+    // signature carries the erasure record, the constant modulus (the
+    // by-design folds + capability-invariance) rides every bundle, the
+    // data-dependent assumptions/drops fire exactly when their shape
+    // occurs, the drop count reconciles the projection, every fold cites
+    // a RowsetContract name, and the live read surfaces the record on
+    // the notice rollup (Info for design facts, Warning for shape
+    // surprises).
+    citationOf "tests/Projection.Tests/BundleErasureTests.fs" "A54 modulus: a fully-joined snapshot erases exactly the constant modulus — the by-design folds and capability-invariance, nothing else"
+    citationOf "tests/Projection.Tests/BundleErasureTests.fs" "A54 modulus: every folded rowset cites a name the rowset contract carries — the erasure record and the wire contract share one vocabulary"
+    citationOf "tests/Projection.Tests/BundleErasureTests.fs" "A54: an entity with no physical-table row erases as AssumedSchema and the bundle assumes dbo — exactly when the join misses"
+    citationOf "tests/Projection.Tests/BundleErasureTests.fs" "A54: an attribute with no declared data type erases as AssumedDataType and the bundle assumes Text — exactly when the type is absent"
+    citationOf "tests/Projection.Tests/BundleErasureTests.fs" "A54: a reference that does not join erases as UnjoinedReference — the drop count reconciles the projection"
+    citationOf "tests/Projection.Tests/BundleErasureTests.fs" "A54: every erasure case carries a distinct routing code and a complete located sentence; the by-design cases ride Info, the data-dependent ones warn"
+    citationOf "tests/Projection.Tests/MetadataSnapshotCapabilityTests.fs" "toBundle is capability-invariant: the vector informs the sink, never the bundle"

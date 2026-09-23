@@ -34,7 +34,9 @@ let private snapshotOf
     { Modules = []; Entities = []; Attributes = attrs; References = []
       PhysicalTables = []; ColumnReality = realities; ColumnChecks = []; Sequences = []; Temporal = []
       PhysColsPresent = []; Indexes = []; IndexColumns = []
-      ForeignKeysReality = []; ForeignKeyColumns = []; Triggers = [] }
+      ForeignKeysReality = []; ForeignKeyColumns = []; Triggers = []
+      Capabilities = []
+      Scope = MetadataSnapshotRunner.AcquisitionScope.Total }
 
 let private divergences (s: MetadataSnapshotRunner.MetadataSnapshot) =
     MetadataSnapshotRunner.columnRealityDivergences s
@@ -186,14 +188,14 @@ let ``toBundle: ColumnReality SqlType and facets lift into AttributeRow.Deployed
         snapshotOf
             [ attr 100 "OFFICEID" true false ]
             [ { reality 100 "OFFICEID" false false with SqlType = Some "nvarchar"; MaxLength = Some 50 } ]
-    let bundle = MetadataSnapshotRunner.toBundle s
+    let bundle = fst (MetadataSnapshotRunner.toBundle s)
     let row = bundle.Attributes |> List.find (fun a -> a.AttrId = 100)
     Assert.Equal(Some (SqlStorageType.NVarChar (Bounded 50)), row.DeployedStorage)
 
 [<Fact>]
 let ``toBundle: no ColumnReality row means no DeployedStorage evidence`` () =
     let s = snapshotOf [ attr 100 "OFFICEID" true false ] []
-    let bundle = MetadataSnapshotRunner.toBundle s
+    let bundle = fst (MetadataSnapshotRunner.toBundle s)
     let row = bundle.Attributes |> List.find (fun a -> a.AttrId = 100)
     Assert.Equal(None, row.DeployedStorage)
 
@@ -213,14 +215,14 @@ let private idxRow (name: string) (dsName: string option) (dsType: string option
 [<Fact>]
 let ``dataspace: reflected PRIMARY filegroup placement is suppressed at the snapshot boundary`` () =
     let s = { snapshotOf [] [] with Indexes = [ idxRow "IX_T" (Some "PRIMARY") (Some "ROWS_FILEGROUP") ] }
-    let bundle = MetadataSnapshotRunner.toBundle s
+    let bundle = fst (MetadataSnapshotRunner.toBundle s)
     let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_T")
     Assert.Equal(None, row.DataSpace)
 
 [<Fact>]
 let ``dataspace: a non-primary filegroup is intentional configuration and carries`` () =
     let s = { snapshotOf [] [] with Indexes = [ idxRow "IX_T" (Some "INDEX_FG") (Some "ROWS_FILEGROUP") ] }
-    let bundle = MetadataSnapshotRunner.toBundle s
+    let bundle = fst (MetadataSnapshotRunner.toBundle s)
     let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_T")
     Assert.Equal(Some (DataSpace.Filegroup "INDEX_FG"), row.DataSpace)
 
@@ -239,7 +241,7 @@ let private idxRowCompression (json: string option) : MetadataSnapshotRunner.Oss
 let ``EF-25: script-shaped uniform PAGE compression JSON lifts into the bundle row`` () =
     let json = Some """[{"partition":1,"compression":"PAGE"},{"partition":2,"compression":"PAGE"}]"""
     let s = { snapshotOf [] [] with Indexes = [ idxRowCompression json ] }
-    let bundle = MetadataSnapshotRunner.toBundle s
+    let bundle = fst (MetadataSnapshotRunner.toBundle s)
     let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_C")
     Assert.Equal(Some "PAGE", row.DataCompression)
 
@@ -247,7 +249,7 @@ let ``EF-25: script-shaped uniform PAGE compression JSON lifts into the bundle r
 let ``EF-25: heterogeneous per-partition compression stays absent (row 56 residual)`` () =
     let json = Some """[{"partition":1,"compression":"PAGE"},{"partition":2,"compression":"ROW"}]"""
     let s = { snapshotOf [] [] with Indexes = [ idxRowCompression json ] }
-    let bundle = MetadataSnapshotRunner.toBundle s
+    let bundle = fst (MetadataSnapshotRunner.toBundle s)
     let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_C")
     Assert.Equal(None, row.DataCompression)
 
@@ -255,7 +257,7 @@ let ``EF-25: heterogeneous per-partition compression stays absent (row 56 residu
 let ``EF-25: the vintage Code-property shape still parses (fallback)`` () =
     let json = Some """[{"P":1,"Code":"ROW"}]"""
     let s = { snapshotOf [] [] with Indexes = [ idxRowCompression json ] }
-    let bundle = MetadataSnapshotRunner.toBundle s
+    let bundle = fst (MetadataSnapshotRunner.toBundle s)
     let row = bundle.Indexes |> List.find (fun i -> i.IndexName = "IX_C")
     Assert.Equal(Some "ROW", row.DataCompression)
 

@@ -186,13 +186,25 @@ let runEject (storePath: string) : int =
         TtyRenderer.renderVoicedTo Console.Error "eject.storeUnreadable"
             (Map.ofList [ "cause", box msg ])
         2
-    | Ok pkg ->
+    | Ok assembled ->
+        // The sink's terminal witnessed states ride the package (S15/K10):
+        // after the eject there is no upstream to re-derive from, so the
+        // metadata editions + displacement journals are named as carried.
+        // Store-gated — a pre-sink eject says nothing and changes nothing.
+        let sinkStates = EjectRun.sinkTerminalStates ()
+        let pkg = EjectRun.withSinkStates sinkStates assembled
         // §13 resultative — the package line, voiced; the timeline beneath.
         TtyRenderer.renderVoicedTo Console.Out "eject.packaged"
             (Map.ofList
                 [ "timeline",         box (Timeline.name pkg.Timeline)
                   "episodeCount",     box (List.length pkg.Episodes)
                   "refactorLogCount", box (List.length pkg.RefactorLogRefs) ])
+        if not (List.isEmpty pkg.SinkStates) then
+            TtyRenderer.renderVoicedTo Console.Out "eject.sinkCarried"
+                (Map.ofList
+                    [ "sources",        box (List.length pkg.SinkStates)
+                      "syncs",          box (pkg.SinkStates |> List.sumBy (fun s -> SyncOrdinal.value s.LatestSyncId))
+                      "journalEntries", box (pkg.SinkStates |> List.sumBy (fun s -> s.JournalEntries)) ])
         if EjectRun.isFaithful pkg then
             // §6 — the freeze's self-verification, asserted.
             TtyRenderer.renderVoicedTo Console.Out "eject.verified" Map.empty
@@ -207,7 +219,7 @@ let runEject (storePath: string) : int =
 /// gauge to stdout; one structured `summary.readiness` event to stderr so
 /// CI can branch on it. Read-only (no ledger append for the query itself).
 let runReadiness () : int =
-    match RunLedger.configuredDir () with
+    match RunIndex.configuredDir () with
     | None ->
         eprintfn "projection: no run ledger configured. Set PROJECTION_LEDGER_DIR to accumulate run history."
         4
@@ -222,17 +234,18 @@ let runReadiness () : int =
         // and touches no ledger (the documented no-append contract above), so it
         // declares the empty digest + no `LedgerRef`.
         RunEnvelope.bracket "projection check ready" ignore Map.empty (fun () -> "", []) (fun () ->
-            let records = RunLedger.read dir
-            let r = RunLedger.readiness records
+            let reading = RunIndex.readReading dir
+            let records = reading.Records
+            let r = RunIndex.readinessOf reading
             let recent =
-                records |> List.choose (fun e -> e.Canary) |> List.rev |> List.truncate 16 |> List.rev
+                records |> List.map (fun e -> e.Canary) |> List.filter CanaryVerdict.ran |> List.rev |> List.truncate 16 |> List.rev
             // #14 — the changeset trend: registered transforms per run over the last 16
             // runs, as a sparkline beside the dots (a settling model trends down toward
             // cutover). Same window as `recent`.
             let series =
                 records |> List.map (fun e -> e.Registered) |> List.rev |> List.truncate 16 |> List.rev
             // Human channel — the themed cutover board (color on a TTY, plain piped).
-            TtyRenderer.renderReadinessBoard r recent series (RunLedger.ledgerPath dir)
+            TtyRenderer.renderReadinessBoard r recent series (RunIndex.indexPath dir)
             // Machine channel — one structured summary.readiness event (CI gates
             // on `eligible`).
             LogSink.emit
@@ -242,8 +255,8 @@ let runReadiness () : int =
                         "canaryRuns",       box r.CanaryRuns
                         "consecutiveGreen", box r.ConsecutiveGreen
                         "threshold",        box r.Threshold
-                        "lastCanary",       (match r.LastCanary with Some c -> box c | None -> null)
-                        "recentCanaries",   box recent
+                        "lastCanary",       (match r.LastCanary with Some c -> box (CanaryVerdict.display c) | None -> null)
+                        "recentCanaries",   box (recent |> List.map CanaryVerdict.display)
                         "eligible",         box r.Eligible ]) with
                     Phase = LogSink.End }
             0, LogSink.Succeeded)
@@ -287,7 +300,7 @@ let runSetup (connRef: string option) : int =
         | v         -> Some v
     let view =
         TtyRenderer.buildSetupView
-            (RunLedger.configuredDir ())
+            (RunIndex.configuredDir ())
             (envOpt "PROJECTION_ALLOW_EXECUTE" = Some "1")
             (Watch.resolveDwellMs ())
             (envOpt "PROJECTION_BENCH_DIR")

@@ -5,7 +5,8 @@ namespace Projection.Core
 /// `PolicyExpr` is a DSL for constructing and composing `Policy` values
 /// without direct record construction. The canonical evaluation map
 /// `PolicyExpr.eval` is a structure-preserving homomorphism: it maps the
-/// expression algebra to the five-axis `Policy` product.
+/// expression algebra to the `Policy` product over its enumerated
+/// decision channels (`PolicyAxis.all` — six channels; A50, align-I.2).
 ///
 /// **Algebra.**
 ///   - `Atom p`            — lift a concrete policy.
@@ -45,9 +46,14 @@ type PolicyExpr =
     /// independent axes" semantics: commutative on disjoint-axis
     /// policies, associative across all axes.
     | Merge    of PolicyExpr * PolicyExpr
-    /// Apply only the named axis from the child expression; all other
-    /// axes remain at `Policy.empty`. `Override (Ordering, _)` produces
-    /// `Policy.empty` because `Ordering` has no corresponding Policy axis.
+    /// Apply only the named axis's Policy channels from the child
+    /// expression; every other channel stays at `Policy.empty`. The
+    /// projection is the A50 designation map's PREIMAGE
+    /// (`PolicyAxis.preimageOf`): `Override (Identity, e)` picks BOTH
+    /// identity channels (UserMatching + BridgeRetarget), and
+    /// `Override (Ordering, _)` produces `Policy.empty` as the map's
+    /// theorem — `Ordering`'s preimage is empty because its operator
+    /// lever lives outside `Policy` — never as a hand-coded silent case.
     | Override of OverlayAxis * PolicyExpr
 
 
@@ -101,6 +107,19 @@ module PolicyExpr =
         | IncludeOnly ka, ExcludeOnly kb -> ExcludeOnly (Set.difference kb ka)
         | ExcludeOnly ka, IncludeOnly kb -> ExcludeOnly (Set.difference ka kb)
 
+    /// Project ONE Policy decision channel from `p` onto an accumulator —
+    /// the Override primitive. Exhaustive over `PolicyAxis`, so a new
+    /// Policy channel cannot land in the DSL without its projection arm
+    /// (A50's expansion-discipline fifth step, enforced by FS0025).
+    let private projectChannel (p: Policy) (acc: Policy) (ch: PolicyAxis) : Policy =
+        match ch with
+        | PolicyAxis.Selection      -> { acc with Selection      = p.Selection }
+        | PolicyAxis.Emission       -> { acc with Emission       = p.Emission }
+        | PolicyAxis.Insertion      -> { acc with Insertion      = p.Insertion }
+        | PolicyAxis.Tightening     -> { acc with Tightening     = p.Tightening }
+        | PolicyAxis.UserMatching   -> { acc with UserMatching   = p.UserMatching }
+        | PolicyAxis.BridgeRetarget -> { acc with BridgeRetarget = p.BridgeRetarget }
+
     /// Sequential merge of two evaluated policies. `b` wins on all axes
     /// except Tightening and BridgeRetarget, which accumulate (left then
     /// right) — both are intervention registries. This is the primitive
@@ -141,13 +160,12 @@ module PolicyExpr =
         | Merge (a, b) ->
             Policy.merge (eval a) (eval b)
         | Override (axis, child) ->
+            // The A50 preimage projection: fold the axis's designated
+            // Policy channels onto empty. Ordering's empty preimage makes
+            // its no-op the map's theorem; Identity picks both identity
+            // channels; a new axis or channel is covered by construction.
             let p = eval child
-            match axis with
-            | Selection  -> { Policy.empty with Selection  = p.Selection  }
-            | Emission   -> { Policy.empty with Emission   = p.Emission   }
-            | Insertion  -> { Policy.empty with Insertion  = p.Insertion  }
-            | Tightening -> { Policy.empty with Tightening = p.Tightening }
-            | Ordering   -> Policy.empty  // Ordering has no corresponding Policy axis
+            PolicyAxis.preimageOf axis |> List.fold (projectChannel p) Policy.empty
 
     /// Structural simplification. Eliminates `Seq(identity, e)` (left
     /// identity). Recurses into all sub-expressions. Does not alter

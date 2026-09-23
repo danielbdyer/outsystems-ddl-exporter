@@ -133,6 +133,10 @@ boundary translates — *always*.
 - **Leaked internals:** `OS_KIND_*`, `OSUSR_*`, raw `SsKey` roots, file paths where a name belongs,
   exit codes on the statement line.
 - **Negation‑as‑headline:** *"nothing destroyed"* → *"no removals"*; define by what *is*.
+- **The lazy plural:** `3 row(s)`, `1 difference(s)` — a statement is readable aloud (rule 3),
+  so the real form is written, verb agreeing: `1 row` · `4,210 rows` · `1 finding remains` ·
+  `3 findings remain`. Both forms are spelled at the site; nothing guesses a suffix.
+  (Banned 2026‑08‑16, the align‑III.1v register audit — the form had spread to 282 sites.)
 
 ---
 
@@ -371,6 +375,8 @@ the prior conversational register, now retired); right is the gold standard.
 | `It ran, but I couldn't read it back to confirm.` | `The change was applied; the read‑back is unavailable, so the result is unverified.` |
 | `needs your okay` / `open a lane` | `approval required` / `Show detail` |
 | `Operation completed successfully.` | `Verified. The database matches the model.` |
+| `7 violation(s) across 4 table(s)` | `7 violations across 4 tables` |
+| `Every compared row is byte-identical across the physical-to-logical gap` | `Every compared row is byte-identical between the source and the target` |
 
 ---
 

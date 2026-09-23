@@ -272,7 +272,7 @@ let ``a source row edit re-opens the re-key act — the fingerprint pins the (ro
 
 [<Fact>]
 let ``the match fingerprint reads the SAME evidence-cache products the workbench forecast reads`` () =
-    let cache : EvidenceCache.Cache =
+    let cache : ForecastEvidence.Cache =
         { SourceRows = Map.ofList [ kKey "Parent", [ row "Parent" [ "Id", "1"; "Email", "alice@x" ] ] ]
           SinkRows   = Map.ofList [ kKey "Parent", [ row "Parent" [ "Id", "71"; "Email", "alice@x" ] ] ]
           References = Map.empty
@@ -281,7 +281,7 @@ let ``the match fingerprint reads the SAME evidence-cache products the workbench
     let acts = [ ActConsent.Act.Match (kKey "Parent") ]
     let strategies = Map.ofList [ kKey "Parent", ReconciliationStrategy.MatchByColumn (nm "Email") ]
     let fps = ActEvidence.fingerprintsOf label catalog plan (Some cache) strategies Map.empty acts
-    let pairs, unmatched, counts = EvidenceCache.matchProducts cache catalog (kKey "Parent") (nm "Email")
+    let pairs, unmatched, counts = ForecastEvidence.matchProducts cache catalog (kKey "Parent") (nm "Email")
     let token = ActConsent.tokenOf label (ActConsent.Act.Match (kKey "Parent"))
     let expected =
         ActConsent.effectFingerprint

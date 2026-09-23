@@ -23,26 +23,31 @@ let private allMetadata : RegisteredTransformMetadata list =
     RegisteredTransforms.all @ RegisteredDataTransforms.all
 
 [<Fact>]
-let ``5.13.identity-axis-closure: byDomain Identity returns the three identity-axis passes`` () =
+let ``5.13.identity-axis-closure: byDomain Domain.Identity returns the five identity-axis entries`` () =
     // Identity-domain entries:
     //   - canonicalizeIdentity (DataIntent — mechanical identity-form
     //     normalization at adapter→catalog boundary)
     //   - namingMorphism (DataIntent — morphism IS data; pass
     //     applies it mechanically)
-    //   - userFkReflow (OperatorIntent Selection — operator selects
-    //     which references reroute via Policy.UserMatching)
+    //   - userFkReflow (OperatorIntent Identity per align-I.3 — the
+    //     operator rules which identity each reference resolves
+    //     through via Policy.UserMatching)
     //
     // Migration + Bootstrap emitters are Data-domain (they consume
     // UserRemapContext via threading; the Identity domain is the
     // pass that produces the context).
+    //   - physicalClaimRules (DataIntent strategy — the data-sink chapter
+    //     S11: which metadata identity owns a physical table).
+    //   - physicalClaims (DataIntent pass — S13: the ownership decisions
+    //     annotated onto kinds as a sink-backed read parses them).
     let identityEntries =
-        TransformRegistry.byDomain Identity allMetadata
+        TransformRegistry.byDomain Domain.Identity allMetadata
     let names =
         identityEntries
         |> List.map (fun rt -> rt.Name)
         |> List.sort
     Assert.Equal<string list>(
-        [ "canonicalizeIdentity"; "namingMorphism"; "userFkReflow" ],
+        [ "canonicalizeIdentity"; "namingMorphism"; "physicalClaimRules"; "physicalClaims"; "userFkReflow" ],
         names)
 
 [<Fact>]
@@ -51,8 +56,8 @@ let ``5.13.identity-axis-closure: byOverlayAxis Insertion cross-cuts Data + Iden
     // emitter's migrationRowEmission + userRemapRewrite;
     // Bootstrap emitter's userRemapBootstrap; the composer's
     // migrationContextThreading + userRemapContextThreading).
-    // UserFkReflowPass is OperatorIntent Selection (not Insertion);
-    // it does NOT appear under byOverlayAxis Insertion.
+    // UserFkReflowPass is OperatorIntent Identity (align-I.3; not
+    // Insertion); it does NOT appear under byOverlayAxis Insertion.
     let insertionEntries =
         TransformRegistry.byOverlayAxis Insertion allMetadata
     let names =
@@ -65,18 +70,25 @@ let ``5.13.identity-axis-closure: byOverlayAxis Insertion cross-cuts Data + Iden
     Assert.DoesNotContain("userFkReflow", names)
 
 [<Fact>]
-let ``5.13.identity-axis-closure: byOverlayAxis Selection includes UserFkReflowPass`` () =
+let ``5.13.identity-axis-closure: byOverlayAxis Identity includes UserFkReflowPass (and Selection no longer does)`` () =
     // UserFkReflowPass.registered's site classifies as
-    // OperatorIntent Selection — the operator selects which
-    // User-FK references reroute via Policy.UserMatching +
-    // source/target populations.
-    let selectionEntries =
-        TransformRegistry.byOverlayAxis Selection allMetadata
+    // OperatorIntent Identity (align-I.3) — the operator rules
+    // which identity each User-FK reference resolves through via
+    // Policy.UserMatching + source/target populations. The
+    // Selection view no longer carries it (Selection = which kinds
+    // surface; the reclassification un-blinded ConflictDetector).
+    let identityAxisEntries =
+        TransformRegistry.byOverlayAxis OverlayAxis.Identity allMetadata
     let names =
-        selectionEntries
+        identityAxisEntries
         |> List.map (fun rt -> rt.Name)
         |> Set.ofList
     Assert.Contains("userFkReflow", names)
+    let selectionNames =
+        TransformRegistry.byOverlayAxis Selection allMetadata
+        |> List.map (fun rt -> rt.Name)
+        |> Set.ofList
+    Assert.DoesNotContain("userFkReflow", selectionNames)
 
 [<Fact>]
 let ``5.13.identity-axis-closure: byDomain Data includes both Core Data passes and Data emitters`` () =
@@ -104,7 +116,7 @@ let ``5.13.identity-axis-closure: byDomain partition is disjoint (each entry in 
     // Sanity invariant: every entry belongs to exactly one Domain
     // bucket. The filter applied across every Domain value must
     // sum to the total entry count.
-    let domains = [ Schema; Data; Identity; Diagnostics; CutoverSafety; CrossCutting ]
+    let domains = [ Schema; Data; Domain.Identity; Diagnostics; CutoverSafety; CrossCutting ]
     let bucketed =
         domains
         |> List.sumBy (fun d ->
@@ -133,20 +145,29 @@ let ``5.13.identity-axis-closure: byOverlayAxis Tightening lives in Schema + Dat
     // here.
     let tighteningInIdentity =
         allMetadata
-        |> TransformRegistry.byDomain Identity
+        |> TransformRegistry.byDomain Domain.Identity
         |> TransformRegistry.byOverlayAxis Tightening
     Assert.Empty tighteningInIdentity
 
 [<Fact>]
-let ``5.13.identity-axis-closure: byDomain Identity ∩ byOverlayAxis Selection = UserFkReflowPass alone`` () =
+let ``5.13.identity-axis-closure: byDomain Domain.Identity ∩ byOverlayAxis Identity = UserFkReflowPass alone`` () =
     // The two filters compose at the consumer level — composing
-    // them gives the "OperatorIntent-Selection IDENTITY-axis"
-    // surface. UserFkReflowPass is the sole entry: the other two
-    // Identity-domain passes (canonicalizeIdentity + namingMorphism)
-    // are DataIntent and drop out via the OverlayAxis filter.
+    // them gives the "OperatorIntent-Identity IDENTITY-domain"
+    // surface (align-I.3: domain names *what it touches*, axis
+    // names *whose intent* — for userFkReflow the two coincide).
+    // UserFkReflowPass is the sole entry: the other Identity-domain
+    // passes (canonicalizeIdentity + namingMorphism +
+    // physicalClaimRules + physicalClaims) are DataIntent and drop
+    // out via the OverlayAxis filter; Domain.Identity ∩ Selection
+    // is now EMPTY.
     let intersection =
         allMetadata
-        |> TransformRegistry.byDomain Identity
-        |> TransformRegistry.byOverlayAxis Selection
+        |> TransformRegistry.byDomain Domain.Identity
+        |> TransformRegistry.byOverlayAxis OverlayAxis.Identity
     Assert.Equal(1, List.length intersection)
     Assert.Equal("userFkReflow", intersection.Head.Name)
+    let selectionIntersection =
+        allMetadata
+        |> TransformRegistry.byDomain Domain.Identity
+        |> TransformRegistry.byOverlayAxis Selection
+    Assert.Empty selectionIntersection

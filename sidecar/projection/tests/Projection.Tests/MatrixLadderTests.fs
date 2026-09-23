@@ -54,16 +54,21 @@ let private rowFor (axis: string) : string =
         | None -> failwithf "no ladder row for axis %s in the generated matrix" axis
 
 [<Fact>]
-let ``D1: the generated matrix reports Schema=L2-partial because IndexOptionsUnreflected is an open tolerance`` () =
-    // IndexOptionsUnreflected is a live, open fidelity gap: after E1 the index
-    // *structure* round-trips (compared in PhysicalSchema.Indexes), but index
-    // *options* (filter / included columns / storage flags) are recovered by
-    // neither side, so the Schema round-trip is not yet fully faithful. The
-    // generator must surface this residual, by name, at the ladder.
-    Assert.Contains(ToleratedDivergence.IndexOptionsUnreflected, ToleratedDivergence.allKnown)
+let ``D1: the generated matrix reports Schema=L3 — every Schema OpenGap is retired (the schema-L3 program's flip)`` () =
+    // THE FLIP (schema-L3.3b, 2026-08-30). This pin spent its life naming
+    // Schema's CURRENT open tolerance (IndexOptionsUnreflected →
+    // CompositePkFkUnreflected → TriggerBodyUnparsedDropped as each
+    // closed); with the last retirement the generator auto-flips the axis
+    // and this test now asserts the L3 state POSITIVELY. The three closure
+    // witnesses: `IndexRoundtripTests` (options), `CanaryRoundTripTests` +
+    // `PhysicalSchemaForeignKeyTests` (composite legs),
+    // `ComposeEmitRefusalTests` (the named trigger refusal).
     let schema = rowFor "Schema"
-    Assert.Contains("L2-partial", schema)
-    Assert.Contains("IndexOptionsUnreflected", schema)
+    Assert.Contains("✅ L3", schema)
+    Assert.DoesNotContain("L2-partial", schema)
+    Assert.DoesNotContain("IndexOptionsUnreflected", schema)
+    Assert.DoesNotContain("CompositePkFkUnreflected", schema)
+    Assert.DoesNotContain("TriggerBodyUnparsedDropped", schema)
 
 [<Fact>]
 let ``D1: an axis with only accepted tolerances reaches L3 (the generator discriminates)`` () =
@@ -77,7 +82,7 @@ let ``D1: an axis with only accepted tolerances reaches L3 (the generator discri
     Assert.DoesNotContain("L2-partial", data)
 
 [<Fact>]
-let ``D1: exactly three tolerances are open fidelity gaps today`` () =
+let ``D1: ZERO tolerances are open fidelity gaps today`` () =
     // The matrix's open-gap count is the codebase's named schema-fidelity debt.
     // Pinning it makes a silently-added OpenGap — or a silently-retired one
     // without regenerating — fail here. NM-16 (2026-06-13) added four kind-facet
@@ -92,5 +97,13 @@ let ``D1: exactly three tolerances are open fidelity gaps today`` () =
     // → 5. M1 (THE VECTOR Wave 1, 2026-06-15) RETIRED the two Decision OpenGaps by
     // routing FK-trust / unique-promotion through the general comparator → back to
     // 3 (IndexOptionsUnreflected + CompositePkFkUnreflected + TriggerBodyUnparsedDropped,
-    // all Schema OpenGap; the Decision axis is now faithful).
-    Assert.Contains("3 open", generatedMatrix)
+    // all Schema OpenGap; the Decision axis is now faithful). schema-L3.1
+    // (2026-08-30) RETIRED IndexOptionsUnreflected by recovering the full
+    // index option surface through ReadSide + the widened PhysicalIndex →
+    // back to 2 (CompositePkFkUnreflected + TriggerBodyUnparsedDropped).
+    // schema-L3.2 (2026-08-30) RETIRED CompositePkFkUnreflected via the
+    // Reference.Legs lift → 1 (TriggerBodyUnparsedDropped alone).
+    // schema-L3.3b (2026-08-30) RETIRED TriggerBodyUnparsedDropped via the
+    // named compose-seam refusal → 0. Every remaining tolerance is
+    // AcceptedFaithful; the ladder reads L1/L2/L3 = 5/5/5.
+    Assert.Contains("0 open", generatedMatrix)

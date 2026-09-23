@@ -182,7 +182,7 @@ let ``migrate: DeclareThese clears the named loss but still refuses an undeclare
 let ``migrate: toEpisode records the target as the new schema plane`` () =
     let plan = Migration.plan DeclareAll sampleCatalog renamedTarget |> mustOk
     let coord = EpisodeCoordinate.create (Version.create 1 "1.1.0" |> mustResultOk) Environment.Dev (DateTimeOffset.Parse "2026-06-08T09:00:00+00:00")
-    let episode = Migration.toEpisode coord (Some "reflog#1") (DataObservation.create 30 (Some "lsn:0x05")) plan
+    let episode = Migration.toEpisode coord (Some "reflog#1") (DataObservation.observed 30 (Some "lsn:0x05")) plan
     Assert.Equal<Catalog>(renamedTarget, episode.Schema)
     Assert.Equal(Some "reflog#1", episode.RefactorLogRef)
-    Assert.Equal(30, episode.Data.CdcCaptureCount)
+    Assert.Equal(30, DataObservation.captureCount episode.Data)

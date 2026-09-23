@@ -77,6 +77,220 @@ module DerivationReason =
                 (ValidationError.create "sskey.derivationReason.unknown"
                     (String.concat "" [ "unknown derivation reason '"; other; "'" ]))
 
+
+/// The grain a synthesis convention mints identity at — which kind of
+/// catalog object the basisParts name. Same-grain conventions are the
+/// comparable ones: rename plausibility already requires a shared
+/// convention, and convergence work quantifies per-grain (the sequence
+/// grain's three live conventions are align-I.5's named target).
+[<RequireQualifiedAccess>]
+type SynthesisGrain =
+    | Module
+    | Kind
+    | Attribute
+    | Reference
+    | Index
+    | Trigger
+    | Sequence
+    | Check
+    | Row
+
+/// The acquisition lane that mints under a convention — which reader
+/// family owns the naming discipline the basisParts follow. Two keys of
+/// one physical object minted by different families are NOT equal (the
+/// audit's cross-lane identity split); the family axis makes that split
+/// an enumerable fact instead of a grep.
+[<RequireQualifiedAccess>]
+type ReaderFamily =
+    /// `Adapters.Osm` — the OSM model translation (JSON + rowset entity
+    /// plane; includes the readiness seam's logical-index normalization,
+    /// whose basis is the OSM logical index identity).
+    | OsmModel
+    /// `Adapters.Osm` — the live OSSYS rowset reader's own mints.
+    | OssysRowset
+    /// `Adapters.Sql` — SQL Server physical reconstruction (ReadSide).
+    | ReadSide
+    /// Core σ: Profile → Data — synthetic row identities.
+    | SyntheticData
+    /// `Projection.Pipeline` — operator-supplied migration dependency rows.
+    | MigrationRows
+    /// `Projection.Pipeline` — slice-apply golden row identities.
+    | GoldenSlice
+    /// `Twin.Core` — Twin scenario pinned-row identities.
+    | TwinScenario
+
+/// The closed registry of synthesis conventions (align-I.4; audit
+/// a2-A2-1). `Synthesized`'s `source` axis carried exactly the load
+/// `DerivationReason` was closed for — "a typo can no longer mint a
+/// silently-different identity" (2026-06-27) — yet stayed a free string
+/// whose vocabulary lived only in greps. This DU is that vocabulary,
+/// closed: 23 conventions, each with its wire token (byte-identical to
+/// the prior literals, including the lowercase `"migration"`), its
+/// grain, and its reader family. Production mints route through
+/// `SsKey.mint` / `SsKey.mintComposite`; the free-string constructors
+/// remain for TEST-local conventions (A51 sweeps only `src/`). New
+/// conventions are added HERE, never as free strings.
+[<RequireQualifiedAccess>]
+type SynthesisConvention =
+    | OsModule
+    | OsKind
+    | OsAttribute
+    | OsReference
+    | OsIndex
+    | OsTrigger
+    | OsSequence
+    | OsCheck
+    | OsIndexLogical
+    | OssysSequence
+    | ReadSideModule
+    | ReadSideKind
+    | ReadSideAttribute
+    | ReadSideReference
+    | ReadSideTrigger
+    | ReadSideCheck
+    | ReadSideIndex
+    | ReadSideSequence
+    | ReadSideRow
+    | SynthRow
+    | GoldenRow
+    | TwinPin
+    | MigrationRow
+
+/// Registry companion — the A51 single-source enumeration + total maps.
+[<RequireQualifiedAccess>]
+module SynthesisConvention =
+
+    /// Every registered convention — the one list A51's laws quantify
+    /// over (the `TransformGroup.all` / `PolicyAxis.all` shape).
+    let all : SynthesisConvention list =
+        [ SynthesisConvention.OsModule
+          SynthesisConvention.OsKind
+          SynthesisConvention.OsAttribute
+          SynthesisConvention.OsReference
+          SynthesisConvention.OsIndex
+          SynthesisConvention.OsTrigger
+          SynthesisConvention.OsSequence
+          SynthesisConvention.OsCheck
+          SynthesisConvention.OsIndexLogical
+          SynthesisConvention.OssysSequence
+          SynthesisConvention.ReadSideModule
+          SynthesisConvention.ReadSideKind
+          SynthesisConvention.ReadSideAttribute
+          SynthesisConvention.ReadSideReference
+          SynthesisConvention.ReadSideTrigger
+          SynthesisConvention.ReadSideCheck
+          SynthesisConvention.ReadSideIndex
+          SynthesisConvention.ReadSideSequence
+          SynthesisConvention.ReadSideRow
+          SynthesisConvention.SynthRow
+          SynthesisConvention.GoldenRow
+          SynthesisConvention.TwinPin
+          SynthesisConvention.MigrationRow ]
+
+    /// The wire token — the exact `source` string the convention has
+    /// always minted (byte-identical; the SsKey codec and every persisted
+    /// key are unmoved by the registry's introduction).
+    let token (c: SynthesisConvention) : string =
+        match c with
+        | SynthesisConvention.OsModule          -> "OS_MOD"
+        | SynthesisConvention.OsKind            -> "OS_KIND"
+        | SynthesisConvention.OsAttribute       -> "OS_ATTR"
+        | SynthesisConvention.OsReference       -> "OS_REF"
+        | SynthesisConvention.OsIndex           -> "OS_IDX"
+        | SynthesisConvention.OsTrigger         -> "OS_TRG"
+        | SynthesisConvention.OsSequence        -> "OS_SEQ"
+        | SynthesisConvention.OsCheck           -> "OS_CHK"
+        | SynthesisConvention.OsIndexLogical    -> "OS_IDX_LOGICAL"
+        | SynthesisConvention.OssysSequence     -> "OSSYS_SEQUENCE"
+        | SynthesisConvention.ReadSideModule    -> "READSIDE_MOD"
+        | SynthesisConvention.ReadSideKind      -> "READSIDE_KIND"
+        | SynthesisConvention.ReadSideAttribute -> "READSIDE_ATTR"
+        | SynthesisConvention.ReadSideReference -> "READSIDE_REF"
+        | SynthesisConvention.ReadSideTrigger   -> "READSIDE_TRIGGER"
+        | SynthesisConvention.ReadSideCheck     -> "READSIDE_CHECK"
+        | SynthesisConvention.ReadSideIndex     -> "READSIDE_IDX"
+        | SynthesisConvention.ReadSideSequence  -> "READSIDE_SEQUENCE"
+        | SynthesisConvention.ReadSideRow       -> "READSIDE_ROW"
+        | SynthesisConvention.SynthRow          -> "SYNTH_ROW"
+        | SynthesisConvention.GoldenRow         -> "GOLDEN"
+        | SynthesisConvention.TwinPin           -> "TWIN_PIN"
+        | SynthesisConvention.MigrationRow      -> "migration"
+
+    /// Parse a stored/observed source token back to its registered
+    /// convention. `None` for unregistered (test-local or foreign)
+    /// conventions — production tokens always parse (A51).
+    let tryParse (s: string) : SynthesisConvention option =
+        all |> List.tryFind (fun c -> token c = s)
+
+    /// The grain the convention mints at.
+    let grain (c: SynthesisConvention) : SynthesisGrain =
+        match c with
+        | SynthesisConvention.OsModule          -> SynthesisGrain.Module
+        | SynthesisConvention.OsKind            -> SynthesisGrain.Kind
+        | SynthesisConvention.OsAttribute       -> SynthesisGrain.Attribute
+        | SynthesisConvention.OsReference       -> SynthesisGrain.Reference
+        | SynthesisConvention.OsIndex           -> SynthesisGrain.Index
+        | SynthesisConvention.OsTrigger         -> SynthesisGrain.Trigger
+        | SynthesisConvention.OsSequence        -> SynthesisGrain.Sequence
+        | SynthesisConvention.OsCheck           -> SynthesisGrain.Check
+        | SynthesisConvention.OsIndexLogical    -> SynthesisGrain.Index
+        | SynthesisConvention.OssysSequence     -> SynthesisGrain.Sequence
+        | SynthesisConvention.ReadSideModule    -> SynthesisGrain.Module
+        | SynthesisConvention.ReadSideKind      -> SynthesisGrain.Kind
+        | SynthesisConvention.ReadSideAttribute -> SynthesisGrain.Attribute
+        | SynthesisConvention.ReadSideReference -> SynthesisGrain.Reference
+        | SynthesisConvention.ReadSideTrigger   -> SynthesisGrain.Trigger
+        | SynthesisConvention.ReadSideCheck     -> SynthesisGrain.Check
+        | SynthesisConvention.ReadSideIndex     -> SynthesisGrain.Index
+        | SynthesisConvention.ReadSideSequence  -> SynthesisGrain.Sequence
+        | SynthesisConvention.ReadSideRow       -> SynthesisGrain.Row
+        | SynthesisConvention.SynthRow          -> SynthesisGrain.Row
+        | SynthesisConvention.GoldenRow         -> SynthesisGrain.Row
+        | SynthesisConvention.TwinPin           -> SynthesisGrain.Row
+        | SynthesisConvention.MigrationRow      -> SynthesisGrain.Row
+
+    /// LEGACY-PARSE-ONLY rows (align-I.5). A legacy convention's stored
+    /// keys parse forever — the registry never forgets a token that ever
+    /// minted — but new production mints are refused by A51's legacy
+    /// sweep. The two rows are the pre-convergence sequence conventions:
+    /// a sequence has no persisted-key channel and no rename channel, so
+    /// per-lane conventions made one physical sequence carry three
+    /// non-equal identities and every cross-lane diff fabricated an
+    /// add+remove pair. `OsSequence` (two typed segments) is the one
+    /// live mint since align-I.5.
+    let legacyParseOnly (c: SynthesisConvention) : bool =
+        match c with
+        | SynthesisConvention.OssysSequence
+        | SynthesisConvention.ReadSideSequence -> true
+        | _ -> false
+
+    /// The reader family that owns the convention's naming discipline.
+    let readerFamily (c: SynthesisConvention) : ReaderFamily =
+        match c with
+        | SynthesisConvention.OsModule
+        | SynthesisConvention.OsKind
+        | SynthesisConvention.OsAttribute
+        | SynthesisConvention.OsReference
+        | SynthesisConvention.OsIndex
+        | SynthesisConvention.OsTrigger
+        | SynthesisConvention.OsSequence
+        | SynthesisConvention.OsCheck
+        | SynthesisConvention.OsIndexLogical    -> ReaderFamily.OsmModel
+        | SynthesisConvention.OssysSequence     -> ReaderFamily.OssysRowset
+        | SynthesisConvention.ReadSideModule
+        | SynthesisConvention.ReadSideKind
+        | SynthesisConvention.ReadSideAttribute
+        | SynthesisConvention.ReadSideReference
+        | SynthesisConvention.ReadSideTrigger
+        | SynthesisConvention.ReadSideCheck
+        | SynthesisConvention.ReadSideIndex
+        | SynthesisConvention.ReadSideSequence
+        | SynthesisConvention.ReadSideRow       -> ReaderFamily.ReadSide
+        | SynthesisConvention.SynthRow          -> ReaderFamily.SyntheticData
+        | SynthesisConvention.GoldenRow         -> ReaderFamily.GoldenSlice
+        | SynthesisConvention.TwinPin           -> ReaderFamily.TwinScenario
+        | SynthesisConvention.MigrationRow      -> ReaderFamily.MigrationRows
+
 type SsKey =
     | OssysOriginal of System.Guid
     | Synthesized of source: string * basisParts: string list
@@ -100,10 +314,12 @@ module SsKey =
     /// `SnapshotRowsets` adapter variant (chapter 3.2).
     let ossysOriginal (g: System.Guid) : SsKey = OssysOriginal g
 
-    /// Build a `Synthesized` SsKey from a synthesis convention and a
-    /// single basis string. Wraps the basis as a single-element typed
-    /// segment list `[basis]`. Used by adapters whose basis is already
-    /// a flat name (`SsKey.synthesized "OS_MOD" moduleName`).
+    /// Build a `Synthesized` SsKey from a free-string synthesis
+    /// convention and a single basis string. Wraps the basis as a
+    /// single-element typed segment list `[basis]`. Since align-I.4
+    /// production mints route through `mint` (registered-convention
+    /// sibling below); this free-string form serves TEST-local
+    /// conventions and is swept out of `src/` by A51.
     /// Both `source` and `basis` must be non-blank.
     let synthesized (source: string) (basis: string) : Result<SsKey> =
         if System.String.IsNullOrWhiteSpace source then
@@ -130,6 +346,23 @@ module SsKey =
             Result.failureOf synthBasisEmpty
         else
             Result.success (Synthesized (source, basisParts))
+
+    /// Build a `Synthesized` SsKey from a REGISTERED convention
+    /// (align-I.4). The token comes from the closed `SynthesisConvention`
+    /// registry, so a typo cannot mint a silently-different identity —
+    /// the `DerivationReason` closure, applied to the convention axis.
+    /// Production mint sites route through here (A51 sweeps `src/` for
+    /// free-string mints); the free-string `synthesized` stays for
+    /// test-local conventions. Single flat basis; wire bytes identical
+    /// to the prior literal-token call.
+    let mint (c: SynthesisConvention) (basis: string) : Result<SsKey> =
+        synthesized (SynthesisConvention.token c) basis
+
+    /// Composite-basis sibling of `mint` — the typed segment list flows
+    /// through the `Synthesized` DU unchanged (chapter 3.6 slice-δ
+    /// segmentation discipline).
+    let mintComposite (c: SynthesisConvention) (basisParts: string list) : Result<SsKey> =
+        synthesizedComposite (SynthesisConvention.token c) basisParts
 
     /// Build a `DerivedFrom` SsKey from a parent identity and a closed
     /// `DerivationReason`. Total — the reason is unforgeable by construction (the
@@ -302,6 +535,13 @@ module SsKey =
         match rootKey key with
         | Synthesized (source, _) -> Some source
         | OssysOriginal _ | V1Mapped _ | DerivedFrom _ -> None
+
+    /// The REGISTERED convention of a `Synthesized`-rooted key —
+    /// `synthesisSource` parsed through the A51 registry. `None` for
+    /// GUID-rooted identities AND for unregistered (test-local)
+    /// conventions; production-minted keys always parse (A51).
+    let synthesisConvention (key: SsKey) : SynthesisConvention option =
+        synthesisSource key |> Option.bind SynthesisConvention.tryParse
 
     /// Sequence of derivation reasons from the root outward, oldest first.
     /// Empty for leaf identities (`OssysOriginal`, `Synthesized`,

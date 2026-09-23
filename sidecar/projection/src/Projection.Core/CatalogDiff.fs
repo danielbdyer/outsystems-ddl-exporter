@@ -102,6 +102,11 @@ type ReferenceFacet =
     | UserFk
     | DbConstraint
     | Trust
+    /// schema-L3.2 — the composite-FK leg list (`Reference.Legs`).
+    /// Registered as a facet so a legs change is a REAL migrate diff;
+    /// an unregistered field would be erased by the facet lens — the
+    /// NM-16 failure class this DU already retired once.
+    | Legs
 
 /// A reference present in BOTH source and target (same `SsKey`) whose emitted
 /// FK shape differs. `Facets` is non-empty by construction.
@@ -426,7 +431,8 @@ module CatalogDiff =
             Apply   = fun src dest -> { dest with ConstraintState = ConstraintState.ofLegacyBooleans (Reference.hasDbConstraint src) (Reference.isConstraintTrusted dest) } }
           { Tag     = ReferenceFacet.Trust
             Differs = fun s t -> Reference.isConstraintTrusted s <> Reference.isConstraintTrusted t
-            Apply   = fun src dest -> { dest with ConstraintState = ConstraintState.ofLegacyBooleans (Reference.hasDbConstraint dest) (Reference.isConstraintTrusted src) } } ]
+            Apply   = fun src dest -> { dest with ConstraintState = ConstraintState.ofLegacyBooleans (Reference.hasDbConstraint dest) (Reference.isConstraintTrusted src) } }
+          Facet.ofLens ReferenceFacet.Legs             (Facet.lens (fun (r: Reference) -> r.Legs) (fun v r -> { r with Legs = v })) ]
 
     /// C1 — the index-shape facets. `Options` groups the nine `WITH (…)` knobs +
     /// platform-auto / disabled flags into one tuple lens (equality on the tuple

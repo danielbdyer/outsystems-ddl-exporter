@@ -52,9 +52,9 @@ let private renamedCatalog : Catalog = IRBuilders.mkCatalog [ renamedModule ]
 
 let private e0 = Episode.ofSchema (coord 0 "1.0.0" 1) sampleCatalog
 let private e1 =
-    Episode.create (coord 1 "1.1.0" 8) renamedCatalog Profile.empty (Some "reflog#1") (DataObservation.create 120 (Some "lsn:0x10"))
+    Episode.create (coord 1 "1.1.0" 8) renamedCatalog Profile.empty (Some "reflog#1") (DataObservation.observed 120 (Some "lsn:0x10"))
 let private e2 =
-    Episode.create (coord 2 "1.2.0" 15) sampleCatalog Profile.empty (Some "reflog#2") (DataObservation.create 95 None)
+    Episode.create (coord 2 "1.2.0" 15) sampleCatalog Profile.empty (Some "reflog#2") (DataObservation.observed 95 None)
 
 let private chain : EpisodicLifecycle =
     EpisodicLifecycle.genesis (tl "dev") e0
@@ -95,7 +95,7 @@ let ``M18: toJson emits one change node per edge, with the displacement + data n
 [<Fact>]
 let ``M18: an absent Decision anchor renders as JSON null (a stable key)`` () =
     // Build a bundle whose only edge has no refactorlog reference.
-    let e1b = Episode.create (coord 3 "1.3.0" 22) renamedCatalog Profile.empty None (DataObservation.create 0 None)
+    let e1b = Episode.create (coord 3 "1.3.0" 22) renamedCatalog Profile.empty None (DataObservation.NotObserved)
     let chain2 =
         EpisodicLifecycle.genesis (tl "dev") e1
         |> (fun lc -> EpisodicLifecycle.append e1b lc |> mustResultOk)
@@ -116,7 +116,7 @@ let ``M18: toJson surfaces the To-episode tolerance residual + applied-transform
     let tolerances =
         Tolerance.strict
         |> Tolerance.withDivergence ToleratedDivergence.HeaderCommentsOmitted
-        |> Tolerance.withDivergence ToleratedDivergence.IndexOptionsUnreflected
+        |> Tolerance.withDivergence ToleratedDivergence.PostDeployForeignKeysSplit
     let appliedTransforms : (SsKey * OverlayAxis option) list =
         [ customerKey, Some Tightening; orderKey, None ]
     let e1p = e1 |> Episode.withProvenance tolerances appliedTransforms
@@ -129,7 +129,7 @@ let ``M18: toJson surfaces the To-episode tolerance residual + applied-transform
     let residual = arr edge0.["toleranceResidual"] |> Seq.map (fun n -> (nn n).GetValue<string>()) |> List.ofSeq
     Assert.Equal<string list>(
         [ ToleratedDivergence.name ToleratedDivergence.HeaderCommentsOmitted
-          ToleratedDivergence.name ToleratedDivergence.IndexOptionsUnreflected ],
+          ToleratedDivergence.name ToleratedDivergence.PostDeployForeignKeysSplit ],
         residual)
     // The applied-transforms carry the canonical SsKey + the overlay axis (or null).
     let applied = arr edge0.["appliedTransforms"] |> Seq.map obj |> List.ofSeq

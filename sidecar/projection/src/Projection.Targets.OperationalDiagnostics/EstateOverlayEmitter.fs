@@ -10,7 +10,7 @@ open System.Text.Json
 open System.Text.Json.Nodes
 open Projection.Core
 
-/// `estate.overlay.json` + `estate.probes.sql` — the interim posture's two
+/// `environments.overlay.json` + `environments.probes.sql` — the interim posture's two
 /// sibling projections (wave A6; π-coherence: both project the SAME
 /// `Relaxation` list the report's RELAX-lane proposals resolved to, keyed
 /// by the finding). The overlay entry's `value` is EXACTLY the
@@ -21,10 +21,12 @@ open Projection.Core
 [<RequireQualifiedAccess>]
 module EstateOverlayEmitter =
 
-    let private evidenceText (evidence: (string * int64) list) : string =
+    let private evidenceText (evidence: PedigreeEntry list) : string =
+        // align-II.12 — the typed pedigree renders the SAME bytes the bare
+        // (env, count) pairs did; standing/instant ride the JSON pedigree.
         evidence
-        |> List.map (fun (env, n) ->
-            sprintf "%s in %s" (n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)) env)
+        |> List.map (fun e ->
+            sprintf "%s in %s" (e.Magnitude.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)) e.Env)
         |> String.concat "; "
 
     let private entryOf (relaxation: Relaxation) : JsonObject =
