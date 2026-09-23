@@ -1,9 +1,10 @@
 # System prompt — the change-validation lifecycle with git as the only store
 
 *Requirements first, for the corporate repository as it exists today. This version assumes
-no reachable artifact store: no package feed, no container registry, no download step for a
-laptop or a pipeline agent beyond `git clone`. Everything distributed is committed; everything
-minted is ephemeral. When a store arrives, §9 says the three things that change and confirms
+no reachable artifact store: no package feed and no download step for a laptop or a pipeline
+agent beyond `git clone`, with one exception: Docker pulls the SQL Server image from the
+Microsoft container registry. Everything distributed is committed; everything minted is
+ephemeral. When a store arrives, §9 says the three things that change and confirms
 that nothing else does.*
 
 ---
@@ -27,10 +28,12 @@ These facts hold and override any document in the repository that says otherwise
 - No environment's contents are ever copied, restored, synchronised or sampled to a developer
   machine or a pipeline agent. Counts and distributions may be read; rows may not.
 - The team works in Visual Studio with GitHub Copilot on Windows against Azure DevOps.
-  Assume LocalDB (installed with Visual Studio's data workload) as the substrate on every
-  machine and on hosted agents; treat Docker as optional where the Microsoft container
-  registry is reachable, and never require it.
-- There is no artifact store. Nothing may be fetched from a feed, a registry, or a share.
+  Docker pulls SQL Server from the Microsoft container registry and runs it with change data
+  capture; where Docker is installed it is the substrate, on laptops and hosted agents alike.
+  LocalDB (installed with Visual Studio's data workload) is the fallback on a machine without
+  Docker, and cannot prove CDC.
+- There is no artifact store. Nothing may be fetched from a feed, a registry, or a share,
+  except the SQL Server image Docker pulls, pinned by digest.
   The repository is the only distribution channel, and Azure Repos' built-in Git LFS is the
   only place a large file may live.
 - After a schema change is deployed to an environment, a person refreshes the external entity
@@ -79,7 +82,9 @@ These facts hold and override any document in the repository that says otherwise
 Before any change, produce `STATE.md` (one page) answering, with the command behind each:
 
 1. Which runtimes the laptops and the hosted agents already have (`dotnet --list-runtimes`,
-   PowerShell, Node), and which SqlPackage or DacFx is present through Visual Studio.
+   PowerShell, Node), whether Docker is installed and `docker pull
+   mcr.microsoft.com/mssql/server:2022-latest` succeeds, and which SqlPackage or DacFx is
+   present through Visual Studio.
 2. Which scripts exist for proving, minting, in-flight checking and packaging; their language
    and size; which runtime each needs.
 3. Which DacFx or sqlpackage version the Octopus publish step runs; which toolchain rows read
@@ -140,9 +145,9 @@ create a fresh local database, publish it under Strict, mint at the requested vo
 committed evidence and the seed, and write the three fingerprints into the database. With a
 matching local cache, restore it instead and verify the fingerprints. No configuration edit is
 required for a schema change.
-*Check:* on a clean laptop with LocalDB, one command reaches a current Twin at shape volume in
-under ten minutes the first time and under one minute from cache; the Twin's self-check (mint
-twice, zero orphans, identical digests) passes.
+*Check:* on a clean laptop with Docker (or LocalDB without it), one command reaches a current
+Twin at shape volume in under ten minutes the first time and under one minute from cache; the
+Twin's self-check (mint twice, zero orphans, identical digests) passes.
 
 **R6 — Mint volumes are tiered and the branch tier is exact.**
 The minter accepts `branch`, `shape` and `scale`. At `branch`, for every table: zero rows if
@@ -238,16 +243,17 @@ a password, a token or a row value.
 
 **R17 — The gate rebuilds the Twin and reproduces, on a hosted agent, from git alone.**
 Registered as a branch policy in Azure DevOps (a YAML `pr:` trigger does not fire on Azure
-Repos; write the portal steps into the pipeline README). On a hosted Windows agent with
-LocalDB it: checks out; runs the committed tool through the shim; builds the Twin at branch
-volume from the committed inputs (R5, R6); proves the pull request's combined delta (R9);
-checks in-flight windows; regenerates the record and diffs it against the body; posts the
-evidence table as a pull-request comment; publishes a machine-readable changelog. Exit 3
-(blocked) fails the check with the verdict attached; any other non-zero exit is a tooling
-failure and says so. It predicts against named environments only if the agent can reach them;
-until it can, the lead's pasted block (R11) is the prediction of record and the comment says so.
+Repos; write the portal steps into the pipeline README). On a hosted agent, Linux with the SQL
+Server container or Windows with LocalDB, it: checks out; runs the committed tool through the
+shim; builds the Twin at branch volume from the committed inputs (R5, R6); proves the pull
+request's combined delta (R9); checks in-flight windows; regenerates the record and diffs it
+against the body; posts the evidence table as a pull-request comment; publishes a
+machine-readable changelog. Exit 3 (blocked) fails the check with the verdict attached; any
+other non-zero exit is a tooling failure and says so. It predicts against named environments
+only if the agent can reach them; until it can, the lead's pasted block (R11) is the prediction
+of record and the comment says so.
 *Check:* the pipeline runs end to end on a real pull request within ten minutes, with no
-placeholder left in the body and no download step in its log.
+placeholder left in the body and no download in its log but the pinned SQL Server image.
 
 **R18 — The record leads with an evidence table and refuses placeholders.**
 The body keeps the tree's ten sections and register and opens with a fixed table, one row per
@@ -307,8 +313,8 @@ directory or the Twin's state.
 Clone → `twin up` → intent (chat) → predict (one command) → prove (one command) → record
 (generated) → pull request (the gate does the rest) → review (read; one command to reproduce;
 one command for QA and UAT predictions) → promote (the train) → converged and refreshed
-(checked, on the page). No station downloads anything, edits a configuration file, or copies a
-database.
+(checked, on the page). No station downloads anything but the pinned SQL Server image, edits a
+configuration file, or copies a database.
 *Check:* a new developer, given only the clone, takes a change from intent to a pull request
 with the evidence table in one session.
 
@@ -331,12 +337,14 @@ flow runs once per pull request.
 - Developers see QA and UAT predictions only after a dev lead runs one command and pastes
   the block; the gate cannot reach named environments from a hosted agent.
 - CDC silence is *not provable here* on LocalDB and is reported as such, never as passed.
-- Docker is optional and never required; where the registry is unreachable there is no image.
+- The SQL Server image is the one download. A machine that has no Docker, or cannot reach the
+  registry, uses LocalDB and reports CDC as *not provable here*.
 
 ## 5. Never
 
-- Never fetch anything from outside the repository at run time: no feed, no registry, no
-  share, no download. If a step cannot run from the clone alone, it is not in this design.
+- Never fetch anything from outside the repository at run time except the pinned SQL Server
+  image through Docker: no feed, no other registry, no share, no download. If a step cannot
+  run from the clone and that image, it is not in this design.
 - Never commit minted data, a disposable copy, a dacpac, a verdict, or a cache.
 - Never copy, restore, synchronise or sample a named environment's data anywhere.
 - Never read or store a row value from an environment classified real.

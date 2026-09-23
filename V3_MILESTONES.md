@@ -16,10 +16,11 @@ E the spike code · F the budget by file.
 
 ## 0. The answer in one breath
 
-**Build the lifecycle first, in eight milestones and one optional wing.** The critical path is
-about thirteen working days with four agent lanes. The first useful thing lands on day three:
-one command, read-only, says whether Dev matches the repository at a tag. Prediction lands on
-day five, the Twin on day six (at branch volume; shape volume on day eight), proof on day nine,
+**Build the lifecycle first, on .NET 10, in eight milestones and one optional wing.** The critical
+path is about thirteen working days with four agent lanes running at once, and about twenty where a
+workflow runs two agents at a time, as on a 4-CPU container. The first useful thing lands on day
+three: one command, read-only, says whether Dev matches the repository at a tag. Prediction lands
+on day five, the Twin on day six (at branch volume; shape volume on day eight), proof on day nine,
 the gate on day eleven, and the after-deploy checks with the status page on day thirteen. The
 knowledge tree and the agent surfaces are rebuilt in a parallel lane that closes with the Copilot
 pilot. The cutover wing (`emit`, `decide`, `move`, and the full OSSYS reader) stays in v2, frozen
@@ -59,14 +60,16 @@ correctness, so the Twin asks for a refresh only when a live branch disagrees wi
 
 ## 1. What was measured before writing this (2026-09-23)
 
-The plan rests on eleven facts. Nine were measured today in this repository's session container
-(.NET SDK 9.0.314, SQL Server 2022 in Docker), on DacFx 162.5.57 and again on 170.5.96 with the
-same results (fact 10 on 162.5.57 only). Two were read from v2's source and from the package's
-documentation. The spike code is Appendix E, and it becomes M1's first tests.
+The plan rests on twelve facts. Ten were measured today in this repository's session container
+against SQL Server 2022 in Docker: facts 1 to 7 and 11 on DacFx 162.5.57 and again on 170.5.96 with
+the same results, facts 1 to 7 once more on the .NET 10 SDK (10.0.401) with DacFx 170.5.96's
+`net10.0` build, fact 10 on 162.5.57, and fact 12 on the container itself. Two were read from v2's
+source and from the package's documentation. The spike code is Appendix E, and it becomes M1's
+first tests.
 
 | # | The claim | How it was measured | Result |
 |---|---|---|---|
-| 1 | A classic (Visual Studio format) `.sqlproj` builds with no Visual Studio and no download | a minimal classic project; `dotnet build -p:NetCoreBuild=true -p:NETCoreTargetsPath=<tool> -p:SQLDBExtensionsRefPath=<tool> -p:TargetFrameworkRootPath=<stub>`, where `<tool>` is a published console app referencing DacFx plus the package's `Microsoft.Data.Tools.Schema.SqlTasks.targets`, and `<stub>` holds one reference assembly (`mscorlib.dll`, 2.7 MB) with its `FrameworkList.xml` | builds on Linux with either engine's targets; the dacpac carries `refactor.xml` and `postdeploy.sql`. The package's `lib` folder alone fails (`SqlBuildTask` needs DacFx's dependencies beside it); a published tool folder has them (framework-dependent: 60 files and 91 MB on 162.5.57; 65 files and 107 MB on 170.5.96) |
+| 1 | A classic (Visual Studio format) `.sqlproj` builds with no Visual Studio and no download | a minimal classic project; `dotnet build -p:NetCoreBuild=true -p:NETCoreTargetsPath=<tool> -p:SQLDBExtensionsRefPath=<tool> -p:TargetFrameworkRootPath=<stub>`, where `<tool>` is a published console app referencing DacFx plus the package's `Microsoft.Data.Tools.Schema.SqlTasks.targets`, and `<stub>` holds one reference assembly (`mscorlib.dll`, 2.7 MB) with its `FrameworkList.xml` | builds on Linux with either engine's targets; the dacpac carries `refactor.xml` and `postdeploy.sql`. The package's `lib` folder alone fails (`SqlBuildTask` needs DacFx's dependencies beside it); a published tool folder has them (framework-dependent: 60 files and 91 MB on 162.5.57; 65 files and 107 MB on 170.5.96; 67 files and 107 MB for `net10.0` on 170.5.96, built with the .NET 10 SDK) |
 | 2 | `Script` and `DeployReport` need nothing beyond read | a login holding only `VIEW DEFINITION` and `db_datareader` on one database; `DacServices.Script(package, db, PublishOptions { GenerateDeploymentScript, GenerateDeploymentReport })` | succeeds |
 | 3 | The data-loss guard can be lifted from the script and run read-only | ScriptDom `TSql160Parser` over the script with SQLCMD lines removed (0 parse errors); the guard is `IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer]) RAISERROR (…, 16, 127)`; its predicate run verbatim as the read-only login | returns 1 on a populated table. The script holds other `IF EXISTS` blocks (database-option checks against `master.dbo.sysdatabases`), so the lens matches the `RAISERROR` at state 127, not the `IF` alone |
 | 4 | The convergence oracle is an empty plan, not a default schema comparison | the base package against the database it was just published to, as the read-only login | the deploy report has no `<Operations>` element. `SchemaComparison` with default options reports two differences: the reader's own user and the role membership granted to it. The oracle is the empty plan under the pipeline's profile; a comparison is used only to name objects, and only with the profile's options |
@@ -77,11 +80,13 @@ documentation. The spike code is Appendix E, and it becomes M1's first tests.
 | 9 | Every DacFx call the plan uses exists on the pinned engine | the XML documentation shipped in the 162.5.57 package; the spike compiled and ran against 170.5.96 | present: `TSqlModel.LoadFromDatabase`; `DacServices.Script` and `Publish` with `PublishOptions`, returning `DatabaseScript` and `DeploymentReport`; `DacProfile.Load(…).DeployOptions`; `PackageOptions.RefactorLogPath`; `SchemaComparison` with dacpac and database endpoints (a project endpoint type exists, but the package's own message `SchemaComparisonOnlySupportsDacpacAndDatabase` limits comparison to those two); `ModelTypeClass.Properties` and `.Relationships`; the typed metadata classes (`Column.Nullable`, `Column.Length`, `CheckConstraint.Expression`, `ForeignKeyConstraint.ForeignTable`) |
 | 10 | The pipeline's publish profile is the options, and a hand-kept copy drifts | `DacProfile.Load(path).DeployOptions` over the proving ground's three profiles | all three load. `ProvingGround.Strict.publish.xml` sets `DropObjectsNotInSource=True` where `ProvingGround.Pipeline.publish.xml` sets `False` (the guard is on in both, off in Permissive). All three also carry a `TargetConnectionString` with a literal `sa` password. So v3 keeps no Strict file, and reads nothing from a profile but its deploy options and SQLCMD values: Strict is the pipeline's profile as loaded, and Permissive is the same with only the guard flipped |
 | 11 | Whether a new foreign key lands trusted is decided by the profile, on either engine | a clean foreign key declared inline on a populated child table, published with default options, then with `ScriptNewConstraintValidation=false` | `is_not_trusted = 0` with the defaults, on 162.5.57 and on 170.5.96; `1` with validation off, on both. v2's finding that a proof on 162.5.57 left a key untrusted does not reproduce with the defaults, so trust depends on how the key is published, not on the engine family. Law 10 is a property of the pipeline's profile, and that profile is a prerequisite (§17 item 15) |
+| 12 | SQL Server comes from Docker, change data capture included | `docker pull mcr.microsoft.com/mssql/server:2022-latest` (digest `sha256:4402d880…`); a container started with `MSSQL_AGENT_ENABLED=true`; a table enabled for CDC and two rows inserted | the pull reaches the registry; the container answers within seconds as SQL Server 2022 Developer (16.0.4295.3); the capture job records both rows within two seconds. Docker is therefore the substrate wherever it is installed, and the only one on which CDC can be proven; LocalDB is the fallback |
 
 What was *not* measured, and is therefore M1's first work: the same build on `windows-latest` and
 on a team laptop; a project that references `master.dacpac` (the tool folder must then carry the
 system dacpacs); the estate's 300-table project for time; the same read-only calls against Dev
-under the developers' Active Directory group; and the profile the Octopus step actually applies.
+under the developers' Active Directory group; the profile the Octopus step actually applies; and
+the SQL Server version the environments run, which the pinned image must match.
 
 ---
 
@@ -123,13 +128,13 @@ under the developers' Active Directory group; and the profile the Octopus step a
 | A live database's schema (Dev, QA, UAT, a copy) | the same model, loaded from the database | `io/SqlServer.Model`: `TSqlModel.LoadFromDatabase`, then the same walk | read (`VIEW DEFINITION`) | `ReadSide.fs` and the read side's hand-rolled drain loops | ~60 |
 | A live database's plan | DacFx's own deploy script and report | `io/SqlServer.Plan`: `DacServices.Script` under the pipeline's profile; the script's AST; the guard sites | read | `sqlpackage /Action:Script` in `prove.mjs` | ~250 |
 | A live database's data | SQL Server's own aggregates | `io/SqlServer.Probe`: one executor; a closed allowlist checked on the ScriptDom AST before anything runs; a failed probe against a real environment reports its error number only; a query log | read (integer aggregates only) | `LiveProfiler.fs`, `EvidenceImport.fs`, `DataIntegrityChecker.fs`, probe SQL in the skills | ~380 |
-| A disposable copy | a database the tool created locally and will drop | `io/Substrate` (LocalDB; Docker when the image is already present; a local developer-edition instance) with its registry, and `Publish`, which exists only on the `Copy` type | write, copy only | `TwinContainer.fs`, `TwinDatabase.fs`, `bake.mjs`, `DockerImageEmitter.fs` | ~460 |
+| A disposable copy | a database the tool created locally and will drop | `io/Substrate` (Docker with the pinned SQL Server image, pulled when absent, wherever Docker is installed; LocalDB where it is not; a local developer-edition instance) with its registry, and `Publish`, which exists only on the `Copy` type | write, copy only | `TwinContainer.fs`, `TwinDatabase.fs`, `bake.mjs`, `DockerImageEmitter.fs` | ~460 |
 | The OutSystems metamodel | its `ossys_*` tables | `io/Ossys`: single `SELECT`s over a committed table-and-column allowlist | read | nothing (the refresh and consumer checks are new); v1's rowset SQL is the donor, rewritten | ~280 |
 | Git (the estate, the wiki) | refs, trees, commits | `io/Git`: a worktree at a ref; changed paths; a commit on a named branch and its push | read; commit and push a named branch | the base checkout in the gate and in `inflight-check.mjs` | ~180 |
 | Azure DevOps (policy, pull request) | a branch policy and a REST API | none in the tool. The pipeline template's host step (≤ 25 lines of PowerShell) writes the PR body to a file and posts the comment | host step | the placeholders in `ssdt-agent-pr-validation.yml` | 0 |
 | The agents' surfaces (Copilot in Visual Studio, Claude Code) | files at known paths | `io/Knowledge`: one generator; the targets as data | write, generated only | `ssdt-agent-package.mjs`, `ssdt-agent-gates.mjs` | ~400 |
 | The machine | the SDK, LocalDB, Docker, the committed tool | `io/Doctor` | read | four hooks, 814 lines | ~140 |
-| The engine | the committed DacFx (170.5.96 until the pin lands) and its version | a stamp in every receipt | read | two engines on two paths (in-process 162, external `sqlpackage` 170) | ~30 |
+| The engine | the committed DacFx (170.5.96 until the pin lands) and the SQL Server image's digest | a stamp in every receipt | read | two engines on two paths (in-process 162, external `sqlpackage` 170) | ~30 |
 
 ### 2.3 The lens register
 
@@ -245,25 +250,28 @@ Five consequences, each a line of a later milestone:
 | 1 | Order | kernel and `emit` first (§14.2 steps 1–2); byte parity with v2's emitter before any lifecycle verb | the lifecycle first (M1–M6); `emit`, `decide`, `move` and the full OSSYS reader form the wing (W) | the lifecycle has consumers every day; the wing's only consumer is Prod's cutover, which v2 serves, frozen | a second estate, or a re-emission from OSSYS, needs the wing before Prod is done |
 | 2 | Reading a live database | port v2's read side and profiler into `io/SqlServer` (~2,300 F# lines) | `TSqlModel.LoadFromDatabase` and the one walk for the schema (~240 lines); one probe executor for the data (~380) | the reader DacFx itself uses when it plans the pipeline's deploy; verified read-only (§1 facts 2, 5) | a needed catalog fact is one DacFx does not model. Two are known (constraint trust, CDC tracking), and the executor reads both from the catalog |
 | 3 | The delta | a typed nine-facet `Delta.between` in the kernel (~700) | `Change.Between` over `Element`s, covering every property DacFx knows and the package's scripts and refactorlog (~280), with DacFx's own plan as the statement of what ships | complete by construction; an unmodelled change surfaces instead of vanishing | — |
-| 4 | Building a package | `dotnet build` or MSBuild for proofs; the Twin's own `AddObjects` build | one build for everything: `dotnet build` with the committed DacFx targets | it carries the refactorlog and the pre- and post-deploy scripts (§1 facts 1, 8); the build engine is the committed engine; no Visual Studio and no download | the hosted agent or a laptop cannot run it (S1); then Visual Studio's own MSBuild and SSDT targets, stamped as that engine |
+| 4 | Building a package | `dotnet build` or MSBuild for proofs; the Twin's own `AddObjects` build | one build for everything: `dotnet build` with the committed DacFx targets | it carries the refactorlog and the pre- and post-deploy scripts (§1 facts 1, 8); the build engine is the committed engine; no Visual Studio and no download | S1 finds the estate's project cannot build this way; then, and only then, Visual Studio's own MSBuild and SSDT targets, stamped as that engine |
 | 5 | The substrate | bake a `.bacpac` and an image, publish them as a pipeline artifact, restore | derived locally from committed inputs and cached by fingerprint; `twin bake`, `twin restore` and `twin gc` do not exist, and the bake lane retires | git is the only store; determinism makes any artifact a cache | an artifact store arrives: a restore path is added and nothing else changes (lifecycle prompt §9) |
 | 6 | Prediction | `classify`, pure, from committed evidence | `classify` stays provisional; a new verb, `predict`, reads each environment's branch read-only from DacFx's own guards; proofs run at each environment's branch | the germ's two instruments and its transfer condition | — |
 | 7 | Laws | twelve | fourteen: adds **P** (on a copy, prediction equals proof) and **T** (a proof is reported for an environment only at that environment's branch, engine and profile). Laws 1–5 take lifecycle forms here and keep their emit forms for the wing; 11 and 12 are restated to match the branch tier (Appendix C) | P holds every query v3 writes to the engine's behaviour; T is the transfer condition | — |
 | 8 | Verbs | thirteen, with `knowledge package` used but not counted | twelve in the lifecycle (adds `predict`; counts `knowledge`) and three in the wing (`emit`, `decide`, `move`); `read --from ossys` moves to the wing | test 9 checks the verb list; the list should be true | — |
 | 9 | Budget | ≤ 31,000 lines of C# without the OSSYS reader (≈ 34,000 with it) | ≤ 14,900 for the lifecycle; the wing at §6.6's own figures, if ported | §2.4 | a milestone's exit cannot be met under its ceiling: raise it with one decision line, never silently |
-| 10 | Distribution | a pinned .NET tool from a feed (instruction architecture §9.6 (e)) | the published tool committed in Git LFS, run by `estate.cmd` and `estate.ps1` at the estate's root; `net10.0`, framework-dependent where the .NET 10 runtime is present and self-contained `win-x64` where it is not | the lifecycle prompt's R1 and R2 | a feed arrives: the folder becomes a tool manifest |
+| 10 | Distribution | a pinned .NET tool from a feed (instruction architecture §9.6 (e)) | the published tool committed in Git LFS, run by `estate.cmd` and `estate.ps1` at the estate's root; `net10.0` throughout, published framework-dependent, with DacFx's `net10.0` build assemblies as the build route's targets; the .NET 10 SDK is a prerequisite on every machine that builds | the lifecycle prompt's R1 and R2; MSBuild loads the build task into its own runtime, so the targets and the SDK must agree (§1 fact 1, re-measured on SDK 10.0.401) | a feed arrives: the folder becomes a tool manifest |
 | 11 | Refreshing evidence | the bake lane, on a schema change and weekly | when a live branch disagrees with the committed one (`check evidence`, and every prediction) | §3 consequence 2 | — |
 | 12 | The OSSYS reader | an optional package (~3,600) serving `read --from ossys` and `check outsystems` | a post-cutover subset (~280) over a table-and-column allowlist serves `check outsystems`; the full reader is in the wing | the lifecycle asks the metamodel three questions, not for the whole model, and the platform database holds user records | — |
 | 13 | Where the Twin's fingerprints live | R5: written into the database; values O6: a lock on `[twin].[__state]` | in the Twin database's name (`estate_twin_<schema>_<evidence>_<seed>_<tier>[_<branch>]`), with a lock file under `.estate/` | a state table would make the Twin's schema differ from the repository's, and the drift oracle could no longer check the Twin exactly; the name carries the same fingerprints and `twin status` verifies them | — |
 | 14 | The estate's configuration | `estate/posture.json` (the publish posture, the writable targets, the substrate) and two mirrored profiles, `estate/profiles/{strict,permissive}.publish.xml` | `estate/posture.json` keeps its name and holds each environment (classification, cohorts, references, the profile's path, SQLCMD values, the metamodel's reference) and the substrate preference; `estate/profiles/` holds the pipeline's one profile | §1 fact 10: a hand-kept Strict copy had already drifted from the pipeline's | — |
 | 15 | What exit 3 means | blocked: the publish guard refused | blocked by the data: `kind: guard` (the row-presence guard) or `kind: violation` (the engine refused the change on existing rows, such as Msg 547 or Msg 2628); anything else is a tooling failure | the operation catalog already says a foreign key over orphans "blocks"; one code with a kind keeps both honest | — |
+| 16 | The substrate's engine | LocalDB on every machine; Docker optional and never pulled (the lifecycle prompt) | Docker with the SQL Server image pinned by tag and digest (pulled when absent) wherever Docker is installed, including cloud sessions and the gate; LocalDB where it is not | §1 fact 12: the pull works and the container runs CDC, which LocalDB cannot; one engine for laptops, cloud sessions and CI | a machine has no Docker: LocalDB, with CDC reported *not provable here* |
 
 Everything else in the design documents stands: the thesis (§5), the C# encoding and its toolchain
 (§6.6), the exit codes and the versioned JSON contract, the kernel's purity and the dependency laws,
 the knowledge tree's shape (§9), the documents and their manifest, the session protocols, the
 archive, and the write budget. WP 0.5 makes the instruction architecture's drafts match this plan
 where they assumed a feed, a store or the wing:
-- the SessionStart hook builds and runs the local tool instead of `dotnet tool restore`;
+- the SessionStart hook installs the .NET 10 SDK when it is absent and builds and runs the local
+  tool instead of `dotnet tool restore`; in remote sessions only, it also starts Docker and the
+  SQL Server container, an exception to "no hook starts a daemon" recorded as a decision line;
 - the permissions ask before any verb that pushes (`profile --commit`, `check cdc --commit`,
   `check environments --page --commit`, `knowledge vendor`), and name no `decide` and no `sql:`
   target;
@@ -272,7 +280,8 @@ where they assumed a feed, a store or the wing:
 - in `VALUES.md`, D1, D7 and E1 to E9 read `pending W`; D5 lands in M4 (a second publish changes
   no row); S5 lands in M4 and M5; S7 lands in M1 (its `move` clause reads `pending W`); G4 and G5
   land in M5; G9 lands in M7; O5 and O6 name the copy registry and the Twin's fingerprinted name
-  (M3); X5 and O10 drop `twin restore` and name the outbound-deny lane (M0).
+  (M3); X5 and O10 drop `twin restore`, name Docker's pull of the pinned SQL Server image as the one
+  fetch, and name the outbound-deny lane (M0).
 
 ---
 
@@ -293,7 +302,9 @@ where they assumed a feed, a store or the wing:
 
 The C# column sums to about 13,970 against the 14,900 ceiling; tests are budgeted at ≤ 10,500
 (Appendix F). The days assume agents writing against executable exit checks, one independent
-review per pull request, and the operator reviewing the kernel and contract pull requests.
+review per pull request, the operator reviewing the kernel and contract pull requests, and four
+lanes running at once. A workflow on a 4-CPU container runs two agents at a time, which stretches
+the calendar to about twenty working days.
 
 **The lanes, by day.** Numbers are work packages.
 
@@ -335,13 +346,13 @@ first; and a published tool folder that already builds a classic project.
 
 | WP | Lane | What | Done when |
 |---|---|---|---|
-| 0.1 | C | **Freeze and archive.** Tag `v2-final` at the commit v3 starts from. `git mv` the v1 trunk (`src/`, `tests/`, `config/`, `docs/`, `notes/`, `handbook/`, `ssdt-playbook/`, `schema/`, `tools/`, the solution, v1's root files and its `global.json`) into `archive/v1/`, and `sidecar/projection/` into `archive/v2/`. Re-path the six workflows so v2's lanes keep running from the archive until M8. Regenerate the `.claude/agents` and `.claude/skills` pointers against the new path with v2's packager, or remove them with a `NEXT.md` line until M7 regenerates them. Generate `archive/INDEX.md` (one line per document: path, date, status). The four design documents (`V3_ARCHITECTURE.md`, `V3_INSTRUCTION_ARCHITECTURE.md`, `LIFECYCLE_BACKPORT_PROMPT.md`, this file) stay at the root, each a manifest row (reader: the operator; moment: until M8). | both archived solutions build and pass their fast suites with the counts they had before the move, recorded in the pull request |
+| 0.1 | C | **Freeze and archive.** Tag `v2-final` at the commit v3 starts from. `git mv` the v1 trunk (`src/`, `tests/`, `config/`, `docs/`, `notes/`, `handbook/`, `ssdt-playbook/`, `schema/`, `tools/`, the solution, v1's root files and its `global.json`) into `archive/v1/`, and `sidecar/projection/` into `archive/v2/`. Re-path the six workflows so v2's lanes keep running from the archive until M8. Remove the `.claude/agents` and `.claude/skills` pointers, which point into v2's tree, with a `NEXT.md` line: M7 regenerates them from `knowledge/`. The same push carries WP 0.5's `.claude/settings.json` and hooks, because today's hooks read `sidecar/projection/global.json` and start SQL Server through `sidecar/projection/scripts/warm-sql.sh`, both of which this move relocates. Generate `archive/INDEX.md` (one line per document: path, date, status). The five root documents (`V3_ARCHITECTURE.md`, `V3_INSTRUCTION_ARCHITECTURE.md`, `LIFECYCLE_BACKPORT_PROMPT.md`, this file and `V3_BUILD_PROMPT.md`) stay at the root, each a manifest row (reader: the operator or the build session; moment: until M8; budget: its size at M0). | both archived solutions build and pass their fast suites with the counts they had before the move, recorded in the pull request |
 | 0.2 | A | **The solution.** `Estate.sln`; `kernel/` (references the BCL and `System.Collections.Immutable` only; implicit usings off), `io/` (kernel, DacFx 170.5.96, ScriptDom, `Microsoft.Data.SqlClient`, Bogus), `cli/` (assembly name `estate`), `tests/{Kernel.Tests, Io.Tests, Budgets.Tests}` (xUnit, CsCheck, NetArchTest). `net10.0` throughout; `global.json` on the .NET 10 SDK band, `rollForward: latestPatch`. `Directory.Build.props`: nullable, warnings as errors, deterministic, the culture and ordinal rules (CA1304, CA1305, CA1307, CA1309) as errors, `BannedApiAnalyzers` with `kernel/BannedSymbols.txt`: `System.IO`, `System.Net`, `DateTime.Now`, `DateTime.UtcNow`, `DateTimeOffset.Now`, `DateTimeOffset.UtcNow`, `Guid.NewGuid`, `Random`, `RandomNumberGenerator`, `Stopwatch`, `Environment`, `CultureInfo.CurrentCulture`, `Task`. `Directory.Packages.props` with lock files, locked restore in CI. `.editorconfig`; `.gitattributes` (LF for text). | each banned symbol, planted in `kernel/`, is a build error; the solution builds clean |
 | 0.3 | A | **The first kernel types.** `Seq<T>` (element-wise equality, ordinal-sorted construction), `Result<T>` and `Refusal` (code, message, remedy), `Name`, `Fingerprint` (SHA-256 over canonical bytes), and §3's `Receipt` and `Engine`. | CsCheck properties for `Seq`'s equality and order and for `Fingerprint`'s stability across processes pass |
 | 0.4 | B | **The contract.** A verb table that generates `--help --json` and the schemas under `cli/schemas/`; the envelope (`schema`, `engine`, `receipt`, `verdict`, `findings`, `exit`); the frozen exit table (0, 1, 2, 3, 4, 5, 6, 7, 9, 130) with a test that it never shrinks; `io/Write.cs` (UTF-8 without a BOM, LF, atomic replace, an existing file's declared line ending preserved). `cli` sets `DACFX_TELEMETRY_OPTOUT=1` and `DOTNET_CLI_TELEMETRY_OPTOUT=1` in its own process before DacFx loads. | `estate --help --json` validates against its schema; the writer's tests pass on both CI operating systems |
-| 0.5 | C | **The words.** `README.md`, `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md` and the hooks), `VALUES.md` (the instruction architecture's §4 with §4 above's re-pointing; each `Where` names the test a milestone will add, written `pending M<n>` or `pending W` until then), `DECISIONS.md` (opened with this plan's decisions: C#; lifecycle first; `predict` added and `knowledge` counted; the wing; git as the only store; `net10.0`; DacFx 170.5.96 until the pin), `NEXT.md`, `ci/docs.manifest.json`, `ci/budgets.json` (Appendix F), `ci/packages.allow`, `.claude/settings.json` (the permissions as §4 redrafts them) and the two hooks (start: make `dotnet` exist, build `cli` into `.estate/bin/` when stale, run `estate doctor`; end: `estate twin down --if-idle`). | the fast tests in 0.6 pass over them |
-| 0.6 | C | **The fast tests.** `Budgets`, `Manifest`, `NoSkips`, `PackagesAllowlist`, `Decisions`, `Citations` (the engine's documents), `Register.Prose` (on `VALUES.md` first), `NoRestatedCounts`, the two dependency laws, and the archive exclusion. `ValuesResolve` accepts `pending M<n>` until that milestone's exit and `pending W` until M8, and fails after. | green in the fast lane, under five minutes |
-| 0.7 | B | **The tool folder, the first fixture, CI.** `ci/publish.{ps1,sh}`: `dotnet publish cli` into `dist/estate/`, then the package's `Microsoft.Data.Tools.Schema.SqlTasks.targets` and the reference stub (§1 fact 1) beside it, size printed. `tests/Golden/classic-minimal/`: Appendix E's classic project. GitHub Actions, on both CI operating systems (Ubuntu with SQL Server in Docker; Windows with LocalDB): a fast lane, and a SQL lane running `Io.Tests`, one of whose jobs denies all outbound traffic except the SQL port. | `dist/estate/estate --version` runs; the minimal classic project builds against `dist/estate/` on both operating systems; the outbound-deny job passes |
+| 0.5 | C | **The words.** `README.md`, `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md` and the hooks), `VALUES.md` (the instruction architecture's §4 with §4 above's re-pointing; each `Where` names the test a milestone will add, written `pending M<n>` or `pending W` until then), `DECISIONS.md` (opened with this plan's decisions: C#; lifecycle first; `predict` added and `knowledge` counted; the wing; git as the only store; `net10.0`; DacFx 170.5.96 until the pin; Docker as the substrate), `NEXT.md`, `ci/docs.manifest.json`, `ci/budgets.json` (Appendix F), `ci/packages.allow`, `.claude/settings.json` (the permissions as §4 redrafts them) and the two hooks. Start: install the .NET 10 SDK `global.json` names when it is absent (`dotnet-install.sh`), build `cli` into `.estate/bin/` when stale, in remote sessions only start Docker and the shared SQL Server container, and run `estate doctor`. End: `estate twin down --if-idle`. The Docker step is an exception to "no hook starts a daemon" and gets its decision line. | the fast tests in 0.6 pass over them; a fresh cloud session reaches `estate doctor` with the .NET 10 SDK and SQL Server up |
+| 0.6 | C | **The fast tests.** `Budgets`, `Manifest`, `NoSkips`, `PackagesAllowlist`, `Decisions`, `Citations` (the engine's documents), `Register.Prose` (on `VALUES.md` first), `NoRestatedCounts`, the two dependency laws, and the archive exclusion. The five root documents are manifest rows but are excluded from `Register.Prose`, `Vocabulary`, `NoRestatedCounts` and `Citations` until M8, because they must name v1's and v2's retired terms, their counts, and verbs not yet built. `ValuesResolve` accepts `pending M<n>` until that milestone's exit and `pending W` until M8, and fails after. | green in the fast lane, under five minutes |
+| 0.7 | B | **The tool folder, the first fixture, CI.** `ci/publish.{ps1,sh}`: `dotnet publish cli` (`net10.0`, framework-dependent) into `dist/estate/`, then the `net10.0` `Microsoft.Data.Tools.Schema.SqlTasks.targets` from the DacFx package and the reference stub (§1 fact 1) beside it, size printed. `Io.Tests` share one SQL Server per run, with a registered database per test (`estate_<host>_<pid>_<rand>`) so concurrent agents never collide: a container from the pinned image (pulled when absent, SQL Server Agent enabled) on Ubuntu and in cloud sessions, LocalDB on Windows. `tests/Golden/classic-minimal/`: Appendix E's classic project. GitHub Actions, on both CI operating systems (Ubuntu with SQL Server in Docker; Windows with LocalDB): a fast lane, and a SQL lane running `Io.Tests` (the CDC tests on Ubuntu), one of whose jobs denies all outbound traffic except the SQL port once the image is present. | `dist/estate/estate --version` runs; the minimal classic project builds against `dist/estate/` on both operating systems; the outbound-deny job passes |
 
 **Day-one spikes, run where each fact lives.**
 
@@ -350,13 +361,15 @@ first; and a published tool folder that already builds a classic project.
 | S1 | Does §1's build run on `windows-latest` and on a team laptop, and does the estate's project reference `master.dacpac` (so the tool folder must carry the system dacpacs)? | engine CI; one laptop | `estate/ledgers/toolchain.md`; a decision line | WP 1.1 |
 | S2 | Which guard shapes does the pipeline's engine emit for each archetype, and do they match the committed engine's? | engine CI, both engines | the extracted guards only, under `tests/Golden/guards/` | WP 2.2 |
 | S3 | Do `Script`, `LoadFromDatabase` and a probe run against Dev as the developers' group, and how long does `LoadFromDatabase` take there? | a developer's laptop | `STATE.md`; `estate/ledgers/toolchain.md` | M1 exit 1 |
-| S4 | How long does a LocalDB restore of a shape-volume Twin take at the estate's size? | `windows-latest`; a laptop | a decision line | WP 3.4 |
+| S4 | How long does a restore of a shape-volume Twin take at the estate's size, in the container and in LocalDB? | engine CI; a laptop | a decision line | WP 3.4 |
 | S5 | Which OutSystems 11 metamodel tables and columns hold consumer references and publish times? | Dev's platform database, read-only | `io/Ossys`'s allowlist and SQL | WP 6.1 |
-| S6 | Which .NET runtimes and SDKs do laptops and hosted agents have? | the corporate agent's `STATE.md` | framework-dependent or self-contained, as a decision line | WP 5.4 |
+| S6 | Do the laptops and the hosted agents have the .NET 10 SDK and Docker? | the corporate agent's `STATE.md` | §17 item 7 | building on the estate |
 | S7 | Which profile and which engine does the Octopus step apply? | the Octopus project's settings, read by release engineering | `estate/profiles/pipeline.publish.xml` (options only); the toolchain row | M4 exit 4's meaning; §17 items 1 and 15 |
+| S8 | Which SQL Server version and compatibility level do Dev, QA and UAT run? | each environment, read-only (`SELECT @@VERSION`; `sys.databases.compatibility_level`) | the pinned image's tag and digest in the toolchain row | WP 3.4's pin; §17 item 19 |
 
 **Exit.**
-1. `dotnet build Estate.sln` is clean with warnings as errors, and `dotnet test --filter Category=fast` is green.
+1. `dotnet build Estate.sln` is clean with warnings as errors, and
+   `dotnet test --filter Category=fast` is green.
 2. `archive/v1` and `archive/v2` build and pass their fast suites with unchanged counts.
 3. `estate doctor` prints `DEGRADED` with a remedy per missing item; it does not claim M1 exists.
 4. `tests/Golden/classic-minimal/` builds against `dist/estate/` on both CI operating systems.
@@ -364,12 +377,12 @@ first; and a published tool folder that already builds a classic project.
 **Retires.** The four hooks (814 lines), the root agent files and `sidecar/projection/CLAUDE.md`,
 all archived with their trees.
 
-**Watch for.** The runtime. The engine targets `net10.0`, the LTS the design documents name (.NET 8
-and 9 both leave support in November 2026). S6 decides only how it ships: framework-dependent where
-every laptop and hosted agent has the .NET 10 runtime (Visual Studio 2026 installs it), self-contained
-`win-x64` where one does not (about 70 MB more in LFS). The build of a `.sqlproj` needs a .NET SDK of
-8 or later, which Visual Studio installs; without one, the fallback is Visual Studio's own MSBuild and
-SSDT targets, and the receipt names that engine.
+**Watch for.** The runtime. Everything targets `net10.0`, the LTS the design documents name. A
+machine that builds a `.sqlproj` needs the .NET 10 SDK, because MSBuild loads DacFx's `net10.0`
+build task into its own runtime. The hook installs it in cloud sessions, Visual Studio 2026 installs
+it on a laptop, and S6 confirms the hosted agents. The tool ships framework-dependent. Visual
+Studio's own MSBuild and SSDT targets are a fallback only if S1 finds the estate's project cannot
+build the committed way.
 
 ---
 
@@ -382,7 +395,7 @@ package's scripts and refactorlog.
 
 | WP | Lane | What | Done when |
 |---|---|---|---|
-| 1.1 | B | `io/Ssdt.Build`: §1's command against the committed tool folder with `-p:DacFxTelemetryEnabled=false`, output under `.estate/build/<sha>/`; Visual Studio's MSBuild with Visual Studio's own SSDT targets through `vswhere` when no .NET SDK is present, stamped as that engine; exit 7 with the log's errors. `Load`; the refactorlog read. A ref builds through `io/Git.At`. | the classic fixtures build on both CI operating systems with the refactorlog and both deploy scripts inside; a broken `.sql` exits 7 naming the file |
+| 1.1 | B | `io/Ssdt.Build`: §1's command against the committed tool folder with `-p:DacFxTelemetryEnabled=false`, output under `.estate/build/<sha>/`; Visual Studio's MSBuild with Visual Studio's own SSDT targets through `vswhere` only if S1 finds the estate's project cannot build the committed way, stamped as that engine; a machine without the .NET 10 SDK is exit 6 with the remedy; exit 7 with the log's errors. `Load`; the refactorlog read. A ref builds through `io/Git.At`. | the classic fixtures build on both CI operating systems with the refactorlog and both deploy scripts inside; a broken `.sql` exits 7 naming the file |
 | 1.2 | B | `io/Ssdt.Walk`: a `TSqlModel` into `Seq<Element>`, generic over `ObjectType.Properties` and `.Relationships`, descending from each top-level object through its composing relationships (columns, constraints, indexes); values into the kernel's closed `Value` (boolean, integer, string, enumeration name, null); a property DacFx cannot read on an object is skipped. From a package, it also emits one element each for the pre- and post-deploy scripts (their text as the build inlined it) and one per refactorlog entry. No code per type. | WP 1.3's properties pass against it |
 | 1.3 | A | kernel `Element` and `Change`: canonical order; `Fingerprint.Of(Seq<Element>)`; `Change.Between(before, after, renames)` into added, removed, renamed (from the refactorlog) and changed (per property, before and after), the deploy scripts included. Pure; CsCheck over generated element sets. | law 3′ passes; the diff of each archetype pair names exactly what the archetype changes, a seed or pre-deploy edit included |
 | 1.4 | B | `io/SqlServer` and a minimal `io/Substrate`. The target grammar: `env:<name>` from `estate/posture.json`; `copy:<name>`, resolved only against `.estate/copies.json`; `twin`; `ref:<git ref>`; `dacpac:<path>`. The `Named` and `Copy` types: `Copy` has no public constructor, `Substrate.Create` makes one for a local database it names `estate_<host>_<pid>_<rand>` and registers, and `Publish` exists only on `Copy`. Connections: the caller's integrated identity by default, or a reference (`env:VAR`, `file:path`) that may resolve to any connection string, SQL authentication included; a literal connection string in `estate/posture.json`, a profile or an argument is exit 6; a resolved value is never printed. `Model(target)` through `LoadFromDatabase` and the walk. `Plan(package, target, profile)` through `DacServices.Script` with both outputs. **The probe executor**, one statement at a time, parsed and checked before it runs. Against a named environment the outermost select list holds only `COUNT` or `COUNT_BIG` (of `*` or of `DISTINCT` a column), `SUM(CASE WHEN <predicate> THEN 1 ELSE 0 END)`, `MIN` or `MAX` over `LEN()` or `DATALENGTH()`, `CASE WHEN EXISTS (<subquery>) THEN 1 ELSE 0 END`, and integer literals, so every result is an integer. Bucket boundaries are lengths or literals, never read from the data. Names have one or two parts. `STRING_AGG`, `MIN`/`MAX`/`AVG` over a bare column, `INTO`, `EXEC`, DML, DDL, `OPENROWSET`, `OPENQUERY`, `OPENDATASOURCE` and `OPENXML` are refused. Against an environment classified real, a failed probe records its error number and its claim site and nothing else ("probe failed: Msg 245; message withheld"). Every statement and its row count go to `.estate/runs/<id>/queries.log`. | the compile-fail test passes; the allowlist's fuzz corpus (each forbidden form planted as a negative case) passes |
@@ -482,14 +495,15 @@ to 3.3) needs only M0; `twin up` (3.5) needs M1's build.
 | 3.1 | T | kernel `Schema`, the typed lens σ reads over `Element`s (tables; columns with their type facets; keys; references; uniques; checks; defaults; identity; computed and temporal columns flagged), and `Order` (a mint order over references; nullable legs deferred to a second pass; a cycle with no nullable leg is a refusal naming it). | `Schema.Of` over a published copy's walk equals, mapped, the catalog v2's read side writes as JSON for the same copy (v2's CLI, run from the archive) |
 | 3.2 | T | kernel `Evidence`: measures per table, column, reference and unique candidate; disclosure classes (count, bucket, vocabulary), where a vocabulary can be constructed only with an environment *confirmed* synthetic as its provenance, so the committed shape tier is literal-free by type; row tiers; and the derivation rule for a column the evidence predates (null in every existing row unless a default fills it). A codec with a round-trip property. The evidence's *standing sites* (every table's presence, every column's nulls and maximum length, every candidate reference's orphans, every unique candidate's duplicates) are what `check evidence` compares. | the codec's round trip and the literal-freedom constructor tests pass |
 | 3.3 | T | kernel `Synth`, σ, ported with its tests first from v2's `SyntheticData.fs`, `SyntheticCorrection.fs`, `SyntheticVolume.fs`, `Centrality.fs`, and `Twin.Core`'s `Evidence.fs` and `DerivedEvidence.fs`. The generator is a parameter (no `Random` and no clock in the kernel); the seed is the ISO week of the head commit's committer date, computed in `io` and passed in; S-stability is kept (a schema edit re-mints only the touched tables' columns). Three tiers. The **branch tier** is exact to R6 (a row where the environment has rows, a null where it has nulls, an orphan where it has orphans, two equal values where it has duplicates, a value at the recorded maximum length), and given a `Branch` it realizes that branch and nothing more. Orphans are minted only on references the evidence records as orphaned and no trusted constraint declares. | v2's minted rows at one seed, per table ordered by key, are byte-identical (law 11′'s differential half); S-stability holds |
-| 3.4 | B | `io/Substrate`, completed from M1's minimal form: LocalDB through `sqllocaldb`; Docker only when the image is already on the machine (the tool never pulls); or a local developer-edition instance. Every copy registered in `.estate/copies.json` under `estate_<host>_<pid>_<rand>`; the sweep drops only this host's registered names older than a day; a substrate on a host that any environment's reference resolves to is exit 9; backup and restore into `.estate/cache/`. | two concurrent runs share nothing; a killed run is swept by the next |
+| 3.4 | B | `io/Substrate`, completed from M1's minimal form: Docker with the SQL Server image pinned by tag and digest in `estate/ledgers/toolchain.md` (pulled when absent; SQL Server Agent enabled, so CDC works), wherever Docker is installed; LocalDB through `sqllocaldb` where it is not; or a local developer-edition instance. The image's digest joins the engine in every receipt. Every copy registered in `.estate/copies.json` under `estate_<host>_<pid>_<rand>`; the sweep drops only this host's registered names older than a day; a substrate on a host that any environment's reference resolves to is exit 9; backup and restore into `.estate/cache/`. | two concurrent runs share nothing; a killed run is swept by the next |
 | 3.5 | T | `io/Twin` and `io/Realize`, and `twin up [--tier branch\|shape\|scale] [--at <ref>] [--branch <file>]`: build at the ref (M1); create a database named from its fingerprints (`estate_twin_<schema>_<evidence>_<seed>_<tier>[_<branch>]`, §4 row 13) under a lock file in `.estate/`; publish under the pipeline's profile with drop-not-in-source, so the post-deploy seeds run as they do in every environment; mint; bulk-load in mint order; fill the deferred legs; validate every constraint `WITH CHECK CHECK` and refuse by name on a violation; back it up into the cache. Shape-tier values are realized with Bogus in `io`, never in the kernel. The Twin carries no state table, so its schema is exactly the repository's and `check drift --target twin` is its health check. | after `twin up --at <Dev's deployed tag>`, `check drift --target twin --at <that tag>` exits 0 (R12, the Twin's half) |
 | 3.6 | T | `twin check`, `status`, `down`: mint twice with identical digests; every trusted reference resolves, and orphans exist exactly where the evidence records them; re-profiling the mint recovers the evidence within ε; converged by the drift oracle; `status` reads the fingerprints from the name and verifies them; `down --if-idle` drops this host's Twin copies and stops the LocalDB instance only when no `estate` process holds the lock. | law 11′ green |
 | 3.7 | T | `io/Profile` and the verbs `profile` and `check evidence`. `estate profile --env dev [--vocabulary] [--counts] [--commit]` runs M2's builders over every standing site the schema declares, plus buckets, and writes `estate/evidence.shape.json`. `--vocabulary` is exit 9 until the environment is confirmed synthetic. An environment classified real is always profiled as `--counts`: row tiers only, into `estate/ledgers/row-tiers.md`, with the environment and the date on every row. `--commit` commits on a new branch, pushes it with the caller's git credential, and prints the URL that opens the pull request. `check evidence` compares the committed evidence's standing sites with a live branch over the same sites, and refuses a file that is not literal-free. | law 12′ green; the canary scan's second half passes |
 
 **Exit.**
-1. On a clean laptop with LocalDB and nothing but the estate's clone, `estate twin up` reaches a
-   current Twin at shape volume in under ten minutes, and from the cache in under a minute (R5).
+1. On a clean laptop with Docker or LocalDB and nothing but the estate's clone, `estate twin up`
+   reaches a current Twin at shape volume in under ten minutes, and from the cache in under a minute
+   (R5).
 2. `estate twin check` passes; two mints under one seed are byte-identical (R8; law 11′).
 3. At branch volume, probes on the Twin find each of R6's population rules met.
 4. A lead's `estate profile --env dev --commit` ends at a pull request that changes only
@@ -519,11 +533,11 @@ or not, and why.
 
 | WP | Lane | What | Done when |
 |---|---|---|---|
-| 4.1 | B | `io/Prove`. For each distinct branch (Dev's by default; those in a prediction file or a PR body's machine block with `--branch-from`): a fresh copy, restored from the cached Twin at that branch or minted at branch tier, never the Twin itself; build head; plan against the copy; publish **Strict** (the pipeline's profile as loaded) and record the outcome: *published*; *blocked*, with `kind: guard` (the row-presence guard, Msg 50000) or `kind: violation` (the engine refused the change on existing rows, such as Msg 547, 515, 1505, 2628 or 245), and the message verbatim, since the copy holds only minted rows; or *failed* for anything else. On a block, publish **Permissive** on the same copy and record the consequence (rows before and after per touched table, widths, trust, and the error number at each violating site). Read back trust (`is_not_trusted` on every foreign key and check, a catalog read). Compute conservation hashes for a multi-phase step. Publish again and require the plan empty and every seeded table's content hash unchanged (value D5). Assert CDC silence where the substrate has CDC; otherwise record *not provable here*. The receipt: the copy's name, the script's SHA-256, the engine, the time, the five fingerprints. Drop the copy unless `--keep`. | the make-mandatory archetype yields exit 3, `kind: guard`, the verbatim message and a receipt |
+| 4.1 | B | `io/Prove`. For each distinct branch (Dev's by default; those in a prediction file or a PR body's machine block with `--branch-from`): a fresh copy, restored from the cached Twin at that branch or minted at branch tier, never the Twin itself; build head; plan against the copy; publish **Strict** (the pipeline's profile as loaded) and record the outcome: *published*; *blocked*, with `kind: guard` (the row-presence guard, Msg 50000) or `kind: violation` (the engine refused the change on existing rows, such as Msg 547, 515, 1505, 2628 or 245), and the message verbatim, since the copy holds only minted rows; or *failed* for anything else. On a block, publish **Permissive** on the same copy and record the consequence (rows before and after per touched table, widths, trust, and the error number at each violating site). Read back trust (`is_not_trusted` on every foreign key and check, a catalog read). Compute conservation hashes for a multi-phase step. Publish again and require the plan empty and every seeded table's content hash unchanged (value D5). Assert CDC silence on the Docker substrate, where SQL Server Agent runs the capture job; on LocalDB record *not provable here*. The receipt: the copy's name, the script's SHA-256, the engine, the time, the five fingerprints. Drop the copy unless `--keep`. | the make-mandatory archetype yields exit 3, `kind: guard`, the verbatim message and a receipt |
 | 4.2 | A | kernel `Outcome.Prove`, `Readback`, `Transfers` (branch, engine and profile, §3); the shapes (`one release`, `two releases`, `refused`), each with its reason; "does not transfer: <the input that differs>". | law T as a kernel property |
 | 4.3 | B | the verb `prove`: `--target twin` means fresh copies restored from the Twin, and `--target copy:<registered name>` a copy the registry holds; `env:` is exit 9 with "prove never publishes to a named environment; use predict". A one-screen Markdown summary by default and the JSON with `--json` (R10). With no substrate on the machine, exit 4 with the remedy, and nothing classified from the text (R27). The refactorlog writer: `estate diff --refactorlog <old> <new>` writes the entry with `XmlWriter`, with v2's `RefactorLogEmitter` as the specification. | law 6 green |
 | 4.4 | C, A | the corpus completed: every operation archetype and the compound case, each with its expected classification, its prediction per branch, and its proof, the `INSERT` fixtures replaced by branch-tier mints; one parameterized test runs them all (the proof lane: nightly, on both CI operating systems). | the proof lane green on the committed engine |
-| 4.5 | B | laws 6, 7, 8, 9, 10, P and T as `Io.Tests` (Appendix C). | all green |
+| 4.5 | B | laws 6, 7, 8, 9, 10, P and T as `Io.Tests` (Appendix C); law 8's CDC half on the Docker substrate. | all green |
 
 **Exit.**
 1. The make-mandatory archetype: `estate prove` exits 3 with the guard's message verbatim, the
@@ -566,12 +580,12 @@ minutes, and posts the table.
 |---|---|---|---|
 | 5.1 | A | kernel `Record` and `Locks`, reading `knowledge/record.md` (WP 7.2 lands it by day 5). The evidence table first: the build; the delta, with its data-loss steps and renames with refactorlog presence; *first time on this estate*, from `estate/ledgers/operations.md` (value G4); the prediction per environment, or *pending a lead*; the proof per branch, with *transfers* or the input that differs; baseline drift; in-flight collision; the engine pin; the profile's provenance; consumers to republish, or *not checked*. Then the ten sections, with "The data" carrying rows before, rows after and the approver for any data-modifying pre-deploy (value S5), and "Not checked" pre-filled with the germ's four standing items (application behaviour in Service Studio; the correctness of the business answer; Prod's population until it is profiled; any change between the last read and the deploy) above a placeholder for the author's own. Placeholders for the intent and the business answer with its owner. The register lint (the banned list) as a pure function. `Locks`: open windows from `estate/ledgers/in-flight.md`; a delta with data-loss steps on more than one table and no program row. | a record over the corpus passes `Register.Samples`' rules; every claim in it carries a receipt with its five inputs or names the one it lacks (law 5′); placeholders are detected by position |
 | 5.2 | B | `io/Gate` and the verbs `gate`, `record`, `check inflight`. Base and head from git. `classify`'s blocking findings (a rename without its entry, for a column, a table or a schema move; a CDC column-list change) and the lock checks run first and exit 9 with the row, before any proof. The branches come from the PR body's machine blocks; a block whose receipt names a different head package is stale and reported so; with no block, Dev's branch comes from the committed evidence. The Twin at branch volume; a proof per distinct branch (environments that share a branch share a proof; the base is published once and restored per branch). The gate reads `estate/ledgers/row-tiers.md` for each environment it reports on, and an environment with no dated row reads *not profiled* (value G5). The record is regenerated; placeholders and banned words fail the gate, by line (R18); a body section that disagrees with the regenerated one, and an author's receipt (script SHA-256, engine, profile, branch) that disagrees with the gate's, are findings posted with the table, not failures. `changelog.json` (added, removed, renamed with refactorlog keys, retyped; the open windows). The page's repository cells (open windows, changes in review) are regenerated (R23). `gate.json`; exit 0, 3 with the verdict attached, 9, or a tooling code that says it is one. | `estate gate` run locally and in CI on one branch give identical `gate.json` apart from the receipt's place and time |
-| 5.3 | C | `ci/azure/`: `gate.yml` (`windows-latest`; checkout with LFS; start LocalDB; `.\estate.cmd gate …`; the `RecordInPullRequest` and `VendoredCitations` checks; a host step of at most twenty-five lines of PowerShell that writes the PR body to a file and posts the evidence table as a comment with the job's access token), its README with the branch-policy steps (a YAML `pr:` trigger does not fire on Azure Repos), and the pre- and post-deploy snippets M6 uses. | the template runs end to end when queued by hand on a scratch pull request in the estate, before the policy is registered |
-| 5.4 | B | `estate knowledge vendor --to <estate checkout>`, on a new branch as one pull request: `tools/estate/` (the published tool, framework-dependent or self-contained per S6, with the targets and the reference stub), `estate.cmd` and `estate.ps1` at the estate's root (both export the telemetry opt-outs), the LFS rules for the tool's binaries, `.estate/` in `.gitignore`, the pipeline templates, and `estate/posture.json` and the ledgers seeded *only if absent*, every environment seeded `real`. Line endings: the vendoring proposes `.gitattributes` and `.editorconfig` lines for `*.sql`, `*.sqlproj`, `*.refactorlog` and `*.publish.xml` that declare the endings the files already carry (`STATE.md`), and never edits those estate-owned files in place. A new tool version appends exactly one dated row to `estate/ledgers/toolchain.md`; the README gives the `git lfs prune` step for the retired one. v2's packager overwrote the ledgers (`ssdt-agent-package.mjs:604–632`). | re-vendoring the same version changes no byte; a new version changes the tool folder and adds one ledger row, nothing else |
+| 5.3 | C | `ci/azure/`: `gate.yml` with two jobs from the clone, each checking out with LFS and running `pwsh ./estate.ps1 gate …` on the .NET 10 SDK the hosted image carries: `ubuntu-latest` with the pinned SQL Server container (the proof, CDC included, and the posted table) and `windows-latest` with LocalDB (the Windows checkout's exactness and parity); the `RecordInPullRequest` and `VendoredCitations` checks; a host step of at most twenty-five lines of PowerShell that writes the PR body to a file and posts the evidence table as a comment with the job's access token), its README with the branch-policy steps (a YAML `pr:` trigger does not fire on Azure Repos), and the pre- and post-deploy snippets M6 uses. | the template runs end to end when queued by hand on a scratch pull request in the estate, before the policy is registered |
+| 5.4 | B | `estate knowledge vendor --to <estate checkout>`, on a new branch as one pull request: `tools/estate/` (the published tool, `net10.0` and framework-dependent, with the `net10.0` targets and the reference stub), `estate.cmd` and `estate.ps1` at the estate's root (both export the telemetry opt-outs), the LFS rules for the tool's binaries, `.estate/` in `.gitignore`, the pipeline templates, and `estate/posture.json` and the ledgers seeded *only if absent*, every environment seeded `real`. Line endings: the vendoring proposes `.gitattributes` and `.editorconfig` lines for `*.sql`, `*.sqlproj`, `*.refactorlog` and `*.publish.xml` that declare the endings the files already carry (`STATE.md`), and never edits those estate-owned files in place. A new tool version appends exactly one dated row to `estate/ledgers/toolchain.md`; the README gives the `git lfs prune` step for the retired one. v2's packager overwrote the ledgers (`ssdt-agent-package.mjs:604–632`). | re-vendoring the same version changes no byte; a new version changes the tool folder and adds one ledger row, nothing else |
 
 **Exit.**
 1. A real pull request on the estate: the gate runs end to end in under ten minutes; its log holds
-   no download; the evidence table is posted (R17).
+   no download but the pinned SQL Server image; the evidence table is posted (R17).
 2. A body with a placeholder or a banned word fails, naming the line (R18). A body whose sections
    disagree with the regenerated ones gets a finding naming the section, posted with the table.
 3. A pull request touching a table in an open window fails with exit 9 naming the ledger row; so
@@ -693,15 +707,16 @@ requirements, not through code.
    `predict` from day 5. Running both on one branch is a differential test in the field, and a
    disagreement is a finding for both.
 4. **One thing crosses the network:** the tool folder and its shims, as a pull request to the
-   estate (§17 item 14). No data crosses in either direction, the tool opens no connection but the
-   SQL Server it was given, and no knowledge travels outside the vendored bundle.
+   estate (§17 item 14). No data crosses in either direction, and no knowledge travels outside the
+   vendored bundle. At run time the tool opens no connection but the SQL Server it was given, and
+   the one fetch is Docker pulling the pinned SQL Server image when it is absent.
 5. **The estate owns** `estate/posture.json`, `estate/ledgers/`, `estate/evidence.shape.json`,
    `estate/profiles/`, `.gitattributes`, `.editorconfig` and the SSDT project. Vendoring seeds what
    is absent and never overwrites (M5's test); the verbs that propose a change to one (`profile`,
    `check cdc`, a new tool version's toolchain row, the line-ending lines) do it as a commit on a
    new branch, for review.
-6. **The corporate agent's `STATE.md`** answers S1, S3, S5, S6 and S7 on its first day. Those are the
-   facts this repository cannot measure (§1's last paragraph).
+6. **The corporate agent's `STATE.md`** answers S1, S3, S5, S6, S7 and S8 on its first day. Those
+   are the facts this repository cannot measure (§1's last paragraph).
 
 ---
 
@@ -743,10 +758,10 @@ requirements, not through code.
 | 4 | Git LFS enabled on the estate | the Azure DevOps administrator | M5 exit 4 on the estate, and nothing else | the rest of M5 runs on the engine repository and a scratch estate |
 | 5 | The gate registered as a branch policy | the Azure DevOps administrator | M5 exit 1 | the gate is queued by hand on a pull request until then |
 | 6 | One dev lead for evidence refreshes and QA and UAT predictions | the operator | M2 exit 2; M3 exit 4 | the operator |
-| 7 | The runtimes and SDKs on laptops and hosted agents (S6) | IT; the corporate agent's `STATE.md` | WP 5.4's form | `net10.0` either way: framework-dependent where the runtime is present, self-contained `win-x64` where it is not |
+| 7 | The .NET 10 SDK and Docker on every laptop and hosted agent (S6) | IT; the corporate agent's `STATE.md` | building a `.sqlproj` there, and so every verb that builds | `estate doctor` names a missing SDK with its remedy; without Docker, LocalDB is the substrate and CDC reads *not provable here* |
 | 8 | The Visual Studio Copilot pilot | the operator and one champion | M7's exit | the 18.4 rung (`V3_ARCHITECTURE.md` §16.1, item 2) |
 | 9 | The wing: will the reverse leg run, and will anything re-emit from OSSYS | the operator | W; M8 | frozen in the archive; no port |
-| 10 | Which tables CDC captures, per environment | the dev leads | M2's CDC finding; M4's CDC proofs | `check cdc` proposes the ledger on day five; CDC proofs run only where the substrate has CDC |
+| 10 | Which tables CDC captures, per environment | the dev leads | M2's CDC finding; M4's CDC proofs | `check cdc` proposes the ledger on day five; CDC proofs run on the Docker substrate (§1 fact 12) |
 | 11 | Prod's counts before its first release | the operator | the page's Prod row; any prediction for Prod | Prod greyed; `estate profile --env prod --counts` before its first release |
 | 12 | The reviewers roster | the operator | nothing in code; the gate is load-bearing until the roster is data | `V3_ARCHITECTURE.md` §16.1, item 5 |
 | 13 | One repository or two | the operator | the vendor contract | two (§15 item 1) |
@@ -755,6 +770,7 @@ requirements, not through code.
 | 16 | Declared bytes: the estate's `.gitattributes` and `.editorconfig` lines for its SSDT files | the dev leads | M5 exit 5 (R24) | WP 5.4 proposes lines matching what the files carry; the oracle's exactness on Windows waits for the merge |
 | 17 | A service account holding every cohort's read access and the metamodel's, for a self-hosted agent | the owners of the AD groups | the gate predicting QA and UAT itself (the backport prompt's prerequisite 7) | the lead's pasted block is the prediction of record |
 | 18 | The first real Dev deploy of a declarative foreign key, read back | the team, at their next such change | turns law 10 from a copy's fact into the estate's | `check drift` and the trust probe after that deploy; the result recorded in `knowledge/findings.md` with its receipt |
+| 19 | The SQL Server version and compatibility level the environments run (S8) | the dev leads | the pinned image's tag | SQL Server 2022 (`mcr.microsoft.com/mssql/server:2022-latest`, pinned by digest) until S8 answers |
 
 ---
 
@@ -781,6 +797,8 @@ requirements, not through code.
   self-hosted agent (§17 item 17) retires the paste.
 - **σ's port.** The largest new code and the only byte oracle. Tests first; the seed fixture; lane
   T starts on day two.
+- **The image drifting.** `2022-latest` moves. The pin is by digest in the toolchain ledger, every
+  receipt stamps it, and a new digest is a decision line, never a silent pull.
 - **The profile and the engine are still unverified.** Until S7 lands, every trust-state finding is
   relative to the committed engine and the proving ground's profile, and §1 fact 11 shows the
   profile can decide the answer. The stamp, the ledger row, the version window and the first real
@@ -801,8 +819,8 @@ state 127 and its predicate returns 1 on a populated table. The deploy report of
 has no operations. `LoadFromDatabase` runs as that login. The property walk finds `Nullable` and
 nothing else. The report stays coarse. The profile loads as options. A clean foreign key lands
 trusted, and lands untrusted with validation off. When it is green on both CI operating systems, M0
-has begun, and every measured fact in §1 is a test instead of a sentence. Then send S3, S6 and S7
-to the corporate agent as the first three questions in its `STATE.md`.
+has begun, and every measured fact in §1 is a test instead of a sentence. Then send S3, S6, S7 and S8
+to the corporate agent as the first four questions in its `STATE.md`.
 
 ---
 
@@ -829,7 +847,7 @@ the prompt's own check, so the mapping holds for the backport and for v3 alike (
 | R14 | read-only by construction; a log of the whole run | M1, M2 | M1 exits 1, 8; M2 exit 3 |
 | R15 | only Octopus writes; Permissive only on a copy | M1, M4 | M1 exit 5; M4 exit 5 |
 | R16 | no credentials; refusals explained; the whole chain searched | M1, M2, M5 | M1 exit 7; M2 exits 2, 4; M5 exit 6 |
-| R17 | the gate reproduces from git alone | M5 | M5 exit 1 |
+| R17 | the gate reproduces from git alone, with the pinned SQL Server image as the one fetch | M5 | M5 exit 1 |
 | R18 | the evidence table; placeholders and banned words refused | M5 | M5 exit 2 |
 | R19 | windows are locks; compound deltas need a program | M5 | M5 exit 3 |
 | R20 | deployed means converged | M6 (the verb from M1) | M6 exit 1 |
@@ -887,14 +905,14 @@ the prompt's own check, so the mapping holds for the backport and for v3 alike (
 
 | # | Test (`V3_INSTRUCTION_ARCHITECTURE.md` §10) | Lands in |
 |---|---|---|
-| 1 | `Manifest` | M0 (WP 0.6), with a row for each of the four design documents |
+| 1 | `Manifest` | M0 (WP 0.6), with a row for each of the five root documents |
 | 2 | `Budgets` | M0, with Appendix F's ceilings |
 | 3 | `Register.Samples` | M7 |
 | 4 | `Register.Refusals` | M1 (WP 1.5), when the first refusals exist |
-| 5 | `Register.Prose` | M0, on `VALUES.md` first |
-| 6 | `Vocabulary` | M7 |
-| 7 | `NoRestatedCounts` | M0 |
-| 8 | `Citations` | M0 (WP 0.6) for the engine's documents; M7 for `knowledge/` |
+| 5 | `Register.Prose` | M0, on `VALUES.md` first; the five root documents excluded until M8 |
+| 6 | `Vocabulary` | M7; the five root documents excluded until M8 |
+| 7 | `NoRestatedCounts` | M0; the five root documents excluded until M8 |
+| 8 | `Citations` | M0 (WP 0.6) for the engine's documents; M7 for `knowledge/`; the five root documents excluded until M8 |
 | 9 | `VerbsMatchArchitecture` | M8, when `ARCHITECTURE.md` exists; until then the verb reference is generated from `--help --json` and cannot drift |
 | 10 | `LawsMatchArchitecture` | M8; `LAWS.md` is generated from M1 on (WP 1.7's `ci/laws.sh`) |
 | 11 | `PackagerCheck` | M7 |
@@ -911,7 +929,8 @@ the prompt's own check, so the mapping holds for the backport and for v3 alike (
 ## Appendix E — The spike, as the first tests
 
 §1's measured facts, reduced to the lines that established them. The spike ran each against DacFx
-162.5.57 and 170.5.96. WP 1.8 turns them into assertions against the committed engine.
+162.5.57 and 170.5.96, and facts 1 to 7 again on the .NET 10 SDK. WP 1.8 turns them into assertions
+against the committed engine, on `net10.0`.
 
 ```bash
 # fact 1: the build, with the committed tool folder as the SSDT targets path

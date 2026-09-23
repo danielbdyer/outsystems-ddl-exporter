@@ -12,9 +12,9 @@ session that receives it.
 
 ## 0. The job, in one breath
 
-Build v3, the lifecycle engine `V3_MILESTONES.md` specifies, in this repository, milestone by
-milestone from M0 to M7. Run one workflow per wave of work packages, stay in the loop between
-waves, and keep the state in the repository, never in a workflow's memory. You are done when
+Build v3, the lifecycle engine `V3_MILESTONES.md` specifies, on .NET 10 in this repository,
+milestone by milestone from M0 to M7. Run one workflow per wave of work packages, stay in the loop
+between waves, and keep the state in the repository, never in a workflow's memory. You are done when
 every exit that can run here is green on your branch and in CI, and every exit that needs the
 estate is recorded with the command a person must run. M8 and the wing (W) wait for the operator.
 The plan is complete and has been reviewed adversarially: execute it, do not re-plan it.
@@ -45,23 +45,33 @@ into your branch first and say so in your pull request.
 
 ## 2. What is already true
 
-- **The plan's §1.** Eleven facts, nine of them measured on DacFx 162.5.57 and again on 170.5.96:
-  the classic build without Visual Studio, `Script` and `LoadFromDatabase` under a read-only login,
-  the guard at `RAISERROR` state 127, the empty plan as the convergence oracle, the generic property
-  walk, the profile as options, and foreign-key trust following `ScriptNewConstraintValidation`.
+- **The plan's §1.** Twelve facts, most of them measured on DacFx 162.5.57 and 170.5.96, and the
+  build and read-only facts again on the .NET 10 SDK:
+  - the classic build without Visual Studio;
+  - `Script` and `LoadFromDatabase` under a read-only login;
+  - the guard at `RAISERROR` state 127;
+  - the empty plan as the convergence oracle;
+  - the generic property walk;
+  - the profile as options;
+  - foreign-key trust following `ScriptNewConstraintValidation`;
+  - SQL Server pulled through Docker, with change data capture.
+
   Turn them into tests (WP 1.8 and the plan's §19); do not measure them again by hand.
 - **The container** (this repository's cloud sessions, as of 2026-09-23):
   - 4 CPUs, so a workflow runs at most two agents at once; 15 GB of memory; about 24 GB of free
     disk. The checkout is about 110 MB, so worktrees are cheap.
   - `.claude/hooks/session-start.sh` installs .NET SDK 9.0.314, the version in
-    `sidecar/projection/global.json`. No .NET 10 SDK is installed yet.
-  - Docker is present, with `mcr.microsoft.com/mssql/server:2022-latest` cached. The hook starts a
-    warm SQL Server on port 11433 through `sidecar/projection/scripts/warm-sql.sh`. If `docker ps`
-    fails, re-run the hook before concluding anything; Docker comes back in seconds.
+    `sidecar/projection/global.json`. The .NET 10 SDK installs beside it with
+    `curl -sSfL https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.sh | bash -s -- --channel 10.0 --install-dir ~/.dotnet`
+    (10.0.401 on 2026-09-23). Do that before building anything; WP 0.5's hook takes it over.
+  - Docker is present and pulls `mcr.microsoft.com/mssql/server:2022-latest` from the Microsoft
+    registry. A container started with `MSSQL_AGENT_ENABLED=true` runs change data capture. Today's
+    hook starts a warm SQL Server on port 11433 through `sidecar/projection/scripts/warm-sql.sh`. If
+    `docker ps` fails, re-run the hook before concluding anything; Docker comes back in seconds.
   - `api.nuget.org` and `builds.dotnet.microsoft.com` are reachable.
-  - The NuGet cache holds DacFx 162.5.57 and 170.5.96. The 170.5.96 package ships `lib/net8.0` and
-    `lib/net10.0`, and each has `Microsoft.Data.Tools.Schema.SqlTasks.targets` and
-    `Microsoft.Data.Tools.Schema.Tasks.Sql.dll`.
+  - The NuGet cache holds DacFx 162.5.57 and 170.5.96. The 170.5.96 package's `lib/net10.0` has
+    `Microsoft.Data.Tools.Schema.SqlTasks.targets` and `Microsoft.Data.Tools.Schema.Tasks.Sql.dll`,
+    the build route's targets.
 - **Out of reach from here:** the corporate network, meaning the estate repository, Dev, QA, UAT,
   the metamodel, Octopus and the team's laptops. An exit that needs any of them is *pending the
   estate*, never passed and never failed (§6).
@@ -154,31 +164,25 @@ until M7's exits are green here, or pending only on the estate:
 
 ---
 
-## 5. What the plan leaves for the first waves to settle
+## 5. Before the first wave
 
-1. **The retired-vocabulary tests.** `Vocabulary` and `Register.Prose` must exclude the four design
-   documents and this file until M8, because they have to name v1's and v2's retired terms (WP 0.6).
-2. **This file's manifest row.** It needs one (reader: the build session; moment: until M8), in
-   WP 0.5.
-3. **The SessionStart hook.** Today it reads `sidecar/projection/global.json` and runs
-   `sidecar/projection/scripts/warm-sql.sh`, and both move at WP 0.1. Either land WP 0.5's new hook
-   in the same push as WP 0.1, or re-path the old hook first. The new hook does two things:
-   - it installs .NET 10 (`dotnet-install.sh --channel 10.0`, or the version in the new root
-     `global.json`);
-   - in remote sessions only, it starts Docker and the SQL Server that `Io.Tests` use. Record that
-     as a decision line: it is an exception to "no hook starts a daemon".
-4. **`Io.Tests`' SQL fixture.** Use one shared SQL Server, with a registered database per test
-   (`estate_<host>_<pid>_<rand>`) so concurrent verifier agents never collide:
-   - the warm container here;
-   - Testcontainers when none is running;
-   - LocalDB on Windows CI.
-5. **The build route's runtime.** MSBuild loads `SqlBuildTask` into its own runtime. A tool folder
-   published for `net10.0` therefore carries a task assembly that only a .NET 10 SDK can load. If
-   S6 finds a laptop or agent without one, the tool folder also needs DacFx's `net8.0` build
-   assemblies as its targets path: a `build/` subfolder published from a small `net8.0` project, as
-   in Appendix B. Measure this in WP 0.7 on both CI operating systems.
-6. **Concurrency.** The plan's four lanes run two at a time here, so expect the calendar to stretch.
-   Record actual dates in `NEXT.md`, not predictions.
+1. Install the .NET 10 SDK (§2) and confirm it: `dotnet --list-sdks` shows a `10.0` SDK.
+2. Confirm Docker: `docker ps` answers, and `docker pull mcr.microsoft.com/mssql/server:2022-latest`
+   succeeds.
+3. Read the plan's WP 0.1 closely. It carries WP 0.5's settings and hooks in the same push, because
+   today's hooks read paths the archive move relocates.
+
+The gaps found while this prompt was first written are fixed in the plan itself:
+- WP 0.1: the hooks travel with the move, and the `.claude` pointers are removed until M7.
+- WP 0.5: the hook installs the .NET 10 SDK and starts Docker in remote sessions.
+- WP 0.6: the root documents are excluded from the prose tests.
+- WP 0.7: the shared SQL Server fixture.
+- §4 rows 10 and 16: .NET 10 throughout, and Docker as the substrate.
+
+What remains open is in the plan's §17, each item with the default that lets work proceed.
+
+Expect the calendar to stretch. The plan's four lanes run two at a time here, so its thirteen days
+become about twenty. Record actual dates in `NEXT.md`, not predictions.
 
 ---
 
@@ -192,7 +196,8 @@ agent's `STATE.md` under *Waiting on a person* in `NEXT.md`, each with its comma
 - S3;
 - S5;
 - S6;
-- S7.
+- S7;
+- S8.
 
 The estate adopts v3 through the vendoring pull request, as the plan's §15 describes. Nothing from
 this repository reaches it any other way.
@@ -416,8 +421,9 @@ agent per lens.
 
 ## Appendix B — Rebuilding the classic build (§1 fact 1)
 
-This recipe was re-run as written on 2026-09-23. It builds a classic, Visual Studio-format project
-with `dotnet build` and a published DacFx folder, with no Visual Studio. It is the seed of
+This recipe was re-run as written on 2026-09-23 with the .NET 10 SDK (10.0.401). It builds a
+classic, Visual Studio-format project with `dotnet build` and a published DacFx folder, with no
+Visual Studio. It is the seed of
 `tests/Golden/classic-minimal/` (WP 0.7) and of the tool folder's build route.
 
 **`Probe.sqlproj`**
@@ -504,12 +510,12 @@ PRINT N'post-deploy ran';
 
 ```bash
 # 1. A published app that references DacFx: its output folder holds DacFx and every dependency.
-#    (net8.0 here, so any .NET SDK of 8 or later can load the build task; see §5 item 5.)
+#    net10.0, because MSBuild loads the build task into its own runtime: the build needs the .NET 10 SDK.
 mkdir tool && cat > tool/Tool.csproj <<'EOF'
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RollForward>Major</RollForward>
   </PropertyGroup>
   <ItemGroup>
@@ -519,7 +525,7 @@ mkdir tool && cat > tool/Tool.csproj <<'EOF'
 EOF
 printf 'System.Console.WriteLine(typeof(Microsoft.SqlServer.Dac.DacServices).Assembly.GetName().Version);\n' > tool/Program.cs
 dotnet publish tool -c Release -o tool/out
-cp ~/.nuget/packages/microsoft.sqlserver.dacfx/170.5.96/lib/net8.0/Microsoft.Data.Tools.Schema.SqlTasks*.targets tool/out/
+cp ~/.nuget/packages/microsoft.sqlserver.dacfx/170.5.96/lib/net10.0/Microsoft.Data.Tools.Schema.SqlTasks*.targets tool/out/
 
 # 2. The reference stub: one reference assembly and its framework list.
 curl -sSfL -o refasm.nupkg \
