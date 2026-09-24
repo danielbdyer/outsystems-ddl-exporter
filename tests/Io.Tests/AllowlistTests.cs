@@ -15,7 +15,8 @@ namespace Estate.Io.Tests;
 /// outermost select list holds COUNT or COUNT_BIG of * or of DISTINCT a column, SUM(CASE WHEN … THEN 1 ELSE 0 END), MIN or MAX over
 /// LEN or DATALENGTH of a column, CASE WHEN EXISTS (…) THEN 1 ELSE 0 END, or an integer literal, with names of one or two parts; any
 /// other form is refused, since the allowlist is closed. The committed corpus plants every form the work package names, and CsCheck
-/// composes variants of them: nested, aliased, commented, cased, a forbidden form hidden inside an allowed one.
+/// composes variants of them: nested, aliased, commented, cased, a forbidden form hidden inside an allowed one, and a boundary another
+/// row's value sets through a join, a correlated EXISTS, a derived table or arithmetic.
 /// </summary>
 public sealed class AllowlistTests
 {
@@ -44,7 +45,9 @@ public sealed class AllowlistTests
     {
         string[] refused = ["STRING_AGG", "MIN over a bare column", "MAX over a bare column", "AVG over a bare column", "SELECT INTO", "EXEC", "INSERT", "UPDATE", "DELETE",
             "MERGE", "TRUNCATE", "CREATE", "ALTER", "DROP", "OPENROWSET", "OPENQUERY", "OPENDATASOURCE", "OPENXML", "three-part", "four-part", "two statements",
-            "a forbidden function inside an allowed one", "disguised by comments", "bucket boundary read from the data"];
+            "a forbidden function inside an allowed one", "disguised by comments", "bucket boundary read from the data", "a join boundary read from the data",
+            "a cross join boundary", "a derived table's column as a length's boundary", "a correlated EXISTS boundary", "written as an equality of their difference",
+            "a value computed in a derived table's select list", "a value computed in the select list of IN's subquery"];
         string[] admitted = ["COUNT of every row", "COUNT_BIG of every row", "COUNT of DISTINCT", "COUNT_BIG of DISTINCT", "SUM of CASE", "MIN over LEN", "MAX over LEN",
             "MIN over DATALENGTH", "MAX over DATALENGTH", "CASE WHEN EXISTS", "an integer literal"];
 
@@ -127,22 +130,32 @@ public sealed class AllowlistTests
 
     private static readonly Gen<string> Literal = Gen.OneOf(Gen.Int[0, 500].Select(n => n.ToString(System.Globalization.CultureInfo.InvariantCulture)), Gen.OneOfConst("N'West'", "'x@example.invalid'"));
 
-    /// <summary>A comparison the allowlist admits, over the columns given: null tests, lengths against literals, LIKE, TRY_CONVERT, IN, EXISTS.</summary>
+    /// <summary>A comparison the allowlist admits, over the columns given: null tests, lengths against literals, LIKE, TRY_CONVERT, IN, EXISTS, and = or &lt;&gt; against another column.</summary>
     private static Gen<string[]> Comparison(Gen<string[]> column) => Gen.OneOf(
         column.Select(c => (string[])[.. c, "IS", "NULL"]),
         Gen.Select(column, Literal).Select((c, n) => (string[])["LEN", "(", .. c, ")", ">", n]),
         column.Select(c => (string[])[.. c, "LIKE", "N'%@%'"]),
         column.Select(c => (string[])["TRY_CONVERT", "(", "int", ",", .. c, ")", "IS", "NULL"]),
         Gen.Select(column, Literal).Select((c, n) => (string[])[.. c, "IN", "(", n, ",", "0", ")"]),
+        Gen.Select(column, Gen.OneOfConst("=", "<>", "!=")).Select((c, op) => (string[])[.. c, op, "a.Region"]),
         Gen.Const((string[])["EXISTS", "(", "SELECT", "1", "FROM", "dbo.Account", "AS", "a", "WHERE", "a.Id", "=", "c.AccountId", ")"]));
 
-    /// <summary>A comparison the allowlist refuses: a name of too many parts, a boundary read from the data, CONVERT, STRING_AGG inside LEN, a variable.</summary>
+    /// <summary>
+    /// A comparison the allowlist refuses: a name of too many parts, CONVERT, STRING_AGG inside LEN, a variable; and a boundary read
+    /// from the data, a subquery's value, another column's or a length against a column, even written as an equality of a difference.
+    /// </summary>
     private static readonly Gen<string[]> Forbidden = Gen.OneOf(
         Comparison(Overnamed).Where(c => c[0] != "EXISTS"),
         Column.Select(c => (string[])["LEN", "(", .. c, ")", ">", "(", "SELECT", "MAX", "(", "LEN", "(", "Email", ")", ")", "FROM", "dbo.Customer", ")"]),
         Column.Select(c => (string[])["CONVERT", "(", "int", ",", .. c, ")", ">", "0"]),
         Column.Select(c => (string[])["LEN", "(", "STRING_AGG", "(", .. c, ",", "N','", ")", ")", ">", "0"]),
-        Column.Select(c => (string[])[.. c, ">", "@x"]));
+        Column.Select(c => (string[])[.. c, ">", "@x"]),
+        Gen.Select(Column, Gen.OneOfConst("<", "<=", ">", ">=", "!<", "!>")).Select((c, op) => (string[])[.. c, op, "a.Balance"]),
+        Column.Select(c => (string[])[.. c, "BETWEEN", "1", "AND", "a.Balance"]),
+        Column.Select(c => (string[])[.. c, "<=", "TRY_CONVERT", "(", "int", ",", "a.Phone", ")"]),
+        Column.Select(c => (string[])["LEN", "(", .. c, ")", ">", "d.m"]),
+        Column.Select(c => (string[])["ABS", "(", .. c, "-", "a.Balance", ")", "+", .. c, "-", "a.Balance", "=", "0"]),
+        Column.Select(c => (string[])["NULLIF", "(", .. c, ",", "a.Balance", ")", "IS", "NULL"]));
 
     /// <summary>The predicate given, inside up to <paramref name="depth"/> admitted layers: NOT, AND or OR beside an admitted comparison, EXISTS around it.</summary>
     private static Gen<string[]> Nested(Gen<string[]> inner, int depth) => depth == 0 ? inner : Gen.OneOf(
@@ -187,12 +200,20 @@ public sealed class AllowlistTests
         Column,
         Gen.Const((string[])["N'x'"])));
 
-    private static readonly Gen<string[]> Table = Gen.OneOfConst("dbo.Customer AS c", "[dbo].[Customer] AS c", "Customer AS c", "dbo.Customer c").Select(t => t.Split(' '));
+    private static readonly Gen<string[]> Table = Gen.OneOfConst("dbo.Customer AS c", "[dbo].[Customer] AS c", "Customer AS c", "dbo.Customer c",
+        "dbo.Customer AS c LEFT OUTER JOIN dbo.Account AS a ON a.Id = c.AccountId", "dbo.Customer AS c CROSS JOIN ( SELECT Id , MAX ( LEN ( Name ) ) AS m FROM dbo.Account GROUP BY Id ) AS d")
+        .Select(t => t.Split(' '));
 
+    /// <summary>A table the allowlist refuses: a name of too many parts, a hint, a rowset function; a join on a boundary read from the data; a value computed in a derived table.</summary>
     private static readonly Gen<string[]> ForbiddenTable = Gen.OneOfConst(
         "Orders.dbo.Customer AS c", "Linked.Orders.dbo.Customer AS c", "dbo.Customer AS c WITH (NOLOCK)",
         "OPENROWSET ( 'SQLNCLI' , 'Server=elsewhere;Trusted_Connection=yes;' , 'SELECT 1' ) AS c", "OPENQUERY ( Linked , 'SELECT 1' ) AS c",
-        "OPENDATASOURCE ( 'SQLNCLI' , 'Data Source=elsewhere' ).Orders.dbo.Customer AS c", "OPENXML ( @doc , N'/root' , 1 ) AS c").Select(t => t.Split(' '));
+        "OPENDATASOURCE ( 'SQLNCLI' , 'Data Source=elsewhere' ).Orders.dbo.Customer AS c", "OPENXML ( @doc , N'/root' , 1 ) AS c",
+        "dbo.Customer AS c INNER JOIN dbo.Account AS a ON c.Id <= a.Balance", "dbo.Customer AS c JOIN dbo.Account AS a ON c.Id BETWEEN 1 AND a.Balance",
+        "dbo.Customer AS c INNER JOIN dbo.Account AS a ON a.Id = c.AccountId AND c.Id <= TRY_CONVERT ( int , a.Phone )",
+        "dbo.Customer AS c INNER JOIN ( SELECT MAX ( LEN ( Email ) ) AS m FROM dbo.Customer ) AS d ON LEN ( c.Email ) > d.m",
+        "( SELECT c.Id - a.Balance AS m FROM dbo.Customer AS c CROSS JOIN dbo.Account AS a ) AS c",
+        "dbo.Customer AS c CROSS JOIN ( SELECT TOP 1 ABS ( Balance ) AS m FROM dbo.Account ) AS d").Select(t => t.Split(' '));
 
     /// <summary>A form that turns the probe into something else, and whether it follows the select list (INTO) or the statement.</summary>
     private static readonly Gen<(string[] Tokens, bool AfterItems)> Decoration = Gen.OneOf(

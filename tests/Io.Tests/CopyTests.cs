@@ -18,7 +18,7 @@ namespace Estate.Io.Tests;
 /// </summary>
 public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGround>, IDisposable
 {
-    private readonly string root = Directory.CreateDirectory(Path.Combine(Repository.Root, ".estate", "copies-under-test", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8])).FullName;
+    private readonly string root = SqlServerFixture.EstateRoot(Path.Combine(Repository.Root, ".estate", "copies-under-test", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]));
 
     public void Dispose() => Directory.Delete(root, recursive: true);
 
@@ -26,14 +26,17 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
     [Trait("Category", "fixture")]
     public async Task Substrate_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row()
     {
-        var copy = Made(Substrate.Create(root, await SqlServerFixture.ServerAsync()));
+        var server = await SqlServerFixture.ServerAsync();
+        var copy = Made(Substrate.Create(root, server));
         try
         {
             Assert.Matches("^" + SqlServerFixture.DatabaseName(Environment.MachineName, Environment.ProcessId, "") + "[0-9a-f]{8}$", copy.Name);
             Assert.True(await SqlServerFixture.ExistsAsync(copy.Name), copy.Name + " was not created");
             var row = Assert.Single(Registry())!.AsObject();
-            Assert.Equal(["created", "host", "name", "pid"], row.Select(p => p.Key).Order(StringComparer.Ordinal));
-            Assert.Equal((copy.Name, Environment.ProcessId), ((string)row["name"]!, (int)row["pid"]!));
+            Assert.Equal(["created", "host", "name", "pid", "server"], row.Select(p => p.Key).Order(StringComparer.Ordinal));
+            Assert.Equal((copy.Name, Environment.ProcessId, Made(Substrate.ServerName(server))), ((string)row["name"]!, (int)row["pid"]!, (string)row["server"]!));
+            var registry = File.ReadAllText(Path.Combine(root, ".estate", "copies.json"));
+            Assert.All(new[] { new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(server).Password }.Where(password => password.Length > 0), password => Assert.DoesNotContain(password, registry, StringComparison.Ordinal));
             Assert.Equal(TimeSpan.Zero, DateTimeOffset.Parse((string)row["created"]!, System.Globalization.CultureInfo.InvariantCulture).Offset);
             Assert.Equal(copy.Name, Assert.IsType<SqlServer.Copy>(Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("copy:" + copy.Name)), root))).Name);
         }

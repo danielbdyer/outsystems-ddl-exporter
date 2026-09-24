@@ -40,6 +40,8 @@ WHERE c.AccountId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Account AS a WHE
 SELECT SUM(CASE WHEN c.Id IS NULL THEN 1 ELSE 0 END) FROM dbo.[Order] AS o LEFT OUTER JOIN dbo.Customer AS c ON c.Id = o.CustomerId;
 === admit: an inner join with a literal filter
 SELECT COUNT_BIG(*) FROM dbo.[Order] AS o INNER JOIN dbo.Customer AS c ON c.Id = o.CustomerId WHERE o.Total > 0;
+=== admit: two columns compared with <>, the one inequality of two columns the allowlist holds
+SELECT COUNT_BIG(*) FROM dbo.[Order] AS o INNER JOIN dbo.Customer AS c ON c.Id = o.CustomerId AND c.Id <> o.Id;
 === admit: values that would not convert, counted with TRY_CONVERT
 SELECT SUM(CASE WHEN Code IS NOT NULL AND TRY_CONVERT(int, Code) IS NULL THEN 1 ELSE 0 END) FROM dbo.Product;
 === admit: TRY_CAST in a predicate
@@ -109,6 +111,30 @@ SELECT LEN(@@VERSION);
 SELECT SUM(CASE WHEN LEN(Email) > (SELECT AVG(LEN(Email)) FROM dbo.Customer) THEN 1 ELSE 0 END) FROM dbo.Customer;
 === refuse: a comparison with ALL over a subquery
 SELECT SUM(CASE WHEN LEN(Email) > ALL (SELECT LEN(Name) FROM dbo.Account) THEN 1 ELSE 0 END) FROM dbo.Customer;
+=== refuse: a join boundary read from the data, a column against another table's column
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c INNER JOIN dbo.Account AS a ON c.Id <= a.Balance WHERE a.Id = 7;
+=== refuse: a join boundary read from the data through TRY_CONVERT
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c INNER JOIN dbo.Account AS a ON c.Id <= TRY_CONVERT(int, a.Phone) WHERE a.Id = 7;
+=== refuse: a join boundary read from the data through BETWEEN
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c INNER JOIN dbo.Account AS a ON c.Id BETWEEN 1 AND a.Balance WHERE a.Id = 7;
+=== refuse: a cross join boundary read from the data in SUM of CASE
+SELECT SUM(CASE WHEN c.Id <= a.Balance THEN 1 ELSE 0 END) FROM dbo.Customer AS c CROSS JOIN dbo.Account AS a WHERE a.Id = 7;
+=== refuse: a derived table's column as a length's boundary read from the data
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c CROSS JOIN (SELECT MAX(LEN(Email)) AS m FROM dbo.Customer) AS d WHERE LEN(c.Email) > d.m;
+=== refuse: a correlated EXISTS boundary read from the data
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c WHERE EXISTS (SELECT 1 FROM dbo.Account AS a WHERE a.Id = 7 AND c.Id <= a.Balance);
+=== refuse: an inequality of two columns written as an equality of their difference
+SELECT SUM(CASE WHEN ABS(c.Id - a.Balance) + c.Id - a.Balance = 0 THEN 1 ELSE 0 END) FROM dbo.Customer AS c CROSS JOIN dbo.Account AS a WHERE a.Id = 7;
+=== refuse: NULLIF of two columns, a boundary read from the data
+SELECT SUM(CASE WHEN NULLIF(c.Id, a.Balance) IS NULL THEN 1 ELSE 0 END) FROM dbo.Customer AS c CROSS JOIN dbo.Account AS a WHERE a.Id = 7;
+=== refuse: a value computed in a derived table's select list
+SELECT SUM(CASE WHEN d.m <= 0 THEN 1 ELSE 0 END) FROM (SELECT c.Id - a.Balance AS m FROM dbo.Customer AS c CROSS JOIN dbo.Account AS a WHERE a.Id = 7) AS d;
+=== refuse: a value computed in the select list of IN's subquery
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c WHERE 0 IN (SELECT ABS(c.Id - a.Balance) + c.Id - a.Balance FROM dbo.Account AS a WHERE a.Id = 7);
+=== refuse: LIKE with a pattern read from the data
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c INNER JOIN dbo.Account AS a ON c.Email LIKE a.Name + N'%';
+=== refuse: two lengths compared, a length's boundary read from the data
+SELECT SUM(CASE WHEN LEN(c.Email) > LEN(c.Name) THEN 1 ELSE 0 END) FROM dbo.Customer AS c;
 === refuse: GROUP BY a column, buckets read from the data
 SELECT COUNT_BIG(*) FROM dbo.Customer GROUP BY Region;
 === refuse: SELECT INTO a temporary table

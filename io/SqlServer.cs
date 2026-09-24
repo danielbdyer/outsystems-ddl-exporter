@@ -45,13 +45,15 @@ public static class SqlServer
         {
         }
 
-        /// <summary>A target from an argument; a literal connection string given for one is exit 6, and no part of the argument is quoted.</summary>
+        /// <summary>A target from an argument: a literal connection string is exit 6, copy: before a name no copy can carry is exit 9 (M1 exit 5), and no part of the argument is quoted.</summary>
         public static Result<Target> Parse(string text, string subject = "--target") =>
             Profiles.IsConnection(text) ? new Refusal("connection.literal", subject + " is a literal connection string, which no argument carries.",
                 "Name the target as env:NAME, an environment whose connection estate/posture.json gives as env:VARIABLE or file:path.")
             : text == "twin" ? new Twin()
             : After(text, "env:") is { } name && Environment.IsMatch(name) ? new Env(name)
-            : After(text, "copy:") is { } copy && Registered.IsMatch(copy) ? new Copy(copy)
+            : After(text, "copy:") is { } copy ? (Registered.IsMatch(copy) ? new Copy(copy) : new Refusal("copy.unregistered",
+                subject + " names a copy by a name no copy estate makes can carry, so " + Substrate.Registry + " holds none by it; a copy's name is estate_<host>_<pid>_<rand>, in lowercase letters, digits and '_'.",
+                "Name a copy that " + Substrate.Registry + " holds on this machine."))
             : After(text, "ref:") is { Length: > 0 } reference && !reference.StartsWith('-') && !reference.Any(char.IsControl) ? new Ref(reference)
             : After(text, "dacpac:") is { Length: > 0 } path && !path.Any(char.IsControl) ? new Dacpac(path)
             : new Refusal("target.unknown", subject + " is none of env:<name>, copy:<name>, twin, ref:<git ref> and dacpac:<path>.",
@@ -135,7 +137,10 @@ public static class SqlServer
         internal override bool Withheld => true;
 
         internal static Result<Named> Of(NamedEnvironment environment, string estateRoot) =>
-            Connect("env:" + environment.Name + "'s connection, " + environment.Connection + ",", environment.Connection, estateRoot).Map(c => new Named(environment, c, estateRoot));
+            Connect(Subject(environment), environment.Connection, estateRoot).Map(c => new Named(environment, c, estateRoot));
+
+        /// <summary>How a refusal about an environment's connection names it: its environment and its reference, never what the reference resolves to.</summary>
+        internal static string Subject(NamedEnvironment environment) => "env:" + environment.Name + "'s connection, " + environment.Connection + ",";
     }
 
     /// <summary>
@@ -337,40 +342,46 @@ public static class SqlServer
     /// root, parsed by SqlClient's own grammar; the caller's integrated identity when it names no other; estate as the application unless
     /// it names one. A refusal names the reference and quotes nothing it read.
     /// </summary>
-    internal static Result<string> Connect(string subject, SecretReference reference, string estateRoot)
-    {
-        if (Read(reference, estateRoot) is not { } text)
-        {
-            return new Refusal("connection.unresolved", subject + " resolves to nothing here.",
-                "Set the variable, or write the file outside git, that " + reference + " names.");
-        }
+    internal static Result<string> Connect(string subject, SecretReference reference, string estateRoot) => Read(reference, estateRoot) is not { } text
+        ? new Refusal("connection.unresolved", subject + " resolves to nothing here.", "Set the variable, or write the file outside git, that " + reference + " names.")
+        : Parsed(subject, reference, text).Bind(connection => connection.InitialCatalog.Length == 0
+            ? new Refusal("connection.malformed", subject + " names no database; Model, Plan and the executor read the database it names.",
+                "Give the connection string an Initial Catalog, in the place " + reference + " names.")
+            : Result.Ok(Identified(connection)));
 
+    /// <summary>An environment's server as R15 reads it, a database named or not: null when its reference resolves to nothing here; refused when SqlClient reads nothing from it.</summary>
+    internal static Result<string?> DataSource(NamedEnvironment environment, string estateRoot) => Read(environment.Connection, estateRoot) is not { } text
+        ? Result.Ok<string?>(null)
+        : Parsed(Named.Subject(environment), environment.Connection, text).Map(connection => (string?)connection.DataSource);
+
+    /// <summary>A reference's text as SqlClient's own grammar reads it; the refusal names the reference and quotes nothing it read.</summary>
+    private static Result<SqlConnectionStringBuilder> Parsed(string subject, SecretReference reference, string text)
+    {
         try
         {
-            var connection = new SqlConnectionStringBuilder(text);
-            if (connection.InitialCatalog.Length == 0)
-            {
-                return new Refusal("connection.malformed", subject + " names no database; Model, Plan and the executor read the database it names.",
-                    "Give the connection string an Initial Catalog, in the place " + reference + " names.");
-            }
-
-            if (!connection.ShouldSerialize("Integrated Security") && connection.UserID.Length == 0 && connection.Authentication == SqlAuthenticationMethod.NotSpecified)
-            {
-                connection.IntegratedSecurity = true;
-            }
-
-            if (!connection.ShouldSerialize("Application Name"))
-            {
-                connection.ApplicationName = "estate";
-            }
-
-            return connection.ConnectionString;
+            return new SqlConnectionStringBuilder(text);
         }
         catch (Exception e) when (e is ArgumentException or FormatException or InvalidOperationException)
         {
             return new Refusal("connection.malformed", subject + " is no connection string SqlClient reads; its text is withheld.",
                 "Correct the connection string in the place " + reference + " names.");
         }
+    }
+
+    /// <summary>The connection as estate opens it: the caller's integrated identity when it names no other, and estate as the application unless it names one.</summary>
+    private static string Identified(SqlConnectionStringBuilder connection)
+    {
+        if (!connection.ShouldSerialize("Integrated Security") && connection.UserID.Length == 0 && connection.Authentication == SqlAuthenticationMethod.NotSpecified)
+        {
+            connection.IntegratedSecurity = true;
+        }
+
+        if (!connection.ShouldSerialize("Application Name"))
+        {
+            connection.ApplicationName = "estate";
+        }
+
+        return connection.ConnectionString;
     }
 
     /// <summary>What a reference names: the variable's value, or the file's text trimmed; null when there is none.</summary>
@@ -389,15 +400,15 @@ public static class SqlServer
     }
 
     /// <summary>
-    /// A server's host as R15 compares it: the data source with its protocol, port and instance set aside, in lower case; this machine,
-    /// however spelled (localhost, 127.0.0.1, ::1, '.', (local), its own name), is localhost.
+    /// A server's host as R15 spells it: the data source with its protocol, port and instance set aside, in lower case; this machine,
+    /// however spelled (localhost, 127.0.0.1, ::1, '.', (local), its own name, or none, SqlClient's local default), is localhost.
     /// </summary>
     public static string Host(string dataSource)
     {
         var host = Regex.Replace(dataSource.Trim(), @"\A(?:tcp|np|lpc|admin):", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         host = host.StartsWith(@"\\", StringComparison.Ordinal) ? host[2..].Split('\\')[0] : host.StartsWith("(localdb)", StringComparison.OrdinalIgnoreCase) ? "(localdb)" : host;
         host = host.Split(',')[0].Split('\\')[0].Trim().Trim('[', ']').ToLowerInvariant();
-        return host is "localhost" or "127.0.0.1" or "::1" or "." or "(local)" || host == System.Environment.MachineName.ToLowerInvariant() ? "localhost" : host;
+        return host is "" or "localhost" or "127.0.0.1" or "::1" or "." or "(local)" || host == System.Environment.MachineName.ToLowerInvariant() ? "localhost" : host;
     }
 
     private static Refusal NotADatabase(Target target) => new Refusal("target.not-a-database",
@@ -491,12 +502,17 @@ public static class SqlServer
     /// <summary>
     /// The probe allowlist, closed (WP 1.4): one SELECT whose outermost select list holds COUNT or COUNT_BIG of * or of DISTINCT a
     /// column, SUM(CASE WHEN … THEN 1 ELSE 0 END), MIN or MAX over LEN or DATALENGTH of a column, CASE WHEN EXISTS (…) THEN 1 ELSE 0 END
-    /// or an integer literal; beneath it, names of one or two parts, literal or length boundaries, TRY_ conversions, and the few functions
-    /// held here. Every other form is refused with where it stands and what it is, and none of the probe's literals is quoted.
+    /// or an integer literal; beneath it, names of one or two parts, TRY_ conversions, and the few functions held here. A boundary is a
+    /// length or a literal, never read from the data: each predicate, in a join's ON as in a WHERE, reads at most one value from the data
+    /// (a column, a length or an aggregate), save = or &lt;&gt; between two columns, an equi-join or an orphan check; and a subquery's
+    /// select list carries only columns, literals and the answers above, so a derived column is never two values combined. Every other
+    /// form is refused with where it stands and what it is, and none of the probe's literals is quoted.
     /// </summary>
     private static class Allowlist
     {
         private const string Forms = "COUNT, COUNT_BIG, SUM(CASE WHEN … THEN 1 ELSE 0 END), MIN or MAX over LEN or DATALENGTH of a column, CASE WHEN EXISTS or an integer literal";
+
+        private const string Boundary = "a boundary read from the data, two values the data holds set against each other; = or <> between two columns is the one comparison of two";
 
         private static readonly HashSet<string> Aggregates = new(StringComparer.OrdinalIgnoreCase) { "COUNT", "COUNT_BIG", "SUM", "MIN", "MAX", "AVG" };
 
@@ -551,7 +567,7 @@ public static class SqlServer
             : First(q.SelectElements, e => (e, outermost) switch
             {
                 (SelectScalarExpression x, true) => Answer(x.Expression),
-                (SelectScalarExpression x, false) => Scalar(x.Expression),
+                (SelectScalarExpression x, false) => Carried(x.Expression),
                 (SelectStarExpression star, false) => star.Qualifier is null || star.Qualifier.Count <= 2 ? null : Parts(star, star.Qualifier.Count),
                 (SelectStarExpression star, true) => new Offence(star, "a star in the outermost select"),
                 _ => new Offence(e, "a variable assigned"),
@@ -600,24 +616,66 @@ public static class SqlServer
         private static Offence? OneOrZero(SearchedCaseExpression c) =>
             c.WhenClauses is [{ ThenExpression: IntegerLiteral { Value: "1" } }] && c.ElseExpression is IntegerLiteral { Value: "0" } ? null : new Offence(c, "a CASE answering other than 1 or 0");
 
+        /// <summary>A predicate whose comparisons each read one value from the data, save = or &lt;&gt; of two columns: no row's value bounds another's, whether a join, a correlated EXISTS or arithmetic (ABS(x - y) + x - y = 0 is x &lt;= y) meets them.</summary>
         private static Offence? Predicate(BooleanExpression b) => b switch
         {
             BooleanBinaryExpression x => Predicate(x.FirstExpression) ?? Predicate(x.SecondExpression),
             BooleanNotExpression x => Predicate(x.Expression),
             BooleanParenthesisExpression x => Predicate(x.Expression),
-            BooleanComparisonExpression x => Scalar(x.FirstExpression) ?? Scalar(x.SecondExpression),
-            BooleanIsNullExpression x => Scalar(x.Expression),
-            BooleanTernaryExpression x => Scalar(x.FirstExpression) ?? Scalar(x.SecondExpression) ?? Scalar(x.ThirdExpression),
-            LikePredicate x => Scalar(x.FirstExpression) ?? Scalar(x.SecondExpression) ?? (x.EscapeExpression is null ? null : Scalar(x.EscapeExpression)),
-            InPredicate x => Scalar(x.Expression) ?? (x.Subquery is { } s ? Subquery(s.QueryExpression) : First(x.Values, Scalar)),
+            BooleanComparisonExpression x => Scalar(x.FirstExpression) ?? Scalar(x.SecondExpression)
+                ?? (x.ComparisonType is BooleanComparisonType.Equals or BooleanComparisonType.NotEqualToBrackets or BooleanComparisonType.NotEqualToExclamation
+                    && Bare(x.FirstExpression) && Bare(x.SecondExpression) ? null : Bounded(x, x.FirstExpression, x.SecondExpression)),
+            BooleanIsNullExpression x => Scalar(x.Expression) ?? Bounded(x, x.Expression),
+            BooleanTernaryExpression x => Scalar(x.FirstExpression) ?? Scalar(x.SecondExpression) ?? Scalar(x.ThirdExpression) ?? Bounded(x, x.FirstExpression, x.SecondExpression, x.ThirdExpression),
+            LikePredicate x => Scalar(x.FirstExpression) ?? Scalar(x.SecondExpression) ?? (x.EscapeExpression is null ? null : Scalar(x.EscapeExpression))
+                ?? Bounded(x, x.FirstExpression, x.SecondExpression, x.EscapeExpression),
+            InPredicate x => Scalar(x.Expression) ?? (x.Subquery is { } s
+                ? Subquery(s.QueryExpression) ?? (Bare(x.Expression) || !Data(x.Expression).Any() ? null : new Offence(x, Boundary))
+                : First(x.Values, Scalar) ?? Bounded(x, [x.Expression, .. x.Values])),
             ExistsPredicate x => Subquery(x.Subquery.QueryExpression),
             _ => new Offence(b, Kind(b)),
         };
 
+        /// <summary>A comparison's operands, which may read one value from the data between them and set it against literals alone.</summary>
+        private static Offence? Bounded(TSqlFragment at, params ScalarExpression?[] operands) => operands.OfType<ScalarExpression>().SelectMany(Data).Skip(1).Any() ? new Offence(at, Boundary) : null;
+
+        /// <summary>
+        /// What an operand reads from the data: each column outside a length or an aggregate, each length, each aggregate; a CASE, what its
+        /// THEN and ELSE read, its WHEN being a predicate of its own. A literal reads nothing, and any form not named here counts as one read.
+        /// </summary>
+        private static IEnumerable<ScalarExpression> Data(ScalarExpression x) => x switch
+        {
+            _ when Constant(x) => [],
+            _ when Length(x) => [x],
+            FunctionCall f when Aggregates.Contains(f.FunctionName.Value) => [x],
+            UnaryExpression u => Data(u.Expression),
+            BinaryExpression y => [.. Data(y.FirstExpression), .. Data(y.SecondExpression)],
+            ParenthesisExpression p => Data(p.Expression),
+            TryConvertCall t => [.. Data(t.Parameter), .. t.Style is null ? [] : Data(t.Style)],
+            TryCastCall t => Data(t.Parameter),
+            CoalesceExpression c => c.Expressions.SelectMany(Data),
+            NullIfExpression n => [.. Data(n.FirstExpression), .. Data(n.SecondExpression)],
+            SearchedCaseExpression s => [.. s.WhenClauses.SelectMany(w => Data(w.ThenExpression)), .. s.ElseExpression is null ? [] : Data(s.ElseExpression)],
+            SimpleCaseExpression s => [.. Data(s.InputExpression), .. s.WhenClauses.SelectMany(w => Data(w.WhenExpression).Concat(Data(w.ThenExpression))),
+                .. s.ElseExpression is null ? [] : Data(s.ElseExpression)],
+            FunctionCall f => f.Parameters.SelectMany(Data),
+            _ => [x],
+        };
+
+        /// <summary>An item of a subquery's select list: a column, a literal or one of the answers, so what an outer predicate reads as a column is a column's own value, a length or a count.</summary>
+        private static Offence? Carried(ScalarExpression x) => x is ParenthesisExpression p ? Carried(p.Expression) : x is ColumnReferenceExpression c ? Column(c)
+            : Constant(x) || Answer(x) is null ? null : new Offence(x, "a value computed in a subquery's select list, which an outer predicate would read as a column");
+
+        /// <summary>A column as it stands, perhaps in parentheses: one side of an equi-join.</summary>
+        private static bool Bare(ScalarExpression x) => x is ColumnReferenceExpression { ColumnType: ColumnType.Regular } || (x is ParenthesisExpression p && Bare(p.Expression));
+
+        /// <summary>A literal of the kinds a probe may write: a number, a string, a binary value or NULL.</summary>
+        private static bool Constant(ScalarExpression x) => x is IntegerLiteral or NumericLiteral or RealLiteral or MoneyLiteral or StringLiteral or BinaryLiteral or NullLiteral;
+
         private static Offence? Scalar(ScalarExpression x) => x switch
         {
             ColumnReferenceExpression c => Column(c),
-            IntegerLiteral or NumericLiteral or RealLiteral or MoneyLiteral or StringLiteral or BinaryLiteral or NullLiteral => null,
+            _ when Constant(x) => null,
             UnaryExpression u => Scalar(u.Expression),
             BinaryExpression y => Scalar(y.FirstExpression) ?? Scalar(y.SecondExpression),
             ParenthesisExpression p => Scalar(p.Expression),

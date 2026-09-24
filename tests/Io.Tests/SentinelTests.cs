@@ -40,7 +40,7 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         var dacpac = Made(Ssdt.Build(ClassicMinimal(), tool.Folder, Path.Combine(scratch, "build"))).Path;
         Assert.ThrowsAny<SocketException>(() => Dns.GetHostEntry("sentinel.invalid"));
 
-        var copy = Made(Substrate.Create(scratch, await SqlServerFixture.ServerAsync()));
+        var copy = Made(Substrate.Create(SqlServerFixture.EstateRoot(scratch), await SqlServerFixture.ServerAsync()));
         try
         {
             var permissive = copy.Permissive(strict);

@@ -52,6 +52,14 @@ public static class SqlServerFixture
     /// <summary>A registered database is named as io/Substrate names a copy, so one sweep serves both.</summary>
     public static string DatabaseName(string host, int pid, string random) => Substrate.CopyName(host, pid, random);
 
+    /// <summary>An estate's root for the copies a test makes: the folder given, its estate/posture.json naming no environment, so R15 reads it and clears the substrate.</summary>
+    public static string EstateRoot(string folder)
+    {
+        Directory.CreateDirectory(Path.Combine(folder, "estate"));
+        File.WriteAllText(Path.Combine(folder, "estate", "posture.json"), "{ \"environments\": {} }");
+        return Path.GetFullPath(folder);
+    }
+
     public static async Task<bool> ExistsAsync(string name) => await ScalarAsync(await Master.Value, "SELECT COUNT(*) FROM sys.databases WHERE name = @name;", name) == 1;
 
     public static async Task<bool> LoginExistsAsync(string name) => await ScalarAsync(await Master.Value, "SELECT COUNT(*) FROM sys.server_principals WHERE name = @name;", name) == 1;
