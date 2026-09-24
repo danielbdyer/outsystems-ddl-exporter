@@ -6,12 +6,18 @@
   const GATE_DOC = "gate/" + (GATE.id || "gate"), ACT_DOC = "reports/" + ((DATA.actions && DATA.actions.id) || "actions");
 
   const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  const inline = t => {
+  // {{Term}} becomes a tappable term whose definition opens in place; an unknown term stays plain text.
+  const GLOSSARY = DATA.glossary || {};
+  const term = key => GLOSSARY[key]
+    ? '<button type="button" class="ref" aria-expanded="false">' + esc(key) + '</button><span class="gloss" hidden><b>' + esc(key) + "</b> · " + inline(GLOSSARY[key]) + "</span>"
+    : esc(key);
+  function inline(t) {
     const codes = [];
     let s = String(t == null ? "" : t).replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return "\u0000" + (codes.length - 1) + "\u0000"; });
     s = esc(s).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/\{\{([^{}]+)\}\}/g, (_, k) => term(k.replace(/&amp;/g, "&")));
     return s.replace(/\u0000(\d+)\u0000/g, (_, i) => "<code>" + esc(codes[+i]) + "</code>");
-  };
+  }
   const paras = t => String(t || "").split(/\n{2,}|\n(?=[-*] )/).map(p => "<p>" + inline(p.replace(/\n/g, " ")) + "</p>").join("");
   const docId = id => "d" + id.replace(/\./g, "-");
   const short = id => String(id).replace(/^[a-z]+-(?=[A-Z])/, ""); // a finding id is <lens>-<ID>; people read the ID
@@ -55,21 +61,24 @@
     const choice = typeof s.choice === "number" ? s.choice : -1;
     const state = choice >= 0 ? "done" : returned(d.id) ? "returned" : "open";
     const pill = choice >= 0 ? "decided" : returned(d.id) ? "returned with a note" : "awaiting you";
-    const refs = d.refs.map(r => {
+    // A related finding is listed with its title, so the reference says what it points at.
+    const refs = (d.refs || []).map(r => {
       const f = FINDINGS.find(x => short(x.id) === r);
-      return f ? '<a href="#f-' + esc(f.id) + '" data-open="' + esc(f.id) + '">' + esc(r) + "</a>" : "<span>" + esc(r) + "</span>";
+      return f ? '<li><a href="#f-' + esc(f.id) + '" data-open="' + esc(f.id) + '">' + esc(r) + "</a>" + inline(f.title) + "</li>" : "";
     }).join("");
+    const field = (label, text, cls) => text ? '<div class="field' + (cls ? " " + cls : "") + '"><span class="fl">' + label + '</span><div class="ft">' + paras(text) + "</div></div>" : "";
+    // Situation and complication first, then the question, then the recommended answer and its reason, then the options.
     return '<article class="card" tabindex="0" id="' + docId(d.id) + '" data-kind="decision" data-id="' + esc(d.id) + '" data-state="' + state + '">'
       + '<div class="card-head"><span class="cid">' + esc(d.id) + '</span><h3 class="ctitle">' + inline(d.title) + '</h3><span class="pill">' + pill + "</span></div>"
-      + '<div class="field"><span class="fl">The question</span><div class="ft">' + inline(d.question) + "</div></div>"
-      + '<div class="field"><span class="fl">Where the build stands</span><div class="ft">' + inline(d.current) + "</div></div>"
-      + '<div class="field"><span class="fl">Findings</span><div class="refs">' + refs + "</div></div>"
+      + field("Situation", d.situation) + field("Complication", d.complication) + field("Where the build stands", d.current)
+      + field("Question", d.question) + field("Recommendation", d.recommendation, "rec-field")
       + '<div class="opt-bar" role="group" aria-label="Options for ' + esc(d.id) + '">'
       + d.options.map((o, i) => '<button type="button" class="opt" data-id="' + esc(d.id) + '" data-i="' + i + '" aria-pressed="' + (choice === i) + '">'
         + '<span class="k">' + (i + 1) + "</span><span><b>" + inline(o.k) + (o.rec ? '<span class="rec">recommended</span>' : "") + "</b>"
         + (o.d ? '<span class="od">' + inline(o.d) + "</span>" : "") + (o.c ? '<span class="oc">' + inline(o.c) + "</span>" : "") + "</span></button>").join("")
       + "</div>"
-      + '<div class="note-wrap"><label for="n-' + docId(d.id) + '">A note, a condition, or an answer of your own</label>'
+      + (refs ? '<div class="field"><span class="fl">Related findings</span><ul class="refs">' + refs + "</ul></div>" : "")
+      + '<div class="note-wrap"><label for="n-' + docId(d.id) + '">A note, a condition, or your own answer</label>'
       + '<textarea id="n-' + docId(d.id) + '" class="dnote" data-id="' + esc(d.id) + '" rows="2">' + esc(s.notes || "") + "</textarea>"
       + '<span class="saved" aria-live="polite"></span></div></article>';
   };
@@ -106,11 +115,12 @@
       + (v ? '<span class="vtag ' + v + '">' + (v === "wontfix" ? "won't fix" : v) + "</span>" : "")
       + '<span class="lens">' + esc(f.lens) + "</span></span></div>"
       + '<div class="fbody"' + (open ? "" : " hidden") + ">"
+      + (f.situation ? '<div class="field"><span class="fl">Situation</span><div class="ft">' + paras(f.situation) + "</div></div>" : "")
       + '<div class="field"><span class="fl">Where</span><div class="ft">' + inline(f.where) + "</div></div>"
       + '<div class="field"><span class="fl">Evidence</span><div class="ft">' + paras(f.evidence) + "</div></div>"
       + (f.designSays ? '<div class="field"><span class="fl">What the design says</span><div class="ft">' + paras(f.designSays) + "</div></div>" : "")
-      + '<div class="field"><span class="fl">The fix</span><div class="ft">' + paras(f.recommendation) + "</div></div>"
-      + (f.skeptic ? '<div class="field"><span class="fl">The skeptic</span><div class="ft"><span class="verified">holds · </span>' + inline(f.skeptic) + "</div></div>" : "")
+      + '<div class="field"><span class="fl">Fix</span><div class="ft">' + paras(f.recommendation) + "</div></div>"
+      + (f.skeptic ? '<div class="field"><span class="fl">Second review</span><div class="ft"><span class="verified">confirmed · </span>' + inline(f.skeptic) + "</div></div>" : "")
       + (by ? '<div class="decided">Settled by decision ' + by.map(id => '<a class="link" href="#' + docId(id) + '">' + esc(id) + "</a>").join(", ") + "; triage here only what an agent should do regardless.</div>" : "")
       + '<div class="actbar" role="group" aria-label="Triage ' + esc(short(f.id)) + '">'
       + VERDICTS.map(([key, label, k]) => '<button type="button" class="act ' + key + '" data-id="' + esc(f.id) + '" data-v="' + key + '" aria-pressed="' + (v === key) + '">' + label + ' <span class="k">' + k + "</span></button>").join("")
@@ -187,6 +197,13 @@
   };
 
   document.addEventListener("click", async e => {
+    const ref = e.target.closest("button.ref");
+    if (ref) { // a term opens its definition in place; nothing re-renders, so an unsaved note survives
+      const gloss = ref.nextElementSibling, open = ref.getAttribute("aria-expanded") === "true";
+      ref.setAttribute("aria-expanded", String(!open));
+      if (gloss && gloss.classList.contains("gloss")) gloss.hidden = open;
+      return;
+    }
     const opt = e.target.closest("button.opt");
     if (opt && opt.dataset.gate) {
       const i = Number(opt.dataset.i);

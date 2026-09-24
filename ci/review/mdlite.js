@@ -1,11 +1,18 @@
 // A Markdown subset for the review's static sections: headings (h3), paragraphs, nested lists, tables, bold, code.
 const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const SEV = ["blocker", "major", "minor", "note"];
+let GLOSSARY = {};
+const setGlossary = g => { GLOSSARY = g || {}; };
+// {{Term}} becomes a tappable term whose definition opens in place; an unknown term stays plain text.
+const term = key => GLOSSARY[key]
+  ? `<button type="button" class="ref" aria-expanded="false">${esc(key)}</button><span class="gloss" hidden><b>${esc(key)}</b> · ${inline(GLOSSARY[key])}</span>`
+  : esc(key);
 function inline(t) {
   const codes = [];
   t = String(t).replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return "\u0000" + (codes.length - 1) + "\u0000"; });
   t = esc(t);
   t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  t = t.replace(/\{\{([^{}]+)\}\}/g, (_, k) => term(k.replace(/&amp;/g, "&")));
   t = t.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${esc(codes[+i])}</code>`);
   return t;
 }
@@ -54,4 +61,4 @@ function section(md, heading) {
   const next = md.indexOf("\n## ", from);
   return md.slice(from + 1, next < 0 ? undefined : next);
 }
-module.exports = { esc, inline, render, section };
+module.exports = { esc, inline, render, section, setGlossary };

@@ -13,9 +13,11 @@
 //
 // The spec (every section optional except heading):
 //   id, title (the <title>: a name, 2-4 words), eyebrow [[label, value]], heading, dek, answer (markdown)
-//   decisions [{id, when, title, question, current, refs [finding id suffixes], options [{k, d, c, rec}]}]
-//   findings  [{id "<lens>-<ID>", severity blocker|major|minor|note, title, where, evidence, designSays,
-//               recommendation, lens, skeptic}]
+//   glossary  {Term: definition}; write {{Term}} in any text to make the term tappable
+//   decisions [{id, when, title, situation, complication, question, recommendation, refs [finding id suffixes],
+//               options [{k, d, c, rec}]}]   rendered in that order: the situation before the question
+//   findings  [{id "<lens>-<ID>", severity blocker|major|minor|note, title, situation, where, evidence, designSays,
+//               recommendation (the fix), lens, skeptic (the second review's reason)}]
 //   actions   {id, title, count, intro (markdown), steps [markdown], fields [{f, label, hint, wide, rows}],
 //              checks [{o, label}]}
 //   gate      {id, title, subtitle, cardTitle, options [{k, d, rec}]}
@@ -23,11 +25,12 @@
 //   colophon  markdown
 const fs = require("fs");
 const path = require("path");
-const { esc, inline, render } = require("./mdlite");
+const { esc, inline, render, setGlossary } = require("./mdlite");
 
 const [specPath, outPath] = process.argv.slice(2);
 if (!specPath || !outPath) { console.error("usage: node ci/review/build.js <spec.json> <out.html>"); process.exit(2); }
 const spec = JSON.parse(fs.readFileSync(specPath, "utf8"));
+setGlossary(spec.glossary);
 const here = __dirname;
 const css = fs.readFileSync(path.join(here, "app.css"), "utf8");
 const client = fs.readFileSync(path.join(here, "app.client.js"), "utf8");
@@ -35,23 +38,23 @@ const client = fs.readFileSync(path.join(here, "app.client.js"), "utf8");
 const decisions = spec.decisions || [], findings = spec.findings || [];
 const count = s => findings.filter(f => f.severity === s).length;
 const lenses = [...new Set(findings.map(f => f.lens))];
-const data = JSON.stringify({ id: spec.id, decisions, findings, gate: spec.gate, actions: spec.actions ? { id: spec.actions.id } : null }).replace(/</g, "\\u003c");
+const data = JSON.stringify({ id: spec.id, glossary: spec.glossary || {}, decisions, findings, gate: spec.gate, actions: spec.actions ? { id: spec.actions.id } : null }).replace(/</g, "\\u003c");
 
 const nav = [];
 const out = [];
 if (spec.answer) {
-  nav.push(`<a href="#answer">The answer</a>`);
-  out.push(`<section class="sec" id="answer"><div class="sec-head"><h2>The answer</h2>${findings.length ? `<span class="sec-count">${findings.length} findings · ${count("blocker")} blocker · ${count("major")} major</span>` : ""}</div><div class="prose">${render(spec.answer)}</div></section>`);
+  nav.push(`<a href="#answer">Summary</a>`);
+  out.push(`<section class="sec" id="answer"><div class="sec-head"><h2>Summary</h2>${findings.length ? `<span class="sec-count">${findings.length} findings · ${count("blocker")} blocker · ${count("major")} major</span>` : ""}</div><div class="prose">${render(spec.answer)}</div></section>`);
 }
 if (decisions.length) {
   nav.push(`<a href="#decisions-sec">Decisions<span class="c" id="j-dec"></span></a>`);
   out.push(`<section class="sec open-band" id="decisions-sec"><div class="sec-head"><h2>Decisions for you</h2><span class="sec-count">${decisions.length} · ordered by when each is needed</span></div>
-<p class="sec-intro">Each is a choice only you should make. The recommended option carries its reason. Pick one, or write your own answer in the note.</p><div id="decisions"></div></section>`);
+<p class="sec-intro">Each card states the situation, then the question, then the recommended answer and its reason. Pick an option, or write your own answer in the note.</p><div id="decisions"></div></section>`);
 }
 if (findings.length) {
   nav.push(`<a href="#findings-sec">Findings<span class="c" id="j-find"></span></a>`);
   out.push(`<section class="sec" id="findings-sec"><div class="sec-head"><h2>Findings</h2><span class="sec-count">${findings.length} · most severe first</span></div>
-<p class="sec-intro">Mark what the next wave should fix, what it should leave, and what we should talk about. A finding a decision settles says so and links to it.</p>
+<p class="sec-intro">Mark each finding fix, won't fix or discuss. A finding that one of the decisions settles links to that decision.</p>
 <div class="filters" role="group" aria-label="Filter findings">
   <div class="fgroup"><span>severity</span>${["blocker", "major", "minor", "note"].map(s => `<button type="button" class="chip" data-sev="${s}" aria-pressed="true">${s} ${count(s)}</button>`).join("")}</div>
   <div class="fgroup"><span>status</span><button type="button" class="chip" data-status="all" aria-pressed="true">all</button><button type="button" class="chip" data-status="open" aria-pressed="false">untriaged</button><button type="button" class="chip" data-status="triaged" aria-pressed="false">triaged</button></div>

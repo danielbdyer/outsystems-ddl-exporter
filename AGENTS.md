@@ -76,10 +76,24 @@ the model that wrote it.
 
 ## The register
 
-Everything written here is agentless, leads with the finding, uses the true verb, puts the evidence
-beneath, names exact objects, admits what was not checked, and ends on the move. It restates no
-count a generated file carries, and it uses neither a private nickname nor a retired word;
-`V3_INSTRUCTION_ARCHITECTURE.md` Appendix A lists the retired words with their replacements.
+Write plain, technical English. The rules hold for documents, refusal and finding messages, CLI output,
+test names, review pages and pull-request bodies.
+
+- Name the exact object: the file and line, the type, the SQL Server feature, the command, the number.
+  Use the word a DBA, an OutSystems developer or the DacFx documentation uses for it.
+- Give the circumstances first, then the background a reader needs, then the point. Define a term where
+  it first matters.
+- Order the text top-down: open with the situation, state the conclusion, and group the support beneath
+  it (the Minto pyramid, applied with judgement).
+- Use a literal phrase wherever one exists. A metaphor or flourish ("a dial worth turning" for "a
+  parameter worth varying") makes the reader recover a meaning the literal phrase states directly, and
+  it brings connotations nobody chose.
+- State content instead of announcing it: no "Two things:", "Here is why:" or "as follows".
+- Make every reference add information: say what the cited thing says as well as its identifier. A test
+  asserts behaviour the code could get wrong; it never restates the implementation or itself.
+- Write agentless, in the active voice, without hedging; say what was not checked. Use no private
+  nickname, no retired word (`V3_INSTRUCTION_ARCHITECTURE.md` Appendix A lists them) and no count that a
+  generated file carries.
 
 ## When something fails
 
