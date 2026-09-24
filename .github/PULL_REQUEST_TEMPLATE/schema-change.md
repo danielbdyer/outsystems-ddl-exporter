@@ -1,7 +1,7 @@
 <!--
   SCHEMA CHANGE PULL REQUEST — the record for a database change.
 
-  Source of truth: sidecar/projection/ssdt-agent/skills/author-pr/SKILL.md (this file mirrors it;
+  Source of truth: archive/v2/ssdt-agent/skills/author-pr/SKILL.md (this file mirrors it;
   if they disagree, the skill wins — fix this file in the same commit).
 
   Use this template for any change to a .sqlproj: table definitions, pre/post-deployment scripts,
