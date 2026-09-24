@@ -12,3 +12,9 @@
 2026-09-23 · `NuGet.config` stays at the root, shared by v1, v2 and v3 · #704
 2026-09-23 · `archive/` stays readable until M8, because v2 is the specification ports read; editing it is denied · #704
 2026-09-23 · the v2 worktrees under the old sidecar path moved with the archive · #704
+2026-09-23 · `Refusal` is a sealed record class, not a struct, because a struct's default would be a refusal with no remedy · #704
+2026-09-23 · `Name` compares ordinally with case, so the kernel never loses a case-only difference; a case-insensitive match is the caller's explicit choice · #704
+2026-09-23 · `Fingerprint.Of(string)` hashes canonical text (a leading BOM dropped, CRLF and CR to LF, UTF-8); `Of(bytes)` hashes bytes as given · #704
+2026-09-23 · `Kernel.Tests` alone runs with invariant globalization off, so a test can show the kernel ignores culture · #704
+2026-09-23 · JsonSchema.Net validates the CLI contract's schemas, in tests only · #704
+2026-09-23 · `ci/budgets.json` counts physical lines by include globs, `bin/` and `obj/` never; planned figures are data and never fail a build · #704
