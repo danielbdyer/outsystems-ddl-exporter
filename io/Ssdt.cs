@@ -95,12 +95,20 @@ public static class Ssdt
 
     public static Result<Dacpac> Build(string project, string toolFolder, string outputRoot) => Build(project, toolFolder, outputRoot, Doctor.Run);
 
+    /// <summary>A project as a ref holds it: its path from the repository's root, found in the ref's worktree, built under outputRoot/&lt;the commit&gt;/.</summary>
+    public static Result<Dacpac> Build(Git.Worktree at, string project, string toolFolder, string outputRoot) => Path.IsPathRooted(project)
+        ? new Refusal("build.no-project", project + " is not a path from the repository's root, where a ref's project is found.", "Name the .sqlproj by its path from the repository's root.")
+        : Build(Path.Combine(at.Path, project), toolFolder, outputRoot, Doctor.Run, at.Commit);
+
+    public static Result<Dacpac> Build(string project, string toolFolder, string outputRoot, Doctor.Command probe) => Build(project, toolFolder, outputRoot, probe, null);
+
     /// <summary>
     /// Builds a classic .sqlproj as §1 fact 1 does, with the SDK the probe lists: dotnet build against the tool folder's targets
-    /// and reference stub, telemetry off, its output and intermediate files under outputRoot/&lt;the inputs' fingerprint&gt;/ so
-    /// nothing is written beside the project. A missing SDK band or tool folder is refused before anything builds.
+    /// and reference stub, telemetry off, its output and intermediate files under outputRoot/&lt;the inputs' fingerprint&gt;/, or
+    /// under outputRoot/&lt;commit&gt;/ for a ref's worktree, so nothing is written beside the project and two refs never share a
+    /// folder. A missing SDK band or tool folder is refused before anything builds.
     /// </summary>
-    public static Result<Dacpac> Build(string project, string toolFolder, string outputRoot, Doctor.Command probe)
+    private static Result<Dacpac> Build(string project, string toolFolder, string outputRoot, Doctor.Command probe, string? commit)
     {
         var (file, tool) = (Path.GetFullPath(project), Path.TrimEndingDirectorySeparator(Path.GetFullPath(toolFolder)));
         var directory = Path.GetDirectoryName(file)!;
@@ -110,18 +118,17 @@ public static class Ssdt
             (_, { Remedy: { } install } sdk, _) => new Refusal(
                 "sdk.missing", "dotnet build loads DacFx's net10.0 build task, and this machine has " + sdk.Found + ".", install + "; then estate doctor"),
             (_, _, { Remedy: { } publish } found) => new Refusal("tool.missing", tool + " is " + found.Found + ".", publish + "; then estate doctor"),
-            _ => Run(file, tool, Path.GetFullPath(outputRoot)),
+            _ => Run(file, tool, Path.GetFullPath(outputRoot), commit),
         };
     }
 
-    private static Result<Dacpac> Run(string project, string tool, string outputRoot)
+    private static Result<Dacpac> Run(string project, string tool, string outputRoot, string? commit)
     {
         var directory = Path.GetDirectoryName(project)!;
         var inputs = Inputs(directory, tool);
 
-        // outputRoot/<the inputs' fingerprint, its first 16 digits so MSBuild's paths stay short on Windows>/. Once WP 1.6's
-        // io/Git.At exists, a build of a ref names its folder by the ref's commit sha instead.
-        var output = Path.Combine(outputRoot, inputs.ToString()[..16]) + "/";
+        // outputRoot/<the ref's commit>/, or for a plain path <the inputs' fingerprint, its first 16 digits so MSBuild's paths stay short on Windows>/.
+        var output = Path.Combine(outputRoot, commit ?? inputs.ToString()[..16]) + "/";
         var (exit, log) = Dotnet(directory,
         [
             "build", project, "-c", "Release", "--no-restore", "-nologo", "-tl:off", "-v:m", "-nodeReuse:false",

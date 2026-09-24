@@ -83,11 +83,15 @@ public static class Contract
     /// </summary>
     public static readonly IReadOnlyDictionary<string, int> RefusalExits = new Dictionary<string, int>(StringComparer.Ordinal)
     {
+        ["ref"] = 1,
         ["package"] = 2,
         ["refactorlog"] = 2,
+        ["origin"] = 4,
+        ["git"] = 6,
         ["sdk"] = 6,
         ["tool"] = 6,
         ["build"] = 7,
+        ["branch"] = 9,
     };
 
     public static int Exit(Refusal refusal) => RefusalExits[refusal.Code.Split('.')[0]];
