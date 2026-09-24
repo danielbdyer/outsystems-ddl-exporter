@@ -62,6 +62,20 @@ public static class Seq
 
     public static Seq<T> Of<T>(IEnumerable<T> items) where T : IComparable<T> => Sorted(items.ToArray());
 
+    /// <summary>Two Seqs in lexicographic order, the shorter first when one begins the other: how a record holding Seqs sorts.</summary>
+    internal static int Compare<T>(Seq<T> mine, Seq<T> theirs) where T : IComparable<T>
+    {
+        for (var i = 0; i < Math.Min(mine.Count, theirs.Count); i++)
+        {
+            if (mine[i].CompareTo(theirs[i]) is var c and not 0)
+            {
+                return c;
+            }
+        }
+
+        return mine.Count.CompareTo(theirs.Count);
+    }
+
     // Sorts the array it owns in place, then hands it to the ImmutableArray without a copy.
     private static Seq<T> Sorted<T>(T[] items) where T : IComparable<T>
     {
