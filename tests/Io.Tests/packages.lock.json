@@ -386,6 +386,12 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
+      "estate": {
+        "type": "Project",
+        "dependencies": {
+          "Estate.Io": "[1.0.0, )"
+        }
+      },
       "Estate.Io": {
         "type": "Project",
         "dependencies": {

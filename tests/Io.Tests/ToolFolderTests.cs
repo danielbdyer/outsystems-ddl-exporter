@@ -1,7 +1,5 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
 using System.Linq;
 using System.Text.Json.Nodes;
 using Estate.Budgets.Tests;
@@ -34,10 +32,18 @@ public sealed class PublishedTool
 }
 
 /// <summary>
-/// §1 fact 1 on this machine: the published tool folder runs, and a classic project builds against it with no Visual Studio,
-/// its dacpac carrying the refactorlog and the post-deploy script.
+/// The classes that use dist/estate/ share one publish and run one after another: a second publish would delete the folder
+/// under a build that is loading DacFx from it.
 /// </summary>
-public sealed class ToolFolderTests(PublishedTool tool) : IClassFixture<PublishedTool>
+[CollectionDefinition(Name)]
+public sealed class PublishedToolCollection : ICollectionFixture<PublishedTool>
+{
+    public const string Name = "the published tool folder";
+}
+
+/// <summary>§1 fact 1 on this machine: the published tool folder runs and finds itself; SsdtTests builds classic projects against it.</summary>
+[Collection(PublishedToolCollection.Name)]
+public sealed class ToolFolderTests(PublishedTool tool)
 {
     [Fact]
     [Trait("Category", "fast")]
@@ -50,35 +56,6 @@ public sealed class ToolFolderTests(PublishedTool tool) : IClassFixture<Publishe
         Assert.Matches(@"dist/estate: \d+ files, \d+ MB", tool.Output);
         Assert.Contains("dotnet dist/estate/estate.dll", tool.Output, StringComparison.Ordinal);
         Assert.Contains("DOTNET_ROOT", tool.Output, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    [Trait("Category", "fast")]
-    public void The_classic_minimal_project_builds_against_the_tool_folder_with_its_refactorlog_and_post_deploy_script()
-    {
-        // A copy under .estate/ (ignored) with tests/Golden/'s stop files, so each run builds fresh and the engine's props stay out.
-        var golden = Path.Combine(Repository.Root, ".estate", "golden", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);
-        try
-        {
-            Copy(Path.Combine(Repository.Root, "tests", "Golden"), golden);
-            var project = Path.Combine(golden, "classic-minimal", "ClassicMinimal.sqlproj");
-
-            var (exit, log) = Command.Run("dotnet",
-            [
-                "build", project, "-c", "Release", "-nologo", "-p:DacFxTelemetryEnabled=false", "-p:NetCoreBuild=true",
-                "-p:NETCoreTargetsPath=" + tool.Folder, "-p:SQLDBExtensionsRefPath=" + tool.Folder, "-p:TargetFrameworkRootPath=" + Path.Combine(tool.Folder, "refasm"),
-            ]);
-
-            Assert.True(exit == 0, log);
-            using var dacpac = ZipFile.OpenRead(Path.Combine(golden, "classic-minimal", "bin", "Release", "ClassicMinimal.dacpac"));
-            Assert.Superset(new HashSet<string>(["model.xml", "refactor.xml", "postdeploy.sql"]), dacpac.Entries.Select(e => e.FullName).ToHashSet());
-            Assert.Contains("[dbo].[Customer].[FirstName]", Text(dacpac, "refactor.xml"), StringComparison.Ordinal);
-            Assert.Contains("post-deploy ran", Text(dacpac, "postdeploy.sql"), StringComparison.Ordinal);
-        }
-        finally
-        {
-            Directory.Delete(golden, recursive: true);
-        }
     }
 
     /// <summary>M0 exit 3 from the published folder: DEGRADED, the tool folder found beside it, a remedy on every block, M1 not claimed.</summary>
@@ -98,26 +75,5 @@ public sealed class ToolFolderTests(PublishedTool tool) : IClassFixture<Publishe
         Assert.DoesNotContain("READY", output, StringComparison.Ordinal);
         Assert.DoesNotContain(findings, f => (string)f["code"]! == "doctor.tool");
         Assert.All(findings, f => Assert.False(string.IsNullOrEmpty((string?)f["remedy"])));
-    }
-
-    private static void Copy(string from, string to)
-    {
-        foreach (var file in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories))
-        {
-            var relative = Path.GetRelativePath(from, file);
-            if (relative.Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj"))
-            {
-                continue;
-            }
-
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(to, relative))!);
-            File.Copy(file, Path.Combine(to, relative));
-        }
-    }
-
-    private static string Text(ZipArchive archive, string entry)
-    {
-        using var reader = new StreamReader(archive.GetEntry(entry)!.Open());
-        return reader.ReadToEnd();
     }
 }
