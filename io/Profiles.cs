@@ -106,7 +106,7 @@ public static class Profiles
         }
     }
 
-    /// <summary>A named environment's profile, its refusals led by the environment; WP 1.4 sets the environment's own SQLCMD values over the profile's.</summary>
+    /// <summary>A named environment's profile, its refusals led by the environment; io/SqlServer.Plan sets the environment's own SQLCMD values over the profile's.</summary>
     public static Result<PublishProfile.Strict> Of(NamedEnvironment environment, string estateRoot) =>
         Load(Path.GetFullPath(Path.Combine(estateRoot, environment.ProfilePath)), "env:" + environment.Name + "'s profile " + environment.ProfilePath);
 
@@ -161,8 +161,8 @@ public static class Profiles
         _ => null,
     };
 
-    /// <summary>Whether a text is a literal connection string: it sets a password, or SqlClient's grammar reads one of its keywords from it (Server, User ID).</summary>
-    private static bool IsConnection(string text)
+    /// <summary>Whether a text is a literal connection string: it sets a password, or SqlClient's grammar reads one of its keywords from it (Server, User ID). io/SqlServer's target grammar asks it of an argument.</summary>
+    internal static bool IsConnection(string text)
     {
         try
         {
@@ -230,7 +230,7 @@ public abstract class PublishProfile
 
     public override string ToString() => (this is Strict ? "Strict: " : "Permissive: ") + Source;
 
-    /// <summary>A fresh copy of the options, the guard on for Strict and off for Permissive, for io's calls into DacFx that plan and publish (WP 1.4).</summary>
+    /// <summary>A fresh copy of the options, the guard on for Strict and off for Permissive, for io/SqlServer's calls into DacFx that plan and publish.</summary>
     internal DacDeployOptions Options()
     {
         var options = DacProfile.Load(new MemoryStream(_profile, writable: false)).DeployOptions;
@@ -249,9 +249,8 @@ public abstract class PublishProfile
 
     /// <summary>
     /// Strict with BlockOnPossibleDataLoss off and nothing else changed (§1 fact 10), for a copy alone (§2.1 rule 3), to see what the
-    /// guard would have stopped. For WP 1.4, which creates Copy: call Of from Copy alone (Copy.Publish, asked for Permissive, say) and
-    /// keep its signature, so no caller of Load, Of or Strict changes; ProfilesTests' "nothing but a Copy makes a Permissive profile"
-    /// fails on a call from anywhere else in io. SentinelTests calls Of until 1.4 routes its publish through Copy.Publish.
+    /// guard would have stopped. SqlServer.Copy.Permissive is Of's one caller, so a Permissive profile exists only for a copy;
+    /// ProfilesTests' "nothing but a Copy makes a Permissive profile" fails on a call from anywhere else in io.
     /// </summary>
     public sealed class Permissive : PublishProfile
     {

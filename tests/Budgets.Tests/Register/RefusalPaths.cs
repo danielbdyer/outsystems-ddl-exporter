@@ -16,6 +16,9 @@ namespace Estate.Budgets.Tests.Register;
 /// (<see cref="Case.Plants"/>) and searches what comes back. A driver writes only under the scratch folder it is given, one per
 /// case, and leaves it deletable. The kernel's schema refusals, io/Ssdt's and io/Git's quote what they refuse, a name, a
 /// version, a path, a ref or a branch, and plant nothing. io/Git's are reached in a repository made under the scratch folder.
+/// io/SqlServer's and io/Substrate's reach no server: each is refused before anything connects, and a SQL Server error reaches
+/// its refusal through Database.Refused, the one door every failure against a server passes through. The substrate's own choice
+/// and Create on a given server are io's alone, so R15 is reached through copy: and a planted registry row.
 /// </summary>
 internal static class RefusalPaths
 {
@@ -148,7 +151,69 @@ internal static class RefusalPaths
         }),
         new("a SQLCMD literal under a credential's name in a profile", "sqlcmd.literal-credential", true, (scratch, planted) =>
             Refused(Profiles.Load(Profile(scratch, "", ("ApiToken", planted))))),
+
+        new("a target of no form the grammar knows", "target.unknown", true, (_, planted) => Refused(SqlServer.Target.Parse("sql:" + planted))),
+        new("a copy named as no copy can be", "copy.unregistered", true, (_, planted) => Refused(SqlServer.Target.Parse("copy:" + planted, "--target"))),
+        new("a literal connection string where a target goes", "connection.literal", true, (_, planted) =>
+            Refused(SqlServer.Target.Parse("Server=db;User ID=sa;Password=" + planted, "--target"))),
+        new("a git ref where a database is asked for", "target.not-a-database", false, (scratch, _) => Refused(SqlServer.Resolve(Target("ref:main"), scratch))),
+        new("an environment the posture does not name", "target.unnamed", false, (scratch, _) => Refused(SqlServer.Resolve(Target("env:qa"), Estate(scratch, Environments(Dev()))))),
+        new("the Twin before its milestone", "twin.not-built", false, (scratch, _) => Refused(SqlServer.Resolve(Target("twin"), scratch))),
+        new("a connection whose variable is unset", "connection.unresolved", false, (scratch, _) =>
+            Refused(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: "env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant())))))),
+        new("a connection file holding no connection string", "connection.malformed", true, (scratch, planted) =>
+            Refused(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "garbled " + planted))))))),
+        new("a copy the registry does not hold", "copy.unregistered", false, (scratch, _) => Refused(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch))),
+        new("a copy registry that is not JSON", "registry.unreadable", true, (scratch, planted) =>
+        {
+            Directory.CreateDirectory(Path.Combine(scratch, ".estate"));
+            File.WriteAllText(Path.Combine(scratch, ".estate", "copies.json"), "{ \"copies\": [ " + planted);
+            return Refused(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch));
+        }),
+        new("a copy made on the host an environment's reference names", "copy.named-host", true, (scratch, planted) => Refused(SqlServer.Resolve(Target("copy:" + Copied),
+            Registered(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted)))))))),
+        new("a copy beside an environment whose connection SqlClient cannot read", "connection.malformed", true, (scratch, planted) => Refused(SqlServer.Resolve(Target("copy:" + Copied),
+            Registered(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Nonsense " + planted + " = 1")))))))),
+        new("no substrate server anywhere", "substrate.missing", false, (scratch, _) => Refused(Substrate.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
+        new("a substrate server SqlClient cannot read", "substrate.missing", true, (scratch, planted) =>
+            Refused(Substrate.ServerName("Server=db;Password=" + planted + ";Nonsense " + planted + " = 1", Path.Combine(scratch, "no-sql.env"), localDb: false))),
+        new("a named environment's login denied", "server.denied", true, (scratch, planted) => DevDatabase(scratch).Refused(18456, "Login failed for user '" + planted + "'.")),
+        new("a named environment that does not answer", "server.unreachable", true, (scratch, planted) =>
+            DevDatabase(scratch).Refused(53, "A network-related or instance-specific error occurred while establishing a connection to " + planted + ".")),
+        new("a named environment's statement failing", "server.failed", true, (scratch, planted) =>
+            DevDatabase(scratch).Refused(245, "Conversion failed when converting the nvarchar value '" + planted + "' to data type int.")),
+        new("a probe the allowlist refuses", "probe.refused", true, (_, planted) =>
+            Refused(SqlServer.Probe.Of("SELECT MAX(Email) FROM dbo.Customer WHERE Name = N'" + planted + "';", "dbo.Customer.Email Fits"))),
+        new("a SQLCMD reference that does not resolve", "sqlcmd.unresolved", false, (scratch, _) =>
+        {
+            var root = Estate(scratch, Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\" }",
+                connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev"))));
+            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
+            var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
+            return Refused(SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.Named)dev).Environment, root))));
+        }),
     ];
+
+    /// <summary>The copy a planted registry holds, made on localhost,11433.</summary>
+    private const string Copied = "estate_host_1_0a1b2c3d";
+
+    private static SqlServer.Target Target(string text) => Made(SqlServer.Target.Parse(text));
+
+    /// <summary>The estate's root with .estate/copies.json holding <see cref="Copied"/>, as io/Substrate writes a row, so copy: reaches R15 without a server.</summary>
+    private static string Registered(string root)
+    {
+        Directory.CreateDirectory(Path.Combine(root, ".estate"));
+        File.WriteAllText(Path.Combine(root, ".estate", "copies.json"),
+            "{ \"copies\": [ { \"name\": \"" + Copied + "\", \"server\": \"localhost,11433\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-24T00:00:00Z\" } ] }");
+        return root;
+    }
+
+    /// <summary>The named environment dev, its connection a file under the scratch folder naming a server that is never reached.</summary>
+    private static SqlServer.Database DevDatabase(string scratch) =>
+        Made(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev"))))));
+
+    /// <summary>A file: reference to a file written under the scratch folder, its path with '/' so the posture's JSON carries it as it is.</summary>
+    private static string Reference(string scratch, string file, string text) => "file:" + Written(scratch, file, text).Replace('\\', '/');
 
     /// <summary>Each refusal code the kernel and io construct, as their sources write it: a literal code, or the literal start of a composed one (element.).</summary>
     public static IEnumerable<string> InTheSources() => Repository.Files

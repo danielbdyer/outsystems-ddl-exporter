@@ -81,6 +81,7 @@ public sealed class ProfilesTests : IDisposable
     [InlineData("profile's SQLCMD value, password-free", "profile.literal-connection", "inline.publish.xml gives $(LinkedServer)")]
     [InlineData("argument", "reference.malformed", "--connection")]
     [InlineData("argument after file:", "reference.malformed", "--connection")]
+    [InlineData("target", "connection.literal", "--target")]
     public void Inline_credential_refused(string where, string code, string named)
     {
         const string credential = "Server=db;User ID=estate;Password=" + Planted;
@@ -97,8 +98,9 @@ public sealed class ProfilesTests : IDisposable
             "profile's SQLCMD value" => Refused(Profiles.Load(Profile("inline", "", ("LinkedServer", "Server=db;UID=sa;PWD=" + Planted)))),
             "profile's SQLCMD value, password-free" =>
                 Refused(Profiles.Load(Profile("inline", "", ("LinkedServer", "Data Source=prod-sql;Initial Catalog=Orders;Integrated Security=True")))),
-            "argument" => Refused(SecretReference.Of("--connection", credential)),   // how WP 1.4 reads a connection argument
-            _ => Refused(SecretReference.Of("--connection", "file:" + credential)),
+            "argument" => Refused(SecretReference.Of("--connection", credential)),   // how a connection argument is read
+            "argument after file:" => Refused(SecretReference.Of("--connection", "file:" + credential)),
+            _ => Refused(SqlServer.Target.Parse(credential, "--target")),            // WP 1.4's target grammar
         };
 
         Assert.Equal((code, 6), (refusal.Code, Contract.Exit(refusal)));
@@ -201,9 +203,9 @@ public sealed class ProfilesTests : IDisposable
 
     /// <summary>
     /// §2.1 rule 3: the Permissive profile is made only for a copy. Its constructor is private and Of internal to io, which no
-    /// assembly but its tests sees into; and the IL of every method io compiles is searched for a call to either. Today Of alone
-    /// calls the constructor, which shows the search finds a call, and nothing calls Of. WP 1.4's Copy is to be Of's one caller, so a
-    /// call from Copy, or from a type nested in it, passes here and a call from anywhere else in io fails.
+    /// assembly but its tests sees into; and the IL of every method io compiles is searched for a call to either. Of alone calls the
+    /// constructor, and WP 1.4's Copy, through Copy.Permissive, alone calls Of: a call from Copy, or from a type nested in it, passes
+    /// here and a call from anywhere else in io fails.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -215,6 +217,7 @@ public sealed class ProfilesTests : IDisposable
         Assert.True(made.IsPrivate && of.IsAssembly);
         Assert.Equal(["Estate.Io.Tests"], typeof(PublishProfile).Assembly.GetCustomAttributes<InternalsVisibleToAttribute>().Select(a => a.AssemblyName));
         Assert.Equal(["Estate.Io.PublishProfile+Permissive.Of"], Callers(made).Select(Named));
+        Assert.NotEmpty(Callers(of));
         Assert.Empty(Callers(of).Where(caller => !InCopy(caller.DeclaringType)).Select(Named));
     }
 
