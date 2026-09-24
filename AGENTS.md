@@ -1,10 +1,10 @@
 # AGENTS.md — working in this repository
 
 This repository builds `estate`, the lifecycle engine behind schema changes on an OutSystems
-estate that moved to SSDT: one CLI (its verbs in `cli/VERBS.md`, generated from
-`estate --help --json`) and, from M7, `knowledge/`, the files a developer's Copilot session
-reads in the estate repository. Read this file, then `NEXT.md`, then the README of the package being
-changed. Nothing else is required before starting.
+estate that moved to SSDT: one CLI (its verbs listed by `estate --help --json`, and from M8 in
+`cli/VERBS.md`, generated from it) and, from M7, `knowledge/`, the files a developer's Copilot
+session reads in the estate repository. Read this file, then `NEXT.md`, then the README of the
+package being changed. Nothing else is required before starting.
 
 ## Before anything
 
@@ -47,8 +47,8 @@ Without the session hook, `dotnet run --project cli -- doctor` runs it.
 - Tests first: a work package's "done when" becomes a test that fails, then passes.
 - A kernel change starts with the test (a law or a property), then the type, then the function.
   Types are records and closed hierarchies; `V3_ARCHITECTURE.md` §6.6 gives the encoding.
-- A verb change updates its `--help` text in the same commit; `cli/VERBS.md` and the bundle are
-  generated from it.
+- A verb change updates its `--help` text in the same commit; the bundle (from M7) and
+  `cli/VERBS.md` (from M8) are generated from it.
 - From M7, a knowledge change edits the canonical file under `knowledge/`, and
   `estate knowledge package` regenerates the pointers, the index and the bundle. A generated file
   is never edited.
@@ -56,8 +56,8 @@ Without the session hook, `dotnet run --project cli -- doctor` runs it.
   `ci/budgets.json` with a decision line in the same pull request.
 - A new package is a decision line, a `PackageVersion` in `Directory.Packages.props` and a line in
   `ci/packages.allow`, in the same pull request.
-- A new law is a test with an English name; `LAWS.md` picks it up on the next build. A law without
-  a green test is not a law.
+- A new law is a test with an English name; from M1, `LAWS.md` picks it up on the next build. A law
+  without a green test is not a law.
 
 ## What a session writes
 
