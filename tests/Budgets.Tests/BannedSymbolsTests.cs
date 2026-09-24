@@ -48,6 +48,7 @@ public sealed class BannedSymbolsTests
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Law", "the kernel cannot do I/O")]
     public void Each_banned_symbol_planted_in_the_kernel_is_a_build_error()
     {
         var plant = Path.Combine(Repository.Root, ".estate", "plant", $"kernel-{Environment.ProcessId}");

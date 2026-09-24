@@ -84,6 +84,17 @@ public static class Ssdt
     private static string? Nearest(DirectoryInfo? directory) => directory is null ? null
         : Path.Combine(directory.FullName, "dist", "estate") is var tool && Doctor.Tool(tool).Remedy is null ? tool : Nearest(directory.Parent);
 
+    /// <summary>The project a ref's worktree holds, as a path from its root: the one named, else its one .sqlproj outside hidden folders, bin/ and obj/.</summary>
+    public static Result<string> Project(string worktree, string? named)
+    {
+        List<string> found = named is not null ? [named] : Directory.EnumerateFiles(worktree, "*.sqlproj", SearchOption.AllDirectories)
+            .Select(file => Path.GetRelativePath(worktree, file).Replace('\\', '/'))
+            .Where(file => !file.Split('/').SkipLast(1).Any(folder => folder is "bin" or "obj" || folder.StartsWith('.'))).Order(StringComparer.Ordinal).ToList();
+        return found is [var project] && File.Exists(Path.Combine(worktree, project)) ? project : new Refusal("build.no-project",
+            found.Count > 1 ? "The repository holds several projects: " + string.Join(", ", found) + "." : "The repository holds no project at " + (named ?? "any path") + ".",
+            "Name the .sqlproj to build with --project, by its path from the repository's root.");
+    }
+
     public static Result<Dacpac> Build(string project, string toolFolder, string outputRoot) => Build(project, toolFolder, outputRoot, Doctor.Run);
 
     /// <summary>A project as a ref holds it: its path from the repository's root, found in the ref's worktree, built under outputRoot/&lt;the commit&gt;/.</summary>

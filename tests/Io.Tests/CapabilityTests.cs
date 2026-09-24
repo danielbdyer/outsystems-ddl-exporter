@@ -39,6 +39,7 @@ public sealed class CapabilityTests
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Law", "a named environment cannot be written")]
     public void No_verb_writes_to_a_named_environment()
     {
         var plant = Path.Combine(Repository.Root, ".estate", "plant", "capabilities-" + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N")[..8]);
@@ -70,6 +71,7 @@ public sealed class CapabilityTests
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Law", "a named environment cannot be written")]
     public void Permissive_never_reaches_an_environment()
     {
         var of = typeof(PublishProfile.Permissive).GetMethod("Of", BindingFlags.NonPublic | BindingFlags.Static)!;
@@ -90,6 +92,7 @@ public sealed class CapabilityTests
     /// <summary>A Copy is made in io/Substrate alone: its constructor is not public, and only Substrate's methods, its lambdas included, call it.</summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Law", "a named environment cannot be written")]
     public void Nothing_but_Substrate_makes_a_Copy()
     {
         var made = CopyConstructor();

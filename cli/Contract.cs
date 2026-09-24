@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json.Nodes;
@@ -8,8 +9,8 @@ using Estate.Kernel;
 
 namespace Estate.Cli;
 
-/// <summary>A row of the verb table: the verb, the question it answers, the milestone it arrives in, and its body once built.</summary>
-public sealed record Verb(string Name, string Summary, int Arrives, Func<IReadOnlyList<string>, Envelope>? Body = null)
+/// <summary>A row of the verb table: the verb, the question it answers, the milestone it arrives in, its body once built, and the schema of what it adds to the envelope.</summary>
+public sealed record Verb(string Name, string Summary, int Arrives, Func<Checkout, IReadOnlyList<string>, Envelope>? Body = null, JsonObject? Content = null)
 {
     /// <summary>The schema its --json answer names, such as estate.doctor/1.</summary>
     public string Output => "estate." + Name.TrimStart('-') + "/1";
@@ -18,14 +19,20 @@ public sealed record Verb(string Name, string Summary, int Arrives, Func<IReadOn
     public string Status => Body is null ? "pending" : Arrives > Contract.Milestone ? "stub" : "built";
 }
 
+/// <summary>Where estate runs: the estate's root (Profiles.Root of the working directory), the working directory, and the tool folder ESTATE_TOOL names, if any.</summary>
+public sealed record Checkout(string Root, string WorkingDirectory, string? Tool)
+{
+    public static Checkout Here() => new(Io.Profiles.Root(Directory.GetCurrentDirectory()), Directory.GetCurrentDirectory(), Environment.GetEnvironmentVariable("ESTATE_TOOL"));
+}
+
 /// <summary>A row of the frozen exit table: codes are added, never removed or renumbered (cli/exits.frozen).</summary>
 public sealed record ExitCode(int Code, string Name, string Meaning, string Remedy, bool RemedyRequired);
 
-/// <summary>
-/// What every verb writes with --json. Engine and Receipt are JSON nodes until WP 1.7 binds the kernel's
-/// Engine and Receipt (WP 0.3); cli/schemas/estate.envelope.1.schema.json pins their shape.
-/// </summary>
-public sealed record Envelope(string Schema, JsonNode Engine, JsonNode? Receipt, Verdict Verdict, IReadOnlyList<Finding> Findings, int Exit);
+/// <summary>The engine an answer stands on (R13), and the pin the toolchain ledger gives it; the pin is null where no ledger was read.</summary>
+public sealed record Stamp(Engine Engine, Pin? Pin);
+
+/// <summary>What every verb writes with --json: the kernel's engine as stamped, its receipt when it claims anything, the verdict, the findings, the exit, and what the verb adds (its Content).</summary>
+public sealed record Envelope(string Schema, Stamp? Stamp, Receipt? Receipt, Verdict Verdict, IReadOnlyList<Finding> Findings, int Exit, JsonObject? Content = null);
 
 /// <summary>The answer in a line; at exit 3 its kind says how the data blocked, and no other verdict has one.</summary>
 public sealed record Verdict(string Outcome, string Message, Blocked? Kind = null);
@@ -48,9 +55,12 @@ public static class Contract
 
     public static readonly IReadOnlyList<Verb> Verbs =
     [
-        new("doctor", "Can this machine do the work: the SDK, the engine, the substrate.", 1, _ => Doctor(Io.Doctor.Examine())),
-        new("read", "What a schema is, from a ref, a package or a database, read whole, with its fingerprint.", 1),
-        new("diff", "What changes between two schemas, property by property, deploy scripts and refactorlog included.", 1),
+        new("doctor", "Can this machine do the work: the SDK and runtime, the tool and its DacFx against the toolchain ledger, the build route, the substrate, Git LFS. estate doctor",
+            1, Cli.Verbs.Doctor, Cli.Verbs.DoctorContent),
+        new("read", "What a schema is, from a ref, a package or a database, read whole, with its fingerprint. estate read --from <target> [--project <path>]",
+            1, Cli.Verbs.Read, Cli.Verbs.ReadContent),
+        new("diff", "What changes between two schemas, property by property, deploy scripts and refactorlog included. estate diff --from <target> --to <target> [--project <path>] [--fail-on-change]",
+            1, Cli.Verbs.Diff, Cli.Verbs.DiffContent),
         new("classify", "Which operation a change is, provisionally, from the committed evidence.", 2),
         new("predict", "Whether a change blocks or applies on each environment the caller can read, and why.", 2),
         new("profile", "What an environment's data looks like, as the evidence the Twin is minted from.", 3),
@@ -58,9 +68,10 @@ public static class Contract
         new("prove", "What the engine does with a change on a fresh copy, with a receipt.", 4),
         new("record", "The pull request body, rendered from the receipts.", 5),
         new("gate", "The pull request's proof, reproduced from the clone.", 5),
-        new("check", "Whether an environment has drifted, and whether the platform, the evidence and the locks agree.", 1),
+        new("check", "Whether a database has drifted from the repository at a ref; the platform, the evidence and the locks arrive later. estate check drift --target <target> --at <ref> "
+            + "[--profile <path>] [--project <path>]", 1, Cli.Verbs.Check, Cli.Verbs.CheckContent),
         new("knowledge", "The knowledge tree, packaged for each agent and vendored to the estate.", 5),
-        new("--version", "The tool's version.", 0, _ => Answer("estate.version/1", "done", "estate " + Version, [], 0)),
+        new("--version", "The tool's version.", 0, (_, _) => Answer("estate.version/1", "done", "estate " + Version, [], 0)),
     ];
 
     public static readonly IReadOnlyList<ExitCode> Exits =
@@ -80,18 +91,21 @@ public static class Contract
     /// <summary>
     /// The refusal table: the exit a refusal takes, by its code's area, the word before the first dot. io names what it refused
     /// (sdk.missing, build.failed), and this table alone says how estate exits for it; ContractTests finds each code io writes.
-    /// The posture, a profile, a reference, a connection and a SQLCMD value are configuration (exit 6), whether io or the kernel
-    /// refuses them. A target of no known form is a bad argument; a server that does not answer or refuses the identity is exit 4;
-    /// a copy the registry does not hold, a substrate on a named host, and a probe the allowlist refuses are refused by name.
+    /// The posture, a profile, a reference, a connection, a SQLCMD value and the toolchain ledger are configuration (exit 6), whether
+    /// io or the kernel refuses them. A target of no known form is a bad argument, as is a flag the verb does not take; a server that
+    /// does not answer or refuses the identity is exit 4; a copy the registry does not hold, a substrate on a named host, and a probe
+    /// the allowlist refuses are refused by name.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, int> RefusalExits = new Dictionary<string, int>(StringComparer.Ordinal)
     {
+        ["arguments"] = 1,
         ["ref"] = 1,
         ["target"] = 1,
         ["package"] = 2,
         ["refactorlog"] = 2,
         ["walk"] = 2,
         ["registry"] = 2,
+        ["change"] = 2,
         ["origin"] = 4,
         ["server"] = 4,
         ["substrate"] = 4,
@@ -104,6 +118,8 @@ public static class Contract
         ["connection"] = 6,
         ["sqlcmd"] = 6,
         ["twin"] = 6,
+        ["engine"] = 6,
+        ["toolchain"] = 6,
         ["build"] = 7,
         ["branch"] = 9,
         ["copy"] = 9,
@@ -117,9 +133,13 @@ public static class Contract
 
     public static string Title(int milestone) => M(milestone) + " (" + Milestones[milestone] + ")";
 
-    /// <summary>An answer with no receipt, from an engine that is only the tool: nothing here loads DacFx or reaches SQL Server.</summary>
-    public static Envelope Answer(string schema, string outcome, string message, IReadOnlyList<Finding> findings, int exit) =>
-        new(schema, new JsonObject { ["estate"] = Version, ["dacfx"] = null, ["sqlserver"] = null }, null, new Verdict(outcome, message), findings, exit);
+    /// <summary>An answer; with no stamp it stands on the tool alone, nothing here having loaded DacFx or reached SQL Server.</summary>
+    public static Envelope Answer(string schema, string outcome, string message, IReadOnlyList<Finding> findings, int exit, Stamp? stamp = null, Receipt? receipt = null, JsonObject? content = null) =>
+        new(schema, stamp, receipt, new Verdict(outcome, message), findings, exit, content);
+
+    /// <summary>A refusal as an answer: its message the verdict, and one blocking finding carrying its code and remedy; the exit its area's.</summary>
+    public static Envelope Refused(Verb verb, Refusal refusal, Stamp? stamp = null) => Answer(verb.Output, Exits.Single(e => e.Code == Exit(refusal)).Name, refusal.Message,
+        [new(refusal.Code, "block", "estate " + verb.Name, refusal.Message, refusal.Remedy)], Exit(refusal), stamp);
 
     public static Envelope NotBuilt(Verb verb) => Answer(verb.Output, "not-built", "estate " + verb.Name + " arrives in " + Title(verb.Arrives) + ".",
         [new("verb.not-built", "block", "estate " + verb.Name, "The verb is in the contract; its body arrives in " + Title(verb.Arrives) + ".", "estate --help lists what this build runs")], 6);
@@ -127,11 +147,28 @@ public static class Contract
     public static Envelope UnknownVerb(string word) => Answer("estate.envelope/1", "bad-arguments", "'" + word + "' is not a verb of estate.",
         [new("arguments.unknown-verb", "block", "estate " + word, "The verb table has no row named '" + word + "'.", "estate --help")], 1);
 
-    /// <summary>M0's doctor (M0 exit 3): DEGRADED, since the checks beyond io/Doctor's are M1's; a blocking finding with its remedy per item missing.</summary>
-    public static Envelope Doctor(IReadOnlyList<Io.Doctor.Check> checks) => Answer("estate.doctor/1", "degraded",
-        string.Join(" | ", (string[])["estate doctor DEGRADED", .. checks.Select(c => c.Item + "=" + c.Found), "checks beyond these arrive in " + Title(1)]),
-        [
-            .. checks.Where(c => c.Remedy is not null).Select(c => new Finding("doctor." + c.Item, "block", "estate doctor", c.Item + ": " + c.Found + ".", c.Remedy)),
-            new("doctor.not-built", "warn", "estate doctor", "The engine against estate/ledgers/toolchain.md, the Twin and the estate checkout are not built until " + Title(1) + ".", "estate --help lists what this build runs"),
-        ], 6);
+    /// <summary>
+    /// The flags a verb reads: each --name followed by its value, or standing alone when it is a switch. A word outside a flag, a flag the
+    /// verb does not take, a flag given twice, a value missing, and a required flag absent are each refused as a bad argument.
+    /// </summary>
+    public static Result<IReadOnlyDictionary<string, string>> Flags(IReadOnlyList<string> words, string[] required, string[] optional, string[] switches)
+    {
+        var flags = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var i = 0; i < words.Count; i++)
+        {
+            var word = words[i];
+            var valued = required.Contains(word) || optional.Contains(word);
+            if (!valued && !switches.Contains(word) || flags.ContainsKey(word) || valued && (i + 1 == words.Count || words[i + 1].StartsWith("--", StringComparison.Ordinal)))
+            {
+                return new Refusal("arguments.unknown-flag", "'" + word + "' is " + (flags.ContainsKey(word) ? "given twice" : valued ? "a flag without its value" : "no flag this verb takes") + ".",
+                    "estate --help names each verb's flags");
+            }
+
+            flags[word] = valued ? words[++i] : "";
+        }
+
+        return required.FirstOrDefault(r => !flags.ContainsKey(r)) is { } missing
+            ? new Refusal("arguments.missing-flag", "The verb needs " + missing + ".", "estate --help names each verb's flags")
+            : Result.Ok<IReadOnlyDictionary<string, string>>(flags);
+    }
 }

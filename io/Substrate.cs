@@ -63,6 +63,11 @@ public static class Substrate
         return Run(copy, Unmake).Bind(_ => Change(copy.Root, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name)])).Map(_ => copy.Name);
     }
 
+    /// <summary>The digest of the SQL Server image a database runs in: the pinned image's for a copy on the estate-sql container; none on LocalDB or a server ESTATE_SQL names.</summary>
+    public static string? Image(SqlServer.Database target) => target is SqlServer.Copy copy && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ESTATE_SQL"))
+        && Server(null, SqlEnv, localDb: false).Bind(ServerName) is Result<string>.Ok { Value: var container }
+        && ServerName(copy.Connection) is Result<string>.Ok { Value: var made } && made == container ? Doctor.ImageDigest : null;
+
     /// <summary>A copy's name: estate_&lt;host&gt;_&lt;pid&gt;_&lt;rand&gt;, lower case and [a-z0-9_] only.</summary>
     public static string CopyName(string host, int pid, string random) =>
         "estate_" + Host(host) + "_" + pid.ToString(CultureInfo.InvariantCulture) + "_" + random.ToLowerInvariant();

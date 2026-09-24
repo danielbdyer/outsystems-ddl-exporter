@@ -43,6 +43,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Law", "3′ the read is complete")]
     public void Two_builds_of_the_proving_ground_walk_to_equal_reads_and_one_fingerprint()
     {
         var (first, second) = (walks.Reads["base"], walks.Reads["again"]);
@@ -61,6 +62,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     [Theory]
     [Trait("Category", "fast")]
     [MemberData(nameof(Archetypes))]
+    [Trait("Law", "3′ the read is complete")]
     public void Each_archetype_edit_to_the_proving_ground_changes_the_fingerprint(string archetype) =>
         Assert.NotEqual(Fingerprint.Of(walks.Reads["base"].Elements), Fingerprint.Of(walks.Reads[archetype].Elements));
 

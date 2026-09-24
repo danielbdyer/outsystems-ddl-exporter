@@ -58,6 +58,7 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
+    [Trait("Law", "3′ the read is complete")]
     public async Task A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint()
     {
         var strict = Made(Profiles.Load(ground.Profile));
@@ -87,6 +88,7 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
     /// <summary>§1 fact 4 through io: the convergence oracle is an empty plan under the pipeline's profile; the make-mandatory head's plan against the same copy is one Alter, its guard in the script.</summary>
     [Fact]
     [Trait("Category", "fixture")]
+    [Trait("Law", "3′ the read is complete")]
     public async Task The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not()
     {
         var strict = Made(Profiles.Load(ground.Profile));

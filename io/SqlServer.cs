@@ -213,6 +213,10 @@ public static class SqlServer
         /// <summary>The report's operations; none is convergence (§1 fact 4).</summary>
         public int Operations => XDocument.Parse(Report).Descendants(Dac + "Operation").Count();
 
+        /// <summary>Each object the report names, by the operation on it (Alter, Create, Drop, TableRebuild), its type as the model serializes it (SqlTable) and its name.</summary>
+        public IReadOnlyList<(string Operation, string Type, string Name)> Items => [.. XDocument.Parse(Report).Descendants(Dac + "Operation")
+            .SelectMany(o => o.Elements(Dac + "Item").Select(i => ((string?)o.Attribute("Name") ?? "", (string?)i.Attribute("Type") ?? "", (string?)i.Attribute("Value") ?? "")))];
+
         public bool IsEmpty => Operations == 0;
     }
 
@@ -413,6 +417,9 @@ public static class SqlServer
 
     private static Refusal NotADatabase(Target target) => new Refusal("target.not-a-database",
         target + " is read as a package; Model, Plan and the executor read a database, env:<name> or copy:<name>.", "Name the database as env:<name> or copy:<name>.");
+
+    /// <summary>The target, when it answers this identity with VIEW DEFINITION: what a verb asks before it builds anything, so a denial arrives first.</summary>
+    public static Result<Database> Reach(Database target, QueryLog? log = null) => Reached(target, log);
 
     /// <summary>
     /// Whether the target answers this identity with what reading it takes, before DacFx's own retries begin: a connection opens, and

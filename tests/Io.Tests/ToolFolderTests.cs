@@ -36,6 +36,10 @@ public sealed class PublishedTool
     /// </summary>
     public (int Exit, string Output) Run(params string[] arguments) => Command.Run("dotnet", [Path.Combine(Folder, "estate.dll"), .. arguments]);
 
+    /// <summary>estate from the folder as its own process, run in <paramref name="estateRoot"/>, so the executable's own runtime settings load the model.</summary>
+    public (int Exit, string Output) RunAt(string estateRoot, params string[] arguments) =>
+        Command.Run("dotnet", [Path.Combine(Folder, "estate.dll"), .. arguments], workingDirectory: estateRoot);
+
     /// <summary>A classic .sqlproj built against the folder (section 1 fact 1): the committed engine's targets, no Visual Studio, no node left holding the folder.</summary>
     public (int Exit, string Output) Build(string project) => Command.Run("dotnet",
     [
@@ -71,23 +75,22 @@ public sealed class ToolFolderTests(PublishedTool tool)
         Assert.Contains("DOTNET_ROOT", tool.Output, StringComparison.Ordinal);
     }
 
-    /// <summary>M0 exit 3 from the published folder: DEGRADED, the tool folder found beside it, a remedy on every block, M1 not claimed.</summary>
+    /// <summary>WP 1.7 from the published folder: READY and exit 0, or DEGRADED and exit 6 with a remedy on every block; the tool folder found beside it, its DacFx named.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void The_published_doctor_finds_its_tool_folder_and_does_not_claim_M1()
+    public void The_published_doctor_finds_its_tool_folder_and_names_its_engine()
     {
         var (exit, output) = tool.Run("doctor", "--json");
 
         var answer = JsonNode.Parse(output)!;
         var line = (string)answer["verdict"]!["message"]!;
         var findings = answer["findings"]!.AsArray().Select(f => f!).ToList();
-        Assert.Equal(6, exit);
-        Assert.StartsWith("estate doctor DEGRADED | ", line, StringComparison.Ordinal);
-        Assert.Contains(" | tool=published | ", line, StringComparison.Ordinal);
-        Assert.EndsWith("arrive in M1 (Read)", line, StringComparison.Ordinal);
-        Assert.DoesNotContain("READY", output, StringComparison.Ordinal);
+        Assert.Equal(findings.Count == 0 ? (0, "estate doctor READY | ") : (6, "estate doctor DEGRADED | "), (exit, line[..(line.IndexOf('|', StringComparison.Ordinal) + 2)]));
+        Assert.Contains(" | tool=published | dacfx=" + Doctor.DacFx + " (", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("M1", line, StringComparison.Ordinal);
         Assert.DoesNotContain(findings, f => (string)f["code"]! == "doctor.tool");
         Assert.All(findings, f => Assert.False(string.IsNullOrEmpty((string?)f["remedy"])));
+        Assert.Equal(Doctor.DacFx, (string?)answer["engine"]!["dacfx"]);
     }
 
     /// <summary>A tree copied without its bin/ and obj/, so each build under .estate/ starts fresh.</summary>

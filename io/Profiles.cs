@@ -34,6 +34,20 @@ public static class Profiles
     /// <summary>A key a message may name as it stands; any other is named by its place among its siblings.</summary>
     private static readonly Regex Nameable = new(@"\A[A-Za-z0-9_-]{1,64}\z", RegexOptions.CultureInvariant);
 
+    /// <summary>The estate's root: the nearest directory at or above <paramref name="workingDirectory"/> holding estate/posture.json, else the working directory.</summary>
+    public static string Root(string workingDirectory)
+    {
+        for (var directory = new DirectoryInfo(workingDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, Posture)))
+            {
+                return directory.FullName;
+            }
+        }
+
+        return Path.GetFullPath(workingDirectory);
+    }
+
     /// <summary>The environments estate/posture.json names under the estate's root, in name order.</summary>
     public static Result<Seq<NamedEnvironment>> Environments(string estateRoot)
     {
@@ -227,6 +241,9 @@ public abstract class PublishProfile
 
     /// <summary>The profile's own SQLCMD values: literals, none under a name shaped like a credential and none a connection string.</summary>
     public Seq<SqlCmdVariable> SqlCmd { get; }
+
+    /// <summary>A receipt's profile input: the fingerprint of the profile as kept, its target removed.</summary>
+    public Fingerprint Fingerprint => Fingerprint.Of(_profile);
 
     public override string ToString() => (this is Strict ? "Strict: " : "Permissive: ") + Source;
 

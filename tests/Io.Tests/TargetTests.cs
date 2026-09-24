@@ -78,6 +78,7 @@ public sealed class TargetTests : IDisposable
     /// <summary>M1 exit 5: copy: resolves against .estate/copies.json alone, and a name it does not hold is exit 9.</summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Law", "a named environment cannot be written")]
     public void A_copy_the_registry_does_not_hold_is_exit_9()
     {
         var refusal = Refused(SqlServer.Resolve(Made(SqlServer.Target.Parse("copy:estate_nowhere_1_00000000")), scratch));
@@ -119,6 +120,7 @@ public sealed class TargetTests : IDisposable
     [InlineData("Server=prod-sql.corp.example;Integrated Security=true", "prod-sql.corp.example,1")]
     [InlineData("Data Source=tcp:prod-sql.corp.example,1433", "PROD-SQL.corp.example,1")]
     [InlineData("Initial Catalog=Dev;Integrated Security=true", "localhost,1")]
+    [Trait("Law", "a named environment cannot be written")]
     public void A_substrate_on_a_host_an_environment_s_reference_names_is_exit_9(string reference, string substrate)
     {
         var root = Estate(Dev(Written("dev.connection", reference + ";User ID=reader;Password=" + Planted)));

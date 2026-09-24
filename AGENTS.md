@@ -9,8 +9,9 @@ package being changed. Nothing else is required before starting.
 ## Before anything
 
 Run `estate doctor` and quote its line before claiming a tool, a daemon or a database is missing.
-The line names the .NET SDK, the DacFx pin, the substrate (Docker or LocalDB) and the Twin, and
-every missing item carries a remedy. At M0 the verb prints `DEGRADED` and claims nothing M1 builds.
+The line reads `READY` or `DEGRADED` and names the .NET SDK and runtime, the tool folder and its
+DacFx against `estate/ledgers/toolchain.md`, the build route, the substrate (Docker or LocalDB) and
+Git LFS; every missing item carries a remedy.
 Without the session hook, `dotnet run --project cli -- doctor` runs it.
 
 ## Where truth lives
@@ -56,8 +57,9 @@ Without the session hook, `dotnet run --project cli -- doctor` runs it.
   `ci/budgets.json` with a decision line in the same pull request.
 - A new package is a decision line, a `PackageVersion` in `Directory.Packages.props` and a line in
   `ci/packages.allow`, in the same pull request.
-- A new law is a test with an English name; from M1, `LAWS.md` picks it up on the next build. A law
-  without a green test is not a law.
+- A new law is a test with an English name and a `[Trait("Law", "<the law>")]`; `ci/laws.sh`
+  (`ci/laws.ps1` on Windows) regenerates `LAWS.md`, and `Budgets.Tests: Laws` fails until the
+  regenerated file is committed. A law without a green test is not a law.
 
 ## What a session writes
 
