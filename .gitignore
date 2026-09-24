@@ -1,6 +1,7 @@
 **/bin/
 **/obj/
 .artifacts/**
+archive/v1/.artifacts/**
 *.user
 *.suo
 *.userprefs
@@ -28,7 +29,11 @@ bench/
 # EXCEPT the perf-gate baselines, which ARE checked in. These are the
 # committed high-water-mark thresholds for `scripts/perf-gate.sh` to
 # compare per-commit canary runs against (chapter-3.6 cash-out).
-!sidecar/projection/bench/
-sidecar/projection/bench/*
-!sidecar/projection/bench/baseline-*.json
-!sidecar/projection/bench/stryker-config.json
+!archive/v2/bench/
+archive/v2/bench/*
+!archive/v2/bench/baseline-*.json
+!archive/v2/bench/stryker-config.json
+
+# v3: the tool's local state (copies registry, runs, worktrees, the built tool) and the published folder.
+.estate/
+dist/

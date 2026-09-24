@@ -27,7 +27,7 @@ on:
   # a REQUIRED status check on `main`: a path-filtered workflow that is skipped
   # leaves its required check pending forever and blocks the merge. With no
   # filter the check always reports — and passes trivially when
-  # `sidecar/projection/` is unchanged (the matrix regenerates identically), so
+  # `archive/v2/` is unchanged (the matrix regenerates identically), so
   # it only ever blocks a stale matrix / phantom-coverage claim.
   pull_request:
   push:
@@ -35,7 +35,7 @@ on:
       - main
       - master
     paths:
-      - 'sidecar/projection/**'
+      - 'archive/v2/**'
 
 jobs:
   verifiability-gate:
@@ -47,18 +47,18 @@ jobs:
 
       - name: Run verifiability-gate.sh (D2 — no phantom Bucket-A/B)
         run: |
-          chmod +x sidecar/projection/scripts/verifiability-gate.sh
-          sidecar/projection/scripts/verifiability-gate.sh
+          chmod +x archive/v2/scripts/verifiability-gate.sh
+          archive/v2/scripts/verifiability-gate.sh
 
       - name: Regenerate the ladder matrix (D1 — @ladder cross-check)
         run: |
-          chmod +x sidecar/projection/scripts/matrix-status.sh
-          sidecar/projection/scripts/matrix-status.sh
+          chmod +x archive/v2/scripts/matrix-status.sh
+          archive/v2/scripts/matrix-status.sh
 
       - name: Assert the committed matrix is current (D1 — no coverage drift)
         run: |
-          if ! git diff --exit-code -- sidecar/projection/NORTH_STAR.matrix.generated.md; then
+          if ! git diff --exit-code -- archive/v2/NORTH_STAR.matrix.generated.md; then
             echo "::error::NORTH_STAR.matrix.generated.md is stale — a coverage shift was not committed."
-            echo "Regenerate locally and commit: sidecar/projection/scripts/matrix-status.sh"
+            echo "Regenerate locally and commit: archive/v2/scripts/matrix-status.sh"
             exit 1
           fi
