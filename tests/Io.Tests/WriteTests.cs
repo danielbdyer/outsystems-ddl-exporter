@@ -41,6 +41,7 @@ public sealed class WriteTests : IDisposable
         string[] versions = [new string('a', 1 << 20) + "\n", new string('b', 3 << 19) + "\n"];
         Write.Text(path, versions[0]);
         using var done = new CancellationTokenSource();
+        var reading = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var (whole, torn) = (0, 0);
         var reader = Task.Run(() =>
         {
@@ -52,6 +53,7 @@ public sealed class WriteTests : IDisposable
                     using var text = new StreamReader(stream);
                     var seen = text.ReadToEnd();
                     _ = seen == versions[0] || seen == versions[1] ? whole++ : torn++;
+                    reading.TrySetResult();
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException)
                 {
@@ -60,6 +62,8 @@ public sealed class WriteTests : IDisposable
             }
         });
 
+        // The writes start once the reader reads, or a busy machine can finish all forty before the reader is scheduled.
+        await reading.Task.WaitAsync(TimeSpan.FromMinutes(1));
         for (var i = 1; i <= 40; i++)
         {
             Write.Text(path, versions[i % 2]);

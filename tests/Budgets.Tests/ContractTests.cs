@@ -135,6 +135,34 @@ public sealed class ContractTests
         Assert.Contains("not built until M1", doctor, StringComparison.Ordinal);
     }
 
+    /// <summary>M0 exit 3 on a bare machine: DEGRADED, one blocking finding with its remedy per missing item, and M1 claimed nowhere.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Doctor_prints_DEGRADED_with_a_remedy_per_missing_item_and_does_not_claim_M1()
+    {
+        var bare = Directory.CreateTempSubdirectory("estate-bare-").FullName;
+        try
+        {
+            var checks = Doctor.Examine(bare, bare, (_, _) => null);
+
+            var json = Render.Json(Contract.Doctor(checks));
+
+            AssertValid("estate.envelope.1.schema.json", json);
+            Assert.Equal(6, (int)json["exit"]!);
+            var line = (string)json["verdict"]!["message"]!;
+            Assert.StartsWith("estate doctor DEGRADED | sdk=", line, StringComparison.Ordinal);
+            Assert.EndsWith(" | checks beyond these arrive in M1 (Read)", line, StringComparison.Ordinal);
+            var findings = json["findings"]!.AsArray().Select(f => ((string)f!["code"]!, (string)f["severity"]!, (string?)f["remedy"])).ToList();
+            Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.substrate", "doctor.not-built"], findings.Select(f => f.Item1));
+            Assert.Equal(checks.Where(c => c.Remedy is not null).Select(c => c.Remedy), findings.Where(f => f.Item2 == "block").Select(f => f.Item3));
+            Assert.DoesNotContain("READY", Render.Markdown(Contract.Doctor(checks)), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(bare, recursive: true);
+        }
+    }
+
     [Fact]
     [Trait("Category", "fast")]
     public void Main_opts_out_of_telemetry_before_anything_else()

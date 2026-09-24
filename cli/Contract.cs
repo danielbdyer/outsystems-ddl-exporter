@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json.Nodes;
 
@@ -46,7 +47,7 @@ public static class Contract
 
     public static readonly IReadOnlyList<Verb> Verbs =
     [
-        new("doctor", "Can this machine do the work: the SDK, the engine, the substrate.", 1, DoctorBeforeM1),
+        new("doctor", "Can this machine do the work: the SDK, the engine, the substrate.", 1, _ => Doctor(Io.Doctor.Examine())),
         new("read", "What a schema is, from a ref, a package or a database, read whole, with its fingerprint.", 1),
         new("diff", "What changes between two schemas, property by property, deploy scripts and refactorlog included.", 1),
         new("classify", "Which operation a change is, provisionally, from the committed evidence.", 2),
@@ -90,6 +91,11 @@ public static class Contract
     public static Envelope UnknownVerb(string word) => Answer("estate.envelope/1", "bad-arguments", "'" + word + "' is not a verb of estate.",
         [new("arguments.unknown-verb", "block", "estate " + word, "The verb table has no row named '" + word + "'.", "estate --help")], 1);
 
-    private static Envelope DoctorBeforeM1(IReadOnlyList<string> _) => Answer("estate.doctor/1", "degraded", "estate doctor DEGRADED | checks=not built until M1",
-        [new("doctor.not-built", "block", "estate doctor", "The machine checks (the SDK, the engine against the toolchain ledger, the substrate) are not built until " + Title(1) + ".", "dotnet --version against global.json; docker ps")], 6);
+    /// <summary>M0's doctor (M0 exit 3): DEGRADED, since the checks beyond io/Doctor's are M1's; a blocking finding with its remedy per item missing.</summary>
+    public static Envelope Doctor(IReadOnlyList<Io.Doctor.Check> checks) => Answer("estate.doctor/1", "degraded",
+        string.Join(" | ", (string[])["estate doctor DEGRADED", .. checks.Select(c => c.Item + "=" + c.Found), "checks beyond these arrive in " + Title(1)]),
+        [
+            .. checks.Where(c => c.Remedy is not null).Select(c => new Finding("doctor." + c.Item, "block", "estate doctor", c.Item + ": " + c.Found + ".", c.Remedy)),
+            new("doctor.not-built", "warn", "estate doctor", "The engine against estate/ledgers/toolchain.md, the Twin and the estate checkout are not built until " + Title(1) + ".", "estate --help lists what this build runs"),
+        ], 6);
 }

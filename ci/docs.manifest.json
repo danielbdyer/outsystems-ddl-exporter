@@ -1,12 +1,12 @@
 {
-  "about": "Every markdown file in the tree outside archive/, plus archive/INDEX.md and the data files in ci/, as data: who reads it, when, and its line budget. The Manifest test holds every markdown file outside archive/ to its row and each hand-written file to its budget. A new document adds its row in the same pull request.",
+  "about": "Every markdown file in the tree outside archive/, plus archive/INDEX.md and every file in ci/, as data: who reads it, when, and its line budget. The Manifest test holds every markdown file outside archive/ to its row and each hand-written file to its budget. A new document adds its row in the same pull request.",
   "fields": {
     "path": "the file, relative to the repository root",
     "kind": "hand, or generated (by the generator named; its first line is the generated banner)",
     "owner": "engine, estate, or vendored (the engine writes it; the estate receives it)",
     "reader": "who reads it",
     "moment": "when they read it",
-    "budget": "the ceiling in physical lines; null for a generated file, for DECISIONS.md, which grows one line per decision under the Decisions test, and for a data file in ci/, which the tests parse and no person reads through",
+    "budget": "the ceiling in physical lines; null for a generated file, for DECISIONS.md, which grows one line per decision under the Decisions test, and for a file in ci/: data the tests parse, or a script the tests and CI run, neither of them prose",
     "generator": "for a generated file, what generates it; null for a hand-written one",
     "becomes": "for a hand-written file a later milestone generates: the milestone and the generator; absent otherwise",
     "ancestor": "the archived documents it succeeds, as provenance"
@@ -142,6 +142,46 @@
       "budget": null,
       "generator": null,
       "ancestor": []
+    },
+    {
+      "path": "ci/publish.sh",
+      "kind": "hand",
+      "owner": "engine",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["the fast lane", "a publish of dist/estate/"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/publish.ps1",
+      "kind": "hand",
+      "owner": "engine",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["the fast lane on Windows", "a publish of dist/estate/ on Windows"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/sql.sh",
+      "kind": "hand",
+      "owner": "engine",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["the SQL lane", "a session that needs SQL Server"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/scripts/warm-sql.sh"]
+    },
+    {
+      "path": "ci/sql.ps1",
+      "kind": "hand",
+      "owner": "engine",
+      "reader": ["the tests", "a maintainer"],
+      "moment": ["the SQL lane on Windows", "a session that needs SQL Server on Windows"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/scripts/warm-sql.sh"]
     },
     {
       "path": "ci/budgets.json",

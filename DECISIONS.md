@@ -19,3 +19,6 @@
 2026-09-23 · JsonSchema.Net validates the CLI contract's schemas, in tests only · #704
 2026-09-23 · `ci/budgets.json` counts physical lines by include globs, `bin/` and `obj/` never; planned figures are data and never fail a build · #704
 2026-09-23 · `Contract.Milestone` names the milestone in progress and each exit raises it by one: `pending M<n>` holds until M<n>'s exit (n ≥ it), and `pending W` and the root design documents' exclusion end as M8 starts · #704
+2026-09-23 · the reference stub (`mscorlib.dll` and `FrameworkList.xml`) comes from Microsoft.NETFramework.ReferenceAssemblies.net472 1.0.3 through a `PackageDownload` in `cli`, its exact version on the item because central package management cannot pin a `PackageDownload`, and `ci/publish` copies it into `dist/estate/refasm/` · #704
+2026-09-23 · `Io.Tests` also runs with invariant globalization off, because Microsoft.Data.SqlClient refuses invariant mode, so the earlier line saying `Kernel.Tests` alone does no longer holds · #704
+2026-09-23 · the `estate-sql` container's SA password is generated once per machine into `~/.estate/sql.env`, outside every checkout so all worktrees share one container, and no output of `ci/sql.sh` or `ci/sql.ps1` prints it · #704

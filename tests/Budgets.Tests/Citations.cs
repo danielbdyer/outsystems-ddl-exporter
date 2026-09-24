@@ -112,8 +112,8 @@ public sealed class Citations
     [InlineData("| O1 | … | `io/Substrate.cs` over both | `Io.Tests` on both substrates — pending M3 |", 0, "io/Substrate.cs")]
     [InlineData("| O1 | … | `io/Substrate.cs` over both, from M3 | `Io.Tests` on both substrates — pending M3 |", 0, "")]
     [InlineData("| O1 | … | `io/Substrate.cs` over both, from M3 | `Io.Tests` on both substrates — pending M3 |", 4, "io/Substrate.cs")]
-    [InlineData("build `tests/Golden/classic-minimal/` on the laptop", 0, "")]
-    [InlineData("build `tests/Golden/classic-minimal/` on the laptop", 1, "tests/Golden/classic-minimal/")]
+    [InlineData("extract the guards into `tests/Golden/guards/`", 0, "")]
+    [InlineData("extract the guards into `tests/Golden/guards/`", 1, "tests/Golden/guards/")]
     [InlineData("builds `cli` into `.estate/bin/` when stale; no `gate.json` carries a password", 0, "")]
     [InlineData("`packages.lock.json` in every project", 0, "")]
     public void A_missing_path_resolves_only_through_a_milestone_its_own_clause_names(string line, int milestone, string unresolved) =>

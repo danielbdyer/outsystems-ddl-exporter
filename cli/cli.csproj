@@ -12,4 +12,12 @@
   <ItemGroup>
     <ProjectReference Include="../io/io.csproj" />
   </ItemGroup>
+  <!--
+    The reference stub a classic .sqlproj build needs (mscorlib.dll and FrameworkList.xml), downloaded by restore and never
+    referenced; ci/publish copies it into dist/estate/refasm/. Central package management cannot pin a PackageDownload,
+    so its exact version is here, and ci/publish reads it from this line.
+  -->
+  <ItemGroup>
+    <PackageDownload Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="[1.0.3]" />
+  </ItemGroup>
 </Project>
