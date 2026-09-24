@@ -14,3 +14,14 @@
   `twin up`, `twin down`; `dotnet build`, `dotnet test`, `dotnet clean`.
 - Always asked: every verb that pushes (`profile --commit`, `check cdc --commit`,
   `check environments --page --commit`, `knowledge vendor`).
+
+## Operator reviews and intake
+
+- A question only the operator can answer (a milestone's close, an alignment review, an intake with
+  open questions) goes to one private Artifact page built by `ci/review/build.js` from a JSON spec:
+  the answer first; each decision a card with its options, the recommended one marked with its
+  reason, and a note; each finding a row with its evidence, its fix, and fix, won't fix or discuss;
+  the operator's own actions with a form to report back; a gate for how the build continues.
+- Publish it with the `db` capability, and republish in place as it changes. Before acting, read the
+  answers back with ArtifactData and write what is adopted into `DECISIONS.md`, `VALUES.md`,
+  `NEXT.md` or the code. The page is a view, never the record.
