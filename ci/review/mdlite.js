@@ -12,7 +12,7 @@ function inline(t) {
   t = String(t).replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return "\u0000" + (codes.length - 1) + "\u0000"; });
   t = esc(t);
   t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  t = t.replace(/\{\{([^{}]+)\}\}/g, (_, k) => term(k.replace(/&amp;/g, "&")));
+  t = t.replace(/\{\{([^{}]+)\}\}/g, (_, k) => term(k.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&amp;/g, "&")));
   t = t.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${esc(codes[+i])}</code>`);
   return t;
 }

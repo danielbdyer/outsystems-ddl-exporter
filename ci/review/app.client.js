@@ -15,7 +15,7 @@
     const codes = [];
     let s = String(t == null ? "" : t).replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return "\u0000" + (codes.length - 1) + "\u0000"; });
     s = esc(s).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-    s = s.replace(/\{\{([^{}]+)\}\}/g, (_, k) => term(k.replace(/&amp;/g, "&")));
+    s = s.replace(/\{\{([^{}]+)\}\}/g, (_, k) => term(k.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&amp;/g, "&")));
     return s.replace(/\u0000(\d+)\u0000/g, (_, i) => "<code>" + esc(codes[+i]) + "</code>");
   }
   const paras = t => String(t || "").split(/\n{2,}|\n(?=[-*] )/).map(p => "<p>" + inline(p.replace(/\n/g, " ")) + "</p>").join("");
