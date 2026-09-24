@@ -7,9 +7,10 @@ using Xunit;
 namespace Estate.Kernel.Tests;
 
 /// <summary>
-/// A named environment is data (WP 1.5): a reference is env:NAME or file:path and prints as itself; an environment is real
-/// until a named lead's dated confirmation says synthetic; a SQLCMD name shaped like a credential never holds a literal; and
-/// substitution is a pure function whose text exists only in the string it returns. No refusal quotes the value it refused.
+/// A named environment is data (WP 1.5): a reference is env:NAME or file:path and prints as itself, and no connection string passes
+/// as a path; an environment is real until a named lead's dated confirmation says synthetic; a SQLCMD value is a literal or a
+/// reference, read through Match, and a name shaped like a credential never holds a literal; and substitution is a pure function
+/// whose text exists only in the string it returns. No refusal quotes the value it refused.
 /// </summary>
 public sealed class NamedEnvironmentTests
 {
@@ -41,7 +42,8 @@ public sealed class NamedEnvironmentTests
     {
         Secret.Sample(secret =>
         {
-            foreach (var text in (string[])[secret, "Server=db;User ID=sa;Password=" + secret, "env:" + secret, "ENV:ESTATE_DEV", "env:1" + secret, "file: " + secret, "file:"])
+            foreach (var text in (string[])[secret, "Server=db;User ID=sa;Password=" + secret, "file:Server=db;User ID=sa;Password=" + secret, "file:Password=" + secret,
+                "file:" + secret + ";x", "env:" + secret, "ENV:ESTATE_DEV", "env:1" + secret, "file: " + secret, "file:"])
             {
                 var refusal = Refused(SecretReference.Of(Where, text));
                 Assert.Equal("reference.malformed", refusal.Code);
@@ -63,6 +65,8 @@ public sealed class NamedEnvironmentTests
         Assert.Equal(new Classification.Real(null), Made(Classification.Of(Where, "real", null)));
         Assert.Equal(new Classification.Real(confirmed), Made(Classification.Of(Where, "real", confirmed)));
         Assert.Equal(new Classification.Synthetic(confirmed), Made(Classification.Of(Where, "synthetic", confirmed)));
+        Assert.Equal(("real", "real by the dev lead", "synthetic by the dev lead"), (Classified(Classification.Of(Where, null, null)),
+            Classified(Classification.Of(Where, "real", confirmed)), Classified(Classification.Of(Where, "synthetic", confirmed))));
         Assert.Equal("posture.unconfirmed", Refused(Classification.Of(Where, "synthetic", null)).Code);
         Assert.Equal("posture.classification", Refused(Classification.Of(Where, "Synthetic", confirmed)).Code);
         Assert.Equal("posture.classification", Refused(Classification.Of(Where, Planted, confirmed)).Code);
@@ -102,7 +106,7 @@ public sealed class NamedEnvironmentTests
 
         Assert.Equal("sqlcmd.literal-credential", refusal.Code);
         Assert.DoesNotContain(Planted, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
-        Assert.Equal((name, (string?)null, "env:ESTATE_SECRET"), (referenced.Name, referenced.Literal, referenced.Reference?.ToString()));
+        Assert.Equal((name, "from env:ESTATE_SECRET"), (referenced.Name, Held(referenced)));
     }
 
     [Fact]
@@ -111,7 +115,7 @@ public sealed class NamedEnvironmentTests
     {
         var literal = Made(SqlCmdVariable.Of(Where, "EnvironmentTag", "dev"));
 
-        Assert.Equal(("EnvironmentTag", (string?)"dev", (SecretReference?)null), (literal.Name, literal.Literal, literal.Reference));
+        Assert.Equal(("EnvironmentTag", "the literal dev"), (literal.Name, Held(literal)));
         foreach (var name in (string[])["", "Environment Tag", "1Tag", "Tag)", "Tag=" + Planted])
         {
             var refusal = Refused(SqlCmdVariable.Of(Where, name, "dev"));
@@ -204,6 +208,13 @@ public sealed class NamedEnvironmentTests
     private static SqlCmdVariable Literal(string name, string value) => Made(SqlCmdVariable.Of(Where, name, value));
 
     private static SqlCmdVariable Referenced(string name, string reference) => Made(SqlCmdVariable.Of(Where, name, Reference(reference)));
+
+    /// <summary>What a SQLCMD variable holds, read through its Match: the literal's text, or the reference it is read from.</summary>
+    private static string Held(SqlCmdVariable variable) => variable.Match(text => "the literal " + text, reference => "from " + reference);
+
+    /// <summary>A classification read through its Match: real or synthetic, and by whom where a lead confirmed it.</summary>
+    private static string Classified(Result<Classification> classification) =>
+        Made(classification).Match(real => "real" + (real.Confirmation is { } by ? " by " + by.Lead : ""), synthetic => "synthetic by " + synthetic.Confirmation.Lead);
 
     private static T Made<T>(Result<T> result) => result.Match(value => value, refusal => throw new Xunit.Sdk.XunitException(refusal.Code + ": " + refusal.Message));
 

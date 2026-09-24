@@ -31,3 +31,4 @@
 2026-09-24 · the proving ground is committed in classic form under `tests/Golden/proving-ground/`, v2's objects and scripts byte for byte; its twin files and extra folders stay in the archive until a work package needs them · #704
 2026-09-24 · the fixture's read-only principal is a SQL login holding VIEW DEFINITION and db_datareader on its database, its connection string only in `.estate/principals/` behind a `file:` reference · #704
 2026-09-24 · a DacFx package is loaded from a stream, never by path, so a publish does not hold the assemblies beside the dacpac in the calling process · #704
+2026-09-24 · VALUES.md X1's "a profile" clause, and M1 exit 7's, reads as WP 1.5 has it: a profile holding `Password=`, as written or as DacFx reads it, or giving a SQLCMD value that is a connection string, is exit 6, while a password-free `TargetConnectionString` or `TargetDatabaseName` is removed before DacFx reads the profile and never refused · #704

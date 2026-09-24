@@ -1,4 +1,5 @@
 {
+  "substrate": "docker",
   "environments": {
     "dev": {
       "classification": "synthetic",

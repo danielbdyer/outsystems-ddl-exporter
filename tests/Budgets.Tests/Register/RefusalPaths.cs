@@ -64,6 +64,10 @@ internal static class RefusalPaths
         new("a SQLCMD literal not marked non-sensitive", "posture.unmarked-literal", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": { \"literal\": " + Quoted(planted) + " } }"))),
         new("a SQLCMD value that is a bare literal", "posture.unmarked-literal", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": " + Quoted(planted) + " }"))),
         new("a connection that is no reference", "reference.malformed", true, (scratch, planted) => Posture(scratch, Dev(connection: "env:" + planted))),
+        new("a file reference that is a connection string", "reference.malformed", true, (_, planted) =>
+            Refused(SecretReference.Of("--connection", "file:Server=db;User ID=sa;Password=" + planted))),
+        new("a substrate that is neither docker nor localdb", "posture.malformed", true, (scratch, planted) =>
+            Refused(Profiles.Environments(Estate(scratch, "{ \"environments\": {}, \"substrate\": " + Quoted(planted) + " }")))),
         new("an environment misnamed", "posture.environment-name", true, (scratch, planted) => Posture(scratch, Dev("\"cohorts\": [" + Quoted(planted) + "]", name: "DEV"))),
         new("a cohort given twice", "posture.cohort", true, (scratch, planted) => Posture(scratch, Dev("\"cohorts\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
         new("a profile path outside the estate", "posture.profile-path", true, (scratch, planted) => Posture(scratch, Dev(profile: "../" + planted + ".publish.xml"))),
@@ -85,6 +89,10 @@ internal static class RefusalPaths
             Refused(Profiles.Load(Profile(scratch, "<BlockOnPossibleDataLoss>" + planted + "</BlockOnPossibleDataLoss>")))),
         new("a profile holding a password", "profile.password", true, (scratch, planted) =>
             Refused(Profiles.Load(Profile(scratch, "<TargetConnectionString>Data Source=db;User ID=sa;Password=" + planted + "</TargetConnectionString>")))),
+        new("a profile holding a password a comment splits", "profile.password", true, (scratch, planted) =>
+            Refused(Profiles.Load(Profile(scratch, "", ("LinkedServer", "Server=db;User ID=sa;Pass<!-- -->word=" + planted))))),
+        new("a profile giving a SQLCMD value that is a connection string", "profile.literal-connection", true, (scratch, planted) =>
+            Refused(Profiles.Load(Profile(scratch, "", ("LinkedServer", "Data Source=" + planted + ";Initial Catalog=Orders;Integrated Security=True"))))),
         new("a profile with the guard off", "profile.guard-off", true, (scratch, planted) =>
             Refused(Profiles.Load(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted))))),
         new("a named environment whose profile has the guard off", "profile.guard-off", true, (scratch, planted) =>
