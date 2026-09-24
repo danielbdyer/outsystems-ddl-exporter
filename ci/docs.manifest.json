@@ -164,6 +164,16 @@
       "ancestor": []
     },
     {
+      "path": "ci/register.json",
+      "kind": "hand",
+      "owner": "engine",
+      "reader": ["the tests"],
+      "moment": ["every build"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/THE_RECORD.md", "V3_INSTRUCTION_ARCHITECTURE.md"]
+    },
+    {
       "path": "archive/INDEX.md",
       "kind": "generated",
       "owner": "engine",

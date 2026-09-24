@@ -8,8 +8,9 @@ Octopus still deploys.
 
 ## The verbs
 
-`cli/VERBS.md` lists every verb with its flags, its JSON output and its exit codes. It is generated
-from `estate --help --json` and never edited by hand.
+`estate --help` lists every verb, the milestone it arrives in, and the exit codes with their
+remedies; `estate --help --json` is the same table as data, with the schema of each JSON answer.
+From M8, `cli/VERBS.md` is generated from it and never edited by hand.
 
 ## Try it in five minutes
 
