@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Linq;
@@ -32,6 +33,48 @@ public readonly record struct Fingerprint
 
     public static Fingerprint Of(string text) => Of(Utf8.GetBytes(Canonical(text)));
 
+    /// <summary>
+    /// The fingerprint of a read: its elements in the Seq's canonical order, serialized so no two element sets serialize
+    /// alike. Every list leads with its count, every string with its length and is written as UTF-16 code units (a lone
+    /// surrogate survives), every value with a tag, every name with its part count and every key with whether it has a
+    /// parent; integers are big-endian. Text values are hashed exactly as the elements hold them, so two reads
+    /// fingerprint equally exactly when their elements are equal.
+    /// </summary>
+    public static Fingerprint Of(Seq<Element> elements)
+    {
+        var to = new ArrayBufferWriter<byte>();
+        Write(to, elements.Count);
+        foreach (var element in elements)
+        {
+            Write(to, element.Key);
+            Write(to, element.Properties.Count);
+            foreach (var property in element.Properties)
+            {
+                Write(to, property.Name);
+                property.Value.Match(
+                    b => Write(to, b ? 2 : 1),
+                    n => Write(to, 3) + Write(to, n),
+                    s => Write(to, 4) + Write(to, s),
+                    (type, member) => Write(to, 5) + Write(to, type) + Write(to, member),
+                    () => Write(to, 0));
+            }
+
+            Write(to, element.Relationships.Count);
+            foreach (var relationship in element.Relationships)
+            {
+                Write(to, relationship.Name);
+                Write(to, relationship.Targets.Count);
+                foreach (var target in relationship.Targets)
+                {
+                    Write(to, target.Position);
+                    Write(to, target.Key);
+                }
+            }
+        }
+
+        return Of(to.WrittenSpan);
+    }
+
     /// <summary>A fingerprint from the 64 lowercase hex digits <see cref="ToString"/> renders, and from nothing else.</summary>
     public static Result<Fingerprint> Parse(string hex) =>
         hex is { Length: 64 } && hex.All(c => char.IsAsciiDigit(c) || c is >= 'a' and <= 'f')
@@ -46,6 +89,40 @@ public readonly record struct Fingerprint
 
     private static ulong Word(ReadOnlySpan<byte> digest, int index) =>
         BinaryPrimitives.ReadUInt64BigEndian(digest.Slice(index * sizeof(ulong), sizeof(ulong)));
+
+    // Each writer returns the bytes it wrote, so a value's tag and content write in one expression, left to right.
+    private static int Write(ArrayBufferWriter<byte> to, int n)
+    {
+        BinaryPrimitives.WriteInt32BigEndian(to.GetSpan(sizeof(int)), n);
+        to.Advance(sizeof(int));
+        return sizeof(int);
+    }
+
+    private static int Write(ArrayBufferWriter<byte> to, long n)
+    {
+        BinaryPrimitives.WriteInt64BigEndian(to.GetSpan(sizeof(long)), n);
+        to.Advance(sizeof(long));
+        return sizeof(long);
+    }
+
+    private static int Write(ArrayBufferWriter<byte> to, string text)
+    {
+        var span = to.GetSpan(sizeof(int) + (text.Length * sizeof(char)));
+        BinaryPrimitives.WriteInt32BigEndian(span, text.Length);
+        for (var i = 0; i < text.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt16BigEndian(span[(sizeof(int) + (i * sizeof(char)))..], text[i]);
+        }
+
+        to.Advance(sizeof(int) + (text.Length * sizeof(char)));
+        return sizeof(int) + (text.Length * sizeof(char));
+    }
+
+    private static int Write(ArrayBufferWriter<byte> to, ElementKey key) =>
+        (key.Parent is { } parent ? Write(to, 1) + Write(to, parent) : Write(to, 0))
+        + Write(to, key.Type)
+        + (key.Name.Schema is { } schema ? Write(to, 2) + Write(to, schema) : Write(to, 1))
+        + Write(to, key.Name.Base);
 
     private static string Canonical(string text) =>
         (text.StartsWith('\uFEFF') ? text[1..] : text)
