@@ -426,7 +426,7 @@ package's scripts and refactorlog.
    denied login prints one sentence naming the environment and saying a lead's prediction will
    appear on the pull request.
 8. R14's log: an Extended Events session on the read-only principal, running through a full
-   `check drift`, records no DML, no DDL and no `EXEC`.
+   `check drift`, records no DML, no DDL and no `EXEC` but DacFx's `xp_instance_regread` of the default paths.
 
 **Retires.** v2's read side as the lifecycle's read path. It stays in the archive as the oracle for
 M3's typed lens.

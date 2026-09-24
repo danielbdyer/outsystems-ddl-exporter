@@ -46,6 +46,8 @@ internal static class RefusalPaths
             Refused(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 2.9.0 | UNPINNED | — |"), "3.0.0+0123abcd"))),
         new("a toolchain ledger whose pin is no release", "toolchain.malformed", false, (scratch, _) =>
             Refused(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 3.0.0 | latest | — |"), "3.0.0"))),
+        new("a toolchain ledger whose release before is newer than its pin", "toolchain.window-order", false, (scratch, _) =>
+            Refused(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 3.0.0 | 170.5.96 | 170.6.10 |"), "3.0.0"))),
         new("an element with a blank type", "element.type-blank", true, (_, planted) => Refused(ElementKey.Of(" ", Made(Name.Of(planted))))),
         new("an element with no name", "element.name-missing", false, (_, _) => Refused(ElementKey.Of("Table", default))),
         new("a child element named in two parts", "element.child-name", false, (_, _) => Refused(ElementKey.Of(Table, "Column", Made(Name.Of("dbo", "Email"))))),

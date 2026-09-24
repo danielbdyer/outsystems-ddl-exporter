@@ -36,6 +36,10 @@ public sealed class PublishedTool
     /// </summary>
     public (int Exit, string Output) Run(params string[] arguments) => Command.Run("dotnet", [Path.Combine(Folder, "estate.dll"), .. arguments]);
 
+    /// <summary>estate from the folder as its own process, run in <paramref name="estateRoot"/>, so the executable's own runtime settings load the model.</summary>
+    public (int Exit, string Output) RunAt(string estateRoot, params string[] arguments) =>
+        Command.Run("dotnet", [Path.Combine(Folder, "estate.dll"), .. arguments], workingDirectory: estateRoot);
+
     /// <summary>A classic .sqlproj built against the folder (section 1 fact 1): the committed engine's targets, no Visual Studio, no node left holding the folder.</summary>
     public (int Exit, string Output) Build(string project) => Command.Run("dotnet",
     [

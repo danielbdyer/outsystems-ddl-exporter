@@ -25,6 +25,28 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         Assert.Equal("Column [dbo].[Customer].[Email]: Nullable true → false\n", output);
     }
 
+    /// <summary>
+    /// M1 exit 2 on the executable, not in this test host: dist/estate/estate.dll as its own process, under its own runtime settings, prints
+    /// the one line, and reads the package its build wrote with an answer valid against estate.read/1.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_published_estate_as_its_own_process_prints_the_make_mandatory_diff_and_reads_the_package()
+    {
+        var (exit, output) = estate.Tool.RunAt(estate.Root, "diff", "--from", "ref:" + estate.Base, "--to", "ref:" + estate.Head);
+
+        Assert.True(exit == 0, output);
+        Assert.Equal("Column [dbo].[Customer].[Email]: Nullable true → false\n", output);
+
+        var dacpac = Path.Combine(estate.Root, ".estate", "build", estate.Head, "SampleCatalog.dacpac");
+        var (readExit, read) = estate.Tool.RunAt(estate.Root, "read", "--from", "dacpac:" + dacpac, "--json");
+
+        Assert.True(readExit == 0, read);
+        var answer = JsonNode.Parse(read)!;
+        ScratchEstate.Valid("estate.read.1.schema.json", answer);
+        Assert.False((bool)answer["read"]!["elements"]!.AsArray().Single(e => (string?)e!["key"] == "Column [dbo].[Customer].[Email]")!["properties"]!["Nullable"]!);
+    }
+
     [Fact]
     [Trait("Category", "fast")]
     public void Diff_json_validates_against_estate_diff_1_and_carries_the_one_property_both_fingerprints_and_the_engine()

@@ -74,8 +74,9 @@ public static partial class Verbs
                     "The plan against " + drift.Target + " would " + i.Operation + " " + Named(i.Type) + " " + i.Name + ".", "estate diff --from " + drift.Target + " --to ref:" + at)),
                 .. items.Count == 0 ? [] : Columns(drift.Database, planned.Read, items, log).Select(line => line.Split(": ", 2) is [var key, var change]
                     ? new Finding("drift.column", "warn", key, change + ", from the target to the repository.", null) : new Finding("drift.column", "warn", line, line + ".", null)),
-                .. stamp.Pin is { IsUnpinned: true } ? new[] { new Finding("engine.unpinned", "note", "estate check drift", "This receipt stands on DacFx " + stamp.Engine.DacFx
+                .. stamp.Pin is Pin.Unpinned ? new[] { new Finding("engine.unpinned", "note", "estate check drift", "This receipt stands on DacFx " + stamp.Engine.DacFx
                     + ", UNPINNED: " + Io.Doctor.Ledger + " pins no engine for estate " + Contract.Version.Split('+')[0] + ".", null) } : [],
+                Unverified,
             ],
             items.Count == 0 ? 0 : 5, stamp, receipt, new JsonObject
             {
@@ -86,6 +87,13 @@ public static partial class Verbs
                 },
             });
     }
+
+    /// <summary>
+    /// §17 item 15's default, on every receipt: until S7 commits the profile the Octopus step applies, the profile a receipt stands on is
+    /// the proving ground's Pipeline profile or the estate's own, and neither is verified against that step.
+    /// </summary>
+    private static Finding Unverified => new("profile.unverified", "note", "estate check drift",
+        "This receipt stands on a profile not verified against the Octopus step: S7 has not committed the profile that step applies.", null);
 
     /// <summary>The pipeline's profile: a named environment's own; for a copy, the one --profile names, else the one profile every environment of the posture names.</summary>
     private static Result<PublishProfile.Strict> Profile(Checkout here, SqlServer.Database database, string? named) =>

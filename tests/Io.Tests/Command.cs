@@ -2,16 +2,21 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Text;
 using Estate.Budgets.Tests;
 
 namespace Estate.Io.Tests;
 
-/// <summary>A program run from the repository root, its standard output and error together; exit -1 when it is not installed or overran.</summary>
+/// <summary>A program run from the repository root, or the directory given, its standard output and error together, read as UTF-8; exit -1 when it is not installed or overran.</summary>
 internal static class Command
 {
-    public static (int Exit, string Output) Run(string file, IEnumerable<string> arguments, TimeSpan? timeout = null)
+    public static (int Exit, string Output) Run(string file, IEnumerable<string> arguments, TimeSpan? timeout = null, string? workingDirectory = null)
     {
-        var start = new ProcessStartInfo(file) { RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = Repository.Root };
+        var start = new ProcessStartInfo(file)
+        {
+            RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
+            WorkingDirectory = workingDirectory ?? Repository.Root,
+        };
         foreach (var argument in arguments)
         {
             start.ArgumentList.Add(argument);

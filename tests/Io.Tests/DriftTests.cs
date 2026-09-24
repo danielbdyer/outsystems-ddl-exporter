@@ -92,7 +92,10 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         }
     }
 
-    /// <summary>R13's stamp (M1 exit 6): the receipt names the committed engine, the image's digest where the copy ran in the container, and UNPINNED while the ledger's row is.</summary>
+    /// <summary>
+    /// R13's stamp (M1 exit 6): the receipt names the committed engine, the image's digest where the copy ran in the container, and UNPINNED
+    /// while the ledger's row is; and, until S7 lands the Octopus step's profile, that its profile is not verified against it (§17 item 15).
+    /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
     public async Task Every_receipt_names_its_engine()
@@ -112,6 +115,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             Assert.Equal(("copy:" + copy.Name, "dataFacts", estate.Base), ((string?)receipt["where"], (string?)receipt["lacking"], (string?)answer["check"]!["commit"]));
             Assert.Equal(answer["engine"]!.ToJsonString(), receipt["engine"]!.ToJsonString());
             Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "engine.unpinned" && ((string?)f["message"])!.Contains("UNPINNED", StringComparison.Ordinal));
+            Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "profile.unverified" && (string?)f["severity"] == "note"
+                && ((string?)f["message"])!.Contains("profile not verified against the Octopus step", StringComparison.Ordinal));
         }
         finally
         {
@@ -142,7 +147,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
 
     /// <summary>
     /// M1 exit 8 (R14): an Extended Events session on the read-only principal's login, made by the fixture's admin identity, records every
-    /// batch and call that login sends through a full check drift of a named environment; none is DML, DDL or an EXEC.
+    /// batch and call that login sends through a full check drift of a named environment; none is DML, DDL or an EXEC, but the one registry
+    /// read of the default file paths DacFx's Script sends, which the exit names (<see cref="DacFxReadsDefaultPath"/>).
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
@@ -199,7 +205,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     /// <summary>
     /// The one EXEC DacFx's Script sends itself, measured here: master.dbo.xp_instance_regread of the instance's DefaultData or DefaultLog
     /// registry value, a read of the default file paths its script's header sets, with exactly the arguments DacFx gives. DacFx's own
-    /// catalog queries are not estate's to allowlist (V3_MILESTONES.md §7, Watch for); this session is what checks them.
+    /// catalog queries are not estate's to allowlist (V3_MILESTONES.md §7, Watch for); this session is what checks them. M1 exit 8 names
+    /// this one EXEC, and DECISIONS.md records it.
     /// </summary>
     private static bool DacFxReadsDefaultPath(ExecutableProcedureReference call) =>
         call.ProcedureReference?.ProcedureReference?.Name is { DatabaseIdentifier.Value: "master", SchemaIdentifier.Value: "dbo", BaseIdentifier.Value: "xp_instance_regread" }

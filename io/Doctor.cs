@@ -72,7 +72,7 @@ public static class Doctor
         var path = Path.Combine(estateRoot, Ledger);
         if (!File.Exists(path))
         {
-            return Pin.Unpinned;
+            return new Pin.Unpinned();
         }
 
         var ours = version.Split('+')[0];
@@ -81,8 +81,8 @@ public static class Doctor
         return row is null
             ? new Refusal("toolchain.unrecorded", Ledger + " has no dated row for estate " + ours + ".",
                 "Add a row for estate " + ours + " to " + Ledger + ", with the Octopus step's DacFx release or UNPINNED.")
-            : row.Groups[3].Value == "UNPINNED" ? Pin.Unpinned
-            : Pin.Of(row.Groups[3].Value, row.Groups[4].Value is "" or "—" or "-" ? null : row.Groups[4].Value).Match(pin => Result.Ok(pin), _ =>
+            : row.Groups[3].Value == "UNPINNED" ? new Pin.Unpinned()
+            : Pin.Of(row.Groups[3].Value, row.Groups[4].Value is "" or "—" or "-" ? null : row.Groups[4].Value).Match<Result<Pin>>(pin => pin, refusal => refusal.Code == "toolchain.window-order" ? refusal :
                 new Refusal("toolchain.malformed", Ledger + "'s row for estate " + ours + " names a pin or a release before it that is no DacFx release.",
                     "Write the row's pin and the release before it as DacFx versions, such as 170.5.96, or the pin as UNPINNED."));
     }
@@ -91,7 +91,7 @@ public static class Doctor
     private static Check Committed(string estateRoot, string version) => Toolchain(estateRoot, version)
         .Bind(pin => Engine.Of(DacFx).Map(engine => (Pin: pin, Refusal: pin.Refuses(engine))))
         .Match(
-            found => new Check("dacfx", DacFx + " (" + (found.Refusal is null ? found.Pin.IsUnpinned ? "UNPINNED" : "pinned " + found.Pin : "outside the pin " + found.Pin) + ")", found.Refusal?.Remedy),
+            found => new Check("dacfx", DacFx + " (" + (found.Refusal is null ? found.Pin.Match(_ => "UNPINNED", pinned => "pinned " + pinned) : "outside the pin " + found.Pin) + ")", found.Refusal?.Remedy),
             refusal => new Check("dacfx", DacFx + " (" + refusal.Message.TrimEnd('.') + ")", refusal.Remedy));
 
     internal static Check Sdk(string workingDirectory, Command run)
