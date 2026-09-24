@@ -16,7 +16,9 @@ namespace Estate.Io;
 /// Git, the only store (V3_MILESTONES.md §2.2, §4 row 5), through the git command line as the caller; the tool stores no
 /// credential and withholds any a URL carries from the errors it quotes. A ref's worktree is .estate/worktrees/&lt;commit&gt;/,
 /// held by one lock per estate process beside it (&lt;commit&gt;.&lt;pid&gt;.lock); every At first sweeps away each worktree no
-/// running holder's lock names. Builds write under .estate/build/&lt;commit&gt;/, never in a worktree, so one serves them all.
+/// running holder's lock names. At and the sweep run only in the worktrees' turn (Turn), one estate process at a time, so no
+/// sweep reads the locks between another process's lock and its worktree. Builds write under .estate/build/&lt;commit&gt;/,
+/// never in a worktree, so one serves them all.
 /// </summary>
 public static class Git
 {
@@ -26,28 +28,30 @@ public static class Git
     /// <summary>What a push published: the new branch and its one commit.</summary>
     public sealed record Pushed(string Branch, string Commit);
 
-    /// <summary>One At or sweep at a time in this process (the lock is reentrant); git's own locks order the processes.</summary>
-    private static readonly Lock Turn = new();
+    /// <summary>How long At or a sweep waits for another estate process's turn before the sharing error surfaces.</summary>
+    private static readonly TimeSpan Patience = TimeSpan.FromMinutes(10);
 
     private static readonly Regex Credential = new(@"(?<=://)[^/\s@]+@", RegexOptions.CultureInvariant);
 
     /// <summary>The worktree of the commit a ref names, made when absent, reused when present, and held by this process.</summary>
     public static Result<Worktree> At(string repository, string reference) => Root(repository).Bind(root => Resolve(root, reference).Bind(commit =>
     {
-        lock (Turn)
-        {
-            var path = Path.Combine(root, ".estate", "worktrees", commit);
-            Write.Text(path + "." + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + ".lock", commit + "\n");   // held before the sweep looks
-            var current = File.Exists(Path.Combine(path, ".git")) && Step(path, ["rev-parse", "HEAD"]) is Result<string>.Ok { Value: var head } && head == commit;
-            return Swept(root).Bind(_ =>
-                current ? Result.Ok(new Worktree(path, commit))
-                : Directory.Exists(path) && !Removed(root, path) ? new Refusal("git.failed", path + " is not at " + commit + ", and git cannot remove it.", "delete the folder, then run estate again")
-                : Step(root, ["worktree", "add", "--force", "--detach", path, commit]).Map(_ => new Worktree(path, commit)));
-        }
+        using var turn = Turn(root);
+        var path = Path.Combine(root, ".estate", "worktrees", commit);
+        Write.Text(path + "." + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + ".lock", commit + "\n");   // held before the sweep looks
+        var current = File.Exists(Path.Combine(path, ".git")) && Step(path, ["rev-parse", "HEAD"]) is Result<string>.Ok { Value: var head } && head == commit;
+        return Swept(root).Bind(_ =>
+            current ? Result.Ok(new Worktree(path, commit))
+            : Directory.Exists(path) && !Removed(root, path) ? new Refusal("git.failed", path + " is not at " + commit + ", and git cannot remove it.", "delete the folder, then run estate again")
+            : Step(root, ["worktree", "add", "--force", "--detach", path, commit]).Map(_ => new Worktree(path, commit)));
     }));
 
     /// <summary>Removes each worktree under .estate/worktrees/ that no running estate holds, and prunes git's records; the commits whose worktrees went.</summary>
-    public static Result<IReadOnlyList<string>> Sweep(string repository) => Root(repository).Bind(Swept);
+    public static Result<IReadOnlyList<string>> Sweep(string repository) => Root(repository).Bind(root =>
+    {
+        using var turn = Turn(root);
+        return Swept(root);
+    });
 
     /// <summary>The commit where the histories of two refs meet.</summary>
     public static Result<string> MergeBase(string repository, string a, string b) => Root(repository).Bind(root => Resolve(root, a).Bind(first => Resolve(root, b).Bind<string>(second =>
@@ -104,20 +108,37 @@ public static class Git
         return commit;
     }
 
+    /// <summary>
+    /// The worktrees' turn: .estate/worktrees/.turn opened for this process alone. Another estate process's At or sweep waits
+    /// for it, from this process or any other; the system closes it when its holder ends, however the holder ends.
+    /// </summary>
+    private static FileStream Turn(string root)
+    {
+        var path = Path.Combine(Directory.CreateDirectory(Path.Combine(root, ".estate", "worktrees")).FullName, ".turn");
+        for (var waiting = Stopwatch.StartNew(); ; Thread.Sleep(20))
+        {
+            try
+            {
+                return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException sharing) when (sharing.GetType() == typeof(IOException) && waiting.Elapsed < Patience)
+            {
+            }
+        }
+    }
+
+    /// <summary>The sweep itself, in the caller's turn, whose folder it is: the locks it reads stay true until it has removed and pruned.</summary>
     private static Result<IReadOnlyList<string>> Swept(string root)
     {
-        lock (Turn)
-        {
-            var folder = new DirectoryInfo(Path.Combine(root, ".estate", "worktrees"));
-            var worktrees = folder.Exists ? folder.GetDirectories() : [];   // listed before the locks, so a worktree made meanwhile is already held
-            var processes = Process.GetProcesses();
-            var running = processes.Select(p => p.Id.ToString(CultureInfo.InvariantCulture)).ToHashSet(StringComparer.Ordinal);
-            Array.ForEach(processes, p => p.Dispose());
-            var locks = (folder.Exists ? folder.GetFiles("*.lock") : []).Select(f => (File: f, Name: f.Name.Split('.'))).ToLookup(l => running.Contains(l.Name[1]));
-            locks[false].ToList().ForEach(l => l.File.Delete());
-            var removed = worktrees.Where(w => !locks[true].Any(l => l.Name[0] == w.Name) && Removed(root, w.FullName)).Select(w => w.Name).Order(StringComparer.Ordinal).ToList();
-            return Step(root, ["worktree", "prune"]).Map<IReadOnlyList<string>>(_ => removed);
-        }
+        var folder = new DirectoryInfo(Path.Combine(root, ".estate", "worktrees"));
+        var worktrees = folder.GetDirectories();
+        var processes = Process.GetProcesses();
+        var running = processes.Select(p => p.Id.ToString(CultureInfo.InvariantCulture)).ToHashSet(StringComparer.Ordinal);
+        Array.ForEach(processes, p => p.Dispose());
+        var locks = folder.GetFiles("*.lock").Select(f => (File: f, Name: f.Name.Split('.'))).ToLookup(l => running.Contains(l.Name[1]));
+        locks[false].ToList().ForEach(l => l.File.Delete());
+        var removed = worktrees.Where(w => !locks[true].Any(l => l.Name[0] == w.Name) && Removed(root, w.FullName)).Select(w => w.Name).Order(StringComparer.Ordinal).ToList();
+        return Step(root, ["worktree", "prune"]).Map<IReadOnlyList<string>>(_ => removed);
     }
 
     /// <summary>Removes a worktree and git's record of it; false when git cannot, such as while something holds a file open.</summary>

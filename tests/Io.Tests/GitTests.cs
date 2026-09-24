@@ -66,6 +66,23 @@ public sealed class GitTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
+    public async Task At_and_a_sweep_wait_while_another_estate_holds_the_worktrees_turn_and_go_on_when_it_ends()
+    {
+        var first = Ok(Git.At(scratch.Root, scratch.Commit("first", ("a.sql", "SELECT 1;\n"))));
+        var turn = new FileStream(Path.Combine(scratch.Root, ".estate", "worktrees", ".turn"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
+        var (at, sweep) = (Task.Run(() => Git.At(scratch.Root, first.Commit)), Task.Run(() => Git.Sweep(scratch.Root)));
+        await Task.Delay(TimeSpan.FromSeconds(1));
+        var waited = !at.IsCompleted && !sweep.IsCompleted;
+        await turn.DisposeAsync();
+
+        Assert.True(waited, "At or a sweep went on in another estate's turn");
+        Assert.Equal(first, Ok(await at));
+        Assert.Empty(Ok(await sweep));
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
     public void MergeBase_finds_where_a_branch_left_main_and_ChangedPaths_lists_the_paths_two_refs_differ_in_from_the_root_in_ordinal_order()
     {
         var fork = scratch.Commit("fork", ("README.md", "estate\n"), ("dbo/Tables/Customer.sql", "c\n"), ("dbo/Tables/Order.sql", "o\n"));
@@ -169,45 +186,100 @@ public sealed class GitTests : IDisposable
 /// <summary>
 /// WP 1.6's Done-when: two refs of a classic-minimal repository, each checked out and built at once against the published
 /// tool folder, share nothing: two worktrees, two build folders named by the commits, each package its own commit's, and
-/// neither build writing in a worktree, in the repository's tree or in the other's folders.
+/// neither build writing in a worktree, in the repository's tree or in the other's folders. Once from two threads of one
+/// process, and again from two estate processes, where nothing but the worktrees' turn orders one process's sweep against
+/// the other's At.
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
 public sealed class RefBuildTests(PublishedTool tool) : IDisposable
 {
+    private const string Project = "classic-minimal/ClassicMinimal.sqlproj";
+
     private readonly Scratch scratch = new();
 
     public void Dispose() => scratch.Dispose();
+
+    private string Output => Path.Combine(scratch.Root, ".estate", "build");
 
     [Fact]
     [Trait("Category", "fast")]
     public async Task Two_concurrent_builds_of_two_refs_share_nothing()
     {
+        var (before, after) = ClassicMinimal();
+
+        var built = await Task.WhenAll(((string[])[before, after]).Select(commit => Task.Run(() =>
+        {
+            var at = GitTests.Ok(Git.At(scratch.Root, commit));
+            return (At: at, Dacpac: GitTests.Ok(Ssdt.Build(at, Project, tool.Folder, Output)).Path);
+        })));
+
+        SharedNothing(before, after, built);
+    }
+
+    /// <summary>
+    /// The Done-when across processes. Two estate processes at once make both worktrees; then, twenty-four times, two more
+    /// take them again from holders that have exited, released from a thirty-second to three quarters of the first round's
+    /// At apart, each ref in turn the later, so that one process's sweep meets the other's worktree while the other is taking
+    /// it; then two build both refs at once. No process ends before every At of its round has returned, so every sweep meets
+    /// both holders running: after every round both worktrees stand at their commits, and the builds share nothing.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Two_estate_processes_building_two_refs_at_once_share_nothing()
+    {
+        var (before, after) = ClassicMinimal();
+        var took = Round([before, after], 0).Max(r => r.Took);
+        for (var round = 1; round <= 24; round++)
+        {
+            Round(round % 2 == 0 ? [before, after] : [after, before], took * round / 32);
+        }
+
+        SharedNothing(before, after, Round([before, after], 0, Project, tool.Folder, Output).Select(r => (r.At, r.Dacpac)).ToArray());
+    }
+
+    /// <summary>One round of estate processes, one per commit in the order released, a gap apart; each commit's worktree stands at it when all have exited.</summary>
+    private List<(Git.Worktree At, long Took, string Dacpac)> Round(string[] commits, long gap, params string[] build)
+    {
+        var taken = EstateProcess.AtOnce(scratch.Root, commits, gap, build);
+        foreach (var (at, _, _) in taken)
+        {
+            Assert.True(File.Exists(Path.Combine(at.Path, Project)), "released " + gap + " ms apart, " + at.Path + " was swept from under the estate process that took it");
+            Assert.Equal(at.Commit, scratch.GitAt(at.Path, "rev-parse", "HEAD"));
+        }
+
+        return taken;
+    }
+
+    /// <summary>The classic-minimal project committed, then committed again with Customer given an Email column; the two commits.</summary>
+    private (string Before, string After) ClassicMinimal()
+    {
         var golden = Path.Combine(Repository.Root, "tests", "Golden");
-        foreach (var file in (string[])["Directory.Build.props", "Directory.Packages.props", "classic-minimal/ClassicMinimal.sqlproj", "classic-minimal/ClassicMinimal.refactorlog", "classic-minimal/Script.PostDeployment.sql", "classic-minimal/dbo/Tables/Customer.sql"])
+        foreach (var file in (string[])["Directory.Build.props", "Directory.Packages.props", Project, "classic-minimal/ClassicMinimal.refactorlog", "classic-minimal/Script.PostDeployment.sql", "classic-minimal/dbo/Tables/Customer.sql"])
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(scratch.Root, file))!);
             File.Copy(Path.Combine(golden, file), Path.Combine(scratch.Root, file));
         }
 
         var before = scratch.Commit("classic-minimal", (".gitignore", ".estate/\n"));
-        var after = scratch.Commit("Customer gains Email", ("classic-minimal/dbo/Tables/Customer.sql",
-            "CREATE TABLE [dbo].[Customer]\n(\n    [Id] INT NOT NULL CONSTRAINT [PK_Customer] PRIMARY KEY,\n    [GivenName] NVARCHAR(100) NULL,\n    [Email] NVARCHAR(320) NULL\n);\n"));
-        var output = Path.Combine(scratch.Root, ".estate", "build");
+        return (before, scratch.Commit("Customer gains Email", ("classic-minimal/dbo/Tables/Customer.sql",
+            "CREATE TABLE [dbo].[Customer]\n(\n    [Id] INT NOT NULL CONSTRAINT [PK_Customer] PRIMARY KEY,\n    [GivenName] NVARCHAR(100) NULL,\n    [Email] NVARCHAR(320) NULL\n);\n")));
+    }
 
-        var built = await Task.WhenAll(((string[])[before, after]).Select(commit => Task.Run(() =>
-        {
-            var at = GitTests.Ok(Git.At(scratch.Root, commit));
-            return (At: at, Dacpac: GitTests.Ok(Ssdt.Build(at, "classic-minimal/ClassicMinimal.sqlproj", tool.Folder, output)));
-        })));
-
+    /// <summary>
+    /// The two refs' worktrees and build folders, named by their commits; each package with its own commit's columns; no
+    /// worktree or build folder naming the other commit; nothing written in a worktree or in the repository's tree.
+    /// </summary>
+    private void SharedNothing(string before, string after, (Git.Worktree At, string Dacpac)[] built)
+    {
         Assert.Equal([before, after], built.Select(b => b.At.Commit));
-        Assert.Equal([Path.Combine(output, before), Path.Combine(output, after)], built.Select(b => Path.GetDirectoryName(b.Dacpac.Path)));
-        Assert.Equal(["[dbo].[Customer].[GivenName]", "[dbo].[Customer].[Id]"], Columns(built[0].Dacpac.Path));
-        Assert.Equal(["[dbo].[Customer].[Email]", "[dbo].[Customer].[GivenName]", "[dbo].[Customer].[Id]"], Columns(built[1].Dacpac.Path));
+        Assert.Equal([Path.Combine(scratch.Root, ".estate", "worktrees", before), Path.Combine(scratch.Root, ".estate", "worktrees", after)], built.Select(b => b.At.Path));
+        Assert.Equal([Path.Combine(Output, before), Path.Combine(Output, after)], built.Select(b => Path.GetDirectoryName(b.Dacpac)));
+        Assert.Equal(["[dbo].[Customer].[GivenName]", "[dbo].[Customer].[Id]"], Columns(built[0].Dacpac));
+        Assert.Equal(["[dbo].[Customer].[Email]", "[dbo].[Customer].[GivenName]", "[dbo].[Customer].[Id]"], Columns(built[1].Dacpac));
         foreach (var (mine, theirs) in ((int[])[0, 1]).Select(i => (built[i], built[1 - i])))
         {
             Assert.Equal("", scratch.GitAt(mine.At.Path, "status", "--porcelain", "--ignored", "--untracked-files=all"));
-            foreach (var folder in (string[])[mine.At.Path, Path.GetDirectoryName(mine.Dacpac.Path)!])
+            foreach (var folder in (string[])[mine.At.Path, Path.GetDirectoryName(mine.Dacpac)!])
             {
                 Assert.Contains(Bytes(folder), text => text.Contains(mine.At.Commit, StringComparison.Ordinal));
                 Assert.DoesNotContain(Bytes(folder), text => text.Contains(theirs.At.Commit, StringComparison.Ordinal));
