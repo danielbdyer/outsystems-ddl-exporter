@@ -13,6 +13,7 @@
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
     <PackageReference Include="CsCheck" />
     <PackageReference Include="NetArchTest.Rules" />
+    <PackageReference Include="JsonSchema.Net" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../kernel/kernel.csproj" />

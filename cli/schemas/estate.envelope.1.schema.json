@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "estate.envelope/1",
+  "description": "What every verb writes with --json: schema, engine, receipt, verdict, findings, exit.",
+  "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with ESTATE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "engine",
+    "receipt",
+    "verdict",
+    "findings",
+    "exit"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "pattern": "^estate\\.[a-z]+/[1-9][0-9]*$"
+    },
+    "engine": {
+      "$ref": "#/$defs/engine"
+    },
+    "receipt": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/receipt"
+        }
+      ]
+    },
+    "verdict": {
+      "type": "object",
+      "required": [
+        "outcome",
+        "message"
+      ],
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "exit": {
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        9,
+        130
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "exit": {
+            "enum": [
+              2,
+              4,
+              6,
+              9
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "findings": {
+            "minItems": 1,
+            "items": {
+              "properties": {
+                "remedy": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "exit": {
+            "const": 3
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "verdict": {
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "guard",
+                  "violation"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "estate",
+        "dacfx",
+        "sqlserver"
+      ],
+      "properties": {
+        "estate": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dacfx": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ]
+        },
+        "sqlserver": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ]
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "delta",
+        "target",
+        "dataFacts",
+        "engine",
+        "profile",
+        "where",
+        "at"
+      ],
+      "properties": {
+        "delta": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "dataFacts": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          ]
+        },
+        "engine": {
+          "$ref": "#/$defs/engine"
+        },
+        "profile": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "where": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "severity",
+        "subject",
+        "message",
+        "remedy"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z]+(\\.[a-z0-9-]+)+$"
+        },
+        "severity": {
+          "enum": [
+            "block",
+            "warn",
+            "note"
+          ]
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "remedy": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "severity": {
+            "const": "block"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "remedy": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}
