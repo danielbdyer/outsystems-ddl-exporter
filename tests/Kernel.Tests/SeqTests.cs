@@ -31,6 +31,41 @@ public sealed class SeqTests
             && Seq.Of(xs).Equals((object)Seq.Of(ys)) == (Seq.Of(xs) == Seq.Of(ys))
             && (Seq.Of(xs) != Seq.Of(ys)) == !(Seq.Of(xs) == Seq.Of(ys)));
 
+    // A near miss changes one element: one character's case flipped, a character appended, or the word swapped for
+    // another. Every sample is unequal, so an equality looser than element by element fails on the first sample.
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_seq_differs_from_its_near_miss() =>
+        Gen.Select(Words.Where(xs => xs.Length > 0), Gen.Int[0, 7], Gen.Int[0, 2], Words.Where(ws => ws.Length > 0)).Sample((xs, at, change, others) =>
+        {
+            var ys = xs.ToArray();
+            var i = at % ys.Length;
+            var cased = Array.FindIndex(ys[i].ToCharArray(), c => char.ToUpperInvariant(c) != char.ToLowerInvariant(c));
+            ys[i] = (change, cased) switch
+            {
+                (0, >= 0) => string.Concat(ys[i][..cased], Flip(ys[i][cased]).ToString(), ys[i][(cased + 1)..]),
+                (2, _) when others[0] != ys[i] => others[0],
+                _ => ys[i] + "b",
+            };
+            return Seq.Of(xs) != Seq.Of(ys) && !Seq.Of(xs).Equals((object)Seq.Of(ys));
+        });
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData(new[] { "a" }, new[] { "A" })]
+    [InlineData(new[] { "a" }, new[] { "a", "a" })]
+    [InlineData(new[] { "a" }, new[] { "ab" })]
+    [InlineData(new[] { "ab" }, new[] { "a", "b" })]
+    [InlineData(new[] { "a", "b" }, new[] { "a", "c" })]
+    [InlineData(new[] { "ä" }, new[] { "Ä" })]
+    public void Pinned_near_misses_are_different_seqs(string[] xs, string[] ys)
+    {
+        Assert.True(Seq.Of(xs) != Seq.Of(ys));
+        Assert.False(Seq.Of(xs).Equals(Seq.Of(ys)));
+    }
+
+    private static char Flip(char c) => char.IsUpper(c) ? char.ToLowerInvariant(c) : char.ToUpperInvariant(c);
+
     [Fact]
     [Trait("Category", "fast")]
     public void A_record_holding_a_seq_compares_the_elements_not_the_array() =>
