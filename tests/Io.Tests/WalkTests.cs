@@ -91,6 +91,94 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
+    /// The rename archetype beside a table dbo.AAA with a column Host and an unnamed CHECK, whose key spells the column's path
+    /// ([dbo].[AAA].[Host]) and sorts before it: an entry's model.xml type pairs with the named objects only, so the column
+    /// rename stays one rename and is not read as a drop and an add.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_rename_beside_an_unnamed_check_whose_key_spells_a_column_s_path_is_still_one_rename()
+    {
+        var (before, after) = (walks.Reads["base"], walks.Reads["rename beside a Host column"]);
+        var rename = new Rename(Key(before, "Column [dbo].[Customer].[ContactPhone]"), Key(after, "Column [dbo].[Customer].[MobileNumber]"));
+        var change = Between("base", "rename beside a Host column");
+
+        Assert.Contains(after.Elements, e => e.Key.ToString() == "CheckConstraint [dbo].[AAA].[Host]");
+        Assert.Contains(after.Elements, e => e.Key.ToString() == "Column [dbo].[AAA].[Host]");
+        Assert.Equal([rename], after.Renames);
+        Assert.Equal([rename], change.Renamed);
+        Assert.Empty(change.Removed);
+    }
+
+    /// <summary>
+    /// The proving ground with two roles granted SELECT on dbo.Account, one also INSERT, and both VIEW DEFINITION on the
+    /// database. A permission's name ends with its securable's name, which tells two grants on one securable nothing, so each
+    /// is keyed under its securable by the name parts the securable's name does not hold: the permission, the grantee, the grantor.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_package_granting_two_roles_on_one_table_and_on_the_database_walks_to_one_key_per_grant()
+    {
+        var read = walks.Reads["grants"].Elements;
+        var permissions = read.Where(e => e.Key.Type == "Permission").Select(e => e.Key.ToString()).ToList();
+        output.WriteLine(string.Join('\n', permissions));
+
+        Assert.Equal(5, permissions.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(read.Count, read.Select(e => e.Key).Distinct().Count());
+        Assert.True(Ok(Change.Between(read, read, [])).IsEmpty);
+        Assert.Contains("Permission [dbo].[Account].[Grant.Select.Object].[AppReader].[dbo]", permissions);
+        Assert.Contains("Permission [DatabaseOptions].[Grant.ViewDefinition.Database].[AppWriter].[dbo]", permissions);
+    }
+
+    /// <summary>
+    /// A model built in memory with grants on one table (two to one grantee, a GRANT and a DENY to another), on a schema, and
+    /// on the database to two users, and an extended property on the table and on a column: each is keyed under its securable
+    /// or host by the name parts that name does not hold, wherever in the name it sits, so no two share a key.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Grants_on_a_table_a_schema_and_the_database_and_extended_properties_each_walk_to_a_key_of_their_own()
+    {
+        using var model = Model(
+            "CREATE TABLE dbo.P (Id INT NOT NULL PRIMARY KEY, A INT NULL);", "CREATE ROLE r1;", "CREATE ROLE r2;", "CREATE USER u1 WITHOUT LOGIN;", "CREATE USER u2 WITHOUT LOGIN;",
+            "GRANT SELECT ON dbo.P TO r1;", "GRANT INSERT ON dbo.P TO r1;", "GRANT SELECT ON dbo.P TO r2;", "DENY DELETE ON dbo.P TO r2;",
+            "GRANT SELECT ON SCHEMA::dbo TO r1;", "GRANT EXECUTE ON SCHEMA::dbo TO r2;", "GRANT VIEW DEFINITION TO u1;", "GRANT VIEW DEFINITION TO u2;",
+            "EXEC sys.sp_addextendedproperty @name = N'MS_Description', @value = N'P', @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'P';",
+            "EXEC sys.sp_addextendedproperty @name = N'MS_Description', @value = N'A', @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'P', @level2type = N'COLUMN', @level2name = N'A';");
+        var read = Ok(Ssdt.Walk(model));
+        var keyed = read.Where(e => e.Key.Type is "Permission" or "ExtendedProperty").Select(e => e.Key.ToString()).ToList();
+        output.WriteLine(string.Join('\n', keyed));
+
+        Assert.Equal(10, keyed.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(read.Count, read.Select(e => e.Key).Distinct().Count());
+        Assert.True(Ok(Change.Between(read, read, [])).IsEmpty);
+        Assert.Superset(
+            new HashSet<string>([
+                "Permission [dbo].[P].[Grant.Select.Object].[r1].[dbo]", "Permission [dbo].[P].[Deny.Delete.Object].[r2].[dbo]", "Permission [dbo].[Grant.Select.Schema].[r1].[dbo]",
+                "Permission [DatabaseOptions].[Grant.ViewDefinition.Database].[u2].[dbo]", "ExtendedProperty [dbo].[P].[A].[SqlColumn].[MS_Description]"]),
+            keyed.ToHashSet());
+    }
+
+    /// <summary>
+    /// Two unnamed checks on one column reference the same things, so their position falls to their own values: the one whose
+    /// Expression sorts first ordinally is Host 1, whichever order the source declares them in.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Unnamed_checks_on_one_column_are_numbered_by_their_own_values_whatever_order_the_source_declares_them_in()
+    {
+        string[] checks = ["ALTER TABLE dbo.T ADD CHECK (A > 0);", "ALTER TABLE dbo.T ADD CHECK (A < 100);"];
+        using var inOrder = Model(["CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, A INT NULL);", .. checks]);
+        using var reversed = Model(["CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, A INT NULL);", .. checks.Reverse()]);
+        var (forward, backward) = (Ok(Ssdt.Walk(inOrder)), Ok(Ssdt.Walk(reversed)));
+
+        Assert.Equal(forward, backward);
+        Assert.True(Ok(Change.Between(forward, backward, [])).IsEmpty);
+        Assert.Contains("A < 100", Expression(forward.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[Host 1]")), StringComparison.Ordinal);
+        Assert.Contains("A > 0", Expression(forward.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[Host 2]")), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A model built in memory: two unnamed defaults DacFx meets in one order, then in the other. Each unnamed child is keyed
     /// by its table, its relationship and its position among its kind in the order of what it references, never by DacFx's
     /// order or a generated name; an index key column's direction is a property of the index.
@@ -115,10 +203,11 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
-    /// The proving ground with a table of unnamed inline constraints, published to a registered copy and read back with
-    /// LoadFromDatabase: the database walk keys every object as the package walk does, though SQL Server named each constraint.
-    /// Their values differ (SQL Server stores a check's text as it normalized it), which is why walk fingerprints are compared
-    /// only between like sources.
+    /// The proving ground with a table of unnamed inline constraints, two of them checks on one column, published to a
+    /// registered copy and read back with LoadFromDatabase: the database walk keys every object as the package walk does, though
+    /// SQL Server named each constraint, and each unnamed key names the same constraint in both (the same targets; the tied
+    /// checks the same text once SQL Server's brackets and parentheses are set aside). Their values differ (SQL Server stores a
+    /// check's text as it normalized it), which is why walk fingerprints are compared only between like sources.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
@@ -133,7 +222,12 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
         var database = Ok(Ssdt.Walk(model));
         Assert.Contains(package, e => e.Key.ToString() == "DefaultConstraint [dbo].[Note].[Host 2]");
         Assert.Equal(package.Select(e => e.Key), database.Select(e => e.Key));
-        var check = package.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[Note].[Host]");
+        var unnamed = package.Where(e => e.Key.Name.Base == "Host" || e.Key.Name.Base.StartsWith("Host ", StringComparison.Ordinal)).ToList();
+        Assert.Equal(8, unnamed.Count(e => e.Key.Parent?.ToString() == "Table [dbo].[Note]"));
+        Assert.All(unnamed, e => Assert.Equal(e.Relationships, database.Single(d => d.Key == e.Key).Relationships));
+        Assert.All(["CheckConstraint [dbo].[Note].[Host 2]", "CheckConstraint [dbo].[Note].[Host 3]"], (string key) =>
+            Assert.Equal(Bare(Expression(package.Single(e => e.Key.ToString() == key))), Bare(Expression(database.Single(e => e.Key.ToString() == key)))));
+        var check = package.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[Note].[Host 1]");
         Assert.NotEqual(check["Expression"], database.Single(e => e.Key == check.Key)["Expression"]);
     }
 
@@ -156,19 +250,33 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
 
     private static TSqlModel Model(bool reverse)
     {
-        var model = new TSqlModel(SqlServerVersion.Sql160, new TSqlModelOptions());
         string[] defaults = ["ALTER TABLE dbo.T ADD DEFAULT (0) FOR A;", "ALTER TABLE dbo.T ADD DEFAULT (5) FOR B;"];
-        foreach (var script in ((string[])["CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, A INT NOT NULL, B INT NULL CHECK (B > 0), C NVARCHAR(10) NULL);"])
-            .Concat(reverse ? defaults.Reverse() : defaults)
-            .Append("CREATE INDEX IX_T_A ON dbo.T (A, B DESC);")
-            .Append("CREATE TABLE dbo.S (Id INT NOT NULL CONSTRAINT PK_S PRIMARY KEY, G GEOMETRY NULL);")
-            .Append("CREATE SPATIAL INDEX SX ON dbo.S (G) WITH (BOUNDING_BOX = (0, 0, 10.5, 10));"))
+        return Model(
+        [
+            "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, A INT NOT NULL, B INT NULL CHECK (B > 0), C NVARCHAR(10) NULL);",
+            .. reverse ? defaults.Reverse() : defaults,
+            "CREATE INDEX IX_T_A ON dbo.T (A, B DESC);",
+            "CREATE TABLE dbo.S (Id INT NOT NULL CONSTRAINT PK_S PRIMARY KEY, G GEOMETRY NULL);",
+            "CREATE SPATIAL INDEX SX ON dbo.S (G) WITH (BOUNDING_BOX = (0, 0, 10.5, 10));",
+        ]);
+    }
+
+    /// <summary>A model built in memory from the scripts, each added in turn.</summary>
+    private static TSqlModel Model(params string[] scripts)
+    {
+        var model = new TSqlModel(SqlServerVersion.Sql160, new TSqlModelOptions());
+        foreach (var script in scripts)
         {
             model.AddObjects(script);
         }
 
         return model;
     }
+
+    private static string Expression(Element check) => ((Value.Text)check["Expression"]!).Content;
+
+    /// <summary>A check's text with the brackets, parentheses and spaces SQL Server's normalization adds set aside: <c>([A]&lt;(100))</c> as <c>A&lt;100</c>.</summary>
+    private static string Bare(string expression) => new([.. expression.Where(c => c is not ('[' or ']' or '(' or ')' or ' '))]);
 
     private Change Between(string before, string after) =>
         Ok(Change.Between(walks.Reads[before].Elements, walks.Reads[after].Elements, walks.Reads[after].Renames));
@@ -198,6 +306,20 @@ public sealed class ProvingGroundWalks : IAsyncLifetime
 {
     public const string RenameKey = "6d1c1b5e-3f0a-4c2e-9b7d-2a4f8e6c0d13";
 
+    /// <summary>The rename archetype: Customer.ContactPhone renamed MobileNumber, with the refactorlog entry SSDT writes for it.</summary>
+    private static readonly (string File, string From, string To)[] RenameEdits =
+    [
+        ("Modules/Customer.sql", "ContactPhone    NVARCHAR(40)    NULL,", "MobileNumber    NVARCHAR(40)    NULL,"),
+        ("SampleCatalog.refactorlog", "</Operations>",
+            "  <Operation Name=\"Rename Refactor\" Key=\"" + RenameKey + "\" ChangeDateTime=\"09/24/2026 10:00:00\">\n"
+            + "    <Property Name=\"ElementName\" Value=\"[dbo].[Customer].[ContactPhone]\" />\n"
+            + "    <Property Name=\"ElementType\" Value=\"SqlSimpleColumn\" />\n"
+            + "    <Property Name=\"ParentElementName\" Value=\"[dbo].[Customer]\" />\n"
+            + "    <Property Name=\"ParentElementType\" Value=\"SqlTable\" />\n"
+            + "    <Property Name=\"NewName\" Value=\"[MobileNumber]\" />\n"
+            + "  </Operation>\n</Operations>"),
+    ];
+
     /// <summary>Each head's edits: a file, text that occurs in it exactly once, and its replacement.</summary>
     private static readonly Dictionary<string, (string File, string From, string To)[]> Edits = new()
     {
@@ -213,21 +335,18 @@ public sealed class ProvingGroundWalks : IAsyncLifetime
             "CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id),\n    CONSTRAINT FK_Order_Customer_CustomerId FOREIGN KEY (CustomerId) REFERENCES dbo.Customer (Id)")],
         ["a seed edit"] = [("Data/Seed.sql", "(3, N'Initech',", "(3, N'Initech Ltd',")],
         ["a pre-deploy edit"] = [("Script.PreDeployment.sql", "PRINT 'Pre-deploy: no backfill active.", "PRINT 'Pre-deploy: still no backfill active.")],
-        ["rename a column"] =
-        [
-            ("Modules/Customer.sql", "ContactPhone    NVARCHAR(40)    NULL,", "MobileNumber    NVARCHAR(40)    NULL,"),
-            ("SampleCatalog.refactorlog", "</Operations>",
-                "  <Operation Name=\"Rename Refactor\" Key=\"" + RenameKey + "\" ChangeDateTime=\"09/24/2026 10:00:00\">\n"
-                + "    <Property Name=\"ElementName\" Value=\"[dbo].[Customer].[ContactPhone]\" />\n"
-                + "    <Property Name=\"ElementType\" Value=\"SqlSimpleColumn\" />\n"
-                + "    <Property Name=\"ParentElementName\" Value=\"[dbo].[Customer]\" />\n"
-                + "    <Property Name=\"ParentElementType\" Value=\"SqlTable\" />\n"
-                + "    <Property Name=\"NewName\" Value=\"[MobileNumber]\" />\n"
-                + "  </Operation>\n</Operations>"),
-        ],
+        ["rename a column"] = RenameEdits,
         ["unnamed constraints"] = [("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.",
             "CREATE TABLE dbo.Note (Id INT NOT NULL PRIMARY KEY, CustomerId INT NULL REFERENCES dbo.Customer (Id), Body NVARCHAR(200) NOT NULL DEFAULT (N''),"
-            + " Pinned BIT NOT NULL DEFAULT (0) CHECK (Pinned IN (0, 1)), Code NVARCHAR(10) NULL UNIQUE);")],
+            + " Pinned BIT NOT NULL DEFAULT (0) CHECK (Pinned IN (0, 1)), Code NVARCHAR(10) NULL UNIQUE, Score INT NULL, CHECK (Score > 0), CHECK (Score < 100));")],
+        ["rename beside a Host column"] =
+        [
+            .. RenameEdits,
+            ("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.", "CREATE TABLE dbo.AAA (Id INT NOT NULL, Host INT NULL, CHECK (Id > 0));"),
+        ],
+        ["grants"] = [("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.", string.Join("\nGO\n",
+            "CREATE ROLE AppReader;", "CREATE ROLE AppWriter;", "GRANT SELECT ON dbo.Account TO AppReader;", "GRANT SELECT ON dbo.Account TO AppWriter;",
+            "GRANT INSERT ON dbo.Account TO AppWriter;", "GRANT VIEW DEFINITION TO AppReader;", "GRANT VIEW DEFINITION TO AppWriter;"))],
     };
 
     private readonly string root = Path.Combine(Repository.Root, ".estate", "walk", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);

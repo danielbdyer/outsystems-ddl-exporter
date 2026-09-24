@@ -260,19 +260,20 @@ public static class Ssdt
 
     /// <summary>
     /// The model walked, one element for each deploy script and each refactorlog entry, and the entries' renames. An entry names
-    /// its type as model.xml does (SqlSimpleColumn) and the walk as DacFx does (Column); an element keyed by a name model.xml gives
-    /// once pairs the two. An entry whose type the package no longer holds keys nothing, and its change reads as a drop and an add.
+    /// its type as model.xml does (SqlSimpleColumn) and the walk as DacFx does (Column); a named object whose name model.xml gives
+    /// once pairs the two, by its own name, never by a key an unnamed object shares with it (a table's CHECK and its column Host).
+    /// An entry whose type the package no longer holds keys nothing, and its change reads as a drop and an add.
     /// </summary>
-    public static Result<Read> Walk(Package package) => Walk(package.Model).Bind(model =>
+    public static Result<Read> Walk(Package package) => Walked(package.Model).Bind(model =>
     {
-        var types = model.Where(e => package.Serialized.ContainsKey(e.Key.Path)).GroupBy(e => package.Serialized[e.Key.Path], StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.First().Key.Type, StringComparer.Ordinal);
+        var types = model.Where(w => w.Name is { } name && package.Serialized.ContainsKey(name)).GroupBy(w => package.Serialized[w.Name!], StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Element.Key.Type, StringComparer.Ordinal);
         string TypeOf(string? serialized) => serialized is not null && types.TryGetValue(serialized, out var type) ? type : serialized ?? "";
         var scripts = (package.PreDeploy is { } pre ? [Element.PreDeploy(Lf(pre))] : Array.Empty<Element>())
             .Concat(package.PostDeploy is { } post ? [Element.PostDeploy(Lf(post))] : []);
         return All(package.Refactors.Select(Entry)).Bind(entries =>
             All(package.Refactors.Where(r => r.NewName is not null || r.NewSchema is not null).Select(r => Renaming(r, TypeOf)))
-                .Map(renames => new Read(Seq.Of(model.Concat(scripts).Concat(entries)), Seq.Of(renames))));
+                .Map(renames => new Read(Seq.Of(model.Select(w => w.Element).Concat(scripts).Concat(entries)), Seq.Of(renames))));
     });
 
     /// <summary>
@@ -280,11 +281,17 @@ public static class Ssdt
     /// relationships reach, each with every property its type declares and every relationship's targets in DacFx's order (a
     /// table's columns in theirs); a target's own property (an index column's Ascending) is Relationship[position].Property. A key
     /// is the name while it has one or two parts and nothing composes the object; else the parent's key (the composer, or the
-    /// hierarchical parent, as an index's table) and the last part; unnamed (an inline constraint, a default), the relationship
-    /// to the parent, numbered from 1 among several of one type in the order of what they reference: never a generated name or
-    /// DacFx's order, so a package and a database key alike. An unresolved reference is keyed as the type Unresolved.
+    /// hierarchical parent: an index's table, a grant's securable) and the name parts the parent's name does not hold (a column's
+    /// table leads its name, a grant's securable ends it). Unnamed (an inline constraint, a default), the relationship to the
+    /// parent, numbered from 1 among several of one type in the order of what they reference, then of their own values: never a
+    /// generated name or DacFx's order. SQL Server stores a check's text as it normalized it, so siblings tied on what they
+    /// reference (two checks on one column) may number apart in a package and its database. Two objects keyed alike are refused.
+    /// An unresolved reference is keyed as the type Unresolved.
     /// </summary>
-    public static Result<Seq<Element>> Walk(TSqlModel model)
+    public static Result<Seq<Element>> Walk(TSqlModel model) => Walked(model).Map(walked => Seq.Of(walked.Select(w => w.Element)));
+
+    /// <summary>The walk, each element with its object's name as model.xml writes it ([dbo].[Customer].[Email]), null for an unnamed object.</summary>
+    private static Result<List<(Element Element, string? Name)>> Walked(TSqlModel model)
     {
         var composers = new Dictionary<TSqlObject, (TSqlObject? Parent, string Relationship)>();
         var walked = new List<TSqlObject>();
@@ -304,7 +311,9 @@ public static class Ssdt
             : (parent, o.ObjectType.Relationships.FirstOrDefault(r => r.Type == RelationshipType.Hierarchical && o.GetReferenced(r, DacQueryScopes.All).Contains(parent))?.Name ?? o.ObjectType.Name);
         string References(TSqlObject o) => string.Join('\n', o.ObjectType.Relationships.Where(r => r.Type != RelationshipType.Composing)
             .SelectMany(r => o.GetReferencedRelationshipInstances(r, DacExternalQueryScopes.All).Select(i => r.Name + " " + i.ObjectName)));
-        var unnamed = walked.Where(o => !o.Name.HasName).GroupBy(o => (Anchor: Anchor(o), Type: o.ObjectType.Name)).SelectMany(g => g.OrderBy(References, StringComparer.Ordinal)
+        string Values(TSqlObject o) => string.Join('\n', o.ObjectType.Properties.Select(p => p.Name + " " + ValueOf(() => o.GetProperty(p), p.DataType)));
+        var unnamed = walked.Where(o => !o.Name.HasName).GroupBy(o => (Anchor: Anchor(o), Type: o.ObjectType.Name))
+            .SelectMany(g => g.OrderBy(References, StringComparer.Ordinal).ThenBy(Values, StringComparer.Ordinal)
                 .Select((o, i) => (Object: o, Name: g.Count() == 1 ? g.Key.Anchor.Relationship : string.Create(CultureInfo.InvariantCulture, $"{g.Key.Anchor.Relationship} {i + 1}"))))
             .ToDictionary(u => u.Object, u => u.Name);
 
@@ -314,7 +323,7 @@ public static class Ssdt
         {
             string[] own = o.Name.HasName ? [.. o.Name.Parts] : [unnamed.GetValueOrDefault(o) ?? Anchor(o).Relationship];
             var parent = o.Name.HasName && own.Length <= 2 && !composers.ContainsKey(o) ? null : Anchor(o).Parent;
-            return parent is null ? Keyed(o.ObjectType.Name, own, null) : Key(parent).Bind(home => Keyed(o.ObjectType.Name, own[^1..], home));
+            return parent is null ? Keyed(o.ObjectType.Name, own, null) : Key(parent).Bind(home => Keyed(o.ObjectType.Name, Beneath(own, [.. parent.Name.Parts]), home));
         }
 
         Result<Element> Read(TSqlObject o)
@@ -329,7 +338,10 @@ public static class Ssdt
             return Key(o).Bind(key => All(targets).Bind(rs => Element.Of(key, properties, rs)));
         }
 
-        return All(walked.Select(Read)).Map(elements => Seq.Of(elements));
+        return All(walked.Select(o => Read(o).Map(e => (Element: e, Name: o.Name.HasName ? Keyed(o.ObjectType.Name, [.. o.Name.Parts], null).Match<string?>(k => k.Path, _ => null) : null))))
+            .Bind(read => read.GroupBy(w => w.Element.Key).FirstOrDefault(g => g.Count() > 1) is not { } alike ? Result.Ok(read) : new Refusal("walk.duplicate-key",
+                $"{alike.Count()} {alike.Key.Type} objects of the model are keyed alike, as {alike.Key}: {string.Join(", ", alike.Select(w => w.Name ?? "unnamed"))}.",
+                "Report the model's source with this refusal: a key names one object, so the walk keys this type ambiguously, a defect in io/Ssdt.Walk."));
     }
 
     /// <summary>
@@ -372,10 +384,10 @@ public static class Ssdt
             ("ParentElementName", r.ParentName), ("ParentElementType", r.ParentType), ("NewName", r.NewName), ("NewSchema", r.NewSchema),
         }.Where(p => p.Item2 is not null).Select(p => new Element.Property(p.Item1, new Value.Text(p.Item2!))));
 
-    /// <summary>An entry's rename: its element's key (under its parent's past two parts) to the key its NewName or NewSchema gives; ScriptDom reads the names.</summary>
+    /// <summary>An entry's rename: its element's key (past two parts, under its parent's, as the walk keys it) to the key its NewName or NewSchema gives; ScriptDom reads the names.</summary>
     private static Result<Rename> Renaming(RefactorEntry r, Func<string?, string> typeOf) =>
         Parts(r.ElementName).Bind(parts => parts.Length > 2 && r.ParentName is { } parent
-                ? Parts(parent).Bind(home => Keyed(typeOf(r.ParentType), home, null)).Bind(home => Keyed(typeOf(r.ElementType), parts[^1..], home))
+                ? Parts(parent).Bind(home => Keyed(typeOf(r.ParentType), home, null).Bind(key => Keyed(typeOf(r.ElementType), Beneath(parts, home), key)))
                 : Keyed(typeOf(r.ElementType), parts, null))
             .Bind(before => r.NewName is { } name
                 ? Parts(name).Bind(n => Rename.Of(before, n[^1]))
@@ -390,6 +402,10 @@ public static class Ssdt
     private static Result<ElementKey> Keyed(string type, string[] parts, ElementKey? home) => parts.Skip(home is null ? 2 : 0).Aggregate(
         home is not null ? Result.Ok(home) : (parts.Length > 1 ? Name.Of(parts[0], parts[1]) : Name.Of(parts.FirstOrDefault() ?? "")).Bind(name => ElementKey.Of(type, name)),
         (key, part) => key.Bind(parent => Name.Of(part).Bind(name => ElementKey.Of(parent, type, name))));
+
+    /// <summary>A name's parts less the run of its parent's name parts (ignoring case) where that run leaves one or more; else all of them.</summary>
+    private static string[] Beneath(string[] own, string[] home) => Enumerable.Range(0, Math.Max(0, own.Length - home.Length + 1))
+        .Where(i => own.Skip(i).Take(home.Length).SequenceEqual(home, StringComparer.OrdinalIgnoreCase)).Select(i => (string[])[.. own[..i], .. own[(i + home.Length)..]]).FirstOrDefault(rest => rest.Length > 0) ?? own;
 
     /// <summary>Every value, in order, or the first refusal.</summary>
     private static Result<List<T>> All<T>(IEnumerable<Result<T>> results) =>

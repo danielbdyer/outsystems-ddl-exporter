@@ -85,6 +85,7 @@ public static class Contract
     {
         ["package"] = 2,
         ["refactorlog"] = 2,
+        ["walk"] = 2,
         ["sdk"] = 6,
         ["tool"] = 6,
         ["build"] = 7,
