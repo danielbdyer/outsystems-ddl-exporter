@@ -1,0 +1,11 @@
+Bogus
+CsCheck
+JsonSchema.Net
+Microsoft.CodeAnalysis.BannedApiAnalyzers
+Microsoft.Data.SqlClient
+Microsoft.NET.Test.Sdk
+Microsoft.SqlServer.DacFx
+Microsoft.SqlServer.TransactSql.ScriptDom
+NetArchTest.Rules
+xunit
+xunit.runner.visualstudio
