@@ -80,6 +80,7 @@ public static class Contract
     /// <summary>
     /// The refusal table: the exit a refusal takes, by its code's area, the word before the first dot. io names what it refused
     /// (sdk.missing, build.failed), and this table alone says how estate exits for it; ContractTests finds each code io writes.
+    /// The posture, a profile, a reference and a SQLCMD value are configuration (exit 6), whether io or the kernel refuses them.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, int> RefusalExits = new Dictionary<string, int>(StringComparer.Ordinal)
     {
@@ -88,6 +89,10 @@ public static class Contract
         ["walk"] = 2,
         ["sdk"] = 6,
         ["tool"] = 6,
+        ["posture"] = 6,
+        ["profile"] = 6,
+        ["reference"] = 6,
+        ["sqlcmd"] = 6,
         ["build"] = 7,
     };
 

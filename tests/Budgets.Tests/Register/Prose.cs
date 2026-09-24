@@ -42,8 +42,8 @@ public sealed class Prose
     public void The_register_finds_a_retired_word_or_a_banned_form(string text, string? found) =>
         Assert.Equal(found, Findings(text).Select(f => f.Split('\'')[1]).FirstOrDefault());
 
-    /// <summary>Each finding as line: 'what' is retired; say instead: what to write.</summary>
-    private static IEnumerable<string> Findings(string text) => Banned
+    /// <summary>Each finding as line: 'what' is retired; say instead: what to write. Register.Refusals reads refusals with it too.</summary>
+    internal static IEnumerable<string> Findings(string text) => Banned
         .SelectMany(b => b.Pattern.Matches(text).Select(m => (m.Index, b.Name, b.Instead)))
         .OrderBy(f => f.Index)
         .Select(f => (text.AsSpan(0, f.Index).Count('\n') + 1).ToString(CultureInfo.InvariantCulture) + ": '" + f.Name + "' is out of the register; write instead: " + f.Instead);

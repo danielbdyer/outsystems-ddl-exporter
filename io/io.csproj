@@ -9,6 +9,10 @@
     <ProjectReference Include="../kernel/kernel.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- A profile's options and Permissive's maker stay internal to io; its own tests publish with them, and nothing else does. -->
+    <InternalsVisibleTo Include="Estate.Io.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.SqlServer.DacFx" />
     <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
