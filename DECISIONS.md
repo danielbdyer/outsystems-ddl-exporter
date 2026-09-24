@@ -22,3 +22,4 @@
 2026-09-23 · the reference stub (`mscorlib.dll` and `FrameworkList.xml`) comes from Microsoft.NETFramework.ReferenceAssemblies.net472 1.0.3 through a `PackageDownload` in `cli`, its exact version on the item because central package management cannot pin a `PackageDownload`, and `ci/publish` copies it into `dist/estate/refasm/` · #704
 2026-09-23 · `Io.Tests` also runs with invariant globalization off, because Microsoft.Data.SqlClient refuses invariant mode, so the earlier line saying `Kernel.Tests` alone does no longer holds · #704
 2026-09-23 · the `estate-sql` container's SA password is generated once per machine into `~/.estate/sql.env`, outside every checkout so all worktrees share one container, and no output of `ci/sql.sh` or `ci/sql.ps1` prints it · #704
+2026-09-23 · M0's exit 2 compares counts from a run with nothing else building beside it, since v1's `Osm.Cli.Tests` failed one test more once under a concurrent build and matched on re-runs · #704
