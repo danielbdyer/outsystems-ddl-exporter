@@ -23,3 +23,11 @@
 2026-09-23 · `Io.Tests` also runs with invariant globalization off, because Microsoft.Data.SqlClient refuses invariant mode, so the earlier line saying `Kernel.Tests` alone does no longer holds · #704
 2026-09-23 · the `estate-sql` container's SA password is generated once per machine into `~/.estate/sql.env`, outside every checkout so all worktrees share one container, and no output of `ci/sql.sh` or `ci/sql.ps1` prints it · #704
 2026-09-23 · M0's exit 2 compares counts from a run with nothing else building beside it, since v1's `Osm.Cli.Tests` failed one test more once under a concurrent build and matched on re-runs · #704
+2026-09-24 · a refusal's exit is found by its code's area in one table, `Contract.RefusalExits`; io names what it refused and never an exit · #704
+2026-09-24 · `io/Ssdt.Build` writes under `.estate/build/<inputs' fingerprint>/` until WP 1.6 names the folder by a ref's commit, and builds with `--no-restore -nodeReuse:false` so no MSBuild process holds `dist/estate/` open · #704
+2026-09-24 · the tool folder is the running estate's own when it carries the targets, else `ESTATE_TOOL` (refused when it lacks them), else the nearest `dist/estate/` · #704
+2026-09-24 · the deploy scripts are elements `PreDeploymentScript` and `PostDeploymentScript` keyed `[PreDeploy]` and `[PostDeploy]`; a refactorlog entry is a `RefactorLogOperation` keyed by its operation key · #704
+2026-09-24 · `Change.Between` takes renames as key pairs io derives from the refactorlog; a read with two elements on one key is refused (`change.duplicate-key`) · #704
+2026-09-24 · the proving ground is committed in classic form under `tests/Golden/proving-ground/`, v2's objects and scripts byte for byte; its twin files and extra folders stay in the archive until a work package needs them · #704
+2026-09-24 · the fixture's read-only principal is a SQL login holding VIEW DEFINITION and db_datareader on its database, its connection string only in `.estate/principals/` behind a `file:` reference · #704
+2026-09-24 · a DacFx package is loaded from a stream, never by path, so a publish does not hold the assemblies beside the dacpac in the calling process · #704
