@@ -17,6 +17,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../io/io.csproj" />
+    <!-- The exit a refusal takes is the CLI's table (Contract.Exit), so a test of io's refusals asserts the exit through it. -->
+    <ProjectReference Include="../../cli/cli.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../Budgets.Tests/Repository.cs" Link="Repository.cs" />

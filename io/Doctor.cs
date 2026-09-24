@@ -36,7 +36,7 @@ public static class Doctor
         return [Sdk(workingDirectory, run), Tool(toolFolder), Substrate(docker, run), Image(docker, run)];
     }
 
-    private static Check Sdk(string workingDirectory, Command run)
+    internal static Check Sdk(string workingDirectory, Command run)
     {
         // Without a global.json, any SDK of the runtime's major version; with one, its feature band at or above its patch (latestPatch).
         var (pin, major) = (Pinned(workingDirectory), Environment.Version.Major);
@@ -67,7 +67,7 @@ public static class Doctor
         return null;
     }
 
-    private static Check Tool(string toolFolder)
+    internal static Check Tool(string toolFolder)
     {
         var absent = Published.Where(file => !File.Exists(Path.Combine(toolFolder, file))).ToList();
         return absent.Count == 0
@@ -86,7 +86,7 @@ public static class Doctor
         : new("image", "absent", "ci/sql.sh up pulls it (docker pull " + SqlServerImage + ")");
 
     /// <summary>Runs a program read-only, its standard error discarded; null when it is not installed or overruns twenty seconds.</summary>
-    private static (int Exit, string Output)? Run(string file, IReadOnlyList<string> arguments)
+    internal static (int Exit, string Output)? Run(string file, IReadOnlyList<string> arguments)
     {
         var start = new ProcessStartInfo(file, arguments) { RedirectStandardOutput = true, RedirectStandardError = true };
         try

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json.Nodes;
+using Estate.Kernel;
 
 namespace Estate.Cli;
 
@@ -75,6 +76,21 @@ public static class Contract
         new(9, "refused-by-name", "Refused by name: a named environment, an unregistered copy or a lock; the refusal's code is printed.", "the refusal's own remedy", true),
         new(130, "interrupted", "Interrupted (Ctrl-C or --timeout); the cleanup ran and the state is as before.", "run the verb again", false),
     ];
+
+    /// <summary>
+    /// The refusal table: the exit a refusal takes, by its code's area, the word before the first dot. io names what it refused
+    /// (sdk.missing, build.failed), and this table alone says how estate exits for it; ContractTests finds each code io writes.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, int> RefusalExits = new Dictionary<string, int>(StringComparer.Ordinal)
+    {
+        ["package"] = 2,
+        ["refactorlog"] = 2,
+        ["sdk"] = 6,
+        ["tool"] = 6,
+        ["build"] = 7,
+    };
+
+    public static int Exit(Refusal refusal) => RefusalExits[refusal.Code.Split('.')[0]];
 
     /// <summary>A milestone as the plan writes it, M2; and as a person reads it, M2 (Predict).</summary>
     public static string M(int milestone) => "M" + milestone.ToString(CultureInfo.InvariantCulture);

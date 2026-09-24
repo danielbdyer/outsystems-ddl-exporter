@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Estate.Cli;
 using Estate.Io;
 using Json.Schema;
@@ -72,6 +73,23 @@ public sealed class ContractTests
         Assert.Empty(frozen.Except(table));    // a frozen code is never removed, renamed or renumbered
         Assert.Empty(table.Except(frozen));    // a new code is frozen in the change that adds it
     }
+
+    /// <summary>io names what it refused; the refusal table alone says which exit that is, by the code's area.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Every_refusal_io_constructs_takes_an_exit_the_table_holds_by_its_codes_area()
+    {
+        var codes = Repository.Files.Where(f => f.StartsWith("io/", StringComparison.Ordinal) && f.EndsWith(".cs", StringComparison.Ordinal))
+            .SelectMany(f => RefusalCode.Matches(Repository.Read(f)).Select(m => m.Groups[1].Value))
+            .ToList();
+
+        Assert.Contains("build.failed", codes);
+        Assert.DoesNotContain(codes, c => !Contract.RefusalExits.ContainsKey(c.Split('.')[0]));
+        Assert.Empty(Contract.RefusalExits.Values.Except(Contract.Exits.Select(e => e.Code)));
+        Assert.Equal([6, 7], ((string[])["sdk.missing", "build.failed"]).Select(c => Contract.Exit(new Kernel.Refusal(c, "Refused.", "Do the other thing."))));
+    }
+
+    private static readonly Regex RefusalCode = new(@"new\s+Refusal\(\s*""([a-z0-9.-]+)""", RegexOptions.CultureInvariant);
 
     [Theory]
     [Trait("Category", "fast")]
