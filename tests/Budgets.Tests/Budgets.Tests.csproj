@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The repository's own laws: budgets, manifest, dependency direction, banned symbols. -->
+  <PropertyGroup>
+    <AssemblyName>Estate.Budgets.Tests</AssemblyName>
+    <RootNamespace>Estate.Budgets.Tests</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="CsCheck" />
+    <PackageReference Include="NetArchTest.Rules" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../kernel/kernel.csproj" />
+    <ProjectReference Include="../../io/io.csproj" />
+    <ProjectReference Include="../../cli/cli.csproj" />
+  </ItemGroup>
+</Project>

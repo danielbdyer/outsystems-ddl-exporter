@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Every effect: disks, SQL Server, DacFx, git, the clock. Decisions stay in kernel/. -->
+  <PropertyGroup>
+    <AssemblyName>Estate.Io</AssemblyName>
+    <RootNamespace>Estate.Io</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../kernel/kernel.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SqlServer.DacFx" />
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Bogus" />
+  </ItemGroup>
+</Project>

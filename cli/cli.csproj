@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The one executable: parse the arguments, call io/, render. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>estate</AssemblyName>
+    <RootNamespace>Estate.Cli</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../io/io.csproj" />
+  </ItemGroup>
+</Project>
