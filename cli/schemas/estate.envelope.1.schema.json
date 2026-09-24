@@ -35,7 +35,8 @@
       "type": "object",
       "required": [
         "outcome",
-        "message"
+        "message",
+        "kind"
       ],
       "properties": {
         "outcome": {
@@ -45,6 +46,19 @@
         "message": {
           "type": "string",
           "minLength": 1
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "guard",
+                "violation"
+              ]
+            }
+          ]
         }
       }
     },
@@ -110,15 +124,23 @@
       "then": {
         "properties": {
           "verdict": {
-            "required": [
-              "kind"
-            ],
             "properties": {
               "kind": {
                 "enum": [
                   "guard",
                   "violation"
                 ]
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "verdict": {
+            "properties": {
+              "kind": {
+                "type": "null"
               }
             }
           }

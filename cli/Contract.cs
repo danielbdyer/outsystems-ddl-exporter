@@ -25,7 +25,11 @@ public sealed record ExitCode(int Code, string Name, string Meaning, string Reme
 /// </summary>
 public sealed record Envelope(string Schema, JsonNode Engine, JsonNode? Receipt, Verdict Verdict, IReadOnlyList<Finding> Findings, int Exit);
 
-public sealed record Verdict(string Outcome, string Message);
+/// <summary>The answer in a line; at exit 3 its kind says how the data blocked, and no other verdict has one.</summary>
+public sealed record Verdict(string Outcome, string Message, Blocked? Kind = null);
+
+/// <summary>How the data blocked (§4 row 15): the publish guard refused because the table has rows, or the engine refused the change on existing rows (Msg 547, Msg 2628).</summary>
+public enum Blocked { Guard, Violation }
 
 /// <summary>A finding; its remedy is a verb or a file path, and one that blocks carries one.</summary>
 public sealed record Finding(string Code, string Severity, string Subject, string Message, string? Remedy);

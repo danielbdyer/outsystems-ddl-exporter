@@ -37,7 +37,7 @@ public static class Render
         ["schema"] = answer.Schema,
         ["engine"] = answer.Engine.DeepClone(),
         ["receipt"] = answer.Receipt?.DeepClone(),
-        ["verdict"] = new JsonObject { ["outcome"] = answer.Verdict.Outcome, ["message"] = answer.Verdict.Message },
+        ["verdict"] = new JsonObject { ["outcome"] = answer.Verdict.Outcome, ["message"] = answer.Verdict.Message, ["kind"] = Kind(answer.Verdict.Kind) },
         ["findings"] = Array(answer.Findings.Select(f => new JsonObject { ["code"] = f.Code, ["severity"] = f.Severity, ["subject"] = f.Subject, ["message"] = f.Message, ["remedy"] = f.Remedy })),
         ["exit"] = answer.Exit,
     };
@@ -84,16 +84,18 @@ public static class Render
             ["schema"] = Pattern(SchemaId),
             ["engine"] = Ref("engine"),
             ["receipt"] = Nullable(Ref("receipt")),
-            ["verdict"] = new JsonObject { ["type"] = "object", ["required"] = new JsonArray("outcome", "message"), ["properties"] = new JsonObject { ["outcome"] = Text(), ["message"] = Text() } },
+            ["verdict"] = new JsonObject { ["type"] = "object", ["required"] = new JsonArray("outcome", "message", "kind"), ["properties"] = new JsonObject { ["outcome"] = Text(), ["message"] = Text(), ["kind"] = Nullable(Kinds()) } },
             ["findings"] = List(Ref("finding")),
             ["exit"] = Enum(Contract.Exits.Select(e => (JsonNode?)e.Code)),
         });
 
         // Every refusal carries a remedy: an exit that requires one names at least one finding, each with its remedy.
-        // Blocked (§4 row 15) is blocked by the data, of one kind: the row-presence guard, or a violation on existing rows.
+        // Blocked (§4 row 15) is blocked by the data and names its kind, the row-presence guard or a violation on existing rows; no other exit has a kind.
+        var blocked = If(Where("exit", new JsonObject { ["const"] = Contract.Exits.Single(e => e.Name == "blocked").Code }), Where("verdict", Where("kind", Kinds())));
+        blocked["else"] = Where("verdict", Where("kind", new JsonObject { ["type"] = "null" }));
         envelope["allOf"] = new JsonArray(
             If(Where("exit", Enum(Contract.Exits.Where(e => e.RemedyRequired).Select(e => (JsonNode?)e.Code))), Where("findings", new JsonObject { ["minItems"] = 1, ["items"] = Where("remedy", Text()) })),
-            If(Where("exit", new JsonObject { ["const"] = Contract.Exits.Single(e => e.Name == "blocked").Code }), Where("verdict", new JsonObject { ["required"] = new JsonArray("kind"), ["properties"] = new JsonObject { ["kind"] = Enum(["guard", "violation"]) } })));
+            blocked);
         var finding = Record(new()
         {
             ["code"] = Pattern("^[a-z]+(\\.[a-z0-9-]+)+$"),
@@ -138,4 +140,8 @@ public static class Render
     private static JsonObject Pattern(string pattern) => new() { ["type"] = "string", ["pattern"] = pattern };
     private static JsonObject Fingerprint() => Pattern("^sha256:[0-9a-f]{64}$");
     private static JsonArray Array(IEnumerable<JsonNode?> items) => new([.. items]);
+
+    /// <summary>A kind as the envelope writes it, null for a verdict the data did not block; the schema's words are these.</summary>
+    private static string? Kind(Blocked? kind) => kind switch { null => null, Blocked.Guard => "guard", Blocked.Violation => "violation", _ => throw new System.ArgumentOutOfRangeException(nameof(kind)) };
+    private static JsonObject Kinds() => Enum(System.Enum.GetValues<Blocked>().Select(k => (JsonNode?)Kind(k)));
 }
