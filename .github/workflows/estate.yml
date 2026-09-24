@@ -24,8 +24,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Start the clock
+        shell: bash
+        run: echo "ESTATE_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
@@ -47,12 +51,20 @@ jobs:
             -p:NetCoreBuild=true "-p:NETCoreTargetsPath=$tool" "-p:SQLDBExtensionsRefPath=$tool" "-p:TargetFrameworkRootPath=$tool/refasm"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet dist/estate/estate.dll --version
+      - name: Elapsed
+        if: always()
+        shell: bash
+        run: echo "elapsed $(( $(date +%s) - ESTATE_JOB_START )) s"
 
   sql-ubuntu:
     name: sql (ubuntu-latest, SQL Server in Docker)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Start the clock
+        shell: bash
+        run: echo "ESTATE_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
@@ -63,14 +75,22 @@ jobs:
       - run: dotnet test Estate.sln --no-build --filter Category=fixture
       - if: always()
         run: bash ci/sql.sh down
+      - name: Elapsed
+        if: always()
+        shell: bash
+        run: echo "elapsed $(( $(date +%s) - ESTATE_JOB_START )) s"
 
   sql-windows:
     name: sql (windows-latest, LocalDB)
     runs-on: windows-latest
+    timeout-minutes: 20
     env:
       ESTATE_SQL: 'Server=(localdb)\MSSQLLocalDB;Integrated Security=true'
     steps:
       - uses: actions/checkout@v4
+      - name: Start the clock
+        shell: bash
+        run: echo "ESTATE_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
@@ -83,12 +103,20 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           sqllocaldb info MSSQLLocalDB
       - run: dotnet test Estate.sln --no-build --filter Category=fixture
+      - name: Elapsed
+        if: always()
+        shell: bash
+        run: echo "elapsed $(( $(date +%s) - ESTATE_JOB_START )) s"
 
   sql-offline:
     name: sql, outbound denied (ubuntu-latest)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Start the clock
+        shell: bash
+        run: echo "ESTATE_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
@@ -127,3 +155,7 @@ jobs:
         run: offline dotnet test Estate.sln --no-build --filter Category=fixture
       - if: always()
         run: bash ci/sql.sh down
+      - name: Elapsed
+        if: always()
+        shell: bash
+        run: echo "elapsed $(( $(date +%s) - ESTATE_JOB_START )) s"
