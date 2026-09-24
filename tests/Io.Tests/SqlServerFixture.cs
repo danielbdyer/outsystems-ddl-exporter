@@ -82,7 +82,7 @@ public static class SqlServerFixture
         var docker = string.IsNullOrEmpty(given) && Command.Run("docker", ["info"], TimeSpan.FromSeconds(30)).Exit == 0 && Up();
         var localDb = string.IsNullOrEmpty(given) && !docker && Command.Run("sqllocaldb", ["start", "MSSQLLocalDB"], TimeSpan.FromMinutes(2)).Exit == 0;
         var chosen = Substrate.Server(given, docker ? Substrate.SqlEnv : "", localDb).Match(server => server, _ => throw new InvalidOperationException(NoServer));
-        var master = new SqlConnectionStringBuilder(chosen) { InitialCatalog = "master", ApplicationName = "estate-tests", TrustServerCertificate = true }.ConnectionString;
+        var master = new SqlConnectionStringBuilder(chosen) { InitialCatalog = "master", ApplicationName = "estate-tests", TrustServerCertificate = true, ConnectTimeout = 60 }.ConnectionString;
         try
         {
             await SweepAsync(master);
