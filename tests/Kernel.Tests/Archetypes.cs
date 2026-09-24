@@ -29,7 +29,8 @@ internal static class Archetypes
     private static readonly Rename OldRename = Ok(Rename.Of(Key(Customer, "Column", "Mail"), "Email"));
 
     public static TheoryData<string> Names => new(
-        "make-mandatory", "add a column", "drop a column", "rename a column", "rename a table", "a post-deploy seed edit", "a pre-deploy edit");
+        "make-mandatory", "add a column", "drop a column", "rename a column", "rename a table", "rename a table and a column",
+        "a post-deploy seed edit", "a pre-deploy edit");
 
     /// <summary>An archetype's model before and after, and the renames the refactorlog after it pairs.</summary>
     public static (Seq<Element> Before, Seq<Element> After, Seq<Rename> Renames) Pair(string archetype) => archetype switch
@@ -37,8 +38,14 @@ internal static class Archetypes
         "make-mandatory" => (Model(), Model(emailNullable: false), [OldRename]),
         "add a column" => (Model(), Model(phone: true), [OldRename]),
         "drop a column" => (Model(), Model(notes: false), [OldRename]),
-        "rename a column" => (Model(), Model(email: "EmailAddress", entry: EmailEntry), [OldRename, Ok(Rename.Of(Email, "EmailAddress"))]),
-        "rename a table" => (Model(), Model(table: "Client", entry: TableEntry), [OldRename, Ok(Rename.Of(Customer, "Client"))]),
+        "rename a column" => (Model(), Model(email: "EmailAddress", entries: [EmailEntry]), [OldRename, Ok(Rename.Of(Email, "EmailAddress"))]),
+        "rename a table" => (Model(), Model(table: "Client", entries: [TableEntry]), [OldRename, Ok(Rename.Of(Customer, "Client"))]),
+        // The column renamed while its table was still Customer, then the table: SSDT records the column's entry
+        // under the table's old name.
+        "rename a table and a column" => (
+            Model(),
+            Model(table: "Client", email: "EmailAddress", entries: [EmailEntry, TableEntry]),
+            [OldRename, Ok(Rename.Of(Email, "EmailAddress")), Ok(Rename.Of(Customer, "Client"))]),
         "a post-deploy seed edit" => (Model(), Model(post: Seed.Replace("(1, N'Active')", "(1, N'Active'), (2, N'Closed')", System.StringComparison.Ordinal)), [OldRename]),
         "a pre-deploy edit" => (Model(), Model(pre: "PRINT N'Checking the Status and Customer tables';\n"), [OldRename]),
         _ => throw new KeyNotFoundException(archetype),
@@ -47,7 +54,7 @@ internal static class Archetypes
     /// <summary>The model, with each archetype's edit as a parameter.</summary>
     public static Seq<Element> Model(
         string table = "Customer", string email = "Email", bool emailNullable = true, bool notes = true, bool phone = false,
-        string pre = PreDeploy, string post = Seed, Element? entry = null)
+        string pre = PreDeploy, string post = Seed, Element[]? entries = null)
     {
         var t = Key("Table", "dbo", table);
         var id = Key(t, "Column", "Id");
@@ -65,7 +72,7 @@ internal static class Archetypes
             OldEntry,
         };
         elements.AddRange(columns.Skip(2).Select(c => New(c, [("Nullable", Bool(true)), ("Length", Int(c.Name.Base == "Notes" ? -1 : 20))], [("DataType", [NVarCharType])])));
-        elements.AddRange(entry is null ? [] : [entry]);
+        elements.AddRange(entries ?? []);
         return Seq.Of(elements);
     }
 

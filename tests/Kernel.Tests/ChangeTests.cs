@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text.Json;
 using CsCheck;
 using Xunit;
 using static Estate.Kernel.Tests.ElementSets;
@@ -22,8 +23,23 @@ public sealed class ChangeTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void The_change_from_one_read_to_another_mirrors_the_change_back() =>
+    public void The_change_from_one_read_to_another_mirrors_the_change_back_through_the_inverted_renames()
+    {
         Gen.Select(Sets, Sets).Sample((a, b) => Mirror(Ok(Change.Between(a, b, []))) == Ok(Change.Between(b, a, [])));
+        Renamings.Sample(
+            r => Mirror(Ok(Change.Between(r.Before, r.After, r.Renames))) == Ok(Change.Between(r.After, r.Before, Inverted(r.Renames))),
+            print: Print, iter: 1000);
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Renames_made_one_at_a_time_are_reported_as_renames_whichever_keys_their_entries_were_recorded_under() =>
+        Renamings.Sample(
+            r => Ok(Change.Between(r.Before, r.After, r.Renames)) is var change
+                && change.Renamed == r.Expected
+                && change.Removed == Seq.Of(r.Dropped)
+                && change.Added == Seq.Of(r.After.Where(e => !r.Kept.Any(k => Final(k, r.Entries) == e.Key))),
+            print: Print, iter: 1000);
 
     [Fact]
     [Trait("Category", "fast")]
@@ -31,8 +47,23 @@ public sealed class ChangeTests
         Edits.Sample(
             (before, edit) =>
                 Ok(Change.Between(before, edit.After, edit.Renames)) == edit.Expected
-                && Ok(Change.Between(edit.After, before, Seq.Of(edit.Renames.Select(r => r.Inverse)))) == Mirror(edit.Expected),
+                && Ok(Change.Between(edit.After, before, Inverted(edit.Renames))) == Mirror(edit.Expected),
             print: x => x.Item2.Kind, iter: 1000);
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_rename_renders_and_serializes_the_key_before_and_the_key_after()
+    {
+        var rename = Ok(Rename.Of(Archetypes.Email, "EmailAddress"));
+
+        var line = $"{rename}";
+
+        Assert.Contains("Column [dbo].[Customer].[Email]", line, StringComparison.Ordinal);
+        Assert.Contains("Column [dbo].[Customer].[EmailAddress]", line, StringComparison.Ordinal);
+        Assert.Contains("\"EmailAddress\"", JsonSerializer.Serialize(rename), StringComparison.Ordinal);
+        Assert.Equal(rename, rename.Inverted().Inverted());
+        Assert.All(Between("rename a table and a column").Renamed, r => Assert.Contains(r.After.ToString(), $"{r}", StringComparison.Ordinal));
+    }
 
     [Fact]
     [Trait("Category", "fast")]
@@ -78,8 +109,8 @@ public sealed class ChangeTests
 
         Assert.Equal(new Change([Archetypes.EmailEntry], [], [rename], []), Between("rename a column"));
         Assert.Equal(
-            new Change([], [Archetypes.EmailEntry], [rename.Inverse], []),
-            Ok(Change.Between(after, before, Seq.Of(renames.Select(r => r.Inverse)))));
+            new Change([], [Archetypes.EmailEntry], [rename.Inverted()], []),
+            Ok(Change.Between(after, before, Inverted(renames))));
     }
 
     [Fact]
@@ -88,6 +119,20 @@ public sealed class ChangeTests
         Assert.Equal(
             new Change([Archetypes.TableEntry], [], [new Rename(Archetypes.Customer, Key("Table", "dbo", "Client"))], []),
             Between("rename a table"));
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Renaming_a_column_then_its_table_is_two_renames_though_the_column_s_entry_names_the_table_s_old_key()
+    {
+        var client = Key("Table", "dbo", "Client");
+        Seq<Rename> renames = [new Rename(Archetypes.Customer, client), new Rename(Archetypes.Email, Key(client, "Column", "EmailAddress"))];
+        var (before, after, entries) = Archetypes.Pair("rename a table and a column");
+
+        Assert.Equal(new Change([Archetypes.EmailEntry, Archetypes.TableEntry], [], renames, []), Between("rename a table and a column"));
+        Assert.Equal(
+            new Change([], [Archetypes.EmailEntry, Archetypes.TableEntry], Inverted(renames), []),
+            Ok(Change.Between(after, before, Inverted(entries))));
+    }
 
     [Fact]
     [Trait("Category", "fast")]
@@ -122,6 +167,12 @@ public sealed class ChangeTests
         Assert.Equal("change.duplicate-key", Assert.IsType<Result<Change>.Refused>(Change.Between(twice, [], [])).Refusal.Code);
         Assert.Equal("change.duplicate-key", Assert.IsType<Result<Change>.Refused>(Change.Between([], twice, [])).Refusal.Code);
     }
+
+    private static Seq<Rename> Inverted(Seq<Rename> renames) => Seq.Of(renames.Select(r => r.Inverted()));
+
+    // A failing renaming, printed as its reads' keys and its entries in the order they were made.
+    private static string Print(Renaming r) =>
+        string.Join(", ", r.Before.Select(e => e.Key)) + " => " + string.Join(", ", r.After.Select(e => e.Key)) + " by " + string.Join("; ", r.Entries);
 
     private static Change Between(string archetype)
     {

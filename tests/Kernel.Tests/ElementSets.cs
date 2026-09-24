@@ -42,11 +42,47 @@ internal static class ElementSets
 
     /// <summary>A set and one edit of one of its elements, with the change the edit makes.</summary>
     public static readonly Gen<(Seq<Element> Before, Edit Edit)> Edits =
-        Gen.Select(Sets, Gen.Int[0, 1000], Gen.Int[0, 6]).Select((set, pick, kind) => (set, Apply(set, set[pick % set.Count], kind, pick)));
+        Gen.Select(Sets, Gen.Int[0, 1000], Gen.Int[0, 7]).Select((set, pick, kind) => (set, Apply(set, set[pick % set.Count], kind, pick)));
 
     /// <summary>Renames between keys of the same shape as the generated ones; most pair nothing.</summary>
     public static readonly Gen<Seq<Rename>> Renames =
         Gen.Select(TopKey, TopKey).Select((a, b) => new Rename(a, b)).Array[0, 4].Select(rs => Seq.Of(rs));
+
+    /// <summary>
+    /// Two reads and the refactorlog between them. The second is the first with elements dropped (fate 0), others
+    /// given generated properties (fate 1) and another set's elements added; then up to five renames, made one at a
+    /// time and each recorded under the keys of its moment, so a column's entry may name its table's old key, its new
+    /// key or a key the table held between the two.
+    /// </summary>
+    public static readonly Gen<Renaming> Renamings = Sets.SelectMany(a =>
+        Gen.Select(Gen.Int[0, 2].Array[a.Count], Properties.Array[a.Count], Sets, Gen.Int[0, 1000].Array[0, 5]).Select((fates, properties, other, picks) =>
+        {
+            var kept = a.Select((e, i) => fates[i] switch
+            {
+                0 => null,
+                1 => Ok(Element.Of(e.Key, properties[i].DistinctBy(p => p.Item1).Select(p => new Element.Property(p.Item1, p.Item2)), e.Relationships)),
+                _ => e,
+            }).OfType<Element>().ToArray();
+            var read = Seq.Of(kept.Concat(other.Where(o => a.All(e => e.Key != o.Key))));
+            var entries = new List<Rename>();
+            foreach (var pick in read.Count == 0 ? [] : picks)
+            {
+                var e = read[pick % read.Count];
+                (read, var made) = Renamed(read, (e.Key, e.Key.Name.Base + "~"));
+                entries.AddRange(made);
+            }
+
+            return new Renaming(a, read, entries, [.. a.Where((_, i) => fates[i] == 0)], [.. kept.Select(e => e.Key)]);
+        }));
+
+    /// <summary>A generated renaming: both reads, the entries in the order they were made, what was dropped and what was kept.</summary>
+    public sealed record Renaming(Seq<Element> Before, Seq<Element> After, IReadOnlyList<Rename> Entries, Element[] Dropped, ElementKey[] Kept)
+    {
+        public Seq<Rename> Renames => Seq.Of(Entries);
+
+        /// <summary>The renames Change must report: each kept element whose own name the entries changed.</summary>
+        public Seq<Rename> Expected => Seq.Of(Kept.Select(k => new Rename(k, Final(k, Entries))).Where(r => r.After.Name != r.Before.Name));
+    }
 
     /// <summary>One edit: its kind, the set after it, the change it makes, and the renames that explain it.</summary>
     public sealed record Edit(string Kind, Seq<Element> After, Change Expected, Seq<Rename> Renames);
@@ -78,15 +114,45 @@ internal static class ElementSets
     public static Change Altered(ElementKey key, Seq<Change.Property> properties = default, Seq<Change.Relationship> relationships = default) =>
         new([], [], [], [new Change.Altered(key, properties, relationships)]);
 
-    /// <summary>What <see cref="Change.Between"/> in the other direction returns: every side swapped.</summary>
+    /// <summary>
+    /// What <see cref="Change.Between"/> in the other direction returns: every side swapped, and each changed element
+    /// keyed back, through the rename that moved it or an ancestor, to the key it had before.
+    /// </summary>
     public static Change Mirror(Change c) => new(
         c.Removed,
         c.Added,
-        Seq.Of(c.Renamed.Select(r => r.Inverse)),
+        Seq.Of(c.Renamed.Select(r => r.Inverted())),
         Seq.Of(c.Changed.Select(a => new Change.Altered(
-            a.Key,
+            Back(a.Key, c.Renamed),
             Seq.Of(a.Properties.Select(p => new Change.Property(p.Name, p.After, p.Before))),
             Seq.Of(a.Relationships.Select(r => new Change.Relationship(r.Name, r.After, r.Before)))))));
+
+    /// <summary>The key an element had before the renames that moved it or one of its ancestors.</summary>
+    public static ElementKey Back(ElementKey key, Seq<Rename> renames) =>
+        renames.FirstOrDefault(r => r.After == key) is { } rename ? rename.Before
+        : key.Parent is { } parent && Back(parent, renames) is var was && was != parent ? Ok(ElementKey.Of(was, key.Type, key.Name))
+        : key;
+
+    /// <summary>
+    /// Renames made one at a time, as SSDT makes and records them: each step names an element by its key in
+    /// <paramref name="set"/> and its new name, and its entry is recorded under the keys the element and its parent
+    /// hold at that moment. Returns the set after, and the entries in the order they were made.
+    /// </summary>
+    public static (Seq<Element> After, IReadOnlyList<Rename> Entries) Renamed(Seq<Element> set, params (ElementKey Element, string Name)[] steps)
+    {
+        var entries = new List<Rename>();
+        foreach (var (element, name) in steps)
+        {
+            var rename = Ok(Rename.Of(Final(element, entries), name));
+            entries.Add(rename);
+            set = Moved(set, rename.Before, rename.After);
+        }
+
+        return (set, entries);
+    }
+
+    /// <summary>The key an element holds after entries made in this order.</summary>
+    public static ElementKey Final(ElementKey key, IEnumerable<Rename> entries) => entries.Aggregate(key, (k, r) => Rebase(k, r.Before, r.After));
 
     /// <summary>The key with <paramref name="from"/> replaced by <paramref name="to"/> wherever it is the key or an ancestor.</summary>
     public static ElementKey Rebase(ElementKey key, ElementKey from, ElementKey to) =>
@@ -139,6 +205,21 @@ internal static class ElementSets
             case 5:
                 var added = New(stranger, [("Nullable", Bool(true))]);
                 return new Edit("an element added", Seq.Of(set.Append(added)), new Change([added], [], [], []), []);
+            case 7 when set.FirstOrDefault(x => set.Any(y => y.Key.Parent == x.Key)) is { } table:
+                // A table and one of its columns renamed, the column's entry recorded under the table's old key, its
+                // new key, or a key the table held between the two, as SSDT records each entry under the keys of its moment.
+                var columns = set.Where(x => x.Key.Parent == table.Key).ToArray();
+                var (owner, column) = (table.Key, columns[pick % columns.Length].Key);
+                (ElementKey, string)[] steps = (pick % 3) switch
+                {
+                    0 => [(column, column.Name.Base + "~"), (owner, owner.Name.Base + "~")],
+                    1 => [(owner, owner.Name.Base + "~"), (column, column.Name.Base + "~")],
+                    _ => [(owner, owner.Name.Base + "~~"), (column, column.Name.Base + "~"), (owner, owner.Name.Base + "~")],
+                };
+                var (both, made) = Renamed(set, steps);
+                var expected = new Change([], [], [new Rename(owner, Final(owner, made)), new Rename(column, Final(column, made))], []);
+                var under = (pick % 3) switch { 0 => "old", 1 => "new", _ => "between" };
+                return new Edit("a table and a column renamed, the column's entry under the table's " + under + " key", both, expected, Seq.Of(made));
             default:
                 // Two times in three the renamed element has children, which must move with it; half the time the
                 // refactorlog renamed it twice, through a name neither read holds.
