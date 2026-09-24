@@ -44,6 +44,7 @@ jobs:
         with:
           global-json-file: archive/v2/global.json
       - name: Install sqlpackage
+        working-directory: archive/v2
         run: dotnet tool install --global microsoft.sqlpackage
       - name: Point bake at the runner's engine
         run: |

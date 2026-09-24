@@ -59,4 +59,5 @@ jobs:
         with:
           global-json-file: archive/v2/global.json
       - name: Build SampleCatalog (Release)
-        run: dotnet build archive/v2/ssdt-agent/proving-ground/SampleCatalog.sqlproj -c Release
+        working-directory: archive/v2
+        run: dotnet build ssdt-agent/proving-ground/SampleCatalog.sqlproj -c Release
