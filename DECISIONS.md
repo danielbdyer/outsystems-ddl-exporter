@@ -18,3 +18,4 @@
 2026-09-23 · `Kernel.Tests` alone runs with invariant globalization off, so a test can show the kernel ignores culture · #704
 2026-09-23 · JsonSchema.Net validates the CLI contract's schemas, in tests only · #704
 2026-09-23 · `ci/budgets.json` counts physical lines by include globs, `bin/` and `obj/` never; planned figures are data and never fail a build · #704
+2026-09-23 · `Contract.Milestone` names the milestone in progress and each exit raises it by one: `pending M<n>` holds until M<n>'s exit (n ≥ it), and `pending W` and the root design documents' exclusion end as M8 starts · #704

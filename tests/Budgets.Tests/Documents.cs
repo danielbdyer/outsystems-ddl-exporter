@@ -31,12 +31,30 @@ internal static class Documents
     public static readonly IReadOnlyList<string> RootDesign =
         ["V3_ARCHITECTURE.md", "V3_INSTRUCTION_ARCHITECTURE.md", "LIFECYCLE_BACKPORT_PROMPT.md", "V3_MILESTONES.md", "V3_BUILD_PROMPT.md"];
 
-    /// <summary>The milestone the build completes; each milestone's exit raises it, so every "until" below expires by itself.</summary>
+    /// <summary>
+    /// The milestone in progress, <see cref="Contract.Milestone"/>: 0 through M0, and each milestone's exit raises it by
+    /// one, so every rule below that reads it expires by itself (DECISIONS.md, 2026-09-23, the milestone in progress).
+    /// </summary>
     public static readonly int Milestone = Contract.Milestone;
+
+    /// <summary>
+    /// M8, one tool: the root design documents leave for archive/design/ and ValuesResolve stops accepting a pending
+    /// clause, so "until M8", the wing's <c>pending W</c> and the root design documents' exclusion all end as it starts.
+    /// </summary>
+    public const int OneTool = 8;
+
+    /// <summary>
+    /// Whether M&lt;n&gt; has not exited while <paramref name="milestone"/> is in progress: <c>pending M&lt;n&gt;</c>, and a
+    /// citation's <c>from M&lt;n&gt;</c> or <c>at M&lt;n&gt;</c>, hold through M&lt;n&gt; and fail once its exit raises the milestone past n.
+    /// </summary>
+    public static bool NotYetExited(int n, int milestone) => n >= milestone;
+
+    /// <summary>Whether <paramref name="milestone"/> is before M&lt;n&gt; starts: what "until M&lt;n&gt;" holds while.</summary>
+    public static bool Before(int n, int milestone) => milestone < n;
 
     /// <summary>Every hand-written markdown row, less the root design documents until M8: what NoRestatedCounts reads.</summary>
     public static IEnumerable<string> HandWritten => Rows
-        .Where(r => r.Kind == "hand" && r.Path.EndsWith(".md", StringComparison.Ordinal) && !(Milestone < 8 && RootDesign.Contains(r.Path)))
+        .Where(r => r.Kind == "hand" && r.Path.EndsWith(".md", StringComparison.Ordinal) && !(Before(OneTool, Milestone) && RootDesign.Contains(r.Path)))
         .Select(r => r.Path);
 
     /// <summary>

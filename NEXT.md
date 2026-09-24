@@ -3,7 +3,7 @@ Updated 2026-09-23 by #704.
 
 ## In flight
 - M0 on `claude/v3-build` (#704): WP 0.1 to 0.5 landed; WP 0.6 (the fast tests over the words,
-  the budgets and the dependency laws) is on `wp/0.6`.
+  the budgets and the dependency laws) is on `wp/0.6`, its review fixes on `wp/0.6-r1`.
 
 ## Next
 - WP 0.7: the published tool folder, the shared SQL Server fixture, `tests/Golden/classic-minimal/`
@@ -13,12 +13,13 @@ Updated 2026-09-23 by #704.
 - Then M1: WP 1.1, 1.3 and 1.8; then 1.2, 1.5 and 1.6; then 1.4; then 1.7.
 
 ## Waiting on a person
-- The operator, before M0's exit: install `.claude/settings.json`,
-  `.claude/hooks/session-start.sh` and `.claude/hooks/session-end.sh` as `V3_MILESTONES.md` WP 0.5
-  and §4 describe them; the permission check refuses an agent's edit to its own settings. Until
-  then the settings on the branch name v2's hooks, which moved to `archive/v2/hooks/`. Once they
-  land, a session adds their rows to `ci/docs.manifest.json` and checks WP 0.5's second Done-when
-  in a fresh cloud session.
+- The operator, at M0: install `.claude/settings.json`, `.claude/hooks/session-start.sh` and
+  `.claude/hooks/session-end.sh` as `V3_MILESTONES.md` WP 0.5 and §4 describe them; the permission
+  check refuses an agent's edit to its own settings. Until then the settings on the branch name
+  v2's hooks, now under `archive/v2/hooks/`. Once they land, a session adds their rows to
+  `ci/docs.manifest.json` and checks WP 0.5's second Done-when in a fresh cloud session.
+- The operator: `pending M<n>` holds until M<n>'s exit (n ≥ `Contract.Milestone`), as WP 0.6's row
+  says; its brief said n > it, which refuses `pending M0` during M0. Confirm, or rule n > it.
 - S1, the laptop half (a developer): does the classic build run on a team laptop, and does the
   estate's `.sqlproj` reference `master.dacpac`? After WP 0.7, build
   `tests/Golden/classic-minimal/` against `dist/estate/` on the laptop, then search the estate's

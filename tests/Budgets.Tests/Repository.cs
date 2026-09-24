@@ -26,11 +26,14 @@ internal static class Repository
 
     private static readonly Lazy<IReadOnlyList<string>> FileList = new(ListFiles);
 
-    private static readonly Lazy<HashSet<string>> Entries = new(() =>
+    private static readonly Lazy<HashSet<string>> EntrySet = new(() =>
         Files.SelectMany(f => f.Split('/').Select((_, i) => string.Join('/', f.Split('/').Take(i + 1)))).ToHashSet(StringComparer.Ordinal));
 
+    /// <summary>Every file and every directory, relative to the root, with no trailing '/'.</summary>
+    public static IReadOnlyCollection<string> Entries => EntrySet.Value;
+
     /// <summary>Whether a relative path names a file or a directory in the repository; a trailing '/' is optional.</summary>
-    public static bool Contains(string path) => Entries.Value.Contains(path.TrimEnd('/'));
+    public static bool Contains(string path) => EntrySet.Value.Contains(path.TrimEnd('/'));
 
     public static string Read(string path) => File.ReadAllText(Path.Combine(Root, path));
 
