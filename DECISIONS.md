@@ -40,3 +40,9 @@
 2026-09-24 · `Git.CommitAndPush` commits on a temporary index and pushes create-only with the caller's own credential helper; a failed push deletes the local branch · #704
 2026-09-24 · the git executable is a parameter of `io/Git`, so no test mutates the process's PATH · #704
 2026-09-24 · R15 reads each environment's server from its reference whether or not it names a database, refuses a reference SqlClient cannot read and an estate without `estate/posture.json`, and compares hosts by spelling and then by DNS address, this machine being every loopback and local address; an environment whose reference resolves to nothing on this machine goes uncompared; a copy's row in `.estate/copies.json` records its server, and `copy:` resolves only while the substrate is that server · #704
+2026-09-24 · the read side's refusal areas exit as target 1, registry 2, server 4, substrate 4, connection 6, twin 6, copy 9 and probe 9 · #704
+2026-09-24 · a named environment's SQL Server messages are withheld whatever its classification; a copy's failed statement keeps its message, because a copy's rows are minted · #704
+2026-09-24 · beneath the probe allowlist's answer forms only LEN, DATALENGTH, UPPER, LOWER, LTRIM, RTRIM, ISNULL, ABS, COALESCE, NULLIF, TRY_CONVERT and TRY_CAST are admitted; CONVERT and CAST are refused because their errors quote the value · #704
+2026-09-24 · an admitted probe runs as ScriptDom writes its checked tree back, so no comment or batch separator reaches SQL Server · #704
+2026-09-24 · `io/Substrate` chooses the substrate's server (ESTATE_SQL, the estate-sql container, LocalDB) and the fixture uses its choice; a copy is registered before its database is made, and `copy:` resolves only on the server its row records · #704
+2026-09-24 · R15 compares a substrate's host with every environment's server by spelling and then by address, this machine being every loopback and local address · #704
