@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -13,7 +14,8 @@ namespace Estate.Budgets.Tests.Register;
 /// Every way to a refusal the kernel and io construct, each with an input that takes it there. Register.Refusals reads each
 /// refusal for the register; Io.Tests' "no output contains Password=" plants a password in every input that can carry a value
 /// (<see cref="Case.Plants"/>) and searches what comes back. A driver writes only under the scratch folder it is given, one per
-/// case. The kernel's schema refusals and io/Ssdt's quote what they refuse, a name, a version or a path, and plant nothing.
+/// case, and leaves it deletable. The kernel's schema refusals, io/Ssdt's and io/Git's quote what they refuse, a name, a
+/// version, a path, a ref or a branch, and plant nothing. io/Git's are reached in a repository made under the scratch folder.
 /// </summary>
 internal static class RefusalPaths
 {
@@ -23,6 +25,9 @@ internal static class RefusalPaths
     private const string Pipeline = "estate/profiles/pipeline.publish.xml";
 
     private static readonly ElementKey Table = Made(ElementKey.Of("Table", Made(Name.Of("dbo", "Customer"))));
+
+    /// <summary>The paths a CommitAndPush of the evidence names, none of which the scratch repository's one empty commit holds.</summary>
+    private static readonly string[] Evidence = ["estate/evidence.shape.json"];
 
     public static IReadOnlyList<Case> All { get; } =
     [
@@ -62,6 +67,33 @@ internal static class RefusalPaths
             using var model = Model("CREATE TABLE dbo.Customer (Id INT NOT NULL);", "CREATE TABLE dbo.Customer (Id INT NOT NULL);");
             return Refused(Ssdt.Walk(model));
         }),
+
+        new("a git program that does not start", "git.missing", false, (scratch, _) => Refused(Git.At(scratch, "HEAD", git: Path.Combine(scratch, "no-git")))),
+        new("a folder in no repository", "git.not-a-repository", false, (scratch, _) => Refused(Git.ChangedPaths(Path.Combine(scratch, "no-repository"), "HEAD~1", "HEAD"))),
+        new("a ref that names no commit", "ref.unresolved", false, (scratch, _) => InRepository(scratch, root => Git.At(root, "no-such-tag"))),
+        new("two refs whose histories never meet", "ref.unrelated", false, (scratch, _) => InRepository(scratch, root =>
+        {
+            Arrange(root, "switch", "-q", "--orphan", "unrelated");
+            Arrange(root, "commit", "-q", "--allow-empty", "-m", "unrelated");
+            return Git.MergeBase(root, "main", "unrelated");
+        })),
+        new("a branch name git does not take", "branch.malformed", false, (scratch, _) => InRepository(scratch, root => Git.CommitAndPush(root, Evidence, "evidence", "estate/..evidence"))),
+        new("a branch that exists here", "branch.taken", false, (scratch, _) => InRepository(scratch, root =>
+        {
+            Arrange(root, "branch", "estate/evidence");
+            return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence");
+        })),
+        new("an origin that does not answer", "origin.unreachable", false, (scratch, _) => InRepository(scratch, root =>
+        {
+            Arrange(root, "remote", "add", "origin", Path.Combine(scratch, "no-origin.git"));
+            return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence");
+        })),
+        new("a commit of a path the working tree lacks", "git.failed", false, (scratch, _) => InRepository(scratch, root =>
+        {
+            Arrange(root, "init", "-q", "--bare", Path.Combine(scratch, "origin.git"));
+            Arrange(root, "remote", "add", "origin", Path.Combine(scratch, "origin.git"));
+            return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence");
+        })),
 
         new("no posture", "posture.missing", false, (scratch, _) => Refused(Profiles.Environments(scratch))),
         new("a posture that is not JSON", "posture.unreadable", true, (scratch, planted) => Refused(Profiles.Environments(Estate(scratch, "{ \"environments\": { \"dev\": " + planted + " } }")))),
@@ -184,6 +216,51 @@ internal static class RefusalPaths
         }
 
         return model;
+    }
+
+    /// <summary>
+    /// A drive of io/Git in a repository of its own at scratch/repository, holding one empty commit on main; after it, git's
+    /// objects, which it writes read-only, are made writable, so the scratch folder deletes.
+    /// </summary>
+    private static Refusal InRepository<T>(string scratch, Func<string, Result<T>> drive)
+    {
+        var root = Directory.CreateDirectory(Path.Combine(scratch, "repository")).FullName;
+        try
+        {
+            Arrange(root, "init", "-q", "--initial-branch=main");
+            Arrange(root, "commit", "-q", "--allow-empty", "-m", "estate");
+            return Refused(drive(root));
+        }
+        finally
+        {
+            foreach (var file in Directory.EnumerateFiles(scratch, "*", SearchOption.AllDirectories))
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+            }
+        }
+    }
+
+    /// <summary>git as a driver arranges the scratch repository: in it, never looking above the scratch folder, as an identity of its own, unsigned.</summary>
+    private static void Arrange(string root, params string[] arguments)
+    {
+        var start = new ProcessStartInfo("git", ["-c", "user.name=Estate Test", "-c", "user.email=estate-test@example.invalid", "-c", "commit.gpgsign=false", .. arguments])
+        {
+            WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true,
+        };
+        start.Environment["GIT_CEILING_DIRECTORIES"] = Path.GetDirectoryName(root);
+        foreach (var variable in (string[])["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"])
+        {
+            start.Environment.Remove(variable);
+        }
+
+        using var process = Process.Start(start)!;
+        var errors = process.StandardError.ReadToEndAsync();
+        process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException("git " + string.Join(' ', arguments) + " exited " + process.ExitCode + ": " + errors.Result);
+        }
     }
 
     private static string Output(string scratch) => Path.Combine(scratch, "build");

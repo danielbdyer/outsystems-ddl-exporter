@@ -34,3 +34,8 @@
 2026-09-24 · the walk reads a module's body (a procedure's, a function's, a trigger's), which DacFx holds in no property, as the element property `Definition` from `TSqlObject.TryGetScript`, for each type with a `BodyDependencies` relationship and no script-typed property · #704
 2026-09-24 · VALUES.md X1's "a profile" clause, and M1 exit 7's, reads as WP 1.5 has it: a profile holding `Password=`, as written or as DacFx reads it, or giving a SQLCMD value that is a connection string, is exit 6, while a password-free `TargetConnectionString` or `TargetDatabaseName` is removed before DacFx reads the profile and never refused · #704
 2026-09-24 · `Budgets.Tests` also runs with invariant globalization off, because DacFx builds no model in invariant mode and `Register.Refusals` walks one to reach `walk.duplicate-key` and `refactorlog.name`, which WP 1.2 added before WP 1.5 asked every refusal for a way to it · #704
+2026-09-24 · `io/Git.At` checks a ref out detached at `.estate/worktrees/<commit>/`, one lock file per holding process; every At first sweeps what no running process holds · #704
+2026-09-24 · a build of a ref writes under `.estate/build/<commit>/` · #704
+2026-09-24 · git's refusal areas exit as `ref` 1, `origin` 4, `git` 6, `branch` 9 · #704
+2026-09-24 · `Git.CommitAndPush` commits on a temporary index and pushes create-only with the caller's own credential helper; a failed push deletes the local branch · #704
+2026-09-24 · the git executable is a parameter of `io/Git`, so no test mutates the process's PATH · #704
