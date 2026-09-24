@@ -22,5 +22,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../Budgets.Tests/Repository.cs" Link="Repository.cs" />
+    <!-- The ways to every refusal, which Register.Refusals reads for the register and "no output contains Password=" plants a password in. -->
+    <Compile Include="../Budgets.Tests/Register/RefusalPaths.cs" Link="RefusalPaths.cs" />
   </ItemGroup>
 </Project>
