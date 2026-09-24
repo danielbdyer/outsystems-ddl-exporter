@@ -23,9 +23,14 @@ public sealed class PublishedTool
 
     public string Folder { get; } = Path.Combine(Repository.Root, "dist", "estate");
 
-    public string Estate => Path.Combine(Folder, OperatingSystem.IsWindows() ? "estate.exe" : "estate");
-
     public string Output { get; }
+
+    /// <summary>
+    /// estate from the folder as any shell with dotnet runs it: <c>dotnet dist/estate/estate.dll</c>. The launcher beside it
+    /// finds .NET only where it is installed machine-wide or DOTNET_ROOT names it, and the test host sets DOTNET_ROOT for
+    /// its children, so a test of the launcher would pass on a machine whose own shell cannot run it.
+    /// </summary>
+    public (int Exit, string Output) Run(params string[] arguments) => Command.Run("dotnet", [Path.Combine(Folder, "estate.dll"), .. arguments]);
 }
 
 /// <summary>
@@ -36,13 +41,15 @@ public sealed class ToolFolderTests(PublishedTool tool) : IClassFixture<Publishe
 {
     [Fact]
     [Trait("Category", "fast")]
-    public void The_published_estate_answers_its_version_and_the_publish_prints_the_folder_size()
+    public void The_published_estate_answers_its_version_and_the_publish_prints_the_folder_size_and_how_to_run_it()
     {
-        var (exit, output) = Command.Run(tool.Estate, ["--version"]);
+        var (exit, output) = tool.Run("--version");
 
         Assert.True(exit == 0, output);
         Assert.StartsWith("estate 3.0.0", output, StringComparison.Ordinal);
         Assert.Matches(@"dist/estate: \d+ files, \d+ MB", tool.Output);
+        Assert.Contains("dotnet dist/estate/estate.dll", tool.Output, StringComparison.Ordinal);
+        Assert.Contains("DOTNET_ROOT", tool.Output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -79,7 +86,7 @@ public sealed class ToolFolderTests(PublishedTool tool) : IClassFixture<Publishe
     [Trait("Category", "fast")]
     public void The_published_doctor_finds_its_tool_folder_and_does_not_claim_M1()
     {
-        var (exit, output) = Command.Run(tool.Estate, ["doctor", "--json"]);
+        var (exit, output) = tool.Run("doctor", "--json");
 
         var answer = JsonNode.Parse(output)!;
         var line = (string)answer["verdict"]!["message"]!;

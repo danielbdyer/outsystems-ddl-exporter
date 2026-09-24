@@ -27,3 +27,5 @@ Copy-Item (Join-Path $from 'RedistList/FrameworkList.xml') $refasm.FullName
 $files = Get-ChildItem -Recurse -File $out
 $megabytes = [int][Math]::Round(($files | Measure-Object Length -Sum).Sum / 1MB)
 "dist/estate: $($files.Count) files, $megabytes MB (DacFx $dacfx, reference stub $stub)"
+# The launcher (dist/estate/estate.exe) finds .NET only machine-wide or through DOTNET_ROOT; dotnet itself runs the dll anywhere.
+'run it as dotnet dist/estate/estate.dll <verb>; dist/estate/estate.exe needs .NET installed machine-wide, or DOTNET_ROOT naming a per-user install'

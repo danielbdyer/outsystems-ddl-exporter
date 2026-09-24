@@ -28,3 +28,5 @@ cp "$from/RedistList/FrameworkList.xml" "$out/refasm/.NETFramework/v4.7.2/Redist
 files="$(find "$out" -type f | wc -l | tr -d ' ')"
 megabytes="$(du -sm "$out" | cut -f1)"
 echo "dist/estate: $files files, $megabytes MB (DacFx $dacfx, reference stub $stub)"
+# The launcher (dist/estate/estate) finds .NET only machine-wide or through DOTNET_ROOT; dotnet itself runs the dll anywhere.
+echo "run it as dotnet dist/estate/estate.dll <verb>; dist/estate/estate needs .NET installed machine-wide, or DOTNET_ROOT naming a per-user install"
