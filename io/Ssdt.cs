@@ -69,33 +69,20 @@ public static class Ssdt
     /// The tool folder: the one estate runs from, when it carries the targets; else the one ESTATE_TOOL names; else dist/estate/
     /// in the nearest directory at or above the working directory, as in a clone of the engine that ci/publish has run in.
     /// </summary>
-    public static Result<string> Tool(string running, string? variable, string workingDirectory)
-    {
-        if (Doctor.Tool(running).Remedy is null)
-        {
-            return running;
-        }
-
-        if (!string.IsNullOrEmpty(variable))
-        {
-            return Doctor.Tool(variable) is { Remedy: { } publish } named
-                ? new Refusal("tool.missing", "ESTATE_TOOL names " + variable + ", which is " + named.Found + ".", publish + ", and set ESTATE_TOOL to it or unset it; then estate doctor")
-                : variable;
-        }
-
-        for (var directory = new DirectoryInfo(workingDirectory); directory is not null; directory = directory.Parent)
-        {
-            if (Doctor.Tool(Path.Combine(directory.FullName, "dist", "estate")) is { Remedy: null })
-            {
-                return Path.Combine(directory.FullName, "dist", "estate");
-            }
-        }
-
-        return new Refusal(
+    public static Result<string> Tool(string running, string? variable, string workingDirectory) =>
+        Doctor.Tool(running).Remedy is null ? running
+        : !string.IsNullOrEmpty(variable) && Doctor.Tool(variable) is { Remedy: { } publish } named
+            ? new Refusal("tool.missing", "ESTATE_TOOL names " + variable + ", which is " + named.Found + ".", publish + ", and set ESTATE_TOOL to it or unset it; then estate doctor")
+        : !string.IsNullOrEmpty(variable) ? variable
+        : Nearest(new DirectoryInfo(workingDirectory)) is { } nearest ? nearest
+        : new Refusal(
             "tool.missing",
             "estate does not run from a published tool folder, ESTATE_TOOL is unset, and no dist/estate/ lies at or above " + workingDirectory + ".",
             "run ci/publish.sh, or ci/publish.ps1 on Windows, in a clone of the engine, or set ESTATE_TOOL to a published tool folder; then estate doctor");
-    }
+
+    /// <summary>dist/estate/ in the nearest directory at or above <paramref name="directory"/> where that is a published tool folder, else null.</summary>
+    private static string? Nearest(DirectoryInfo? directory) => directory is null ? null
+        : Path.Combine(directory.FullName, "dist", "estate") is var tool && Doctor.Tool(tool).Remedy is null ? tool : Nearest(directory.Parent);
 
     public static Result<Dacpac> Build(string project, string toolFolder, string outputRoot) => Build(project, toolFolder, outputRoot, Doctor.Run);
 
@@ -259,18 +246,16 @@ public static class Ssdt
     public sealed record Read(Seq<Element> Elements, Seq<Rename> Renames);
 
     /// <summary>
-    /// The model walked, one element for each deploy script and each refactorlog entry, and the entries' renames. An entry names
-    /// its type as model.xml does (SqlSimpleColumn) and the walk as DacFx does (Column); a named object whose name model.xml gives
-    /// once pairs the two, by its own name, never by a key an unnamed object shares with it (a table's CHECK and its column Host).
-    /// An entry whose type the package no longer holds keys nothing, and its change reads as a drop and an add.
+    /// The model walked, one element for each deploy script and each refactorlog entry, and the entries' renames. An entry's type,
+    /// written as model.xml writes it (SqlSimpleColumn), is the walk's (Column) through a named object model.xml names once, matched
+    /// by its own name and never by a key an unnamed object shares; a type the package no longer holds keys nothing (a drop and an add).
     /// </summary>
     public static Result<Read> Walk(Package package) => Walked(package.Model).Bind(model =>
     {
         var types = model.Where(w => w.Name is { } name && package.Serialized.ContainsKey(name)).GroupBy(w => package.Serialized[w.Name!], StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().Element.Key.Type, StringComparer.Ordinal);
         string TypeOf(string? serialized) => serialized is not null && types.TryGetValue(serialized, out var type) ? type : serialized ?? "";
-        var scripts = (package.PreDeploy is { } pre ? [Element.PreDeploy(Lf(pre))] : Array.Empty<Element>())
-            .Concat(package.PostDeploy is { } post ? [Element.PostDeploy(Lf(post))] : []);
+        var scripts = new[] { package.PreDeploy is { } pre ? Element.PreDeploy(Lf(pre)) : null, package.PostDeploy is { } post ? Element.PostDeploy(Lf(post)) : null }.OfType<Element>();
         return All(package.Refactors.Select(Entry)).Bind(entries =>
             All(package.Refactors.Where(r => r.NewName is not null || r.NewSchema is not null).Select(r => Renaming(r, TypeOf)))
                 .Map(renames => new Read(Seq.Of(model.Select(w => w.Element).Concat(scripts).Concat(entries)), Seq.Of(renames))));
@@ -278,15 +263,14 @@ public static class Ssdt
 
     /// <summary>
     /// A model read whole, no code per type (§1 fact 6): each user-defined top-level object and, depth first, what its composing
-    /// relationships reach, each with every property its type declares and every relationship's targets in DacFx's order (a
-    /// table's columns in theirs); a target's own property (an index column's Ascending) is Relationship[position].Property. A key
-    /// is the name while it has one or two parts and nothing composes the object; else the parent's key (the composer, or the
-    /// hierarchical parent: an index's table, a grant's securable) and the name parts the parent's name does not hold (a column's
-    /// table leads its name, a grant's securable ends it). Unnamed (an inline constraint, a default), the relationship to the
-    /// parent, numbered from 1 among several of one type in the order of what they reference, then of their own values: never a
-    /// generated name or DacFx's order. SQL Server stores a check's text as it normalized it, so siblings tied on what they
-    /// reference (two checks on one column) may number apart in a package and its database. Two objects keyed alike are refused.
-    /// An unresolved reference is keyed as the type Unresolved.
+    /// relationships reach, each object once, with every property its type declares (a module's Definition too) and every
+    /// relationship's targets in DacFx's order; a target's own property (an index column's Ascending) is Relationship[position].Property.
+    /// A key is the name while it has one or two parts and nothing composes the object; else the parent's key (the composer, or
+    /// the hierarchical parent: an index's table, a grant's securable) and the name parts the parent's name does not hold.
+    /// Unnamed (an inline constraint, a default), the relationship to the parent, numbered from 1 among several of one type in
+    /// the order of what they reference, then of their own values, never by a generated name or DacFx's order; SQL Server
+    /// normalizes a check's text, so tied siblings (two checks on one column) may number apart in a package and its database.
+    /// Two objects keyed alike are refused; an unresolved reference is keyed as the type Unresolved.
     /// </summary>
     public static Result<Seq<Element>> Walk(TSqlModel model) => Walked(model).Map(walked => Seq.Of(walked.Select(w => w.Element)));
 
@@ -294,11 +278,11 @@ public static class Ssdt
     private static Result<List<(Element Element, string? Name)>> Walked(TSqlModel model)
     {
         var composers = new Dictionary<TSqlObject, (TSqlObject? Parent, string Relationship)>();
-        var walked = new List<TSqlObject>();
+        var walked = new HashSet<TSqlObject>();
         void Descend(TSqlObject o)
         {
-            walked.Add(o);
-            foreach (var (r, child) in o.ObjectType.Relationships.Where(r => r.Type == RelationshipType.Composing).SelectMany(r => o.GetReferenced(r, DacQueryScopes.All).Select(c => (r, c))))
+            var composed = o.ObjectType.Relationships.Where(r => r.Type == RelationshipType.Composing).SelectMany(r => o.GetReferenced(r, DacQueryScopes.All).Select(c => (r, c)));
+            foreach (var (r, child) in walked.Add(o) ? composed : [])
             {
                 composers[child] = (o, r.Name);
                 Descend(child);
@@ -330,6 +314,7 @@ public static class Ssdt
         {
             var relationships = o.ObjectType.Relationships.Select(r => (Class: r, Instances: o.GetReferencedRelationshipInstances(r, DacExternalQueryScopes.All).ToArray())).ToArray();
             var properties = o.ObjectType.Properties.Select(p => (p.Name, Value: ValueOf(() => o.GetProperty(p), p.DataType)))
+                .Append((Name: "Definition", Value: Module(o.ObjectType) ? ValueOf(() => o.TryGetScript(out var script) ? script : null, typeof(string)) : null))
                 .Concat(relationships.SelectMany(r => r.Instances.SelectMany((i, n) => r.Class.Properties.Select(p =>
                     (Name: string.Create(CultureInfo.InvariantCulture, $"{r.Class.Name}[{n}].{p.Name}"), Value: ValueOf(() => i.GetProperty(p), p.DataType))))))
                 .Where(p => p.Value is not null).Select(p => new Element.Property(p.Name, p.Value!));
@@ -353,36 +338,35 @@ public static class Ssdt
 
     private static Value? ValueOf(Func<object?> read, Type declared)
     {
-        object? value;
+        var type = Nullable.GetUnderlyingType(declared) ?? declared;
         try
         {
-            value = read();
+            var value = read();
+            return value switch
+            {
+                null => new Value.Null(),
+                bool b => new Value.Boolean(b),
+                string s => new Value.Text(Lf(s)),
+                Enum or sbyte or byte or short or ushort or int or uint or long when type.IsEnum => new Value.Enumeration(type.Name, Enum.Format(type, Enum.ToObject(type, value), "G")),
+                sbyte or byte or short or ushort or int or uint or long => new Value.Integer(Convert.ToInt64(value, CultureInfo.InvariantCulture)),
+                IFormattable f => new Value.Text(f.ToString(null, CultureInfo.InvariantCulture)),
+                _ => new Value.Text(Lf(value.ToString() ?? "")),
+            };
         }
         catch (DacModelException)
         {
             return null;
         }
-
-        var type = Nullable.GetUnderlyingType(declared) ?? declared;
-        return value switch
-        {
-            null => new Value.Null(),
-            bool b => new Value.Boolean(b),
-            string s => new Value.Text(Lf(s)),
-            Enum or sbyte or byte or short or ushort or int or uint or long when type.IsEnum => new Value.Enumeration(type.Name, Enum.Format(type, Enum.ToObject(type, value), "G")),
-            sbyte or byte or short or ushort or int or uint or long => new Value.Integer(Convert.ToInt64(value, CultureInfo.InvariantCulture)),
-            IFormattable f => new Value.Text(f.ToString(null, CultureInfo.InvariantCulture)),
-            _ => new Value.Text(Lf(value.ToString() ?? "")),
-        };
     }
 
+    /// <summary>A module, whose body DacFx reads for BodyDependencies and holds in no property of its script type: a procedure, a function, a trigger (a view's is SelectStatement).</summary>
+    private static bool Module(ModelTypeClass type) => type.Relationships.Any(r => r.Name == "BodyDependencies") && type.Properties.All(p => p.DataType.Name != "SqlScriptProperty");
+
     /// <summary>A refactorlog entry as an element: its key, and as text each attribute and property the file gives it.</summary>
-    private static Result<Element> Entry(RefactorEntry r) => Element.RefactorLogEntry(r.Key,
-        new[]
-        {
-            ("Operation", r.Operation), ("ChangeDateTime", r.ChangeDateTime), ("ElementName", r.ElementName), ("ElementType", r.ElementType),
-            ("ParentElementName", r.ParentName), ("ParentElementType", r.ParentType), ("NewName", r.NewName), ("NewSchema", r.NewSchema),
-        }.Where(p => p.Item2 is not null).Select(p => new Element.Property(p.Item1, new Value.Text(p.Item2!))));
+    private static Result<Element> Entry(RefactorEntry r) => Element.RefactorLogEntry(r.Key, new (string Name, string? Value)[] {
+        ("Operation", r.Operation), ("ChangeDateTime", r.ChangeDateTime), ("ElementName", r.ElementName), ("ElementType", r.ElementType),
+        ("ParentElementName", r.ParentName), ("ParentElementType", r.ParentType), ("NewName", r.NewName), ("NewSchema", r.NewSchema) }
+        .Where(p => p.Value is not null).Select(p => new Element.Property(p.Name, new Value.Text(p.Value!))));
 
     /// <summary>An entry's rename: its element's key (past two parts, under its parent's, as the walk keys it) to the key its NewName or NewSchema gives; ScriptDom reads the names.</summary>
     private static Result<Rename> Renaming(RefactorEntry r, Func<string?, string> typeOf) =>

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Estate.Budgets.Tests;
 using Estate.Kernel;
+using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Xunit;
 using Xunit.Abstractions;
@@ -203,18 +204,64 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
-    /// The proving ground with a table of unnamed inline constraints, two of them checks on one column, published to a
-    /// registered copy and read back with LoadFromDatabase: the database walk keys every object as the package walk does, though
-    /// SQL Server named each constraint, and each unnamed key names the same constraint in both (the same targets; the tied
-    /// checks the same text once SQL Server's brackets and parentheses are set aside). Their values differ (SQL Server stores a
-    /// check's text as it normalized it), which is why walk fingerprints are compared only between like sources.
+    /// A security policy composes its predicates, and DacFx also lists each predicate among the top-level objects: the walk
+    /// reads an object once however many paths reach it, so the read is whole and each key names one object.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_security_policy_s_predicates_which_two_paths_reach_are_each_read_once()
+    {
+        using var model = Model(
+            "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, Owner INT NULL);",
+            "CREATE FUNCTION dbo.fn(@Owner INT) RETURNS TABLE WITH SCHEMABINDING AS RETURN SELECT 1 AS ok WHERE @Owner = 1;",
+            "CREATE SECURITY POLICY dbo.SP ADD FILTER PREDICATE dbo.fn(Owner) ON dbo.T, ADD BLOCK PREDICATE dbo.fn(Owner) ON dbo.T AFTER INSERT;");
+        var read = Ok(Ssdt.Walk(model));
+        var predicates = read.Where(e => e.Key.Type == "SecurityPredicate").Select(e => e.Key.ToString()).ToList();
+        output.WriteLine(string.Join('\n', predicates));
+
+        Assert.Equal(read.Count, read.Select(e => e.Key).Distinct().Count());
+        Assert.Equal(["SecurityPredicate [dbo].[SP].[Predicates 1]", "SecurityPredicate [dbo].[SP].[Predicates 2]"], predicates);
+        Assert.True(Ok(Change.Between(read, read, [])).IsEmpty);
+    }
+
+    /// <summary>
+    /// DacFx declares no property holding a procedure's, a trigger's or a function's body, so the walk reads each such module's
+    /// Definition, the script DacFx gives it; a view's body is its SelectStatement property and is read once, there. An edit to
+    /// the body alone, walked from a package on each side, changes the fingerprint and is that one property.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("Procedure [dbo].[P]", "Definition", "CREATE PROCEDURE dbo.P AS SELECT {0} AS One;")]
+    [InlineData("DmlTrigger [dbo].[TR]", "Definition", "CREATE TRIGGER dbo.TR ON dbo.T AFTER INSERT AS SELECT {0} AS One;")]
+    [InlineData("DatabaseDdlTrigger [TD]", "Definition", "CREATE TRIGGER TD ON DATABASE FOR CREATE_TABLE AS SELECT {0} AS One;")]
+    [InlineData("ScalarFunction [dbo].[S]", "Definition", "CREATE FUNCTION dbo.S() RETURNS INT AS BEGIN RETURN {0}; END")]
+    [InlineData("TableValuedFunction [dbo].[F]", "Definition", "CREATE FUNCTION dbo.F() RETURNS TABLE AS RETURN SELECT {0} AS One;")]
+    [InlineData("View [dbo].[V]", "SelectStatement", "CREATE VIEW dbo.V AS SELECT {0} AS One;")]
+    public void A_module_s_body_edit_changes_the_fingerprint_and_is_one_property_of_the_module(string key, string property, string module)
+    {
+        const string table = "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY);";
+        var (before, after) = (Packaged(table, string.Format(CultureInfo.InvariantCulture, module, 1)), Packaged(table, string.Format(CultureInfo.InvariantCulture, module, 2)));
+
+        Assert.NotEqual(Fingerprint.Of(before), Fingerprint.Of(after));
+        Assert.Equal([key + ": " + property], Lines(Ok(Change.Between(before, after, []))));
+        Assert.Contains(" 2", ((Value.Text)after.Single(e => e.Key.ToString() == key)[property]!).Content, StringComparison.Ordinal);
+        Assert.DoesNotContain(after, e => e.Key.Type == "Table" && e["Definition"] is not null);
+    }
+
+    /// <summary>
+    /// The proving ground with a table of unnamed inline constraints, two of them checks on one column, and a procedure over it,
+    /// published to a registered copy and read back with LoadFromDatabase: the database walk keys every object as the package
+    /// walk does, though SQL Server named each constraint, and each unnamed key names the same constraint in both (the same
+    /// targets; the tied checks the same text once SQL Server's brackets and parentheses are set aside). Their values differ (SQL
+    /// Server stores a check's text as it normalized it), which is why walk fingerprints are compared only between like sources.
+    /// The procedure's Definition reads alike from both: SQL Server keeps a module's text as the publish sent it.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
     public async Task A_package_and_the_database_it_was_published_to_key_every_object_alike_unnamed_constraints_included()
     {
         await using var copy = await SqlServerFixture.RegisterAsync();
-        ProvingGround.Publish(walks.Dacpacs["unnamed constraints"], copy, new Microsoft.SqlServer.Dac.DacDeployOptions());
+        ProvingGround.Publish(walks.Dacpacs["unnamed constraints"], copy, new DacDeployOptions());
         using var model = TSqlModel.LoadFromDatabase(copy.ConnectionString, new ModelExtractOptions());
 
         var package = walks.Reads["unnamed constraints"].Elements
@@ -229,6 +276,9 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
             Assert.Equal(Bare(Expression(package.Single(e => e.Key.ToString() == key))), Bare(Expression(database.Single(e => e.Key.ToString() == key)))));
         var check = package.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[Note].[Host 1]");
         Assert.NotEqual(check["Expression"], database.Single(e => e.Key == check.Key)["Expression"]);
+        var procedure = package.Single(e => e.Key.ToString() == "Procedure [dbo].[NoteCount]");
+        Assert.Contains("WHERE CustomerId = @CustomerId", Assert.IsType<Value.Text>(procedure["Definition"]).Content, StringComparison.Ordinal);
+        Assert.Equal(procedure["Definition"], database.Single(e => e.Key == procedure.Key)["Definition"]);
     }
 
     [Fact]
@@ -271,6 +321,26 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
         }
 
         return model;
+    }
+
+    /// <summary>A model built in memory from the scripts, packaged by DacFx, then loaded as Load loads a build's package and walked.</summary>
+    private static Seq<Element> Packaged(params string[] scripts)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "estate-walk-" + Guid.NewGuid().ToString("N") + ".dacpac");
+        try
+        {
+            using (var model = Model(scripts))
+            {
+                DacPackageExtensions.BuildPackage(path, model, new PackageMetadata());
+            }
+
+            using var package = Ok(Ssdt.Load(path));
+            return Ok(Ssdt.Walk(package)).Elements;
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     private static string Expression(Element check) => ((Value.Text)check["Expression"]!).Content;
@@ -338,7 +408,8 @@ public sealed class ProvingGroundWalks : IAsyncLifetime
         ["rename a column"] = RenameEdits,
         ["unnamed constraints"] = [("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.",
             "CREATE TABLE dbo.Note (Id INT NOT NULL PRIMARY KEY, CustomerId INT NULL REFERENCES dbo.Customer (Id), Body NVARCHAR(200) NOT NULL DEFAULT (N''),"
-            + " Pinned BIT NOT NULL DEFAULT (0) CHECK (Pinned IN (0, 1)), Code NVARCHAR(10) NULL UNIQUE, Score INT NULL, CHECK (Score > 0), CHECK (Score < 100));")],
+            + " Pinned BIT NOT NULL DEFAULT (0) CHECK (Pinned IN (0, 1)), Code NVARCHAR(10) NULL UNIQUE, Score INT NULL, CHECK (Score > 0), CHECK (Score < 100));"
+            + "\nGO\nCREATE PROCEDURE dbo.NoteCount @CustomerId INT\nAS\n    SELECT COUNT_BIG(*) AS Notes FROM dbo.Note WHERE CustomerId = @CustomerId;")],
         ["rename beside a Host column"] =
         [
             .. RenameEdits,
