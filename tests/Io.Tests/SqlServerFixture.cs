@@ -30,8 +30,10 @@ public static class SqlServerFixture
         + "IF DB_ID(@name) IS NOT NULL EXEC (@sql); "
         + "DECLARE @reader sysname = @name + N'" + ReadOnlyPrincipal.Suffix + "'; SET @sql = N''; "
         + "SELECT @sql += N'BEGIN TRY KILL ' + CAST(session_id AS nvarchar(10)) + N'; END TRY BEGIN CATCH END CATCH; ' FROM sys.dm_exec_sessions WHERE login_name = @reader; "
-        + "IF EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @reader) SET @sql += N'DROP LOGIN ' + QUOTENAME(@reader) + N';'; "
-        + "EXEC (@sql);";
+        + "EXEC (@sql); "
+        // KILL returns before the session is gone, so the drop waits (up to ten seconds) until no session of the login remains.
+        + "DECLARE @wait int = 0; WHILE @wait < 50 AND EXISTS (SELECT 1 FROM sys.dm_exec_sessions WHERE login_name = @reader) BEGIN WAITFOR DELAY '00:00:00.200'; SET @wait += 1; END; "
+        + "IF EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @reader) BEGIN SET @sql = N'DROP LOGIN ' + QUOTENAME(@reader) + N';'; EXEC (@sql); END;";
 
     /// <summary>What io/Substrate names this host's databases with, up to the process: estate_&lt;host&gt;_.</summary>
     private static readonly string Prefix = Substrate.CopyName(Environment.MachineName, 0, "00000000")[..^"0_00000000".Length];
