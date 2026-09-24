@@ -6,6 +6,8 @@
     <RootNamespace>Estate.Cli</RootNamespace>
     <ImplicitUsings>disable</ImplicitUsings>
     <RollForward>Major</RollForward>
+    <!-- v3; the build appends the commit (3.0.0+<sha>), which is what a receipt stamps. -->
+    <VersionPrefix>3.0.0</VersionPrefix>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../io/io.csproj" />

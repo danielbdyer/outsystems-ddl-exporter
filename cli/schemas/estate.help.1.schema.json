@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "estate.help/1",
+  "description": "What estate --help --json writes: the verb table, the exit table and the schemas.",
+  "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with ESTATE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "milestone",
+    "usage",
+    "verbs",
+    "exits",
+    "schemas"
+  ],
+  "properties": {
+    "schema": {
+      "const": "estate.help/1"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "milestone": {
+      "type": "string",
+      "pattern": "^M[0-9]$"
+    },
+    "usage": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verbs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "summary",
+          "arrives",
+          "status",
+          "output"
+        ],
+        "properties": {
+          "name": {
+            "enum": [
+              "doctor",
+              "read",
+              "diff",
+              "classify",
+              "predict",
+              "profile",
+              "twin",
+              "prove",
+              "record",
+              "gate",
+              "check",
+              "knowledge",
+              "--version"
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "arrives": {
+            "type": "string",
+            "pattern": "^M[0-9]$"
+          },
+          "status": {
+            "enum": [
+              "built",
+              "stub",
+              "pending"
+            ]
+          },
+          "output": {
+            "type": "string",
+            "pattern": "^estate\\.[a-z]+/[1-9][0-9]*$"
+          }
+        }
+      }
+    },
+    "exits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "name",
+          "meaning",
+          "remedy"
+        ],
+        "properties": {
+          "code": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              9,
+              130
+            ]
+          },
+          "name": {
+            "enum": [
+              "done",
+              "bad-arguments",
+              "unparsed-input",
+              "blocked",
+              "unreachable",
+              "differs",
+              "configuration-refused",
+              "build-failed",
+              "refused-by-name",
+              "interrupted"
+            ]
+          },
+          "meaning": {
+            "type": "string",
+            "minLength": 1
+          },
+          "remedy": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "schemas": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    }
+  }
+}
