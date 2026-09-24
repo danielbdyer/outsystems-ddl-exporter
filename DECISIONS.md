@@ -31,3 +31,4 @@
 2026-09-24 · the proving ground is committed in classic form under `tests/Golden/proving-ground/`, v2's objects and scripts byte for byte; its twin files and extra folders stay in the archive until a work package needs them · #704
 2026-09-24 · the fixture's read-only principal is a SQL login holding VIEW DEFINITION and db_datareader on its database, its connection string only in `.estate/principals/` behind a `file:` reference · #704
 2026-09-24 · a DacFx package is loaded from a stream, never by path, so a publish does not hold the assemblies beside the dacpac in the calling process · #704
+2026-09-24 · the walk reads a module's body (a procedure's, a function's, a trigger's), which DacFx holds in no property, as the element property `Definition` from `TSqlObject.TryGetScript`, for each type with a `BodyDependencies` relationship and no script-typed property · #704
