@@ -16,7 +16,8 @@ public sealed class NameTests
     private static readonly Gen<(string Part, string Code)> Invalid = Gen.OneOf(
         Gen.Char[" \u00A0\u2003\u3000"].Array[0, 4].Select(cs => (new string(cs), "name.blank")),
         Gen.Char['a', 'z'].Array[129, 300].Select(cs => (new string(cs), "name.too-long")),
-        Gen.Select(Gen.Char['a', 'z'].Array[0, 100], Gen.OneOf(Gen.Char['\u0000', '\u001F'], Gen.Char['\u007F', '\u009F']))
+        // At least one letter beside the control character: a part that is only \t or U+0085 is white space, so blank.
+        Gen.Select(Gen.Char['a', 'z'].Array[1, 100], Gen.OneOf(Gen.Char['\u0000', '\u001F'], Gen.Char['\u007F', '\u009F']))
             .Select((cs, c) => (new string(cs).Insert(cs.Length / 2, new string(c, 1)), "name.control-character")));
 
     private static readonly Gen<Name> Small =
