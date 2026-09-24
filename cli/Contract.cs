@@ -80,24 +80,34 @@ public static class Contract
     /// <summary>
     /// The refusal table: the exit a refusal takes, by its code's area, the word before the first dot. io names what it refused
     /// (sdk.missing, build.failed), and this table alone says how estate exits for it; ContractTests finds each code io writes.
-    /// The posture, a profile, a reference and a SQLCMD value are configuration (exit 6), whether io or the kernel refuses them.
+    /// The posture, a profile, a reference, a connection and a SQLCMD value are configuration (exit 6), whether io or the kernel
+    /// refuses them. A target of no known form is a bad argument; a server that does not answer or refuses the identity is exit 4;
+    /// a copy the registry does not hold, a substrate on a named host, and a probe the allowlist refuses are refused by name.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, int> RefusalExits = new Dictionary<string, int>(StringComparer.Ordinal)
     {
         ["ref"] = 1,
+        ["target"] = 1,
         ["package"] = 2,
         ["refactorlog"] = 2,
         ["walk"] = 2,
+        ["registry"] = 2,
         ["origin"] = 4,
+        ["server"] = 4,
+        ["substrate"] = 4,
         ["git"] = 6,
         ["sdk"] = 6,
         ["tool"] = 6,
         ["posture"] = 6,
         ["profile"] = 6,
         ["reference"] = 6,
+        ["connection"] = 6,
         ["sqlcmd"] = 6,
+        ["twin"] = 6,
         ["build"] = 7,
         ["branch"] = 9,
+        ["copy"] = 9,
+        ["probe"] = 9,
     };
 
     public static int Exit(Refusal refusal) => RefusalExits[refusal.Code.Split('.')[0]];

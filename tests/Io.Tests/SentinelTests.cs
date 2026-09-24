@@ -7,17 +7,15 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using Estate.Budgets.Tests;
 using Estate.Kernel;
-using Microsoft.SqlServer.Dac;
 using Xunit;
 
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// WP 1.5's Done-when on SQL Server: a publish with the options io/Profiles returns, from the pipeline's profile given a
-/// TargetConnectionString that names sentinel.invalid (a name no resolver answers, RFC 6761, so a publish that looked it up
-/// would fail) and a TargetDatabaseName of another database, reaches the registered database it is sent to and nothing else.
-/// Strict publishes the classic-minimal package, then Permissive publishes it again. WP 1.4 routes the same publish through
-/// Copy.Publish.
+/// WP 1.5's Done-when on SQL Server, through WP 1.4's Copy.Publish: the pipeline's profile, given a TargetConnectionString that names
+/// sentinel.invalid (a name no resolver answers, RFC 6761, so a publish that looked it up would fail) and a TargetDatabaseName of
+/// another database, publishes the classic-minimal package to a copy io/Substrate made, Strict and then Permissive, which only the
+/// copy makes; the package reaches the copy and nothing else.
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
 public sealed class SentinelTests(PublishedTool tool) : IDisposable
@@ -39,21 +37,26 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         Telemetry.OptOut();   // before DacFx loads, as estate's Main does
         var elsewhere = "estate_sentinel_" + Guid.NewGuid().ToString("N")[..8];
         var strict = Made(Profiles.Load(Sentinel(elsewhere)));
-        var permissive = PublishProfile.Permissive.Of(strict);
         var dacpac = Made(Ssdt.Build(ClassicMinimal(), tool.Folder, Path.Combine(scratch, "build"))).Path;
         Assert.ThrowsAny<SocketException>(() => Dns.GetHostEntry("sentinel.invalid"));
 
-        await using var copy = await SqlServerFixture.RegisterAsync();
-        foreach (var profile in (PublishProfile[])[strict, permissive])
+        var copy = Made(Substrate.Create(scratch, await SqlServerFixture.ServerAsync()));
+        try
         {
-            using var stream = File.OpenRead(dacpac);
-            using var package = DacPackage.Load(stream);
-            new DacServices(copy.ConnectionString).Publish(package, copy.Name, new PublishOptions { DeployOptions = profile.Options() });
-        }
+            var permissive = copy.Permissive(strict);
+            foreach (var profile in (PublishProfile[])[strict, permissive])
+            {
+                Made(copy.Publish(dacpac, profile));
+            }
 
-        Assert.False(permissive.Options().BlockOnPossibleDataLoss);
-        Assert.Equal(1, await SqlServerFixture.ScalarAsync(copy.ConnectionString, "SELECT COUNT(*) FROM sys.tables WHERE SCHEMA_NAME(schema_id) = N'dbo' AND name = N'Customer';"));
-        Assert.False(await SqlServerFixture.ExistsAsync(elsewhere), "the profile's TargetDatabaseName, " + elsewhere + ", was created");
+            Assert.False(permissive.Options().BlockOnPossibleDataLoss);
+            Assert.Equal(1, await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.tables WHERE SCHEMA_NAME(schema_id) = N'dbo' AND name = N'Customer';"));
+            Assert.False(await SqlServerFixture.ExistsAsync(elsewhere), "the profile's TargetDatabaseName, " + elsewhere + ", was created");
+        }
+        finally
+        {
+            Made(Substrate.Drop(copy));
+        }
     }
 
     /// <summary>The committed pipeline profile, given a target: a sentinel server and another database's name.</summary>

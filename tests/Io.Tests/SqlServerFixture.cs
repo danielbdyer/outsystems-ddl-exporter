@@ -13,9 +13,10 @@ namespace Estate.Io.Tests;
 
 /// <summary>
 /// One SQL Server per test run, and a registered database per test, estate_&lt;host&gt;_&lt;pid&gt;_&lt;rand&gt;, dropped after it, so
-/// concurrent runs and agents sharing a server never collide. The server: ESTATE_SQL when set; else, where docker info
-/// answers, the estate-sql container that ci/sql.sh up (ci/sql.ps1 up on Windows) pulls and starts; else LocalDB's
-/// MSSQLLocalDB. With none, every fixture test fails with the remedy; the fixture lane never skips.
+/// concurrent runs and agents sharing a server never collide. The server is io/Substrate's (WP 1.4): ESTATE_SQL when set; else,
+/// where docker info answers, the estate-sql container that ci/sql.sh up (ci/sql.ps1 up on Windows) pulls and starts, reached
+/// through ~/.estate/sql.env; else LocalDB's MSSQLLocalDB. With none, every fixture test fails with the remedy; the fixture lane
+/// never skips.
 /// </summary>
 public static class SqlServerFixture
 {
@@ -32,9 +33,13 @@ public static class SqlServerFixture
         + "IF EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @reader) SET @sql += N'DROP LOGIN ' + QUOTENAME(@reader) + N';'; "
         + "EXEC (@sql);";
 
-    private static readonly string Host = Named(Environment.MachineName);
+    /// <summary>What io/Substrate names this host's databases with, up to the process: estate_&lt;host&gt;_.</summary>
+    private static readonly string Prefix = Substrate.CopyName(Environment.MachineName, 0, "00000000")[..^"0_00000000".Length];
 
     private static readonly Lazy<Task<string>> Master = new(ChooseAsync);
+
+    /// <summary>The run's SQL Server, master as its catalog: where io/Substrate makes the fixture tests' copies.</summary>
+    public static Task<string> ServerAsync() => Master.Value;
 
     public static async Task<RegisteredDatabase> RegisterAsync()
     {
@@ -44,7 +49,8 @@ public static class SqlServerFixture
         return new RegisteredDatabase(name, new SqlConnectionStringBuilder(master) { InitialCatalog = name, Pooling = false }.ConnectionString, master);
     }
 
-    public static string DatabaseName(string host, int pid, string random) => "estate_" + Named(host) + "_" + pid.ToString(CultureInfo.InvariantCulture) + "_" + random.ToLowerInvariant();
+    /// <summary>A registered database is named as io/Substrate names a copy, so one sweep serves both.</summary>
+    public static string DatabaseName(string host, int pid, string random) => Substrate.CopyName(host, pid, random);
 
     public static async Task<bool> ExistsAsync(string name) => await ScalarAsync(await Master.Value, "SELECT COUNT(*) FROM sys.databases WHERE name = @name;", name) == 1;
 
@@ -61,12 +67,13 @@ public static class SqlServerFixture
         ReadOnlyPrincipal.Forget(name);
     }
 
+    /// <summary>io/Substrate's choice, once the fixture has started what it chooses: the container when docker info answers, else LocalDB's instance.</summary>
     private static async Task<string> ChooseAsync()
     {
-        var chosen = Environment.GetEnvironmentVariable("ESTATE_SQL") is { Length: > 0 } given ? given
-            : Command.Run("docker", ["info"], TimeSpan.FromSeconds(30)).Exit == 0 ? Container()
-            : Command.Run("sqllocaldb", ["start", "MSSQLLocalDB"], TimeSpan.FromMinutes(2)).Exit == 0 ? @"Server=(localdb)\MSSQLLocalDB;Integrated Security=true"
-            : throw new InvalidOperationException(NoServer);
+        var given = Environment.GetEnvironmentVariable("ESTATE_SQL");
+        var docker = string.IsNullOrEmpty(given) && Command.Run("docker", ["info"], TimeSpan.FromSeconds(30)).Exit == 0 && Up();
+        var localDb = string.IsNullOrEmpty(given) && !docker && Command.Run("sqllocaldb", ["start", "MSSQLLocalDB"], TimeSpan.FromMinutes(2)).Exit == 0;
+        var chosen = Substrate.Server(given, docker ? Substrate.SqlEnv : "", localDb).Match(server => server, _ => throw new InvalidOperationException(NoServer));
         var master = new SqlConnectionStringBuilder(chosen) { InitialCatalog = "master", ApplicationName = "estate-tests", TrustServerCertificate = true }.ConnectionString;
         try
         {
@@ -80,8 +87,8 @@ public static class SqlServerFixture
         return master;
     }
 
-    /// <summary>The estate-sql container, up: its port and SA password are in ~/.estate/sql.env, which only the scripts write.</summary>
-    private static string Container()
+    /// <summary>The estate-sql container, up: its port and SA password go into ~/.estate/sql.env, which only the scripts write.</summary>
+    private static bool Up()
     {
         var (exit, output) = OperatingSystem.IsWindows()
             ? Command.Run("pwsh", ["-NoProfile", "-File", Path.Combine(Repository.Root, "ci", "sql.ps1"), "up"])
@@ -91,11 +98,7 @@ public static class SqlServerFixture
             throw new InvalidOperationException("ci/sql up failed:\n" + output);
         }
 
-        var env = File.ReadAllLines(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".estate", "sql.env"))
-            .Select(line => line.Split('=', 2))
-            .Where(pair => pair.Length == 2)
-            .ToDictionary(pair => pair[0], pair => pair[1].Trim(), StringComparer.Ordinal);
-        return new SqlConnectionStringBuilder { DataSource = "127.0.0.1," + env["ESTATE_SQL_PORT"], UserID = "sa", Password = env["MSSQL_SA_PASSWORD"] }.ConnectionString;
+        return true;
     }
 
     /// <summary>Drops what this host registered for a process no longer running: a killed run's databases and their principals' logins.</summary>
@@ -107,7 +110,7 @@ public static class SqlServerFixture
             + "FROM sys.server_principals WHERE name LIKE N'estate[_]%' AND RIGHT(name, LEN(@suffix)) = @suffix;", connection);
         list.Parameters.Add(new SqlParameter("@suffix", System.Data.SqlDbType.NVarChar, 128) { Value = ReadOnlyPrincipal.Suffix });
         await using var reader = await list.ExecuteReaderAsync();
-        var owned = new Regex("^estate_" + Regex.Escape(Host) + "_([0-9]+)_[0-9a-f]{8}$", RegexOptions.CultureInvariant);
+        var owned = new Regex("^" + Regex.Escape(Prefix) + "([0-9]+)_[0-9a-f]{8}$", RegexOptions.CultureInvariant);
         while (await reader.ReadAsync())
         {
             if (owned.Match(reader.GetString(0)) is { Success: true } match && !Running(int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture)))
@@ -129,9 +132,6 @@ public static class SqlServerFixture
             return false;
         }
     }
-
-    /// <summary>A host name as a database name carries it: lower case, [a-z0-9_] only, at most forty characters.</summary>
-    private static string Named(string host) => new([.. host.ToLowerInvariant().Select(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') ? c : '_').Take(40)]);
 
     private static async Task<T> RunAsync<T>(string connectionString, string sql, string? name, Func<SqlCommand, Task<T>> run)
     {
