@@ -24,8 +24,13 @@ public static class SqlServerFixture
 
     private const string Create = "DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql);";
 
+    /// <summary>The database, then its read-only principal's login, once no session holds it (a session that ended first is no error).</summary>
     private const string Drop = "DECLARE @sql nvarchar(max) = N'ALTER DATABASE ' + QUOTENAME(@name) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ' + QUOTENAME(@name) + N';'; "
-        + "IF DB_ID(@name) IS NOT NULL EXEC (@sql);";
+        + "IF DB_ID(@name) IS NOT NULL EXEC (@sql); "
+        + "DECLARE @reader sysname = @name + N'" + ReadOnlyPrincipal.Suffix + "'; SET @sql = N''; "
+        + "SELECT @sql += N'BEGIN TRY KILL ' + CAST(session_id AS nvarchar(10)) + N'; END TRY BEGIN CATCH END CATCH; ' FROM sys.dm_exec_sessions WHERE login_name = @reader; "
+        + "IF EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @reader) SET @sql += N'DROP LOGIN ' + QUOTENAME(@reader) + N';'; "
+        + "EXEC (@sql);";
 
     private static readonly string Host = Named(Environment.MachineName);
 
@@ -43,12 +48,18 @@ public static class SqlServerFixture
 
     public static async Task<bool> ExistsAsync(string name) => await ScalarAsync(await Master.Value, "SELECT COUNT(*) FROM sys.databases WHERE name = @name;", name) == 1;
 
+    public static async Task<bool> LoginExistsAsync(string name) => await ScalarAsync(await Master.Value, "SELECT COUNT(*) FROM sys.server_principals WHERE name = @name;", name) == 1;
+
     public static async Task ExecuteAsync(string connectionString, string sql, string? name = null) => await RunAsync(connectionString, sql, name, c => c.ExecuteNonQueryAsync());
 
     public static async Task<int> ScalarAsync(string connectionString, string sql, string? name = null) =>
         Convert.ToInt32(await RunAsync(connectionString, sql, name, c => c.ExecuteScalarAsync()), CultureInfo.InvariantCulture);
 
-    internal static Task DropAsync(string master, string name) => ExecuteAsync(master, Drop, name);
+    internal static async Task DropAsync(string master, string name)
+    {
+        await ExecuteAsync(master, Drop, name);
+        ReadOnlyPrincipal.Forget(name);
+    }
 
     private static async Task<string> ChooseAsync()
     {
@@ -87,12 +98,14 @@ public static class SqlServerFixture
         return new SqlConnectionStringBuilder { DataSource = "127.0.0.1," + env["ESTATE_SQL_PORT"], UserID = "sa", Password = env["MSSQL_SA_PASSWORD"] }.ConnectionString;
     }
 
-    /// <summary>Drops what this host registered for a process no longer running: a killed run's databases.</summary>
+    /// <summary>Drops what this host registered for a process no longer running: a killed run's databases and their principals' logins.</summary>
     private static async Task SweepAsync(string master)
     {
         await using var connection = new SqlConnection(master);
         await connection.OpenAsync();
-        await using var list = new SqlCommand("SELECT name FROM sys.databases WHERE name LIKE N'estate[_]%';", connection);
+        await using var list = new SqlCommand("SELECT name FROM sys.databases WHERE name LIKE N'estate[_]%' UNION SELECT LEFT(name, LEN(name) - LEN(@suffix)) "
+            + "FROM sys.server_principals WHERE name LIKE N'estate[_]%' AND RIGHT(name, LEN(@suffix)) = @suffix;", connection);
+        list.Parameters.Add(new SqlParameter("@suffix", System.Data.SqlDbType.NVarChar, 128) { Value = ReadOnlyPrincipal.Suffix });
         await using var reader = await list.ExecuteReaderAsync();
         var owned = new Regex("^estate_" + Regex.Escape(Host) + "_([0-9]+)_[0-9a-f]{8}$", RegexOptions.CultureInvariant);
         while (await reader.ReadAsync())
