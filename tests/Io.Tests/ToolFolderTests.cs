@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text.Json.Nodes;
 using Estate.Budgets.Tests;
@@ -7,14 +8,19 @@ using Xunit;
 
 namespace Estate.Io.Tests;
 
-/// <summary>dist/estate/, published once per run by ci/publish.ps1 on Windows and ci/publish.sh elsewhere.</summary>
+/// <summary>
+/// dist/estate/, published once per run by ci/publish.ps1 on Windows and ci/publish.sh elsewhere, and shared by every class
+/// that builds against it, so no class's publish deletes the folder under another's build.
+/// </summary>
 public sealed class PublishedTool
 {
+    private static readonly Lazy<(int Exit, string Output)> Publication = new(() => OperatingSystem.IsWindows()
+        ? Command.Run("pwsh", ["-NoProfile", "-File", Path.Combine(Repository.Root, "ci", "publish.ps1")])
+        : Command.Run("bash", [Path.Combine(Repository.Root, "ci", "publish.sh")]));
+
     public PublishedTool()
     {
-        (int Exit, string Output) published = OperatingSystem.IsWindows()
-            ? Command.Run("pwsh", ["-NoProfile", "-File", Path.Combine(Repository.Root, "ci", "publish.ps1")])
-            : Command.Run("bash", [Path.Combine(Repository.Root, "ci", "publish.sh")]);
+        var published = Publication.Value;
         Assert.True(published.Exit == 0, "ci/publish failed:\n" + published.Output);
         Output = published.Output;
     }
@@ -29,6 +35,13 @@ public sealed class PublishedTool
     /// its children, so a test of the launcher would pass on a machine whose own shell cannot run it.
     /// </summary>
     public (int Exit, string Output) Run(params string[] arguments) => Command.Run("dotnet", [Path.Combine(Folder, "estate.dll"), .. arguments]);
+
+    /// <summary>A classic .sqlproj built against the folder (section 1 fact 1): the committed engine's targets, no Visual Studio, no node left holding the folder.</summary>
+    public (int Exit, string Output) Build(string project) => Command.Run("dotnet",
+    [
+        "build", project, "-c", "Release", "-nologo", "-nodeReuse:false", "-p:DacFxTelemetryEnabled=false", "-p:NetCoreBuild=true",
+        "-p:NETCoreTargetsPath=" + Folder, "-p:SQLDBExtensionsRefPath=" + Folder, "-p:TargetFrameworkRootPath=" + Path.Combine(Folder, "refasm"),
+    ]);
 }
 
 /// <summary>
@@ -41,7 +54,7 @@ public sealed class PublishedToolCollection : ICollectionFixture<PublishedTool>
     public const string Name = "the published tool folder";
 }
 
-/// <summary>§1 fact 1 on this machine: the published tool folder runs and finds itself; SsdtTests builds classic projects against it.</summary>
+/// <summary>§1 fact 1 on this machine: the published tool folder runs and finds itself; SsdtTests and the proving ground (SpikeTests) build classic projects against it.</summary>
 [Collection(PublishedToolCollection.Name)]
 public sealed class ToolFolderTests(PublishedTool tool)
 {
@@ -75,5 +88,27 @@ public sealed class ToolFolderTests(PublishedTool tool)
         Assert.DoesNotContain("READY", output, StringComparison.Ordinal);
         Assert.DoesNotContain(findings, f => (string)f["code"]! == "doctor.tool");
         Assert.All(findings, f => Assert.False(string.IsNullOrEmpty((string?)f["remedy"])));
+    }
+
+    /// <summary>A tree copied without its bin/ and obj/, so each build under .estate/ starts fresh.</summary>
+    internal static void Copy(string from, string to)
+    {
+        foreach (var file in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(from, file);
+            if (relative.Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj"))
+            {
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(to, relative))!);
+            File.Copy(file, Path.Combine(to, relative));
+        }
+    }
+
+    internal static string Text(ZipArchive archive, string entry)
+    {
+        using var reader = new StreamReader(archive.GetEntry(entry)!.Open());
+        return reader.ReadToEnd();
     }
 }

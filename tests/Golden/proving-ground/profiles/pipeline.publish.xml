@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The proving ground's Pipeline profile (v2's ProvingGround.Pipeline.publish.xml) with its TargetConnectionString removed:
+  v3 reads a profile's deploy options and SQLCMD values and nothing else (V3_MILESTONES.md section 1 fact 10). Strict is
+  this profile as loaded, and Permissive is the same with only BlockOnPossibleDataLoss flipped, so neither has a file.
+  It stands in for the profile the Octopus step applies until that one is committed (section 17 item 15), and is not
+  verified against it.
+-->
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <BlockOnPossibleDataLoss>True</BlockOnPossibleDataLoss>
+    <GenerateSmartDefaults>False</GenerateSmartDefaults>
+    <IgnoreColumnOrder>True</IgnoreColumnOrder>
+    <DropObjectsNotInSource>False</DropObjectsNotInSource>
+    <IncludeTransactionalScripts>True</IncludeTransactionalScripts>
+    <AllowIncompatiblePlatform>False</AllowIncompatiblePlatform>
+    <IgnorePermissions>True</IgnorePermissions>
+  </PropertyGroup>
+</Project>
