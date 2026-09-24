@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -11,13 +12,14 @@ using System.Xml.Linq;
 using Estate.Kernel;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
+using Microsoft.SqlServer.TransactSql.ScriptDom;
 
 namespace Estate.Io;
 
 /// <summary>
 /// The SSDT project and its package, read whole (V3_MILESTONES.md §2.2): Build runs the project's own build against the
-/// published tool folder's DacFx targets (§1 fact 1), Load reads what the build wrote, and RefactorLog reads a refactorlog.
-/// WP 1.2 adds the walk. A refusal's code names what was refused; cli/Contract.cs maps its area to the exit.
+/// published tool folder's DacFx targets (§1 fact 1), Load reads what the build wrote, RefactorLog reads a refactorlog, and Walk
+/// reads a package or a model into kernel Elements. A refusal's code names what was refused; cli/Contract.cs maps its area to the exit.
 /// </summary>
 /// <remarks>
 /// No Visual Studio fallback: S1's windows-latest half answered that the committed route builds a classic project there.
@@ -31,9 +33,11 @@ public static class Ssdt
 
     /// <summary>
     /// A package as DacFx reads it: the model; the pre- and post-deploy scripts as the build inlined them, null when the
-    /// project has none; and its refactorlog's entries in file order. Disposing it releases the model.
+    /// project has none; its refactorlog's entries in file order; and, for each name model.xml gives exactly one element,
+    /// that element's serialized type (SqlTable, SqlSimpleColumn), the vocabulary a refactorlog entry names its element in.
+    /// Disposing it releases the model.
     /// </summary>
-    public sealed record Package(TSqlModel Model, string? PreDeploy, string? PostDeploy, IReadOnlyList<RefactorEntry> Refactors) : IDisposable
+    public sealed record Package(TSqlModel Model, string? PreDeploy, string? PostDeploy, IReadOnlyList<RefactorEntry> Refactors, IReadOnlyDictionary<string, string> Serialized) : IDisposable
     {
         public void Dispose() => Model.Dispose();
     }
@@ -191,8 +195,9 @@ public static class Ssdt
             using var package = DacPackage.Load(dacpac, DacSchemaModelStorageType.Memory, FileAccess.Read);
             using var zip = ZipFile.OpenRead(dacpac);
             using var log = zip.GetEntry("refactor.xml")?.Open();
+            using var xml = zip.GetEntry("model.xml")?.Open() ?? throw new InvalidDataException("The package holds no model.xml.");
             var (pre, post, refactors) = (Text(package.PreDeploymentScript), Text(package.PostDeploymentScript), log is null ? [] : Entries(log));
-            return new Package(TSqlModel.LoadFromDacpac(dacpac, new ModelLoadOptions(DacSchemaModelStorageType.Memory, loadAsScriptBackedModel: false)), pre, post, refactors);
+            return new Package(TSqlModel.LoadFromDacpac(dacpac, new ModelLoadOptions(DacSchemaModelStorageType.Memory, loadAsScriptBackedModel: false)), pre, post, refactors, Serialized(xml));
         }
         catch (Exception e) when (e is DacServicesException or DacModelException or IOException or InvalidDataException or XmlException or UnauthorizedAccessException)
         {
@@ -236,4 +241,160 @@ public static class Ssdt
         using var reader = script is null ? null : new StreamReader(script);
         return reader?.ReadToEnd();
     }
+
+    /// <summary>Each name model.xml gives exactly one element, with that element's serialized type; streamed, as model.xml grows with the estate.</summary>
+    private static Dictionary<string, string> Serialized(Stream model)
+    {
+        var elements = new List<(string? Name, string? Type)>();
+        using var reader = XmlReader.Create(model, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
+        while (reader.ReadToFollowing("Element", Dac.NamespaceName))
+        {
+            elements.Add((reader.GetAttribute("Name"), reader.GetAttribute("Type")));
+        }
+
+        return elements.Where(e => e.Name is not null).GroupBy(e => e.Name!, StringComparer.Ordinal).Where(g => g.Count() == 1).ToDictionary(g => g.Key, g => g.Single().Type ?? "", StringComparer.Ordinal);
+    }
+
+    /// <summary>A package read whole (§2.1 rule 1): its elements, and the renames its refactorlog records, as Change.Between takes them.</summary>
+    public sealed record Read(Seq<Element> Elements, Seq<Rename> Renames);
+
+    /// <summary>
+    /// The model walked, one element for each deploy script and each refactorlog entry, and the entries' renames. An entry names
+    /// its type as model.xml does (SqlSimpleColumn) and the walk as DacFx does (Column); an element keyed by a name model.xml gives
+    /// once pairs the two. An entry whose type the package no longer holds keys nothing, and its change reads as a drop and an add.
+    /// </summary>
+    public static Result<Read> Walk(Package package) => Walk(package.Model).Bind(model =>
+    {
+        var types = model.Where(e => package.Serialized.ContainsKey(e.Key.Path)).GroupBy(e => package.Serialized[e.Key.Path], StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Key.Type, StringComparer.Ordinal);
+        string TypeOf(string? serialized) => serialized is not null && types.TryGetValue(serialized, out var type) ? type : serialized ?? "";
+        var scripts = (package.PreDeploy is { } pre ? [Element.PreDeploy(Lf(pre))] : Array.Empty<Element>())
+            .Concat(package.PostDeploy is { } post ? [Element.PostDeploy(Lf(post))] : []);
+        return All(package.Refactors.Select(Entry)).Bind(entries =>
+            All(package.Refactors.Where(r => r.NewName is not null || r.NewSchema is not null).Select(r => Renaming(r, TypeOf)))
+                .Map(renames => new Read(Seq.Of(model.Concat(scripts).Concat(entries)), Seq.Of(renames))));
+    });
+
+    /// <summary>
+    /// A model read whole, no code per type (§1 fact 6): each user-defined top-level object and, depth first, what its composing
+    /// relationships reach, each with every property its type declares and every relationship's targets in DacFx's order (a
+    /// table's columns in theirs); a target's own property (an index column's Ascending) is Relationship[position].Property. A key
+    /// is the name while it has one or two parts and nothing composes the object; else the parent's key (the composer, or the
+    /// hierarchical parent, as an index's table) and the last part; unnamed (an inline constraint, a default), the relationship
+    /// to the parent, numbered from 1 among several of one type in the order of what they reference: never a generated name or
+    /// DacFx's order, so a package and a database key alike. An unresolved reference is keyed as the type Unresolved.
+    /// </summary>
+    public static Result<Seq<Element>> Walk(TSqlModel model)
+    {
+        var composers = new Dictionary<TSqlObject, (TSqlObject? Parent, string Relationship)>();
+        var walked = new List<TSqlObject>();
+        void Descend(TSqlObject o)
+        {
+            walked.Add(o);
+            foreach (var (r, child) in o.ObjectType.Relationships.Where(r => r.Type == RelationshipType.Composing).SelectMany(r => o.GetReferenced(r, DacQueryScopes.All).Select(c => (r, c))))
+            {
+                composers[child] = (o, r.Name);
+                Descend(child);
+            }
+        }
+
+        model.GetObjects(DacQueryScopes.UserDefined).ToList().ForEach(Descend);
+        (TSqlObject? Parent, string Relationship) Anchor(TSqlObject o) => composers.TryGetValue(o, out var composer) ? composer
+            : o.GetParent(DacQueryScopes.All) is not { } parent ? (null, o.ObjectType.Name)
+            : (parent, o.ObjectType.Relationships.FirstOrDefault(r => r.Type == RelationshipType.Hierarchical && o.GetReferenced(r, DacQueryScopes.All).Contains(parent))?.Name ?? o.ObjectType.Name);
+        string References(TSqlObject o) => string.Join('\n', o.ObjectType.Relationships.Where(r => r.Type != RelationshipType.Composing)
+            .SelectMany(r => o.GetReferencedRelationshipInstances(r, DacExternalQueryScopes.All).Select(i => r.Name + " " + i.ObjectName)));
+        var unnamed = walked.Where(o => !o.Name.HasName).GroupBy(o => (Anchor: Anchor(o), Type: o.ObjectType.Name)).SelectMany(g => g.OrderBy(References, StringComparer.Ordinal)
+                .Select((o, i) => (Object: o, Name: g.Count() == 1 ? g.Key.Anchor.Relationship : string.Create(CultureInfo.InvariantCulture, $"{g.Key.Anchor.Relationship} {i + 1}"))))
+            .ToDictionary(u => u.Object, u => u.Name);
+
+        var keys = new Dictionary<TSqlObject, Result<ElementKey>>();
+        Result<ElementKey> Key(TSqlObject o) => keys.TryGetValue(o, out var key) ? key : keys[o] = KeyOf(o);
+        Result<ElementKey> KeyOf(TSqlObject o)
+        {
+            string[] own = o.Name.HasName ? [.. o.Name.Parts] : [unnamed.GetValueOrDefault(o) ?? Anchor(o).Relationship];
+            var parent = o.Name.HasName && own.Length <= 2 && !composers.ContainsKey(o) ? null : Anchor(o).Parent;
+            return parent is null ? Keyed(o.ObjectType.Name, own, null) : Key(parent).Bind(home => Keyed(o.ObjectType.Name, own[^1..], home));
+        }
+
+        Result<Element> Read(TSqlObject o)
+        {
+            var relationships = o.ObjectType.Relationships.Select(r => (Class: r, Instances: o.GetReferencedRelationshipInstances(r, DacExternalQueryScopes.All).ToArray())).ToArray();
+            var properties = o.ObjectType.Properties.Select(p => (p.Name, Value: ValueOf(() => o.GetProperty(p), p.DataType)))
+                .Concat(relationships.SelectMany(r => r.Instances.SelectMany((i, n) => r.Class.Properties.Select(p =>
+                    (Name: string.Create(CultureInfo.InvariantCulture, $"{r.Class.Name}[{n}].{p.Name}"), Value: ValueOf(() => i.GetProperty(p), p.DataType))))))
+                .Where(p => p.Value is not null).Select(p => new Element.Property(p.Name, p.Value!));
+            var targets = relationships.Select(r => All(r.Instances.Select(i => i.Object is { } target ? Key(target) : Keyed("Unresolved", [.. i.ObjectName.ExternalParts ?? [], .. i.ObjectName.Parts], null)))
+                .Map(to => Element.Relationship.Of(r.Class.Name, to)));
+            return Key(o).Bind(key => All(targets).Bind(rs => Element.Of(key, properties, rs)));
+        }
+
+        return All(walked.Select(Read)).Map(elements => Seq.Of(elements));
+    }
+
+    /// <summary>
+    /// An object's property as the kernel's closed Value, or null where DacFx cannot read it, and the walk skips it. An enumeration
+    /// reaches an untyped read as its integer, so the declared type names its member; any other type (a double, as a spatial
+    /// index's bounds) is its invariant string, so no value is dropped for its type. Text has CRLF and a lone CR made LF.
+    /// </summary>
+    public static Value? ValueOf(TSqlObject o, ModelPropertyClass property) => ValueOf(() => o.GetProperty(property), property.DataType);
+
+    private static Value? ValueOf(Func<object?> read, Type declared)
+    {
+        object? value;
+        try
+        {
+            value = read();
+        }
+        catch (DacModelException)
+        {
+            return null;
+        }
+
+        var type = Nullable.GetUnderlyingType(declared) ?? declared;
+        return value switch
+        {
+            null => new Value.Null(),
+            bool b => new Value.Boolean(b),
+            string s => new Value.Text(Lf(s)),
+            Enum or sbyte or byte or short or ushort or int or uint or long when type.IsEnum => new Value.Enumeration(type.Name, Enum.Format(type, Enum.ToObject(type, value), "G")),
+            sbyte or byte or short or ushort or int or uint or long => new Value.Integer(Convert.ToInt64(value, CultureInfo.InvariantCulture)),
+            IFormattable f => new Value.Text(f.ToString(null, CultureInfo.InvariantCulture)),
+            _ => new Value.Text(Lf(value.ToString() ?? "")),
+        };
+    }
+
+    /// <summary>A refactorlog entry as an element: its key, and as text each attribute and property the file gives it.</summary>
+    private static Result<Element> Entry(RefactorEntry r) => Element.RefactorLogEntry(r.Key,
+        new[]
+        {
+            ("Operation", r.Operation), ("ChangeDateTime", r.ChangeDateTime), ("ElementName", r.ElementName), ("ElementType", r.ElementType),
+            ("ParentElementName", r.ParentName), ("ParentElementType", r.ParentType), ("NewName", r.NewName), ("NewSchema", r.NewSchema),
+        }.Where(p => p.Item2 is not null).Select(p => new Element.Property(p.Item1, new Value.Text(p.Item2!))));
+
+    /// <summary>An entry's rename: its element's key (under its parent's past two parts) to the key its NewName or NewSchema gives; ScriptDom reads the names.</summary>
+    private static Result<Rename> Renaming(RefactorEntry r, Func<string?, string> typeOf) =>
+        Parts(r.ElementName).Bind(parts => parts.Length > 2 && r.ParentName is { } parent
+                ? Parts(parent).Bind(home => Keyed(typeOf(r.ParentType), home, null)).Bind(home => Keyed(typeOf(r.ElementType), parts[^1..], home))
+                : Keyed(typeOf(r.ElementType), parts, null))
+            .Bind(before => r.NewName is { } name
+                ? Parts(name).Bind(n => Rename.Of(before, n[^1]))
+                : Parts(r.NewSchema!).Bind(s => Name.Of(s[^1], before.Name.Base)).Bind(n => ElementKey.Of(before.Type, n)).Map(after => new Rename(before, after)));
+
+    private static Result<string[]> Parts(string name) =>
+        new TSql160Parser(initialQuotedIdentifiers: true).ParseSchemaObjectName(new StringReader(name), out _) is { } parsed
+            ? parsed.Identifiers.Select(i => i.Value).ToArray()
+            : new Refusal("refactorlog.name", "The refactorlog names " + name + ", which is not a name of one to four parts.", "Restore the refactorlog from git, then repeat the rename in Visual Studio so SSDT writes its entry.");
+
+    /// <summary>A key from name parts: under home, each part a level down; with no home, the first one or two parts at the top and each further part a level down.</summary>
+    private static Result<ElementKey> Keyed(string type, string[] parts, ElementKey? home) => parts.Skip(home is null ? 2 : 0).Aggregate(
+        home is not null ? Result.Ok(home) : (parts.Length > 1 ? Name.Of(parts[0], parts[1]) : Name.Of(parts.FirstOrDefault() ?? "")).Bind(name => ElementKey.Of(type, name)),
+        (key, part) => key.Bind(parent => Name.Of(part).Bind(name => ElementKey.Of(parent, type, name))));
+
+    /// <summary>Every value, in order, or the first refusal.</summary>
+    private static Result<List<T>> All<T>(IEnumerable<Result<T>> results) =>
+        results.Aggregate(Result.Ok(new List<T>()), (all, next) => all.Bind(list => next.Map(value => { list.Add(value); return list; })));
+
+    /// <summary>XML's end-of-line rule (CRLF and a lone CR to LF), which DacFx's own model values arrive under, so a build on Windows reads as one on Linux.</summary>
+    private static string Lf(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
 }
