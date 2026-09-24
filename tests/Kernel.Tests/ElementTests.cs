@@ -10,22 +10,22 @@ namespace Estate.Kernel.Tests;
 /// <summary>
 /// An element is one DacFx object as the walk reads it, keyed by its type and name path, with its properties and
 /// relationships in canonical order; a read is a Seq of them, and its fingerprint is law 3′'s kernel half: stable
-/// whatever the order of construction, and changed by any edit. Tests named Law3 carry that law.
+/// whatever the order of construction, and changed by any edit. Its law tests carry that law as a trait.
 /// </summary>
 public sealed class ElementTests
 {
     [Fact]
     [Trait("Category", "fast")]
-    [Trait("Law", "3'")]
-    public void Law3_the_fingerprint_of_a_read_is_independent_of_the_order_its_elements_are_given_in() =>
+    [Trait("Law", "3′ the read is complete")]
+    public void The_fingerprint_of_a_read_is_independent_of_the_order_its_elements_are_given_in() =>
         Sets.SelectMany(set => Gen.Shuffle(set.ToArray()).Select(shuffled => (set, shuffled))).Sample((set, shuffled) =>
             Fingerprint.Of(Seq.Of(shuffled.Select(Rebuilt))) == Fingerprint.Of(set)
             && Seq.Of(shuffled.Select(Rebuilt)) == set);
 
     [Fact]
     [Trait("Category", "fast")]
-    [Trait("Law", "3'")]
-    public void Law3_two_reads_fingerprint_equally_exactly_when_their_elements_are_equal()
+    [Trait("Law", "3′ the read is complete")]
+    public void Two_reads_fingerprint_equally_exactly_when_their_elements_are_equal()
     {
         Gen.Select(Sets, Sets).Sample((a, b) => (Fingerprint.Of(a) == Fingerprint.Of(b)) == (a == b));
         Assert.Equal(Fingerprint.Of(Archetypes.Model()), Fingerprint.Of(Archetypes.Model()));
@@ -34,15 +34,15 @@ public sealed class ElementTests
 
     [Fact]
     [Trait("Category", "fast")]
-    [Trait("Law", "3'")]
-    public void Law3_any_single_edit_to_a_key_a_property_value_a_relationship_target_or_a_script_changes_the_fingerprint() =>
+    [Trait("Law", "3′ the read is complete")]
+    public void Any_single_edit_to_a_key_a_property_value_a_relationship_target_or_a_script_changes_the_fingerprint() =>
         Edits.Sample((before, edit) => Fingerprint.Of(before) != Fingerprint.Of(edit.After), print: x => x.Item2.Kind, iter: 1000);
 
     [Theory]
     [Trait("Category", "fast")]
-    [Trait("Law", "3'")]
+    [Trait("Law", "3′ the read is complete")]
     [MemberData(nameof(Archetypes.Names), MemberType = typeof(Archetypes))]
-    public void Law3_every_archetype_edit_changes_the_fingerprint(string archetype)
+    public void Every_archetype_edit_changes_the_fingerprint(string archetype)
     {
         var (before, after, _) = Archetypes.Pair(archetype);
         Assert.NotEqual(Fingerprint.Of(before), Fingerprint.Of(after));
@@ -51,7 +51,7 @@ public sealed class ElementTests
     // Pairs that run together without the mechanism each names: lengths, value tags, counts, UTF-16 code units.
     [Theory]
     [Trait("Category", "fast")]
-    [Trait("Law", "3'")]
+    [Trait("Law", "3′ the read is complete")]
     [InlineData("lengths: a two-part name split at another place", 0)]
     [InlineData("lengths: an enumeration's type and member split at another place", 1)]
     [InlineData("tags: a text whose length and code units spell an integer", 2)]
@@ -60,7 +60,7 @@ public sealed class ElementTests
     [InlineData("counts: one relationship of two targets and two of one", 5)]
     [InlineData("code units: two lone surrogates", 6)]
     [InlineData("parents: a child key and a top-level key", 7)]
-    public void Law3_reads_a_careless_serialization_would_confuse_fingerprint_differently(string what, int pair)
+    public void Reads_a_careless_serialization_would_confuse_fingerprint_differently(string what, int pair)
     {
         var t = Key("Table", "dbo", "T");
         var (a, b) = pair switch

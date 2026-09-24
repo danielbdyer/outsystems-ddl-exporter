@@ -1,22 +1,22 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "estate.envelope/1",
-  "description": "What every verb writes with --json: schema, engine, receipt, verdict, findings, exit.",
+  "title": "estate.read/1",
+  "description": "What estate read --json writes: the envelope, and read.",
   "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with ESTATE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
   "type": "object",
-  "additionalProperties": true,
+  "additionalProperties": false,
   "required": [
     "schema",
     "engine",
     "receipt",
     "verdict",
     "findings",
-    "exit"
+    "exit",
+    "read"
   ],
   "properties": {
     "schema": {
-      "type": "string",
-      "pattern": "^estate\\.[a-z]+/[1-9][0-9]*$"
+      "const": "estate.read/1"
     },
     "engine": {
       "$ref": "#/$defs/engine"
@@ -80,6 +80,71 @@
         7,
         9,
         130
+      ]
+    },
+    "read": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "from",
+            "fingerprint",
+            "elements"
+          ],
+          "properties": {
+            "from": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fingerprint": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "elements": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "key",
+                  "properties",
+                  "relationships"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "properties": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": [
+                        "boolean",
+                        "integer",
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "relationships": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       ]
     }
   },

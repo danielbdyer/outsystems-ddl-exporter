@@ -21,6 +21,7 @@ public sealed class KernelCannotDoIo
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Law", "the kernel cannot do I/O")]
     public void The_kernel_references_the_bcl_and_nothing_else()
     {
         Assert.Empty(OutsideTheBcl(Kernel));
@@ -30,6 +31,7 @@ public sealed class KernelCannotDoIo
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Law", "the kernel cannot do I/O")]
     public void No_public_kernel_member_is_asynchronous()
     {
         Type[] asynchronous = [typeof(Task), typeof(Task<>), typeof(ValueTask), typeof(ValueTask<>), typeof(IAsyncEnumerable<>)];

@@ -78,3 +78,36 @@ public readonly record struct Engine
         version?.Split('.') is { Length: >= 2 and <= 4 } groups
         && groups.All(group => group.Length > 0 && group.All(char.IsAsciiDigit));
 }
+
+/// <summary>
+/// The engine the toolchain ledger pins for a tool version (R13): the DacFx release the Octopus step runs, and the release
+/// immediately before it; or neither, while the ledger's row reads UNPINNED. A committed engine stands inside the window when it
+/// is the pin or the release before it, and anything else, a newer release included, is refused. Unpinned admits every engine,
+/// and a receipt made under it says UNPINNED.
+/// </summary>
+public sealed record Pin
+{
+    private Pin(string? release, string? before) => (Release, Before) = (release, before);
+
+    public static Pin Unpinned { get; } = new(null, null);
+
+    /// <summary>The pinned DacFx release; null while unpinned.</summary>
+    public string? Release { get; }
+
+    /// <summary>The DacFx release immediately before the pin, which the window also admits; null when the ledger names none.</summary>
+    public string? Before { get; }
+
+    public bool IsUnpinned => Release is null;
+
+    /// <summary>A pin from the ledger's release and the release before it, each a DacFx release version.</summary>
+    public static Result<Pin> Of(string release, string? before) =>
+        Engine.Of(release).Bind(_ => before is null ? Result.Ok(new Pin(release, null)) : Engine.Of(before).Map(_ => new Pin(release, before)));
+
+    /// <summary>The refusal of a committed engine outside the window, or null when the pin admits it.</summary>
+    public Refusal? Refuses(Engine engine) => Release is null || engine.DacFx == Release || engine.DacFx == Before ? null : new Refusal(
+        "toolchain.outside-window",
+        $"The committed engine, DacFx {engine.DacFx}, is neither the pinned release {Release} nor the release before it{(Before is null ? "" : ", " + Before)}.",
+        $"Publish estate with DacFx {Release}, or record the Octopus step's new engine in estate/ledgers/toolchain.md.");
+
+    public override string ToString() => Release ?? "UNPINNED";
+}

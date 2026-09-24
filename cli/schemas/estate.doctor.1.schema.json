@@ -1,22 +1,22 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "estate.envelope/1",
-  "description": "What every verb writes with --json: schema, engine, receipt, verdict, findings, exit.",
+  "title": "estate.doctor/1",
+  "description": "What estate doctor --json writes: the envelope, and checks.",
   "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with ESTATE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
   "type": "object",
-  "additionalProperties": true,
+  "additionalProperties": false,
   "required": [
     "schema",
     "engine",
     "receipt",
     "verdict",
     "findings",
-    "exit"
+    "exit",
+    "checks"
   ],
   "properties": {
     "schema": {
-      "type": "string",
-      "pattern": "^estate\\.[a-z]+/[1-9][0-9]*$"
+      "const": "estate.doctor/1"
     },
     "engine": {
       "$ref": "#/$defs/engine"
@@ -80,6 +80,46 @@
         7,
         9,
         130
+      ]
+    },
+    "checks": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "item",
+              "found",
+              "remedy"
+            ],
+            "properties": {
+              "item": {
+                "type": "string",
+                "minLength": 1
+              },
+              "found": {
+                "type": "string",
+                "minLength": 1
+              },
+              "remedy": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              }
+            }
+          }
+        }
       ]
     }
   },

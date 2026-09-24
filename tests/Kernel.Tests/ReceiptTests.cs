@@ -42,6 +42,37 @@ public sealed class ReceiptTests
         Assert.Throws<InvalidOperationException>(() => default(Engine).DacFx);
     }
 
+    /// <summary>R13's window: the committed engine is the pin or the release immediately before it; anything else, newer included, is refused.</summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("170.5.96", true)]
+    [InlineData("170.4.71", true)]
+    [InlineData("170.6.10", false)]
+    [InlineData("170.3.93", false)]
+    [InlineData("162.5.57", false)]
+    public void An_engine_is_inside_the_pin_s_window_only_at_the_pin_or_the_release_before_it(string committed, bool inside)
+    {
+        var pin = Assert.IsType<Result<Pin>.Ok>(Pin.Of("170.5.96", "170.4.71")).Value;
+
+        var refusal = pin.Refuses(Made(Engine.Of(committed, Digest)));
+
+        Assert.Equal(inside, refusal is null);
+        Assert.Equal(inside ? null : "toolchain.outside-window", refusal?.Code);
+        Assert.Equal("170.5.96", pin.ToString());
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Unpinned_admits_every_engine_and_says_so()
+    {
+        Assert.Null(Pin.Unpinned.Refuses(Pinned()));
+        Assert.Null(Pin.Unpinned.Refuses(Made(Engine.Of("162.5.57"))));
+        Assert.Equal("UNPINNED", Pin.Unpinned.ToString());
+        Assert.True(Pin.Unpinned.IsUnpinned);
+        Assert.Equal("engine.dacfx-version", Assert.IsType<Result<Pin>.Refused>(Pin.Of("latest", null)).Refusal.Code);
+        Assert.Equal("engine.dacfx-version", Assert.IsType<Result<Pin>.Refused>(Pin.Of("170.5.96", "the one before")).Refusal.Code);
+    }
+
     private static Engine Pinned() => Made(Engine.Of("170.5.96", Digest));
 
     private static Engine Made(Result<Engine> result) => Assert.IsType<Result<Engine>.Ok>(result).Value;

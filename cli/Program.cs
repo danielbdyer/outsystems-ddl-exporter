@@ -17,7 +17,10 @@ public static class Program
     }
 
     /// <summary>Answers <paramref name="args"/> on <paramref name="output"/>, as Markdown or, with --json, as one JSON object; returns the exit code.</summary>
-    public static int Run(IReadOnlyList<string> args, Stream output)
+    public static int Run(IReadOnlyList<string> args, Stream output) => Run(args, output, Checkout.Here());
+
+    /// <summary>Answers <paramref name="args"/> on <paramref name="output"/> for the estate checkout <paramref name="here"/>; returns the exit code.</summary>
+    public static int Run(IReadOnlyList<string> args, Stream output, Checkout here)
     {
         var json = args.Contains("--json");
         var words = args.Where(a => a != "--json").ToArray();
@@ -28,7 +31,7 @@ public static class Program
         }
 
         var verb = Contract.Verbs.FirstOrDefault(v => v.Name == words[0]);
-        var answer = verb is null ? Contract.UnknownVerb(words[0]) : verb.Body is null ? Contract.NotBuilt(verb) : verb.Body(words[1..]);
+        var answer = verb is null ? Contract.UnknownVerb(words[0]) : verb.Body is null ? Contract.NotBuilt(verb) : verb.Body(here, words[1..]);
         Write.Text(output, json ? Io.Json.Text(Render.Json(answer)) : Render.Markdown(answer));
         return answer.Exit;
     }

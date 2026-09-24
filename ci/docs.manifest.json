@@ -63,6 +63,16 @@
       "ancestor": ["archive/v2/DECISIONS.md"]
     },
     {
+      "path": "LAWS.md",
+      "kind": "generated",
+      "owner": "engine",
+      "reader": ["a maintainer", "a review bot"],
+      "moment": ["a change", "an engine pull request"],
+      "budget": null,
+      "generator": "ci/laws.sh, or ci/laws.ps1 on Windows, from the tests' Law traits; Budgets.Tests: Laws holds the committed file to its output",
+      "ancestor": ["archive/v2/AXIOMS.md", "archive/v2/PRODUCT_AXIOMS.md"]
+    },
+    {
       "path": "NEXT.md",
       "kind": "hand",
       "owner": "engine",
@@ -200,6 +210,36 @@
       "reader": ["the tests"],
       "moment": ["every build"],
       "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/laws.sh",
+      "kind": "hand",
+      "owner": "engine",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["every build", "a new law test"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/scripts/matrix-status.sh"]
+    },
+    {
+      "path": "ci/laws.ps1",
+      "kind": "hand",
+      "owner": "engine",
+      "reader": ["the tests", "a maintainer"],
+      "moment": ["every build on Windows", "a new law test on Windows"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/scripts/matrix-status.sh"]
+    },
+    {
+      "path": "tests/Golden/estate/ledgers/toolchain.md",
+      "kind": "hand",
+      "owner": "estate",
+      "reader": ["estate doctor", "estate check drift", "release engineering"],
+      "moment": ["every receipt", "a new estate version", "the Octopus step's engine changing"],
+      "budget": 15,
       "generator": null,
       "ancestor": []
     },

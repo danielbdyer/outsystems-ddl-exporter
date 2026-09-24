@@ -40,6 +40,12 @@ internal static class RefusalPaths
         new("a DacFx version that is none", "engine.dacfx-version", false, (_, _) => Refused(Engine.Of("v170"))),
         new("an image digest that is none", "engine.image-digest", false, (_, _) => Refused(Engine.Of("170.5.96", "sha256:0"))),
         new("a fingerprint that is none", "fingerprint.malformed", false, (_, _) => Refused(Fingerprint.Parse("0"))),
+        new("an engine outside the pin's window", "toolchain.outside-window", false, (_, _) =>
+            Made(Pin.Of("170.6.10", "170.5.96")).Refuses(Made(Engine.Of("170.7.2"))) ?? throw new InvalidOperationException("the window admitted a newer engine")),
+        new("a toolchain ledger with no row for this estate", "toolchain.unrecorded", false, (scratch, _) =>
+            Refused(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 2.9.0 | UNPINNED | — |"), "3.0.0+0123abcd"))),
+        new("a toolchain ledger whose pin is no release", "toolchain.malformed", false, (scratch, _) =>
+            Refused(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 3.0.0 | latest | — |"), "3.0.0"))),
         new("an element with a blank type", "element.type-blank", true, (_, planted) => Refused(ElementKey.Of(" ", Made(Name.Of(planted))))),
         new("an element with no name", "element.name-missing", false, (_, _) => Refused(ElementKey.Of("Table", default))),
         new("a child element named in two parts", "element.child-name", false, (_, _) => Refused(ElementKey.Of(Table, "Column", Made(Name.Of("dbo", "Email"))))),
@@ -54,6 +60,12 @@ internal static class RefusalPaths
         new("no tool folder anywhere", "tool.missing", false, (scratch, _) => Refused(Ssdt.Tool(Bare(scratch), null, scratch))),
         new("a build against no tool folder", "tool.missing", false, (scratch, _) => Refused(Ssdt.Build(Project(scratch), Bare(scratch), Output(scratch), Sdk))),
         new("a build of no project", "build.no-project", false, (scratch, _) => Refused(Ssdt.Build(Path.Combine(scratch, "none.sqlproj"), Bare(scratch), Output(scratch), Sdk))),
+        new("a repository holding two projects", "build.no-project", false, (scratch, _) =>
+        {
+            Written(scratch, "a/One.sqlproj", "<Project />");
+            Written(scratch, "b/Two.sqlproj", "<Project />");
+            return Refused(Ssdt.Project(scratch, null));
+        }),
         new("a build without the SDK band", "sdk.missing", false, (scratch, _) => Refused(Ssdt.Build(Project(scratch), Bare(scratch), Output(scratch), (_, _) => (0, "8.0.100 [sdk]\n")))),
         new("a build that fails", "build.failed", false, (scratch, _) => Refused(Ssdt.Build(Project(scratch), Hollow(scratch), Output(scratch), Sdk))),
         new("a package that is none", "package.unreadable", false, (scratch, _) => Refused(Ssdt.Load(Written(scratch, "not.dacpac", "not a package")))),
@@ -251,8 +263,17 @@ internal static class RefusalPaths
 
     private static string Written(string scratch, string file, string text)
     {
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(scratch, file))!);
         File.WriteAllText(Path.Combine(scratch, file), text);
         return Path.Combine(scratch, file);
+    }
+
+    /// <summary>An estate's root whose toolchain ledger is the sample's, its one row replaced.</summary>
+    private static string Ledger(string scratch, string row)
+    {
+        var sample = File.ReadAllText(Path.Combine(Repository.Root, "tests", "Golden", "estate", "ledgers", "toolchain.md"));
+        Written(scratch, Doctor.Ledger, sample.Replace("| 2026-09-24 | 3.0.0 | UNPINNED | — |", row, StringComparison.Ordinal));
+        return scratch;
     }
 
     /// <summary>A copy of the classic-minimal project with the corpus's stop files, so the engine's build settings stay out.</summary>

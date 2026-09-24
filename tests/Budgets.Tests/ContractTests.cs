@@ -101,6 +101,32 @@ public sealed class ContractTests
         var envelope = JsonNode.Parse(output)!;
         AssertValid("estate.envelope.1.schema.json", envelope);
         Assert.Equal(exit, (int)envelope["exit"]!);
+        if (Contract.Verbs.SingleOrDefault(v => v.Name == verb) is { Content: not null } built)
+        {
+            AssertValid(Render.SchemaFile(built.Output), envelope);   // its own schema too, whatever the exit
+        }
+    }
+
+    /// <summary>WP 1.7: each verb built at M1 writes its own schema, the envelope and what the verb adds, committed under cli/schemas/.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Each_verb_built_at_M1_has_its_own_schema_and_a_refusal_of_it_validates_against_it()
+    {
+        var built = Contract.Verbs.Where(v => v.Arrives == 1).ToList();
+
+        Assert.Equal(["doctor", "read", "diff", "check"], built.Select(v => v.Name));
+        foreach (var verb in built)
+        {
+            Assert.True(File.Exists(Path.Combine(Repository.Root, "cli", "schemas", Render.SchemaFile(verb.Output))), verb.Output + " has no schema under cli/schemas/");
+            using var output = new MemoryStream();
+            var exit = Cli.Program.Run([verb.Name, "--no-such-flag", "--json"], output, new Checkout(Repository.Root, Repository.Root, null));
+            var answer = JsonNode.Parse(output.ToArray())!;
+            Assert.Equal(1, exit);
+            AssertValid(Render.SchemaFile(verb.Output), answer);
+            Assert.All(verb.Content!, added => Assert.Null(answer[added.Key]));
+            answer[verb.Content!.First().Key] = new JsonObject();
+            Assert.False(Evaluate(Render.SchemaFile(verb.Output), answer).IsValid, verb.Output + " admits what the verb adds in a shape it never writes");
+        }
     }
 
     /// <summary>
@@ -147,37 +173,78 @@ public sealed class ContractTests
         Assert.Equal(6, exit);
         Assert.Contains("M2 (Predict)", output, StringComparison.Ordinal);
 
-        var (doctorExit, doctor) = Estate("doctor");
-        Assert.Equal(6, doctorExit);
-        Assert.StartsWith("estate doctor DEGRADED", doctor, StringComparison.Ordinal);
-        Assert.Contains("not built until M1", doctor, StringComparison.Ordinal);
+        var (checkExit, check) = Estate("check", "outsystems");
+        Assert.Equal(6, checkExit);
+        Assert.Contains("M6 (After deploy)", check, StringComparison.Ordinal);
     }
 
-    /// <summary>M0 exit 3 on a bare machine: DEGRADED, one blocking finding with its remedy per missing item, and M1 claimed nowhere.</summary>
+    /// <summary>WP 1.7's doctor on a bare machine: DEGRADED, exit 6, one blocking finding with its remedy per missing item, and no milestone deferred to.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Doctor_prints_DEGRADED_with_a_remedy_per_missing_item_and_does_not_claim_M1()
+    public void Doctor_on_a_bare_machine_prints_DEGRADED_with_a_remedy_per_missing_item()
     {
         var bare = Directory.CreateTempSubdirectory("estate-bare-").FullName;
         try
         {
-            var checks = Doctor.Examine(bare, bare, (_, _) => null);
+            var checks = Doctor.Examine(bare, null, bare, (_, _) => null, Contract.Version);
 
-            var json = Render.Json(Contract.Doctor(checks));
+            var json = Render.Json(Verbs.Doctor(checks, Doctor.Toolchain(bare, Contract.Version)));
 
-            AssertValid("estate.envelope.1.schema.json", json);
+            AssertValid("estate.doctor.1.schema.json", json);
             Assert.Equal(6, (int)json["exit"]!);
             var line = (string)json["verdict"]!["message"]!;
             Assert.StartsWith("estate doctor DEGRADED | sdk=", line, StringComparison.Ordinal);
-            Assert.EndsWith(" | checks beyond these arrive in M1 (Read)", line, StringComparison.Ordinal);
+            Assert.Contains(" | dacfx=" + Doctor.DacFx + " (UNPINNED) | ", line, StringComparison.Ordinal);
+            Assert.DoesNotContain("M1", line, StringComparison.Ordinal);
             var findings = json["findings"]!.AsArray().Select(f => ((string)f!["code"]!, (string)f["severity"]!, (string?)f["remedy"])).ToList();
-            Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.substrate", "doctor.not-built"], findings.Select(f => f.Item1));
-            Assert.Equal(checks.Where(c => c.Remedy is not null).Select(c => c.Remedy), findings.Where(f => f.Item2 == "block").Select(f => f.Item3));
-            Assert.DoesNotContain("READY", Render.Markdown(Contract.Doctor(checks)), StringComparison.Ordinal);
+            Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.substrate", "doctor.lfs"], findings.Select(f => f.Item1));
+            Assert.Equal(checks.Where(c => c.Remedy is not null).Select(c => c.Remedy), findings.Select(f => f.Item3));
+            Assert.All(findings, f => Assert.Equal("block", f.Item2));
+            Assert.Equal(checks.Select(c => c.Item), json["checks"]!.AsArray().Select(c => (string)c!["item"]!));
         }
         finally
         {
             Directory.Delete(bare, recursive: true);
+        }
+    }
+
+    /// <summary>WP 1.7's doctor with every item present: READY and exit 0, naming the SDK and runtime, the tool and its DacFx against the ledger, the build route, the substrate and LFS.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Doctor_with_every_item_present_prints_READY_and_exits_0()
+    {
+        var machine = Directory.CreateTempSubdirectory("estate-ready-").FullName;
+        try
+        {
+            foreach (var file in (string[])["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"])
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(machine, file))!);
+                File.WriteAllText(Path.Combine(machine, file), "");
+            }
+
+            File.WriteAllText(Path.Combine(machine, "global.json"), """{ "sdk": { "version": "10.0.401" } }""");
+            Doctor.Command answers = (file, arguments) => (file + " " + arguments[0]) switch
+            {
+                "dotnet --list-sdks" => (0, "10.0.402 [x]\n"),
+                "docker info" => (0, "29.5.3\n"),
+                "docker image" => (0, "sha256:5b09\n"),
+                "git lfs" => (0, "git-lfs/3.4.0 (GitHub; windows amd64; go 1.21.1)\n"),
+                _ => null,
+            };
+
+            var answer = Verbs.Doctor(Doctor.Examine(machine, null, machine, answers, Contract.Version), Doctor.Toolchain(machine, Contract.Version));
+
+            var json = Render.Json(answer);
+            AssertValid("estate.doctor.1.schema.json", json);
+            Assert.Equal((0, "ready"), (answer.Exit, answer.Verdict.Outcome));
+            Assert.Equal("estate doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx=" + Doctor.DacFx + " (UNPINNED) | build=dotnet with the tool folder's targets"
+                + " | substrate=docker 29.5.3 | image=present | lfs=git-lfs/3.4.0", answer.Verdict.Message);
+            Assert.Empty(answer.Findings);
+            Assert.Equal(("170.5.96", Doctor.ImageDigest, "UNPINNED"), ((string?)json["engine"]!["dacfx"], (string?)json["engine"]!["sqlserver"], (string?)json["engine"]!["pin"]));
+        }
+        finally
+        {
+            Directory.Delete(machine, recursive: true);
         }
     }
 
@@ -228,6 +295,8 @@ public sealed class ContractTests
             ["a blocking finding carries a remedy"] = (Finds(1, "warn", remedy: null), Finds(1, "block", remedy: null)),
             ["a receipt names its data facts, as null when it lacks them"] = (WithReceipt(r => r["dataFacts"] = null), WithReceipt(r => r.Remove("dataFacts"))),
             ["a receipt's at is a date-time"] = (WithReceipt(_ => { }), WithReceipt(r => r["at"] = "yesterday")),
+            ["a receipt names the input it lacks, as null when it lacks none"] = (WithReceipt(r => r["lacking"] = null), WithReceipt(r => r["lacking"] = "seed")),
+            ["the engine names the SQL Server image by its digest"] = (WithReceipt(_ => { }), WithReceipt(r => r["engine"]!["sqlserver"] = "16.0.4295.3")),
         };
 
         // Instruction architecture §9.1: a remedy is required for severity block and for exits 2, 4, 6 and 9.
@@ -239,12 +308,12 @@ public sealed class ContractTests
         }
 
         // Milestones §3: the receipt's five inputs, where and when; the engine names the tool, DacFx and SQL Server, null when unknown.
-        foreach (var field in (string[])["delta", "target", "engine", "profile", "where", "at"])
+        foreach (var field in (string[])["delta", "target", "engine", "profile", "where", "at", "lacking"])
         {
             pairs["a receipt carries its " + field] = (WithReceipt(_ => { }), WithReceipt(r => r.Remove(field)));
         }
 
-        foreach (var field in (string[])["estate", "dacfx", "sqlserver"])
+        foreach (var field in (string[])["estate", "dacfx", "sqlserver", "pin"])
         {
             pairs["the engine names its " + field] = (_ => { }, a => a["engine"]!.AsObject().Remove(field));
         }
@@ -296,8 +365,8 @@ public sealed class ContractTests
         var receipt = new JsonObject
         {
             ["delta"] = "sha256:" + new string('1', 64), ["target"] = "sha256:" + new string('2', 64), ["dataFacts"] = "sha256:" + new string('3', 64),
-            ["engine"] = new JsonObject { ["estate"] = "3.0.0", ["dacfx"] = "170.5.96", ["sqlserver"] = "16.0.4295.3" },
-            ["profile"] = "sha256:" + new string('4', 64), ["where"] = "env:dev", ["at"] = "2026-09-23T20:47:51Z",
+            ["engine"] = new JsonObject { ["estate"] = "3.0.0", ["dacfx"] = "170.5.96", ["sqlserver"] = "sha256:" + new string('5', 64), ["pin"] = "UNPINNED" },
+            ["profile"] = "sha256:" + new string('4', 64), ["where"] = "env:dev", ["at"] = "2026-09-23T20:47:51Z", ["lacking"] = "dataFacts",
         };
         change(receipt);
         answer["receipt"] = receipt;
