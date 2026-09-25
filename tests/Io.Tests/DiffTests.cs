@@ -109,8 +109,8 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
     }
 
     /// <summary>
-    /// A read's identity sets what it sees: SQL Server hides the logins users map to from an identity without VIEW ANY DEFINITION on the
-    /// server, all but its own (measured). The read-only principal, which holds VIEW DEFINITION on its database alone, reads env:uat with the
+    /// The identity that reads a database sets what its model holds: SQL Server hides the logins users map to from an identity without
+    /// VIEW ANY DEFINITION on the server, all but its own (measured). The read-only principal, which holds VIEW DEFINITION on its database alone, reads env:uat with the
     /// note read.database-scope and without the login another user of the database maps to; the fixture's admin identity reads the same
     /// database with no such note, and names that login.
     /// </summary>

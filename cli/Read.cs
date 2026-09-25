@@ -67,7 +67,7 @@ public static partial class Verbs
     /// </summary>
     internal sealed record Source(Target Target, Ssdt.ModelElements Model, Server? Server, bool IsDatabase, SqlServer.Readable? Readable = null)
     {
-        /// <summary>The notes the read raised: each error DacFx found in the model, and, for a database, a read as an identity without the server's scope.</summary>
+        /// <summary>The notes reading the target raised: each error DacFx found in the model, and, for a database, an identity without the server's scope.</summary>
         public IEnumerable<Finding> Notes => [.. Model.Notes(Target.ToString()), .. Readable?.Notes ?? []];
     }
 

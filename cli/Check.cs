@@ -60,8 +60,8 @@ public static partial class Verbs
     /// <summary>
     /// check drift's answer: matches, exit 0, when the deploy plan is empty; else differs, exit 5, with a warning per operation that changes an
     /// object, one note listing what DacFx adds for the objects that depend on them, a warning per alert, and a warning per column that differs
-    /// under a table the plan alters; each answer with the notes the read and the plan raised, UNPINNED while the ledger pins no DacFx release,
-    /// and that the profile is not verified against the Octopus step's (§17 item 15).
+    /// under a table the plan alters; each answer with the notes the profile, the package, the two models and the plan raised, UNPINNED
+    /// while the ledger pins no DacFx release, and that the profile is not verified against the Octopus step's (§17 item 15).
     /// </summary>
     private static Envelope Drifted(Checkout here, DriftCheck.Answer answer, Stamp stamp)
     {

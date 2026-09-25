@@ -430,8 +430,8 @@ public static class SqlServer
     }
 
     /// <summary>
-    /// A run's log of every statement estate sends through <see cref="Query{T}"/>, .estate/runs/&lt;id&gt;/queries.log: each aggregate query, the
-    /// VIEW DEFINITION check a read of a database sends before DacFx's own catalog queries, which are DacFx's to answer for, and a copy's CREATE
+    /// A run's log of every statement estate sends through <see cref="Query{T}"/>, .estate/runs/&lt;id&gt;/queries.log: each aggregate query; the
+    /// VIEW DEFINITION check Reach sends ahead of an extract, whose catalog queries are DacFx's to answer for; and a copy's CREATE
     /// and DROP DATABASE. Per statement: the time, the target, the site and the row count, the failure's number or code, or the timeout,
     /// then the statement and GO, so the log runs as a script. It holds no value a statement read. Each entry is appended and flushed to
     /// the file through io/Write.Append as it is made, so a run's statements cost their own bytes once (finding ARCH-08), and a reader
@@ -661,14 +661,14 @@ public static class SqlServer
 
     /// <summary>
     /// What this identity may read of a database it reached: the database, where it holds VIEW DEFINITION, and whether it also holds VIEW
-    /// ANY DEFINITION on the server. SQL Server hides from an identity without it the logins users map to and other server-scoped objects,
-    /// so a read of the database holds none of them, which the note read.database-scope says.
+    /// ANY DEFINITION on the server. SQL Server hides from an identity without it every login but its own, and the other server-scoped
+    /// objects, so the model read from the database holds none of them, which the note read.database-scope says.
     /// </summary>
     public sealed record Readable(Database Database, bool ServerScope)
     {
-        /// <summary>The note a read as a database-scoped identity carries; none for an identity that holds VIEW ANY DEFINITION.</summary>
+        /// <summary>The note reading the database as a database-scoped identity carries; none for an identity that holds VIEW ANY DEFINITION.</summary>
         public IEnumerable<Finding> Notes => ServerScope ? [] : [Finding.Note("read.database-scope", Database.Target.ToString(), Database.Target
-            + " is read as an identity without VIEW ANY DEFINITION on the server, from which SQL Server hides the logins users map to and other server-scoped objects, so the read holds none of them.")];
+            + " is read as an identity without VIEW ANY DEFINITION on the server, from which SQL Server hides the logins users map to and other server-scoped objects, so the model holds none of them.")];
     }
 
     /// <summary>The target, when it answers this identity with VIEW DEFINITION, and whether the identity reads the server's scope too: what a verb asks before it builds anything, so a denial arrives first.</summary>

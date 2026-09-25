@@ -71,8 +71,8 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     }
 
     /// <summary>
-    /// Finding NFR-12: the golden project's read, as one fingerprint committed here, which the Windows and the Ubuntu CI jobs both compute;
-    /// a read that differs between the two operating systems, or a change to what a read holds, fails here and prints the new value.
+    /// Finding NFR-12: the golden project's model, as one fingerprint committed here, which the Windows and the Ubuntu CI jobs both compute;
+    /// a model that differs between the two operating systems, or a change to what Ssdt.Elements keeps, fails here and prints the new value.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
