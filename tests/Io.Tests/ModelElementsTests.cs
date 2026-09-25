@@ -70,6 +70,15 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
             + $"{first.Elements.Sum(e => e.Relationships.Sum(r => r.Targets.Count))} relationship targets, read into elements in {heads.ReadingTime.TotalMilliseconds:0} ms"));
     }
 
+    /// <summary>
+    /// Finding NFR-12: the golden project's read, as one fingerprint committed here, which the Windows and the Ubuntu CI jobs both compute;
+    /// a read that differs between the two operating systems, or a change to what a read holds, fails here and prints the new value.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_golden_project_reads_into_one_committed_fingerprint_on_every_operating_system() =>
+        Assert.Equal("9dc433f1c913cc65eac7c8d64c9ce6f136e3be016dda9ebce524b06757fe6b50", Fingerprint.Of(heads.Models["base"].Elements).ToString());
+
     [Theory]
     [Trait("Category", "fast")]
     [MemberData(nameof(SampleChanges))]
