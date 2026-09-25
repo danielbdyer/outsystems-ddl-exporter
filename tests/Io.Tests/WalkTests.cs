@@ -236,7 +236,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
-    /// The alignment review's case (2026-09-24): dbo.T (B INT DEFAULT 0, C INT DEFAULT 5) becomes (B INT DEFAULT 0, A INT DEFAULT 5)
+    /// The M1 alignment review's case (2026-09-24): dbo.T (B INT DEFAULT 0, C INT DEFAULT 5) becomes (B INT DEFAULT 0, A INT DEFAULT 5)
     /// with the refactorlog's entry renaming C to A. Keyed by position, the two defaults swapped keys and read as two changed
     /// Expressions; keyed under their columns, the change is the rename and the refactorlog's new entry, nothing else.
     /// </summary>
@@ -274,7 +274,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
-    /// The third alignment review's case (2026-09-25): dbo.T (Id, B INT NULL CHECK (B &gt; 0), A INT NULL CHECK (A &gt; 5)) becomes
+    /// The case from the review of H1's second round (2026-09-25): dbo.T (Id, B INT NULL CHECK (B &gt; 0), A INT NULL CHECK (A &gt; 5)) becomes
     /// (Id, B …, X INT NULL CHECK (X &lt; 9), A …), a column carrying an unnamed check inserted ahead of another checked column. Each
     /// check is keyed under its column, so the change is the new column, its check and the table's column list, and neither
     /// existing check reads as changed.
@@ -355,8 +355,11 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
-    /// Every text property DacFx 170.5.96's model declares, each reviewed on 2026-09-25 as a secret or as none, with the reason. A
-    /// property a later DacFx adds is on neither list, and the test names it; it is reviewed and listed before the upgrade lands.
+    /// Every string-typed property DacFx 170.5.96's model declares, each reviewed on 2026-09-25 as a secret or as none, with the
+    /// reason. A property a later DacFx adds is on neither list, and the test names it; it is reviewed and listed before the upgrade
+    /// lands. The review covers string-typed properties only: a SqlScriptProperty-typed one (Parameter.DefaultExpression,
+    /// ExtendedProperty.Value, Table.QueryScript and the rest) is schema text, and the walk prints it as written, as it does a
+    /// module's Definition and a deploy script, until the operator's decision 2.27 on schema text that sets a password.
     /// </summary>
     private static readonly Dictionary<string, string[]> NotSecret = new(StringComparer.Ordinal)
     {
@@ -473,58 +476,23 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
-    /// Each clause that sets a password or a secret in T-SQL, and each system procedure parameter that passes one, with the planted
-    /// value as a Unicode, an ASCII or a binary literal and inside dynamic SQL: each value reads as '&lt;left out&gt;', and the text
-    /// around it, a comment and a string that sets nothing included, is as written.
+    /// Two packages whose procedures differ only in RAISERROR's message, 'The user''s password has expired' against 'was reset':
+    /// the walk reads each module's Definition as DacFx gives it, so the change between them is that one Definition, and each
+    /// walked Definition is its procedure's text as written. A walk that rewrote text holding the word password would read both
+    /// messages alike and give an empty change.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Redacted_leaves_out_the_value_of_each_clause_that_sets_a_password_or_a_secret_and_nothing_else()
+    [Trait("Law", "3′ the read is complete")]
+    public void Procedures_differing_only_in_a_message_that_names_a_password_walk_as_written_and_differ_in_their_Definition()
     {
-        // {0} an ASCII literal, {1} a Unicode literal, {2} a binary literal, {3} the text of a literal inside a literal.
-        const string Script = "/* PRINT 'kept'; */\n"
-            + "CREATE LOGIN L WITH PASSWORD = {0}, CHECK_POLICY = OFF;\n"
-            + "ALTER LOGIN L WITH PASSWORD = {1} OLD_PASSWORD = {0};\n"
-            + "ALTER LOGIN L WITH PASSWORD = {2} HASHED;\n"
-            + "OPEN SYMMETRIC KEY K DECRYPTION BY PASSWORD = {1};\n"
-            + "CREATE SYMMETRIC KEY K2 WITH KEY_SOURCE = {0}, IDENTITY_VALUE = {0}, ALGORITHM = AES_256 ENCRYPTION BY PASSWORD = {0};\n"
-            + "CREATE CREDENTIAL C WITH IDENTITY = 'i', SECRET = {0};\n"
-            + "CREATE EXTERNAL DATA SOURCE E WITH (LOCATION = 'sqlserver://r', CONNECTION_OPTIONS = {0});\n"
-            + "EXEC sp_addlinkedsrvlogin @rmtsrvname = N'LS', @useself = N'FALSE', @rmtuser = N'u', @rmtpassword = {1};\n"
-            + "EXEC sp_addlinkedserver @server = N'LS', @provstr = {1};\n"
-            + "EXEC sp_addlogin @loginame = N'L', @passwd = {1};\n"
-            + "EXEC sp_setapprole @rolename = N'R', @password = {1};\n"
-            + "EXEC (N'CREATE LOGIN D WITH PASSWORD = N''{3}''');\n"
-            + "SELECT 'PASSWORD = kept' AS Note;\n";
-        const string Planted = "Pl4nted!clause#7f3a";
+        const string Expired = "CREATE PROCEDURE dbo.P AS RAISERROR('The user''s password has expired', 16, 1);";
+        const string Reset = "CREATE PROCEDURE dbo.P AS RAISERROR('The user''s password was reset', 16, 1);";
+        var (before, after) = (Packaged(Expired), Packaged(Reset));
 
-        var redacted = Ssdt.Redacted(string.Format(CultureInfo.InvariantCulture, Script, "'PWD=" + Planted + "'", "N'" + Planted + "'", "0x0200AB", Planted));
-
-        Assert.DoesNotContain(Planted, redacted, StringComparison.Ordinal);
-        Assert.DoesNotContain("0x0200AB", redacted, StringComparison.Ordinal);
-        Assert.Equal(string.Format(CultureInfo.InvariantCulture, Script, "'<left out>'", "N'<left out>'", "'<left out>'", "<left out>"), redacted);
-    }
-
-    /// <summary>
-    /// A procedure that opens a symmetric key by password, packaged and walked, and the proving ground's pre-deploy script
-    /// creating a login by password, directly and through dynamic SQL, built and walked: the module's Definition and the
-    /// script's Text hold '&lt;left out&gt;' where the password was written, and the planted value nowhere.
-    /// </summary>
-    [Fact]
-    [Trait("Category", "fast")]
-    public void A_password_written_in_a_module_s_body_or_a_deploy_script_reaches_no_walked_property()
-    {
-        const string Planted = "Pl4nted!module#7f3a";
-        var read = Packaged(
-            "CREATE SYMMETRIC KEY K WITH ALGORITHM = AES_256 ENCRYPTION BY PASSWORD = '" + Planted + "';",
-            "CREATE PROCEDURE dbo.OpenKey AS OPEN SYMMETRIC KEY K DECRYPTION BY PASSWORD = N'" + Planted + "'; CLOSE SYMMETRIC KEY K;");
-        var script = walks.Reads["a password in the pre-deploy script"].Elements;
-
-        Assert.Contains("DECRYPTION BY PASSWORD = N'<left out>'", ((Value.Text)read.Single(e => e.Key.ToString() == "Procedure [dbo].[OpenKey]")["Definition"]!).Content, StringComparison.Ordinal);
-        Assert.Contains("WITH PASSWORD = N'<left out>'", ((Value.Text)script.Single(e => e.Key.Type == Element.PreDeploymentScript)["Text"]!).Content, StringComparison.Ordinal);
-        Assert.Contains("WITH PASSWORD = N''<left out>''", ((Value.Text)script.Single(e => e.Key.Type == Element.PreDeploymentScript)["Text"]!).Content, StringComparison.Ordinal);
-        Assert.DoesNotContain(read.Concat(script).SelectMany(e => e.Properties), p => p.Value is Value.Text { Content: var text }
-            && (text.Contains(Planted, StringComparison.Ordinal) || text.Contains(ProvingGroundWalks.PlantedPassword, StringComparison.Ordinal)));
+        Assert.Equal(["Procedure [dbo].[P]: Definition"], Lines(Ok(Change.Between(before, after, []))));
+        Assert.Equal(new Value.Text(Expired), before.Single(e => e.Key.ToString() == "Procedure [dbo].[P]")["Definition"]);
+        Assert.Equal(new Value.Text(Reset), after.Single(e => e.Key.ToString() == "Procedure [dbo].[P]")["Definition"]);
     }
 
     /// <summary>
@@ -576,7 +544,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
-    /// The second alignment review's case (2026-09-25): dbo.T (Id, B INT NULL CHECK (B &gt; 0), A INT NULL CHECK (A &gt; 5)) packaged with
+    /// The case from the review of H1's first round (2026-09-25): dbo.T (Id, B INT NULL CHECK (B &gt; 0), A INT NULL CHECK (A &gt; 5)) packaged with
     /// the refactorlog's entry renaming C to A, published to a registered copy and read back through SqlServer.Model. A database
     /// has no refactorlog, so each unnamed check's key has to follow from what both reads hold: each CheckConstraint key names the
     /// check on the same column in the package's walk and in the database's walk.
@@ -607,7 +575,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
-    /// The third alignment review's two cases (2026-09-25): a first package published to a registered database, then a second
+    /// The two cases from the review of H1's second round (2026-09-25): a first package published to a registered database, then a second
     /// that inserts a column carrying an unnamed check ahead of a checked column, published over it under the golden pipeline
     /// profile's deploy options. That profile sets IgnoreColumnOrder, so DacFx appends the new column and the database holds its
     /// columns in another order than the second package. Each CheckConstraint key names the check on the same column in the
@@ -789,9 +757,6 @@ public sealed class ProvingGroundWalks : IAsyncLifetime
 {
     public const string RenameKey = "6d1c1b5e-3f0a-4c2e-9b7d-2a4f8e6c0d13";
 
-    /// <summary>The password the head "a password in the pre-deploy script" writes in its pre-deploy script.</summary>
-    public const string PlantedPassword = "Pl4nted!deploy#7f3a";
-
     /// <summary>The rename archetype: Customer.ContactPhone renamed MobileNumber, with the refactorlog entry SSDT writes for it.</summary>
     private static readonly (string File, string From, string To)[] RenameEdits =
     [
@@ -821,10 +786,6 @@ public sealed class ProvingGroundWalks : IAsyncLifetime
             "CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id),\n    CONSTRAINT FK_Order_Customer_CustomerId FOREIGN KEY (CustomerId) REFERENCES dbo.Customer (Id)")],
         ["a seed edit"] = [("Data/Seed.sql", "(3, N'Initech',", "(3, N'Initech Ltd',")],
         ["a pre-deploy edit"] = [("Script.PreDeployment.sql", "PRINT 'Pre-deploy: no backfill active.", "PRINT 'Pre-deploy: still no backfill active.")],
-        ["a password in the pre-deploy script"] = [("Script.PreDeployment.sql", "PRINT 'Pre-deploy: no backfill active.",
-            "IF SUSER_ID(N'PreDeployLogin') IS NULL CREATE LOGIN PreDeployLogin WITH PASSWORD = N'" + PlantedPassword + "';\nGO\n"
-            + "IF SUSER_ID(N'PreDeployDynamic') IS NULL EXEC (N'CREATE LOGIN PreDeployDynamic WITH PASSWORD = N''" + PlantedPassword + "''');\nGO\n"
-            + "PRINT 'Pre-deploy: no backfill active.")],
         ["rename a column"] = RenameEdits,
         ["unnamed constraints"] = [("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.",
             "CREATE TABLE dbo.Note (Id INT NOT NULL PRIMARY KEY, CustomerId INT NULL REFERENCES dbo.Customer (Id), Body NVARCHAR(200) NOT NULL DEFAULT (N''),"

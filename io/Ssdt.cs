@@ -6,7 +6,6 @@ using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
@@ -268,7 +267,7 @@ public static class Ssdt
     /// credential secrets: a symmetric key's KEY_SOURCE and IDENTITY_VALUE, from which SQL Server derives the key; a linked server's
     /// provider string (sp_addlinkedserver's @provstr) and an external data source's CONNECTION_OPTIONS, each a connection string
     /// whose documented form carries PWD=, left out whole, so an edit to either is not seen. DacFx 170.5.96's metadata marks none of
-    /// them as secret, so the list is kept here; Io.Tests' WalkTests plants each, and lists every other text property DacFx declares
+    /// them as secret, so the list is kept here; Io.Tests' WalkTests plants each, and lists every other string-typed property DacFx declares
     /// with the reason it is not a secret. DacFx fills these static fields when its model schema initializes, which the first
     /// TSqlModel a process makes does, so the list is made on first use, after one.
     /// </summary>
@@ -290,17 +289,16 @@ public static class Ssdt
     public sealed record Read(Seq<Element> Elements, Seq<Rename> Renames);
 
     /// <summary>
-    /// The model walked, one element for each deploy script (its text <see cref="Redacted"/>) and each refactorlog entry, and the
-    /// entries' renames. An entry's type, written as model.xml writes it (SqlSimpleColumn), is the walk's (Column) through a named
-    /// object model.xml names once, matched by its own name and never by a key an unnamed object shares; a type the package no
-    /// longer holds keys nothing (a drop and an add).
+    /// The model walked, one element for each deploy script and each refactorlog entry, and the entries' renames. An entry's type,
+    /// written as model.xml writes it (SqlSimpleColumn), is the walk's (Column) through a named object model.xml names once, matched
+    /// by its own name and never by a key an unnamed object shares; a type the package no longer holds keys nothing (a drop and an add).
     /// </summary>
     public static Result<Read> Walk(Package package) => Walked(package.Model).Bind(model =>
     {
         var types = model.Where(w => w.Name is { } name && package.Serialized.ContainsKey(name)).GroupBy(w => package.Serialized[w.Name!], StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().Element.Key.Type, StringComparer.Ordinal);
         string TypeOf(string? serialized) => serialized is not null && types.TryGetValue(serialized, out var type) ? type : serialized ?? "";
-        var scripts = new[] { package.PreDeploy is { } pre ? Element.PreDeploy(Redacted(Lf(pre))) : null, package.PostDeploy is { } post ? Element.PostDeploy(Redacted(Lf(post))) : null }.OfType<Element>();
+        var scripts = new[] { package.PreDeploy is { } pre ? Element.PreDeploy(Lf(pre)) : null, package.PostDeploy is { } post ? Element.PostDeploy(Lf(post)) : null }.OfType<Element>();
         return All(package.Refactors.Select(Entry)).Bind(entries =>
             All(package.Refactors.Where(r => r.NewName is not null || r.NewSchema is not null).Select(r => Renaming(r, TypeOf)))
                 .Map(renames => new Read(Seq.Of(model.Select(w => w.Element).Concat(scripts).Concat(entries)), Seq.Of(renames))));
@@ -308,10 +306,10 @@ public static class Ssdt
 
     /// <summary>
     /// A model read whole, no code per type (§1 fact 6): each user-defined top-level object but the two grants to public SQL Server
-    /// makes in every new database (<see cref="Default"/>) and, depth first, what its composing
-    /// relationships reach, each object once, with every property its type declares but a password or a secret (<see cref="Secrets"/>),
-    /// a module's Definition too (<see cref="Redacted"/>), and every relationship's targets in DacFx's order; a target's own property
-    /// (an index column's Ascending) is Relationship[position].Property. A key is the name while it has one or two parts and nothing
+    /// makes in every new database (<see cref="Default"/>) and, depth first, what its composing relationships reach, each object
+    /// once, with every property its type declares but a password or a secret (<see cref="Secrets"/>), a module's Definition as
+    /// written too, and every relationship's targets in DacFx's order; a target's own property (an index column's Ascending) is
+    /// Relationship[position].Property. A key is the name while it has one or two parts and nothing
     /// composes the object; else the parent's key (the composer, or the hierarchical parent: an index's table, a grant's securable)
     /// and the name parts the parent's name does not hold. An unnamed default, check, unique or foreign key constraint on exactly one
     /// column is keyed under that column by the relationship that names it (TargetColumn, ExpressionDependencies, Columns), so it
@@ -392,7 +390,7 @@ public static class Ssdt
         {
             var relationships = o.ObjectType.Relationships.Select(r => (Class: r, Instances: o.GetReferencedRelationshipInstances(r, DacExternalQueryScopes.All).ToArray())).ToArray();
             var properties = Kept(o.ObjectType.Properties).Select(p => (p.Name, Value: ValueOf(() => o.GetProperty(p), p.DataType)))
-                .Append((Name: "Definition", Value: Module(o.ObjectType) ? ValueOf(() => o.TryGetScript(out var script) ? Redacted(script) : null, typeof(string)) : null))
+                .Append((Name: "Definition", Value: Module(o.ObjectType) ? ValueOf(() => o.TryGetScript(out var script) ? script : null, typeof(string)) : null))
                 .Concat(relationships.SelectMany(r => r.Instances.SelectMany((i, n) => Kept(r.Class.Properties).Select(p =>
                     (Name: string.Create(CultureInfo.InvariantCulture, $"{r.Class.Name}[{n}].{p.Name}"), Value: ValueOf(() => i.GetProperty(p), p.DataType))))))
                 .Where(p => p.Value is not null).Select(p => new Element.Property(p.Name, p.Value!));
@@ -439,55 +437,6 @@ public static class Ssdt
 
     /// <summary>A module, whose body DacFx reads for BodyDependencies and holds in no property of its script type: a procedure, a function, a trigger (a view's is SelectStatement).</summary>
     private static bool Module(ModelTypeClass type) => type.Relationships.Any(r => r.Name == "BodyDependencies") && type.Properties.All(p => p.DataType.Name != "SqlScriptProperty");
-
-    /// <summary>
-    /// The words that open a clause setting a password or a secret, the text values <see cref="Secrets"/> leaves out: PASSWORD
-    /// (CREATE and ALTER LOGIN, USER and APPLICATION ROLE, a master key, ENCRYPTION or DECRYPTION BY PASSWORD, OPEN SYMMETRIC KEY),
-    /// OLD_PASSWORD, SECRET (a credential), KEY_SOURCE and IDENTITY_VALUE (a symmetric key), CONNECTION_OPTIONS (an external data
-    /// source); and the parameters that pass one to a system procedure: sp_addlogin's @passwd, sp_setapprole's @password,
-    /// sp_addlinkedsrvlogin's @rmtpassword and sp_addlinkedserver's @provstr.
-    /// </summary>
-    private static readonly HashSet<string> Setting = new(
-        ["PASSWORD", "OLD_PASSWORD", "SECRET", "KEY_SOURCE", "IDENTITY_VALUE", "CONNECTION_OPTIONS", "@passwd", "@password", "@rmtpassword", "@provstr"], StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// A module's text or a deploy script as written, but the value of each clause <see cref="Setting"/> opens, as ScriptDom reads the
-    /// text: a string or binary literal after the word and an equals sign, set as '&lt;left out&gt;' (N'&lt;left out&gt;' for a
-    /// Unicode one). A string literal holding such a clause (EXEC (N'CREATE LOGIN … WITH PASSWORD = ''…''')) is read the same way.
-    /// VALUES.md X2 holds for these texts too; an edit to such a value alone is therefore not seen. Not left out: a value passed by
-    /// position or through a variable, built by concatenation, or written in a comment. Text past a point ScriptDom cannot read (an unclosed string or
-    /// comment, which neither a build nor SQL Server accepts) is left out, with a line saying so.
-    /// </summary>
-    public static string Redacted(string script)
-    {
-        if (!Setting.Any(word => script.Contains(word.TrimStart('@'), StringComparison.OrdinalIgnoreCase)))
-        {
-            return script;
-        }
-
-        var tokens = new TSql160Parser(initialQuotedIdentifiers: true).GetTokenStream(new StringReader(script), out var errors);
-        var text = new StringBuilder(script.Length);
-        var (opened, set) = (false, false);
-        foreach (var token in tokens)
-        {
-            var literal = token.TokenType is TSqlTokenType.AsciiStringLiteral or TSqlTokenType.UnicodeStringLiteral or TSqlTokenType.HexLiteral;
-            text.Append(set && literal ? (token.Text[0] is 'N' or 'n' ? "N" : "") + "'<left out>'" : literal ? Inner(token.Text) : token.Text);
-            (opened, set) = token.TokenType is TSqlTokenType.WhiteSpace or TSqlTokenType.SingleLineComment or TSqlTokenType.MultilineComment ? (opened, set)
-                : (Setting.Contains(token.Text), opened && token.TokenType == TSqlTokenType.EqualsSign);
-        }
-
-        return errors.Count == 0 ? text.ToString()
-            : text.Append(string.Create(CultureInfo.InvariantCulture, $"\n-- estate left out the rest of this text: ScriptDom could not read it past line {errors[0].Line}.")).ToString();
-
-        // A string literal whose text holds a clause, as ScriptDom reads that text, quoted again; a hex literal as it is.
-        static string Inner(string literal)
-        {
-            var unicode = literal[0] is 'N' or 'n';
-            var content = literal[0] == '0' ? "" : literal[(unicode ? 2 : 1)..^1].Replace("''", "'", StringComparison.Ordinal);
-            var inner = Redacted(content);
-            return inner == content ? literal : (unicode ? "N'" : "'") + inner.Replace("'", "''", StringComparison.Ordinal) + "'";
-        }
-    }
 
     /// <summary>A refactorlog entry as an element: its key, and as text each attribute and property the file gives it.</summary>
     private static Result<Element> Entry(RefactorEntry r) => Element.RefactorLogEntry(r.Key, new (string Name, string? Value)[] {

@@ -35,7 +35,7 @@ public sealed class ProfilesTests : IDisposable
     private static readonly string Pipeline = Path.Combine(Golden, "proving-ground", "profiles", "pipeline.publish.xml");
 
     /// <summary>A password set in any connection string, however spelled or spaced: what no output may carry.</summary>
-    private static readonly Regex PasswordSetting = new(@"(?:password|pwd)\s*=", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    internal static readonly Regex PasswordSetting = new(@"(?:password|pwd)\s*=", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     private readonly string scratch = Directory.CreateTempSubdirectory("estate-profiles-").FullName;
 
@@ -221,7 +221,12 @@ public sealed class ProfilesTests : IDisposable
         Assert.Empty(Callers(of).Where(caller => !InCopy(caller.DeclaringType)).Select(Named));
     }
 
-    /// <summary>VALUES.md X2: every refusal, driven with a password planted in its input wherever the input can carry one, returns neither the password nor a password setting in its code, its message or its remedy, and throws nothing.</summary>
+    /// <summary>
+    /// VALUES.md X2: every refusal, driven with a password planted in its input wherever the input can carry one, returns neither the
+    /// password nor a password setting in its code, its message or its remedy, and throws nothing. The other half of the search is
+    /// <see cref="DiffTests.Estate_read_of_a_database_holding_a_SQL_login_prints_no_password"/>, which searches estate read's answer
+    /// for a database holding a SQL login.
+    /// </summary>
     [Theory]
     [Trait("Category", "fast")]
     [MemberData(nameof(Ways))]
