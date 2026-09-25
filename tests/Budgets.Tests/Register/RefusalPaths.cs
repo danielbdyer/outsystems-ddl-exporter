@@ -21,7 +21,8 @@ namespace Estate.Budgets.Tests.Register;
 /// case, and leaves it deletable. The kernel's schema errors, io/Ssdt's and io/Git's quote what they reject, a name, a
 /// version, a path, a ref or a branch, and plant nothing. io/Git's are reached in a repository made under the scratch folder.
 /// io/SqlServer's and io/ScratchServer's reach no server: each is an error before anything connects, and a SQL Server or DacFx error reaches
-/// its code through Database.ErrorOf, the one door every failure against a server passes through, which io/DacFx.Failed hands a DacFx failure to. The scratch server's own choice
+/// its code through Database.ErrorOf, the one method that classifies a failure against a server, which io/DacFx.Failed hands each DacFx
+/// failure to. The scratch server's own choice
 /// and Create on a given server are io's alone, so R15 is reached through copy: and a planted registry row. The cli's reject
 /// arguments, through Contract.Flags and estate check's own answer.
 /// </summary>
