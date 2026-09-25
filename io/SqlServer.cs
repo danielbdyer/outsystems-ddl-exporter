@@ -34,7 +34,7 @@ public static class SqlServer
 
     /// <summary>
     /// Where a verb reads or writes, as an argument writes it (WP 1.4): env:&lt;name&gt;, an environment estate/posture.json names;
-    /// copy:&lt;name&gt;, a copy .estate/copies.json holds; twin; ref:&lt;git ref&gt;; dacpac:&lt;path&gt;. The cases are closed.
+    /// copy:&lt;name&gt;, a copy .estate/copies.json holds; synthetic-copy; ref:&lt;git ref&gt;; dacpac:&lt;path&gt;. The cases are closed.
     /// </summary>
     public abstract record Target
     {
@@ -49,27 +49,27 @@ public static class SqlServer
         public static Result<Target> Parse(string text, string subject = "--target") =>
             Profiles.IsConnection(text) ? new Error("connection.literal", subject + " is a literal connection string, which no argument carries.",
                 "Name the target as env:NAME, an environment whose connection estate/posture.json gives as env:VARIABLE or file:path.")
-            : text == "twin" ? new Twin()
+            : text == "synthetic-copy" ? new SyntheticCopy()
             : After(text, "env:") is { } name && Environment.IsMatch(name) ? new Env(name)
             : After(text, "copy:") is { } copy ? (Registered.IsMatch(copy) ? new Copy(copy) : new Error("copy.unregistered",
                 subject + " names a copy by a name no copy estate makes can carry, so " + ScratchServer.Registry + " holds none by it; a copy's name is estate_<host>_<pid>_<rand>, in lowercase letters, digits and '_'.",
                 "Name a copy that " + ScratchServer.Registry + " holds on this machine."))
             : After(text, "ref:") is { Length: > 0 } reference && !reference.StartsWith('-') && !reference.Any(char.IsControl) ? new Ref(reference)
             : After(text, "dacpac:") is { Length: > 0 } path && !path.Any(char.IsControl) ? new Dacpac(path)
-            : new Error("target.unknown", subject + " is none of env:<name>, copy:<name>, twin, ref:<git ref> and dacpac:<path>.",
+            : new Error("target.unknown", subject + " is none of env:<name>, copy:<name>, synthetic-copy, ref:<git ref> and dacpac:<path>.",
                 "Write the target in one of those forms, such as env:dev or ref:main.");
 
-        public T Match<T>(Func<Env, T> env, Func<Copy, T> copy, Func<T> twin, Func<Ref, T> reference, Func<Dacpac, T> dacpac) => this switch
+        public T Match<T>(Func<Env, T> env, Func<Copy, T> copy, Func<T> syntheticCopy, Func<Ref, T> reference, Func<Dacpac, T> dacpac) => this switch
         {
             Env e => env(e),
             Copy c => copy(c),
-            Twin => twin(),
+            SyntheticCopy => syntheticCopy(),
             Ref r => reference(r),
             Dacpac d => dacpac(d),
             _ => throw new System.Diagnostics.UnreachableException(),
         };
 
-        public sealed override string ToString() => Match(e => "env:" + e.Name, c => "copy:" + c.Name, () => "twin", r => "ref:" + r.Name, d => "dacpac:" + d.Path);
+        public sealed override string ToString() => Match(e => "env:" + e.Name, c => "copy:" + c.Name, () => "synthetic-copy", r => "ref:" + r.Name, d => "dacpac:" + d.Path);
 
         private static string? After(string text, string prefix) => text.StartsWith(prefix, StringComparison.Ordinal) ? text[prefix.Length..] : null;
 
@@ -77,7 +77,7 @@ public static class SqlServer
 
         public sealed record Copy(string Name) : Target;
 
-        public sealed record Twin : Target;
+        public sealed record SyntheticCopy : Target;
 
         public sealed record Ref(string Name) : Target;
 
@@ -209,7 +209,7 @@ public static class SqlServer
 
     /// <summary>
     /// A target as a database: env: through estate/posture.json and the environment's connection reference; copy: through
-    /// .estate/copies.json alone (io/ScratchServer). A git ref and a package are read as packages, and the Twin arrives in M3.
+    /// .estate/copies.json alone (io/ScratchServer). A git ref and a package are read as packages, and the synthetic copy arrives in M3.
     /// </summary>
     public static Result<Database> Resolve(Target target, string estateRoot) => target.Match<Result<Database>>(
         env => Profiles.Environments(estateRoot).Bind(environments => environments.FirstOrDefault(e => e.Name == env.Name) is { } named
@@ -218,7 +218,7 @@ public static class SqlServer
                 ? "Add the environment to " + Profiles.Posture + " with its connection reference and profile."
                 : "Name one it holds: " + string.Join(", ", environments.Select(e => "env:" + e.Name)) + ".")),
         copy => ScratchServer.Registered(estateRoot, copy.Name).Map(c => (Database)c),
-        () => new Error("twin.not-built", "twin names the Twin, which arrives in M3 (Twin); this build reads env: and copy: databases.",
+        () => new Error("synthetic-copy.not-built", "synthetic-copy names the synthetic copy, which arrives in M3 (Synthetic copy); this build reads env: and copy: databases.",
             "Name an env: or a copy: target; estate --help lists what this build runs."),
         reference => NotADatabase(reference),
         dacpac => NotADatabase(dacpac));

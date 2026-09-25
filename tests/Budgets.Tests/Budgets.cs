@@ -44,7 +44,7 @@ public sealed class Budgets
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("kernel/SortedArray.cs", "kernel/**/*.cs", true)]
-    [InlineData("kernel/Twin/Synth.cs", "kernel/**/*.cs", true)]
+    [InlineData("kernel/SyntheticData/Generate.cs", "kernel/**/*.cs", true)]
     [InlineData("kernel/SortedArray.csx", "kernel/**/*.cs", false)]
     [InlineData("kernelx/SortedArray.cs", "kernel/**/*.cs", false)]
     [InlineData("kernel/obj/Debug/net10.0/Estate.Kernel.AssemblyInfo.cs", "**/obj/**", true)]

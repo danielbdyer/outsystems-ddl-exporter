@@ -176,7 +176,7 @@ internal static class RefusalPaths
             Failed(SqlServer.Target.Parse("Server=db;User ID=sa;Password=" + planted, "--target"))),
         new("a git ref where a database is asked for", "target.not-a-database", false, (scratch, _) => Failed(SqlServer.Resolve(Target("ref:main"), scratch))),
         new("an environment the posture does not name", "target.unnamed", false, (scratch, _) => Failed(SqlServer.Resolve(Target("env:qa"), Estate(scratch, Environments(Dev()))))),
-        new("the Twin before its milestone", "twin.not-built", false, (scratch, _) => Failed(SqlServer.Resolve(Target("twin"), scratch))),
+        new("the synthetic copy before its milestone", "synthetic-copy.not-built", false, (scratch, _) => Failed(SqlServer.Resolve(Target("synthetic-copy"), scratch))),
         new("a connection whose variable is unset", "connection.unresolved", false, (scratch, _) =>
             Failed(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: "env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant())))))),
         new("a connection file holding no connection string", "connection.malformed", true, (scratch, planted) =>

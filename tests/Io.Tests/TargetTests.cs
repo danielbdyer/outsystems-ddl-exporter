@@ -38,7 +38,7 @@ public sealed class TargetTests : IDisposable
     [InlineData("env:dev", "Env", "dev")]
     [InlineData("env:uat-2", "Env", "uat-2")]
     [InlineData("copy:estate_danny_pc_4242_0a1b2c3d", "Copy", "estate_danny_pc_4242_0a1b2c3d")]
-    [InlineData("twin", "Twin", "")]
+    [InlineData("synthetic-copy", "SyntheticCopy", "")]
     [InlineData("ref:main", "Ref", "main")]
     [InlineData("ref:origin/release/2026.09", "Ref", "origin/release/2026.09")]
     [InlineData("dacpac:.estate/build/0a1b/SampleCatalog.dacpac", "Dacpac", ".estate/build/0a1b/SampleCatalog.dacpac")]
@@ -58,7 +58,7 @@ public sealed class TargetTests : IDisposable
     [InlineData("env:")]
     [InlineData("env:DEV")]
     [InlineData("env:ESTATE_DEV")]
-    [InlineData("twin:dev")]
+    [InlineData("synthetic-copy:dev")]
     [InlineData("ref:")]
     [InlineData("ref:-n")]
     [InlineData("dacpac:")]
@@ -557,12 +557,12 @@ public sealed class TargetTests : IDisposable
             .Select(mode => SqlServer.ReadableByOthers("env:dev's connection, file:" + file + ",", (UnixFileMode)mode)?.Code));
     }
 
-    /// <summary>ref: and dacpac: name no database; the Twin arrives in M3.</summary>
+    /// <summary>ref: and dacpac: name no database; the synthetic copy arrives in M3.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("ref:main", "target.not-a-database", 1)]
     [InlineData("dacpac:build/x.dacpac", "target.not-a-database", 1)]
-    [InlineData("twin", "twin.not-built", 6)]
+    [InlineData("synthetic-copy", "synthetic-copy.not-built", 6)]
     public void A_target_that_is_no_database_this_build_reads_is_refused_where_a_database_is_asked_for(string text, string code, int exit)
     {
         var error = Failed(SqlServer.Resolve(Made(SqlServer.Target.Parse(text)), scratch));

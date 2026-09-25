@@ -49,7 +49,7 @@ public static class Contract
     /// <summary>The milestone this build completes.</summary>
     public const int Milestone = 0;
 
-    private static readonly string[] Milestones = ["Ground", "Read", "Predict", "Twin", "Prove", "Record and gate", "After deploy", "Front door"];
+    private static readonly string[] Milestones = ["Foundation", "Read", "Predict", "Synthetic copy", "Prove", "Describe and gate", "After deploy", "Agent instructions"];
 
     public static string Version { get; } = typeof(Contract).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion;
 
@@ -63,10 +63,10 @@ public static class Contract
             1, Cli.Verbs.Diff, Cli.Verbs.DiffContent),
         new("classify", "Which operation a change is, provisionally, from the committed evidence.", 2),
         new("predict", "Whether a change blocks or applies on each environment the caller can read, and why.", 2),
-        new("profile", "What an environment's data looks like, as the evidence the Twin is minted from.", 3),
-        new("twin", "A current substrate, stood up from the repository at a ref.", 3),
+        new("measure", "What an environment's data looks like, as the evidence the synthetic copy is generated from.", 3),
+        new("synthetic-copy", "A copy on the scratch server, built from the repository at a ref and filled with rows generated from the measured data.", 3),
         new("prove", "What the engine does with a change on a fresh copy, with a receipt.", 4),
-        new("record", "The pull request body, rendered from the receipts.", 5),
+        new("describe", "The pull request description, rendered from the receipts.", 5),
         new("gate", "The pull request's proof, reproduced from the clone.", 5),
         new("check", "Whether a database has drifted from the repository at a ref; the platform, the evidence and the locks arrive later. estate check drift --target <target> --at <ref> "
             + "[--profile <path>] [--project <path>]", 1, Cli.Verbs.Check, Cli.Verbs.CheckContent),
@@ -80,7 +80,7 @@ public static class Contract
         new(1, "bad-arguments", "Bad arguments: an unknown verb, flag or value.", "estate --help", false),
         new(2, "unparsed-input", "An input could not be parsed: a schema, a configuration file or a project.", "the file and line the finding names", true),
         new(3, "blocked", "Blocked by the data, a finding and not a failure: kind guard, the publish guard refused because the table has rows; or kind violation, the engine refused the change on existing rows (Msg 547, Msg 2628).", "the site the finding names: the operation's two-release shape, or the rows it counts", false),
-        new(4, "unreachable", "The target is unreachable: no scratch server, or SQL Server, Docker or LocalDB not answering.", "estate doctor; estate twin up", true),
+        new(4, "unreachable", "The target is unreachable: no scratch server, or SQL Server, Docker or LocalDB not answering.", "estate doctor; estate synthetic-copy up", true),
         new(5, "differs", "Divergence found: the target differs from the repository; the findings name each differing object.", "the objects the findings name", false),
         new(6, "configuration-refused", "The environment or configuration is refused: the .NET SDK missing, an unknown key, a literal credential, an engine outside the pinned window, a verb this build does not have yet, a failure DacFx reports with no SQL Server error inside (dacfx.failed), or a defect in estate itself (internal.unexpected, internal.unmapped-category).", "estate doctor, or the file or milestone the finding names", true),
         new(7, "build-failed", "The build failed; the findings carry the build's errors.", "the file and error the finding names", false),
@@ -123,7 +123,7 @@ public static class Contract
         ["reference"] = 6,
         ["connection"] = 6,
         ["sqlcmd"] = 6,
-        ["twin"] = 6,
+        ["synthetic-copy"] = 6,
         ["engine"] = 6,
         ["toolchain"] = 6,
         ["dacfx"] = 6,

@@ -16,7 +16,7 @@
   "properties": {
     "schema": {
       "type": "string",
-      "pattern": "^estate\\.[a-z]+/[1-9][0-9]*$"
+      "pattern": "^estate\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$"
     },
     "engine": {
       "$ref": "#/$defs/engine"

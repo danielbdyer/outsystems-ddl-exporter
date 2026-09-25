@@ -39,7 +39,7 @@ internal static class Documents
 
     /// <summary>
     /// M8, one tool: the root design documents leave for archive/design/ and ValuesResolve stops accepting a pending
-    /// clause, so "until M8", the wing's <c>pending W</c> and the root design documents' exclusion all end as it starts.
+    /// clause, so "until M8", the cutover tools' <c>pending W</c> and the root design documents' exclusion all end as it starts.
     /// </summary>
     public const int OneTool = 8;
 

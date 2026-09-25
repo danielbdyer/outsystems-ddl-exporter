@@ -32,7 +32,7 @@ public sealed class ContractTests
         var help = JsonNode.Parse(output)!;
         AssertValid("estate.help.1.schema.json", help);
         Assert.Equal(
-            ["doctor", "read", "diff", "classify", "predict", "profile", "twin", "prove", "record", "gate", "check", "knowledge", "--version"],
+            ["doctor", "read", "diff", "classify", "predict", "measure", "synthetic-copy", "prove", "describe", "gate", "check", "knowledge", "--version"],
             help["verbs"]!.AsArray().Select(v => (string)v!["name"]!));
         help["exits"]![0]!["code"] = 8;
         Assert.False(Evaluate("estate.help.1.schema.json", help).IsValid, "the schema admits an exit code the table does not have");

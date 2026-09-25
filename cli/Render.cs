@@ -11,7 +11,7 @@ public static class Render
 {
     public const string Usage = "estate <verb> [arguments] [--json] | estate --help [--json] | estate --version";
 
-    private const string SchemaId = "^estate\\.[a-z]+/[1-9][0-9]*$";
+    private const string SchemaId = "^estate\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$";
 
     public static JsonObject Help() => new()
     {
