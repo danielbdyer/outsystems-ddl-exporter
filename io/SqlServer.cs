@@ -339,20 +339,66 @@ public static class SqlServer
         public override string ToString() => Site + ": " + Statement;
     }
 
-    /// <summary>What an aggregate query measured: its rows, every value an integer or null; or its failure, the number and the site, SQL Server's message kept for a copy alone.</summary>
+    /// <summary>
+    /// What an aggregate query measured, a value: its rows, every value an integer or null, in the order of their values, so two
+    /// measurements of the same rows are equal whatever order SQL Server returned them in; or its failure, the number and the site, SQL
+    /// Server's message kept for a copy alone. The cases are closed, and Match reads each.
+    /// </summary>
     public abstract record Measurement
     {
         private Measurement()
         {
         }
 
-        public sealed record Answered(string Site, IReadOnlyList<IReadOnlyList<long?>> Rows) : Measurement;
+        public T Match<T>(Func<Answered, T> answered, Func<Failed, T> failed) => this switch
+        {
+            Answered a => answered(a),
+            Failed f => failed(f),
+            _ => throw new System.Diagnostics.UnreachableException(),
+        };
+
+        public sealed record Answered(string Site, SortedArray<Row> Rows) : Measurement;
 
         public sealed record Failed(string Site, int Number, string? Message) : Measurement
         {
             public override string ToString() =>
                 Site + ": query failed: Msg " + Number.ToString(CultureInfo.InvariantCulture) + (Message is null ? "; message withheld" : ": " + Message);
         }
+    }
+
+    /// <summary>
+    /// One row an aggregate query answered: the values of its select list, in order, each an integer or null. Two rows are equal when
+    /// their values are, one by one; rows order by their values, a null before any integer and a shorter row before a longer one it begins.
+    /// </summary>
+    public sealed class Row : IEquatable<Row>, IComparable<Row>
+    {
+        private readonly long?[] values;
+
+        private Row(long?[] values) => this.values = values;
+
+        public IReadOnlyList<long?> Values => values;
+
+        public static Row Of(params long?[] values) => new([.. values]);
+
+        public bool Equals(Row? other) => other is not null && values.AsSpan().SequenceEqual(other.values);
+
+        public override bool Equals(object? obj) => Equals(obj as Row);
+
+        public override int GetHashCode()
+        {
+            var hash = new HashCode();
+            foreach (var value in values)
+            {
+                hash.Add(value);
+            }
+
+            return hash.ToHashCode();
+        }
+
+        public int CompareTo(Row? other) => other is null ? 1
+            : values.Zip(other.values, Nullable.Compare).FirstOrDefault(c => c != 0) is var byValue and not 0 ? byValue : values.Length.CompareTo(other.values.Length);
+
+        public override string ToString() => string.Join(", ", values.Select(v => v?.ToString(CultureInfo.InvariantCulture) ?? "NULL"));
     }
 
     /// <summary>
@@ -367,14 +413,14 @@ public static class SqlServer
             connection.Open();
             using var command = new SqlCommand(query.Statement, connection) { CommandTimeout = 30 };
             using var reader = command.ExecuteReader();
-            var rows = new List<IReadOnlyList<long?>>();
+            var rows = new List<Row>();
             while (reader.Read())
             {
-                rows.Add([.. Enumerable.Range(0, reader.FieldCount).Select(i => reader.IsDBNull(i) ? (long?)null : Integer(reader.GetValue(i)))]);
+                rows.Add(Row.Of([.. Enumerable.Range(0, reader.FieldCount).Select(i => reader.IsDBNull(i) ? (long?)null : Integer(reader.GetValue(i)))]));
             }
 
             log.Add(target, query, rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows");
-            return new Measurement.Answered(query.Site, rows);
+            return new Measurement.Answered(query.Site, SortedArray.Of(rows));
         }
         catch (SqlException e) when (connection.State == System.Data.ConnectionState.Open && e.Class < 20)
         {

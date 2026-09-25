@@ -35,7 +35,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
         var measured = admitted.Select(query => Assert.IsType<SqlServer.Measurement.Answered>(Made(SqlServer.Measure(uat, query, log)))).ToList();
 
         Assert.All(measured, m => Assert.NotEmpty(m.Rows));
-        Assert.Contains(measured, m => m.Rows.Any(row => row.Any(value => value > 0)));
+        Assert.Contains(measured, m => m.Rows.Any(row => row.Values.Any(value => value > 0)));
         Assert.StartsWith(Path.Combine(root, ".estate", "runs"), log.Path, StringComparison.Ordinal);
         var entries = Entries(File.ReadAllText(log.Path));
         Assert.Equal(admitted.Select(p => (p.Site, p.Statement)), entries.Select(e => (e.Site, e.Statement)));
