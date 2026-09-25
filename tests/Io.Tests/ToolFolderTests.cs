@@ -14,9 +14,9 @@ namespace Estate.Io.Tests;
 /// </summary>
 public sealed class PublishedTool
 {
-    private static readonly Lazy<(int Exit, string Output)> Publication = new(() => OperatingSystem.IsWindows()
-        ? Command.Run("pwsh", ["-NoProfile", "-File", Path.Combine(Repository.Root, "ci", "publish.ps1")])
-        : Command.Run("bash", [Path.Combine(Repository.Root, "ci", "publish.sh")]));
+    private static readonly Lazy<(int Exit, string Output)> Publication = new(() => (OperatingSystem.IsWindows()
+        ? Programs.InRepository("pwsh", "-NoProfile", "-File", Path.Combine(Repository.Root, "ci", "publish.ps1"))
+        : Programs.InRepository("bash", Path.Combine(Repository.Root, "ci", "publish.sh"))).Finish().Joined());
 
     public PublishedTool()
     {
@@ -34,18 +34,16 @@ public sealed class PublishedTool
     /// finds .NET only where it is installed machine-wide or DOTNET_ROOT names it, and the test host sets DOTNET_ROOT for
     /// its children, so a test of the launcher would pass on a machine whose own shell cannot run it.
     /// </summary>
-    public (int Exit, string Output) Run(params string[] arguments) => Command.Run("dotnet", [Path.Combine(Folder, "estate.dll"), .. arguments]);
+    public (int Exit, string Output) Run(params string[] arguments) => Programs.InRepository("dotnet", [Path.Combine(Folder, "estate.dll"), .. arguments]).Finish().Joined();
 
     /// <summary>estate from the folder as its own process, run in <paramref name="estateRoot"/>, so the executable's own runtime settings load the model.</summary>
     public (int Exit, string Output) RunAt(string estateRoot, params string[] arguments) =>
-        Command.Run("dotnet", [Path.Combine(Folder, "estate.dll"), .. arguments], workingDirectory: estateRoot);
+        (Programs.InRepository("dotnet", [Path.Combine(Folder, "estate.dll"), .. arguments]) with { Directory = estateRoot }).Finish().Joined();
 
-    /// <summary>A classic .sqlproj built against the folder (section 1 fact 1): the committed engine's targets, no Visual Studio, no node left holding the folder.</summary>
-    public (int Exit, string Output) Build(string project) => Command.Run("dotnet",
-    [
+    /// <summary>A classic .sqlproj built against the folder (section 1 fact 1): the committed DacFx's targets, no Visual Studio, no node left holding the folder.</summary>
+    public (int Exit, string Output) Build(string project) => Programs.InRepository("dotnet",
         "build", project, "-c", "Release", "-nologo", "-nodeReuse:false", "-p:DacFxTelemetryEnabled=false", "-p:NetCoreBuild=true",
-        "-p:NETCoreTargetsPath=" + Folder, "-p:SQLDBExtensionsRefPath=" + Folder, "-p:TargetFrameworkRootPath=" + Path.Combine(Folder, "refasm"),
-    ]);
+        "-p:NETCoreTargetsPath=" + Folder, "-p:SQLDBExtensionsRefPath=" + Folder, "-p:TargetFrameworkRootPath=" + Path.Combine(Folder, "refasm")).Finish().Joined();
 }
 
 /// <summary>

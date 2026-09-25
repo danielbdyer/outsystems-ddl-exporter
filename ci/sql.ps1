@@ -51,6 +51,7 @@ function Up {
         if (-not $password) { $password = 'Est!' + [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(16)).ToLowerInvariant() }
         $port = if ($env:ESTATE_SQL_PORT) { $env:ESTATE_SQL_PORT } else { '11433' }
         [IO.File]::WriteAllText($envFile, "MSSQL_SA_PASSWORD=$password`nESTATE_SQL_PORT=$port`n")
+        if (-not $IsWindows) { chmod 600 $envFile }   # its owner alone reads the password, as ci/sql.sh's umask 077 arranges
         docker image inspect $image *> $null
         if ($LASTEXITCODE -ne 0) { docker pull $image | Out-Host }
         docker run -d --name $name --env-file $envFile -e ACCEPT_EULA=Y -e MSSQL_AGENT_ENABLED=true -p "127.0.0.1:${port}:1433" $image | Out-Null

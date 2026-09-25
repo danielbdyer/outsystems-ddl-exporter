@@ -410,7 +410,7 @@ public sealed class ContractTests
         var bare = Directory.CreateTempSubdirectory("estate-bare-").FullName;
         try
         {
-            var checks = Doctor.Examine(bare, null, bare, (_, _) => null, Contract.Version);
+            var checks = Doctor.Examine(new Doctor.Machine(bare, null, bare, null, Path.Combine(bare, "no-sql.env"), Environment.Version), (c, _) => new Ran.NotFound(c.Program, "not installed"), Contract.Version);
 
             var json = Render.Json(Verbs.Doctor(checks, Doctor.Toolchain(bare, Contract.Version)));
 
@@ -421,10 +421,10 @@ public sealed class ContractTests
             Assert.Contains(" | dacfx=" + Doctor.DacFx + " (UNPINNED) | ", line, StringComparison.Ordinal);
             Assert.DoesNotContain("M1", line, StringComparison.Ordinal);
             var findings = json["findings"]!.AsArray().Select(f => ((string)f!["code"]!, (string)f["severity"]!, (string?)f["remedy"])).ToList();
-            Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.scratch-server", "doctor.lfs"], findings.Select(f => f.Item1));
+            Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.git", "doctor.scratch-server", "doctor.lfs"], findings.Select(f => f.Item1));
             Assert.Equal(checks.Where(c => c.Remedy is not null).Select(c => c.Remedy), findings.Select(f => f.Item3));
             Assert.All(findings, f => Assert.Equal("error", f.Item2));
-            Assert.Equal(checks.Select(c => c.Item), json["checks"]!.AsArray().Select(c => (string)c!["item"]!));
+            Assert.Equal(checks.Select(c => c.Item.Name), json["checks"]!.AsArray().Select(c => (string)c!["item"]!));
         }
         finally
         {
@@ -447,22 +447,25 @@ public sealed class ContractTests
             }
 
             File.WriteAllText(Path.Combine(machine, "global.json"), """{ "sdk": { "version": "10.0.401" } }""");
-            Doctor.Command answers = (file, arguments) => (file + " " + arguments[0]) switch
+            File.WriteAllText(Path.Combine(machine, "sql.env"), "MSSQL_SA_PASSWORD=x\nESTATE_SQL_PORT=11433\n");
+            Runner answers = (command, _) => (command.Program + " " + command.Arguments[0]) switch
             {
-                "dotnet --list-sdks" => (0, "10.0.402 [x]\n"),
-                "docker info" => (0, "29.5.3\n"),
-                "docker image" => (0, "sha256:5b09\n"),
-                "git lfs" => (0, "git-lfs/3.4.0 (GitHub; windows amd64; go 1.21.1)\n"),
-                _ => null,
+                "dotnet --list-sdks" => new Ran.Exited(0, "10.0.402 [x]\n", ""),
+                "docker info" => new Ran.Exited(0, "29.5.3\n", ""),
+                "docker image" => new Ran.Exited(0, "sha256:5b09\n", ""),
+                "docker container" => new Ran.Exited(0, Doctor.SqlServerImage + "\n", ""),
+                "git --version" => new Ran.Exited(0, "git version 2.31.1.windows.1\n", ""),
+                "git lfs" => new Ran.Exited(0, "git-lfs/3.4.0 (GitHub; windows amd64; go 1.21.1)\n", ""),
+                _ => new Ran.NotFound(command.Program, "not installed"),
             };
 
-            var answer = Verbs.Doctor(Doctor.Examine(machine, null, machine, answers, Contract.Version), Doctor.Toolchain(machine, Contract.Version));
+            var answer = Verbs.Doctor(Doctor.Examine(new Doctor.Machine(machine, null, machine, null, Path.Combine(machine, "sql.env"), Environment.Version), answers, Contract.Version), Doctor.Toolchain(machine, Contract.Version));
 
             var json = Render.Json(answer);
             AssertValid("estate.doctor.1.schema.json", json);
             Assert.Equal((0, "ready"), (answer.Exit, answer.Verdict.Outcome));
             Assert.Equal("estate doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx=" + Doctor.DacFx + " (UNPINNED) | build=dotnet with the tool folder's targets"
-                + " | scratch-server=docker 29.5.3 | image=present | lfs=git-lfs/3.4.0", answer.Verdict.Message);
+                + " | git=2.31.1 | scratch-server=estate-sql container (localhost,11433) | image=present | lfs=git-lfs/3.4.0", answer.Verdict.Message);
             Assert.Empty(answer.Findings);
             Assert.Equal(("170.5.96", Doctor.ImageDigest, "UNPINNED"), ((string?)json["engine"]!["dacfx"], (string?)json["engine"]!["sqlserver"], (string?)json["engine"]!["pin"]));
         }
@@ -596,23 +599,10 @@ public sealed class ContractTests
         answer["receipt"] = receipt;
     };
 
-    /// <summary>Runs the built estate, as a process, and returns its exit code and standard output.</summary>
+    /// <summary>Runs the built estate, as a process, and returns its exit code and standard output alone, which its JSON answer is.</summary>
     private static (int Exit, string Output) Estate(params string[] arguments)
     {
-        var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
-        {
-            RedirectStandardOutput = true,
-            StandardOutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-        };
-        start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "estate.dll"));
-        foreach (var argument in arguments)
-        {
-            start.ArgumentList.Add(argument);
-        }
-
-        using var process = Process.Start(start)!;
-        var output = process.StandardOutput.ReadToEnd();
-        process.WaitForExit();
-        return (process.ExitCode, output);
+        var ran = new Command(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet", [Path.Combine(AppContext.BaseDirectory, "estate.dll"), .. arguments], Programs.Default).Finish();
+        return (ran.Code, ran.Output);
     }
 }

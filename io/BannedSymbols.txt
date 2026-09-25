@@ -1,0 +1,3 @@
+T:System.Diagnostics.Process;run a program through io/Command, the one place io starts one; io prints nothing, cli renders
+T:System.Diagnostics.ProcessStartInfo;run a program through io/Command, the one place io starts one; io prints nothing, cli renders
+T:System.Console;io prints nothing: cli renders, and a program's output arrives through io/Command

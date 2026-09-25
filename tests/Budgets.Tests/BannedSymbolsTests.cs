@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -62,7 +61,7 @@ public sealed class BannedSymbolsTests
             lines.AddRange(["    ];", "}", ""]);
             File.WriteAllText(Path.Combine(plant, "Planted.cs"), string.Join('\n', lines));
 
-            var (exit, output) = Run("dotnet", $"build \"{Path.Combine(plant, "kernel.csproj")}\" -nologo -v q -clp:NoSummary");
+            var (exit, output) = Programs.InRepository("dotnet", "build", Path.Combine(plant, "kernel.csproj"), "-nologo", "-v", "q", "-clp:NoSummary").Finish().Joined();
 
             Assert.NotEqual(0, exit);
             var errorLines = Regex.Matches(output, @"Planted\.cs\((\d+),\d+\): error RS0030")
@@ -81,19 +80,35 @@ public sealed class BannedSymbolsTests
         }
     }
 
-    private static (int Exit, string Output) Run(string file, string arguments)
+    /// <summary>io's own list (io/BannedSymbols.txt, wired by io.csproj) keeps Process, ProcessStartInfo and Console out of io, and only io/Command.cs, the one place io starts a program, suppresses the rule.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Io_bans_Process_and_Console_and_only_Command_suppresses_the_rule()
     {
-        var start = new ProcessStartInfo(file, arguments)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            WorkingDirectory = Repository.Root,
-        };
-        start.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-        using var process = Process.Start(start)!;
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        process.WaitForExit();
-        return (process.ExitCode, stdout.Result + stderr.Result);
+        var banned = Repository.Lines("io/BannedSymbols.txt").Where(l => l.Length > 0 && !l.StartsWith('#')).Select(l => l.Split(';')[0]).Order(StringComparer.Ordinal);
+        var suppressing = Repository.Files.Where(f => f.StartsWith("io/", StringComparison.Ordinal) && f.EndsWith(".cs", StringComparison.Ordinal) && Repository.Read(f).Contains("RS0030", StringComparison.Ordinal));
+
+        Assert.Equal(["T:System.Console", "T:System.Diagnostics.Process", "T:System.Diagnostics.ProcessStartInfo"], banned);
+        Assert.Contains("BannedSymbols.txt", Repository.Xml("io/io.csproj").Descendants().Single(e => e.Name.LocalName == "EstateBannedSymbols").Value, StringComparison.Ordinal);
+        Assert.Equal(["io/Command.cs"], suppressing);
+    }
+
+    /// <summary>
+    /// The analyzer bans a type whole, so the file rules are a source scan: outside io/Write.cs no io file writes, creates, replaces, moves or
+    /// copies a file (VALUES.md D3), and outside io/FileLock.cs and io/Write.cs none opens a file for itself alone (R6).
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Only_Write_writes_a_file_and_only_FileLock_and_Write_open_one_exclusively()
+    {
+        var writes = new Regex(@"\bFile\.(WriteAll\w*|AppendAll\w*|Create|CreateText|OpenWrite|Replace|Move|Copy)\(", RegexOptions.CultureInvariant);
+        var exclusive = new Regex(@"\bFileShare\.None\b", RegexOptions.CultureInvariant);
+        var offending = Repository.Files
+            .Where(f => f.StartsWith("io/", StringComparison.Ordinal) && f.EndsWith(".cs", StringComparison.Ordinal))
+            .SelectMany(f => Repository.Lines(f).Select((line, i) => (File: f, Line: i + 1, Text: line)))
+            .Where(x => (writes.IsMatch(x.Text) && x.File != "io/Write.cs") || (exclusive.IsMatch(x.Text) && x.File is not ("io/Write.cs" or "io/FileLock.cs")))
+            .Select(x => x.File + ":" + x.Line.ToString(System.Globalization.CultureInfo.InvariantCulture) + ": " + x.Text.Trim());
+
+        Assert.Empty(offending);
     }
 }

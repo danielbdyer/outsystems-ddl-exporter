@@ -2,13 +2,20 @@ using System;
 using System.IO;
 using System.Text;
 using System.Threading;
+using Estate.Kernel;
 
 namespace Estate.Io;
 
 /// <summary>
-/// Every byte the engine writes: UTF-8 without a byte-order mark; LF, unless the file already on disk
-/// uses CRLF, whose line ending is kept; and a file replaced atomically, through a temporary file
-/// beside it, so a reader sees the old content or the new and never a part.
+/// Every byte estate writes to a file (VALUES.md D3): UTF-8 without a byte-order mark; the kernel's line ending (LineEndings.Lf:
+/// CRLF and a lone CR to LF), unless the file already on disk declares CRLF by its first line, read through a UTF-8 or UTF-16
+/// byte-order mark, in which case CRLF is kept and the file is still rewritten as UTF-8; and a file replaced atomically, through a
+/// temporary file beside it, so a reader sees the old content or the new and never a part. A failure the file system reports is
+/// file.unwritable (exit 6), naming the path and the cause: a folder that cannot be made, a full disk, a read-only file or file
+/// system, a target another program holds open past a few attempts. A lone surrogate in the text has no UTF-8 form and throws, since it
+/// is a defect in the caller's text; the old content is kept and no temporary file is left. A target that is a symbolic link is replaced by
+/// a regular file, and a target with other hard links leaves those names on the old content. Text(Stream, string) writes standard output
+/// and keeps throwing, since Program.Run answers for that stream.
 /// </summary>
 public static class Write
 {
@@ -17,17 +24,26 @@ public static class Write
     /// <summary>A lone surrogate has no UTF-8 form: it throws rather than becoming a question mark.</summary>
     private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
-    /// <summary>Writes <paramref name="text"/> to <paramref name="path"/>, creating its directory.</summary>
-    public static void Text(string path, string text)
+    /// <summary>Writes <paramref name="text"/> to <paramref name="path"/>, creating its folder; the full path written.</summary>
+    public static Result<string> Text(string path, string text)
     {
         var target = Path.GetFullPath(path);
         var directory = Path.GetDirectoryName(target)!;
-        Directory.CreateDirectory(directory);
-        var lf = text.Replace("\r\n", "\n", StringComparison.Ordinal);
-        var content = UsesCrlf(target) ? lf.Replace("\n", "\r\n", StringComparison.Ordinal) : lf;
+        try
+        {
+            Directory.CreateDirectory(directory);
+        }
+        catch (Exception e) when (FileSystemFailure(e))
+        {
+            return Unwritable(directory, e);
+        }
+
+        var lf = LineEndings.Lf(text);
         var temporary = Path.Combine(directory, "." + Path.GetFileName(target) + "." + Path.GetRandomFileName() + ".tmp");
         try
         {
+            Stale(directory, Path.GetFileName(target));
+            var content = UsesCrlf(target) ? lf.Replace("\n", "\r\n", StringComparison.Ordinal) : lf;
             using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
                 Text(stream, content);
@@ -35,11 +51,39 @@ public static class Write
             }
 
             Replace(temporary, target);
+            return target;
+        }
+        catch (Exception e) when (FileSystemFailure(e))
+        {
+            Discarded(temporary);
+            return Unwritable(target, e);
         }
         catch
         {
-            File.Delete(temporary);
+            Discarded(temporary);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Appends <paramref name="text"/> to <paramref name="path"/>, creating the file and its folder, as UTF-8 in LF, flushed to the
+    /// operating system when it returns and shared with readers meanwhile; no fsync, since an appended file is a record of what ran
+    /// (a run's queries.log), never a document a person keeps. The full path written.
+    /// </summary>
+    public static Result<string> Append(string path, string text)
+    {
+        var target = Path.GetFullPath(path);
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            using var stream = new FileStream(target, FileMode.Append, FileAccess.Write, FileShare.Read);
+            Text(stream, LineEndings.Lf(text));
+            stream.Flush();
+            return target;
+        }
+        catch (Exception e) when (FileSystemFailure(e))
+        {
+            return Unwritable(target, e);
         }
     }
 
@@ -50,7 +94,35 @@ public static class Write
         writer.Write(text);
     }
 
-    /// <summary>Whether the file on disk declares CRLF: its first line ends in CRLF.</summary>
+    /// <summary>Whether an exception is one the file system reports about a path, which becomes file.unwritable, rather than a defect in the caller.</summary>
+    internal static bool FileSystemFailure(Exception e) => e is IOException or UnauthorizedAccessException or NotSupportedException;
+
+    /// <summary>Whether an IOException says another process holds the file: on Windows a sharing or lock violation, on Linux and macOS flock's EWOULDBLOCK.</summary>
+    internal static bool SharingViolation(IOException e) => OperatingSystem.IsWindows()
+        ? e.HResult is unchecked((int)0x80070020) or unchecked((int)0x80070021)
+        : e.HResult is 11 or 35;
+
+    /// <summary>file.unwritable for <paramref name="path"/>, its cause read from the exception the file system raised, with the remedy for that cause.</summary>
+    internal static Error Unwritable(string path, Exception cause)
+    {
+        var (what, remedy) = cause switch
+        {
+            IOException io when DiskFull(io) => ("the disk is full", "Free space on the disk that holds " + path + ", then run estate again."),
+            IOException io when SharingViolation(io) => ("another program holds it open", "Close the program that holds " + path + " open, then run estate again."),
+            IOException io when FileInTheWay(io) => ("a file stands where a folder should be", "Move the file that stands where the folder of " + path + " should be, then run estate again."),
+            UnauthorizedAccessException => ("this identity may not write it, or it is read-only", "Grant this identity write access to " + path + ", or clear its read-only attribute, then run estate again."),
+            _ => (cause.Message.TrimEnd('.'), "Fix what the operating system reports for " + path + ", then run estate again."),
+        };
+        return new Error("file.unwritable", path + " cannot be written: " + what + ".", remedy);
+    }
+
+    /// <summary>ERROR_DISK_FULL or ERROR_HANDLE_DISK_FULL on Windows; ENOSPC elsewhere.</summary>
+    private static bool DiskFull(IOException e) => OperatingSystem.IsWindows() ? e.HResult is unchecked((int)0x80070070) or unchecked((int)0x80070027) : e.HResult == 28;
+
+    /// <summary>ERROR_ALREADY_EXISTS on Windows, which CreateDirectory raises for a file of the folder's name; ENOTDIR or EEXIST elsewhere.</summary>
+    private static bool FileInTheWay(IOException e) => OperatingSystem.IsWindows() ? e.HResult == unchecked((int)0x800700B7) : e.HResult is 20 or 17;
+
+    /// <summary>Whether the file on disk declares CRLF: its first line ends in CRLF, read as UTF-16 when it opens with that byte-order mark.</summary>
     private static bool UsesCrlf(string path)
     {
         if (!File.Exists(path))
@@ -59,7 +131,20 @@ public static class Write
         }
 
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        for (int previous = -1, current; (current = stream.ReadByte()) != -1; previous = current)
+        var (first, second) = (stream.ReadByte(), stream.ReadByte());
+        var (utf16, littleEndian) = ((first, second) is (0xFF, 0xFE) or (0xFE, 0xFF), first == 0xFF);
+        if (!utf16)
+        {
+            stream.Position = 0;
+        }
+
+        int Next()
+        {
+            var (low, high) = (stream.ReadByte(), utf16 ? stream.ReadByte() : 0);
+            return low < 0 || high < 0 ? -1 : utf16 ? (littleEndian ? low | (high << 8) : (low << 8) | high) : low;
+        }
+
+        for (int previous = -1, current; (current = Next()) != -1; previous = current)
         {
             if (current == '\n')
             {
@@ -99,6 +184,34 @@ public static class Write
             {
                 Thread.Sleep(TimeSpan.FromMilliseconds(25 * attempt));
             }
+        }
+    }
+
+    /// <summary>
+    /// Temporary files a write of the target left beside it, more than an hour ago (a second Ctrl-C, SIGKILL or a power loss cut that
+    /// write off), deleted before this write makes its own; a fresh one may belong to a write in progress and stays.
+    /// </summary>
+    private static void Stale(string directory, string name)
+    {
+        foreach (var left in Directory.EnumerateFiles(directory, "." + name + ".*.tmp"))
+        {
+            if (File.GetLastWriteTimeUtc(left) < DateTime.UtcNow.AddHours(-1))
+            {
+                Discarded(left);
+            }
+        }
+    }
+
+    /// <summary>The temporary file deleted after a failed write; one the file system will not release is left, named beside the target.</summary>
+    private static void Discarded(string temporary)
+    {
+        try
+        {
+            File.Delete(temporary);
+        }
+        catch (Exception e) when (FileSystemFailure(e))
+        {
+            // a scanner holds it; the failure being reported is the write's
         }
     }
 }
