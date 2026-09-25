@@ -1,10 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Estate.Cli;
-using Estate.Io;
+using Estate.Tests;
 using Xunit;
 
 namespace Estate.Budgets.Tests.Register;
@@ -33,36 +32,32 @@ public sealed class Refusals
 
     private static readonly Regex RunsEstate = new(@"\b[Rr]un estate (\S+)", RegexOptions.CultureInvariant);
 
-    public Refusals() => Telemetry.OptOut();   // before DacFx loads, as estate's Main does
-
     public static TheoryData<string> Cases => new(RefusalPaths.All.Select(c => c.Label));
 
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Value", "S2")]
+    [Trait("Value", "O4")]
+    [Trait("Value", "L1")]
     [MemberData(nameof(Cases))]
-    public void An_error_carries_its_code_a_message_and_a_remedy_that_is_one_move_in_the_register(string label)
+    public void An_error_carries_a_remedy_that_is_one_move_in_the_register(string label)
     {
         var way = RefusalPaths.All.Single(c => c.Label == label);
-        var scratch = Directory.CreateTempSubdirectory("estate-register-").FullName;
-        try
-        {
-            var error = way.Drive(scratch, "planted-value");
+        using var scratch = ScratchFolder.Temporary("register");
 
-            Assert.Equal(way.Code, error.Code);
-            Assert.False(string.IsNullOrWhiteSpace(error.Message) || string.IsNullOrWhiteSpace(error.Remedy), error.Code + " lacks a message or a remedy");
-            var flaw = Flaw(error.Remedy);
-            Assert.True(flaw is null || (!RefusalPaths.KernelOrCli(way.Code) && Form.Contains(flaw)), error.Code + ": the remedy " + flaw + ": " + error.Remedy);
-            Assert.Empty(Prose.Findings(error.Message).Concat(Prose.Findings(error.Remedy)).Select(f => error.Code + ": " + f));
-        }
-        finally
-        {
-            Directory.Delete(scratch, recursive: true);
-        }
+        var error = way.Drive(scratch.Path, "planted-value");
+
+        Assert.Equal(way.Code, error.Code);
+        var flaw = Flaw(error.Remedy);
+        Assert.True(flaw is null || (!RefusalPaths.KernelOrCli(way.Code) && Form.Contains(flaw)), error.Code + ": the remedy " + flaw + ": " + error.Remedy);
+        Assert.Empty(Prose.Findings(error.Message).Concat(Prose.Findings(error.Remedy)).Select(f => error.Code + ": " + f));
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Every_error_code_the_kernel_io_and_the_cli_construct_has_a_way_to_it_here()
+    [Trait("Value", "S2")]
+    [Trait("Value", "O4")]
+    public void Every_error_code_the_kernel_io_and_the_cli_construct_has_a_driver_here()
     {
         var driven = RefusalPaths.All.Select(c => c.Code).ToHashSet(StringComparer.Ordinal);
         var written = RefusalPaths.InTheSources().ToList();
@@ -74,6 +69,17 @@ public sealed class Refusals
         Assert.DoesNotContain(driven, code => !written.Contains(code) && !written.Any(start => start.EndsWith('.') && code.StartsWith(start, StringComparison.Ordinal)));
         Assert.True(RefusalPaths.KernelOrCli("name.blank") && RefusalPaths.KernelOrCli("arguments.unknown-verb") && !RefusalPaths.KernelOrCli("tool.missing"));
     }
+
+    /// <summary>The scan reads a code from a construction that names the type and from a target-typed one (finding D6), and reads no code from a string that is none.</summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("return new Error(\"posture.missing\", \"No posture.\", \"Commit it.\");", "posture.missing")]
+    [InlineData("private static Error Malformed(string at) => new(\"posture.malformed\", at, \"Write it.\");", "posture.malformed")]
+    [InlineData("new Error(ErrorCode.Text(category) + \".\", m, r)", null)]
+    [InlineData("new(\"estate.doctor/1\", outcome, 0, message, [])", null)]
+    [InlineData("new(\"done\", [0], \"the message is the tool's version\")", null)]
+    public void The_scan_reads_a_code_from_a_named_and_a_target_typed_construction_alike(string source, string? code) =>
+        Assert.Equal(code, RefusalPaths.CodesIn(source).SingleOrDefault());
 
     /// <summary>The remedy check as minimal pairs: each remedy the register keeps, beside one it refuses and why.</summary>
     [Theory]

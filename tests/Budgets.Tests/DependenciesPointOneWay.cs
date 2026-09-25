@@ -17,6 +17,7 @@ public sealed class DependenciesPointOneWay
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "dependencies point one way")]
+    [Trait("Value", "L7")]
     public void Io_does_not_depend_on_the_cli_and_the_kernel_on_neither()
     {
         var io = Types.InAssembly(typeof(Write).Assembly).ShouldNot().HaveDependencyOn("Estate.Cli").GetResult();
@@ -31,6 +32,7 @@ public sealed class DependenciesPointOneWay
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "dependencies point one way")]
+    [Trait("Value", "L7")]
     public void No_project_reaches_into_the_knowledge_files_or_ci()
     {
         var reaching = Repository.MsBuildFiles

@@ -22,7 +22,8 @@ public sealed class KernelCannotDoIo
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "the kernel cannot do I/O")]
-    public void The_kernel_references_the_bcl_and_nothing_else()
+    [Trait("Value", "L7")]
+    public void The_kernel_references_the_BCL_and_nothing_else()
     {
         Assert.Empty(OutsideTheBcl(Kernel));
         Assert.Contains(Kernel.GetReferencedAssemblies(), a => a.Name == "System.Collections.Immutable");
@@ -32,6 +33,7 @@ public sealed class KernelCannotDoIo
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "the kernel cannot do I/O")]
+    [Trait("Value", "L7")]
     public void No_public_kernel_member_is_asynchronous()
     {
         Type[] asynchronous = [typeof(Task), typeof(Task<>), typeof(ValueTask), typeof(ValueTask<>), typeof(IAsyncEnumerable<>)];

@@ -17,6 +17,7 @@ public sealed class ClosedHierarchies
 {
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "S2")]
     public void Every_case_of_a_kernel_closed_hierarchy_is_sealed_and_nested_inside_it()
     {
         var hierarchies = typeof(SortedArray).Assembly.GetTypes().Where(t => t.IsClass && t.IsAbstract && !t.IsSealed).ToList();

@@ -19,6 +19,8 @@ public sealed class NoSkips
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "L6")]
+    [Trait("Value", "L9")]
     public void No_test_skips_itself()
     {
         var skips = Repository.Files
@@ -28,6 +30,19 @@ public sealed class NoSkips
             .Select(x => x.Where + ": " + x.Line.Trim());
 
         Assert.Empty(skips);
+    }
+
+    /// <summary>A test with no category runs in no lane, a skip that reads as a pass; one with two runs twice.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    [Trait("Value", "L9")]
+    public void Every_test_carries_exactly_one_category_fast_fixture_or_build()
+    {
+        string[] categories = ["fast", "fixture", "build"];
+
+        Assert.NotEmpty(TestTraits.All);
+        Assert.Empty(TestTraits.All.Where(t => t.Values("Category").Count() != 1 || !t.Values("Category").All(categories.Contains))
+            .Select(t => t.FullName + " carries " + (t.Values("Category").Any() ? string.Join(" and ", t.Values("Category")) : "no category") + "; a test carries one of fast, fixture and build"));
     }
 
     [Theory]
