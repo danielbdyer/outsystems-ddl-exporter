@@ -313,6 +313,7 @@ internal static class RefusalPaths
             return SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.EnvironmentDatabase)dev).Environment, root)));
         })),
 
+        new("a timeout that is no whole number of seconds", "arguments.timeout", false, (_, _) => Failed(Cli.Program.Timeout(["read", "--timeout", "soon"]))),
         new("a flag the verb does not take", "arguments.unknown-flag", false, (_, _) => Failed(Contract.Flags(["--no-such-flag"], [], [], []))),
         new("a required flag absent", "arguments.missing-flag", false, (_, _) => Failed(Contract.Flags([], ["--from"], [], []))),
         new("estate check with no check named", "arguments.unknown-check", false, (scratch, _) => Carried(Verbs.Check(new Checkout(scratch, scratch, null), []))),
