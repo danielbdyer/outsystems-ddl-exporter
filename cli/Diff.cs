@@ -54,16 +54,17 @@ public static partial class Verbs
     /// </summary>
     internal static Envelope Diff(Source before, Source after, Change change, bool failOnChange, Stamp stamp)
     {
-        var lines = Lines(change).ToList();
+        var (lines, printer) = (Lines(change).ToList(), new Printer());
         var message = lines.Count == 0 ? "No change from " + before.Target + " to " + after.Target + "."
             : lines.Count.ToString(CultureInfo.InvariantCulture) + (lines.Count == 1 ? " change from " : " changes from ") + before.Target + " to " + after.Target + ".";
+        var content = new JsonObject { ["diff"] = new JsonObject { ["from"] = Side(before), ["to"] = Side(after), ["change"] = Json(change, printer) } };
         return Contract.Answer(Of("diff").Output, Of("diff").Outcome(change.IsEmpty ? "matches" : "differs"), failOnChange && !change.IsEmpty ? 5 : 0, message,
-            before.IsDatabase == after.IsDatabase ? [] : [Finding.Note("diff.unlike-sources", "estate diff", before.Target + " and " + after.Target
-                + " are read one from a package and one from a database, and SQL Server keeps a check's or a default's text as it normalized it, so such text can differ where the schemas agree.")],
-            stamp, content: new JsonObject
-            {
-                ["diff"] = new JsonObject { ["from"] = Side(before), ["to"] = Side(after), ["change"] = Json(change) },
-            }, lines: lines);
+            [
+                .. before.IsDatabase == after.IsDatabase ? [] : new[] { Finding.Note("diff.unlike-sources", "estate diff", before.Target + " and " + after.Target
+                    + " are read one from a package and one from a database, and SQL Server keeps a check's or a default's text as it normalized it, so such text can differ where the schemas agree.") },
+                .. printer.Findings,
+            ],
+            stamp, content: content, lines: lines);
     }
 
     /// <summary>A change as lines: each element created, dropped or renamed, then each property (with its values, a text's or a script's left out) or relationship that is altered.</summary>
@@ -75,7 +76,8 @@ public static partial class Verbs
                 .Select(p => a.Key + ": " + p.Name + (p.Before is Value.Text or Value.Script || p.After is Value.Text or Value.Script ? "" : " " + (p.Before?.ToString() ?? "none") + " → " + (p.After?.ToString() ?? "none")))
                 .Concat(a.Relationships.Select(r => a.Key + ": " + r.Name))));
 
-    private static JsonObject Json(Change change) => new()
+    /// <summary>A change as JSON: the keys created, dropped and renamed, and each alteration with its values before and after, a script's through the printer.</summary>
+    private static JsonObject Json(Change change, Printer printer) => new()
     {
         ["created"] = Render.Array(change.Created.Select(e => (JsonNode?)e.Key.ToString())),
         ["dropped"] = Render.Array(change.Dropped.Select(e => (JsonNode?)e.Key.ToString())),
@@ -83,7 +85,7 @@ public static partial class Verbs
         ["altered"] = Render.Array(change.Altered.Select(a => new JsonObject
         {
             ["key"] = a.Key.ToString(),
-            ["properties"] = Render.Array(a.Properties.Select(p => new JsonObject { ["name"] = p.Name, ["before"] = Json(p.Before), ["after"] = Json(p.After) })),
+            ["properties"] = Render.Array(a.Properties.Select(p => new JsonObject { ["name"] = p.Name, ["before"] = printer.Json(a.Key, p.Name, p.Before), ["after"] = printer.Json(a.Key, p.Name, p.After) })),
             ["relationships"] = Render.Array(a.Relationships.Select(r => new JsonObject
             {
                 ["name"] = r.Name, ["before"] = Render.Array(r.Before.Select(t => (JsonNode?)t.Key.ToString())), ["after"] = Render.Array(r.After.Select(t => (JsonNode?)t.Key.ToString())),
