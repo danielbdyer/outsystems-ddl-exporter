@@ -75,7 +75,7 @@ public sealed class ProbeTests(GoldenProject ground) : IClassFixture<GoldenProje
         System.Environment.SetEnvironmentVariable(variable, token);
         try
         {
-            var uat = Assert.IsType<SqlServer.Named>(Resolved("uat", ground.Reader.ConnectionString,
+            var uat = Assert.IsType<SqlServer.EnvironmentDatabase>(Resolved("uat", ground.Reader.ConnectionString,
                 ", \"sqlcmd\": { \"EnvironmentTag\": { \"literal\": \"uat\", \"sensitive\": false }, \"ServiceToken\": \"env:" + variable + "\" }"));
             var log = SqlServer.QueryLog.Start(root);
 

@@ -201,7 +201,7 @@ internal static class RefusalPaths
             Written(root, "estate/posture.json", Environments(Dev(connection: "file:.estate/dev.connection::$DATA")));
             var file = OwnerOnly(Written(root, ".estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
             return OperatingSystem.IsWindows()   // Windows opens the default data stream as name::$DATA; elsewhere that name opens no file, and the driver asks io/SqlServer of it directly
-                ? SqlServer.Resolve(Target("env:dev"), root).Map(database => database.Where)
+                ? SqlServer.Resolve(Target("env:dev"), root).Map(database => database.Target)
                 : SqlServer.Listed("env:dev's connection, file:.estate/dev.connection::$DATA,", file + "::$DATA");
         })),
         new("a connection file in a folder this identity cannot list", "reference.unlistable", true, (scratch, planted) =>
@@ -258,7 +258,7 @@ internal static class RefusalPaths
                 connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev")))));
             File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
             var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
-            return Failed(SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.Named)dev).Environment, root))));
+            return Failed(SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.EnvironmentDatabase)dev).Environment, root))));
         }),
         new("a SQLCMD reference to a file git tracks", "reference.tracked", true, (scratch, planted) => InRepository(scratch, root =>
         {
@@ -270,7 +270,7 @@ internal static class RefusalPaths
             Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
             File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
             var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
-            return SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.Named)dev).Environment, root)));
+            return SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.EnvironmentDatabase)dev).Environment, root)));
         })),
 
         new("a flag the verb does not take", "arguments.unknown-flag", false, (_, _) => Failed(Contract.Flags(["--no-such-flag"], [], [], []))),

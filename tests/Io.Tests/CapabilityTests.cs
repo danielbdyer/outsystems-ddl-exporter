@@ -78,7 +78,7 @@ public sealed class CapabilityTests
 
         Assert.Equal(["Estate.Io.SqlServer+Copy.Permissive"], Callers(of).Select(Named));
         Assert.Equal(typeof(PublishProfile.Strict), typeof(SqlServer).GetMethod(nameof(SqlServer.Plan))!.GetParameters().Single(p => typeof(PublishProfile).IsAssignableFrom(p.ParameterType)).ParameterType);
-        foreach (var type in (Type[])[typeof(SqlServer.Named), typeof(SqlServer.Database)])
+        foreach (var type in (Type[])[typeof(SqlServer.EnvironmentDatabase), typeof(SqlServer.Database)])
         {
             var members = type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
             Assert.DoesNotContain(members, m => m.Name is "Publish" or "Permissive");
@@ -86,7 +86,7 @@ public sealed class CapabilityTests
             Assert.DoesNotContain(members.OfType<PropertyInfo>(), p => Touches(p.PropertyType));
         }
 
-        Assert.True(typeof(SqlServer.Named).IsSealed && typeof(SqlServer.Copy).IsSealed && !typeof(SqlServer.Copy).IsAssignableFrom(typeof(SqlServer.Named)));
+        Assert.True(typeof(SqlServer.EnvironmentDatabase).IsSealed && typeof(SqlServer.Copy).IsSealed && !typeof(SqlServer.Copy).IsAssignableFrom(typeof(SqlServer.EnvironmentDatabase)));
     }
 
     /// <summary>A Copy is made in io/ScratchServer alone: its constructor is not public, and only ScratchServer's methods, its lambdas included, call it.</summary>
@@ -113,7 +113,7 @@ public sealed class CapabilityTests
             "using Estate.Io;", "using Estate.Kernel;", "", "namespace Planted;", "", "public static class Uses", "{",
             "    public static Result<SqlServer.Copy> Made(string root, string dacpac, PublishProfile.Strict strict) =>",
             "        ScratchServer.Create(root).Bind(copy => copy.Publish(dacpac, strict)).Bind(copy => copy.Publish(dacpac, copy.Permissive(strict)));",
-            "", "    public static void Refused(SqlServer.Named named, string dacpac, PublishProfile.Strict strict)", "    {",
+            "", "    public static void Refused(SqlServer.EnvironmentDatabase named, string dacpac, PublishProfile.Strict strict)", "    {",
         };
         var first = lines.Count + 1;
         lines.AddRange(uses.Select(use => "        " + use));

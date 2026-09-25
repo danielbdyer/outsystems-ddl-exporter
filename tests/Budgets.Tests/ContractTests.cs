@@ -196,7 +196,7 @@ public sealed class ContractTests
 
     /// <summary>
     /// VALUES.md X2 at the top-level catch, for M2's predict and M6's check environments, which read environments without an env: argument:
-    /// a verb that resolves env:dev (through Named.Of) or a copy (through R15's read of dev's connection in io/ScratchServer) and then throws has
+    /// a verb that resolves env:dev (through EnvironmentDatabase.Of) or a copy (through R15's read of dev's connection in io/ScratchServer) and then throws has
     /// its exception's message withheld, its type alone printed; one that resolves a git ref reads no environment and keeps the message.
     /// </summary>
     [Theory]

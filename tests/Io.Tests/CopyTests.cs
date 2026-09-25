@@ -173,7 +173,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
             DacPackageExtensions.BuildPackage(dacpac, model, new PackageMetadata());
         }
 
-        var dev = Assert.IsType<SqlServer.Named>(Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root)));
+        var dev = Assert.IsType<SqlServer.EnvironmentDatabase>(Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root)));
         var error = Assert.IsType<Result<SqlServer.Deployment>.Failed>(SqlServer.Plan(dacpac, dev, Made(Profiles.Load(ground.Profile)))).Error;
 
         Assert.Equal(("dacfx.failed", 6), (error.Code, Contract.Exit(error)));

@@ -18,7 +18,7 @@ using ColumnType = Microsoft.SqlServer.TransactSql.ScriptDom.ColumnType;
 namespace Estate.Io;
 
 /// <summary>
-/// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4): the target grammar; Named, the database of an
+/// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4): the target grammar; EnvironmentDatabase, the database of an
 /// environment estate/posture.json names, and Copy, a database io/ScratchServer made, which alone publishes (§2.1 rule 3); Model through
 /// LoadFromDatabase and io/Ssdt.Elements; Plan through DacServices.Script; and the probe executor, whose closed allowlist admits only
 /// integer answers. A resolved connection is never printed, logged or put in an error, and a named environment's SQL Server messages
@@ -87,10 +87,10 @@ public static class SqlServer
     /// <summary>A live database the tool reads: a named environment's or a copy's. Its resolved connection stays inside io, and it prints as its target.</summary>
     public abstract class Database
     {
-        private protected Database(string where, string connection) => (Where, Connection) = (where, connection);
+        private protected Database(string target, string connection) => (Target, Connection) = (target, connection);
 
         /// <summary>The target as an argument writes it: env:dev, copy:estate_host_4242_0a1b2c3d.</summary>
-        public string Where { get; }
+        public string Target { get; }
 
         internal string Connection { get; }
 
@@ -127,7 +127,7 @@ public static class SqlServer
                 : !chain.Any(x => x is DacServicesException or DacModelException) ? ErrorOf(0, failure.Message)
                 : said.Select(s => SqlServerNumber.Match(s)).FirstOrDefault(m => m.Success) is { } number
                     ? ErrorOf(int.Parse(number.Groups[1].Value, CultureInfo.InvariantCulture), string.Join(' ', said))
-                : new Error("dacfx.failed", "DacFx failed against " + Where + " with no SQL Server error inside: " + string.Join(' ', said),
+                : new Error("dacfx.failed", "DacFx failed against " + Target + " with no SQL Server error inside: " + string.Join(' ', said),
                     "Correct what DacFx names in the project or the publish profile, then run the step again.");
         }
 
@@ -147,24 +147,24 @@ public static class SqlServer
         internal Error ErrorOf(int number, string message, bool fatal)
         {
             var msg = number == 0 ? "no SQL Server number" : string.Create(CultureInfo.InvariantCulture, $"Msg {number}");
-            return Denials.Contains(number) ? new Error("server.denied", Where + " refused this identity (" + msg + ", SQL Server's message withheld)"
-                    + (this is Named ? "; a lead's prediction will appear on the pull request." : "."), this is Named
-                    ? "Ask a lead to predict for " + Where + ", or ask its DBA for VIEW DEFINITION and db_datareader there."
+            return Denials.Contains(number) ? new Error("server.denied", Target + " refused this identity (" + msg + ", SQL Server's message withheld)"
+                    + (this is EnvironmentDatabase ? "; a lead's prediction will appear on the pull request." : "."), this is EnvironmentDatabase
+                    ? "Ask a lead to predict for " + Target + ", or ask its DBA for VIEW DEFINITION and db_datareader there."
                     : "Check the scratch server's login in ESTATE_SQL or ~/.estate/sql.env, then run estate doctor.")
-                : fatal || Silences.Contains(number) ? new Error("server.unreachable", Where + " does not answer (" + msg + ", SQL Server's message withheld).", this is Named
-                    ? "Check the network path to " + Where + "'s server and that it runs, then run estate doctor."
+                : fatal || Silences.Contains(number) ? new Error("server.unreachable", Target + " does not answer (" + msg + ", SQL Server's message withheld).", this is EnvironmentDatabase
+                    ? "Check the network path to " + Target + "'s server and that it runs, then run estate doctor."
                     : "Start the scratch server with ci/sql.sh up, or ci/sql.ps1 up on Windows, then run estate doctor.")
-                : new Error("server.failed", Where + " failed the statement: " + msg + (Withheld ? "; SQL Server's message is withheld, since it can quote a row." : ": " + message),
+                : new Error("server.failed", Target + " failed the statement: " + msg + (Withheld ? "; SQL Server's message is withheld, since it can quote a row." : ": " + message),
                     "Look the number up in SQL Server's error list, correct what it names, then run the step again.");
         }
 
-        public sealed override string ToString() => Where;
+        public sealed override string ToString() => Target;
     }
 
     /// <summary>The database of an environment estate/posture.json names: read only, and never published to (VALUES.md S7).</summary>
-    public sealed class Named : Database
+    public sealed class EnvironmentDatabase : Database
     {
-        private Named(NamedEnvironment environment, string connection, string estateRoot)
+        private EnvironmentDatabase(NamedEnvironment environment, string connection, string estateRoot)
             : base("env:" + environment.Name, connection) => (Environment, Root) = (environment, estateRoot);
 
         public NamedEnvironment Environment { get; }
@@ -173,8 +173,8 @@ public static class SqlServer
 
         internal override bool Withheld => true;
 
-        internal static Result<Named> Of(NamedEnvironment environment, string estateRoot) =>
-            Connect(Subject(environment), environment.Connection, estateRoot).Map(c => new Named(environment, c, estateRoot));
+        internal static Result<EnvironmentDatabase> Of(NamedEnvironment environment, string estateRoot) =>
+            Connect(Subject(environment), environment.Connection, estateRoot).Map(c => new EnvironmentDatabase(environment, c, estateRoot));
 
         /// <summary>How an error about an environment's connection names it: its environment and its reference, never what the reference resolves to.</summary>
         internal static string Subject(NamedEnvironment environment) => "env:" + environment.Name + "'s connection, " + environment.Connection + ",";
@@ -213,7 +213,7 @@ public static class SqlServer
     /// </summary>
     public static Result<Database> Resolve(Target target, string estateRoot) => target.Match<Result<Database>>(
         env => Profiles.Environments(estateRoot).Bind(environments => environments.FirstOrDefault(e => e.Name == env.Name) is { } named
-            ? Named.Of(named, estateRoot).Map(n => (Database)n)
+            ? EnvironmentDatabase.Of(named, estateRoot).Map(n => (Database)n)
             : new Error("target.unnamed", env + " names no environment of " + Profiles.Posture + ".", environments.Count == 0
                 ? "Add the environment to " + Profiles.Posture + " with its connection reference and profile."
                 : "Name one it holds: " + string.Join(", ", environments.Select(e => "env:" + e.Name)) + ".")),
@@ -400,7 +400,7 @@ public static class SqlServer
         {
             lock (gate)
             {
-                entries.Append("-- ").Append(DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)).Append(' ').Append(target.Where).Append(' ')
+                entries.Append("-- ").Append(DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)).Append(' ').Append(target.Target).Append(' ')
                     .Append(site).Append(": ").Append(outcome).Append('\n').Append(statement).Append("\nGO\n");
                 Write.Text(Path, entries.ToString());
             }
@@ -420,9 +420,9 @@ public static class SqlServer
             : Result.Ok(Identified(connection))));
 
     /// <summary>An environment's server as R15 reads it, a database named or not: null when its reference resolves to nothing here; an error when SqlClient reads nothing from it.</summary>
-    internal static Result<string?> DataSource(NamedEnvironment environment, string estateRoot) => Read(Named.Subject(environment), environment.Connection, estateRoot).Bind(read => read is not { } text
+    internal static Result<string?> DataSource(NamedEnvironment environment, string estateRoot) => Read(EnvironmentDatabase.Subject(environment), environment.Connection, estateRoot).Bind(read => read is not { } text
         ? Result.Ok<string?>(null)
-        : Parsed(Named.Subject(environment), environment.Connection, text).Map(connection => (string?)connection.DataSource));
+        : Parsed(EnvironmentDatabase.Subject(environment), environment.Connection, text).Map(connection => (string?)connection.DataSource));
 
     /// <summary>A reference's text as SqlClient's own grammar reads it; the error names the reference and quotes nothing it read.</summary>
     private static Result<SqlConnectionStringBuilder> Parsed(string subject, SecretReference reference, string text)
@@ -590,7 +590,7 @@ public static class SqlServer
 
     /// <summary>
     /// Whether this run has read a connection or other reference of a named environment (VALUES.md X2), whose text an exception's message
-    /// can then quote. SqlServer.Read records each read, and every one goes through it: Named.Of, which SqlServer.Resolve calls for env:;
+    /// can then quote. SqlServer.Read records each read, and every one goes through it: EnvironmentDatabase.Of, which SqlServer.Resolve calls for env:;
     /// R15's read of each environment's connection in io/ScratchServer, which copy: and a new copy run; and a named environment's SQLCMD values.
     /// cli/Program.cs begins a run around each command and withholds an unexpected exception's message when the run holds a read. The
     /// record reaches the threads the run's work starts (it is an AsyncLocal); a read outside any run is recorded nowhere, no catch
@@ -698,7 +698,7 @@ public static class SqlServer
     }
 
     /// <summary>A named environment's own SQLCMD values, each literal as the posture gives it and each reference resolved in memory; a copy has none.</summary>
-    private static Result<IReadOnlyList<SqlCmdValue>> Values(Database target) => target is not Named named ? Result.Ok<IReadOnlyList<SqlCmdValue>>([])
+    private static Result<IReadOnlyList<SqlCmdValue>> Values(Database target) => target is not EnvironmentDatabase named ? Result.Ok<IReadOnlyList<SqlCmdValue>>([])
         : Result.All(named.Environment.SqlCmd.Select(variable => variable.Match(
             literal => Result.Ok(new SqlCmdValue(variable.Name, literal, false)),
             reference => Read(named + "'s $(" + variable.Name + "), " + reference + ",", reference, named.Root).Bind(read => read is { } value

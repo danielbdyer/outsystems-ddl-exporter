@@ -97,7 +97,7 @@ public static partial class Verbs
 
     /// <summary>The pipeline's profile: a named environment's own; for a copy, the one --profile names, else the one profile every environment of the posture names.</summary>
     private static Result<PublishProfile.Strict> Profile(Checkout here, SqlServer.Database database, string? named) =>
-        database is SqlServer.Named environment ? Profiles.Of(environment.Environment, here.Root)
+        database is SqlServer.EnvironmentDatabase environment ? Profiles.Of(environment.Environment, here.Root)
         : named is not null ? Profiles.Load(Path.GetFullPath(Path.Combine(here.Root, named)))
         : Profiles.Environments(here.Root).Bind(environments => environments.Select(e => e.ProfilePath).Distinct().ToList() is [var shared]
             ? Profiles.Load(Path.GetFullPath(Path.Combine(here.Root, shared)))

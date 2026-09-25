@@ -223,7 +223,7 @@ public sealed class TargetTests : IDisposable
         var elsewhere = Failed(ScratchServer.Registered(clear, Name, () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver));
         var onNamedHost = Failed(ScratchServer.Registered(named, Name, () => throw new Xunit.Sdk.XunitException("the scratch server was chosen before R15 read the row's server"), Resolver));
 
-        Assert.Equal(("copy:" + Name, "localhost,11433"), (there.Where, ScratchServer.ServerName(null, Written("sql.env", "ESTATE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n, r => r.Code)));
+        Assert.Equal(("copy:" + Name, "localhost,11433"), (there.Target, ScratchServer.ServerName(null, Written("sql.env", "ESTATE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n, r => r.Code)));
         Assert.Equal(("copy.unregistered", 9), (elsewhere.Code, Contract.Exit(elsewhere)));
         Assert.Contains("copy:" + Name, elsewhere.Message, StringComparison.Ordinal);
         Assert.Equal(("copy.named-host", 9), (onNamedHost.Code, Contract.Exit(onNamedHost)));
@@ -244,7 +244,7 @@ public sealed class TargetTests : IDisposable
         Assert.Equal("(localdb)", SqlServer.Host("(localdb)\\MSSQLLocalDB"));
     }
 
-    /// <summary>The caller's integrated identity by default; SQL authentication where the reference names it; and a Named prints as its environment alone.</summary>
+    /// <summary>The caller's integrated identity by default; SQL authentication where the reference names it; and an EnvironmentDatabase prints as its environment alone.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("Server=dev-sql;Initial Catalog=Dev", true)]
@@ -257,14 +257,14 @@ public sealed class TargetTests : IDisposable
         {
             var root = Estate("\"qa\": { \"connection\": \"env:" + variable + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
 
-            var named = Assert.IsType<SqlServer.Named>(Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:qa")), root)));
+            var named = Assert.IsType<SqlServer.EnvironmentDatabase>(Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:qa")), root)));
 
             var resolved = new SqlConnectionStringBuilder(named.Connection);
             Assert.Equal((integrated, "Dev"), (resolved.IntegratedSecurity, resolved.InitialCatalog));
             Assert.Equal(integrated ? "" : "reader", resolved.UserID);
             Assert.Equal("env:qa", named.ToString());
-            Assert.Equal("env:qa", named.Where);
-            Assert.DoesNotContain(Planted, named.ToString() + named.Where + named.Environment, StringComparison.Ordinal);
+            Assert.Equal("env:qa", named.Target);
+            Assert.DoesNotContain(Planted, named.ToString() + named.Target + named.Environment, StringComparison.Ordinal);
         }
         finally
         {
@@ -503,7 +503,7 @@ public sealed class TargetTests : IDisposable
         Environment.SetEnvironmentVariable("LC_MESSAGES", "de_DE.UTF-8");
         try
         {
-            resolved = SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root).Match<(string?, string?)>(database => (database.Where, null), error => (null, error.Code + ": " + error.Message));
+            resolved = SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root).Match<(string?, string?)>(database => (database.Target, null), error => (null, error.Code + ": " + error.Message));
         }
         finally
         {
