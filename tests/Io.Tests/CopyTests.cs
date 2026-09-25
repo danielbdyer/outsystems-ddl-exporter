@@ -27,6 +27,8 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
 
     [Fact]
     [Trait("Category", "fixture")]
+    [Trait("Value", "O5")]
+    [Trait("Value", "O12")]
     public async Task ScratchServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row()
     {
         var server = await SqlServerFixture.ServerAsync();
@@ -62,6 +64,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
     [Fact]
     [Trait("Category", "fixture")]
     [Trait("Law", "3′ the model is complete")]
+    [Trait("Exit", "M1.4")]
     public async Task A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint()
     {
         var strict = Made(Profiles.Load(project.Profile));
@@ -92,6 +95,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
     [Fact]
     [Trait("Category", "fixture")]
     [Trait("Law", "3′ the model is complete")]
+    [Trait("Exit", "M1.4")]
     public async Task The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not()
     {
         var strict = Made(Profiles.Load(project.Profile));

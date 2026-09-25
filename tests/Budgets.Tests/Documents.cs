@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using Estate.Cli;
 
 namespace Estate.Budgets.Tests;
 
-/// <summary>The documents as ci/docs.manifest.json lists them, and the sets each document law reads.</summary>
+/// <summary>The documents as ci/docs.manifest.json lists them, the sets each document law reads, the rows of VALUES.md, and each milestone's exits and whether it is complete.</summary>
 internal static class Documents
 {
     public sealed record Row(string Path, string Kind, string Owner, string[] Reader, string[] Moment, int? Budget, string? Generator, string? Becomes);
@@ -26,35 +26,104 @@ internal static class Documents
 
     /// <summary>
     /// The five root design documents: manifest rows, but outside Register.Prose, Vocabulary, NoRestatedCounts and
-    /// Citations until M8, because they must name v1's and v2's retired terms, their counts, and verbs not yet built.
+    /// Citations until M8 starts, because they must name v1's and v2's retired terms, their counts, and verbs not yet built.
     /// </summary>
     public static readonly IReadOnlyList<string> RootDesign =
         ["V3_ARCHITECTURE.md", "V3_INSTRUCTION_ARCHITECTURE.md", "LIFECYCLE_BACKPORT_PROMPT.md", "V3_MILESTONES.md", "V3_BUILD_PROMPT.md"];
 
-    /// <summary>
-    /// The milestone in progress, <see cref="Contract.Milestone"/>: 0 through M0, and each milestone's exit raises it by
-    /// one, so every rule below that reads it expires by itself (DECISIONS.md, 2026-09-23, the milestone in progress).
-    /// </summary>
-    public static readonly int Milestone = Contract.Milestone;
-
-    /// <summary>
-    /// M8, one tool: the root design documents leave for archive/design/ and ValuesResolve stops accepting a pending
-    /// clause, so "until M8", the cutover tools' <c>pending W</c> and the root design documents' exclusion all end as it starts.
-    /// </summary>
+    /// <summary>M8, one tool: the root design documents leave for archive/design/ and the cutover tools' "not held yet" ends as it starts.</summary>
     public const int OneTool = 8;
 
+    private static readonly Regex ValueRow = new(@"^\| ([A-Z]\d+) \|", RegexOptions.CultureInvariant);
+    private static readonly Regex WorkPackageRow = new(@"^\| (\d)\.(\d+) \|", RegexOptions.CultureInvariant);
+    private static readonly Regex MilestoneHeading = new(@"^## \d+\. M(\d)\b", RegexOptions.CultureInvariant);
+    private static readonly Regex NumberedExit = new(@"^(\d+)\.\s", RegexOptions.CultureInvariant);
+
+    /// <summary>A NEXT.md line naming an exit a person runs: M&lt;n&gt; exit &lt;k&gt; beside a backticked command starting estate.</summary>
+    private static readonly Regex RunByAPerson = new(@"\bM(\d) exit (\d+)\b", RegexOptions.CultureInvariant);
+    private static readonly Regex EstateCommand = new(@"`estate [^`]*`", RegexOptions.CultureInvariant);
+
+    /// <summary>The rows of VALUES.md, S1 to G9, in the file's order.</summary>
+    public static IReadOnlyList<string> Values { get; } = Repository.Lines("VALUES.md").Select(l => ValueRow.Match(l)).Where(m => m.Success).Select(m => m.Groups[1].Value).ToList();
+
+    /// <summary>The work packages of V3_MILESTONES.md, as (milestone, number).</summary>
+    public static IReadOnlySet<(int Milestone, int Number)> WorkPackages { get; } = Repository.Lines("V3_MILESTONES.md").Select(l => WorkPackageRow.Match(l)).Where(m => m.Success)
+        .Select(m => (int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture))).ToHashSet();
+
     /// <summary>
-    /// Whether M&lt;n&gt; has not exited while <paramref name="milestone"/> is in progress: <c>pending M&lt;n&gt;</c>, and a
-    /// citation's <c>from M&lt;n&gt;</c> or <c>at M&lt;n&gt;</c>, hold through M&lt;n&gt; and fail once its exit raises the milestone past n.
+    /// Each milestone's exits as V3_MILESTONES.md numbers them: the numbered list after <c>**Exit.**</c> in the section headed
+    /// <c>M&lt;n&gt; —</c>, or one exit when the section writes its exit as a paragraph; a milestone whose section has no
+    /// <c>**Exit.**</c> (M8) lists none.
     /// </summary>
-    public static bool NotYetExited(int n, int milestone) => n >= milestone;
+    public static IReadOnlyDictionary<int, IReadOnlyList<int>> Exits { get; } = ReadExits(Repository.Lines("V3_MILESTONES.md"));
 
-    /// <summary>Whether <paramref name="milestone"/> is before M&lt;n&gt; starts: what "until M&lt;n&gt;" holds while.</summary>
-    public static bool Before(int n, int milestone) => milestone < n;
+    internal static IReadOnlyDictionary<int, IReadOnlyList<int>> ReadExits(IEnumerable<string> lines)
+    {
+        var exits = new Dictionary<int, IReadOnlyList<int>>();
+        var (milestone, reading, numbered) = (-1, false, new List<int>());
+        void Close()
+        {
+            if (reading)
+            {
+                exits[milestone] = numbered.Count > 0 ? [.. numbered] : [1];
+            }
 
-    /// <summary>Every hand-written markdown row, less the root design documents until M8: what NoRestatedCounts reads.</summary>
+            (reading, numbered) = (false, []);
+        }
+
+        foreach (var line in lines)
+        {
+            if (MilestoneHeading.Match(line) is { Success: true } heading)
+            {
+                Close();
+                milestone = int.Parse(heading.Groups[1].Value, CultureInfo.InvariantCulture);
+            }
+            else if (line.StartsWith("**Exit.**", StringComparison.Ordinal) && milestone >= 0)
+            {
+                Close();
+                reading = true;
+            }
+            else if (reading && NumberedExit.Match(line) is { Success: true } item)
+            {
+                numbered.Add(int.Parse(item.Groups[1].Value, CultureInfo.InvariantCulture));
+            }
+            else if (reading && line.Length == 0)
+            {
+                Close();
+            }
+        }
+
+        Close();
+        return exits;
+    }
+
+    /// <summary>Every exit of the plan, as a trait names it: M0.1 to M7.1.</summary>
+    public static IEnumerable<string> EveryExit => Exits.OrderBy(e => e.Key).SelectMany(e => e.Value.Select(k => Exit(e.Key, k)));
+
+    /// <summary>The exits some test declares with [Trait("Exit", …)].</summary>
+    public static IReadOnlySet<string> DeclaredExits { get; } = TestTraits.All.SelectMany(t => t.Values("Exit")).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether M&lt;n&gt; is complete (DECISIONS.md, 2026-09-25): its section lists exits, and each has a test declaring
+    /// [Trait("Exit", "M&lt;n&gt;.&lt;k&gt;")], or a line of NEXT.md names it as M&lt;n&gt; exit &lt;k&gt; beside the backticked estate command a person runs.
+    /// </summary>
+    public static bool Complete(int n) => Complete(n, Exits, DeclaredExits, Repository.Lines("NEXT.md"));
+
+    internal static bool Complete(int n, IReadOnlyDictionary<int, IReadOnlyList<int>> exits, IReadOnlySet<string> declared, IEnumerable<string> next) =>
+        exits.TryGetValue(n, out var list) && list.All(k => declared.Contains(Exit(n, k)) || next.Any(line => EstateCommand.IsMatch(line)
+            && RunByAPerson.Matches(line).Any(m => m.Groups[1].Value == n.ToString(CultureInfo.InvariantCulture) && m.Groups[2].Value == k.ToString(CultureInfo.InvariantCulture))));
+
+    /// <summary>Whether M&lt;n&gt; has started: every milestone before it is complete.</summary>
+    public static bool Started(int n) => Started(n, Complete);
+
+    internal static bool Started(int n, Func<int, bool> complete) => Enumerable.Range(0, n).All(complete);
+
+    /// <summary>An exit as a trait names it: M1.5.</summary>
+    public static string Exit(int milestone, int exit) => string.Create(CultureInfo.InvariantCulture, $"M{milestone}.{exit}");
+
+    /// <summary>Every hand-written markdown row, less the root design documents until M8 starts: what NoRestatedCounts reads.</summary>
     public static IEnumerable<string> HandWritten => Rows
-        .Where(r => r.Kind == "hand" && r.Path.EndsWith(".md", StringComparison.Ordinal) && !(Before(OneTool, Milestone) && RootDesign.Contains(r.Path)))
+        .Where(r => r.Kind == "hand" && r.Path.EndsWith(".md", StringComparison.Ordinal) && !(!Started(OneTool) && RootDesign.Contains(r.Path)))
         .Select(r => r.Path);
 
     /// <summary>

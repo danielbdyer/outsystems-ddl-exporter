@@ -50,6 +50,8 @@ public sealed class ReceiptTests
     [InlineData("170.6.10", false)]
     [InlineData("170.3.93", false)]
     [InlineData("162.5.57", false)]
+    [Trait("Value", "R1")]
+    [Trait("Exit", "M1.6")]
     public void An_engine_is_inside_the_pin_s_window_only_at_the_pin_or_the_release_before_it(string committed, bool inside)
     {
         var pin = Assert.IsType<Result<Pin>.Ok>(Pin.Of("170.5.96", "170.4.71")).Value;
@@ -65,6 +67,8 @@ public sealed class ReceiptTests
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "R1")]
+    [Trait("Exit", "M1.6")]
     public void Unpinned_admits_every_engine_and_says_so()
     {
         Pin unpinned = new Pin.Unpinned();
@@ -85,6 +89,7 @@ public sealed class ReceiptTests
     [InlineData("170.10.1", "170.9.95", true)]
     [InlineData("170.5.96", "170.5.9", true)]
     [InlineData("170.5.96", null, true)]
+    [Trait("Value", "R1")]
     public void A_release_before_that_is_not_older_than_the_pin_is_rejected(string release, string? before, bool made)
     {
         var pin = Pin.Of(release, before);

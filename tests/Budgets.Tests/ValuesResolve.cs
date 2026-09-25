@@ -10,14 +10,13 @@ using Xunit.Abstractions;
 namespace Estate.Budgets.Tests;
 
 /// <summary>
-/// Every value in VALUES.md names where its mechanism lives. Each clause of a Where (clauses split at ';') either
-/// names things that exist, or says <c>pending M&lt;n&gt;</c>, accepted through M&lt;n&gt; and refused once its exit
-/// raises <see cref="Contract.Milestone"/> past n, or <c>pending W</c>, accepted until M8 starts, or says
-/// <c>prose only</c>. <see cref="Documents.NotYetExited"/> and <see cref="Documents.Before"/> hold the two boundaries,
-/// and the minimal pairs below pin each at the milestone it ends on. A name is a backticked test
-/// (<c>Budgets.Tests: Manifest</c>, <c>Kernel.Tests: "an English name"</c>, or a test class), a file or directory, or
-/// <c>estate &lt;verb&gt;</c> once the verb is built. A pending clause whose test already exists drops its
-/// <c>pending</c>. The rows that say <c>prose only</c> are printed, and their number rises only with a DECISIONS.md line.
+/// Every row of VALUES.md names where it is held (DECISIONS.md, 2026-09-25). Each clause of a Where (clauses split at ';' outside
+/// backticks) names a test that declares the row with [Trait("Value", "&lt;row&gt;")] (a class, or <c>Kernel.Tests: "its English name"</c>),
+/// a file or directory, a verb this build has (<c>estate doctor</c>) or a job of .github/workflows/estate.yml; or says
+/// <c>not held yet: WP &lt;n&gt;.&lt;m&gt;</c>, accepted while M&lt;n&gt; is not complete (<see cref="Documents.Complete(int)"/>), or
+/// <c>not held yet: the cutover tools</c>, accepted until M8 starts; or says <c>prose only</c>, which is printed and capped. A test the
+/// clause names that exists drops its <c>not held yet</c>. <c>pending M&lt;n&gt;</c> and <c>pending W</c> are retired phrases and fail.
+/// Every Value trait names a row.
 /// </summary>
 public sealed class ValuesResolve(ITestOutputHelper output)
 {
@@ -25,9 +24,16 @@ public sealed class ValuesResolve(ITestOutputHelper output)
 
     private static readonly Regex Row = new(@"^\|\s*([A-Z]\d+)\s*\|", RegexOptions.CultureInvariant);
     private static readonly Regex Clause = new(@";\s+(?=(?:[^`]*`[^`]*`)*[^`]*$)", RegexOptions.CultureInvariant);
-    private static readonly Regex Pending = new(@"— pending (?:M(\d+)|W)$", RegexOptions.CultureInvariant);
+    private static readonly Regex NotHeldYet = new(@"— not held yet: (?:WP (\d)\.(\d+)|the cutover tools)$", RegexOptions.CultureInvariant);
+    private static readonly Regex Retired = new(@"\bpending (?:M\d|W)\b", RegexOptions.CultureInvariant);
     private static readonly Regex Name = new("`([^`]+)`", RegexOptions.CultureInvariant);
     private static readonly Regex Test = new(@"^(\w+\.Tests): (?:""(.+)""|([\w.]+))$", RegexOptions.CultureInvariant);
+    private static readonly Regex Job = new(@"\bthe ([a-z][\w-]*) job\b", RegexOptions.CultureInvariant);
+    private static readonly Regex JobId = new(@"^  ([a-z][\w-]*):$", RegexOptions.CultureInvariant);
+
+    /// <summary>The jobs of the workflow, by id: fast, sql-ubuntu, sql-windows, sql-offline.</summary>
+    private static readonly Lazy<HashSet<string>> Jobs = new(() => Repository.Lines(".github/workflows/estate.yml")
+        .Select(l => JobId.Match(l)).Where(m => m.Success).Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal));
 
     [Fact]
     [Trait("Category", "fast")]
@@ -35,107 +41,139 @@ public sealed class ValuesResolve(ITestOutputHelper output)
     {
         var rows = Repository.Lines("VALUES.md").Where(l => Row.IsMatch(l)).Select(l => l.Trim('|').Split('|').Select(c => c.Trim()).ToArray()).ToList();
         var proseOnly = rows.Where(r => r[^1].Contains("prose only", StringComparison.Ordinal)).Select(r => r[0]).ToList();
+        var declared = TestTraits.All.SelectMany(t => t.Values("Value")).ToHashSet(StringComparer.Ordinal);
         output.WriteLine("VALUES.md rows held by prose only: " + proseOnly.Count.ToString(CultureInfo.InvariantCulture) + " (" + string.Join(", ", proseOnly) + ")");
+        output.WriteLine("VALUES.md rows no test declares: " + string.Join(", ", rows.Select(r => r[0]).Where(r => !declared.Contains(r))));
 
         Assert.All(rows, r => Assert.Equal(5, r.Length));
-        Assert.Empty(rows.SelectMany(r => Clause.Split(r[^1]).SelectMany(c => Unresolved(c, Documents.Milestone)).Select(p => "VALUES.md " + r[0] + ": " + p)));
+        Assert.Empty(rows.SelectMany(r => Clause.Split(r[^1]).SelectMany(c => Unresolved(r[0], c, Documents.Complete)).Select(p => "VALUES.md " + r[0] + ": " + p)));
         Assert.True(proseOnly.Count <= ProseOnlyCeiling, "more VALUES.md rows are held by prose only than the ceiling of " + ProseOnlyCeiling.ToString(CultureInfo.InvariantCulture) + "; add a mechanism, or raise the ceiling with a DECISIONS.md line");
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Every_declared_value_names_a_row_of_VALUES_md()
+    {
+        var rows = Documents.Values.ToHashSet(StringComparer.Ordinal);
+
+        Assert.Empty(TestTraits.All.SelectMany(t => t.Values("Value").Where(v => !rows.Contains(v)).Select(v => t.FullName + " declares Value " + v + ", which is no row of VALUES.md")));
     }
 
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("`Budgets.Tests: Manifest`", true)]
-    [InlineData("`Budgets.Tests: Register.Prose`", true)]
-    [InlineData("`BannedSymbolsTests`; `Directory.Build.props`", true)]
-    [InlineData("`Budgets.Tests: NoSuchLaw`", false)]
-    [InlineData("the dependency laws in `Budgets.Tests`", false)]
-    [InlineData("the outbound-deny job", false)]
-    [InlineData("`Kernel.Tests: \"no arm returns success by default\"` — pending M1", true)]
-    [InlineData("`Budgets.Tests: Manifest` — pending M1", false)]
-    [InlineData("`estate doctor`", false)]
-    [InlineData("the author rule, prose only", true)]
-    public void A_clause_resolves_when_it_names_what_exists_or_a_milestone_not_yet_exited(string clause, bool resolves) =>
-        Assert.Equal(resolves, !Clause.Split(clause).SelectMany(c => Unresolved(c, Documents.Milestone)).Any());
+    [InlineData("L4", "`Budgets.Tests: Manifest`", true)]
+    [InlineData("L1", "`Budgets.Tests: Manifest`", false)]
+    [InlineData("L4", "`Budgets.Tests: NoSuchTest`", false)]
+    [InlineData("L4", "`Budgets.Tests: \"every markdown file outside the archive and every ci file is a row\"`", true)]
+    [InlineData("L2", "`Budgets.Tests: \"every markdown file outside the archive and every ci file is a row\"`", false)]
+    [InlineData("L7", "`BannedSymbolsTests`; `Directory.Build.props`", true)]
+    [InlineData("L4", "the dependency laws in `Budgets.Tests`", false)]
+    [InlineData("L4", "`estate doctor`", true)]
+    [InlineData("L4", "`estate predict`", false)]
+    [InlineData("A6", "`AGENTS.md`", true)]
+    [InlineData("O10", "the sql-offline job of `.github/workflows/estate.yml`", true)]
+    [InlineData("O10", "the sql-elsewhere job of `.github/workflows/estate.yml`", false)]
+    [InlineData("A5", "the author rule, prose only", true)]
+    [InlineData("L4", "`Budgets.Tests: Manifest` — pending M1", false)]
+    [InlineData("D1", "law 1, its emit form — pending W", false)]
+    public void A_clause_resolves_when_it_names_a_test_that_declares_the_row_or_a_file_a_built_verb_or_a_job_that_holds_it(string row, string clause, bool resolves) =>
+        Assert.Equal(resolves, !Clause.Split(clause).SelectMany(c => Unresolved(row, c, Documents.Complete)).Any());
 
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("pending M0", 0, true)]
-    [InlineData("pending M0", 1, false)]
-    [InlineData("pending M3", 3, true)]
-    [InlineData("pending M3", 4, false)]
-    [InlineData("pending W", 7, true)]
-    [InlineData("pending W", 8, false)]
-    public void A_pending_clause_is_refused_once_its_milestone_has_passed(string pending, int milestone, bool resolves) =>
-        Assert.Equal(resolves, !Unresolved("`Kernel.Tests: \"no arm returns success by default\"` — " + pending, milestone).Any());
+    [InlineData("`Kernel.Tests: \"classify says provisional first\"` — not held yet: WP 2.5", false, true)]
+    [InlineData("`Kernel.Tests: \"classify says provisional first\"` — not held yet: WP 2.5", true, false)]
+    [InlineData("law 1, its emit form — not held yet: the cutover tools", false, true)]
+    [InlineData("law 1, its emit form — not held yet: the cutover tools", true, false)]
+    [InlineData("`Budgets.Tests: Manifest` — not held yet: WP 2.5", false, false)]
+    [InlineData("`Kernel.Tests: \"classify says provisional first\"` — not held yet: WP 2.9", false, false)]
+    public void A_clause_not_held_yet_resolves_while_its_work_package_s_milestone_is_incomplete(string clause, bool complete, bool resolves) =>
+        Assert.Equal(resolves, !Unresolved("A1", clause, _ => complete).Any());
 
-    /// <summary>What a clause fails to resolve while <paramref name="milestone"/> is in progress, as the reason; nothing when it resolves.</summary>
-    private static IEnumerable<string> Unresolved(string clause, int milestone)
+    /// <summary>What a clause of <paramref name="row"/> fails to resolve, as the reason, under <paramref name="complete"/> saying which milestones are; nothing when it resolves.</summary>
+    private static IEnumerable<string> Unresolved(string row, string clause, Func<int, bool> complete)
     {
-        var pending = Pending.Match(clause);
-        var names = Name.Matches(clause).Select(m => m.Groups[1].Value).ToList();
-        if (pending.Success)
+        if (Retired.IsMatch(clause))
         {
-            var accepted = pending.Groups[1].Success
-                ? Documents.NotYetExited(int.Parse(pending.Groups[1].Value, CultureInfo.InvariantCulture), milestone)
-                : Documents.Before(Documents.OneTool, milestone);
+            yield return "'" + clause + "' says pending, a retired phrase; write not held yet: WP <n>.<m>, or not held yet: the cutover tools";
+            yield break;
+        }
+
+        var names = Name.Matches(clause).Select(m => m.Groups[1].Value).ToList();
+        if (NotHeldYet.Match(clause) is { Success: true } later)
+        {
+            var (accepted, what) = later.Groups[1].Success
+                ? (Documents.WorkPackages.Contains((Number(later, 1), Number(later, 2))) && !complete(Number(later, 1)), "WP " + later.Groups[1].Value + "." + later.Groups[2].Value)
+                : (!Documents.Started(Documents.OneTool, complete), "the cutover tools");
             if (!accepted)
             {
-                yield return "'" + clause + "' is past its milestone; name the test that holds it";
+                yield return "'" + clause + "' waits on " + what + ", which the plan does not list or whose milestone is complete; name the test that holds it";
             }
 
-            foreach (var built in names.Where(n => Test.IsMatch(n) && Exists(n, milestone)))
+            foreach (var built in names.Where(n => IsTestName(n) && Tests(n).Any()))
             {
-                yield return "`" + built + "` exists; drop its 'pending'";
+                yield return "`" + built + "` exists; drop its 'not held yet' and give it [Trait(\"Value\", \"" + row + "\")]";
             }
         }
         else if (!clause.Contains("prose only", StringComparison.Ordinal))
         {
-            if (names.Count == 0)
+            if (names.Count == 0 && !Job.IsMatch(clause))
             {
-                yield return "'" + clause + "' names no test, file or verb";
+                yield return "'" + clause + "' names no test, file, verb or job";
             }
 
-            foreach (var missing in names.Where(n => !Exists(n, milestone)))
+            foreach (var reason in names.SelectMany(n => Unresolved(row, n)))
             {
-                yield return "`" + missing + "` names no test, file or built verb";
+                yield return reason;
+            }
+
+            foreach (var job in Job.Matches(clause).Select(m => m.Groups[1].Value).Where(j => !Jobs.Value.Contains(j)))
+            {
+                yield return "the " + job + " job is no job of .github/workflows/estate.yml";
             }
         }
     }
 
-    private static bool Exists(string name, int milestone)
+    /// <summary>Why a backticked name resolves nothing for <paramref name="row"/>: a test that does not declare it, or a name that is no test, file or built verb.</summary>
+    private static IEnumerable<string> Unresolved(string row, string name)
+    {
+        if (IsTestName(name))
+        {
+            var tests = Tests(name).ToList();
+            if (tests.Count == 0)
+            {
+                yield return "`" + name + "` names no test";
+            }
+            else if (!tests.Any(t => t.Values("Value").Contains(row)))
+            {
+                yield return "`" + name + "` declares no [Trait(\"Value\", \"" + row + "\")]";
+            }
+        }
+        else if (name.StartsWith("estate ", StringComparison.Ordinal))
+        {
+            if (!Contract.Verbs.Any(v => v.Name == name[7..].Split(' ')[0] && v.Built))
+            {
+                yield return "`" + name + "` is no verb this build has";
+            }
+        }
+        else if (name.EndsWith(".Tests", StringComparison.Ordinal) || !Repository.Contains(name))
+        {
+            yield return "`" + name + "` names no file or directory";
+        }
+    }
+
+    /// <summary>A project and a quoted English name or a class (<c>Io.Tests: DriftTests</c>), or a bare class name.</summary>
+    private static bool IsTestName(string name) => Test.IsMatch(name) || Regex.IsMatch(name, @"^\w+$", RegexOptions.CultureInvariant);
+
+    /// <summary>The tests a name picks out: by project and words for a quoted name, by the class's last name otherwise.</summary>
+    private static IEnumerable<TestTraits.Test> Tests(string name)
     {
         var test = Test.Match(name);
-        if (test.Success)
-        {
-            var declared = Declared.Value.Where(d => d.Project == test.Groups[1].Value);
-            return test.Groups[2].Success
-                ? declared.Any(d => d.Words == Words(test.Groups[2].Value))
-                : declared.Any(d => d.Words.Length == 0 && ("." + d.Name).EndsWith("." + test.Groups[3].Value, StringComparison.Ordinal));
-        }
-
-        if (name.StartsWith("estate ", StringComparison.Ordinal))
-        {
-            return Contract.Verbs.Any(v => v.Name == name[7..] && v.Body is not null && v.Arrives <= milestone);
-        }
-
-        return Regex.IsMatch(name, @"^\w+$", RegexOptions.CultureInvariant)
-            ? Declared.Value.Any(d => d.Words.Length == 0 && d.Name.EndsWith("." + name, StringComparison.Ordinal))
-            : !name.EndsWith(".Tests", StringComparison.Ordinal) && Repository.Contains(name);
+        return test.Success
+            ? TestTraits.All.Where(t => t.Project == test.Groups[1].Value
+                && (test.Groups[2].Success ? t.Words == TestTraits.Words(test.Groups[2].Value) : ("." + t.Class).EndsWith("." + test.Groups[3].Value, StringComparison.Ordinal)))
+            : TestTraits.All.Where(t => t.Class.EndsWith("." + name, StringComparison.Ordinal));
     }
 
-    /// <summary>Every class and every test method declared under tests/, by project: a class by its full name, a method by its words.</summary>
-    private static readonly Lazy<List<(string Project, string Name, string Words)>> Declared = new(() => Repository.Files
-        .Where(f => f.StartsWith("tests/", StringComparison.Ordinal) && f.EndsWith(".cs", StringComparison.Ordinal))
-        .SelectMany(f =>
-        {
-            var text = Repository.Read(f);
-            var project = f.Split('/')[1];
-            var space = Regex.Match(text, @"^namespace ([\w.]+);", RegexOptions.Multiline | RegexOptions.CultureInvariant).Groups[1].Value;
-            return Regex.Matches(text, @"\bclass (\w+)", RegexOptions.CultureInvariant).Select(m => (project, space + "." + m.Groups[1].Value, ""))
-                .Concat(Regex.Matches(text, @"public (?:async )?\w+ (\w+)\(", RegexOptions.CultureInvariant).Select(m => (project, m.Groups[1].Value, Words(m.Groups[1].Value))));
-        })
-        .ToList());
-
-    /// <summary>A name as its words: lower case, letters and digits only, one space between, so a method's name and its English name compare.</summary>
-    private static string Words(string name) => string.Join(' ', Regex.Split(name.ToLowerInvariant(), @"[^\p{Ll}\p{Nd}]+", RegexOptions.CultureInvariant).Where(w => w.Length > 0));
+    private static int Number(Match match, int group) => int.Parse(match.Groups[group].Value, CultureInfo.InvariantCulture);
 }

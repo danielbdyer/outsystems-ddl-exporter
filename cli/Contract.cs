@@ -10,16 +10,17 @@ using Estate.Kernel;
 namespace Estate.Cli;
 
 /// <summary>
-/// A row of the verb table: the verb, the question it answers, the milestone it arrives in, its body once built, the schema of what it
-/// adds to the envelope, and the outcomes its answers take. A failure's outcome is its exit's name and is not listed here.
+/// A row of the verb table: the verb, the question it answers, its body once built, the schema of what it adds to the envelope, and the
+/// outcomes its answers take. A verb is built when it has a body, and the help says so and nothing of when the rest arrive (DECISIONS.md,
+/// 2026-09-25). A failure's outcome is its exit's name and is not listed here.
 /// </summary>
-public sealed record Verb(string Name, string Summary, int Arrives, Func<Checkout, IReadOnlyList<string>, Envelope>? Body = null, JsonObject? Content = null, IReadOnlyList<Outcome>? Outcomes = null)
+public sealed record Verb(string Name, string Summary, Func<Checkout, IReadOnlyList<string>, Envelope>? Body = null, JsonObject? Content = null, IReadOnlyList<Outcome>? Outcomes = null)
 {
     /// <summary>The schema its --json answer names, such as estate.doctor/1.</summary>
     public string Output => "estate." + Name.TrimStart('-') + "/1";
 
-    /// <summary>built; stub, a body ahead of its milestone; pending, no body yet.</summary>
-    public string Status => Body is null ? "pending" : Arrives > Contract.Milestone ? "stub" : "built";
+    /// <summary>Whether this build has the verb: it has a body.</summary>
+    public bool Built => Body is not null;
 
     /// <summary>The outcomes this verb's answers take, a closed set its schema enumerates and ties to its exits; none for a verb with no body.</summary>
     public IReadOnlyList<Outcome> Answers => Outcomes ?? [];
@@ -128,35 +129,30 @@ public sealed record Envelope
 /// <summary>The contract as data: the verb table and the exit table. --help --json and cli/schemas/ are generated from them.</summary>
 public static class Contract
 {
-    /// <summary>The milestone this build completes.</summary>
-    public const int Milestone = 0;
-
-    private static readonly string[] Milestones = ["Foundation", "Read", "Predict", "Synthetic copy", "Prove", "Describe and gate", "After deploy", "Agent instructions"];
-
     public static string Version { get; } = typeof(Contract).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion;
 
     public static readonly IReadOnlyList<Verb> Verbs =
     [
         new("doctor", "Can this machine do the work: the SDK and runtime, the tool and its DacFx against the toolchain ledger, the build route, the scratch server, Git LFS. estate doctor",
-            1, Cli.Verbs.Doctor, Cli.Verbs.DoctorContent,
+            Cli.Verbs.Doctor, Cli.Verbs.DoctorContent,
             [new("ready", [0], "every prerequisite is present"), new("degraded", [6], "a prerequisite is missing; a finding names each, with its remedy")]),
         new("read", "What a schema is, from a ref, a package or a database, read whole, with its fingerprint. estate read --from <target> [--project <path>]",
-            1, Cli.Verbs.Read, Cli.Verbs.ReadContent, [new("done", [0], "the target was read whole; read holds its elements and fingerprint")]),
+            Cli.Verbs.Read, Cli.Verbs.ReadContent, [new("done", [0], "the target was read whole; read holds its elements and fingerprint")]),
         new("diff", "What changes between two schemas, property by property, deploy scripts and refactorlog included. estate diff --from <target> --to <target> [--project <path>] [--fail-on-change]",
-            1, Cli.Verbs.Diff, Cli.Verbs.DiffContent,
+            Cli.Verbs.Diff, Cli.Verbs.DiffContent,
             [new("matches", [0], "the two schemas hold the same elements"), new("differs", [0, 5], "the two schemas differ; exit 5 only with --fail-on-change")]),
-        new("classify", "Which operation a change is, provisionally, from the committed evidence.", 2),
-        new("predict", "Whether a change blocks or applies on each environment the caller can read, and why.", 2),
-        new("measure", "What an environment's data looks like, as the evidence the synthetic copy is generated from.", 3),
-        new("synthetic-copy", "A copy on the scratch server, built from the repository at a ref and filled with rows generated from the measured data.", 3),
-        new("prove", "What the engine does with a change on a fresh copy, with a receipt.", 4),
-        new("describe", "The pull request description, rendered from the receipts.", 5),
-        new("gate", "The pull request's proof, reproduced from the clone.", 5),
+        new("classify", "Which operation a change is, provisionally, from the committed evidence."),
+        new("predict", "Whether a change blocks or applies on each environment the caller can read, and why."),
+        new("measure", "What an environment's data looks like, as the evidence the synthetic copy is generated from."),
+        new("synthetic-copy", "A copy on the scratch server, built from the repository at a ref and filled with rows generated from the measured data."),
+        new("prove", "What the engine does with a change on a fresh copy, with a receipt."),
+        new("describe", "The pull request description, rendered from the receipts."),
+        new("gate", "The pull request's proof, reproduced from the clone."),
         new("check", "Whether a database has drifted from the repository at a ref; the platform, the evidence and the locks arrive later. estate check drift --target <target> --at <ref> "
-            + "[--profile <path>] [--project <path>]", 1, Cli.Verbs.Check, Cli.Verbs.CheckContent,
+            + "[--profile <path>] [--project <path>]", Cli.Verbs.Check, Cli.Verbs.CheckContent,
             [new("matches", [0], "the deploy plan against the target is empty"), new("differs", [5], "the deploy plan holds operations; a finding names each object")]),
-        new("knowledge", "The knowledge tree, packaged for each agent and vendored to the estate.", 5),
-        new("--version", "The tool's version.", 0, (_, _) => Answer("estate.version/1", new Outcome("done", [0], "the message is the tool's version"), 0, "estate " + Version, []),
+        new("knowledge", "The knowledge tree, packaged for each agent and vendored to the estate."),
+        new("--version", "The tool's version.", (_, _) => Answer("estate.version/1", new Outcome("done", [0], "the message is the tool's version"), 0, "estate " + Version, []),
             Outcomes: [new("done", [0], "the message is the tool's version")]),
     ];
 
@@ -233,11 +229,6 @@ public static class Contract
     /// <summary>The exit an error takes: its category's arm of <see cref="ExitByCategory"/>.</summary>
     public static int Exit(Error error) => ExitByCategory(error.Category);
 
-    /// <summary>A milestone as the plan writes it, M2; and as a person reads it, M2 (Predict).</summary>
-    public static string M(int milestone) => "M" + milestone.ToString(CultureInfo.InvariantCulture);
-
-    public static string Title(int milestone) => M(milestone) + " (" + Milestones[milestone] + ")";
-
     /// <summary>An answer; with no stamp it stands on the tool alone, nothing here having loaded DacFx or reached SQL Server.</summary>
     public static Envelope Answer(string schema, Outcome outcome, int exit, string message, IReadOnlyList<Finding> findings, Stamp? stamp = null, Receipt? receipt = null,
         JsonObject? content = null, IReadOnlyList<string>? lines = null) =>
@@ -267,9 +258,9 @@ public static class Contract
         return Failed(verb?.Output ?? "estate.envelope/1", command, new Error("internal.unexpected", what + said, ReportIt));
     }
 
-    /// <summary>A verb the contract names and this build has no body for: the error verb.not-built, at its category's exit.</summary>
+    /// <summary>A verb the contract names and this build has no body for: the error verb.not-built, at its category's exit, naming the verb and nothing of when it arrives.</summary>
     public static Envelope NotBuilt(Verb verb) => Failed(verb, new Error("verb.not-built",
-        "estate " + verb.Name + " is in the contract; its body arrives in " + Title(verb.Arrives) + ".", "Run estate --help to see what this build runs."));
+        "estate " + verb.Name + " is not in this build.", "Run estate --help to see the verbs this build has."));
 
     /// <summary>A word that names no verb: the error arguments.unknown-verb, at its category's exit, under the generic envelope.</summary>
     public static Envelope UnknownVerb(string word) => Failed("estate.envelope/1", "estate " + word, new Error("arguments.unknown-verb",

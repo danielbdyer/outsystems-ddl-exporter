@@ -8,7 +8,6 @@
   "required": [
     "schema",
     "version",
-    "milestone",
     "usage",
     "verbs",
     "exits",
@@ -22,10 +21,6 @@
       "type": "string",
       "minLength": 1
     },
-    "milestone": {
-      "type": "string",
-      "pattern": "^M[0-9]$"
-    },
     "usage": {
       "type": "string",
       "minLength": 1
@@ -38,8 +33,7 @@
         "required": [
           "name",
           "summary",
-          "arrives",
-          "status",
+          "built",
           "output",
           "outcomes"
         ],
@@ -65,16 +59,8 @@
             "type": "string",
             "minLength": 1
           },
-          "arrives": {
-            "type": "string",
-            "pattern": "^M[0-9]$"
-          },
-          "status": {
-            "enum": [
-              "built",
-              "stub",
-              "pending"
-            ]
+          "built": {
+            "type": "boolean"
           },
           "output": {
             "type": "string",

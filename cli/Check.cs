@@ -10,8 +10,8 @@ namespace Estate.Cli;
 
 public static partial class Verbs
 {
-    /// <summary>The checks the verb table names beyond drift, and the milestone each arrives in.</summary>
-    private static readonly Dictionary<string, int> Later = new(StringComparer.Ordinal) { ["cdc"] = 2, ["evidence"] = 3, ["inflight"] = 5, ["outsystems"] = 6, ["environments"] = 6 };
+    /// <summary>The checks the verb table names beyond drift, which this build does not have.</summary>
+    private static readonly HashSet<string> Later = new(StringComparer.Ordinal) { "cdc", "evidence", "inflight", "outsystems", "environments" };
 
     /// <summary>What check adds to the envelope: the kind of check, the target, the ref and its commit, how many operations the plan holds, and each, a list that can be long.</summary>
     public static JsonObject CheckContent => new()
@@ -28,7 +28,7 @@ public static partial class Verbs
     public static Envelope Check(Checkout here, IReadOnlyList<string> words) => words switch
     {
         ["drift", ..] => Drift(here, [.. words.Skip(1)]),
-        [var kind, ..] when Later.TryGetValue(kind, out var arrives) => Contract.NotBuilt(Of("check") with { Name = "check " + kind, Arrives = arrives }) with { Schema = Of("check").Output },
+        [var kind, ..] when Later.Contains(kind) => Contract.NotBuilt(Of("check") with { Name = "check " + kind }) with { Schema = Of("check").Output },
         _ => Contract.Failed(Of("check"), new Error("arguments.unknown-check", "estate check needs the check to run; this build runs check drift.", "Run estate check drift --target <target> --at <ref>.")),
     };
 
