@@ -47,6 +47,18 @@ public sealed class ErrorTests
     [InlineData("name.-long")]
     [InlineData("name.long-")]
     [InlineData("name.too--long")]
+    [InlineData("name.blank\n")]
+    [InlineData("\nname.blank")]
     public void An_error_code_is_a_category_and_a_detail_in_lowercase_words(string code) =>
         Assert.Throws<ArgumentException>("code", () => new Error(code, "Failed.", "Do the other thing."));
+
+    /// <summary>Every word of a code, the category included, may hold digits and single hyphens, as scratch-server and git-branch do.</summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("scratch-server.missing")]
+    [InlineData("git-branch.exists")]
+    [InlineData("toolchain.window-order")]
+    [InlineData("v2.sql-72014.detail")]
+    public void Each_word_of_an_error_code_may_hold_digits_and_single_hyphens(string code) =>
+        Assert.Equal(code, new Error(code, "Failed.", "Do the other thing.").Code);
 }

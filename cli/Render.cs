@@ -131,7 +131,7 @@ public static class Render
             blocked);
         var finding = Record(new()
         {
-            ["code"] = Pattern("^[a-z]+(\\.[a-z0-9-]+)+$"),
+            ["code"] = Pattern(Error.CodePattern),
             ["severity"] = Enum(["block", "warn", "note"]),
             ["subject"] = Text(),
             ["message"] = Text(),

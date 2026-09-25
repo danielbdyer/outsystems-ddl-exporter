@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using CsCheck;
 using Estate.Cli;
 using Estate.Io;
 using Json.Schema;
@@ -75,7 +76,7 @@ public sealed class ContractTests
 
     /// <summary>
     /// The kernel, io and the cli name what went wrong; the category table alone says which exit that is, by the code's category. The codes
-    /// are Register.RefusalPaths', which Register.Refusals holds to every code the three packages construct, composed ones included, so a
+    /// are Register.RefusalPaths', which Register.Refusals holds to every code the three packages construct, composed ones included, so an
     /// error of a new category fails here until the table gives the category a row; and a row for a category nothing constructs fails too.
     /// </summary>
     [Fact]
@@ -102,6 +103,28 @@ public sealed class ContractTests
         Assert.Equal(["nowhere.failed", "internal.unmapped-category"], answer.Findings.Select(f => f.Code));
         Assert.Contains("'nowhere'", answer.Findings[1].Message, StringComparison.Ordinal);
         AssertValid("estate.read.1.schema.json", Render.Json(answer));
+    }
+
+    /// <summary>
+    /// Finding X-1: the committed schemas carry the kernel's one code pattern as a finding's code, so an error whose category is
+    /// hyphenated, as scratch-server is, answers with an envelope that validates against the envelope's schema and its verb's; and over
+    /// generated codes and their near misses (a capital, a space, a line break, a doubled or stray dot or hyphen), the kernel constructs
+    /// an Error exactly when the envelope's schema admits the code as a finding's.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_schemas_admit_exactly_the_codes_the_kernel_constructs_a_hyphenated_category_included()
+    {
+        var answer = Render.Json(Contract.Failed(Contract.Verbs.Single(v => v.Name == "read"), new Kernel.Error("scratch-server.missing", "No SQL Server answers for copies.", "Run ci/sql.sh up.")));
+        AssertValid("estate.read.1.schema.json", answer);
+        AssertValid("estate.envelope.1.schema.json", answer);
+
+        var word = Gen.Char["a0z9"].Array[1, 3].Select(cs => new string(cs)).Array[1, 2].Select(pieces => string.Join('-', pieces));
+        var code = word.Array[2, 3].Select(words => string.Join('.', words));
+        var nearMiss = Gen.Select(code, Gen.Int[0, 12], Gen.Char[".-A \n_"]).Select((text, at, mark) => text.Insert(at % (text.Length + 1), mark.ToString()));
+        Gen.OneOf(code, nearMiss).Sample(text =>
+            (Record.Exception(() => new Kernel.Error(text, "Failed.", "Do the other thing.")) is null)
+            == Evaluate("estate.envelope.1.schema.json", Answer(Finds(0, "note", code: text))).IsValid);
     }
 
     /// <summary>
@@ -549,13 +572,13 @@ public sealed class ContractTests
         answer["verdict"]!["kind"] = kind;
     };
 
-    /// <summary>An answer at <paramref name="exit"/> with one finding of <paramref name="severity"/>, or with none when it is null.</summary>
-    private static Action<JsonObject> Finds(int exit, string? severity, string? remedy = null) => answer =>
+    /// <summary>An answer at <paramref name="exit"/> with one finding of <paramref name="severity"/> and <paramref name="code"/>, or with none when the severity is null.</summary>
+    private static Action<JsonObject> Finds(int exit, string? severity, string? remedy = null, string code = "guard.row-presence") => answer =>
     {
         answer["exit"] = exit;
         answer["findings"] = severity is null ? new JsonArray() : new JsonArray(new JsonObject
         {
-            ["code"] = "guard.row-presence", ["severity"] = severity, ["subject"] = "dbo.Customer.Email",
+            ["code"] = code, ["severity"] = severity, ["subject"] = "dbo.Customer.Email",
             ["message"] = "The publish guard refused: the table has rows.", ["remedy"] = remedy,
         });
     };

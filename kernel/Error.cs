@@ -1,5 +1,5 @@
 using System;
-using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace Estate.Kernel;
 
@@ -12,9 +12,20 @@ namespace Estate.Kernel;
 /// </summary>
 public sealed record Error
 {
+    /// <summary>
+    /// The form of every code, as a regular expression that .NET and JSON Schema's ECMA-262 dialect read alike: two or more words
+    /// joined by dots, each word runs of lowercase ASCII letters and digits joined by single hyphens, such as <c>name.too-long</c>
+    /// or <c>scratch-server.missing</c>. The first word is the code's category. The constructor applies it, and cli/Render.cs writes
+    /// it into every schema as a finding's code. It ends in <c>(?![\s\S])</c>, the end of the text in both dialects, where .NET's
+    /// <c>$</c> would also admit a final line break.
+    /// </summary>
+    public const string CodePattern = @"^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)+(?![\s\S])";
+
+    private static readonly Regex CodeForm = new(CodePattern, RegexOptions.CultureInvariant);
+
     public Error(string code, string message, string remedy)
     {
-        Code = IsCode(code)
+        Code = code is not null && CodeForm.IsMatch(code)
             ? code
             : throw new ArgumentException(
                 $"'{code}' is not an error code: a category and a detail in lowercase words, such as name.too-long.",
@@ -28,12 +39,6 @@ public sealed record Error
     public string Message { get; }
 
     public string Remedy { get; }
-
-    // Two or more dot-separated words; a word is lowercase ASCII letters and digits, hyphen-joined.
-    private static bool IsCode(string? code) =>
-        code?.Split('.') is { Length: >= 2 } words
-        && words.All(word => word.Split('-').All(
-            piece => piece.Length > 0 && piece.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c))));
 
     private static string Present(string? text, string name) =>
         string.IsNullOrWhiteSpace(text) ? throw new ArgumentException($"An error needs a {name}.", name) : text;
