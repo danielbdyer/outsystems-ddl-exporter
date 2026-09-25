@@ -558,7 +558,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         try
         {
             SortedArray<Element> package;
-            using (var loaded = Ok(Ssdt.Load(dacpac)))
+            using (var loaded = Ok(Ssdt.Open(dacpac)))
             {
                 package = Ok(Ssdt.Elements(loaded)).Elements;
             }
@@ -594,7 +594,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         try
         {
             SortedArray<Element> package;
-            using (var loaded = Ok(Ssdt.Load(v2)))
+            using (var loaded = Ok(Ssdt.Open(v2)))
             {
                 package = Ok(Ssdt.Elements(loaded)).Elements;
             }
@@ -633,8 +633,108 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
             GoldenProject.Publish(dacpac, database, options);
         }
 
-        return Ok(SqlServer.Model(new SqlServer.Copy(Ok(CopyName.Of("the registered database", database.Name)), await SqlServerFixture.ServerAsync(), Repository.Root)));
+        using var package = Ok(DacFx.Extract(new SqlServer.Copy(Ok(CopyName.Of("the registered database", database.Name)), await SqlServerFixture.ServerAsync(), Repository.Root)));
+        return Ok(package.Elements).Elements;
     }
+
+    /// <summary>
+    /// R1's measurement, made before check drift planned package to package and kept as the pin (the ruling of 2026-09-25): the golden
+    /// project published to a registered database under the pipeline profile's options; then, for its own package and each sample change,
+    /// the deploy report of the package planned against the database extracted equals the report of DacServices.Script against the live
+    /// database, both read by DacFx.Report against the same element sets.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task The_package_to_package_plan_reports_the_operations_the_live_plan_reports()
+    {
+        await using var database = await SqlServerFixture.RegisterAsync();
+        var profile = Ok(Profiles.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml")));
+        GoldenProject.Publish(heads.Dacpacs["base"], database, profile.Options());
+        var copy = new SqlServer.Copy(Ok(CopyName.Of("the registered database", database.Name)), await SqlServerFixture.ServerAsync(), Repository.Root);
+        using var extracted = Ok(DacFx.Extract(copy));
+        var target = Ok(extracted.Elements).Elements;
+
+        foreach (var head in (string[])["base", "make-mandatory", "add a nullable column", "drop a column", "widen a column", "add a check constraint", "add a foreign key", "rename a column"])
+        {
+            using var package = Ok(Ssdt.Open(heads.Dacpacs[head]));
+            var source = Ok(package.Elements).Elements;
+            var planned = Ok(DacFx.Plan(package, extracted, database.Name, profile, [])).Report;
+            var live = Ok(DacFx.Report(new DacServices(database.ConnectionString).Script(package.Dac, database.Name,
+                new PublishOptions { GenerateDeploymentReport = true, DeployOptions = profile.Options() }).DeploymentReport, source, target)).Report;
+
+            output.WriteLine(head + ": " + string.Join("; ", planned.Operations.Select(o => o.Kind + " " + o.Key)) + " | " + string.Join("; ", planned.Alerts.Select(a => a.Kind + " " + a.Text)));
+            Assert.True(live == planned, head + ": live " + string.Join("; ", live.Operations.Select(o => o.Kind + " " + o.Key)) + string.Join("; ", live.Alerts.Select(a => " " + a.Kind + " " + a.Text))
+                + "\npackage to package " + string.Join("; ", planned.Operations.Select(o => o.Kind + " " + o.Key)) + string.Join("; ", planned.Alerts.Select(a => " " + a.Kind + " " + a.Text)));
+        }
+    }
+
+    /// <summary>
+    /// The read did not change what it reads: the golden project published to a registered database, its elements as DacFx.Extract's package
+    /// gives them equal its elements as TSqlModel.LoadFromDatabase gave them under the options estate read a database with until
+    /// 2026-09-25, kept here alone.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task The_elements_of_an_extracted_copy_fingerprint_as_the_elements_LoadFromDatabase_read()
+    {
+        await using var database = await SqlServerFixture.RegisterAsync();
+        GoldenProject.Publish(heads.Dacpacs["grants"], database, new DacDeployOptions());
+        var copy = new SqlServer.Copy(Ok(CopyName.Of("the registered database", database.Name)), await SqlServerFixture.ServerAsync(), Repository.Root);
+        using var extracted = Ok(DacFx.Extract(copy));
+        using var loaded = TSqlModel.LoadFromDatabase(database.ConnectionString, new ModelExtractOptions
+        {
+            IgnorePermissions = false, IgnoreExtendedProperties = false, IgnoreUserLoginMappings = false, ExtractApplicationScopedObjectsOnly = true,
+            ExtractReferencedServerScopedElements = true, ExtractUsageProperties = false, LoadAsScriptBackedModel = false, VerifyExtraction = false,
+            Storage = DacSchemaModelStorageType.Memory, HashObjectNamesInLogs = false,
+        });
+
+        var (fromExtract, fromLoad) = (Ok(extracted.Elements).Elements, Ok(Ssdt.Elements(loaded)));
+
+        var differing = Ok(Change.Between(fromLoad, fromExtract, []));
+        Assert.True(differing.IsEmpty, string.Join('\n', Lines(differing)));
+        Assert.Equal(Fingerprint.Of(fromLoad), Fingerprint.Of(fromExtract));
+    }
+
+    /// <summary>
+    /// ModelTypes' one map against what DacFx 170.5.96 serializes: in the model.xml of each head the fixture builds, every element that names
+    /// an object the model holds once by that name has a serialized type the map reads as that object's type. A later DacFx that serializes
+    /// a type otherwise fails here, naming the pair to add.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Every_serialized_type_the_golden_project_and_the_sample_changes_write_maps_to_the_type_the_model_gives_it()
+    {
+        var misread = new SortedSet<string>(StringComparer.Ordinal);
+        var checkedTypes = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var dacpac in heads.Dacpacs.Values)
+        {
+            using var package = Ok(Ssdt.Open(dacpac));
+            var objects = Composed(package.Model).GroupBy(o => o.Name.ToString(), StringComparer.Ordinal).Where(g => g.Count() == 1).ToDictionary(g => g.Key, g => g.Single().ObjectType.Name, StringComparer.Ordinal);
+            using var zip = System.IO.Compression.ZipFile.OpenRead(dacpac);
+            using var model = zip.GetEntry("model.xml")!.Open();
+            foreach (var element in System.Xml.Linq.XDocument.Load(model).Descendants().Where(e => e.Name.LocalName == "Element" && e.Attribute("Name") is not null))
+            {
+                var (serialized, name) = ((string)element.Attribute("Type")!, (string)element.Attribute("Name")!);
+                if (objects.TryGetValue(name, out var type))
+                {
+                    checkedTypes.Add(serialized);
+                    if (ModelTypes.Element(serialized) != type)
+                    {
+                        misread.Add(serialized + " is " + type + ", and the map reads " + (ModelTypes.Element(serialized) ?? "nothing"));
+                    }
+                }
+            }
+        }
+
+        output.WriteLine(string.Join('\n', checkedTypes));
+        Assert.Empty(misread);
+        Assert.Superset(new SortedSet<string>(
+            ["SqlTable", "SqlSimpleColumn", "SqlComputedColumn", "SqlColumnSet", "SqlInlineTableValuedFunction", "SqlMultiStatementTableValuedFunction", "SqlTableTypeSimpleColumn",
+                "SqlTableTypeComputedColumn", "SqlPermissionStatement", "SqlStatistic", "SqlUserDefinedDataType", "SqlSubroutineParameter"], StringComparer.Ordinal), checkedTypes);
+    }
+
+    /// <summary>Each object of a model, top-level and composed.</summary>
+    private static IEnumerable<TSqlObject> Composed(TSqlModel model) => model.GetObjects(DacQueryScopes.UserDefined).SelectMany(Composed).Distinct();
 
     [Fact]
     [Trait("Category", "fast")]
@@ -689,7 +789,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         var dacpac = Built(refactorlog, scripts);
         try
         {
-            using var package = Ok(Ssdt.Load(dacpac));
+            using var package = Ok(Ssdt.Open(dacpac));
             return Ok(Ssdt.Elements(package));
         }
         finally
@@ -803,6 +903,12 @@ public sealed class GoldenProjectModels : IAsyncLifetime
         ["grants"] = [("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.", string.Join("\nGO\n",
             "CREATE ROLE AppReader;", "CREATE ROLE AppWriter;", "GRANT SELECT ON dbo.Account TO AppReader;", "GRANT SELECT ON dbo.Account TO AppWriter;",
             "GRANT INSERT ON dbo.Account TO AppWriter;", "GRANT VIEW DEFINITION TO AppReader;", "GRANT VIEW DEFINITION TO AppWriter;"))],
+        ["every serialized form"] = [("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.", string.Join("\nGO\n",
+            "CREATE TYPE dbo.Code FROM NVARCHAR(10) NOT NULL;", "CREATE TYPE dbo.Lines AS TABLE (Id INT NOT NULL, Doubled AS Id * 2);",
+            "CREATE TABLE dbo.Measured (Id INT NOT NULL PRIMARY KEY, Doubled AS Id * 2, Kept INT SPARSE NULL, Everything XML COLUMN_SET FOR ALL_SPARSE_COLUMNS);",
+            "CREATE STATISTICS ST_Measured_Id ON dbo.Measured (Id);", "CREATE FUNCTION dbo.Inline() RETURNS TABLE AS RETURN SELECT 1 AS One;",
+            "CREATE FUNCTION dbo.Multi() RETURNS @t TABLE (One INT) AS BEGIN INSERT @t VALUES (1); RETURN; END",
+            "CREATE PROCEDURE dbo.WithParameter @Id INT AS SELECT @Id AS Id;", "CREATE ROLE MeasuredReader;", "GRANT SELECT ON dbo.Measured TO MeasuredReader;"))],
     };
 
     private readonly string root = Path.Combine(Repository.Root, ".estate", "models", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);
@@ -836,7 +942,7 @@ public sealed class GoldenProjectModels : IAsyncLifetime
             }
 
             var dacpac = Ok(Ssdt.Build(Path.Combine(directory, "SampleCatalog.sqlproj"), tool.Folder, Path.Combine(root, "build", head.Key.Replace(' ', '-'))));
-            using var package = Ok(Ssdt.Load(dacpac.Path));
+            using var package = Ok(Ssdt.Open(dacpac.Path));
             return (Head: head.Key, Dacpac: dacpac.Path, Model: Ok(Ssdt.Elements(package)));
         })));
         foreach (var (head, dacpac, model) in built)
@@ -845,7 +951,7 @@ public sealed class GoldenProjectModels : IAsyncLifetime
         }
 
         // The base read into elements once more, alone and warm, for its time.
-        using var again = Ok(Ssdt.Load(Dacpacs["base"]));
+        using var again = Ok(Ssdt.Open(Dacpacs["base"]));
         var clock = Stopwatch.StartNew();
         Assert.Equal(Models["base"], Ok(Ssdt.Elements(again)));
         ReadingTime = clock.Elapsed;

@@ -85,39 +85,14 @@ public static class SqlServer
         public Error ErrorOf(int number, string message) => ErrorOf(number, message, fatal: false);
 
         /// <summary>
-        /// The error a SqlClient or DacFx failure against a target becomes, the one boundary every failure against a server passes
-        /// through. With a SqlException anywhere in the chain, by its number, a severity of 20 or more being a connection lost, and
-        /// <paramref name="opened"/> saying the connection had opened. With none, DacFx's own failure: when its texts quote a SQL Server
-        /// number (Msg 50000, the data-loss check; Msg 2627 inside SQL72014), by that number, since SQL Server's words, which can quote a
-        /// row, are inside; else dacfx.failed, quoting what each exception of the chain says, DacFx's errors (SQL71501: …) among it, kept
-        /// for a named environment too. Any other failure is server.failed with no number.
+        /// The error a SqlClient failure against a target becomes, the one boundary every failure of a statement estate sends passes
+        /// through: with a SqlException anywhere in the chain, by its number, a severity of 20 or more being a connection lost, and
+        /// <paramref name="opened"/> saying the connection had opened; any other failure is server.failed with no number. A DacFx failure
+        /// passes through io/DacFx.Failed, which hands this adapter the SqlException or the SQL Server number it finds.
         /// </summary>
-        public Error ErrorOf(Exception failure) => ErrorOf(failure, opened: false);
-
-        internal Error ErrorOf(Exception failure, bool opened)
-        {
-            var chain = Chain(failure).ToList();
-            var said = chain.SelectMany(Said).Distinct(StringComparer.Ordinal).ToList();
-            return chain.OfType<SqlException>().FirstOrDefault() is { } sql ? ErrorOf(sql.Number, sql.Message, fatal: sql.Class >= 20, opened)
-                : !chain.Any(x => x is DacServicesException or DacModelException) ? ErrorOf(0, failure.Message)
-                : said.Select(s => SqlServerNumber.Match(s)).FirstOrDefault(m => m.Success) is { } number
-                    ? ErrorOf(int.Parse(number.Groups[1].Value, CultureInfo.InvariantCulture), string.Join(' ', said))
-                : new Error("dacfx.failed", "DacFx failed against " + Target + " with no SQL Server error inside: " + string.Join(' ', said),
-                    "Correct what DacFx names in the project or the publish profile, then run the step again.");
-        }
-
-        private static readonly Regex SqlServerNumber = new(@"\bMsg (\d+)", RegexOptions.CultureInvariant);
-
-        /// <summary>
-        /// What one exception of a DacFx failure says, on one line: its Message alone. DacFx writes each error and warning of the failure
-        /// into Message as "Error SQL71501: …" (BuildPackage's SQL71501, AddObjects' SQL46010 and SQL71006, Publish's SQL72014 quoting
-        /// Msg 50000, SQL72045), so the SQL Server number the error is routed by and every SQL7xxxx code are in it. A failed Publish's
-        /// Messages also holds informational entries of number 0 that Message leaves out: PRINT output of a deployment script, "Altering
-        /// Table [dbo].[T]...", "The statement has been terminated.", "An error occurred while the batch was being executed.". They carry
-        /// no error and no code, and are not quoted.
-        /// </summary>
-        private static IEnumerable<string> Said(Exception x) =>
-            Regex.Replace(x.Message, @"\s*\n\s*", " ", RegexOptions.CultureInvariant).Trim() is { Length: > 0 } text ? [text] : [];
+        internal Error ErrorOf(Exception failure, bool opened) => Chain(failure).OfType<SqlException>().FirstOrDefault() is { } sql
+            ? ErrorOf(sql.Number, sql.Message, fatal: sql.Class >= 20, opened)
+            : ErrorOf(0, failure.Message);
 
         /// <summary>
         /// The error SQL Server's error <paramref name="number"/> against this database becomes, as <see cref="Classify"/> reads it:
@@ -215,11 +190,13 @@ public static class SqlServer
         /// <summary>The pipeline's profile with the data-loss check off (§1 fact 10), made for this copy: the one maker of a Permissive profile.</summary>
         public PublishProfile.Permissive Permissive(PublishProfile.Strict strict) => PublishProfile.Permissive.Of(strict);
 
-        /// <summary>The package published to this copy under the profile's options, Strict or this copy's Permissive, the package loaded from a stream.</summary>
-        public Result<Copy> Publish(string dacpac, PublishProfile profile) => Reached(this, null).Bind(_ => Loaded(dacpac, this, package =>
+        /// <summary>The package at <paramref name="dacpac"/> published to this copy under the profile's options, Strict or this copy's Permissive, through io/DacFx.Publish.</summary>
+        public Result<Copy> Publish(string dacpac, PublishProfile profile) => Reached(this, null).Bind(_ => Ssdt.Open(dacpac).Bind(package =>
         {
-            new DacServices(Connection).Publish(package, Name.ToString(), new PublishOptions { DeployOptions = profile.Options() });
-            return Result.Ok(this);
+            using (package)
+            {
+                return DacFx.Publish(this, package, profile).Map(_ => this);
+            }
         }));
     }
 
@@ -243,93 +220,6 @@ public static class SqlServer
             "Name an env: or a copy: target; estate --help lists what this build runs."),
         reference => NotADatabase(reference),
         dacpac => NotADatabase(dacpac));
-
-    /// <summary>
-    /// How LoadFromDatabase reads a database, each option set here with its reason, so a database reads as a package built from it
-    /// does. DacFx 170.5.96's defaults are noted; IgnorePermissions is the one this changes.
-    /// </summary>
-    internal static ModelExtractOptions Extraction => new()
-    {
-        // A package keeps its GRANT, DENY and REVOKE statements and Ssdt.Elements keys each one; the default, true, drops every permission.
-        IgnorePermissions = false,
-        // A package keeps its sp_addextendedproperty values (MS_Description); the default, false, keeps them.
-        IgnoreExtendedProperties = false,
-        // A package keeps CREATE USER ... FOR LOGIN; the default, false, keeps a user's login.
-        IgnoreUserLoginMappings = false,
-        // A package holds database-scoped objects; the default, true, leaves out server-scoped ones a user does not reference.
-        ExtractApplicationScopedObjectsOnly = true,
-        // The default, true, reads the login a user maps to; SQL Server shows it only to a reader with permission on the login.
-        ExtractReferencedServerScopedElements = true,
-        // Table.RowCount, the data and index sizes and the page counts change with the rows, not the schema; the default is false.
-        ExtractUsageProperties = false,
-        // Ssdt.Elements reads properties and each module's script, which a model loaded from a database gives without a scripted copy of
-        // every object; the default, false, skips that copy's one-time cost.
-        LoadAsScriptBackedModel = false,
-        // Verification validates the model as a package build would; Ssdt.Elements reads what the database holds, valid or not. Default false.
-        VerifyExtraction = false,
-        // The model is held in memory, as Ssdt.Load holds a package's; the default is Memory.
-        Storage = DacSchemaModelStorageType.Memory,
-        // DacFx's log is not kept, so hashing the names in it changes nothing; the default is false.
-        HashObjectNamesInLogs = false,
-    };
-
-    /// <summary>A database read whole (§1 fact 5): TSqlModel.LoadFromDatabase as the target's identity under <see cref="Extraction"/>, then io/Ssdt.Elements; the run's log, when given, holds the statement estate sends first.</summary>
-    public static Result<SortedArray<Element>> Model(Database target, QueryLog? log = null) => Reached(target, log).Bind(_ =>
-    {
-        TSqlModel model;
-        try
-        {
-            model = TSqlModel.LoadFromDatabase(target.Connection, Extraction);
-        }
-        catch (Exception e) when (e is DacServicesException or DacModelException or SqlException or InvalidOperationException)
-        {
-            return target.ErrorOf(e);
-        }
-
-        using (model)
-        {
-            return Ssdt.Elements(model);
-        }
-    });
-
-    /// <summary>What DacFx would deploy: its script, kept with the SQLCMD variables whose values a reference holds unset, and its report.</summary>
-    public sealed record Deployment(string Script, string Report)
-    {
-        private static readonly XNamespace Dac = "http://schemas.microsoft.com/sqlserver/dac/DeployReport/2012/02";
-
-        /// <summary>The report's operations; none is the empty deploy plan, a database that matches the package (§1 fact 4).</summary>
-        public int Operations => XDocument.Parse(Report).Descendants(Dac + "Operation").Count();
-
-        /// <summary>Each object the report names, by the operation on it (Alter, Create, Drop, TableRebuild), its type as the model serializes it (SqlTable) and its name.</summary>
-        public IReadOnlyList<(string Operation, string Type, string Name)> Items => [.. XDocument.Parse(Report).Descendants(Dac + "Operation")
-            .SelectMany(o => o.Elements(Dac + "Item").Select(i => ((string?)o.Attribute("Name") ?? "", (string?)i.Attribute("Type") ?? "", (string?)i.Attribute("Value") ?? "")))];
-
-        public bool IsEmpty => Operations == 0;
-    }
-
-    /// <summary>
-    /// DacServices.Script of a package against the target under the profile's options (§1 facts 2 and 4), both outputs generated. A named
-    /// environment's own SQLCMD values go over the profile's, a reference's resolved in memory and never kept in the script. The run's log,
-    /// when given, holds the statement estate sends first.
-    /// </summary>
-    public static Result<Deployment> Plan(string dacpac, Database target, PublishProfile.Strict profile, QueryLog? log = null) => Values(target).Bind(values => Reached(target, log).Bind(_ =>
-        Loaded(dacpac, target, package =>
-        {
-            var options = profile.Options();
-            foreach (var value in values)
-            {
-                options.SqlCommandVariableValues[value.Name] = value.Text;
-            }
-
-            var plan = new DacServices(target.Connection).Script(package, target.Catalog,
-                new PublishOptions { GenerateDeploymentScript = true, GenerateDeploymentReport = true, DeployOptions = options });
-            var kept = values.Where(v => v.Referenced).Aggregate(plan.DatabaseScript, (script, v) =>
-                Regex.Replace(script, @"^:setvar\s+" + Regex.Escape(v.Name) + @"\s.*(?:\r?\n|\z)", "", RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant));
-            return Result.Ok(new Deployment(kept, plan.DeploymentReport));
-        })));
-
-    /// <summary>A SQLCMD value a plan sets: its variable, its text, and whether a reference gave it, so the kept script leaves it unset.</summary>
-    private sealed record SqlCmdValue(string Name, string Text, bool Referenced);
 
     /// <summary>
     /// An aggregate query the allowlist admitted (VALUES.md P2): one statement, as ScriptDom writes it back, so what runs is what was
@@ -791,42 +681,15 @@ public static class SqlServer
                 rows => rows is [[{ } held]] && Convert.ToInt32(held, CultureInfo.InvariantCulture) == 1)
             .Bind(held => held ? Result.Ok(target) : target.ErrorOf(300, ""));
 
-    /// <summary>A package loaded from a stream, handed to use, then released (a package loaded by path holds the assemblies beside it in this process).</summary>
-    private static Result<T> Loaded<T>(string dacpac, Database target, Func<DacPackage, Result<T>> use)
-    {
-        DacPackage package;
-        FileStream? stream = null;
-        try
-        {
-            stream = File.OpenRead(dacpac);
-            package = DacPackage.Load(stream);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or DacServicesException or DacModelException or InvalidDataException or ArgumentException or System.Xml.XmlException)
-        {
-            stream?.Dispose();
-            return new Error("package.unreadable", dacpac + " is not a package DacFx reads: " + e.Message, "Name a .dacpac a build wrote, or build its project again.");
-        }
-
-        using (stream)
-        using (package)
-        {
-            try
-            {
-                return use(package);
-            }
-            catch (Exception e) when (e is DacServicesException or SqlException or InvalidOperationException)
-            {
-                return target.ErrorOf(e);
-            }
-        }
-    }
-
-    /// <summary>A named environment's own SQLCMD values, each literal as the posture gives it and each reference resolved in memory; a copy has none.</summary>
-    private static Result<IReadOnlyList<SqlCmdValue>> Values(Database target) => target is not EnvironmentDatabase named ? Result.Ok<IReadOnlyList<SqlCmdValue>>([])
+    /// <summary>
+    /// A named environment's own SQLCMD values, which a plan against it sets over the profile's: each literal as the posture gives it and
+    /// each reference resolved in memory, recorded as a read of the environment's; a copy has none.
+    /// </summary>
+    internal static Result<IReadOnlyList<SqlCmdValue>> SqlCmdValues(Database target) => target is not EnvironmentDatabase named ? Result.Ok<IReadOnlyList<SqlCmdValue>>([])
         : Result.All(named.Environment.SqlCmd.Select(variable => variable.Match(
-            literal => Result.Ok(new SqlCmdValue(variable.Name.ToString(), literal, false)),
+            literal => Result.Ok(new SqlCmdValue(variable.Name, literal, false)),
             reference => Read(named + "'s " + SqlCmdVariable.Placeholder(variable.Name.ToString()) + ", " + reference + ",", reference, named.Root).Bind(read => read is { } value
-                ? Result.Ok(new SqlCmdValue(variable.Name.ToString(), value, true))
+                ? Result.Ok(new SqlCmdValue(variable.Name, value, true))
                 : new Error("sqlcmd.unresolved", named + "'s " + SqlCmdVariable.Placeholder(variable.Name.ToString()) + " names " + reference + ", which resolves to nothing here.",
                     "Set the variable, or write the file outside git, that " + reference + " names.")))));
 

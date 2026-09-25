@@ -110,6 +110,9 @@ public abstract record PlanAlertKind : IComparable<PlanAlertKind>
     /// <summary>DacFx's name for the alert, as the deploy report writes it.</summary>
     public string Name { get; }
 
+    /// <summary>The name as estate writes it in a finding's code: data-issue, data-motion, drop-clustered-index; unlisted for a name outside the list.</summary>
+    public string Word => this is Unlisted ? "unlisted" : Words.Hyphenated(Name);
+
     public static PlanAlertKind Of(string name) => name switch
     {
         "DataIssue" => new DataIssue(),
@@ -193,6 +196,23 @@ public abstract record Drift
 
     /// <summary>The deploy plan holds operations; the columns that differ under each table it alters or rebuilds, from the target to the package.</summary>
     public sealed record Differs(DeployReport Plan, Change Columns) : Drift;
+}
+
+/// <summary>
+/// The SQL Server platform a model targets, as DacFx names it (Sql160 for SQL Server 2022, SqlAzure for Azure SQL Database): what DacFx
+/// compares a package's with its target's before it plans, and what the plan.platform error names. default(Platform) is not a platform.
+/// </summary>
+public readonly record struct Platform
+{
+    private readonly string? _name;
+
+    private Platform(string name) => _name = name;
+
+    /// <summary>The platform DacFx names <paramref name="name"/>, or model.platform for a name of other than letters and digits.</summary>
+    public static Result<Platform> Of(string? name) => name is { Length: > 0 } && name.All(char.IsAsciiLetterOrDigit) ? new Platform(name)
+        : new Error("model.platform", "'" + name + "' is no DacFx platform name, such as Sql160.", "Report the package's source with this error; DacFx names each platform it knows.");
+
+    public override string ToString() => _name ?? throw new InvalidOperationException("default(Platform) is not a platform; make one with Platform.Of.");
 }
 
 /// <summary>How estate writes one of DacFx's names in a code or in JSON.</summary>

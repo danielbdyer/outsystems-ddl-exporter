@@ -37,13 +37,13 @@ public static partial class Verbs
 
         var stamp = new Stamp(dacfx);
         if (Contract.Flags(words, ["--from"], ["--project"], []).Bind(flags => SqlServer.Target(flags["--from"], "--from").Map(from => (Flags: flags, From: from)))
-            .Bind(asked => Pinned(here, dacfx).Map(pin => (asked.Flags, asked.From, Pin: pin))).Failed(out var asked, out error))
+            .Bind(asked => Io.Doctor.Toolchain(here.Root, Contract.Version).Map(pin => (asked.Flags, asked.From, Pin: pin))).Failed(out var asked, out error))
         {
             return Contract.Failed(Of("read"), error, stamp);
         }
 
         stamp = stamp with { Pin = asked.Pin };
-        if (Reading(here, asked.From, asked.Flags.GetValueOrDefault("--project")).Failed(out var source, out error))
+        if ((asked.Pin.Rejects(dacfx) is { } outside ? Result.Fail<Source>(outside) : Reading(here, asked.From, asked.Flags.GetValueOrDefault("--project"))).Failed(out var source, out error))
         {
             return Contract.Failed(Of("read"), error, stamp);
         }
@@ -57,14 +57,6 @@ public static partial class Verbs
             });
     }
 
-    /// <summary>
-    /// The collation a model's names compare under (decision 2.26): its DatabaseOptions element's Collation property, which
-    /// io/Ssdt.Elements reads from a package as its project's default collation and from a database as the database's; the comparison
-    /// that follows no database when the model has none.
-    /// </summary>
-    internal static Result<Collation> CollationOf(SortedArray<Element> elements) =>
-        elements.FirstOrDefault(e => e.Key.Type == "DatabaseOptions")?["Collation"] is Value.Text { Content: var name } ? Collation.Of(name) : Result.Ok(Collation.CaseSensitive);
-
     /// <summary>A case-only pair as a note: the collation reads the two spellings as one name, and DacFx plans nothing for the difference.</summary>
     internal static Finding CaseOnly(string code, Rename pair, Collation collation) => Finding.Note(code, pair.After.ToString(),
         pair.Before + " and " + pair.After + " differ in letter case alone, which " + collation.Name + " reads as one name; DacFx plans nothing for it.");
@@ -74,29 +66,30 @@ public static partial class Verbs
 
     internal static Result<Source> Reading(Checkout here, Target target, string? project) => target.Match(
         _ => Modelled(here, target), _ => Modelled(here, target), () => Modelled(here, target),
-        reference => Built(here, reference.Ref.ToString(), project).Bind(built => Packaged(built.Dacpac)).Map(model => new Source(target, model, null, false)),
+        reference => Ssdt.Build(here.Root, reference.Ref.ToString(), project, here.Tool, here.WorkingDirectory).Bind(built => Packaged(built.Built.Path))
+            .Map(model => new Source(target, model, null, false)),
         dacpac => Packaged(Path.GetFullPath(Path.Combine(here.WorkingDirectory, dacpac.Path))).Map(model => new Source(target, model, null, false)));
 
-    /// <summary>A ref's project built at its commit (io/Git.At, io/Ssdt.Build): the package, and the commit.</summary>
-    internal static Result<(string Dacpac, string Commit)> Built(Checkout here, string reference, string? project) => Git.At(here.Root, reference).Bind(at =>
-        Ssdt.Project(at.Path, project).Bind(file => Ssdt.Tool(AppContext.BaseDirectory, here.Tool, here.WorkingDirectory)
-            .Bind(tool => Ssdt.Build(at, file, tool, Path.Combine(here.Root, ".estate", "build")))).Map(built => (built.Path, at.Commit)));
-
-    internal static Result<Ssdt.ModelElements> Packaged(string dacpac) => Ssdt.Load(dacpac).Bind(package =>
+    /// <summary>A package's model read into elements, the package opened once and released.</summary>
+    private static Result<Ssdt.ModelElements> Packaged(string dacpac) => Ssdt.Open(dacpac).Bind(package =>
     {
         using (package)
         {
-            return Ssdt.Elements(package);
+            return package.Elements;
         }
     });
 
-    private static Result<Source> Modelled(Checkout here, Target target) => SqlServer.Resolve(target, here.Root).Bind(database =>
-        SqlServer.Model(database, here.Run).Bind(elements => (database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, here.Run).Map(server => (Server?)server) : Result.Ok<Server?>(null))
-            .Map(server => new Source(target, new Ssdt.ModelElements(elements, []), server, true))));
-
-    /// <summary>The toolchain ledger's pin, which every verb that builds reads (R13), or the rejection of the committed DacFx outside its window.</summary>
-    internal static Result<Pin> Pinned(Checkout here, DacFxVersion dacfx) => Io.Doctor.Toolchain(here.Root, Contract.Version)
-        .Bind(pin => pin.Rejects(dacfx) is { } outside ? Result.Fail<Pin>(outside) : Result.Ok(pin));
+    /// <summary>A database read once (io/DacFx.Extract), after this identity is found to hold VIEW DEFINITION there, with a copy's SQL Server.</summary>
+    private static Result<Source> Modelled(Checkout here, Target target) => SqlServer.Resolve(target, here.Root).Bind(database => SqlServer.Reach(database, here.Run)
+        .Bind(_ => DacFx.Extract(database)).Bind(package =>
+        {
+            using (package)
+            {
+                return package.Elements;
+            }
+        })
+        .Bind(model => (database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, here.Run).Map(server => (Server?)server) : Result.Ok<Server?>(null))
+            .Map(server => new Source(target, model, server, true))));
 
     /// <summary>
     /// The writer of the values an answer prints, and the findings printing raises (decision 2.27): a script is written through

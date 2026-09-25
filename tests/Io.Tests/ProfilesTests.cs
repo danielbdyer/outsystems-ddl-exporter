@@ -286,7 +286,11 @@ public sealed class ProfilesTests : IDisposable
     /// <summary>Each method and constructor io compiles, compiler-made ones included, whose IL holds <paramref name="callee"/>'s metadata token.</summary>
     private static IEnumerable<MethodBase> Callers(MethodBase callee) => typeof(PublishProfile).Assembly.GetTypes()
         .SelectMany(t => t.GetMethods(Declared).Cast<MethodBase>().Concat(t.GetConstructors(Declared)))
-        .Where(m => m.GetMethodBody()?.GetILAsByteArray() is { } il && il.AsSpan().IndexOf(BitConverter.GetBytes(callee.MetadataToken)) >= 0);
+        .Where(m => m.GetMethodBody()?.GetILAsByteArray() is { } il && Calls(il, callee.MetadataToken));
+
+    /// <summary>Whether IL holds a call, callvirt, newobj, ldftn or ldvirtftn of the member whose metadata token is <paramref name="token"/>: the token after its opcode, never the same four bytes elsewhere.</summary>
+    private static bool Calls(byte[] il, int token) => Enumerable.Range(1, Math.Max(0, il.Length - 4)).Any(i =>
+        il.AsSpan(i, 4).SequenceEqual(BitConverter.GetBytes(token)) && (il[i - 1] is 0x28 or 0x6F or 0x73 || (i >= 2 && il[i - 2] == 0xFE && il[i - 1] is 0x06 or 0x07)));
 
     private static bool InCopy(Type? type) => type is not null && (type.Name == "Copy" || InCopy(type.DeclaringType));
 

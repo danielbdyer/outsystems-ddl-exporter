@@ -65,9 +65,10 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
     }
 
     /// <summary>
-    /// §1 facts 2, 4 and 5 through io, as the read-only principal: Model reads the environment whole, and the plan of the package it was
-    /// published from is empty. The environment's SQLCMD values reach the plan; the kept script holds the literal and never the value a
-    /// reference resolved to, and the run's log holds the one statement estate sent before DacFx's own.
+    /// §1 facts 2, 4 and 5 through io, as the read-only principal: the environment is extracted whole, and the plan of the package it was
+    /// published from against it, package to package, is empty. The environment's SQLCMD values reach the plan; the kept script holds the
+    /// literal and never the value a reference resolved to, and the run's log holds the one statement estate sent, since the plan connects
+    /// to nothing.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
@@ -81,15 +82,18 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
                 ", \"sqlcmd\": { \"EnvironmentTag\": { \"literal\": \"uat\", \"sensitive\": false }, \"ServiceToken\": \"env:" + variable + "\" }"));
             var log = SqlServer.QueryLog.Start(root);
 
-            var model = Made(SqlServer.Model(uat, log));
-            var plan = Made(SqlServer.Plan(project.Base, uat, Made(Profiles.Of(uat.Environment, root)), log));
+            Made(SqlServer.Reach(uat, log));
+            using var extracted = Made(DacFx.Extract(uat));
+            using var package = Made(Ssdt.Open(project.Base));
+            var model = Made(extracted.Elements).Elements;
+            var plan = Made(DacFx.Plan(package, extracted, uat.Catalog, Made(Profiles.Of(uat.Environment, root)), Made(SqlServer.SqlCmdValues(uat))));
 
             Assert.Equal(project.Reader.Login, new SqlConnectionStringBuilder(uat.Connection).UserID);
             Assert.Contains(model, e => e.Key.ToString() == "Column [dbo].[Customer].[Email]");
-            Assert.True(plan.IsEmpty, "the plan of the package against the environment it was published to has operations:\n" + plan.Report);
+            Assert.True(plan.Report.IsEmpty, "the plan of the package against the environment it was published to has operations:\n" + string.Join('\n', plan.Report.Operations));
             Assert.Contains(":setvar EnvironmentTag \"uat\"", plan.Script, StringComparison.Ordinal);
             Assert.DoesNotContain(token, plan.Script + plan.Report + plan, StringComparison.Ordinal);
-            Assert.Equal([("VIEW DEFINITION", "1"), ("VIEW DEFINITION", "1")], Entries(File.ReadAllText(log.Path)).Select(e => (e.Site, e.Outcome)));
+            Assert.Equal([("VIEW DEFINITION", "1")], Entries(File.ReadAllText(log.Path)).Select(e => (e.Site, e.Outcome)));
         }
         finally
         {
@@ -109,8 +113,8 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
     {
         var (admin, reader) = (Resolved("uat", project.Copy.ConnectionString), Resolved("qa", project.Reader.ConnectionString));
 
-        var (first, second) = (Made(SqlServer.Model(admin)), Made(SqlServer.Model(admin)));
-        var (third, fourth) = (Made(SqlServer.Model(reader)), Made(SqlServer.Model(reader)));
+        var (first, second) = (Extracted(admin), Extracted(admin));
+        var (third, fourth) = (Extracted(reader), Extracted(reader));
 
         Assert.Contains(first, e => e.Key.ToString() == "Login [" + project.Reader.Login + "]");
         Assert.Equal(Fingerprint.Of(first), Fingerprint.Of(second));
@@ -125,7 +129,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
         const string Wrong = "Wr0ng!planted#7f3a";
         var qa = Resolved("qa", new SqlConnectionStringBuilder(project.Reader.ConnectionString) { Password = Wrong }.ConnectionString);
 
-        var errors = new[] { Failed(SqlServer.Model(qa)), Failed(SqlServer.Measure(qa, Made(SqlServer.AggregateQuery.Of("SELECT 1;", "the login")), SqlServer.QueryLog.Start(root))) };
+        var errors = new[] { Failed(SqlServer.Reach(qa)), Failed(DacFx.Extract(qa)), Failed(SqlServer.Measure(qa, Made(SqlServer.AggregateQuery.Of("SELECT 1;", "the login")), SqlServer.QueryLog.Start(root))) };
 
         Assert.All(errors, error =>
         {
@@ -157,6 +161,13 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
     /// <summary>queries.log as entries: a header line naming the site and the outcome (a row count, or the failure's number), the statement, then GO.</summary>
     private static (string Site, string Statement, string Outcome)[] Entries(string log) => [.. Regex.Matches(log, @"^-- \S+ \S+ (?<site>.+): (?<outcome>\d+|failed, Msg \d+)(?: rows?)?\n(?<statement>(?:(?!GO\n).*\n)+?)GO\n", RegexOptions.Multiline | RegexOptions.CultureInvariant)
         .Select(m => (m.Groups["site"].Value, m.Groups["statement"].Value.TrimEnd('\n'), m.Groups["outcome"].Value))];
+
+    /// <summary>A database's elements, as io reads one: extracted once, as its identity.</summary>
+    private static SortedArray<Element> Extracted(SqlServer.Database database)
+    {
+        using var package = Made(DacFx.Extract(database));
+        return Made(package.Elements).Elements;
+    }
 
     private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 

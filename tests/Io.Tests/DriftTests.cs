@@ -16,9 +16,9 @@ using Xunit;
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// estate check drift (WP 1.7, V3_ARCHITECTURE.md §8.8): the ref built and planned against the target under the pipeline's profile, exit 0
-/// when the deploy report has no operation and 5 naming each object when it has; law 2′ (M1 exit 3), R13's stamp and window (exit 6),
-/// R16's refusals (exit 7), and R14's log of the read-only principal (exit 8).
+/// estate check drift (WP 1.7, V3_ARCHITECTURE.md §8.8, contract C7): the ref built, the target extracted once, the ref's package planned
+/// against it package to package under the pipeline's profile; exit 0 when the deploy plan is empty and 5 naming each object when it is
+/// not; law 2′ (M1 exit 3), R13's stamp and window (exit 6), R16's refusals (exit 7), and R14's watch on the read-only principal (exit 8).
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
 public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEstate>
@@ -64,7 +64,10 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         }
     }
 
-    /// <summary>Law 2′ (M1 exit 3): the golden project published to a fresh copy matches it, check drift exit 0; one column altered on the copy is exit 5 naming its table and the column.</summary>
+    /// <summary>
+    /// Law 2′ (M1 exit 3): the golden project published to a fresh copy matches it, check drift exit 0 and the deploy plan empty; one column
+    /// altered on the copy is exit 5 naming its table and that column, the column's Length from the target to the repository.
+    /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
     [Trait("Law", "2′ a published copy matches its package")]
@@ -75,14 +78,14 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         {
             var (exit, output) = Drift("copy:" + copy.Name);
             Assert.True(exit == 0, output);
-            Assert.StartsWith("copy:" + copy.Name + " matches " + estate.Base + "\n", output, StringComparison.Ordinal);
+            Assert.StartsWith("copy:" + copy.Name + " matches ref:" + estate.Base + " (commit " + estate.Base[..8] + ").\n", output, StringComparison.Ordinal);
 
             await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(300) NULL;");
             (exit, output) = Drift("copy:" + copy.Name);
 
             Assert.True(exit == 5, output);
-            Assert.StartsWith("copy:" + copy.Name + " differs from " + estate.Base, output, StringComparison.Ordinal);
-            Assert.Contains("- warning `drift.alter` Table [dbo].[Customer]: ", output, StringComparison.Ordinal);
+            Assert.StartsWith("copy:" + copy.Name + " differs from ref:" + estate.Base + " (commit " + estate.Base[..8] + "): the deploy plan holds 1 operation.", output, StringComparison.Ordinal);
+            Assert.Contains("- warning `drift.alter` Table [dbo].[Customer]: The deploy plan against copy:" + copy.Name + " would alter Table [dbo].[Customer].", output, StringComparison.Ordinal);
             Assert.Equal(["- warning `drift.column` Column [dbo].[Customer].[Email]: Length 300 → 256, from the target to the repository."],
                 output.Split('\n').Where(l => l.Contains("`drift.column`", StringComparison.Ordinal)));
         }
@@ -93,15 +96,52 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     }
 
     /// <summary>
+    /// The golden project published to a copy, then a column the project lacks added to dbo.Product with a named default, and a view the
+    /// project lacks over it: the plan of the project against the copy drops the column. check drift names the table's alteration and the
+    /// default's drop as warnings, quotes DacFx's DataIssue alert, lists any operation DacFx adds for a dependent in one note, and writes no
+    /// warning for a refresh.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task A_column_the_package_drops_is_named_with_DacFx_s_data_issue_and_a_dependent_s_refresh_is_a_note()
+    {
+        var copy = await Published();
+        try
+        {
+            await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Product ADD LegacyNote NVARCHAR(40) NOT NULL CONSTRAINT DF_Product_LegacyNote DEFAULT (N'x');");
+            await SqlServerFixture.ExecuteAsync(copy.Connection, "CREATE VIEW dbo.ProductNotes AS SELECT Id, LegacyNote FROM dbo.Product;");
+
+            var (exit, output) = Drift("copy:" + copy.Name, "--json");
+
+            var answer = JsonNode.Parse(output)!;
+            ScratchEstate.Valid("estate.check.1.schema.json", answer);
+            var findings = answer["findings"]!.AsArray().Select(f => (Code: (string)f!["code"]!, Severity: (string)f["severity"]!, Subject: (string)f["subject"]!, Message: (string)f["message"]!)).ToList();
+            Console.WriteLine(string.Join('\n', findings));
+            Assert.True(exit == 5, output);
+            Assert.Contains(("drift.alter", "warning", "Table [dbo].[Product]"), findings.Select(f => (f.Code, f.Severity, f.Subject)));
+            Assert.Contains(("drift.drop", "warning", "DefaultConstraint [dbo].[DF_Product_LegacyNote]"), findings.Select(f => (f.Code, f.Severity, f.Subject)));
+            Assert.Contains(findings, f => f is { Code: "drift.data-issue", Severity: "warning", Subject: "Table [dbo].[Product]" }
+                && f.Message == "The column [dbo].[Product].[LegacyNote] is being dropped, data loss could occur.");
+            Assert.DoesNotContain(findings, f => f.Code == "drift.refresh");
+            Assert.All(findings.Where(f => f.Code == "drift.consequence"), f => Assert.Equal("note", f.Severity));
+            Assert.Contains("`drift.column` dropped Column [dbo].[Product].[LegacyNote]", Drift("copy:" + copy.Name).Output, StringComparison.Ordinal);
+        }
+        finally
+        {
+            GitTests.Ok(ScratchServer.Drop(copy));
+        }
+    }
+
+    /// <summary>
     /// Decision 2.26's measurement (O2): the golden project built under a case-insensitive and under a case-sensitive collation, each
     /// published to a copy created under that collation, then dbo.Customer renamed CUSTOMER on each with sp_rename, which sys.tables
-    /// confirms in a binary comparison. DacServices.Script of the package against its copy plans nothing under either collation: DacFx
-    /// matches object names ignoring case even where the database reads [dbo].[Customer] and [dbo].[CUSTOMER] as two names, so a
-    /// case-only rename on a case-sensitive database is a difference no deploy plan will reconcile. estate diff from the copy to the
-    /// package reads names under the copy's collation: one case-only pair with its note under the case-insensitive collation, and the
-    /// table dropped and created under the case-sensitive one. check drift builds the golden ref, a case-insensitive package: against
-    /// the case-insensitive copy it exits 0, and against the case-sensitive copy DacFx refuses the plan (SQL72030, a case-insensitive
-    /// model deployed to a case-sensitive target), dacfx.failed at exit 6.
+    /// confirms in a binary comparison. The plan of the package against its copy plans nothing under either collation: DacFx matches object
+    /// names ignoring case even where the database reads [dbo].[Customer] and [dbo].[CUSTOMER] as two names, so a case-only rename on a
+    /// case-sensitive database is a difference no deploy plan will reconcile. estate diff from the copy to the package reads names under the
+    /// copy's collation: one case-only pair with its note under the case-insensitive collation, and the table dropped and created under the
+    /// case-sensitive one. check drift builds the golden ref, a case-insensitive package: against the case-insensitive copy it exits 0, and
+    /// against the case-sensitive copy it is refused as DacFx refuses a live plan of a case-insensitive model against a case-sensitive
+    /// database (SQL72030), which the plan package to package does not check: plan.collation at exit 6.
     /// </summary>
     [Theory]
     [Trait("Category", "fixture")]
@@ -118,16 +158,15 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
                 await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.tables WHERE name COLLATE Latin1_General_BIN2 = N'CUSTOMER';"),
                 await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.tables WHERE name COLLATE Latin1_General_BIN2 = N'Customer';")));
 
-            var plan = GitTests.Ok(SqlServer.Plan(dacpac, copy, profile));
+            var plan = Planned(dacpac, copy, profile);
             var (exit, output) = Drift("copy:" + copy.Name);
             var (diffExit, diffOutput) = estate.Estate("diff", "--from", "copy:" + copy.Name, "--to", "dacpac:" + dacpac, "--json");
 
-            Console.WriteLine(collation + ": " + (plan.IsEmpty ? "no operation" : string.Join("; ", plan.Items.Select(i => i.Operation + " " + i.Type + " " + i.Name))));
-            Assert.True(plan.IsEmpty, collation + " planned:\n" + plan.Report);
+            Assert.True(plan.Report.IsEmpty, collation + " planned:\n" + string.Join('\n', plan.Report.Operations));
             Assert.True(exit == driftExit, output);
             if (driftExit == 6)
             {
-                Assert.Contains("`dacfx.failed`", output, StringComparison.Ordinal);
+                Assert.Contains("`plan.collation`", output, StringComparison.Ordinal);
                 Assert.Contains("SQL72030", output, StringComparison.Ordinal);
             }
 
@@ -197,23 +236,33 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     }
 
     /// <summary>
-    /// R13's stamp (M1 exit 6): the provenance names the committed DacFx and the copy's server, with the image's digest where the copy ran in
-    /// the container, and the stamp says UNPINNED while the ledger's row does; and, until S7 lands the Octopus step's profile, that its profile
-    /// is not verified against it (§17 item 15).
+    /// R1 and DECISIONS.md, 2026-09-25: a drift's provenance holds the fingerprint of the target's schema, its elements as the copy extracts,
+    /// and of the deploy report, the change the claim is about; neither is the package's. It names the committed DacFx and the copy's server,
+    /// with the image's digest where the copy ran in the container, and lacks only the data conditions; the stamp says UNPINNED while the
+    /// ledger's row does, and until S7 lands the Octopus step's profile, a note says the profile is not verified against it (§17 item 15).
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task Every_drift_answer_names_its_DacFx_and_its_server()
+    [Trait("Value", "R1")]
+    [Trait("Exit", "M1.6")]
+    public async Task A_drift_s_provenance_fingerprints_the_target_s_schema_and_the_deploy_report()
     {
-        var copy = await Published();
+        var (copy, dacpac, profile) = await Published(null);
         try
         {
+            await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(300) NULL;");
             var (exit, output) = Drift("copy:" + copy.Name, "--json");
+            var plan = Planned(dacpac, copy, profile);
+            using var extracted = GitTests.Ok(DacFx.Extract(copy));
+            using var package = GitTests.Ok(Ssdt.Open(dacpac));
+            var (schema, packaged) = (Fingerprint.Of(GitTests.Ok(extracted.Elements).Elements), Fingerprint.Of(GitTests.Ok(package.Elements).Elements));
 
             var answer = JsonNode.Parse(output)!;
             ScratchEstate.Valid("estate.check.1.schema.json", answer);
-            Assert.Equal((0, "matches"), (exit, (string?)answer["outcome"]));
+            Assert.Equal((5, "differs"), (exit, (string?)answer["outcome"]));
             var provenance = answer["provenance"]!;
+            Assert.Equal(("sha256:" + schema, "sha256:" + Fingerprint.Of(plan.Report)), ((string?)provenance["schema"], (string?)provenance["change"]));
+            Assert.DoesNotContain("sha256:" + packaged, new[] { (string?)provenance["schema"], (string?)provenance["change"] });
             // The copy ran in the estate-sql container when its server is the one ~/.estate/sql.env names, whether ESTATE_SQL also names it or
             // not; ci/sql.sh up, which the fixture runs, keeps that container on the pinned image, whose digest Docker then reports.
             var container = File.Exists(ScratchServer.SqlEnv) && ScratchServer.ServerName(null, ScratchServer.SqlEnv, localDb: false) is Result<ServerName>.Ok(var inContainer)
@@ -223,7 +272,35 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             Assert.Equal(answer["server"]!.ToJsonString(), provenance["server"]!.ToJsonString());
             Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "toolchain.unpinned" && ((string?)f["message"])!.Contains("UNPINNED", StringComparison.Ordinal));
             Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "profile.unverified" && (string?)f["severity"] == "note"
-                && ((string?)f["message"])!.Contains("profile not verified against the Octopus step", StringComparison.Ordinal));
+                && (string?)f["message"] == "The estate commits no copy of the publish profile the Octopus step applies, so " + ScratchEstate.Profile + " is not verified against it.");
+        }
+        finally
+        {
+            GitTests.Ok(ScratchServer.Drop(copy));
+        }
+    }
+
+    /// <summary>
+    /// VALUES.md S2, finding NFR-10: a check whose read of the database fails answers that failure, its stamp as far as the work got, and
+    /// neither a column line nor matches; the cli once turned the same failure into an empty list of columns.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    [Trait("Value", "S2")]
+    public async Task A_check_drift_whose_extract_is_refused_answers_the_refusal_and_no_column_lines()
+    {
+        var copy = await Published();
+        try
+        {
+            var refusal = new Error("server.failed", "copy:" + copy.Name + " failed the statement: Msg 245.", "Look the number up in SQL Server's error list.");
+            var request = new DriftCheck.Request(new Target.RegisteredCopy(copy.Name), GitTests.Ok(GitRef.Of("--at", estate.Base)), ScratchEstate.Profile, null);
+
+            var drift = DriftCheck.Run(new DriftCheck.Estate(estate.Root, estate.Root, estate.Tool.Folder, Cli.Contract.Version), request, SqlServer.QueryLog.Start(estate.Root), _ => refusal);
+
+            Assert.Equal(refusal, Assert.IsType<Result<DriftCheck.Answer>.Failed>(drift.Result).Error);
+            Assert.Equal(4, Cli.Contract.Exit(refusal));
+            Assert.Equal("UNPINNED", drift.Stamp?.Pin?.ToString());
+            Assert.NotNull(drift.Stamp?.Server);
         }
         finally
         {
@@ -257,13 +334,18 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     }
 
     /// <summary>
-    /// M1 exit 8 (R14): an Extended Events session on the read-only principal's login, made by the fixture's admin identity, records every
-    /// batch and call that login sends through a full check drift of a named environment; none is DML, DDL or an EXEC, but the one registry
-    /// read of the default file paths DacFx's Script sends, which the exit names (<see cref="DacFxReadsDefaultPath"/>).
+    /// M1 exit 8 (R14) and the ruling of 2026-09-25: an Extended Events session on the read-only principal's login, made by the fixture's
+    /// admin identity, records every batch and call that login sends through a check drift of a named environment that matches, one that
+    /// finds drift, and a read --from env:dev. None is DML, DDL or an EXEC: the plan runs package to package, so DacFx no longer reads the
+    /// instance's default file paths (xp_instance_regread), and the test admits no EXEC at all. SQL Server masks the text of one call per read
+    /// of the database, which the test cannot read and admits by its form: DacFx sends its catalog queries as one sp_executesql call, and SQL
+    /// Server replaces that call's text with *encrypt and dashes because it names the key and credential catalog views (measured through
+    /// SqlClient's trace on DacFx 170.5.96: the call holds SELECT statements only).
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_a_full_check_drift()
+    [Trait("Exit", "M1.8")]
+    public async Task The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read()
     {
         await using var database = await SqlServerFixture.RegisterAsync();
         var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "project/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
@@ -281,14 +363,22 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
                 + "JOIN sys.dm_xe_sessions s ON s.address = t.event_session_address WHERE s.name = @name AND t.target_name = N'event_file';", session);
             var root = estate.Named(("dev", Path.Combine(Repository.Root, reader.Reference["file:".Length..])));
 
-            var (exit, output) = estate.EstateAt(root, "check", "drift", "--target", "env:dev", "--at", estate.Base);
+            var (matchExit, matching) = estate.EstateAt(root, "check", "drift", "--target", "env:dev", "--at", estate.Base);
+            await SqlServerFixture.ExecuteAsync(database.ConnectionString, "ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(300) NULL;");
+            var (driftExit, drifted) = estate.EstateAt(root, "check", "drift", "--target", "env:dev", "--at", estate.Base);
+            var (readExit, read) = estate.EstateAt(root, "read", "--from", "env:dev");
             await SqlServerFixture.ExecuteAsync(master, "ALTER EVENT SESSION [" + session + "] ON SERVER STATE = STOP;");
 
-            Assert.True(exit == 0, output);
-            Assert.StartsWith("env:dev matches " + estate.Base, output, StringComparison.Ordinal);
+            Assert.True(matchExit == 0, matching);
+            Assert.StartsWith("env:dev matches ref:" + estate.Base, matching, StringComparison.Ordinal);
+            Assert.True(driftExit == 5, drifted);
+            Assert.Contains("`drift.column` Column [dbo].[Customer].[Email]: Length 300 → 256", drifted, StringComparison.Ordinal);
+            Assert.True(readExit == 0, read);
             var sent = await Events(master, file[..file.LastIndexOf('_')] + "*.xel");
-            Assert.Contains(sent, s => s.Contains("HAS_PERMS_BY_NAME", StringComparison.Ordinal));   // the session saw the run: estate's own first statement
-            var writes = sent.SelectMany(Writes).ToList();
+            Assert.Contains(sent, s => s.Text.Contains("HAS_PERMS_BY_NAME", StringComparison.Ordinal));   // the session saw the run: estate's own first statement
+            var masked = sent.Where(s => Masked(s.Text)).ToList();
+            Assert.Equal(Enumerable.Repeat(("rpc_completed", "sp_executesql"), 3), masked.Select(s => (s.Event, s.Object)));   // one per read: the two checks and the read
+            var writes = sent.Where(s => !Masked(s.Text)).SelectMany(s => Writes(s.Text)).ToList();
             Assert.True(writes.Count == 0, string.Join("\n----\n", writes));
         }
         finally
@@ -303,9 +393,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     [InlineData("SELECT name FROM sys.tables;", false)]
     [InlineData("SELECT HAS_PERMS_BY_NAME(NULL, N'DATABASE', N'VIEW DEFINITION');", false)]
     [InlineData("exec sp_executesql N'SELECT 1 WHERE @p = 1', N'@p int', @p = 1", false)]
-    [InlineData("DECLARE @filepath nvarchar(260); EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE',N'Software\\Microsoft\\MSSQLServer\\MSSQLServer',N'DefaultLog', @filepath output, 'no_output'", false)]
+    [InlineData("DECLARE @filepath nvarchar(260); EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE',N'Software\\Microsoft\\MSSQLServer\\MSSQLServer',N'DefaultLog', @filepath output, 'no_output'", true)]
     [InlineData("exec sp_executesql N'DELETE dbo.Customer WHERE Id = @p', N'@p int', @p = 1", true)]
-    [InlineData("DECLARE @v nvarchar(260); EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE',N'Software\\Microsoft\\MSSQLServer\\MSSQLServer',N'BackupDirectory', @v output, 'no_output'", true)]
     [InlineData("EXEC dbo.usp_Anything;", true)]
     [InlineData("IF 1 = 1 BEGIN UPDATE dbo.Customer SET Email = NULL; END", true)]
     [InlineData("SELECT * INTO #kept FROM dbo.Customer;", true)]
@@ -313,16 +402,18 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     [InlineData("GRANT SELECT ON dbo.Customer TO public;", true)]
     public void The_principal_test_finds_every_write_and_passes_every_read(string sent, bool writes) => Assert.Equal(writes, Writes(sent).Any());
 
-    /// <summary>
-    /// The one EXEC DacFx's Script sends itself, measured here: master.dbo.xp_instance_regread of the instance's DefaultData or DefaultLog
-    /// registry value, a read of the default file paths its script's header sets, with exactly the arguments DacFx gives. DacFx's own
-    /// catalog queries are not estate's to allowlist (V3_MILESTONES.md §7, Watch for); this session is what checks them. M1 exit 8 names
-    /// this one EXEC, and DECISIONS.md records it.
-    /// </summary>
-    private static bool DacFxReadsDefaultPath(ExecutableProcedureReference call) =>
-        call.ProcedureReference?.ProcedureReference?.Name is { DatabaseIdentifier.Value: "master", SchemaIdentifier.Value: "dbo", BaseIdentifier.Value: "xp_instance_regread" }
-        && call.Parameters.Select(p => (p.ParameterValue as StringLiteral)?.Value ?? (p.ParameterValue as VariableReference)?.Name + (p.IsOutput ? " OUTPUT" : "")).ToArray() is
-            ["HKEY_LOCAL_MACHINE", @"Software\Microsoft\MSSQLServer\MSSQLServer", "DefaultData" or "DefaultLog", "@filepath OUTPUT", "no_output"];
+    /// <summary>The form SQL Server gives a masked text, an asterisk, the word it matched and dashes, beside texts that only resemble it.</summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("*encrypt------------------------------", true)]
+    [InlineData("*password----------", true)]
+    [InlineData("*encrypt", false)]
+    [InlineData("SELECT '*encrypt----' AS masked;", false)]
+    [InlineData("", false)]
+    public void The_principal_test_reads_a_masked_text_only_in_SQL_Server_s_form(string sent, bool masked) => Assert.Equal(masked, Masked(sent));
+
+    /// <summary>Whether SQL Server masked a statement's text in the event: an asterisk, a lower-case word, then dashes to the end.</summary>
+    private static bool Masked(string text) => System.Text.RegularExpressions.Regex.IsMatch(text, @"\A\*[a-z_]+-+\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     /// <summary>What a batch or a call does beyond reading: each DML, DDL or EXEC statement in it, sp_executesql read through to the statement it carries.</summary>
     private static IEnumerable<string> Writes(string sent)
@@ -339,7 +430,6 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         {
             ExecuteStatement { ExecuteSpecification.ExecutableEntity: ExecutableProcedureReference { ProcedureReference.ProcedureReference.Name.BaseIdentifier.Value: var name } call }
                 when string.Equals(name, "sp_executesql", StringComparison.OrdinalIgnoreCase) && call.Parameters is [{ ParameterValue: StringLiteral inner }, ..] => Writes(inner.Value),
-            ExecuteStatement { ExecuteSpecification.ExecutableEntity: ExecutableProcedureReference call } when DacFxReadsDefaultPath(call) => [],
             ExecuteStatement or InsertStatement or UpdateStatement or DeleteStatement or MergeStatement or TruncateTableStatement or BulkInsertStatement => [s.GetType().Name + ": " + sent],
             SelectStatement { Into: not null } => ["SELECT INTO: " + sent],
             _ when s.GetType().Name.StartsWith("Create", StringComparison.Ordinal) || s.GetType().Name.StartsWith("Alter", StringComparison.Ordinal)
@@ -356,10 +446,10 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         public override void Visit(TSqlStatement node) => Found.Add(node);
     }
 
-    /// <summary>Each batch's text and each call's statement the session wrote to its files.</summary>
-    private static async Task<List<string>> Events(string master, string files)
+    /// <summary>Each batch's text and each call's statement the session wrote to its files, with the event's name and, for a call, the procedure called.</summary>
+    private static async Task<List<(string Event, string Object, string Text)>> Events(string master, string files)
     {
-        var sent = new List<string>();
+        var sent = new List<(string Event, string Object, string Text)>();
         await using var connection = new SqlConnection(master);
         await connection.OpenAsync();
         await using var read = new SqlCommand("SELECT CAST(event_data AS nvarchar(max)) FROM sys.fn_xe_file_target_read_file(@files, NULL, NULL, NULL);", connection);
@@ -367,8 +457,9 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         await using var events = await read.ExecuteReaderAsync();
         while (await events.ReadAsync())
         {
-            var data = XElement.Parse(events.GetString(0)).Elements("data").ToDictionary(d => (string)d.Attribute("name")!, d => (string?)d.Element("value") ?? "");
-            sent.Add(data.GetValueOrDefault("batch_text") ?? data.GetValueOrDefault("statement") ?? "");
+            var @event = XElement.Parse(events.GetString(0));
+            var data = @event.Elements("data").ToDictionary(d => (string)d.Attribute("name")!, d => (string?)d.Element("value") ?? "");
+            sent.Add(((string?)@event.Attribute("name") ?? "", data.GetValueOrDefault("object_name") ?? "", data.GetValueOrDefault("batch_text") ?? data.GetValueOrDefault("statement") ?? ""));
         }
 
         return sent;
@@ -381,6 +472,14 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.Add(new SqlParameter("@name", System.Data.SqlDbType.NVarChar, 128) { Value = name });
         return (string)(await command.ExecuteScalarAsync())!;
+    }
+
+    /// <summary>The plan of the package at <paramref name="dacpac"/> against the copy, extracted, package to package, as check drift plans.</summary>
+    private static Plan Planned(string dacpac, SqlServer.Copy copy, PublishProfile.Strict profile)
+    {
+        using var extracted = GitTests.Ok(DacFx.Extract(copy));
+        using var package = GitTests.Ok(Ssdt.Open(dacpac));
+        return GitTests.Ok(DacFx.Plan(package, extracted, copy.Catalog, profile, []));
     }
 
     /// <summary>A fresh copy on the run's scratch server, registered under the estate's root, with the golden project published to it under the pipeline's profile.</summary>

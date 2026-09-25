@@ -642,7 +642,7 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// DacFx's own failure through Database.ErrorOf: DacPackageExtensions.BuildPackage over a view on a table the model lacks throws
+    /// DacFx's own failure through io/DacFx.Failed: DacPackageExtensions.BuildPackage over a view on a table the model lacks throws
     /// DacServicesException, whose Message already holds each of its three SQL71501 messages and which holds no SqlException. The error is
     /// dacfx.failed at exit 6 for a named environment and a copy alike, quoting DacFx's words with each SQL71501 message once.
     /// </summary>
@@ -664,11 +664,11 @@ public sealed class TargetTests : IDisposable
             Microsoft.SqlServer.Dac.DacPackageExtensions.BuildPackage(Path.Combine(scratch, "unresolved.dacpac"), model, new Microsoft.SqlServer.Dac.PackageMetadata());
         }));
 
-        var error = database.ErrorOf(failure);
+        var error = DacFx.Failed(database, failure);
 
         Assert.Equal(3, failure.Messages.Count(m => m.Prefix + m.Number == "SQL71501"));
         Assert.Equal(("dacfx.failed", 6), (error.Code, Contract.Exit(error)));
-        Assert.StartsWith("DacFx failed against " + target + " with no SQL Server error inside: Cannot save package to file.", error.Message, StringComparison.Ordinal);
+        Assert.StartsWith("DacFx failed against " + target + " with no SQL Server error inside: Error SQL71501: ", error.Message, StringComparison.Ordinal);
         Assert.Equal(3, error.Message.Split("SQL71501").Length - 1);
         Assert.Contains("[dbo].[V] has an unresolved reference to object [dbo].[Missing].", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain('\n', error.Message);

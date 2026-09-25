@@ -16,7 +16,7 @@ namespace Estate.Io.Tests;
 /// <summary>
 /// io/Ssdt's build and load (WP 1.1): a classic project builds against the published tool folder with no Visual Studio,
 /// into a folder under .estate/build/ that its inputs' fingerprint names; its package carries the refactorlog and both
-/// deploy scripts, and Load reads them back. A broken .sql is exit 7 naming its file and line; a machine without the SDK
+/// deploy scripts, and Open reads them back. A broken .sql is exit 7 naming its file and line; a machine without the SDK
 /// band global.json names is exit 6 with the remedy. Each test builds its own copy of tests/Golden/ under .estate/.
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
@@ -24,7 +24,13 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
 {
     private readonly string scratch = Path.Combine(Repository.Root, ".estate", "ssdt", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);
 
+    /// <summary>The classic-minimal project's path from the root of <see cref="Golden"/>'s copy.</summary>
+    private const string Minimal = "classic-minimal/ClassicMinimal.sqlproj";
+
     private string Output => Path.Combine(scratch, "build");
+
+    /// <summary><see cref="Golden"/>'s copy standing in for a ref's worktree at a commit, which a build reads as a folder and a commit.</summary>
+    private Git.Worktree At => new(Path.Combine(scratch, "golden"), "0123456789abcdef0123456789abcdef01234567");
 
     public void Dispose()
     {
@@ -52,25 +58,114 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_project_with_a_pre_deploy_script_builds_both_deploy_scripts_in_and_Load_reads_them_the_model_and_the_rename()
+    public void A_project_with_a_pre_deploy_script_builds_both_deploy_scripts_in_and_Open_reads_them_the_model_and_the_rename()
     {
         var project = Golden();
         var directory = Path.GetDirectoryName(project)!;
         File.WriteAllText(Path.Combine(directory, "Script.PreDeployment.sql"), "PRINT N'pre-deploy ran';\n");
-        var xml = XDocument.Load(project);
-        XNamespace msbuild = "http://schemas.microsoft.com/developer/msbuild/2003";
-        xml.Root!.Add(new XElement(msbuild + "ItemGroup", new XElement(msbuild + "PreDeploy", new XAttribute("Include", "Script.PreDeployment.sql"))));
-        xml.Save(project);
+        Edited(project, new XElement(MsBuild + "ItemGroup", new XElement(MsBuild + "PreDeploy", new XAttribute("Include", "Script.PreDeployment.sql"))));
 
-        using var package = Ok(Ssdt.Load(Ok(Ssdt.Build(project, tool.Folder, Output)).Path));
+        using var package = Ok(Ssdt.Open(Ok(Ssdt.Build(project, tool.Folder, Output)).Path));
 
         Assert.Contains("pre-deploy ran", package.PreDeploy, StringComparison.Ordinal);
         Assert.Contains("post-deploy ran", package.PostDeploy, StringComparison.Ordinal);
         Assert.Contains(package.Model.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass), t => t.Name.ToString() == "[dbo].[Customer]");
+        var rename = Assert.Single(package.Refactors);
         Assert.Equal(
-            new Ssdt.RefactorEntry("3f6a2c1e-8a4b-4d1e-9d2f-7c0b1a2e3d4f", "Rename Refactor", "09/23/2026 10:00:00", "[dbo].[Customer].[FirstName]", "SqlSimpleColumn", "[dbo].[Customer]", "SqlTable", "[GivenName]", null),
-            Assert.Single(package.Refactors));
+            new Ssdt.RefactorLogOperation("3f6a2c1e-8a4b-4d1e-9d2f-7c0b1a2e3d4f", "Rename Refactor", "09/23/2026 10:00:00", "[dbo].[Customer].[FirstName]", "SqlSimpleColumn", "[dbo].[Customer]", "SqlTable", "[GivenName]", null),
+            rename);
+        Assert.Equal(Ssdt.RefactorOperationKind.Rename, rename.Kind);
         Assert.Equal(package.Refactors, Ok(Ssdt.RefactorLog(Path.Combine(directory, "ClassicMinimal.refactorlog"))));
+    }
+
+    /// <summary>
+    /// DECISIONS.md, 2026-09-24: a package is opened from its bytes, never by path, so nothing holds the file and no assembly the build wrote
+    /// beside it loads into this process: the package deletes while it is open, and a plan of it against itself loads none of them.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_package_opens_from_one_stream_and_holds_its_assemblies_in_no_process()
+    {
+        var dacpac = Ok(Ssdt.Build(Golden(), tool.Folder, Output)).Path;
+        var folder = Path.GetDirectoryName(dacpac)!;
+
+        using (var package = Ok(Ssdt.Open(dacpac)))
+        {
+            File.Delete(dacpac);
+            Assert.True(Ok(DacFx.Plan(package, package, "ClassicMinimal", Strict(), [])).Report.IsEmpty);
+            Assert.False(File.Exists(dacpac));
+        }
+
+        Assert.DoesNotContain(AppDomain.CurrentDomain.GetAssemblies(), a => !a.IsDynamic && a.Location.StartsWith(folder, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>A package whose refactor.xml SSDT could not have written is refused as a refactorlog, naming the part and the package; a missing package is named as missing.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_package_whose_refactor_xml_is_malformed_is_refused_as_a_refactorlog_naming_the_package_and_a_missing_one_as_absent()
+    {
+        var dacpac = Ok(Ssdt.Build(Golden(), tool.Folder, Output)).Path;
+        using (var zip = ZipFile.Open(dacpac, ZipArchiveMode.Update))
+        {
+            zip.GetEntry("refactor.xml")!.Delete();
+            using var log = new StreamWriter(zip.CreateEntry("refactor.xml").Open());
+            log.Write("<Operations xmlns=\"http://schemas.microsoft.com/sqlserver/dac/Serialization/2012/02\"><Operation Key=\"k\" /></Operations>");
+        }
+
+        var malformed = Failed(Ssdt.Open(dacpac));
+        var missing = Failed(Ssdt.Open(Path.Combine(scratch, "none.dacpac")));
+
+        Assert.Equal(("refactorlog.unreadable", 2), (malformed.Code, Contract.Exit(malformed)));
+        Assert.StartsWith("refactor.xml inside " + dacpac + " is not a refactorlog SSDT reads:", malformed.Message, StringComparison.Ordinal);
+        Assert.Equal(("package.unreadable", "No package at " + Path.Combine(scratch, "none.dacpac") + "."), (missing.Code, missing.Message));
+    }
+
+    /// <summary>
+    /// DF-9: the golden classic project declares no SQLCMD variable and targets Sql160; the same project given a SqlCmdVariable builds to a
+    /// package that declares it (DacPackage.SqlCmdVariables), and a plan that gives it no value is refused before DacFx plans, naming the
+    /// variable, while one whose profile gives it a value plans.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_declared_variable_with_no_value_is_refused_before_the_plan_and_names_the_variable()
+    {
+        var project = Golden();
+        using (var golden = Ok(Ssdt.Open(Ok(Ssdt.Build(project, tool.Folder, Output)).Path)))
+        {
+            Assert.Equal(("", "Sql160"), (string.Join(",", golden.Declared), golden.Platform.ToString()));
+        }
+
+        Edited(project, new XElement(MsBuild + "ItemGroup", new XElement(MsBuild + "SqlCmdVariable", new XAttribute("Include", "Tag"), new XElement(MsBuild + "Value", "$(SqlCmdVar__1)"))));
+        using var tagged = Ok(Ssdt.Open(Ok(Ssdt.Build(project, tool.Folder, Path.Combine(scratch, "tagged"))).Path));
+        var given = Strict(("Tag", "dev"));
+
+        var undefined = Failed(DacFx.Plan(tagged, tagged, "ClassicMinimal", Strict(), []));
+
+        Assert.Equal(["Tag"], tagged.Declared.Select(n => n.ToString()));
+        Assert.Equal(("sqlcmd.undefined", 6), (undefined.Code, Contract.Exit(undefined)));
+        Assert.Contains("$(Tag)", undefined.Message, StringComparison.Ordinal);
+        Assert.Contains(":setvar Tag \"dev\"", Ok(DacFx.Plan(tagged, tagged, "ClassicMinimal", given, [])).Script, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The measurement DF-9's refusal waited on: a project whose SqlCmdVariable has a DefaultValue, planned by DacServices.Script with no
+    /// value given, gets an empty value in its script (measured on DacFx 170.5.96): DacFx does not apply the project's default, so a declared
+    /// variable no profile or posture gives is refused whether or not the project defaults it.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_declared_variable_s_default_value_is_not_what_DacFx_plans_when_no_value_is_given()
+    {
+        var project = Golden();
+        Edited(project, new XElement(MsBuild + "ItemGroup", new XElement(MsBuild + "SqlCmdVariable", new XAttribute("Include", "Tag"),
+            new XElement(MsBuild + "DefaultValue", "dev"), new XElement(MsBuild + "Value", "$(SqlCmdVar__1)"))));
+        using var package = Ok(Ssdt.Open(Ok(Ssdt.Build(project, tool.Folder, Output)).Path));
+
+        var script = Microsoft.SqlServer.Dac.DacServices.Script(package.Dac, package.Dac, "ClassicMinimal",
+            new Microsoft.SqlServer.Dac.PublishOptions { GenerateDeploymentScript = true, DeployOptions = Strict().Options() }).DatabaseScript;
+
+        Assert.Equal([":setvar Tag \"\""], script.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.StartsWith(":setvar Tag", StringComparison.Ordinal)));
+        Assert.Equal("sqlcmd.undefined", Failed(DacFx.Plan(package, package, "ClassicMinimal", Strict(), [])).Code);
     }
 
     [Fact]
@@ -177,6 +272,130 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         Assert.Contains("dotnet build ClassicMinimal.sqlproj -v:n", error.Remedy, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The ruling of 2026-09-25: a second build of one commit against the same targets returns the package the first wrote and asks the
+    /// runner for nothing; a changed byte in the tool folder's SqlTasks targets changes the targets' fingerprint, and the build runs again,
+    /// into another folder under the commit's.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_second_build_of_one_commit_with_the_same_targets_runs_no_dotnet()
+    {
+        Golden();
+        var folder = Path.Combine(scratch, "tool");
+        ToolFolderTests.Copy(tool.Folder, folder);
+        var calls = new List<Command>();
+        Ran Counted(Command c, System.Threading.CancellationToken t)
+        {
+            calls.Add(c);
+            return Command.Run(c, t);
+        }
+
+        var first = Ok(Ssdt.Build(At, Minimal, folder, Output, Counted));
+        var afterFirst = calls.Count;
+        var second = Ok(Ssdt.Build(At, Minimal, folder, Output, Counted));
+        var afterSecond = calls.Count;
+        File.AppendAllText(Path.Combine(folder, Ssdt.BuildTargets.Targets), "\n");
+        var third = Ok(Ssdt.Build(At, Minimal, folder, Output, Counted));
+
+        Assert.Equal(first, second);
+        Assert.Equal(afterFirst, afterSecond);
+        Assert.Equal(Path.Combine(Output, At.Commit), Path.GetDirectoryName(Path.GetDirectoryName(first.Path)));
+        Assert.NotEqual(first.Targets.Fingerprint, third.Targets.Fingerprint);
+        Assert.NotEqual(Path.GetDirectoryName(first.Path), Path.GetDirectoryName(third.Path));
+        Assert.Equal(2, calls.Count(c => c.Arguments[0] == "build"));
+    }
+
+    /// <summary>A package whose bytes changed after its build no longer fingerprints as its marker says, so the next build of that commit runs dotnet again and writes it anew.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_cached_package_whose_bytes_changed_is_built_again()
+    {
+        Golden();
+        var builds = 0;
+        Ran Counted(Command c, System.Threading.CancellationToken t)
+        {
+            builds += c.Arguments[0] == "build" ? 1 : 0;
+            return Command.Run(c, t);
+        }
+
+        var first = Ok(Ssdt.Build(At, Minimal, tool.Folder, Output, Counted));
+        File.WriteAllBytes(first.Path, [0x50]);
+        var second = Ok(Ssdt.Build(At, Minimal, tool.Folder, Output, Counted));
+
+        Assert.Equal((2, first.Path), (builds, second.Path));
+        using var package = Ok(Ssdt.Open(second.Path));
+        Assert.Contains(package.Model.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass), t => t.Name.ToString() == "[dbo].[Customer]");
+    }
+
+    /// <summary>Two builds of one commit at once take the output folder's lock in turn: one runs dotnet, and the other, once the lock is free, returns the package the first wrote.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public async System.Threading.Tasks.Task Two_processes_building_one_commit_serialize_on_the_lock()
+    {
+        Golden();
+        var builds = 0;
+        Ran Slow(Command c, System.Threading.CancellationToken t)
+        {
+            if (c.Arguments[0] == "build")
+            {
+                System.Threading.Interlocked.Increment(ref builds);
+                System.Threading.Thread.Sleep(TimeSpan.FromSeconds(1));
+            }
+
+            return Command.Run(c, t);
+        }
+
+        var both = await System.Threading.Tasks.Task.WhenAll(Enumerable.Range(0, 2).Select(_ => System.Threading.Tasks.Task.Run(() => Ssdt.Build(At, Minimal, tool.Folder, Output, Slow))));
+
+        Assert.Equal(1, builds);
+        Assert.Equal(Ok(both[0]), Ok(both[1]));
+    }
+
+    /// <summary>A build that exits 0 and names no package it wrote (a project whose OutputType is not Database) is build.no-package, whose remedy names OutputType, and not build.failed.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_project_that_writes_no_package_is_refused_as_no_package_and_not_as_a_failed_build()
+    {
+        Ran Quiet(Command c, System.Threading.CancellationToken t) => c.Arguments[0] == "build" ? new Ran.Exited(0, "  Build succeeded.\n    0 Warning(s)\n    0 Error(s)\n", "") : Command.Run(c, t);
+
+        var error = Failed(Ssdt.Build(Golden(), tool.Folder, Output, Quiet));
+
+        Assert.Equal(("build.no-package", 7), (error.Code, Contract.Exit(error)));
+        Assert.Contains("OutputType", error.Remedy, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// §1.1: a tool folder whose build task is not the DacFx estate runs is refused before the build, as toolchain.targets-mismatch at exit 6:
+    /// an empty file in the task's place carries no file version, and a task of another release names both releases.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_tool_folder_whose_task_is_another_DacFx_is_refused_before_the_build()
+    {
+        var folder = Path.Combine(scratch, "mismatched");
+        foreach (var file in (string[])[Ssdt.BuildTargets.Targets, "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"])
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(folder, file))!);
+            File.Copy(Path.Combine(tool.Folder, file), Path.Combine(folder, file));
+        }
+
+        File.WriteAllBytes(Path.Combine(folder, Ssdt.BuildTargets.Task), []);
+        var builds = 0;
+
+        var empty = Failed(Ssdt.Build(Golden(), folder, Output, (c, t) =>
+        {
+            builds += c.Arguments[0] == "build" ? 1 : 0;
+            return Command.Run(c, t);
+        }));
+        var older = Failed(Ssdt.BuildTargets.Of(tool.Folder, DacFxVersion.Of("170.4.71")));
+
+        Assert.Equal(("toolchain.targets-mismatch", 6, 0), (empty.Code, Contract.Exit(empty), builds));
+        Assert.Contains("no file version", empty.Message, StringComparison.Ordinal);
+        Assert.Equal("The tool folder's build task is DacFx 170.5.96 and estate runs DacFx 170.4.71.", older.Message);
+        Assert.Contains("ci/publish.sh", older.Remedy, StringComparison.Ordinal);
+    }
+
     /// <summary>The command the build runs: dotnet build from the project's folder, for ten minutes, telemetry and the SDK's first-run actions off, English, UTF-8, no MSBuild server, ESTATE_SQL withheld.</summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -205,7 +424,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
     {
         var sql = Path.Combine(Path.GetDirectoryName(Golden())!, "dbo", "Tables", "Customer.sql");
 
-        Assert.Equal(("package.unreadable", 2), (Failed(Ssdt.Load(sql)).Code, Contract.Exit(Failed(Ssdt.Load(sql)))));
+        Assert.Equal(("package.unreadable", 2), (Failed(Ssdt.Open(sql)).Code, Contract.Exit(Failed(Ssdt.Open(sql)))));
         Assert.Equal(("refactorlog.unreadable", 2), (Failed(Ssdt.RefactorLog(sql)).Code, Contract.Exit(Failed(Ssdt.RefactorLog(sql)))));
     }
 
@@ -257,6 +476,33 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         }
 
         return Path.Combine(root, name);
+    }
+
+    private static readonly XNamespace MsBuild = "http://schemas.microsoft.com/developer/msbuild/2003";
+
+    /// <summary>The project with one more element under its root, saved in place.</summary>
+    private static void Edited(string project, XElement added)
+    {
+        var xml = XDocument.Load(project);
+        xml.Root!.Add(added);
+        xml.Save(project);
+    }
+
+    /// <summary>The golden pipeline profile; with values given, a copy of it under the scratch folder that gives each as a SQLCMD variable.</summary>
+    private PublishProfile.Strict Strict(params (string Name, string Value)[] values)
+    {
+        var pipeline = Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml");
+        if (values.Length == 0)
+        {
+            return Ok(Profiles.Load(pipeline));
+        }
+
+        var profile = XDocument.Load(pipeline);
+        profile.Root!.Add(new XElement(MsBuild + "ItemGroup", values.Select(v => new XElement(MsBuild + "SqlCmdVariable", new XAttribute("Include", v.Name), new XElement(MsBuild + "Value", v.Value)))));
+        var path = Path.Combine(scratch, "given.publish.xml");
+        Directory.CreateDirectory(scratch);
+        profile.Save(path);
+        return Ok(Profiles.Load(path));
     }
 
     private static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));

@@ -545,7 +545,7 @@ public sealed class RefBuildTests(PublishedTool tool) : IDisposable
     {
         Assert.Equal([before, after], built.Select(b => b.At.Commit));
         Assert.Equal([Path.Combine(scratch.Root, ".estate", "worktrees", before), Path.Combine(scratch.Root, ".estate", "worktrees", after)], built.Select(b => b.At.Path));
-        Assert.Equal([Path.Combine(Output, before), Path.Combine(Output, after)], built.Select(b => Path.GetDirectoryName(b.Dacpac)));
+        Assert.Equal([Path.Combine(Output, before), Path.Combine(Output, after)], built.Select(b => Path.GetDirectoryName(Path.GetDirectoryName(b.Dacpac))));
         Assert.Equal(["[dbo].[Customer].[GivenName]", "[dbo].[Customer].[Id]"], Columns(built[0].Dacpac));
         Assert.Equal(["[dbo].[Customer].[Email]", "[dbo].[Customer].[GivenName]", "[dbo].[Customer].[Id]"], Columns(built[1].Dacpac));
         foreach (var (mine, theirs) in ((int[])[0, 1]).Select(i => (built[i], built[1 - i])))
@@ -564,7 +564,7 @@ public sealed class RefBuildTests(PublishedTool tool) : IDisposable
     /// <summary>The columns a package holds, by name, in ordinal order.</summary>
     private static List<string> Columns(string dacpac)
     {
-        using var package = GitTests.Ok(Ssdt.Load(dacpac));
+        using var package = GitTests.Ok(Ssdt.Open(dacpac));
         return package.Model.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass).SelectMany(t => t.GetReferenced(Table.Columns)).Select(c => c.Name.ToString()).Order(StringComparer.Ordinal).ToList();
     }
 

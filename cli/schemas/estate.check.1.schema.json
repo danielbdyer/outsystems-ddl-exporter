@@ -157,7 +157,8 @@
             "at",
             "commit",
             "counts",
-            "operations"
+            "operations",
+            "columns"
           ],
           "properties": {
             "kind": {
@@ -181,10 +182,15 @@
               "type": "object",
               "additionalProperties": false,
               "required": [
-                "operations"
+                "operations",
+                "columns"
               ],
               "properties": {
                 "operations": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "columns": {
                   "type": "integer",
                   "minimum": 0
                 }
@@ -197,25 +203,197 @@
                 "additionalProperties": false,
                 "required": [
                   "operation",
-                  "type",
-                  "name"
+                  "name",
+                  "key",
+                  "issues"
                 ],
                 "properties": {
                   "operation": {
                     "type": "string",
-                    "minLength": 1
-                  },
-                  "type": {
-                    "type": "string",
-                    "minLength": 1
+                    "pattern": "^[a-z]+(-[a-z]+)*$"
                   },
                   "name": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    ]
+                  },
+                  "key": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "issues": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
                   }
                 }
               },
               "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+            },
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "created",
+                "dropped",
+                "renamed",
+                "caseOnlyRenamed",
+                "altered"
+              ],
+              "properties": {
+                "created": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+                },
+                "dropped": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+                },
+                "renamed": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "before",
+                      "after"
+                    ],
+                    "properties": {
+                      "before": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "after": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+                },
+                "caseOnlyRenamed": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "before",
+                      "after"
+                    ],
+                    "properties": {
+                      "before": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "after": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+                },
+                "altered": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "key",
+                      "properties",
+                      "relationships"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "properties": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "name",
+                            "before",
+                            "after"
+                          ],
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "before": {
+                              "type": [
+                                "boolean",
+                                "integer",
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "after": {
+                              "type": [
+                                "boolean",
+                                "integer",
+                                "string",
+                                "null"
+                              ]
+                            }
+                          }
+                        }
+                      },
+                      "relationships": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "name",
+                            "before",
+                            "after"
+                          ],
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "before": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "after": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+                }
+              }
             }
           }
         }

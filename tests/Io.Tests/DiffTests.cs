@@ -40,7 +40,7 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         Assert.True(exit == 0, output);
         Assert.Equal("Column [dbo].[Customer].[Email]: Nullable true → false\n", output);
 
-        var dacpac = Path.Combine(estate.Root, ".estate", "build", estate.Head, "SampleCatalog.dacpac");
+        var dacpac = Built(estate.Head);
         var (readExit, read) = estate.Tool.RunAt(estate.Root, "read", "--from", "dacpac:" + dacpac, "--json");
 
         Assert.True(readExit == 0, read);
@@ -55,6 +55,10 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
     /// </summary>
     private JsonArray Elements(JsonNode answer) =>
         ((string?)answer["full"] is { } full ? JsonNode.Parse(File.ReadAllText(Path.Combine(estate.Root, full)))! : answer)["read"]!["elements"]!.AsArray();
+
+    /// <summary>The package a ref's build wrote: under .estate/build/, the commit's folder, then the folder the tool folder's build files name.</summary>
+    private string Built(string commit) => Path.Combine(estate.Root, ".estate", "build", commit,
+        GitTests.Ok(Ssdt.BuildTargets.Of(estate.Tool.Folder)).Fingerprint.ToString()[..16], "SampleCatalog.dacpac");
 
     /// <summary>
     /// VALUES.md X2 for a database read, the other half of ProfilesTests.No_output_contains_Password's search of every error: a
@@ -139,14 +143,14 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
     public void Read_of_a_ref_and_of_the_package_its_build_wrote_fingerprint_alike_and_validate_against_estate_read_1()
     {
         var (exit, output) = estate.Estate("read", "--from", "ref:" + estate.Base, "--json");
-        var dacpac = Path.Combine(estate.Root, ".estate", "build", estate.Base, "SampleCatalog.dacpac");
+        var dacpac = Built(estate.Base);
         var (packageExit, package) = estate.Estate("read", "--from", "dacpac:" + dacpac, "--json");
 
         var (fromRef, fromPackage) = (JsonNode.Parse(output)!, JsonNode.Parse(package)!);
         ScratchEstate.Valid("estate.read.1.schema.json", fromRef);
         ScratchEstate.Valid("estate.read.1.schema.json", fromPackage);
         Assert.Equal((0, 0), (exit, packageExit));
-        using var loaded = GitTests.Ok(Ssdt.Load(dacpac));
+        using var loaded = GitTests.Ok(Ssdt.Open(dacpac));
         var elements = GitTests.Ok(Ssdt.Elements(loaded)).Elements;
         Assert.Equal("sha256:" + Fingerprint.Of(elements), (string?)fromRef["read"]!["fingerprint"]);
         Assert.Equal((string?)fromRef["read"]!["fingerprint"], (string?)fromPackage["read"]!["fingerprint"]);

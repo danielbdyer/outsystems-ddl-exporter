@@ -214,6 +214,7 @@ public static class Contract
         ErrorCategory.SyntheticCopy => 6,
         ErrorCategory.Toolchain => 6,
         ErrorCategory.DacFx => 6,
+        ErrorCategory.Plan => 6,
         ErrorCategory.File => 6,
         ErrorCategory.Verb => 6,
         ErrorCategory.Internal => 6,

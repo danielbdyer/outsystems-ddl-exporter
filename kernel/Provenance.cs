@@ -121,5 +121,5 @@ public readonly record struct ServerLevel(int Major, int CompatibilityLevel);
 /// </summary>
 public sealed record Stamp(DacFxVersion DacFx, Pin? Pin = null, Server? Server = null);
 
-/// <summary>A verb's result with the stamp its work reached: the stamp stands whether the result holds its value or an error.</summary>
-public sealed record Stamped<T>(Stamp Stamp, Result<T> Result);
+/// <summary>A verb's result with the stamp its work reached, whether the result holds its value or an error; null where the work failed before DacFx's release was named.</summary>
+public sealed record Stamped<T>(Stamp? Stamp, Result<T> Result);

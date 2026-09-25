@@ -21,7 +21,7 @@ namespace Estate.Budgets.Tests.Register;
 /// case, and leaves it deletable. The kernel's schema errors, io/Ssdt's and io/Git's quote what they reject, a name, a
 /// version, a path, a ref or a branch, and plant nothing. io/Git's are reached in a repository made under the scratch folder.
 /// io/SqlServer's and io/ScratchServer's reach no server: each is an error before anything connects, and a SQL Server or DacFx error reaches
-/// its code through Database.ErrorOf, the one door every failure against a server passes through. The scratch server's own choice
+/// its code through Database.ErrorOf, the one door every failure against a server passes through, which io/DacFx.Failed hands a DacFx failure to. The scratch server's own choice
 /// and Create on a given server are io's alone, so R15 is reached through copy: and a planted registry row. The cli's reject
 /// arguments, through Contract.Flags and estate check's own answer.
 /// </summary>
@@ -80,18 +80,43 @@ internal static class RefusalPaths
         new("a build that fails", "build.failed", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Hollow(scratch), Output(scratch), Sdk))),
         new("a build past its timeout", "build.timed-out", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Hollow(scratch), Output(scratch),
             (c, t) => c.Arguments[0] == "build" ? new Ran.TimedOut(c.Timeout, "  Determining projects to restore...\n", "") : Sdk(c, t)))),
+        new("a build that succeeds and writes no package", "build.no-package", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Hollow(scratch), Output(scratch),
+            (c, t) => c.Arguments[0] == "build" ? new Ran.Exited(0, "  Build succeeded.\n", "") : Sdk(c, t)))),
+        new("a tool folder whose build task carries no file version", "toolchain.targets-mismatch", false, (scratch, _) =>
+        {
+            var tool = Hollow(scratch);
+            File.WriteAllBytes(Path.Combine(tool, Ssdt.BuildTargets.Task), []);
+            return Failed(Ssdt.Build(Project(scratch), tool, Output(scratch), Sdk));
+        }),
         new("a global.json that is not JSON", "sdk.global-json", true, (scratch, planted) => Failed(Doctor.Pinned(Path.GetDirectoryName(Written(scratch, "global.json", "{ \"sdk\": { \"version\": " + planted + " } }"))!))),
         new("a toolchain ledger this identity cannot read", "toolchain.unreadable", false, (scratch, _) =>
             Denied(Path.Combine(Ledger(scratch, "| 2026-09-24 | 3.0.0 | UNPINNED | — |"), Doctor.Ledger), () => Failed(Doctor.Toolchain(scratch, "3.0.0")))),
-        new("a package that is none", "package.unreadable", false, (scratch, _) => Failed(Ssdt.Load(Written(scratch, "not.dacpac", "not a package")))),
+        new("a package that is none", "package.unreadable", false, (scratch, _) => Failed(Ssdt.Open(Written(scratch, "not.dacpac", "not a package")))),
+        new("no package where one is named", "package.unreadable", false, (scratch, _) => Failed(Ssdt.Open(Path.Combine(scratch, "none.dacpac")))),
         new("a refactorlog that is none", "refactorlog.unreadable", false, (scratch, _) => Failed(Ssdt.RefactorLog(Written(scratch, "not.refactorlog", "not a refactorlog")))),
+        new("a package whose refactor.xml is no refactorlog", "refactorlog.unreadable", false, (scratch, _) =>
+        {
+            var dacpac = Path.Combine(scratch, "refactored.dacpac");
+            using (var model = Model("CREATE TABLE dbo.Customer (Id INT NOT NULL);"))
+            {
+                DacPackageExtensions.BuildPackage(dacpac, model, new PackageMetadata());
+            }
+
+            using (var zip = System.IO.Compression.ZipFile.Open(dacpac, System.IO.Compression.ZipArchiveMode.Update))
+            using (var log = new StreamWriter(zip.CreateEntry("refactor.xml").Open()))
+            {
+                log.Write("<Operations xmlns=\"http://schemas.microsoft.com/sqlserver/dac/Serialization/2012/02\"><Operation Key=\"k\" /></Operations>");
+            }
+
+            return Failed(Ssdt.Open(dacpac));
+        }),
         new("a refactorlog entry naming no object", "refactorlog.name", false, (_, _) =>
         {
-            using var package = new Ssdt.Package(Model(), null, null,
-                [new Ssdt.RefactorEntry("0a1b2c3d-0000-4000-8000-000000000001", "Rename Refactor", null, "[dbo].[Customer", "SqlTable", null, null, "[Client]", null)],
-                new Dictionary<string, string>(StringComparer.Ordinal));
-            return Failed(Ssdt.Elements(package));
+            using var model = Model();
+            return Failed(Ssdt.Elements(model, null, null,
+                [new Ssdt.RefactorLogOperation("0a1b2c3d-0000-4000-8000-000000000001", "Rename Refactor", null, "[dbo].[Customer", "SqlTable", null, null, "[Client]", null)]));
         }),
+        new("a platform DacFx names in other than letters and digits", "model.platform", false, (_, _) => Failed(Platform.Of("Sql 160"))),
         new("two objects of a model keyed alike", "model.duplicate-key", false, (_, _) =>
         {
             using var model = Model("CREATE TABLE dbo.Customer (Id INT NOT NULL);", "CREATE TABLE dbo.Customer (Id INT NOT NULL);");
@@ -293,11 +318,24 @@ internal static class RefusalPaths
         new("a named environment's statement failing", "server.failed", true, (scratch, planted) =>
             DevDatabase(scratch).ErrorOf(245, "Conversion failed when converting the nvarchar value '" + planted + "' to data type int.")),
         new("a SQL Server error DacFx quotes by its number, with no SqlException inside", "server.failed", true, (scratch, planted) =>
-            DevDatabase(scratch).ErrorOf(new DacServicesException("Could not deploy package.", new InvalidOperationException("Error SQL72014: Core Microsoft SqlClient Data Provider: "
+            DacFx.Failed(DevDatabase(scratch), new DacServicesException("Could not deploy package.", new InvalidOperationException("Error SQL72014: Core Microsoft SqlClient Data Provider: "
                 + "Msg 2627, Level 14, State 1, Line 1 Violation of PRIMARY KEY constraint 'PK_Customer'. The duplicate key value is (" + planted + ").")))),
         new("DacFx failing with no SQL Server error inside", "dacfx.failed", false, (scratch, _) =>
-            DevDatabase(scratch).ErrorOf(new DacServicesException("An error occurred during deployment plan generation. Deployment cannot continue.",
-                new InvalidOperationException("A project which specifies SQL Server vNext as the target platform cannot be published to SQL Server 2022.")))),
+            DacFx.Failed(DevDatabase(scratch), new DacServicesException("Could not save package to file.", new InvalidOperationException("Error SQL71501: [dbo].[V] has an unresolved reference to object [dbo].[Missing].")))),
+        new("a package of a newer platform than its target's", "plan.platform", false, (scratch, _) =>
+        {
+            using var newer = Made(Ssdt.Open(Packaged(scratch, "newer", SqlServerVersion.Sql170)));
+            using var older = Made(Ssdt.Open(Packaged(scratch, "older", SqlServerVersion.Sql160)));
+            return Failed(DacFx.Plan(newer, older, "Target", Made(Profiles.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"))), []));
+        }),
+        new("a case-insensitive package planned against a case-sensitive one", "plan.collation", false, (scratch, _) =>
+        {
+            using var insensitive = Made(Ssdt.Open(Packaged(scratch, "insensitive", SqlServerVersion.Sql160, "SQL_Latin1_General_CP1_CI_AS")));
+            using var sensitive = Made(Ssdt.Open(Packaged(scratch, "sensitive", SqlServerVersion.Sql160, "Latin1_General_CS_AS")));
+            return Failed(DacFx.Plan(insensitive, sensitive, "Target", Made(Profiles.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"))), []));
+        }),
+        new("a deploy report of another shape", "plan.report-unread", false, (_, _) =>
+            Failed(DacFx.Report("<DeploymentReport xmlns=\"http://schemas.microsoft.com/sqlserver/dac/DeployReport/2012/02\"><Warnings /></DeploymentReport>", [], []))),
         new("an aggregate query the allowlist refuses", "aggregate-query.refused", true, (_, planted) =>
             Failed(SqlServer.AggregateQuery.Of("SELECT MAX(Email) FROM dbo.Customer WHERE Name = N'" + planted + "';", "dbo.Customer.Email Fits"))),
         new("a SQLCMD reference that does not resolve", "sqlcmd.unresolved", false, (scratch, _) =>
@@ -305,8 +343,7 @@ internal static class RefusalPaths
             var root = Initialized(Estate(scratch, Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\" }",
                 connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev")))));
             File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
-            var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
-            return Failed(SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.EnvironmentDatabase)dev).Environment, root))));
+            return Failed(SqlServer.SqlCmdValues(Made(SqlServer.Resolve(Target("env:dev"), root))));
         }),
         new("a SQLCMD reference to a file git tracks", "reference.tracked", true, (scratch, planted) => InRepository(scratch, root =>
         {
@@ -317,8 +354,7 @@ internal static class RefusalPaths
             Arrange(root, "commit", "-q", "-m", "the token");
             Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
             File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
-            var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
-            return SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.EnvironmentDatabase)dev).Environment, root)));
+            return SqlServer.SqlCmdValues(Made(SqlServer.Resolve(Target("env:dev"), root)));
         })),
 
         new("a timeout that is no whole number of seconds", "arguments.timeout", false, (_, _) => Failed(Cli.Program.Timeout(["read", "--timeout", "soon"]))),
@@ -553,6 +589,16 @@ internal static class RefusalPaths
         return Path.Combine(scratch, "golden", "classic-minimal", "ClassicMinimal.sqlproj");
     }
 
+    /// <summary>A package of one table, built by DacFx for the platform given under the scratch folder, under the collation given or the model's default.</summary>
+    private static string Packaged(string scratch, string name, SqlServerVersion platform, string? collation = null)
+    {
+        var dacpac = Path.Combine(scratch, name + ".dacpac");
+        using var model = new TSqlModel(platform, new TSqlModelOptions { Collation = collation });
+        model.AddObjects("CREATE TABLE dbo.Customer (Id INT NOT NULL);");
+        DacPackageExtensions.BuildPackage(dacpac, model, new PackageMetadata());
+        return dacpac;
+    }
+
     /// <summary>A model built in memory, each script added as its own source, as io/Ssdt.Elements reads one.</summary>
     private static TSqlModel Model(params string[] scripts)
     {
@@ -595,7 +641,10 @@ internal static class RefusalPaths
 
     private static string Bare(string scratch) => Directory.CreateDirectory(Path.Combine(scratch, "bare")).FullName;
 
-    /// <summary>A folder holding, empty, the files a published tool folder carries, so the build starts and its targets fail to load.</summary>
+    /// <summary>
+    /// A folder holding, empty, the files a published tool folder carries, and DacFx's own assembly in the build task's place, whose file
+    /// version is the release estate runs, so the build starts and its targets fail to load.
+    /// </summary>
     private static string Hollow(string scratch)
     {
         var tool = Path.Combine(scratch, "hollow");
@@ -605,6 +654,7 @@ internal static class RefusalPaths
             File.WriteAllText(Path.Combine(tool, file), "");
         }
 
+        File.Copy(typeof(DacServices).Assembly.Location, Path.Combine(tool, Ssdt.BuildTargets.Task), overwrite: true);
         return tool;
     }
 
