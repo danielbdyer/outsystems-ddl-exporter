@@ -35,7 +35,7 @@ public sealed class AllowlistTests
         var probe = SqlServer.Probe.Of(text, "corpus");
 
         Assert.True(admitted == probe is Result<SqlServer.Probe>.Ok, (admitted ? "refused: " : "admitted: ") + label + "\n" + probe.Match(p => p.Statement, r => r.Message));
-        Assert.All(new[] { probe }.OfType<Result<SqlServer.Probe>.Refused>(), r => Assert.Equal(("probe.refused", 9), (r.Refusal.Code, Contract.Exit(r.Refusal))));
+        Assert.All(new[] { probe }.OfType<Result<SqlServer.Probe>.Failed>(), r => Assert.Equal(("probe.refused", 9), (r.Error.Code, Contract.Exit(r.Error))));
     }
 
     /// <summary>Every form the work package names is planted, forbidden and allowed alike, so a corpus trimmed of one fails here.</summary>
@@ -82,11 +82,11 @@ public sealed class AllowlistTests
     [InlineData("SELECT COUNT(*) FROM dbo.Customer WHERE Email = N'planted-7f3a'; DELETE FROM dbo.Customer;", "2 statements", "one statement at a time")]
     public void A_refusal_names_the_form_and_its_place_and_quotes_no_literal(string text, string place, string form)
     {
-        var refusal = Assert.IsType<Result<SqlServer.Probe>.Refused>(SqlServer.Probe.Of(text, "dbo.Customer.Email NotNull")).Refusal;
+        var error = Assert.IsType<Result<SqlServer.Probe>.Failed>(SqlServer.Probe.Of(text, "dbo.Customer.Email NotNull")).Error;
 
-        Assert.Contains(place, refusal.Message, StringComparison.Ordinal);
-        Assert.Contains(form, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
-        Assert.DoesNotContain("planted", refusal.Message + refusal.Remedy, StringComparison.Ordinal);
+        Assert.Contains(place, error.Message, StringComparison.Ordinal);
+        Assert.Contains(form, error.Message + error.Remedy, StringComparison.Ordinal);
+        Assert.DoesNotContain("planted", error.Message + error.Remedy, StringComparison.Ordinal);
     }
 
     /// <summary>What an admitted probe runs is the statement the allowlist checked, as ScriptDom writes it back: no comment and no batch separator reaches SQL Server.</summary>

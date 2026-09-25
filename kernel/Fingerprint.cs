@@ -79,7 +79,7 @@ public readonly record struct Fingerprint
     public static Result<Fingerprint> Parse(string hex) =>
         hex is { Length: 64 } && hex.All(c => char.IsAsciiDigit(c) || c is >= 'a' and <= 'f')
             ? new Fingerprint(Convert.FromHexString(hex))
-            : new Refusal(
+            : new Error(
                 "fingerprint.malformed",
                 $"'{hex}' is not a fingerprint.",
                 "Give the fingerprint as a receipt prints it: 64 lowercase hex digits.");

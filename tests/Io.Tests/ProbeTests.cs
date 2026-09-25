@@ -123,15 +123,15 @@ public sealed class ProbeTests(ProvingGround ground) : IClassFixture<ProvingGrou
         const string Wrong = "Wr0ng!planted#7f3a";
         var qa = Resolved("qa", new SqlConnectionStringBuilder(ground.Reader.ConnectionString) { Password = Wrong }.ConnectionString);
 
-        var refusals = new[] { Refused(SqlServer.Model(qa)), Refused(SqlServer.Measure(qa, Made(SqlServer.Probe.Of("SELECT 1;", "the login")), SqlServer.QueryLog.Start(root))) };
+        var errors = new[] { Failed(SqlServer.Model(qa)), Failed(SqlServer.Measure(qa, Made(SqlServer.Probe.Of("SELECT 1;", "the login")), SqlServer.QueryLog.Start(root))) };
 
-        Assert.All(refusals, refusal =>
+        Assert.All(errors, error =>
         {
-            Assert.Equal(("server.denied", 4), (refusal.Code, Contract.Exit(refusal)));
-            Assert.StartsWith("env:qa ", refusal.Message, StringComparison.Ordinal);
-            Assert.Contains("a lead's prediction will appear on the pull request", refusal.Message, StringComparison.Ordinal);
-            Assert.DoesNotContain(Wrong, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
-            Assert.DoesNotContain(ground.Reader.Login, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
+            Assert.Equal(("server.denied", 4), (error.Code, Contract.Exit(error)));
+            Assert.StartsWith("env:qa ", error.Message, StringComparison.Ordinal);
+            Assert.Contains("a lead's prediction will appear on the pull request", error.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(Wrong, error.Message + error.Remedy, StringComparison.Ordinal);
+            Assert.DoesNotContain(ground.Reader.Login, error.Message + error.Remedy, StringComparison.Ordinal);
         });
     }
 
@@ -156,7 +156,7 @@ public sealed class ProbeTests(ProvingGround ground) : IClassFixture<ProvingGrou
     private static (string Site, string Statement, string Outcome)[] Entries(string log) => [.. Regex.Matches(log, @"^-- \S+ \S+ (?<site>.+): (?<outcome>\d+|failed, Msg \d+)(?: rows?)?\n(?<statement>(?:(?!GO\n).*\n)+?)GO\n", RegexOptions.Multiline | RegexOptions.CultureInvariant)
         .Select(m => (m.Groups["site"].Value, m.Groups["statement"].Value.TrimEnd('\n'), m.Groups["outcome"].Value))];
 
-    private static T Made<T>(Result<T> result) => result.Match(value => value, refusal => throw new Xunit.Sdk.XunitException(refusal.Code + ": " + refusal.Message));
+    private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 
-    private static Refusal Refused<T>(Result<T> result) => Assert.IsType<Result<T>.Refused>(result).Refusal;
+    private static Error Failed<T>(Result<T> result) => Assert.IsType<Result<T>.Failed>(result).Error;
 }

@@ -49,7 +49,7 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
     }
 
     /// <summary>
-    /// VALUES.md X2 for a database read, the other half of ProfilesTests.No_output_contains_Password's search of every refusal: a
+    /// VALUES.md X2 for a database read, the other half of ProfilesTests.No_output_contains_Password's search of every error: a
     /// registered database holding a SQL login and a user for it, read through estate read --from env:uat --json as the fixture's
     /// admin identity, who sees the login. What the test asserts is that the answer names the login and that no property in it is
     /// named after a member of <see cref="Ssdt.Secrets"/>: DacFx makes up a new Login.Password on each read, since SQL Server keeps

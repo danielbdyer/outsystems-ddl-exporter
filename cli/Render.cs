@@ -101,7 +101,7 @@ public static class Render
         ["schemas"] = new JsonObject { ["type"] = "object", ["additionalProperties"] = new JsonObject { ["type"] = "object" } },
     });
 
-    /// <summary>The envelope's schema, with the properties a verb adds, each null where an answer carries none (a refusal).</summary>
+    /// <summary>The envelope's schema, with the properties a verb adds, each null where an answer carries none (an error).</summary>
     private static JsonObject EnvelopeSchema(string id, string description, JsonObject added)
     {
         var envelope = Document(id, description, new()
@@ -122,7 +122,7 @@ public static class Render
         // The envelope alone admits what a verb adds, which the verb's own schema closes.
         envelope["additionalProperties"] = id == "estate.envelope/1";
 
-        // Every refusal carries a remedy: an exit that requires one names at least one finding, each with its remedy.
+        // Every error carries a remedy: an exit that requires one names at least one finding, each with its remedy.
         // Blocked (§4 row 15) is blocked by the data and names its kind, the row-presence guard or a violation on existing rows; no other exit has a kind.
         var blocked = If(Where("exit", new JsonObject { ["const"] = Contract.Exits.Single(e => e.Name == "blocked").Code }), Where("verdict", Where("kind", Kinds())));
         blocked["else"] = Where("verdict", Where("kind", new JsonObject { ["type"] = "null" }));

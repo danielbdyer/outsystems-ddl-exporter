@@ -28,9 +28,9 @@ public static partial class Verbs
     {
         if (Contract.Flags(words, ["--from"], ["--project"], []).Bind(flags => SqlServer.Target.Parse(flags["--from"], "--from")
             .Bind(from => Pinned(here).Bind(pin => Reading(here, from, flags.GetValueOrDefault("--project")).Map(source => (Source: source, Pin: pin)))))
-            .Refused(out var read, out var refusal))
+            .Failed(out var read, out var error))
         {
-            return Contract.Refused(Of("read"), refusal, Stamped(null, null));
+            return Contract.Failed(Of("read"), error, Stamped(null, null));
         }
 
         var (source, fingerprint) = (read.Source, Fingerprint.Of(read.Source.Read.Elements));
@@ -65,12 +65,12 @@ public static partial class Verbs
     private static Result<Source> Modelled(Checkout here, SqlServer.Target target) => SqlServer.Resolve(target, here.Root).Bind(database =>
         SqlServer.Model(database, SqlServer.QueryLog.Start(here.Root)).Map(elements => new Source(target, new Ssdt.Read(elements, []), Substrate.Image(database), true)));
 
-    /// <summary>The toolchain ledger's pin, which every verb that builds reads (R13), or the refusal of a committed engine outside its window.</summary>
+    /// <summary>The toolchain ledger's pin, which every verb that builds reads (R13), or the rejection of a committed engine outside its window.</summary>
     internal static Result<Pin> Pinned(Checkout here) => Io.Doctor.Toolchain(here.Root, Contract.Version)
-        .Bind(pin => pin.Refuses(Stamped(null, pin).Engine) is { } outside ? Result.Refuse<Pin>(outside) : Result.Ok(pin));
+        .Bind(pin => pin.Rejects(Stamped(null, pin).Engine) is { } outside ? Result.Fail<Pin>(outside) : Result.Ok(pin));
 
     /// <summary>The engine as stamped: the committed DacFx, the image's digest where a copy ran in the container, and the pin when a ledger was read.</summary>
-    internal static Stamp Stamped(string? image, Pin? pin) => new(Engine.Of(Io.Doctor.DacFx, image).Match(engine => engine, refusal => throw new UnreachableException(refusal.Message)), pin);
+    internal static Stamp Stamped(string? image, Pin? pin) => new(Engine.Of(Io.Doctor.DacFx, image).Match(engine => engine, error => throw new UnreachableException(error.Message)), pin);
 
     /// <summary>An element as JSON: its key, its properties by name and its relationships' target keys in DacFx's order.</summary>
     internal static JsonObject Json(Element element) => new()
@@ -85,17 +85,17 @@ public static partial class Verbs
 
     internal static JsonObject Values() => new() { ["type"] = new JsonArray("boolean", "integer", "string", "null") };
 
-    /// <summary>Whether a result is refused: its value when it is not, its refusal when it is.</summary>
-    internal static bool Refused<T>(this Result<T> result, [MaybeNullWhen(true)] out T value, [MaybeNullWhen(false)] out Refusal refusal)
+    /// <summary>Whether a result failed: its value when it did not, its error when it did.</summary>
+    internal static bool Failed<T>(this Result<T> result, [MaybeNullWhen(true)] out T value, [MaybeNullWhen(false)] out Error error)
     {
-        (value, refusal) = (default, null);
+        (value, error) = (default, null);
         if (result is Result<T>.Ok ok)
         {
             value = ok.Value;
             return false;
         }
 
-        refusal = ((Result<T>.Refused)result).Refusal;
+        error = ((Result<T>.Failed)result).Error;
         return true;
     }
 }

@@ -745,7 +745,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
 
     private static string Text(Ssdt.Read read, string type) => ((Value.Text)read.Elements.Single(e => e.Key.Type == type)["Text"]!).Content;
 
-    private static T Ok<T>(Result<T> result) => result.Match(value => value, refusal => throw new Xunit.Sdk.XunitException(refusal.Code + ": " + refusal.Message));
+    private static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 }
 
 /// <summary>
@@ -857,5 +857,5 @@ public sealed class ProvingGroundWalks : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    private static T Ok<T>(Result<T> result) => result.Match(value => value, refusal => throw new Xunit.Sdk.XunitException(refusal.Code + ": " + refusal.Message));
+    private static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 }

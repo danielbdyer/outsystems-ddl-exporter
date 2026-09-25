@@ -74,8 +74,8 @@ public sealed class FingerprintTests
     [InlineData("E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855")]
     [InlineData("g3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")]
     [InlineData("sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")]
-    public void Parse_refuses_anything_but_64_lowercase_hex_digits(string text) =>
+    public void Parse_rejects_anything_but_64_lowercase_hex_digits(string text) =>
         Assert.Equal(
             "fingerprint.malformed",
-            Assert.IsType<Result<Fingerprint>.Refused>(Fingerprint.Parse(text)).Refusal.Code);
+            Assert.IsType<Result<Fingerprint>.Failed>(Fingerprint.Parse(text)).Error.Code);
 }

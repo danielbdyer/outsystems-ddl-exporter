@@ -89,5 +89,5 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         return Path.Combine(scratch, "golden", "classic-minimal", "ClassicMinimal.sqlproj");
     }
 
-    private static T Made<T>(Result<T> result) => result.Match(value => value, refusal => throw new Xunit.Sdk.XunitException(refusal.Code + ": " + refusal.Message));
+    private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 }

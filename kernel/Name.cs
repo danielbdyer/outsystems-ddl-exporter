@@ -27,10 +27,10 @@ public readonly record struct Name : IComparable<Name>
     /// <summary>The last part (ScriptDom's base identifier): the object, column or schema itself.</summary>
     public string Base => _base ?? throw new InvalidOperationException("default(Name) is not a name; make one with Name.Of.");
 
-    public static Result<Name> Of(string part) => Refuse(part) is { } refusal ? refusal : new Name(null, part);
+    public static Result<Name> Of(string part) => Invalid(part) is { } error ? error : new Name(null, part);
 
     public static Result<Name> Of(string schema, string part) =>
-        (Refuse(schema) ?? Refuse(part)) is { } refusal ? refusal : new Name(schema, part);
+        (Invalid(schema) ?? Invalid(part)) is { } error ? error : new Name(schema, part);
 
     /// <summary>One-part names first, then by schema, then by the last part; all ordinal.</summary>
     public int CompareTo(Name other)
@@ -43,15 +43,15 @@ public readonly record struct Name : IComparable<Name>
 
     private static string Quote(string? part) => "[" + part?.Replace("]", "]]", StringComparison.Ordinal) + "]";
 
-    private static Refusal? Refuse(string? part) => part switch
+    private static Error? Invalid(string? part) => part switch
     {
         _ when string.IsNullOrWhiteSpace(part) =>
-            new Refusal("name.blank", "A name part is empty or white space.", "Give each part 1 to 128 characters."),
-        { Length: > Sysname } => new Refusal(
+            new Error("name.blank", "A name part is empty or white space.", "Give each part 1 to 128 characters."),
+        { Length: > Sysname } => new Error(
             "name.too-long",
             string.Create(CultureInfo.InvariantCulture, $"A name part has {part.Length} characters; SQL Server allows 128."),
             "Shorten the part to 128 characters."),
-        _ when part.Any(char.IsControl) => new Refusal(
+        _ when part.Any(char.IsControl) => new Error(
             "name.control-character",
             string.Create(CultureInfo.InvariantCulture, $"A name part holds the control character U+{(int)part.First(char.IsControl):X4}."),
             "Remove the control character from the part."),

@@ -43,7 +43,7 @@ public static class Git
         var current = File.Exists(Path.Combine(path, ".git")) && Step(git, path, ["rev-parse", "HEAD"]) is Result<string>.Ok { Value: var head } && head == commit;
         return Swept(git, root).Bind(_ =>
             current ? Result.Ok(new Worktree(path, commit))
-            : Directory.Exists(path) && !Removed(git, root, path) ? new Refusal("git.failed", path + " is not at " + commit + ", and git cannot remove it.", "delete the folder, then run estate again")
+            : Directory.Exists(path) && !Removed(git, root, path) ? new Error("git.failed", path + " is not at " + commit + ", and git cannot remove it.", "delete the folder, then run estate again")
             : Step(git, root, ["worktree", "add", "--force", "--detach", path, commit]).Map(_ => new Worktree(path, commit)));
     }));
 
@@ -59,7 +59,7 @@ public static class Git
         Run(git, root, ["merge-base", first, second]) switch
         {
             (0, var commit, _) => commit.Trim(),
-            (1, _, _) => new Refusal("ref.unrelated", "'" + a + "' and '" + b + "' share no commit: their histories never meet.", "name two refs of one history, such as a branch and the branch it left"),
+            (1, _, _) => new Error("ref.unrelated", "'" + a + "' and '" + b + "' share no commit: their histories never meet.", "name two refs of one history, such as a branch and the branch it left"),
             (_, _, var errors) => Failed("merge-base", errors),
         })));
 
@@ -129,7 +129,7 @@ public static class Git
         var name = "refs/heads/" + branch;
         if (Run(git, root, ["check-ref-format", name]).Exit != 0)
         {
-            return new Refusal("branch.malformed", "'" + branch + "' is not a name git takes for a branch.", "name the branch in words joined by '-' and '/', such as estate/evidence-dev");
+            return new Error("branch.malformed", "'" + branch + "' is not a name git takes for a branch.", "name the branch in words joined by '-' and '/', such as estate/evidence-dev");
         }
 
         var here = Run(git, root, ["rev-parse", "--verify", "--quiet", name]).Exit == 0;
@@ -145,7 +145,7 @@ public static class Git
 
                 return new Pushed(branch, commit);
             })),
-            (0, _, _) => new Refusal(
+            (0, _, _) => new Error(
                 "branch.taken", "The branch " + branch + " already exists " + (here ? "in this repository." : "at the origin."), "name a new branch, or delete " + branch + " where it exists once its review is done"),
             (_, _, var errors) => Unreachable("ls-remote", errors),
         };
@@ -201,21 +201,21 @@ public static class Git
     {
         (0, var root, _) => Path.GetFullPath(root.Trim()),
         (-1, _, _) => Missing(git),
-        (_, _, var errors) => new Refusal("git.not-a-repository", repository + " is not in a git repository: " + errors.Trim(), "run estate in a clone of the repository, or name the clone's folder"),
+        (_, _, var errors) => new Error("git.not-a-repository", repository + " is not in a git repository: " + errors.Trim(), "run estate in a clone of the repository, or name the clone's folder"),
     };
 
     private static Result<string> Resolve(string git, string root, string reference) => Run(git, root, ["rev-parse", "--verify", "--quiet", "--end-of-options", reference + "^{commit}"]) is (0, var commit, _)
         ? commit.Trim()
-        : new Refusal("ref.unresolved", "'" + reference + "' names no commit in " + root + ".", "name a branch, tag or commit the repository holds; git fetch brings the origin's");
+        : new Error("ref.unresolved", "'" + reference + "' names no commit in " + root + ".", "name a branch, tag or commit the repository holds; git fetch brings the origin's");
 
-    private static Refusal Missing(string git) =>
-        new Refusal("git.missing", "git does not run here: '" + git + "' is not installed or not on the PATH.", "install git and put it on the PATH; then estate doctor");
+    private static Error Missing(string git) =>
+        new Error("git.missing", "git does not run here: '" + git + "' is not installed or not on the PATH.", "install git and put it on the PATH; then estate doctor");
 
-    private static Refusal Unreachable(string command, string errors) => new Refusal(
+    private static Error Unreachable(string command, string errors) => new Error(
         "origin.unreachable", "git " + command + " to the origin failed, and nothing was committed: " + errors.Trim(),
         "check that git fetch reaches the origin, signing in through git's own credential helper when it asks; then run estate again");
 
-    private static Refusal Failed(string command, string errors) => new Refusal("git.failed", "git " + command + " failed: " + errors.Trim(), "fix what git names, then run estate again");
+    private static Error Failed(string command, string errors) => new Error("git.failed", "git " + command + " failed: " + errors.Trim(), "fix what git names, then run estate again");
 
     /// <summary>git that must succeed: its output less the final line break; a failure quotes git's error.</summary>
     private static Result<string> Step(string git, string directory, IReadOnlyList<string> arguments, string? index = null) => Run(git, directory, arguments, index) switch

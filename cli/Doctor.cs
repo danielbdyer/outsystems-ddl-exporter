@@ -17,7 +17,7 @@ public static partial class Verbs
 
     /// <summary>estate doctor: can this machine do the work (V3_ARCHITECTURE.md §8.12), read-only.</summary>
     public static Envelope Doctor(Checkout here, IReadOnlyList<string> words) => words.Count > 0
-        ? Contract.Refused(Of("doctor"), new Refusal("arguments.unknown-flag", "estate doctor takes no arguments.", "estate --help names each verb's flags"))
+        ? Contract.Failed(Of("doctor"), new Error("arguments.unknown-flag", "estate doctor takes no arguments.", "estate --help names each verb's flags"))
         : Doctor(Io.Doctor.Examine(System.AppContext.BaseDirectory, here.Tool, here.WorkingDirectory, Io.Doctor.Run, Contract.Version),
             Io.Doctor.Toolchain(here.Root, Contract.Version));
 

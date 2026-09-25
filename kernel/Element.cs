@@ -78,12 +78,12 @@ public sealed record ElementKey : IComparable<ElementKey>
     public string Path => Parent is null ? Name.ToString() : Parent.Path + "." + Name;
 
     public static Result<ElementKey> Of(string type, Name name) =>
-        Refuse(type, name) is { } refusal ? refusal : new ElementKey(null, type, name);
+        Invalid(type, name) is { } error ? error : new ElementKey(null, type, name);
 
     public static Result<ElementKey> Of(ElementKey parent, string type, Name name) =>
-        (Refuse(type, name) ?? (name.Schema is null ? null : new Refusal(
+        (Invalid(type, name) ?? (name.Schema is null ? null : new Error(
             "element.child-name", $"{name} names a {type} of {parent} in two parts.", "Name an object keyed under its parent by its own one-part name.")))
-            is { } refusal ? refusal : new ElementKey(parent, type, name);
+            is { } error ? error : new ElementKey(parent, type, name);
 
     public int CompareTo(ElementKey? other)
     {
@@ -106,9 +106,9 @@ public sealed record ElementKey : IComparable<ElementKey>
 
     private static ElementKey[] Chain(ElementKey key) => key.Parent is null ? [key] : [.. Chain(key.Parent), key];
 
-    private static Refusal? Refuse(string type, Name name) =>
-        string.IsNullOrWhiteSpace(type) ? new Refusal("element.type-blank", "An element's type is blank.", "Give the DacFx type name, such as Column.")
-        : name == default ? new Refusal("element.name-missing", $"A {type} has no name.", "Make the name with Name.Of.")
+    private static Error? Invalid(string type, Name name) =>
+        string.IsNullOrWhiteSpace(type) ? new Error("element.type-blank", "An element's type is blank.", "Give the DacFx type name, such as Column.")
+        : name == default ? new Error("element.name-missing", $"A {type} has no name.", "Make the name with Name.Of.")
         : null;
 }
 
@@ -139,8 +139,8 @@ public sealed record Element : IComparable<Element>
     public static Result<Element> Of(ElementKey key, IEnumerable<Property> properties, IEnumerable<Relationship> relationships)
     {
         var (ps, rs) = (Seq.Of(properties), Seq.Of(relationships.Where(r => r.Targets.Count > 0)));
-        return (Repeated([.. ps.Select(p => p.Name)], key, "property") ?? Repeated([.. rs.Select(r => r.Name)], key, "relationship")) is { } refusal
-            ? refusal
+        return (Repeated([.. ps.Select(p => p.Name)], key, "property") ?? Repeated([.. rs.Select(r => r.Name)], key, "relationship")) is { } error
+            ? error
             : new Element(key, ps, rs);
     }
 
@@ -163,11 +163,11 @@ public sealed record Element : IComparable<Element>
     private static Element Script(string type, string name, string text) =>
         Known(Of(Known(ElementKey.Of(type, Known(Name.Of(name)))), [new Property("Text", new Value.Text(text))], []));
 
-    private static T Known<T>(Result<T> result) => result.Match(value => value, refusal => throw new UnreachableException(refusal.Message));
+    private static T Known<T>(Result<T> result) => result.Match(value => value, error => throw new UnreachableException(error.Message));
 
-    private static Refusal? Repeated(string[] names, ElementKey key, string what) => names
+    private static Error? Repeated(string[] names, ElementKey key, string what) => names
         .Where((name, i) => string.IsNullOrWhiteSpace(name) || (i > 0 && names[i - 1] == name))
-        .Select(name => new Refusal("element." + what + "-name", $"{key} has a {what} named '{name}' that is blank or repeated.", $"Give each {what} of an element one distinct name."))
+        .Select(name => new Error("element." + what + "-name", $"{key} has a {what} named '{name}' that is blank or repeated.", $"Give each {what} of an element one distinct name."))
         .FirstOrDefault();
 
     public sealed record Property(string Name, Value Value) : IComparable<Property>

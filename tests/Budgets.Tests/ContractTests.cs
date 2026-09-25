@@ -74,43 +74,43 @@ public sealed class ContractTests
     }
 
     /// <summary>
-    /// The kernel, io and the cli name what they refused; the refusal table alone says which exit that is, by the code's area. The codes
+    /// The kernel, io and the cli name what went wrong; the category table alone says which exit that is, by the code's category. The codes
     /// are Register.RefusalPaths', which Register.Refusals holds to every code the three packages construct, composed ones included, so a
-    /// refusal of a new area fails here until the table gives the area a row; and a row for an area nothing constructs fails too.
+    /// error of a new category fails here until the table gives the category a row; and a row for a category nothing constructs fails too.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Every_refusal_the_kernel_io_and_the_cli_construct_has_a_row_for_its_area_in_the_refusal_table()
+    public void Every_error_the_kernel_io_and_the_cli_construct_has_a_row_for_its_category_in_the_category_table()
     {
-        var areas = Register.RefusalPaths.All.Select(c => c.Code.Split('.')[0]).Distinct().Order(StringComparer.Ordinal).ToList();
+        var categories = Register.RefusalPaths.All.Select(c => c.Code.Split('.')[0]).Distinct().Order(StringComparer.Ordinal).ToList();
 
-        Assert.DoesNotContain(areas, area => !Contract.RefusalExits.ContainsKey(area));
-        Assert.Empty(Contract.RefusalExits.Keys.Except(areas));
-        Assert.Empty(Contract.RefusalExits.Values.Except(Contract.Exits.Select(e => e.Code)));
+        Assert.DoesNotContain(categories, category => !Contract.ExitByCategory.ContainsKey(category));
+        Assert.Empty(Contract.ExitByCategory.Keys.Except(categories));
+        Assert.Empty(Contract.ExitByCategory.Values.Except(Contract.Exits.Select(e => e.Code)));
         Assert.Equal([1, 2, 2, 2, 6, 6, 7], ((string[])["arguments.unknown-flag", "name.blank", "element.property-name", "fingerprint.malformed", "sdk.missing", "dacfx.failed", "build.failed"])
-            .Select(c => Contract.Exit(new Kernel.Refusal(c, "Refused.", "Do the other thing."))));
+            .Select(c => Contract.Exit(new Kernel.Error(c, "Failed.", "Do the other thing."))));
     }
 
-    /// <summary>An area the refusal table lacks still answers with an envelope: exit 6, the refusal's own finding, and one naming the missing row.</summary>
+    /// <summary>A category the category table lacks still answers with an envelope: exit 6, the error's own finding, and one naming the missing row.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void A_refusal_whose_area_has_no_row_answers_exit_6_with_a_finding_naming_the_area()
+    public void An_error_whose_category_has_no_row_answers_exit_6_with_a_finding_naming_the_category()
     {
-        var answer = Contract.Refused(Contract.Verbs.Single(v => v.Name == "read"), new Kernel.Refusal("nowhere.refused", "Refused.", "Do the other thing."));
+        var answer = Contract.Failed(Contract.Verbs.Single(v => v.Name == "read"), new Kernel.Error("nowhere.failed", "Failed.", "Do the other thing."));
 
         Assert.Equal(6, answer.Exit);
-        Assert.Equal(["nowhere.refused", "internal.unmapped-area"], answer.Findings.Select(f => f.Code));
+        Assert.Equal(["nowhere.failed", "internal.unmapped-category"], answer.Findings.Select(f => f.Code));
         Assert.Contains("'nowhere'", answer.Findings[1].Message, StringComparison.Ordinal);
         AssertValid("estate.read.1.schema.json", Render.Json(answer));
     }
 
     /// <summary>
     /// The alignment review's reproduction (ARCH-03): a package whose table has a column named by a space, which DacFx builds and the kernel's
-    /// Name refuses (name.blank), read with --json answers exit 2 with an envelope carrying the refusal, and throws nothing.
+    /// Name rejects (name.blank), read with --json answers exit 2 with an envelope carrying the error, and throws nothing.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Reading_a_package_with_a_column_named_by_a_space_answers_exit_2_with_the_name_refusal()
+    public void Reading_a_package_with_a_column_named_by_a_space_answers_exit_2_with_the_name_blank_error()
     {
         Telemetry.OptOut();   // before DacFx loads, as estate's Main does
         var scratch = Directory.CreateTempSubdirectory("estate-blank-name-").FullName;
@@ -311,7 +311,7 @@ public sealed class ContractTests
     /// <summary>WP 1.7: each verb built at M1 writes its own schema, the envelope and what the verb adds, committed under cli/schemas/.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Each_verb_built_at_M1_has_its_own_schema_and_a_refusal_of_it_validates_against_it()
+    public void Each_verb_built_at_M1_has_its_own_schema_and_its_error_answer_validates_against_it()
     {
         var built = Contract.Verbs.Where(v => v.Arrives == 1).ToList();
 
@@ -482,11 +482,11 @@ public sealed class ContractTests
     /// The envelope's rules, each named by the sentence it pins, as (admitted, refused). The exit codes and the field
     /// names are written out rather than read from the contract, so a rule narrowed there fails here.
     /// </summary>
-    private static readonly Dictionary<string, (Action<JsonObject> Admitted, Action<JsonObject> Refused)> EnvelopePairs = Pairs();
+    private static readonly Dictionary<string, (Action<JsonObject> Admitted, Action<JsonObject> Failed)> EnvelopePairs = Pairs();
 
-    private static Dictionary<string, (Action<JsonObject> Admitted, Action<JsonObject> Refused)> Pairs()
+    private static Dictionary<string, (Action<JsonObject> Admitted, Action<JsonObject> Failed)> Pairs()
     {
-        var pairs = new Dictionary<string, (Action<JsonObject> Admitted, Action<JsonObject> Refused)>(StringComparer.Ordinal)
+        var pairs = new Dictionary<string, (Action<JsonObject> Admitted, Action<JsonObject> Failed)>(StringComparer.Ordinal)
         {
             ["exit is a code of the frozen table"] = (a => a["exit"] = 7, a => a["exit"] = 8),
             ["exit 3 names its kind"] = (BlockedBy("guard"), BlockedBy(null)),

@@ -39,9 +39,9 @@ public static partial class Verbs
             .Bind(before => Reading(here, to, flags.GetValueOrDefault("--project")).Bind(after =>
                 Change.Between(before.Read.Elements, after.Read.Elements, Seq.Of(before.Read.Renames.Concat(after.Read.Renames).Distinct()))
                     .Map(change => (Before: before, After: after, Change: change, Fail: flags.ContainsKey("--fail-on-change"), Pin: pin))))))))
-            .Refused(out var diff, out var refusal))
+            .Failed(out var diff, out var error))
         {
-            return Contract.Refused(Of("diff"), refusal, Stamped(null, null));
+            return Contract.Failed(Of("diff"), error, Stamped(null, null));
         }
 
         var (lines, fails) = (Lines(diff.Change).ToList(), diff.Fail && !diff.Change.IsEmpty);

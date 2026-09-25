@@ -88,7 +88,7 @@ internal static class ElementSets
     public sealed record Edit(string Kind, Seq<Element> After, Change Expected, Seq<Rename> Renames);
 
     public static T Ok<T>(Result<T> result) =>
-        result.Match(value => value, refusal => throw new InvalidOperationException(refusal.Code + ": " + refusal.Message));
+        result.Match(value => value, error => throw new InvalidOperationException(error.Code + ": " + error.Message));
 
     public static ElementKey Key(string type, string schema, string name) => Ok(ElementKey.Of(type, Ok(Name.Of(schema, name))));
 

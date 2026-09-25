@@ -90,11 +90,11 @@ public sealed class DoctorTests : IDisposable
             File.WriteAllText(Path.Combine(machine, "estate", "ledgers", "toolchain.md"), sample.Replace("| 2026-09-24 | 3.0.0 | UNPINNED | — |", rows, StringComparison.Ordinal));
         }
 
-        var refusal = Doctor.Toolchain(machine, Version).Match(pin => pin.Refuses(Kernel.Engine.Of(Doctor.DacFx).Match(e => e, r => throw new InvalidOperationException(r.Message))), r => r);
+        var error = Doctor.Toolchain(machine, Version).Match(pin => pin.Rejects(Kernel.Engine.Of(Doctor.DacFx).Match(e => e, r => throw new InvalidOperationException(r.Message))), r => r);
         var dacfx = Doctor.Examine(machine, null, machine, (_, _) => null, Version).Single(c => c.Item == "dacfx");
 
-        Assert.True(code == refusal?.Code, what + ": " + refusal?.Code);
-        Assert.Equal<int?>(code is null ? null : 6, refusal is null ? null : Cli.Contract.Exit(refusal));
+        Assert.True(code == error?.Code, what + ": " + error?.Code);
+        Assert.Equal<int?>(code is null ? null : 6, error is null ? null : Cli.Contract.Exit(error));
         Assert.Equal(code is null, dacfx.Remedy is null);
         Assert.Contains(said, dacfx.Found, StringComparison.Ordinal);
     }

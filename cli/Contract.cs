@@ -82,24 +82,24 @@ public static class Contract
         new(3, "blocked", "Blocked by the data, a finding and not a failure: kind guard, the publish guard refused because the table has rows; or kind violation, the engine refused the change on existing rows (Msg 547, Msg 2628).", "the site the finding names: the operation's two-release shape, or the rows it counts", false),
         new(4, "unreachable", "The target is unreachable: no substrate, or SQL Server, Docker or LocalDB not answering.", "estate doctor; estate twin up", true),
         new(5, "differs", "Divergence found: the target differs from the repository; the findings name each differing object.", "the objects the findings name", false),
-        new(6, "configuration-refused", "The environment or configuration is refused: the .NET SDK missing, an unknown key, a literal credential, an engine outside the pinned window, a verb this build does not have yet, a failure DacFx reports with no SQL Server error inside (dacfx.failed), or a defect in estate itself (internal.unexpected, internal.unmapped-area).", "estate doctor, or the file or milestone the finding names", true),
+        new(6, "configuration-refused", "The environment or configuration is refused: the .NET SDK missing, an unknown key, a literal credential, an engine outside the pinned window, a verb this build does not have yet, a failure DacFx reports with no SQL Server error inside (dacfx.failed), or a defect in estate itself (internal.unexpected, internal.unmapped-category).", "estate doctor, or the file or milestone the finding names", true),
         new(7, "build-failed", "The build failed; the findings carry the build's errors.", "the file and error the finding names", false),
         new(9, "refused-by-name", "Refused by name: a named environment, an unregistered copy or a lock; the refusal's code is printed.", "the refusal's own remedy", true),
         new(130, "interrupted", "Interrupted (Ctrl-C or --timeout); the cleanup ran and the state is as before.", "run the verb again", false),
     ];
 
     /// <summary>
-    /// The refusal table: the exit a refusal takes, by its code's area, the word before the first dot. The kernel, io and the cli name
-    /// what they refused (name.blank, sdk.missing, build.failed), and this table alone says how estate exits for it; ContractTests holds
-    /// a row here for the area of every code Register.RefusalPaths reaches. A name, an element, a fingerprint or a change the kernel
-    /// refuses while reading a package or a database is input that could not be parsed (exit 2), as is a package, a refactorlog, a walk
-    /// or the copy registry. The posture, a profile, a reference, a connection, a SQLCMD value and the toolchain ledger are configuration
-    /// (exit 6), whether io or the kernel refuses them, and so is a failure DacFx reports with no SQL Server error inside it, such as a
-    /// package whose target platform the server is not. A target of no known form is a bad argument, as is a flag the verb does not
-    /// take; a server that does not answer or refuses the identity is exit 4; a copy the registry does not hold, a substrate on a named
-    /// host, and a probe the allowlist refuses are refused by name.
+    /// The category table: the exit an error takes, by its code's category, the word before the first dot. The kernel, io and the cli
+    /// name what went wrong (name.blank, sdk.missing, build.failed), and this table alone says how estate exits for it; ContractTests
+    /// holds a row here for the category of every code Register.RefusalPaths reaches. A name, an element, a fingerprint or a change the
+    /// kernel rejects while reading a package or a database is input that could not be parsed (exit 2), as is a package, a refactorlog,
+    /// a walk or the copy registry. The posture, a profile, a reference, a connection, a SQLCMD value and the toolchain ledger are
+    /// configuration (exit 6), whether io or the kernel finds the error, and so is a failure DacFx reports with no SQL Server error
+    /// inside it, such as a package whose target platform the server is not. A target of no known form is a bad argument, as is a flag
+    /// the verb does not take; a server that does not answer or refuses the identity is exit 4; a copy the registry does not hold, a
+    /// substrate on a named host, and a probe the allowlist refuses are refused by name.
     /// </summary>
-    public static readonly IReadOnlyDictionary<string, int> RefusalExits = new Dictionary<string, int>(StringComparer.Ordinal)
+    public static readonly IReadOnlyDictionary<string, int> ExitByCategory = new Dictionary<string, int>(StringComparer.Ordinal)
     {
         ["arguments"] = 1,
         ["ref"] = 1,
@@ -133,16 +133,16 @@ public static class Contract
         ["probe"] = 9,
     };
 
-    /// <summary>The exit of a defect in estate itself: a refusal whose area the refusal table lacks, or an exception no verb expected.</summary>
+    /// <summary>The exit of a defect in estate itself: an error whose category the category table lacks, or an exception no verb expected.</summary>
     internal const int Defect = 6;
 
     /// <summary>The remedy a defect in estate itself carries: the defect is estate's to fix, and the envelope is what its maintainers need.</summary>
     private const string ReportIt = "Report this envelope and the command that produced it to estate's maintainers.";
 
-    /// <summary>The exit a refusal takes: its area's row in the refusal table, or exit 6 for an area the table lacks, which Refused names in a finding.</summary>
-    public static int Exit(Refusal refusal) => RefusalExits.GetValueOrDefault(Area(refusal), Defect);
+    /// <summary>The exit an error takes: its category's row in the category table, or exit 6 for a category the table lacks, which Failed names in a finding.</summary>
+    public static int Exit(Error error) => ExitByCategory.GetValueOrDefault(Category(error), Defect);
 
-    private static string Area(Refusal refusal) => refusal.Code.Split('.')[0];
+    private static string Category(Error error) => error.Code.Split('.')[0];
 
     /// <summary>A milestone as the plan writes it, M2; and as a person reads it, M2 (Predict).</summary>
     public static string M(int milestone) => "M" + milestone.ToString(CultureInfo.InvariantCulture);
@@ -154,15 +154,15 @@ public static class Contract
         new(schema, stamp, receipt, new Verdict(outcome, message), findings, exit, content);
 
     /// <summary>
-    /// A refusal as an answer: its message the verdict, and one blocking finding carrying its code and remedy; the exit its area's. A refusal
-    /// whose area the refusal table lacks takes exit 6, with a second finding, internal.unmapped-area, naming the area.
+    /// An error as an answer: its message the verdict, and one blocking finding carrying its code and remedy; the exit its category's. An
+    /// error whose category the category table lacks takes exit 6, with a second finding, internal.unmapped-category, naming the category.
     /// </summary>
-    public static Envelope Refused(Verb verb, Refusal refusal, Stamp? stamp = null) => Answer(verb.Output, Exits.Single(e => e.Code == Exit(refusal)).Name, refusal.Message,
+    public static Envelope Failed(Verb verb, Error error, Stamp? stamp = null) => Answer(verb.Output, Exits.Single(e => e.Code == Exit(error)).Name, error.Message,
         [
-            new(refusal.Code, "block", "estate " + verb.Name, refusal.Message, refusal.Remedy),
-            .. RefusalExits.ContainsKey(Area(refusal)) ? [] : new Finding[] { new("internal.unmapped-area", "block", "estate " + verb.Name,
-                "The refusal's area '" + Area(refusal) + "' has no row in the refusal table of cli/Contract.cs, so estate exits 6.", ReportIt) },
-        ], Exit(refusal), stamp);
+            new(error.Code, "block", "estate " + verb.Name, error.Message, error.Remedy),
+            .. ExitByCategory.ContainsKey(Category(error)) ? [] : new Finding[] { new("internal.unmapped-category", "block", "estate " + verb.Name,
+                "The error's category '" + Category(error) + "' has no row in the category table of cli/Contract.cs, so estate exits 6.", ReportIt) },
+        ], Exit(error), stamp);
 
     /// <summary>
     /// An exception no verb expected, as an answer: exit 6 and one finding, internal.unexpected, naming the exception's type. Its message is
@@ -186,7 +186,7 @@ public static class Contract
 
     /// <summary>
     /// The flags a verb reads: each --name followed by its value, or standing alone when it is a switch. A word outside a flag, a flag the
-    /// verb does not take, a flag given twice, a value missing, and a required flag absent are each refused as a bad argument.
+    /// verb does not take, a flag given twice, a value missing, and a required flag absent are each a bad argument (exit 1).
     /// </summary>
     public static Result<IReadOnlyDictionary<string, string>> Flags(IReadOnlyList<string> words, string[] required, string[] optional, string[] switches)
     {
@@ -197,7 +197,7 @@ public static class Contract
             var valued = required.Contains(word) || optional.Contains(word);
             if (!valued && !switches.Contains(word) || flags.ContainsKey(word) || valued && (i + 1 == words.Count || words[i + 1].StartsWith("--", StringComparison.Ordinal)))
             {
-                return new Refusal("arguments.unknown-flag", "'" + word + "' is " + (flags.ContainsKey(word) ? "given twice" : valued ? "a flag without its value" : "no flag this verb takes") + ".",
+                return new Error("arguments.unknown-flag", "'" + word + "' is " + (flags.ContainsKey(word) ? "given twice" : valued ? "a flag without its value" : "no flag this verb takes") + ".",
                     "estate --help names each verb's flags");
             }
 
@@ -205,7 +205,7 @@ public static class Contract
         }
 
         return required.FirstOrDefault(r => !flags.ContainsKey(r)) is { } missing
-            ? new Refusal("arguments.missing-flag", "The verb needs " + missing + ".", "estate --help names each verb's flags")
+            ? new Error("arguments.missing-flag", "The verb needs " + missing + ".", "estate --help names each verb's flags")
             : Result.Ok<IReadOnlyDictionary<string, string>>(flags);
     }
 }

@@ -148,7 +148,7 @@ public sealed class ElementTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void An_element_refuses_a_blank_or_repeated_property_or_relationship_name_and_a_key_refuses_a_malformed_part()
+    public void An_element_rejects_a_blank_or_repeated_property_or_relationship_name_and_a_key_rejects_a_malformed_part()
     {
         var t = Key("Table", "dbo", "T");
         var one = new Element.Property("Nullable", Bool(true));
@@ -187,5 +187,5 @@ public sealed class ElementTests
         Assert.Equal("name.blank", Code(Rename.Of(customer, "")));
     }
 
-    private static string Code<T>(Result<T> result) => Assert.IsType<Result<T>.Refused>(result).Refusal.Code;
+    private static string Code<T>(Result<T> result) => Assert.IsType<Result<T>.Failed>(result).Error.Code;
 }

@@ -61,7 +61,7 @@
     { "term": "plane", "instead": "nothing; the thing is gone" },
     { "term": "estate board", "instead": "check environments" },
     { "term": "go board", "instead": "check environments" },
-    { "term": "Voice", "exact": true, "instead": "a Finding list, a Refusal" },
+    { "term": "Voice", "exact": true, "instead": "a Finding list, an Error" },
     { "term": "View", "exact": true, "instead": "a Finding list" },
     { "term": "Watch", "exact": true, "instead": "a Finding list" },
     { "term": "register lint", "instead": "the register tests" },

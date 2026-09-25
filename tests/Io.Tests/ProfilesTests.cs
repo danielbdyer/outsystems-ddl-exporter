@@ -20,7 +20,7 @@ namespace Estate.Io.Tests;
 
 /// <summary>
 /// io/Profiles (WP 1.5): estate/posture.json read into named environments, and the pipeline's publish profile read into its
-/// deploy options and SQLCMD values alone. A refusal of either exits 6 through the CLI's table, names the key or the file, and
+/// deploy options and SQLCMD values alone. An error in either exits 6 through the CLI's category table, names the key or the file, and
 /// never quotes the value; Strict is the profile as loaded, Permissive differs from it in BlockOnPossibleDataLoss alone and
 /// nothing in io but a Copy makes one, and nothing either prints carries a value a reference names or a literal holds.
 /// </summary>
@@ -85,27 +85,27 @@ public sealed class ProfilesTests : IDisposable
     public void Inline_credential_refused(string where, string code, string named)
     {
         const string credential = "Server=db;User ID=estate;Password=" + Planted;
-        var refusal = where switch
+        var error = where switch
         {
-            "connection" => Refused(Profiles.Environments(Estate(Dev(connection: credential)))),
-            "metamodel" => Refused(Profiles.Environments(Estate(Dev("\"metamodel\": \"" + credential + "\"")))),
-            "sqlcmd" => Refused(Profiles.Environments(Estate(Dev("\"sqlcmd\": { \"LinkedServer\": { \"literal\": \"" + credential + "\", \"sensitive\": false } }")))),
-            "cohort" => Refused(Profiles.Environments(Estate(Dev("\"cohorts\": [\"" + credential + "\"]")))),
-            "key" => Refused(Profiles.Environments(Estate(Dev("\"sqlcmd\": { \"" + credential + "\": \"env:ESTATE_LINK\" }")))),
-            "profile" => Refused(Profiles.Load(Profile("inline", "<TargetConnectionString>" + credential + "</TargetConnectionString>"))),
+            "connection" => Failed(Profiles.Environments(Estate(Dev(connection: credential)))),
+            "metamodel" => Failed(Profiles.Environments(Estate(Dev("\"metamodel\": \"" + credential + "\"")))),
+            "sqlcmd" => Failed(Profiles.Environments(Estate(Dev("\"sqlcmd\": { \"LinkedServer\": { \"literal\": \"" + credential + "\", \"sensitive\": false } }")))),
+            "cohort" => Failed(Profiles.Environments(Estate(Dev("\"cohorts\": [\"" + credential + "\"]")))),
+            "key" => Failed(Profiles.Environments(Estate(Dev("\"sqlcmd\": { \"" + credential + "\": \"env:ESTATE_LINK\" }")))),
+            "profile" => Failed(Profiles.Load(Profile("inline", "<TargetConnectionString>" + credential + "</TargetConnectionString>"))),
             "profile, a comment splitting the password" =>
-                Refused(Profiles.Load(Profile("inline", "<TargetConnectionString>Server=db;User ID=sa;Pass<!-- -->word=" + Planted + "</TargetConnectionString>"))),
-            "profile's SQLCMD value" => Refused(Profiles.Load(Profile("inline", "", ("LinkedServer", "Server=db;UID=sa;PWD=" + Planted)))),
+                Failed(Profiles.Load(Profile("inline", "<TargetConnectionString>Server=db;User ID=sa;Pass<!-- -->word=" + Planted + "</TargetConnectionString>"))),
+            "profile's SQLCMD value" => Failed(Profiles.Load(Profile("inline", "", ("LinkedServer", "Server=db;UID=sa;PWD=" + Planted)))),
             "profile's SQLCMD value, password-free" =>
-                Refused(Profiles.Load(Profile("inline", "", ("LinkedServer", "Data Source=prod-sql;Initial Catalog=Orders;Integrated Security=True")))),
-            "argument" => Refused(SecretReference.Of("--connection", credential)),   // how a connection argument is read
-            "argument after file:" => Refused(SecretReference.Of("--connection", "file:" + credential)),
-            _ => Refused(SqlServer.Target.Parse(credential, "--target")),            // WP 1.4's target grammar
+                Failed(Profiles.Load(Profile("inline", "", ("LinkedServer", "Data Source=prod-sql;Initial Catalog=Orders;Integrated Security=True")))),
+            "argument" => Failed(SecretReference.Of("--connection", credential)),   // how a connection argument is read
+            "argument after file:" => Failed(SecretReference.Of("--connection", "file:" + credential)),
+            _ => Failed(SqlServer.Target.Parse(credential, "--target")),            // WP 1.4's target grammar
         };
 
-        Assert.Equal((code, 6), (refusal.Code, Contract.Exit(refusal)));
-        Assert.Contains(named, refusal.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
+        Assert.Equal((code, 6), (error.Code, Contract.Exit(error)));
+        Assert.Contains(named, error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
     }
 
     /// <summary>§4 row 14: beside its environments, the posture holds the substrate preference, docker or localdb and nothing else.</summary>
@@ -126,20 +126,20 @@ public sealed class ProfilesTests : IDisposable
     [InlineData("{ \"environments\": { \"dev\": { \"connection\": \"env:A\", \"profile\": \"estate/p.publish.xml\", \"sqlcmd\": { \"Tag\": { \"literal\": \"dev\", \"sensitive\": false, \"value\": \"x\" } } } } }", "environments.dev.sqlcmd.Tag.value")]
     public void An_unknown_key_is_refused_by_its_place_in_the_posture(string posture, string at)
     {
-        var refusal = Refused(Profiles.Environments(Estate(posture, raw: true)));
+        var error = Failed(Profiles.Environments(Estate(posture, raw: true)));
 
-        Assert.Equal(("posture.unknown-key", 6), (refusal.Code, Contract.Exit(refusal)));
-        Assert.Contains(at, refusal.Message, StringComparison.Ordinal);
+        Assert.Equal(("posture.unknown-key", 6), (error.Code, Contract.Exit(error)));
+        Assert.Contains(at, error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Every_refusal_of_the_posture_and_the_profile_is_exit_6()
+    public void Every_error_of_the_posture_and_the_profile_is_exit_6()
     {
         foreach (var way in RefusalPaths.All.Where(c => c.Code.Split('.')[0] is "posture" or "profile" or "reference" or "sqlcmd"))
         {
-            var refusal = way.Drive(Directory.CreateDirectory(Path.Combine(scratch, way.Label)).FullName, Planted);
-            Assert.True(Contract.Exit(refusal) == 6, way.Label + " takes exit " + Contract.Exit(refusal));
+            var error = way.Drive(Directory.CreateDirectory(Path.Combine(scratch, way.Label)).FullName, Planted);
+            Assert.True(Contract.Exit(error) == 6, way.Label + " takes exit " + Contract.Exit(error));
         }
     }
 
@@ -203,8 +203,8 @@ public sealed class ProfilesTests : IDisposable
         var root = Estate(Dev(profile: "estate/profiles/relaxed.publish.xml"));
         File.Copy(relaxed, Path.Combine(root, "estate", "profiles", "relaxed.publish.xml"));
 
-        var bare = Refused(Profiles.Load(relaxed));
-        var named = Refused(Profiles.Of(Made(Profiles.Environments(root)).Single(), root));
+        var bare = Failed(Profiles.Load(relaxed));
+        var named = Failed(Profiles.Of(Made(Profiles.Environments(root)).Single(), root));
 
         Assert.Equal(("profile.guard-off", 6), (bare.Code, Contract.Exit(bare)));
         Assert.Equal(("profile.guard-off", 6), (named.Code, Contract.Exit(named)));
@@ -246,7 +246,7 @@ public sealed class ProfilesTests : IDisposable
     }
 
     /// <summary>
-    /// VALUES.md X2: every refusal, driven with a password planted in its input wherever the input can carry one, returns neither the
+    /// VALUES.md X2: every error, driven with a password planted in its input wherever the input can carry one, returns neither the
     /// password nor a password setting in its code, its message or its remedy, and throws nothing. The other half of the search is
     /// <see cref="DiffTests.Estate_read_of_a_database_holding_a_SQL_login_prints_no_password"/>, which searches estate read's answer
     /// for a database holding a SQL login.
@@ -258,10 +258,10 @@ public sealed class ProfilesTests : IDisposable
     {
         var way = RefusalPaths.All.Single(c => c.Label == label);
 
-        var refusal = way.Drive(Directory.CreateDirectory(Path.Combine(scratch, "way")).FullName, Planted);
-        var output = string.Join('\n', refusal.Code, refusal.Message, refusal.Remedy, refusal);
+        var error = way.Drive(Directory.CreateDirectory(Path.Combine(scratch, "way")).FullName, Planted);
+        var output = string.Join('\n', error.Code, error.Message, error.Remedy, error);
 
-        Assert.Equal(way.Code, refusal.Code);
+        Assert.Equal(way.Code, error.Code);
         Assert.DoesNotContain(Planted, output, StringComparison.Ordinal);
         Assert.DoesNotMatch(PasswordSetting, output);
     }
@@ -348,7 +348,7 @@ public sealed class ProfilesTests : IDisposable
         return file;
     }
 
-    private static T Made<T>(Result<T> result) => result.Match(value => value, refusal => throw new Xunit.Sdk.XunitException(refusal.Code + ": " + refusal.Message));
+    private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 
-    private static Refusal Refused<T>(Result<T> result) => Assert.IsType<Result<T>.Refused>(result).Refusal;
+    private static Error Failed<T>(Result<T> result) => Assert.IsType<Result<T>.Failed>(result).Error;
 }

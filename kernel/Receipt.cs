@@ -61,7 +61,7 @@ public readonly record struct Engine
         {
             (null, _) => new Engine(release, null),
             (_, Result<Fingerprint>.Ok(var parsed)) => new Engine(release, parsed),
-            _ => Result.Refuse<Engine>(new Refusal(
+            _ => Result.Fail<Engine>(new Error(
                 "engine.image-digest",
                 $"'{image}' is not an image digest.",
                 "Give the image digest as sha256: and 64 lowercase hex digits.")),
@@ -82,11 +82,11 @@ public readonly record struct DacFxVersion : IComparable<DacFxVersion>
 
     private DacFxVersion(string text) => _text = text;
 
-    /// <summary>A version from its text, or the refusal <c>engine.dacfx-version</c>.</summary>
+    /// <summary>A version from its text, or the error <c>engine.dacfx-version</c>.</summary>
     public static Result<DacFxVersion> Of(string? text) =>
         text?.Split('.') is { Length: >= 2 and <= 4 } groups && groups.All(group => group.Length > 0 && group.All(char.IsAsciiDigit))
             ? new DacFxVersion(text)
-            : new Refusal("engine.dacfx-version", $"'{text}' is not a DacFx release version.", "Name the DacFx package version, such as 170.5.96.");
+            : new Error("engine.dacfx-version", $"'{text}' is not a DacFx release version.", "Name the DacFx package version, such as 170.5.96.");
 
     public int CompareTo(DacFxVersion other)
     {
@@ -126,7 +126,7 @@ public abstract record Pin
         ? Result.Ok<Pin>(new Pinned(pin, null))
         : DacFxVersion.Of(before).Bind(prior => prior.CompareTo(pin) < 0
             ? Result.Ok<Pin>(new Pinned(pin, prior))
-            : new Refusal(
+            : new Error(
                 "toolchain.window-order",
                 $"The release before the pin, DacFx {prior}, is not older than the pin, DacFx {pin}.",
                 "Write the release immediately before the pin in the ledger row's last column, or —.")));
@@ -138,10 +138,10 @@ public abstract record Pin
         _ => throw new UnreachableException(),
     };
 
-    /// <summary>The refusal of a committed engine outside the window, or null when the pin admits it.</summary>
-    public Refusal? Refuses(Engine engine) => Match(
+    /// <summary>The rejection of a committed engine outside the window, toolchain.outside-window, or null when the pin admits it.</summary>
+    public Error? Rejects(Engine engine) => Match(
         _ => null,
-        pin => engine.Release == pin.Release || engine.Release == pin.Before ? null : new Refusal(
+        pin => engine.Release == pin.Release || engine.Release == pin.Before ? null : new Error(
             "toolchain.outside-window",
             $"The committed engine, DacFx {engine.DacFx}, is neither the pinned release {pin.Release} nor the release before it{(pin.Before is { } b ? ", " + b : "")}.",
             $"Publish estate with DacFx {pin.Release}, or record the Octopus step's new engine in estate/ledgers/toolchain.md."));

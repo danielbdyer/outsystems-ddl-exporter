@@ -20,7 +20,7 @@ namespace Estate.Io;
 /// <summary>
 /// The SSDT project and its package, read whole (V3_MILESTONES.md §2.2): Build runs the project's own build against the
 /// published tool folder's DacFx targets (§1 fact 1), Load reads what the build wrote, RefactorLog reads a refactorlog, and Walk
-/// reads a package or a model into kernel Elements. A refusal's code names what was refused; cli/Contract.cs maps its area to the exit.
+/// reads a package or a model into kernel Elements. An error's code names what went wrong; cli/Contract.cs maps its category to the exit.
 /// </summary>
 /// <remarks>
 /// No Visual Studio fallback: S1's windows-latest half answered that the committed route builds a classic project there.
@@ -57,7 +57,7 @@ public static class Ssdt
     private static readonly Regex Wrote = new(@" -> (?<path>.+\.dacpac)\r?$", RegexOptions.CultureInvariant | RegexOptions.Multiline);
 
     /// <summary>An MSBuild error: its origin (a file and its position, or a tool), an optional subcategory, the code and the text, then the project in brackets.</summary>
-    private static readonly Regex Error = new(
+    private static readonly Regex BuildError = new(
         @"^\s*(?<origin>.+?)(?<position>\(\d+(?:,\d+)*\))?\s*:\s*(?:[\w ]+ )?error (?<code>[A-Za-z]+\d+)\s*:\s*(?<text>.*?)(?:\s+\[[^\]]*\])?\s*$",
         RegexOptions.CultureInvariant);
 
@@ -73,10 +73,10 @@ public static class Ssdt
     public static Result<string> Tool(string running, string? variable, string workingDirectory) =>
         Doctor.Tool(running).Remedy is null ? running
         : !string.IsNullOrEmpty(variable) && Doctor.Tool(variable) is { Remedy: { } publish } named
-            ? new Refusal("tool.missing", "ESTATE_TOOL names " + variable + ", which is " + named.Found + ".", publish + ", and set ESTATE_TOOL to it or unset it; then estate doctor")
+            ? new Error("tool.missing", "ESTATE_TOOL names " + variable + ", which is " + named.Found + ".", publish + ", and set ESTATE_TOOL to it or unset it; then estate doctor")
         : !string.IsNullOrEmpty(variable) ? variable
         : Nearest(new DirectoryInfo(workingDirectory)) is { } nearest ? nearest
-        : new Refusal(
+        : new Error(
             "tool.missing",
             "estate does not run from a published tool folder, ESTATE_TOOL is unset, and no dist/estate/ lies at or above " + workingDirectory + ".",
             "run ci/publish.sh, or ci/publish.ps1 on Windows, in a clone of the engine, or set ESTATE_TOOL to a published tool folder; then estate doctor");
@@ -91,7 +91,7 @@ public static class Ssdt
         List<string> found = named is not null ? [named] : Directory.EnumerateFiles(worktree, "*.sqlproj", SearchOption.AllDirectories)
             .Select(file => Path.GetRelativePath(worktree, file).Replace('\\', '/'))
             .Where(file => !file.Split('/').SkipLast(1).Any(folder => folder is "bin" or "obj" || folder.StartsWith('.'))).Order(StringComparer.Ordinal).ToList();
-        return found is [var project] && File.Exists(Path.Combine(worktree, project)) ? project : new Refusal("build.no-project",
+        return found is [var project] && File.Exists(Path.Combine(worktree, project)) ? project : new Error("build.no-project",
             found.Count > 1 ? "The repository holds several projects: " + string.Join(", ", found) + "." : "The repository holds no project at " + (named ?? "any path") + ".",
             "Name the .sqlproj to build with --project, by its path from the repository's root.");
     }
@@ -100,7 +100,7 @@ public static class Ssdt
 
     /// <summary>A project as a ref holds it: its path from the repository's root, found in the ref's worktree, built under outputRoot/&lt;the commit&gt;/.</summary>
     public static Result<Dacpac> Build(Git.Worktree at, string project, string toolFolder, string outputRoot) => Path.IsPathRooted(project)
-        ? new Refusal("build.no-project", project + " is not a path from the repository's root, where a ref's project is found.", "Name the .sqlproj by its path from the repository's root.")
+        ? new Error("build.no-project", project + " is not a path from the repository's root, where a ref's project is found.", "Name the .sqlproj by its path from the repository's root.")
         : Build(Path.Combine(at.Path, project), toolFolder, outputRoot, Doctor.Run, at.Commit);
 
     public static Result<Dacpac> Build(string project, string toolFolder, string outputRoot, Doctor.Command probe) => Build(project, toolFolder, outputRoot, probe, null);
@@ -109,7 +109,7 @@ public static class Ssdt
     /// Builds a classic .sqlproj as §1 fact 1 does, with the SDK the probe lists: dotnet build against the tool folder's targets
     /// and reference stub, telemetry off, its output and intermediate files under outputRoot/&lt;the inputs' fingerprint&gt;/, or
     /// under outputRoot/&lt;commit&gt;/ for a ref's worktree, so nothing is written beside the project and two refs never share a
-    /// folder. A missing SDK band or tool folder is refused before anything builds.
+    /// folder. A missing SDK band or tool folder is an error before anything builds.
     /// </summary>
     private static Result<Dacpac> Build(string project, string toolFolder, string outputRoot, Doctor.Command probe, string? commit)
     {
@@ -117,10 +117,10 @@ public static class Ssdt
         var directory = Path.GetDirectoryName(file)!;
         return (File.Exists(file), Doctor.Sdk(directory, probe), Doctor.Tool(tool)) switch
         {
-            (false, _, _) => new Refusal("build.no-project", "No project at " + file + ".", "Name the .sqlproj to build, by its path from the working directory."),
-            (_, { Remedy: { } install } sdk, _) => new Refusal(
+            (false, _, _) => new Error("build.no-project", "No project at " + file + ".", "Name the .sqlproj to build, by its path from the working directory."),
+            (_, { Remedy: { } install } sdk, _) => new Error(
                 "sdk.missing", "dotnet build loads DacFx's net10.0 build task, and this machine has " + sdk.Found + ".", install + "; then estate doctor"),
-            (_, _, { Remedy: { } publish } found) => new Refusal("tool.missing", tool + " is " + found.Found + ".", publish + "; then estate doctor"),
+            (_, _, { Remedy: { } publish } found) => new Error("tool.missing", tool + " is " + found.Found + ".", publish + "; then estate doctor"),
             _ => Run(file, tool, Path.GetFullPath(outputRoot), commit),
         };
     }
@@ -139,11 +139,11 @@ public static class Ssdt
             "-p:TargetFrameworkRootPath=" + Path.Combine(tool, "refasm"),
             "-p:OutputPath=" + output, "-p:BaseIntermediateOutputPath=" + output + "obj/", "-p:IntermediateOutputPath=" + output + "obj/",
         ]);
-        var errors = log.Split('\n').Select(line => Error.Match(line.TrimEnd('\r'))).Where(m => m.Success).Select(m => Located(m, directory)).Distinct().ToList();
+        var errors = log.Split('\n').Select(line => BuildError.Match(line.TrimEnd('\r'))).Where(m => m.Success).Select(m => Located(m, directory)).Distinct().ToList();
         var dacpac = Wrote.Matches(log).Select(m => m.Groups["path"].Value).LastOrDefault();
         return exit == 0 && errors.Count == 0 && dacpac is not null && File.Exists(dacpac)
             ? new Dacpac(dacpac, inputs)
-            : new Refusal(
+            : new Error(
                 "build.failed",
                 "dotnet build of " + Path.GetFileName(project) + " failed:\n" + string.Join('\n', errors.Count > 0 ? errors : log.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).TakeLast(20)),
                 "Fix each error at the file and line it names, then build again.");
@@ -193,7 +193,7 @@ public static class Ssdt
         }
     }
 
-    /// <summary>A package's model, its deploy scripts and its refactorlog; a file DacFx cannot read as a package is refused.</summary>
+    /// <summary>A package's model, its deploy scripts and its refactorlog; a file DacFx cannot read as a package is the error package.unreadable.</summary>
     public static Result<Package> Load(string dacpac)
     {
         try
@@ -207,7 +207,7 @@ public static class Ssdt
         }
         catch (Exception e) when (e is DacServicesException or DacModelException or IOException or InvalidDataException or XmlException or UnauthorizedAccessException)
         {
-            return new Refusal("package.unreadable", dacpac + " is not a package DacFx reads: " + e.Message, "Name a .dacpac a build wrote, or build its project again.");
+            return new Error("package.unreadable", dacpac + " is not a package DacFx reads: " + e.Message, "Name a .dacpac a build wrote, or build its project again.");
         }
     }
 
@@ -221,13 +221,13 @@ public static class Ssdt
         }
         catch (Exception e) when (e is IOException or XmlException or UnauthorizedAccessException)
         {
-            return new Refusal("refactorlog.unreadable", path + " is not a refactorlog SSDT reads: " + e.Message, "Restore the file from git, then repeat the rename in Visual Studio so SSDT writes its entry.");
+            return new Error("refactorlog.unreadable", path + " is not a refactorlog SSDT reads: " + e.Message, "Restore the file from git, then repeat the rename in Visual Studio so SSDT writes its entry.");
         }
     }
 
     /// <summary>
     /// The operations of a refactorlog, in file order. A build's copy leaves the root element outside the namespace its
-    /// operations carry, so the operations are found by name wherever they sit; one with no key, name or element is refused.
+    /// operations carry, so the operations are found by name wherever they sit; one with no key, name or element makes the whole file unreadable.
     /// </summary>
     private static List<RefactorEntry> Entries(Stream log)
     {
@@ -320,7 +320,7 @@ public static class Ssdt
     /// generated name or DacFx's order; a package and the database it was published to hold the same names, so they number alike,
     /// and a rename of a column that a constraint on several columns references can renumber that constraint and its siblings. SQL
     /// Server normalizes a check's text, so two checks on one column may number apart in a package and its database. Two objects
-    /// keyed alike are refused; an unresolved reference is keyed as the type Unresolved. Reads are compared only between like sources and, for databases, like identities:
+    /// keyed alike are the error walk.duplicate-key; an unresolved reference is keyed as the type Unresolved. Reads are compared only between like sources and, for databases, like identities:
     /// SQL Server shows a server-scoped login only to a reader with permission on it (sysadmin, VIEW ANY DEFINITION, or its own), and
     /// a db_datareader login holding VIEW DEFINITION read Query Store's database options differently from sa when measured on 2026-09-24.
     /// </summary>
@@ -400,9 +400,9 @@ public static class Ssdt
         }
 
         return All(walked.Select(o => Read(o).Map(e => (Element: e, Name: o.Name.HasName ? Keyed(o.ObjectType.Name, [.. o.Name.Parts], null).Match<string?>(k => k.Path, _ => null) : null))))
-            .Bind(read => read.GroupBy(w => w.Element.Key).FirstOrDefault(g => g.Count() > 1) is not { } alike ? Result.Ok(read) : new Refusal("walk.duplicate-key",
+            .Bind(read => read.GroupBy(w => w.Element.Key).FirstOrDefault(g => g.Count() > 1) is not { } alike ? Result.Ok(read) : new Error("walk.duplicate-key",
                 $"{alike.Count()} {alike.Key.Type} objects of the model are keyed alike, as {alike.Key}: {string.Join(", ", alike.Select(w => w.Name ?? "unnamed"))}.",
-                "Report the model's source with this refusal: a key names one object, so the walk keys this type ambiguously, a defect in io/Ssdt.Walk."));
+                "Report the model's source with this error: a key names one object, so the walk keys this type ambiguously, a defect in io/Ssdt.Walk."));
     }
 
     /// <summary>
@@ -456,7 +456,7 @@ public static class Ssdt
     private static Result<string[]> Parts(string name) =>
         new TSql160Parser(initialQuotedIdentifiers: true).ParseSchemaObjectName(new StringReader(name), out _) is { } parsed
             ? parsed.Identifiers.Select(i => i.Value).ToArray()
-            : new Refusal("refactorlog.name", "The refactorlog names " + name + ", which is not a name of one to four parts.", "Restore the refactorlog from git, then repeat the rename in Visual Studio so SSDT writes its entry.");
+            : new Error("refactorlog.name", "The refactorlog names " + name + ", which is not a name of one to four parts.", "Restore the refactorlog from git, then repeat the rename in Visual Studio so SSDT writes its entry.");
 
     /// <summary>A key from name parts: under home, each part a level down; with no home, the first one or two parts at the top and each further part a level down.</summary>
     private static Result<ElementKey> Keyed(string type, string[] parts, ElementKey? home) => parts.Skip(home is null ? 2 : 0).Aggregate(
@@ -467,7 +467,7 @@ public static class Ssdt
     private static string[] Beneath(string[] own, string[] home) => Enumerable.Range(0, Math.Max(0, own.Length - home.Length + 1))
         .Where(i => own.Skip(i).Take(home.Length).SequenceEqual(home, StringComparer.OrdinalIgnoreCase)).Select(i => (string[])[.. own[..i], .. own[(i + home.Length)..]]).FirstOrDefault(rest => rest.Length > 0) ?? own;
 
-    /// <summary>Every value, in order, or the first refusal.</summary>
+    /// <summary>Every value, in order, or the first error.</summary>
     private static Result<List<T>> All<T>(IEnumerable<Result<T>> results) =>
         results.Aggregate(Result.Ok(new List<T>()), (all, next) => all.Bind(list => next.Map(value => { list.Add(value); return list; })));
 

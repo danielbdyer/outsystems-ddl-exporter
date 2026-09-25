@@ -50,7 +50,7 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
 
         Assert.False(await SqlServerFixture.ExistsAsync(copy.Name), copy.Name + " outlived Drop");
         Assert.Empty(Registry());
-        var gone = Assert.IsType<Result<SqlServer.Database>.Refused>(SqlServer.Resolve(Made(SqlServer.Target.Parse("copy:" + copy.Name)), root)).Refusal;
+        var gone = Assert.IsType<Result<SqlServer.Database>.Failed>(SqlServer.Resolve(Made(SqlServer.Target.Parse("copy:" + copy.Name)), root)).Error;
         Assert.Equal(("copy.unregistered", 9), (gone.Code, Contract.Exit(gone)));
     }
 
@@ -115,16 +115,16 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
     }
 
     /// <summary>
-    /// A failed DacServices.Publish through Copy.Publish and Database.Refused. The copy holds the seed's Customer rows, so the
+    /// A failed DacServices.Publish through Copy.Publish and Database.ErrorOf. The copy holds the seed's Customer rows, so the
     /// make-mandatory head's guard (BlockOnPossibleDataLoss True in the pipeline's profile) raises Msg 50000 and DacFx throws
     /// DacServicesException with no SqlException inside. Its Message holds DacFx's errors (SQL72014 quoting Msg 50000, SQL72045), and
     /// its Messages adds informational entries of number 0 that Message leaves out: the pre-deployment script's PRINT output and "An
-    /// error occurred while the batch was being executed.". The refusal is routed by the number inside SQL72014, which Message alone
+    /// error occurred while the batch was being executed.". The error is routed by the number inside SQL72014, which Message alone
     /// carries, and quotes Message only.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task A_publish_the_guard_stops_is_refused_as_server_failed_by_Msg_50000_quoting_DacFx_s_errors_and_not_its_informational_messages()
+    public async Task A_publish_the_guard_stops_is_server_failed_by_Msg_50000_quoting_DacFx_s_errors_and_not_its_informational_messages()
     {
         var strict = Made(Profiles.Load(ground.Profile));
         var copy = Made(Substrate.Create(root, await SqlServerFixture.ServerAsync()));
@@ -132,14 +132,14 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
         {
             Made(copy.Publish(ground.Base, strict));
 
-            var refused = Assert.IsType<Result<SqlServer.Copy>.Refused>(copy.Publish(ground.Mandatory, strict)).Refusal;
+            var error = Assert.IsType<Result<SqlServer.Copy>.Failed>(copy.Publish(ground.Mandatory, strict)).Error;
 
-            Assert.Equal(("server.failed", 4), (refused.Code, Contract.Exit(refused)));
-            Assert.StartsWith("copy:" + copy.Name + " failed the statement: Msg 50000: ", refused.Message, StringComparison.Ordinal);
-            Assert.Contains("SQL72014", refused.Message, StringComparison.Ordinal);
-            Assert.Contains("Rows were detected", refused.Message, StringComparison.Ordinal);
-            Assert.DoesNotContain("SQL0:", refused.Message, StringComparison.Ordinal);
-            Assert.DoesNotContain("An error occurred while the batch was being executed.", refused.Message, StringComparison.Ordinal);
+            Assert.Equal(("server.failed", 4), (error.Code, Contract.Exit(error)));
+            Assert.StartsWith("copy:" + copy.Name + " failed the statement: Msg 50000: ", error.Message, StringComparison.Ordinal);
+            Assert.Contains("SQL72014", error.Message, StringComparison.Ordinal);
+            Assert.Contains("Rows were detected", error.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("SQL0:", error.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("An error occurred while the batch was being executed.", error.Message, StringComparison.Ordinal);
         }
         finally
         {
@@ -150,12 +150,12 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
     /// <summary>
     /// DF-4: DacFx's own failure, with no SqlException inside. A package built for a newer platform (Sql180) than the SQL Server it is
     /// planned against (SQL Server 2022 in the container, an older release in the Windows runner's LocalDB), planned for a named
-    /// environment under the pipeline's profile (AllowIncompatiblePlatform False), is refused as dacfx.failed at exit 6, and the refusal
+    /// environment under the pipeline's profile (AllowIncompatiblePlatform False), fails as dacfx.failed at exit 6, and the error
     /// quotes DacFx's reason, which names the server's release; SQL Server's messages alone are withheld for a named environment.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task A_package_for_a_newer_platform_planned_for_a_named_environment_is_refused_with_DacFx_s_reason()
+    public async Task A_package_for_a_newer_platform_planned_for_a_named_environment_fails_with_DacFx_s_reason()
     {
         await using var database = await SqlServerFixture.RegisterAsync();
         File.WriteAllText(Path.Combine(root, "dev.connection"), database.ConnectionString);
@@ -174,12 +174,12 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
         }
 
         var dev = Assert.IsType<SqlServer.Named>(Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root)));
-        var refused = Assert.IsType<Result<SqlServer.Deployment>.Refused>(SqlServer.Plan(dacpac, dev, Made(Profiles.Load(ground.Profile)))).Refusal;
+        var error = Assert.IsType<Result<SqlServer.Deployment>.Failed>(SqlServer.Plan(dacpac, dev, Made(Profiles.Load(ground.Profile)))).Error;
 
-        Assert.Equal(("dacfx.failed", 6), (refused.Code, Contract.Exit(refused)));
+        Assert.Equal(("dacfx.failed", 6), (error.Code, Contract.Exit(error)));
         // The release DacFx names after these words differs between the container and the Windows runner's LocalDB; a failure prints the whole message.
-        Assert.True(refused.Message.Contains("as the target platform cannot be published to", StringComparison.Ordinal), refused.Message);
-        Assert.DoesNotContain("withheld", refused.Message, StringComparison.Ordinal);
+        Assert.True(error.Message.Contains("as the target platform cannot be published to", StringComparison.Ordinal), error.Message);
+        Assert.DoesNotContain("withheld", error.Message, StringComparison.Ordinal);
     }
 
     private static bool MakesMandatory(Change.Altered altered) =>
@@ -189,5 +189,5 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
         ? JsonNode.Parse(File.ReadAllText(Path.Combine(root, ".estate", "copies.json")))!["copies"]!.AsArray()
         : [];
 
-    private static T Made<T>(Result<T> result) => result.Match(value => value, refusal => throw new Xunit.Sdk.XunitException(refusal.Code + ": " + refusal.Message));
+    private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 }

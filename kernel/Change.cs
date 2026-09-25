@@ -39,14 +39,14 @@ public sealed record Change(Seq<Element> Added, Seq<Element> Removed, Seq<Rename
     /// under its parent's key after, is gone after, and a rename of it leads, directly or through later renames, to a
     /// key that is new after and continues no other element; the rest of the refactorlog's history changes nothing.
     /// SSDT records each entry under the keys of its moment, so an entry may name the element under any key its parent
-    /// held, old, new or between, and its new key is read under the parent's key after. Refuses a read in which two
-    /// elements share a key.
+    /// held, old, new or between, and its new key is read under the parent's key after. A read in which two
+    /// elements share a key is the error change.duplicate-key.
     /// </summary>
     public static Result<Change> Between(Seq<Element> before, Seq<Element> after, Seq<Rename> renames)
     {
-        if ((Duplicate(before) ?? Duplicate(after)) is { } refusal)
+        if ((Duplicate(before) ?? Duplicate(after)) is { } error)
         {
-            return refusal;
+            return error;
         }
 
         var (was, now) = (before.ToDictionary(e => e.Key), after.ToDictionary(e => e.Key));
@@ -131,9 +131,9 @@ public sealed record Change(Seq<Element> Added, Seq<Element> Removed, Seq<Rename
         element.Relationships.FirstOrDefault(r => r.Name == name)?.Targets ?? default;
 
     // A Seq sorts elements by key first, so two elements with one key sit side by side.
-    private static Refusal? Duplicate(Seq<Element> read) => Enumerable.Range(1, Math.Max(0, read.Count - 1))
+    private static Error? Duplicate(Seq<Element> read) => Enumerable.Range(1, Math.Max(0, read.Count - 1))
         .Where(i => read[i].Key == read[i - 1].Key)
-        .Select(i => new Refusal(
+        .Select(i => new Error(
             "change.duplicate-key",
             $"Two elements of one read have the key {read[i].Key}.",
             "Report the read's source: a key names one element, so the walk that produced this read has a defect."))

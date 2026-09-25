@@ -92,7 +92,7 @@ public static class Substrate
             : env.GetValueOrDefault("MSSQL_SA_PASSWORD") is { Length: > 0 } password && env.GetValueOrDefault("ESTATE_SQL_PORT") is { Length: > 0 } port
                 ? new SqlConnectionStringBuilder { DataSource = "127.0.0.1," + port, UserID = "sa", Password = password, TrustServerCertificate = true }.ConnectionString
             : localDb ? @"Server=(localdb)\MSSQLLocalDB;Integrated Security=true"
-            : new Refusal("substrate.missing", "No substrate: ESTATE_SQL is unset, " + sqlEnv + " gives no container's port and password, and LocalDB is not installed.",
+            : new Error("substrate.missing", "No substrate: ESTATE_SQL is unset, " + sqlEnv + " gives no container's port and password, and LocalDB is not installed.",
                 "Start Docker and run ci/sql.sh up, or ci/sql.ps1 up on Windows, or set ESTATE_SQL; then run estate doctor.");
     }
 
@@ -106,7 +106,7 @@ public static class Substrate
         }
         catch (Exception e) when (e is ArgumentException or FormatException or InvalidOperationException)
         {
-            return new Refusal("substrate.missing", "The substrate's server, as ESTATE_SQL gives it, is no connection string SqlClient reads; its text is withheld.",
+            return new Error("substrate.missing", "The substrate's server, as ESTATE_SQL gives it, is no connection string SqlClient reads; its text is withheld.",
                 "Correct ESTATE_SQL, or unset it; then run estate doctor.");
         }
 
@@ -127,7 +127,7 @@ public static class Substrate
             };
             return Change(estateRoot, rows => [.. rows, row]).Bind(_ => Run(copy, Make).Match(
                 made => Result.Ok(made),
-                refusal => Change(estateRoot, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name)]).Bind(_ => Result.Refuse<SqlServer.Copy>(refusal))));
+                error => Change(estateRoot, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name)]).Bind(_ => Result.Fail<SqlServer.Copy>(error))));
         });
 
     /// <summary>copy: resolved against .estate/copies.json alone: the row holding the name, on a server no environment's reference resolves to, which the substrate this machine names must still be.</summary>
@@ -135,17 +135,17 @@ public static class Substrate
 
     internal static Result<SqlServer.Copy> Registered(string estateRoot, string name, Func<Result<string>> substrate, Func<string, IPAddress[]> resolve) =>
         Rows(estateRoot).Bind(rows => rows.FirstOrDefault(r => (string?)r["name"] == name) is not { } row
-            ? new Refusal("copy.unregistered", "copy:" + name + " is no copy " + Registry + " holds, and copy: names only a database estate made and recorded there.",
+            ? new Error("copy.unregistered", "copy:" + name + " is no copy " + Registry + " holds, and copy: names only a database estate made and recorded there.",
                 "Name a copy that " + Registry + " holds on this machine.")
             : Unnamed(estateRoot, (string)row["server"]!, resolve).Bind(made => substrate().Bind(server => ServerName(server).Bind(now => now == made
                 ? Result.Ok(new SqlServer.Copy(name, server, estateRoot))
-                : new Refusal("copy.unregistered", "copy:" + name + " was made on another server than the substrate this machine names now, so " + Registry + " holds no such copy here.",
+                : new Error("copy.unregistered", "copy:" + name + " was made on another server than the substrate this machine names now, so " + Registry + " holds no such copy here.",
                     "Set ESTATE_SQL back to the server that made the copy, or make a new copy on this one.")))));
 
     /// <summary>
     /// R15: the server's host is none an environment's reference resolves to, compared by spelling, then by address; this machine is
     /// every loopback address and each of its own. An environment whose reference resolves to nothing on this machine goes uncompared,
-    /// its host unknown here; one SqlClient reads no connection string from is refused, and so is an estate without its posture.
+    /// its host unknown here; one SqlClient reads no connection string from is an error, and so is an estate without its posture.
     /// </summary>
     internal static Result<string> Unnamed(string estateRoot, string serverName, Func<string, IPAddress[]> resolve) =>
         Profiles.Environments(estateRoot).Bind(environments => environments.Aggregate(Result.Ok(new List<(NamedEnvironment Environment, string Host)>()), (hosts, environment) =>
@@ -155,7 +155,7 @@ public static class Substrate
             var host = SqlServer.Host(serverName);
             var addresses = new Lazy<HashSet<IPAddress>>(() => Addresses(host, resolve));
             return hosts.Where(h => h.Host == host).Concat(hosts.Where(h => h.Host != host && Addresses(h.Host, resolve).Overlaps(addresses.Value))).Select(h => h.Environment).FirstOrDefault() is { } named
-                ? new Refusal("copy.named-host", "The substrate is on the host env:" + named.Name + "'s connection resolves to, and a copy is made only where no named environment lives.",
+                ? new Error("copy.named-host", "The substrate is on the host env:" + named.Name + "'s connection resolves to, and a copy is made only where no named environment lives.",
                     "Point ESTATE_SQL at a local SQL Server, or unset it and run ci/sql.sh up (ci/sql.ps1 up on Windows).")
                 : Result.Ok(serverName);
         });
@@ -201,7 +201,7 @@ public static class Substrate
         }
         catch (SqlException e)
         {
-            return copy.Refused(e.Number, e.Message, fatal: e.Class >= 20);
+            return copy.ErrorOf(e.Number, e.Message, fatal: e.Class >= 20);
         }
     }
 
@@ -219,7 +219,7 @@ public static class Substrate
         }
         catch (Exception e) when (e is JsonException or InvalidOperationException or IOException or UnauthorizedAccessException)
         {
-            return new Refusal("registry.unreadable", Registry + " under " + estateRoot + " is not the registry estate writes; its text is withheld.",
+            return new Error("registry.unreadable", Registry + " under " + estateRoot + " is not the registry estate writes; its text is withheld.",
                 "Drop the copies it lists with DROP DATABASE, then delete " + Registry + ".");
         }
     }

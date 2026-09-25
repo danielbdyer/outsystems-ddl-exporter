@@ -160,12 +160,12 @@ public sealed class ChangeTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Two_elements_of_one_read_with_one_key_are_refused()
+    public void Two_elements_of_one_read_with_one_key_fail_with_change_duplicate_key()
     {
         var twice = Seq.Of(New(Archetypes.Customer, [("IsMemoryOptimized", Bool(false))]), New(Archetypes.Customer, []));
 
-        Assert.Equal("change.duplicate-key", Assert.IsType<Result<Change>.Refused>(Change.Between(twice, [], [])).Refusal.Code);
-        Assert.Equal("change.duplicate-key", Assert.IsType<Result<Change>.Refused>(Change.Between([], twice, [])).Refusal.Code);
+        Assert.Equal("change.duplicate-key", Assert.IsType<Result<Change>.Failed>(Change.Between(twice, [], [])).Error.Code);
+        Assert.Equal("change.duplicate-key", Assert.IsType<Result<Change>.Failed>(Change.Between([], twice, [])).Error.Code);
     }
 
     private static Seq<Rename> Inverted(Seq<Rename> renames) => Seq.Of(renames.Select(r => r.Inverted()));

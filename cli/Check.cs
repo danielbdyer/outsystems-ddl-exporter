@@ -28,30 +28,30 @@ public static partial class Verbs
     {
         ["drift", ..] => Drift(here, [.. words.Skip(1)]),
         [var kind, ..] when Later.TryGetValue(kind, out var arrives) => Contract.NotBuilt(Of("check") with { Name = "check " + kind, Arrives = arrives }) with { Schema = Of("check").Output },
-        _ => Contract.Refused(Of("check"), new Refusal("arguments.unknown-check", "estate check needs the check to run; this build runs check drift.", "estate check drift --target <target> --at <ref>")),
+        _ => Contract.Failed(Of("check"), new Error("arguments.unknown-check", "estate check needs the check to run; this build runs check drift.", "estate check drift --target <target> --at <ref>")),
     };
 
     /// <summary>
     /// Whether a database matches the repository at a ref (§1 fact 4; M1 exits 1 and 3): the ref built, then planned against the target under
     /// the pipeline's profile as the caller, or as the environment's reference names. An empty deploy report is exit 0, "&lt;target&gt; matches
     /// &lt;ref&gt;"; else exit 5, a finding per object the report names. The receipt stamps the committed engine, which must stand inside the
-    /// toolchain ledger's window (R13); a denial is refused before anything builds, in one sentence naming the environment (R16).
+    /// toolchain ledger's window (R13); a denial is reported before anything builds, in one sentence naming the environment (R16).
     /// </summary>
     private static Envelope Drift(Checkout here, IReadOnlyList<string> words)
     {
         var (verb, stamp) = (Of("check"), Stamped(null, null));
         if (Contract.Flags(words, ["--target", "--at"], ["--profile", "--project"], []).Bind(flags => SqlServer.Target.Parse(flags["--target"], "--target").Map(target => (Flags: flags, Target: target)))
-            .Bind(asked => Io.Doctor.Toolchain(here.Root, Contract.Version).Map(pin => (asked.Flags, asked.Target, Pin: pin))).Refused(out var asked, out var refusal))
+            .Bind(asked => Io.Doctor.Toolchain(here.Root, Contract.Version).Map(pin => (asked.Flags, asked.Target, Pin: pin))).Failed(out var asked, out var error))
         {
-            return Contract.Refused(verb, refusal, stamp);
+            return Contract.Failed(verb, error, stamp);
         }
 
         stamp = Stamped(null, asked.Pin);
-        if ((asked.Pin.Refuses(stamp.Engine) is { } outside ? Result.Refuse<SqlServer.Database>(outside) : SqlServer.Resolve(asked.Target, here.Root))
+        if ((asked.Pin.Rejects(stamp.Engine) is { } outside ? Result.Fail<SqlServer.Database>(outside) : SqlServer.Resolve(asked.Target, here.Root))
             .Bind(database => Profile(here, database, asked.Flags.GetValueOrDefault("--profile")).Map(profile => (asked.Flags, asked.Target, Database: database, Profile: profile)))
-            .Refused(out var drift, out refusal))
+            .Failed(out var drift, out error))
         {
-            return Contract.Refused(verb, refusal, stamp);
+            return Contract.Failed(verb, error, stamp);
         }
 
         stamp = Stamped(Substrate.Image(drift.Database), stamp.Pin);
@@ -59,9 +59,9 @@ public static partial class Verbs
         var at = drift.Flags["--at"];
         if (SqlServer.Reach(drift.Database, log).Bind(_ => Built(here, at, drift.Flags.GetValueOrDefault("--project"))).Bind(built => Packaged(built.Dacpac)
                 .Bind(read => SqlServer.Plan(built.Dacpac, drift.Database, drift.Profile, log).Map(plan => (built.Commit, Read: read, Plan: plan))))
-            .Refused(out var planned, out refusal))
+            .Failed(out var planned, out error))
         {
-            return Contract.Refused(verb, refusal, stamp);
+            return Contract.Failed(verb, error, stamp);
         }
 
         var receipt = new Receipt(Fingerprint.Of(planned.Read.Elements), Fingerprint.Of(planned.Plan.Report), null, stamp.Engine, drift.Profile.Fingerprint, drift.Target.ToString(),
@@ -101,7 +101,7 @@ public static partial class Verbs
         : named is not null ? Profiles.Load(Path.GetFullPath(Path.Combine(here.Root, named)))
         : Profiles.Environments(here.Root).Bind(environments => environments.Select(e => e.ProfilePath).Distinct().ToList() is [var shared]
             ? Profiles.Load(Path.GetFullPath(Path.Combine(here.Root, shared)))
-            : new Refusal("arguments.missing-flag", database + " is a copy, and " + Profiles.Posture + " names no one profile its environments share.",
+            : new Error("arguments.missing-flag", database + " is a copy, and " + Profiles.Posture + " names no one profile its environments share.",
                 "estate check drift --profile <the pipeline's .publish.xml> names the profile to plan under"));
 
     /// <summary>
