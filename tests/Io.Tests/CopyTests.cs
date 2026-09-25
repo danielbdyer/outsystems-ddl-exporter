@@ -115,6 +115,39 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
     }
 
     /// <summary>
+    /// A failed DacServices.Publish through Copy.Publish and Database.Refused. The copy holds the seed's Customer rows, so the
+    /// make-mandatory head's guard (BlockOnPossibleDataLoss True in the pipeline's profile) raises Msg 50000 and DacFx throws
+    /// DacServicesException with no SqlException inside. Its Message holds DacFx's errors (SQL72014 quoting Msg 50000, SQL72045), and
+    /// its Messages adds informational entries of number 0 that Message leaves out: the pre-deployment script's PRINT output and "An
+    /// error occurred while the batch was being executed.". The refusal is routed by the number inside SQL72014, which Message alone
+    /// carries, and quotes Message only.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task A_publish_the_guard_stops_is_refused_as_server_failed_by_Msg_50000_quoting_DacFx_s_errors_and_not_its_informational_messages()
+    {
+        var strict = Made(Profiles.Load(ground.Profile));
+        var copy = Made(Substrate.Create(root, await SqlServerFixture.ServerAsync()));
+        try
+        {
+            Made(copy.Publish(ground.Base, strict));
+
+            var refused = Assert.IsType<Result<SqlServer.Copy>.Refused>(copy.Publish(ground.Mandatory, strict)).Refusal;
+
+            Assert.Equal(("server.failed", 4), (refused.Code, Contract.Exit(refused)));
+            Assert.StartsWith("copy:" + copy.Name + " failed the statement: Msg 50000: ", refused.Message, StringComparison.Ordinal);
+            Assert.Contains("SQL72014", refused.Message, StringComparison.Ordinal);
+            Assert.Contains("Rows were detected", refused.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("SQL0:", refused.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("An error occurred while the batch was being executed.", refused.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Made(Substrate.Drop(copy));
+        }
+    }
+
+    /// <summary>
     /// DF-4: DacFx's own failure, with no SqlException inside. A package built for a newer platform than the 2022 substrate (Sql180),
     /// planned for a named environment on it under the pipeline's profile (AllowIncompatiblePlatform False), is refused as dacfx.failed
     /// at exit 6, and the refusal quotes DacFx's reason; SQL Server's messages alone are withheld for a named environment.

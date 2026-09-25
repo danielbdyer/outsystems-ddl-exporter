@@ -111,7 +111,7 @@ public static class SqlServer
         /// The refusal a SqlClient or DacFx failure against a target takes. With a SqlException inside, by its number, a severity of 20 or
         /// more being a connection lost. With none, DacFx's own failure: when its texts quote a SQL Server number (Msg 50000, the guard;
         /// Msg 2627 inside SQL72014), by that number, since SQL Server's words, which can quote a row, are inside; else dacfx.failed,
-        /// quoting what each exception of the chain says, DacFx's messages (SQL71501: …) among it, kept for a named environment too. Any
+        /// quoting what each exception of the chain says, DacFx's errors (SQL71501: …) among it, kept for a named environment too. Any
         /// other failure is refused with no number.
         /// </summary>
         public Refusal Refused(Exception failure)
@@ -134,8 +134,12 @@ public static class SqlServer
         private static readonly Regex SqlServerNumber = new(@"\bMsg (\d+)", RegexOptions.CultureInvariant);
 
         /// <summary>
-        /// What one exception of a DacFx failure says, on one line. DacFx writes each of its messages into the exception's Message as
-        /// "Error SQL71501: …" where it has any (BuildPackage's SQL71501, AddObjects' SQL46010), so Message alone is quoted.
+        /// What one exception of a DacFx failure says, on one line: its Message alone. DacFx writes each error and warning of the failure
+        /// into Message as "Error SQL71501: …" (BuildPackage's SQL71501, AddObjects' SQL46010 and SQL71006, Publish's SQL72014 quoting
+        /// Msg 50000, SQL72045), so the SQL Server number the refusal is routed by and every SQL7xxxx code are in it. A failed Publish's
+        /// Messages also holds informational entries of number 0 that Message leaves out: PRINT output of a deployment script, "Altering
+        /// Table [dbo].[T]...", "The statement has been terminated.", "An error occurred while the batch was being executed.". They carry
+        /// no error and no code, and are not quoted.
         /// </summary>
         private static IEnumerable<string> Said(Exception x) =>
             Regex.Replace(x.Message, @"\s*\n\s*", " ", RegexOptions.CultureInvariant).Trim() is { Length: > 0 } text ? [text] : [];
