@@ -111,6 +111,7 @@
           "required": [
             "from",
             "to",
+            "counts",
             "change"
           ],
           "properties": {
@@ -150,6 +151,34 @@
                 }
               }
             },
+            "counts": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "created",
+                "dropped",
+                "renamed",
+                "altered"
+              ],
+              "properties": {
+                "created": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "dropped": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "renamed": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "altered": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
             "change": {
               "type": "object",
               "additionalProperties": false,
@@ -165,14 +194,16 @@
                   "items": {
                     "type": "string",
                     "minLength": 1
-                  }
+                  },
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
                 },
                 "dropped": {
                   "type": "array",
                   "items": {
                     "type": "string",
                     "minLength": 1
-                  }
+                  },
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
                 },
                 "renamed": {
                   "type": "array",
@@ -193,7 +224,8 @@
                         "minLength": 1
                       }
                     }
-                  }
+                  },
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
                 },
                 "altered": {
                   "type": "array",
@@ -277,7 +309,8 @@
                         }
                       }
                     }
-                  }
+                  },
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
                 }
               }
             }

@@ -13,13 +13,14 @@ public static partial class Verbs
     /// <summary>The checks the verb table names beyond drift, and the milestone each arrives in.</summary>
     private static readonly Dictionary<string, int> Later = new(StringComparer.Ordinal) { ["cdc"] = 2, ["evidence"] = 3, ["inflight"] = 5, ["outsystems"] = 6, ["environments"] = 6 };
 
-    /// <summary>What check adds to the envelope: the kind of check, the target, the ref and its commit, and each operation the plan holds.</summary>
+    /// <summary>What check adds to the envelope: the kind of check, the target, the ref and its commit, how many operations the plan holds, and each, a list that can be long.</summary>
     public static JsonObject CheckContent => new()
     {
         ["check"] = Render.Record(new()
         {
             ["kind"] = Render.Enum(["drift"]), ["target"] = Render.Text(), ["at"] = Render.Text(), ["commit"] = Render.Pattern("^[0-9a-f]{40,64}$"),
-            ["operations"] = Render.List(Render.Record(new() { ["operation"] = Render.Text(), ["type"] = Render.Text(), ["name"] = Render.Text() })),
+            ["counts"] = Render.Record(new() { ["operations"] = Count() }),
+            ["operations"] = Render.Long(Render.Record(new() { ["operation"] = Render.Text(), ["type"] = Render.Text(), ["name"] = Render.Text() })),
         }),
     };
 
@@ -55,7 +56,7 @@ public static partial class Verbs
         }
 
         stamp = Stamped(ScratchServer.Image(drift.Database), stamp.Pin);
-        var log = SqlServer.QueryLog.Start(here.Root);
+        var log = here.Run;
         var at = drift.Flags["--at"];
         if (SqlServer.Reach(drift.Database, log).Bind(_ => Built(here, at, drift.Flags.GetValueOrDefault("--project"))).Bind(built => Packaged(built.Dacpac)
                 .Bind(model => SqlServer.Plan(built.Dacpac, drift.Database, drift.Profile, log).Map(plan => (built.Commit, Model: model, Plan: plan))))
@@ -82,7 +83,7 @@ public static partial class Verbs
             {
                 ["check"] = new JsonObject
                 {
-                    ["kind"] = "drift", ["target"] = drift.Target.ToString(), ["at"] = at, ["commit"] = planned.Commit,
+                    ["kind"] = "drift", ["target"] = drift.Target.ToString(), ["at"] = at, ["commit"] = planned.Commit, ["counts"] = new JsonObject { ["operations"] = items.Count },
                     ["operations"] = Render.Array(items.Select(i => new JsonObject { ["operation"] = i.Operation, ["type"] = Named(i.Type), ["name"] = i.Name })),
                 },
             });

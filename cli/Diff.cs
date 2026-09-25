@@ -9,17 +9,18 @@ namespace Estate.Cli;
 
 public static partial class Verbs
 {
-    /// <summary>What diff adds to the envelope: each side and its fingerprint, and the change, per element and per property.</summary>
+    /// <summary>What diff adds to the envelope: each side and its fingerprint, the counts of the whole change, and the change, per element and per property, each of its four lists one that can be long.</summary>
     public static JsonObject DiffContent => new()
     {
         ["diff"] = Render.Record(new()
         {
             ["from"] = Side(), ["to"] = Side(),
+            ["counts"] = Render.Record(new() { ["created"] = Count(), ["dropped"] = Count(), ["renamed"] = Count(), ["altered"] = Count() }),
             ["change"] = Render.Record(new()
             {
-                ["created"] = Render.List(Render.Text()), ["dropped"] = Render.List(Render.Text()),
-                ["renamed"] = Render.List(Render.Record(new() { ["before"] = Render.Text(), ["after"] = Render.Text() })),
-                ["altered"] = Render.List(Render.Record(new()
+                ["created"] = Render.Long(Render.Text()), ["dropped"] = Render.Long(Render.Text()),
+                ["renamed"] = Render.Long(Render.Record(new() { ["before"] = Render.Text(), ["after"] = Render.Text() })),
+                ["altered"] = Render.Long(Render.Record(new()
                 {
                     ["key"] = Render.Text(),
                     ["properties"] = Render.List(Render.Record(new() { ["name"] = Render.Text(), ["before"] = Values(), ["after"] = Values() })),
@@ -57,7 +58,8 @@ public static partial class Verbs
         var (lines, printer) = (Lines(change).ToList(), new Printer());
         var message = lines.Count == 0 ? "No change from " + before.Target + " to " + after.Target + "."
             : lines.Count.ToString(CultureInfo.InvariantCulture) + (lines.Count == 1 ? " change from " : " changes from ") + before.Target + " to " + after.Target + ".";
-        var content = new JsonObject { ["diff"] = new JsonObject { ["from"] = Side(before), ["to"] = Side(after), ["change"] = Json(change, printer) } };
+        var counts = new JsonObject { ["created"] = change.Created.Count, ["dropped"] = change.Dropped.Count, ["renamed"] = change.Renamed.Count, ["altered"] = change.Altered.Count };
+        var content = new JsonObject { ["diff"] = new JsonObject { ["from"] = Side(before), ["to"] = Side(after), ["counts"] = counts, ["change"] = Json(change, printer) } };
         return Contract.Answer(Of("diff").Output, Of("diff").Outcome(change.IsEmpty ? "matches" : "differs"), failOnChange && !change.IsEmpty ? 5 : 0, message,
             [
                 .. before.IsDatabase == after.IsDatabase ? [] : new[] { Finding.Note("diff.unlike-sources", "estate diff", before.Target + " and " + after.Target

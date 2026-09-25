@@ -12,10 +12,16 @@ public static class Render
 {
     public const string Usage = "estate <verb> [arguments] [--json] [--summary] | estate --help [--json] | estate --version";
 
+    /// <summary>How many entries of each long list, lines and warnings the default answer holds (VALUES.md O11); the whole answer is in the run's answer.json.</summary>
+    public const int Shown = 50;
+
     private const string SchemaId = "^estate\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$";
 
     /// <summary>The whole answer's file, under the run's folder: what full names when an answer was cut.</summary>
     private const string FullPattern = "^\\.estate/runs/[^/]+/answer\\.json$";
+
+    /// <summary>How a content schema marks a list that can be long, so Cut finds it: the default answer holds its first entries.</summary>
+    private const string LongList = "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list";
 
     public static JsonObject Help() => new()
     {
@@ -75,15 +81,74 @@ public static class Render
 
     /// <summary>
     /// An answer as Markdown: the message, or the verb's lines in its place when it has any (diff's change lines, one per line, so M1
-    /// exit 2's one line is the whole output); then each finding, its message left out where it repeats the answer's. Every field
-    /// passes through <see cref="Printable"/>; the line feeds and list markers written here are structure and are not escaped.
+    /// exit 2's one line is the whole output); then each finding, its message left out where it repeats the answer's; then, when the
+    /// answer was cut, one line naming what was left out and the whole answer's file. Every field passes through
+    /// <see cref="Printable"/>; the line feeds and list markers written here are structure and are not escaped.
     /// </summary>
     public static string Markdown(Envelope answer) => string.Concat((string[])
     [
         .. answer.Lines.Count == 0 ? [Printable(answer.Message) + "\n"] : answer.Lines.Select(line => Printable(line) + "\n"),
         .. answer.Findings.Select(f => "\n- " + Word(f.Severity) + " `" + Printable(f.Code) + "` " + Printable(f.Subject) + (f.Message == answer.Message ? "." : ": " + Printable(f.Message))
             + (f.Remedy is null ? "" : " Remedy: " + Printable(f.Remedy)) + "\n"),
+        .. answer.Truncated
+            ? new[] { "\n… " + answer.LeftOut.ToString("N0", CultureInfo.InvariantCulture) + " more; the whole answer " + (answer.Full is { } full ? "is in " + Printable(full) : "was not written") + ".\n" }
+            : [],
     ]);
+
+    /// <summary>A list that can be long, as a content schema marks it: the default answer holds its first <see cref="Shown"/> entries.</summary>
+    internal static JsonObject Long(JsonObject items)
+    {
+        var list = List(items);
+        list["$comment"] = LongList;
+        return list;
+    }
+
+    /// <summary>
+    /// The answer cut to what the default form shows: the first <see cref="Shown"/> entries of each list its content schema marks long,
+    /// the first Shown lines, every error and note, and the first Shown warnings; with <paramref name="summary"/>, none of the long
+    /// lists' entries, no lines and no warnings, so the counts alone stand. The answer's own content is not changed. What was left out
+    /// is counted in the cut answer's LeftOut as the entries and warnings left out; the lines mirror the entries (each of diff's lines
+    /// is one change of its lists) and are not counted again. The caller writes the whole answer where Full names.
+    /// </summary>
+    public static Envelope Cut(Envelope answer, bool summary)
+    {
+        var keep = summary ? 0 : Shown;
+        var content = (JsonObject?)answer.Content?.DeepClone();
+        var left = 0;
+        foreach (var added in content is null ? [] : Contract.Verbs.FirstOrDefault(v => v.Output == answer.Schema)?.Content ?? new JsonObject())
+        {
+            left += Cut(content![added.Key], (JsonObject)added.Value!, keep);
+        }
+
+        var warnings = answer.Findings.Where(f => f.Severity == Severity.Warning).ToList();
+        var findings = answer.Findings.Where(f => f.Severity != Severity.Warning || warnings.IndexOf(f) < keep).ToList();
+        left += warnings.Count - Math.Min(warnings.Count, keep);
+        return answer with { Content = content, Findings = findings, Lines = [.. answer.Lines.Take(keep)], LeftOut = left };
+    }
+
+    /// <summary>The entries left out of each long list under <paramref name="schema"/> in <paramref name="json"/>, cut in place to its first <paramref name="keep"/>.</summary>
+    private static int Cut(JsonNode? json, JsonObject schema, int keep)
+    {
+        if (schema["anyOf"] is JsonArray branches)
+        {
+            return branches.OfType<JsonObject>().Where(b => (string?)b["type"] != "null").Sum(b => Cut(json, b, keep));
+        }
+
+        if ((string?)schema["$comment"] == LongList && json is JsonArray list)
+        {
+            var left = Math.Max(0, list.Count - keep);
+            for (var i = list.Count - 1; i >= keep; i--)
+            {
+                list.RemoveAt(i);
+            }
+
+            return left;
+        }
+
+        return (string?)schema["type"] == "object" && schema["properties"] is JsonObject properties && json is JsonObject record
+            ? properties.Sum(p => Cut(record[p.Key], (JsonObject)p.Value!, keep))
+            : 0;
+    }
 
     /// <summary>
     /// A JSON answer as text: io/Json's canonical form, with each bidirectional control character written as \uXXXX as well.

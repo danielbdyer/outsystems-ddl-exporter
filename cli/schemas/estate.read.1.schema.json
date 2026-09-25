@@ -111,6 +111,7 @@
           "required": [
             "from",
             "fingerprint",
+            "count",
             "elements"
           ],
           "properties": {
@@ -121,6 +122,10 @@
             "fingerprint": {
               "type": "string",
               "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 0
             },
             "elements": {
               "type": "array",
@@ -159,7 +164,8 @@
                     }
                   }
                 }
-              }
+              },
+              "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
             }
           }
         }

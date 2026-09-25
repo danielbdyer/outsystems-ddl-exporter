@@ -36,10 +36,17 @@ public sealed record Outcome(string Word, IReadOnlyList<int> Exits, string Meani
     public static Outcome Of(ExitCode exit) => new(exit.Name, [exit.Code], exit.Meaning);
 }
 
-/// <summary>Where estate runs: the estate's root (Profiles.Root of the working directory), the working directory, and the tool folder ESTATE_TOOL names, if any.</summary>
-public sealed record Checkout(string Root, string WorkingDirectory, string? Tool)
+/// <summary>
+/// Where estate runs: the estate's root (Profiles.Root of the working directory), the working directory, the tool folder ESTATE_TOOL
+/// names, if any, and the run's query log, which names the run's folder under .estate/runs/ and which Program.Run begins once per
+/// command, so a verb's statements and the whole answer it was cut from sit in one folder.
+/// </summary>
+public sealed record Checkout(string Root, string WorkingDirectory, string? Tool, Io.SqlServer.QueryLog? Log = null)
 {
     public static Checkout Here() => new(Io.Profiles.Root(Directory.GetCurrentDirectory()), Directory.GetCurrentDirectory(), Environment.GetEnvironmentVariable("ESTATE_TOOL"));
+
+    /// <summary>The run's query log: the one begun for the command, or a new one when this checkout was made outside Program.Run.</summary>
+    public Io.SqlServer.QueryLog Run => Log ?? Io.SqlServer.QueryLog.Start(Root);
 }
 
 /// <summary>A row of the frozen exit table: codes are added, never removed or renumbered (cli/exits.frozen).</summary>
@@ -108,10 +115,13 @@ public sealed record Envelope
     /// <summary>The Markdown body a verb prints in its message's place: diff's change lines; empty for the others.</summary>
     public IReadOnlyList<string> Lines { get; init; }
 
-    /// <summary>Whether the answer was cut to its first entries and warnings (Render.Shown); the whole answer is then in <see cref="Full"/>.</summary>
-    public bool Truncated { get; init; }
+    /// <summary>How many entries of a long list, lines and warnings the answer was cut by (Render.Cut); 0 for an answer shown whole.</summary>
+    public int LeftOut { get; init; }
 
-    /// <summary>The run's answer.json holding the whole answer, from the estate's root, when the answer was cut and the file could be written.</summary>
+    /// <summary>Whether the answer was cut to its first entries, lines and warnings (Render.Shown); the whole answer is then in <see cref="Full"/>.</summary>
+    public bool Truncated => LeftOut > 0;
+
+    /// <summary>The run's answer.json holding the whole answer, from the estate's root with '/', when the answer was cut and the file could be written.</summary>
     public string? Full { get; init; }
 }
 

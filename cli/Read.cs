@@ -13,16 +13,19 @@ namespace Estate.Cli;
 
 public static partial class Verbs
 {
-    /// <summary>What read adds to the envelope: the target read, its fingerprint, and its elements.</summary>
+    /// <summary>What read adds to the envelope: the target read, its fingerprint, how many elements it holds, and its elements, a list that can be long.</summary>
     public static JsonObject ReadContent => new()
     {
-        ["read"] = Render.Record(new() { ["from"] = Render.Text(), ["fingerprint"] = Render.Fingerprint(), ["elements"] = Render.List(Render.Record(new()
+        ["read"] = Render.Record(new() { ["from"] = Render.Text(), ["fingerprint"] = Render.Fingerprint(), ["count"] = Count(), ["elements"] = Render.Long(Render.Record(new()
         {
             ["key"] = Render.Text(),
             ["properties"] = new JsonObject { ["type"] = "object", ["additionalProperties"] = Values() },
             ["relationships"] = new JsonObject { ["type"] = "object", ["additionalProperties"] = Render.List(Render.Text()) },
         })) }),
     };
+
+    /// <summary>A count of what the whole answer holds, which stands whether or not the list was cut.</summary>
+    internal static JsonObject Count() => new() { ["type"] = "integer", ["minimum"] = 0 };
 
     /// <summary>estate read --from &lt;target&gt; [--project &lt;path&gt;]: a ref built at its commit, a package or a database, read whole (V3_ARCHITECTURE.md §8.1).</summary>
     public static Envelope Read(Checkout here, IReadOnlyList<string> words)
@@ -39,7 +42,7 @@ public static partial class Verbs
         return Contract.Answer(Of("read").Output, Of("read").Outcome("done"), 0, source.Target + ": " + source.Model.Elements.Count + " elements, fingerprint " + Render.Digest(fingerprint),
             printer.Findings, Stamped(source.Image, reading.Pin), content: new JsonObject
             {
-                ["read"] = new JsonObject { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(fingerprint), ["elements"] = elements },
+                ["read"] = new JsonObject { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(fingerprint), ["count"] = source.Model.Elements.Count, ["elements"] = elements },
             });
     }
 
@@ -65,7 +68,7 @@ public static partial class Verbs
     });
 
     private static Result<Source> Modelled(Checkout here, SqlServer.Target target) => SqlServer.Resolve(target, here.Root).Bind(database =>
-        SqlServer.Model(database, SqlServer.QueryLog.Start(here.Root)).Map(elements => new Source(target, new Ssdt.ModelElements(elements, []), ScratchServer.Image(database), true)));
+        SqlServer.Model(database, here.Run).Map(elements => new Source(target, new Ssdt.ModelElements(elements, []), ScratchServer.Image(database), true)));
 
     /// <summary>The toolchain ledger's pin, which every verb that builds reads (R13), or the rejection of a committed engine outside its window.</summary>
     internal static Result<Pin> Pinned(Checkout here) => Io.Doctor.Toolchain(here.Root, Contract.Version)

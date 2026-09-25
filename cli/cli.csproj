@@ -14,7 +14,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../io/io.csproj" />
+    <!-- The contract's tests render answers in memory; Io.Tests renders a large change as diff's answer to hold VALUES.md O11. -->
     <InternalsVisibleTo Include="Estate.Budgets.Tests" />
+    <InternalsVisibleTo Include="Estate.Io.Tests" />
   </ItemGroup>
   <!--
     The reference assemblies a classic .sqlproj build needs (mscorlib.dll and FrameworkList.xml), downloaded by restore and never

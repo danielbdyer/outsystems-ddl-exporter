@@ -113,6 +113,7 @@
             "target",
             "at",
             "commit",
+            "counts",
             "operations"
           ],
           "properties": {
@@ -132,6 +133,19 @@
             "commit": {
               "type": "string",
               "pattern": "^[0-9a-f]{40,64}$"
+            },
+            "counts": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "operations"
+              ],
+              "properties": {
+                "operations": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
             },
             "operations": {
               "type": "array",
@@ -157,7 +171,8 @@
                     "minLength": 1
                   }
                 }
-              }
+              },
+              "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
             }
           }
         }
