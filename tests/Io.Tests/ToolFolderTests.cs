@@ -58,7 +58,7 @@ public sealed class PublishedToolCollection : ICollectionFixture<PublishedTool>
     public const string Name = "the published tool folder";
 }
 
-/// <summary>§1 fact 1 on this machine: the published tool folder runs and finds itself; SsdtTests and the proving ground (SpikeTests) build classic projects against it.</summary>
+/// <summary>§1 fact 1 on this machine: the published tool folder runs and finds itself; SsdtTests and the golden project (SpikeTests) build classic projects against it.</summary>
 [Collection(PublishedToolCollection.Name)]
 public sealed class ToolFolderTests(PublishedTool tool)
 {

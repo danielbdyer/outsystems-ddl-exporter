@@ -17,12 +17,12 @@ namespace Estate.Io.Tests;
 
 /// <summary>
 /// io/Ssdt.Elements (WP 1.2) against real builds: law 3′'s io half (M1 exit 4) and WP 1.3's archetype properties, each
-/// archetype an edited copy of the proving ground built against dist/estate/ and read into elements. A package's model is compared
-/// with a package's only. Make-mandatory edits Customer.Email, the proving ground's own populated nullable column (the seed
+/// archetype an edited copy of the golden project built against dist/estate/ and read into elements. A package's model is compared
+/// with a package's only. Make-mandatory edits Customer.Email, the golden project's own populated nullable column (the seed
 /// plants rows with and without an Email).
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
-public sealed class ModelElementsTests(ProvingGroundModels heads, ITestOutputHelper output) : IClassFixture<ProvingGroundModels>
+public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHelper output) : IClassFixture<GoldenProjectModels>
 {
     /// <summary>What each archetype's change names, one line per element created, dropped, renamed or altered.</summary>
     private static readonly Dictionary<string, string[]> Named = new()
@@ -36,7 +36,7 @@ public sealed class ModelElementsTests(ProvingGroundModels heads, ITestOutputHel
         ["a seed edit"] = ["PostDeploymentScript [PostDeploy]: Text"],
         ["a pre-deploy edit"] = ["PreDeploymentScript [PreDeploy]: Text"],
         ["rename a column"] = [
-            "created RefactorLogOperation [" + ProvingGroundModels.RenameKey + "]",
+            "created RefactorLogOperation [" + GoldenProjectModels.RenameKey + "]",
             "renamed Column [dbo].[Customer].[ContactPhone] to Column [dbo].[Customer].[MobileNumber]"],
     };
 
@@ -55,7 +55,7 @@ public sealed class ModelElementsTests(ProvingGroundModels heads, ITestOutputHel
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "3′ the read is complete")]
-    public void Two_builds_of_the_proving_ground_read_into_equal_models_and_one_fingerprint()
+    public void Two_builds_of_the_golden_project_read_into_equal_models_and_one_fingerprint()
     {
         var (first, second) = (heads.Models["base"], heads.Models["again"]);
 
@@ -66,7 +66,7 @@ public sealed class ModelElementsTests(ProvingGroundModels heads, ITestOutputHel
         Assert.Contains("Pre-deploy: no backfill active.", Text(first, Element.PreDeploymentScript), StringComparison.Ordinal);
         Assert.DoesNotContain(first.Elements.SelectMany(e => e.Properties), p => p.Value is Value.Text { Content: var t } && t.Contains('\r', StringComparison.Ordinal));
         output.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"the proving ground's model: {first.Elements.Count} elements, {first.Elements.Sum(e => e.Properties.Count)} properties, "
+            $"the golden project's model: {first.Elements.Count} elements, {first.Elements.Sum(e => e.Properties.Count)} properties, "
             + $"{first.Elements.Sum(e => e.Relationships.Sum(r => r.Targets.Count))} relationship targets, read into elements in {heads.ReadingTime.TotalMilliseconds:0} ms"));
     }
 
@@ -74,7 +74,7 @@ public sealed class ModelElementsTests(ProvingGroundModels heads, ITestOutputHel
     [Trait("Category", "fast")]
     [MemberData(nameof(Archetypes))]
     [Trait("Law", "3′ the read is complete")]
-    public void Each_archetype_edit_to_the_proving_ground_changes_the_fingerprint(string archetype) =>
+    public void Each_archetype_edit_to_the_golden_project_changes_the_fingerprint(string archetype) =>
         Assert.NotEqual(Fingerprint.Of(heads.Models["base"].Elements), Fingerprint.Of(heads.Models[archetype].Elements));
 
     [Theory]
@@ -125,7 +125,7 @@ public sealed class ModelElementsTests(ProvingGroundModels heads, ITestOutputHel
     }
 
     /// <summary>
-    /// The proving ground with two roles granted SELECT on dbo.Account, one also INSERT, and both VIEW DEFINITION on the
+    /// The golden project with two roles granted SELECT on dbo.Account, one also INSERT, and both VIEW DEFINITION on the
     /// database. A permission's name ends with its securable's name, which tells two grants on one securable nothing, so each
     /// is keyed under its securable by the name parts the securable's name does not hold: the permission, the grantee, the grantor.
     /// </summary>
@@ -496,7 +496,7 @@ public sealed class ModelElementsTests(ProvingGroundModels heads, ITestOutputHel
     }
 
     /// <summary>
-    /// The proving ground with a table of unnamed inline constraints, two of them checks on one column, and a procedure over it,
+    /// The golden project with a table of unnamed inline constraints, two of them checks on one column, and a procedure over it,
     /// published to a registered copy and read back through SqlServer.Model: the database's model keys every object as the package's
     /// does, though SQL Server named each constraint, and each unnamed key names the same constraint in both (the same
     /// targets; the tied checks the same text once SQL Server's brackets and parentheses are set aside). Their values differ (SQL
@@ -598,7 +598,7 @@ public sealed class ModelElementsTests(ProvingGroundModels heads, ITestOutputHel
                 package = Ok(Ssdt.Elements(loaded)).Elements;
             }
 
-            var profile = DacProfile.Load(Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml")).DeployOptions;
+            var profile = DacProfile.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml")).DeployOptions;
             Assert.True(profile.IgnoreColumnOrder);
             var database = await PublishedAndRead(profile, v1, v2);
 
@@ -629,7 +629,7 @@ public sealed class ModelElementsTests(ProvingGroundModels heads, ITestOutputHel
         await using var database = await SqlServerFixture.RegisterAsync();
         foreach (var dacpac in dacpacs)
         {
-            ProvingGround.Publish(dacpac, database, options);
+            GoldenProject.Publish(dacpac, database, options);
         }
 
         return Ok(SqlServer.Model(new SqlServer.Copy(database.Name, await SqlServerFixture.ServerAsync(), Repository.Root)));
@@ -749,11 +749,11 @@ public sealed class ModelElementsTests(ProvingGroundModels heads, ITestOutputHel
 }
 
 /// <summary>
-/// The proving ground built twice from two copies, and once per head from a copy with the head's edits, all against
+/// The golden project built twice from two copies, and once per head from a copy with the head's edits, all against
 /// dist/estate/ and in parallel, each loaded and read into elements; then the base read again, alone, for the reading's time. The tree
 /// under .estate/models/ is dropped after.
 /// </summary>
-public sealed class ProvingGroundModels : IAsyncLifetime
+public sealed class GoldenProjectModels : IAsyncLifetime
 {
     public const string RenameKey = "6d1c1b5e-3f0a-4c2e-9b7d-2a4f8e6c0d13";
 
@@ -822,7 +822,7 @@ public sealed class ProvingGroundModels : IAsyncLifetime
         var built = await Task.WhenAll(Edits.Select(head => Task.Run(() =>
         {
             var directory = Path.Combine(root, "heads", head.Key.Replace(' ', '-'));
-            ToolFolderTests.Copy(Path.Combine(golden, "proving-ground"), directory);
+            ToolFolderTests.Copy(Path.Combine(golden, "project"), directory);
             foreach (var (file, from, to) in head.Value)
             {
                 var path = Path.Combine(directory, file);

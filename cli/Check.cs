@@ -90,7 +90,7 @@ public static partial class Verbs
 
     /// <summary>
     /// §17 item 15's default, on every receipt: until S7 commits the profile the Octopus step applies, the profile a receipt stands on is
-    /// the proving ground's Pipeline profile or the estate's own, and neither is verified against that step.
+    /// the golden project's Pipeline profile or the estate's own, and neither is verified against that step.
     /// </summary>
     private static Finding Unverified => new("profile.unverified", "note", "estate check drift",
         "This receipt stands on a profile not verified against the Octopus step: S7 has not committed the profile that step applies.", null);

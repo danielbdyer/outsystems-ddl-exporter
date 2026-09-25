@@ -18,7 +18,7 @@ namespace Estate.Io.Tests;
 /// the run's queries.log; a failed probe reports its number and its site and nothing else; Model and Plan read as the same principal;
 /// and a denied login names the environment and quotes nothing.
 /// </summary>
-public sealed class ProbeTests(ProvingGround ground) : IClassFixture<ProvingGround>, IDisposable
+public sealed class ProbeTests(GoldenProject ground) : IClassFixture<GoldenProject>, IDisposable
 {
     private readonly string root = Directory.CreateDirectory(Path.Combine(Repository.Root, ".estate", "probes-under-test", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8])).FullName;
 

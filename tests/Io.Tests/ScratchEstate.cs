@@ -17,7 +17,7 @@ namespace Estate.Io.Tests;
 /// </summary>
 public sealed class ScratchEstate : IDisposable
 {
-    public const string Profile = "proving-ground/profiles/pipeline.publish.xml";
+    public const string Profile = "project/profiles/pipeline.publish.xml";
 
     private readonly Scratch scratch = new();
 
@@ -30,13 +30,13 @@ public sealed class ScratchEstate : IDisposable
             File.Copy(Path.Combine(golden, stop), Path.Combine(Root, stop));
         }
 
-        ToolFolderTests.Copy(Path.Combine(golden, "proving-ground"), Path.Combine(Root, "proving-ground"));
+        ToolFolderTests.Copy(Path.Combine(golden, "project"), Path.Combine(Root, "project"));
         Ledger(Root);
         Base = scratch.Commit("the golden project", (".gitignore", ".estate/\n"), ("estate/posture.json", "{ \"environments\": {} }\n"));
-        var customer = Path.Combine(Root, "proving-ground", "Modules", "Customer.sql");
+        var customer = Path.Combine(Root, "project", "Modules", "Customer.sql");
         var text = File.ReadAllText(customer);
         Assert.True(text.Split("Email           NVARCHAR(256)   NULL,").Length == 2, customer + " does not hold Email's declaration once");
-        Head = scratch.Commit("Customer.Email made mandatory", ("proving-ground/Modules/Customer.sql", text.Replace("Email           NVARCHAR(256)   NULL,", "Email           NVARCHAR(256)   NOT NULL,", StringComparison.Ordinal)));
+        Head = scratch.Commit("Customer.Email made mandatory", ("project/Modules/Customer.sql", text.Replace("Email           NVARCHAR(256)   NULL,", "Email           NVARCHAR(256)   NOT NULL,", StringComparison.Ordinal)));
     }
 
     public PublishedTool Tool { get; }

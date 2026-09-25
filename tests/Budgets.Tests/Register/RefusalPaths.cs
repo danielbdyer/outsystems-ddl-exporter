@@ -256,7 +256,7 @@ internal static class RefusalPaths
         {
             var root = Initialized(Estate(scratch, Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\" }",
                 connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev")))));
-            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
+            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
             var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
             return Failed(SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.Named)dev).Environment, root))));
         }),
@@ -268,7 +268,7 @@ internal static class RefusalPaths
             Arrange(root, "add", "--", "estate/token.txt");
             Arrange(root, "commit", "-q", "-m", "the token");
             Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
-            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
+            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
             var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
             return SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.Named)dev).Environment, root)));
         })),

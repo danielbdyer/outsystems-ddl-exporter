@@ -19,7 +19,7 @@ namespace Estate.Io.Tests;
 /// against its own published copy is empty. Model fingerprints are compared only between like sources: a package's keys with its
 /// copy's, and one copy's fingerprint with another's.
 /// </summary>
-public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGround>, IDisposable
+public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProject>, IDisposable
 {
     private readonly string root = SqlServerFixture.EstateRoot(Path.Combine(Repository.Root, ".estate", "copies-under-test", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]));
 

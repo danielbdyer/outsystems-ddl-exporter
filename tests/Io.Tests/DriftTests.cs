@@ -159,8 +159,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     public async Task The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_a_full_check_drift()
     {
         await using var database = await SqlServerFixture.RegisterAsync();
-        var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "proving-ground/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
-        ProvingGround.Publish(dacpac, database, DacProfile.Load(Path.Combine(estate.Root, ScratchEstate.Profile)).DeployOptions);
+        var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "project/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
+        GoldenProject.Publish(dacpac, database, DacProfile.Load(Path.Combine(estate.Root, ScratchEstate.Profile)).DeployOptions);
         var reader = await ReadOnlyPrincipal.CreateAsync(database);
         var master = await SqlServerFixture.ServerAsync();
         var session = "estate_xe_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
@@ -280,7 +280,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     private async Task<SqlServer.Copy> Published()
     {
         var copy = GitTests.Ok(Substrate.Create(estate.Root, await SqlServerFixture.ServerAsync()));
-        var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "proving-ground/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
+        var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "project/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
         GitTests.Ok(copy.Publish(dacpac, GitTests.Ok(Profiles.Load(Path.Combine(estate.Root, ScratchEstate.Profile)))));
         return copy;
     }

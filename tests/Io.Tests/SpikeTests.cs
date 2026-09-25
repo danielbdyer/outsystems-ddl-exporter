@@ -20,13 +20,13 @@ namespace Estate.Io.Tests;
 /// committed engine (DacFx 170.5.96, used directly). Every read runs as the read-only principal; only the fixture's copies
 /// are written.
 /// </summary>
-public sealed class SpikeTests(ProvingGround ground) : IClassFixture<ProvingGround>
+public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProject>
 {
     private static readonly XNamespace Report = "http://schemas.microsoft.com/sqlserver/dac/DeployReport/2012/02";
 
     [Fact]
     [Trait("Category", "fixture")]
-    public void Fact_1_the_classic_build_of_the_proving_ground_carries_the_refactorlog_and_both_deploy_scripts()
+    public void Fact_1_the_classic_build_of_the_golden_project_carries_the_refactorlog_and_both_deploy_scripts()
     {
         using var dacpac = ZipFile.OpenRead(ground.Base);
 
@@ -131,10 +131,10 @@ public sealed class SpikeTests(ProvingGround ground) : IClassFixture<ProvingGrou
     private async Task<int> NotTrustedAfterPublishing(DacDeployOptions options)
     {
         await using var copy = await SqlServerFixture.RegisterAsync();
-        ProvingGround.Publish(ground.Base, copy, ground.Pipeline);
+        GoldenProject.Publish(ground.Base, copy, ground.Pipeline);
         Assert.True(await SqlServerFixture.ScalarAsync(copy.ConnectionString, "SELECT COUNT(*) FROM dbo.Customer WHERE AccountId IS NOT NULL;") > 0, "the child table is not populated");
 
-        ProvingGround.Publish(ground.ForeignKey, copy, options);
+        GoldenProject.Publish(ground.ForeignKey, copy, options);
         return await SqlServerFixture.ScalarAsync(copy.ConnectionString, "SELECT CAST(is_not_trusted AS int) FROM sys.foreign_keys WHERE name = N'FK_Customer_Account_AccountId';");
     }
 
@@ -169,18 +169,18 @@ public sealed class SpikeTests(ProvingGround ground) : IClassFixture<ProvingGrou
 }
 
 /// <summary>
-/// The proving ground (tests/Golden/proving-ground/) built the classic way against dist/estate/, with two heads built beside
+/// The golden project (tests/Golden/project/) built the classic way against dist/estate/, with two heads built beside
 /// it from edited copies: make-mandatory (Customer.Email NOT NULL) and a clean foreign key (Customer.AccountId to Account).
 /// The base is published to one registered database, the copy, as the fixture's admin identity, and the read-only principal
 /// is created on it. Everything is dropped after the class: the build tree under .estate/golden/, the copy and its principal.
 /// </summary>
-public sealed class ProvingGround : IAsyncLifetime
+public sealed class GoldenProject : IAsyncLifetime
 {
     private readonly string root = Path.Combine(Repository.Root, ".estate", "golden", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);
     private RegisteredDatabase? copy;
     private ReadOnlyPrincipal? reader;
 
-    public string Profile { get; } = Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml");
+    public string Profile { get; } = Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml");
 
     public string Base => Dacpac("base");
 
@@ -208,7 +208,7 @@ public sealed class ProvingGround : IAsyncLifetime
 
         foreach (var head in (string[])["base", "mandatory", "foreign-key"])
         {
-            ToolFolderTests.Copy(Path.Combine(golden, "proving-ground"), Path.Combine(root, head));
+            ToolFolderTests.Copy(Path.Combine(golden, "project"), Path.Combine(root, head));
         }
 
         Edit(Path.Combine(root, "mandatory", "Modules", "Customer.sql"), "Email           NVARCHAR(256)   NULL,", "Email           NVARCHAR(256)   NOT NULL,");

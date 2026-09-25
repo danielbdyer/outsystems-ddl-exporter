@@ -32,7 +32,7 @@ public sealed class ProfilesTests : IDisposable
 
     private static readonly string Golden = Path.Combine(Repository.Root, "tests", "Golden");
 
-    private static readonly string Pipeline = Path.Combine(Golden, "proving-ground", "profiles", "pipeline.publish.xml");
+    private static readonly string Pipeline = Path.Combine(Golden, "project", "profiles", "pipeline.publish.xml");
 
     /// <summary>A password set in any connection string, however spelled or spaced: what no output may carry.</summary>
     internal static readonly Regex PasswordSetting = new(@"(?:password|pwd)\s*=", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
@@ -56,7 +56,7 @@ public sealed class ProfilesTests : IDisposable
         Assert.Equal("env:dev (synthetic, confirmed by the dev lead on 2026-09-20)", dev.ToString());
         Assert.Equal(["env:prod (real)", "env:qa (real)", "env:uat (real)"], environments.Where(e => e != dev).Select(e => e.ToString()));
         Assert.Equal(["developers", "leads"], dev.Cohorts);
-        Assert.Equal(("env:ESTATE_DEV", "proving-ground/profiles/pipeline.publish.xml", (string?)"file:.estate/principals/dev-ossys.connection"), (dev.Connection.ToString(), dev.ProfilePath, dev.Metamodel?.ToString()));
+        Assert.Equal(("env:ESTATE_DEV", "project/profiles/pipeline.publish.xml", (string?)"file:.estate/principals/dev-ossys.connection"), (dev.Connection.ToString(), dev.ProfilePath, dev.Metamodel?.ToString()));
         Assert.Equal("$(EnvironmentTag), a literal | $(ServiceAccountPassword) from env:ESTATE_DEV_SERVICE_PASSWORD", string.Join(" | ", dev.SqlCmd));
         Assert.Equal("dev", dev.SqlCmd[0].Match(text => text, reference => "from " + reference));
         Assert.All(environments, e => Assert.True(Made(Profiles.Of(e, Golden)).Options().BlockOnPossibleDataLoss));
@@ -164,7 +164,7 @@ public sealed class ProfilesTests : IDisposable
     [Fact]
     [Trait("Category", "fast")]
     public void The_pipeline_profile_fingerprints_to_one_committed_value_on_every_operating_system() =>
-        Assert.Equal("a59812bcb859aac82a849eac1abbc76effe192735025192850dd05b4792a628f", Made(Profiles.Load(Pipeline)).Fingerprint.ToString());
+        Assert.Equal("139ffe34dbec24fadeab8501028b8a50cab2ba547d7cffd28d8e9b20ac0536d5", Made(Profiles.Load(Pipeline)).Fingerprint.ToString());
 
     /// <summary>A profile fingerprints by its content: the file saved with CRLF and a byte-order mark, as Visual Studio on Windows can save it, and saved with LF alone fingerprint alike.</summary>
     [Fact]

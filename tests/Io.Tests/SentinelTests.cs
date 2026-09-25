@@ -62,7 +62,7 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
     /// <summary>The committed pipeline profile, given a target: a sentinel server and another database's name.</summary>
     private string Sentinel(string elsewhere)
     {
-        var profile = XDocument.Load(Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml"));
+        var profile = XDocument.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"));
         var properties = profile.Root!.Elements().First(e => e.Name.LocalName == "PropertyGroup");
         properties.Add(
             new XElement(properties.Name.Namespace + "TargetConnectionString", "Data Source=sentinel.invalid;Initial Catalog=" + elsewhere + ";Integrated Security=True"),

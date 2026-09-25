@@ -7,7 +7,7 @@
       "confirmedOn": "2026-09-20",
       "cohorts": ["developers", "leads"],
       "connection": "env:ESTATE_DEV",
-      "profile": "proving-ground/profiles/pipeline.publish.xml",
+      "profile": "project/profiles/pipeline.publish.xml",
       "sqlcmd": {
         "EnvironmentTag": { "literal": "dev", "sensitive": false },
         "ServiceAccountPassword": "env:ESTATE_DEV_SERVICE_PASSWORD"
@@ -17,19 +17,19 @@
     "qa": {
       "cohorts": ["leads"],
       "connection": "env:ESTATE_QA",
-      "profile": "proving-ground/profiles/pipeline.publish.xml"
+      "profile": "project/profiles/pipeline.publish.xml"
     },
     "uat": {
       "classification": "real",
       "cohorts": ["leads"],
       "connection": "file:.estate/principals/uat.connection",
-      "profile": "proving-ground/profiles/pipeline.publish.xml",
+      "profile": "project/profiles/pipeline.publish.xml",
       "metamodel": "env:ESTATE_UAT_OSSYS"
     },
     "prod": {
       "classification": "real",
       "connection": "env:ESTATE_PROD",
-      "profile": "proving-ground/profiles/pipeline.publish.xml"
+      "profile": "project/profiles/pipeline.publish.xml"
     }
   }
 }
