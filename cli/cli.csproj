@@ -17,8 +17,8 @@
     <InternalsVisibleTo Include="Estate.Budgets.Tests" />
   </ItemGroup>
   <!--
-    The reference stub a classic .sqlproj build needs (mscorlib.dll and FrameworkList.xml), downloaded by restore and never
-    referenced; ci/publish copies it into dist/estate/refasm/. Central package management cannot pin a PackageDownload,
+    The reference assemblies a classic .sqlproj build needs (mscorlib.dll and FrameworkList.xml), downloaded by restore and never
+    referenced; ci/publish copies them into dist/estate/refasm/. Central package management cannot pin a PackageDownload,
     so its exact version is here, and ci/publish reads it from this line.
   -->
   <ItemGroup>

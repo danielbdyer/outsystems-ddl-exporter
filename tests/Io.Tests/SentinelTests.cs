@@ -14,7 +14,7 @@ namespace Estate.Io.Tests;
 /// <summary>
 /// WP 1.5's Done-when on SQL Server, through WP 1.4's Copy.Publish: the pipeline's profile, given a TargetConnectionString that names
 /// sentinel.invalid (a name no resolver answers, RFC 6761, so a publish that looked it up would fail) and a TargetDatabaseName of
-/// another database, publishes the classic-minimal package to a copy io/Substrate made, Strict and then Permissive, which only the
+/// another database, publishes the classic-minimal package to a copy io/ScratchServer made, Strict and then Permissive, which only the
 /// copy makes; the package reaches the copy and nothing else.
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
@@ -40,7 +40,7 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         var dacpac = Made(Ssdt.Build(ClassicMinimal(), tool.Folder, Path.Combine(scratch, "build"))).Path;
         Assert.ThrowsAny<SocketException>(() => Dns.GetHostEntry("sentinel.invalid"));
 
-        var copy = Made(Substrate.Create(SqlServerFixture.EstateRoot(scratch), await SqlServerFixture.ServerAsync()));
+        var copy = Made(ScratchServer.Create(SqlServerFixture.EstateRoot(scratch), await SqlServerFixture.ServerAsync()));
         try
         {
             var permissive = copy.Permissive(strict);
@@ -55,14 +55,14 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         }
         finally
         {
-            Made(Substrate.Drop(copy));
+            Made(ScratchServer.Drop(copy));
         }
     }
 
     /// <summary>The committed pipeline profile, given a target: a sentinel server and another database's name.</summary>
     private string Sentinel(string elsewhere)
     {
-        var profile = XDocument.Load(Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml"));
+        var profile = XDocument.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"));
         var properties = profile.Root!.Elements().First(e => e.Name.LocalName == "PropertyGroup");
         properties.Add(
             new XElement(properties.Name.Namespace + "TargetConnectionString", "Data Source=sentinel.invalid;Initial Catalog=" + elsewhere + ";Integrated Security=True"),
@@ -89,5 +89,5 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         return Path.Combine(scratch, "golden", "classic-minimal", "ClassicMinimal.sqlproj");
     }
 
-    private static T Made<T>(Result<T> result) => result.Match(value => value, refusal => throw new Xunit.Sdk.XunitException(refusal.Code + ": " + refusal.Message));
+    private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 }

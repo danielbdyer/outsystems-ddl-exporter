@@ -9,7 +9,7 @@ namespace Estate.Io.Tests;
 
 /// <summary>
 /// io/Doctor (WP 1.7): read-only checks of the SDK and runtime, the tool folder and its DacFx against the toolchain ledger, the build
-/// route, the substrate and its image, and Git LFS, with a remedy for each item missing, on a machine the test describes; and R13's
+/// route, the scratch server and its image, and Git LFS, with a remedy for each item missing, on a machine the test describes; and R13's
 /// window, the committed engine against a sample ledger's row (M1 exit 6).
 /// </summary>
 public sealed class DoctorTests : IDisposable
@@ -26,8 +26,8 @@ public sealed class DoctorTests : IDisposable
     {
         var checks = Doctor.Examine(machine, null, machine, (_, _) => null, Version);   // no global.json, no tool folder, and nothing installed
 
-        Assert.Equal(["sdk", "runtime", "tool", "dacfx", "build", "substrate", "image", "lfs"], checks.Select(c => c.Item));
-        Assert.Equal(["sdk", "tool", "build", "substrate", "lfs"], checks.Where(c => c.Remedy is not null).Select(c => c.Item));
+        Assert.Equal(["sdk", "runtime", "tool", "dacfx", "build", "scratch-server", "image", "lfs"], checks.Select(c => c.Item));
+        Assert.Equal(["sdk", "tool", "build", "scratch-server", "lfs"], checks.Where(c => c.Remedy is not null).Select(c => c.Item));
         Assert.All(checks, c => Assert.False(string.IsNullOrWhiteSpace(c.Found)));
     }
 
@@ -49,7 +49,7 @@ public sealed class DoctorTests : IDisposable
         Assert.All(checks, c => Assert.Null(c.Remedy));
         Assert.Equal(
             ["sdk=10.0.402", "runtime=" + Environment.Version, "tool=published", "dacfx=" + Doctor.DacFx + " (UNPINNED)", "build=dotnet with the tool folder's targets",
-                "substrate=docker 29.5.3", "image=present", "lfs=git-lfs/3.4.0"],
+                "scratch-server=docker 29.5.3", "image=present", "lfs=git-lfs/3.4.0"],
             checks.Select(c => c.Item + "=" + c.Found));
     }
 
@@ -90,11 +90,11 @@ public sealed class DoctorTests : IDisposable
             File.WriteAllText(Path.Combine(machine, "estate", "ledgers", "toolchain.md"), sample.Replace("| 2026-09-24 | 3.0.0 | UNPINNED | — |", rows, StringComparison.Ordinal));
         }
 
-        var refusal = Doctor.Toolchain(machine, Version).Match(pin => pin.Refuses(Kernel.Engine.Of(Doctor.DacFx).Match(e => e, r => throw new InvalidOperationException(r.Message))), r => r);
+        var error = Doctor.Toolchain(machine, Version).Match(pin => pin.Rejects(Kernel.Engine.Of(Doctor.DacFx).Match(e => e, r => throw new InvalidOperationException(r.Message))), r => r);
         var dacfx = Doctor.Examine(machine, null, machine, (_, _) => null, Version).Single(c => c.Item == "dacfx");
 
-        Assert.True(code == refusal?.Code, what + ": " + refusal?.Code);
-        Assert.Equal<int?>(code is null ? null : 6, refusal is null ? null : Cli.Contract.Exit(refusal));
+        Assert.True(code == error?.Code, what + ": " + error?.Code);
+        Assert.Equal<int?>(code is null ? null : 6, error is null ? null : Cli.Contract.Exit(error));
         Assert.Equal(code is null, dacfx.Remedy is null);
         Assert.Contains(said, dacfx.Found, StringComparison.Ordinal);
     }
@@ -118,11 +118,11 @@ public sealed class DoctorTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Without_Docker_LocalDB_is_the_substrate_and_no_image_is_needed()
+    public void Without_Docker_LocalDB_is_the_scratch_server_and_no_image_is_needed()
     {
         var checks = Doctor.Examine(machine, null, machine, Answers(new() { ["docker info"] = (1, "Cannot connect to the Docker daemon"), ["sqllocaldb info"] = (0, "MSSQLLocalDB\n") }), Version).ToDictionary(c => c.Item);
 
-        Assert.Equal(("localdb, CDC not provable here", null), (checks["substrate"].Found, checks["substrate"].Remedy));
+        Assert.Equal(("localdb, CDC not provable here", null), (checks["scratch-server"].Found, checks["scratch-server"].Remedy));
         Assert.Null(checks["image"].Remedy);
     }
 
@@ -145,7 +145,7 @@ public sealed class DoctorTests : IDisposable
         Assert.All(["sql.sh", "sql.ps1"], script => Assert.Contains(Doctor.SqlServerImage, File.ReadAllText(Path.Combine(Repository.Root, "ci", script)), StringComparison.Ordinal));
     }
 
-    /// <summary>The files a published tool folder holds beside estate: the SqlTasks targets and the reference stub.</summary>
+    /// <summary>The files a published tool folder holds beside estate: the SqlTasks targets and the reference assemblies.</summary>
     private void Publish()
     {
         foreach (var file in (string[])["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"])

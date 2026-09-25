@@ -14,20 +14,20 @@ using Contract = Estate.Cli.Contract;
 namespace Estate.Budgets.Tests.Register;
 
 /// <summary>
-/// Every way to a refusal the kernel, io and the cli construct, each with an input that takes it there. Register.Refusals reads each
-/// refusal for the register; Io.Tests' "no output contains Password=" plants a password in every input that can carry a value
+/// Every way to an error the kernel, io and the cli construct, each with an input that takes it there. Register.Refusals reads each
+/// error for the register; Io.Tests' "no output contains Password=" plants a password in every input that can carry a value
 /// (<see cref="Case.Plants"/>) and searches what comes back. A driver writes only under the scratch folder it is given, one per
-/// case, and leaves it deletable. The kernel's schema refusals, io/Ssdt's and io/Git's quote what they refuse, a name, a
+/// case, and leaves it deletable. The kernel's schema errors, io/Ssdt's and io/Git's quote what they reject, a name, a
 /// version, a path, a ref or a branch, and plant nothing. io/Git's are reached in a repository made under the scratch folder.
-/// io/SqlServer's and io/Substrate's reach no server: each is refused before anything connects, and a SQL Server or DacFx error reaches
-/// its refusal through Database.Refused, the one door every failure against a server passes through. The substrate's own choice
-/// and Create on a given server are io's alone, so R15 is reached through copy: and a planted registry row. The cli's refuse
+/// io/SqlServer's and io/ScratchServer's reach no server: each is an error before anything connects, and a SQL Server or DacFx error reaches
+/// its code through Database.ErrorOf, the one door every failure against a server passes through. The scratch server's own choice
+/// and Create on a given server are io's alone, so R15 is reached through copy: and a planted registry row. The cli's reject
 /// arguments, through Contract.Flags and estate check's own answer.
 /// </summary>
 internal static class RefusalPaths
 {
-    /// <summary>One way to a refusal: what it is, the code it must take, whether its input carries the planted value, and its driver (scratch, planted).</summary>
-    public sealed record Case(string Label, string Code, bool Plants, Func<string, string, Refusal> Drive);
+    /// <summary>One way to an error: what it is, the code it must take, whether its input carries the planted value, and its driver (scratch, planted).</summary>
+    public sealed record Case(string Label, string Code, bool Plants, Func<string, string, Error> Drive);
 
     private const string Pipeline = "estate/profiles/pipeline.publish.xml";
 
@@ -38,59 +38,59 @@ internal static class RefusalPaths
 
     public static IReadOnlyList<Case> All { get; } =
     [
-        new("a blank name part", "name.blank", false, (_, _) => Refused(Name.Of(" "))),
-        new("an overlong name part", "name.too-long", true, (_, planted) => Refused(Name.Of(planted + new string('x', 129)))),
-        new("a control character in a name part", "name.control-character", true, (_, planted) => Refused(Name.Of(planted + "\u0001"))),
-        new("a DacFx version that is none", "engine.dacfx-version", false, (_, _) => Refused(Engine.Of("v170"))),
-        new("an image digest that is none", "engine.image-digest", false, (_, _) => Refused(Engine.Of("170.5.96", "sha256:0"))),
-        new("a fingerprint that is none", "fingerprint.malformed", false, (_, _) => Refused(Fingerprint.Parse("0"))),
+        new("a blank name part", "name.blank", false, (_, _) => Failed(Name.Of(" "))),
+        new("an overlong name part", "name.too-long", true, (_, planted) => Failed(Name.Of(planted + new string('x', 129)))),
+        new("a control character in a name part", "name.control-character", true, (_, planted) => Failed(Name.Of(planted + "\u0001"))),
+        new("a DacFx version that is none", "engine.dacfx-version", false, (_, _) => Failed(Engine.Of("v170"))),
+        new("an image digest that is none", "engine.image-digest", false, (_, _) => Failed(Engine.Of("170.5.96", "sha256:0"))),
+        new("a fingerprint that is none", "fingerprint.malformed", false, (_, _) => Failed(Fingerprint.Parse("0"))),
         new("an engine outside the pin's window", "toolchain.outside-window", false, (_, _) =>
-            Made(Pin.Of("170.6.10", "170.5.96")).Refuses(Made(Engine.Of("170.7.2"))) ?? throw new InvalidOperationException("the window admitted a newer engine")),
+            Made(Pin.Of("170.6.10", "170.5.96")).Rejects(Made(Engine.Of("170.7.2"))) ?? throw new InvalidOperationException("the window admitted a newer engine")),
         new("a toolchain ledger with no row for this estate", "toolchain.unrecorded", false, (scratch, _) =>
-            Refused(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 2.9.0 | UNPINNED | — |"), "3.0.0+0123abcd"))),
+            Failed(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 2.9.0 | UNPINNED | — |"), "3.0.0+0123abcd"))),
         new("a toolchain ledger whose pin is no release", "toolchain.malformed", false, (scratch, _) =>
-            Refused(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 3.0.0 | latest | — |"), "3.0.0"))),
+            Failed(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 3.0.0 | latest | — |"), "3.0.0"))),
         new("a toolchain ledger whose release before is newer than its pin", "toolchain.window-order", false, (scratch, _) =>
-            Refused(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 3.0.0 | 170.5.96 | 170.6.10 |"), "3.0.0"))),
-        new("an element with a blank type", "element.type-blank", true, (_, planted) => Refused(ElementKey.Of(" ", Made(Name.Of(planted))))),
-        new("an element with no name", "element.name-missing", false, (_, _) => Refused(ElementKey.Of("Table", default))),
-        new("a child element named in two parts", "element.child-name", false, (_, _) => Refused(ElementKey.Of(Table, "Column", Made(Name.Of("dbo", "Email"))))),
+            Failed(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 3.0.0 | 170.5.96 | 170.6.10 |"), "3.0.0"))),
+        new("an element with a blank type", "element.type-blank", true, (_, planted) => Failed(ElementKey.Of(" ", Made(Name.Of(planted))))),
+        new("an element with no name", "element.name-missing", false, (_, _) => Failed(ElementKey.Of("Table", default))),
+        new("a child element named in two parts", "element.child-name", false, (_, _) => Failed(ElementKey.Of(Table, "Column", Made(Name.Of("dbo", "Email"))))),
         new("an element with a property given twice", "element.property-name", false, (_, _) =>
-            Refused(Element.Of(Table, [new("Nullable", new Value.Boolean(true)), new("Nullable", new Value.Boolean(false))], []))),
+            Failed(Element.Of(Table, [new("Nullable", new Value.Boolean(true)), new("Nullable", new Value.Boolean(false))], []))),
         new("an element with a relationship given twice", "element.relationship-name", false, (_, _) =>
-            Refused(Element.Of(Table, [], [Element.Relationship.Of("Columns", [Table]), Element.Relationship.Of("Columns", [Table])]))),
-        new("a read with two elements on one key", "change.duplicate-key", false, (_, _) =>
-            Refused(Change.Between(Seq.Of(Made(Element.Of(Table, [], [])), Made(Element.Of(Table, [new("Nullable", new Value.Null())], []))), [], []))),
+            Failed(Element.Of(Table, [], [Element.Relationship.Of("Columns", [Table]), Element.Relationship.Of("Columns", [Table])]))),
+        new("a model with two elements on one key", "change.duplicate-key", false, (_, _) =>
+            Failed(Change.Between(SortedArray.Of(Made(Element.Of(Table, [], [])), Made(Element.Of(Table, [new("Nullable", new Value.Null())], []))), [], []))),
 
-        new("ESTATE_TOOL naming no tool folder", "tool.missing", false, (scratch, _) => Refused(Ssdt.Tool(Bare(scratch), Bare(scratch), scratch))),
-        new("no tool folder anywhere", "tool.missing", false, (scratch, _) => Refused(Ssdt.Tool(Bare(scratch), null, scratch))),
-        new("a build against no tool folder", "tool.missing", false, (scratch, _) => Refused(Ssdt.Build(Project(scratch), Bare(scratch), Output(scratch), Sdk))),
-        new("a build of no project", "build.no-project", false, (scratch, _) => Refused(Ssdt.Build(Path.Combine(scratch, "none.sqlproj"), Bare(scratch), Output(scratch), Sdk))),
+        new("ESTATE_TOOL naming no tool folder", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), Bare(scratch), scratch))),
+        new("no tool folder anywhere", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), null, scratch))),
+        new("a build against no tool folder", "tool.missing", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Bare(scratch), Output(scratch), Sdk))),
+        new("a build of no project", "build.no-project", false, (scratch, _) => Failed(Ssdt.Build(Path.Combine(scratch, "none.sqlproj"), Bare(scratch), Output(scratch), Sdk))),
         new("a repository holding two projects", "build.no-project", false, (scratch, _) =>
         {
             Written(scratch, "a/One.sqlproj", "<Project />");
             Written(scratch, "b/Two.sqlproj", "<Project />");
-            return Refused(Ssdt.Project(scratch, null));
+            return Failed(Ssdt.Project(scratch, null));
         }),
-        new("a build without the SDK band", "sdk.missing", false, (scratch, _) => Refused(Ssdt.Build(Project(scratch), Bare(scratch), Output(scratch), (_, _) => (0, "8.0.100 [sdk]\n")))),
-        new("a build that fails", "build.failed", false, (scratch, _) => Refused(Ssdt.Build(Project(scratch), Hollow(scratch), Output(scratch), Sdk))),
-        new("a package that is none", "package.unreadable", false, (scratch, _) => Refused(Ssdt.Load(Written(scratch, "not.dacpac", "not a package")))),
-        new("a refactorlog that is none", "refactorlog.unreadable", false, (scratch, _) => Refused(Ssdt.RefactorLog(Written(scratch, "not.refactorlog", "not a refactorlog")))),
+        new("a build without the SDK band", "sdk.missing", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Bare(scratch), Output(scratch), (_, _) => (0, "8.0.100 [sdk]\n")))),
+        new("a build that fails", "build.failed", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Hollow(scratch), Output(scratch), Sdk))),
+        new("a package that is none", "package.unreadable", false, (scratch, _) => Failed(Ssdt.Load(Written(scratch, "not.dacpac", "not a package")))),
+        new("a refactorlog that is none", "refactorlog.unreadable", false, (scratch, _) => Failed(Ssdt.RefactorLog(Written(scratch, "not.refactorlog", "not a refactorlog")))),
         new("a refactorlog entry naming no object", "refactorlog.name", false, (_, _) =>
         {
             using var package = new Ssdt.Package(Model(), null, null,
                 [new Ssdt.RefactorEntry("0a1b2c3d-0000-4000-8000-000000000001", "Rename Refactor", null, "[dbo].[Customer", "SqlTable", null, null, "[Client]", null)],
                 new Dictionary<string, string>(StringComparer.Ordinal));
-            return Refused(Ssdt.Walk(package));
+            return Failed(Ssdt.Elements(package));
         }),
-        new("two objects of a model keyed alike", "walk.duplicate-key", false, (_, _) =>
+        new("two objects of a model keyed alike", "model.duplicate-key", false, (_, _) =>
         {
             using var model = Model("CREATE TABLE dbo.Customer (Id INT NOT NULL);", "CREATE TABLE dbo.Customer (Id INT NOT NULL);");
-            return Refused(Ssdt.Walk(model));
+            return Failed(Ssdt.Elements(model));
         }),
 
-        new("a git program that does not start", "git.missing", false, (scratch, _) => Refused(Git.At(scratch, "HEAD", git: Path.Combine(scratch, "no-git")))),
-        new("a folder in no repository", "git.not-a-repository", false, (scratch, _) => Refused(Git.ChangedPaths(Path.Combine(scratch, "no-repository"), "HEAD~1", "HEAD"))),
+        new("a git program that does not start", "git.missing", false, (scratch, _) => Failed(Git.At(scratch, "HEAD", git: Path.Combine(scratch, "no-git")))),
+        new("a folder in no repository", "git.not-a-repository", false, (scratch, _) => Failed(Git.ChangedPaths(Path.Combine(scratch, "no-repository"), "HEAD~1", "HEAD"))),
         new("a ref that names no commit", "ref.unresolved", false, (scratch, _) => InRepository(scratch, root => Git.At(root, "no-such-tag"))),
         new("two refs whose histories never meet", "ref.unrelated", false, (scratch, _) => InRepository(scratch, root =>
         {
@@ -98,8 +98,8 @@ internal static class RefusalPaths
             Arrange(root, "commit", "-q", "--allow-empty", "-m", "unrelated");
             return Git.MergeBase(root, "main", "unrelated");
         })),
-        new("a branch name git does not take", "branch.malformed", false, (scratch, _) => InRepository(scratch, root => Git.CommitAndPush(root, Evidence, "evidence", "estate/..evidence"))),
-        new("a branch that exists here", "branch.taken", false, (scratch, _) => InRepository(scratch, root =>
+        new("a branch name git does not take", "git-branch.malformed", false, (scratch, _) => InRepository(scratch, root => Git.CommitAndPush(root, Evidence, "evidence", "estate/..evidence"))),
+        new("a branch that exists here", "git-branch.exists", false, (scratch, _) => InRepository(scratch, root =>
         {
             Arrange(root, "branch", "estate/evidence");
             return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence");
@@ -116,71 +116,71 @@ internal static class RefusalPaths
             return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence");
         })),
 
-        new("no posture", "posture.missing", false, (scratch, _) => Refused(Profiles.Environments(scratch))),
-        new("a posture that is not JSON", "posture.unreadable", true, (scratch, planted) => Refused(Profiles.Environments(Estate(scratch, "{ \"environments\": { \"dev\": " + planted + " } }")))),
-        new("a posture giving a key twice", "posture.unreadable", true, (scratch, planted) => Posture(scratch, Dev("\"cohorts\": [" + Quoted(planted) + "], \"cohorts\": []"))),
+        new("no posture", "posture.missing", false, (scratch, _) => Failed(Profiles.Environments(scratch))),
+        new("a posture that is not JSON", "posture.unreadable", true, (scratch, planted) => Failed(Profiles.Environments(Estate(scratch, "{ \"environments\": { \"dev\": " + planted + " } }")))),
+        new("a posture giving a key twice", "posture.unreadable", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + "], \"readers\": []"))),
         new("a literal connection string", "posture.literal-connection", true, (scratch, planted) => Posture(scratch, Dev(connection: "Server=db;User ID=estate;Password=" + planted))),
         new("a literal connection string as a key", "posture.literal-connection", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Data Source=db;Password=" + planted + "\": \"env:A\" }"))),
         new("an unknown key", "posture.unknown-key", true, (scratch, planted) => Posture(scratch, Dev("\"password\": " + Quoted(planted)))),
         new("an unknown key beside a SQLCMD literal", "posture.unknown-key", true, (scratch, planted) =>
             Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": { \"literal\": \"dev\", \"sensitive\": false, \"secret\": " + Quoted(planted) + " } }"))),
-        new("a value of the wrong JSON kind", "posture.malformed", true, (scratch, planted) => Posture(scratch, Dev("\"cohorts\": " + Quoted(planted)))),
+        new("a value of the wrong JSON kind", "posture.malformed", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": " + Quoted(planted)))),
         new("an environment with no connection", "posture.malformed", true, (scratch, planted) =>
-            Posture(scratch, "\"dev\": { \"profile\": \"" + Pipeline + "\", \"cohorts\": [" + Quoted(planted) + "] }")),
+            Posture(scratch, "\"dev\": { \"profile\": \"" + Pipeline + "\", \"readers\": [" + Quoted(planted) + "] }")),
         new("a SQLCMD literal not marked non-sensitive", "posture.unmarked-literal", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": { \"literal\": " + Quoted(planted) + " } }"))),
         new("a SQLCMD value that is a bare literal", "posture.unmarked-literal", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": " + Quoted(planted) + " }"))),
         new("a connection that is no reference", "reference.malformed", true, (scratch, planted) => Posture(scratch, Dev(connection: "env:" + planted))),
         new("a file reference that is a connection string", "reference.malformed", true, (_, planted) =>
-            Refused(SecretReference.Of("--connection", "file:Server=db;User ID=sa;Password=" + planted))),
-        new("a substrate that is neither docker nor localdb", "posture.malformed", true, (scratch, planted) =>
-            Refused(Profiles.Environments(Estate(scratch, "{ \"environments\": {}, \"substrate\": " + Quoted(planted) + " }")))),
-        new("an environment misnamed", "posture.environment-name", true, (scratch, planted) => Posture(scratch, Dev("\"cohorts\": [" + Quoted(planted) + "]", name: "DEV"))),
-        new("a cohort given twice", "posture.cohort", true, (scratch, planted) => Posture(scratch, Dev("\"cohorts\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
+            Failed(SecretReference.Of("--connection", "file:Server=db;User ID=sa;Password=" + planted))),
+        new("a scratch server that is neither docker nor localdb", "posture.malformed", true, (scratch, planted) =>
+            Failed(Profiles.Environments(Estate(scratch, "{ \"environments\": {}, \"scratchServer\": " + Quoted(planted) + " }")))),
+        new("an environment misnamed", "posture.environment-name", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + "]", name: "DEV"))),
+        new("a reader group given twice", "posture.readers", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
         new("a profile path outside the estate", "posture.profile-path", true, (scratch, planted) => Posture(scratch, Dev(profile: "../" + planted + ".publish.xml"))),
         new("a SQLCMD variable given twice in two cases", "posture.sqlcmd-repeated", true, (scratch, planted) =>
-            Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": \"env:A\", \"tag\": \"env:B\" }, \"cohorts\": [" + Quoted(planted) + "]"))),
+            Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": \"env:A\", \"tag\": \"env:B\" }, \"readers\": [" + Quoted(planted) + "]"))),
         new("a classification that is none", "posture.classification", true, (scratch, planted) => Posture(scratch, Dev("\"classification\": " + Quoted(planted)))),
         new("a synthetic environment unconfirmed", "posture.unconfirmed", true, (scratch, planted) =>
-            Posture(scratch, Dev("\"classification\": \"synthetic\", \"cohorts\": [" + Quoted(planted) + "]"))),
+            Posture(scratch, Dev("\"classification\": \"synthetic\", \"readers\": [" + Quoted(planted) + "]"))),
         new("a confirmation with no date", "posture.confirmation", true, (scratch, planted) => Posture(scratch, Dev("\"classification\": \"synthetic\", \"confirmedBy\": " + Quoted(planted)))),
-        new("a SQLCMD variable misnamed", "sqlcmd.name", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Tag Name\": \"env:A\" }, \"cohorts\": [" + Quoted(planted) + "]"))),
+        new("a SQLCMD variable misnamed", "sqlcmd.name", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Tag Name\": \"env:A\" }, \"readers\": [" + Quoted(planted) + "]"))),
         new("a SQLCMD literal under a credential's name in the posture", "sqlcmd.literal-credential", true, (scratch, planted) =>
             Posture(scratch, Dev("\"sqlcmd\": { \"ServicePassword\": { \"literal\": " + Quoted(planted) + ", \"sensitive\": false } }"))),
         new("a script using a variable with no value", "sqlcmd.undefined", true, (_, planted) =>
-            Refused(SqlCmdVariable.Substitute("PRINT '$(Missing)';", new Dictionary<string, string>(StringComparer.Ordinal) { ["Tag"] = planted }))),
+            Failed(SqlCmdVariable.Substitute("PRINT '$(Missing)';", new Dictionary<string, string>(StringComparer.Ordinal) { ["Tag"] = planted }))),
 
-        new("no profile", "profile.missing", false, (scratch, _) => Refused(Profiles.Load(Path.Combine(scratch, "none.publish.xml")))),
-        new("a profile that is not XML", "profile.unreadable", true, (scratch, planted) => Refused(Profiles.Load(Written(scratch, "broken.publish.xml", "<Project>" + planted + "</Projec>")))),
+        new("no profile", "profile.missing", false, (scratch, _) => Failed(Profiles.Load(Path.Combine(scratch, "none.publish.xml")))),
+        new("a profile that is not XML", "profile.unreadable", true, (scratch, planted) => Failed(Profiles.Load(Written(scratch, "broken.publish.xml", "<Project>" + planted + "</Projec>")))),
         new("a profile DacFx does not read", "profile.unreadable", true, (scratch, planted) =>
-            Refused(Profiles.Load(Profile(scratch, "<BlockOnPossibleDataLoss>" + planted + "</BlockOnPossibleDataLoss>")))),
+            Failed(Profiles.Load(Profile(scratch, "<BlockOnPossibleDataLoss>" + planted + "</BlockOnPossibleDataLoss>")))),
         new("a profile holding a password", "profile.password", true, (scratch, planted) =>
-            Refused(Profiles.Load(Profile(scratch, "<TargetConnectionString>Data Source=db;User ID=sa;Password=" + planted + "</TargetConnectionString>")))),
+            Failed(Profiles.Load(Profile(scratch, "<TargetConnectionString>Data Source=db;User ID=sa;Password=" + planted + "</TargetConnectionString>")))),
         new("a profile holding a password a comment splits", "profile.password", true, (scratch, planted) =>
-            Refused(Profiles.Load(Profile(scratch, "", ("LinkedServer", "Server=db;User ID=sa;Pass<!-- -->word=" + planted))))),
+            Failed(Profiles.Load(Profile(scratch, "", ("LinkedServer", "Server=db;User ID=sa;Pass<!-- -->word=" + planted))))),
         new("a profile giving a SQLCMD value that is a connection string", "profile.literal-connection", true, (scratch, planted) =>
-            Refused(Profiles.Load(Profile(scratch, "", ("LinkedServer", "Data Source=" + planted + ";Initial Catalog=Orders;Integrated Security=True"))))),
-        new("a profile with the guard off", "profile.guard-off", true, (scratch, planted) =>
-            Refused(Profiles.Load(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted))))),
-        new("a named environment whose profile has the guard off", "profile.guard-off", true, (scratch, planted) =>
+            Failed(Profiles.Load(Profile(scratch, "", ("LinkedServer", "Data Source=" + planted + ";Initial Catalog=Orders;Integrated Security=True"))))),
+        new("a profile that allows data loss", "profile.data-loss-allowed", true, (scratch, planted) =>
+            Failed(Profiles.Load(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted))))),
+        new("a named environment whose profile allows data loss", "profile.data-loss-allowed", true, (scratch, planted) =>
         {
             var root = Estate(scratch, Environments(Dev(profile: "estate/profiles/relaxed.publish.xml")));
             File.Move(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted)), Path.Combine(root, "estate", "profiles", "relaxed.publish.xml"));
-            return Refused(Profiles.Of(Made(Profiles.Environments(root)).Single(), root));
+            return Failed(Profiles.Of(Made(Profiles.Environments(root)).Single(), root));
         }),
         new("a SQLCMD literal under a credential's name in a profile", "sqlcmd.literal-credential", true, (scratch, planted) =>
-            Refused(Profiles.Load(Profile(scratch, "", ("ApiToken", planted))))),
+            Failed(Profiles.Load(Profile(scratch, "", ("ApiToken", planted))))),
 
-        new("a target of no form the grammar knows", "target.unknown", true, (_, planted) => Refused(SqlServer.Target.Parse("sql:" + planted))),
-        new("a copy named as no copy can be", "copy.unregistered", true, (_, planted) => Refused(SqlServer.Target.Parse("copy:" + planted, "--target"))),
+        new("a target of no form the grammar knows", "target.unknown", true, (_, planted) => Failed(SqlServer.Target.Parse("sql:" + planted))),
+        new("a copy named as no copy can be", "copy.unregistered", true, (_, planted) => Failed(SqlServer.Target.Parse("copy:" + planted, "--target"))),
         new("a literal connection string where a target goes", "connection.literal", true, (_, planted) =>
-            Refused(SqlServer.Target.Parse("Server=db;User ID=sa;Password=" + planted, "--target"))),
-        new("a git ref where a database is asked for", "target.not-a-database", false, (scratch, _) => Refused(SqlServer.Resolve(Target("ref:main"), scratch))),
-        new("an environment the posture does not name", "target.unnamed", false, (scratch, _) => Refused(SqlServer.Resolve(Target("env:qa"), Estate(scratch, Environments(Dev()))))),
-        new("the Twin before its milestone", "twin.not-built", false, (scratch, _) => Refused(SqlServer.Resolve(Target("twin"), scratch))),
+            Failed(SqlServer.Target.Parse("Server=db;User ID=sa;Password=" + planted, "--target"))),
+        new("a git ref where a database is asked for", "target.not-a-database", false, (scratch, _) => Failed(SqlServer.Resolve(Target("ref:main"), scratch))),
+        new("an environment the posture does not name", "target.unnamed", false, (scratch, _) => Failed(SqlServer.Resolve(Target("env:qa"), Estate(scratch, Environments(Dev()))))),
+        new("the synthetic copy before its milestone", "synthetic-copy.not-built", false, (scratch, _) => Failed(SqlServer.Resolve(Target("synthetic-copy"), scratch))),
         new("a connection whose variable is unset", "connection.unresolved", false, (scratch, _) =>
-            Refused(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: "env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant())))))),
+            Failed(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: "env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant())))))),
         new("a connection file holding no connection string", "connection.malformed", true, (scratch, planted) =>
-            Refused(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "garbled " + planted)))))))),
+            Failed(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "garbled " + planted)))))))),
         new("a connection file git tracks", "reference.tracked", true, (scratch, planted) => InRepository(scratch, root =>
         {
             Written(root, "estate/posture.json", Environments(Dev(connection: "file:estate/dev.connection")));
@@ -201,64 +201,64 @@ internal static class RefusalPaths
             Written(root, "estate/posture.json", Environments(Dev(connection: "file:.estate/dev.connection::$DATA")));
             var file = OwnerOnly(Written(root, ".estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
             return OperatingSystem.IsWindows()   // Windows opens the default data stream as name::$DATA; elsewhere that name opens no file, and the driver asks io/SqlServer of it directly
-                ? SqlServer.Resolve(Target("env:dev"), root).Map(database => database.Where)
+                ? SqlServer.Resolve(Target("env:dev"), root).Map(database => database.Target)
                 : SqlServer.Listed("env:dev's connection, file:.estate/dev.connection::$DATA,", file + "::$DATA");
         })),
         new("a connection file in a folder this identity cannot list", "reference.unlistable", true, (scratch, planted) =>
         {
             var root = Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "locked/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
-            return Denied(Path.Combine(scratch, "locked"), () => Refused(SqlServer.Resolve(Target("env:dev"), root)));
+            return Denied(Path.Combine(scratch, "locked"), () => Failed(SqlServer.Resolve(Target("env:dev"), root)));
         }),
         new("a connection file this identity cannot read", "reference.unreadable", true, (scratch, planted) =>
         {
             var root = Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
-            return Denied(Path.Combine(scratch, "dev.connection"), () => Refused(SqlServer.Resolve(Target("env:dev"), root)));
+            return Denied(Path.Combine(scratch, "dev.connection"), () => Failed(SqlServer.Resolve(Target("env:dev"), root)));
         }),
         new("a connection file whose attributes this identity cannot read", "reference.inaccessible", true, (scratch, planted) =>
         {
             var root = Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "locked/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
-            return Unexaminable(Path.Combine(scratch, "locked", "dev.connection"), () => Refused(SqlServer.Resolve(Target("env:dev"), root)));
+            return Unexaminable(Path.Combine(scratch, "locked", "dev.connection"), () => Failed(SqlServer.Resolve(Target("env:dev"), root)));
         }),
         new("a connection file of an estate in no git repository", "reference.no-repository", true, (scratch, planted) =>
-            Refused(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Password=" + planted))))))),
+            Failed(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Password=" + planted))))))),
         new("a connection file its group can read, where files carry a Unix mode", "reference.readable-by-others", !OperatingSystem.IsWindows(), (scratch, planted) => OperatingSystem.IsWindows()
             ? SqlServer.ReadableByOthers("env:dev's connection, file:.estate/dev.connection,", (UnixFileMode)0b110_100_000) ?? throw new InvalidOperationException("mode 0640 was not refused")
-            : Refused(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection:
+            : Failed(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection:
                 GroupReadable(Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted))))))))),
-        new("a copy the registry does not hold", "copy.unregistered", false, (scratch, _) => Refused(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch))),
+        new("a copy the registry does not hold", "copy.unregistered", false, (scratch, _) => Failed(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch))),
         new("a copy registry that is not JSON", "registry.unreadable", true, (scratch, planted) =>
         {
             Directory.CreateDirectory(Path.Combine(scratch, ".estate"));
             File.WriteAllText(Path.Combine(scratch, ".estate", "copies.json"), "{ \"copies\": [ " + planted);
-            return Refused(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch));
+            return Failed(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch));
         }),
-        new("a copy made on the host an environment's reference names", "copy.named-host", true, (scratch, planted) => Refused(SqlServer.Resolve(Target("copy:" + Copied),
+        new("a copy made on the host an environment's reference names", "copy.named-host", true, (scratch, planted) => Failed(SqlServer.Resolve(Target("copy:" + Copied),
             Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted))))))))),
-        new("a copy beside an environment whose connection SqlClient cannot read", "connection.malformed", true, (scratch, planted) => Refused(SqlServer.Resolve(Target("copy:" + Copied),
+        new("a copy beside an environment whose connection SqlClient cannot read", "connection.malformed", true, (scratch, planted) => Failed(SqlServer.Resolve(Target("copy:" + Copied),
             Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Nonsense " + planted + " = 1"))))))))),
-        new("no substrate server anywhere", "substrate.missing", false, (scratch, _) => Refused(Substrate.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
-        new("a substrate server SqlClient cannot read", "substrate.missing", true, (scratch, planted) =>
-            Refused(Substrate.ServerName("Server=db;Password=" + planted + ";Nonsense " + planted + " = 1", Path.Combine(scratch, "no-sql.env"), localDb: false))),
-        new("a named environment's login denied", "server.denied", true, (scratch, planted) => DevDatabase(scratch).Refused(18456, "Login failed for user '" + planted + "'.")),
+        new("no scratch server server anywhere", "scratch-server.missing", false, (scratch, _) => Failed(ScratchServer.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
+        new("a scratch server server SqlClient cannot read", "scratch-server.missing", true, (scratch, planted) =>
+            Failed(ScratchServer.ServerName("Server=db;Password=" + planted + ";Nonsense " + planted + " = 1", Path.Combine(scratch, "no-sql.env"), localDb: false))),
+        new("a named environment's login denied", "server.denied", true, (scratch, planted) => DevDatabase(scratch).ErrorOf(18456, "Login failed for user '" + planted + "'.")),
         new("a named environment that does not answer", "server.unreachable", true, (scratch, planted) =>
-            DevDatabase(scratch).Refused(53, "A network-related or instance-specific error occurred while establishing a connection to " + planted + ".")),
+            DevDatabase(scratch).ErrorOf(53, "A network-related or instance-specific error occurred while establishing a connection to " + planted + ".")),
         new("a named environment's statement failing", "server.failed", true, (scratch, planted) =>
-            DevDatabase(scratch).Refused(245, "Conversion failed when converting the nvarchar value '" + planted + "' to data type int.")),
+            DevDatabase(scratch).ErrorOf(245, "Conversion failed when converting the nvarchar value '" + planted + "' to data type int.")),
         new("a SQL Server error DacFx quotes by its number, with no SqlException inside", "server.failed", true, (scratch, planted) =>
-            DevDatabase(scratch).Refused(new DacServicesException("Could not deploy package.", new InvalidOperationException("Error SQL72014: Core Microsoft SqlClient Data Provider: "
+            DevDatabase(scratch).ErrorOf(new DacServicesException("Could not deploy package.", new InvalidOperationException("Error SQL72014: Core Microsoft SqlClient Data Provider: "
                 + "Msg 2627, Level 14, State 1, Line 1 Violation of PRIMARY KEY constraint 'PK_Customer'. The duplicate key value is (" + planted + ").")))),
         new("DacFx failing with no SQL Server error inside", "dacfx.failed", false, (scratch, _) =>
-            DevDatabase(scratch).Refused(new DacServicesException("An error occurred during deployment plan generation. Deployment cannot continue.",
+            DevDatabase(scratch).ErrorOf(new DacServicesException("An error occurred during deployment plan generation. Deployment cannot continue.",
                 new InvalidOperationException("A project which specifies SQL Server vNext as the target platform cannot be published to SQL Server 2022.")))),
-        new("a probe the allowlist refuses", "probe.refused", true, (_, planted) =>
-            Refused(SqlServer.Probe.Of("SELECT MAX(Email) FROM dbo.Customer WHERE Name = N'" + planted + "';", "dbo.Customer.Email Fits"))),
+        new("an aggregate query the allowlist refuses", "aggregate-query.refused", true, (_, planted) =>
+            Failed(SqlServer.AggregateQuery.Of("SELECT MAX(Email) FROM dbo.Customer WHERE Name = N'" + planted + "';", "dbo.Customer.Email Fits"))),
         new("a SQLCMD reference that does not resolve", "sqlcmd.unresolved", false, (scratch, _) =>
         {
             var root = Initialized(Estate(scratch, Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\" }",
                 connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev")))));
-            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
+            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
             var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
-            return Refused(SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.Named)dev).Environment, root))));
+            return Failed(SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.EnvironmentDatabase)dev).Environment, root))));
         }),
         new("a SQLCMD reference to a file git tracks", "reference.tracked", true, (scratch, planted) => InRepository(scratch, root =>
         {
@@ -268,13 +268,13 @@ internal static class RefusalPaths
             Arrange(root, "add", "--", "estate/token.txt");
             Arrange(root, "commit", "-q", "-m", "the token");
             Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
-            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
+            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
             var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
-            return SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.Named)dev).Environment, root)));
+            return SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.EnvironmentDatabase)dev).Environment, root)));
         })),
 
-        new("a flag the verb does not take", "arguments.unknown-flag", false, (_, _) => Refused(Contract.Flags(["--no-such-flag"], [], [], []))),
-        new("a required flag absent", "arguments.missing-flag", false, (_, _) => Refused(Contract.Flags([], ["--from"], [], []))),
+        new("a flag the verb does not take", "arguments.unknown-flag", false, (_, _) => Failed(Contract.Flags(["--no-such-flag"], [], [], []))),
+        new("a required flag absent", "arguments.missing-flag", false, (_, _) => Failed(Contract.Flags([], ["--from"], [], []))),
         new("estate check with no check named", "arguments.unknown-check", false, (scratch, _) => Carried(Verbs.Check(new Checkout(scratch, scratch, null), []))),
     ];
 
@@ -283,7 +283,7 @@ internal static class RefusalPaths
 
     private static SqlServer.Target Target(string text) => Made(SqlServer.Target.Parse(text));
 
-    /// <summary>The estate's root with .estate/copies.json holding <see cref="Copied"/>, as io/Substrate writes a row, so copy: reaches R15 without a server.</summary>
+    /// <summary>The estate's root with .estate/copies.json holding <see cref="Copied"/>, as io/ScratchServer writes a row, so copy: reaches R15 without a server.</summary>
     private static string Registered(string root)
     {
         Directory.CreateDirectory(Path.Combine(root, ".estate"));
@@ -419,11 +419,11 @@ internal static class RefusalPaths
         return root;
     }
 
-    /// <summary>Each refusal code the kernel, io and the cli construct, as their sources write it: a literal code, or the literal start of a composed one (element.).</summary>
+    /// <summary>Each error code the kernel, io and the cli construct, as their sources write it: a literal code, or the literal start of a composed one (element.).</summary>
     public static IEnumerable<string> InTheSources() => Repository.Files
         .Where(f => (f.StartsWith("kernel/", StringComparison.Ordinal) || f.StartsWith("io/", StringComparison.Ordinal) || f.StartsWith("cli/", StringComparison.Ordinal))
             && f.EndsWith(".cs", StringComparison.Ordinal))
-        .SelectMany(f => System.Text.RegularExpressions.Regex.Matches(Repository.Read(f), @"new\s+Refusal\(\s*""([a-z0-9.-]+)""").Select(m => m.Groups[1].Value))
+        .SelectMany(f => System.Text.RegularExpressions.Regex.Matches(Repository.Read(f), @"new\s+Error\(\s*""([a-z0-9.-]+)""").Select(m => m.Groups[1].Value))
         .Distinct()
         .Order(StringComparer.Ordinal);
 
@@ -436,7 +436,7 @@ internal static class RefusalPaths
 
     private static string Environments(string environments) => "{ \"environments\": { " + environments + " } }";
 
-    private static Refusal Posture(string scratch, string environments) => Refused(Profiles.Environments(Estate(scratch, Environments(environments))));
+    private static Error Posture(string scratch, string environments) => Failed(Profiles.Environments(Estate(scratch, Environments(environments))));
 
     /// <summary>An estate's root under the scratch folder, holding estate/posture.json with the text given.</summary>
     private static string Estate(string scratch, string posture)
@@ -485,7 +485,7 @@ internal static class RefusalPaths
         return Path.Combine(scratch, "golden", "classic-minimal", "ClassicMinimal.sqlproj");
     }
 
-    /// <summary>A model built in memory, each script added as its own source, as io/Ssdt.Walk reads one.</summary>
+    /// <summary>A model built in memory, each script added as its own source, as io/Ssdt.Elements reads one.</summary>
     private static TSqlModel Model(params string[] scripts)
     {
         var model = new TSqlModel(SqlServerVersion.Sql160, new TSqlModelOptions());
@@ -501,14 +501,14 @@ internal static class RefusalPaths
     /// A drive of io/Git in a repository of its own at scratch/repository, holding one empty commit on main; after it, git's
     /// objects, which it writes read-only, are made writable, so the scratch folder deletes.
     /// </summary>
-    private static Refusal InRepository<T>(string scratch, Func<string, Result<T>> drive)
+    private static Error InRepository<T>(string scratch, Func<string, Result<T>> drive)
     {
         var root = Directory.CreateDirectory(Path.Combine(scratch, "repository")).FullName;
         try
         {
             Arrange(root, "init", "-q", "--initial-branch=main");
             Arrange(root, "commit", "-q", "--allow-empty", "-m", "estate");
-            return Refused(drive(root));
+            return Failed(drive(root));
         }
         finally
         {
@@ -561,12 +561,12 @@ internal static class RefusalPaths
 
     private static string Quoted(string text) => "\"" + text + "\"";
 
-    /// <summary>The refusal a verb's answer carries as its one blocking finding, where the cli refuses inside a verb rather than in a Result.</summary>
-    private static Refusal Carried(Envelope answer) => answer.Findings is [{ Severity: "block", Remedy: { } remedy } finding]
-        ? new Refusal(finding.Code, finding.Message, remedy)
-        : throw new InvalidOperationException("the answer carries no one refusal: " + answer.Verdict.Message);
+    /// <summary>The error a verb's answer carries as its one finding of severity error, where the cli fails inside a verb rather than in a Result.</summary>
+    private static Error Carried(Envelope answer) => answer.Findings is [{ Severity: "error", Remedy: { } remedy } finding]
+        ? new Error(finding.Code, finding.Message, remedy)
+        : throw new InvalidOperationException("the answer carries no one error: " + answer.Verdict.Message);
 
-    private static T Made<T>(Result<T> result) => result.Match(value => value, refusal => throw new InvalidOperationException(refusal.Code + ": " + refusal.Message));
+    private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new InvalidOperationException(error.Code + ": " + error.Message));
 
-    private static Refusal Refused<T>(Result<T> result) => result.Match(value => throw new InvalidOperationException("accepted where a refusal was due: " + value), refusal => refusal);
+    private static Error Failed<T>(Result<T> result) => result.Match(value => throw new InvalidOperationException("accepted where an error was due: " + value), error => error);
 }

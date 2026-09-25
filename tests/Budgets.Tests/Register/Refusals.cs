@@ -10,11 +10,11 @@ using Xunit;
 namespace Estate.Budgets.Tests.Register;
 
 /// <summary>
-/// The engine's refusals are in the register (V3_INSTRUCTION_ARCHITECTURE.md §10 test 4; VALUES.md S2, O4, L1). Every refusal
+/// The engine's errors are in the register (V3_INSTRUCTION_ARCHITECTURE.md §10 test 4; VALUES.md S2, O4, L1). Every error
 /// the kernel, io and the cli construct, reached through <see cref="RefusalPaths"/>, carries a code, a message and a remedy; the remedy is
 /// one move on one line, led by a verb, an estate verb or a file path, never a paragraph; and neither the message nor the remedy
 /// uses a retired word or a banned form of ci/register.json. A code the sources construct with no way to it here fails, so a new
-/// refusal arrives with its driver.
+/// error arrives with its driver.
 /// </summary>
 public sealed class Refusals
 {
@@ -35,18 +35,18 @@ public sealed class Refusals
     [Theory]
     [Trait("Category", "fast")]
     [MemberData(nameof(Cases))]
-    public void A_refusal_carries_its_code_a_message_and_a_remedy_that_is_one_move_in_the_register(string label)
+    public void An_error_carries_its_code_a_message_and_a_remedy_that_is_one_move_in_the_register(string label)
     {
         var way = RefusalPaths.All.Single(c => c.Label == label);
-        var scratch = Directory.CreateTempSubdirectory("estate-refusal-").FullName;
+        var scratch = Directory.CreateTempSubdirectory("estate-register-").FullName;
         try
         {
-            var refusal = way.Drive(scratch, "planted-value");
+            var error = way.Drive(scratch, "planted-value");
 
-            Assert.Equal(way.Code, refusal.Code);
-            Assert.False(string.IsNullOrWhiteSpace(refusal.Message) || string.IsNullOrWhiteSpace(refusal.Remedy), refusal.Code + " lacks a message or a remedy");
-            Assert.Null(Flaw(refusal.Remedy));
-            Assert.Empty(Prose.Findings(refusal.Message).Concat(Prose.Findings(refusal.Remedy)).Select(f => refusal.Code + ": " + f));
+            Assert.Equal(way.Code, error.Code);
+            Assert.False(string.IsNullOrWhiteSpace(error.Message) || string.IsNullOrWhiteSpace(error.Remedy), error.Code + " lacks a message or a remedy");
+            Assert.Null(Flaw(error.Remedy));
+            Assert.Empty(Prose.Findings(error.Message).Concat(Prose.Findings(error.Remedy)).Select(f => error.Code + ": " + f));
         }
         finally
         {
@@ -56,7 +56,7 @@ public sealed class Refusals
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Every_refusal_code_the_kernel_io_and_the_cli_construct_has_a_way_to_it_here()
+    public void Every_error_code_the_kernel_io_and_the_cli_construct_has_a_way_to_it_here()
     {
         var driven = RefusalPaths.All.Select(c => c.Code).ToHashSet(StringComparer.Ordinal);
         var written = RefusalPaths.InTheSources().ToList();

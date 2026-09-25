@@ -34,13 +34,13 @@ public readonly record struct Fingerprint
     public static Fingerprint Of(string text) => Of(Utf8.GetBytes(Canonical(text)));
 
     /// <summary>
-    /// The fingerprint of a read: its elements in the Seq's canonical order, serialized so no two element sets serialize
+    /// The fingerprint of a model: its elements in the SortedArray's canonical order, serialized so no two element sets serialize
     /// alike. Every list leads with its count, every string with its length and is written as UTF-16 code units (a lone
     /// surrogate survives), every value with a tag, every name with its part count and every key with whether it has a
-    /// parent; integers are big-endian. Text values are hashed exactly as the elements hold them, so two reads
+    /// parent; integers are big-endian. Text values are hashed exactly as the elements hold them, so two models
     /// fingerprint equally exactly when their elements are equal.
     /// </summary>
-    public static Fingerprint Of(Seq<Element> elements)
+    public static Fingerprint Of(SortedArray<Element> elements)
     {
         var to = new ArrayBufferWriter<byte>();
         Write(to, elements.Count);
@@ -79,10 +79,10 @@ public readonly record struct Fingerprint
     public static Result<Fingerprint> Parse(string hex) =>
         hex is { Length: 64 } && hex.All(c => char.IsAsciiDigit(c) || c is >= 'a' and <= 'f')
             ? new Fingerprint(Convert.FromHexString(hex))
-            : new Refusal(
+            : new Error(
                 "fingerprint.malformed",
                 $"'{hex}' is not a fingerprint.",
-                "Give the fingerprint as a receipt prints it: 64 lowercase hex digits.");
+                "Give the fingerprint as estate prints it: 64 lowercase hex digits.");
 
     public override string ToString() =>
         string.Create(CultureInfo.InvariantCulture, $"{_w0:x16}{_w1:x16}{_w2:x16}{_w3:x16}");

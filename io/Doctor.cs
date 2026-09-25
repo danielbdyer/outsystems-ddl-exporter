@@ -14,12 +14,12 @@ namespace Estate.Io;
 
 /// <summary>
 /// Can this machine do the work, read-only (V3_ARCHITECTURE.md §8.12): the .NET SDK in the band global.json names and the runtime;
-/// the committed tool folder and its DacFx against the estate's toolchain ledger; the build route; a substrate (Docker answering, or
+/// the committed tool folder and its DacFx against the estate's toolchain ledger; the build route; a scratch server (Docker answering, or
 /// LocalDB) and the pinned SQL Server image; and Git LFS. Each item missing carries its remedy.
 /// </summary>
 public static class Doctor
 {
-    /// <summary>The substrate's image, pinned by tag and digest (§1 fact 12); ci/sql.sh and ci/sql.ps1 run the same one.</summary>
+    /// <summary>The scratch server's image, pinned by tag and digest (§1 fact 12); ci/sql.sh and ci/sql.ps1 run the same one.</summary>
     public const string SqlServerImage = "mcr.microsoft.com/mssql/server:2022-latest@sha256:4402d880dd4c34bfa7d8705e56a86cd6c88da80a1f6bbbe741f999e76264a090";
 
     /// <summary>The toolchain ledger, from the estate's root: one dated row per estate version, with the pinned engine or UNPINNED.</summary>
@@ -31,7 +31,7 @@ public static class Doctor
     /// <summary>A program's exit code and output, or null when it is not installed or does not answer in time.</summary>
     public delegate (int Exit, string Output)? Command(string file, IReadOnlyList<string> arguments);
 
-    /// <summary>The files a published tool folder holds beside estate: DacFx's SqlTasks targets and the reference stub.</summary>
+    /// <summary>The files a published tool folder holds beside estate: DacFx's SqlTasks targets and the reference assemblies (mscorlib.dll and FrameworkList.xml).</summary>
     private static readonly string[] Published = ["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"];
 
     /// <summary>A ledger row: | date | estate version | pinned DacFx or UNPINNED | the release before the pin, or — |.</summary>
@@ -51,21 +51,21 @@ public static class Doctor
     {
         var docker = run("docker", ["info", "--format", "{{.ServerVersion}}"]) is (0, var answer) ? answer.Trim() : null;
         var (sdk, tool) = (Sdk(workingDirectory, run), Ssdt.Tool(toolFolder, toolVariable, workingDirectory).Match(
-            folder => new Check("tool", folder == toolFolder ? "published" : folder, null), refusal => new Check("tool", "missing", refusal.Remedy)));
+            folder => new Check("tool", folder == toolFolder ? "published" : folder, null), error => new Check("tool", "missing", error.Remedy)));
         var lfs = run("git", ["lfs", "version"]) is (0, var said) ? said.Trim().Split(' ')[0] : null;
         return
         [
             sdk, new("runtime", Environment.Version.ToString(), null), tool, Committed(Profiles.Root(workingDirectory), version),
             sdk.Remedy is null && tool.Remedy is null ? new("build", "dotnet with the tool folder's targets", null)
                 : new("build", "none", "install what the sdk and tool items name; then estate doctor"),
-            Substrate(docker, run), Image(docker, run),
+            ScratchServerCheck(docker, run), Image(docker, run),
             lfs is null ? new("lfs", "absent", "install Git LFS, then run git lfs install; the estate's evidence needs it from M5") : new("lfs", lfs, null),
         ];
     }
 
     /// <summary>
     /// The pin estate/ledgers/toolchain.md records for this estate version: its latest dated row naming the version. An estate that
-    /// commits no ledger is unpinned, as §17 item 1 assumes; a ledger without a row for this version, or with a malformed one, is refused.
+    /// commits no ledger is unpinned, as §17 item 1 assumes; a ledger without a row for this version, or with a malformed one, is an error.
     /// </summary>
     public static Result<Pin> Toolchain(string estateRoot, string version)
     {
@@ -79,20 +79,20 @@ public static class Doctor
         var row = File.ReadAllLines(path).Select(line => Row.Match(line)).Where(m => m.Success && m.Groups[2].Value == ours)
             .OrderBy(m => m.Groups[1].Value, StringComparer.Ordinal).LastOrDefault();
         return row is null
-            ? new Refusal("toolchain.unrecorded", Ledger + " has no dated row for estate " + ours + ".",
+            ? new Error("toolchain.unrecorded", Ledger + " has no dated row for estate " + ours + ".",
                 "Add a row for estate " + ours + " to " + Ledger + ", with the Octopus step's DacFx release or UNPINNED.")
             : row.Groups[3].Value == "UNPINNED" ? new Pin.Unpinned()
-            : Pin.Of(row.Groups[3].Value, row.Groups[4].Value is "" or "—" or "-" ? null : row.Groups[4].Value).Match<Result<Pin>>(pin => pin, refusal => refusal.Code == "toolchain.window-order" ? refusal :
-                new Refusal("toolchain.malformed", Ledger + "'s row for estate " + ours + " names a pin or a release before it that is no DacFx release.",
+            : Pin.Of(row.Groups[3].Value, row.Groups[4].Value is "" or "—" or "-" ? null : row.Groups[4].Value).Match<Result<Pin>>(pin => pin, error => error.Code == "toolchain.window-order" ? error :
+                new Error("toolchain.malformed", Ledger + "'s row for estate " + ours + " names a pin or a release before it that is no DacFx release.",
                     "Write the row's pin and the release before it as DacFx versions, such as 170.5.96, or the pin as UNPINNED."));
     }
 
-    /// <summary>The committed DacFx against the ledger's row: its pin, or the refusal of the row or of an engine outside the window.</summary>
+    /// <summary>The committed DacFx against the ledger's row: its pin, the error in the row, or the rejection of an engine outside the window.</summary>
     private static Check Committed(string estateRoot, string version) => Toolchain(estateRoot, version)
-        .Bind(pin => Engine.Of(DacFx).Map(engine => (Pin: pin, Refusal: pin.Refuses(engine))))
+        .Bind(pin => Engine.Of(DacFx).Map(engine => (Pin: pin, Rejection: pin.Rejects(engine))))
         .Match(
-            found => new Check("dacfx", DacFx + " (" + (found.Refusal is null ? found.Pin.Match(_ => "UNPINNED", pinned => "pinned " + pinned) : "outside the pin " + found.Pin) + ")", found.Refusal?.Remedy),
-            refusal => new Check("dacfx", DacFx + " (" + refusal.Message.TrimEnd('.') + ")", refusal.Remedy));
+            found => new Check("dacfx", DacFx + " (" + (found.Rejection is null ? found.Pin.Match(_ => "UNPINNED", pinned => "pinned " + pinned) : "outside the pin " + found.Pin) + ")", found.Rejection?.Remedy),
+            error => new Check("dacfx", DacFx + " (" + error.Message.TrimEnd('.') + ")", error.Remedy));
 
     internal static Check Sdk(string workingDirectory, Command run)
     {
@@ -133,10 +133,10 @@ public static class Doctor
             : new("tool", "not a published tool folder (" + string.Join(", ", absent.Select(Path.GetFileName)) + " absent)", "ci/publish.sh, or ci/publish.ps1 on Windows, publishes dist/estate/; run estate from there");
     }
 
-    private static Check Substrate(string? docker, Command run) =>
-        docker is not null ? new("substrate", "docker " + docker, null)
-        : run("sqllocaldb", ["info"]) is (0, _) ? new("substrate", "localdb, CDC not provable here", null)
-        : new("substrate", "none: Docker does not answer and LocalDB is absent", "start Docker until docker info answers; where Docker cannot run, install SQL Server Express LocalDB");
+    private static Check ScratchServerCheck(string? docker, Command run) =>
+        docker is not null ? new("scratch-server", "docker " + docker, null)
+        : run("sqllocaldb", ["info"]) is (0, _) ? new("scratch-server", "localdb, CDC not provable here", null)
+        : new("scratch-server", "none: Docker does not answer and LocalDB is absent", "start Docker until docker info answers; where Docker cannot run, install SQL Server Express LocalDB");
 
     private static Check Image(string? docker, Command run) =>
         docker is null ? new("image", "not needed without Docker", null)

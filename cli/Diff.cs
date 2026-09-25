@@ -8,7 +8,7 @@ namespace Estate.Cli;
 
 public static partial class Verbs
 {
-    /// <summary>What diff adds to the envelope: each side read and its fingerprint, and the change, per element and per property.</summary>
+    /// <summary>What diff adds to the envelope: each side and its fingerprint, and the change, per element and per property.</summary>
     public static JsonObject DiffContent => new()
     {
         ["diff"] = Render.Record(new()
@@ -16,9 +16,9 @@ public static partial class Verbs
             ["from"] = Side(), ["to"] = Side(),
             ["change"] = Render.Record(new()
             {
-                ["added"] = Render.List(Render.Text()), ["removed"] = Render.List(Render.Text()),
+                ["created"] = Render.List(Render.Text()), ["dropped"] = Render.List(Render.Text()),
                 ["renamed"] = Render.List(Render.Record(new() { ["before"] = Render.Text(), ["after"] = Render.Text() })),
-                ["changed"] = Render.List(Render.Record(new()
+                ["altered"] = Render.List(Render.Record(new()
                 {
                     ["key"] = Render.Text(),
                     ["properties"] = Render.List(Render.Record(new() { ["name"] = Render.Text(), ["before"] = Values(), ["after"] = Values() })),
@@ -29,7 +29,7 @@ public static partial class Verbs
     };
 
     /// <summary>
-    /// estate diff --from &lt;target&gt; --to &lt;target&gt; [--project &lt;path&gt;] [--fail-on-change]: Change.Between the two reads with the renames
+    /// estate diff --from &lt;target&gt; --to &lt;target&gt; [--project &lt;path&gt;] [--fail-on-change]: Change.Between the two models with the renames
     /// their refactorlogs record (V3_ARCHITECTURE.md §8.5), one line per change; exit 5 with --fail-on-change when anything changes.
     /// </summary>
     public static Envelope Diff(Checkout here, IReadOnlyList<string> words)
@@ -37,11 +37,11 @@ public static partial class Verbs
         if (Contract.Flags(words, ["--from", "--to"], ["--project"], ["--fail-on-change"]).Bind(flags => SqlServer.Target.Parse(flags["--from"], "--from")
             .Bind(from => SqlServer.Target.Parse(flags["--to"], "--to").Bind(to => Pinned(here).Bind(pin => Reading(here, from, flags.GetValueOrDefault("--project"))
             .Bind(before => Reading(here, to, flags.GetValueOrDefault("--project")).Bind(after =>
-                Change.Between(before.Read.Elements, after.Read.Elements, Seq.Of(before.Read.Renames.Concat(after.Read.Renames).Distinct()))
+                Change.Between(before.Model.Elements, after.Model.Elements, SortedArray.Of(before.Model.Renames.Concat(after.Model.Renames).Distinct()))
                     .Map(change => (Before: before, After: after, Change: change, Fail: flags.ContainsKey("--fail-on-change"), Pin: pin))))))))
-            .Refused(out var diff, out var refusal))
+            .Failed(out var diff, out var error))
         {
-            return Contract.Refused(Of("diff"), refusal, Stamped(null, null));
+            return Contract.Failed(Of("diff"), error, Stamped(null, null));
         }
 
         var (lines, fails) = (Lines(diff.Change).ToList(), diff.Fail && !diff.Change.IsEmpty);
@@ -54,21 +54,21 @@ public static partial class Verbs
             });
     }
 
-    /// <summary>A change as lines: each element added, removed or renamed, then each property (with its values, a text's left out) or relationship that differs.</summary>
+    /// <summary>A change as lines: each element created, dropped or renamed, then each property (with its values, a text's left out) or relationship that is altered.</summary>
     internal static IEnumerable<string> Lines(Change change) =>
-        change.Added.Select(e => "added " + e.Key)
-            .Concat(change.Removed.Select(e => "removed " + e.Key))
+        change.Created.Select(e => "created " + e.Key)
+            .Concat(change.Dropped.Select(e => "dropped " + e.Key))
             .Concat(change.Renamed.Select(r => "renamed " + r.Before + " to " + r.After))
-            .Concat(change.Changed.SelectMany(a => a.Properties
+            .Concat(change.Altered.SelectMany(a => a.Properties
                 .Select(p => a.Key + ": " + p.Name + (p.Before is Value.Text || p.After is Value.Text ? "" : " " + (p.Before?.ToString() ?? "none") + " → " + (p.After?.ToString() ?? "none")))
                 .Concat(a.Relationships.Select(r => a.Key + ": " + r.Name))));
 
     private static JsonObject Json(Change change) => new()
     {
-        ["added"] = Render.Array(change.Added.Select(e => (JsonNode?)e.Key.ToString())),
-        ["removed"] = Render.Array(change.Removed.Select(e => (JsonNode?)e.Key.ToString())),
+        ["created"] = Render.Array(change.Created.Select(e => (JsonNode?)e.Key.ToString())),
+        ["dropped"] = Render.Array(change.Dropped.Select(e => (JsonNode?)e.Key.ToString())),
         ["renamed"] = Render.Array(change.Renamed.Select(r => new JsonObject { ["before"] = r.Before.ToString(), ["after"] = r.After.ToString() })),
-        ["changed"] = Render.Array(change.Changed.Select(a => new JsonObject
+        ["altered"] = Render.Array(change.Altered.Select(a => new JsonObject
         {
             ["key"] = a.Key.ToString(),
             ["properties"] = Render.Array(a.Properties.Select(p => new JsonObject { ["name"] = p.Name, ["before"] = Json(p.Before), ["after"] = Json(p.After) })),
@@ -81,5 +81,5 @@ public static partial class Verbs
 
     private static JsonObject Side() => Render.Record(new() { ["from"] = Render.Text(), ["fingerprint"] = Render.Fingerprint() });
 
-    private static JsonObject Side(Source source) => new() { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(Fingerprint.Of(source.Read.Elements)) };
+    private static JsonObject Side(Source source) => new() { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(Fingerprint.Of(source.Model.Elements)) };
 }

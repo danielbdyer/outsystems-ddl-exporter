@@ -18,11 +18,11 @@ using ColumnType = Microsoft.SqlServer.TransactSql.ScriptDom.ColumnType;
 namespace Estate.Io;
 
 /// <summary>
-/// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4): the target grammar; Named, the database of an
-/// environment estate/posture.json names, and Copy, a database io/Substrate made, which alone publishes (§2.1 rule 3); Model through
-/// LoadFromDatabase and io/Ssdt's walk; Plan through DacServices.Script; and the probe executor, whose closed allowlist admits only
-/// integer answers. A resolved connection is never printed, logged or put in a refusal, and a named environment's SQL Server messages
-/// are withheld, since they can quote a row (§18). A refusal's code names what was refused; cli/Contract.cs maps its area to the exit.
+/// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4): the target grammar; EnvironmentDatabase, the database of an
+/// environment estate/posture.json names, and Copy, a database io/ScratchServer made, which alone publishes (§2.1 rule 3); Model through
+/// LoadFromDatabase and io/Ssdt.Elements; Plan through DacServices.Script; and Measure, which runs an aggregate query its closed
+/// allowlist admits, every answer an integer. A resolved connection is never printed, logged or put in an error, and a named environment's SQL Server messages
+/// are withheld, since they can quote a row (§18). An error's code names what went wrong; cli/Contract.cs maps its category to the exit.
 /// </summary>
 public static class SqlServer
 {
@@ -34,7 +34,7 @@ public static class SqlServer
 
     /// <summary>
     /// Where a verb reads or writes, as an argument writes it (WP 1.4): env:&lt;name&gt;, an environment estate/posture.json names;
-    /// copy:&lt;name&gt;, a copy .estate/copies.json holds; twin; ref:&lt;git ref&gt;; dacpac:&lt;path&gt;. The cases are closed.
+    /// copy:&lt;name&gt;, a copy .estate/copies.json holds; synthetic-copy; ref:&lt;git ref&gt;; dacpac:&lt;path&gt;. The cases are closed.
     /// </summary>
     public abstract record Target
     {
@@ -47,29 +47,29 @@ public static class SqlServer
 
         /// <summary>A target from an argument: a literal connection string is exit 6, copy: before a name no copy can carry is exit 9 (M1 exit 5), and no part of the argument is quoted.</summary>
         public static Result<Target> Parse(string text, string subject = "--target") =>
-            Profiles.IsConnection(text) ? new Refusal("connection.literal", subject + " is a literal connection string, which no argument carries.",
+            Profiles.IsConnection(text) ? new Error("connection.literal", subject + " is a literal connection string, which no argument carries.",
                 "Name the target as env:NAME, an environment whose connection estate/posture.json gives as env:VARIABLE or file:path.")
-            : text == "twin" ? new Twin()
+            : text == "synthetic-copy" ? new SyntheticCopy()
             : After(text, "env:") is { } name && Environment.IsMatch(name) ? new Env(name)
-            : After(text, "copy:") is { } copy ? (Registered.IsMatch(copy) ? new Copy(copy) : new Refusal("copy.unregistered",
-                subject + " names a copy by a name no copy estate makes can carry, so " + Substrate.Registry + " holds none by it; a copy's name is estate_<host>_<pid>_<rand>, in lowercase letters, digits and '_'.",
-                "Name a copy that " + Substrate.Registry + " holds on this machine."))
+            : After(text, "copy:") is { } copy ? (Registered.IsMatch(copy) ? new Copy(copy) : new Error("copy.unregistered",
+                subject + " names a copy by a name no copy estate makes can carry, so " + ScratchServer.Registry + " holds none by it; a copy's name is estate_<host>_<pid>_<rand>, in lowercase letters, digits and '_'.",
+                "Name a copy that " + ScratchServer.Registry + " holds on this machine."))
             : After(text, "ref:") is { Length: > 0 } reference && !reference.StartsWith('-') && !reference.Any(char.IsControl) ? new Ref(reference)
             : After(text, "dacpac:") is { Length: > 0 } path && !path.Any(char.IsControl) ? new Dacpac(path)
-            : new Refusal("target.unknown", subject + " is none of env:<name>, copy:<name>, twin, ref:<git ref> and dacpac:<path>.",
+            : new Error("target.unknown", subject + " is none of env:<name>, copy:<name>, synthetic-copy, ref:<git ref> and dacpac:<path>.",
                 "Write the target in one of those forms, such as env:dev or ref:main.");
 
-        public T Match<T>(Func<Env, T> env, Func<Copy, T> copy, Func<T> twin, Func<Ref, T> reference, Func<Dacpac, T> dacpac) => this switch
+        public T Match<T>(Func<Env, T> env, Func<Copy, T> copy, Func<T> syntheticCopy, Func<Ref, T> reference, Func<Dacpac, T> dacpac) => this switch
         {
             Env e => env(e),
             Copy c => copy(c),
-            Twin => twin(),
+            SyntheticCopy => syntheticCopy(),
             Ref r => reference(r),
             Dacpac d => dacpac(d),
             _ => throw new System.Diagnostics.UnreachableException(),
         };
 
-        public sealed override string ToString() => Match(e => "env:" + e.Name, c => "copy:" + c.Name, () => "twin", r => "ref:" + r.Name, d => "dacpac:" + d.Path);
+        public sealed override string ToString() => Match(e => "env:" + e.Name, c => "copy:" + c.Name, () => "synthetic-copy", r => "ref:" + r.Name, d => "dacpac:" + d.Path);
 
         private static string? After(string text, string prefix) => text.StartsWith(prefix, StringComparison.Ordinal) ? text[prefix.Length..] : null;
 
@@ -77,7 +77,7 @@ public static class SqlServer
 
         public sealed record Copy(string Name) : Target;
 
-        public sealed record Twin : Target;
+        public sealed record SyntheticCopy : Target;
 
         public sealed record Ref(string Name) : Target;
 
@@ -87,10 +87,10 @@ public static class SqlServer
     /// <summary>A live database the tool reads: a named environment's or a copy's. Its resolved connection stays inside io, and it prints as its target.</summary>
     public abstract class Database
     {
-        private protected Database(string where, string connection) => (Where, Connection) = (where, connection);
+        private protected Database(string target, string connection) => (Target, Connection) = (target, connection);
 
         /// <summary>The target as an argument writes it: env:dev, copy:estate_host_4242_0a1b2c3d.</summary>
-        public string Where { get; }
+        public string Target { get; }
 
         internal string Connection { get; }
 
@@ -101,20 +101,20 @@ public static class SqlServer
         internal abstract bool Withheld { get; }
 
         /// <summary>
-        /// The refusal a SQL Server error against this database takes, by its number (M1 exit 7, X2): a login, a database or a permission
+        /// What a SQL Server error against this database becomes, by its number (M1 exit 7, X2): a login, a database or a permission
         /// refused is server.denied; no answer is server.unreachable; anything else is server.failed. SQL Server's message is kept only for a
         /// copy's failed statement, a copy's rows being minted; one about a connection can name the server or the login, and is withheld.
         /// </summary>
-        public Refusal Refused(int number, string message) => Refused(number, message, fatal: false);
+        public Error ErrorOf(int number, string message) => ErrorOf(number, message, fatal: false);
 
         /// <summary>
-        /// The refusal a SqlClient or DacFx failure against a target takes. With a SqlException inside, by its number, a severity of 20 or
-        /// more being a connection lost. With none, DacFx's own failure: when its texts quote a SQL Server number (Msg 50000, the guard;
+        /// The error a SqlClient or DacFx failure against a target becomes. With a SqlException inside, by its number, a severity of 20 or
+        /// more being a connection lost. With none, DacFx's own failure: when its texts quote a SQL Server number (Msg 50000, the data-loss check;
         /// Msg 2627 inside SQL72014), by that number, since SQL Server's words, which can quote a row, are inside; else dacfx.failed,
         /// quoting what each exception of the chain says, DacFx's errors (SQL71501: …) among it, kept for a named environment too. Any
-        /// other failure is refused with no number.
+        /// other failure is server.failed with no number.
         /// </summary>
-        public Refusal Refused(Exception failure)
+        public Error ErrorOf(Exception failure)
         {
             var chain = new List<Exception>();
             for (var x = failure; x is not null; x = x.InnerException)
@@ -123,11 +123,11 @@ public static class SqlServer
             }
 
             var said = chain.SelectMany(Said).Distinct(StringComparer.Ordinal).ToList();
-            return chain.OfType<SqlException>().FirstOrDefault() is { } sql ? Refused(sql.Number, sql.Message, fatal: sql.Class >= 20)
-                : !chain.Any(x => x is DacServicesException or DacModelException) ? Refused(0, failure.Message)
+            return chain.OfType<SqlException>().FirstOrDefault() is { } sql ? ErrorOf(sql.Number, sql.Message, fatal: sql.Class >= 20)
+                : !chain.Any(x => x is DacServicesException or DacModelException) ? ErrorOf(0, failure.Message)
                 : said.Select(s => SqlServerNumber.Match(s)).FirstOrDefault(m => m.Success) is { } number
-                    ? Refused(int.Parse(number.Groups[1].Value, CultureInfo.InvariantCulture), string.Join(' ', said))
-                : new Refusal("dacfx.failed", "DacFx failed against " + Where + " with no SQL Server error inside: " + string.Join(' ', said),
+                    ? ErrorOf(int.Parse(number.Groups[1].Value, CultureInfo.InvariantCulture), string.Join(' ', said))
+                : new Error("dacfx.failed", "DacFx failed against " + Target + " with no SQL Server error inside: " + string.Join(' ', said),
                     "Correct what DacFx names in the project or the publish profile, then run the step again.");
         }
 
@@ -136,7 +136,7 @@ public static class SqlServer
         /// <summary>
         /// What one exception of a DacFx failure says, on one line: its Message alone. DacFx writes each error and warning of the failure
         /// into Message as "Error SQL71501: …" (BuildPackage's SQL71501, AddObjects' SQL46010 and SQL71006, Publish's SQL72014 quoting
-        /// Msg 50000, SQL72045), so the SQL Server number the refusal is routed by and every SQL7xxxx code are in it. A failed Publish's
+        /// Msg 50000, SQL72045), so the SQL Server number the error is routed by and every SQL7xxxx code are in it. A failed Publish's
         /// Messages also holds informational entries of number 0 that Message leaves out: PRINT output of a deployment script, "Altering
         /// Table [dbo].[T]...", "The statement has been terminated.", "An error occurred while the batch was being executed.". They carry
         /// no error and no code, and are not quoted.
@@ -144,27 +144,27 @@ public static class SqlServer
         private static IEnumerable<string> Said(Exception x) =>
             Regex.Replace(x.Message, @"\s*\n\s*", " ", RegexOptions.CultureInvariant).Trim() is { Length: > 0 } text ? [text] : [];
 
-        internal Refusal Refused(int number, string message, bool fatal)
+        internal Error ErrorOf(int number, string message, bool fatal)
         {
             var msg = number == 0 ? "no SQL Server number" : string.Create(CultureInfo.InvariantCulture, $"Msg {number}");
-            return Denials.Contains(number) ? new Refusal("server.denied", Where + " refused this identity (" + msg + ", SQL Server's message withheld)"
-                    + (this is Named ? "; a lead's prediction will appear on the pull request." : "."), this is Named
-                    ? "Ask a lead to predict for " + Where + ", or ask its DBA for VIEW DEFINITION and db_datareader there."
-                    : "Check the substrate's login in ESTATE_SQL or ~/.estate/sql.env, then run estate doctor.")
-                : fatal || Silences.Contains(number) ? new Refusal("server.unreachable", Where + " does not answer (" + msg + ", SQL Server's message withheld).", this is Named
-                    ? "Check the network path to " + Where + "'s server and that it runs, then run estate doctor."
-                    : "Start the substrate with ci/sql.sh up, or ci/sql.ps1 up on Windows, then run estate doctor.")
-                : new Refusal("server.failed", Where + " failed the statement: " + msg + (Withheld ? "; SQL Server's message is withheld, since it can quote a row." : ": " + message),
+            return Denials.Contains(number) ? new Error("server.denied", Target + " refused this identity (" + msg + ", SQL Server's message withheld)"
+                    + (this is EnvironmentDatabase ? "; a lead's prediction will appear on the pull request." : "."), this is EnvironmentDatabase
+                    ? "Ask a lead to predict for " + Target + ", or ask its DBA for VIEW DEFINITION and db_datareader there."
+                    : "Check the scratch server's login in ESTATE_SQL or ~/.estate/sql.env, then run estate doctor.")
+                : fatal || Silences.Contains(number) ? new Error("server.unreachable", Target + " does not answer (" + msg + ", SQL Server's message withheld).", this is EnvironmentDatabase
+                    ? "Check the network path to " + Target + "'s server and that it runs, then run estate doctor."
+                    : "Start the scratch server with ci/sql.sh up, or ci/sql.ps1 up on Windows, then run estate doctor.")
+                : new Error("server.failed", Target + " failed the statement: " + msg + (Withheld ? "; SQL Server's message is withheld, since it can quote a row." : ": " + message),
                     "Look the number up in SQL Server's error list, correct what it names, then run the step again.");
         }
 
-        public sealed override string ToString() => Where;
+        public sealed override string ToString() => Target;
     }
 
     /// <summary>The database of an environment estate/posture.json names: read only, and never published to (VALUES.md S7).</summary>
-    public sealed class Named : Database
+    public sealed class EnvironmentDatabase : Database
     {
-        private Named(NamedEnvironment environment, string connection, string estateRoot)
+        private EnvironmentDatabase(NamedEnvironment environment, string connection, string estateRoot)
             : base("env:" + environment.Name, connection) => (Environment, Root) = (environment, estateRoot);
 
         public NamedEnvironment Environment { get; }
@@ -173,16 +173,16 @@ public static class SqlServer
 
         internal override bool Withheld => true;
 
-        internal static Result<Named> Of(NamedEnvironment environment, string estateRoot) =>
-            Connect(Subject(environment), environment.Connection, estateRoot).Map(c => new Named(environment, c, estateRoot));
+        internal static Result<EnvironmentDatabase> Of(NamedEnvironment environment, string estateRoot) =>
+            Connect(Subject(environment), environment.Connection, estateRoot).Map(c => new EnvironmentDatabase(environment, c, estateRoot));
 
-        /// <summary>How a refusal about an environment's connection names it: its environment and its reference, never what the reference resolves to.</summary>
+        /// <summary>How an error about an environment's connection names it: its environment and its reference, never what the reference resolves to.</summary>
         internal static string Subject(NamedEnvironment environment) => "env:" + environment.Name + "'s connection, " + environment.Connection + ",";
     }
 
     /// <summary>
-    /// A database io/Substrate made on the local substrate and recorded in .estate/copies.json (§2.1 rule 3): the one target that
-    /// publishes, and the one a Permissive profile is made for. Its constructor is io's, and only io/Substrate calls it.
+    /// A database io/ScratchServer made on the scratch server and recorded in .estate/copies.json (§2.1 rule 3): the one target that
+    /// publishes, and the one a Permissive profile is made for. Its constructor is io's, and only io/ScratchServer calls it.
     /// </summary>
     public sealed class Copy : Database
     {
@@ -196,7 +196,7 @@ public static class SqlServer
 
         internal override bool Withheld => false;
 
-        /// <summary>The pipeline's profile with the guard off (§1 fact 10), made for this copy: the one maker of a Permissive profile.</summary>
+        /// <summary>The pipeline's profile with the data-loss check off (§1 fact 10), made for this copy: the one maker of a Permissive profile.</summary>
         public PublishProfile.Permissive Permissive(PublishProfile.Strict strict) => PublishProfile.Permissive.Of(strict);
 
         /// <summary>The package published to this copy under the profile's options, Strict or this copy's Permissive, the package loaded from a stream.</summary>
@@ -209,16 +209,16 @@ public static class SqlServer
 
     /// <summary>
     /// A target as a database: env: through estate/posture.json and the environment's connection reference; copy: through
-    /// .estate/copies.json alone (io/Substrate). A git ref and a package are read as packages, and the Twin arrives in M3.
+    /// .estate/copies.json alone (io/ScratchServer). A git ref and a package are read as packages, and the synthetic copy arrives in M3.
     /// </summary>
     public static Result<Database> Resolve(Target target, string estateRoot) => target.Match<Result<Database>>(
         env => Profiles.Environments(estateRoot).Bind(environments => environments.FirstOrDefault(e => e.Name == env.Name) is { } named
-            ? Named.Of(named, estateRoot).Map(n => (Database)n)
-            : new Refusal("target.unnamed", env + " names no environment of " + Profiles.Posture + ".", environments.Count == 0
+            ? EnvironmentDatabase.Of(named, estateRoot).Map(n => (Database)n)
+            : new Error("target.unnamed", env + " names no environment of " + Profiles.Posture + ".", environments.Count == 0
                 ? "Add the environment to " + Profiles.Posture + " with its connection reference and profile."
                 : "Name one it holds: " + string.Join(", ", environments.Select(e => "env:" + e.Name)) + ".")),
-        copy => Substrate.Registered(estateRoot, copy.Name).Map(c => (Database)c),
-        () => new Refusal("twin.not-built", "twin names the Twin, which arrives in M3 (Twin); this build reads env: and copy: databases.",
+        copy => ScratchServer.Registered(estateRoot, copy.Name).Map(c => (Database)c),
+        () => new Error("synthetic-copy.not-built", "synthetic-copy names the synthetic copy, which arrives in M3 (Synthetic copy); this build reads env: and copy: databases.",
             "Name an env: or a copy: target; estate --help lists what this build runs."),
         reference => NotADatabase(reference),
         dacpac => NotADatabase(dacpac));
@@ -229,7 +229,7 @@ public static class SqlServer
     /// </summary>
     internal static ModelExtractOptions Extraction => new()
     {
-        // A package keeps its GRANT, DENY and REVOKE statements and the walk keys each one; the default, true, drops every permission.
+        // A package keeps its GRANT, DENY and REVOKE statements and Ssdt.Elements keys each one; the default, true, drops every permission.
         IgnorePermissions = false,
         // A package keeps its sp_addextendedproperty values (MS_Description); the default, false, keeps them.
         IgnoreExtendedProperties = false,
@@ -241,10 +241,10 @@ public static class SqlServer
         ExtractReferencedServerScopedElements = true,
         // Table.RowCount, the data and index sizes and the page counts change with the rows, not the schema; the default is false.
         ExtractUsageProperties = false,
-        // The walk reads properties and each module's script, which a model loaded from a database gives without a scripted copy of
+        // Ssdt.Elements reads properties and each module's script, which a model loaded from a database gives without a scripted copy of
         // every object; the default, false, skips that copy's one-time cost.
         LoadAsScriptBackedModel = false,
-        // Verification validates the model as a package build would; the walk reads what the database holds, valid or not. Default false.
+        // Verification validates the model as a package build would; Ssdt.Elements reads what the database holds, valid or not. Default false.
         VerifyExtraction = false,
         // The model is held in memory, as Ssdt.Load holds a package's; the default is Memory.
         Storage = DacSchemaModelStorageType.Memory,
@@ -252,8 +252,8 @@ public static class SqlServer
         HashObjectNamesInLogs = false,
     };
 
-    /// <summary>A database read whole (§1 fact 5): TSqlModel.LoadFromDatabase as the target's identity under <see cref="Extraction"/>, then io/Ssdt's walk; the run's log, when given, holds the statement estate sends first.</summary>
-    public static Result<Seq<Element>> Model(Database target, QueryLog? log = null) => Reached(target, log).Bind(_ =>
+    /// <summary>A database read whole (§1 fact 5): TSqlModel.LoadFromDatabase as the target's identity under <see cref="Extraction"/>, then io/Ssdt.Elements; the run's log, when given, holds the statement estate sends first.</summary>
+    public static Result<SortedArray<Element>> Model(Database target, QueryLog? log = null) => Reached(target, log).Bind(_ =>
     {
         TSqlModel model;
         try
@@ -262,12 +262,12 @@ public static class SqlServer
         }
         catch (Exception e) when (e is DacServicesException or DacModelException or SqlException or InvalidOperationException)
         {
-            return target.Refused(e);
+            return target.ErrorOf(e);
         }
 
         using (model)
         {
-            return Ssdt.Walk(model);
+            return Ssdt.Elements(model);
         }
     });
 
@@ -276,7 +276,7 @@ public static class SqlServer
     {
         private static readonly XNamespace Dac = "http://schemas.microsoft.com/sqlserver/dac/DeployReport/2012/02";
 
-        /// <summary>The report's operations; none is convergence (§1 fact 4).</summary>
+        /// <summary>The report's operations; none is the empty deploy plan, a database that matches the package (§1 fact 4).</summary>
         public int Operations => XDocument.Parse(Report).Descendants(Dac + "Operation").Count();
 
         /// <summary>Each object the report names, by the operation on it (Alter, Create, Drop, TableRebuild), its type as the model serializes it (SqlTable) and its name.</summary>
@@ -311,23 +311,23 @@ public static class SqlServer
     private sealed record SqlCmdValue(string Name, string Text, bool Referenced);
 
     /// <summary>
-    /// A statement the allowlist admitted (VALUES.md P2), as ScriptDom writes it back, so what runs is what was checked, with no comment
-    /// and no batch separator; and the claim site it measures. Only Of makes one, and the executor runs nothing else.
+    /// An aggregate query the allowlist admitted (VALUES.md P2): one statement, as ScriptDom writes it back, so what runs is what was
+    /// checked, with no comment and no batch separator; and the site it measures. Only Of makes one, and Measure runs nothing else.
     /// </summary>
-    public sealed class Probe
+    public sealed class AggregateQuery
     {
-        private Probe(string statement, string site) => (Statement, Site) = (statement, site);
+        private AggregateQuery(string statement, string site) => (Statement, Site) = (statement, site);
 
         public string Statement { get; }
 
         public string Site { get; }
 
-        public static Result<Probe> Of(string text, string site) => Allowlist.Admitted(text).Map(statement => new Probe(statement, site));
+        public static Result<AggregateQuery> Of(string text, string site) => Allowlist.Admitted(text).Map(statement => new AggregateQuery(statement, site));
 
         public override string ToString() => Site + ": " + Statement;
     }
 
-    /// <summary>What a probe measured: its rows, every value an integer or null; or its failure, the number and the site, SQL Server's message kept for a copy alone.</summary>
+    /// <summary>What an aggregate query measured: its rows, every value an integer or null; or its failure, the number and the site, SQL Server's message kept for a copy alone.</summary>
     public abstract record Measurement
     {
         private Measurement()
@@ -339,21 +339,21 @@ public static class SqlServer
         public sealed record Failed(string Site, int Number, string? Message) : Measurement
         {
             public override string ToString() =>
-                Site + ": probe failed: Msg " + Number.ToString(CultureInfo.InvariantCulture) + (Message is null ? "; message withheld" : ": " + Message);
+                Site + ": query failed: Msg " + Number.ToString(CultureInfo.InvariantCulture) + (Message is null ? "; message withheld" : ": " + Message);
         }
     }
 
     /// <summary>
-    /// The probe executor (WP 1.4): one admitted statement against the target, read back as integers, and logged with its row count. A
-    /// statement that fails is measured as failed, by its number; a connection that fails is a refusal.
+    /// One admitted aggregate query against the target (WP 1.4), read back as integers and logged with its row count. A statement
+    /// that fails is measured as failed, by its number; a connection that fails is an error.
     /// </summary>
-    public static Result<Measurement> Measure(Database target, Probe probe, QueryLog log)
+    public static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log)
     {
         using var connection = new SqlConnection(target.Connection);
         try
         {
             connection.Open();
-            using var command = new SqlCommand(probe.Statement, connection) { CommandTimeout = 30 };
+            using var command = new SqlCommand(query.Statement, connection) { CommandTimeout = 30 };
             using var reader = command.ExecuteReader();
             var rows = new List<IReadOnlyList<long?>>();
             while (reader.Read())
@@ -361,22 +361,22 @@ public static class SqlServer
                 rows.Add([.. Enumerable.Range(0, reader.FieldCount).Select(i => reader.IsDBNull(i) ? (long?)null : Integer(reader.GetValue(i)))]);
             }
 
-            log.Add(target, probe, rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows");
-            return new Measurement.Answered(probe.Site, rows);
+            log.Add(target, query, rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows");
+            return new Measurement.Answered(query.Site, rows);
         }
         catch (SqlException e) when (connection.State == System.Data.ConnectionState.Open && e.Class < 20)
         {
-            log.Add(target, probe, "failed, Msg " + e.Number.ToString(CultureInfo.InvariantCulture));
-            return new Measurement.Failed(probe.Site, e.Number, target.Withheld ? null : e.Message);
+            log.Add(target, query, "failed, Msg " + e.Number.ToString(CultureInfo.InvariantCulture));
+            return new Measurement.Failed(query.Site, e.Number, target.Withheld ? null : e.Message);
         }
         catch (Exception e) when (e is SqlException or InvalidOperationException)
         {
-            return target.Refused(e);
+            return target.ErrorOf(e);
         }
     }
 
     /// <summary>
-    /// A run's log of every statement estate sends, .estate/runs/&lt;id&gt;/queries.log: each probe, and the one statement Model and Plan send
+    /// A run's log of every statement estate sends, .estate/runs/&lt;id&gt;/queries.log: each aggregate query, and the one statement Model and Plan send
     /// before DacFx's own catalog queries, which are DacFx's to answer for. Per statement: the time, the target, the site and the row count
     /// or the failure's number, then the statement and GO, so the log runs as a script. It holds no value a statement read.
     /// </summary>
@@ -394,13 +394,13 @@ public static class SqlServer
             DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture) + "-" + System.Environment.ProcessId.ToString(CultureInfo.InvariantCulture)
             + "-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(2)).ToLowerInvariant(), "queries.log"));
 
-        internal void Add(Database target, Probe probe, string outcome) => Add(target, probe.Site, probe.Statement, outcome);
+        internal void Add(Database target, AggregateQuery query, string outcome) => Add(target, query.Site, query.Statement, outcome);
 
         internal void Add(Database target, string site, string statement, string outcome)
         {
             lock (gate)
             {
-                entries.Append("-- ").Append(DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)).Append(' ').Append(target.Where).Append(' ')
+                entries.Append("-- ").Append(DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)).Append(' ').Append(target.Target).Append(' ')
                     .Append(site).Append(": ").Append(outcome).Append('\n').Append(statement).Append("\nGO\n");
                 Write.Text(Path, entries.ToString());
             }
@@ -410,21 +410,21 @@ public static class SqlServer
     /// <summary>
     /// A reference's connection (§4 row 14, VALUES.md X1): env:NAME's variable or file:path's text, a relative path read from the estate's
     /// root, parsed by SqlClient's own grammar; the caller's integrated identity when it names no other; estate as the application unless
-    /// it names one. A refusal names the reference and quotes nothing it read.
+    /// it names one. An error names the reference and quotes nothing it read.
     /// </summary>
     internal static Result<string> Connect(string subject, SecretReference reference, string estateRoot) => Read(subject, reference, estateRoot).Bind(read => read is not { } text
-        ? new Refusal("connection.unresolved", subject + " resolves to nothing here.", "Set the variable, or write the file outside git, that " + reference + " names.")
+        ? new Error("connection.unresolved", subject + " resolves to nothing here.", "Set the variable, or write the file outside git, that " + reference + " names.")
         : Parsed(subject, reference, text).Bind(connection => connection.InitialCatalog.Length == 0
-            ? new Refusal("connection.malformed", subject + " names no database; Model, Plan and the executor read the database it names.",
+            ? new Error("connection.malformed", subject + " names no database; Model, Plan and Measure read the database it names.",
                 "Give the connection string an Initial Catalog, in the place " + reference + " names.")
             : Result.Ok(Identified(connection))));
 
-    /// <summary>An environment's server as R15 reads it, a database named or not: null when its reference resolves to nothing here; refused when SqlClient reads nothing from it.</summary>
-    internal static Result<string?> DataSource(NamedEnvironment environment, string estateRoot) => Read(Named.Subject(environment), environment.Connection, estateRoot).Bind(read => read is not { } text
+    /// <summary>An environment's server as R15 reads it, a database named or not: null when its reference resolves to nothing here; an error when SqlClient reads nothing from it.</summary>
+    internal static Result<string?> DataSource(NamedEnvironment environment, string estateRoot) => Read(EnvironmentDatabase.Subject(environment), environment.Connection, estateRoot).Bind(read => read is not { } text
         ? Result.Ok<string?>(null)
-        : Parsed(Named.Subject(environment), environment.Connection, text).Map(connection => (string?)connection.DataSource));
+        : Parsed(EnvironmentDatabase.Subject(environment), environment.Connection, text).Map(connection => (string?)connection.DataSource));
 
-    /// <summary>A reference's text as SqlClient's own grammar reads it; the refusal names the reference and quotes nothing it read.</summary>
+    /// <summary>A reference's text as SqlClient's own grammar reads it; the error names the reference and quotes nothing it read.</summary>
     private static Result<SqlConnectionStringBuilder> Parsed(string subject, SecretReference reference, string text)
     {
         try
@@ -433,7 +433,7 @@ public static class SqlServer
         }
         catch (Exception e) when (e is ArgumentException or FormatException or InvalidOperationException)
         {
-            return new Refusal("connection.malformed", subject + " is no connection string SqlClient reads; its text is withheld.",
+            return new Error("connection.malformed", subject + " is no connection string SqlClient reads; its text is withheld.",
                 "Correct the connection string in the place " + reference + " names.");
         }
     }
@@ -459,9 +459,9 @@ public static class SqlServer
     /// file system reports that no file or folder is at the path, that a folder is, or that no file can have the path's name
     /// (<see cref="Absent"/>), or when the file holds only white space. A file,
     /// a relative path read from the estate's root, is read only when git keeps it out of every commit, ignored or in no repository
-    /// while the estate's root is in one, and, where files carry a Unix mode, when its owner alone can read it; a refusal leads with
+    /// while the estate's root is in one, and, where files carry a Unix mode, when its owner alone can read it; an error leads with
     /// <paramref name="subject"/>. git is asked about the file by the name its folder lists (<see cref="Listed"/>), and that name is the
-    /// one read. Whatever the file system withholds is a refusal, never null, since the host of a file that may be there is unknown
+    /// one read. Whatever the file system withholds is an error, never null, since the host of a file that may be there is unknown
     /// here and R15 must not leave the environment uncompared as it does one that resolves to nothing: a path whose attributes this
     /// identity cannot read, where File.Exists answers false as it does where no file is, is reference.inaccessible; a file whose
     /// folder it cannot list is reference.unlistable; and one it cannot read is reference.unreadable. The check covers the path the
@@ -501,7 +501,7 @@ public static class SqlServer
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return new Refusal("reference.inaccessible", subject + " names a path whose attributes this identity cannot read, or that it cannot reach,"
+            return new Error("reference.inaccessible", subject + " names a path whose attributes this identity cannot read, or that it cannot reach,"
                 + " so whether a file is there, and what it holds, is unknown here; it is not read.",
                 "Grant this identity the right to list the file's folder and read the file's attributes (on Linux and macOS, search permission on every folder of the path), or move the file under a folder it can list, such as .estate/.");
         }
@@ -510,8 +510,8 @@ public static class SqlServer
     /// <summary>The HResult of the IOException .NET throws for Windows' ERROR_INVALID_NAME (123), a name no file on Windows can have.</summary>
     private const int InvalidName = unchecked((int)0x8007007B);
 
-    /// <summary>A step on a file that exists; the refusal given when the file system refuses the step (IOException, UnauthorizedAccessException).</summary>
-    private static Result<T> Opened<T>(Func<Result<T>> step, Func<Refusal> refused)
+    /// <summary>A step on a file that exists; the error given when the file system refuses the step (IOException, UnauthorizedAccessException).</summary>
+    private static Result<T> Opened<T>(Func<Result<T>> step, Func<Error> refused)
     {
         try
         {
@@ -523,11 +523,11 @@ public static class SqlServer
         }
     }
 
-    private static Refusal Unlistable(string subject) => new Refusal("reference.unlistable", subject + " is a file whose folder this identity cannot list,"
+    private static Error Unlistable(string subject) => new Error("reference.unlistable", subject + " is a file whose folder this identity cannot list,"
         + " so git cannot be asked about the file by the name the folder lists, and the file is not read.",
         "Grant this identity the right to list the file's folder, or move the file under a folder it can list, such as .estate/.");
 
-    private static Refusal Unreadable(string subject) => new Refusal("reference.unreadable", subject + " is a file this identity cannot open for reading,"
+    private static Error Unreadable(string subject) => new Error("reference.unreadable", subject + " is a file this identity cannot open for reading,"
         + " for want of the right to read it or while another program holds it open, so what it holds is unknown here.",
         "Grant this identity the right to read the file, and close any program that holds it open.");
 
@@ -535,8 +535,8 @@ public static class SqlServer
     /// The refusal of a file a reference names whose Unix mode lets its group or other users read it, or null: Read asks it of the
     /// file's mode on Linux and macOS, and Windows keeps no such mode.
     /// </summary>
-    public static Refusal? ReadableByOthers(string subject, UnixFileMode mode) => (mode & (UnixFileMode.GroupRead | UnixFileMode.OtherRead)) == 0 ? null
-        : new Refusal("reference.readable-by-others", subject + " is a file its group or other users can read (mode "
+    public static Error? ReadableByOthers(string subject, UnixFileMode mode) => (mode & (UnixFileMode.GroupRead | UnixFileMode.OtherRead)) == 0 ? null
+        : new Error("reference.readable-by-others", subject + " is a file its group or other users can read (mode "
             + Convert.ToString((int)mode & 0b111_111_111, 8).PadLeft(4, '0') + "); a file holding a connection string is read by its owner alone.",
             "Run chmod 600 on the file, so its owner alone reads it.");
 
@@ -562,27 +562,27 @@ public static class SqlServer
             ?? (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? entries.FirstOrDefault(e => string.Equals(e.Name, named.Name, StringComparison.OrdinalIgnoreCase)) : null);
     }
 
-    private static Refusal Unlisted(string subject) => new Refusal("reference.unlisted", subject + " opens a file by a name its folder does not list, such as name::$DATA, a data stream;"
+    private static Error Unlisted(string subject) => new Error("reference.unlisted", subject + " opens a file by a name its folder does not list, such as name::$DATA, a data stream;"
         + " git matches .gitignore and its index against the name the folder lists, so it cannot say whether a commit holds the file, and the file is not read.",
         "Write the path as dir or ls lists the file, in estate/posture.json.");
 
     /// <summary>
     /// The path of a file a file: reference names, when git keeps it out of every commit and no other user can read it; else the
-    /// refusal, the file unread. git.failed and git.missing lead with <paramref name="subject"/>, then quote io/Git's own message.
+    /// error, the file unread. git.failed and git.missing lead with <paramref name="subject"/>, then quote io/Git's own message.
     /// </summary>
     private static Result<string> Kept(string subject, string estateRoot, string path) => Git.HoldingOf(estateRoot, path).Match<Result<string>>(holding => holding switch
     {
-        Git.Holding.Tracked => new Refusal("reference.tracked", subject + " is a file git tracks, so every clone of the repository holds what it holds; a file: reference names a file git keeps out of every commit.",
+        Git.Holding.Tracked => new Error("reference.tracked", subject + " is a file git tracks, so every clone of the repository holds what it holds; a file: reference names a file git keeps out of every commit.",
             "Run git rm --cached on the file, list it in .gitignore, and change the password it held, since the history keeps the commit."),
-        Git.Holding.NotIgnored => new Refusal("reference.not-ignored", subject + " is a file git does not ignore, so the next git add commits it; a file: reference names a file git keeps out of every commit.",
+        Git.Holding.NotIgnored => new Error("reference.not-ignored", subject + " is a file git does not ignore, so the next git add commits it; a file: reference names a file git keeps out of every commit.",
             "List the file in .gitignore, or move it under a folder .gitignore lists, such as .estate/."),
-        Git.Holding.EstateInNoRepository => new Refusal("reference.no-repository", subject + " names a file, and the estate's root " + estateRoot
+        Git.Holding.EstateInNoRepository => new Error("reference.no-repository", subject + " names a file, and the estate's root " + estateRoot
             + " is in no git repository, so git cannot say whether a clone would commit the file; it is not read.",
             "Run estate in a clone of the estate's repository, or give the reference as env:NAME."),
         Git.Holding.Ignored => OwnerOnly(subject, path),
         Git.Holding.InNoRepository => OwnerOnly(subject, path),
         _ => throw new System.Diagnostics.UnreachableException(),
-    }, refusal => new Refusal(refusal.Code, subject + " cannot be checked against git: " + refusal.Message, refusal.Remedy));
+    }, error => new Error(error.Code, subject + " cannot be checked against git: " + error.Message, error.Remedy));
 
     /// <summary>The path of a file git keeps out of every commit, when no other user can read it: on Linux and macOS by its mode; Windows keeps no such mode.</summary>
     private static Result<string> OwnerOnly(string subject, string path) =>
@@ -590,8 +590,8 @@ public static class SqlServer
 
     /// <summary>
     /// Whether this run has read a connection or other reference of a named environment (VALUES.md X2), whose text an exception's message
-    /// can then quote. SqlServer.Read records each read, and every one goes through it: Named.Of, which SqlServer.Resolve calls for env:;
-    /// R15's read of each environment's connection in io/Substrate, which copy: and a new copy run; and a named environment's SQLCMD values.
+    /// can then quote. SqlServer.Read records each read, and every one goes through it: EnvironmentDatabase.Of, which SqlServer.Resolve calls for env:;
+    /// R15's read of each environment's connection in io/ScratchServer, which copy: and a new copy run; and a named environment's SQLCMD values.
     /// cli/Program.cs begins a run around each command and withholds an unexpected exception's message when the run holds a read. The
     /// record reaches the threads the run's work starts (it is an AsyncLocal); a read outside any run is recorded nowhere, no catch
     /// reading it.
@@ -639,8 +639,8 @@ public static class SqlServer
         return host is "" or "localhost" or "127.0.0.1" or "::1" or "." or "(local)" || host == System.Environment.MachineName.ToLowerInvariant() ? "localhost" : host;
     }
 
-    private static Refusal NotADatabase(Target target) => new Refusal("target.not-a-database",
-        target + " is read as a package; Model, Plan and the executor read a database, env:<name> or copy:<name>.", "Name the database as env:<name> or copy:<name>.");
+    private static Error NotADatabase(Target target) => new Error("target.not-a-database",
+        target + " is read as a package; Model, Plan and Measure read a database, env:<name> or copy:<name>.", "Name the database as env:<name> or copy:<name>.");
 
     /// <summary>The target, when it answers this identity with VIEW DEFINITION: what a verb asks before it builds anything, so a denial arrives first.</summary>
     public static Result<Database> Reach(Database target, QueryLog? log = null) => Reached(target, log);
@@ -659,11 +659,11 @@ public static class SqlServer
             using var command = new SqlCommand(Statement, connection);
             var held = Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture) == 1;
             log?.Add(target, "VIEW DEFINITION", Statement, "1 row");
-            return held ? Result.Ok(target) : target.Refused(300, "");
+            return held ? Result.Ok(target) : target.ErrorOf(300, "");
         }
         catch (Exception e) when (e is SqlException or InvalidOperationException)
         {
-            return target.Refused(e);
+            return target.ErrorOf(e);
         }
     }
 
@@ -680,7 +680,7 @@ public static class SqlServer
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or DacServicesException or DacModelException or InvalidDataException or ArgumentException or System.Xml.XmlException)
         {
             stream?.Dispose();
-            return new Refusal("package.unreadable", dacpac + " is not a package DacFx reads: " + e.Message, "Name a .dacpac a build wrote, or build its project again.");
+            return new Error("package.unreadable", dacpac + " is not a package DacFx reads: " + e.Message, "Name a .dacpac a build wrote, or build its project again.");
         }
 
         using (stream)
@@ -692,35 +692,35 @@ public static class SqlServer
             }
             catch (Exception e) when (e is DacServicesException or SqlException or InvalidOperationException)
             {
-                return target.Refused(e);
+                return target.ErrorOf(e);
             }
         }
     }
 
     /// <summary>A named environment's own SQLCMD values, each literal as the posture gives it and each reference resolved in memory; a copy has none.</summary>
-    private static Result<List<SqlCmdValue>> Values(Database target) => target is not Named named ? new List<SqlCmdValue>()
-        : named.Environment.SqlCmd.Aggregate(Result.Ok(new List<SqlCmdValue>()), (all, variable) => all.Bind(list => variable.Match(
-            literal => Result.Ok<List<SqlCmdValue>>([.. list, new(variable.Name, literal, false)]),
+    private static Result<IReadOnlyList<SqlCmdValue>> Values(Database target) => target is not EnvironmentDatabase named ? Result.Ok<IReadOnlyList<SqlCmdValue>>([])
+        : Result.All(named.Environment.SqlCmd.Select(variable => variable.Match(
+            literal => Result.Ok(new SqlCmdValue(variable.Name, literal, false)),
             reference => Read(named + "'s $(" + variable.Name + "), " + reference + ",", reference, named.Root).Bind(read => read is { } value
-                ? Result.Ok<List<SqlCmdValue>>([.. list, new(variable.Name, value, true)])
-                : new Refusal("sqlcmd.unresolved", named + "'s $(" + variable.Name + ") names " + reference + ", which resolves to nothing here.",
+                ? Result.Ok(new SqlCmdValue(variable.Name, value, true))
+                : new Error("sqlcmd.unresolved", named + "'s $(" + variable.Name + ") names " + reference + ", which resolves to nothing here.",
                     "Set the variable, or write the file outside git, that " + reference + " names.")))));
 
     /// <summary>A value the allowlist admits the type of: an integer of any width. Anything else is a defect in the allowlist, named by its type alone.</summary>
     private static long Integer(object value) => value switch
     {
         int or long or short or byte => Convert.ToInt64(value, CultureInfo.InvariantCulture),
-        _ => throw new NotSupportedException("A probe answered with a " + value.GetType().Name + ", a type no form of the allowlist yields."),
+        _ => throw new NotSupportedException("An aggregate query answered with a " + value.GetType().Name + ", a type no form of the allowlist yields."),
     };
 
     /// <summary>
-    /// The probe allowlist, closed (WP 1.4): one SELECT whose outermost select list holds COUNT or COUNT_BIG of * or of DISTINCT a
+    /// The aggregate-query allowlist, closed (WP 1.4): one SELECT whose outermost select list holds COUNT or COUNT_BIG of * or of DISTINCT a
     /// column, SUM(CASE WHEN … THEN 1 ELSE 0 END), MIN or MAX over LEN or DATALENGTH of a column, CASE WHEN EXISTS (…) THEN 1 ELSE 0 END
     /// or an integer literal; beneath it, names of one or two parts, TRY_ conversions, and the few functions held here. A boundary is a
     /// length or a literal, never read from the data: each predicate, in a join's ON as in a WHERE, reads at most one value from the data
     /// (a column, a length or an aggregate), save = or &lt;&gt; between two columns, an equi-join or an orphan check; and a subquery's
     /// select list carries only columns, literals and the answers above, so a derived column is never two values combined. Every other
-    /// form is refused with where it stands and what it is, and none of the probe's literals is quoted.
+    /// form is refused with where it stands and what it is, and none of the query's literals is quoted.
     /// </summary>
     private static class Allowlist
     {
@@ -740,20 +740,20 @@ public static class SqlServer
             var parsed = new TSql160Parser(initialQuotedIdentifiers: true).Parse(new StringReader(text), out var errors);
             if (errors.Count > 0)
             {
-                return new Refusal("probe.refused", string.Create(CultureInfo.InvariantCulture, $"The probe does not parse at line {errors[0].Line}, column {errors[0].Column}."),
-                    "Correct the probe's syntax at that place.");
+                return new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query does not parse at line {errors[0].Line}, column {errors[0].Column}."),
+                    "Correct the query's syntax at that place.");
             }
 
             var statements = ((TSqlScript)parsed).Batches.SelectMany(b => b.Statements).ToList();
             if (statements.Count != 1)
             {
-                return new Refusal("probe.refused", string.Create(CultureInfo.InvariantCulture, $"The probe holds {statements.Count} statements; the executor runs one statement at a time."),
-                    "Split it into probes of one SELECT each.");
+                return new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query holds {statements.Count} statements; estate runs one statement at a time."),
+                    "Split it into queries of one SELECT each.");
             }
 
             if ((statements[0] is SelectStatement select ? Statement(select) : new Offence(statements[0], Kind(statements[0]))) is { } offence)
             {
-                return new Refusal("probe.refused", string.Create(CultureInfo.InvariantCulture, $"The probe is refused at line {offence.At.StartLine}, column {offence.At.StartColumn}: {offence.What}."),
+                return new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query is refused at line {offence.At.StartLine}, column {offence.At.StartColumn}: {offence.What}."),
                     "Rewrite it so its select list holds only " + Forms + ".");
             }
 
@@ -883,7 +883,7 @@ public static class SqlServer
         /// <summary>A column as it stands, perhaps in parentheses: one side of an equi-join.</summary>
         private static bool Bare(ScalarExpression x) => x is ColumnReferenceExpression { ColumnType: ColumnType.Regular } || (x is ParenthesisExpression p && Bare(p.Expression));
 
-        /// <summary>A literal of the kinds a probe may write: a number, a string, a binary value or NULL.</summary>
+        /// <summary>A literal of the kinds an aggregate query may write: a number, a string, a binary value or NULL.</summary>
         private static bool Constant(ScalarExpression x) => x is IntegerLiteral or NumericLiteral or RealLiteral or MoneyLiteral or StringLiteral or BinaryLiteral or NullLiteral;
 
         private static Offence? Scalar(ScalarExpression x) => x switch

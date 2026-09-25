@@ -11,7 +11,7 @@ using Xunit;
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// The probe executor's allowlist (V3_MILESTONES.md WP 1.4, VALUES.md P2): a probe is admitted only when it is one SELECT whose
+/// The aggregate-query allowlist (V3_MILESTONES.md WP 1.4, VALUES.md P2): a query is admitted only when it is one SELECT whose
 /// outermost select list holds COUNT or COUNT_BIG of * or of DISTINCT a column, SUM(CASE WHEN … THEN 1 ELSE 0 END), MIN or MAX over
 /// LEN or DATALENGTH of a column, CASE WHEN EXISTS (…) THEN 1 ELSE 0 END, or an integer literal, with names of one or two parts; any
 /// other form is refused, since the allowlist is closed. The committed corpus plants every form the work package names, and CsCheck
@@ -22,7 +22,7 @@ public sealed class AllowlistTests
 {
     public static TheoryData<string> Corpus => new(Cases.Select(c => c.Label));
 
-    /// <summary>The corpus under tests/Golden/probes/: each case's kind (admit or refuse), its label and its text.</summary>
+    /// <summary>The corpus under tests/Golden/aggregate-queries/: each case's kind (admit or refuse), its label and its text.</summary>
     internal static IReadOnlyList<(bool Admitted, string Label, string Text)> Cases { get; } = Read();
 
     [Theory]
@@ -32,10 +32,10 @@ public sealed class AllowlistTests
     {
         var (admitted, _, text) = Cases.Single(c => c.Label == label);
 
-        var probe = SqlServer.Probe.Of(text, "corpus");
+        var query = SqlServer.AggregateQuery.Of(text, "corpus");
 
-        Assert.True(admitted == probe is Result<SqlServer.Probe>.Ok, (admitted ? "refused: " : "admitted: ") + label + "\n" + probe.Match(p => p.Statement, r => r.Message));
-        Assert.All(new[] { probe }.OfType<Result<SqlServer.Probe>.Refused>(), r => Assert.Equal(("probe.refused", 9), (r.Refusal.Code, Contract.Exit(r.Refusal))));
+        Assert.True(admitted == query is Result<SqlServer.AggregateQuery>.Ok, (admitted ? "refused: " : "admitted: ") + label + "\n" + query.Match(q => q.Statement, e => e.Message));
+        Assert.All(new[] { query }.OfType<Result<SqlServer.AggregateQuery>.Failed>(), r => Assert.Equal(("aggregate-query.refused", 9), (r.Error.Code, Contract.Exit(r.Error))));
     }
 
     /// <summary>Every form the work package names is planted, forbidden and allowed alike, so a corpus trimmed of one fails here.</summary>
@@ -69,11 +69,11 @@ public sealed class AllowlistTests
         Assert.InRange(drawn.Count(v => v.Admitted), 40, 360);   // both kinds are drawn, so neither half of the property holds vacuously
 
         // A forbidden variant is refused for its form: it parses, so no variant passes by being unreadable.
-        Variants.Sample(variant => SqlServer.Probe.Of(variant.Text, "variant").Match(_ => variant.Admitted, r => !variant.Admitted && !r.Message.Contains("does not parse", StringComparison.Ordinal)),
+        Variants.Sample(variant => SqlServer.AggregateQuery.Of(variant.Text, "variant").Match(_ => variant.Admitted, r => !variant.Admitted && !r.Message.Contains("does not parse", StringComparison.Ordinal)),
             iter: 2000, print: variant => (variant.Admitted ? "allowed but refused: " : "forbidden but admitted, or unparsed: ") + variant.Text);
     }
 
-    /// <summary>A refusal says where the probe breaks the allowlist and which form it is; it quotes none of the probe's literals, which a caller may have taken from anywhere.</summary>
+    /// <summary>A refusal says where the query breaks the allowlist and which form it is; it quotes none of the query's literals, which a caller may have taken from anywhere.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("SELECT MAX(Email) FROM dbo.Customer WHERE Email = N'planted-7f3a';", "line 1, column 8", "MAX over a bare column")]
@@ -82,28 +82,28 @@ public sealed class AllowlistTests
     [InlineData("SELECT COUNT(*) FROM dbo.Customer WHERE Email = N'planted-7f3a'; DELETE FROM dbo.Customer;", "2 statements", "one statement at a time")]
     public void A_refusal_names_the_form_and_its_place_and_quotes_no_literal(string text, string place, string form)
     {
-        var refusal = Assert.IsType<Result<SqlServer.Probe>.Refused>(SqlServer.Probe.Of(text, "dbo.Customer.Email NotNull")).Refusal;
+        var error = Assert.IsType<Result<SqlServer.AggregateQuery>.Failed>(SqlServer.AggregateQuery.Of(text, "dbo.Customer.Email NotNull")).Error;
 
-        Assert.Contains(place, refusal.Message, StringComparison.Ordinal);
-        Assert.Contains(form, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
-        Assert.DoesNotContain("planted", refusal.Message + refusal.Remedy, StringComparison.Ordinal);
+        Assert.Contains(place, error.Message, StringComparison.Ordinal);
+        Assert.Contains(form, error.Message + error.Remedy, StringComparison.Ordinal);
+        Assert.DoesNotContain("planted", error.Message + error.Remedy, StringComparison.Ordinal);
     }
 
-    /// <summary>What an admitted probe runs is the statement the allowlist checked, as ScriptDom writes it back: no comment and no batch separator reaches SQL Server.</summary>
+    /// <summary>What an admitted query runs is the statement the allowlist checked, as ScriptDom writes it back: no comment and no batch separator reaches SQL Server.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void An_admitted_probe_runs_the_statement_it_was_checked_as_without_comments_or_a_batch_separator()
+    public void An_admitted_query_runs_the_statement_it_was_checked_as_without_comments_or_a_batch_separator()
     {
-        var probe = Assert.IsType<Result<SqlServer.Probe>.Ok>(SqlServer.Probe.Of("/* one */ select count_big( * ) -- two\nfrom dbo.Customer ;\nGO\n", "dbo.Customer Presence")).Value;
+        var query = Assert.IsType<Result<SqlServer.AggregateQuery>.Ok>(SqlServer.AggregateQuery.Of("/* one */ select count_big( * ) -- two\nfrom dbo.Customer ;\nGO\n", "dbo.Customer Presence")).Value;
 
-        Assert.Equal("SELECT count_big(*)\nFROM   dbo.Customer", probe.Statement);
-        Assert.Equal("dbo.Customer Presence", probe.Site);
+        Assert.Equal("SELECT count_big(*)\nFROM   dbo.Customer", query.Statement);
+        Assert.Equal("dbo.Customer Presence", query.Site);
     }
 
     private static List<(bool, string, string)> Read()
     {
         var cases = new List<(bool, string, string)>();
-        foreach (var line in File.ReadAllLines(Path.Combine(Repository.Root, "tests", "Golden", "probes", "allowlist.txt")))
+        foreach (var line in File.ReadAllLines(Path.Combine(Repository.Root, "tests", "Golden", "aggregate-queries", "allowlist.txt")))
         {
             if (line.StartsWith("=== ", StringComparison.Ordinal))
             {
@@ -120,7 +120,7 @@ public sealed class AllowlistTests
     }
 
 
-    /// <summary>A generated probe: its text, and whether nothing forbidden went into it.</summary>
+    /// <summary>A generated query: its text, and whether nothing forbidden went into it.</summary>
     public sealed record Variant(string Text, bool Admitted);
 
     private static readonly Gen<string[]> Column = Gen.OneOfConst("Email", "Region", "c.Email", "c.Region", "[c].[Name]").Select(c => (string[])[c]);
@@ -215,7 +215,7 @@ public sealed class AllowlistTests
         "( SELECT c.Id - a.Balance AS m FROM dbo.Customer AS c CROSS JOIN dbo.Account AS a ) AS c",
         "dbo.Customer AS c CROSS JOIN ( SELECT TOP 1 ABS ( Balance ) AS m FROM dbo.Account ) AS d").Select(t => t.Split(' '));
 
-    /// <summary>A form that turns the probe into something else, and whether it follows the select list (INTO) or the statement.</summary>
+    /// <summary>A form that turns the query into something else, and whether it follows the select list (INTO) or the statement.</summary>
     private static readonly Gen<(string[] Tokens, bool AfterItems)> Decoration = Gen.OneOf(
         Gen.OneOfConst("INTO #leak", "INTO dbo.Leak").Select(into => (into.Split(' '), true)),
         Gen.OneOfConst("; SELECT 1", "; DELETE FROM dbo.Customer", "; EXEC sp_who", "OPTION ( MAXDOP 1 )", "FOR XML PATH", "UNION ALL SELECT 1", "\nGO\nSELECT 1")
@@ -225,7 +225,7 @@ public sealed class AllowlistTests
     private static readonly string[] Gaps = [" ", " ", " ", "\n", "\t", "  ", " /* note */ ", "/**/", " -- note\n", "\r\n"];
 
     /// <summary>
-    /// A probe of admitted forms, and in half the draws exactly one slot given a forbidden form instead: one of the select items, the
+    /// A query of admitted forms, and in half the draws exactly one slot given a forbidden form instead: one of the select items, the
     /// table, the WHERE clause, or a decoration of the statement.
     /// </summary>
     private static readonly Gen<Variant> Variants = Gen.Select(

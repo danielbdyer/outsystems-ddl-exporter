@@ -64,11 +64,11 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         }
     }
 
-    /// <summary>Law 2′ (M1 exit 3): the golden project published to a fresh copy converges, check drift exit 0; one column altered on the copy is exit 5 naming its table and the column.</summary>
+    /// <summary>Law 2′ (M1 exit 3): the golden project published to a fresh copy matches it, check drift exit 0; one column altered on the copy is exit 5 naming its table and the column.</summary>
     [Fact]
     [Trait("Category", "fixture")]
-    [Trait("Law", "2′ a published copy converges")]
-    public async Task A_published_copy_converges_and_one_column_altered_on_it_is_exit_5_naming_it()
+    [Trait("Law", "2′ a published copy matches its package")]
+    public async Task A_published_copy_matches_its_package_and_one_column_altered_on_it_is_exit_5_naming_it()
     {
         var copy = await Published();
         try
@@ -82,13 +82,13 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
 
             Assert.True(exit == 5, output);
             Assert.StartsWith("copy:" + copy.Name + " differs from " + estate.Base, output, StringComparison.Ordinal);
-            Assert.Contains("- warn `drift.alter` Table [dbo].[Customer]: ", output, StringComparison.Ordinal);
-            Assert.Equal(["- warn `drift.column` Column [dbo].[Customer].[Email]: Length 300 → 256, from the target to the repository."],
+            Assert.Contains("- warning `drift.alter` Table [dbo].[Customer]: ", output, StringComparison.Ordinal);
+            Assert.Equal(["- warning `drift.column` Column [dbo].[Customer].[Email]: Length 300 → 256, from the target to the repository."],
                 output.Split('\n').Where(l => l.Contains("`drift.column`", StringComparison.Ordinal)));
         }
         finally
         {
-            GitTests.Ok(Substrate.Drop(copy));
+            GitTests.Ok(ScratchServer.Drop(copy));
         }
     }
 
@@ -107,9 +107,9 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
 
             var answer = JsonNode.Parse(output)!;
             ScratchEstate.Valid("estate.check.1.schema.json", answer);
-            Assert.Equal(0, exit);
+            Assert.Equal((0, "matches"), (exit, (string?)answer["verdict"]!["outcome"]));
             var receipt = answer["receipt"]!;
-            var container = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ESTATE_SQL")) && File.Exists(Substrate.SqlEnv);
+            var container = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ESTATE_SQL")) && File.Exists(ScratchServer.SqlEnv);
             Assert.Equal(("170.5.96", container ? Doctor.ImageDigest : null, "UNPINNED"),
                 ((string?)receipt["engine"]!["dacfx"], (string?)receipt["engine"]!["sqlserver"], (string?)receipt["engine"]!["pin"]));
             Assert.Equal(("copy:" + copy.Name, "dataFacts", estate.Base), ((string?)receipt["where"], (string?)receipt["lacking"], (string?)answer["check"]!["commit"]));
@@ -120,7 +120,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         }
         finally
         {
-            GitTests.Ok(Substrate.Drop(copy));
+            GitTests.Ok(ScratchServer.Drop(copy));
         }
     }
 
@@ -159,8 +159,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     public async Task The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_a_full_check_drift()
     {
         await using var database = await SqlServerFixture.RegisterAsync();
-        var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "proving-ground/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
-        ProvingGround.Publish(dacpac, database, DacProfile.Load(Path.Combine(estate.Root, ScratchEstate.Profile)).DeployOptions);
+        var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "project/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
+        GoldenProject.Publish(dacpac, database, DacProfile.Load(Path.Combine(estate.Root, ScratchEstate.Profile)).DeployOptions);
         var reader = await ReadOnlyPrincipal.CreateAsync(database);
         var master = await SqlServerFixture.ServerAsync();
         var session = "estate_xe_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
@@ -276,11 +276,11 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         return (string)(await command.ExecuteScalarAsync())!;
     }
 
-    /// <summary>A fresh copy on the run's substrate, registered under the estate's root, with the golden project published to it under the pipeline's profile.</summary>
+    /// <summary>A fresh copy on the run's scratch server, registered under the estate's root, with the golden project published to it under the pipeline's profile.</summary>
     private async Task<SqlServer.Copy> Published()
     {
-        var copy = GitTests.Ok(Substrate.Create(estate.Root, await SqlServerFixture.ServerAsync()));
-        var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "proving-ground/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
+        var copy = GitTests.Ok(ScratchServer.Create(estate.Root, await SqlServerFixture.ServerAsync()));
+        var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "project/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
         GitTests.Ok(copy.Publish(dacpac, GitTests.Ok(Profiles.Load(Path.Combine(estate.Root, ScratchEstate.Profile)))));
         return copy;
     }

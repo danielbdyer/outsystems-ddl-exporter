@@ -6,36 +6,36 @@ using Xunit;
 
 namespace Estate.Kernel.Tests;
 
-/// <summary>A Seq is sorted when it is built and compared element by element, whatever the order or the culture.</summary>
-public sealed class SeqTests
+/// <summary>A SortedArray is sorted when it is built and compared element by element, whatever the order or the culture.</summary>
+public sealed class SortedArrayTests
 {
     // Up to eight short words over letters whose ordinal and linguistic orders disagree, so repeats are common.
     private static readonly Gen<string[]> Words =
         Gen.Char["aAbB-\u00E4\u00E9"].Array[0, 3].Select(cs => new string(cs)).Array[0, 8];
 
-    private sealed record Holder(Seq<string> Items);
+    private sealed record Holder(SortedArray<string> Items);
 
     [Fact]
     [Trait("Category", "fast")]
-    public void The_same_elements_in_any_order_build_one_seq() =>
+    public void The_same_elements_in_any_order_build_one_sorted_array() =>
         Words.SelectMany(xs => Gen.Shuffle(xs.ToArray()).Select(ys => (xs, ys))).Sample((xs, ys) =>
-            Seq.Of(xs) == Seq.Of(ys)
-            && Seq.Of(xs).GetHashCode() == Seq.Of(ys).GetHashCode()
-            && Seq.Of(xs).SequenceEqual(Seq.Of(ys)));
+            SortedArray.Of(xs) == SortedArray.Of(ys)
+            && SortedArray.Of(xs).GetHashCode() == SortedArray.Of(ys).GetHashCode()
+            && SortedArray.Of(xs).SequenceEqual(SortedArray.Of(ys)));
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Seqs_are_equal_exactly_when_their_elements_are_equal_one_by_one() =>
+    public void Sorted_arrays_are_equal_exactly_when_their_elements_are_equal_one_by_one() =>
         Gen.Select(Words, Words).Sample((xs, ys) =>
-            (Seq.Of(xs) == Seq.Of(ys)) == xs.Order(StringComparer.Ordinal).SequenceEqual(ys.Order(StringComparer.Ordinal))
-            && Seq.Of(xs).Equals((object)Seq.Of(ys)) == (Seq.Of(xs) == Seq.Of(ys))
-            && (Seq.Of(xs) != Seq.Of(ys)) == !(Seq.Of(xs) == Seq.Of(ys)));
+            (SortedArray.Of(xs) == SortedArray.Of(ys)) == xs.Order(StringComparer.Ordinal).SequenceEqual(ys.Order(StringComparer.Ordinal))
+            && SortedArray.Of(xs).Equals((object)SortedArray.Of(ys)) == (SortedArray.Of(xs) == SortedArray.Of(ys))
+            && (SortedArray.Of(xs) != SortedArray.Of(ys)) == !(SortedArray.Of(xs) == SortedArray.Of(ys)));
 
     // A near miss changes one element: one character's case flipped, a character appended, or the word swapped for
     // another. Every sample is unequal, so an equality looser than element by element fails on the first sample.
     [Fact]
     [Trait("Category", "fast")]
-    public void A_seq_differs_from_its_near_miss() =>
+    public void A_sorted_array_differs_from_its_near_miss() =>
         Gen.Select(Words.Where(xs => xs.Length > 0), Gen.Int[0, 7], Gen.Int[0, 2], Words.Where(ws => ws.Length > 0)).Sample((xs, at, change, others) =>
         {
             var ys = xs.ToArray();
@@ -47,7 +47,7 @@ public sealed class SeqTests
                 (2, _) when others[0] != ys[i] => others[0],
                 _ => ys[i] + "b",
             };
-            return Seq.Of(xs) != Seq.Of(ys) && !Seq.Of(xs).Equals((object)Seq.Of(ys));
+            return SortedArray.Of(xs) != SortedArray.Of(ys) && !SortedArray.Of(xs).Equals((object)SortedArray.Of(ys));
         });
 
     [Theory]
@@ -58,19 +58,19 @@ public sealed class SeqTests
     [InlineData(new[] { "ab" }, new[] { "a", "b" })]
     [InlineData(new[] { "a", "b" }, new[] { "a", "c" })]
     [InlineData(new[] { "ä" }, new[] { "Ä" })]
-    public void Pinned_near_misses_are_different_seqs(string[] xs, string[] ys)
+    public void Pinned_near_misses_are_different_sorted_arrays(string[] xs, string[] ys)
     {
-        Assert.True(Seq.Of(xs) != Seq.Of(ys));
-        Assert.False(Seq.Of(xs).Equals(Seq.Of(ys)));
+        Assert.True(SortedArray.Of(xs) != SortedArray.Of(ys));
+        Assert.False(SortedArray.Of(xs).Equals(SortedArray.Of(ys)));
     }
 
     private static char Flip(char c) => char.IsUpper(c) ? char.ToLowerInvariant(c) : char.ToUpperInvariant(c);
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_record_holding_a_seq_compares_the_elements_not_the_array() =>
+    public void A_record_holding_a_sorted_array_compares_the_elements_not_the_array() =>
         Words.Sample(xs =>
-            new Holder(Seq.Of(xs)) == new Holder(Seq.Of(Enumerable.Reverse(xs).Select(x => new string(x.AsSpan())))));
+            new Holder(SortedArray.Of(xs)) == new Holder(SortedArray.Of(Enumerable.Reverse(xs).Select(x => new string(x.AsSpan())))));
 
     // Each culture's own order puts "a" before "B"; ordinal order puts "B" first.
     [Theory]
@@ -79,15 +79,15 @@ public sealed class SeqTests
     [InlineData("en-US")]
     [InlineData("sv-SE")]
     [InlineData("tr-TR")]
-    public void A_seq_is_in_ordinal_order_whatever_the_culture(string culture)
+    public void A_sorted_array_is_in_ordinal_order_whatever_the_culture(string culture)
     {
         var before = CultureInfo.CurrentCulture;
         CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
         try
         {
             Assert.True(CultureInfo.CurrentCulture.CompareInfo.Compare("a", "B") < 0, "the culture is not in force");
-            Gen.String.Array[0, 8].Sample(xs => Seq.Of(xs).SequenceEqual(xs.Order(StringComparer.Ordinal)), threads: 1);
-            Seq<string> built = ["b", "\u00E9", "B", "a", "\u00E4", "A"];
+            Gen.String.Array[0, 8].Sample(xs => SortedArray.Of(xs).SequenceEqual(xs.Order(StringComparer.Ordinal)), threads: 1);
+            SortedArray<string> built = ["b", "\u00E9", "B", "a", "\u00E4", "A"];
             Assert.Equal(new[] { "A", "B", "a", "b", "\u00E4", "\u00E9" }, built.ToArray());
         }
         finally
@@ -98,11 +98,11 @@ public sealed class SeqTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void The_default_seq_is_the_empty_seq()
+    public void The_default_sorted_array_is_the_empty_sorted_array()
     {
-        Seq<string> empty = [];
-        Assert.True(empty == default(Seq<string>));
-        Assert.Equal(empty.GetHashCode(), default(Seq<string>).GetHashCode());
-        Assert.Empty(default(Seq<string>));
+        SortedArray<string> empty = [];
+        Assert.True(empty == default(SortedArray<string>));
+        Assert.Equal(empty.GetHashCode(), default(SortedArray<string>).GetHashCode());
+        Assert.Empty(default(SortedArray<string>));
     }
 }

@@ -12,7 +12,7 @@ public sealed class NameTests
         Gen.Char[' ', '\uFFFF'].Where(c => !char.IsControl(c)).Array[1, 128]
             .Select(cs => new string(cs)).Where(s => !string.IsNullOrWhiteSpace(s));
 
-    // Each invalid form of a part, with the code of the refusal that names it.
+    // Each invalid form of a part, with the code of the error that names it.
     private static readonly Gen<(string Part, string Code)> Invalid = Gen.OneOf(
         Gen.Char[" \u00A0\u2003\u3000"].Array[0, 4].Select(cs => (new string(cs), "name.blank")),
         Gen.Char['a', 'z'].Array[129, 300].Select(cs => (new string(cs), "name.too-long")),
@@ -36,7 +36,7 @@ public sealed class NameTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_name_refuses_a_blank_an_overlong_or_a_control_character_part_in_either_place()
+    public void A_name_rejects_a_blank_an_overlong_or_a_control_character_part_in_either_place()
     {
         Invalid.Sample(bad =>
             Code(Name.Of(bad.Part)) == bad.Code
@@ -56,11 +56,11 @@ public sealed class NameTests
         Assert.NotEqual(N("Customer"), N("customer"));
         Assert.Equal(
             new[] { "[Customer]", "[customer]", "[dbo].[A]" },
-            Seq.Of(N("dbo", "A"), N("customer"), N("Customer")).Select(n => n.ToString()));
+            SortedArray.Of(N("dbo", "A"), N("customer"), N("Customer")).Select(n => n.ToString()));
         Assert.Equal("[a]]b].[c.d]", N("a]b", "c.d").ToString());
     }
 
-    private static string? Code(Result<Name> result) => (result as Result<Name>.Refused)?.Refusal.Code;
+    private static string? Code(Result<Name> result) => (result as Result<Name>.Failed)?.Error.Code;
 
     private static Name N(string part) => Assert.IsType<Result<Name>.Ok>(Name.Of(part)).Value;
 

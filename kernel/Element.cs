@@ -7,7 +7,7 @@ using System.Linq;
 namespace Estate.Kernel;
 
 /// <summary>
-/// A property's value as the walk reads it from DacFx: a boolean, an integer, a string, an enumeration's member with
+/// A property's value as io/Ssdt.Elements reads it from DacFx: a boolean, an integer, a string, an enumeration's member with
 /// its enumeration type, or null. The cases are closed. Equality and order are ordinal and culture-free: null first,
 /// then booleans, integers, strings and enumerations, each in its own order.
 /// </summary>
@@ -78,12 +78,12 @@ public sealed record ElementKey : IComparable<ElementKey>
     public string Path => Parent is null ? Name.ToString() : Parent.Path + "." + Name;
 
     public static Result<ElementKey> Of(string type, Name name) =>
-        Refuse(type, name) is { } refusal ? refusal : new ElementKey(null, type, name);
+        Invalid(type, name) is { } error ? error : new ElementKey(null, type, name);
 
     public static Result<ElementKey> Of(ElementKey parent, string type, Name name) =>
-        (Refuse(type, name) ?? (name.Schema is null ? null : new Refusal(
+        (Invalid(type, name) ?? (name.Schema is null ? null : new Error(
             "element.child-name", $"{name} names a {type} of {parent} in two parts.", "Name an object keyed under its parent by its own one-part name.")))
-            is { } refusal ? refusal : new ElementKey(parent, type, name);
+            is { } error ? error : new ElementKey(parent, type, name);
 
     public int CompareTo(ElementKey? other)
     {
@@ -106,17 +106,17 @@ public sealed record ElementKey : IComparable<ElementKey>
 
     private static ElementKey[] Chain(ElementKey key) => key.Parent is null ? [key] : [.. Chain(key.Parent), key];
 
-    private static Refusal? Refuse(string type, Name name) =>
-        string.IsNullOrWhiteSpace(type) ? new Refusal("element.type-blank", "An element's type is blank.", "Give the DacFx type name, such as Column.")
-        : name == default ? new Refusal("element.name-missing", $"A {type} has no name.", "Make the name with Name.Of.")
+    private static Error? Invalid(string type, Name name) =>
+        string.IsNullOrWhiteSpace(type) ? new Error("element.type-blank", "An element's type is blank.", "Give the DacFx type name, such as Column.")
+        : name == default ? new Error("element.name-missing", $"A {type} has no name.", "Make the name with Name.Of.")
         : null;
 }
 
 /// <summary>
-/// One object of a read, as the walk (io/Ssdt) reads it from DacFx for every consumer: its key, its properties as
+/// One object of a model, as io/Ssdt.Elements reads it from DacFx for every consumer: its key, its properties as
 /// (name, value) and its relationships as (name, the target keys in DacFx's order), each sorted by name, so the order
-/// the walk met them in never matters. A relationship with no target is no relationship. The deploy scripts and the
-/// refactorlog entries are elements too, each of its own type. A Seq of elements, sorted by key, is a read.
+/// DacFx gives them in never matters. A relationship with no target is no relationship. The deploy scripts and the
+/// refactorlog entries are elements too, each of its own type. A SortedArray of elements, sorted by key, is a model.
 /// </summary>
 public sealed record Element : IComparable<Element>
 {
@@ -124,23 +124,23 @@ public sealed record Element : IComparable<Element>
     public const string PostDeploymentScript = "PostDeploymentScript";
     public const string RefactorLogOperation = "RefactorLogOperation";
 
-    private Element(ElementKey key, Seq<Property> properties, Seq<Relationship> relationships) =>
+    private Element(ElementKey key, SortedArray<Property> properties, SortedArray<Relationship> relationships) =>
         (Key, Properties, Relationships) = (key, properties, relationships);
 
     public ElementKey Key { get; }
 
-    public Seq<Property> Properties { get; }
+    public SortedArray<Property> Properties { get; }
 
-    public Seq<Relationship> Relationships { get; }
+    public SortedArray<Relationship> Relationships { get; }
 
     /// <summary>The value of the named property, or null when the element does not carry it.</summary>
     public Value? this[string property] => Properties.FirstOrDefault(p => p.Name == property)?.Value;
 
     public static Result<Element> Of(ElementKey key, IEnumerable<Property> properties, IEnumerable<Relationship> relationships)
     {
-        var (ps, rs) = (Seq.Of(properties), Seq.Of(relationships.Where(r => r.Targets.Count > 0)));
-        return (Repeated([.. ps.Select(p => p.Name)], key, "property") ?? Repeated([.. rs.Select(r => r.Name)], key, "relationship")) is { } refusal
-            ? refusal
+        var (ps, rs) = (SortedArray.Of(properties), SortedArray.Of(relationships.Where(r => r.Targets.Count > 0)));
+        return (Repeated([.. ps.Select(p => p.Name)], key, "property") ?? Repeated([.. rs.Select(r => r.Name)], key, "relationship")) is { } error
+            ? error
             : new Element(key, ps, rs);
     }
 
@@ -157,17 +157,17 @@ public sealed record Element : IComparable<Element>
     public int CompareTo(Element? other) =>
         other is null ? 1
         : Key.CompareTo(other.Key) is var k and not 0 ? k
-        : Seq.Compare(Properties, other.Properties) is var p and not 0 ? p
-        : Seq.Compare(Relationships, other.Relationships);
+        : SortedArray.Compare(Properties, other.Properties) is var p and not 0 ? p
+        : SortedArray.Compare(Relationships, other.Relationships);
 
     private static Element Script(string type, string name, string text) =>
         Known(Of(Known(ElementKey.Of(type, Known(Name.Of(name)))), [new Property("Text", new Value.Text(text))], []));
 
-    private static T Known<T>(Result<T> result) => result.Match(value => value, refusal => throw new UnreachableException(refusal.Message));
+    private static T Known<T>(Result<T> result) => result.Match(value => value, error => throw new UnreachableException(error.Message));
 
-    private static Refusal? Repeated(string[] names, ElementKey key, string what) => names
+    private static Error? Repeated(string[] names, ElementKey key, string what) => names
         .Where((name, i) => string.IsNullOrWhiteSpace(name) || (i > 0 && names[i - 1] == name))
-        .Select(name => new Refusal("element." + what + "-name", $"{key} has a {what} named '{name}' that is blank or repeated.", $"Give each {what} of an element one distinct name."))
+        .Select(name => new Error("element." + what + "-name", $"{key} has a {what} named '{name}' that is blank or repeated.", $"Give each {what} of an element one distinct name."))
         .FirstOrDefault();
 
     public sealed record Property(string Name, Value Value) : IComparable<Property>
@@ -176,13 +176,13 @@ public sealed record Element : IComparable<Element>
             other is null ? 1 : string.CompareOrdinal(Name, other.Name) is var c and not 0 ? c : Value.CompareTo(other.Value);
     }
 
-    public sealed record Relationship(string Name, Seq<Relationship.Target> Targets) : IComparable<Relationship>
+    public sealed record Relationship(string Name, SortedArray<Relationship.Target> Targets) : IComparable<Relationship>
     {
         /// <summary>A relationship whose targets keep the order given, as DacFx gives a key's columns.</summary>
-        public static Relationship Of(string name, IEnumerable<ElementKey> targets) => new(name, Seq.Of(targets.Select((key, i) => new Target(i, key))));
+        public static Relationship Of(string name, IEnumerable<ElementKey> targets) => new(name, SortedArray.Of(targets.Select((key, i) => new Target(i, key))));
 
         public int CompareTo(Relationship? other) =>
-            other is null ? 1 : string.CompareOrdinal(Name, other.Name) is var c and not 0 ? c : Seq.Compare(Targets, other.Targets);
+            other is null ? 1 : string.CompareOrdinal(Name, other.Name) is var c and not 0 ? c : SortedArray.Compare(Targets, other.Targets);
 
         /// <summary>One target of a relationship: its position in DacFx's order, and its key.</summary>
         public sealed record Target(int Position, ElementKey Key) : IComparable<Target>

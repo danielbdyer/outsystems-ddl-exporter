@@ -75,41 +75,41 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_syntax_error_in_a_sql_file_is_the_build_failed_refusal_exit_7_naming_the_file_and_line()
+    public void A_syntax_error_in_a_sql_file_is_the_build_failed_error_exit_7_naming_the_file_and_line()
     {
         var project = Golden();
         File.WriteAllText(Path.Combine(Path.GetDirectoryName(project)!, "dbo", "Tables", "Customer.sql"), "CREATE TABLE [dbo].[Customer]\n(\n    [Id] INT NOT NULL,,\n);\n");
 
-        var refused = Refused(Ssdt.Build(project, tool.Folder, Output));
+        var error = Failed(Ssdt.Build(project, tool.Folder, Output));
 
-        Assert.Equal(("build.failed", 7), (refused.Code, Contract.Exit(refused)));
-        Assert.Contains("dbo/Tables/Customer.sql(3,", refused.Message, StringComparison.Ordinal);
-        Assert.Contains("SQL46010", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(("build.failed", 7), (error.Code, Contract.Exit(error)));
+        Assert.Contains("dbo/Tables/Customer.sql(3,", error.Message, StringComparison.Ordinal);
+        Assert.Contains("SQL46010", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_machine_without_the_SDK_band_global_json_names_is_refused_before_the_build_with_exit_6_and_the_remedy()
+    public void A_machine_without_the_SDK_band_global_json_names_fails_before_the_build_with_exit_6_and_the_remedy()
     {
         var pin = (string)JsonNode.Parse(File.ReadAllText(Path.Combine(Repository.Root, "global.json")))!["sdk"]!["version"]!;
 
-        var refused = Refused(Ssdt.Build(Golden(), tool.Folder, Output, (_, _) => (0, "8.0.100 [sdk]\n9.0.314 [sdk]\n")));
+        var error = Failed(Ssdt.Build(Golden(), tool.Folder, Output, (_, _) => (0, "8.0.100 [sdk]\n9.0.314 [sdk]\n")));
 
-        Assert.Equal(("sdk.missing", 6), (refused.Code, Contract.Exit(refused)));
-        Assert.Contains(pin[..^2] + "xx", refused.Message, StringComparison.Ordinal);
-        Assert.Contains("install the .NET SDK " + pin, refused.Remedy, StringComparison.Ordinal);
-        Assert.Contains("estate doctor", refused.Remedy, StringComparison.Ordinal);
+        Assert.Equal(("sdk.missing", 6), (error.Code, Contract.Exit(error)));
+        Assert.Contains(pin[..^2] + "xx", error.Message, StringComparison.Ordinal);
+        Assert.Contains("install the .NET SDK " + pin, error.Remedy, StringComparison.Ordinal);
+        Assert.Contains("estate doctor", error.Remedy, StringComparison.Ordinal);
         Assert.False(Directory.Exists(Output));
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_file_that_is_not_a_package_or_a_refactorlog_is_refused_as_unparsed_input()
+    public void A_file_that_is_not_a_package_or_a_refactorlog_is_unparsed_input_at_exit_2()
     {
         var sql = Path.Combine(Path.GetDirectoryName(Golden())!, "dbo", "Tables", "Customer.sql");
 
-        Assert.Equal(("package.unreadable", 2), (Refused(Ssdt.Load(sql)).Code, Contract.Exit(Refused(Ssdt.Load(sql)))));
-        Assert.Equal(("refactorlog.unreadable", 2), (Refused(Ssdt.RefactorLog(sql)).Code, Contract.Exit(Refused(Ssdt.RefactorLog(sql)))));
+        Assert.Equal(("package.unreadable", 2), (Failed(Ssdt.Load(sql)).Code, Contract.Exit(Failed(Ssdt.Load(sql)))));
+        Assert.Equal(("refactorlog.unreadable", 2), (Failed(Ssdt.RefactorLog(sql)).Code, Contract.Exit(Failed(Ssdt.RefactorLog(sql)))));
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
             Assert.Equal(running, Ok(Ssdt.Tool(running, named, inside)));
             Assert.Equal(named, Ok(Ssdt.Tool(bare, named, inside)));
             Assert.Equal(dist, Ok(Ssdt.Tool(bare, null, inside)));
-            Assert.All([Ssdt.Tool(bare, bare, inside), Ssdt.Tool(bare, null, bare)], r => Assert.Equal(("tool.missing", 6), (Refused(r).Code, Contract.Exit(Refused(r)))));
+            Assert.All([Ssdt.Tool(bare, bare, inside), Ssdt.Tool(bare, null, bare)], r => Assert.Equal(("tool.missing", 6), (Failed(r).Code, Contract.Exit(Failed(r)))));
         }
         finally
         {
@@ -162,7 +162,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         return Path.Combine(root, name);
     }
 
-    private static T Ok<T>(Result<T> result) => result.Match(value => value, refusal => throw new Xunit.Sdk.XunitException(refusal.Code + ": " + refusal.Message));
+    private static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 
-    private static Refusal Refused<T>(Result<T> result) => Assert.IsType<Result<T>.Refused>(result).Refusal;
+    private static Error Failed<T>(Result<T> result) => Assert.IsType<Result<T>.Failed>(result).Error;
 }

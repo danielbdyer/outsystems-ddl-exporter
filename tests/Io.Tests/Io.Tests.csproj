@@ -21,12 +21,12 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../io/io.csproj" />
-    <!-- The exit a refusal takes is the CLI's table (Contract.Exit), so a test of io's refusals asserts the exit through it. -->
+    <!-- The exit an error takes is the CLI's category table (Contract.Exit), so a test of io's errors asserts the exit through it. -->
     <ProjectReference Include="../../cli/cli.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../Budgets.Tests/Repository.cs" Link="Repository.cs" />
-    <!-- The ways to every refusal, which Register.Refusals reads for the register and "no output contains Password=" plants a password in. -->
+    <!-- The ways to every error, which Register.Refusals reads for the register and "no output contains Password=" plants a password in. -->
     <Compile Include="../Budgets.Tests/Register/RefusalPaths.cs" Link="RefusalPaths.cs" />
   </ItemGroup>
 </Project>

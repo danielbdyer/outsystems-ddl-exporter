@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The proving ground (v2's archive/v2/ssdt-agent/proving-ground/SampleCatalog.sqlproj, SDK-style) as a classic, Visual Studio
+  The golden project (v2's archive/v2/ssdt-agent/proving-ground/SampleCatalog.sqlproj, SDK-style) as a classic, Visual Studio
   format project: the same objects and scripts, with the items the SDK's glob made implicit listed here. It builds with
   dotnet build against dist/estate/, the committed engine's targets (V3_MILESTONES.md section 1 fact 1).
 -->

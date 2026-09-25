@@ -42,7 +42,7 @@ public sealed class GitTests : IDisposable
         Assert.Equal("SELECT 1;\n", File.ReadAllText(Path.Combine(at.Path, "a.sql")));
         Assert.Equal("HEAD", scratch.GitAt(at.Path, "rev-parse", "--abbrev-ref", "HEAD"));
         Assert.Equal(2, scratch.Worktrees().Count);
-        Assert.Equal("build.no-project", Refused(Ssdt.Build(at, Path.Combine(scratch.Root, "a.sqlproj"), scratch.Root, scratch.Root)).Code);   // a ref's project is named from its root
+        Assert.Equal("build.no-project", Failed(Ssdt.Build(at, Path.Combine(scratch.Root, "a.sqlproj"), scratch.Root, scratch.Root)).Code);   // a ref's project is named from its root
     }
 
     [Fact]
@@ -124,7 +124,7 @@ public sealed class GitTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_taken_or_malformed_branch_is_exit_9_and_an_origin_that_does_not_answer_is_exit_4_with_no_credential_printed_and_no_branch_left()
+    public void An_existing_or_malformed_branch_is_exit_9_and_an_origin_that_does_not_answer_is_exit_4_with_no_credential_printed_and_no_branch_left()
     {
         scratch.Origin();
         scratch.Commit("the estate", ("estate/evidence.shape.json", "{}\n"));
@@ -132,17 +132,17 @@ public sealed class GitTests : IDisposable
         string[] paths = ["estate/evidence.shape.json"];
         Ok(Git.CommitAndPush(scratch.Root, paths, "first", "estate/evidence"));
 
-        var taken = Refused(Git.CommitAndPush(scratch.Root, paths, "again", "estate/evidence"));
+        var existing = Failed(Git.CommitAndPush(scratch.Root, paths, "again", "estate/evidence"));
         scratch.Git("branch", "-q", "-D", "estate/evidence");
-        var takenAtOrigin = Refused(Git.CommitAndPush(scratch.Root, paths, "again", "estate/evidence"));
-        var malformed = Refused(Git.CommitAndPush(scratch.Root, paths, "again", "estate/..evidence"));
+        var existingAtOrigin = Failed(Git.CommitAndPush(scratch.Root, paths, "again", "estate/evidence"));
+        var malformed = Failed(Git.CommitAndPush(scratch.Root, paths, "again", "estate/..evidence"));
         scratch.Git("remote", "set-url", "origin", "https://estate:s3cret-token@127.0.0.1:9/estate.git");
-        var silent = Refused(Git.CommitAndPush(scratch.Root, paths, "again", "estate/elsewhere"));
+        var silent = Failed(Git.CommitAndPush(scratch.Root, paths, "again", "estate/elsewhere"));
 
-        Assert.Equal(("branch.taken", 9), (taken.Code, Contract.Exit(taken)));
-        Assert.Equal(("branch.taken", 9), (takenAtOrigin.Code, Contract.Exit(takenAtOrigin)));
-        Assert.Contains("the origin", takenAtOrigin.Message, StringComparison.Ordinal);
-        Assert.Equal(("branch.malformed", 9), (malformed.Code, Contract.Exit(malformed)));
+        Assert.Equal(("git-branch.exists", 9), (existing.Code, Contract.Exit(existing)));
+        Assert.Equal(("git-branch.exists", 9), (existingAtOrigin.Code, Contract.Exit(existingAtOrigin)));
+        Assert.Contains("the origin", existingAtOrigin.Message, StringComparison.Ordinal);
+        Assert.Equal(("git-branch.malformed", 9), (malformed.Code, Contract.Exit(malformed)));
         Assert.Equal(("origin.unreachable", 4), (silent.Code, Contract.Exit(silent)));
         Assert.DoesNotContain("s3cret-token", silent.Message + silent.Remedy, StringComparison.Ordinal);
         Assert.Equal("", scratch.Git("branch", "--list", "estate/elsewhere", "estate/..evidence"));
@@ -157,9 +157,9 @@ public sealed class GitTests : IDisposable
         scratch.Git("switch", "-q", "--orphan", "unrelated");
         scratch.Commit("unrelated", ("b.sql", "SELECT 2;\n"));
 
-        var unresolved = Refused(Git.At(scratch.Root, "no-such-tag"));
-        var unrelated = Refused(Git.MergeBase(scratch.Root, "main", "unrelated"));
-        var nowhere = Refused(Git.ChangedPaths(Path.Combine(scratch.Root, "no-such-folder"), "main", "unrelated"));
+        var unresolved = Failed(Git.At(scratch.Root, "no-such-tag"));
+        var unrelated = Failed(Git.MergeBase(scratch.Root, "main", "unrelated"));
+        var nowhere = Failed(Git.ChangedPaths(Path.Combine(scratch.Root, "no-such-folder"), "main", "unrelated"));
 
         Assert.Equal(("ref.unresolved", 1), (unresolved.Code, Contract.Exit(unresolved)));
         Assert.Contains("'no-such-tag'", unresolved.Message, StringComparison.Ordinal);
@@ -171,7 +171,7 @@ public sealed class GitTests : IDisposable
     /// <summary>
     /// io/Git reads git's English "not a git repository (or any ...)" to tell a folder in no repository from a failed search, so git
     /// runs with LC_ALL=C, and without LANGUAGE and LC_MESSAGES, which GNU gettext would otherwise read to choose a translation. A
-    /// stand-in for git prints the environment it is given to its error stream and exits 2, so HoldingOf refuses as git.failed and
+    /// stand-in for git prints the environment it is given to its error stream and exits 2, so HoldingOf fails with git.failed and
     /// quotes that environment: LC_ALL=C is in it, and LANGUAGE and LC_MESSAGES, set in this process, are not.
     /// </summary>
     [Fact]
@@ -192,10 +192,10 @@ public sealed class GitTests : IDisposable
         var asked = (Language: Environment.GetEnvironmentVariable("LANGUAGE"), Messages: Environment.GetEnvironmentVariable("LC_MESSAGES"));
         Environment.SetEnvironmentVariable("LANGUAGE", "de");
         Environment.SetEnvironmentVariable("LC_MESSAGES", "de_DE.UTF-8");
-        Refusal refusal;
+        Error error;
         try
         {
-            refusal = Refused(Git.HoldingOf(scratch.Root, Path.Combine(scratch.Root, "dev.connection"), git));
+            error = Failed(Git.HoldingOf(scratch.Root, Path.Combine(scratch.Root, "dev.connection"), git));
         }
         finally
         {
@@ -203,9 +203,9 @@ public sealed class GitTests : IDisposable
             Environment.SetEnvironmentVariable("LC_MESSAGES", asked.Messages);
         }
 
-        Assert.Equal("git.failed", refusal.Code);
-        Assert.StartsWith("git rev-parse failed: ", refusal.Message, StringComparison.Ordinal);
-        var variables = refusal.Message["git rev-parse failed: ".Length..].Split('\n').Select(line => line.Trim()).ToList();
+        Assert.Equal("git.failed", error.Code);
+        Assert.StartsWith("git rev-parse failed: ", error.Message, StringComparison.Ordinal);
+        var variables = error.Message["git rev-parse failed: ".Length..].Split('\n').Select(line => line.Trim()).ToList();
         Assert.Contains("LC_ALL=C", variables);
         Assert.DoesNotContain(variables, line => line.StartsWith("LANGUAGE=", StringComparison.OrdinalIgnoreCase) || line.StartsWith("LC_MESSAGES=", StringComparison.OrdinalIgnoreCase));
     }
@@ -220,9 +220,9 @@ public sealed class GitTests : IDisposable
         return id;
     }
 
-    internal static T Ok<T>(Result<T> result) => result.Match(value => value, refusal => throw new Xunit.Sdk.XunitException(refusal.Code + ": " + refusal.Message));
+    internal static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 
-    internal static Refusal Refused<T>(Result<T> result) => Assert.IsType<Result<T>.Refused>(result).Refusal;
+    internal static Error Failed<T>(Result<T> result) => Assert.IsType<Result<T>.Failed>(result).Error;
 }
 
 /// <summary>

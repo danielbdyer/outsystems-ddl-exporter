@@ -20,7 +20,7 @@ public sealed class DependenciesPointOneWay
     public void Io_does_not_depend_on_the_cli_and_the_kernel_on_neither()
     {
         var io = Types.InAssembly(typeof(Write).Assembly).ShouldNot().HaveDependencyOn("Estate.Cli").GetResult();
-        var kernel = Types.InAssembly(typeof(Seq).Assembly).ShouldNot().HaveDependencyOnAny("Estate.Io", "Estate.Cli").GetResult();
+        var kernel = Types.InAssembly(typeof(SortedArray).Assembly).ShouldNot().HaveDependencyOnAny("Estate.Io", "Estate.Cli").GetResult();
 
         Assert.True(io.IsSuccessful, "io depends on the CLI: " + string.Join(", ", io.FailingTypeNames ?? []));
         Assert.True(kernel.IsSuccessful, "the kernel depends on io or the CLI: " + string.Join(", ", kernel.FailingTypeNames ?? []));

@@ -136,20 +136,20 @@
               "type": "object",
               "additionalProperties": false,
               "required": [
-                "added",
-                "removed",
+                "created",
+                "dropped",
                 "renamed",
-                "changed"
+                "altered"
               ],
               "properties": {
-                "added": {
+                "created": {
                   "type": "array",
                   "items": {
                     "type": "string",
                     "minLength": 1
                   }
                 },
-                "removed": {
+                "dropped": {
                   "type": "array",
                   "items": {
                     "type": "string",
@@ -177,7 +177,7 @@
                     }
                   }
                 },
-                "changed": {
+                "altered": {
                   "type": "array",
                   "items": {
                     "type": "object",
@@ -462,12 +462,12 @@
       "properties": {
         "code": {
           "type": "string",
-          "pattern": "^[a-z]+(\\.[a-z0-9-]+)+$"
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9]+(-[a-z0-9]+)*)+(?![\\s\\S])"
         },
         "severity": {
           "enum": [
-            "block",
-            "warn",
+            "error",
+            "warning",
             "note"
           ]
         },
@@ -494,7 +494,7 @@
       "if": {
         "properties": {
           "severity": {
-            "const": "block"
+            "const": "error"
           }
         }
       },

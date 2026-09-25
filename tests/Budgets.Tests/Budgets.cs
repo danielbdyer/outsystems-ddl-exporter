@@ -43,13 +43,13 @@ public sealed class Budgets
 
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("kernel/Seq.cs", "kernel/**/*.cs", true)]
-    [InlineData("kernel/Twin/Synth.cs", "kernel/**/*.cs", true)]
-    [InlineData("kernel/Seq.csx", "kernel/**/*.cs", false)]
-    [InlineData("kernelx/Seq.cs", "kernel/**/*.cs", false)]
+    [InlineData("kernel/SortedArray.cs", "kernel/**/*.cs", true)]
+    [InlineData("kernel/SyntheticData/Generate.cs", "kernel/**/*.cs", true)]
+    [InlineData("kernel/SortedArray.csx", "kernel/**/*.cs", false)]
+    [InlineData("kernelx/SortedArray.cs", "kernel/**/*.cs", false)]
     [InlineData("kernel/obj/Debug/net10.0/Estate.Kernel.AssemblyInfo.cs", "**/obj/**", true)]
     [InlineData("tests/Golden/classic-minimal/Estate.sqlproj", "tests/Golden/**", true)]
-    [InlineData("tests/Kernel.Tests/SeqTests.cs", "tests/Golden/**", false)]
+    [InlineData("tests/Kernel.Tests/SortedArrayTests.cs", "tests/Golden/**", false)]
     public void A_glob_matches_the_paths_it_names(string path, string glob, bool matches) =>
         Assert.Equal(matches, Repository.Glob(glob).IsMatch(path));
 

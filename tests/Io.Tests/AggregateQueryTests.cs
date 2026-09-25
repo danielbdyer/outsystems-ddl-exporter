@@ -13,26 +13,26 @@ namespace Estate.Io.Tests;
 
 /// <summary>
 /// io/SqlServer against a named environment (V3_MILESTONES.md WP 1.4, M1 exit 7, §18; VALUES.md P2, X2): the golden project's
-/// registered database stands in for env:uat, classified real and reached as the read-only principal through a file: reference. The
-/// executor runs each admitted probe of the allowlist's corpus there and reads integers back; every statement and its row count go to
-/// the run's queries.log; a failed probe reports its number and its site and nothing else; Model and Plan read as the same principal;
+/// registered database stands in for env:uat, classified real and reached as the read-only principal through a file: reference. SqlServer.Measure
+/// runs each admitted aggregate query of the allowlist's corpus there and reads integers back; every statement and its row count go to
+/// the run's queries.log; a failed query reports its number and its site and nothing else; Model and Plan read as the same principal;
 /// and a denied login names the environment and quotes nothing.
 /// </summary>
-public sealed class ProbeTests(ProvingGround ground) : IClassFixture<ProvingGround>, IDisposable
+public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<GoldenProject>, IDisposable
 {
-    private readonly string root = Directory.CreateDirectory(Path.Combine(Repository.Root, ".estate", "probes-under-test", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8])).FullName;
+    private readonly string root = Directory.CreateDirectory(Path.Combine(Repository.Root, ".estate", "aggregate-queries-under-test", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8])).FullName;
 
     public void Dispose() => Directory.Delete(root, recursive: true);
 
     [Fact]
     [Trait("Category", "fixture")]
-    public void Every_admitted_probe_of_the_corpus_returns_integers_as_the_read_only_principal_and_queries_log_holds_each_statement_and_its_row_count()
+    public void Every_admitted_query_of_the_corpus_returns_integers_as_the_read_only_principal_and_queries_log_holds_each_statement_and_its_row_count()
     {
-        var uat = Resolved("uat", ground.Reader.ConnectionString);
+        var uat = Resolved("uat", project.Reader.ConnectionString);
         var log = SqlServer.QueryLog.Start(root);
-        var admitted = AllowlistTests.Cases.Where(c => c.Admitted).Select(c => Made(SqlServer.Probe.Of(c.Text, c.Label))).ToList();
+        var admitted = AllowlistTests.Cases.Where(c => c.Admitted).Select(c => Made(SqlServer.AggregateQuery.Of(c.Text, c.Label))).ToList();
 
-        var measured = admitted.Select(probe => Assert.IsType<SqlServer.Measurement.Answered>(Made(SqlServer.Measure(uat, probe, log)))).ToList();
+        var measured = admitted.Select(query => Assert.IsType<SqlServer.Measurement.Answered>(Made(SqlServer.Measure(uat, query, log)))).ToList();
 
         Assert.All(measured, m => Assert.NotEmpty(m.Rows));
         Assert.Contains(measured, m => m.Rows.Any(row => row.Any(value => value > 0)));
@@ -45,19 +45,19 @@ public sealed class ProbeTests(ProvingGround ground) : IClassFixture<ProvingGrou
     /// <summary>§18: SQL Server writes the value it fails to convert into Msg 245. Against an environment classified real, the executor records the number and the site, and the value appears in no result, message or line of the log.</summary>
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task A_failed_probe_against_a_real_environment_reports_only_its_number_and_its_site()
+    public async Task A_failed_query_against_a_real_environment_reports_only_its_number_and_its_site()
     {
         var planted = "planted-" + Guid.NewGuid().ToString("N")[..12];
-        await SqlServerFixture.ExecuteAsync(ground.Copy.ConnectionString, "CREATE TABLE dbo.Planted (Id INT NOT NULL PRIMARY KEY, Value NVARCHAR(100) NOT NULL); INSERT dbo.Planted (Id, Value) VALUES (1, @name);", planted);
+        await SqlServerFixture.ExecuteAsync(project.Copy.ConnectionString, "CREATE TABLE dbo.Planted (Id INT NOT NULL PRIMARY KEY, Value NVARCHAR(100) NOT NULL); INSERT dbo.Planted (Id, Value) VALUES (1, @name);", planted);
         const string Statement = "SELECT SUM(CASE WHEN Value > 0 THEN 1 ELSE 0 END) FROM dbo.Planted;";
-        Assert.Contains(planted, (await Assert.ThrowsAsync<SqlException>(() => SqlServerFixture.ScalarAsync(ground.Copy.ConnectionString, Statement))).Message, StringComparison.Ordinal);
-        var uat = Resolved("uat", ground.Reader.ConnectionString);
+        Assert.Contains(planted, (await Assert.ThrowsAsync<SqlException>(() => SqlServerFixture.ScalarAsync(project.Copy.ConnectionString, Statement))).Message, StringComparison.Ordinal);
+        var uat = Resolved("uat", project.Reader.ConnectionString);
         var log = SqlServer.QueryLog.Start(root);
 
-        var failed = Assert.IsType<SqlServer.Measurement.Failed>(Made(SqlServer.Measure(uat, Made(SqlServer.Probe.Of(Statement, "dbo.Planted.Value Fits")), log)));
+        var failed = Assert.IsType<SqlServer.Measurement.Failed>(Made(SqlServer.Measure(uat, Made(SqlServer.AggregateQuery.Of(Statement, "dbo.Planted.Value Fits")), log)));
 
         Assert.Equal((245, "dbo.Planted.Value Fits", (string?)null), (failed.Number, failed.Site, failed.Message));
-        Assert.Equal("dbo.Planted.Value Fits: probe failed: Msg 245; message withheld", failed.ToString());
+        Assert.Equal("dbo.Planted.Value Fits: query failed: Msg 245; message withheld", failed.ToString());
         Assert.Equal("failed, Msg 245", Assert.Single(Entries(File.ReadAllText(log.Path))).Outcome);
         Assert.DoesNotContain(planted, failed + File.ReadAllText(log.Path), StringComparison.Ordinal);
     }
@@ -75,14 +75,14 @@ public sealed class ProbeTests(ProvingGround ground) : IClassFixture<ProvingGrou
         System.Environment.SetEnvironmentVariable(variable, token);
         try
         {
-            var uat = Assert.IsType<SqlServer.Named>(Resolved("uat", ground.Reader.ConnectionString,
+            var uat = Assert.IsType<SqlServer.EnvironmentDatabase>(Resolved("uat", project.Reader.ConnectionString,
                 ", \"sqlcmd\": { \"EnvironmentTag\": { \"literal\": \"uat\", \"sensitive\": false }, \"ServiceToken\": \"env:" + variable + "\" }"));
             var log = SqlServer.QueryLog.Start(root);
 
             var model = Made(SqlServer.Model(uat, log));
-            var plan = Made(SqlServer.Plan(ground.Base, uat, Made(Profiles.Of(uat.Environment, root)), log));
+            var plan = Made(SqlServer.Plan(project.Base, uat, Made(Profiles.Of(uat.Environment, root)), log));
 
-            Assert.Equal(ground.Reader.Login, new SqlConnectionStringBuilder(uat.Connection).UserID);
+            Assert.Equal(project.Reader.Login, new SqlConnectionStringBuilder(uat.Connection).UserID);
             Assert.Contains(model, e => e.Key.ToString() == "Column [dbo].[Customer].[Email]");
             Assert.True(plan.IsEmpty, "the plan of the package against the environment it was published to has operations:\n" + plan.Report);
             Assert.Contains(":setvar EnvironmentTag \"uat\"", plan.Script, StringComparison.Ordinal);
@@ -98,19 +98,19 @@ public sealed class ProbeTests(ProvingGround ground) : IClassFixture<ProvingGrou
     /// <summary>
     /// The golden project's copy holds the read-only principal's SQL login and a user for it. Read twice as the fixture's admin
     /// identity, who sees the login, and twice as the read-only principal, it fingerprints once per identity: SQL Server never
-    /// returns a login's password, DacFx makes a new one up on each load, and the walk leaves that property out.
+    /// returns a login's password, DacFx makes a new one up on each load, and Ssdt.Elements leaves that property out.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
-    [Trait("Law", "3′ the read is complete")]
-    public void Two_reads_of_one_database_by_one_identity_fingerprint_equally()
+    [Trait("Law", "3′ the model is complete")]
+    public void One_database_read_twice_by_one_identity_fingerprints_equally()
     {
-        var (admin, reader) = (Resolved("uat", ground.Copy.ConnectionString), Resolved("qa", ground.Reader.ConnectionString));
+        var (admin, reader) = (Resolved("uat", project.Copy.ConnectionString), Resolved("qa", project.Reader.ConnectionString));
 
         var (first, second) = (Made(SqlServer.Model(admin)), Made(SqlServer.Model(admin)));
         var (third, fourth) = (Made(SqlServer.Model(reader)), Made(SqlServer.Model(reader)));
 
-        Assert.Contains(first, e => e.Key.ToString() == "Login [" + ground.Reader.Login + "]");
+        Assert.Contains(first, e => e.Key.ToString() == "Login [" + project.Reader.Login + "]");
         Assert.Equal(Fingerprint.Of(first), Fingerprint.Of(second));
         Assert.Equal(Fingerprint.Of(third), Fingerprint.Of(fourth));
     }
@@ -121,17 +121,17 @@ public sealed class ProbeTests(ProvingGround ground) : IClassFixture<ProvingGrou
     public void A_denied_login_names_the_environment_and_quotes_nothing()
     {
         const string Wrong = "Wr0ng!planted#7f3a";
-        var qa = Resolved("qa", new SqlConnectionStringBuilder(ground.Reader.ConnectionString) { Password = Wrong }.ConnectionString);
+        var qa = Resolved("qa", new SqlConnectionStringBuilder(project.Reader.ConnectionString) { Password = Wrong }.ConnectionString);
 
-        var refusals = new[] { Refused(SqlServer.Model(qa)), Refused(SqlServer.Measure(qa, Made(SqlServer.Probe.Of("SELECT 1;", "the login")), SqlServer.QueryLog.Start(root))) };
+        var errors = new[] { Failed(SqlServer.Model(qa)), Failed(SqlServer.Measure(qa, Made(SqlServer.AggregateQuery.Of("SELECT 1;", "the login")), SqlServer.QueryLog.Start(root))) };
 
-        Assert.All(refusals, refusal =>
+        Assert.All(errors, error =>
         {
-            Assert.Equal(("server.denied", 4), (refusal.Code, Contract.Exit(refusal)));
-            Assert.StartsWith("env:qa ", refusal.Message, StringComparison.Ordinal);
-            Assert.Contains("a lead's prediction will appear on the pull request", refusal.Message, StringComparison.Ordinal);
-            Assert.DoesNotContain(Wrong, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
-            Assert.DoesNotContain(ground.Reader.Login, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
+            Assert.Equal(("server.denied", 4), (error.Code, Contract.Exit(error)));
+            Assert.StartsWith("env:qa ", error.Message, StringComparison.Ordinal);
+            Assert.Contains("a lead's prediction will appear on the pull request", error.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(Wrong, error.Message + error.Remedy, StringComparison.Ordinal);
+            Assert.DoesNotContain(project.Reader.Login, error.Message + error.Remedy, StringComparison.Ordinal);
         });
     }
 
@@ -146,7 +146,7 @@ public sealed class ProbeTests(ProvingGround ground) : IClassFixture<ProvingGrou
         }
 
         Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
-        File.Copy(ground.Profile, Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"), overwrite: true);
+        File.Copy(project.Profile, Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"), overwrite: true);
         File.WriteAllText(Path.Combine(root, "estate", "posture.json"), "{ \"environments\": { \"" + name + "\": { \"classification\": \"real\", \"connection\": \"file:"
             + file.Replace('\\', '/') + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\"" + extra + " } } }");
         return Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:" + name)), root));
@@ -156,7 +156,7 @@ public sealed class ProbeTests(ProvingGround ground) : IClassFixture<ProvingGrou
     private static (string Site, string Statement, string Outcome)[] Entries(string log) => [.. Regex.Matches(log, @"^-- \S+ \S+ (?<site>.+): (?<outcome>\d+|failed, Msg \d+)(?: rows?)?\n(?<statement>(?:(?!GO\n).*\n)+?)GO\n", RegexOptions.Multiline | RegexOptions.CultureInvariant)
         .Select(m => (m.Groups["site"].Value, m.Groups["statement"].Value.TrimEnd('\n'), m.Groups["outcome"].Value))];
 
-    private static T Made<T>(Result<T> result) => result.Match(value => value, refusal => throw new Xunit.Sdk.XunitException(refusal.Code + ": " + refusal.Message));
+    private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 
-    private static Refusal Refused<T>(Result<T> result) => Assert.IsType<Result<T>.Refused>(result).Refusal;
+    private static Error Failed<T>(Result<T> result) => Assert.IsType<Result<T>.Failed>(result).Error;
 }

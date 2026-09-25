@@ -62,7 +62,7 @@ function Up {
     elseif (-not (Value 'MSSQL_SA_PASSWORD')) { Fail "$name exists but $envFile holds no password for it: ./ci/sql.ps1 down, then ./ci/sql.ps1 up" 6 }
     elseif ((State) -ne 'running') { docker start $name | Out-Null }
 
-    # The password stays inside the container: the probe reads the container's own environment.
+    # The password stays inside the container: sqlcmd's SELECT 1 runs there and reads the container's own environment.
     foreach ($attempt in 1..90) {
         if ((State) -ne 'running') { docker logs --tail 20 $name | Out-Host; Fail "$name stopped; its last lines are above" }
         docker exec $name /bin/sh -c '/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P $MSSQL_SA_PASSWORD -b -Q ''SELECT 1'' >/dev/null 2>&1'

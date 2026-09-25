@@ -1,6 +1,6 @@
-The probe allowlist's corpus (V3_MILESTONES.md WP 1.4): each case is a line "=== admit: <what>" or "=== refuse: <what>"
-and the probe text below it, up to the next case. Io.Tests' AllowlistTests read every case; ProbeTests run every admitted
-case against the proving ground as the read-only principal, so an admitted case names only the proving ground's tables.
+The aggregate-query allowlist's corpus (V3_MILESTONES.md WP 1.4): each case is a line "=== admit: <what>" or "=== refuse: <what>"
+and the query's text below it, up to the next case. Io.Tests' AllowlistTests read every case; AggregateQueryTests run every admitted
+case against the golden project as the read-only principal, so an admitted case names only the golden project's tables.
 
 === admit: COUNT of every row
 SELECT COUNT(*) FROM dbo.Customer;
@@ -22,7 +22,7 @@ SELECT MAX(LEN(Email)) FROM dbo.Customer;
 SELECT MIN(DATALENGTH(ContactPhone)) FROM dbo.Customer;
 === admit: MAX over DATALENGTH
 SELECT MAX(DATALENGTH(Email)) FROM dbo.Customer;
-=== admit: CASE WHEN EXISTS, the data-loss guard's predicate as DacFx writes it
+=== admit: CASE WHEN EXISTS, the data-loss check's predicate as DacFx writes it
 SELECT CASE WHEN EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer]) THEN 1 ELSE 0 END;
 === admit: an integer literal
 SELECT 1;

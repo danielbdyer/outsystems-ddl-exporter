@@ -14,7 +14,7 @@ namespace Estate.Io.Tests;
 /// This test assembly run as a program (dotnet Estate.Io.Tests.dll): one estate process on a clone, as a second estate
 /// invocation, another agent in the same clone or the gate proving another branch is. Each step waits for a line on its
 /// standard input: it prints ready; takes the ref's worktree (Git.At) and prints it with the milliseconds At took; then,
-/// when a project is named, builds it there and prints the package. A refusal is printed as its code and message, exit 1.
+/// when a project is named, builds it there and prints the package. An error is printed as its code and message, exit 1.
 /// </summary>
 internal static class EstateProcess
 {
@@ -26,7 +26,7 @@ internal static class EstateProcess
         Console.ReadLine();
         var clock = Stopwatch.StartNew();
         var taken = Git.At(arguments[0], arguments[1]);
-        Console.WriteLine(taken.Match(at => at.Path + "\n" + clock.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture), refusal => Printed(refusal) + "\n-1"));
+        Console.WriteLine(taken.Match(at => at.Path + "\n" + clock.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture), error => Printed(error) + "\n-1"));
         Console.ReadLine();
         var built = taken.Bind(at => arguments.Length < 5 ? Result.Ok("") : Ssdt.Build(at, arguments[2], arguments[3], arguments[4]).Map(dacpac => dacpac.Path));
         Console.WriteLine(built.Match(dacpac => dacpac, Printed));
@@ -87,5 +87,5 @@ internal static class EstateProcess
         }
     }
 
-    private static string Printed(Refusal refusal) => refusal.Code + ": " + refusal.Message.ReplaceLineEndings(" ");
+    private static string Printed(Error error) => error.Code + ": " + error.Message.ReplaceLineEndings(" ");
 }

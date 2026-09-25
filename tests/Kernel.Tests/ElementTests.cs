@@ -8,50 +8,50 @@ using static Estate.Kernel.Tests.ElementSets;
 namespace Estate.Kernel.Tests;
 
 /// <summary>
-/// An element is one DacFx object as the walk reads it, keyed by its type and name path, with its properties and
-/// relationships in canonical order; a read is a Seq of them, and its fingerprint is law 3′'s kernel half: stable
+/// An element is one DacFx object as io/Ssdt.Elements reads it, keyed by its type and name path, with its properties and
+/// relationships in canonical order; a model is a SortedArray of them, and its fingerprint is law 3′'s kernel half: stable
 /// whatever the order of construction, and changed by any edit. Its law tests carry that law as a trait.
 /// </summary>
 public sealed class ElementTests
 {
     [Fact]
     [Trait("Category", "fast")]
-    [Trait("Law", "3′ the read is complete")]
-    public void The_fingerprint_of_a_read_is_independent_of_the_order_its_elements_are_given_in() =>
+    [Trait("Law", "3′ the model is complete")]
+    public void The_fingerprint_of_a_model_is_independent_of_the_order_its_elements_are_given_in() =>
         Sets.SelectMany(set => Gen.Shuffle(set.ToArray()).Select(shuffled => (set, shuffled))).Sample((set, shuffled) =>
-            Fingerprint.Of(Seq.Of(shuffled.Select(Rebuilt))) == Fingerprint.Of(set)
-            && Seq.Of(shuffled.Select(Rebuilt)) == set);
+            Fingerprint.Of(SortedArray.Of(shuffled.Select(Rebuilt))) == Fingerprint.Of(set)
+            && SortedArray.Of(shuffled.Select(Rebuilt)) == set);
 
     [Fact]
     [Trait("Category", "fast")]
-    [Trait("Law", "3′ the read is complete")]
-    public void Two_reads_fingerprint_equally_exactly_when_their_elements_are_equal()
+    [Trait("Law", "3′ the model is complete")]
+    public void Two_models_fingerprint_equally_exactly_when_their_elements_are_equal()
     {
         Gen.Select(Sets, Sets).Sample((a, b) => (Fingerprint.Of(a) == Fingerprint.Of(b)) == (a == b));
-        Assert.Equal(Fingerprint.Of(Archetypes.Model()), Fingerprint.Of(Archetypes.Model()));
-        Assert.Equal(Fingerprint.Of(Seq.Of<Element>()), Fingerprint.Of(default(Seq<Element>)));
+        Assert.Equal(Fingerprint.Of(SampleChanges.Model()), Fingerprint.Of(SampleChanges.Model()));
+        Assert.Equal(Fingerprint.Of(SortedArray.Of<Element>()), Fingerprint.Of(default(SortedArray<Element>)));
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    [Trait("Law", "3′ the read is complete")]
+    [Trait("Law", "3′ the model is complete")]
     public void Any_single_edit_to_a_key_a_property_value_a_relationship_target_or_a_script_changes_the_fingerprint() =>
         Edits.Sample((before, edit) => Fingerprint.Of(before) != Fingerprint.Of(edit.After), print: x => x.Item2.Kind, iter: 1000);
 
     [Theory]
     [Trait("Category", "fast")]
-    [Trait("Law", "3′ the read is complete")]
-    [MemberData(nameof(Archetypes.Names), MemberType = typeof(Archetypes))]
-    public void Every_archetype_edit_changes_the_fingerprint(string archetype)
+    [Trait("Law", "3′ the model is complete")]
+    [MemberData(nameof(SampleChanges.Names), MemberType = typeof(SampleChanges))]
+    public void Every_sample_change_changes_the_fingerprint(string sample)
     {
-        var (before, after, _) = Archetypes.Pair(archetype);
+        var (before, after, _) = SampleChanges.Pair(sample);
         Assert.NotEqual(Fingerprint.Of(before), Fingerprint.Of(after));
     }
 
     // Pairs that run together without the mechanism each names: lengths, value tags, counts, UTF-16 code units.
     [Theory]
     [Trait("Category", "fast")]
-    [Trait("Law", "3′ the read is complete")]
+    [Trait("Law", "3′ the model is complete")]
     [InlineData("lengths: a two-part name split at another place", 0)]
     [InlineData("lengths: an enumeration's type and member split at another place", 1)]
     [InlineData("tags: a text whose length and code units spell an integer", 2)]
@@ -60,7 +60,7 @@ public sealed class ElementTests
     [InlineData("counts: one relationship of two targets and two of one", 5)]
     [InlineData("code units: two lone surrogates", 6)]
     [InlineData("parents: a child key and a top-level key", 7)]
-    public void Reads_a_careless_serialization_would_confuse_fingerprint_differently(string what, int pair)
+    public void Models_a_careless_serialization_would_confuse_fingerprint_differently(string what, int pair)
     {
         var t = Key("Table", "dbo", "T");
         var (a, b) = pair switch
@@ -103,7 +103,7 @@ public sealed class ElementTests
             Assert.NotEqual<Value>(Text("1"), Int(1));
             Assert.Equal(
                 new[] { "NULL", "false", "true", "-1234567", "'it''s'", "SqlDataType.NVarChar" },
-                Seq.Of<Value>(new Value.Enumeration("SqlDataType", "NVarChar"), Text("it's"), Int(-1234567), Bool(true), Bool(false), new Value.Null())
+                SortedArray.Of<Value>(new Value.Enumeration("SqlDataType", "NVarChar"), Text("it's"), Int(-1234567), Bool(true), Bool(false), new Value.Null())
                     .Select(v => v.ToString()));
         }
         finally
@@ -123,7 +123,7 @@ public sealed class ElementTests
         Assert.Equal(customer, email.Parent);
         Assert.Equal(
             new[] { customer, email, Key(customer, "Index", "Email"), Key("Table", "dbo", "Customers") },
-            Seq.Of(Key("Table", "dbo", "Customers"), Key(customer, "Index", "Email"), email, customer));
+            SortedArray.Of(Key("Table", "dbo", "Customers"), Key(customer, "Index", "Email"), email, customer));
         Assert.NotEqual(Key("Table", "dbo", "Customer"), Key("View", "dbo", "Customer"));
     }
 
@@ -148,7 +148,7 @@ public sealed class ElementTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void An_element_refuses_a_blank_or_repeated_property_or_relationship_name_and_a_key_refuses_a_malformed_part()
+    public void An_element_rejects_a_blank_or_repeated_property_or_relationship_name_and_a_key_rejects_a_malformed_part()
     {
         var t = Key("Table", "dbo", "T");
         var one = new Element.Property("Nullable", Bool(true));
@@ -187,5 +187,5 @@ public sealed class ElementTests
         Assert.Equal("name.blank", Code(Rename.Of(customer, "")));
     }
 
-    private static string Code<T>(Result<T> result) => Assert.IsType<Result<T>.Refused>(result).Refusal.Code;
+    private static string Code<T>(Result<T> result) => Assert.IsType<Result<T>.Failed>(result).Error.Code;
 }

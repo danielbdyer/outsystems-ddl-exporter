@@ -15,8 +15,8 @@ public sealed record Rename(ElementKey Before, ElementKey After) : IComparable<R
             .Bind(name => before.Parent is { } parent ? ElementKey.Of(parent, before.Type, name) : ElementKey.Of(before.Type, name))
             .Map(after => new Rename(before, after));
 
-    /// <summary>The rename back. A method, not a property: a record prints and serializes every public property, and
-    /// a property returning the rename back would be walked back and forth without end.</summary>
+    /// <summary>The rename back, as a method: a record prints and serializes every public property, and a property
+    /// returning the rename back would recurse until the stack overflows.</summary>
     public Rename Inverted() => new(After, Before);
 
     public int CompareTo(Rename? other) =>
@@ -24,29 +24,29 @@ public sealed record Rename(ElementKey Before, ElementKey After) : IComparable<R
 }
 
 /// <summary>
-/// What changes between two reads, for every element type the walk reads, the deploy scripts and the refactorlog
-/// entries included: the elements added and removed, the renames, and each element in both reads that differs,
+/// What changes between two models, for every element type io/Ssdt.Elements reads, the deploy scripts and the refactorlog
+/// entries included: the elements created and dropped, the renames, and each element in both models that is altered,
 /// property by property and relationship by relationship. An element continues under its own key, or under the key a
 /// rename gives it or one of its ancestors; so a renamed table's columns and indexes move with it, a column renamed in
 /// a renamed table is one rename, and a reference to a renamed element is unchanged when it names the new key.
 /// </summary>
-public sealed record Change(Seq<Element> Added, Seq<Element> Removed, Seq<Rename> Renamed, Seq<Change.Altered> Changed)
+public sealed record Change(SortedArray<Element> Created, SortedArray<Element> Dropped, SortedArray<Rename> Renamed, SortedArray<Change.Alteration> Altered)
 {
-    public bool IsEmpty => Added.Count + Removed.Count + Renamed.Count + Changed.Count == 0;
+    public bool IsEmpty => Created.Count + Dropped.Count + Renamed.Count + Altered.Count == 0;
 
     /// <summary>
     /// The change from <paramref name="before"/> to <paramref name="after"/>. A rename applies when an element's key,
     /// under its parent's key after, is gone after, and a rename of it leads, directly or through later renames, to a
     /// key that is new after and continues no other element; the rest of the refactorlog's history changes nothing.
     /// SSDT records each entry under the keys of its moment, so an entry may name the element under any key its parent
-    /// held, old, new or between, and its new key is read under the parent's key after. Refuses a read in which two
-    /// elements share a key.
+    /// held, old, new or between, and its new key is read under the parent's key after. A model in which two
+    /// elements share a key is the error change.duplicate-key.
     /// </summary>
-    public static Result<Change> Between(Seq<Element> before, Seq<Element> after, Seq<Rename> renames)
+    public static Result<Change> Between(SortedArray<Element> before, SortedArray<Element> after, SortedArray<Rename> renames)
     {
-        if ((Duplicate(before) ?? Duplicate(after)) is { } refusal)
+        if ((Duplicate(before) ?? Duplicate(after)) is { } error)
         {
-            return refusal;
+            return error;
         }
 
         var (was, now) = (before.ToDictionary(e => e.Key), after.ToDictionary(e => e.Key));
@@ -106,47 +106,47 @@ public sealed record Change(Seq<Element> Added, Seq<Element> Removed, Seq<Rename
 
         var pairs = before.Where(e => continues.GetValueOrDefault(Image(e.Key)) == e.Key).Select(e => (Was: e, Now: now[Image(e.Key)])).ToList();
         return new Change(
-            Seq.Of(after.Where(e => !continues.ContainsKey(e.Key))),
-            Seq.Of(before.Where(e => continues.GetValueOrDefault(Image(e.Key)) != e.Key)),
-            Seq.Of(renamed),
-            Seq.Of(pairs.Select(p => Alteration(p.Was, p.Now, Image)).OfType<Altered>()));
+            SortedArray.Of(after.Where(e => !continues.ContainsKey(e.Key))),
+            SortedArray.Of(before.Where(e => continues.GetValueOrDefault(Image(e.Key)) != e.Key)),
+            SortedArray.Of(renamed),
+            SortedArray.Of(pairs.Select(p => AlterationOf(p.Was, p.Now, Image)).OfType<Alteration>()));
     }
 
     // Where a key is after, and every key the refactorlog may name it by: each key it held, under each key its parent held.
     private sealed record Place(ElementKey Image, ElementKey?[] Held);
 
-    // How an element differs from the one it continues as, its old targets read through the renames; null when alike.
-    private static Altered? Alteration(Element was, Element now, Func<ElementKey, ElementKey> image)
+    // How an element is altered from the one it continues as, its old targets read through the renames; null when alike.
+    private static Alteration? AlterationOf(Element was, Element now, Func<ElementKey, ElementKey> image)
     {
-        var properties = Seq.Of(was.Properties.Select(p => p.Name).Union(now.Properties.Select(p => p.Name))
+        var properties = SortedArray.Of(was.Properties.Select(p => p.Name).Union(now.Properties.Select(p => p.Name))
             .Select(name => new Property(name, was[name], now[name]))
             .Where(p => p.Before != p.After));
-        var relationships = Seq.Of(was.Relationships.Select(r => r.Name).Union(now.Relationships.Select(r => r.Name))
+        var relationships = SortedArray.Of(was.Relationships.Select(r => r.Name).Union(now.Relationships.Select(r => r.Name))
             .Select(name => new Relationship(name, Targets(was, name), Targets(now, name)))
-            .Where(r => Seq.Of(r.Before.Select(t => t with { Key = image(t.Key) })) != r.After));
-        return properties.Count + relationships.Count == 0 ? null : new Altered(now.Key, properties, relationships);
+            .Where(r => SortedArray.Of(r.Before.Select(t => t with { Key = image(t.Key) })) != r.After));
+        return properties.Count + relationships.Count == 0 ? null : new Alteration(now.Key, properties, relationships);
     }
 
-    private static Seq<Element.Relationship.Target> Targets(Element element, string name) =>
+    private static SortedArray<Element.Relationship.Target> Targets(Element element, string name) =>
         element.Relationships.FirstOrDefault(r => r.Name == name)?.Targets ?? default;
 
-    // A Seq sorts elements by key first, so two elements with one key sit side by side.
-    private static Refusal? Duplicate(Seq<Element> read) => Enumerable.Range(1, Math.Max(0, read.Count - 1))
-        .Where(i => read[i].Key == read[i - 1].Key)
-        .Select(i => new Refusal(
+    // A SortedArray sorts elements by key first, so two elements with one key sit side by side.
+    private static Error? Duplicate(SortedArray<Element> model) => Enumerable.Range(1, Math.Max(0, model.Count - 1))
+        .Where(i => model[i].Key == model[i - 1].Key)
+        .Select(i => new Error(
             "change.duplicate-key",
-            $"Two elements of one read have the key {read[i].Key}.",
-            "Report the read's source: a key names one element, so the walk that produced this read has a defect."))
+            $"Two elements of one model have the key {model[i].Key}.",
+            "Report the model's source: a key names one element, so what read this model into elements has a defect."))
         .FirstOrDefault();
 
-    /// <summary>An element in both reads that differs.</summary>
-    public sealed record Altered(ElementKey Key, Seq<Property> Properties, Seq<Relationship> Relationships) : IComparable<Altered>
+    /// <summary>An element in both models that is altered: its key after, and each property and relationship that differs.</summary>
+    public sealed record Alteration(ElementKey Key, SortedArray<Property> Properties, SortedArray<Relationship> Relationships) : IComparable<Alteration>
     {
-        public int CompareTo(Altered? other) =>
+        public int CompareTo(Alteration? other) =>
             other is null ? 1
             : Key.CompareTo(other.Key) is var k and not 0 ? k
-            : Seq.Compare(Properties, other.Properties) is var p and not 0 ? p
-            : Seq.Compare(Relationships, other.Relationships);
+            : SortedArray.Compare(Properties, other.Properties) is var p and not 0 ? p
+            : SortedArray.Compare(Relationships, other.Relationships);
     }
 
     /// <summary>A property that differs: its value before and after, null where the element does not carry it.</summary>
@@ -162,13 +162,13 @@ public sealed record Change(Seq<Element> Added, Seq<Element> Removed, Seq<Rename
     }
 
     /// <summary>A relationship that differs: its targets before and after, empty where the element has none.</summary>
-    public sealed record Relationship(string Name, Seq<Element.Relationship.Target> Before, Seq<Element.Relationship.Target> After)
+    public sealed record Relationship(string Name, SortedArray<Element.Relationship.Target> Before, SortedArray<Element.Relationship.Target> After)
         : IComparable<Relationship>
     {
         public int CompareTo(Relationship? other) =>
             other is null ? 1
             : string.CompareOrdinal(Name, other.Name) is var n and not 0 ? n
-            : Seq.Compare(Before, other.Before) is var b and not 0 ? b
-            : Seq.Compare(After, other.After);
+            : SortedArray.Compare(Before, other.Before) is var b and not 0 ? b
+            : SortedArray.Compare(After, other.After);
     }
 }

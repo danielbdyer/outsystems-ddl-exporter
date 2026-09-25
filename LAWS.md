@@ -6,23 +6,23 @@ Whether each is green is the CI run's to say. A law without a green test is not 
 
 | Law | The test, in English | The test |
 |---|---|---|
-| 2′ a published copy converges | A published copy converges and one column altered on it is exit 5 naming it | `Estate.Io.Tests.DriftTests.A_published_copy_converges_and_one_column_altered_on_it_is_exit_5_naming_it` |
-| 3′ the read is complete | A copy published from a package models to the package's keys and two copies of it to one fingerprint | `Estate.Io.Tests.CopyTests.A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint` |
-| 3′ the read is complete | The plan of a package against its own published copy is empty and of the make mandatory head is not | `Estate.Io.Tests.CopyTests.The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not` |
-| 3′ the read is complete | Two reads of one database by one identity fingerprint equally | `Estate.Io.Tests.ProbeTests.Two_reads_of_one_database_by_one_identity_fingerprint_equally` |
-| 3′ the read is complete | Each archetype edit to the proving ground changes the fingerprint | `Estate.Io.Tests.WalkTests.Each_archetype_edit_to_the_proving_ground_changes_the_fingerprint` |
-| 3′ the read is complete | Procedures differing only in a message that names a password walk as written and differ in their Definition | `Estate.Io.Tests.WalkTests.Procedures_differing_only_in_a_message_that_names_a_password_walk_as_written_and_differ_in_their_Definition` |
-| 3′ the read is complete | Two builds of the proving ground walk to equal reads and one fingerprint | `Estate.Io.Tests.WalkTests.Two_builds_of_the_proving_ground_walk_to_equal_reads_and_one_fingerprint` |
-| 3′ the read is complete | Any single edit to a key a property value a relationship target or a script changes the fingerprint | `Estate.Kernel.Tests.ElementTests.Any_single_edit_to_a_key_a_property_value_a_relationship_target_or_a_script_changes_the_fingerprint` |
-| 3′ the read is complete | Every archetype edit changes the fingerprint | `Estate.Kernel.Tests.ElementTests.Every_archetype_edit_changes_the_fingerprint` |
-| 3′ the read is complete | Reads a careless serialization would confuse fingerprint differently | `Estate.Kernel.Tests.ElementTests.Reads_a_careless_serialization_would_confuse_fingerprint_differently` |
-| 3′ the read is complete | The fingerprint of a read is independent of the order its elements are given in | `Estate.Kernel.Tests.ElementTests.The_fingerprint_of_a_read_is_independent_of_the_order_its_elements_are_given_in` |
-| 3′ the read is complete | Two reads fingerprint equally exactly when their elements are equal | `Estate.Kernel.Tests.ElementTests.Two_reads_fingerprint_equally_exactly_when_their_elements_are_equal` |
+| 2′ a published copy matches its package | A published copy matches its package and one column altered on it is exit 5 naming it | `Estate.Io.Tests.DriftTests.A_published_copy_matches_its_package_and_one_column_altered_on_it_is_exit_5_naming_it` |
+| 3′ the model is complete | One database read twice by one identity fingerprints equally | `Estate.Io.Tests.AggregateQueryTests.One_database_read_twice_by_one_identity_fingerprints_equally` |
+| 3′ the model is complete | A copy published from a package models to the package's keys and two copies of it to one fingerprint | `Estate.Io.Tests.CopyTests.A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint` |
+| 3′ the model is complete | The plan of a package against its own published copy is empty and of the make mandatory head is not | `Estate.Io.Tests.CopyTests.The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not` |
+| 3′ the model is complete | Each sample change to the golden project changes the fingerprint | `Estate.Io.Tests.ModelElementsTests.Each_sample_change_to_the_golden_project_changes_the_fingerprint` |
+| 3′ the model is complete | Procedures differing only in a message that names a password read as written and differ in their Definition | `Estate.Io.Tests.ModelElementsTests.Procedures_differing_only_in_a_message_that_names_a_password_read_as_written_and_differ_in_their_Definition` |
+| 3′ the model is complete | Two builds of the golden project read into equal models and one fingerprint | `Estate.Io.Tests.ModelElementsTests.Two_builds_of_the_golden_project_read_into_equal_models_and_one_fingerprint` |
+| 3′ the model is complete | Any single edit to a key a property value a relationship target or a script changes the fingerprint | `Estate.Kernel.Tests.ElementTests.Any_single_edit_to_a_key_a_property_value_a_relationship_target_or_a_script_changes_the_fingerprint` |
+| 3′ the model is complete | Every sample change changes the fingerprint | `Estate.Kernel.Tests.ElementTests.Every_sample_change_changes_the_fingerprint` |
+| 3′ the model is complete | Models a careless serialization would confuse fingerprint differently | `Estate.Kernel.Tests.ElementTests.Models_a_careless_serialization_would_confuse_fingerprint_differently` |
+| 3′ the model is complete | The fingerprint of a model is independent of the order its elements are given in | `Estate.Kernel.Tests.ElementTests.The_fingerprint_of_a_model_is_independent_of_the_order_its_elements_are_given_in` |
+| 3′ the model is complete | Two models fingerprint equally exactly when their elements are equal | `Estate.Kernel.Tests.ElementTests.Two_models_fingerprint_equally_exactly_when_their_elements_are_equal` |
 | a named environment cannot be written | No verb writes to a named environment | `Estate.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |
-| a named environment cannot be written | Nothing but Substrate makes a Copy | `Estate.Io.Tests.CapabilityTests.Nothing_but_Substrate_makes_a_Copy` |
+| a named environment cannot be written | Nothing but ScratchServer makes a Copy | `Estate.Io.Tests.CapabilityTests.Nothing_but_ScratchServer_makes_a_Copy` |
 | a named environment cannot be written | Permissive never reaches an environment | `Estate.Io.Tests.CapabilityTests.Permissive_never_reaches_an_environment` |
 | a named environment cannot be written | A copy the registry does not hold is exit 9 | `Estate.Io.Tests.TargetTests.A_copy_the_registry_does_not_hold_is_exit_9` |
-| a named environment cannot be written | A substrate on a host an environment's reference names is exit 9 | `Estate.Io.Tests.TargetTests.A_substrate_on_a_host_an_environment_s_reference_names_is_exit_9` |
+| a named environment cannot be written | A scratch server on a host an environment's reference names is exit 9 | `Estate.Io.Tests.TargetTests.A_scratch_server_on_a_host_an_environment_s_reference_names_is_exit_9` |
 | dependencies point one way | Io does not depend on the cli and the kernel on neither | `Estate.Budgets.Tests.DependenciesPointOneWay.Io_does_not_depend_on_the_cli_and_the_kernel_on_neither` |
 | dependencies point one way | No project reaches into the knowledge files or ci | `Estate.Budgets.Tests.DependenciesPointOneWay.No_project_reaches_into_the_knowledge_files_or_ci` |
 | the kernel cannot do I/O | Each banned symbol planted in the kernel is a build error | `Estate.Budgets.Tests.BannedSymbolsTests.Each_banned_symbol_planted_in_the_kernel_is_a_build_error` |

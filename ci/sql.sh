@@ -48,8 +48,8 @@ up() {
     docker start "$name" >/dev/null
   fi
 
-  # The password stays inside the container: the probe reads the container's own environment. MSYS_NO_PATHCONV keeps
-  # Git Bash from rewriting the container's paths as Windows ones.
+  # The password stays inside the container: sqlcmd's SELECT 1 runs there and reads the container's own environment.
+  # MSYS_NO_PATHCONV keeps Git Bash from rewriting the container's paths as Windows ones.
   for _ in $(seq 1 90); do
     [ "$(state)" = running ] || { docker logs --tail 20 "$name" >&2; fail "$name stopped; its last lines are above"; }
     if MSYS_NO_PATHCONV=1 docker exec "$name" /bin/sh -c '/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -b -Q "SELECT 1" >/dev/null 2>&1'; then

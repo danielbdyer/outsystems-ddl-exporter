@@ -7,7 +7,7 @@ namespace Estate.Budgets.Tests;
 
 /// <summary>
 /// archive/ is outside v3: its own Directory.Build.props, Directory.Packages.props (central versions off) and
-/// .editorconfig (root = true) stop every walk up from v3's settings; no v3 project reaches into it; and no budget,
+/// .editorconfig (root = true) keep v3's settings out of archive/; no v3 project reaches into it; and no budget,
 /// lint or manifest check counts it, because on the day the archive landed every one of them would have gone red.
 /// </summary>
 public sealed class ArchiveExclusion

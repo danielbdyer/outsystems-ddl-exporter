@@ -16,7 +16,7 @@
   "properties": {
     "schema": {
       "type": "string",
-      "pattern": "^estate\\.[a-z]+/[1-9][0-9]*$"
+      "pattern": "^estate\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$"
     },
     "engine": {
       "$ref": "#/$defs/engine"
@@ -277,12 +277,12 @@
       "properties": {
         "code": {
           "type": "string",
-          "pattern": "^[a-z]+(\\.[a-z0-9-]+)+$"
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9]+(-[a-z0-9]+)*)+(?![\\s\\S])"
         },
         "severity": {
           "enum": [
-            "block",
-            "warn",
+            "error",
+            "warning",
             "note"
           ]
         },
@@ -309,7 +309,7 @@
       "if": {
         "properties": {
           "severity": {
-            "const": "block"
+            "const": "error"
           }
         }
       },

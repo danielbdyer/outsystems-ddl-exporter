@@ -50,10 +50,10 @@
               "diff",
               "classify",
               "predict",
-              "profile",
-              "twin",
+              "measure",
+              "synthetic-copy",
               "prove",
-              "record",
+              "describe",
               "gate",
               "check",
               "knowledge",
@@ -77,7 +77,7 @@
           },
           "output": {
             "type": "string",
-            "pattern": "^estate\\.[a-z]+/[1-9][0-9]*$"
+            "pattern": "^estate\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$"
           }
         }
       }
