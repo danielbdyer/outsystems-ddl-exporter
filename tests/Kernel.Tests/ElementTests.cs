@@ -28,7 +28,7 @@ public sealed class ElementTests
     public void Two_models_fingerprint_equally_exactly_when_their_elements_are_equal()
     {
         Gen.Select(Sets, Sets).Sample((a, b) => (Fingerprint.Of(a) == Fingerprint.Of(b)) == (a == b));
-        Assert.Equal(Fingerprint.Of(Archetypes.Model()), Fingerprint.Of(Archetypes.Model()));
+        Assert.Equal(Fingerprint.Of(SampleChanges.Model()), Fingerprint.Of(SampleChanges.Model()));
         Assert.Equal(Fingerprint.Of(SortedArray.Of<Element>()), Fingerprint.Of(default(SortedArray<Element>)));
     }
 
@@ -41,10 +41,10 @@ public sealed class ElementTests
     [Theory]
     [Trait("Category", "fast")]
     [Trait("Law", "3′ the read is complete")]
-    [MemberData(nameof(Archetypes.Names), MemberType = typeof(Archetypes))]
-    public void Every_archetype_edit_changes_the_fingerprint(string archetype)
+    [MemberData(nameof(SampleChanges.Names), MemberType = typeof(SampleChanges))]
+    public void Every_sample_change_changes_the_fingerprint(string sample)
     {
-        var (before, after, _) = Archetypes.Pair(archetype);
+        var (before, after, _) = SampleChanges.Pair(sample);
         Assert.NotEqual(Fingerprint.Of(before), Fingerprint.Of(after));
     }
 

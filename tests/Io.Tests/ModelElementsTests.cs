@@ -16,15 +16,15 @@ using Xunit.Abstractions;
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// io/Ssdt.Elements (WP 1.2) against real builds: law 3′'s io half (M1 exit 4) and WP 1.3's archetype properties, each
-/// archetype an edited copy of the golden project built against dist/estate/ and read into elements. A package's model is compared
+/// io/Ssdt.Elements (WP 1.2) against real builds: law 3′'s io half (M1 exit 4) and WP 1.3's sample-change properties, each
+/// sample change an edited copy of the golden project built against dist/estate/ and read into elements. A package's model is compared
 /// with a package's only. Make-mandatory edits Customer.Email, the golden project's own populated nullable column (the seed
 /// plants rows with and without an Email).
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
 public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHelper output) : IClassFixture<GoldenProjectModels>
 {
-    /// <summary>What each archetype's change names, one line per element created, dropped, renamed or altered.</summary>
+    /// <summary>What each sample change names, one line per element created, dropped, renamed or altered.</summary>
     private static readonly Dictionary<string, string[]> Named = new()
     {
         ["make-mandatory"] = ["Column [dbo].[Customer].[Email]: Nullable true → false"],
@@ -50,7 +50,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         + "    <Property Name=\"ParentElementName\" Value=\"[dbo].[T]\" />\n    <Property Name=\"ParentElementType\" Value=\"SqlTable\" />\n"
         + "    <Property Name=\"NewName\" Value=\"[A]\" />\n  </Operation>\n</Operations>\n";
 
-    public static TheoryData<string> Archetypes => new(Named.Keys);
+    public static TheoryData<string> SampleChanges => new(Named.Keys);
 
     [Fact]
     [Trait("Category", "fast")]
@@ -72,16 +72,16 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
     [Theory]
     [Trait("Category", "fast")]
-    [MemberData(nameof(Archetypes))]
+    [MemberData(nameof(SampleChanges))]
     [Trait("Law", "3′ the read is complete")]
-    public void Each_archetype_edit_to_the_golden_project_changes_the_fingerprint(string archetype) =>
-        Assert.NotEqual(Fingerprint.Of(heads.Models["base"].Elements), Fingerprint.Of(heads.Models[archetype].Elements));
+    public void Each_sample_change_to_the_golden_project_changes_the_fingerprint(string sample) =>
+        Assert.NotEqual(Fingerprint.Of(heads.Models["base"].Elements), Fingerprint.Of(heads.Models[sample].Elements));
 
     [Theory]
     [Trait("Category", "fast")]
-    [MemberData(nameof(Archetypes))]
-    public void Each_archetype_s_change_between_real_models_names_exactly_what_the_archetype_edits(string archetype) =>
-        Assert.Equal(Named[archetype].Order(StringComparer.Ordinal), Lines(Between("base", archetype)).Order(StringComparer.Ordinal));
+    [MemberData(nameof(SampleChanges))]
+    public void The_change_between_real_models_names_exactly_what_each_sample_change_edits(string sample) =>
+        Assert.Equal(Named[sample].Order(StringComparer.Ordinal), Lines(Between("base", sample)).Order(StringComparer.Ordinal));
 
     /// <summary>M1 exit 2's shape: one line, and nothing else.</summary>
     [Fact]
@@ -105,7 +105,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     }
 
     /// <summary>
-    /// The rename archetype beside a table dbo.AAA with a column Host and an unnamed CHECK on two columns, whose key spells the column's path
+    /// The rename sample change beside a table dbo.AAA with a column Host and an unnamed CHECK on two columns, whose key spells the column's path
     /// ([dbo].[AAA].[Host]) and sorts before it: an entry's model.xml type pairs with the named objects only, so the column
     /// rename stays one rename and is not read as a drop and an add.
     /// </summary>
@@ -757,7 +757,7 @@ public sealed class GoldenProjectModels : IAsyncLifetime
 {
     public const string RenameKey = "6d1c1b5e-3f0a-4c2e-9b7d-2a4f8e6c0d13";
 
-    /// <summary>The rename archetype: Customer.ContactPhone renamed MobileNumber, with the refactorlog entry SSDT writes for it.</summary>
+    /// <summary>The rename sample change: Customer.ContactPhone renamed MobileNumber, with the refactorlog entry SSDT writes for it.</summary>
     private static readonly (string File, string From, string To)[] RenameEdits =
     [
         ("Modules/Customer.sql", "ContactPhone    NVARCHAR(40)    NULL,", "MobileNumber    NVARCHAR(40)    NULL,"),

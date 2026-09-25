@@ -10,12 +10,12 @@ namespace Estate.Io.Tests;
 
 /// <summary>
 /// estate read and estate diff (WP 1.7, V3_ARCHITECTURE.md §8.1 and §8.5) against a git repository holding the golden project at Base and
-/// the make-mandatory archetype at Head: M1 exit 2, and each verb's JSON against its schema under cli/schemas/.
+/// the make-mandatory sample change at Head: M1 exit 2, and each verb's JSON against its schema under cli/schemas/.
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
 public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstate>
 {
-    /// <summary>M1 exit 2: the diff of the make-mandatory archetype prints Customer.Email's Nullable true → false, and nothing else.</summary>
+    /// <summary>M1 exit 2: the diff of the make-mandatory sample change prints Customer.Email's Nullable true → false, and nothing else.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Diff_from_the_base_ref_to_the_make_mandatory_head_prints_Customer_Email_s_Nullable_true_to_false_and_nothing_else()

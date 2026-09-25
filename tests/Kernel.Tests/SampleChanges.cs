@@ -6,12 +6,12 @@ using static Estate.Kernel.Tests.ElementSets;
 namespace Estate.Kernel.Tests;
 
 /// <summary>
-/// The archetype pairs, hand-built as io/Ssdt.Elements reads them: a Customer table with its columns in order, an index
+/// The sample changes, hand-built as io/Ssdt.Elements reads them: a Customer table with its columns in order, an index
 /// on Email, a primary key, both deploy scripts, and a refactorlog holding one old rename (Mail to Email) that every
-/// pair carries, so a rename the refactorlog already applied is shown to change nothing. Each archetype is the same
+/// pair carries, so a rename the refactorlog already applied is shown to change nothing. Each sample change is the same
 /// model built again with one edit.
 /// </summary>
-internal static class Archetypes
+internal static class SampleChanges
 {
     public const string PreDeploy = "PRINT N'Checking the Status table';\n";
     public const string Seed = "MERGE INTO [dbo].[Status] AS t\nUSING (VALUES (1, N'Active')) AS s ([Id], [Name]) ON t.[Id] = s.[Id]\nWHEN NOT MATCHED THEN INSERT ([Id], [Name]) VALUES (s.[Id], s.[Name]);\n";
@@ -32,8 +32,8 @@ internal static class Archetypes
         "make-mandatory", "add a column", "drop a column", "rename a column", "rename a table", "rename a table and a column",
         "a post-deploy seed edit", "a pre-deploy edit");
 
-    /// <summary>An archetype's model before and after, and the renames the refactorlog after it pairs.</summary>
-    public static (SortedArray<Element> Before, SortedArray<Element> After, SortedArray<Rename> Renames) Pair(string archetype) => archetype switch
+    /// <summary>A sample change's model before and after, and the renames the refactorlog after it pairs.</summary>
+    public static (SortedArray<Element> Before, SortedArray<Element> After, SortedArray<Rename> Renames) Pair(string sample) => sample switch
     {
         "make-mandatory" => (Model(), Model(emailNullable: false), [OldRename]),
         "add a column" => (Model(), Model(phone: true), [OldRename]),
@@ -48,10 +48,10 @@ internal static class Archetypes
             [OldRename, Ok(Rename.Of(Email, "EmailAddress")), Ok(Rename.Of(Customer, "Client"))]),
         "a post-deploy seed edit" => (Model(), Model(post: Seed.Replace("(1, N'Active')", "(1, N'Active'), (2, N'Closed')", System.StringComparison.Ordinal)), [OldRename]),
         "a pre-deploy edit" => (Model(), Model(pre: "PRINT N'Checking the Status and Customer tables';\n"), [OldRename]),
-        _ => throw new KeyNotFoundException(archetype),
+        _ => throw new KeyNotFoundException(sample),
     };
 
-    /// <summary>The model, with each archetype's edit as a parameter.</summary>
+    /// <summary>The model, with each sample change's edit as a parameter.</summary>
     public static SortedArray<Element> Model(
         string table = "Customer", string email = "Email", bool emailNullable = true, bool notes = true, bool phone = false,
         string pre = PreDeploy, string post = Seed, Element[]? entries = null)
