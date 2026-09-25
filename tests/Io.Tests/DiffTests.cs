@@ -104,7 +104,7 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Diff_json_validates_against_estate_diff_1_and_carries_the_one_property_both_fingerprints_and_the_engine()
+    public void Diff_json_validates_against_estate_diff_1_and_carries_the_one_property_both_fingerprints_and_the_DacFx_release_and_claims_nothing()
     {
         var (exit, output) = estate.Estate("diff", "--from", "ref:" + estate.Base, "--to", "ref:" + estate.Head, "--json");
 
@@ -116,8 +116,8 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         var property = Assert.Single(altered["properties"]!.AsArray())!;
         Assert.Equal(("Nullable", true, false), ((string?)property["name"], (bool)property["before"]!, (bool)property["after"]!));
         Assert.NotEqual((string?)answer["diff"]!["from"]!["fingerprint"], (string?)answer["diff"]!["to"]!["fingerprint"]);
-        Assert.Equal(Doctor.DacFx, (string?)answer["engine"]!["dacfx"]);
-        Assert.Null(answer["receipt"]);
+        Assert.Equal(DacFx.Version.Match(v => v.ToString(), e => e.Message), (string?)answer["dacfx"]);
+        Assert.Null(answer["provenance"]);
     }
 
     /// <summary>--fail-on-change makes a change exit 5 (the drift check in CI); an unchanged pair still exits 0 and says so.</summary>

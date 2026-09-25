@@ -773,6 +773,16 @@ public static class SqlServer
     public static Result<Database> Reach(Database target, QueryLog? log = null) => Reached(target, log);
 
     /// <summary>
+    /// A copy's SQL Server (R1), which a claim on the copy records: the product version and the copy's compatibility level, read in one
+    /// statement through <see cref="Query{T}"/>, and the digest of the image the estate-sql container runs, which Docker reports
+    /// (ScratchServer.Image). A named environment's server is read by S8, and nothing here reads it.
+    /// </summary>
+    public static Result<Server> ServerOf(Copy copy, QueryLog? log = null) =>
+        Query(copy, new Statement("SQL Server", "SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128)), compatibility_level FROM sys.databases WHERE database_id = DB_ID();"), log,
+                rows => rows is [[string version, byte level]] ? (Version: version, Level: (int)level) : (Version: (string?)null, Level: 0))
+            .Bind(read => Server.Of(read.Version, read.Level, ScratchServer.Image(copy)));
+
+    /// <summary>
     /// Whether the target answers this identity with what reading it takes, before DacFx's own retries begin: a connection opens, and
     /// the identity holds VIEW DEFINITION there (§1 fact 2), whose absence is a denial (Msg 300, SQL Server's number for it).
     /// </summary>

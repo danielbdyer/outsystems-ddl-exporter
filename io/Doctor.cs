@@ -82,10 +82,7 @@ public static class Doctor
     /// <summary>What the examination of one item found, and its remedy when the item is missing.</summary>
     public sealed record Prerequisite(Item Item, string Found, string? Remedy);
 
-    /// <summary>The committed DacFx: the release estate runs, its package version as in 170.5.96.</summary>
-    public static string DacFx { get; } = FileVersion(typeof(DacServices).Assembly.Location) ?? "";
-
-    /// <summary>The pinned image's digest, which a receipt stamps when a copy ran in the container.</summary>
+    /// <summary>The pinned image's digest, which the image item compares the estate-sql container's image with.</summary>
     public static string ImageDigest => SqlServerImage[(SqlServerImage.IndexOf('@', StringComparison.Ordinal) + 1)..];
 
     public static IReadOnlyList<Prerequisite> Examine(Machine machine, Runner run, string version, CancellationToken cancel = default)
@@ -221,18 +218,18 @@ public static class Doctor
 
     /// <summary>The tool folder estate would build with (Ssdt.Tool), and whether its DacFx build task is the committed DacFx: a stale publish under another DacFx is named.</summary>
     private static Prerequisite Tool(Machine machine) => Ssdt.Tool(machine.ToolFolder, machine.ToolVariable, machine.WorkingDirectory).Match(
-        folder => FileVersion(Path.Combine(folder, BuildTask)) is { } task && task != DacFx
-            ? new Prerequisite(Item.Tool, (folder == machine.ToolFolder ? "published" : folder) + ", whose DacFx build task is " + task + ", not " + DacFx,
-                "Run ci/publish.sh, or ci/publish.ps1 on Windows, again so the tool folder carries DacFx " + DacFx + ", then run estate doctor.")
+        folder => FileVersion(Path.Combine(folder, BuildTask)) is { } task && DacFx.Version is Result<DacFxVersion>.Ok(var running) && task != running.ToString()
+            ? new Prerequisite(Item.Tool, (folder == machine.ToolFolder ? "published" : folder) + ", whose DacFx build task is " + task + " while estate runs DacFx " + running,
+                "Run ci/publish.sh, or ci/publish.ps1 on Windows, again so the tool folder carries DacFx " + running + ", then run estate doctor.")
             : new Prerequisite(Item.Tool, folder == machine.ToolFolder ? "published" : folder, null),
         error => new Prerequisite(Item.Tool, "missing", error.Remedy));
 
-    /// <summary>The committed DacFx against the ledger's row: its pin, the error in the row, or the rejection of a DacFx outside the window.</summary>
-    private static Prerequisite Committed(string estateRoot, string version) => Toolchain(estateRoot, version)
-        .Bind(pin => Engine.Of(DacFx).Map(engine => (Pin: pin, Rejection: pin.Rejects(engine))))
-        .Match(
-            found => new Prerequisite(Item.DacFx, DacFx + " (" + (found.Rejection is null ? found.Pin.Match(_ => "UNPINNED", pinned => "pinned " + pinned) : "outside the pin " + found.Pin) + ")", found.Rejection?.Remedy),
-            error => new Prerequisite(Item.DacFx, DacFx + " (" + error.Message.TrimEnd('.') + ")", error.Remedy));
+    /// <summary>The committed DacFx against the ledger's row: its pin, the error in the row, or the rejection of a DacFx outside the window; or why estate cannot name the release it runs.</summary>
+    private static Prerequisite Committed(string estateRoot, string version) => DacFx.Version.Match(
+        dacfx => Toolchain(estateRoot, version).Map(pin => (Pin: pin, Rejection: pin.Rejects(dacfx))).Match(
+            found => new Prerequisite(Item.DacFx, dacfx + " (" + (found.Rejection is null ? found.Pin.Match(_ => "UNPINNED", pinned => "pinned " + pinned) : "outside the pin " + found.Pin) + ")", found.Rejection?.Remedy),
+            error => new Prerequisite(Item.DacFx, dacfx + " (" + error.Message.TrimEnd('.') + ")", error.Remedy)),
+        error => new Prerequisite(Item.DacFx, "unknown (" + error.Message.TrimEnd('.') + ")", error.Remedy));
 
     /// <summary>git --version: absent, not answering, or older than 2.24, which lacks the --end-of-options io/Git passes to rev-parse.</summary>
     private static Prerequisite GitVersion(Runner run, CancellationToken cancel) => run(Program("git", "--version"), cancel) switch

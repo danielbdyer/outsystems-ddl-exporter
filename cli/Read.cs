@@ -30,17 +30,28 @@ public static partial class Verbs
     /// <summary>estate read --from &lt;target&gt; [--project &lt;path&gt;]: a ref built at its commit, a package or a database, read whole (V3_ARCHITECTURE.md §8.1).</summary>
     public static Envelope Read(Checkout here, IReadOnlyList<string> words)
     {
-        if (Contract.Flags(words, ["--from"], ["--project"], []).Bind(flags => SqlServer.Target(flags["--from"], "--from")
-            .Bind(from => Pinned(here).Bind(pin => Reading(here, from, flags.GetValueOrDefault("--project")).Map(source => (Source: source, Pin: pin)))))
-            .Failed(out var reading, out var error))
+        if (DacFx.Version.Failed(out var dacfx, out var error))
         {
-            return Contract.Failed(Of("read"), error, Stamped(null, null));
+            return Contract.Failed(Of("read"), error);
         }
 
-        var (source, fingerprint, printer) = (reading.Source, Fingerprint.Of(reading.Source.Model.Elements), new Printer());
+        var stamp = new Stamp(dacfx);
+        if (Contract.Flags(words, ["--from"], ["--project"], []).Bind(flags => SqlServer.Target(flags["--from"], "--from").Map(from => (Flags: flags, From: from)))
+            .Bind(asked => Pinned(here, dacfx).Map(pin => (asked.Flags, asked.From, Pin: pin))).Failed(out var asked, out error))
+        {
+            return Contract.Failed(Of("read"), error, stamp);
+        }
+
+        stamp = stamp with { Pin = asked.Pin };
+        if (Reading(here, asked.From, asked.Flags.GetValueOrDefault("--project")).Failed(out var source, out error))
+        {
+            return Contract.Failed(Of("read"), error, stamp);
+        }
+
+        var (fingerprint, printer) = (Fingerprint.Of(source.Model.Elements), new Printer());
         var elements = Render.Array(source.Model.Elements.Select(printer.Json));
         return Contract.Answer(Of("read").Output, Of("read").Outcome("done"), 0, source.Target + ": " + source.Model.Elements.Count + " elements, fingerprint " + Render.Digest(fingerprint),
-            printer.Findings, Stamped(source.Image, reading.Pin), content: new JsonObject
+            printer.Findings, stamp with { Server = source.Server }, content: new JsonObject
             {
                 ["read"] = new JsonObject { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(fingerprint), ["count"] = source.Model.Elements.Count, ["elements"] = elements },
             });
@@ -58,8 +69,8 @@ public static partial class Verbs
     internal static Finding CaseOnly(string code, Rename pair, Collation collation) => Finding.Note(code, pair.After.ToString(),
         pair.Before + " and " + pair.After + " differ in letter case alone, which " + collation.Name + " reads as one name; DacFx plans nothing for it.");
 
-    /// <summary>A target's model read whole into elements, with the SQL Server image a database ran in; a package's model carries its refactorlog's renames.</summary>
-    internal sealed record Source(Target Target, Ssdt.ModelElements Model, string? Image, bool IsDatabase);
+    /// <summary>A target's model read whole into elements, with the SQL Server a copy runs on; a package's model carries its refactorlog's renames.</summary>
+    internal sealed record Source(Target Target, Ssdt.ModelElements Model, Server? Server, bool IsDatabase);
 
     internal static Result<Source> Reading(Checkout here, Target target, string? project) => target.Match(
         _ => Modelled(here, target), _ => Modelled(here, target), () => Modelled(here, target),
@@ -80,14 +91,12 @@ public static partial class Verbs
     });
 
     private static Result<Source> Modelled(Checkout here, Target target) => SqlServer.Resolve(target, here.Root).Bind(database =>
-        SqlServer.Model(database, here.Run).Map(elements => new Source(target, new Ssdt.ModelElements(elements, []), ScratchServer.Image(database), true)));
+        SqlServer.Model(database, here.Run).Bind(elements => (database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, here.Run).Map(server => (Server?)server) : Result.Ok<Server?>(null))
+            .Map(server => new Source(target, new Ssdt.ModelElements(elements, []), server, true))));
 
-    /// <summary>The toolchain ledger's pin, which every verb that builds reads (R13), or the rejection of a committed engine outside its window.</summary>
-    internal static Result<Pin> Pinned(Checkout here) => Io.Doctor.Toolchain(here.Root, Contract.Version)
-        .Bind(pin => pin.Rejects(Stamped(null, pin).Engine) is { } outside ? Result.Fail<Pin>(outside) : Result.Ok(pin));
-
-    /// <summary>The engine as stamped: the committed DacFx, the image's digest where a copy ran in the container, and the pin when a ledger was read.</summary>
-    internal static Stamp Stamped(string? image, Pin? pin) => new(Engine.Of(Io.Doctor.DacFx, image).Match(engine => engine, error => throw new UnreachableException(error.Message)), pin);
+    /// <summary>The toolchain ledger's pin, which every verb that builds reads (R13), or the rejection of the committed DacFx outside its window.</summary>
+    internal static Result<Pin> Pinned(Checkout here, DacFxVersion dacfx) => Io.Doctor.Toolchain(here.Root, Contract.Version)
+        .Bind(pin => pin.Rejects(dacfx) is { } outside ? Result.Fail<Pin>(outside) : Result.Ok(pin));
 
     /// <summary>
     /// The writer of the values an answer prints, and the findings printing raises (decision 2.27): a script is written through

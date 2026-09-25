@@ -41,11 +41,14 @@ internal static class RefusalPaths
     [
         new("an empty name part", "name.blank", false, (_, _) => Failed(Name.Of(""))),
         new("an overlong name part", "name.too-long", true, (_, planted) => Failed(Name.Of(planted + new string('x', 129)))),
-        new("a DacFx version that is none", "engine.dacfx-version", false, (_, _) => Failed(Engine.Of("v170"))),
-        new("an image digest that is none", "engine.image-digest", false, (_, _) => Failed(Engine.Of("170.5.96", "sha256:0"))),
+        new("a DacFx version that is none", "toolchain.dacfx-version", false, (_, _) => Failed(DacFxVersion.Of("v170"))),
+        new("a DacFx assembly that carries no version", "toolchain.dacfx-version", false, (_, _) => Failed(DacFx.VersionOf("", null))),
+        new("an image digest that is none", "server.image-digest", false, (_, _) => Failed(Server.Of("16.0.4295.3", 160, "sha256:0"))),
+        new("a SQL Server product version of other than four numbers", "server.product-version", false, (_, _) => Failed(Server.Of("16.0", 160, null))),
+        new("a compatibility level SQL Server never had", "server.compatibility-level", false, (_, _) => Failed(Server.Of("16.0.4295.3", 165, null))),
         new("a fingerprint that is none", "fingerprint.malformed", false, (_, _) => Failed(Fingerprint.Parse("0"))),
-        new("an engine outside the pin's window", "toolchain.outside-window", false, (_, _) =>
-            Made(Pin.Of("170.6.10", "170.5.96")).Rejects(Made(Engine.Of("170.7.2"))) ?? throw new InvalidOperationException("the window admitted a newer engine")),
+        new("a DacFx release outside the pin's window", "toolchain.outside-window", false, (_, _) =>
+            Made(Pin.Of("170.6.10", "170.5.96")).Rejects(Made(DacFxVersion.Of("170.7.2"))) ?? throw new InvalidOperationException("the window admitted a newer release")),
         new("a toolchain ledger with no row for this estate", "toolchain.unrecorded", false, (scratch, _) =>
             Failed(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 2.9.0 | UNPINNED | — |"), "3.0.0+0123abcd"))),
         new("a toolchain ledger whose pin is no release", "toolchain.malformed", false, (scratch, _) =>

@@ -38,17 +38,30 @@ public static partial class Verbs
     /// </summary>
     public static Envelope Diff(Checkout here, IReadOnlyList<string> words)
     {
-        if (Contract.Flags(words, ["--from", "--to"], ["--project"], ["--fail-on-change"]).Bind(flags => SqlServer.Target(flags["--from"], "--from")
-            .Bind(from => SqlServer.Target(flags["--to"], "--to").Bind(to => Pinned(here).Bind(pin => Reading(here, from, flags.GetValueOrDefault("--project"))
-            .Bind(before => Reading(here, to, flags.GetValueOrDefault("--project")).Bind(after => CollationOf(before.Model.Elements).Bind(collation =>
-                Change.Between(before.Model.Elements, after.Model.Elements, SortedArray.Of(before.Model.Renames.Concat(after.Model.Renames).Distinct()), collation)
-                    .Map(change => (Before: before, After: after, Change: change, Collation: collation, Fail: flags.ContainsKey("--fail-on-change"), Pin: pin)))))))))
-            .Failed(out var diff, out var error))
+        if (DacFx.Version.Failed(out var dacfx, out var error))
         {
-            return Contract.Failed(Of("diff"), error, Stamped(null, null));
+            return Contract.Failed(Of("diff"), error);
         }
 
-        return Diff(diff.Before, diff.After, diff.Change, diff.Collation, diff.Fail, Stamped(diff.Before.Image ?? diff.After.Image, diff.Pin));
+        var stamp = new Stamp(dacfx);
+        if (Contract.Flags(words, ["--from", "--to"], ["--project"], ["--fail-on-change"]).Bind(flags => SqlServer.Target(flags["--from"], "--from")
+            .Bind(from => SqlServer.Target(flags["--to"], "--to").Bind(to => Pinned(here, dacfx).Map(pin => (Flags: flags, From: from, To: to, Pin: pin)))))
+            .Failed(out var asked, out error))
+        {
+            return Contract.Failed(Of("diff"), error, stamp);
+        }
+
+        stamp = stamp with { Pin = asked.Pin };
+        if (Reading(here, asked.From, asked.Flags.GetValueOrDefault("--project")).Bind(before => Reading(here, asked.To, asked.Flags.GetValueOrDefault("--project"))
+                .Bind(after => CollationOf(before.Model.Elements).Bind(collation =>
+                    Change.Between(before.Model.Elements, after.Model.Elements, SortedArray.Of(before.Model.Renames.Concat(after.Model.Renames).Distinct()), collation)
+                        .Map(change => (Before: before, After: after, Change: change, Collation: collation)))))
+            .Failed(out var diff, out error))
+        {
+            return Contract.Failed(Of("diff"), error, stamp);
+        }
+
+        return Diff(diff.Before, diff.After, diff.Change, diff.Collation, asked.Flags.ContainsKey("--fail-on-change"), stamp with { Server = diff.Before.Server ?? diff.After.Server });
     }
 
     /// <summary>

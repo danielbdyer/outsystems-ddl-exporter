@@ -40,24 +40,35 @@ public static partial class Verbs
     /// </summary>
     private static Envelope Drift(Checkout here, IReadOnlyList<string> words)
     {
-        var (verb, stamp) = (Of("check"), Stamped(null, null));
+        var verb = Of("check");
+        if (DacFx.Version.Failed(out var dacfx, out var error))
+        {
+            return Contract.Failed(verb, error);
+        }
+
+        var stamp = new Stamp(dacfx);
         if (Contract.Flags(words, ["--target", "--at"], ["--profile", "--project"], []).Bind(flags => SqlServer.Target(flags["--target"], "--target").Map(target => (Flags: flags, Target: target)))
-            .Bind(asked => Io.Doctor.Toolchain(here.Root, Contract.Version).Map(pin => (asked.Flags, asked.Target, Pin: pin))).Failed(out var asked, out var error))
+            .Bind(asked => Io.Doctor.Toolchain(here.Root, Contract.Version).Map(pin => (asked.Flags, asked.Target, Pin: pin))).Failed(out var asked, out error))
         {
             return Contract.Failed(verb, error, stamp);
         }
 
-        stamp = Stamped(null, asked.Pin);
+        stamp = stamp with { Pin = asked.Pin };
         var posture = Profiles.Environments(here.Root);
-        if ((asked.Pin.Rejects(stamp.Engine) is { } outside ? Result.Fail<SqlServer.Database>(outside) : SqlServer.Resolve(asked.Target, posture, here.Root))
+        if ((asked.Pin.Rejects(dacfx) is { } outside ? Result.Fail<SqlServer.Database>(outside) : SqlServer.Resolve(asked.Target, posture, here.Root))
             .Bind(database => Profile(here, database, posture, asked.Flags.GetValueOrDefault("--profile")).Map(profile => (asked.Flags, asked.Target, Database: database, Profile: profile)))
             .Failed(out var drift, out error))
         {
             return Contract.Failed(verb, error, stamp);
         }
 
-        stamp = Stamped(ScratchServer.Image(drift.Database), stamp.Pin);
         var log = here.Run;
+        if ((drift.Database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, log).Map(server => (Server?)server) : Result.Ok<Server?>(null)).Failed(out var reached, out error))
+        {
+            return Contract.Failed(verb, error, stamp);
+        }
+
+        stamp = stamp with { Server = reached };
         var at = drift.Flags["--at"];
         if (SqlServer.Reach(drift.Database, log).Bind(_ => Built(here, at, drift.Flags.GetValueOrDefault("--project"))).Bind(built => Packaged(built.Dacpac)
                 .Bind(model => SqlServer.Plan(built.Dacpac, drift.Database, drift.Profile, log).Map(plan => (built.Commit, Model: model, Plan: plan))))
@@ -66,8 +77,7 @@ public static partial class Verbs
             return Contract.Failed(verb, error, stamp);
         }
 
-        var receipt = new Receipt(Fingerprint.Of(planned.Model.Elements), Fingerprint.Of(planned.Plan.Report), null, stamp.Engine, drift.Profile.Fingerprint, drift.Target.ToString(),
-            DateTimeOffset.UtcNow);
+        var provenance = Provenance.Drift(Fingerprint.Of(planned.Model.Elements), Fingerprint.Of(planned.Plan.Report), dacfx, stamp.Server, drift.Profile.Fingerprint, drift.Target, DateTimeOffset.UtcNow);
         var items = planned.Plan.Items;
         return Contract.Answer(verb.Output, verb.Outcome(items.Count == 0 ? "matches" : "differs"), items.Count == 0 ? 0 : 5,
             drift.Target + (items.Count == 0 ? " matches " + at : " differs from " + at + " in each object below."),
@@ -76,11 +86,11 @@ public static partial class Verbs
                     "The plan against " + drift.Target + " would " + i.Operation + " " + Named(i.Type) + " " + i.Name + ".",
                     "Run estate diff --from " + drift.Target + " --to ref:" + at + " to see each property that differs.")),
                 .. items.Count == 0 ? [] : Columns(drift.Database, planned.Model, items, log),
-                .. stamp.Pin is Pin.Unpinned ? new[] { Finding.Note("engine.unpinned", "estate check drift", "This receipt stands on DacFx " + stamp.Engine.DacFx
-                    + ", UNPINNED: " + Io.Doctor.Ledger + " pins no engine for estate " + Contract.Version.Split('+')[0] + ".") } : [],
+                .. stamp.Pin is Pin.Unpinned ? new[] { Finding.Note("toolchain.unpinned", Io.Doctor.Ledger, "This answer stands on DacFx " + dacfx
+                    + ", UNPINNED: " + Io.Doctor.Ledger + " pins no DacFx release for estate " + Contract.Version.Split('+')[0] + ".") } : [],
                 Unverified,
             ],
-            stamp, receipt, new JsonObject
+            stamp, provenance, new JsonObject
             {
                 ["check"] = new JsonObject
                 {
@@ -91,11 +101,11 @@ public static partial class Verbs
     }
 
     /// <summary>
-    /// §17 item 15's default, on every receipt: until S7 commits the profile the Octopus step applies, the profile a receipt stands on is
-    /// the golden project's Pipeline profile or the estate's own, and neither is verified against that step.
+    /// §17 item 15's default, on every drift answer: until S7 commits the profile the Octopus step applies, the profile an answer stands on
+    /// is the golden project's Pipeline profile or the estate's own, and neither is verified against that step.
     /// </summary>
     private static Finding Unverified => Finding.Note("profile.unverified", "estate check drift",
-        "This receipt stands on a profile not verified against the Octopus step: S7 has not committed the profile that step applies.");
+        "This answer stands on a profile not verified against the Octopus step, whose profile the estate does not yet commit.");
 
     /// <summary>The pipeline's profile: a named environment's own; for a copy, the one --profile names, else the one profile every environment of the posture names.</summary>
     private static Result<PublishProfile.Strict> Profile(Checkout here, SqlServer.Database database, Result<Environments> posture, string? named) =>

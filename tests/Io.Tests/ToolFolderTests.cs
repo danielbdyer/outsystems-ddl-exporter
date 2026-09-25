@@ -84,11 +84,11 @@ public sealed class ToolFolderTests(PublishedTool tool)
         var line = (string)answer["message"]!;
         var findings = answer["findings"]!.AsArray().Select(f => f!).ToList();
         Assert.Equal(findings.Count == 0 ? (0, "estate doctor READY | ") : (6, "estate doctor DEGRADED | "), (exit, line[..(line.IndexOf('|', StringComparison.Ordinal) + 2)]));
-        Assert.Contains(" | tool=published | dacfx=" + Doctor.DacFx + " (", line, StringComparison.Ordinal);
+        Assert.Contains(" | tool=published | dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (", line, StringComparison.Ordinal);
         Assert.DoesNotContain("M1", line, StringComparison.Ordinal);
         Assert.DoesNotContain(findings, f => (string)f["code"]! == "doctor.tool");
         Assert.All(findings, f => Assert.False(string.IsNullOrEmpty((string?)f["remedy"])));
-        Assert.Equal(Doctor.DacFx, (string?)answer["engine"]!["dacfx"]);
+        Assert.Equal(DacFx.Version.Match(v => v.ToString(), e => e.Message), (string?)answer["dacfx"]);
     }
 
     /// <summary>A tree copied without its bin/ and obj/, so each build under .estate/ starts fresh.</summary>

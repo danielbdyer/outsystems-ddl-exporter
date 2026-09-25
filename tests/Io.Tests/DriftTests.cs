@@ -39,10 +39,10 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         Assert.DoesNotContain("Server=db", output, StringComparison.Ordinal);
     }
 
-    /// <summary>M1 exit 6 through the verb: a ledger whose pin the committed engine is neither, nor the release before, is exit 6 before anything connects, the engine stamped.</summary>
+    /// <summary>M1 exit 6 through the verb: a ledger whose pin the committed DacFx is neither, nor the release before, is exit 6 before anything connects, the stamp naming both.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void An_engine_outside_the_ledger_s_window_is_exit_6_before_anything_connects()
+    public void The_committed_DacFx_outside_the_ledger_s_window_is_exit_6_before_anything_connects()
     {
         var root = Directory.CreateTempSubdirectory("estate-window-").FullName;
         try
@@ -56,7 +56,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             ScratchEstate.Valid("estate.check.1.schema.json", answer);
             Assert.Equal(6, exit);
             Assert.Equal("toolchain.outside-window", (string?)answer["findings"]![0]!["code"]);
-            Assert.Equal(("170.5.96", "170.7.2"), ((string?)answer["engine"]!["dacfx"], (string?)answer["engine"]!["pin"]));
+            Assert.Equal(("170.5.96", "170.7.2", null), ((string?)answer["dacfx"], (string?)answer["pin"], answer["server"]));
         }
         finally
         {
@@ -197,12 +197,13 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     }
 
     /// <summary>
-    /// R13's stamp (M1 exit 6): the receipt names the committed engine, the image's digest where the copy ran in the container, and UNPINNED
-    /// while the ledger's row is; and, until S7 lands the Octopus step's profile, that its profile is not verified against it (§17 item 15).
+    /// R13's stamp (M1 exit 6): the provenance names the committed DacFx and the copy's server, with the image's digest where the copy ran in
+    /// the container, and the stamp says UNPINNED while the ledger's row does; and, until S7 lands the Octopus step's profile, that its profile
+    /// is not verified against it (§17 item 15).
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task Every_receipt_names_its_engine()
+    public async Task Every_drift_answer_names_its_DacFx_and_its_server()
     {
         var copy = await Published();
         try
@@ -212,16 +213,15 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             var answer = JsonNode.Parse(output)!;
             ScratchEstate.Valid("estate.check.1.schema.json", answer);
             Assert.Equal((0, "matches"), (exit, (string?)answer["outcome"]));
-            var receipt = answer["receipt"]!;
+            var provenance = answer["provenance"]!;
             // The copy ran in the estate-sql container when its server is the one ~/.estate/sql.env names, whether ESTATE_SQL also names it or
             // not; ci/sql.sh up, which the fixture runs, keeps that container on the pinned image, whose digest Docker then reports.
             var container = File.Exists(ScratchServer.SqlEnv) && ScratchServer.ServerName(null, ScratchServer.SqlEnv, localDb: false) is Result<ServerName>.Ok(var inContainer)
                 && ScratchServer.ServerName(copy.Connection) is Result<ServerName>.Ok(var made) && made == inContainer;
-            Assert.Equal(("170.5.96", container ? Doctor.ImageDigest : null, "UNPINNED"),
-                ((string?)receipt["engine"]!["dacfx"], (string?)receipt["engine"]!["sqlserver"], (string?)receipt["engine"]!["pin"]));
-            Assert.Equal(("copy:" + copy.Name, "dataFacts", estate.Base), ((string?)receipt["where"], (string?)receipt["lacking"], (string?)answer["check"]!["commit"]));
-            Assert.Equal(answer["engine"]!.ToJsonString(), receipt["engine"]!.ToJsonString());
-            Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "engine.unpinned" && ((string?)f["message"])!.Contains("UNPINNED", StringComparison.Ordinal));
+            Assert.Equal(("170.5.96", container ? Doctor.ImageDigest : null, "UNPINNED"), ((string?)provenance["dacfx"], (string?)provenance["server"]!["image"], (string?)answer["pin"]));
+            Assert.Equal(("copy:" + copy.Name, "[\"dataConditions\"]", estate.Base), ((string?)provenance["target"], provenance["lacking"]!.ToJsonString(), (string?)answer["check"]!["commit"]));
+            Assert.Equal(answer["server"]!.ToJsonString(), provenance["server"]!.ToJsonString());
+            Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "toolchain.unpinned" && ((string?)f["message"])!.Contains("UNPINNED", StringComparison.Ordinal));
             Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "profile.unverified" && (string?)f["severity"] == "note"
                 && ((string?)f["message"])!.Contains("profile not verified against the Octopus step", StringComparison.Ordinal));
         }

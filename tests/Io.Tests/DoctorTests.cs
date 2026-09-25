@@ -52,7 +52,7 @@ public sealed class DoctorTests : IDisposable
 
         Assert.All(checks, c => Assert.Null(c.Remedy));
         Assert.Equal(
-            ["sdk=10.0.402", "runtime=" + Environment.Version, "tool=published", "dacfx=" + Doctor.DacFx + " (UNPINNED)", "build=dotnet with the tool folder's targets", "git=2.31.1",
+            ["sdk=10.0.402", "runtime=" + Environment.Version, "tool=published", "dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED)", "build=dotnet with the tool folder's targets", "git=2.31.1",
                 "scratch-server=estate-sql container (localhost,11433)", "image=present", "lfs=git-lfs/3.4.0"],   // the loopback address as SqlServer.Host spells it
             checks.Select(c => c.Item + "=" + c.Found));
     }
@@ -65,8 +65,8 @@ public sealed class DoctorTests : IDisposable
         var pinned = System.Xml.Linq.XDocument.Load(Path.Combine(Repository.Root, "Directory.Packages.props")).Descendants()
             .Single(e => (string?)e.Attribute("Include") == "Microsoft.SqlServer.DacFx").Attribute("Version")!.Value;
 
-        Assert.Equal(pinned, Doctor.DacFx);
-        Assert.Equal("170.5.96", Doctor.DacFx);
+        Assert.Equal(pinned, DacFx.Version.Match(v => v.ToString(), e => e.Message));
+        Assert.Equal("170.5.96", DacFx.Version.Match(v => v.ToString(), e => e.Message));
     }
 
     /// <summary>
@@ -92,7 +92,7 @@ public sealed class DoctorTests : IDisposable
             Ledger(rows);
         }
 
-        var error = Doctor.Toolchain(machine, Version).Match(pin => pin.Rejects(Kernel.Engine.Of(Doctor.DacFx).Match(e => e, r => throw new InvalidOperationException(r.Message))), r => r);
+        var error = Doctor.Toolchain(machine, Version).Match(pin => pin.Rejects(DacFx.Version.Match(v => v, r => throw new InvalidOperationException(r.Message))), r => r);
         var dacfx = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.DacFx);
 
         Assert.True(code == error?.Code, what + ": " + error?.Code);
@@ -194,7 +194,7 @@ public sealed class DoctorTests : IDisposable
 
         var tool = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.Tool);
 
-        Assert.Contains("not " + Doctor.DacFx, tool.Found, StringComparison.Ordinal);
+        Assert.Contains("while estate runs DacFx " + DacFx.Version.Match(v => v.ToString(), e => e.Message), tool.Found, StringComparison.Ordinal);
         Assert.Contains("ci/publish.sh", tool.Remedy, StringComparison.Ordinal);
     }
 

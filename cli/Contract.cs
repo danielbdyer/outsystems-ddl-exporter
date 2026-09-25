@@ -52,9 +52,6 @@ public sealed record Checkout(string Root, string WorkingDirectory, string? Tool
 /// <summary>A row of the frozen exit table: codes are added, never removed or renumbered (cli/exits.frozen).</summary>
 public sealed record ExitCode(int Code, string Name, string Meaning, string Remedy, bool RemedyRequired);
 
-/// <summary>The engine an answer stands on (R13), and the pin the toolchain ledger gives it; the pin is null where no ledger was read.</summary>
-public sealed record Stamp(Engine Engine, Pin? Pin);
-
 /// <summary>
 /// How the data blocked (§4 row 15), at exit 3 alone: the data-loss check (BlockOnPossibleDataLoss) stopped the publish because the
 /// table has rows, or SQL Server refused the change on existing rows (Msg 547, Msg 2628), a constraint violation. Written as
@@ -68,16 +65,16 @@ public enum BlockedBy
 
 /// <summary>
 /// What every verb writes with --json: its schema; the outcome, a word of the verb's closed set or a failure's exit name, with the
-/// exit the outcome admits; the answer in one line; what blocked it, at exit 3 alone; the findings; the engine as stamped and the
-/// receipt when the answer claims anything; whether the answer was cut to its first entries and where the whole one is; and what the
-/// verb adds (its Content), with the lines a verb prints after its message (diff's change lines). The constructor refuses an exit its
-/// outcome does not list and a blockedBy off exit 3, so an answer that says matches at exit 5 is a defect found by the first test that
-/// renders it.
+/// exit the outcome admits; the answer in one line; what blocked it, at exit 3 alone; the findings; the stamp (DacFx, the pin and the
+/// SQL Server, as far as the verb's work got) and the provenance of the claim, when the answer makes one; whether the answer was cut
+/// to its first entries and where the whole one is; and what the verb adds (its Content), with the lines a verb prints after its
+/// message (diff's change lines). The constructor refuses an exit its outcome does not list and a blockedBy off exit 3, so an answer
+/// that says matches at exit 5 is a defect found by the first test that renders it.
 /// </summary>
 public sealed record Envelope
 {
     public Envelope(string schema, Outcome outcome, int exit, string message, IReadOnlyList<Finding> findings, BlockedBy? blockedBy = null, Stamp? stamp = null,
-        Receipt? receipt = null, JsonObject? content = null, IReadOnlyList<string>? lines = null)
+        Provenance? provenance = null, JsonObject? content = null, IReadOnlyList<string>? lines = null)
     {
         if (!outcome.Exits.Contains(exit))
         {
@@ -90,7 +87,7 @@ public sealed record Envelope
             throw new ArgumentException("An answer names what blocked it exactly at exit 3, and this one exits " + exit.ToString(CultureInfo.InvariantCulture) + ".", nameof(blockedBy));
         }
 
-        (Schema, Outcome, Exit, Message, Findings, BlockedBy, Stamp, Receipt, Content, Lines) = (schema, outcome, exit, message, findings, blockedBy, stamp, receipt, content, lines ?? []);
+        (Schema, Outcome, Exit, Message, Findings, BlockedBy, Stamp, Provenance, Content, Lines) = (schema, outcome, exit, message, findings, blockedBy, stamp, provenance, content, lines ?? []);
     }
 
     public string Schema { get; init; }
@@ -106,9 +103,11 @@ public sealed record Envelope
 
     public BlockedBy? BlockedBy { get; init; }
 
+    /// <summary>What the answer stands on beside the tool's version; null for an answer that stands on the tool alone, which loaded no DacFx.</summary>
     public Stamp? Stamp { get; init; }
 
-    public Receipt? Receipt { get; init; }
+    /// <summary>What the claim stands on, when the answer makes one.</summary>
+    public Provenance? Provenance { get; init; }
 
     public JsonObject? Content { get; init; }
 
@@ -213,7 +212,6 @@ public static class Contract
         ErrorCategory.Connection => 6,
         ErrorCategory.Sqlcmd => 6,
         ErrorCategory.SyntheticCopy => 6,
-        ErrorCategory.Engine => 6,
         ErrorCategory.Toolchain => 6,
         ErrorCategory.DacFx => 6,
         ErrorCategory.File => 6,
@@ -239,9 +237,9 @@ public static class Contract
     public static string Title(int milestone) => M(milestone) + " (" + Milestones[milestone] + ")";
 
     /// <summary>An answer; with no stamp it stands on the tool alone, nothing here having loaded DacFx or reached SQL Server.</summary>
-    public static Envelope Answer(string schema, Outcome outcome, int exit, string message, IReadOnlyList<Finding> findings, Stamp? stamp = null, Receipt? receipt = null,
+    public static Envelope Answer(string schema, Outcome outcome, int exit, string message, IReadOnlyList<Finding> findings, Stamp? stamp = null, Provenance? provenance = null,
         JsonObject? content = null, IReadOnlyList<string>? lines = null) =>
-        new(schema, outcome, exit, message, findings, null, stamp, receipt, content, lines);
+        new(schema, outcome, exit, message, findings, null, stamp, provenance, content, lines);
 
     /// <summary>An error as a verb's answer: its message the answer's, one finding of severity error carrying its code and remedy, and the exit of its category.</summary>
     public static Envelope Failed(Verb verb, Error error, Stamp? stamp = null) => Failed(verb.Output, "estate " + verb.Name, error, stamp);
