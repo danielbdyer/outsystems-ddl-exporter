@@ -131,7 +131,7 @@ public static class Render
             blocked);
         var finding = Record(new()
         {
-            ["code"] = Pattern(Error.CodePattern),
+            ["code"] = Pattern(ErrorCode.Pattern),
             ["severity"] = Enum(["error", "warning", "note"]),
             ["subject"] = Text(),
             ["message"] = Text(),

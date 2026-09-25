@@ -60,7 +60,7 @@ public static class Program
                 // Standard output refused the answer too; the exit code is what still reaches the caller.
             }
 
-            return Contract.Defect;
+            return Contract.ExitByCategory(Estate.Kernel.ErrorCategory.Internal);
         }
     }
 

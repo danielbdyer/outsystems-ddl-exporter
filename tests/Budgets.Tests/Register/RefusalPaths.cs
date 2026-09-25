@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json.Nodes;
 using Estate.Cli;
 using Estate.Io;
@@ -275,7 +276,21 @@ internal static class RefusalPaths
         new("a flag the verb does not take", "arguments.unknown-flag", false, (_, _) => Failed(Contract.Flags(["--no-such-flag"], [], [], []))),
         new("a required flag absent", "arguments.missing-flag", false, (_, _) => Failed(Contract.Flags([], ["--from"], [], []))),
         new("estate check with no check named", "arguments.unknown-check", false, (scratch, _) => Carried(Verbs.Check(new Checkout(scratch, scratch, null), []))),
+        new("a word that names no verb", "arguments.unknown-verb", false, (scratch, _) => Answered(["frobnicate"], new Checkout(scratch, scratch, null))),
+        new("a verb this build has no body for", "verb.not-built", false, (scratch, _) => Answered(["predict"], new Checkout(scratch, scratch, null))),
+        new("an exception no verb expected", "internal.unexpected", false, (scratch, _) => Answered(["read", "--from", "dacpac:none.dacpac"], new Checkout(scratch, null!, null))),
     ];
+
+    /// <summary>The error estate answers a command with, run in this process against <paramref name="here"/>: the one finding of severity error its --json answer carries.</summary>
+    private static Error Answered(string[] arguments, Checkout here)
+    {
+        using var output = new MemoryStream();
+        Cli.Program.Run([.. arguments, "--json"], output, here);
+        var findings = JsonNode.Parse(output.ToArray())!["findings"]!.AsArray();
+        return findings.Count == 1 && (string?)findings[0]!["severity"] == "error" && (string?)findings[0]!["remedy"] is { } remedy
+            ? new Error((string)findings[0]!["code"]!, (string)findings[0]!["message"]!, remedy)
+            : throw new InvalidOperationException("the answer carries no one error: " + Encoding.UTF8.GetString(output.ToArray()));
+    }
 
     /// <summary>The copy a planted registry holds, made on localhost,11433.</summary>
     private const string Copied = "estate_host_1_0a1b2c3d";
