@@ -256,8 +256,8 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
 
     /// <summary>
     /// Two unnamed checks, on B and on C, numbered in the order of the columns they reference; C is renamed A, which sorts before
-    /// B. The walk reads each reference under the name it held before the refactorlog's renames, so the check on the renamed
-    /// column keeps its number, and the one difference is that check's own text, which names the column.
+    /// B by name. The walk orders a reference to a column by the column's position in its table, which the rename leaves as it
+    /// was, so the check on the renamed column keeps its number, and the one difference is that check's own text, which names the column.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -277,9 +277,11 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     /// <summary>
     /// A model holding one of each object that carries a secret, each planted with one value: a login's, a contained user's and an
     /// application role's password; an asymmetric key's, a certificate's (its key's and its private key file's) and a symmetric
-    /// key's password; a server credential's and a database scoped credential's secret; the database master key's password; a
-    /// signature's password; and a linked server login's password. DacFx gives the planted value back from every property <see cref="Ssdt.Secrets"/> lists, and the walk
-    /// carries it in no property; every text property DacFx 170.5.96 names a password or a secret is on the list.
+    /// key's password; a symmetric key's KEY_SOURCE and IDENTITY_VALUE, from which SQL Server derives the key; a server credential's
+    /// and a database scoped credential's secret; the database master key's password; a signature's password; a linked server
+    /// login's password; a linked server's provider string (sp_addlinkedserver's @provstr) and an external data source's
+    /// CONNECTION_OPTIONS, each an ODBC or OLE DB connection string carrying PWD=. DacFx gives the planted value back from every
+    /// property <see cref="Ssdt.Secrets"/> lists, and the walk carries it in no property.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -296,23 +298,94 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
             "CREATE ASYMMETRIC KEY AK WITH ALGORITHM = RSA_2048 ENCRYPTION BY PASSWORD = '" + Planted + "';",
             "CREATE CERTIFICATE C1 ENCRYPTION BY PASSWORD = '" + Planted + "' WITH SUBJECT = 'c1';",
             "CREATE CERTIFICATE C2 FROM FILE = 'c2.cer' WITH PRIVATE KEY (FILE = 'c2.pvk', DECRYPTION BY PASSWORD = '" + Planted + "', ENCRYPTION BY PASSWORD = '" + Planted + "');",
-            "CREATE SYMMETRIC KEY SK WITH ALGORITHM = AES_256 ENCRYPTION BY PASSWORD = '" + Planted + "';",
+            "CREATE SYMMETRIC KEY SK WITH ALGORITHM = AES_256, KEY_SOURCE = '" + Planted + "ks', IDENTITY_VALUE = '" + Planted + "iv' ENCRYPTION BY PASSWORD = '" + Planted + "';",
             "CREATE CREDENTIAL CR WITH IDENTITY = 'i', SECRET = '" + Planted + "';",
             "CREATE DATABASE SCOPED CREDENTIAL DC WITH IDENTITY = 'i', SECRET = '" + Planted + "';",
+            "CREATE EXTERNAL DATA SOURCE EDS WITH (LOCATION = 'sqlserver://remote', CONNECTION_OPTIONS = 'Server=remote;UID=u;PWD=" + Planted + "', CREDENTIAL = DC);",
             "ADD SIGNATURE TO dbo.P BY CERTIFICATE C1 WITH PASSWORD = '" + Planted + "';",
-            "EXECUTE sp_addlinkedserver @server = N'LS', @srvproduct = N'', @provider = N'MSOLEDBSQL', @datasrc = N'remote';",
+            "EXECUTE sp_addlinkedserver @server = N'LS', @srvproduct = N'', @provider = N'MSOLEDBSQL', @datasrc = N'remote', @provstr = N'UID=u;PWD=" + Planted + "';",
             "EXECUTE sp_addlinkedsrvlogin @rmtsrvname = N'LS', @useself = N'FALSE', @locallogin = NULL, @rmtuser = N'u', @rmtpassword = N'" + Planted + "';");
 
         var read = Ok(Ssdt.Walk(model));
 
-        Assert.All(Ssdt.Secrets, secret => Assert.True(Held(model, secret, Planted), secret.OwningType?.Name + secret.OwningRelationship?.Name + "." + secret.Name + " holds no planted value"));
+        Assert.All(Ssdt.Secrets, secret => Assert.True(Held(model, secret, Planted), Qualified(secret) + " holds no planted value"));
         Assert.Contains(read, e => e.Key.ToString() == "Login [L]");
+        Assert.Contains(read, e => e.Key.ToString() == "LinkedServer [LS]");
         Assert.DoesNotContain(read.SelectMany(e => e.Properties), p => p.Value is Value.Text { Content: var text } && text.Contains(Planted, StringComparison.Ordinal));
-        var named = typeof(ModelSchema).GetFields(BindingFlags.Public | BindingFlags.Static).Select(f => f.GetValue(null)).OfType<ModelTypeClass>()
-            .SelectMany(t => t.Properties.Concat(t.Relationships.SelectMany(r => r.Properties)))
-            .Where(p => p.DataType == typeof(string) && (p.Name.Contains("Password", StringComparison.Ordinal) || p.Name.Contains("Secret", StringComparison.Ordinal)));
-        Assert.Empty(named.Where(p => !Ssdt.Secrets.Contains(p)).Select(p => (p.OwningType?.Name ?? p.OwningRelationship?.Name) + "." + p.Name));
     }
+
+    /// <summary>
+    /// Every text property DacFx 170.5.96's model declares, each reviewed on 2026-09-25 as a secret or as none, with the reason. A
+    /// property a later DacFx adds is on neither list, and the test names it; it is reviewed and listed before the upgrade lands.
+    /// </summary>
+    private static readonly Dictionary<string, string[]> NotSecret = new(StringComparer.Ordinal)
+    {
+        ["a name, an address, a file or a path the definition gives, which SQL Server shows to a reader holding VIEW DEFINITION"] =
+        [
+            "Aggregate.ClassName", "AsymmetricKey.ExecutableFile", "AsymmetricKey.File", "AsymmetricKey.ProviderKeyName", "BrokerPriority.RemoteServiceName",
+            "Certificate.ExistingKeysFilePath", "Certificate.PrivateKeyFilePath", "Certificate.Subject", "ClrTableOption.ClassName", "ClrTypeMethod.Name",
+            "ClrTypeMethodParameter.Name", "ClrTypeProperty.Name", "Column.EncryptionAlgorithmName", "ColumnMasterKey.KeyPath", "ColumnMasterKey.KeyStoreProviderName",
+            "Credential.Identity", "CryptographicProvider.DllPath", "DatabaseCredential.Identity", "DatabaseDdlTrigger.ClassName", "DatabaseDdlTrigger.MethodName",
+            "DatabaseEventNotification.BrokerInstanceSpecifier", "DatabaseEventNotification.BrokerService", "DatabaseOptions.DefaultFullTextLanguage",
+            "DatabaseOptions.DefaultLanguage", "DatabaseOptions.FileStreamDirectoryName", "DmlTrigger.ClassName", "DmlTrigger.MethodName", "ErrorMessage.Language",
+            "EventSessionAction.ActionName", "EventSessionAction.EventPackageName", "EventSessionDefinitions.EventName", "EventSessionDefinitions.EventPackageName",
+            "EventSessionSetting.SettingName", "EventSessionTarget.EventPackageName", "EventSessionTarget.TargetName", "ExternalDataSource.DatabaseName",
+            "ExternalDataSource.Location", "ExternalDataSource.ResourceManagerLocation", "ExternalDataSource.ShardMapName", "ExternalLanguage.LanguageName",
+            "ExternalLanguageFile.FileName", "ExternalLanguageFile.Path", "ExternalLanguageFile.Platform", "ExternalLibrary.Language", "ExternalLibrary.LibraryName",
+            "ExternalLibraryFile.Path", "ExternalLibraryFile.Platform", "ExternalModel.LocalRuntimePath", "ExternalModel.Location", "ExternalModel.ModelNameExternal",
+            "ExternalStream.Location", "ExternalTable.ExternalObjectName", "ExternalTable.ExternalSchemaName", "ExternalTable.Location", "ExternalTable.RejectedRowLocation",
+            "FileTable.FileTableDirectory", "FullTextCatalog.Path", "HttpProtocolSpecifier.AuthenticationRealm", "HttpProtocolSpecifier.DefaultLogonDomain",
+            "HttpProtocolSpecifier.Path", "HttpProtocolSpecifier.Website", "LinkedServer.Catalog", "LinkedServer.DataSource", "LinkedServer.Location",
+            "LinkedServer.ProductName", "LinkedServer.ProviderName", "LinkedServerLogin.LinkedServerLoginName", "Login.DefaultDatabase", "Login.DefaultLanguage",
+            "Procedure.ClassName", "Procedure.MethodName", "PromotedNodePathForSqlType.NodePath", "PromotedNodePathForXQueryType.NodePath",
+            "PromotedNodePathForXQueryType.Type", "QueueEventNotification.BrokerInstanceSpecifier", "QueueEventNotification.BrokerService", "RemoteServiceBinding.Service",
+            "Route.Address", "Route.BrokerInstance", "Route.MirrorAddress", "Route.ServiceName", "ScalarFunction.ClassName", "ScalarFunction.FillRowMethodName",
+            "ScalarFunction.MethodName", "SearchProperty.Description", "ServerAudit.FilePath", "ServerAudit.Path", "ServerDdlTrigger.ClassName", "ServerDdlTrigger.MethodName",
+            "ServerEventNotification.BrokerInstanceSpecifier", "ServerEventNotification.BrokerService", "SoapLanguageSpecifier.DatabaseName", "SoapLanguageSpecifier.Namespace",
+            "SoapLanguageSpecifier.WsdlSpName", "SoapMethodSpecification.WebMethodAlias", "SoapMethodSpecification.WebMethodNamespace", "SqlFile.FileName",
+            "SymmetricKey.ProviderKeyName", "Table.LedgerHistoryTableName", "Table.LedgerHistoryTableSchemaName", "Table.LedgerViewName",
+            "Table.LedgerViewOperationTypeColumnName", "Table.LedgerViewOperationTypeDescColumnName", "Table.LedgerViewSchemaName", "Table.LedgerViewSequenceNumberColumnName",
+            "Table.LedgerViewTransactionIdColumnName", "TableValuedFunction.ClassName", "TableValuedFunction.FillRowMethodName", "TableValuedFunction.MethodName",
+            "TableValuedFunction.ReturnTableVariableName", "TcpProtocolSpecifier.ListenerIPv4", "TcpProtocolSpecifier.ListenerIPv6", "User.DefaultLanguage",
+            "UserDefinedType.ClassName", "UserDefinedType.ValidationMethodName", "WorkloadClassifier.MemberName", "WorkloadClassifier.WlmContext",
+            "WorkloadClassifier.WlmLabel", "XmlNamespace.NamespaceUri", "XmlNamespace.Prefix",
+        ],
+        ["a setting, a number, a date, a label or a statement the definition states, with no password or key in its documented form"] =
+        [
+            "Certificate.ExpiryDate", "Certificate.StartDate", "Column.Collation", "Column.IdentityIncrement", "Column.IdentitySeed", "Column.MaskingFunction",
+            "Column.SensitivityInformationType", "Column.SensitivityInformationTypeId", "Column.SensitivityLabel", "Column.SensitivityLabelId",
+            "ColumnEncryptionKeyValue.EncryptionAlgorithm", "DatabaseOptions.Collation", "ErrorMessage.MessageText", "ExternalFileFormat.DataCompression",
+            "ExternalFileFormat.DateFormat", "ExternalFileFormat.Encoding", "ExternalFileFormat.FieldTerminator", "ExternalFileFormat.ParserVersion",
+            "ExternalFileFormat.SerDeMethod", "ExternalFileFormat.StringDelimiter", "ExternalLanguageFile.EnvironmentVariables", "ExternalLanguageFile.Parameters",
+            "ExternalModel.ApiFormat", "ExternalModel.Parameters", "ExternalStream.InputOptions", "ExternalStream.OutputOptions", "ExternalStreamingJob.Statement",
+            "ExternalTable.TableOptions", "FileTable.FileTableCollateFilename", "LinkedServer.CollationName", "Sequence.IncrementValue", "Sequence.MaxValue",
+            "Sequence.MinValue", "Sequence.StartValue", "TableTypeColumn.Collation", "TableTypeColumn.IdentityIncrement", "TableTypeColumn.IdentitySeed",
+            "WorkloadClassifier.EndTime", "WorkloadClassifier.StartTime",
+        ],
+        ["a value SQL Server generates and shows in its catalog views: a GUID, a SID, a signature, a statistics blob, a key value encrypted by its column master key"] =
+        [
+            "ColumnEncryptionKeyValue.EncryptedValue", "ColumnMasterKey.Signature", "EventSessionAction.EventModuleGuid", "EventSessionDefinitions.EventModuleGuid",
+            "EventSessionTarget.EventModuleGuid", "Login.Sid", "SearchProperty.PropertySetGuid", "ServerAudit.AuditGuid", "SignatureEncryptionMechanism.SignedBlob",
+            "Statistics.StatsStream", "User.Sid",
+        ],
+    };
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Every_text_property_DacFx_declares_is_a_listed_secret_or_reviewed_as_not_a_secret()
+    {
+        var reviewed = NotSecret.Values.SelectMany(names => names).ToList();
+        var declared = typeof(ModelSchema).GetFields(BindingFlags.Public | BindingFlags.Static).Select(f => f.GetValue(null)).OfType<ModelTypeClass>()
+            .SelectMany(t => t.Properties.Concat(t.Relationships.SelectMany(r => r.Properties))).Where(p => p.DataType == typeof(string)).Distinct().ToList();
+
+        Assert.Empty(declared.Where(p => !Ssdt.Secrets.Contains(p) && !reviewed.Contains(Qualified(p))).Select(Qualified));
+        Assert.Empty(reviewed.Except(declared.Select(Qualified)));
+        Assert.Empty(reviewed.Intersect(Ssdt.Secrets.Select(Qualified)));
+        Assert.Equal(reviewed.Count, reviewed.Distinct().Count());
+    }
+
+    /// <summary>A property as Type.Property, a relationship's as Relationship.Property.</summary>
+    private static string Qualified(ModelPropertyClass p) => (p.OwningType?.Name ?? p.OwningRelationship?.Name) + "." + p.Name;
 
     /// <summary>
     /// A security policy composes its predicates, and DacFx also lists each predicate among the top-level objects: the walk
@@ -407,6 +480,39 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
         Assert.Equal(packaged, read);
     }
 
+    /// <summary>
+    /// The second alignment review's case (2026-09-25): dbo.T (Id, B INT NULL CHECK (B &gt; 0), A INT NULL CHECK (A &gt; 5)) packaged with
+    /// the refactorlog's entry renaming C to A, published to a registered copy and read back through SqlServer.Model. A database
+    /// has no refactorlog, so each unnamed check's key has to follow from what both reads hold: each CheckConstraint key names the
+    /// check on the same column in the package's walk and in the database's walk.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task Unnamed_checks_beside_a_renamed_column_are_keyed_alike_in_a_package_and_the_database_it_was_published_to()
+    {
+        var dacpac = Built(RenameCToA, "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B INT NULL CHECK (B > 0), A INT NULL CHECK (A > 5));");
+        try
+        {
+            Seq<Element> package;
+            using (var loaded = Ok(Ssdt.Load(dacpac)))
+            {
+                package = Ok(Ssdt.Walk(loaded)).Elements;
+            }
+
+            var database = await PublishedAndRead(dacpac);
+
+            string Checked(IEnumerable<Element> read) => string.Join('\n', read.Where(e => e.Key.Type == "CheckConstraint").OrderBy(e => e.Key.ToString(), StringComparer.Ordinal)
+                .Select(e => e.Key + " → " + string.Join(", ", e.Relationships.Where(r => r.Name == "ExpressionDependencies").SelectMany(r => r.Targets.Select(t => t.Key)))));
+            output.WriteLine(Checked(database));
+            Assert.Contains("CheckConstraint [dbo].[T].[Host 2] → Column [dbo].[T].[A]", Checked(package), StringComparison.Ordinal);
+            Assert.Equal(Checked(package), Checked(database));
+        }
+        finally
+        {
+            Delete(dacpac);
+        }
+    }
+
     private static List<string> Permissions(IEnumerable<Element> read) => [.. read.Where(e => e.Key.Type == "Permission").Select(e => e.Key.ToString())];
 
     /// <summary>A head's package published to a registered database under DacFx's default deploy options, then read back as io reads a copy; the database is dropped after.</summary>
@@ -467,32 +573,41 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     /// <summary>The scripts packaged by DacFx with the refactorlog's text as the package's refactor.xml, where one is given, then loaded as Load loads a build's package and walked.</summary>
     private static Ssdt.Read PackageRead(string? refactorlog, params string[] scripts)
     {
-        var path = Path.Combine(Path.GetTempPath(), "estate-walk-" + Guid.NewGuid().ToString("N"));
+        var dacpac = Built(refactorlog, scripts);
         try
         {
-            if (refactorlog is not null)
-            {
-                File.WriteAllText(path + ".refactorlog", refactorlog);
-            }
-
-            using (var model = Model(scripts))
-            {
-                DacPackageExtensions.BuildPackage(path + ".dacpac", model, new PackageMetadata(), new PackageOptions { RefactorLogPath = refactorlog is null ? null : path + ".refactorlog" });
-            }
-
-            using var package = Ok(Ssdt.Load(path + ".dacpac"));
+            using var package = Ok(Ssdt.Load(dacpac));
             return Ok(Ssdt.Walk(package));
         }
         finally
         {
-            File.Delete(path + ".dacpac");
-            File.Delete(path + ".refactorlog");
+            Delete(dacpac);
         }
     }
 
-    /// <summary>Whether an object of the secret's type, top-level or composed by another (a symmetric key's password, a signature), gives the planted value back.</summary>
-    private static bool Held(TSqlModel model, ModelPropertyClass secret, string planted) =>
-        model.GetObjects(DacQueryScopes.UserDefined).SelectMany(Composed).Any(o => o.ObjectType == secret.OwningType && Equals(o.GetProperty(secret), planted));
+    /// <summary>The scripts packaged by DacFx under the temp folder, with the refactorlog's text as the package's refactor.xml where one is given; the caller deletes it with <see cref="Delete"/>.</summary>
+    private static string Built(string? refactorlog, params string[] scripts)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "estate-walk-" + Guid.NewGuid().ToString("N"));
+        if (refactorlog is not null)
+        {
+            File.WriteAllText(path + ".refactorlog", refactorlog);
+        }
+
+        using var model = Model(scripts);
+        DacPackageExtensions.BuildPackage(path + ".dacpac", model, new PackageMetadata(), new PackageOptions { RefactorLogPath = refactorlog is null ? null : path + ".refactorlog" });
+        return path + ".dacpac";
+    }
+
+    private static void Delete(string dacpac)
+    {
+        File.Delete(dacpac);
+        File.Delete(Path.ChangeExtension(dacpac, ".refactorlog"));
+    }
+
+    /// <summary>Whether an object of the secret's type, top-level or composed by another (a symmetric key's password, a signature), gives back a value holding the planted one.</summary>
+    private static bool Held(TSqlModel model, ModelPropertyClass secret, string planted) => model.GetObjects(DacQueryScopes.UserDefined).SelectMany(Composed)
+        .Any(o => o.ObjectType == secret.OwningType && o.GetProperty(secret) is string value && value.Contains(planted, StringComparison.Ordinal));
 
     private static IEnumerable<TSqlObject> Composed(TSqlObject o) =>
         [o, .. o.ObjectType.Relationships.Where(r => r.Type == RelationshipType.Composing).SelectMany(r => o.GetReferenced(r, DacQueryScopes.All)).SelectMany(Composed)];
