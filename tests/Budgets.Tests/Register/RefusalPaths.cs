@@ -200,6 +200,16 @@ internal static class RefusalPaths
                 ? SqlServer.Resolve(Target("env:dev"), root).Map(database => database.Where)
                 : SqlServer.Listed("env:dev's connection, file:.estate/dev.connection::$DATA,", file + "::$DATA");
         })),
+        new("a connection file in a folder this identity cannot list", "reference.unlistable", true, (scratch, planted) =>
+        {
+            var root = Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "locked/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
+            return Denied(Path.Combine(scratch, "locked"), () => Refused(SqlServer.Resolve(Target("env:dev"), root)));
+        }),
+        new("a connection file this identity cannot read", "reference.unreadable", true, (scratch, planted) =>
+        {
+            var root = Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
+            return Denied(Path.Combine(scratch, "dev.connection"), () => Refused(SqlServer.Resolve(Target("env:dev"), root)));
+        }),
         new("a connection file of an estate in no git repository", "reference.no-repository", true, (scratch, planted) =>
             Refused(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Password=" + planted))))))),
         new("a connection file its group can read, where files carry a Unix mode", "reference.readable-by-others", !OperatingSystem.IsWindows(), (scratch, planted) => OperatingSystem.IsWindows()
@@ -235,6 +245,18 @@ internal static class RefusalPaths
             var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
             return Refused(SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.Named)dev).Environment, root))));
         }),
+        new("a SQLCMD reference to a file git tracks", "reference.tracked", true, (scratch, planted) => InRepository(scratch, root =>
+        {
+            Written(root, "estate/posture.json", Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"file:estate/token.txt\" }",
+                connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev"))));
+            OwnerOnly(Written(root, "estate/token.txt", planted));
+            Arrange(root, "add", "--", "estate/token.txt");
+            Arrange(root, "commit", "-q", "-m", "the token");
+            Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
+            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
+            var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
+            return SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.Named)dev).Environment, root)));
+        })),
     ];
 
     /// <summary>The copy a planted registry holds, made on localhost,11433.</summary>
@@ -270,6 +292,55 @@ internal static class RefusalPaths
         }
 
         return file;
+    }
+
+    /// <summary>
+    /// What <paramref name="use"/> returns while this identity may not list the folder, or read the file, at <paramref name="path"/>:
+    /// on Windows a deny entry for RD (FILE_LIST_DIRECTORY on a folder, FILE_READ_DATA on a file) in its ACL, made and removed by
+    /// icacls; on Linux and macOS mode 0300 for a folder and 0200 for a file, then 0700 or 0600 again. The denial is undone
+    /// however use ends, so the scratch folder deletes.
+    /// </summary>
+    internal static T Denied<T>(string path, Func<T> use)
+    {
+        var (full, folder) = (Path.GetFullPath(path), Directory.Exists(path));
+        var identity = Environment.UserDomainName + "\\" + Environment.UserName;
+        var execute = folder ? UnixFileMode.UserExecute : UnixFileMode.None;
+        if (OperatingSystem.IsWindows())
+        {
+            Icacls(full, "/deny", identity + ":(RD)");
+        }
+        else
+        {
+            File.SetUnixFileMode(full, UnixFileMode.UserWrite | execute);
+        }
+
+        try
+        {
+            return use();
+        }
+        finally
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Icacls(full, "/remove:d", identity);
+            }
+            else
+            {
+                File.SetUnixFileMode(full, UnixFileMode.UserRead | UnixFileMode.UserWrite | execute);
+            }
+        }
+    }
+
+    private static void Icacls(params string[] arguments)
+    {
+        using var icacls = Process.Start(new ProcessStartInfo("icacls", arguments) { RedirectStandardOutput = true, RedirectStandardError = true })!;
+        var errors = icacls.StandardError.ReadToEndAsync();
+        var output = icacls.StandardOutput.ReadToEnd();
+        icacls.WaitForExit();
+        if (icacls.ExitCode != 0)
+        {
+            throw new InvalidOperationException("icacls " + string.Join(' ', arguments) + " exited " + icacls.ExitCode + ": " + output + errors.Result);
+        }
     }
 
     /// <summary>

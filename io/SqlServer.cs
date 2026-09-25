@@ -389,26 +389,43 @@ public static class SqlServer
     }
 
     /// <summary>
-    /// What a reference names: the variable's value, or the file's text trimmed; null when there is none. A file, a relative path read
-    /// from the estate's root, is read only when git keeps it out of every commit, ignored or in no repository while the estate's root
-    /// is in one, and, where files carry a Unix mode, when its owner alone can read it; a refusal leads with <paramref name="subject"/>.
-    /// git is asked about the file by the name its folder lists (<see cref="Listed"/>), and that name is the one read.
+    /// What a reference names: the variable's value, or the file's text trimmed; null when the variable is unset or empty, when no
+    /// file is at the path, or when the file holds only white space. A file, a relative path read from the estate's root, is read only
+    /// when git keeps it out of every commit, ignored or in no repository while the estate's root is in one, and, where files carry a
+    /// Unix mode, when its owner alone can read it; a refusal leads with <paramref name="subject"/>. git is asked about the file by the
+    /// name its folder lists (<see cref="Listed"/>), and that name is the one read. A file that exists but whose folder this identity
+    /// cannot list is reference.unlistable, and one it cannot read is reference.unreadable: its host is unknown here, and R15 must not
+    /// leave the environment uncompared as it does one that resolves to nothing. The check covers the path the reference names, since
+    /// git tracks paths: a hard link to a committed file, or a plain copy of one, under a folder .gitignore lists such as .estate/ is
+    /// read, though the commit holds what it holds.
     /// </summary>
-    internal static Result<string?> Read(string subject, SecretReference reference, string estateRoot)
+    internal static Result<string?> Read(string subject, SecretReference reference, string estateRoot) => reference.Match(
+        variable => Result.Ok(System.Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value ? value : null),
+        file => System.IO.Path.Combine(estateRoot, file) is var path && File.Exists(path)
+            ? Opened(() => Listed(subject, path), () => Unlistable(subject))
+                .Bind(listed => Opened(() => Kept(subject, estateRoot, listed).Map(kept => File.ReadAllText(kept).Trim() is { Length: > 0 } text ? text : null), () => Unreadable(subject)))
+            : Result.Ok<string?>(null));
+
+    /// <summary>A step on a file that exists; the refusal given when the file system refuses the step (IOException, UnauthorizedAccessException).</summary>
+    private static Result<T> Opened<T>(Func<Result<T>> step, Func<Refusal> refused)
     {
         try
         {
-            return reference.Match(
-                variable => Result.Ok(System.Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value ? value : null),
-                file => System.IO.Path.Combine(estateRoot, file) is var path && File.Exists(path)
-                    ? Listed(subject, path).Bind(listed => Kept(subject, estateRoot, listed)).Map(kept => File.ReadAllText(kept).Trim() is { Length: > 0 } text ? text : null)
-                    : Result.Ok<string?>(null));
+            return step();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return Result.Ok<string?>(null);
+            return refused();
         }
     }
+
+    private static Refusal Unlistable(string subject) => new Refusal("reference.unlistable", subject + " is a file whose folder this identity cannot list,"
+        + " so git cannot be asked about the file by the name the folder lists, and the file is not read.",
+        "Grant this identity the right to list the file's folder, or move the file under a folder it can list, such as .estate/.");
+
+    private static Refusal Unreadable(string subject) => new Refusal("reference.unreadable", subject + " is a file this identity cannot open for reading,"
+        + " for want of the right to read it or while another program holds it open, so what it holds is unknown here.",
+        "Grant this identity the right to read the file, and close any program that holds it open.");
 
     /// <summary>
     /// The refusal of a file a reference names whose Unix mode lets its group or other users read it, or null: Read asks it of the
@@ -445,8 +462,11 @@ public static class SqlServer
         + " git matches .gitignore and its index against the name the folder lists, so it cannot say whether a commit holds the file, and the file is not read.",
         "Write the path as dir or ls lists the file, in estate/posture.json.");
 
-    /// <summary>The path of a file a file: reference names, when git keeps it out of every commit and no other user can read it; else the refusal, the file unread.</summary>
-    private static Result<string> Kept(string subject, string estateRoot, string path) => Git.HoldingOf(estateRoot, path).Bind<string>(holding => holding switch
+    /// <summary>
+    /// The path of a file a file: reference names, when git keeps it out of every commit and no other user can read it; else the
+    /// refusal, the file unread. git.failed and git.missing lead with <paramref name="subject"/>, then quote io/Git's own message.
+    /// </summary>
+    private static Result<string> Kept(string subject, string estateRoot, string path) => Git.HoldingOf(estateRoot, path).Match<Result<string>>(holding => holding switch
     {
         Git.Holding.Tracked => new Refusal("reference.tracked", subject + " is a file git tracks, so every clone of the repository holds what it holds; a file: reference names a file git keeps out of every commit.",
             "Run git rm --cached on the file, list it in .gitignore, and change the password it held, since the history keeps the commit."),
@@ -455,8 +475,14 @@ public static class SqlServer
         Git.Holding.EstateInNoRepository => new Refusal("reference.no-repository", subject + " names a file, and the estate's root " + estateRoot
             + " is in no git repository, so git cannot say whether a clone would commit the file; it is not read.",
             "Run estate in a clone of the estate's repository, or give the reference as env:NAME."),
-        _ => !OperatingSystem.IsWindows() && ReadableByOthers(subject, File.GetUnixFileMode(path)) is { } readable ? readable : path,
-    });
+        Git.Holding.Ignored => OwnerOnly(subject, path),
+        Git.Holding.InNoRepository => OwnerOnly(subject, path),
+        _ => throw new System.Diagnostics.UnreachableException(),
+    }, refusal => new Refusal(refusal.Code, subject + " cannot be checked against git: " + refusal.Message, refusal.Remedy));
+
+    /// <summary>The path of a file git keeps out of every commit, when no other user can read it: on Linux and macOS by its mode; Windows keeps no such mode.</summary>
+    private static Result<string> OwnerOnly(string subject, string path) =>
+        !OperatingSystem.IsWindows() && ReadableByOthers(subject, File.GetUnixFileMode(path)) is { } readable ? readable : path;
 
     /// <summary>
     /// A server's host as R15 spells it: the data source with its protocol, port and instance set aside, in lower case; this machine,

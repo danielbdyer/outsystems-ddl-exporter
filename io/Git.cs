@@ -227,7 +227,8 @@ public static class Git
     /// <summary>
     /// The git program -C the directory, as the caller: its exit (-1 when it does not start), output, and errors less any credential
     /// in a URL. The caller's GIT_DIR, index and GIT_CEILING_DIRECTORIES never reach it, its search for a repository crosses file
-    /// systems, its messages are in English (LC_ALL=C), which Searched reads, it never prompts on the terminal, and LFS pointers stay unfetched.
+    /// systems, its messages are in English (LC_ALL=C, and neither LANGUAGE nor LC_MESSAGES, which choose a translation), which
+    /// Searched reads, it never prompts on the terminal, and LFS pointers stay unfetched.
     /// </summary>
     private static (int Exit, string Output, string Errors) Run(string git, string directory, IReadOnlyList<string> arguments, string? index = null)
     {
@@ -235,7 +236,7 @@ public static class Git
         {
             RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
         };
-        foreach (var variable in (string[])["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES"])
+        foreach (var variable in (string[])["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES", "LANGUAGE", "LC_MESSAGES"])
         {
             start.Environment.Remove(variable);
         }
