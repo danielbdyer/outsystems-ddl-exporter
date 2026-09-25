@@ -59,14 +59,17 @@ public static class ScratchServer
     /// <summary>The scratch server, from the sources given, as the registry records it and R15 compares it (localhost,11433); nothing of its login.</summary>
     public static Result<Kernel.ServerName> ServerName(string? estateSql, string sqlEnv, bool localDb) => Server(estateSql, sqlEnv, localDb).Bind(ServerName);
 
-    /// <summary>A copy on this machine's scratch server, refused on a named environment's host (R15).</summary>
-    public static Result<SqlServer.Copy> Create(string estateRoot) => Server().Bind(server => Create(estateRoot, server));
+    /// <summary>A copy on this machine's scratch server, refused on a named environment's host (R15); its CREATE DATABASE goes to the run's log, when given.</summary>
+    public static Result<SqlServer.Copy> Create(string estateRoot, SqlServer.QueryLog? log = null) => Server().Bind(server => Create(estateRoot, server, log));
 
-    /// <summary>The copy's database dropped, its sessions ended first, then its row; a database already gone is no error.</summary>
-    public static Result<CopyName> Drop(SqlServer.Copy copy)
+    /// <summary>
+    /// The copy's database dropped, its sessions ended first, then its row; a database already gone is no error. The DROP DATABASE goes
+    /// to the run's log, when given.
+    /// </summary>
+    public static Result<CopyName> Drop(SqlServer.Copy copy, SqlServer.QueryLog? log = null)
     {
         SqlConnection.ClearPool(new SqlConnection(copy.Connection));
-        return Run(copy, Unmake).Bind(_ => Change(copy.Root, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())])).Map(_ => copy.Name);
+        return Run(copy, "DROP DATABASE", Unmake, log).Bind(_ => Change(copy.Root, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())])).Map(_ => copy.Name);
     }
 
     /// <summary>The digest of the SQL Server image a database runs in: the pinned image's for a copy on the estate-sql container; none on LocalDB or a server ESTATE_SQL names.</summary>
@@ -103,7 +106,7 @@ public static class ScratchServer
     /// A copy on the server given, refused on a named environment's host (R15 against estate/posture.json, read here once); recorded
     /// with its server before its database is made, so a crash leaves a row to follow.
     /// </summary>
-    internal static Result<SqlServer.Copy> Create(string estateRoot, string server, Func<string, IPAddress[]>? resolve = null) =>
+    internal static Result<SqlServer.Copy> Create(string estateRoot, string server, SqlServer.QueryLog? log = null, Func<string, IPAddress[]>? resolve = null) =>
         ServerName(server).Bind(name => Profiles.Environments(estateRoot).Bind(environments => Unnamed(environments, estateRoot, name, resolve ?? Resolved))).Bind(name =>
         {
             var copy = new SqlServer.Copy(CopyName.Make(Environment.MachineName, Environment.ProcessId, BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, estateRoot);
@@ -112,7 +115,7 @@ public static class ScratchServer
                 ["name"] = copy.Name.ToString(), ["server"] = name.ToString(), ["host"] = copy.Name.Machine, ["pid"] = Environment.ProcessId,
                 ["created"] = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
             };
-            return Change(estateRoot, rows => [.. rows, row]).Bind(_ => Run(copy, Make).Match(
+            return Change(estateRoot, rows => [.. rows, row]).Bind(_ => Run(copy, "CREATE DATABASE", Make, log).Match(
                 made => Result.Ok(made),
                 error => Change(estateRoot, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())]).Bind(_ => Result.Fail<SqlServer.Copy>(error))));
         });
@@ -179,23 +182,15 @@ public static class ScratchServer
         }
     }
 
-    /// <summary>A statement about the copy's database, run against master on its server with the copy's name as @name.</summary>
-    private static Result<SqlServer.Copy> Run(SqlServer.Copy copy, string statement)
-    {
-        try
+    /// <summary>
+    /// A statement about the copy's database, through the one statement path (io/SqlServer.Query): run against master on its server, on
+    /// a connection of its own outside SqlClient's pool, with the copy's name as @name, waiting up to <see cref="DatabaseStatementSeconds"/>.
+    /// </summary>
+    private static Result<SqlServer.Copy> Run(SqlServer.Copy copy, string site, string statement, SqlServer.QueryLog? log) =>
+        SqlServer.Query(copy, new SqlServer.Statement(site, statement)
         {
-            using var connection = new SqlConnection(ConnectionString.Unpooled(ConnectionString.WithCatalog(copy.Connection, "master")));
-            connection.Open();
-            using var command = new SqlCommand(statement, connection) { CommandTimeout = DatabaseStatementSeconds };
-            command.Parameters.Add(new SqlParameter("@name", System.Data.SqlDbType.NVarChar, 128) { Value = copy.Name.ToString() });
-            command.ExecuteNonQuery();
-            return copy;
-        }
-        catch (SqlException e)
-        {
-            return copy.ErrorOf(e.Number, e.Message, fatal: e.Class >= 20);
-        }
-    }
+            Timeout = TimeSpan.FromSeconds(DatabaseStatementSeconds), Catalog = "master", Pooled = false, Parameters = [("@name", copy.Name.ToString())],
+        }, log, _ => copy);
 
     /// <summary>The registry's rows, none when it is absent, each naming its copy and the server it was made on. A write replaces the file whole, so a reader sees the rows before a change or after it.</summary>
     private static Result<List<JsonObject>> Rows(string estateRoot)

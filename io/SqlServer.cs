@@ -35,6 +35,18 @@ public static class SqlServer
     /// <summary>A statement SQL Server refused on an open connection: its number, its message where a copy's may be kept, and whether the command ran past its timeout.</summary>
     internal sealed record StatementFailure(int Number, string? Message, bool TimedOut);
 
+    /// <summary>An exception and each exception inside it, outermost first.</summary>
+    private static IEnumerable<Exception> Chain(Exception failure)
+    {
+        for (var x = failure; x is not null; x = x.InnerException)
+        {
+            yield return x;
+        }
+    }
+
+    /// <summary>Whether a failure carries a SqlException, however deep: what Database.ErrorOf reads by its number.</summary>
+    private static bool Carries(Exception failure) => Chain(failure).Any(x => x is SqlException);
+
     /// <summary>
     /// The target an argument names (kernel/Target.cs), read for the argument <paramref name="subject"/>; a literal connection string, which
     /// only SqlClient's grammar tells from a target, is connection.literal at exit 6, and no part of the argument is quoted.
@@ -149,14 +161,6 @@ public static class SqlServer
             : fatal || Silences.Contains(number) ? Category.Unreachable
             : Category.Failed;
 
-        private static IEnumerable<Exception> Chain(Exception failure)
-        {
-            for (var x = failure; x is not null; x = x.InnerException)
-            {
-                yield return x;
-            }
-        }
-
         private enum Category
         {
             Denied,
@@ -194,7 +198,7 @@ public static class SqlServer
     public sealed class Copy : Database
     {
         internal Copy(CopyName name, string server, string estateRoot)
-            : base(new Target.RegisteredCopy(name), ConnectionString.WithCatalog(server, name.ToString())) => (Name, Root) = (name, estateRoot);
+            : base(new Target.RegisteredCopy(name), ConnectionString.OfDatabase(server, name.ToString())) => (Name, Root) = (name, estateRoot);
 
         public CopyName Name { get; }
 
@@ -334,15 +338,18 @@ public static class SqlServer
 
         public string Site { get; }
 
-        public static Result<AggregateQuery> Of(string text, string site) => Allowlist.Admitted(text).Map(statement => new AggregateQuery(statement, site));
+        public static Result<AggregateQuery> Of(string text, string site) => Allowlist.Admitted(text).Map(statement => new AggregateQuery(TSql.Text(statement), site));
+
+        /// <summary>An aggregate query built as a ScriptDom tree, checked as the tree, and run as the text ScriptDom writes it back as.</summary>
+        internal static Result<AggregateQuery> Of(TSqlStatement tree, string site) => Allowlist.Admitted(tree, site).Map(statement => new AggregateQuery(TSql.Text(statement), site));
 
         public override string ToString() => Site + ": " + Statement;
     }
 
     /// <summary>
     /// What an aggregate query measured, a value: its rows, every value an integer or null, in the order of their values, so two
-    /// measurements of the same rows are equal whatever order SQL Server returned them in; or its failure, the number and the site, SQL
-    /// Server's message kept for a copy alone. The cases are closed, and Match reads each.
+    /// measurements of the same rows are equal whatever order SQL Server returned them in; its failure, the number and the site, SQL
+    /// Server's message kept for a copy alone; or its timeout. The cases are closed, and Match reads each.
     /// </summary>
     public abstract record Measurement
     {
@@ -350,10 +357,11 @@ public static class SqlServer
         {
         }
 
-        public T Match<T>(Func<Answered, T> answered, Func<Failed, T> failed) => this switch
+        public T Match<T>(Func<Answered, T> answered, Func<Failed, T> failed, Func<TimedOut, T> timedOut) => this switch
         {
             Answered a => answered(a),
             Failed f => failed(f),
+            TimedOut t => timedOut(t),
             _ => throw new System.Diagnostics.UnreachableException(),
         };
 
@@ -363,6 +371,12 @@ public static class SqlServer
         {
             public override string ToString() =>
                 Site + ": query failed: Msg " + Number.ToString(CultureInfo.InvariantCulture) + (Message is null ? "; message withheld" : ": " + Message);
+        }
+
+        /// <summary>SQL Server still running the query when its timeout passed, on a connection that stayed open: the server answered, and the measurement is missing, not failed.</summary>
+        public sealed record TimedOut(string Site, TimeSpan After) : Measurement
+        {
+            public override string ToString() => Site + ": query ran past its timeout of " + After.TotalSeconds.ToString(CultureInfo.InvariantCulture) + " s";
         }
     }
 
@@ -402,41 +416,109 @@ public static class SqlServer
     }
 
     /// <summary>
-    /// One admitted aggregate query against the target (WP 1.4), read back as integers and logged with its row count. A statement
-    /// that fails is measured as failed, by its number; a connection that fails is an error.
+    /// How long SQL Server may run an aggregate query before SqlClient cancels it: SqlClient's own default for a command, named here.
+    /// An aggregate query reads each row of a table once, and thirty seconds covers a scan of the estate's largest tables that S3 and S8
+    /// have not yet measured; a query past it is measured as timed out, not as a server that does not answer (finding ARCH-13). The
+    /// measure verb of M3 revisits the figure with the row counts S8 reports; no posture key or flag sets it before then.
     /// </summary>
-    public static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log)
+    internal static readonly TimeSpan AggregateQueryTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// One admitted aggregate query against the target (WP 1.4), through the one statement path, read back as integers and logged
+    /// with its row count. A statement SQL Server refuses on the open connection is measured as failed, by its number, and one past
+    /// its timeout as timed out; a connection that fails, or an identity refused, is an error.
+    /// </summary>
+    public static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log) => Measure(target, query, log, AggregateQueryTimeout);
+
+    internal static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log, TimeSpan timeout) =>
+        Query(target, new Statement(query.Site, query.Statement) { Timeout = timeout }, log,
+            rows => (Measurement)new Measurement.Answered(query.Site, SortedArray.Of(rows.Select(row => Row.Of([.. row.Select(Integer)])))),
+            failed => failed.TimedOut ? new Measurement.TimedOut(query.Site, timeout) : new Measurement.Failed(query.Site, failed.Number, failed.Message));
+
+    /// <summary>
+    /// A statement estate sends itself (R5): its site, which names it in the run's log; its text; how long SQL Server may take over it
+    /// before SqlClient cancels it; the database it runs in, the target's own unless another is named; whether its connection may come
+    /// from SqlClient's pool; and its parameters, each nvarchar(128).
+    /// </summary>
+    internal sealed record Statement(string Site, string Text)
     {
-        using var connection = new SqlConnection(target.Connection);
+        /// <summary>SqlClient's own default for a command, named.</summary>
+        public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(30);
+
+        public string? Catalog { get; init; }
+
+        public bool Pooled { get; init; } = true;
+
+        public IReadOnlyList<(string Name, string Value)> Parameters { get; init; } = [];
+    }
+
+    /// <summary>
+    /// The one path for a statement estate sends itself (R5): a connection of its own opened (io/ConnectionString.cs), the statement run
+    /// under its timeout, every row of its first result read into the answer, its remaining results read so every error the batch
+    /// raises surfaces, its site and row count or failure written to the run's log, and every failure mapped through
+    /// Database.ErrorOf, the one boundary. A caller that records a statement's own failure as its outcome (Measure) passes
+    /// <paramref name="failed"/>, which receives a failure SQL Server raised on the open connection below severity 20 and the
+    /// command's timeout. A connection is never reused across statements, so a broken pooled connection surfaces as that statement's
+    /// own failure and is mapped once. A statement is logged once the connection opened, since only then was it sent.
+    /// </summary>
+    internal static Result<T> Query<T>(Database target, Statement statement, QueryLog? log, Func<IReadOnlyList<IReadOnlyList<object?>>, T> answer,
+        Func<StatementFailure, T>? failed = null)
+    {
+        var opened = false;
         try
         {
+            using var connection = new SqlConnection(ConnectionString.ForStatement(target.Connection, statement.Catalog, statement.Pooled));
             connection.Open();
-            using var command = new SqlCommand(query.Statement, connection) { CommandTimeout = 30 };
-            using var reader = command.ExecuteReader();
-            var rows = new List<Row>();
-            while (reader.Read())
+            opened = true;
+            using var command = new SqlCommand(statement.Text, connection) { CommandTimeout = (int)statement.Timeout.TotalSeconds };
+            foreach (var (name, value) in statement.Parameters)
             {
-                rows.Add(Row.Of([.. Enumerable.Range(0, reader.FieldCount).Select(i => reader.IsDBNull(i) ? (long?)null : Integer(reader.GetValue(i)))]));
+                command.Parameters.Add(new SqlParameter(name, System.Data.SqlDbType.NVarChar, 128) { Value = value });
             }
 
-            log.Add(target, query, rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows");
-            return new Measurement.Answered(query.Site, SortedArray.Of(rows));
+            var rows = new List<IReadOnlyList<object?>>();
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    var values = new object[reader.FieldCount];
+                    reader.GetValues(values);
+                    rows.Add([.. values.Select(v => v is DBNull ? null : (object?)v)]);
+                }
+
+                while (reader.NextResult())
+                {
+                }
+            }
+
+            log?.Add(target, statement.Site, statement.Text, rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows");
+            return answer(rows);
         }
-        catch (SqlException e) when (connection.State == System.Data.ConnectionState.Open && e.Class < 20)
+        catch (Exception e) when (e is InvalidOperationException || Carries(e))
         {
-            log.Add(target, query, "failed, Msg " + e.Number.ToString(CultureInfo.InvariantCulture));
-            return new Measurement.Failed(query.Site, e.Number, target.Withheld ? null : e.Message);
-        }
-        catch (Exception e) when (e is SqlException or InvalidOperationException)
-        {
-            return target.ErrorOf(e);
+            if (failed is not null && target.FailedStatement(e, opened) is { } statementFailure)
+            {
+                log?.Add(target, statement.Site, statement.Text, statementFailure.TimedOut
+                    ? "timed out after " + statement.Timeout.TotalSeconds.ToString(CultureInfo.InvariantCulture) + " s"
+                    : "failed, Msg " + statementFailure.Number.ToString(CultureInfo.InvariantCulture));
+                return failed(statementFailure);
+            }
+
+            var error = target.ErrorOf(e, opened);
+            if (opened)
+            {
+                log?.Add(target, statement.Site, statement.Text, "failed, " + error.Code);
+            }
+
+            return error;
         }
     }
 
     /// <summary>
-    /// A run's log of every statement estate sends, .estate/runs/&lt;id&gt;/queries.log: each aggregate query, and the one statement Model and Plan send
-    /// before DacFx's own catalog queries, which are DacFx's to answer for. Per statement: the time, the target, the site and the row count
-    /// or the failure's number, then the statement and GO, so the log runs as a script. It holds no value a statement read.
+    /// A run's log of every statement estate sends through <see cref="Query{T}"/>, .estate/runs/&lt;id&gt;/queries.log: each aggregate query, the
+    /// VIEW DEFINITION check Model and Plan send before DacFx's own catalog queries, which are DacFx's to answer for, and a copy's CREATE
+    /// and DROP DATABASE. Per statement: the time, the target, the site and the row count, the failure's number or code, or the timeout,
+    /// then the statement and GO, so the log runs as a script. It holds no value a statement read.
     /// </summary>
     public sealed class QueryLog
     {
@@ -451,8 +533,6 @@ public static class SqlServer
         public static QueryLog Start(string estateRoot) => new(System.IO.Path.Combine(estateRoot, ".estate", "runs",
             DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture) + "-" + System.Environment.ProcessId.ToString(CultureInfo.InvariantCulture)
             + "-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(2)).ToLowerInvariant(), "queries.log"));
-
-        internal void Add(Database target, AggregateQuery query, string outcome) => Add(target, query.Site, query.Statement, outcome);
 
         internal void Add(Database target, string site, string statement, string outcome)
         {
@@ -669,23 +749,10 @@ public static class SqlServer
     /// Whether the target answers this identity with what reading it takes, before DacFx's own retries begin: a connection opens, and
     /// the identity holds VIEW DEFINITION there (§1 fact 2), whose absence is a denial (Msg 300, SQL Server's number for it).
     /// </summary>
-    private static Result<Database> Reached(Database target, QueryLog? log)
-    {
-        const string Statement = "SELECT HAS_PERMS_BY_NAME(NULL, N'DATABASE', N'VIEW DEFINITION');";
-        try
-        {
-            using var connection = new SqlConnection(target.Connection);
-            connection.Open();
-            using var command = new SqlCommand(Statement, connection);
-            var held = Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture) == 1;
-            log?.Add(target, "VIEW DEFINITION", Statement, "1 row");
-            return held ? Result.Ok(target) : target.ErrorOf(300, "");
-        }
-        catch (Exception e) when (e is SqlException or InvalidOperationException)
-        {
-            return target.ErrorOf(e);
-        }
-    }
+    private static Result<Database> Reached(Database target, QueryLog? log) =>
+        Query(target, new Statement("VIEW DEFINITION", "SELECT HAS_PERMS_BY_NAME(NULL, N'DATABASE', N'VIEW DEFINITION');"), log,
+                rows => rows is [[{ } held]] && Convert.ToInt32(held, CultureInfo.InvariantCulture) == 1)
+            .Bind(held => held ? Result.Ok(target) : target.ErrorOf(300, ""));
 
     /// <summary>A package loaded from a stream, handed to use, then released (a package loaded by path holds the assemblies beside it in this process).</summary>
     private static Result<T> Loaded<T>(string dacpac, Database target, Func<DacPackage, Result<T>> use)
@@ -726,9 +793,13 @@ public static class SqlServer
                 : new Error("sqlcmd.unresolved", named + "'s " + SqlCmdVariable.Placeholder(variable.Name) + " names " + reference + ", which resolves to nothing here.",
                     "Set the variable, or write the file outside git, that " + reference + " names.")))));
 
-    /// <summary>A value the allowlist admits the type of: an integer of any width. Anything else is a defect in the allowlist, named by its type alone.</summary>
-    private static long Integer(object value) => value switch
+    /// <summary>
+    /// A value the allowlist admits the type of: an integer of any width, or NULL. Anything else is a defect in the allowlist, named by
+    /// its type alone and never by the value; it escapes as an exception, which cli/Program.cs answers as internal.unexpected at exit 6.
+    /// </summary>
+    private static long? Integer(object? value) => value switch
     {
+        null => null,
         int or long or short or byte => Convert.ToInt64(value, CultureInfo.InvariantCulture),
         _ => throw new NotSupportedException("An aggregate query answered with a " + value.GetType().Name + ", a type no form of the allowlist yields."),
     };
@@ -755,9 +826,10 @@ public static class SqlServer
         /// <summary>The first form the allowlist does not hold: where it stands, and what it is.</summary>
         private sealed record Offence(TSqlFragment At, string What);
 
-        public static Result<string> Admitted(string text)
+        /// <summary>The one statement <paramref name="text"/> holds, when the allowlist admits it; a refusal names the line and the column of what it refuses.</summary>
+        public static Result<TSqlStatement> Admitted(string text)
         {
-            var parsed = new TSql160Parser(initialQuotedIdentifiers: true).Parse(new StringReader(text), out var errors);
+            var parsed = TSql.Parse(text, out var errors);
             if (errors.Count > 0)
             {
                 return new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query does not parse at line {errors[0].Line}, column {errors[0].Column}."),
@@ -765,21 +837,23 @@ public static class SqlServer
             }
 
             var statements = ((TSqlScript)parsed).Batches.SelectMany(b => b.Statements).ToList();
-            if (statements.Count != 1)
-            {
-                return new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query holds {statements.Count} statements; estate runs one statement at a time."),
-                    "Split it into queries of one SELECT each.");
-            }
-
-            if ((statements[0] is SelectStatement select ? Statement(select) : new Offence(statements[0], Kind(statements[0]))) is { } offence)
-            {
-                return new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query is refused at line {offence.At.StartLine}, column {offence.At.StartColumn}: {offence.What}."),
-                    "Rewrite it so its select list holds only " + Forms + ".");
-            }
-
-            new Sql160ScriptGenerator().GenerateScript(statements[0], out var script);
-            return script.Replace("\r\n", "\n", StringComparison.Ordinal).Trim();
+            return statements.Count != 1
+                ? new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query holds {statements.Count} statements; estate runs one statement at a time."),
+                    "Split it into queries of one SELECT each.")
+                : Admitted(statements[0], site: null);
         }
+
+        /// <summary>
+        /// A statement as a tree, when the allowlist admits it: what M2's builders make, checked without being written as text and read
+        /// again. A tree built in code carries no line and column, so its refusal names <paramref name="site"/> and the kind of node the
+        /// allowlist stops at instead.
+        /// </summary>
+        public static Result<TSqlStatement> Admitted(TSqlStatement statement, string? site) =>
+            (statement is SelectStatement select ? Statement(select) : new Offence(statement, Kind(statement))) is not { } offence ? statement
+            : new Error("aggregate-query.refused", offence.At.StartLine > 0
+                    ? string.Create(CultureInfo.InvariantCulture, $"The query is refused at line {offence.At.StartLine}, column {offence.At.StartColumn}: {offence.What}.")
+                    : "The query " + site + " is refused at its " + Kind(offence.At) + ": " + offence.What + ".",
+                "Rewrite it so its select list holds only " + Forms + ".");
 
         private static Offence? Statement(SelectStatement s) =>
             s.Into is not null ? new Offence(s.Into, "SELECT INTO")

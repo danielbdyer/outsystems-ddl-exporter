@@ -49,7 +49,17 @@ internal static class ConnectionString
         }
     }
 
-    /// <summary>The connection as estate opens it: the caller's integrated identity when it names no other, and estate as the application unless it names one; nothing else is added.</summary>
+    /// <summary>
+    /// How long opening a connection waits for a server to answer the login: SqlClient's own default, named here. A server across a VPN
+    /// answers well within it, and one that has not answered is reported as not answering (server.unreachable); each statement estate
+    /// sends opens one connection, and DacFx opens its own. A connection string that spells Connect Timeout keeps its own.
+    /// </summary>
+    internal const int ConnectTimeoutSeconds = 15;
+
+    /// <summary>
+    /// The connection as estate opens it: the caller's integrated identity when it names no other, estate as the application unless it
+    /// names one, and a login wait of <see cref="ConnectTimeoutSeconds"/> unless it names one; nothing else is added.
+    /// </summary>
     internal static string WithDefaults(SqlConnectionStringBuilder connection)
     {
         if (!connection.ShouldSerialize("Integrated Security") && connection.UserID.Length == 0 && connection.Authentication == SqlAuthenticationMethod.NotSpecified)
@@ -62,14 +72,23 @@ internal static class ConnectionString
             connection.ApplicationName = "estate";
         }
 
+        if (!connection.ShouldSerialize("Connect Timeout"))
+        {
+            connection.ConnectTimeout = ConnectTimeoutSeconds;
+        }
+
         return connection.ConnectionString;
     }
 
-    /// <summary>A connection estate made to the database <paramref name="catalog"/> instead of the one it names.</summary>
-    internal static string WithCatalog(string connection, string catalog) => new SqlConnectionStringBuilder(connection) { InitialCatalog = catalog }.ConnectionString;
+    /// <summary>A copy's connection: the scratch server's, to the copy's database <paramref name="catalog"/>, with estate's defaults.</summary>
+    internal static string OfDatabase(string server, string catalog) => WithDefaults(new SqlConnectionStringBuilder(server) { InitialCatalog = catalog });
 
-    /// <summary>A connection estate made, opened afresh each time rather than from SqlClient's pool: for CREATE and DROP DATABASE on master, which no pooled session may outlive.</summary>
-    internal static string Unpooled(string connection) => new SqlConnectionStringBuilder(connection) { Pooling = false }.ConnectionString;
+    /// <summary>
+    /// The connection one statement estate sends opens: to <paramref name="catalog"/> when one is named (master, for CREATE and DROP
+    /// DATABASE), and from SqlClient's pool unless <paramref name="pooled"/> is false.
+    /// </summary>
+    internal static string ForStatement(string connection, string? catalog, bool pooled) => catalog is null && pooled ? connection
+        : new SqlConnectionStringBuilder(connection) { InitialCatalog = catalog ?? CatalogOf(connection), Pooling = pooled }.ConnectionString;
 
     /// <summary>The database a connection estate made names.</summary>
     internal static string CatalogOf(string connection) => new SqlConnectionStringBuilder(connection).InitialCatalog;

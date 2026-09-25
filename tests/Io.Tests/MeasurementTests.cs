@@ -34,9 +34,11 @@ public sealed class MeasurementTests
         [
             new SqlServer.Measurement.Answered("rows", SortedArray.Of(SqlServer.Row.Of(7))),
             new SqlServer.Measurement.Failed("conversion", 245, null),
+            new SqlServer.Measurement.TimedOut("scan", TimeSpan.FromSeconds(30)),
         ];
 
-        Assert.Equal(["rows answered 1 row", "conversion failed with Msg 245"], measured.Select(m => m.Match(
-            answered => answered.Site + " answered " + answered.Rows.Count + " row", failed => failed.Site + " failed with Msg " + failed.Number)));
+        Assert.Equal(["rows answered 1 row", "conversion failed with Msg 245", "scan ran past 30 s"], measured.Select(m => m.Match(
+            answered => answered.Site + " answered " + answered.Rows.Count + " row", failed => failed.Site + " failed with Msg " + failed.Number,
+            timedOut => timedOut.Site + " ran past " + timedOut.After.TotalSeconds + " s")));
     }
 }
