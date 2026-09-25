@@ -26,7 +26,7 @@ public static class Profiles
 {
     public const string Posture = "estate/posture.json";
 
-    private static readonly string[] Keys = ["classification", "confirmedBy", "confirmedOn", "cohorts", "connection", "profile", "sqlcmd", "metamodel"];
+    private static readonly string[] Keys = ["classification", "confirmedBy", "confirmedOn", "readers", "connection", "profile", "sqlcmd", "metamodel"];
 
     /// <summary>A password set in a connection string, however spelled or spaced.</summary>
     private static readonly Regex Password = new(@"(?:password|pwd)\s*=", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
@@ -153,7 +153,7 @@ public static class Profiles
 
         var subject = Where(at);
         string? Given(string key) => entry.TryGetProperty(key, out var value) ? value.GetString() : null;
-        string[] cohorts = entry.TryGetProperty("cohorts", out var names) ? [.. names.EnumerateArray().Select(c => c.GetString()!)] : [];
+        string[] readers = entry.TryGetProperty("readers", out var names) ? [.. names.EnumerateArray().Select(g => g.GetString()!)] : [];
         var confirmation = Given("confirmedBy") is null && Given("confirmedOn") is null ? Result.Ok<Confirmation?>(null)
             : Confirmation.Of(subject, Given("confirmedBy"), Given("confirmedOn")).Map(c => (Confirmation?)c);
         var metamodel = Given("metamodel") is { } reference
@@ -163,7 +163,7 @@ public static class Profiles
             : default(SortedArray<SqlCmdVariable>);
         return confirmation.Bind(confirmed => Classification.Of(subject, Given("classification"), confirmed)).Bind(classification =>
             SecretReference.Of(Where(at + ".connection"), Given("connection")).Bind(connection => metamodel.Bind(meta => sqlCmd.Bind(variables =>
-                NamedEnvironment.Of(subject, name, classification, cohorts, connection, Given("profile")!, variables, meta)))));
+                NamedEnvironment.Of(subject, name, classification, readers, connection, Given("profile")!, variables, meta)))));
     }
 
     /// <summary>A SQLCMD value in the posture: a string is a reference, and an object a literal, taken only when marked "sensitive": false.</summary>
@@ -212,8 +212,8 @@ public static class Profiles
     /// <summary>The error of a value of another kind than its key takes, or null: a string, unless the key takes another.</summary>
     private static Error? Kind(JsonProperty key, string at) => (key.Name, key.Value.ValueKind) switch
     {
-        ("cohorts", JsonValueKind.Array) when key.Value.EnumerateArray().All(c => c.ValueKind == JsonValueKind.String) => null,
-        ("cohorts", _) => Malformed(at, "an array of cohort names"),
+        ("readers", JsonValueKind.Array) when key.Value.EnumerateArray().All(g => g.ValueKind == JsonValueKind.String) => null,
+        ("readers", _) => Malformed(at, "an array of group names"),
         ("environments" or "sqlcmd", JsonValueKind.Object) or ("sensitive", _) => null,
         ("environments", _) => Malformed(at, "an object of each environment by its name"),
         ("sqlcmd", _) => Malformed(at, "an object of SQLCMD values by variable name"),

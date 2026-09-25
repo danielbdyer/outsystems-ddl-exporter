@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 namespace Estate.Kernel;
 
 /// <summary>
-/// An environment as estate/posture.json names it (V3_MILESTONES.md WP 1.5, §4 row 14): its name, classification and cohorts, the
+/// An environment as estate/posture.json names it (V3_MILESTONES.md WP 1.5, §4 row 14): its name, classification and readers (the groups that may read it), the
 /// reference its connection resolves from, its publish profile's path from the estate's root ('/' between its parts), its SQLCMD
 /// values and, where the posture names one, the metamodel's reference. Data only (§2.1 rule 3), holding no value a reference names.
 /// Each error leads with the subject its caller gives, where in the posture the value sits, and quotes no value.
@@ -17,16 +17,17 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 {
     private static readonly Regex Named = new(@"\A[a-z][a-z0-9-]{0,31}\z", RegexOptions.CultureInvariant);
 
-    private NamedEnvironment(string name, Classification classification, SortedArray<string> cohorts, SecretReference connection, string profilePath,
-        SortedArray<SqlCmdVariable> sqlCmd, SecretReference? metamodel) => (Name, Classification, Cohorts, Connection, ProfilePath, SqlCmd, Metamodel) =
-        (name, classification, cohorts, connection, profilePath, sqlCmd, metamodel);
+    private NamedEnvironment(string name, Classification classification, SortedArray<string> readers, SecretReference connection, string profilePath,
+        SortedArray<SqlCmdVariable> sqlCmd, SecretReference? metamodel) => (Name, Classification, Readers, Connection, ProfilePath, SqlCmd, Metamodel) =
+        (name, classification, readers, connection, profilePath, sqlCmd, metamodel);
 
     /// <summary>1 to 32 lowercase letters, digits and hyphens, from a letter: dev, qa, uat.</summary>
     public string Name { get; }
 
     public Classification Classification { get; }
 
-    public SortedArray<string> Cohorts { get; }
+    /// <summary>The groups that may read the environment, such as the Active Directory groups of its leads.</summary>
+    public SortedArray<string> Readers { get; }
 
     public SecretReference Connection { get; }
 
@@ -36,22 +37,22 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 
     public SecretReference? Metamodel { get; }
 
-    public static Result<NamedEnvironment> Of(string subject, string name, Classification classification, IEnumerable<string> cohorts,
+    public static Result<NamedEnvironment> Of(string subject, string name, Classification classification, IEnumerable<string> readers,
         SecretReference connection, string profilePath, IEnumerable<SqlCmdVariable> sqlCmd, SecretReference? metamodel)
     {
-        var (readers, values) = (SortedArray.Of(cohorts), SortedArray.Of(sqlCmd));
+        var (groups, values) = (SortedArray.Of(readers), SortedArray.Of(sqlCmd));
         return !Named.IsMatch(name)
             ? new Error("posture.environment-name", subject + " names an environment in other than 1 to 32 lowercase letters, digits and hyphens.",
                 "Rename it with lowercase letters, digits and hyphens from a letter, such as dev or uat.")
-            : readers.Where((c, i) => string.IsNullOrWhiteSpace(c) || c.Any(char.IsControl) || (i > 0 && readers[i - 1] == c)).Any()
-                ? new Error("posture.cohort", subject + " names a cohort that is blank or given twice.", "Name each cohort that reads the environment once.")
+            : groups.Where((g, i) => string.IsNullOrWhiteSpace(g) || g.Any(char.IsControl) || (i > 0 && groups[i - 1] == g)).Any()
+                ? new Error("posture.readers", subject + " names a reader group that is blank or given twice.", "Name each group that reads the environment once.")
             : !InsideTheEstate(profilePath)
                 ? new Error("posture.profile-path", subject + " gives its profile a path that leaves the estate or names no .publish.xml.",
                     "Write the profile's path from the estate's root with '/' between its parts, such as estate/profiles/pipeline.publish.xml.")
             : values.Where((v, i) => i > 0 && string.Equals(values[i - 1].Name, v.Name, StringComparison.OrdinalIgnoreCase)).Any()
                 ? new Error("posture.sqlcmd-repeated", subject + " gives one SQLCMD variable twice; sqlcmd reads names in any case as one.",
                     "Keep one value for each SQLCMD variable.")
-            : new NamedEnvironment(name, classification, readers, connection, profilePath, values, metamodel);
+            : new NamedEnvironment(name, classification, groups, connection, profilePath, values, metamodel);
     }
 
     /// <summary>By name, which the posture gives each environment once.</summary>

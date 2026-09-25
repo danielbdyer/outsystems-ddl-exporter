@@ -55,7 +55,7 @@ public sealed class ProfilesTests : IDisposable
         Assert.Equal(["dev", "prod", "qa", "uat"], environments.Select(e => e.Name));
         Assert.Equal("env:dev (synthetic, confirmed by the dev lead on 2026-09-20)", dev.ToString());
         Assert.Equal(["env:prod (real)", "env:qa (real)", "env:uat (real)"], environments.Where(e => e != dev).Select(e => e.ToString()));
-        Assert.Equal(["developers", "leads"], dev.Cohorts);
+        Assert.Equal(["developers", "leads"], dev.Readers);
         Assert.Equal(("env:ESTATE_DEV", "project/profiles/pipeline.publish.xml", (string?)"file:.estate/principals/dev-ossys.connection"), (dev.Connection.ToString(), dev.ProfilePath, dev.Metamodel?.ToString()));
         Assert.Equal("$(EnvironmentTag), a literal | $(ServiceAccountPassword) from env:ESTATE_DEV_SERVICE_PASSWORD", string.Join(" | ", dev.SqlCmd));
         Assert.Equal("dev", dev.SqlCmd[0].Match(text => text, reference => "from " + reference));
@@ -73,7 +73,7 @@ public sealed class ProfilesTests : IDisposable
     [InlineData("connection", "posture.literal-connection", "environments.dev.connection")]
     [InlineData("metamodel", "posture.literal-connection", "environments.dev.metamodel")]
     [InlineData("sqlcmd", "posture.literal-connection", "environments.dev.sqlcmd.LinkedServer.literal")]
-    [InlineData("cohort", "posture.literal-connection", "environments.dev.cohorts[0]")]
+    [InlineData("reader", "posture.literal-connection", "environments.dev.readers[0]")]
     [InlineData("key", "posture.literal-connection", "environments.dev.sqlcmd.#1")]
     [InlineData("profile", "profile.password", "inline.publish.xml")]
     [InlineData("profile, a comment splitting the password", "profile.password", "inline.publish.xml")]
@@ -90,7 +90,7 @@ public sealed class ProfilesTests : IDisposable
             "connection" => Failed(Profiles.Environments(Estate(Dev(connection: credential)))),
             "metamodel" => Failed(Profiles.Environments(Estate(Dev("\"metamodel\": \"" + credential + "\"")))),
             "sqlcmd" => Failed(Profiles.Environments(Estate(Dev("\"sqlcmd\": { \"LinkedServer\": { \"literal\": \"" + credential + "\", \"sensitive\": false } }")))),
-            "cohort" => Failed(Profiles.Environments(Estate(Dev("\"cohorts\": [\"" + credential + "\"]")))),
+            "reader" => Failed(Profiles.Environments(Estate(Dev("\"readers\": [\"" + credential + "\"]")))),
             "key" => Failed(Profiles.Environments(Estate(Dev("\"sqlcmd\": { \"" + credential + "\": \"env:ESTATE_LINK\" }")))),
             "profile" => Failed(Profiles.Load(Profile("inline", "<TargetConnectionString>" + credential + "</TargetConnectionString>"))),
             "profile, a comment splitting the password" =>

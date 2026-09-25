@@ -5,7 +5,7 @@
       "classification": "synthetic",
       "confirmedBy": "the dev lead",
       "confirmedOn": "2026-09-20",
-      "cohorts": ["developers", "leads"],
+      "readers": ["developers", "leads"],
       "connection": "env:ESTATE_DEV",
       "profile": "project/profiles/pipeline.publish.xml",
       "sqlcmd": {
@@ -15,13 +15,13 @@
       "metamodel": "file:.estate/principals/dev-ossys.connection"
     },
     "qa": {
-      "cohorts": ["leads"],
+      "readers": ["leads"],
       "connection": "env:ESTATE_QA",
       "profile": "project/profiles/pipeline.publish.xml"
     },
     "uat": {
       "classification": "real",
-      "cohorts": ["leads"],
+      "readers": ["leads"],
       "connection": "file:.estate/principals/uat.connection",
       "profile": "project/profiles/pipeline.publish.xml",
       "metamodel": "env:ESTATE_UAT_OSSYS"

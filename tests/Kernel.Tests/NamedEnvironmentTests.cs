@@ -128,10 +128,10 @@ public sealed class NamedEnvironmentTests
     [Trait("Category", "fast")]
     public void A_named_environment_holds_what_the_posture_gives_it_in_order()
     {
-        var environment = Made(Environment("dev", Pipeline, cohorts: ["leads", "developers"], sqlCmd: [Literal("Tag", "dev"), Referenced("ServicePassword", "env:ESTATE_PW")]));
+        var environment = Made(Environment("dev", Pipeline, readers: ["leads", "developers"], sqlCmd: [Literal("Tag", "dev"), Referenced("ServicePassword", "env:ESTATE_PW")]));
 
         Assert.Equal("dev", environment.Name);
-        Assert.Equal(["developers", "leads"], environment.Cohorts);
+        Assert.Equal(["developers", "leads"], environment.Readers);
         Assert.Equal(["ServicePassword", "Tag"], environment.SqlCmd.Select(v => v.Name));
         Assert.Equal(("env:ESTATE_DEV", Pipeline, (string?)"file:.estate/dev-ossys.connection"), (environment.Connection.ToString(), environment.ProfilePath, environment.Metamodel?.ToString()));
         Assert.Equal(new Classification.Real(null), environment.Classification);
@@ -156,10 +156,10 @@ public sealed class NamedEnvironmentTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_named_environment_rejects_a_blank_or_repeated_cohort_and_a_SQLCMD_variable_given_twice_in_any_case()
+    public void A_named_environment_rejects_a_blank_or_repeated_reader_group_and_a_SQLCMD_variable_given_twice_in_any_case()
     {
-        Assert.Equal("posture.cohort", Failed(Environment("dev", Pipeline, cohorts: ["leads", "leads"])).Code);
-        Assert.Equal("posture.cohort", Failed(Environment("dev", Pipeline, cohorts: ["leads", " "])).Code);
+        Assert.Equal("posture.readers", Failed(Environment("dev", Pipeline, readers: ["leads", "leads"])).Code);
+        Assert.Equal("posture.readers", Failed(Environment("dev", Pipeline, readers: ["leads", " "])).Code);
         Assert.Equal("posture.sqlcmd-repeated", Failed(Environment("dev", Pipeline, sqlCmd: [Literal("Tag", "a"), Literal("tag", "b")])).Code);
     }
 
@@ -200,8 +200,8 @@ public sealed class NamedEnvironmentTests
         Assert.DoesNotContain(Planted, printed, StringComparison.Ordinal);
     }
 
-    private static Result<NamedEnvironment> Environment(string name, string profile, IEnumerable<string>? cohorts = null, IEnumerable<SqlCmdVariable>? sqlCmd = null) =>
-        NamedEnvironment.Of(Where, name, new Classification.Real(null), cohorts ?? [], Reference("env:ESTATE_DEV"), profile, sqlCmd ?? [], Reference("file:.estate/dev-ossys.connection"));
+    private static Result<NamedEnvironment> Environment(string name, string profile, IEnumerable<string>? readers = null, IEnumerable<SqlCmdVariable>? sqlCmd = null) =>
+        NamedEnvironment.Of(Where, name, new Classification.Real(null), readers ?? [], Reference("env:ESTATE_DEV"), profile, sqlCmd ?? [], Reference("file:.estate/dev-ossys.connection"));
 
     private static SecretReference Reference(string text) => Made(SecretReference.Of(Where, text));
 
