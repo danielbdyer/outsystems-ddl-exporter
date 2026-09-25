@@ -114,7 +114,7 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
         var (groups, values) = (SortedArray.Of(readers), SortedArray.Of(sqlCmd));
         return groups.Where((g, i) => string.IsNullOrWhiteSpace(g) || g.Any(char.IsControl) || (i > 0 && groups[i - 1] == g)).Any()
                 ? new Error("posture.readers", subject + " names a reader group that is blank or given twice.", "Name each group that reads the environment once.")
-            : values.Where((v, i) => i > 0 && string.Equals(values[i - 1].Name, v.Name, StringComparison.OrdinalIgnoreCase)).Any()
+            : values.Where((v, i) => i > 0 && values[i - 1].Name == v.Name).Any()
                 ? new Error("posture.sqlcmd-repeated", subject + " gives one SQLCMD variable twice; sqlcmd reads names in any case as one.",
                     "Keep one value for each SQLCMD variable.")
             : new NamedEnvironment(name, host, classification, groups, connection, profile, values, metamodel);

@@ -107,7 +107,7 @@ public sealed class EnvironmentsTests
 
         Assert.Equal("sqlcmd.literal-credential", error.Code);
         Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
-        Assert.Equal((name, "from env:ESTATE_SECRET"), (referenced.Name, Held(referenced)));
+        Assert.Equal((name, "from env:ESTATE_SECRET"), (referenced.Name.ToString(), Held(referenced)));
     }
 
     [Fact]
@@ -116,7 +116,7 @@ public sealed class EnvironmentsTests
     {
         var literal = Made(SqlCmdVariable.Of(Where, "EnvironmentTag", "dev"));
 
-        Assert.Equal(("EnvironmentTag", "the literal dev"), (literal.Name, Held(literal)));
+        Assert.Equal(("EnvironmentTag", "the literal dev"), (literal.Name.ToString(), Held(literal)));
         foreach (var name in (string[])["", "Environment Tag", "1Tag", "Tag)", "Tag=" + Planted])
         {
             var error = Failed(SqlCmdVariable.Of(Where, name, "dev"));
@@ -133,7 +133,7 @@ public sealed class EnvironmentsTests
 
         Assert.Equal(("dev", "dev-sql.corp.example", "env:dev"), (environment.Name.ToString(), environment.Host.ToString(), environment.Target.ToString()));
         Assert.Equal(["developers", "leads"], environment.Readers);
-        Assert.Equal(["ServicePassword", "Tag"], environment.SqlCmd.Select(v => v.Name));
+        Assert.Equal(["ServicePassword", "Tag"], environment.SqlCmd.Select(v => v.Name.ToString()));
         Assert.Equal(("env:ESTATE_DEV", Pipeline, (string?)"file:.estate/dev-ossys.connection"), (environment.Connection.ToString(), environment.Profile.ToString(), environment.Metamodel?.ToString()));
         Assert.Equal(new Classification.Real(null), environment.Classification);
     }

@@ -278,7 +278,7 @@ public sealed class ProfilesTests : IDisposable
 
         var printed = string.Join('\n', (object[])[environment, .. environment.SqlCmd, strict, .. strict.SqlCmd, PublishProfile.Permissive.Of(strict)]);
 
-        Assert.Equal(Planted, environment.SqlCmd.Single(v => v.Name == "EnvironmentTag").Match(text => text, reference => "from " + reference));
+        Assert.Equal(Planted, environment.SqlCmd.Single(v => v.Name.ToString() == "EnvironmentTag").Match(text => text, reference => "from " + reference));
         Assert.DoesNotContain(Planted, printed, StringComparison.Ordinal);
         Assert.DoesNotMatch(PasswordSetting, printed);
     }
