@@ -147,7 +147,8 @@ public static class SqlServerFixture
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
-        await using var command = new SqlCommand(sql, connection);
+        // The fixture creates and drops databases while other test classes do the same; it waits as long as io/Substrate does.
+        await using var command = new SqlCommand(sql, connection) { CommandTimeout = Substrate.DatabaseStatementSeconds };
         if (name is not null)
         {
             command.Parameters.Add(new SqlParameter("@name", System.Data.SqlDbType.NVarChar, 128) { Value = name });

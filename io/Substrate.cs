@@ -34,6 +34,13 @@ public static class Substrate
     private const string Unmake = "IF DB_ID(@name) IS NOT NULL BEGIN DECLARE @sql nvarchar(max) = N'ALTER DATABASE ' + QUOTENAME(@name) "
         + "+ N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql); END";
 
+    /// <summary>
+    /// How long CREATE DATABASE and DROP DATABASE may wait. Each waits for the database locks that other copies being made or
+    /// dropped on the same server hold, and LocalDB on the four-core Windows CI runner has taken longer than SqlClient's default of
+    /// 30 seconds for a DROP while parallel test classes made and dropped their own databases.
+    /// </summary>
+    internal const int DatabaseStatementSeconds = 180;
+
     /// <summary>This machine's addresses as R15 reads them: loopback, and each its network interfaces hold.</summary>
     private static readonly Lazy<HashSet<IPAddress>> Local = new(() =>
     {
@@ -187,7 +194,7 @@ public static class Substrate
         {
             using var connection = new SqlConnection(new SqlConnectionStringBuilder(copy.Connection) { InitialCatalog = "master", Pooling = false }.ConnectionString);
             connection.Open();
-            using var command = new SqlCommand(statement, connection);
+            using var command = new SqlCommand(statement, connection) { CommandTimeout = DatabaseStatementSeconds };
             command.Parameters.Add(new SqlParameter("@name", System.Data.SqlDbType.NVarChar, 128) { Value = copy.Name });
             command.ExecuteNonQuery();
             return copy;
