@@ -166,7 +166,7 @@ internal static class RefusalPaths
         {
             var root = Estate(scratch, Environments(Dev(profile: "estate/profiles/relaxed.publish.xml")));
             File.Move(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted)), Path.Combine(root, "estate", "profiles", "relaxed.publish.xml"));
-            return Failed(Profiles.Of(Made(Profiles.Environments(root)).Single(), root));
+            return Failed(Profiles.Of(Made(Profiles.Environments(root)).All.Single(), root));
         }),
         new("a SQLCMD literal under a credential's name in a profile", "sqlcmd.literal-credential", true, (scratch, planted) =>
             Failed(Profiles.Load(Profile(scratch, "", ("ApiToken", planted))))),
@@ -235,7 +235,7 @@ internal static class RefusalPaths
             return Failed(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch));
         }),
         new("a copy made on the host an environment's reference names", "copy.named-host", true, (scratch, planted) => Failed(SqlServer.Resolve(Target("copy:" + Copied),
-            Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted))))))))),
+            Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted), host: "localhost")))))))),
         new("a copy beside an environment whose connection SqlClient cannot read", "connection.malformed", true, (scratch, planted) => Failed(SqlServer.Resolve(Target("copy:" + Copied),
             Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Nonsense " + planted + " = 1"))))))))),
         new("no scratch server server anywhere", "scratch-server.missing", false, (scratch, _) => Failed(ScratchServer.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
@@ -432,9 +432,9 @@ internal static class RefusalPaths
     private static (int Exit, string Output)? Sdk(string file, IReadOnlyList<string> arguments) =>
         (0, (string)JsonNode.Parse(File.ReadAllText(Path.Combine(Repository.Root, "global.json")))!["sdk"]!["version"]! + " [sdk]\n");
 
-    /// <summary>A dev environment in posture JSON: its connection, its profile and whatever else is given.</summary>
-    private static string Dev(string extra = "", string connection = "env:ESTATE_DEV", string profile = Pipeline, string name = "dev") =>
-        Quoted(name) + ": { \"connection\": " + Quoted(connection) + ", \"profile\": " + Quoted(profile) + (extra.Length > 0 ? ", " + extra : "") + " }";
+    /// <summary>A dev environment in posture JSON: its host, its connection, its profile and whatever else is given.</summary>
+    private static string Dev(string extra = "", string connection = "env:ESTATE_DEV", string profile = Pipeline, string name = "dev", string host = "dev-sql") =>
+        Quoted(name) + ": { \"host\": " + Quoted(host) + ", \"connection\": " + Quoted(connection) + ", \"profile\": " + Quoted(profile) + (extra.Length > 0 ? ", " + extra : "") + " }";
 
     private static string Environments(string environments) => "{ \"environments\": { " + environments + " } }";
 

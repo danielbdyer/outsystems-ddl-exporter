@@ -147,7 +147,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
 
         Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
         File.Copy(project.Profile, Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"), overwrite: true);
-        File.WriteAllText(Path.Combine(root, "estate", "posture.json"), "{ \"environments\": { \"" + name + "\": { \"classification\": \"real\", \"connection\": \"file:"
+        File.WriteAllText(Path.Combine(root, "estate", "posture.json"), "{ \"environments\": { \"" + name + "\": { \"host\": \"localhost\", \"classification\": \"real\", \"connection\": \"file:"
             + file.Replace('\\', '/') + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\"" + extra + " } } }");
         return Made(SqlServer.Resolve(Made(SqlServer.Target("env:" + name, "--target")), root));
     }

@@ -164,18 +164,22 @@ public static class SqlServer
         }));
     }
 
+    /// <summary>A target as a database, estate/posture.json read under the estate's root for it.</summary>
+    public static Result<Database> Resolve(Target target, string estateRoot) => Resolve(target, Profiles.Environments(estateRoot), estateRoot);
+
     /// <summary>
-    /// A target as a database: env: through estate/posture.json and the environment's connection reference; copy: through
-    /// .estate/copies.json alone (io/ScratchServer). A git ref and a package are read as packages, and the synthetic copy is not in
-    /// this build.
+    /// A target as a database, against estate/posture.json as the verb read it once (<paramref name="posture"/>, whose error counts only
+    /// for a target that needs the posture): env: through the environment's connection reference; copy: through .estate/copies.json
+    /// alone, on a server R15 clears against the posture (io/ScratchServer). A git ref and a package are read as packages, and the
+    /// synthetic copy is not in this build.
     /// </summary>
-    public static Result<Database> Resolve(Target target, string estateRoot) => target.Match<Result<Database>>(
-        environment => Profiles.Environments(estateRoot).Bind(environments => environments.FirstOrDefault(e => e.Name == environment.Name) is { } named
+    public static Result<Database> Resolve(Target target, Result<Environments> posture, string estateRoot) => target.Match<Result<Database>>(
+        environment => posture.Bind(environments => environments.Named(environment.Name) is { } named
             ? EnvironmentDatabase.Of(named, estateRoot).Map(n => (Database)n)
-            : new Error("target.unnamed", environment + " names no environment of " + Profiles.Posture + ".", environments.Count == 0
-                ? "Add the environment to " + Profiles.Posture + " with its connection reference and profile."
-                : "Name one it holds: " + string.Join(", ", environments.Select(e => e.Target)) + ".")),
-        copy => ScratchServer.Registered(estateRoot, copy.Name).Map(c => (Database)c),
+            : new Error("target.unnamed", environment + " names no environment of " + Profiles.Posture + ".", environments.All.Count == 0
+                ? "Add the environment to " + Profiles.Posture + " with its host, connection reference and profile."
+                : "Name one it holds: " + string.Join(", ", environments.All.Select(e => e.Target)) + ".")),
+        copy => ScratchServer.Registered(estateRoot, copy.Name, posture).Map(c => (Database)c),
         () => new Error("synthetic-copy.not-built", "synthetic-copy names the synthetic copy, which is not in this build; this build reads env: and copy: databases.",
             "Name an env: or a copy: target; estate --help lists what this build runs."),
         reference => NotADatabase(reference),

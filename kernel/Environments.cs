@@ -8,19 +8,87 @@ using System.Text.RegularExpressions;
 namespace Estate.Kernel;
 
 /// <summary>
-/// An environment as estate/posture.json names it (V3_MILESTONES.md WP 1.5, §4 row 14): its name, classification and readers (the groups that may read it), the
-/// reference its connection resolves from, its publish profile's path from the estate's root ('/' between its parts), its SQLCMD
-/// values and, where the posture names one, the metamodel's reference. Data only (§2.1 rule 3), holding no value a reference names.
-/// Each error leads with the subject its caller gives, where in the posture the value sits, and quotes no value.
+/// estate/posture.json as a value (V3_MILESTONES.md WP 1.5, §4 row 14): the environments it names, each once, in name order, and the
+/// scratch server it prefers, when it names one. io reads the file once for a verb and hands this to what resolves a target, to R15 and
+/// to the lookup of a copy's profile.
+/// </summary>
+public sealed record Environments
+{
+    private Environments(SortedArray<NamedEnvironment> all, ScratchServerKind? scratchServer) => (All, ScratchServer) = (all, scratchServer);
+
+    /// <summary>Every environment the posture names, by name.</summary>
+    public SortedArray<NamedEnvironment> All { get; }
+
+    /// <summary>The scratch server the posture prefers, the key scratchServer; null when it names none.</summary>
+    public ScratchServerKind? ScratchServer { get; }
+
+    /// <summary>The environments given, or posture.environment-name when two share a name; the error leads with <paramref name="subject"/>.</summary>
+    public static Result<Environments> Of(string subject, IEnumerable<NamedEnvironment> environments, ScratchServerKind? scratchServer)
+    {
+        var all = SortedArray.Of(environments);
+        return all.Where((e, i) => i > 0 && all[i - 1].Name == e.Name).FirstOrDefault() is { } repeated
+            ? new Error("posture.environment-name", subject + " names " + repeated.Target + " twice.", "Keep one entry for each environment.")
+            : new Environments(all, scratchServer);
+    }
+
+    /// <summary>The environment the posture names by <paramref name="name"/>, or null.</summary>
+    public NamedEnvironment? Named(EnvironmentName name) => All.FirstOrDefault(e => e.Name == name);
+
+    /// <summary>The publish profile every environment names, which a copy is planned under when no profile is named for it; null when two differ or none is named.</summary>
+    public PublishProfilePath? SharedProfile => All.Select(e => e.Profile).Distinct().ToList() is [var shared] ? shared : null;
+}
+
+/// <summary>
+/// Which SQL Server the posture prefers to hold copies (VALUES.md O1): Docker, the estate-sql container; or LocalDb, where Docker cannot
+/// run. The key scratchServer, written docker or localdb. The cases are closed.
+/// </summary>
+public abstract record ScratchServerKind
+{
+    private ScratchServerKind()
+    {
+    }
+
+    /// <summary>The kind <paramref name="text"/> names, or posture.malformed led by <paramref name="subject"/>.</summary>
+    public static Result<ScratchServerKind> Of(string subject, string? text) => text switch
+    {
+        "docker" => new Docker(),
+        "localdb" => new LocalDb(),
+        _ => new Error("posture.malformed", subject + " is not docker or localdb.", "Write " + subject + " as docker or localdb."),
+    };
+
+    public T Match<T>(Func<T> docker, Func<T> localDb) => this switch
+    {
+        Docker => docker(),
+        LocalDb => localDb(),
+        _ => throw new UnreachableException(),
+    };
+
+    /// <summary>As the posture writes it.</summary>
+    public sealed override string ToString() => Match(() => "docker", () => "localdb");
+
+    public sealed record Docker : ScratchServerKind;
+
+    public sealed record LocalDb : ScratchServerKind;
+}
+
+/// <summary>
+/// An environment as estate/posture.json names it (V3_MILESTONES.md WP 1.5, §4 row 14): its name; the host its SQL Server runs on, which
+/// R15 compares with the scratch server's whether or not the environment's reference resolves on this machine (DECISIONS.md,
+/// 2026-09-25); its classification and readers (the groups that may read it); the reference its connection resolves from; its publish
+/// profile's path; its SQLCMD values; and, where the posture names one, the metamodel's reference. Data only (§2.1 rule 3), holding no
+/// value a reference names. Each error leads with the subject its caller gives, where in the posture the value sits, and quotes no value.
 /// </summary>
 public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 {
-    private NamedEnvironment(EnvironmentName name, Classification classification, SortedArray<string> readers, SecretReference connection, string profilePath,
-        SortedArray<SqlCmdVariable> sqlCmd, SecretReference? metamodel) => (Name, Classification, Readers, Connection, ProfilePath, SqlCmd, Metamodel) =
-        (name, classification, readers, connection, profilePath, sqlCmd, metamodel);
+    private NamedEnvironment(EnvironmentName name, Host host, Classification classification, SortedArray<string> readers, SecretReference connection,
+        PublishProfilePath profile, SortedArray<SqlCmdVariable> sqlCmd, SecretReference? metamodel) =>
+        (Name, Host, Classification, Readers, Connection, Profile, SqlCmd, Metamodel) = (name, host, classification, readers, connection, profile, sqlCmd, metamodel);
 
     /// <summary>The key estate/posture.json gives it: dev, qa, uat.</summary>
     public EnvironmentName Name { get; }
+
+    /// <summary>The host its SQL Server runs on, as the posture names it.</summary>
+    public Host Host { get; }
 
     /// <summary>The target that names it, env:&lt;name&gt;.</summary>
     public Target Target => new Target.Environment(Name);
@@ -32,32 +100,52 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 
     public SecretReference Connection { get; }
 
-    public string ProfilePath { get; }
+    /// <summary>The pipeline's publish profile for the environment, from the estate's root.</summary>
+    public PublishProfilePath Profile { get; }
 
     public SortedArray<SqlCmdVariable> SqlCmd { get; }
 
     public SecretReference? Metamodel { get; }
 
-    public static Result<NamedEnvironment> Of(string subject, string name, Classification classification, IEnumerable<string> readers,
-        SecretReference connection, string profilePath, IEnumerable<SqlCmdVariable> sqlCmd, SecretReference? metamodel)
+    /// <summary>An environment of the values given, or the error of a reader group blank or given twice, or of a SQLCMD variable given twice in any case.</summary>
+    public static Result<NamedEnvironment> Of(string subject, EnvironmentName name, Host host, Classification classification, IEnumerable<string> readers,
+        SecretReference connection, PublishProfilePath profile, IEnumerable<SqlCmdVariable> sqlCmd, SecretReference? metamodel)
     {
         var (groups, values) = (SortedArray.Of(readers), SortedArray.Of(sqlCmd));
-        return EnvironmentName.Of(subject, name).Bind(environment =>
-            groups.Where((g, i) => string.IsNullOrWhiteSpace(g) || g.Any(char.IsControl) || (i > 0 && groups[i - 1] == g)).Any()
+        return groups.Where((g, i) => string.IsNullOrWhiteSpace(g) || g.Any(char.IsControl) || (i > 0 && groups[i - 1] == g)).Any()
                 ? new Error("posture.readers", subject + " names a reader group that is blank or given twice.", "Name each group that reads the environment once.")
-            : !InsideTheEstate(profilePath)
-                ? new Error("posture.profile-path", subject + " gives its profile a path that leaves the estate or names no .publish.xml.",
-                    "Write the profile's path from the estate's root with '/' between its parts, such as estate/profiles/pipeline.publish.xml.")
             : values.Where((v, i) => i > 0 && string.Equals(values[i - 1].Name, v.Name, StringComparison.OrdinalIgnoreCase)).Any()
                 ? new Error("posture.sqlcmd-repeated", subject + " gives one SQLCMD variable twice; sqlcmd reads names in any case as one.",
                     "Keep one value for each SQLCMD variable.")
-            : Result.Ok(new NamedEnvironment(environment, classification, groups, connection, profilePath, values, metamodel)));
+            : new NamedEnvironment(name, host, classification, groups, connection, profile, values, metamodel);
     }
 
     /// <summary>By name, which the posture gives each environment once.</summary>
     public int CompareTo(NamedEnvironment? other) => other is null ? 1 : Name.CompareTo(other.Name);
 
     public override string ToString() => Target + " (" + Classification + ")";
+}
+
+/// <summary>
+/// A publish profile's path as the posture gives it, from the estate's root: '/' between parts, none empty, '.' or '..', no ':', '\' or
+/// control character, not led by '/', ending in .publish.xml; so it names a file inside the estate on every operating system.
+/// default(PublishProfilePath) is not a path.
+/// </summary>
+public readonly record struct PublishProfilePath : IComparable<PublishProfilePath>
+{
+    private readonly string? _text;
+
+    private PublishProfilePath(string text) => _text = text;
+
+    /// <summary>The path <paramref name="text"/> gives, or posture.profile-path led by <paramref name="subject"/>.</summary>
+    public static Result<PublishProfilePath> Of(string subject, string? text) => InsideTheEstate(text) ? new PublishProfilePath(text!)
+        : new Error("posture.profile-path", subject + " gives its profile a path that leaves the estate or names no .publish.xml.",
+            "Write the profile's path from the estate's root with '/' between its parts, such as estate/profiles/pipeline.publish.xml.");
+
+    /// <summary>Ordinally.</summary>
+    public int CompareTo(PublishProfilePath other) => string.CompareOrdinal(_text, other._text);
+
+    public override string ToString() => _text ?? throw new InvalidOperationException("default(PublishProfilePath) is not a path; make one with PublishProfilePath.Of.");
 
     private static bool InsideTheEstate(string? path) =>
         path is { Length: > 0 } && path.EndsWith(".publish.xml", StringComparison.Ordinal) && !path.StartsWith('/')

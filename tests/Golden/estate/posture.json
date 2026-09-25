@@ -2,6 +2,7 @@
   "scratchServer": "docker",
   "environments": {
     "dev": {
+      "host": "dev-sql.corp.example",
       "classification": "synthetic",
       "confirmedBy": "the dev lead",
       "confirmedOn": "2026-09-20",
@@ -15,11 +16,13 @@
       "metamodel": "file:.estate/principals/dev-ossys.connection"
     },
     "qa": {
+      "host": "qa-sql.corp.example",
       "readers": ["leads"],
       "connection": "env:ESTATE_QA",
       "profile": "project/profiles/pipeline.publish.xml"
     },
     "uat": {
+      "host": "uat-sql.corp.example",
       "classification": "real",
       "readers": ["leads"],
       "connection": "file:.estate/principals/uat.connection",
@@ -27,6 +30,7 @@
       "metamodel": "env:ESTATE_UAT_OSSYS"
     },
     "prod": {
+      "host": "prod-sql.corp.example",
       "classification": "real",
       "connection": "env:ESTATE_PROD",
       "profile": "project/profiles/pipeline.publish.xml"

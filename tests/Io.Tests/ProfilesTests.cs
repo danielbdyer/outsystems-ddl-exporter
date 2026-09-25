@@ -49,17 +49,19 @@ public sealed class ProfilesTests : IDisposable
     [Trait("Category", "fast")]
     public void The_sample_posture_reads_into_its_named_environments_each_with_the_pipelines_profile()
     {
-        var environments = Made(Profiles.Environments(Golden));
-        var dev = environments.Single(e => e.Name.ToString() == "dev");
+        var posture = Made(Profiles.Environments(Golden));
+        var dev = posture.All.Single(e => e.Name.ToString() == "dev");
 
-        Assert.Equal(["dev", "prod", "qa", "uat"], environments.Select(e => e.Name.ToString()));
+        Assert.Equal(["dev", "prod", "qa", "uat"], posture.All.Select(e => e.Name.ToString()));
+        Assert.Equal(["dev-sql.corp.example", "prod-sql.corp.example", "qa-sql.corp.example", "uat-sql.corp.example"], posture.All.Select(e => e.Host.ToString()));
+        Assert.Equal(("docker", (string?)"project/profiles/pipeline.publish.xml"), (posture.ScratchServer?.ToString(), posture.SharedProfile?.ToString()));
         Assert.Equal("env:dev (synthetic, confirmed by the dev lead on 2026-09-20)", dev.ToString());
-        Assert.Equal(["env:prod (real)", "env:qa (real)", "env:uat (real)"], environments.Where(e => e != dev).Select(e => e.ToString()));
+        Assert.Equal(["env:prod (real)", "env:qa (real)", "env:uat (real)"], posture.All.Where(e => e != dev).Select(e => e.ToString()));
         Assert.Equal(["developers", "leads"], dev.Readers);
-        Assert.Equal(("env:ESTATE_DEV", "project/profiles/pipeline.publish.xml", (string?)"file:.estate/principals/dev-ossys.connection"), (dev.Connection.ToString(), dev.ProfilePath, dev.Metamodel?.ToString()));
+        Assert.Equal(("env:ESTATE_DEV", (string?)"file:.estate/principals/dev-ossys.connection"), (dev.Connection.ToString(), dev.Metamodel?.ToString()));
         Assert.Equal("$(EnvironmentTag), a literal | $(ServiceAccountPassword) from env:ESTATE_DEV_SERVICE_PASSWORD", string.Join(" | ", dev.SqlCmd));
         Assert.Equal("dev", dev.SqlCmd[0].Match(text => text, reference => "from " + reference));
-        Assert.All(environments, e => Assert.True(Made(Profiles.Of(e, Golden)).Options().BlockOnPossibleDataLoss));
+        Assert.All(posture.All, e => Assert.True(Made(Profiles.Of(e, Golden)).Options().BlockOnPossibleDataLoss));
     }
 
     /// <summary>
@@ -122,8 +124,8 @@ public sealed class ProfilesTests : IDisposable
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("{ \"environments\": {}, \"targets\": [\"qa\"] }", "targets")]
-    [InlineData("{ \"environments\": { \"dev\": { \"connection\": \"env:A\", \"profile\": \"estate/p.publish.xml\", \"Profile\": \"x\" } } }", "environments.dev.Profile")]
-    [InlineData("{ \"environments\": { \"dev\": { \"connection\": \"env:A\", \"profile\": \"estate/p.publish.xml\", \"sqlcmd\": { \"Tag\": { \"literal\": \"dev\", \"sensitive\": false, \"value\": \"x\" } } } } }", "environments.dev.sqlcmd.Tag.value")]
+    [InlineData("{ \"environments\": { \"dev\": { \"host\": \"dev-sql\", \"connection\": \"env:A\", \"profile\": \"estate/p.publish.xml\", \"Profile\": \"x\" } } }", "environments.dev.Profile")]
+    [InlineData("{ \"environments\": { \"dev\": { \"host\": \"dev-sql\", \"connection\": \"env:A\", \"profile\": \"estate/p.publish.xml\", \"sqlcmd\": { \"Tag\": { \"literal\": \"dev\", \"sensitive\": false, \"value\": \"x\" } } } } }", "environments.dev.sqlcmd.Tag.value")]
     public void An_unknown_key_is_refused_by_its_place_in_the_posture(string posture, string at)
     {
         var error = Failed(Profiles.Environments(Estate(posture, raw: true)));
@@ -204,7 +206,7 @@ public sealed class ProfilesTests : IDisposable
         File.Copy(relaxed, Path.Combine(root, "estate", "profiles", "relaxed.publish.xml"));
 
         var bare = Failed(Profiles.Load(relaxed));
-        var named = Failed(Profiles.Of(Made(Profiles.Environments(root)).Single(), root));
+        var named = Failed(Profiles.Of(Made(Profiles.Environments(root)).All.Single(), root));
 
         Assert.Equal(("profile.data-loss-allowed", 6), (bare.Code, Contract.Exit(bare)));
         Assert.Equal(("profile.data-loss-allowed", 6), (named.Code, Contract.Exit(named)));
@@ -271,7 +273,7 @@ public sealed class ProfilesTests : IDisposable
     public void Nothing_read_from_the_posture_or_a_profile_prints_a_literal_or_what_a_reference_names()
     {
         var root = Estate(Dev("\"sqlcmd\": { \"EnvironmentTag\": { \"literal\": \"" + Planted + "\", \"sensitive\": false }, \"ServicePassword\": \"env:ESTATE_PW\" }"));
-        var environment = Made(Profiles.Environments(root)).Single();
+        var environment = Made(Profiles.Environments(root)).All.Single();
         var strict = Made(Profiles.Load(Profile("printed", "", ("EnvironmentTag", Planted))));
 
         var printed = string.Join('\n', (object[])[environment, .. environment.SqlCmd, strict, .. strict.SqlCmd, PublishProfile.Permissive.Of(strict)]);
@@ -323,9 +325,9 @@ public sealed class ProfilesTests : IDisposable
         }
     }
 
-    /// <summary>A dev environment in posture JSON: its connection, its profile and whatever else is given.</summary>
+    /// <summary>A dev environment in posture JSON: its host, its connection, its profile and whatever else is given.</summary>
     private static string Dev(string extra = "", string connection = "env:ESTATE_DEV", string profile = "estate/profiles/pipeline.publish.xml") =>
-        "\"dev\": { \"connection\": \"" + connection + "\", \"profile\": \"" + profile + "\"" + (extra.Length > 0 ? ", " + extra : "") + " }";
+        "\"dev\": { \"host\": \"dev-sql\", \"connection\": \"" + connection + "\", \"profile\": \"" + profile + "\"" + (extra.Length > 0 ? ", " + extra : "") + " }";
 
     /// <summary>An estate's root under the scratch folder, holding estate/posture.json: the environments given, or the text given whole.</summary>
     private string Estate(string environments, bool raw = false)

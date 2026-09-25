@@ -20,7 +20,7 @@
         { "files": ["Receipt.cs"], "what": "the five inputs, Engine", "lines": 180, "milestones": ["M0"] },
         { "files": ["Element.cs"], "what": null, "lines": 200, "milestones": ["M1"] },
         { "files": ["Change.cs"], "what": "the deploy scripts and refactorlog included", "lines": 280, "milestones": ["M1"] },
-        { "files": ["NamedEnvironment.cs"], "what": "classification and its confirmation", "lines": 160, "milestones": ["M1"] },
+        { "files": ["Environments.cs"], "what": "classification and its confirmation", "lines": 160, "milestones": ["M1"] },
         { "files": ["Claims.cs"], "what": "claims, Branch, baseline drift", "lines": 320, "milestones": ["M2"] },
         { "files": ["Outcome.cs"], "what": "predict, prove, transfer, matches", "lines": 320, "milestones": ["M2", "M4"] },
         { "files": ["Classify.cs"], "what": "renames of three kinds, shapes from recognize:", "lines": 450, "milestones": ["M2"] },

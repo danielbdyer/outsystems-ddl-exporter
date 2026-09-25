@@ -80,23 +80,23 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// M1 exit 5, R15: a scratch server on the host an environment's reference resolves to is exit 9, before anything connects, whether
-    /// or not the reference names a database; a reference that names no server names SqlClient's local default instance. The refusal
-    /// names the environment and quotes neither connection.
+    /// M1 exit 5, R15: a scratch server on the host an environment names in estate/posture.json is exit 9, before anything connects, the
+    /// environment's reference agreeing with that host, whether or not it names a database; a reference that names no server names
+    /// SqlClient's local default instance. The refusal names the environment and quotes neither connection.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("Server=tcp:127.0.0.1,1433;Initial Catalog=Dev", "localhost,11433")]
-    [InlineData("Server=localhost;Initial Catalog=Dev", "127.0.0.1,11433")]
-    [InlineData("Server=(local)\\SQLEXPRESS;Initial Catalog=Dev", ".")]
-    [InlineData("Server=dev-sql.corp.example,1433;Initial Catalog=Dev", "tcp:DEV-SQL.corp.example,11433")]
-    [InlineData("Server=prod-sql.corp.example;Integrated Security=true", "prod-sql.corp.example,1")]
-    [InlineData("Data Source=tcp:prod-sql.corp.example,1433", "PROD-SQL.corp.example,1")]
-    [InlineData("Initial Catalog=Dev;Integrated Security=true", "localhost,1")]
+    [InlineData("Server=tcp:127.0.0.1,1433;Initial Catalog=Dev", "127.0.0.1", "localhost,11433")]
+    [InlineData("Server=localhost;Initial Catalog=Dev", "localhost", "127.0.0.1,11433")]
+    [InlineData("Server=(local)\\SQLEXPRESS;Initial Catalog=Dev", "localhost", ".")]
+    [InlineData("Server=dev-sql.corp.example,1433;Initial Catalog=Dev", "DEV-SQL.corp.example", "tcp:DEV-SQL.corp.example,11433")]
+    [InlineData("Server=prod-sql.corp.example;Integrated Security=true", "prod-sql.corp.example", "prod-sql.corp.example,1")]
+    [InlineData("Data Source=tcp:prod-sql.corp.example,1433", "prod-sql.corp.example", "PROD-SQL.corp.example,1")]
+    [InlineData("Initial Catalog=Dev;Integrated Security=true", "localhost", "localhost,1")]
     [Trait("Law", "a named environment cannot be written")]
-    public void A_scratch_server_on_a_host_an_environment_s_reference_names_is_exit_9(string reference, string server)
+    public void A_scratch_server_on_the_host_an_environment_names_is_exit_9(string reference, string host, string server)
     {
-        var root = Estate(Dev(Written("dev.connection", reference + ";User ID=reader;Password=" + Planted)));
+        var root = Estate(Dev(Written("dev.connection", reference + ";User ID=reader;Password=" + Planted), host));
 
         var error = Failed(ScratchServer.Create(root, "Server=" + server + ";Initial Catalog=master;User ID=sa;Password=" + Planted + ";TrustServerCertificate=True;Connect Timeout=2"));
 
@@ -107,8 +107,26 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// R15 fails closed: an environment whose reference resolves here to text SqlClient reads no connection string from has a host no
-    /// check can clear, so the scratch server is refused at exit 6 by that reference; and without estate/posture.json no environment's host
+    /// The ruling of 2026-09-25: each environment names its host, so R15 compares every environment. Before it, an environment whose
+    /// reference resolved to nothing on this machine, its variable unset here, went uncompared, and a copy was made on its host.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_scratch_server_on_the_host_of_an_environment_whose_reference_resolves_to_nothing_here_is_exit_9()
+    {
+        var root = Estate(Unresolved("dev", "localhost") + ", " + Unresolved("uat", "dev-sql"));
+
+        var local = Failed(ScratchServer.Unnamed(Posture(root), root, Server("localhost,11433"), Resolver));
+        var aliased = Failed(ScratchServer.Unnamed(Posture(root), root, Server("192.0.2.10,1433"), Resolver));
+
+        Assert.Equal(("copy.named-host", 9, "copy.named-host"), (local.Code, Contract.Exit(local), aliased.Code));
+        Assert.Contains("env:dev", local.Message, StringComparison.Ordinal);
+        Assert.Contains("env:uat", aliased.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// R15 fails closed: an environment whose reference resolves here to text SqlClient reads no connection string from has a server no
+    /// check can place, so the scratch server is refused at exit 6 by that reference; and without estate/posture.json no environment's host
     /// can be read, so no copy is made. Neither refusal quotes a connection, and neither registers a copy.
     /// </summary>
     [Theory]
@@ -129,6 +147,27 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
+    /// R15 compares the host the posture names, so a reference that resolves here to a server on another host is refused by the
+    /// environment at exit 6 (posture.host) before a copy is made: the posture and the connection disagree about where the environment
+    /// is. The refusal names the posture's host, which the repository holds, and not the host the reference names.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_reference_to_a_server_on_another_host_than_the_posture_names_is_refused_by_the_environment()
+    {
+        var root = Estate(Dev(Written("dev.connection", "Server=prod-sql.corp.example,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted), "dev-sql"));
+
+        var error = Failed(ScratchServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2"));
+
+        Assert.Equal(("posture.host", 6), (error.Code, Contract.Exit(error)));
+        Assert.StartsWith("env:dev's connection", error.Message, StringComparison.Ordinal);
+        Assert.Contains("dev-sql", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("prod-sql", error.Message + error.Remedy, StringComparison.Ordinal);
+        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(root, ".estate", "copies.json")), "a refused scratch server registered a copy");
+    }
+
+    /// <summary>
     /// R15 by address: a scratch server is on an environment's host when the two hosts share an address, whatever either spelling, a name
     /// and its FQDN, a name and its IP address; this machine is every loopback address, LocalDB and each address of its own. DNS is
     /// the resolver given here, so no lookup leaves the test.
@@ -136,55 +175,53 @@ public sealed class TargetTests : IDisposable
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("dev-sql", "dev-sql.corp.example,11433")]
-    [InlineData("dev-sql.corp.example,1433", "dev-sql,11433")]
-    [InlineData("192.0.2.10,1433", "dev-sql,11433")]
+    [InlineData("dev-sql.corp.example", "dev-sql,11433")]
+    [InlineData("192.0.2.10", "dev-sql,11433")]
     [InlineData("dev-sql", "192.0.2.10")]
-    [InlineData("[::ffff:192.0.2.10],1433", "dev-sql")]
-    [InlineData("127.0.0.2,1433", "localhost,11433")]
-    [InlineData("(localdb)\\MSSQLLocalDB", "localhost,11433")]
+    [InlineData("::ffff:192.0.2.10", "dev-sql")]
+    [InlineData("127.0.0.2", "localhost,11433")]
+    [InlineData("(localdb)", "localhost,11433")]
     [InlineData("localhost", "(localdb)\\MSSQLLocalDB")]
     [InlineData("sql.this-machine.example", "localhost,11433")]
-    public void A_scratch_server_on_an_alias_of_an_environment_s_host_is_exit_9(string environment, string server)
+    public void A_scratch_server_on_an_alias_of_an_environment_s_host_is_exit_9(string host, string server)
     {
-        var root = Estate(Dev(Written("dev.connection", "Server=" + environment + ";Initial Catalog=Dev;User ID=reader;Password=" + Planted)));
+        var root = Estate(Unresolved("dev", host));
 
-        var error = Failed(ScratchServer.Unnamed(root, Server(server), Resolver));
+        var error = Failed(ScratchServer.Unnamed(Posture(root), root, Server(server), Resolver));
 
         Assert.Equal(("copy.named-host", 9), (error.Code, Contract.Exit(error)));
         Assert.Contains("env:dev", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
     }
 
-    /// <summary>A scratch server whose host shares no address and no spelling with any environment's is cleared; an environment whose reference resolves to nothing here goes uncompared.</summary>
+    /// <summary>A scratch server whose host shares no address and no spelling with any environment's host is cleared, the environment's reference resolving here or not.</summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("Server=prod-sql.corp.example;Initial Catalog=Prod", "localhost,11433")]
-    [InlineData("Server=dev-sql;Initial Catalog=Dev", "192.0.2.20,11433")]
-    [InlineData("Server=no-such-host.corp.example;Initial Catalog=Dev", "localhost,11433")]
-    [InlineData("", "localhost,11433")]
-    public void A_scratch_server_on_a_host_no_environment_s_reference_names_is_cleared(string reference, string server)
+    [InlineData("Server=prod-sql.corp.example;Initial Catalog=Prod", "prod-sql.corp.example", "localhost,11433")]
+    [InlineData("Server=dev-sql;Initial Catalog=Dev", "dev-sql", "192.0.2.20,11433")]
+    [InlineData("Server=no-such-host.corp.example;Initial Catalog=Dev", "no-such-host.corp.example", "localhost,11433")]
+    [InlineData("", "prod-sql.corp.example", "localhost,11433")]
+    public void A_scratch_server_on_a_host_no_environment_names_is_cleared(string reference, string host, string server)
     {
-        var root = Estate(reference.Length == 0 ? "\"dev\": { \"connection\": \"env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }"
-            : Dev(Written("dev.connection", reference)));
+        var root = Estate(reference.Length == 0 ? Unresolved("dev", host) : Dev(Written("dev.connection", reference), host));
 
-        Assert.Equal(Server(server), Made(ScratchServer.Unnamed(root, Server(server), Resolver)));
+        Assert.Equal(Server(server), Made(ScratchServer.Unnamed(Posture(root), root, Server(server), Resolver)));
     }
 
     /// <summary>
     /// M1 exit 5, the registry bound to its server: a copy's row records the server it was made on, and copy: resolves it only while
-    /// the scratch server is that server; on another it is a copy the registry does not hold there. A row whose server an environment's
-    /// reference names is exit 9 before the scratch server is chosen.
+    /// the scratch server is that server; on another it is a copy the registry does not hold there. A row whose server is on the host an
+    /// environment names is exit 9 before the scratch server is chosen.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_copy_resolves_only_on_the_server_its_row_records_and_never_on_a_named_host()
     {
         var name = CopyName.Make("host", 1, 0x0a1b2c3d);
-        var (clear, named) = (Registry(Estate(""), name, "localhost,11433"), Registry(Estate(Dev(Written("dev.connection", "Server=127.0.0.1,1433;Initial Catalog=Dev"))), name, "localhost,11433"));
+        var (clear, named) = (Registry(Estate(""), name, "localhost,11433"), Registry(Estate(Dev(Written("dev.connection", "Server=127.0.0.1,1433;Initial Catalog=Dev"), "localhost")), name, "localhost,11433"));
 
-        var there = Made(ScratchServer.Registered(clear, name, () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
-        var elsewhere = Failed(ScratchServer.Registered(clear, name, () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver));
-        var onNamedHost = Failed(ScratchServer.Registered(named, name, () => throw new Xunit.Sdk.XunitException("the scratch server was chosen before R15 read the row's server"), Resolver));
+        var there = Made(ScratchServer.Registered(clear, name, Profiles.Environments(clear), () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
+        var elsewhere = Failed(ScratchServer.Registered(clear, name, Profiles.Environments(clear), () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver));
+        var onNamedHost = Failed(ScratchServer.Registered(named, name, Profiles.Environments(named), () => throw new Xunit.Sdk.XunitException("the scratch server was chosen before R15 read the row's server"), Resolver));
 
         Assert.Equal(("copy:" + name, "localhost,11433"), (there.Target.ToString(), ScratchServer.ServerName(null, Written("sql.env", "ESTATE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n.ToString(), r => r.Code)));
         Assert.Equal(("copy.unregistered", 9), (elsewhere.Code, Contract.Exit(elsewhere)));
@@ -204,7 +241,7 @@ public sealed class TargetTests : IDisposable
         Environment.SetEnvironmentVariable(variable, connection);
         try
         {
-            var root = Estate("\"qa\": { \"connection\": \"env:" + variable + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
+            var root = Estate("\"qa\": { \"host\": \"dev-sql\", \"connection\": \"env:" + variable + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
 
             var named = Assert.IsType<SqlServer.EnvironmentDatabase>(Made(SqlServer.Resolve(Made(SqlServer.Target("env:qa", "--target")), root)));
 
@@ -237,7 +274,7 @@ public sealed class TargetTests : IDisposable
             "not a connection string" => "file:" + Written("garbled.connection", "Nonsense " + Planted + " = 1"),
             _ => "file:" + Written("bare.connection", "Server=dev-sql;User ID=reader;Password=" + Planted),
         };
-        var root = Estate("\"qa\": { \"connection\": \"" + reference.Replace("\\", "\\\\", StringComparison.Ordinal) + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
+        var root = Estate("\"qa\": { \"host\": \"dev-sql\", \"connection\": \"" + reference.Replace("\\", "\\\\", StringComparison.Ordinal) + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
 
         var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:qa", "--target")), root));
 
@@ -266,7 +303,7 @@ public sealed class TargetTests : IDisposable
         var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root));
 
         Assert.Equal(("connection.unresolved", 6), (error.Code, Contract.Exit(error)));
-        Assert.Equal(Server("localhost,11433"), Made(ScratchServer.Unnamed(root, Server("localhost,11433"), Resolver)));
+        Assert.Equal(Server("localhost,11433"), Made(ScratchServer.Unnamed(Posture(root), root, Server("localhost,11433"), Resolver)));
     }
 
     /// <summary>
@@ -421,7 +458,7 @@ public sealed class TargetTests : IDisposable
         var file = Written(Path.Combine("locked", "dev.connection"), "Server=127.0.0.1,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted);
         var root = Estate(Dev(file));
 
-        var use = () => (SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root), ScratchServer.Unnamed(root, Server("localhost,11433"), Resolver));
+        var use = () => (SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root), ScratchServer.Unnamed(Posture(root), root, Server("localhost,11433"), Resolver));
         var (resolved, unnamed) = denied switch
         {
             "folder" => RefusalPaths.Denied(Path.Combine(scratch, "locked"), use),
@@ -535,7 +572,7 @@ public sealed class TargetTests : IDisposable
     [InlineData(2628, "server.failed")]
     public void A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept(int number, string code)
     {
-        var root = Estate("\"qa\": { \"connection\": \"file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa") + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
+        var root = Estate("\"qa\": { \"host\": \"qa-sql\", \"connection\": \"file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa") + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
         var named = Made(SqlServer.Resolve(Made(SqlServer.Target("env:qa", "--target")), root));
         var copy = new SqlServer.Copy(CopyName.Make("host", 1, 0x0a1b2c3d), "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
         var message = "Conversion failed when converting the nvarchar value '" + Planted + "' to data type int.";
@@ -562,7 +599,7 @@ public sealed class TargetTests : IDisposable
     public void A_DacFx_failure_with_no_SQL_Server_error_inside_is_dacfx_failed_quoting_its_SQL7_codes(string target)
     {
         Telemetry.OptOut();
-        var root = Estate("\"qa\": { \"connection\": \"file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa") + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
+        var root = Estate("\"qa\": { \"host\": \"qa-sql\", \"connection\": \"file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa") + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
         SqlServer.Database database = target == "env:qa"
             ? Made(SqlServer.Resolve(Made(SqlServer.Target(target, "--target")), root))
             : new SqlServer.Copy(CopyName.Make("host", 1, 0x0a1b2c3d), "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
@@ -595,8 +632,16 @@ public sealed class TargetTests : IDisposable
         _ => [],
     };
 
-    /// <summary>The environment dev in posture JSON, its connection the file given.</summary>
-    private static string Dev(string connectionFile) => "\"dev\": { \"connection\": \"file:" + connectionFile + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }";
+    /// <summary>The environment dev in posture JSON, on the host given, its connection the file given.</summary>
+    private static string Dev(string connectionFile, string host = "dev-sql") =>
+        "\"dev\": { \"host\": \"" + host + "\", \"connection\": \"file:" + connectionFile + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }";
+
+    /// <summary>An environment in posture JSON on the host given, whose connection is a variable no process sets, so it resolves to nothing here.</summary>
+    private static string Unresolved(string name, string host) => "\"" + name + "\": { \"host\": \"" + host + "\", \"connection\": \"env:ESTATE_UNSET_"
+        + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }";
+
+    /// <summary>The estate's posture, read.</summary>
+    private static Environments Posture(string root) => Made(Profiles.Environments(root));
 
     /// <summary>The estate's root with .estate/copies.json holding one copy, made on the server given.</summary>
     private static string Registry(string root, CopyName name, string server)

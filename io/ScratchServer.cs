@@ -108,9 +108,12 @@ public static class ScratchServer
         return Kernel.ServerName.Of(source, Environment.MachineName);
     }
 
-    /// <summary>A copy on the server given, refused on a named environment's host; recorded with its server before its database is made, so a crash leaves a row to follow.</summary>
+    /// <summary>
+    /// A copy on the server given, refused on a named environment's host (R15 against estate/posture.json, read here once); recorded
+    /// with its server before its database is made, so a crash leaves a row to follow.
+    /// </summary>
     internal static Result<SqlServer.Copy> Create(string estateRoot, string server, Func<string, IPAddress[]>? resolve = null) =>
-        ServerName(server).Bind(name => Unnamed(estateRoot, name, resolve ?? Resolved)).Bind(name =>
+        ServerName(server).Bind(name => Profiles.Environments(estateRoot).Bind(environments => Unnamed(environments, estateRoot, name, resolve ?? Resolved))).Bind(name =>
         {
             var copy = new SqlServer.Copy(CopyName.Make(Environment.MachineName, Environment.ProcessId, BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, estateRoot);
             var row = new JsonObject
@@ -123,32 +126,40 @@ public static class ScratchServer
                 error => Change(estateRoot, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())]).Bind(_ => Result.Fail<SqlServer.Copy>(error))));
         });
 
-    /// <summary>copy: resolved against .estate/copies.json alone: the row holding the name, on a server no environment's reference resolves to, which the scratch server this machine names must still be.</summary>
-    internal static Result<SqlServer.Copy> Registered(string estateRoot, CopyName name) => Registered(estateRoot, name, Server, Resolved);
+    /// <summary>
+    /// copy: resolved against .estate/copies.json alone: the row holding the name, on a server R15 clears against the posture as the verb
+    /// read it, which the scratch server this machine names must still be. A name the registry does not hold is refused before the
+    /// posture is consulted.
+    /// </summary>
+    internal static Result<SqlServer.Copy> Registered(string estateRoot, CopyName name, Result<Environments> posture) => Registered(estateRoot, name, posture, Server, Resolved);
 
-    internal static Result<SqlServer.Copy> Registered(string estateRoot, CopyName name, Func<Result<string>> chosen, Func<string, IPAddress[]> resolve) =>
+    internal static Result<SqlServer.Copy> Registered(string estateRoot, CopyName name, Result<Environments> posture, Func<Result<string>> chosen, Func<string, IPAddress[]> resolve) =>
         Rows(estateRoot).Bind(rows => rows.FirstOrDefault(r => (string?)r["name"] == name.ToString()) is not { } row
             ? new Error("copy.unregistered", new Target.RegisteredCopy(name) + " is no copy " + Registry + " holds, and copy: names only a database estate made and recorded there.",
                 "Name a copy that " + Registry + " holds on this machine.")
-            : Unnamed(estateRoot, Kernel.ServerName.Of((string)row["server"]!, Environment.MachineName), resolve).Bind(made => chosen().Bind(server => ServerName(server).Bind(now => now == made
+            : posture.Bind(environments => Unnamed(environments, estateRoot, Kernel.ServerName.Of((string)row["server"]!, Environment.MachineName), resolve)).Bind(made => chosen().Bind(server => ServerName(server).Bind(now => now == made
                 ? Result.Ok(new SqlServer.Copy(name, server, estateRoot))
                 : new Error("copy.unregistered", new Target.RegisteredCopy(name) + " was made on another server than the scratch server this machine names now, so " + Registry + " holds no such copy here.",
                     "Set ESTATE_SQL back to the server that made the copy, or make a new copy on this one.")))));
 
     /// <summary>
-    /// R15: the server's host is none an environment's reference resolves to, compared by spelling, then by address; this machine is
-    /// every loopback address and each of its own. An environment whose reference resolves to nothing on this machine goes uncompared,
-    /// its host unknown here; one SqlClient reads no connection string from is an error, and so is an estate without its posture.
+    /// R15: the server's host is none an environment of the posture names as its host (DECISIONS.md, 2026-09-25), compared by spelling,
+    /// then by address; this machine is every loopback address and each of its own. Every environment is compared, its reference
+    /// resolving on this machine or not. Where a reference does resolve, its server must be on the host the posture names, since R15
+    /// compares that host (posture.host); a reference SqlClient reads no connection string from, or whose file cannot be examined, is an
+    /// error, R15 failing closed.
     /// </summary>
-    internal static Result<Kernel.ServerName> Unnamed(string estateRoot, Kernel.ServerName server, Func<string, IPAddress[]> resolve) =>
-        Profiles.Environments(estateRoot).Bind(environments => Result.All(environments.Select(environment => SqlServer.DataSource(environment, estateRoot)
-            .Map(source => (Environment: environment, Source: source)))))
-        .Bind(sources =>
+    internal static Result<Kernel.ServerName> Unnamed(Environments environments, string estateRoot, Kernel.ServerName server, Func<string, IPAddress[]> resolve) =>
+        Result.All(environments.All.Select(environment => SqlServer.DataSource(environment, estateRoot).Bind(source => source is { } read && read.Host != environment.Host
+            ? new Error("posture.host", SqlServer.EnvironmentDatabase.Subject(environment) + " names a server on another host than " + environment.Host + ", the host "
+                + Profiles.Posture + " gives " + environment.Target + ", and estate makes no copy on the host the posture gives.",
+                "Write " + environment.Target + "'s host in " + Profiles.Posture + " as its connection string spells the server, or correct the connection string.")
+            : Result.Ok(environment))))
+        .Bind(compared =>
         {
-            var hosts = sources.Where(s => s.Source is not null).Select(s => (s.Environment, s.Source!.Value.Host)).ToList();
             var addresses = new Lazy<HashSet<IPAddress>>(() => Addresses(server.Host, resolve));
-            return hosts.Where(h => h.Host == server.Host).Concat(hosts.Where(h => h.Host != server.Host && Addresses(h.Host, resolve).Overlaps(addresses.Value))).Select(h => h.Environment).FirstOrDefault() is { } named
-                ? new Error("copy.named-host", "The scratch server is on the host env:" + named.Name + "'s connection resolves to, and a copy is made only where no named environment lives.",
+            return compared.Where(e => e.Host == server.Host).Concat(compared.Where(e => e.Host != server.Host && Addresses(e.Host, resolve).Overlaps(addresses.Value))).FirstOrDefault() is { } named
+                ? new Error("copy.named-host", "The scratch server is on " + named.Host + ", the host " + named.Target + " runs on, and a copy is made only where no named environment lives.",
                     "Point ESTATE_SQL at a local SQL Server, or unset it and run ci/sql.sh up (ci/sql.ps1 up on Windows).")
                 : Result.Ok(server);
         });

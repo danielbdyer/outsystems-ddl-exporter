@@ -165,7 +165,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
         }
 
         File.WriteAllText(Path.Combine(root, "estate", "posture.json"),
-            "{ \"environments\": { \"dev\": { \"connection\": \"file:dev.connection\", \"profile\": \"estate/profiles/pipeline.publish.xml\" } } }");
+            "{ \"environments\": { \"dev\": { \"host\": \"localhost\", \"connection\": \"file:dev.connection\", \"profile\": \"estate/profiles/pipeline.publish.xml\" } } }");
         var dacpac = Path.Combine(root, "vnext.dacpac");
         using (var model = new TSqlModel(SqlServerVersion.Sql180, new TSqlModelOptions()))
         {
