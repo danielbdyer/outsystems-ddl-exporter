@@ -126,7 +126,9 @@ public sealed class FileLockTests : IDisposable
         }
         finally
         {
+            // Kill returns before Windows closes the holder's handle; the folder is deleted only once the holder has exited.
             holder.Kill(entireProcessTree: true);
+            holder.WaitForExit();
         }
     }
 

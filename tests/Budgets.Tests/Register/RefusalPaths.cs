@@ -572,6 +572,9 @@ internal static class RefusalPaths
         try
         {
             Arrange(root, "init", "-q", "--initial-branch=main");
+            // estate's own commit runs git with the repository's configuration alone; a runner with no global identity must not fail it first.
+            Arrange(root, "config", "user.name", "Estate Test");
+            Arrange(root, "config", "user.email", "estate-test@example.invalid");
             Arrange(root, "commit", "-q", "--allow-empty", "-m", "estate");
             return Failed(drive(root));
         }
