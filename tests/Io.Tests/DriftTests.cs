@@ -386,8 +386,12 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             Assert.True(readExit == 0, read);
             var sent = await Events(master, file[..file.LastIndexOf('_')] + "*.xel");
             Assert.Contains(sent, s => s.Text.Contains("HAS_PERMS_BY_NAME", StringComparison.Ordinal));   // the session saw the run: estate's own first statement
+            // The container's SQL Server shows DacFx's catalog batch masked (*encrypt---); the Windows runner's LocalDB shows it as written,
+            // and then its text is read below like every other. A masked text is admitted only as DacFx's sp_executesql, one per read at most:
+            // the two checks and the read.
             var masked = sent.Where(s => Masked(s.Text)).ToList();
-            Assert.Equal(Enumerable.Repeat(("rpc_completed", "sp_executesql"), 3), masked.Select(s => (s.Event, s.Object)));   // one per read: the two checks and the read
+            Assert.All(masked, s => Assert.Equal(("rpc_completed", "sp_executesql"), (s.Event, s.Object)));
+            Assert.True(masked.Count <= 3, masked.Count + " masked calls for three reads");
             var writes = sent.Where(s => !Masked(s.Text)).SelectMany(s => Writes(s.Text)).ToList();
             Assert.True(writes.Count == 0, string.Join("\n----\n", writes));
         }
