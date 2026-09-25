@@ -2,15 +2,18 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using Estate.Budgets.Tests;
+using Estate.Budgets.Tests.Register;
 using Xunit;
+using Contract = Estate.Cli.Contract;
 
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// io/Doctor (WP 1.7): read-only checks of the SDK and runtime, the tool folder and its DacFx against the toolchain ledger, the build
-/// route, the scratch server and its image, and Git LFS, with a remedy for each item missing, on a machine the test describes; and R13's
-/// window, the committed engine against a sample ledger's row (M1 exit 6).
+/// io/Doctor (WP 1.7): read-only checks of the SDK and the runtime, git, the tool folder and its DacFx against the toolchain ledger, the build
+/// route, the scratch server estate would use and its image, and Git LFS, with a remedy for each item missing, on a machine the test describes
+/// and with programs a stand-in runner answers; and R13's window, the committed DacFx against a sample ledger's row (M1 exit 6).
 /// </summary>
 public sealed class DoctorTests : IDisposable
 {
@@ -20,14 +23,21 @@ public sealed class DoctorTests : IDisposable
 
     public void Dispose() => Directory.Delete(machine, recursive: true);
 
+    /// <summary>The programs a machine with every item present answers.</summary>
+    private static Dictionary<string, (int Exit, string Output)> Everything => new()
+    {
+        ["dotnet --list-sdks"] = (0, "9.0.314 [x]\n10.0.402 [x]\n"), ["docker info"] = (0, "29.5.3\n"), ["docker image"] = (0, "sha256:5b0916c7af8c\n"),
+        ["docker container"] = (0, Doctor.SqlServerImage + "\n"), ["git --version"] = (0, "git version 2.31.1.windows.1\n"), ["git lfs"] = (0, "git-lfs/3.4.0 (GitHub; windows amd64)\n"),
+    };
+
     [Fact]
     [Trait("Category", "fast")]
     public void A_bare_machine_gets_a_remedy_for_each_item_missing()
     {
-        var checks = Doctor.Examine(machine, null, machine, (_, _) => null, Version);   // no global.json, no tool folder, and nothing installed
+        var checks = Doctor.Examine(Bare(), Nothing, Version);   // no global.json, no tool folder, no sql.env, and nothing installed
 
-        Assert.Equal(["sdk", "runtime", "tool", "dacfx", "build", "scratch-server", "image", "lfs"], checks.Select(c => c.Item));
-        Assert.Equal(["sdk", "tool", "build", "scratch-server", "lfs"], checks.Where(c => c.Remedy is not null).Select(c => c.Item));
+        Assert.Equal(["sdk", "runtime", "tool", "dacfx", "build", "git", "scratch-server", "image", "lfs"], checks.Select(c => c.Item.Name));
+        Assert.Equal(["sdk", "tool", "build", "git", "scratch-server", "lfs"], checks.Where(c => c.Remedy is not null).Select(c => c.Item.Name));
         Assert.All(checks, c => Assert.False(string.IsNullOrWhiteSpace(c.Found)));
     }
 
@@ -38,25 +48,19 @@ public sealed class DoctorTests : IDisposable
         Publish();
         File.WriteAllText(Path.Combine(machine, "global.json"), """{ "sdk": { "version": "10.0.401", "rollForward": "latestPatch" } }""");
 
-        var checks = Doctor.Examine(machine, null, Directory.CreateDirectory(Path.Combine(machine, "estate", "src")).FullName, Answers(new()
-        {
-            ["dotnet --list-sdks"] = (0, "9.0.314 [x]\n10.0.402 [x]\n"),
-            ["docker info"] = (0, "29.5.3\n"),
-            ["docker image"] = (0, "sha256:5b0916c7af8c\n"),
-            ["git lfs"] = (0, "git-lfs/3.4.0 (GitHub; windows amd64)\n"),
-        }), Version);
+        var checks = Doctor.Examine(Bare(sqlEnv: SqlEnv()) with { WorkingDirectory = Directory.CreateDirectory(Path.Combine(machine, "estate", "src")).FullName }, Answers(Everything), Version);
 
         Assert.All(checks, c => Assert.Null(c.Remedy));
         Assert.Equal(
-            ["sdk=10.0.402", "runtime=" + Environment.Version, "tool=published", "dacfx=" + Doctor.DacFx + " (UNPINNED)", "build=dotnet with the tool folder's targets",
-                "scratch-server=docker 29.5.3", "image=present", "lfs=git-lfs/3.4.0"],
+            ["sdk=10.0.402", "runtime=" + Environment.Version, "tool=published", "dacfx=" + Doctor.DacFx + " (UNPINNED)", "build=dotnet with the tool folder's targets", "git=2.31.1",
+                "scratch-server=estate-sql container (localhost,11433)", "image=present", "lfs=git-lfs/3.4.0"],   // the loopback address as SqlServer.Host spells it
             checks.Select(c => c.Item + "=" + c.Found));
     }
 
     /// <summary>The committed DacFx is the package the build and every plan use: the version Directory.Packages.props pins.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void The_committed_engine_is_the_DacFx_Directory_Packages_props_pins()
+    public void The_committed_DacFx_is_the_release_Directory_Packages_props_pins()
     {
         var pinned = System.Xml.Linq.XDocument.Load(Path.Combine(Repository.Root, "Directory.Packages.props")).Descendants()
             .Single(e => (string?)e.Attribute("Include") == "Microsoft.SqlServer.DacFx").Attribute("Version")!.Value;
@@ -66,37 +70,48 @@ public sealed class DoctorTests : IDisposable
     }
 
     /// <summary>
-    /// M1 exit 6 (R13): over the sample ledger's row, the committed engine is accepted at the pin and at the release immediately before it,
+    /// M1 exit 6 (R13): over the sample ledger's row, the committed DacFx is accepted at the pin and at the release immediately before it,
     /// and anything else, newer or older, is exit 6, as is a ledger with no row for this estate or a malformed one; while the row reads
-    /// UNPINNED every engine is accepted and the doctor says UNPINNED; an estate committing no ledger is unpinned.
+    /// UNPINNED every DacFx is accepted and the doctor says UNPINNED; an estate committing no ledger is unpinned.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("the pin", "| 2026-09-25 | 3.0.0 | 170.5.96 | 170.4.71 |", null, "pinned 170.5.96")]
     [InlineData("the release before the pin", "| 2026-09-25 | 3.0.0 | 170.6.10 | 170.5.96 |", null, "pinned 170.6.10")]
-    [InlineData("a pin older than the engine", "| 2026-09-25 | 3.0.0 | 170.4.71 | 170.3.93 |", "toolchain.outside-window", "outside the pin 170.4.71")]
+    [InlineData("a pin older than the DacFx", "| 2026-09-25 | 3.0.0 | 170.4.71 | 170.3.93 |", "toolchain.outside-window", "outside the pin 170.4.71")]
     [InlineData("a pin two releases newer", "| 2026-09-25 | 3.0.0 | 170.7.2 | 170.6.10 |", "toolchain.outside-window", "outside the pin 170.7.2")]
     [InlineData("UNPINNED", "| 2026-09-25 | 3.0.0 | UNPINNED | — |", null, "UNPINNED")]
     [InlineData("the latest row of this estate's", "| 2026-09-26 | 3.0.0 | 170.4.71 | 170.3.93 |\n| 2026-09-25 | 3.0.0 | 170.5.96 | — |", "toolchain.outside-window", "outside the pin 170.4.71")]
     [InlineData("no row for this estate", "| 2026-09-25 | 3.1.0 | 170.5.96 | — |", "toolchain.unrecorded", "has no dated row for estate 3.0.0")]
     [InlineData("a malformed pin", "| 2026-09-25 | 3.0.0 | the latest | — |", "toolchain.malformed", "no DacFx release")]
     [InlineData("no ledger", null, null, "UNPINNED")]
-    public void The_committed_engine_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it(string what, string? rows, string? code, string said)
+    public void The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it(string what, string? rows, string? code, string said)
     {
         if (rows is not null)
         {
-            var sample = File.ReadAllText(Path.Combine(Repository.Root, "tests", "Golden", "estate", "ledgers", "toolchain.md"));
-            Directory.CreateDirectory(Path.Combine(machine, "estate", "ledgers"));
-            File.WriteAllText(Path.Combine(machine, "estate", "ledgers", "toolchain.md"), sample.Replace("| 2026-09-24 | 3.0.0 | UNPINNED | — |", rows, StringComparison.Ordinal));
+            Ledger(rows);
         }
 
         var error = Doctor.Toolchain(machine, Version).Match(pin => pin.Rejects(Kernel.Engine.Of(Doctor.DacFx).Match(e => e, r => throw new InvalidOperationException(r.Message))), r => r);
-        var dacfx = Doctor.Examine(machine, null, machine, (_, _) => null, Version).Single(c => c.Item == "dacfx");
+        var dacfx = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.DacFx);
 
         Assert.True(code == error?.Code, what + ": " + error?.Code);
-        Assert.Equal<int?>(code is null ? null : 6, error is null ? null : Cli.Contract.Exit(error));
+        Assert.Equal<int?>(code is null ? null : 6, error is null ? null : Contract.Exit(error));
         Assert.Equal(code is null, dacfx.Remedy is null);
         Assert.Contains(said, dacfx.Found, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void An_unreadable_toolchain_ledger_is_toolchain_unreadable_at_exit_6_and_the_dacfx_item_s_finding()
+    {
+        var ledger = Ledger("| 2026-09-25 | 3.0.0 | UNPINNED | — |");
+
+        var (error, dacfx) = RefusalPaths.Denied(ledger, () => (GitTests.Failed(Doctor.Toolchain(machine, Version)), Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.DacFx)));
+
+        Assert.Equal(("toolchain.unreadable", 6), (error.Code, Contract.Exit(error)));
+        Assert.Contains("cannot be read", dacfx.Found, StringComparison.Ordinal);
+        Assert.Contains("read access", dacfx.Remedy, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -110,7 +125,7 @@ public sealed class DoctorTests : IDisposable
     {
         File.WriteAllText(Path.Combine(machine, "global.json"), """{ "sdk": { "version": "10.0.401" } }""");
 
-        var sdk = Doctor.Examine(machine, null, machine, Answers(new() { ["dotnet --list-sdks"] = (0, installed + " [x]\n") }), Version)[0];
+        var sdk = Doctor.Examine(Bare(), Answers(new() { ["dotnet --list-sdks"] = (0, installed + " [x]\n") }), Version)[0];
 
         Assert.Equal(found, sdk.Remedy is null);
         Assert.Contains(found ? installed : "10.0.4xx", sdk.Found, StringComparison.Ordinal);
@@ -118,23 +133,124 @@ public sealed class DoctorTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Without_Docker_LocalDB_is_the_scratch_server_and_no_image_is_needed()
+    public void A_malformed_global_json_is_sdk_global_json_naming_the_line_and_the_sdk_item_s_finding()
     {
-        var checks = Doctor.Examine(machine, null, machine, Answers(new() { ["docker info"] = (1, "Cannot connect to the Docker daemon"), ["sqllocaldb info"] = (0, "MSSQLLocalDB\n") }), Version).ToDictionary(c => c.Item);
+        File.WriteAllText(Path.Combine(machine, "global.json"), "{\n  \"sdk\": { \"version\": 10.0.401 }\n}\n");
 
-        Assert.Equal(("localdb, CDC not provable here", null), (checks["scratch-server"].Found, checks["scratch-server"].Remedy));
-        Assert.Null(checks["image"].Remedy);
+        var error = GitTests.Failed(Doctor.Pinned(machine));
+        var sdk = Doctor.Examine(Bare(), Answers(Everything), Version)[0];
+
+        Assert.Equal(("sdk.global-json", 6), (error.Code, Contract.Exit(error)));
+        Assert.Contains("is not JSON at line 2", error.Message, StringComparison.Ordinal);
+        Assert.Equal((error.Message, error.Remedy), (sdk.Found, sdk.Remedy));
+    }
+
+    /// <summary>A program that does not answer in twenty seconds is named as such, never as absent, since the remedy differs: dotnet, git and docker each.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_program_the_doctor_runs_that_does_not_answer_in_time_is_named_as_such_and_not_as_absent()
+    {
+        var checks = Doctor.Examine(Bare(), (c, _) => new Ran.TimedOut(c.Timeout, "", ""), Version).ToDictionary(c => c.Item.Name);
+
+        Assert.Equal("dotnet did not answer in 20 seconds", checks["sdk"].Found);
+        Assert.Equal("git did not answer in 20 seconds", checks["git"].Found);
+        Assert.Contains("restart Docker", checks["scratch-server"].Remedy, StringComparison.Ordinal);
+        Assert.DoesNotContain("absent", checks["sdk"].Found + checks["git"].Found + checks["scratch-server"].Found, StringComparison.Ordinal);
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Docker_without_the_pinned_image_names_its_pull()
+    public void A_runtime_other_than_NET_10_is_refused_with_its_remedy()
     {
-        var image = Doctor.Examine(machine, null, machine, Answers(new() { ["docker info"] = (0, "29.5.3\n"), ["docker image"] = (1, "No such image") }), Version).Single(c => c.Item == "image");
+        var eleven = Doctor.Examine(Bare(runtime: new Version(11, 0, 0)), Nothing, Version).Single(c => c.Item == Doctor.Item.Runtime);
+        var ten = Doctor.Examine(Bare(runtime: new Version(10, 0, 5)), Nothing, Version).Single(c => c.Item == Doctor.Item.Runtime);
 
-        Assert.Equal("absent", image.Found);
-        Assert.Contains("ci/sql.sh up", image.Remedy, StringComparison.Ordinal);
-        Assert.Contains(Doctor.SqlServerImage, image.Remedy, StringComparison.Ordinal);
+        Assert.Equal(("11.0.0", "Install the .NET 10 runtime; estate runs on .NET 10 alone."), (eleven.Found, eleven.Remedy));
+        Assert.Equal(("10.0.5", null), (ten.Found, ten.Remedy));
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Git_older_than_2_24_is_refused_and_git_absent_is_named()
+    {
+        var old = Doctor.Examine(Bare(), Answers(new() { ["git --version"] = (0, "git version 2.20.1\n") }), Version).Single(c => c.Item == Doctor.Item.Git);
+        var absent = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.Git);
+        var linux = Doctor.Examine(Bare(), Answers(new() { ["git --version"] = (0, "git version 2.43.0\n") }), Version).Single(c => c.Item == Doctor.Item.Git);
+
+        Assert.Contains("older than 2.24", old.Found, StringComparison.Ordinal);
+        Assert.Contains("rev-parse --end-of-options", old.Found, StringComparison.Ordinal);
+        Assert.NotNull(old.Remedy);
+        Assert.Equal(("absent", "Install git and put it on the PATH, then run estate doctor."), (absent.Found, absent.Remedy));
+        Assert.Equal(("2.43.0", null), (linux.Found, linux.Remedy));
+    }
+
+    /// <summary>The tool folder's DacFx build task names the release its targets run: one other than the committed DacFx is a stale publish.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_tool_folder_whose_DacFx_build_task_is_another_release_is_named_as_a_stale_publish()
+    {
+        Publish();
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Estate.Kernel.dll"), Path.Combine(machine, "Microsoft.Data.Tools.Schema.Tasks.Sql.dll"));   // a file with another version
+
+        var tool = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.Tool);
+
+        Assert.Contains("not " + Doctor.DacFx, tool.Found, StringComparison.Ordinal);
+        Assert.Contains("ci/publish.sh", tool.Remedy, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Without_Docker_LocalDB_is_the_scratch_server_and_no_image_is_needed()
+    {
+        var checks = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (1, "Cannot connect to the Docker daemon"), ["sqllocaldb info"] = (0, "MSSQLLocalDB\n") }), Version).ToDictionary(c => c.Item.Name);
+
+        Assert.Equal(("LocalDB MSSQLLocalDB, CDC not provable here", null), (checks["scratch-server"].Found, checks["scratch-server"].Remedy));
+        Assert.Equal(("not needed without Docker", null), (checks["image"].Found, checks["image"].Remedy));
+    }
+
+    /// <summary>ESTATE_SQL names the scratch server first, in io/ScratchServer's order: no docker or sqllocaldb runs, and the image is not needed.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_scratch_server_is_the_one_estate_would_use_ESTATE_SQL_first()
+    {
+        Ran NeverDocker(Command c, CancellationToken t) => c.Program is "docker" or "sqllocaldb" ? throw new Xunit.Sdk.XunitException(c + " ran while ESTATE_SQL names the server") : Answers(Everything)(c, t);
+
+        var checks = Doctor.Examine(Bare(estateSql: "Server=tcp:DB-Host,1433;User ID=sa;Password=planted-value", sqlEnv: SqlEnv()), NeverDocker, Version).ToDictionary(c => c.Item.Name);
+
+        Assert.Equal(("ESTATE_SQL (db-host,1433)", null), (checks["scratch-server"].Found, checks["scratch-server"].Remedy));
+        Assert.Equal(("not needed: ESTATE_SQL names the server", null), (checks["image"].Found, checks["image"].Remedy));
+        Assert.DoesNotContain("planted-value", string.Join(" ", checks.Values.Select(c => c.Found + c.Remedy)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Docker_installed_with_its_daemon_stopped_says_to_start_Docker_and_Docker_absent_says_to_install_it()
+    {
+        var stopped = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (1, "") }), Version).Single(c => c.Item == Doctor.Item.ScratchServer);
+        var absent = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.ScratchServer);
+        var noContainer = Doctor.Examine(Bare(), Answers(Everything), Version).Single(c => c.Item == Doctor.Item.ScratchServer);
+        var daemonDown = Doctor.Examine(Bare(sqlEnv: SqlEnv()), Answers(new() { ["docker info"] = (1, "") }), Version).Single(c => c.Item == Doctor.Item.ScratchServer);
+
+        Assert.Contains("start Docker Desktop", stopped.Remedy, StringComparison.Ordinal);
+        Assert.DoesNotContain("Install Docker", stopped.Remedy, StringComparison.Ordinal);
+        Assert.Contains("Install Docker", absent.Remedy, StringComparison.Ordinal);
+        Assert.Contains("ci/sql.sh up", noContainer.Remedy, StringComparison.Ordinal);
+        Assert.Equal("estate-sql container (localhost,11433)", daemonDown.Found);
+        Assert.Contains("start Docker Desktop", daemonDown.Remedy, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Docker_without_the_pinned_image_names_its_pull_and_a_container_running_another_image_says_to_recreate_it()
+    {
+        var absent = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (0, "29.5.3\n"), ["docker image"] = (1, "No such image") }), Version).Single(c => c.Item == Doctor.Item.Image);
+        var other = Doctor.Examine(Bare(), Answers(new(Everything) { ["docker container"] = (0, "mcr.microsoft.com/mssql/server:2019-latest\n") }), Version).Single(c => c.Item == Doctor.Item.Image);
+
+        Assert.Equal("absent", absent.Found);
+        Assert.Contains("ci/sql.sh up", absent.Remedy, StringComparison.Ordinal);
+        Assert.Contains(Doctor.SqlServerImage, absent.Remedy, StringComparison.Ordinal);
+        Assert.Equal("present, and estate-sql runs mcr.microsoft.com/mssql/server:2019-latest", other.Found);
+        Assert.Contains("ci/sql.sh down", other.Remedy, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -143,6 +259,28 @@ public sealed class DoctorTests : IDisposable
     {
         Assert.Matches("^mcr.microsoft.com/mssql/server:2022-latest@sha256:[0-9a-f]{64}$", Doctor.SqlServerImage);
         Assert.All(["sql.sh", "sql.ps1"], script => Assert.Contains(Doctor.SqlServerImage, File.ReadAllText(Path.Combine(Repository.Root, "ci", script)), StringComparison.Ordinal));
+    }
+
+    /// <summary>A machine holding nothing but the test folder: no ESTATE_SQL, no sql.env unless given, this process's runtime unless given.</summary>
+    private Doctor.Machine Bare(string? estateSql = null, string? sqlEnv = null, Version? runtime = null) =>
+        new(machine, null, machine, estateSql, sqlEnv ?? Path.Combine(machine, "no-sql.env"), runtime ?? Environment.Version);
+
+    /// <summary>A sql.env as ci/sql.sh writes it, naming the container's port and password.</summary>
+    private string SqlEnv()
+    {
+        var file = Path.Combine(machine, "sql.env");
+        File.WriteAllText(file, "MSSQL_SA_PASSWORD=planted-value\nESTATE_SQL_PORT=11433\n");
+        return file;
+    }
+
+    /// <summary>The sample toolchain ledger under the machine's estate root, its one row replaced; the file's path.</summary>
+    private string Ledger(string rows)
+    {
+        var sample = File.ReadAllText(Path.Combine(Repository.Root, "tests", "Golden", "estate", "ledgers", "toolchain.md"));
+        Directory.CreateDirectory(Path.Combine(machine, "estate", "ledgers"));
+        var ledger = Path.Combine(machine, "estate", "ledgers", "toolchain.md");
+        File.WriteAllText(ledger, sample.Replace("| 2026-09-24 | 3.0.0 | UNPINNED | — |", rows, StringComparison.Ordinal));
+        return ledger;
     }
 
     /// <summary>The files a published tool folder holds beside estate: the SqlTasks targets and the reference assemblies.</summary>
@@ -155,7 +293,10 @@ public sealed class DoctorTests : IDisposable
         }
     }
 
+    /// <summary>A machine on which no program is installed.</summary>
+    private static Ran Nothing(Command command, CancellationToken cancel) => new Ran.NotFound(command.Program, "'" + command.Program + "' is on no folder of the PATH.");
+
     /// <summary>A machine that answers a program and its first argument as given, and has nothing else installed.</summary>
-    private static Doctor.Command Answers(Dictionary<string, (int Exit, string Output)> answers) =>
-        (file, arguments) => answers.TryGetValue(file + " " + arguments[0], out var answer) ? answer : null;
+    internal static Runner Answers(Dictionary<string, (int Exit, string Output)> answers) =>
+        (command, _) => answers.TryGetValue(command.Program + " " + command.Arguments[0], out var answer) ? new Ran.Exited(answer.Exit, answer.Output, "") : Nothing(command, default);
 }

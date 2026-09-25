@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Xml;
 using System.Xml.Linq;
 using Estate.Kernel;
@@ -96,14 +96,27 @@ public static class Ssdt
             "Name the .sqlproj to build with --project, by its path from the repository's root.");
     }
 
-    public static Result<Dacpac> Build(string project, string toolFolder, string outputRoot) => Build(project, toolFolder, outputRoot, Doctor.Run);
+    /// <summary>How long a project's build may run: V3_MILESTONES.md gives M5's whole gate ten minutes, so a build still running then has failed the gate; a 300-table classic project builds in about two minutes.</summary>
+    public static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// The build's environment over estate's own: telemetry off; none of the SDK's first-run actions (no banner, no ASP.NET Core development
+    /// certificate, no PATH change); English messages; UTF-8 output; no MSBuild server, as -nodeReuse:false keeps no node; and ESTATE_SQL
+    /// withheld, since a project's own targets can read any variable as a property.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string?> BuildEnvironment = new Dictionary<string, string?>(StringComparer.Ordinal)
+    {
+        ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1", ["DACFX_TELEMETRY_OPTOUT"] = "1", ["DOTNET_NOLOGO"] = "1", ["DOTNET_CLI_UI_LANGUAGE"] = "en-US", ["DOTNET_CLI_FORCE_UTF8_ENCODING"] = "1",
+        ["DOTNET_GENERATE_ASPNET_CERTIFICATE"] = "false", ["DOTNET_ADD_GLOBAL_TOOLS_TO_PATH"] = "false", ["DOTNET_CLI_USE_MSBUILD_SERVER"] = "0", ["ESTATE_SQL"] = null,
+    };
+
+    public static Result<Dacpac> Build(string project, string toolFolder, string outputRoot, Runner? run = null, CancellationToken cancel = default) =>
+        Build(project, toolFolder, outputRoot, run ?? Command.Run, null, cancel);
 
     /// <summary>A project as a ref holds it: its path from the repository's root, found in the ref's worktree, built under outputRoot/&lt;the commit&gt;/.</summary>
-    public static Result<Dacpac> Build(Git.Worktree at, string project, string toolFolder, string outputRoot) => Path.IsPathRooted(project)
+    public static Result<Dacpac> Build(Git.Worktree at, string project, string toolFolder, string outputRoot, Runner? run = null, CancellationToken cancel = default) => Path.IsPathRooted(project)
         ? new Error("build.no-project", project + " is not a path from the repository's root, where a ref's project is found.", "Name the .sqlproj by its path from the repository's root.")
-        : Build(Path.Combine(at.Path, project), toolFolder, outputRoot, Doctor.Run, at.Commit);
-
-    public static Result<Dacpac> Build(string project, string toolFolder, string outputRoot, Doctor.Command run) => Build(project, toolFolder, outputRoot, run, null);
+        : Build(Path.Combine(at.Path, project), toolFolder, outputRoot, run ?? Command.Run, at.Commit, cancel);
 
     /// <summary>
     /// Builds a classic .sqlproj as §1 fact 1 does, with the SDK that dotnet --list-sdks, through run, lists: dotnet build against the tool folder's targets
@@ -111,43 +124,67 @@ public static class Ssdt
     /// under outputRoot/&lt;commit&gt;/ for a ref's worktree, so nothing is written beside the project and two refs never share a
     /// folder. A missing SDK band or tool folder is an error before anything builds.
     /// </summary>
-    private static Result<Dacpac> Build(string project, string toolFolder, string outputRoot, Doctor.Command run, string? commit)
+    private static Result<Dacpac> Build(string project, string toolFolder, string outputRoot, Runner run, string? commit, CancellationToken cancel)
     {
         var (file, tool) = (Path.GetFullPath(project), Path.TrimEndingDirectorySeparator(Path.GetFullPath(toolFolder)));
         var directory = Path.GetDirectoryName(file)!;
-        return (File.Exists(file), Doctor.Sdk(directory, run), Doctor.Tool(tool)) switch
+        return (File.Exists(file), Doctor.Sdk(directory, run, cancel), Doctor.Tool(tool)) switch
         {
             (false, _, _) => new Error("build.no-project", "No project at " + file + ".", "Name the .sqlproj to build, by its path from the working directory."),
             (_, { Remedy: { } install } sdk, _) => new Error(
-                "sdk.missing", "dotnet build loads DacFx's net10.0 build task, and this machine has " + sdk.Found + ".", install + "; then estate doctor"),
+                "sdk.missing", "dotnet build loads DacFx's net10.0 build task, and this machine has " + sdk.Found + ".", install.TrimEnd('.') + "; then run estate doctor."),
             (_, _, { Remedy: { } publish } found) => new Error("tool.missing", tool + " is " + found.Found + ".", publish + "; then estate doctor"),
-            _ => Run(file, tool, Path.GetFullPath(outputRoot), commit),
+            _ => Run(file, tool, Path.GetFullPath(outputRoot), commit, run, cancel),
         };
     }
 
-    private static Result<Dacpac> Run(string project, string tool, string outputRoot, string? commit)
+    /// <summary>
+    /// dotnet build through io/Command, its two streams read as UTF-8 whatever the console's code page (the SDK writes UTF-8 to a pipe) and
+    /// joined to read MSBuild's lines; every path passed as a property escaped for MSBuild, which splits a property at ',' and ';' and unescapes
+    /// %XX; stopped after <see cref="BuildTimeout"/> as build.timed-out, quoting the last lines read.
+    /// </summary>
+    private static Result<Dacpac> Run(string project, string tool, string outputRoot, string? commit, Runner run, CancellationToken cancel)
     {
         var directory = Path.GetDirectoryName(project)!;
         var inputs = Inputs(directory, tool);
 
         // outputRoot/<the ref's commit>/, or for a plain path <the inputs' fingerprint, its first 16 digits so MSBuild's paths stay short on Windows>/.
         var output = Path.Combine(outputRoot, commit ?? inputs.ToString()[..16]) + "/";
-        var (exit, log) = Dotnet(directory,
+        var build = new Command("dotnet",
         [
             "build", project, "-c", "Release", "--no-restore", "-nologo", "-tl:off", "-v:m", "-nodeReuse:false",
-            "-p:DacFxTelemetryEnabled=false", "-p:NetCoreBuild=true", "-p:NETCoreTargetsPath=" + tool, "-p:SQLDBExtensionsRefPath=" + tool,
-            "-p:TargetFrameworkRootPath=" + Path.Combine(tool, "refasm"),
-            "-p:OutputPath=" + output, "-p:BaseIntermediateOutputPath=" + output + "obj/", "-p:IntermediateOutputPath=" + output + "obj/",
-        ]);
+            "-p:DacFxTelemetryEnabled=false", "-p:NetCoreBuild=true", "-p:NETCoreTargetsPath=" + Escaped(tool), "-p:SQLDBExtensionsRefPath=" + Escaped(tool),
+            "-p:TargetFrameworkRootPath=" + Escaped(Path.Combine(tool, "refasm")),
+            "-p:OutputPath=" + Escaped(output), "-p:BaseIntermediateOutputPath=" + Escaped(output + "obj/"), "-p:IntermediateOutputPath=" + Escaped(output + "obj/"),
+        ], BuildTimeout) { Directory = directory, Environment = BuildEnvironment };
+        var name = Path.GetFileName(project);
+        return run(build, cancel) switch
+        {
+            Ran.NotFound notFound => new Error("sdk.missing", "dotnet build loads DacFx's net10.0 build task, and dotnet does not run here: " + notFound.Why,
+                "Install the .NET SDK global.json names and put dotnet on the PATH; then run estate doctor."),
+            Ran.TimedOut timedOut => new Error("build.timed-out",
+                "dotnet build of " + name + " ran for " + Command.Written(BuildTimeout) + " without finishing, and estate stopped it; its last lines:\n" + string.Join('\n', Last(timedOut.Output + timedOut.Errors)),
+                "Run dotnet build " + name + " -v:n in " + directory + " to see where it stops."),
+            Ran.Exited exited => Built(exited.Code, exited.Output + exited.Errors, name, directory, inputs),
+            _ => throw new UnreachableException(),
+        };
+    }
+
+    /// <summary>What the build wrote, read from MSBuild's lines: the package the SqlTasks targets named, or build.failed with each error at its file and line, or the last lines when MSBuild named no error.</summary>
+    private static Result<Dacpac> Built(int exit, string log, string name, string directory, Fingerprint inputs)
+    {
         var errors = log.Split('\n').Select(line => BuildError.Match(line.TrimEnd('\r'))).Where(m => m.Success).Select(m => Located(m, directory)).Distinct().ToList();
         var dacpac = Wrote.Matches(log).Select(m => m.Groups["path"].Value).LastOrDefault();
         return exit == 0 && errors.Count == 0 && dacpac is not null && File.Exists(dacpac)
             ? new Dacpac(dacpac, inputs)
-            : new Error(
-                "build.failed",
-                "dotnet build of " + Path.GetFileName(project) + " failed:\n" + string.Join('\n', errors.Count > 0 ? errors : log.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).TakeLast(20)),
-                "Fix each error at the file and line it names, then build again.");
+            : new Error("build.failed", "dotnet build of " + name + " failed:\n" + string.Join('\n', errors.Count > 0 ? errors : Last(log)), "Fix each error at the file and line it names, then build again.");
     }
+
+    /// <summary>The last twenty non-blank lines of a build's output, trimmed.</summary>
+    private static IEnumerable<string> Last(string log) => log.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).TakeLast(20);
+
+    /// <summary>A path as an MSBuild property value carries it exactly: '%', ';' and ',' written as %25, %3B and %2C, in that order, since MSBuild splits a value at the two separators and unescapes %XX (measured: MSB1006 for a comma, %41 read as A).</summary>
+    private static string Escaped(string path) => path.Replace("%", "%25", StringComparison.Ordinal).Replace(";", "%3B", StringComparison.Ordinal).Replace(",", "%2C", StringComparison.Ordinal);
 
     /// <summary>An error as MSBuild writes it, with a file under the project named from the project's folder and the project's bracket dropped.</summary>
     private static string Located(Match error, string directory)
@@ -171,27 +208,6 @@ public static class Ssdt
             .Order(StringComparer.Ordinal)
             .Select(file => file + " " + Fingerprint.Of(File.ReadAllBytes(Path.Combine(directory, file))))
             .Concat(Engine.Where(file => File.Exists(Path.Combine(tool, file))).Select(file => "tool/" + file + " " + Fingerprint.Of(File.ReadAllBytes(Path.Combine(tool, file)))))));
-
-    /// <summary>dotnet with the arguments, from the directory, telemetry off: its exit code, and its output and errors together.</summary>
-    private static (int Exit, string Log) Dotnet(string directory, IReadOnlyList<string> arguments)
-    {
-        var start = new ProcessStartInfo("dotnet", arguments) { RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = directory };
-        start.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-        start.Environment["DACFX_TELEMETRY_OPTOUT"] = "1";
-        start.Environment["DOTNET_NOLOGO"] = "1";
-        try
-        {
-            using var process = Process.Start(start)!;
-            var errors = process.StandardError.ReadToEndAsync();
-            var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-            return (process.ExitCode, output + errors.Result);
-        }
-        catch (Win32Exception e)
-        {
-            return (-1, "dotnet did not start: " + e.Message);
-        }
-    }
 
     /// <summary>A package's model, its deploy scripts and its refactorlog; a file DacFx cannot read as a package is the error package.unreadable.</summary>
     public static Result<Package> Load(string dacpac)

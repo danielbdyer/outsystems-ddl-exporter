@@ -80,7 +80,7 @@ public static class ScratchServer
         "estate_" + Host(host) + "_" + pid.ToString(CultureInfo.InvariantCulture) + "_" + random.ToLowerInvariant();
 
     internal static Result<string> Server() =>
-        Server(Environment.GetEnvironmentVariable("ESTATE_SQL"), SqlEnv, OperatingSystem.IsWindows() && Doctor.Run("sqllocaldb", ["info", "MSSQLLocalDB"]) is (0, _));
+        Server(Environment.GetEnvironmentVariable("ESTATE_SQL"), SqlEnv, Doctor.LocalDbInstalled(Command.Run));
 
     /// <summary>The scratch server, in the fixture's order: ESTATE_SQL; the container, when sql.env gives its port and password; LocalDB, when installed.</summary>
     internal static Result<string> Server(string? estateSql, string sqlEnv, bool localDb)
@@ -226,29 +226,17 @@ public static class ScratchServer
     }
 
     /// <summary>The registry changed under a lock this process alone holds while it reads, changes and writes the file back through io/Write.</summary>
-    private static Result<List<JsonObject>> Change(string estateRoot, Func<List<JsonObject>, List<JsonObject>> change)
+    private static Result<List<JsonObject>> Change(string estateRoot, Func<List<JsonObject>, List<JsonObject>> change) => Held(new LocalState(estateRoot).CopiesLock).Bind(held =>
     {
-        var folder = Directory.CreateDirectory(Path.Combine(estateRoot, ".estate")).FullName;
-        using var held = Held(Path.Combine(folder, "copies.lock"));
-        return Rows(estateRoot).Map(change).Map(rows =>
+        using (held)
         {
-            Write.Text(Path.Combine(estateRoot, Registry), Json.Text(new JsonObject { ["copies"] = new JsonArray([.. rows]) }));
-            return rows;
-        });
-    }
-
-    /// <summary>The lock file opened for this process alone, another holder waited out for up to a minute; the system closes it when its holder ends.</summary>
-    private static FileStream Held(string path)
-    {
-        for (var waiting = Stopwatch.StartNew(); ; Thread.Sleep(20))
-        {
-            try
-            {
-                return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-            }
-            catch (IOException sharing) when (sharing.GetType() == typeof(IOException) && waiting.Elapsed < TimeSpan.FromMinutes(1))
-            {
-            }
+            return Rows(estateRoot).Map(change).Bind(rows => Write.Text(Path.Combine(estateRoot, Registry), Json.Text(new JsonObject { ["copies"] = new JsonArray([.. rows]) })).Map(_ => rows));
         }
-    }
+    });
+
+    /// <summary>How long a registry change waits for another estate process's: a change takes milliseconds.</summary>
+    private static readonly TimeSpan RegistryTimeout = TimeSpan.FromMinutes(1);
+
+    /// <summary>The registry's lock file, taken for this process alone through io/FileLock; another holder is waited out for <see cref="RegistryTimeout"/>.</summary>
+    private static Result<FileLock> Held(string path) => FileLock.Take(path, RegistryTimeout);
 }

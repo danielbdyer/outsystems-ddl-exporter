@@ -72,8 +72,13 @@ internal static class RefusalPaths
             Written(scratch, "b/Two.sqlproj", "<Project />");
             return Failed(Ssdt.Project(scratch, null));
         }),
-        new("a build without the SDK band", "sdk.missing", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Bare(scratch), Output(scratch), (_, _) => (0, "8.0.100 [sdk]\n")))),
+        new("a build without the SDK band", "sdk.missing", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Bare(scratch), Output(scratch), (_, _) => new Ran.Exited(0, "8.0.100 [sdk]\n", "")))),
         new("a build that fails", "build.failed", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Hollow(scratch), Output(scratch), Sdk))),
+        new("a build past its timeout", "build.timed-out", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Hollow(scratch), Output(scratch),
+            (c, t) => c.Arguments[0] == "build" ? new Ran.TimedOut(c.Timeout, "  Determining projects to restore...\n", "") : Sdk(c, t)))),
+        new("a global.json that is not JSON", "sdk.global-json", true, (scratch, planted) => Failed(Doctor.Pinned(Path.GetDirectoryName(Written(scratch, "global.json", "{ \"sdk\": { \"version\": " + planted + " } }"))!))),
+        new("a toolchain ledger this identity cannot read", "toolchain.unreadable", false, (scratch, _) =>
+            Denied(Path.Combine(Ledger(scratch, "| 2026-09-24 | 3.0.0 | UNPINNED | — |"), Doctor.Ledger), () => Failed(Doctor.Toolchain(scratch, "3.0.0")))),
         new("a package that is none", "package.unreadable", false, (scratch, _) => Failed(Ssdt.Load(Written(scratch, "not.dacpac", "not a package")))),
         new("a refactorlog that is none", "refactorlog.unreadable", false, (scratch, _) => Failed(Ssdt.RefactorLog(Written(scratch, "not.refactorlog", "not a refactorlog")))),
         new("a refactorlog entry naming no object", "refactorlog.name", false, (_, _) =>
@@ -98,7 +103,10 @@ internal static class RefusalPaths
         }),
         new("a lock on Linux or macOS with the runtime's file locking off", "lock.unsupported", false, (_, _) => FileLock.Unsupported),   // Windows share modes ignore the switch, so the error is taken from its maker
 
-        new("a git program that does not start", "git.missing", false, (scratch, _) => Failed(Git.At(scratch, "HEAD", git: Path.Combine(scratch, "no-git")))),
+        new("a git program that does not run", "git.missing", false, (scratch, _) => Failed(Git.At(scratch, "HEAD", (c, _) => new Ran.NotFound(c.Program, "'git' is on no folder of the PATH (C:\\Windows).")))),
+        new("a git command past its timeout", "git.timed-out", false, (scratch, _) => Failed(Git.At(scratch, "HEAD", (c, _) => new Ran.TimedOut(c.Timeout, "", "")))),
+        new("a repository git refuses for its owner", "git.dubious-ownership", false, (scratch, _) =>
+            Failed(Git.At(scratch, "HEAD", (_, _) => new Ran.Exited(128, "", "fatal: detected dubious ownership in repository at '" + scratch.Replace('\\', '/') + "'\n")))),
         new("a folder in no repository", "git.not-a-repository", false, (scratch, _) => Failed(Git.ChangedPaths(Path.Combine(scratch, "no-repository"), "HEAD~1", "HEAD"))),
         new("a ref that names no commit", "ref.unresolved", false, (scratch, _) => InRepository(scratch, root => Git.At(root, "no-such-tag"))),
         new("two refs whose histories never meet", "ref.unrelated", false, (scratch, _) => InRepository(scratch, root =>
@@ -107,16 +115,39 @@ internal static class RefusalPaths
             Arrange(root, "commit", "-q", "--allow-empty", "-m", "unrelated");
             return Git.MergeBase(root, "main", "unrelated");
         })),
+        new("two refs whose fork a shallow clone cannot see", "git.shallow-clone", false, (scratch, _) => InRepository(scratch, root =>
+        {
+            Arrange(root, "switch", "-q", "--orphan", "unrelated");
+            Arrange(root, "commit", "-q", "--allow-empty", "-m", "unrelated");
+            return Git.MergeBase(root, "main", "unrelated", (c, t) => c.Arguments.Contains("--is-shallow-repository") ? new Ran.Exited(0, "true\n", "") : Command.Run(c, t));
+        })),
         new("a branch name git does not take", "git-branch.malformed", false, (scratch, _) => InRepository(scratch, root => Git.CommitAndPush(root, Evidence, "evidence", "estate/..evidence"))),
         new("a branch that exists here", "git-branch.exists", false, (scratch, _) => InRepository(scratch, root =>
         {
             Arrange(root, "branch", "estate/evidence");
             return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence");
         })),
+        new("a repository with no origin", "git.no-origin", false, (scratch, _) => InRepository(scratch, root => Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence"))),
         new("an origin that does not answer", "origin.unreachable", false, (scratch, _) => InRepository(scratch, root =>
         {
             Arrange(root, "remote", "add", "origin", Path.Combine(scratch, "no-origin.git"));
             return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence");
+        })),
+        new("an origin that refuses the credential", "origin.denied", false, (scratch, _) => InRepository(scratch, root =>
+        {
+            Arrange(root, "init", "-q", "--bare", Path.Combine(scratch, "origin.git"));
+            Arrange(root, "remote", "add", "origin", Path.Combine(scratch, "origin.git"));
+            Written(root, "estate/evidence.shape.json", "{}\n");
+            return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence",
+                (c, t) => c.Arguments.Contains("push") ? new Ran.Exited(128, "", "fatal: Authentication failed for 'https://dev.azure.com/estate/_git/estate/'\n") : Command.Run(c, t));
+        })),
+        new("an origin whose hook refuses the branch", "origin.rejected", false, (scratch, _) => InRepository(scratch, root =>
+        {
+            Arrange(root, "init", "-q", "--bare", Path.Combine(scratch, "origin.git"));
+            Arrange(root, "remote", "add", "origin", Path.Combine(scratch, "origin.git"));
+            Written(root, "estate/evidence.shape.json", "{}\n");
+            return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence",
+                (c, t) => c.Arguments.Contains("push") ? new Ran.Exited(1, "To origin\n!\tHEAD:refs/heads/estate/evidence\t[remote rejected] (pre-receive hook declined)\nDone\n", "") : Command.Run(c, t));
         })),
         new("a commit of a path the working tree lacks", "git.failed", false, (scratch, _) => InRepository(scratch, root =>
         {
@@ -432,8 +463,10 @@ internal static class RefusalPaths
         .Distinct()
         .Order(StringComparer.Ordinal);
 
-    private static (int Exit, string Output)? Sdk(string file, IReadOnlyList<string> arguments) =>
-        (0, (string)JsonNode.Parse(File.ReadAllText(Path.Combine(Repository.Root, "global.json")))!["sdk"]!["version"]! + " [sdk]\n");
+    /// <summary>A machine whose dotnet lists the SDK global.json pins, and runs every other program as it is.</summary>
+    private static Ran Sdk(Command command, System.Threading.CancellationToken cancel) => command.Arguments[0] == "--list-sdks"
+        ? new Ran.Exited(0, (string)JsonNode.Parse(File.ReadAllText(Path.Combine(Repository.Root, "global.json")))!["sdk"]!["version"]! + " [sdk]\n", "")
+        : Command.Run(command, cancel);
 
     /// <summary>A dev environment in posture JSON: its connection, its profile and whatever else is given.</summary>
     private static string Dev(string extra = "", string connection = "env:ESTATE_DEV", string profile = Pipeline, string name = "dev") =>
@@ -503,8 +536,8 @@ internal static class RefusalPaths
     }
 
     /// <summary>
-    /// A drive of io/Git in a repository of its own at scratch/repository, holding one empty commit on main; after it, git's
-    /// objects, which it writes read-only, are made writable, so the scratch folder deletes.
+    /// A drive of io/Git in a repository of its own at scratch/repository, holding one empty commit on main; after it, this process's
+    /// holds on its worktrees are released and git's objects, which it writes read-only, are made writable, so the scratch folder deletes.
     /// </summary>
     private static Error InRepository<T>(string scratch, Func<string, Result<T>> drive)
     {
@@ -517,6 +550,7 @@ internal static class RefusalPaths
         }
         finally
         {
+            Git.Release(root);
             foreach (var file in Directory.EnumerateFiles(scratch, "*", SearchOption.AllDirectories))
             {
                 File.SetAttributes(file, FileAttributes.Normal);
@@ -525,27 +559,7 @@ internal static class RefusalPaths
     }
 
     /// <summary>git as a driver arranges the scratch repository: in it, never looking above the scratch folder, as an identity of its own, unsigned.</summary>
-    private static void Arrange(string root, params string[] arguments)
-    {
-        var start = new ProcessStartInfo("git", ["-c", "user.name=Estate Test", "-c", "user.email=estate-test@example.invalid", "-c", "commit.gpgsign=false", .. arguments])
-        {
-            WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true,
-        };
-        start.Environment["GIT_CEILING_DIRECTORIES"] = Path.GetDirectoryName(root);
-        foreach (var variable in (string[])["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"])
-        {
-            start.Environment.Remove(variable);
-        }
-
-        using var process = Process.Start(start)!;
-        var errors = process.StandardError.ReadToEndAsync();
-        process.StandardOutput.ReadToEnd();
-        process.WaitForExit();
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException("git " + string.Join(' ', arguments) + " exited " + process.ExitCode + ": " + errors.Result);
-        }
-    }
+    private static void Arrange(string root, params string[] arguments) => Programs.TestGit(root, Path.GetDirectoryName(root)!, arguments);
 
     private static string Output(string scratch) => Path.Combine(scratch, "build");
 

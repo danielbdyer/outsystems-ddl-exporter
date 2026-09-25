@@ -93,13 +93,110 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
     {
         var pin = (string)JsonNode.Parse(File.ReadAllText(Path.Combine(Repository.Root, "global.json")))!["sdk"]!["version"]!;
 
-        var error = Failed(Ssdt.Build(Golden(), tool.Folder, Output, (_, _) => (0, "8.0.100 [sdk]\n9.0.314 [sdk]\n")));
+        var error = Failed(Ssdt.Build(Golden(), tool.Folder, Output, (_, _) => new Ran.Exited(0, "8.0.100 [sdk]\n9.0.314 [sdk]\n", "")));
 
         Assert.Equal(("sdk.missing", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains(pin[..^2] + "xx", error.Message, StringComparison.Ordinal);
-        Assert.Contains("install the .NET SDK " + pin, error.Remedy, StringComparison.Ordinal);
+        Assert.Contains("Install the .NET SDK " + pin, error.Remedy, StringComparison.Ordinal);
         Assert.Contains("estate doctor", error.Remedy, StringComparison.Ordinal);
         Assert.False(Directory.Exists(Output));
+    }
+
+    /// <summary>
+    /// Fact 3 of the specification: MSBuild splits a property value at ',' and ';' (MSB1006) and unescapes %XX, so a checkout under a folder such as
+    /// C:\Users\Doe, John\ failed to build until the build escaped each path it passes as a property. The package lands under that folder.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_project_under_a_folder_whose_name_holds_a_comma_a_semicolon_and_a_percent_sign_builds()
+    {
+        const string Folder = "Doe, John; 50%41";
+        var project = Golden(Folder);
+
+        var dacpac = Ok(Ssdt.Build(project, tool.Folder, Path.Combine(scratch, Folder, "build")));
+
+        Assert.Contains(Path.DirectorySeparatorChar + Folder + Path.DirectorySeparatorChar, dacpac.Path, StringComparison.Ordinal);
+        Assert.True(File.Exists(dacpac.Path), dacpac.Path + " was not written");
+    }
+
+    /// <summary>
+    /// Fact 1 of the specification: the SDK writes MSBuild's lines to a pipe as UTF-8, and a build read with the console's code page (437 on a
+    /// Windows console) turned a non-ASCII folder in the " -> …dacpac" line into another path, so the build of a checkout under such a folder
+    /// was refused as build.failed. io/Command reads the build as UTF-8 whatever the console holds, and the package's path is found.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_project_under_a_folder_named_in_other_than_ASCII_builds_whatever_the_console_s_code_page()
+    {
+        var project = Golden("Café-Ω");
+
+        var dacpac = Ok(Ssdt.Build(project, tool.Folder, Path.Combine(scratch, "Café-Ω", "build")));
+
+        Assert.Contains(Path.DirectorySeparatorChar + "Café-Ω" + Path.DirectorySeparatorChar, dacpac.Path, StringComparison.Ordinal);
+        Assert.True(File.Exists(dacpac.Path), dacpac.Path + " was not written");
+    }
+
+    /// <summary>
+    /// The variables an enclosing MSBuild sets (MSBuildSDKsPath, MSBuildExtensionsPath, MSBUILD_EXE_PATH, as when estate runs inside dotnet test
+    /// or an Exec task) reach the build's environment beneath the build's own settings, and a classic project still builds under bogus values.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_classic_project_under_a_bogus_MSBuildSDKsPath_builds()
+    {
+        Ran Enclosed(Command c, System.Threading.CancellationToken t)
+        {
+            var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["MSBuildSDKsPath"] = Path.Combine(scratch, "bogus", "sdks"), ["MSBuildExtensionsPath"] = Path.Combine(scratch, "bogus", "ext"), ["MSBUILD_EXE_PATH"] = Path.Combine(scratch, "bogus", "MSBuild.dll"),
+            };
+            foreach (var (name, value) in c.Environment)
+            {
+                environment[name] = value;   // the build's own settings win
+            }
+
+            return Command.Run(c with { Environment = environment }, t);
+        }
+
+        var dacpac = Ok(Ssdt.Build(Golden(), tool.Folder, Output, Enclosed));
+
+        Assert.True(File.Exists(dacpac.Path), dacpac.Path + " was not written");
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_build_past_its_timeout_is_build_timed_out_at_exit_7_quoting_its_last_lines()
+    {
+        Ran Hangs(Command c, System.Threading.CancellationToken t) => c.Arguments[0] == "build" ? new Ran.TimedOut(c.Timeout, "  Determining projects to restore...\n  ClassicMinimal -> building\n", "") : Command.Run(c, t);
+
+        var error = Failed(Ssdt.Build(Golden(), tool.Folder, Output, Hangs));
+
+        Assert.Equal(("build.timed-out", 7), (error.Code, Contract.Exit(error)));
+        Assert.Contains("10 minutes", error.Message, StringComparison.Ordinal);
+        Assert.EndsWith("ClassicMinimal -> building", error.Message, StringComparison.Ordinal);
+        Assert.Contains("dotnet build ClassicMinimal.sqlproj -v:n", error.Remedy, StringComparison.Ordinal);
+    }
+
+    /// <summary>The command the build runs: dotnet build from the project's folder, for ten minutes, telemetry and the SDK's first-run actions off, English, UTF-8, no MSBuild server, ESTATE_SQL withheld.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_build_runs_dotnet_from_the_project_s_folder_with_telemetry_and_first_run_actions_off_and_ESTATE_SQL_withheld()
+    {
+        Command? built = null;
+        Ran Records(Command c, System.Threading.CancellationToken t)
+        {
+            built = c.Arguments[0] == "build" ? c : built;
+            return c.Arguments[0] == "build" ? new Ran.Exited(1, "", "") : Command.Run(c, t);
+        }
+
+        var project = Golden();
+        Failed(Ssdt.Build(project, tool.Folder, Output, Records));
+
+        Assert.NotNull(built);
+        Assert.Equal(("dotnet", Path.GetDirectoryName(project), Ssdt.BuildTimeout), (built.Program, built.Directory, built.Timeout));
+        Assert.Equal(["DACFX_TELEMETRY_OPTOUT=1", "DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false", "DOTNET_CLI_FORCE_UTF8_ENCODING=1", "DOTNET_CLI_TELEMETRY_OPTOUT=1", "DOTNET_CLI_UI_LANGUAGE=en-US",
+            "DOTNET_CLI_USE_MSBUILD_SERVER=0", "DOTNET_GENERATE_ASPNET_CERTIFICATE=false", "DOTNET_NOLOGO=1", "ESTATE_SQL="], built.Environment.Select(v => v.Key + "=" + v.Value).Order(StringComparer.Ordinal));
+        Assert.Contains("-nodeReuse:false", built.Arguments);
     }
 
     [Fact]
@@ -134,20 +231,20 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         }
     }
 
-    /// <summary>A fresh copy of tests/Golden/, its stop files included so the engine's build settings stay out; its classic-minimal project.</summary>
-    private string Golden()
+    /// <summary>A fresh copy of tests/Golden/ under the scratch folder's <paramref name="under"/>, its stop files included so the engine's build settings stay out; its classic-minimal project.</summary>
+    private string Golden(string under = "golden")
     {
         var from = Path.Combine(Repository.Root, "tests", "Golden");
         foreach (var file in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(from, f)))
         {
             if (!file.Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj"))
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(scratch, "golden", file))!);
-                File.Copy(Path.Combine(from, file), Path.Combine(scratch, "golden", file));
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(scratch, under, file))!);
+                File.Copy(Path.Combine(from, file), Path.Combine(scratch, under, file));
             }
         }
 
-        return Path.Combine(scratch, "golden", "classic-minimal", "ClassicMinimal.sqlproj");
+        return Path.Combine(scratch, under, "classic-minimal", "ClassicMinimal.sqlproj");
     }
 
     /// <summary>A folder holding, empty, the files a published tool folder carries beside estate.</summary>

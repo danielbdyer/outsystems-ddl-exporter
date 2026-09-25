@@ -31,4 +31,25 @@ internal static class Programs
 
     /// <summary>The exit code and both streams together, as a test reads a program's log.</summary>
     public static (int Exit, string Output) Joined(this Ran.Exited ran) => (ran.Code, ran.Output + ran.Errors);
+
+    /// <summary>
+    /// git as a test arranges a scratch repository: in <paramref name="directory"/>, never looking above <paramref name="ceiling"/>, with
+    /// io/Git's own scrub of the caller's environment, as an identity of its own and unsigned; its output less the final line break. A
+    /// non-zero exit fails the test naming the command.
+    /// </summary>
+    public static string TestGit(string directory, string ceiling, params string[] arguments)
+    {
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var variable in Git.Scrubbed)
+        {
+            environment[variable] = null;
+        }
+
+        environment["GIT_CEILING_DIRECTORIES"] = ceiling;
+        var ran = new Command("git", ["-c", "user.name=Estate Test", "-c", "user.email=estate-test@example.invalid", "-c", "commit.gpgsign=false", .. arguments], Default)
+        {
+            Directory = directory, Environment = environment,
+        }.Finish();
+        return ran.Code == 0 ? ran.Output.TrimEnd() : throw new XunitException("git " + string.Join(' ', arguments) + " exited " + ran.Code + " in " + directory + ": " + ran.Errors);
+    }
 }
