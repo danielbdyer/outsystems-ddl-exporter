@@ -561,8 +561,17 @@ public static class Ssdt
         ];
     });
 
-    /// <summary>A model read whole into elements (§2.1 rule 1), and the renames its package's refactorlog records, as Change.Between takes them; a database's model has none.</summary>
-    public sealed record ModelElements(SortedArray<Element> Elements, SortedArray<Rename> Renames);
+    /// <summary>
+    /// A model read whole into elements (§2.1 rule 1); the renames its package's refactorlog records, as Change.Between takes them, which a
+    /// database's model has none of; and the errors DacFx found loading the model (TSqlModel.GetModelErrors: a script it cannot parse), each
+    /// a note and never a refusal, since the rest of the model reads.
+    /// </summary>
+    public sealed record ModelElements(SortedArray<Element> Elements, SortedArray<Rename> Renames, SortedArray<DacFxMessage> Errors = default)
+    {
+        /// <summary>A model.error note for each error, naming the model's source.</summary>
+        public IEnumerable<Finding> Notes(string source) => Errors.Select(error => Finding.Note("model.error", source,
+            "DacFx found " + error + " in the model of " + source + "; the rest of the model reads whole, and the object the error concerns may lack what DacFx could not read."));
+    }
 
     /// <summary>
     /// The collation a model's names compare under (decision 2.26): its DatabaseOptions element's Collation property, which Elements reads
@@ -585,13 +594,22 @@ public static class Ssdt
         var scripts = new[] { preDeploy is { } pre ? Element.PreDeploy(LineEndings.Lf(pre)) : null, postDeploy is { } post ? Element.PostDeploy(LineEndings.Lf(post)) : null }.OfType<Element>();
         return Result.All(refactors.Select(Entry)).Bind(entries =>
             Result.All(refactors.Where(r => r.Kind != RefactorOperationKind.Other).Select(Renaming))
-                .Map(renames => new ModelElements(SortedArray.Of(objects.Select(o => o.Element).Concat(scripts).Concat(entries)), SortedArray.Of(renames))));
+                .Map(renames => new ModelElements(SortedArray.Of(objects.Select(o => o.Element).Concat(scripts).Concat(entries)), SortedArray.Of(renames), Errors(model))));
     });
+
+    /// <summary>
+    /// The errors DacFx found loading a model (TSqlModel.GetModelErrors): measured on DacFx 170.5.96, a script it cannot parse (SQL46010);
+    /// an unresolved reference, such as a user whose login is gone, is Validate's to find, which is not called, and a database whose user
+    /// lost its login extracts that user with no login.
+    /// </summary>
+    private static SortedArray<DacFxMessage> Errors(TSqlModel model) => SortedArray.Of(model.GetModelErrors().Select(e =>
+        new DacFxMessage(e.Severity == ModelErrorSeverity.Warning ? DacFxMessageType.Warning : DacFxMessageType.Error, e.Prefix, e.ErrorCode, e.Message, null)));
 
     /// <summary>
     /// A model read whole, no code per type (§1 fact 6): each user-defined top-level object but the two grants to public SQL Server
     /// makes in every new database (<see cref="Default"/>) and, depth first, what its composing relationships reach, each object
-    /// once, with every property its type declares but a password or a secret (<see cref="Secrets"/>), a module's Definition as
+    /// once, with every property its type declares that the model's platform carries (a Sql110 model's column has no GraphType) but a
+    /// password or a secret (<see cref="Secrets"/>), a module's Definition as
     /// written too, and every relationship's targets in DacFx's order; a target's own property (an index column's Ascending) is
     /// Relationship[position].Property. A key is the name while it has one or two parts and nothing
     /// composes the object; else the parent's key (the composer, or the hierarchical parent: an index's table, a grant's securable)
@@ -654,7 +672,11 @@ public static class Ssdt
         string References(TSqlObject o) => string.Join('\n', o.ObjectType.Relationships.Where(r => r.Type != RelationshipType.Composing)
             .SelectMany(r => o.GetReferencedRelationshipInstances(r, DacExternalQueryScopes.All).Select(i => r.Name + " " + i.ObjectName)));
         var secrets = Secrets;
-        IEnumerable<ModelPropertyClass> Kept(IEnumerable<ModelPropertyClass> declared) => declared.Where(p => !secrets.Contains(p));
+
+        // A property the model's platform does not carry reads as DacFx's default (measured: a Sql110 column's GraphType 0 and IsHidden
+        // false; four of DatabaseOptions' on Sql160), a value SQL Server never held, so it is not read.
+        var platform = Enum.TryParse<TSqlPlatforms>(model.Version.ToString(), out var carried) ? carried : TSqlPlatforms.All;
+        IEnumerable<ModelPropertyClass> Kept(IEnumerable<ModelPropertyClass> declared) => declared.Where(p => !secrets.Contains(p) && (p.SupportedPlatforms & platform) != 0);
         string Values(TSqlObject o) => string.Join('\n', Kept(o.ObjectType.Properties).Select(p => p.Name + " " + ValueOf(() => o.GetProperty(p), p.DataType)));
         var unnamed = reached.Where(o => !o.Name.HasName).GroupBy(o => (Anchor: Anchor(o), Type: o.ObjectType.Name))
             .SelectMany(g => g.OrderBy(References, StringComparer.Ordinal).ThenBy(Values, StringComparer.Ordinal)

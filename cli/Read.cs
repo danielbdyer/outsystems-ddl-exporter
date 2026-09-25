@@ -51,7 +51,7 @@ public static partial class Verbs
         var (fingerprint, printer) = (Fingerprint.Of(source.Model.Elements), new Printer());
         var elements = Render.Array(source.Model.Elements.Select(printer.Json));
         return Contract.Answer(Of("read").Output, Of("read").Outcome("done"), 0, source.Target + ": " + source.Model.Elements.Count + " elements, fingerprint " + Render.Digest(fingerprint),
-            printer.Findings, stamp with { Server = source.Server }, content: new JsonObject
+            [.. source.Model.Notes(source.Target.ToString()), .. printer.Findings], stamp with { Server = source.Server }, content: new JsonObject
             {
                 ["read"] = new JsonObject { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(fingerprint), ["count"] = source.Model.Elements.Count, ["elements"] = elements },
             });

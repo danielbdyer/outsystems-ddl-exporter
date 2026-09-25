@@ -21,7 +21,7 @@ public static class DriftCheck
 
     /// <summary>
     /// What check drift answers: the target and the ref; the ref's commit; the drift; the collation the target's names compare under; the
-    /// provenance of the claim; the profile the plan ran under; and the notes the profile, the package and the plan raised.
+    /// provenance of the claim; the profile the plan ran under; and the notes the profile, the package, the two models and the plan raised.
     /// </summary>
     public sealed record Answer(Target Target, GitRef At, string Commit, Drift Drift, Collation Collation, Provenance Provenance, string Profile, IReadOnlyList<Finding> Notes);
 
@@ -88,7 +88,7 @@ public static class DriftCheck
             Ssdt.CollationOf(target.Elements).Bind(collation => Drift.Of(plan.Report, target.Elements, source.Elements, collation).Map(drift =>
                 new Answer(request.Target, request.At, commit, drift, collation,
                     Provenance.Drift(Fingerprint.Of(target.Elements), Fingerprint.Of(plan.Report), stamp.DacFx, stamp.Server, profile.Fingerprint, request.Target, DateTimeOffset.UtcNow),
-                    profile.Source, [.. profile.Notes, .. Notes(package), .. plan.Notes]))))));
+                    profile.Source, [.. profile.Notes, .. Notes(package), .. source.Notes(package.Source), .. target.Notes(request.Target.ToString()), .. plan.Notes]))))));
 
     /// <summary>What the ref's package says that a plan package to package leaves out: a pre-plan script, which a live deploy runs and this plan does not.</summary>
     private static IEnumerable<Finding> Notes(Ssdt.Package package) => package.PrePlan is null ? [] : [Finding.Note("package.pre-plan-script", package.Source,

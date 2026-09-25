@@ -736,6 +736,74 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     /// <summary>Each object of a model, top-level and composed.</summary>
     private static IEnumerable<TSqlObject> Composed(TSqlModel model) => model.GetObjects(DacQueryScopes.UserDefined).SelectMany(Composed).Distinct();
 
+    /// <summary>
+    /// A property the model's platform does not carry reads as DacFx's default, a value SQL Server never held (measured: a Sql110 column's
+    /// GraphType 0 and IsHidden false), so it is not read: the same table on Sql110 has neither on its column, and on Sql160 has both.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_property_the_model_s_platform_does_not_carry_is_not_read()
+    {
+        Element Column(SqlServerVersion platform)
+        {
+            using var model = new TSqlModel(platform, new TSqlModelOptions());
+            model.AddObjects("CREATE TABLE dbo.T (Id INT NOT NULL);");
+            return Ok(Ssdt.Elements(model)).Single(e => e.Key.ToString() == "Column [dbo].[T].[Id]");
+        }
+
+        var (old, current) = (Column(SqlServerVersion.Sql110), Column(SqlServerVersion.Sql160));
+
+        Assert.Null(old["GraphType"]);
+        Assert.Null(old["IsHidden"]);
+        Assert.NotNull(current["GraphType"]);
+        Assert.Equal(new Value.Boolean(false), current["IsHidden"]);
+        Assert.Equal(new Value.Boolean(false), old["Nullable"]);
+    }
+
+    /// <summary>
+    /// A model DacFx loaded with an error in it (a script it cannot parse, SQL46010, the kind TSqlModel.GetModelErrors reports) reads whole:
+    /// its other objects are elements, and the error is carried beside them as a model.error note, never a refusal.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_model_with_an_error_reads_whole_and_names_the_error_as_a_note()
+    {
+        using var model = new TSqlModel(SqlServerVersion.Sql160, new TSqlModelOptions());
+        model.AddObjects("CREATE TABLE dbo.T (Id INT NOT NULL);");
+        Assert.Throws<DacModelException>(() => model.AddObjects("CREATE TABLE dbo.U (Id INT NOT NULL,,);"));
+
+        var read = Ok(Ssdt.Elements(model, null, null, []));
+
+        Assert.Contains(read.Elements, e => e.Key.ToString() == "Table [dbo].[T]");
+        var error = Assert.Single(read.Errors);
+        Assert.Equal((DacFxMessageType.Error, "SQL", 46010), (error.MessageType, error.Prefix, error.Number));
+        var note = Assert.Single(read.Notes("the model"));
+        Assert.Equal(("model.error", Severity.Note, "the model"), (note.Code, note.Severity, note.Subject));
+        Assert.Contains("SQL46010", note.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// §5's unmeasured case, measured: a database holding a user whose login was dropped extracts whole under VerifyExtraction false, the user
+    /// read with no login, and DacFx reports no error in the model, so such a user is no model.error note.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task A_database_holding_a_user_whose_login_was_dropped_extracts_whole_and_reads_the_user_without_a_login()
+    {
+        await using var database = await SqlServerFixture.RegisterAsync();
+        var login = database.Name + ReadOnlyPrincipal.Suffix;   // the fixture drops a login of this name with the database, should the test stop before it does
+        await SqlServerFixture.ExecuteAsync(database.ConnectionString, "DECLARE @sql nvarchar(max) = N'CREATE LOGIN ' + QUOTENAME(@name) + N' WITH PASSWORD = N''Orphan!"
+            + Guid.NewGuid().ToString("N")[..12] + "''; CREATE USER [orphan] FOR LOGIN ' + QUOTENAME(@name) + N'; DROP LOGIN ' + QUOTENAME(@name) + N';'; EXEC (@sql);", login);
+        var copy = new SqlServer.Copy(Ok(CopyName.Of("the registered database", database.Name)), await SqlServerFixture.ServerAsync(), Repository.Root);
+
+        using var extracted = Ok(DacFx.Extract(copy));
+        var read = Ok(extracted.Elements);
+
+        var user = Assert.Single(read.Elements, e => e.Key.ToString() == "User [orphan]");
+        Assert.DoesNotContain(user.Relationships, r => r.Name == "Login" && r.Targets.Count > 0);
+        Assert.Empty(read.Errors);
+    }
+
     [Fact]
     [Trait("Category", "fast")]
     public void A_value_reads_as_the_kernel_s_closed_cases_a_double_as_its_invariant_string_and_a_property_DacFx_cannot_read_is_skipped()
