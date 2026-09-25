@@ -128,7 +128,7 @@ public static class Contract
         ["toolchain"] = 6,
         ["dacfx"] = 6,
         ["build"] = 7,
-        ["branch"] = 9,
+        ["git-branch"] = 9,
         ["copy"] = 9,
         ["aggregate-query"] = 9,
     };

@@ -98,8 +98,8 @@ internal static class RefusalPaths
             Arrange(root, "commit", "-q", "--allow-empty", "-m", "unrelated");
             return Git.MergeBase(root, "main", "unrelated");
         })),
-        new("a branch name git does not take", "branch.malformed", false, (scratch, _) => InRepository(scratch, root => Git.CommitAndPush(root, Evidence, "evidence", "estate/..evidence"))),
-        new("a branch that exists here", "branch.taken", false, (scratch, _) => InRepository(scratch, root =>
+        new("a branch name git does not take", "git-branch.malformed", false, (scratch, _) => InRepository(scratch, root => Git.CommitAndPush(root, Evidence, "evidence", "estate/..evidence"))),
+        new("a branch that exists here", "git-branch.exists", false, (scratch, _) => InRepository(scratch, root =>
         {
             Arrange(root, "branch", "estate/evidence");
             return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence");

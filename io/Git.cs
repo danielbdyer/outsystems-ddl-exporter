@@ -129,7 +129,7 @@ public static class Git
         var name = "refs/heads/" + branch;
         if (Run(git, root, ["check-ref-format", name]).Exit != 0)
         {
-            return new Error("branch.malformed", "'" + branch + "' is not a name git takes for a branch.", "name the branch in words joined by '-' and '/', such as estate/evidence-dev");
+            return new Error("git-branch.malformed", "'" + branch + "' is not a name git takes for a branch.", "name the branch in words joined by '-' and '/', such as estate/evidence-dev");
         }
 
         var here = Run(git, root, ["rev-parse", "--verify", "--quiet", name]).Exit == 0;
@@ -146,7 +146,7 @@ public static class Git
                 return new Pushed(branch, commit);
             })),
             (0, _, _) => new Error(
-                "branch.taken", "The branch " + branch + " already exists " + (here ? "in this repository." : "at the origin."), "name a new branch, or delete " + branch + " where it exists once its review is done"),
+                "git-branch.exists", "The branch " + branch + " already exists " + (here ? "in this repository." : "at the origin."), "name a new branch, or delete " + branch + " where it exists once its review is done"),
             (_, _, var errors) => Unreachable("ls-remote", errors),
         };
     });
