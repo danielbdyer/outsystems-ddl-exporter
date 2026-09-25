@@ -139,7 +139,8 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
         var refused = Assert.IsType<Result<SqlServer.Deployment>.Refused>(SqlServer.Plan(dacpac, dev, Made(Profiles.Load(ground.Profile)))).Refusal;
 
         Assert.Equal(("dacfx.failed", 6), (refused.Code, Contract.Exit(refused)));
-        Assert.Matches(@"cannot be published to SQL Server [0-9]{4}\.", refused.Message);
+        // The release DacFx names after these words differs between the container and the Windows runner's LocalDB; a failure prints the whole message.
+        Assert.True(refused.Message.Contains("as the target platform cannot be published to", StringComparison.Ordinal), refused.Message);
         Assert.DoesNotContain("withheld", refused.Message, StringComparison.Ordinal);
     }
 
