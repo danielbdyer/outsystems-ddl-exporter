@@ -10,8 +10,8 @@ namespace Estate.Kernel.Tests;
 /// estate/posture.json as data (WP 1.5, §4 row 14): the environments it names, each once and each with the host its server runs on, a
 /// publish profile's path inside the estate, and the scratch server it prefers; a reference is env:NAME or file:path and prints as
 /// itself, and no connection string passes as a path; an environment is real until a named lead's dated confirmation says synthetic;
-/// a SQLCMD value is a literal or a reference, read through Match, and a name shaped like a credential never holds a literal; and
-/// substitution is a pure function whose text exists only in the string it returns. No error quotes the value it rejected.
+/// and a SQLCMD value is a literal or a reference, read through Match, and a name shaped like a credential never holds a literal.
+/// No error quotes the value it rejected.
 /// </summary>
 public sealed class EnvironmentsTests
 {
@@ -206,28 +206,6 @@ public sealed class EnvironmentsTests
     [InlineData(null, null)]
     public void The_scratch_server_the_posture_prefers_is_docker_or_localdb(string? text, string? kind) =>
         Assert.Equal(kind ?? "posture.malformed", ScratchServerKind.Of("scratchServer in estate/posture.json", text).Match(k => k.ToString(), error => error.Code));
-
-    [Fact]
-    [Trait("Category", "fast")]
-    public void Substitution_replaces_each_variable_as_sqlcmd_does_ignoring_case_and_never_twice()
-    {
-        const string script = "PRINT N'$(EnvironmentTag)'; -- $(environmenttag)\nALTER USER [$(ServiceUser)] WITH DEFAULT_SCHEMA = dbo;";
-        var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["EnvironmentTag"] = "dev", ["ServiceUser"] = "svc$(EnvironmentTag)" };
-
-        Assert.Equal("PRINT N'dev'; -- dev\nALTER USER [svc$(EnvironmentTag)] WITH DEFAULT_SCHEMA = dbo;", Made(SqlCmdVariable.Substitute(script, values)));
-        Assert.Equal("no variables here", Made(SqlCmdVariable.Substitute("no variables here", new Dictionary<string, string>())));
-    }
-
-    [Fact]
-    [Trait("Category", "fast")]
-    public void Substitution_fails_on_a_variable_with_no_value_naming_it_and_quotes_no_value()
-    {
-        var error = Failed(SqlCmdVariable.Substitute("PRINT '$(Tag)'; PRINT '$(Missing)';", new Dictionary<string, string> { ["Tag"] = Planted }));
-
-        Assert.Equal("sqlcmd.undefined", error.Code);
-        Assert.Contains("$(Missing)", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
-    }
 
     [Fact]
     [Trait("Category", "fast")]

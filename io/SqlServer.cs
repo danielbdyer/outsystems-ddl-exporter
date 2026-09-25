@@ -651,9 +651,9 @@ public static class SqlServer
     private static Result<IReadOnlyList<SqlCmdValue>> Values(Database target) => target is not EnvironmentDatabase named ? Result.Ok<IReadOnlyList<SqlCmdValue>>([])
         : Result.All(named.Environment.SqlCmd.Select(variable => variable.Match(
             literal => Result.Ok(new SqlCmdValue(variable.Name, literal, false)),
-            reference => Read(named + "'s $(" + variable.Name + "), " + reference + ",", reference, named.Root).Bind(read => read is { } value
+            reference => Read(named + "'s " + SqlCmdVariable.Placeholder(variable.Name) + ", " + reference + ",", reference, named.Root).Bind(read => read is { } value
                 ? Result.Ok(new SqlCmdValue(variable.Name, value, true))
-                : new Error("sqlcmd.unresolved", named + "'s $(" + variable.Name + ") names " + reference + ", which resolves to nothing here.",
+                : new Error("sqlcmd.unresolved", named + "'s " + SqlCmdVariable.Placeholder(variable.Name) + " names " + reference + ", which resolves to nothing here.",
                     "Set the variable, or write the file outside git, that " + reference + " names.")))));
 
     /// <summary>A value the allowlist admits the type of: an integer of any width. Anything else is a defect in the allowlist, named by its type alone.</summary>
