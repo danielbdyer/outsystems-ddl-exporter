@@ -11,9 +11,10 @@ using Xunit;
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// The one path for the statements estate sends itself (R5 option A): every one of them, CREATE and DROP DATABASE included, is in the
-/// run's queries.log with its site and its row count or failure; a command that runs past its timeout on an open connection is a
-/// timed-out statement, not a server that does not answer; and any failure carrying a SqlException is read by that exception's number.
+/// The one path for the statements estate sends itself (R5 option A): every one of them, CREATE and DROP DATABASE and the catalog read
+/// for synonyms included, is in the run's queries.log with its site and its row count or failure; a command that runs past its timeout
+/// on an open connection is a timed-out statement, not a server that does not answer; an aggregate query over a synonym is refused;
+/// and any failure carrying a SqlException is read by that exception's number.
 /// </summary>
 public sealed class StatementTests : IDisposable
 {
@@ -37,7 +38,7 @@ public sealed class StatementTests : IDisposable
             Made(ScratchServer.Drop(copy, log));
         }
 
-        Assert.Equal([("CREATE DATABASE", "0 rows"), ("VIEW DEFINITION", "1 row"), ("sys.objects Rows", "1 row"), ("DROP DATABASE", "0 rows")],
+        Assert.Equal([("CREATE DATABASE", "0 rows"), ("VIEW DEFINITION", "1 row"), ("Synonyms: sys.objects Rows", "0 rows"), ("sys.objects Rows", "1 row"), ("DROP DATABASE", "0 rows")],
             Entries(File.ReadAllText(log.Path)).Select(e => (e.Site, e.Outcome)));
         Assert.All(Entries(File.ReadAllText(log.Path)), e => Assert.Equal("copy:" + copy.Name, e.Target));
     }
@@ -62,8 +63,37 @@ public sealed class StatementTests : IDisposable
             var measured = Made(SqlServer.Measure(copy, slow, log, TimeSpan.FromSeconds(1)));
 
             Assert.Equal(new SqlServer.Measurement.TimedOut("billions of rows", TimeSpan.FromSeconds(1)), measured);
-            Assert.Equal("timed out after 1 s", Assert.Single(Entries(File.ReadAllText(log.Path))).Outcome);
+            Assert.Equal("timed out after 1 s", Assert.Single(Entries(File.ReadAllText(log.Path)), e => e.Site == "billions of rows").Outcome);
             Assert.IsType<Result<SqlServer.Database>.Ok>(SqlServer.Reach(copy, log));
+        }
+        finally
+        {
+            Made(ScratchServer.Drop(copy));
+        }
+    }
+
+    /// <summary>
+    /// DECISIONS.md, 2026-09-25: a synonym can stand for a table in another database or on a linked server, which the query's text
+    /// cannot show, so an aggregate query that reads one is refused before it runs; the target's catalog is asked once, and the same
+    /// query over the table itself is measured.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task An_aggregate_query_that_reads_a_synonym_is_refused_before_it_runs()
+    {
+        var log = SqlServer.QueryLog.Start(root);
+        var copy = Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync()));
+        try
+        {
+            await SqlServerFixture.ExecuteAsync(copy.Connection, "CREATE TABLE dbo.Person (Id INT NOT NULL PRIMARY KEY); INSERT dbo.Person (Id) VALUES (1), (2); CREATE SYNONYM dbo.People FOR dbo.Person;");
+
+            var refused = Assert.IsType<Result<SqlServer.Measurement>.Failed>(SqlServer.Measure(copy, Made(SqlServer.AggregateQuery.Of("SELECT COUNT_BIG(*) FROM dbo.People;", "dbo.People Rows")), log)).Error;
+            var measured = Made(SqlServer.Measure(copy, Made(SqlServer.AggregateQuery.Of("SELECT COUNT_BIG(*) FROM dbo.Person AS p WHERE p.Id > 0;", "dbo.Person Rows")), log));
+
+            Assert.Equal(("aggregate-query.refused", 9), (refused.Code, Estate.Cli.Contract.Exit(refused)));
+            Assert.StartsWith("The query dbo.People Rows reads [dbo].[People], a synonym", refused.Message, StringComparison.Ordinal);
+            Assert.Equal(new SqlServer.Measurement.Answered("dbo.Person Rows", SortedArray.Of(SqlServer.Row.Of(2))), measured);
+            Assert.DoesNotContain(Entries(File.ReadAllText(log.Path)), e => e.Site == "dbo.People Rows");
         }
         finally
         {

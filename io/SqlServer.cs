@@ -328,20 +328,25 @@ public static class SqlServer
 
     /// <summary>
     /// An aggregate query the allowlist admitted (VALUES.md P2): one statement, as ScriptDom writes it back, so what runs is what was
-    /// checked, with no comment and no batch separator; and the site it measures. Only Of makes one, and Measure runs nothing else.
+    /// checked, with no comment and no batch separator; the site it measures; and the tables it reads by name. Only Of makes one, and Of
+    /// is internal to io (DECISIONS.md, 2026-09-25), so only io's builders (WP 2.3) make one for a named environment and no verb or
+    /// file hands one text; Measure runs nothing else.
     /// </summary>
     public sealed class AggregateQuery
     {
-        private AggregateQuery(string statement, string site) => (Statement, Site) = (statement, site);
+        private AggregateQuery(TSqlStatement statement, string site) => (Statement, Site, Tables) = (TSql.Text(statement), site, TSql.TablesNamed(statement));
 
         public string Statement { get; }
 
         public string Site { get; }
 
-        public static Result<AggregateQuery> Of(string text, string site) => Allowlist.Admitted(text).Map(statement => new AggregateQuery(TSql.Text(statement), site));
+        /// <summary>Each table the query reads by name, as QUOTENAME writes it: what Measure asks the target whether a synonym stands for.</summary>
+        internal IReadOnlyList<string> Tables { get; }
+
+        internal static Result<AggregateQuery> Of(string text, string site) => Allowlist.Admitted(text).Map(statement => new AggregateQuery(statement, site));
 
         /// <summary>An aggregate query built as a ScriptDom tree, checked as the tree, and run as the text ScriptDom writes it back as.</summary>
-        internal static Result<AggregateQuery> Of(TSqlStatement tree, string site) => Allowlist.Admitted(tree, site).Map(statement => new AggregateQuery(TSql.Text(statement), site));
+        internal static Result<AggregateQuery> Of(TSqlStatement tree, string site) => Allowlist.Admitted(tree, site).Map(statement => new AggregateQuery(statement, site));
 
         public override string ToString() => Site + ": " + Statement;
     }
@@ -431,14 +436,28 @@ public static class SqlServer
     public static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log) => Measure(target, query, log, AggregateQueryTimeout);
 
     internal static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log, TimeSpan timeout) =>
-        Query(target, new Statement(query.Site, query.Statement) { Timeout = timeout }, log,
+        NoSynonym(target, query, log).Bind(_ => Query(target, new Statement(query.Site, query.Statement) { Timeout = timeout }, log,
             rows => (Measurement)new Measurement.Answered(query.Site, SortedArray.Of(rows.Select(row => Row.Of([.. row.Select(Integer)])))),
-            failed => failed.TimedOut ? new Measurement.TimedOut(query.Site, timeout) : new Measurement.Failed(query.Site, failed.Number, failed.Message));
+            failed => failed.TimedOut ? new Measurement.TimedOut(query.Site, timeout) : new Measurement.Failed(query.Site, failed.Number, failed.Message)));
+
+    /// <summary>
+    /// The query, when no table it reads by name is a synonym on the target (DECISIONS.md, 2026-09-25): a synonym can stand for a table
+    /// in another database or on a linked server, which the query's text cannot show, so the target's catalog is asked, in one statement
+    /// through <see cref="Query{T}"/>, before the query runs. A synonym is aggregate-query.refused, named as the query writes it.
+    /// </summary>
+    private static Result<AggregateQuery> NoSynonym(Database target, AggregateQuery query, QueryLog log) => query.Tables.Count == 0 ? query
+        : Query(target, new Statement("Synonyms: " + query.Site, "SELECT t.name FROM (VALUES " + string.Join(", ", query.Tables.Select((_, i) => "(@t" + i.ToString(CultureInfo.InvariantCulture) + ")"))
+                + ") AS t(name) WHERE OBJECT_ID(t.name, N'SN') IS NOT NULL;") { Parameters = [.. query.Tables.Select((table, i) => ("@t" + i.ToString(CultureInfo.InvariantCulture), table))] },
+            log, rows => rows.Select(row => (string)row[0]!).ToList())
+        .Bind(synonyms => synonyms is [var synonym, ..]
+            ? new Error("aggregate-query.refused", "The query " + query.Site + " reads " + synonym + ", a synonym, which can stand for a table in another database or on a linked server; an aggregate query reads the target's own tables.",
+                "Name the table the synonym stands for in the query.")
+            : Result.Ok(query));
 
     /// <summary>
     /// A statement estate sends itself (R5): its site, which names it in the run's log; its text; how long SQL Server may take over it
     /// before SqlClient cancels it; the database it runs in, the target's own unless another is named; whether its connection may come
-    /// from SqlClient's pool; and its parameters, each nvarchar(128).
+    /// from SqlClient's pool; and its parameters, each nvarchar(4000), which holds a quoted two-part name.
     /// </summary>
     internal sealed record Statement(string Site, string Text)
     {
@@ -473,7 +492,7 @@ public static class SqlServer
             using var command = new SqlCommand(statement.Text, connection) { CommandTimeout = (int)statement.Timeout.TotalSeconds };
             foreach (var (name, value) in statement.Parameters)
             {
-                command.Parameters.Add(new SqlParameter(name, System.Data.SqlDbType.NVarChar, 128) { Value = value });
+                command.Parameters.Add(new SqlParameter(name, System.Data.SqlDbType.NVarChar, 4000) { Value = value });
             }
 
             var rows = new List<IReadOnlyList<object?>>();

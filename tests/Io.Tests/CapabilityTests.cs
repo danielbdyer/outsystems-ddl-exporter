@@ -25,8 +25,9 @@ public sealed class CapabilityTests
 
     /// <summary>
     /// Each forbidden use, one per line, with the compiler error that refuses it: no Publish or Permissive on a named environment or on
-    /// the type both databases share (CS1061); and, io's internals being invisible to any other assembly, no Permissive.Of (CS0117) and
-    /// no constructor of a Copy, called with as many arguments as io's own takes (CS1729).
+    /// the type both databases share (CS1061); and, io's internals being invisible to any assembly but its tests, no Permissive.Of
+    /// (CS0117), no constructor of a Copy, called with as many arguments as io's own takes (CS1729), and no aggregate query made from
+    /// text, which only io's builders make for a named environment (CS0117; DECISIONS.md, 2026-09-25).
     /// </summary>
     private static readonly (string Use, string Error)[] Forbidden =
     [
@@ -35,6 +36,7 @@ public sealed class CapabilityTests
         ("_ = named.Permissive(strict);", "CS1061"),
         ("_ = PublishProfile.Permissive.Of(strict);", "CS0117"),
         ("_ = new SqlServer.Copy(" + string.Join(", ", Enumerable.Repeat("default!", CopyConstructor().GetParameters().Length)) + ");", "CS1729"),
+        ("_ = SqlServer.AggregateQuery.Of(\"SELECT COUNT(*) FROM dbo.Customer;\", \"planted\");", "CS0117"),
     ];
 
     [Fact]

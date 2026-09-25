@@ -28,5 +28,21 @@ internal static class TSql
     internal static string[]? NameParts(string name) =>
         Parser().ParseSchemaObjectName(new StringReader(name), out var errors) is { } parsed && errors.Count == 0 ? [.. parsed.Identifiers.Select(i => i.Value)] : null;
 
+    /// <summary>Each object a tree reads by name in a FROM or a JOIN, once, its parts quoted as QUOTENAME quotes them, in the order the tree first names them.</summary>
+    internal static IReadOnlyList<string> TablesNamed(TSqlFragment fragment)
+    {
+        var named = new Named();
+        fragment.Accept(named);
+        return [.. named.Found.Distinct(StringComparer.Ordinal)];
+    }
+
     private static TSql160Parser Parser() => new(initialQuotedIdentifiers: true);
+
+    private sealed class Named : TSqlFragmentVisitor
+    {
+        public List<string> Found { get; } = [];
+
+        public override void Visit(NamedTableReference node) =>
+            Found.Add(string.Join('.', node.SchemaObject.Identifiers.Select(i => "[" + i.Value.Replace("]", "]]", StringComparison.Ordinal) + "]")));
+    }
 }
