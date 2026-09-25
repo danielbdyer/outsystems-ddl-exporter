@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using Estate.Budgets.Tests;
 using Estate.Cli;
 using Estate.Kernel;
 using Xunit;
@@ -103,6 +105,54 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         finally
         {
             File.Delete(connection);
+        }
+    }
+
+    /// <summary>
+    /// A read's identity sets what it sees: SQL Server hides the logins users map to from an identity without VIEW ANY DEFINITION on the
+    /// server, all but its own (measured). The read-only principal, which holds VIEW DEFINITION on its database alone, reads env:uat with the
+    /// note read.database-scope and without the login another user of the database maps to; the fixture's admin identity reads the same
+    /// database with no such note, and names that login.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task A_read_of_a_database_scoped_identity_carries_the_scope_note_and_an_admin_read_does_not()
+    {
+        await using var database = await SqlServerFixture.RegisterAsync();
+        var reader = await ReadOnlyPrincipal.CreateAsync(database);
+        var other = database.Name + "_other";
+        await SqlServerFixture.ExecuteAsync(database.ConnectionString, "DECLARE @sql nvarchar(max) = N'CREATE LOGIN ' + QUOTENAME(@name) + N' WITH PASSWORD = N''Other!"
+            + Guid.NewGuid().ToString("N")[..12] + "''; CREATE USER ' + QUOTENAME(@name) + N' FOR LOGIN ' + QUOTENAME(@name) + N';'; EXEC (@sql);", other);
+        var connection = Path.Combine(Path.GetDirectoryName(estate.Root)!, database.Name + ".connection");
+        File.WriteAllText(connection, database.ConnectionString);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(connection, UnixFileMode.UserRead | UnixFileMode.UserWrite);   // io/SqlServer refuses a connection file others can read
+        }
+
+        try
+        {
+            var (asReader, asAdmin) = (Read(estate.Named(("uat", Path.Combine(Repository.Root, reader.Reference["file:".Length..])))), Read(estate.Named(("uat", connection))));
+
+            Assert.Contains(asReader.Findings, f => f == ("read.database-scope", "note"));
+            Assert.DoesNotContain("Login [" + other + "]", asReader.Keys);
+            Assert.DoesNotContain(asAdmin.Findings, f => f.Code == "read.database-scope");
+            Assert.Contains("Login [" + other + "]", asAdmin.Keys);
+        }
+        finally
+        {
+            File.Delete(connection);
+            await SqlServerFixture.ExecuteAsync(await SqlServerFixture.ServerAsync(), "DECLARE @sql nvarchar(max) = N'DROP LOGIN ' + QUOTENAME(@name) + N';'; EXEC (@sql);", other);
+        }
+
+        (IReadOnlyList<(string Code, string? Severity)> Findings, IReadOnlyList<string> Keys) Read(string root)
+        {
+            var (exit, output) = estate.EstateAt(root, "read", "--from", "env:uat", "--json");
+            Assert.True(exit == 0, output);
+            var answer = JsonNode.Parse(output)!;
+            var whole = (string?)answer["full"] is { } full ? JsonNode.Parse(File.ReadAllText(Path.Combine(root, full)))! : answer;
+            return ([.. answer["findings"]!.AsArray().Select(f => ((string)f!["code"]!, (string?)f["severity"]))],
+                [.. whole["read"]!["elements"]!.AsArray().Select(e => (string)e!["key"]!)]);
         }
     }
 

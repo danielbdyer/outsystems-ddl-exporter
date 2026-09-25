@@ -85,9 +85,10 @@ public static partial class Verbs
         return Contract.Answer(Of("diff").Output, Of("diff").Outcome(change.IsEmpty ? "matches" : "differs"), failOnChange && !change.IsEmpty ? 5 : 0, message,
             [
                 .. before.IsDatabase == after.IsDatabase ? [] : new[] { Finding.Note("diff.unlike-sources", "estate diff", before.Target + " and " + after.Target
-                    + " are read one from a package and one from a database, and SQL Server keeps a check's or a default's text as it normalized it, so such text can differ where the schemas agree.") },
-                .. before.Model.Notes(before.Target.ToString()),
-                .. after.Model.Notes(after.Target.ToString()),
+                    + " are read one from a package and one from a database: SQL Server keeps a check's, a default's and a computed column's Expression as it normalized the text,"
+                    + " and an index's DataCompressionOption reads otherwise from each, so those four properties can differ where the schemas agree.") },
+                .. before.Notes,
+                .. after.Notes,
                 .. change.CaseOnlyRenamed.Select(pair => CaseOnly("diff.case-only-rename", pair, collation)),
                 .. printer.Findings,
             ],

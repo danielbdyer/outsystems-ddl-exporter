@@ -51,7 +51,7 @@ public static partial class Verbs
         var (fingerprint, printer) = (Fingerprint.Of(source.Model.Elements), new Printer());
         var elements = Render.Array(source.Model.Elements.Select(printer.Json));
         return Contract.Answer(Of("read").Output, Of("read").Outcome("done"), 0, source.Target + ": " + source.Model.Elements.Count + " elements, fingerprint " + Render.Digest(fingerprint),
-            [.. source.Model.Notes(source.Target.ToString()), .. printer.Findings], stamp with { Server = source.Server }, content: new JsonObject
+            [.. source.Notes, .. printer.Findings], stamp with { Server = source.Server }, content: new JsonObject
             {
                 ["read"] = new JsonObject { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(fingerprint), ["count"] = source.Model.Elements.Count, ["elements"] = elements },
             });
@@ -61,8 +61,15 @@ public static partial class Verbs
     internal static Finding CaseOnly(string code, Rename pair, Collation collation) => Finding.Note(code, pair.After.ToString(),
         pair.Before + " and " + pair.After + " differ in letter case alone, which " + collation.Name + " reads as one name; DacFx plans nothing for it.");
 
-    /// <summary>A target's model read whole into elements, with the SQL Server a copy runs on; a package's model carries its refactorlog's renames.</summary>
-    internal sealed record Source(Target Target, Ssdt.ModelElements Model, Server? Server, bool IsDatabase);
+    /// <summary>
+    /// A target's model read whole into elements, with the SQL Server a copy runs on; a package's model carries its refactorlog's renames,
+    /// and a database's read says what the identity could read there.
+    /// </summary>
+    internal sealed record Source(Target Target, Ssdt.ModelElements Model, Server? Server, bool IsDatabase, SqlServer.Readable? Readable = null)
+    {
+        /// <summary>The notes the read raised: each error DacFx found in the model, and, for a database, a read as an identity without the server's scope.</summary>
+        public IEnumerable<Finding> Notes => [.. Model.Notes(Target.ToString()), .. Readable?.Notes ?? []];
+    }
 
     internal static Result<Source> Reading(Checkout here, Target target, string? project) => target.Match(
         _ => Modelled(here, target), _ => Modelled(here, target), () => Modelled(here, target),
@@ -79,9 +86,9 @@ public static partial class Verbs
         }
     });
 
-    /// <summary>A database read once (io/DacFx.Extract), after this identity is found to hold VIEW DEFINITION there, with a copy's SQL Server.</summary>
+    /// <summary>A database read once (io/DacFx.Extract), after this identity is found to hold VIEW DEFINITION there, with a copy's SQL Server and what the identity could read.</summary>
     private static Result<Source> Modelled(Checkout here, Target target) => SqlServer.Resolve(target, here.Root).Bind(database => SqlServer.Reach(database, here.Run)
-        .Bind(_ => DacFx.Extract(database)).Bind(package =>
+        .Bind(readable => DacFx.Extract(database).Bind(package =>
         {
             using (package)
             {
@@ -89,7 +96,7 @@ public static partial class Verbs
             }
         })
         .Bind(model => (database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, here.Run).Map(server => (Server?)server) : Result.Ok<Server?>(null))
-            .Map(server => new Source(target, model, server, true))));
+            .Map(server => new Source(target, model, server, true, readable)))));
 
     /// <summary>
     /// The writer of the values an answer prints, and the findings printing raises (decision 2.27): a script is written through

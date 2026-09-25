@@ -64,7 +64,7 @@ public sealed class StatementTests : IDisposable
 
             Assert.Equal(new SqlServer.Measurement.TimedOut("billions of rows", TimeSpan.FromSeconds(1)), measured);
             Assert.Equal("timed out after 1 s", Assert.Single(Entries(File.ReadAllText(log.Path)), e => e.Site == "billions of rows").Outcome);
-            Assert.IsType<Result<SqlServer.Database>.Ok>(SqlServer.Reach(copy, log));
+            Assert.IsType<Result<SqlServer.Readable>.Ok>(SqlServer.Reach(copy, log));
         }
         finally
         {

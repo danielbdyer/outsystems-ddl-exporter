@@ -55,12 +55,12 @@ public static class DriftCheck
         var posture = Posture.Environments(estate.Root);
         var reached = SqlServer.Resolve(request.Target, posture, estate.Root)
             .Bind(database => Profile(estate.Root, database, posture, request.Profile).Map(profile => (Database: database, Profile: profile)))
-            .Bind(chosen => SqlServer.Reach(chosen.Database, log).Map(_ => chosen))
+            .Bind(chosen => SqlServer.Reach(chosen.Database, log).Map(readable => (chosen.Database, chosen.Profile, Readable: readable)))
             .Bind(chosen => (chosen.Database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, log).Map(server => (Server?)server) : Result.Ok<Server?>(null))
-                .Map(server => (chosen.Database, chosen.Profile, Server: server)));
-        if (reached is not Result<(SqlServer.Database Database, PublishProfile.Strict Profile, Server? Server)>.Ok { Value: var target })
+                .Map(server => (chosen.Database, chosen.Profile, chosen.Readable, Server: server)));
+        if (reached is not Result<(SqlServer.Database Database, PublishProfile.Strict Profile, SqlServer.Readable Readable, Server? Server)>.Ok { Value: var target })
         {
-            return new(stamp, ((Result<(SqlServer.Database, PublishProfile.Strict, Server?)>.Failed)reached).Error);
+            return new(stamp, ((Result<(SqlServer.Database, PublishProfile.Strict, SqlServer.Readable, Server?)>.Failed)reached).Error);
         }
 
         stamp = stamp with { Server = target.Server };
@@ -74,7 +74,7 @@ public static class DriftCheck
                     {
                         using (extracted)
                         {
-                            return Decided(request, built.Commit, package, extracted, target.Database, target.Profile, values, decided);
+                            return Decided(request, built.Commit, package, extracted, target.Readable, target.Profile, values, decided);
                         }
                     }));
                 }
@@ -82,13 +82,14 @@ public static class DriftCheck
     }
 
     /// <summary>The plan of the ref's package against the extracted database, the drift it shows, and the claim's provenance.</summary>
-    private static Result<Answer> Decided(Request request, string commit, Ssdt.Package package, Ssdt.Package extracted, SqlServer.Database database, PublishProfile.Strict profile,
+    private static Result<Answer> Decided(Request request, string commit, Ssdt.Package package, Ssdt.Package extracted, SqlServer.Readable readable, PublishProfile.Strict profile,
         IReadOnlyList<SqlCmdValue> values, Stamp stamp) =>
-        package.Elements.Bind(source => extracted.Elements.Bind(target => DacFx.Plan(package, extracted, database.Catalog, profile, values).Bind(plan =>
+        package.Elements.Bind(source => extracted.Elements.Bind(target => DacFx.Plan(package, extracted, readable.Database.Catalog, profile, values).Bind(plan =>
             Ssdt.CollationOf(target.Elements).Bind(collation => Drift.Of(plan.Report, target.Elements, source.Elements, collation).Map(drift =>
                 new Answer(request.Target, request.At, commit, drift, collation,
                     Provenance.Drift(Fingerprint.Of(target.Elements), Fingerprint.Of(plan.Report), stamp.DacFx, stamp.Server, profile.Fingerprint, request.Target, DateTimeOffset.UtcNow),
-                    profile.Source, [.. profile.Notes, .. Notes(package), .. source.Notes(package.Source), .. target.Notes(request.Target.ToString()), .. plan.Notes]))))));
+                    profile.Source,
+                    [.. profile.Notes, .. Notes(package), .. source.Notes(package.Source), .. target.Notes(request.Target.ToString()), .. readable.Notes, .. plan.Notes]))))));
 
     /// <summary>What the ref's package says that a plan package to package leaves out: a pre-plan script, which a live deploy runs and this plan does not.</summary>
     private static IEnumerable<Finding> Notes(Ssdt.Package package) => package.PrePlan is null ? [] : [Finding.Note("package.pre-plan-script", package.Source,

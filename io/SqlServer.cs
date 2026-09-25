@@ -21,9 +21,9 @@ namespace Estate.Io;
 /// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4), and the one adapter to SQL Server and SqlClient: an
 /// argument read as a target (kernel/Target.cs); EnvironmentDatabase, the database of an environment estate/posture.json names, and Copy,
 /// a database io/ScratchServer made, which alone publishes (§2.1 rule 3); Query, the one path for the statements estate sends itself;
-/// Database.ErrorOf, the one boundary every SqlClient or DacFx failure passes through, reading SQL Server's numbers once; Model through
-/// LoadFromDatabase and io/Ssdt.Elements; Plan through DacServices.Script; and Measure, which runs an aggregate query its closed
-/// allowlist admits, every answer an integer. A resolved connection is never printed, logged or put in an error, and a named
+/// Database.ErrorOf, the one boundary every SqlClient or DacFx failure passes through, reading SQL Server's numbers once; Reach, what
+/// this identity may read there, asked before anything builds; and Measure, which runs an aggregate query its closed allowlist admits,
+/// every answer an integer. io/DacFx reads a database and plans against it. A resolved connection is never printed, logged or put in an error, and a named
 /// environment's SQL Server messages are withheld, since they can quote a row (§18). Objects are keyed by kernel/Name, compared ordinally
 /// with case, so two databases whose collations fold case differently read the same schema alike; estate sets no collation and no SET
 /// option of its own, and DacFx reads each database's own. An error's code names what went wrong; cli/Contract.cs maps its category to
@@ -431,7 +431,7 @@ public static class SqlServer
 
     /// <summary>
     /// A run's log of every statement estate sends through <see cref="Query{T}"/>, .estate/runs/&lt;id&gt;/queries.log: each aggregate query, the
-    /// VIEW DEFINITION check Model and Plan send before DacFx's own catalog queries, which are DacFx's to answer for, and a copy's CREATE
+    /// VIEW DEFINITION check a read of a database sends before DacFx's own catalog queries, which are DacFx's to answer for, and a copy's CREATE
     /// and DROP DATABASE. Per statement: the time, the target, the site and the row count, the failure's number or code, or the timeout,
     /// then the statement and GO, so the log runs as a script. It holds no value a statement read. Each entry is appended and flushed to
     /// the file through io/Write.Append as it is made, so a run's statements cost their own bytes once (finding ARCH-08), and a reader
@@ -659,8 +659,20 @@ public static class SqlServer
     private static Error NotADatabase(Target target) => new Error("target.not-a-database",
         target + " is read as a package, and a database is asked for here: env:<name> or copy:<name>.", "Name the database as env:<name> or copy:<name>.");
 
-    /// <summary>The target, when it answers this identity with VIEW DEFINITION: what a verb asks before it builds anything, so a denial arrives first.</summary>
-    public static Result<Database> Reach(Database target, QueryLog? log = null) => Reached(target, log);
+    /// <summary>
+    /// What this identity may read of a database it reached: the database, where it holds VIEW DEFINITION, and whether it also holds VIEW
+    /// ANY DEFINITION on the server. SQL Server hides from an identity without it the logins users map to and other server-scoped objects,
+    /// so a read of the database holds none of them, which the note read.database-scope says.
+    /// </summary>
+    public sealed record Readable(Database Database, bool ServerScope)
+    {
+        /// <summary>The note a read as a database-scoped identity carries; none for an identity that holds VIEW ANY DEFINITION.</summary>
+        public IEnumerable<Finding> Notes => ServerScope ? [] : [Finding.Note("read.database-scope", Database.Target.ToString(), Database.Target
+            + " is read as an identity without VIEW ANY DEFINITION on the server, from which SQL Server hides the logins users map to and other server-scoped objects, so the read holds none of them.")];
+    }
+
+    /// <summary>The target, when it answers this identity with VIEW DEFINITION, and whether the identity reads the server's scope too: what a verb asks before it builds anything, so a denial arrives first.</summary>
+    public static Result<Readable> Reach(Database target, QueryLog? log = null) => Reached(target, log);
 
     /// <summary>
     /// A copy's SQL Server (R1), which a claim on the copy records: the product version and the copy's compatibility level, read in one
@@ -674,12 +686,15 @@ public static class SqlServer
 
     /// <summary>
     /// Whether the target answers this identity with what reading it takes, before DacFx's own retries begin: a connection opens, and
-    /// the identity holds VIEW DEFINITION there (§1 fact 2), whose absence is a denial (Msg 300, SQL Server's number for it).
+    /// the identity holds VIEW DEFINITION there (§1 fact 2), whose absence is a denial (Msg 300, SQL Server's number for it); and, in the
+    /// same statement, whether it holds VIEW ANY DEFINITION on the server.
     /// </summary>
-    private static Result<Database> Reached(Database target, QueryLog? log) =>
-        Query(target, new Statement("VIEW DEFINITION", "SELECT HAS_PERMS_BY_NAME(NULL, N'DATABASE', N'VIEW DEFINITION');"), log,
-                rows => rows is [[{ } held]] && Convert.ToInt32(held, CultureInfo.InvariantCulture) == 1)
-            .Bind(held => held ? Result.Ok(target) : target.ErrorOf(300, ""));
+    private static Result<Readable> Reached(Database target, QueryLog? log) =>
+        Query(target, new Statement("VIEW DEFINITION", "SELECT HAS_PERMS_BY_NAME(NULL, N'DATABASE', N'VIEW DEFINITION'), HAS_PERMS_BY_NAME(NULL, NULL, N'VIEW ANY DEFINITION');"), log,
+                rows => rows is [[{ } database, var server]]
+                    ? (Database: Convert.ToInt32(database, CultureInfo.InvariantCulture) == 1, Server: server is not null && Convert.ToInt32(server, CultureInfo.InvariantCulture) == 1)
+                    : (Database: false, Server: false))
+            .Bind(held => held.Database ? Result.Ok(new Readable(target, held.Server)) : target.ErrorOf(300, ""));
 
     /// <summary>
     /// A named environment's own SQLCMD values, which a plan against it sets over the profile's: each literal as the posture gives it and
