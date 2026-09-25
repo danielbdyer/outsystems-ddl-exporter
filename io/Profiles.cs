@@ -58,7 +58,7 @@ public static class Profiles
     }
 
     /// <summary>The environments estate/posture.json names under the estate's root, in name order.</summary>
-    public static Result<Seq<NamedEnvironment>> Environments(string estateRoot)
+    public static Result<SortedArray<NamedEnvironment>> Environments(string estateRoot)
     {
         try
         {
@@ -68,7 +68,7 @@ public static class Profiles
                     "Move it into an environment variable or a file outside git, and write env:NAME or file:path at " + at + ".")
                 : (Unknown(root, "", ["environments", "substrate"]) ?? Missing(root, "", "environments"))
                     ?? Result.All(root.GetProperty("environments").EnumerateObject().Select((e, i) => EnvironmentAt(e.Name, e.Value, Place("environments", e.Name, i))))
-                        .Map(environments => Seq.Of(environments));
+                        .Map(environments => SortedArray.Of(environments));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -125,7 +125,7 @@ public static class Profiles
                     subject + " sets BlockOnPossibleDataLoss to False; Strict is the pipeline's profile with the guard on.",
                     "Set BlockOnPossibleDataLoss to True in " + path + "; only a copy publishes with the guard off, as Permissive.")
                 : Result.All(options.SqlCommandVariableValues.OrderBy(v => v.Key, StringComparer.Ordinal).Select(v => ProfileValue(subject, path, v.Key, v.Value ?? "")))
-                    .Map(values => new PublishProfile.Strict(path, kept.ToArray(), Seq.Of(values)));
+                    .Map(values => new PublishProfile.Strict(path, kept.ToArray(), SortedArray.Of(values)));
         }
         catch (Exception e) when (e is DacServicesException or ArgumentException or FormatException or InvalidOperationException or XmlException)
         {
@@ -159,8 +159,8 @@ public static class Profiles
         var metamodel = Given("metamodel") is { } reference
             ? SecretReference.Of(Where(at + ".metamodel"), reference).Map(m => (SecretReference?)m) : Result.Ok<SecretReference?>(null);
         var sqlCmd = entry.TryGetProperty("sqlcmd", out var values)
-            ? Result.All(values.EnumerateObject().Select((v, i) => PostureValue(v.Name, v.Value, Place(at + ".sqlcmd", v.Name, i)))).Map(variables => Seq.Of(variables))
-            : default(Seq<SqlCmdVariable>);
+            ? Result.All(values.EnumerateObject().Select((v, i) => PostureValue(v.Name, v.Value, Place(at + ".sqlcmd", v.Name, i)))).Map(variables => SortedArray.Of(variables))
+            : default(SortedArray<SqlCmdVariable>);
         return confirmation.Bind(confirmed => Classification.Of(subject, Given("classification"), confirmed)).Bind(classification =>
             SecretReference.Of(Where(at + ".connection"), Given("connection")).Bind(connection => metamodel.Bind(meta => sqlCmd.Bind(variables =>
                 NamedEnvironment.Of(subject, name, classification, cohorts, connection, Given("profile")!, variables, meta)))));
@@ -246,13 +246,13 @@ public abstract class PublishProfile
 {
     private readonly byte[] _profile;
 
-    private PublishProfile(string source, byte[] profile, Seq<SqlCmdVariable> sqlCmd) => (Source, _profile, SqlCmd) = (source, profile, sqlCmd);
+    private PublishProfile(string source, byte[] profile, SortedArray<SqlCmdVariable> sqlCmd) => (Source, _profile, SqlCmd) = (source, profile, sqlCmd);
 
     /// <summary>The file it was loaded from.</summary>
     public string Source { get; }
 
     /// <summary>The profile's own SQLCMD values: literals, none under a name shaped like a credential and none a connection string.</summary>
-    public Seq<SqlCmdVariable> SqlCmd { get; }
+    public SortedArray<SqlCmdVariable> SqlCmd { get; }
 
     /// <summary>A receipt's profile input: the fingerprint of the profile as kept, its target removed, in UTF-8 with LF line ends and no byte-order mark on every operating system.</summary>
     public Fingerprint Fingerprint => Fingerprint.Of(_profile);
@@ -270,7 +270,7 @@ public abstract class PublishProfile
     /// <summary>The pipeline's profile as loaded, the guard on: every plan uses it, and every publish unless a copy asks for Permissive.</summary>
     public sealed class Strict : PublishProfile
     {
-        internal Strict(string source, byte[] profile, Seq<SqlCmdVariable> sqlCmd)
+        internal Strict(string source, byte[] profile, SortedArray<SqlCmdVariable> sqlCmd)
             : base(source, profile, sqlCmd)
         {
         }

@@ -17,8 +17,8 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 {
     private static readonly Regex Named = new(@"\A[a-z][a-z0-9-]{0,31}\z", RegexOptions.CultureInvariant);
 
-    private NamedEnvironment(string name, Classification classification, Seq<string> cohorts, SecretReference connection, string profilePath,
-        Seq<SqlCmdVariable> sqlCmd, SecretReference? metamodel) => (Name, Classification, Cohorts, Connection, ProfilePath, SqlCmd, Metamodel) =
+    private NamedEnvironment(string name, Classification classification, SortedArray<string> cohorts, SecretReference connection, string profilePath,
+        SortedArray<SqlCmdVariable> sqlCmd, SecretReference? metamodel) => (Name, Classification, Cohorts, Connection, ProfilePath, SqlCmd, Metamodel) =
         (name, classification, cohorts, connection, profilePath, sqlCmd, metamodel);
 
     /// <summary>1 to 32 lowercase letters, digits and hyphens, from a letter: dev, qa, uat.</summary>
@@ -26,20 +26,20 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 
     public Classification Classification { get; }
 
-    public Seq<string> Cohorts { get; }
+    public SortedArray<string> Cohorts { get; }
 
     public SecretReference Connection { get; }
 
     public string ProfilePath { get; }
 
-    public Seq<SqlCmdVariable> SqlCmd { get; }
+    public SortedArray<SqlCmdVariable> SqlCmd { get; }
 
     public SecretReference? Metamodel { get; }
 
     public static Result<NamedEnvironment> Of(string subject, string name, Classification classification, IEnumerable<string> cohorts,
         SecretReference connection, string profilePath, IEnumerable<SqlCmdVariable> sqlCmd, SecretReference? metamodel)
     {
-        var (readers, values) = (Seq.Of(cohorts), Seq.Of(sqlCmd));
+        var (readers, values) = (SortedArray.Of(cohorts), SortedArray.Of(sqlCmd));
         return !Named.IsMatch(name)
             ? new Error("posture.environment-name", subject + " names an environment in other than 1 to 32 lowercase letters, digits and hyphens.",
                 "Rename it with lowercase letters, digits and hyphens from a letter, such as dev or uat.")

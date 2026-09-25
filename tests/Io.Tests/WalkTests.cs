@@ -99,7 +99,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
 
         Assert.Equal([new Rename(phone, mobile)], after.Renames);
         Assert.Equal([new Rename(phone, mobile)], Between("base", "rename a column").Renamed);
-        var lost = Ok(Change.Between(before.Elements, Seq.Of(after.Elements.Where(e => e.Key.Type != Element.RefactorLogOperation)), []));
+        var lost = Ok(Change.Between(before.Elements, SortedArray.Of(after.Elements.Where(e => e.Key.Type != Element.RefactorLogOperation)), []));
         Assert.Equal([mobile], lost.Added.Select(e => e.Key));
         Assert.Equal([phone], lost.Removed.Select(e => e.Key));
     }
@@ -556,7 +556,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
         var dacpac = Built(RenameCToA, "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B INT NULL CHECK (B > 0), A INT NULL CHECK (A > 5));");
         try
         {
-            Seq<Element> package;
+            SortedArray<Element> package;
             using (var loaded = Ok(Ssdt.Load(dacpac)))
             {
                 package = Ok(Ssdt.Walk(loaded)).Elements;
@@ -592,7 +592,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
         var (v1, v2) = (Built(null, first), Built(null, second));
         try
         {
-            Seq<Element> package;
+            SortedArray<Element> package;
             using (var loaded = Ok(Ssdt.Load(v2)))
             {
                 package = Ok(Ssdt.Walk(loaded)).Elements;
@@ -621,10 +621,10 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     private static List<string> Permissions(IEnumerable<Element> read) => [.. read.Where(e => e.Key.Type == "Permission").Select(e => e.Key.ToString())];
 
     /// <summary>A head's package published to a registered database under DacFx's default deploy options, then read back as io reads a copy; the database is dropped after.</summary>
-    private static Task<Seq<Element>> PublishedAndRead(string dacpac) => PublishedAndRead(new DacDeployOptions(), dacpac);
+    private static Task<SortedArray<Element>> PublishedAndRead(string dacpac) => PublishedAndRead(new DacDeployOptions(), dacpac);
 
     /// <summary>Packages published in turn to one registered database under the deploy options, then read back as io reads a copy; the database is dropped after.</summary>
-    private static async Task<Seq<Element>> PublishedAndRead(DacDeployOptions options, params string[] dacpacs)
+    private static async Task<SortedArray<Element>> PublishedAndRead(DacDeployOptions options, params string[] dacpacs)
     {
         await using var database = await SqlServerFixture.RegisterAsync();
         foreach (var dacpac in dacpacs)
@@ -680,7 +680,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>A model built in memory from the scripts, packaged by DacFx, then loaded as Load loads a build's package and walked.</summary>
-    private static Seq<Element> Packaged(params string[] scripts) => PackageRead(null, scripts).Elements;
+    private static SortedArray<Element> Packaged(params string[] scripts) => PackageRead(null, scripts).Elements;
 
     /// <summary>The scripts packaged by DacFx with the refactorlog's text as the package's refactor.xml, where one is given, then loaded as Load loads a build's package and walked.</summary>
     private static Ssdt.Read PackageRead(string? refactorlog, params string[] scripts)

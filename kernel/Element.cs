@@ -116,7 +116,7 @@ public sealed record ElementKey : IComparable<ElementKey>
 /// One object of a read, as the walk (io/Ssdt) reads it from DacFx for every consumer: its key, its properties as
 /// (name, value) and its relationships as (name, the target keys in DacFx's order), each sorted by name, so the order
 /// the walk met them in never matters. A relationship with no target is no relationship. The deploy scripts and the
-/// refactorlog entries are elements too, each of its own type. A Seq of elements, sorted by key, is a read.
+/// refactorlog entries are elements too, each of its own type. A SortedArray of elements, sorted by key, is a read.
 /// </summary>
 public sealed record Element : IComparable<Element>
 {
@@ -124,21 +124,21 @@ public sealed record Element : IComparable<Element>
     public const string PostDeploymentScript = "PostDeploymentScript";
     public const string RefactorLogOperation = "RefactorLogOperation";
 
-    private Element(ElementKey key, Seq<Property> properties, Seq<Relationship> relationships) =>
+    private Element(ElementKey key, SortedArray<Property> properties, SortedArray<Relationship> relationships) =>
         (Key, Properties, Relationships) = (key, properties, relationships);
 
     public ElementKey Key { get; }
 
-    public Seq<Property> Properties { get; }
+    public SortedArray<Property> Properties { get; }
 
-    public Seq<Relationship> Relationships { get; }
+    public SortedArray<Relationship> Relationships { get; }
 
     /// <summary>The value of the named property, or null when the element does not carry it.</summary>
     public Value? this[string property] => Properties.FirstOrDefault(p => p.Name == property)?.Value;
 
     public static Result<Element> Of(ElementKey key, IEnumerable<Property> properties, IEnumerable<Relationship> relationships)
     {
-        var (ps, rs) = (Seq.Of(properties), Seq.Of(relationships.Where(r => r.Targets.Count > 0)));
+        var (ps, rs) = (SortedArray.Of(properties), SortedArray.Of(relationships.Where(r => r.Targets.Count > 0)));
         return (Repeated([.. ps.Select(p => p.Name)], key, "property") ?? Repeated([.. rs.Select(r => r.Name)], key, "relationship")) is { } error
             ? error
             : new Element(key, ps, rs);
@@ -157,8 +157,8 @@ public sealed record Element : IComparable<Element>
     public int CompareTo(Element? other) =>
         other is null ? 1
         : Key.CompareTo(other.Key) is var k and not 0 ? k
-        : Seq.Compare(Properties, other.Properties) is var p and not 0 ? p
-        : Seq.Compare(Relationships, other.Relationships);
+        : SortedArray.Compare(Properties, other.Properties) is var p and not 0 ? p
+        : SortedArray.Compare(Relationships, other.Relationships);
 
     private static Element Script(string type, string name, string text) =>
         Known(Of(Known(ElementKey.Of(type, Known(Name.Of(name)))), [new Property("Text", new Value.Text(text))], []));
@@ -176,13 +176,13 @@ public sealed record Element : IComparable<Element>
             other is null ? 1 : string.CompareOrdinal(Name, other.Name) is var c and not 0 ? c : Value.CompareTo(other.Value);
     }
 
-    public sealed record Relationship(string Name, Seq<Relationship.Target> Targets) : IComparable<Relationship>
+    public sealed record Relationship(string Name, SortedArray<Relationship.Target> Targets) : IComparable<Relationship>
     {
         /// <summary>A relationship whose targets keep the order given, as DacFx gives a key's columns.</summary>
-        public static Relationship Of(string name, IEnumerable<ElementKey> targets) => new(name, Seq.Of(targets.Select((key, i) => new Target(i, key))));
+        public static Relationship Of(string name, IEnumerable<ElementKey> targets) => new(name, SortedArray.Of(targets.Select((key, i) => new Target(i, key))));
 
         public int CompareTo(Relationship? other) =>
-            other is null ? 1 : string.CompareOrdinal(Name, other.Name) is var c and not 0 ? c : Seq.Compare(Targets, other.Targets);
+            other is null ? 1 : string.CompareOrdinal(Name, other.Name) is var c and not 0 ? c : SortedArray.Compare(Targets, other.Targets);
 
         /// <summary>One target of a relationship: its position in DacFx's order, and its key.</summary>
         public sealed record Target(int Position, ElementKey Key) : IComparable<Target>

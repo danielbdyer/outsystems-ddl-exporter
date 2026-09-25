@@ -16,7 +16,7 @@
       "ceiling": 6800,
       "planned": 6460,
       "plannedFiles": [
-        { "files": ["Seq.cs", "Result.cs", "Error.cs", "Name.cs", "Fingerprint.cs"], "what": null, "lines": 410, "milestones": ["M0"] },
+        { "files": ["SortedArray.cs", "Result.cs", "Error.cs", "Name.cs", "Fingerprint.cs"], "what": null, "lines": 410, "milestones": ["M0"] },
         { "files": ["Receipt.cs"], "what": "the five inputs, Engine", "lines": 180, "milestones": ["M0"] },
         { "files": ["Element.cs"], "what": null, "lines": 200, "milestones": ["M1"] },
         { "files": ["Change.cs"], "what": "the deploy scripts and refactorlog included", "lines": 280, "milestones": ["M1"] },

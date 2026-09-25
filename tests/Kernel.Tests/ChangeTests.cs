@@ -18,7 +18,7 @@ public sealed class ChangeTests
     [Trait("Category", "fast")]
     public void The_change_between_equal_reads_is_empty_whatever_the_refactorlog_holds() =>
         Gen.Select(Sets, Renames).Sample((set, renames) =>
-            Ok(Change.Between(set, Seq.Of(set.Reverse().Select(Rebuilt)), renames)).IsEmpty
+            Ok(Change.Between(set, SortedArray.Of(set.Reverse().Select(Rebuilt)), renames)).IsEmpty
             && Ok(Change.Between(Archetypes.Model(), Archetypes.Model(), renames)).IsEmpty);
 
     [Fact]
@@ -37,8 +37,8 @@ public sealed class ChangeTests
         Renamings.Sample(
             r => Ok(Change.Between(r.Before, r.After, r.Renames)) is var change
                 && change.Renamed == r.Expected
-                && change.Removed == Seq.Of(r.Dropped)
-                && change.Added == Seq.Of(r.After.Where(e => !r.Kept.Any(k => Final(k, r.Entries) == e.Key))),
+                && change.Removed == SortedArray.Of(r.Dropped)
+                && change.Added == SortedArray.Of(r.After.Where(e => !r.Kept.Any(k => Final(k, r.Entries) == e.Key))),
             print: Print, iter: 1000);
 
     [Fact]
@@ -125,7 +125,7 @@ public sealed class ChangeTests
     public void Renaming_a_column_then_its_table_is_two_renames_though_the_column_s_entry_names_the_table_s_old_key()
     {
         var client = Key("Table", "dbo", "Client");
-        Seq<Rename> renames = [new Rename(Archetypes.Customer, client), new Rename(Archetypes.Email, Key(client, "Column", "EmailAddress"))];
+        SortedArray<Rename> renames = [new Rename(Archetypes.Customer, client), new Rename(Archetypes.Email, Key(client, "Column", "EmailAddress"))];
         var (before, after, entries) = Archetypes.Pair("rename a table and a column");
 
         Assert.Equal(new Change([Archetypes.EmailEntry, Archetypes.TableEntry], [], renames, []), Between("rename a table and a column"));
@@ -140,7 +140,7 @@ public sealed class ChangeTests
     {
         var (before, after, _) = Archetypes.Pair("rename a column");
         var address = Key(Archetypes.Customer, "Column", "EmailAddress");
-        var change = Ok(Change.Between(before, Seq.Of(after.Where(e => e != Archetypes.EmailEntry)), []));
+        var change = Ok(Change.Between(before, SortedArray.Of(after.Where(e => e != Archetypes.EmailEntry)), []));
 
         Assert.Equal(new[] { after.Single(e => e.Key == address) }, change.Added);
         Assert.Equal(new[] { before.Single(e => e.Key == Archetypes.Email) }, change.Removed);
@@ -162,13 +162,13 @@ public sealed class ChangeTests
     [Trait("Category", "fast")]
     public void Two_elements_of_one_read_with_one_key_fail_with_change_duplicate_key()
     {
-        var twice = Seq.Of(New(Archetypes.Customer, [("IsMemoryOptimized", Bool(false))]), New(Archetypes.Customer, []));
+        var twice = SortedArray.Of(New(Archetypes.Customer, [("IsMemoryOptimized", Bool(false))]), New(Archetypes.Customer, []));
 
         Assert.Equal("change.duplicate-key", Assert.IsType<Result<Change>.Failed>(Change.Between(twice, [], [])).Error.Code);
         Assert.Equal("change.duplicate-key", Assert.IsType<Result<Change>.Failed>(Change.Between([], twice, [])).Error.Code);
     }
 
-    private static Seq<Rename> Inverted(Seq<Rename> renames) => Seq.Of(renames.Select(r => r.Inverted()));
+    private static SortedArray<Rename> Inverted(SortedArray<Rename> renames) => SortedArray.Of(renames.Select(r => r.Inverted()));
 
     // A failing renaming, printed as its reads' keys and its entries in the order they were made.
     private static string Print(Renaming r) =>
@@ -185,7 +185,7 @@ public sealed class ChangeTests
         [],
         [new Change.Relationship("Columns", Targets(before), Targets(after))]);
 
-    private static Seq<Element.Relationship.Target> Targets(string[] columns) =>
+    private static SortedArray<Element.Relationship.Target> Targets(string[] columns) =>
         Element.Relationship.Of("Columns", columns.Select(c => Key(Archetypes.Customer, "Column", c))).Targets;
 
     // The one change a script edit makes: its Text, before and after, and nothing else.

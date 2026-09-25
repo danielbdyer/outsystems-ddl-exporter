@@ -17,7 +17,7 @@ namespace Estate.Budgets.Tests;
 /// </summary>
 public sealed class KernelCannotDoIo
 {
-    private static readonly Assembly Kernel = typeof(Seq).Assembly;
+    private static readonly Assembly Kernel = typeof(SortedArray).Assembly;
 
     [Fact]
     [Trait("Category", "fast")]

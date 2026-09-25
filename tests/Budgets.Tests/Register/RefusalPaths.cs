@@ -60,7 +60,7 @@ internal static class RefusalPaths
         new("an element with a relationship given twice", "element.relationship-name", false, (_, _) =>
             Failed(Element.Of(Table, [], [Element.Relationship.Of("Columns", [Table]), Element.Relationship.Of("Columns", [Table])]))),
         new("a read with two elements on one key", "change.duplicate-key", false, (_, _) =>
-            Failed(Change.Between(Seq.Of(Made(Element.Of(Table, [], [])), Made(Element.Of(Table, [new("Nullable", new Value.Null())], []))), [], []))),
+            Failed(Change.Between(SortedArray.Of(Made(Element.Of(Table, [], [])), Made(Element.Of(Table, [new("Nullable", new Value.Null())], []))), [], []))),
 
         new("ESTATE_TOOL naming no tool folder", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), Bare(scratch), scratch))),
         new("no tool folder anywhere", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), null, scratch))),

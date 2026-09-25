@@ -37,7 +37,7 @@ public static partial class Verbs
         if (Contract.Flags(words, ["--from", "--to"], ["--project"], ["--fail-on-change"]).Bind(flags => SqlServer.Target.Parse(flags["--from"], "--from")
             .Bind(from => SqlServer.Target.Parse(flags["--to"], "--to").Bind(to => Pinned(here).Bind(pin => Reading(here, from, flags.GetValueOrDefault("--project"))
             .Bind(before => Reading(here, to, flags.GetValueOrDefault("--project")).Bind(after =>
-                Change.Between(before.Read.Elements, after.Read.Elements, Seq.Of(before.Read.Renames.Concat(after.Read.Renames).Distinct()))
+                Change.Between(before.Read.Elements, after.Read.Elements, SortedArray.Of(before.Read.Renames.Concat(after.Read.Renames).Distinct()))
                     .Map(change => (Before: before, After: after, Change: change, Fail: flags.ContainsKey("--fail-on-change"), Pin: pin))))))))
             .Failed(out var diff, out var error))
         {

@@ -56,7 +56,7 @@ public sealed class NameTests
         Assert.NotEqual(N("Customer"), N("customer"));
         Assert.Equal(
             new[] { "[Customer]", "[customer]", "[dbo].[A]" },
-            Seq.Of(N("dbo", "A"), N("customer"), N("Customer")).Select(n => n.ToString()));
+            SortedArray.Of(N("dbo", "A"), N("customer"), N("Customer")).Select(n => n.ToString()));
         Assert.Equal("[a]]b].[c.d]", N("a]b", "c.d").ToString());
     }
 

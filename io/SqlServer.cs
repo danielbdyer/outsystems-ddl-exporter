@@ -253,7 +253,7 @@ public static class SqlServer
     };
 
     /// <summary>A database read whole (§1 fact 5): TSqlModel.LoadFromDatabase as the target's identity under <see cref="Extraction"/>, then io/Ssdt's walk; the run's log, when given, holds the statement estate sends first.</summary>
-    public static Result<Seq<Element>> Model(Database target, QueryLog? log = null) => Reached(target, log).Bind(_ =>
+    public static Result<SortedArray<Element>> Model(Database target, QueryLog? log = null) => Reached(target, log).Bind(_ =>
     {
         TSqlModel model;
         try

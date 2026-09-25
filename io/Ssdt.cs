@@ -286,7 +286,7 @@ public static class Ssdt
     });
 
     /// <summary>A package read whole (§2.1 rule 1): its elements, and the renames its refactorlog records, as Change.Between takes them.</summary>
-    public sealed record Read(Seq<Element> Elements, Seq<Rename> Renames);
+    public sealed record Read(SortedArray<Element> Elements, SortedArray<Rename> Renames);
 
     /// <summary>
     /// The model walked, one element for each deploy script and each refactorlog entry, and the entries' renames. An entry's type,
@@ -301,7 +301,7 @@ public static class Ssdt
         var scripts = new[] { package.PreDeploy is { } pre ? Element.PreDeploy(Lf(pre)) : null, package.PostDeploy is { } post ? Element.PostDeploy(Lf(post)) : null }.OfType<Element>();
         return Result.All(package.Refactors.Select(Entry)).Bind(entries =>
             Result.All(package.Refactors.Where(r => r.NewName is not null || r.NewSchema is not null).Select(r => Renaming(r, TypeOf)))
-                .Map(renames => new Read(Seq.Of(model.Select(w => w.Element).Concat(scripts).Concat(entries)), Seq.Of(renames))));
+                .Map(renames => new Read(SortedArray.Of(model.Select(w => w.Element).Concat(scripts).Concat(entries)), SortedArray.Of(renames))));
     });
 
     /// <summary>
@@ -324,7 +324,7 @@ public static class Ssdt
     /// SQL Server shows a server-scoped login only to a reader with permission on it (sysadmin, VIEW ANY DEFINITION, or its own), and
     /// a db_datareader login holding VIEW DEFINITION read Query Store's database options differently from sa when measured on 2026-09-24.
     /// </summary>
-    public static Result<Seq<Element>> Walk(TSqlModel model) => Walked(model).Map(walked => Seq.Of(walked.Select(w => w.Element)));
+    public static Result<SortedArray<Element>> Walk(TSqlModel model) => Walked(model).Map(walked => SortedArray.Of(walked.Select(w => w.Element)));
 
     /// <summary>
     /// A grant SQL Server makes in every new database, copying it from model: VIEW ANY COLUMN ENCRYPTION KEY DEFINITION and VIEW ANY

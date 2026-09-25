@@ -9,7 +9,7 @@ namespace Estate.Kernel.Tests;
 
 /// <summary>
 /// An element is one DacFx object as the walk reads it, keyed by its type and name path, with its properties and
-/// relationships in canonical order; a read is a Seq of them, and its fingerprint is law 3′'s kernel half: stable
+/// relationships in canonical order; a read is a SortedArray of them, and its fingerprint is law 3′'s kernel half: stable
 /// whatever the order of construction, and changed by any edit. Its law tests carry that law as a trait.
 /// </summary>
 public sealed class ElementTests
@@ -19,8 +19,8 @@ public sealed class ElementTests
     [Trait("Law", "3′ the read is complete")]
     public void The_fingerprint_of_a_read_is_independent_of_the_order_its_elements_are_given_in() =>
         Sets.SelectMany(set => Gen.Shuffle(set.ToArray()).Select(shuffled => (set, shuffled))).Sample((set, shuffled) =>
-            Fingerprint.Of(Seq.Of(shuffled.Select(Rebuilt))) == Fingerprint.Of(set)
-            && Seq.Of(shuffled.Select(Rebuilt)) == set);
+            Fingerprint.Of(SortedArray.Of(shuffled.Select(Rebuilt))) == Fingerprint.Of(set)
+            && SortedArray.Of(shuffled.Select(Rebuilt)) == set);
 
     [Fact]
     [Trait("Category", "fast")]
@@ -29,7 +29,7 @@ public sealed class ElementTests
     {
         Gen.Select(Sets, Sets).Sample((a, b) => (Fingerprint.Of(a) == Fingerprint.Of(b)) == (a == b));
         Assert.Equal(Fingerprint.Of(Archetypes.Model()), Fingerprint.Of(Archetypes.Model()));
-        Assert.Equal(Fingerprint.Of(Seq.Of<Element>()), Fingerprint.Of(default(Seq<Element>)));
+        Assert.Equal(Fingerprint.Of(SortedArray.Of<Element>()), Fingerprint.Of(default(SortedArray<Element>)));
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public sealed class ElementTests
             Assert.NotEqual<Value>(Text("1"), Int(1));
             Assert.Equal(
                 new[] { "NULL", "false", "true", "-1234567", "'it''s'", "SqlDataType.NVarChar" },
-                Seq.Of<Value>(new Value.Enumeration("SqlDataType", "NVarChar"), Text("it's"), Int(-1234567), Bool(true), Bool(false), new Value.Null())
+                SortedArray.Of<Value>(new Value.Enumeration("SqlDataType", "NVarChar"), Text("it's"), Int(-1234567), Bool(true), Bool(false), new Value.Null())
                     .Select(v => v.ToString()));
         }
         finally
@@ -123,7 +123,7 @@ public sealed class ElementTests
         Assert.Equal(customer, email.Parent);
         Assert.Equal(
             new[] { customer, email, Key(customer, "Index", "Email"), Key("Table", "dbo", "Customers") },
-            Seq.Of(Key("Table", "dbo", "Customers"), Key(customer, "Index", "Email"), email, customer));
+            SortedArray.Of(Key("Table", "dbo", "Customers"), Key(customer, "Index", "Email"), email, customer));
         Assert.NotEqual(Key("Table", "dbo", "Customer"), Key("View", "dbo", "Customer"));
     }
 

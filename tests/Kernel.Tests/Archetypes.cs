@@ -33,7 +33,7 @@ internal static class Archetypes
         "a post-deploy seed edit", "a pre-deploy edit");
 
     /// <summary>An archetype's model before and after, and the renames the refactorlog after it pairs.</summary>
-    public static (Seq<Element> Before, Seq<Element> After, Seq<Rename> Renames) Pair(string archetype) => archetype switch
+    public static (SortedArray<Element> Before, SortedArray<Element> After, SortedArray<Rename> Renames) Pair(string archetype) => archetype switch
     {
         "make-mandatory" => (Model(), Model(emailNullable: false), [OldRename]),
         "add a column" => (Model(), Model(phone: true), [OldRename]),
@@ -52,7 +52,7 @@ internal static class Archetypes
     };
 
     /// <summary>The model, with each archetype's edit as a parameter.</summary>
-    public static Seq<Element> Model(
+    public static SortedArray<Element> Model(
         string table = "Customer", string email = "Email", bool emailNullable = true, bool notes = true, bool phone = false,
         string pre = PreDeploy, string post = Seed, Element[]? entries = null)
     {
@@ -73,7 +73,7 @@ internal static class Archetypes
         };
         elements.AddRange(columns.Skip(2).Select(c => New(c, [("Nullable", Bool(true)), ("Length", Int(c.Name.Base == "Notes" ? -1 : 20))], [("DataType", [NVarCharType])])));
         elements.AddRange(entries ?? []);
-        return Seq.Of(elements);
+        return SortedArray.Of(elements);
     }
 
     private static Element Entry(string key, string elementName, string elementType, string parent, string newName) =>

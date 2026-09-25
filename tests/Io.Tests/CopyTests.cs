@@ -74,7 +74,7 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
             using var basePackage = Made(Ssdt.Load(ground.Base));
             using var headPackage = Made(Ssdt.Load(ground.Mandatory));
             var (packaged, head) = (Made(Ssdt.Walk(basePackage)), Made(Ssdt.Walk(headPackage)));
-            var schema = Seq.Of(packaged.Elements.Where(e => e.Key.Type is not (Element.PreDeploymentScript or Element.PostDeploymentScript or Element.RefactorLogOperation)));
+            var schema = SortedArray.Of(packaged.Elements.Where(e => e.Key.Type is not (Element.PreDeploymentScript or Element.PostDeploymentScript or Element.RefactorLogOperation)));
 
             Assert.Equal(schema.Select(e => e.Key), first.Select(e => e.Key));
             Assert.Equal(Fingerprint.Of(first), Fingerprint.Of(second));

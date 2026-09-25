@@ -19,12 +19,12 @@ public sealed class ClosedHierarchies
     [Trait("Category", "fast")]
     public void Every_case_of_a_kernel_closed_hierarchy_is_sealed_and_nested_inside_it()
     {
-        var hierarchies = typeof(Seq).Assembly.GetTypes().Where(t => t.IsClass && t.IsAbstract && !t.IsSealed).ToList();
+        var hierarchies = typeof(SortedArray).Assembly.GetTypes().Where(t => t.IsClass && t.IsAbstract && !t.IsSealed).ToList();
         var open = hierarchies
             .SelectMany(h => h.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                 .Where(c => !c.IsPrivate && !(c.GetParameters() is [var only] && Definition(only.ParameterType) == h))
                 .Select(c => h + " can be derived from outside: " + c));
-        var strays = new[] { typeof(Seq).Assembly, typeof(Write).Assembly, typeof(Contract).Assembly }
+        var strays = new[] { typeof(SortedArray).Assembly, typeof(Write).Assembly, typeof(Contract).Assembly }
             .SelectMany(a => a.GetTypes())
             .SelectMany(t => hierarchies.Where(h => Derives(t, h) && (Definition(t.DeclaringType) != h || !t.IsSealed)).Select(h => t + " derives from " + h + " but is not a sealed type nested in it"));
 
