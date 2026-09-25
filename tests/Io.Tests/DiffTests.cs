@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using Estate.Cli;
 using Estate.Kernel;
 using Xunit;
 
@@ -45,8 +46,15 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         Assert.True(readExit == 0, read);
         var answer = JsonNode.Parse(read)!;
         ScratchEstate.Valid("estate.read.1.schema.json", answer);
-        Assert.False((bool)answer["read"]!["elements"]!.AsArray().Single(e => (string?)e!["key"] == "Column [dbo].[Customer].[Email]")!["properties"]!["Nullable"]!);
+        Assert.False((bool)Elements(answer).Single(e => (string?)e!["key"] == "Column [dbo].[Customer].[Email]")!["properties"]!["Nullable"]!);
     }
+
+    /// <summary>
+    /// The elements a read's answer holds: the golden project holds more than Render.Shown, so the answer is cut and names the run's
+    /// answer.json, which holds them all; a smaller read holds them in the answer itself.
+    /// </summary>
+    private JsonArray Elements(JsonNode answer) =>
+        ((string?)answer["full"] is { } full ? JsonNode.Parse(File.ReadAllText(Path.Combine(estate.Root, full)))! : answer)["read"]!["elements"]!.AsArray();
 
     /// <summary>
     /// VALUES.md X2 for a database read, the other half of ProfilesTests.No_output_contains_Password's search of every error: a
@@ -75,14 +83,18 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
 
         try
         {
-            var (exit, output) = estate.EstateAt(estate.Named(("uat", connection)), "read", "--from", "env:uat", "--json");
+            var named = estate.Named(("uat", connection));
+            var (exit, output) = estate.EstateAt(named, "read", "--from", "env:uat", "--json");
 
             Assert.True(exit == 0, output);
-            var elements = JsonNode.Parse(output)!["read"]!["elements"]!.AsArray();
+            var answer = JsonNode.Parse(output)!;
+            var whole = (string?)answer["full"] is { } full ? File.ReadAllText(Path.Combine(named, full)) : output;
+            var elements = JsonNode.Parse(whole)!["read"]!["elements"]!.AsArray();
             Assert.Contains(elements, e => (string?)e!["key"] == "Login [" + login + "]");
             var secrets = Ssdt.Secrets.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
             Assert.DoesNotContain(elements.SelectMany(e => e!["properties"]!.AsObject().Select(p => (string?)e["key"] + " " + p.Key)), p => secrets.Contains(p.Split('.', ' ')[^1]));
             Assert.DoesNotMatch(ProfilesTests.PasswordSetting, output);
+            Assert.DoesNotMatch(ProfilesTests.PasswordSetting, whole);
         }
         finally
         {
@@ -138,8 +150,9 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         var elements = GitTests.Ok(Ssdt.Elements(loaded)).Elements;
         Assert.Equal("sha256:" + Fingerprint.Of(elements), (string?)fromRef["read"]!["fingerprint"]);
         Assert.Equal((string?)fromRef["read"]!["fingerprint"], (string?)fromPackage["read"]!["fingerprint"]);
-        Assert.Equal(elements.Count, fromRef["read"]!["elements"]!.AsArray().Count);
-        var email = fromRef["read"]!["elements"]!.AsArray().Single(e => (string?)e!["key"] == "Column [dbo].[Customer].[Email]")!;
+        Assert.Equal((elements.Count, Render.Shown, true), ((int)fromRef["read"]!["count"]!, fromRef["read"]!["elements"]!.AsArray().Count, (bool)fromRef["truncated"]!));
+        Assert.Equal(elements.Count, Elements(fromRef).Count);
+        var email = Elements(fromRef).Single(e => (string?)e!["key"] == "Column [dbo].[Customer].[Email]")!;
         Assert.True((bool)email["properties"]!["Nullable"]!);
         Assert.StartsWith("ref:" + estate.Base + ": " + elements.Count + " elements, fingerprint sha256:", estate.Estate("read", "--from", "ref:" + estate.Base).Output, StringComparison.Ordinal);
     }
