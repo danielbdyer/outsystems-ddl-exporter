@@ -226,13 +226,42 @@ public static class SqlServer
         reference => NotADatabase(reference),
         dacpac => NotADatabase(dacpac));
 
-    /// <summary>A database read whole (§1 fact 5): TSqlModel.LoadFromDatabase as the target's identity, then io/Ssdt's walk; the run's log, when given, holds the statement estate sends first.</summary>
+    /// <summary>
+    /// How LoadFromDatabase reads a database, each option set here with its reason, so a database reads as a package built from it
+    /// does. DacFx 170.5.96's defaults are noted; IgnorePermissions is the one this changes.
+    /// </summary>
+    internal static ModelExtractOptions Extraction => new()
+    {
+        // A package keeps its GRANT, DENY and REVOKE statements and the walk keys each one; the default, true, drops every permission.
+        IgnorePermissions = false,
+        // A package keeps its sp_addextendedproperty values (MS_Description); the default, false, keeps them.
+        IgnoreExtendedProperties = false,
+        // A package keeps CREATE USER ... FOR LOGIN; the default, false, keeps a user's login.
+        IgnoreUserLoginMappings = false,
+        // A package holds database-scoped objects; the default, true, leaves out server-scoped ones a user does not reference.
+        ExtractApplicationScopedObjectsOnly = true,
+        // The default, true, reads the login a user maps to; SQL Server shows it only to a reader with permission on the login.
+        ExtractReferencedServerScopedElements = true,
+        // Table.RowCount, the data and index sizes and the page counts change with the rows, not the schema; the default is false.
+        ExtractUsageProperties = false,
+        // The walk reads properties and each module's script, which a model loaded from a database gives without a scripted copy of
+        // every object; the default, false, skips that copy's one-time cost.
+        LoadAsScriptBackedModel = false,
+        // Verification validates the model as a package build would; the walk reads what the database holds, valid or not. Default false.
+        VerifyExtraction = false,
+        // The model is held in memory, as Ssdt.Load holds a package's; the default is Memory.
+        Storage = DacSchemaModelStorageType.Memory,
+        // DacFx's log is not kept, so hashing the names in it changes nothing; the default is false.
+        HashObjectNamesInLogs = false,
+    };
+
+    /// <summary>A database read whole (§1 fact 5): TSqlModel.LoadFromDatabase as the target's identity under <see cref="Extraction"/>, then io/Ssdt's walk; the run's log, when given, holds the statement estate sends first.</summary>
     public static Result<Seq<Element>> Model(Database target, QueryLog? log = null) => Reached(target, log).Bind(_ =>
     {
         TSqlModel model;
         try
         {
-            model = TSqlModel.LoadFromDatabase(target.Connection, new ModelExtractOptions());
+            model = TSqlModel.LoadFromDatabase(target.Connection, Extraction);
         }
         catch (Exception e) when (e is DacServicesException or DacModelException or SqlException or InvalidOperationException)
         {

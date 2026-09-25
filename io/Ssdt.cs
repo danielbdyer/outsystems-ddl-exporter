@@ -13,6 +13,7 @@ using Estate.Kernel;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
+using Permission = Microsoft.SqlServer.Dac.Model.Permission;
 
 namespace Estate.Io;
 
@@ -260,6 +261,30 @@ public static class Ssdt
         return elements.Where(e => e.Name is not null).GroupBy(e => e.Name!, StringComparer.Ordinal).Where(g => g.Count() == 1).ToDictionary(g => g.Key, g => g.Single().Type ?? "", StringComparer.Ordinal);
     }
 
+    /// <summary>
+    /// The properties the walk leaves out, each holding a password or a secret: SQL Server never returns one, so DacFx makes up a new
+    /// value for a login's password on each database read, and a package carries whatever its script wrote. Besides the passwords and
+    /// credential secrets: a symmetric key's KEY_SOURCE and IDENTITY_VALUE, from which SQL Server derives the key; a linked server's
+    /// provider string (sp_addlinkedserver's @provstr) and an external data source's CONNECTION_OPTIONS, each a connection string
+    /// whose documented form carries PWD=, left out whole, so an edit to either is not seen. DacFx 170.5.96's metadata marks none of
+    /// them as secret, so the list is kept here; Io.Tests' WalkTests plants each, and lists every other string-typed property DacFx declares
+    /// with the reason it is not a secret. DacFx fills these static fields when its model schema initializes, which the first
+    /// TSqlModel a process makes does, so the list is made on first use, after one.
+    /// </summary>
+    public static IReadOnlySet<ModelPropertyClass> Secrets => Secret.Value;
+
+    private static readonly Lazy<HashSet<ModelPropertyClass>> Secret = new(() =>
+    {
+        new TSqlModel(SqlServerVersion.Sql160, new TSqlModelOptions()).Dispose();
+        return
+        [
+            Login.Password, User.Password, ApplicationRole.Password, MasterKey.Password, AsymmetricKey.Password, SymmetricKeyPassword.Password,
+            Certificate.EncryptionPassword, Certificate.PrivateKeyDecryptionPassword, Certificate.PrivateKeyEncryptionPassword,
+            Credential.Secret, DatabaseCredential.Secret, LinkedServerLogin.LinkedServerPassword, SignatureEncryptionMechanism.Password,
+            SymmetricKey.KeySource, SymmetricKey.IdentityValue, LinkedServer.ProviderString, ExternalDataSource.ConnectionOptions,
+        ];
+    });
+
     /// <summary>A package read whole (§2.1 rule 1): its elements, and the renames its refactorlog records, as Change.Between takes them.</summary>
     public sealed record Read(Seq<Element> Elements, Seq<Rename> Renames);
 
@@ -280,22 +305,42 @@ public static class Ssdt
     });
 
     /// <summary>
-    /// A model read whole, no code per type (§1 fact 6): each user-defined top-level object and, depth first, what its composing
-    /// relationships reach, each object once, with every property its type declares (a module's Definition too) and every
-    /// relationship's targets in DacFx's order; a target's own property (an index column's Ascending) is Relationship[position].Property.
-    /// A key is the name while it has one or two parts and nothing composes the object; else the parent's key (the composer, or
-    /// the hierarchical parent: an index's table, a grant's securable) and the name parts the parent's name does not hold.
-    /// Unnamed (an inline constraint, a default), the relationship to the parent, numbered from 1 among several of one type in
-    /// the order of what they reference, then of their own values, never by a generated name or DacFx's order; SQL Server
-    /// normalizes a check's text, so tied siblings (two checks on one column) may number apart in a package and its database.
-    /// Two objects keyed alike are refused; an unresolved reference is keyed as the type Unresolved.
+    /// A model read whole, no code per type (§1 fact 6): each user-defined top-level object but the two grants to public SQL Server
+    /// makes in every new database (<see cref="Default"/>) and, depth first, what its composing relationships reach, each object
+    /// once, with every property its type declares but a password or a secret (<see cref="Secrets"/>), a module's Definition as
+    /// written too, and every relationship's targets in DacFx's order; a target's own property (an index column's Ascending) is
+    /// Relationship[position].Property. A key is the name while it has one or two parts and nothing
+    /// composes the object; else the parent's key (the composer, or the hierarchical parent: an index's table, a grant's securable)
+    /// and the name parts the parent's name does not hold. An unnamed default, check, unique or foreign key constraint on exactly one
+    /// column is keyed under that column by the relationship that names it (TargetColumn, ExpressionDependencies, Columns), so it
+    /// moves with the column's rename, and a column added beside it, or a table whose columns a database holds in another order
+    /// (a publish under IgnoreColumnOrder appends a column the project inserts), leaves its key as it was. Any other unnamed object
+    /// (a primary key, a constraint on several columns) is keyed by the relationship to its table. Several unnamed objects of one
+    /// type under one parent are numbered from 1 in the order of the names they reference, then of their own values, never by a
+    /// generated name or DacFx's order; a package and the database it was published to hold the same names, so they number alike,
+    /// and a rename of a column that a constraint on several columns references can renumber that constraint and its siblings. SQL
+    /// Server normalizes a check's text, so two checks on one column may number apart in a package and its database. Two objects
+    /// keyed alike are refused; an unresolved reference is keyed as the type Unresolved. Reads are compared only between like sources and, for databases, like identities:
+    /// SQL Server shows a server-scoped login only to a reader with permission on it (sysadmin, VIEW ANY DEFINITION, or its own), and
+    /// a db_datareader login holding VIEW DEFINITION read Query Store's database options differently from sa when measured on 2026-09-24.
     /// </summary>
     public static Result<Seq<Element>> Walk(TSqlModel model) => Walked(model).Map(walked => Seq.Of(walked.Select(w => w.Element)));
+
+    /// <summary>
+    /// A grant SQL Server makes in every new database, copying it from model: VIEW ANY COLUMN ENCRYPTION KEY DEFINITION and VIEW ANY
+    /// COLUMN MASTER KEY DEFINITION to public, which Always Encrypted's client drivers read. A database holds both whatever its project
+    /// says, and a project imported from a database may hold them too, so the walk leaves both out of every read; a REVOKE of either
+    /// is therefore not seen.
+    /// </summary>
+    private static bool Default(TSqlObject o) => o.ObjectType == Permission.TypeClass
+        && o.GetProperty<PermissionAction>(Permission.PermissionAction) == PermissionAction.Grant && !o.GetProperty<bool>(Permission.WithGrantOption)
+        && o.GetProperty<PermissionType>(Permission.PermissionType) is PermissionType.ViewAnyColumnEncryptionKeyDefinition or PermissionType.ViewAnyColumnMasterKeyDefinition
+        && o.GetReferenced(Permission.Grantee, DacQueryScopes.All).ToArray() is [var grantee] && grantee.Name.Parts is [var role] && string.Equals(role, "public", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The walk, each element with its object's name as model.xml writes it ([dbo].[Customer].[Email]), null for an unnamed object.</summary>
     private static Result<List<(Element Element, string? Name)>> Walked(TSqlModel model)
     {
-        var composers = new Dictionary<TSqlObject, (TSqlObject? Parent, string Relationship)>();
+        var composers = new Dictionary<TSqlObject, (TSqlObject Parent, string Relationship)>();
         var walked = new HashSet<TSqlObject>();
         void Descend(TSqlObject o)
         {
@@ -307,13 +352,26 @@ public static class Ssdt
             }
         }
 
-        model.GetObjects(DacQueryScopes.UserDefined).ToList().ForEach(Descend);
+        model.GetObjects(DacQueryScopes.UserDefined).Where(o => !Default(o)).ToList().ForEach(Descend);
+
+        // The relationship through which each type of unnamed constraint that can sit on one column names its columns.
+        var on = new Dictionary<ModelTypeClass, ModelRelationshipClass>
+        {
+            [DefaultConstraint.TypeClass] = DefaultConstraint.TargetColumn, [CheckConstraint.TypeClass] = CheckConstraint.ExpressionDependencies,
+            [UniqueConstraint.TypeClass] = UniqueConstraint.Columns, [ForeignKeyConstraint.TypeClass] = ForeignKeyConstraint.Columns,
+        };
         (TSqlObject? Parent, string Relationship) Anchor(TSqlObject o) => composers.TryGetValue(o, out var composer) ? composer
+            : !o.Name.HasName && on.TryGetValue(o.ObjectType, out var through)
+                && o.GetReferenced(through, DacQueryScopes.All).Where(c => c.ObjectType == Column.TypeClass).Distinct().ToArray() is [var column]
+                ? (column, through.Name)
             : o.GetParent(DacQueryScopes.All) is not { } parent ? (null, o.ObjectType.Name)
             : (parent, o.ObjectType.Relationships.FirstOrDefault(r => r.Type == RelationshipType.Hierarchical && o.GetReferenced(r, DacQueryScopes.All).Contains(parent))?.Name ?? o.ObjectType.Name);
+
         string References(TSqlObject o) => string.Join('\n', o.ObjectType.Relationships.Where(r => r.Type != RelationshipType.Composing)
             .SelectMany(r => o.GetReferencedRelationshipInstances(r, DacExternalQueryScopes.All).Select(i => r.Name + " " + i.ObjectName)));
-        string Values(TSqlObject o) => string.Join('\n', o.ObjectType.Properties.Select(p => p.Name + " " + ValueOf(() => o.GetProperty(p), p.DataType)));
+        var secrets = Secrets;
+        IEnumerable<ModelPropertyClass> Kept(IEnumerable<ModelPropertyClass> declared) => declared.Where(p => !secrets.Contains(p));
+        string Values(TSqlObject o) => string.Join('\n', Kept(o.ObjectType.Properties).Select(p => p.Name + " " + ValueOf(() => o.GetProperty(p), p.DataType)));
         var unnamed = walked.Where(o => !o.Name.HasName).GroupBy(o => (Anchor: Anchor(o), Type: o.ObjectType.Name))
             .SelectMany(g => g.OrderBy(References, StringComparer.Ordinal).ThenBy(Values, StringComparer.Ordinal)
                 .Select((o, i) => (Object: o, Name: g.Count() == 1 ? g.Key.Anchor.Relationship : string.Create(CultureInfo.InvariantCulture, $"{g.Key.Anchor.Relationship} {i + 1}"))))
@@ -331,9 +389,9 @@ public static class Ssdt
         Result<Element> Read(TSqlObject o)
         {
             var relationships = o.ObjectType.Relationships.Select(r => (Class: r, Instances: o.GetReferencedRelationshipInstances(r, DacExternalQueryScopes.All).ToArray())).ToArray();
-            var properties = o.ObjectType.Properties.Select(p => (p.Name, Value: ValueOf(() => o.GetProperty(p), p.DataType)))
+            var properties = Kept(o.ObjectType.Properties).Select(p => (p.Name, Value: ValueOf(() => o.GetProperty(p), p.DataType)))
                 .Append((Name: "Definition", Value: Module(o.ObjectType) ? ValueOf(() => o.TryGetScript(out var script) ? script : null, typeof(string)) : null))
-                .Concat(relationships.SelectMany(r => r.Instances.SelectMany((i, n) => r.Class.Properties.Select(p =>
+                .Concat(relationships.SelectMany(r => r.Instances.SelectMany((i, n) => Kept(r.Class.Properties).Select(p =>
                     (Name: string.Create(CultureInfo.InvariantCulture, $"{r.Class.Name}[{n}].{p.Name}"), Value: ValueOf(() => i.GetProperty(p), p.DataType))))))
                 .Where(p => p.Value is not null).Select(p => new Element.Property(p.Name, p.Value!));
             var targets = relationships.Select(r => All(r.Instances.Select(i => i.Object is { } target ? Key(target) : Keyed("Unresolved", [.. i.ObjectName.ExternalParts ?? [], .. i.ObjectName.Parts], null)))

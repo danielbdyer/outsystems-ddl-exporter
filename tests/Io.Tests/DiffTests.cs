@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Estate.Kernel;
 using Xunit;
 
@@ -45,6 +46,43 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         var answer = JsonNode.Parse(read)!;
         ScratchEstate.Valid("estate.read.1.schema.json", answer);
         Assert.False((bool)answer["read"]!["elements"]!.AsArray().Single(e => (string?)e!["key"] == "Column [dbo].[Customer].[Email]")!["properties"]!["Nullable"]!);
+    }
+
+    /// <summary>
+    /// VALUES.md X2 for a database read, the other half of ProfilesTests.No_output_contains_Password's search of every refusal: a
+    /// registered database holding a SQL login and a user for it, read through estate read --from env:uat --json as the fixture's
+    /// admin identity, who sees the login. What the test asserts is that the answer names the login and that no property in it is
+    /// named after a member of <see cref="Ssdt.Secrets"/>: DacFx makes up a new Login.Password on each read, since SQL Server keeps
+    /// only a hash of the one the login was made with, and the walk leaves that property out. The answer is also searched for a
+    /// password setting (<see cref="ProfilesTests.PasswordSetting"/>): on the container the fixture's identity signs in as sa with a
+    /// password, the env:uat connection file holds that connection string with its Password=, and the search fails if the read
+    /// printed it.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task Estate_read_of_a_database_holding_a_SQL_login_prints_no_password()
+    {
+        await using var database = await SqlServerFixture.RegisterAsync();
+        var login = database.Name + ReadOnlyPrincipal.Suffix;   // the fixture drops the login of this name with the database
+        await SqlServerFixture.ExecuteAsync(database.ConnectionString, "DECLARE @sql nvarchar(max) = N'CREATE LOGIN ' + QUOTENAME(@name) + N' WITH PASSWORD = N''"
+            + "Pa55!planted#7f3a''; CREATE USER ' + QUOTENAME(@name) + N' FOR LOGIN ' + QUOTENAME(@name) + N';'; EXEC (@sql);", login);
+        var connection = Path.Combine(Path.GetDirectoryName(estate.Root)!, database.Name + ".connection");
+        File.WriteAllText(connection, database.ConnectionString);
+        try
+        {
+            var (exit, output) = estate.EstateAt(estate.Named(("uat", connection)), "read", "--from", "env:uat", "--json");
+
+            Assert.True(exit == 0, output);
+            var elements = JsonNode.Parse(output)!["read"]!["elements"]!.AsArray();
+            Assert.Contains(elements, e => (string?)e!["key"] == "Login [" + login + "]");
+            var secrets = Ssdt.Secrets.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
+            Assert.DoesNotContain(elements.SelectMany(e => e!["properties"]!.AsObject().Select(p => (string?)e["key"] + " " + p.Key)), p => secrets.Contains(p.Split('.', ' ')[^1]));
+            Assert.DoesNotMatch(ProfilesTests.PasswordSetting, output);
+        }
+        finally
+        {
+            File.Delete(connection);
+        }
     }
 
     [Fact]
