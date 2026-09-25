@@ -123,7 +123,7 @@ button.bulk.arm { background: var(--accent); color: var(--paper); }
 .fhead .fmeta { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; justify-content: flex-end; }
 .fbody { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 10px; }
 .fbody[hidden] { display: none; }
-.lens { font: 500 10.5px var(--mono); color: var(--ink-3); text-transform: uppercase; letter-spacing: .08em; }
+.area { font: 500 10.5px var(--mono); color: var(--ink-3); text-transform: uppercase; letter-spacing: .08em; }
 .verified { font: 500 10.5px var(--mono); color: var(--done); }
 .sev { display: inline-block; font: 600 10.5px/1.6 var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 0 7px; border-radius: 999px; white-space: nowrap; }
 .sev-blocker { color: var(--blocker); background: var(--blocker-bg); }
@@ -141,7 +141,7 @@ button.act.wontfix[aria-pressed="true"] { background: var(--ink-3); border-color
 button.act.discuss[aria-pressed="true"] { background: var(--heat); border-color: var(--heat); color: #fff; }
 button.act[aria-pressed="true"] .k { color: rgba(255,255,255,.75); border-color: rgba(255,255,255,.4); }
 .decided { font-size: 13px; color: var(--ink-2); }
-/* laptop check */
+/* the operator's actions: steps, form fields and checks */
 .form-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; border: 1px solid var(--rule); background: var(--paper); border-radius: 6px; padding: 16px 18px; }
 @media (min-width: 700px) { .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .form-grid .wide { grid-column: 1 / -1; } }
 .form-grid label { display: flex; flex-direction: column; gap: 4px; font: 500 10.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }

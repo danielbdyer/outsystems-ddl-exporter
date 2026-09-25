@@ -16,12 +16,12 @@
 //   glossary  {Term: definition}; write {{Term}} in any text to make the term tappable
 //   decisions [{id, when, title, situation, complication, question, recommendation, refs [finding id suffixes],
 //               examples (markdown, tables allowed), options [{k, d, c, rec}]}]   rendered in that order
-//   findings  [{id "<lens>-<ID>", severity blocker|major|minor|note, title, situation, where, evidence, designSays,
-//               recommendation (the fix), lens, skeptic (the second review's reason)}]
+//   findings  [{id "<area>-<ID>", severity blocker|major|minor|note, title, situation, where, evidence, designSays,
+//               recommendation (the fix), area (the review area that found it), skeptic (the second review's reason)}]
 //   actions   {id, title, count, intro (markdown), steps [markdown], fields [{f, label, hint, wide, rows}],
 //              checks [{o, label}]}
 //   gate      {id, title, subtitle, cardTitle, options [{k, d, rec}]}
-//   sections  [{id, title, count, md, fold}]   after the gate: what is solid, risks, not checked
+//   sections  [{id, title, count, md, fold}]   after the gate: what is solid, the risks, and what was not checked
 //   colophon  markdown
 const fs = require("fs");
 const path = require("path");
@@ -39,7 +39,7 @@ const client = fs.readFileSync(path.join(here, "app.client.js"), "utf8");
 const decisions = (spec.decisions || []).map(d => d.examples ? Object.assign({}, d, { examplesHtml: render(d.examples) }) : d);
 const findings = spec.findings || [];
 const count = s => findings.filter(f => f.severity === s).length;
-const lenses = [...new Set(findings.map(f => f.lens))];
+const areas = [...new Set(findings.map(f => f.area))];
 const data = JSON.stringify({ id: spec.id, glossary: spec.glossary || {}, decisions, findings, gate: spec.gate, actions: spec.actions ? { id: spec.actions.id } : null }).replace(/</g, "\\u003c");
 
 const nav = [];
@@ -73,7 +73,7 @@ if (findings.length) {
 <div class="filters" role="group" aria-label="Filter findings">
   <div class="fgroup"><span>severity</span>${["blocker", "major", "minor", "note"].map(s => `<button type="button" class="chip" data-sev="${s}" aria-pressed="true">${s} ${count(s)}</button>`).join("")}</div>
   <div class="fgroup"><span>status</span><button type="button" class="chip" data-status="all" aria-pressed="true">all</button><button type="button" class="chip" data-status="open" aria-pressed="false">untriaged</button><button type="button" class="chip" data-status="triaged" aria-pressed="false">triaged</button></div>
-  <div class="fgroup"><select id="flens" aria-label="Lens"><option value="all">every lens</option>${lenses.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join("")}</select><input type="text" id="fq" placeholder="Search findings" aria-label="Search findings"></div>
+  <div class="fgroup"><select id="farea" aria-label="Review area"><option value="all">every review area</option>${areas.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join("")}</select><input type="text" id="fq" placeholder="Search findings" aria-label="Search findings"></div>
   <button type="button" class="bulk" id="bulk" data-n="0" hidden>Mark untriaged as fix</button><span class="fcount" id="fcount"></span>
 </div><div class="stack" id="findings"></div></section>`);
 }

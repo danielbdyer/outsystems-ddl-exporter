@@ -20,7 +20,7 @@
   }
   const paras = t => String(t || "").split(/\n{2,}|\n(?=[-*] )/).map(p => "<p>" + inline(p.replace(/\n/g, " ")) + "</p>").join("");
   const docId = id => "d" + id.replace(/\./g, "-");
-  const short = id => String(id).replace(/^[a-z]+-(?=[A-Z])/, ""); // a finding id is <lens>-<ID>; people read the ID
+  const short = id => String(id).replace(/^[a-z]+-(?=[A-Z])/, ""); // a finding id is <area>-<ID>; people read the ID
 
   // Which decision settles a finding: a finding id appears in a decision's refs.
   const decidedBy = {};
@@ -38,7 +38,7 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage refused: the filter just isn't remembered */ } },
   };
   const FKEY = "estate-review." + (DATA.id || "review") + ".filters";
-  const filters = Object.assign({ sev: ["blocker", "major", "minor", "note"], lens: "all", status: "all", q: "" }, ls.get(FKEY, {}));
+  const filters = Object.assign({ sev: ["blocker", "major", "minor", "note"], area: "all", status: "all", q: "" }, ls.get(FKEY, {}));
 
   const readOnly = () => document.body.classList.add("read-only");
   const stamp = () => new Date().toISOString();
@@ -96,7 +96,7 @@
   const shown = () => FINDINGS.filter(f => {
     const v = (fState[f.id] || {}).verdict || "";
     if (!filters.sev.includes(f.severity)) return false;
-    if (filters.lens !== "all" && f.lens !== filters.lens) return false;
+    if (filters.area !== "all" && f.area !== filters.area) return false;
     if (filters.status === "open" && v) return false;
     if (filters.status === "triaged" && !v) return false;
     if (filters.q) { const q = filters.q.toLowerCase(); if (![f.id, f.title, f.where, f.evidence, f.recommendation].join(" ").toLowerCase().includes(q)) return false; }
@@ -114,7 +114,7 @@
       + '<span class="ftitle">' + inline(f.title) + "</span>"
       + '<span class="fmeta"><span class="sev sev-' + f.severity + '">' + f.severity + "</span>"
       + (v ? '<span class="vtag ' + v + '">' + (v === "wontfix" ? "won't fix" : v) + "</span>" : "")
-      + '<span class="lens">' + esc(f.lens) + "</span></span></div>"
+      + '<span class="area">' + esc(f.area) + "</span></span></div>"
       + '<div class="fbody"' + (open ? "" : " hidden") + ">"
       + (f.situation ? '<div class="field"><span class="fl">Situation</span><div class="ft">' + paras(f.situation) + "</div></div>" : "")
       + '<div class="field"><span class="fl">Where</span><div class="ft">' + inline(f.where) + "</div></div>"
@@ -136,7 +136,7 @@
     document.getElementById("fcount").textContent = list.length + " of " + FINDINGS.length + " shown";
     for (const b of document.querySelectorAll("button.chip[data-sev]")) b.setAttribute("aria-pressed", String(filters.sev.includes(b.dataset.sev)));
     for (const b of document.querySelectorAll("button.chip[data-status]")) b.setAttribute("aria-pressed", String(filters.status === b.dataset.status));
-    document.getElementById("flens").value = filters.lens;
+    document.getElementById("farea").value = filters.area;
     const bulk = document.getElementById("bulk");
     const n = list.filter(f => !(fState[f.id] || {}).verdict).length;
     bulk.hidden = n === 0; bulk.classList.remove("arm"); bulk.textContent = "Mark the " + n + " untriaged shown as fix"; bulk.dataset.n = n;
@@ -226,7 +226,7 @@
     const openRef = e.target.closest("a[data-open]");
     if (openRef) {
       const id = openRef.dataset.open;
-      filters.sev = ["blocker", "major", "minor", "note"]; filters.lens = "all"; filters.status = "all"; filters.q = "";
+      filters.sev = ["blocker", "major", "minor", "note"]; filters.area = "all"; filters.status = "all"; filters.q = "";
       document.getElementById("fq").value = ""; ls.set(FKEY, filters);
       expanded.add(id); renderFindings();
       return; // the anchor's own navigation scrolls to the row
@@ -264,7 +264,7 @@
     if (t.id === "gate-note") { await save(GATE_DOC, { choice: typeof gState.choice === "number" ? gState.choice : -1, option: gState.choice >= 0 ? GATE.options[gState.choice].k : "", notes: t.value }, document.querySelector("#gate-card .saved")); gState.notes = t.value; return; }
     if (t.dataset.f) { report[t.dataset.f] = t.value; await save(ACT_DOC, report, document.getElementById("act-saved")); return; }
     if (t.dataset.o) { ops[t.dataset.o] = t.checked; await save(ACT_DOC + "-checks", ops, document.getElementById("act-saved")); return; }
-    if (t.id === "flens") { filters.lens = t.value; ls.set(FKEY, filters); renderFindings(); }
+    if (t.id === "farea") { filters.area = t.value; ls.set(FKEY, filters); renderFindings(); }
   });
   document.addEventListener("input", e => { if (e.target.id === "fq") { filters.q = e.target.value; ls.set(FKEY, filters); renderFindings(); } });
   document.addEventListener("keydown", e => {

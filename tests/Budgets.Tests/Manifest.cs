@@ -35,7 +35,7 @@ public sealed class Manifest
     {
         var wrong = Documents.Rows.Where(r => !Repository.Files.Contains(r.Path)
                 || r.Kind is not ("hand" or "generated")
-                || r.Owner is not ("engine" or "estate" or "vendored")
+                || r.Owner is not ("tool" or "estate" or "vendored")
                 || r.Reader.Length == 0
                 || r.Moment.Length == 0
                 || (r.Kind == "generated") != (r.Generator is not null)

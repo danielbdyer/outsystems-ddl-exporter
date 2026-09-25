@@ -1,17 +1,17 @@
 # AGENTS.md — working in this repository
 
-This repository builds `estate`, the lifecycle engine behind schema changes on an OutSystems
-estate that moved to SSDT: one CLI (its verbs listed by `estate --help --json`, and from M8 in
-`cli/VERBS.md`, generated from it) and, from M7, `knowledge/`, the files a developer's Copilot
-session reads in the estate repository. Read this file, then `NEXT.md`, then the README of the
-package being changed. Nothing else is required before starting.
+This repository builds `estate`, which tells a developer whether a schema change to an OutSystems
+estate on SSDT blocks or applies on each environment before Octopus deploys it: one CLI (its verbs
+listed by `estate --help --json`, and from M8 in `cli/VERBS.md`, generated from it) and, from M7,
+`knowledge/`, the files a developer's Copilot session reads in the estate repository. Read this
+file, then `NEXT.md`, then the README of the package being changed. Nothing else is required.
 
 ## Before anything
 
 Run `estate doctor` and quote its line before claiming a tool, a daemon or a database is missing.
 The line reads `READY` or `DEGRADED` and names the .NET SDK and runtime, the tool folder and its
-DacFx against `estate/ledgers/toolchain.md`, the build route, the substrate (Docker or LocalDB) and
-Git LFS; every missing item carries a remedy.
+DacFx against `estate/ledgers/toolchain.md`, the build route, the scratch server (Docker or LocalDB)
+and Git LFS; every missing item carries a remedy.
 Without the session hook, `dotnet run --project cli -- doctor` runs it.
 
 ## Where truth lives
@@ -19,16 +19,17 @@ Without the session hook, `dotnet run --project cli -- doctor` runs it.
 - What is built, and in what order: `V3_MILESTONES.md`; where its §4 changes a design document,
   the plan wins. The design: `V3_ARCHITECTURE.md` (the code) and `V3_INSTRUCTION_ARCHITECTURE.md`
   (the documents), until `ARCHITECTURE.md` replaces both at M8.
-- What it upholds: `VALUES.md`. What is proven: `LAWS.md`, generated from the tests from M1. What
-  was decided: `DECISIONS.md`. What is next: `NEXT.md`.
+- What it upholds: `VALUES.md`. The laws, each with the test that states it: `LAWS.md`, generated
+  from the tests from M1; the CI run says which are green. What was decided: `DECISIONS.md`. What is
+  next: `NEXT.md`.
 - The domain (SQL Server, DacFx, the estate, the platform): `knowledge/` from M7; until then, the
   design documents.
 - The past: `archive/` holds v1 and v2, indexed in `archive/INDEX.md`. It is provenance: cite it as
   archive, and re-verify against the current files before relying on it. It stays readable until
   M8 because v2 is the specification a port reads: a work package that ports names its v2 files,
-  ports their tests first, and is reviewed against them. Editing `archive/` is denied. The root
-  `.ignore` hides it from search: search it with `rg --no-ignore <pattern> archive/`, or read a file
-  by its path.
+  ports their tests first, and is reviewed against them. No agent edits `archive/`; the deny rule
+  arrives with the operator's `.claude/settings.json` at M0. The root `.ignore` hides it from
+  search: search it with `rg --no-ignore <pattern> archive/`, or read a file by its path.
 
 ## Building and testing
 
@@ -40,8 +41,8 @@ Without the session hook, `dotnet run --project cli -- doctor` runs it.
   container from the pinned image where Docker runs, LocalDB where it does not.
 - Every test carries `[Trait("Category", "fast")]`, or `[Trait("Category", "fixture")]` when it
   needs SQL Server. No test skips itself, and none retries.
-- The proof lane and the scale lane run in CI. Run them locally only when the task is about them,
-  and never both in one `dotnet test`.
+- The scale lane (from M3) and the proof lane (from M4) run in CI. Run them locally only when the
+  task is about them, and never both in one `dotnet test`.
 - A stale build after switching branches: `dotnet clean`; an old RID-specific output directory
   shadows a fresh build without an error.
 
@@ -66,10 +67,10 @@ Without the session hook, `dotnet run --project cli -- doctor` runs it.
 ## What a session writes
 
 Code and tests, under the laws and the budgets. A pull request body in the register below. At most
-one line in `DECISIONS.md`, in the format `2026-09-23 · <the decision> · #<pull request>`.
-`NEXT.md`, rewritten, never appended to, under its budget. A knowledge file, when what is true of
-the domain changed. `V3_MILESTONES.md` only to keep it true, one paragraph at a time, each
-correction with a decision line.
+one line in `DECISIONS.md` per decision, each in the format
+`2026-09-23 · <the decision> · #<pull request>`. `NEXT.md`, rewritten, never appended to, under its
+budget. A knowledge file, when what is true of the domain changed. `V3_MILESTONES.md` only to keep
+it true, one paragraph at a time, each correction with a decision line.
 
 Nothing else: no new top-level document, no status section, no plan, no assessment. A new markdown
 file fails the build until its row in `ci/docs.manifest.json` says who reads it and when. An edit
@@ -78,7 +79,7 @@ the model that wrote it.
 
 ## The register
 
-Write plain, technical English. The rules hold for documents, refusal and finding messages, CLI output,
+Write plain, technical English. The rules hold for documents, error and finding messages, CLI output,
 test names, review pages and pull-request bodies.
 
 - Name the exact object: the file and line, the type, the SQL Server feature, the command, the number.
@@ -94,23 +95,24 @@ test names, review pages and pull-request bodies.
 - Make every reference add information: say what the cited thing says as well as its identifier. A test
   asserts behaviour the code could get wrong; it never restates the implementation or itself.
 - Write agentless, in the active voice, without hedging; say what was not checked. Use no private
-  nickname, no retired word (`V3_INSTRUCTION_ARCHITECTURE.md` Appendix A lists them) and no count that a
-  generated file carries.
+  nickname, no retired word (`ci/register.json` lists each with what to write instead, and
+  `Register.Prose` fails on one) and no count that a generated file carries.
 
 ## When something fails
 
-- A refusal names its code and its remedy. Do the remedy; a workaround hides the refusal.
+- An error names its code and its remedy. Do the remedy; a workaround hides the error.
 - A tool call refused by the permission check: say so, and continue with the rest.
 - A red budget test names the ceiling and the file.
 - A red law names the law. The law is right until a decision line says otherwise.
-- A substrate failure: `estate twin up`, then `estate doctor`.
-- A verdict that disagrees with a recorded finding: the verdict is a new finding with a receipt;
-  append it and strike the old one, which stays.
-- A question only the operator can answer: one line under *Waiting on a person* in `NEXT.md`, and
-  the thread stops there.
+- The scratch server not answering (exit 4): `ci/sql.sh up`, or `ci/sql.ps1 up` on Windows, then
+  `estate doctor`.
+- A proof whose verdict disagrees with a recorded finding: the verdict is a new finding with its
+  provenance; append it and strike the old one, which stays.
+- A question only the operator can answer: one line in `NEXT.md` naming the question and who
+  answers it, and work on that question stops there.
 
 ## The pull request
 
-Summary; what changed; the law or test that pins it; budgets; the decision line, or none; and
-*Not checked*, never empty. CI posts the budget numbers and the law results; the author says what
-moved and why. A person approves; no lane ever does.
+Summary; what changed; the law or test that pins it; budgets; the decision lines, or none; and
+*Not checked*, never empty. CI runs the budget and law tests, which name the ceiling or the law that
+fails; the author says what moved and why. A person approves; no lane ever does.
