@@ -67,3 +67,6 @@
 2026-09-25 · `archive/` stays readable until M8 (row 18 of `V3_MILESTONES.md` §4) and the root `.ignore` hides it from search; the plan's manifest budget rises to its new size · #704
 2026-09-25 · X5 names the DNS lookups R15 makes and git's LFS setting; S6 is answered before M2's developer-facing exit · #704
 2026-09-25 · the operator reviews the kernel and the contract through a standalone explainer, kept out of the repository · #704
+2026-09-25 · every refusal area exits by a row of `RefusalExits`: the kernel's `name`, `element` and `fingerprint` exit 2 (unparsed input), an area with no row exits 6 with `internal.unmapped-area`, and the exit test reads every code from `RefusalPaths` · #704
+2026-09-25 · `Program.Run` answers an exception no verb expected with `internal.unexpected` at exit 6, naming its type, and keeps its message only when no argument names an `env:` or `copy:` target · #704
+2026-09-25 · a DacFx failure with no `SqlException` inside is `dacfx.failed`, exit 6, quoting DacFx's own messages (SQL7xxxx); one that quotes a SQL Server error number takes the `server.*` route and is withheld for a named environment · #704
