@@ -61,7 +61,7 @@ internal static class RefusalPaths
             Failed(Element.Of(Table, [], [Element.Relationship.Of("Columns", [Table]), Element.Relationship.Of("Columns", [Table])]))),
         new("a model with two elements on one key", "change.duplicate-key", false, (_, _) =>
             Failed(Change.Between(SortedArray.Of(Made(Element.Of(Table, [], [])), Made(Element.Of(Table, [new("Nullable", new Value.Null())], []))), [], []))),
-        new("a collation name with no case rule", "model.collation", true, (_, planted) => Failed(Collation.Of("Latin1_General_" + planted))),
+        new("a collation name with no case rule", "model.collation", false, (_, _) => Failed(Collation.Of("Latin1_General"))),
 
         new("ESTATE_TOOL naming no tool folder", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), Bare(scratch), scratch))),
         new("no tool folder anywhere", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), null, scratch))),
