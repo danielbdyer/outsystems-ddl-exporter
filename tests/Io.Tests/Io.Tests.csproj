@@ -21,10 +21,13 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../io/io.csproj" />
-    <!-- The exit an error takes is the CLI's category table (Contract.Exit), so a test of io's errors asserts the exit through it. -->
+    <!-- The verb tests run estate in this process through Cli.Program.Run; an adapter test asserts an error's code, never an exit. -->
     <ProjectReference Include="../../cli/cli.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The test primitives every project shares (DECISIONS.md, 2026-09-25), and the half of ScratchFolder that knows the repository. -->
+    <Compile Include="../Shared/*.cs" LinkBase="Shared" />
+    <Compile Include="../Shared/Io/*.cs" LinkBase="Shared/Io" />
     <Compile Include="../Budgets.Tests/Repository.cs" Link="Repository.cs" />
     <!-- The tests' program runs through io/Command: a program that does not run, or overruns, fails the test naming it. -->
     <Compile Include="../Budgets.Tests/Programs.cs" Link="Programs.cs" />

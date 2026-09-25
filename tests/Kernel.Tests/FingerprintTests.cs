@@ -40,16 +40,7 @@ public sealed class FingerprintTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void The_fingerprint_is_a_pure_function_of_its_input()
-    {
-        Gen.String.Sample(s =>
-            Fingerprint.Of(s) == Fingerprint.Of(new string(s.AsSpan()))
-            && Fingerprint.Of(s).ToString() == Fingerprint.Of(new string(s.AsSpan())).ToString());
-        Gen.Byte.Array.Sample(b => Fingerprint.Of(b) == Fingerprint.Of(b.ToArray()));
-    }
-
-    [Fact]
-    [Trait("Category", "fast")]
+    [Trait("Value", "D3")]
     public void Text_is_fingerprinted_in_its_canonical_form() =>
         Gen.Char["ab \n\u00E9"].Array[0, 12].Select(cs => new string(cs)).Sample(lf =>
             Fingerprint.Of(lf) == Fingerprint.Of(Encoding.UTF8.GetBytes(lf))

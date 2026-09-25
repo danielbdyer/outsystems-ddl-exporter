@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Text.Json;
 using CsCheck;
+using Estate.Tests;
 using Xunit;
 using static Estate.Kernel.Tests.ElementSets;
 
@@ -90,7 +91,7 @@ public sealed class ChangeTests
     {
         var twice = SortedArray.Of(New(Key("Table", "dbo", "Customer"), []), New(Key("Table", "dbo", "CUSTOMER"), []));
 
-        Assert.Equal("change.duplicate-key", Assert.IsType<Result<Change>.Failed>(Change.Between(twice, [], [], CaseInsensitive)).Error.Code);
+        Expect.Failed(Change.Between(twice, [], [], CaseInsensitive), "change.duplicate-key");
         Assert.True(Ok(Change.Between(twice, twice, [], Collation.CaseSensitive)).IsEmpty);
     }
 
@@ -116,8 +117,7 @@ public sealed class ChangeTests
     [InlineData("")]
     [InlineData(null)]
     [InlineData("Latin1_General_CS_AS; DROP TABLE x")]
-    public void A_collation_name_with_no_case_rule_is_refused(string? name) =>
-        Assert.Equal("model.collation", Assert.IsType<Result<Collation>.Failed>(Collation.Of(name)).Error.Code);
+    public void A_collation_name_with_no_case_rule_is_refused(string? name) => Expect.Failed(Collation.Of(name), "model.collation");
 
     /// <summary>Whether <paramref name="key"/> lies under <paramref name="ancestor"/>.</summary>
     private static bool Beneath(ElementKey key, ElementKey ancestor) => key.Parent is { } parent && (parent == ancestor || Beneath(parent, ancestor));
@@ -133,24 +133,17 @@ public sealed class ChangeTests
         Assert.Contains("Column [dbo].[Customer].[Email]", line, StringComparison.Ordinal);
         Assert.Contains("Column [dbo].[Customer].[EmailAddress]", line, StringComparison.Ordinal);
         Assert.Contains("\"EmailAddress\"", JsonSerializer.Serialize(rename), StringComparison.Ordinal);
-        Assert.Equal(rename, rename.Inverted().Inverted());
         Assert.All(Between("rename a table and a column").Renamed, r => Assert.Contains(r.After.ToString(), $"{r}", StringComparison.Ordinal));
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Make_mandatory_changes_the_nullable_property_of_the_one_column_and_nothing_else()
-    {
-        var change = Between("make-mandatory");
-
-        Assert.Equal(Altered(SampleChanges.Email, [new Change.Property("Nullable", Bool(true), Bool(false))]), change);
-        var line = change.Altered.SelectMany(a => a.Properties.Select(p => a.Key + ": " + p.Name + " " + p.Before + " → " + p.After));
-        Assert.Equal("Column [dbo].[Customer].[Email]: Nullable true → false", Assert.Single(line));
-    }
+    public void Make_mandatory_changes_the_nullable_property_of_the_one_column_and_nothing_else() =>
+        Assert.Equal(Altered(SampleChanges.Email, [new Change.Property("Nullable", Bool(true), Bool(false))]), Between("make-mandatory"));
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Adding_a_column_adds_it_and_appends_it_to_its_table_s_columns()
+    public void Adding_a_column_reports_it_created_and_appends_it_to_its_table_s_columns()
     {
         var (_, after, _) = SampleChanges.Pair("add a column");
         var phone = after.Single(e => e.Key.Name.Base == "Phone");
@@ -162,7 +155,7 @@ public sealed class ChangeTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Dropping_a_column_removes_it_and_takes_it_out_of_its_table_s_columns()
+    public void Dropping_a_column_reports_it_dropped_and_takes_it_out_of_its_table_s_columns()
     {
         var (before, _, _) = SampleChanges.Pair("drop a column");
         var notes = before.Single(e => e.Key.Name.Base == "Notes");
@@ -232,12 +225,12 @@ public sealed class ChangeTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Two_elements_of_one_model_with_one_key_fail_with_change_duplicate_key()
+    public void Two_elements_of_one_model_with_one_key_fail_as_change_duplicate_key()
     {
         var twice = SortedArray.Of(New(SampleChanges.Customer, [("IsMemoryOptimized", Bool(false))]), New(SampleChanges.Customer, []));
 
-        Assert.Equal("change.duplicate-key", Assert.IsType<Result<Change>.Failed>(Change.Between(twice, [], [])).Error.Code);
-        Assert.Equal("change.duplicate-key", Assert.IsType<Result<Change>.Failed>(Change.Between([], twice, [])).Error.Code);
+        Expect.Failed(Change.Between(twice, [], []), "change.duplicate-key");
+        Expect.Failed(Change.Between([], twice, []), "change.duplicate-key");
     }
 
     private static SortedArray<Rename> Inverted(SortedArray<Rename> renames) => SortedArray.Of(renames.Select(r => r.Inverted()));

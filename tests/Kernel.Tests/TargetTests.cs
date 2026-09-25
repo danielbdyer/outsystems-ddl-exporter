@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using CsCheck;
+using Estate.Tests;
 using Xunit;
 
 namespace Estate.Kernel.Tests;
@@ -28,13 +29,13 @@ public sealed class TargetTests
     [InlineData("dacpac:.estate/build/0a1b/SampleCatalog.dacpac", "package", ".estate/build/0a1b/SampleCatalog.dacpac")]
     public void The_target_grammar_reads_each_form_into_its_case_and_writes_it_back(string text, string form, string named)
     {
-        var target = Made(Target.Parse(text, Subject));
+        var target = Expect.Value(Target.Parse(text, Subject));
 
         Assert.Equal((form, named), target.Match(
             environment => ("environment", environment.Name.ToString()), copy => ("registered copy", copy.Name.ToString()), () => ("synthetic copy", ""),
             reference => ("git ref", reference.Ref.ToString()), package => ("package", package.Path)));
         Assert.Equal(text, target.ToString());
-        Assert.Equal(target, Made(Target.Parse(target.ToString(), Subject)));
+        Assert.Equal(target, Expect.Value(Target.Parse(target.ToString(), Subject)));
     }
 
     /// <summary>An env: target is read exactly when its name is an environment's name, the one grammar the posture's keys also answer to.</summary>
@@ -59,13 +60,8 @@ public sealed class TargetTests
     [InlineData("dacpac:")]
     [InlineData("dacpac:x\n.dacpac")]
     [InlineData("")]
-    public void A_text_in_no_form_of_the_grammar_is_target_unknown(string text)
-    {
-        var error = Failed(Target.Parse(text, Subject));
-
-        Assert.Equal("target.unknown", error.Code);
-        Assert.StartsWith("The value of " + Subject + " is none of", error.Message, StringComparison.Ordinal);
-    }
+    public void A_text_in_no_form_of_the_grammar_is_target_unknown(string text) =>
+        Assert.StartsWith("The value of " + Subject + " is none of", Expect.Failed(Target.Parse(text, Subject), "target.unknown").Message, StringComparison.Ordinal);
 
     /// <summary>An argument can hold anything a caller pastes, so no refusal of the grammar quotes it.</summary>
     [Theory]
@@ -79,10 +75,9 @@ public sealed class TargetTests
     [InlineData("dacpac:\n")]
     public void No_refusal_of_the_grammar_quotes_the_argument(string form)
     {
-        const string Planted = "Planted-7f3a";
-        var error = Failed(Target.Parse(form + Planted, Subject));
+        var planted = new PlantedValue("Planted-7f3a");
 
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.OrdinalIgnoreCase);
+        planted.AbsentFrom(Expect.Failed(Target.Parse(form + planted, Subject)));
     }
 
     /// <summary>The names estate gives copies read back as themselves, whatever the machine is called, the process's id and the eight hexadecimal digits.</summary>
@@ -118,9 +113,8 @@ public sealed class TargetTests
     [InlineData("")]
     public void A_name_estate_never_gives_a_copy_is_copy_unregistered_and_is_not_quoted(string text)
     {
-        var error = Failed(CopyName.Of(Subject, text));
+        var error = Expect.Failed(CopyName.Of(Subject, text), "copy.unregistered");
 
-        Assert.Equal("copy.unregistered", error.Code);
         Assert.StartsWith(Subject + " names a copy", error.Message, StringComparison.Ordinal);
         Assert.Contains(".estate/copies.json", error.Message, StringComparison.Ordinal);
         Assert.All(new[] { text }.Where(t => t.Length > 0), t => Assert.DoesNotContain(t, error.Message + error.Remedy, StringComparison.Ordinal));
@@ -133,8 +127,7 @@ public sealed class TargetTests
     [InlineData("main\u0000")]
     [InlineData("")]
     [InlineData(null)]
-    public void A_git_ref_git_would_read_as_an_option_or_that_holds_a_control_character_is_refused(string? text) =>
-        Assert.Equal("ref.malformed", Failed(GitRef.Of("--at", text)).Code);
+    public void A_git_ref_git_would_read_as_an_option_or_that_holds_a_control_character_is_refused(string? text) => Expect.Failed(GitRef.Of("--at", text), "ref.malformed");
 
     [Fact]
     [Trait("Category", "fast")]
@@ -144,8 +137,4 @@ public sealed class TargetTests
         Assert.Throws<InvalidOperationException>(() => default(CopyName).ToString());
         Assert.Throws<InvalidOperationException>(() => default(GitRef).ToString());
     }
-
-    private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
-
-    private static Error Failed<T>(Result<T> result) => Assert.IsType<Result<T>.Failed>(result).Error;
 }

@@ -22,4 +22,9 @@
     <ProjectReference Include="../../io/io.csproj" />
     <ProjectReference Include="../../cli/cli.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The test primitives every project shares (DECISIONS.md, 2026-09-25), and the half of ScratchFolder that knows the repository. -->
+    <Compile Include="../Shared/*.cs" LinkBase="Shared" />
+    <Compile Include="../Shared/Io/*.cs" LinkBase="Shared/Io" />
+  </ItemGroup>
 </Project>

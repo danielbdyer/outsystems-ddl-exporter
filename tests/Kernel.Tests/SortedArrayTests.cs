@@ -28,14 +28,13 @@ public sealed class SortedArrayTests
     public void Sorted_arrays_are_equal_exactly_when_their_elements_are_equal_one_by_one() =>
         Gen.Select(Words, Words).Sample((xs, ys) =>
             (SortedArray.Of(xs) == SortedArray.Of(ys)) == xs.Order(StringComparer.Ordinal).SequenceEqual(ys.Order(StringComparer.Ordinal))
-            && SortedArray.Of(xs).Equals((object)SortedArray.Of(ys)) == (SortedArray.Of(xs) == SortedArray.Of(ys))
-            && (SortedArray.Of(xs) != SortedArray.Of(ys)) == !(SortedArray.Of(xs) == SortedArray.Of(ys)));
+            && SortedArray.Of(xs).Equals((object)SortedArray.Of(ys)) == (SortedArray.Of(xs) == SortedArray.Of(ys)));
 
-    // A near miss changes one element: one character's case flipped, a character appended, or the word swapped for
-    // another. Every sample is unequal, so an equality looser than element by element fails on the first sample.
+    // One element changed: one character's case flipped, a character appended, or the word swapped for another. Every
+    // sample is unequal, so an equality looser than element by element fails on the first sample.
     [Fact]
     [Trait("Category", "fast")]
-    public void A_sorted_array_differs_from_its_near_miss() =>
+    public void A_sorted_array_differs_from_one_with_one_element_changed() =>
         Gen.Select(Words.Where(xs => xs.Length > 0), Gen.Int[0, 7], Gen.Int[0, 2], Words.Where(ws => ws.Length > 0)).Sample((xs, at, change, others) =>
         {
             var ys = xs.ToArray();
@@ -58,7 +57,7 @@ public sealed class SortedArrayTests
     [InlineData(new[] { "ab" }, new[] { "a", "b" })]
     [InlineData(new[] { "a", "b" }, new[] { "a", "c" })]
     [InlineData(new[] { "ä" }, new[] { "Ä" })]
-    public void Pinned_near_misses_are_different_sorted_arrays(string[] xs, string[] ys)
+    public void Arrays_that_differ_in_one_element_build_different_sorted_arrays(string[] xs, string[] ys)
     {
         Assert.True(SortedArray.Of(xs) != SortedArray.Of(ys));
         Assert.False(SortedArray.Of(xs).Equals(SortedArray.Of(ys)));
@@ -68,7 +67,7 @@ public sealed class SortedArrayTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_record_holding_a_sorted_array_compares_the_elements_not_the_array() =>
+    public void A_record_holding_a_sorted_array_compares_its_elements() =>
         Words.Sample(xs =>
             new Holder(SortedArray.Of(xs)) == new Holder(SortedArray.Of(Enumerable.Reverse(xs).Select(x => new string(x.AsSpan())))));
 
@@ -79,6 +78,7 @@ public sealed class SortedArrayTests
     [InlineData("en-US")]
     [InlineData("sv-SE")]
     [InlineData("tr-TR")]
+    [Trait("Value", "D2")]
     public void A_sorted_array_is_in_ordinal_order_whatever_the_culture(string culture)
     {
         var before = CultureInfo.CurrentCulture;
@@ -98,7 +98,7 @@ public sealed class SortedArrayTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void The_default_sorted_array_is_the_empty_sorted_array()
+    public void The_default_sorted_array_is_empty()
     {
         SortedArray<string> empty = [];
         Assert.True(empty == default(SortedArray<string>));

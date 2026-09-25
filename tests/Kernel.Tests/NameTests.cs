@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using CsCheck;
+using Estate.Tests;
 using Xunit;
 
 namespace Estate.Kernel.Tests;
@@ -14,7 +15,7 @@ public sealed class NameTests
     /// <summary>A part of 1 to 128 code units drawn from the whole BMP: control characters (U+0000 to U+001F, U+007F to U+009F), white space and the rest.</summary>
     private static readonly Gen<string> Part = Gen.OneOf(
         Gen.Char['\u0000', '￿'].Array[1, 128].Select(cs => new string(cs)),
-        Gen.Char[" \t\r\n\u0000\u001B\u007F\u0085  　"].Array[1, 8].Select(cs => new string(cs)));
+        Gen.Char[" \t\r\n\u0000\u001B\u007F\u0085  　"].Array[1, 8].Select(cs => new string(cs)));
 
     private static readonly Gen<Name> Small =
         Gen.Select(Gen.Bool, Gen.Char["aA."].Array[1, 2], Gen.Char["aA."].Array[1, 2])
@@ -38,11 +39,11 @@ public sealed class NameTests
     {
         Gen.Char['a', 'z'].Array[129, 300].Select(cs => new string(cs)).Sample(overlong =>
             Code(Name.Of(overlong)) == "name.too-long" && Code(Name.Of(overlong, "Customer")) == "name.too-long" && Code(Name.Of("dbo", overlong)) == "name.too-long");
-        Assert.Equal("name.too-long", Code(Name.Of(new string('x', 129))));
-        Assert.Equal("name.blank", Code(Name.Of("")));
-        Assert.Equal("name.blank", Code(Name.Of("", "Customer")));
-        Assert.Equal("name.blank", Code(Name.Of("dbo", "")));
-        Assert.Equal("name.blank", Code(Name.Of(null!)));
+        Expect.Failed(Name.Of(new string('x', 129)), "name.too-long");
+        Expect.Failed(Name.Of(""), "name.blank");
+        Expect.Failed(Name.Of("", "Customer"), "name.blank");
+        Expect.Failed(Name.Of("dbo", ""), "name.blank");
+        Expect.Failed(Name.Of(null!), "name.blank");
         Assert.Throws<InvalidOperationException>(() => default(Name).Base);
     }
 
@@ -64,7 +65,7 @@ public sealed class NameTests
     [Trait("Category", "fast")]
     public void Names_match_ignoring_case_under_a_case_insensitive_collation_alone()
     {
-        var insensitive = Assert.IsType<Result<Collation>.Ok>(Collation.Of("SQL_Latin1_General_CP1_CI_AS")).Value;
+        var insensitive = Expect.Value(Collation.Of("SQL_Latin1_General_CP1_CI_AS"));
 
         Assert.True(N("dbo", "Customer").Matches(N("DBO", "customer"), insensitive));
         Assert.False(N("dbo", "Customer").Matches(N("DBO", "customer"), Collation.CaseSensitive));
@@ -75,7 +76,7 @@ public sealed class NameTests
 
     private static string? Code(Result<Name> result) => (result as Result<Name>.Failed)?.Error.Code;
 
-    private static Name N(string part) => Assert.IsType<Result<Name>.Ok>(Name.Of(part)).Value;
+    private static Name N(string part) => Expect.Value(Name.Of(part));
 
-    private static Name N(string schema, string part) => Assert.IsType<Result<Name>.Ok>(Name.Of(schema, part)).Value;
+    private static Name N(string schema, string part) => Expect.Value(Name.Of(schema, part));
 }
