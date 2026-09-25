@@ -102,7 +102,7 @@ public sealed class AggregateQueryTests(GoldenProject ground) : IClassFixture<Go
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
-    [Trait("Law", "3′ the read is complete")]
+    [Trait("Law", "3′ the model is complete")]
     public void One_database_read_twice_by_one_identity_fingerprints_equally()
     {
         var (admin, reader) = (Resolved("uat", ground.Copy.ConnectionString), Resolved("qa", ground.Reader.ConnectionString));

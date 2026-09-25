@@ -16,7 +16,7 @@ public sealed class ElementTests
 {
     [Fact]
     [Trait("Category", "fast")]
-    [Trait("Law", "3′ the read is complete")]
+    [Trait("Law", "3′ the model is complete")]
     public void The_fingerprint_of_a_model_is_independent_of_the_order_its_elements_are_given_in() =>
         Sets.SelectMany(set => Gen.Shuffle(set.ToArray()).Select(shuffled => (set, shuffled))).Sample((set, shuffled) =>
             Fingerprint.Of(SortedArray.Of(shuffled.Select(Rebuilt))) == Fingerprint.Of(set)
@@ -24,7 +24,7 @@ public sealed class ElementTests
 
     [Fact]
     [Trait("Category", "fast")]
-    [Trait("Law", "3′ the read is complete")]
+    [Trait("Law", "3′ the model is complete")]
     public void Two_models_fingerprint_equally_exactly_when_their_elements_are_equal()
     {
         Gen.Select(Sets, Sets).Sample((a, b) => (Fingerprint.Of(a) == Fingerprint.Of(b)) == (a == b));
@@ -34,13 +34,13 @@ public sealed class ElementTests
 
     [Fact]
     [Trait("Category", "fast")]
-    [Trait("Law", "3′ the read is complete")]
+    [Trait("Law", "3′ the model is complete")]
     public void Any_single_edit_to_a_key_a_property_value_a_relationship_target_or_a_script_changes_the_fingerprint() =>
         Edits.Sample((before, edit) => Fingerprint.Of(before) != Fingerprint.Of(edit.After), print: x => x.Item2.Kind, iter: 1000);
 
     [Theory]
     [Trait("Category", "fast")]
-    [Trait("Law", "3′ the read is complete")]
+    [Trait("Law", "3′ the model is complete")]
     [MemberData(nameof(SampleChanges.Names), MemberType = typeof(SampleChanges))]
     public void Every_sample_change_changes_the_fingerprint(string sample)
     {
@@ -51,7 +51,7 @@ public sealed class ElementTests
     // Pairs that run together without the mechanism each names: lengths, value tags, counts, UTF-16 code units.
     [Theory]
     [Trait("Category", "fast")]
-    [Trait("Law", "3′ the read is complete")]
+    [Trait("Law", "3′ the model is complete")]
     [InlineData("lengths: a two-part name split at another place", 0)]
     [InlineData("lengths: an enumeration's type and member split at another place", 1)]
     [InlineData("tags: a text whose length and code units spell an integer", 2)]

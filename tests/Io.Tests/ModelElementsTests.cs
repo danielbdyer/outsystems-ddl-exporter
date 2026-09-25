@@ -54,7 +54,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
     [Fact]
     [Trait("Category", "fast")]
-    [Trait("Law", "3′ the read is complete")]
+    [Trait("Law", "3′ the model is complete")]
     public void Two_builds_of_the_golden_project_read_into_equal_models_and_one_fingerprint()
     {
         var (first, second) = (heads.Models["base"], heads.Models["again"]);
@@ -73,7 +73,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     [Theory]
     [Trait("Category", "fast")]
     [MemberData(nameof(SampleChanges))]
-    [Trait("Law", "3′ the read is complete")]
+    [Trait("Law", "3′ the model is complete")]
     public void Each_sample_change_to_the_golden_project_changes_the_fingerprint(string sample) =>
         Assert.NotEqual(Fingerprint.Of(heads.Models["base"].Elements), Fingerprint.Of(heads.Models[sample].Elements));
 
@@ -483,7 +483,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    [Trait("Law", "3′ the read is complete")]
+    [Trait("Law", "3′ the model is complete")]
     public void Procedures_differing_only_in_a_message_that_names_a_password_read_as_written_and_differ_in_their_Definition()
     {
         const string Expired = "CREATE PROCEDURE dbo.P AS RAISERROR('The user''s password has expired', 16, 1);";

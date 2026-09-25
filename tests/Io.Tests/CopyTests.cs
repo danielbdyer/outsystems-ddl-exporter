@@ -61,7 +61,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
-    [Trait("Law", "3′ the read is complete")]
+    [Trait("Law", "3′ the model is complete")]
     public async Task A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint()
     {
         var strict = Made(Profiles.Load(ground.Profile));
@@ -91,7 +91,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
     /// <summary>§1 fact 4 through io: a copy matches its package when the deploy plan under the pipeline's profile is empty; the make-mandatory head's plan against the same copy is one Alter, its data-loss check in the script.</summary>
     [Fact]
     [Trait("Category", "fixture")]
-    [Trait("Law", "3′ the read is complete")]
+    [Trait("Law", "3′ the model is complete")]
     public async Task The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not()
     {
         var strict = Made(Profiles.Load(ground.Profile));
