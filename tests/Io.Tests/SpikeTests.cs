@@ -84,7 +84,7 @@ public sealed class SpikeTests(GoldenProject project) : IClassFixture<GoldenProj
 
     [Fact]
     [Trait("Category", "fixture")]
-    public void Fact_6_the_property_walk_finds_Nullable_true_to_false_and_nothing_else()
+    public void Fact_6_one_read_of_every_property_finds_Nullable_true_to_false_and_nothing_else()
     {
         using var before = TSqlModel.LoadFromDacpac(project.Base, new ModelLoadOptions());
         using var after = TSqlModel.LoadFromDacpac(project.Mandatory, new ModelLoadOptions());
@@ -141,7 +141,7 @@ public sealed class SpikeTests(GoldenProject project) : IClassFixture<GoldenProj
     private static List<string> Tables(TSqlModel model) =>
         [.. model.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass).Select(t => t.Name.ToString()).Order(StringComparer.Ordinal)];
 
-    /// <summary>One walk over <c>ModelTypeClass.Properties</c>, no code per property: every column of every table, base against head.</summary>
+    /// <summary>One read of every entry in <c>ModelTypeClass.Properties</c>, no code per property: every column of every table, base against head.</summary>
     private static IEnumerable<(string Column, string Property, object? Before, object? After)> Changes(TSqlModel before, TSqlModel after)
     {
         var heads = after.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass).SelectMany(t => t.GetReferenced(Table.Columns))

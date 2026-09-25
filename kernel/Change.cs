@@ -15,8 +15,8 @@ public sealed record Rename(ElementKey Before, ElementKey After) : IComparable<R
             .Bind(name => before.Parent is { } parent ? ElementKey.Of(parent, before.Type, name) : ElementKey.Of(before.Type, name))
             .Map(after => new Rename(before, after));
 
-    /// <summary>The rename back. A method, not a property: a record prints and serializes every public property, and
-    /// a property returning the rename back would be walked back and forth without end.</summary>
+    /// <summary>The rename back, as a method: a record prints and serializes every public property, and a property
+    /// returning the rename back would recurse until the stack overflows.</summary>
     public Rename Inverted() => new(After, Before);
 
     public int CompareTo(Rename? other) =>
