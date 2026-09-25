@@ -111,7 +111,7 @@ public static class SqlServer
         /// The refusal a SqlClient or DacFx failure against a target takes. With a SqlException inside, by its number, a severity of 20 or
         /// more being a connection lost. With none, DacFx's own failure: when its texts quote a SQL Server number (Msg 50000, the guard;
         /// Msg 2627 inside SQL72014), by that number, since SQL Server's words, which can quote a row, are inside; else dacfx.failed,
-        /// quoting what each exception of the chain and each DacFx message says (SQL72045: …), kept for a named environment too. Any
+        /// quoting what each exception of the chain says, DacFx's errors (SQL71501: …) among it, kept for a named environment too. Any
         /// other failure is refused with no number.
         /// </summary>
         public Refusal Refused(Exception failure)
@@ -133,19 +133,16 @@ public static class SqlServer
 
         private static readonly Regex SqlServerNumber = new(@"\bMsg (\d+)", RegexOptions.CultureInvariant);
 
-        /// <summary>What one exception of a DacFx failure says, on one line: its message, then each DacFx message as its code and text, where the message does not already carry it.</summary>
-        private static IEnumerable<string> Said(Exception x)
-        {
-            var messages = x switch
-            {
-                DacServicesException d => d.Messages.Select(m => (m.Prefix, m.Number, m.Message)),
-                DacModelException d => d.Messages.Select(m => (m.Prefix, m.Number, m.Message)),
-                _ => [],
-            };
-            return [.. ((string[])[x.Message, .. messages.Where(m => !x.Message.Contains(m.Message, StringComparison.Ordinal))
-                    .Select(m => m.Prefix + m.Number.ToString(CultureInfo.InvariantCulture) + ": " + m.Message)])
-                .Select(text => Regex.Replace(text, @"\s*\n\s*", " ", RegexOptions.CultureInvariant).Trim()).Where(text => text.Length > 0)];
-        }
+        /// <summary>
+        /// What one exception of a DacFx failure says, on one line: its Message alone. DacFx writes each error and warning of the failure
+        /// into Message as "Error SQL71501: …" (BuildPackage's SQL71501, AddObjects' SQL46010 and SQL71006, Publish's SQL72014 quoting
+        /// Msg 50000, SQL72045), so the SQL Server number the refusal is routed by and every SQL7xxxx code are in it. A failed Publish's
+        /// Messages also holds informational entries of number 0 that Message leaves out: PRINT output of a deployment script, "Altering
+        /// Table [dbo].[T]...", "The statement has been terminated.", "An error occurred while the batch was being executed.". They carry
+        /// no error and no code, and are not quoted.
+        /// </summary>
+        private static IEnumerable<string> Said(Exception x) =>
+            Regex.Replace(x.Message, @"\s*\n\s*", " ", RegexOptions.CultureInvariant).Trim() is { Length: > 0 } text ? [text] : [];
 
         internal Refusal Refused(int number, string message, bool fatal)
         {
@@ -469,14 +466,19 @@ public static class SqlServer
     /// identity cannot read, where File.Exists answers false as it does where no file is, is reference.inaccessible; a file whose
     /// folder it cannot list is reference.unlistable; and one it cannot read is reference.unreadable. The check covers the path the
     /// reference names, since git tracks paths: a hard link to a committed file, or a plain copy of one, under a folder .gitignore
-    /// lists such as .estate/ is read, though the commit holds what it holds.
+    /// lists such as .estate/ is read, though the commit holds what it holds. The attempt, a refused one too, is recorded in the run's
+    /// Reads.
     /// </summary>
-    internal static Result<string?> Read(string subject, SecretReference reference, string estateRoot) => reference.Match(
-        variable => Result.Ok(System.Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value ? value : null),
-        file => System.IO.Path.Combine(estateRoot, file) is var path && File.Exists(path)
-            ? Opened(() => Listed(subject, path), () => Unlistable(subject))
-                .Bind(listed => Opened(() => Kept(subject, estateRoot, listed).Map(kept => File.ReadAllText(kept).Trim() is { Length: > 0 } text ? text : null), () => Unreadable(subject)))
-            : Absent(subject, path));
+    internal static Result<string?> Read(string subject, SecretReference reference, string estateRoot)
+    {
+        Reads.Record();
+        return reference.Match(
+            variable => Result.Ok(System.Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value ? value : null),
+            file => System.IO.Path.Combine(estateRoot, file) is var path && File.Exists(path)
+                ? Opened(() => Listed(subject, path), () => Unlistable(subject))
+                    .Bind(listed => Opened(() => Kept(subject, estateRoot, listed).Map(kept => File.ReadAllText(kept).Trim() is { Length: > 0 } text ? text : null), () => Unreadable(subject)))
+                : Absent(subject, path));
+    }
 
     /// <summary>
     /// Null for a path File.Exists does not open, when File.GetAttributes says why: no such file (FileNotFoundException), no such
@@ -585,6 +587,45 @@ public static class SqlServer
     /// <summary>The path of a file git keeps out of every commit, when no other user can read it: on Linux and macOS by its mode; Windows keeps no such mode.</summary>
     private static Result<string> OwnerOnly(string subject, string path) =>
         !OperatingSystem.IsWindows() && ReadableByOthers(subject, File.GetUnixFileMode(path)) is { } readable ? readable : path;
+
+    /// <summary>
+    /// Whether this run has read a connection or other reference of a named environment (VALUES.md X2), whose text an exception's message
+    /// can then quote. SqlServer.Read records each read, and every one goes through it: Named.Of, which SqlServer.Resolve calls for env:;
+    /// R15's read of each environment's connection in io/Substrate, which copy: and a new copy run; and a named environment's SQLCMD values.
+    /// cli/Program.cs begins a run around each command and withholds an unexpected exception's message when the run holds a read. The
+    /// record reaches the threads the run's work starts (it is an AsyncLocal); a read outside any run is recorded nowhere, no catch
+    /// reading it.
+    /// </summary>
+    public static class Reads
+    {
+        private static readonly AsyncLocal<Run?> Current = new();
+
+        /// <summary>A run begun on this thread, the current one until it is disposed, when the run it began inside is current again.</summary>
+        public static Run Begin() => Current.Value = new Run(Current.Value);
+
+        internal static void Record() => Current.Value?.Record();
+
+        /// <summary>One command's record: whether it has read a named environment's reference.</summary>
+        public sealed class Run : IDisposable
+        {
+            private readonly Run? outer;
+            private int read;
+
+            internal Run(Run? outer) => this.outer = outer;
+
+            /// <summary>Whether a named environment's connection or other reference was read while this run was current.</summary>
+            public bool NamedEnvironment => Volatile.Read(ref read) == 1;
+
+            /// <summary>Recorded here and in each run this one began inside.</summary>
+            internal void Record()
+            {
+                Interlocked.Exchange(ref read, 1);
+                outer?.Record();
+            }
+
+            public void Dispose() => Current.Value = outer;
+        }
+    }
 
     /// <summary>
     /// A server's host as R15 spells it: the data source with its protocol, port and instance set aside, in lower case; this machine,

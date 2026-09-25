@@ -134,7 +134,7 @@ public static class Contract
     };
 
     /// <summary>The exit of a defect in estate itself: a refusal whose area the refusal table lacks, or an exception no verb expected.</summary>
-    private const int Defect = 6;
+    internal const int Defect = 6;
 
     /// <summary>The remedy a defect in estate itself carries: the defect is estate's to fix, and the envelope is what its maintainers need.</summary>
     private const string ReportIt = "Report this envelope and the command that produced it to estate's maintainers.";
@@ -166,14 +166,16 @@ public static class Contract
 
     /// <summary>
     /// An exception no verb expected, as an answer: exit 6 and one finding, internal.unexpected, naming the exception's type. Its message is
-    /// kept only when <paramref name="withheld"/> is false: a command that names an env: or a copy: target reads a named environment's
-    /// connection, and an exception's message can quote what that environment holds (VALUES.md X2).
+    /// kept only when <paramref name="withheld"/> is false: once a command has read a named environment's connection or other reference,
+    /// an exception's message can quote what that environment holds (VALUES.md X2). <paramref name="word"/> is the verb as typed, empty
+    /// when the exception came before the arguments were read.
     /// </summary>
     public static Envelope Unexpected(Verb? verb, string word, Exception exception, bool withheld)
     {
-        var what = "estate " + word + " stopped on an unexpected " + exception.GetType().Name;
-        var said = withheld ? "; its message is withheld, since the command names an env: or copy: target and the message can quote a named environment." : ": " + exception.Message;
-        return Answer(verb?.Output ?? "estate.envelope/1", "unexpected", what + ".", [new("internal.unexpected", "block", "estate " + word, what + said, ReportIt)], Defect);
+        var command = word.Length == 0 ? "estate" : "estate " + word;
+        var what = command + " stopped on an unexpected " + exception.GetType().Name;
+        var said = withheld ? "; its message is withheld, since the command read a named environment's connection and the message can quote what that environment holds." : ": " + exception.Message;
+        return Answer(verb?.Output ?? "estate.envelope/1", "unexpected", what + ".", [new("internal.unexpected", "block", command, what + said, ReportIt)], Defect);
     }
 
     public static Envelope NotBuilt(Verb verb) => Answer(verb.Output, "not-built", "estate " + verb.Name + " arrives in " + Title(verb.Arrives) + ".",

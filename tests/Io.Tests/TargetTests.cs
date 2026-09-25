@@ -601,6 +601,39 @@ public sealed class TargetTests : IDisposable
         Assert.Equal(code == "server.failed", fromCopy.Message.Contains(Planted, StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// DacFx's own failure through Database.Refused: DacPackageExtensions.BuildPackage over a view on a table the model lacks throws
+    /// DacServicesException, whose Message already holds each of its three SQL71501 messages and which holds no SqlException. The refusal is
+    /// dacfx.failed at exit 6 for a named environment and a copy alike, quoting DacFx's words with each SQL71501 message once.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("env:qa")]
+    [InlineData("copy:estate_host_1_0a1b2c3d")]
+    public void A_DacFx_failure_with_no_SQL_Server_error_inside_is_refused_as_dacfx_failed_quoting_its_SQL7_codes(string target)
+    {
+        Telemetry.OptOut();
+        var root = Estate("\"qa\": { \"connection\": \"file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa") + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
+        SqlServer.Database database = target == "env:qa"
+            ? Made(SqlServer.Resolve(Made(SqlServer.Target.Parse(target)), root))
+            : new SqlServer.Copy("estate_host_1_0a1b2c3d", "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
+        var failure = Assert.IsType<Microsoft.SqlServer.Dac.DacServicesException>(Record.Exception(() =>
+        {
+            using var model = new Microsoft.SqlServer.Dac.Model.TSqlModel(Microsoft.SqlServer.Dac.Model.SqlServerVersion.Sql160, new Microsoft.SqlServer.Dac.Model.TSqlModelOptions());
+            model.AddObjects("CREATE VIEW dbo.V AS SELECT Id FROM dbo.Missing;");
+            Microsoft.SqlServer.Dac.DacPackageExtensions.BuildPackage(Path.Combine(scratch, "unresolved.dacpac"), model, new Microsoft.SqlServer.Dac.PackageMetadata());
+        }));
+
+        var refusal = database.Refused(failure);
+
+        Assert.Equal(3, failure.Messages.Count(m => m.Prefix + m.Number == "SQL71501"));
+        Assert.Equal(("dacfx.failed", 6), (refusal.Code, Contract.Exit(refusal)));
+        Assert.StartsWith("DacFx failed against " + target + " with no SQL Server error inside: Cannot save package to file.", refusal.Message, StringComparison.Ordinal);
+        Assert.Equal(3, refusal.Message.Split("SQL71501").Length - 1);
+        Assert.Contains("[dbo].[V] has an unresolved reference to object [dbo].[Missing].", refusal.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain('\n', refusal.Message);
+    }
+
     /// <summary>DNS as these tests have it: dev-sql and its FQDN at one TEST-NET address, prod-sql at another, a name of this machine at loopback, and nothing else.</summary>
     private static IPAddress[] Resolver(string host) => host switch
     {

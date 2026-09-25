@@ -14,6 +14,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../io/io.csproj" />
+    <InternalsVisibleTo Include="Estate.Budgets.Tests" />
   </ItemGroup>
   <!--
     The reference stub a classic .sqlproj build needs (mscorlib.dll and FrameworkList.xml), downloaded by restore and never
