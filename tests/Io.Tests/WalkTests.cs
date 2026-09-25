@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using Estate.Budgets.Tests;
 using Estate.Kernel;
@@ -38,6 +39,16 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
             "added RefactorLogOperation [" + ProvingGroundWalks.RenameKey + "]",
             "renamed Column [dbo].[Customer].[ContactPhone] to Column [dbo].[Customer].[MobileNumber]"],
     };
+
+    private const string RenameKey = "0b6f2d7e-4c1a-4e3b-8d5f-7a9c1e2b3d40";
+
+    /// <summary>The refactorlog SSDT writes when column dbo.T.C is renamed A.</summary>
+    private const string RenameCToA = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+        + "<Operations Version=\"1.0\" xmlns=\"http://schemas.microsoft.com/sqlserver/dac/Serialization/2012/02\">\n"
+        + "  <Operation Name=\"Rename Refactor\" Key=\"" + RenameKey + "\" ChangeDateTime=\"09/25/2026 10:00:00\">\n"
+        + "    <Property Name=\"ElementName\" Value=\"[dbo].[T].[C]\" />\n    <Property Name=\"ElementType\" Value=\"SqlSimpleColumn\" />\n"
+        + "    <Property Name=\"ParentElementName\" Value=\"[dbo].[T]\" />\n    <Property Name=\"ParentElementType\" Value=\"SqlTable\" />\n"
+        + "    <Property Name=\"NewName\" Value=\"[A]\" />\n  </Operation>\n</Operations>\n";
 
     public static TheoryData<string> Archetypes => new(Named.Keys);
 
@@ -163,6 +174,24 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
+    /// SQL Server grants VIEW ANY COLUMN ENCRYPTION KEY DEFINITION and VIEW ANY COLUMN MASTER KEY DEFINITION to public in every new
+    /// database, so a database holds them whether its project does or not. The walk leaves out those two grants to public and keeps
+    /// the same permissions granted to a role, and any other grant to public.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_two_grants_to_public_SQL_Server_makes_in_every_database_are_left_out_and_other_grants_kept()
+    {
+        using var model = Model(
+            "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY);", "CREATE ROLE r1;", "GRANT VIEW ANY COLUMN ENCRYPTION KEY DEFINITION TO public;",
+            "GRANT VIEW ANY COLUMN MASTER KEY DEFINITION TO public;", "GRANT VIEW ANY COLUMN MASTER KEY DEFINITION TO r1;", "GRANT SELECT ON dbo.T TO public;");
+
+        var permissions = Ok(Ssdt.Walk(model)).Where(e => e.Key.Type == "Permission").Select(e => e.Key.ToString());
+
+        Assert.Equal(["Permission [DatabaseOptions].[Grant.ViewAnyColumnMasterKeyDefinition.Database].[r1].[dbo]", "Permission [dbo].[T].[Grant.Select.Object].[public].[dbo]"], permissions);
+    }
+
+    /// <summary>
     /// Two unnamed checks on one column reference the same things, so their position falls to their own values: the one whose
     /// Expression sorts first ordinally is Host 1, whichever order the source declares them in.
     /// </summary>
@@ -182,9 +211,10 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
-    /// A model built in memory: two unnamed defaults DacFx meets in one order, then in the other. Each unnamed child is keyed
-    /// by its table, its relationship and its position among its kind in the order of what it references, never by DacFx's
-    /// order or a generated name; an index key column's direction is a property of the index.
+    /// A model built in memory: two unnamed defaults DacFx meets in one order, then in the other. An unnamed default is keyed
+    /// under the column it targets, SQL Server allowing one default per column; any other unnamed child is keyed by its table,
+    /// its relationship and its position among its kind in the order of what it references, never by DacFx's order or a
+    /// generated name. An index key column's direction is a property of the index.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -197,12 +227,91 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
         Assert.Equal(forward, backward);
         var keys = forward.Select(e => e.Key.ToString()).ToList();
         Assert.Superset(
-            new HashSet<string>(["PrimaryKeyConstraint [dbo].[T].[Host]", "CheckConstraint [dbo].[T].[Host]", "DefaultConstraint [dbo].[T].[Host 1]", "DefaultConstraint [dbo].[T].[Host 2]", "DatabaseOptions [DatabaseOptions]"]),
+            new HashSet<string>(["PrimaryKeyConstraint [dbo].[T].[Host]", "CheckConstraint [dbo].[T].[Host]", "DefaultConstraint [dbo].[T].[A].[TargetColumn]",
+                "DefaultConstraint [dbo].[T].[B].[TargetColumn]", "DatabaseOptions [DatabaseOptions]"]),
             keys.ToHashSet());
-        var first = forward.Single(e => e.Key.ToString() == "DefaultConstraint [dbo].[T].[Host 1]");
-        Assert.Equal("Column [dbo].[T].[A]", first.Relationships.Single(r => r.Name == "TargetColumn").Targets.Single().Key.ToString());
+        var onA = forward.Single(e => e.Key.ToString() == "DefaultConstraint [dbo].[T].[A].[TargetColumn]");
+        Assert.Equal(new Value.Text("(0)"), onA["Expression"]);
         var index = forward.Single(e => e.Key.ToString() == "Index [dbo].[T].[IX_T_A]");
         Assert.Equal((new Value.Boolean(true), new Value.Boolean(false)), (index["Columns[0].Ascending"], index["Columns[1].Ascending"]));
+    }
+
+    /// <summary>
+    /// The alignment review's case (2026-09-24): dbo.T (B INT DEFAULT 0, C INT DEFAULT 5) becomes (B INT DEFAULT 0, A INT DEFAULT 5)
+    /// with the refactorlog's entry renaming C to A. Keyed by position, the two defaults swapped keys and read as two changed
+    /// Expressions; keyed under their columns, the change is the rename and the refactorlog's new entry, nothing else.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_column_rename_beside_another_column_s_unnamed_default_is_one_rename_and_the_refactorlog_s_entry()
+    {
+        var before = PackageRead(null, "CREATE TABLE dbo.T (B INT DEFAULT 0, C INT DEFAULT 5);");
+        var after = PackageRead(RenameCToA, "CREATE TABLE dbo.T (B INT DEFAULT 0, A INT DEFAULT 5);");
+
+        var change = Ok(Change.Between(before.Elements, after.Elements, after.Renames));
+
+        Assert.Equal(["renamed Column [dbo].[T].[C] to Column [dbo].[T].[A]"], change.Renamed.Select(r => "renamed " + r.Before + " to " + r.After));
+        Assert.Equal(["added RefactorLogOperation [" + RenameKey + "]"], Lines(change).Where(line => !line.StartsWith("renamed ", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// Two unnamed checks, on B and on C, numbered in the order of the columns they reference; C is renamed A, which sorts before
+    /// B. The walk reads each reference under the name it held before the refactorlog's renames, so the check on the renamed
+    /// column keeps its number, and the one difference is that check's own text, which names the column.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void An_unnamed_check_on_a_renamed_column_keeps_its_number_and_only_its_own_text_changes()
+    {
+        var before = PackageRead(null, "CREATE TABLE dbo.T (B INT NULL CHECK (B > 0), C INT NULL CHECK (C > 5));");
+        var after = PackageRead(RenameCToA, "CREATE TABLE dbo.T (B INT NULL CHECK (B > 0), A INT NULL CHECK (A > 5));");
+
+        var change = Ok(Change.Between(before.Elements, after.Elements, after.Renames));
+
+        Assert.Contains("C > 5", Expression(before.Elements.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[Host 2]")), StringComparison.Ordinal);
+        Assert.Contains("A > 5", Expression(after.Elements.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[Host 2]")), StringComparison.Ordinal);
+        Assert.Equal(["CheckConstraint [dbo].[T].[Host 2]: Expression"], Lines(change).Where(line => !line.StartsWith("renamed ", StringComparison.Ordinal) && !line.StartsWith("added ", StringComparison.Ordinal)));
+        Assert.Single(change.Renamed);
+    }
+
+    /// <summary>
+    /// A model holding one of each object that carries a secret, each planted with one value: a login's, a contained user's and an
+    /// application role's password; an asymmetric key's, a certificate's (its key's and its private key file's) and a symmetric
+    /// key's password; a server credential's and a database scoped credential's secret; the database master key's password; a
+    /// signature's password; and a linked server login's password. DacFx gives the planted value back from every property <see cref="Ssdt.Secrets"/> lists, and the walk
+    /// carries it in no property; every text property DacFx 170.5.96 names a password or a secret is on the list.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_secret_planted_in_every_property_that_holds_one_reaches_no_walked_property()
+    {
+        const string Planted = "Pl4nted!secret#7f3a";
+        using var model = Model(new TSqlModelOptions { Containment = Containment.Partial },
+            "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY);",
+            "CREATE PROCEDURE dbo.P AS SELECT 1 AS One;",
+            "CREATE LOGIN L WITH PASSWORD = '" + Planted + "';",
+            "CREATE USER U WITH PASSWORD = '" + Planted + "';",
+            "CREATE APPLICATION ROLE AR WITH PASSWORD = '" + Planted + "';",
+            "CREATE MASTER KEY ENCRYPTION BY PASSWORD = '" + Planted + "';",
+            "CREATE ASYMMETRIC KEY AK WITH ALGORITHM = RSA_2048 ENCRYPTION BY PASSWORD = '" + Planted + "';",
+            "CREATE CERTIFICATE C1 ENCRYPTION BY PASSWORD = '" + Planted + "' WITH SUBJECT = 'c1';",
+            "CREATE CERTIFICATE C2 FROM FILE = 'c2.cer' WITH PRIVATE KEY (FILE = 'c2.pvk', DECRYPTION BY PASSWORD = '" + Planted + "', ENCRYPTION BY PASSWORD = '" + Planted + "');",
+            "CREATE SYMMETRIC KEY SK WITH ALGORITHM = AES_256 ENCRYPTION BY PASSWORD = '" + Planted + "';",
+            "CREATE CREDENTIAL CR WITH IDENTITY = 'i', SECRET = '" + Planted + "';",
+            "CREATE DATABASE SCOPED CREDENTIAL DC WITH IDENTITY = 'i', SECRET = '" + Planted + "';",
+            "ADD SIGNATURE TO dbo.P BY CERTIFICATE C1 WITH PASSWORD = '" + Planted + "';",
+            "EXECUTE sp_addlinkedserver @server = N'LS', @srvproduct = N'', @provider = N'MSOLEDBSQL', @datasrc = N'remote';",
+            "EXECUTE sp_addlinkedsrvlogin @rmtsrvname = N'LS', @useself = N'FALSE', @locallogin = NULL, @rmtuser = N'u', @rmtpassword = N'" + Planted + "';");
+
+        var read = Ok(Ssdt.Walk(model));
+
+        Assert.All(Ssdt.Secrets, secret => Assert.True(Held(model, secret, Planted), secret.OwningType?.Name + secret.OwningRelationship?.Name + "." + secret.Name + " holds no planted value"));
+        Assert.Contains(read, e => e.Key.ToString() == "Login [L]");
+        Assert.DoesNotContain(read.SelectMany(e => e.Properties), p => p.Value is Value.Text { Content: var text } && text.Contains(Planted, StringComparison.Ordinal));
+        var named = typeof(ModelSchema).GetFields(BindingFlags.Public | BindingFlags.Static).Select(f => f.GetValue(null)).OfType<ModelTypeClass>()
+            .SelectMany(t => t.Properties.Concat(t.Relationships.SelectMany(r => r.Properties)))
+            .Where(p => p.DataType == typeof(string) && (p.Name.Contains("Password", StringComparison.Ordinal) || p.Name.Contains("Secret", StringComparison.Ordinal)));
+        Assert.Empty(named.Where(p => !Ssdt.Secrets.Contains(p)).Select(p => (p.OwningType?.Name ?? p.OwningRelationship?.Name) + "." + p.Name));
     }
 
     /// <summary>
@@ -252,7 +361,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
 
     /// <summary>
     /// The proving ground with a table of unnamed inline constraints, two of them checks on one column, and a procedure over it,
-    /// published to a registered copy and read back with LoadFromDatabase: the database walk keys every object as the package
+    /// published to a registered copy and read back through SqlServer.Model: the database walk keys every object as the package
     /// walk does, though SQL Server named each constraint, and each unnamed key names the same constraint in both (the same
     /// targets; the tied checks the same text once SQL Server's brackets and parentheses are set aside). Their values differ (SQL
     /// Server stores a check's text as it normalized it), which is why walk fingerprints are compared only between like sources.
@@ -262,17 +371,14 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     [Trait("Category", "fixture")]
     public async Task A_package_and_the_database_it_was_published_to_key_every_object_alike_unnamed_constraints_included()
     {
-        await using var copy = await SqlServerFixture.RegisterAsync();
-        ProvingGround.Publish(walks.Dacpacs["unnamed constraints"], copy, new DacDeployOptions());
-        using var model = TSqlModel.LoadFromDatabase(copy.ConnectionString, new ModelExtractOptions());
-
         var package = walks.Reads["unnamed constraints"].Elements
             .Where(e => e.Key.Type is not (Element.PreDeploymentScript or Element.PostDeploymentScript or Element.RefactorLogOperation)).ToList();
-        var database = Ok(Ssdt.Walk(model));
-        Assert.Contains(package, e => e.Key.ToString() == "DefaultConstraint [dbo].[Note].[Host 2]");
+        var database = await PublishedAndRead(walks.Dacpacs["unnamed constraints"]);
+
+        Assert.Contains(package, e => e.Key.ToString() == "DefaultConstraint [dbo].[Note].[Pinned].[TargetColumn]");
         Assert.Equal(package.Select(e => e.Key), database.Select(e => e.Key));
-        var unnamed = package.Where(e => e.Key.Name.Base == "Host" || e.Key.Name.Base.StartsWith("Host ", StringComparison.Ordinal)).ToList();
-        Assert.Equal(8, unnamed.Count(e => e.Key.Parent?.ToString() == "Table [dbo].[Note]"));
+        var unnamed = package.Where(e => e.Key.Name.Base is "Host" or "TargetColumn" || e.Key.Name.Base.StartsWith("Host ", StringComparison.Ordinal)).ToList();
+        Assert.Equal(8, unnamed.Count(e => e.Key.Path.StartsWith("[dbo].[Note].", StringComparison.Ordinal)));
         Assert.All(unnamed, e => Assert.Equal(e.Relationships, database.Single(d => d.Key == e.Key).Relationships));
         Assert.All(["CheckConstraint [dbo].[Note].[Host 2]", "CheckConstraint [dbo].[Note].[Host 3]"], (string key) =>
             Assert.Equal(Bare(Expression(package.Single(e => e.Key.ToString() == key))), Bare(Expression(database.Single(e => e.Key.ToString() == key)))));
@@ -281,6 +387,34 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
         var procedure = package.Single(e => e.Key.ToString() == "Procedure [dbo].[NoteCount]");
         Assert.Contains("WHERE CustomerId = @CustomerId", Assert.IsType<Value.Text>(procedure["Definition"]).Content, StringComparison.Ordinal);
         Assert.Equal(procedure["Definition"], database.Single(e => e.Key == procedure.Key)["Definition"]);
+    }
+
+    /// <summary>
+    /// The grants head (two roles granted SELECT on dbo.Account, one also INSERT, and both VIEW DEFINITION on the database)
+    /// published to a registered copy and read back through SqlServer.Model holds the Permission keys the package's walk holds.
+    /// DacFx 170.5.96's LoadFromDatabase leaves every permission out unless ModelExtractOptions.IgnorePermissions is set false.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task A_package_s_grants_published_to_a_copy_read_back_as_the_same_Permission_keys()
+    {
+        var database = await PublishedAndRead(walks.Dacpacs["grants"]);
+
+        var (packaged, read) = (Permissions(walks.Reads["grants"].Elements), Permissions(database));
+        output.WriteLine(string.Join('\n', read));
+
+        Assert.Contains("Permission [dbo].[Account].[Grant.Select.Object].[AppReader].[dbo]", packaged);
+        Assert.Equal(packaged, read);
+    }
+
+    private static List<string> Permissions(IEnumerable<Element> read) => [.. read.Where(e => e.Key.Type == "Permission").Select(e => e.Key.ToString())];
+
+    /// <summary>A head's package published to a registered database under DacFx's default deploy options, then read back as io reads a copy; the database is dropped after.</summary>
+    private static async Task<Seq<Element>> PublishedAndRead(string dacpac)
+    {
+        await using var database = await SqlServerFixture.RegisterAsync();
+        ProvingGround.Publish(dacpac, database, new DacDeployOptions());
+        return Ok(SqlServer.Model(new SqlServer.Copy(database.Name, await SqlServerFixture.ServerAsync(), Repository.Root)));
     }
 
     [Fact]
@@ -314,9 +448,11 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>A model built in memory from the scripts, each added in turn.</summary>
-    private static TSqlModel Model(params string[] scripts)
+    private static TSqlModel Model(params string[] scripts) => Model(new TSqlModelOptions(), scripts);
+
+    private static TSqlModel Model(TSqlModelOptions options, params string[] scripts)
     {
-        var model = new TSqlModel(SqlServerVersion.Sql160, new TSqlModelOptions());
+        var model = new TSqlModel(SqlServerVersion.Sql160, options);
         foreach (var script in scripts)
         {
             model.AddObjects(script);
@@ -326,24 +462,40 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>A model built in memory from the scripts, packaged by DacFx, then loaded as Load loads a build's package and walked.</summary>
-    private static Seq<Element> Packaged(params string[] scripts)
+    private static Seq<Element> Packaged(params string[] scripts) => PackageRead(null, scripts).Elements;
+
+    /// <summary>The scripts packaged by DacFx with the refactorlog's text as the package's refactor.xml, where one is given, then loaded as Load loads a build's package and walked.</summary>
+    private static Ssdt.Read PackageRead(string? refactorlog, params string[] scripts)
     {
-        var path = Path.Combine(Path.GetTempPath(), "estate-walk-" + Guid.NewGuid().ToString("N") + ".dacpac");
+        var path = Path.Combine(Path.GetTempPath(), "estate-walk-" + Guid.NewGuid().ToString("N"));
         try
         {
-            using (var model = Model(scripts))
+            if (refactorlog is not null)
             {
-                DacPackageExtensions.BuildPackage(path, model, new PackageMetadata());
+                File.WriteAllText(path + ".refactorlog", refactorlog);
             }
 
-            using var package = Ok(Ssdt.Load(path));
-            return Ok(Ssdt.Walk(package)).Elements;
+            using (var model = Model(scripts))
+            {
+                DacPackageExtensions.BuildPackage(path + ".dacpac", model, new PackageMetadata(), new PackageOptions { RefactorLogPath = refactorlog is null ? null : path + ".refactorlog" });
+            }
+
+            using var package = Ok(Ssdt.Load(path + ".dacpac"));
+            return Ok(Ssdt.Walk(package));
         }
         finally
         {
-            File.Delete(path);
+            File.Delete(path + ".dacpac");
+            File.Delete(path + ".refactorlog");
         }
     }
+
+    /// <summary>Whether an object of the secret's type, top-level or composed by another (a symmetric key's password, a signature), gives the planted value back.</summary>
+    private static bool Held(TSqlModel model, ModelPropertyClass secret, string planted) =>
+        model.GetObjects(DacQueryScopes.UserDefined).SelectMany(Composed).Any(o => o.ObjectType == secret.OwningType && Equals(o.GetProperty(secret), planted));
+
+    private static IEnumerable<TSqlObject> Composed(TSqlObject o) =>
+        [o, .. o.ObjectType.Relationships.Where(r => r.Type == RelationshipType.Composing).SelectMany(r => o.GetReferenced(r, DacQueryScopes.All)).SelectMany(Composed)];
 
     private static string Expression(Element check) => ((Value.Text)check["Expression"]!).Content;
 
