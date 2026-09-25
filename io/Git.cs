@@ -94,12 +94,13 @@ public static class Git
     }
 
     /// <summary>
-    /// The holds this process keeps on the worktrees under an estate's root, released: a sweep may then remove them. Estate's own process
-    /// ends without calling it; a host that outlives its runs (a test process) calls it before it deletes the checkout.
+    /// The holds this process keeps on worktrees anywhere under <paramref name="folder"/> (an estate's root, or a folder holding several),
+    /// released: a sweep may then remove them. Estate's own process ends without calling it; a host that outlives its runs (a test
+    /// process) calls it before it deletes the folder.
     /// </summary>
-    public static void Release(string estateRoot)
+    public static void Release(string folder)
     {
-        var under = new LocalState(estateRoot).Worktrees;
+        var under = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)) + Path.DirectorySeparatorChar;
         lock (Held)
         {
             foreach (var hold in Held.Where(h => h.Path.StartsWith(under, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)).ToList())
