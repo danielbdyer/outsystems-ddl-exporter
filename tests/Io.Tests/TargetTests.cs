@@ -298,6 +298,29 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
+    /// Windows forbids ? * &lt; &gt; and | in a file name, so no file is at a path whose name holds one; File.Exists answers false and
+    /// File.GetAttributes throws an IOException for ERROR_INVALID_NAME. On Linux and macOS the name is legal and no file is there.
+    /// On every operating system the reference resolves to nothing: Resolve refuses it as connection.unresolved, and
+    /// Substrate.Unnamed leaves env:dev uncompared and returns the server, as it does for any path with no file.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("dev?.connection")]
+    [InlineData("dev*.connection")]
+    [InlineData("dev<.connection")]
+    [InlineData("dev>.connection")]
+    [InlineData("dev|.connection")]
+    public void A_connection_file_whose_name_Windows_forbids_resolves_to_nothing_on_every_operating_system(string name)
+    {
+        var root = Estate(Dev(scratch.Replace('\\', '/') + "/" + name));
+
+        var refusal = Refused(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root));
+
+        Assert.Equal(("connection.unresolved", 6), (refusal.Code, Contract.Exit(refusal)));
+        Assert.Equal("localhost,11433", Made(Substrate.Unnamed(root, "localhost,11433", Resolver)));
+    }
+
+    /// <summary>
     /// kernel/NamedEnvironment.cs documents a file: reference as naming a file outside git, and the estate's own principal
     /// files sit under .estate/, which .gitignore lists. A connection file git tracks, or one git does not ignore, which the next
     /// git add would commit, is exit 6 by the environment and the reference, before the file is read, and quotes nothing it holds;

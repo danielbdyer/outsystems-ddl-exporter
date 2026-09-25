@@ -390,7 +390,8 @@ public static class SqlServer
 
     /// <summary>
     /// What a reference names: the variable's value, or the file's text trimmed; null when the variable is unset or empty, when the
-    /// file system reports that no file or folder is at the path or that a folder is, or when the file holds only white space. A file,
+    /// file system reports that no file or folder is at the path, that a folder is, or that no file can have the path's name
+    /// (<see cref="Absent"/>), or when the file holds only white space. A file,
     /// a relative path read from the estate's root, is read only when git keeps it out of every commit, ignored or in no repository
     /// while the estate's root is in one, and, where files carry a Unix mode, when its owner alone can read it; a refusal leads with
     /// <paramref name="subject"/>. git is asked about the file by the name its folder lists (<see cref="Listed"/>), and that name is the
@@ -409,11 +410,12 @@ public static class SqlServer
             : Absent(subject, path));
 
     /// <summary>
-    /// Null for a path File.Exists does not open, when the file system says why: no such file (FileNotFoundException), no such folder
-    /// on the way (DirectoryNotFoundException), or a folder at the path; a path no file could have (ArgumentException) is absent too.
-    /// File.Exists also answers false for a file whose attributes this identity cannot read (on Windows, RA denied on the file and RD
-    /// on its folder; on Linux and macOS, a folder on the path without search permission); File.GetAttributes then throws
-    /// UnauthorizedAccessException, or IOException for a path it cannot reach, and that is reference.inaccessible.
+    /// Null for a path File.Exists does not open, when File.GetAttributes says why: no such file (FileNotFoundException), no such
+    /// folder on the way (DirectoryNotFoundException), a name Windows forbids in a file name, such as one holding ? * &lt; &gt; or |
+    /// (IOException for ERROR_INVALID_NAME, HResult 0x8007007B), or a folder at the path. File.Exists also answers false for a file
+    /// whose attributes this identity cannot read (on Windows, RA denied on the file and RD on its folder; on Linux and macOS, a folder
+    /// on the path without search permission); File.GetAttributes then throws UnauthorizedAccessException, or another IOException for
+    /// a path it cannot reach, and that is reference.inaccessible.
     /// </summary>
     private static Result<string?> Absent(string subject, string path)
     {
@@ -422,7 +424,7 @@ public static class SqlServer
             File.GetAttributes(path);
             return Result.Ok<string?>(null);
         }
-        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException or ArgumentException)
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException || (e is IOException && e.HResult == InvalidName))
         {
             return Result.Ok<string?>(null);
         }
@@ -433,6 +435,9 @@ public static class SqlServer
                 "Grant this identity the right to list the file's folder and read the file's attributes (on Linux and macOS, search permission on every folder of the path), or move the file under a folder it can list, such as .estate/.");
         }
     }
+
+    /// <summary>The HResult of the IOException .NET throws for Windows' ERROR_INVALID_NAME (123), a name no file on Windows can have.</summary>
+    private const int InvalidName = unchecked((int)0x8007007B);
 
     /// <summary>A step on a file that exists; the refusal given when the file system refuses the step (IOException, UnauthorizedAccessException).</summary>
     private static Result<T> Opened<T>(Func<Result<T>> step, Func<Refusal> refused)
