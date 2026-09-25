@@ -338,27 +338,42 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// git ls-files matches a name with case and .gitignore matches it without, where core.ignorecase is true. A committed
-    /// estate/dev.connection is refused as tracked though .gitignore lists *.connection, and, on Windows and macOS, where the file
-    /// system opens it as estate/Dev.connection too, under that spelling as well; on Linux estate/Dev.connection opens no file and
-    /// resolves to nothing. Either way the file's text reaches no connection.
+    /// estate/secrets/dev.connection, added with --force and committed though .gitignore lists estate/secrets/ and *.connection, is
+    /// refused as tracked under each spelling that opens it: its own name; the name in another case on Windows and macOS; on Windows
+    /// the name with trailing dots and spaces, which Windows drops, and its 8.3 short name where the volume makes one; and a symbolic
+    /// link under .estate/, which .gitignore also lists. git is asked about the name the folder lists, so .gitignore's patterns never
+    /// match the spelling instead. Windows opens the file's default data stream as dev.connection::$DATA, a name no folder lists:
+    /// reference.unlisted. A spelling that opens no file (on Linux, every spelling but the file's own name and the link) resolves to
+    /// nothing. The file's text reaches no connection. On Windows each row but the 8.3 name must open the file.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("estate/dev.connection")]
-    [InlineData("estate/Dev.connection")]
-    public void A_connection_file_git_tracks_is_refused_though_gitignore_lists_it_under_any_spelling_that_opens_it(string reference)
+    [InlineData("estate/secrets/dev.connection", "reference.tracked")]
+    [InlineData("estate/secrets/Dev.connection", "reference.tracked")]
+    [InlineData("estate/secrets/dev.connection.", "reference.tracked")]
+    [InlineData("estate/secrets/dev.connection . .", "reference.tracked")]
+    [InlineData("estate/secrets/DEV~1.CON", "reference.tracked")]
+    [InlineData(".estate/dev.connection", "reference.tracked")]
+    [InlineData("estate/secrets/dev.connection::$DATA", "reference.unlisted")]
+    public void A_connection_file_git_tracks_is_refused_under_each_spelling_that_opens_it_though_gitignore_lists_it(string reference, string code)
     {
         using var repository = new Scratch();
-        repository.Commit("the estate", (".gitignore", "*.connection\n"), ("estate/posture.json", "{ \"environments\": { " + Dev(reference) + " } }"));
-        repository.Write(("estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
-        OwnerOnly(Path.Combine(repository.Root, "estate", "dev.connection"));
-        repository.Git("add", "--force", "--", "estate/dev.connection");
+        repository.Commit("the estate", (".gitignore", ".estate/\nestate/secrets/\n*.connection\n"), ("estate/posture.json", "{ \"environments\": { " + Dev(reference) + " } }"));
+        repository.Write(("estate/secrets/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
+        OwnerOnly(Path.Combine(repository.Root, "estate", "secrets", "dev.connection"));
+        repository.Git("add", "--force", "--", "estate/secrets/dev.connection");
         repository.Git("commit", "-q", "-m", "the connection file");
+        if (reference == ".estate/dev.connection")
+        {
+            Directory.CreateDirectory(Path.Combine(repository.Root, ".estate"));
+            File.CreateSymbolicLink(Path.Combine(repository.Root, ".estate", "dev.connection"), Path.Combine(repository.Root, "estate", "secrets", "dev.connection"));
+        }
 
+        var opens = File.Exists(Path.Combine(repository.Root, reference));
         var refusal = Refused(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), repository.Root));
 
-        Assert.Equal((File.Exists(Path.Combine(repository.Root, reference)) ? "reference.tracked" : "connection.unresolved", 6), (refusal.Code, Contract.Exit(refusal)));
+        Assert.True(opens || !OperatingSystem.IsWindows() || reference.Contains('~', StringComparison.Ordinal), reference + " opens no file on Windows");
+        Assert.Equal((opens ? code : "connection.unresolved", 6), (refusal.Code, Contract.Exit(refusal)));
         Assert.DoesNotContain(Planted, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
     }
 

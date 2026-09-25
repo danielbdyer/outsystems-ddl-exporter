@@ -83,7 +83,8 @@ public static class Git
 
     /// <summary>
     /// How git holds an existing <paramref name="file"/>, asked in the file's own folder, so the repository is the one git finds there
-    /// (the estate's, another, or none). A tracked file is Tracked whatever .gitignore lists. Where the file system opens a file
+    /// (the estate's, another, or none), and by the name the caller gives, which io/SqlServer takes from the folder's listing
+    /// (SqlServer.Listed), since git never sees another spelling Windows opens. A tracked file is Tracked whatever .gitignore lists. Where the file system opens a file
     /// whatever the case of its name (Windows, macOS, or core.ignorecase true), git's index is searched for the name without case, as
     /// .gitignore already is, so estate/Dev.connection finds a tracked estate/dev.connection. InNoRepository and EstateInNoRepository
     /// come only from git's own "not a git repository" at the end of its search; any other failure of the search is git.failed, and

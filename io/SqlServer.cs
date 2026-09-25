@@ -392,6 +392,7 @@ public static class SqlServer
     /// What a reference names: the variable's value, or the file's text trimmed; null when there is none. A file, a relative path read
     /// from the estate's root, is read only when git keeps it out of every commit, ignored or in no repository while the estate's root
     /// is in one, and, where files carry a Unix mode, when its owner alone can read it; a refusal leads with <paramref name="subject"/>.
+    /// git is asked about the file by the name its folder lists (<see cref="Listed"/>), and that name is the one read.
     /// </summary>
     internal static Result<string?> Read(string subject, SecretReference reference, string estateRoot)
     {
@@ -400,7 +401,7 @@ public static class SqlServer
             return reference.Match(
                 variable => Result.Ok(System.Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value ? value : null),
                 file => System.IO.Path.Combine(estateRoot, file) is var path && File.Exists(path)
-                    ? Kept(subject, estateRoot, path).Map(_ => File.ReadAllText(path).Trim() is { Length: > 0 } text ? text : null)
+                    ? Listed(subject, path).Bind(listed => Kept(subject, estateRoot, listed)).Map(kept => File.ReadAllText(kept).Trim() is { Length: > 0 } text ? text : null)
                     : Result.Ok<string?>(null));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -417,6 +418,32 @@ public static class SqlServer
         : new Refusal("reference.readable-by-others", subject + " is a file its group or other users can read (mode "
             + Convert.ToString((int)mode & 0b111_111_111, 8).PadLeft(4, '0') + "); a file holding a connection string is read by its owner alone.",
             "Run chmod 600 on the file, so its owner alone reads it.");
+
+    /// <summary>
+    /// The full path of the file <paramref name="path"/> opens, spelled as its folder lists it, following a symbolic link to its final
+    /// target: git matches .gitignore and its index against that name, and Windows opens a file under other spellings too. On Windows,
+    /// Path.GetFullPath drops trailing dots and spaces and expands an 8.3 short name, and the folder's listing gives the name's case
+    /// on Windows and macOS. A spelling that names no entry of its folder, such as Windows' name::$DATA for a file's default data
+    /// stream, is reference.unlisted, the file unread. Read asks it only of a path File.Exists opens; it is public because the register's
+    /// refusal paths ask it directly on Linux and macOS, where name::$DATA opens no file.
+    /// </summary>
+    public static Result<string> Listed(string subject, string path) => Entry(path) is not { } entry ? Unlisted(subject)
+        : entry.ResolveLinkTarget(returnFinalTarget: true) is not { } target ? entry.FullName
+        : Entry(target.FullName) is { } final ? final.FullName
+        : Unlisted(subject);
+
+    /// <summary>The entry of the path's folder that the path names: the one of its exact name, else, where the file system opens a name whatever its case, the one of its name in another case.</summary>
+    private static FileInfo? Entry(string path)
+    {
+        var named = new FileInfo(System.IO.Path.GetFullPath(path));
+        var entries = named.Directory is { Exists: true } folder ? folder.GetFiles() : [];
+        return entries.FirstOrDefault(e => e.Name == named.Name)
+            ?? (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? entries.FirstOrDefault(e => string.Equals(e.Name, named.Name, StringComparison.OrdinalIgnoreCase)) : null);
+    }
+
+    private static Refusal Unlisted(string subject) => new Refusal("reference.unlisted", subject + " opens a file by a name its folder does not list, such as name::$DATA, a data stream;"
+        + " git matches .gitignore and its index against the name the folder lists, so it cannot say whether a commit holds the file, and the file is not read.",
+        "Write the path as dir or ls lists the file, in estate/posture.json.");
 
     /// <summary>The path of a file a file: reference names, when git keeps it out of every commit and no other user can read it; else the refusal, the file unread.</summary>
     private static Result<string> Kept(string subject, string estateRoot, string path) => Git.HoldingOf(estateRoot, path).Bind<string>(holding => holding switch
