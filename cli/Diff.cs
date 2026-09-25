@@ -16,20 +16,23 @@ public static partial class Verbs
         {
             ["from"] = Side(), ["to"] = Side(),
             ["counts"] = Render.Record(new() { ["created"] = Count(), ["dropped"] = Count(), ["renamed"] = Count(), ["altered"] = Count(), ["caseOnlyRenamed"] = Count() }),
-            ["change"] = Render.Record(new()
-            {
-                ["created"] = Render.Long(Render.Text()), ["dropped"] = Render.Long(Render.Text()),
-                ["renamed"] = Render.Long(Render.Record(new() { ["before"] = Render.Text(), ["after"] = Render.Text() })),
-                ["caseOnlyRenamed"] = Render.Long(Render.Record(new() { ["before"] = Render.Text(), ["after"] = Render.Text() })),
-                ["altered"] = Render.Long(Render.Record(new()
-                {
-                    ["key"] = Render.Text(),
-                    ["properties"] = Render.List(Render.Record(new() { ["name"] = Render.Text(), ["before"] = Values(), ["after"] = Values() })),
-                    ["relationships"] = Render.List(Render.Record(new() { ["name"] = Render.Text(), ["before"] = Render.List(Render.Text()), ["after"] = Render.List(Render.Text()) })),
-                })),
-            }),
+            ["change"] = ChangeSchema(),
         }),
     };
+
+    /// <summary>A change as diff and check drift write one: the keys created and dropped, the renames and case-only pairs, and each alteration, each list one that can be long.</summary>
+    internal static JsonObject ChangeSchema() => Render.Record(new()
+    {
+        ["created"] = Render.Long(Render.Text()), ["dropped"] = Render.Long(Render.Text()),
+        ["renamed"] = Render.Long(Render.Record(new() { ["before"] = Render.Text(), ["after"] = Render.Text() })),
+        ["caseOnlyRenamed"] = Render.Long(Render.Record(new() { ["before"] = Render.Text(), ["after"] = Render.Text() })),
+        ["altered"] = Render.Long(Render.Record(new()
+        {
+            ["key"] = Render.Text(),
+            ["properties"] = Render.List(Render.Record(new() { ["name"] = Render.Text(), ["before"] = Values(), ["after"] = Values() })),
+            ["relationships"] = Render.List(Render.Record(new() { ["name"] = Render.Text(), ["before"] = Render.List(Render.Text()), ["after"] = Render.List(Render.Text()) })),
+        })),
+    });
 
     /// <summary>
     /// estate diff --from &lt;target&gt; --to &lt;target&gt; [--project &lt;path&gt;] [--fail-on-change]: Change.Between the two models with the renames
@@ -38,17 +41,31 @@ public static partial class Verbs
     /// </summary>
     public static Envelope Diff(Checkout here, IReadOnlyList<string> words)
     {
-        if (Contract.Flags(words, ["--from", "--to"], ["--project"], ["--fail-on-change"]).Bind(flags => SqlServer.Target(flags["--from"], "--from")
-            .Bind(from => SqlServer.Target(flags["--to"], "--to").Bind(to => Pinned(here).Bind(pin => Reading(here, from, flags.GetValueOrDefault("--project"))
-            .Bind(before => Reading(here, to, flags.GetValueOrDefault("--project")).Bind(after => CollationOf(before.Model.Elements).Bind(collation =>
-                Change.Between(before.Model.Elements, after.Model.Elements, SortedArray.Of(before.Model.Renames.Concat(after.Model.Renames).Distinct()), collation)
-                    .Map(change => (Before: before, After: after, Change: change, Collation: collation, Fail: flags.ContainsKey("--fail-on-change"), Pin: pin)))))))))
-            .Failed(out var diff, out var error))
+        if (DacFx.Version.Failed(out var dacfx, out var error))
         {
-            return Contract.Failed(Of("diff"), error, Stamped(null, null));
+            return Contract.Failed(Of("diff"), error);
         }
 
-        return Diff(diff.Before, diff.After, diff.Change, diff.Collation, diff.Fail, Stamped(diff.Before.Image ?? diff.After.Image, diff.Pin));
+        var stamp = new Stamp(dacfx);
+        if (Contract.Flags(words, ["--from", "--to"], ["--project"], ["--fail-on-change"]).Bind(flags => SqlServer.Target(flags["--from"], "--from")
+            .Bind(from => SqlServer.Target(flags["--to"], "--to").Bind(to => Io.Doctor.Toolchain(here.Root, Contract.Version).Map(pin => (Flags: flags, From: from, To: to, Pin: pin)))))
+            .Failed(out var asked, out error))
+        {
+            return Contract.Failed(Of("diff"), error, stamp);
+        }
+
+        stamp = stamp with { Pin = asked.Pin };
+        if ((asked.Pin.Rejects(dacfx) is { } outside ? Result.Fail<Source>(outside) : Reading(here, asked.From, asked.Flags.GetValueOrDefault("--project")))
+                .Bind(before => Reading(here, asked.To, asked.Flags.GetValueOrDefault("--project"))
+                .Bind(after => Ssdt.CollationOf(before.Model.Elements).Bind(collation =>
+                    Change.Between(before.Model.Elements, after.Model.Elements, SortedArray.Of(before.Model.Renames.Concat(after.Model.Renames).Distinct()), collation)
+                        .Map(change => (Before: before, After: after, Change: change, Collation: collation)))))
+            .Failed(out var diff, out error))
+        {
+            return Contract.Failed(Of("diff"), error, stamp);
+        }
+
+        return Diff(diff.Before, diff.After, diff.Change, diff.Collation, asked.Flags.ContainsKey("--fail-on-change"), stamp with { Server = diff.Before.Server ?? diff.After.Server });
     }
 
     /// <summary>
@@ -68,7 +85,10 @@ public static partial class Verbs
         return Contract.Answer(Of("diff").Output, Of("diff").Outcome(change.IsEmpty ? "matches" : "differs"), failOnChange && !change.IsEmpty ? 5 : 0, message,
             [
                 .. before.IsDatabase == after.IsDatabase ? [] : new[] { Finding.Note("diff.unlike-sources", "estate diff", before.Target + " and " + after.Target
-                    + " are read one from a package and one from a database, and SQL Server keeps a check's or a default's text as it normalized it, so such text can differ where the schemas agree.") },
+                    + " are read one from a package and one from a database: SQL Server keeps a check's, a default's and a computed column's Expression as it normalized the text,"
+                    + " and an index's DataCompressionOption reads otherwise from each, so those four properties can differ where the schemas agree.") },
+                .. before.Notes,
+                .. after.Notes,
                 .. change.CaseOnlyRenamed.Select(pair => CaseOnly("diff.case-only-rename", pair, collation)),
                 .. printer.Findings,
             ],
@@ -85,7 +105,7 @@ public static partial class Verbs
                 .Concat(a.Relationships.Select(r => a.Key + ": " + r.Name))));
 
     /// <summary>A change as JSON: the keys created, dropped and renamed, and each alteration with its values before and after, a script's through the printer.</summary>
-    private static JsonObject Json(Change change, Printer printer) => new()
+    internal static JsonObject Json(Change change, Printer printer) => new()
     {
         ["created"] = Render.Array(change.Created.Select(e => (JsonNode?)e.Key.ToString())),
         ["dropped"] = Render.Array(change.Dropped.Select(e => (JsonNode?)e.Key.ToString())),

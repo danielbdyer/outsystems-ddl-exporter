@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using Estate.Budgets.Tests;
 using Estate.Cli;
 using Estate.Kernel;
 using Xunit;
@@ -42,7 +44,7 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         Assert.True(exit == 0, output);
         Assert.Equal("Column [dbo].[Customer].[Email]: Nullable true → false\n", output);
 
-        var dacpac = Path.Combine(estate.Root, ".estate", "build", estate.Head, "SampleCatalog.dacpac");
+        var dacpac = Built(estate.Head);
         var (readExit, read) = estate.Tool.RunAt(estate.Root, "read", "--from", "dacpac:" + dacpac, "--json");
 
         Assert.True(readExit == 0, read);
@@ -58,13 +60,17 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
     private JsonArray Elements(JsonNode answer) =>
         ((string?)answer["full"] is { } full ? JsonNode.Parse(File.ReadAllText(Path.Combine(estate.Root, full)))! : answer)["read"]!["elements"]!.AsArray();
 
+    /// <summary>The package a ref's build wrote: under .estate/build/, the commit's folder, then the folder the tool folder's build files name.</summary>
+    private string Built(string commit) => Path.Combine(estate.Root, ".estate", "build", commit,
+        GitTests.Ok(Ssdt.BuildTargets.Of(estate.Tool.Folder)).Fingerprint.ToString()[..16], "SampleCatalog.dacpac");
+
     /// <summary>
-    /// VALUES.md X2 for a database read, the other half of ProfilesTests.No_output_contains_Password's search of every error: a
+    /// VALUES.md X2 for a database read, the other half of PublishProfilesTests.No_output_contains_Password's search of every error: a
     /// registered database holding a SQL login and a user for it, read through estate read --from env:uat --json as the fixture's
     /// admin identity, who sees the login. What the test asserts is that the answer names the login and that no property in it is
     /// named after a member of <see cref="Ssdt.Secrets"/>: DacFx makes up a new Login.Password on each read, since SQL Server keeps
     /// only a hash of the one the login was made with, and Ssdt.Elements leaves that property out. The answer is also searched for a
-    /// password setting (<see cref="ProfilesTests.PasswordSetting"/>): on the container the fixture's identity signs in as sa with a
+    /// password setting (<see cref="PublishProfilesTests.PasswordSetting"/>): on the container the fixture's identity signs in as sa with a
     /// password, the env:uat connection file holds that connection string with its Password=, and the search fails if estate read
     /// printed it.
     /// </summary>
@@ -96,8 +102,8 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
             Assert.Contains(elements, e => (string?)e!["key"] == "Login [" + login + "]");
             var secrets = Ssdt.Secrets.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
             Assert.DoesNotContain(elements.SelectMany(e => e!["properties"]!.AsObject().Select(p => (string?)e["key"] + " " + p.Key)), p => secrets.Contains(p.Split('.', ' ')[^1]));
-            Assert.DoesNotMatch(ProfilesTests.PasswordSetting, output);
-            Assert.DoesNotMatch(ProfilesTests.PasswordSetting, whole);
+            Assert.DoesNotMatch(PublishProfilesTests.PasswordSetting, output);
+            Assert.DoesNotMatch(PublishProfilesTests.PasswordSetting, whole);
         }
         finally
         {
@@ -105,9 +111,57 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         }
     }
 
+    /// <summary>
+    /// The identity that reads a database sets what its model holds: SQL Server hides the logins users map to from an identity without
+    /// VIEW ANY DEFINITION on the server, all but its own (measured). The read-only principal, which holds VIEW DEFINITION on its database alone, reads env:uat with the
+    /// note read.database-scope and without the login another user of the database maps to; the fixture's admin identity reads the same
+    /// database with no such note, and names that login.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task A_read_of_a_database_scoped_identity_carries_the_scope_note_and_an_admin_read_does_not()
+    {
+        await using var database = await SqlServerFixture.RegisterAsync();
+        var reader = await ReadOnlyPrincipal.CreateAsync(database);
+        var other = database.Name + "_other";
+        await SqlServerFixture.ExecuteAsync(database.ConnectionString, "DECLARE @sql nvarchar(max) = N'CREATE LOGIN ' + QUOTENAME(@name) + N' WITH PASSWORD = N''Other!"
+            + Guid.NewGuid().ToString("N")[..12] + "''; CREATE USER ' + QUOTENAME(@name) + N' FOR LOGIN ' + QUOTENAME(@name) + N';'; EXEC (@sql);", other);
+        var connection = Path.Combine(Path.GetDirectoryName(estate.Root)!, database.Name + ".connection");
+        File.WriteAllText(connection, database.ConnectionString);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(connection, UnixFileMode.UserRead | UnixFileMode.UserWrite);   // io/SqlServer refuses a connection file others can read
+        }
+
+        try
+        {
+            var (asReader, asAdmin) = (Read(estate.Named(("uat", Path.Combine(Repository.Root, reader.Reference["file:".Length..])))), Read(estate.Named(("uat", connection))));
+
+            Assert.Contains(asReader.Findings, f => f == ("read.database-scope", "note"));
+            Assert.DoesNotContain("Login [" + other + "]", asReader.Keys);
+            Assert.DoesNotContain(asAdmin.Findings, f => f.Code == "read.database-scope");
+            Assert.Contains("Login [" + other + "]", asAdmin.Keys);
+        }
+        finally
+        {
+            File.Delete(connection);
+            await SqlServerFixture.ExecuteAsync(await SqlServerFixture.ServerAsync(), "DECLARE @sql nvarchar(max) = N'DROP LOGIN ' + QUOTENAME(@name) + N';'; EXEC (@sql);", other);
+        }
+
+        (IReadOnlyList<(string Code, string? Severity)> Findings, IReadOnlyList<string> Keys) Read(string root)
+        {
+            var (exit, output) = estate.EstateAt(root, "read", "--from", "env:uat", "--json");
+            Assert.True(exit == 0, output);
+            var answer = JsonNode.Parse(output)!;
+            var whole = (string?)answer["full"] is { } full ? JsonNode.Parse(File.ReadAllText(Path.Combine(root, full)))! : answer;
+            return ([.. answer["findings"]!.AsArray().Select(f => ((string)f!["code"]!, (string?)f["severity"]))],
+                [.. whole["read"]!["elements"]!.AsArray().Select(e => (string)e!["key"]!)]);
+        }
+    }
+
     [Fact]
     [Trait("Category", "fast")]
-    public void Diff_json_validates_against_estate_diff_1_and_carries_the_one_property_both_fingerprints_and_the_engine()
+    public void Diff_json_validates_against_estate_diff_1_and_carries_the_one_property_both_fingerprints_and_the_DacFx_release_and_claims_nothing()
     {
         var (exit, output) = estate.Estate("diff", "--from", "ref:" + estate.Base, "--to", "ref:" + estate.Head, "--json");
 
@@ -119,8 +173,8 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         var property = Assert.Single(altered["properties"]!.AsArray())!;
         Assert.Equal(("Nullable", true, false), ((string?)property["name"], (bool)property["before"]!, (bool)property["after"]!));
         Assert.NotEqual((string?)answer["diff"]!["from"]!["fingerprint"], (string?)answer["diff"]!["to"]!["fingerprint"]);
-        Assert.Equal(Doctor.DacFx, (string?)answer["engine"]!["dacfx"]);
-        Assert.Null(answer["receipt"]);
+        Assert.Equal(DacFx.Version.Match(v => v.ToString(), e => e.Message), (string?)answer["dacfx"]);
+        Assert.Null(answer["provenance"]);
     }
 
     /// <summary>--fail-on-change makes a change exit 5 (the drift check in CI); an unchanged pair still exits 0 and says so.</summary>
@@ -142,14 +196,14 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
     public void Read_of_a_ref_and_of_the_package_its_build_wrote_fingerprint_alike_and_validate_against_estate_read_1()
     {
         var (exit, output) = estate.Estate("read", "--from", "ref:" + estate.Base, "--json");
-        var dacpac = Path.Combine(estate.Root, ".estate", "build", estate.Base, "SampleCatalog.dacpac");
+        var dacpac = Built(estate.Base);
         var (packageExit, package) = estate.Estate("read", "--from", "dacpac:" + dacpac, "--json");
 
         var (fromRef, fromPackage) = (JsonNode.Parse(output)!, JsonNode.Parse(package)!);
         ScratchEstate.Valid("estate.read.1.schema.json", fromRef);
         ScratchEstate.Valid("estate.read.1.schema.json", fromPackage);
         Assert.Equal((0, 0), (exit, packageExit));
-        using var loaded = GitTests.Ok(Ssdt.Load(dacpac));
+        using var loaded = GitTests.Ok(Ssdt.Open(dacpac));
         var elements = GitTests.Ok(Ssdt.Elements(loaded)).Elements;
         Assert.Equal("sha256:" + Fingerprint.Of(elements), (string?)fromRef["read"]!["fingerprint"]);
         Assert.Equal((string?)fromRef["read"]!["fingerprint"], (string?)fromPackage["read"]!["fingerprint"]);

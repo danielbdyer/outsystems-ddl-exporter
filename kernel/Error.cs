@@ -47,8 +47,7 @@ public sealed record Error
 /// The category of an error: the word before the first dot of its code, one member per category the kernel, io or cli constructs
 /// an error of, and no other. The set is closed so that cli/Contract.cs maps each member to its exit in one switch with no discard
 /// arm: a member added here without an arm there fails the build (CS8509 under warnings as errors), and an error whose code names
-/// a word outside the set cannot be constructed. <see cref="Engine"/> stays until the provenance record replaces Receipt.cs's
-/// Engine (N4), which carries the last engine.* codes.
+/// a word outside the set cannot be constructed.
 /// </summary>
 public enum ErrorCategory
 {
@@ -60,7 +59,6 @@ public enum ErrorCategory
     Copy,
     DacFx,
     Element,
-    Engine,
     File,
     Fingerprint,
     Git,
@@ -71,6 +69,7 @@ public enum ErrorCategory
     Name,
     Origin,
     Package,
+    Plan,
     Posture,
     Profile,
     Ref,
@@ -112,7 +111,6 @@ public static class ErrorCode
         ErrorCategory.Copy => "copy",
         ErrorCategory.DacFx => "dacfx",
         ErrorCategory.Element => "element",
-        ErrorCategory.Engine => "engine",
         ErrorCategory.File => "file",
         ErrorCategory.Fingerprint => "fingerprint",
         ErrorCategory.Git => "git",
@@ -123,6 +121,7 @@ public static class ErrorCode
         ErrorCategory.Name => "name",
         ErrorCategory.Origin => "origin",
         ErrorCategory.Package => "package",
+        ErrorCategory.Plan => "plan",
         ErrorCategory.Posture => "posture",
         ErrorCategory.Profile => "profile",
         ErrorCategory.Ref => "ref",

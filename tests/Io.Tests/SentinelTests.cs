@@ -31,7 +31,7 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
     public async Task A_Permissive_publish_under_a_profile_naming_a_sentinel_server_reaches_the_copy_and_never_the_sentinel()
     {
         var elsewhere = "estate_sentinel_" + Guid.NewGuid().ToString("N")[..8];
-        var strict = Value(Profiles.Load(Sentinel(elsewhere)));
+        var strict = Value(PublishProfiles.Load(Sentinel(elsewhere)));
         var dacpac = Value(Ssdt.Build(ClassicMinimal(), tool.Folder, scratch.Under("build"))).Path;
         Assert.ThrowsAny<SocketException>(() => Dns.GetHostEntry("sentinel.invalid"));
 

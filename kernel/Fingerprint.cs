@@ -76,6 +76,40 @@ public readonly record struct Fingerprint
         return Of(to.WrittenSpan);
     }
 
+    /// <summary>
+    /// The fingerprint of a deploy report: its operations in the SortedArray's order, each by whether its kind is unlisted, its kind's
+    /// name, its key and its issues' ids; then its alerts, each by whether its kind is unlisted, its kind's name, whether it has an id and
+    /// the id, and its text; every list led by its count and every string by its length. So two reports fingerprint alike exactly when they
+    /// are equal, whatever order DacFx listed their operations in.
+    /// </summary>
+    public static Fingerprint Of(DeployReport report)
+    {
+        var to = new ArrayBufferWriter<byte>();
+        Write(to, report.Operations.Count);
+        foreach (var operation in report.Operations)
+        {
+            Write(to, operation.Kind is PlanOperationKind.Unlisted ? 1 : 0);
+            Write(to, operation.Kind.Name);
+            Write(to, operation.Key);
+            Write(to, operation.Issues.Count);
+            foreach (var issue in operation.Issues)
+            {
+                Write(to, issue);
+            }
+        }
+
+        Write(to, report.Alerts.Count);
+        foreach (var alert in report.Alerts)
+        {
+            Write(to, alert.Kind is PlanAlertKind.Unlisted ? 1 : 0);
+            Write(to, alert.Kind.Name);
+            _ = alert.Id is { } id ? Write(to, 1) + Write(to, id) : Write(to, 0);
+            Write(to, alert.Text);
+        }
+
+        return Of(to.WrittenSpan);
+    }
+
     /// <summary>A fingerprint from the 64 lowercase hex digits <see cref="ToString"/> renders, and from nothing else.</summary>
     public static Result<Fingerprint> Parse(string hex) =>
         hex is { Length: 64 } && hex.All(c => char.IsAsciiDigit(c) || c is >= 'a' and <= 'f')

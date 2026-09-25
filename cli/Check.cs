@@ -13,14 +13,23 @@ public static partial class Verbs
     /// <summary>The checks the verb table names beyond drift, which this build does not have.</summary>
     private static readonly HashSet<string> Later = new(StringComparer.Ordinal) { "cdc", "evidence", "inflight", "outsystems", "environments" };
 
-    /// <summary>What check adds to the envelope: the kind of check, the target, the ref and its commit, how many operations the plan holds, and each, a list that can be long.</summary>
+    /// <summary>
+    /// What check adds to the envelope: the kind of check, the target, the ref and its commit, the counts, each operation of the deploy plan
+    /// (its word, DacFx's name where estate's list lacks it, the element and the data issues it raises), and the columns that differ, as diff
+    /// writes a change; the two lists can be long.
+    /// </summary>
     public static JsonObject CheckContent => new()
     {
         ["check"] = Render.Record(new()
         {
             ["kind"] = Render.Enum(["drift"]), ["target"] = Render.Text(), ["at"] = Render.Text(), ["commit"] = Render.Pattern("^[0-9a-f]{40,64}$"),
-            ["counts"] = Render.Record(new() { ["operations"] = Count() }),
-            ["operations"] = Render.Long(Render.Record(new() { ["operation"] = Render.Text(), ["type"] = Render.Text(), ["name"] = Render.Text() })),
+            ["counts"] = Render.Record(new() { ["operations"] = Count(), ["columns"] = Count() }),
+            ["operations"] = Render.Long(Render.Record(new()
+            {
+                ["operation"] = Render.Pattern("^[a-z]+(-[a-z]+)*$"), ["name"] = Render.Nullable(Render.Text()), ["key"] = Render.Text(),
+                ["issues"] = Render.List(new JsonObject { ["type"] = "integer" }),
+            })),
+            ["columns"] = ChangeSchema(),
         }),
     };
 
@@ -32,99 +41,94 @@ public static partial class Verbs
         _ => Contract.Failed(Of("check"), new Error("arguments.unknown-check", "estate check needs the check to run; this build runs check drift.", "Run estate check drift --target <target> --at <ref>.")),
     };
 
-    /// <summary>
-    /// Whether a database matches the repository at a ref (§1 fact 4; M1 exits 1 and 3): the ref built, then planned against the target under
-    /// the pipeline's profile as the caller, or as the environment's reference names. An empty deploy report is exit 0, "&lt;target&gt; matches
-    /// &lt;ref&gt;"; else exit 5, a finding per object the report names. The receipt stamps the committed engine, which must stand inside the
-    /// toolchain ledger's window (R13); a denial is reported before anything builds, in one sentence naming the environment (R16).
-    /// </summary>
+    /// <summary>check drift's arguments read, io/DriftCheck run, and its answer rendered; --at takes ref:&lt;ref&gt;, or a ref alone, since git forbids ':' in a ref's name.</summary>
     private static Envelope Drift(Checkout here, IReadOnlyList<string> words)
     {
-        var (verb, stamp) = (Of("check"), Stamped(null, null));
-        if (Contract.Flags(words, ["--target", "--at"], ["--profile", "--project"], []).Bind(flags => SqlServer.Target(flags["--target"], "--target").Map(target => (Flags: flags, Target: target)))
-            .Bind(asked => Io.Doctor.Toolchain(here.Root, Contract.Version).Map(pin => (asked.Flags, asked.Target, Pin: pin))).Failed(out var asked, out var error))
+        var verb = Of("check");
+        if (Contract.Flags(words, ["--target", "--at"], ["--profile", "--project"], []).Bind(flags => SqlServer.Target(flags["--target"], "--target")
+                .Bind(target => GitRef.Of("--at", flags["--at"].StartsWith("ref:", StringComparison.Ordinal) ? flags["--at"][4..] : flags["--at"])
+                    .Map(at => new DriftCheck.Request(target, at, flags.GetValueOrDefault("--profile"), flags.GetValueOrDefault("--project")))))
+            .Failed(out var request, out var error))
         {
-            return Contract.Failed(verb, error, stamp);
+            return Contract.Failed(verb, error, DacFx.Version.Match<Stamp?>(dacfx => new Stamp(dacfx), _ => null));
         }
 
-        stamp = Stamped(null, asked.Pin);
-        var posture = Profiles.Environments(here.Root);
-        if ((asked.Pin.Rejects(stamp.Engine) is { } outside ? Result.Fail<SqlServer.Database>(outside) : SqlServer.Resolve(asked.Target, posture, here.Root))
-            .Bind(database => Profile(here, database, posture, asked.Flags.GetValueOrDefault("--profile")).Map(profile => (asked.Flags, asked.Target, Database: database, Profile: profile)))
-            .Failed(out var drift, out error))
-        {
-            return Contract.Failed(verb, error, stamp);
-        }
-
-        stamp = Stamped(ScratchServer.Image(drift.Database), stamp.Pin);
-        var log = here.Run;
-        var at = drift.Flags["--at"];
-        if (SqlServer.Reach(drift.Database, log).Bind(_ => Built(here, at, drift.Flags.GetValueOrDefault("--project"))).Bind(built => Packaged(built.Dacpac)
-                .Bind(model => SqlServer.Plan(built.Dacpac, drift.Database, drift.Profile, log).Map(plan => (built.Commit, Model: model, Plan: plan))))
-            .Failed(out var planned, out error))
-        {
-            return Contract.Failed(verb, error, stamp);
-        }
-
-        var receipt = new Receipt(Fingerprint.Of(planned.Model.Elements), Fingerprint.Of(planned.Plan.Report), null, stamp.Engine, drift.Profile.Fingerprint, drift.Target.ToString(),
-            DateTimeOffset.UtcNow);
-        var items = planned.Plan.Items;
-        return Contract.Answer(verb.Output, verb.Outcome(items.Count == 0 ? "matches" : "differs"), items.Count == 0 ? 0 : 5,
-            drift.Target + (items.Count == 0 ? " matches " + at : " differs from " + at + " in each object below."),
-            [
-                .. items.Select(i => Finding.Warning("drift." + i.Operation.ToLowerInvariant(), Named(i.Type) + " " + i.Name,
-                    "The plan against " + drift.Target + " would " + i.Operation + " " + Named(i.Type) + " " + i.Name + ".",
-                    "Run estate diff --from " + drift.Target + " --to ref:" + at + " to see each property that differs.")),
-                .. items.Count == 0 ? [] : Columns(drift.Database, planned.Model, items, log),
-                .. stamp.Pin is Pin.Unpinned ? new[] { Finding.Note("engine.unpinned", "estate check drift", "This receipt stands on DacFx " + stamp.Engine.DacFx
-                    + ", UNPINNED: " + Io.Doctor.Ledger + " pins no engine for estate " + Contract.Version.Split('+')[0] + ".") } : [],
-                Unverified,
-            ],
-            stamp, receipt, new JsonObject
-            {
-                ["check"] = new JsonObject
-                {
-                    ["kind"] = "drift", ["target"] = drift.Target.ToString(), ["at"] = at, ["commit"] = planned.Commit, ["counts"] = new JsonObject { ["operations"] = items.Count },
-                    ["operations"] = Render.Array(items.Select(i => new JsonObject { ["operation"] = i.Operation, ["type"] = Named(i.Type), ["name"] = i.Name })),
-                },
-            });
+        var drift = DriftCheck.Run(new DriftCheck.Estate(here.Root, here.WorkingDirectory, here.Tool, Contract.Version), request, here.Run);
+        return drift.Result.Failed(out var answer, out error) ? Contract.Failed(verb, error, drift.Stamp) : Drifted(here, answer, drift.Stamp!);
     }
 
     /// <summary>
-    /// §17 item 15's default, on every receipt: until S7 commits the profile the Octopus step applies, the profile a receipt stands on is
-    /// the golden project's Pipeline profile or the estate's own, and neither is verified against that step.
+    /// check drift's answer: matches, exit 0, when the deploy plan is empty; else differs, exit 5, with a warning per operation that changes an
+    /// object, one note listing what DacFx adds for the objects that depend on them, a warning per alert, and a warning per column that differs
+    /// under a table the plan alters; each answer with the notes the profile, the package, the two models and the plan raised, UNPINNED
+    /// while the ledger pins no DacFx release, and that the profile is not verified against the Octopus step's (§17 item 15).
     /// </summary>
-    private static Finding Unverified => Finding.Note("profile.unverified", "estate check drift",
-        "This receipt stands on a profile not verified against the Octopus step: S7 has not committed the profile that step applies.");
-
-    /// <summary>The pipeline's profile: a named environment's own; for a copy, the one --profile names, else the one profile every environment of the posture names.</summary>
-    private static Result<PublishProfile.Strict> Profile(Checkout here, SqlServer.Database database, Result<Environments> posture, string? named) =>
-        database is SqlServer.EnvironmentDatabase environment ? Profiles.Of(environment.Environment, here.Root)
-        : named is not null ? Profiles.Load(Path.GetFullPath(Path.Combine(here.Root, named)))
-        : posture.Bind(environments => environments.SharedProfile is { } shared
-            ? Profiles.Load(Path.GetFullPath(Path.Combine(here.Root, shared.ToString())))
-            : new Error("arguments.missing-flag", database + " is a copy, and " + Profiles.Posture + " names no one profile its environments share.",
-                "Name the profile to plan under with estate check drift --profile <the pipeline's .publish.xml>."));
-
-    /// <summary>
-    /// The columns that differ under each table the report names, which DacFx's report names only as the table, as drift.column
-    /// warnings: the target's model read and compared with the package's under the target's collation, the column's own properties alone,
-    /// so text SQL Server keeps as it normalized it plays no part; and each pair of names the collation reads as one, as a note.
-    /// </summary>
-    private static IReadOnlyList<Finding> Columns(SqlServer.Database database, Ssdt.ModelElements package, IReadOnlyList<(string Operation, string Type, string Name)> items, SqlServer.QueryLog log)
+    private static Envelope Drifted(Checkout here, DriftCheck.Answer answer, Stamp stamp)
     {
-        var tables = items.Where(i => i.Type == "SqlTable").Select(i => "Table " + i.Name).ToHashSet(StringComparer.Ordinal);
-        bool Under(ElementKey key) => key.Type == "Column" && tables.Contains(key.Parent?.ToString() ?? "");
-        return SqlServer.Model(database, log).Bind(model => CollationOf(model).Bind(collation => Change.Between(model, package.Elements, [], collation).Map(change => (Change: change, Collation: collation)))).Match(
-            found => (IReadOnlyList<Finding>)
-            [
-                .. Lines(new Change(SortedArray.Of(found.Change.Created.Where(e => Under(e.Key))), SortedArray.Of(found.Change.Dropped.Where(e => Under(e.Key))), [], SortedArray.Of(found.Change.Altered.Where(a => Under(a.Key)))))
-                    .Select(line => line.Split(": ", 2) is [var key, var change] ? Finding.Warning("drift.column", key, change + ", from the target to the repository.") : Finding.Warning("drift.column", line, line + ".")),
-                .. found.Change.CaseOnlyRenamed.Select(pair => CaseOnly("drift.case-only-rename", pair, found.Collation)),
-            ],
-            _ => []);
+        var (verb, at, printer) = (Of("check"), "ref:" + answer.At, new Printer());
+        var profile = Path.GetRelativePath(here.Root, answer.Profile).Replace('\\', '/');
+        IReadOnlyList<Finding> standing =
+        [
+            .. answer.Notes,
+            .. stamp.Pin is Pin.Unpinned ? new[] { Finding.Note("toolchain.unpinned", Io.Doctor.Ledger, "This answer stands on DacFx " + stamp.DacFx + ", UNPINNED: " + Io.Doctor.Ledger
+                + " pins no DacFx release for estate " + Contract.Version.Split('+')[0] + ".") } : [],
+            Finding.Note("profile.unverified", profile, "The estate commits no copy of the publish profile the Octopus step applies, so " + profile + " is not verified against it."),
+        ];
+        var (operations, columns) = answer.Drift.Match(_ => (default(SortedArray<PlanOperation>), new Change([], [], [], [])), differs => (differs.Plan.Operations, differs.Columns));
+        var content = new JsonObject
+        {
+            ["check"] = new JsonObject
+            {
+                ["kind"] = "drift", ["target"] = answer.Target.ToString(), ["at"] = at, ["commit"] = answer.Commit,
+                ["counts"] = new JsonObject { ["operations"] = operations.Count, ["columns"] = columns.Created.Count + columns.Dropped.Count + columns.Altered.Count },
+                ["operations"] = Render.Array(operations.Select(o => new JsonObject
+                {
+                    ["operation"] = o.Kind.Word, ["name"] = o.Kind is PlanOperationKind.Unlisted ? o.Kind.Name : null, ["key"] = o.Key.ToString(),
+                    ["issues"] = Render.Array(o.Issues.Select(i => (JsonNode?)i)),
+                })),
+                ["columns"] = Json(columns, printer),
+            },
+        };
+        var commit = " (commit " + answer.Commit[..8] + ")";
+        return answer.Drift.Match(
+            _ => Contract.Answer(verb.Output, verb.Outcome("matches"), 0, answer.Target + " matches " + at + commit + ".", standing, stamp, answer.Provenance, content),
+            differs => Contract.Answer(verb.Output, verb.Outcome("differs"), 5,
+                answer.Target + " differs from " + at + commit + ": the deploy plan holds " + Counted(differs.Plan.Operations.Count, "operation") + ".",
+                [.. Differences(answer, differs, at), .. columns.CaseOnlyRenamed.Select(pair => CaseOnly("drift.case-only-rename", pair, answer.Collation)), .. printer.Findings, .. standing],
+                stamp, answer.Provenance, content));
     }
 
-    /// <summary>A type as the deploy report serializes it (SqlTable), as io/Ssdt.Elements names it (Table).</summary>
-    private static string Named(string type) => type.StartsWith("Sql", StringComparison.Ordinal) ? type[3..] : type;
+    /// <summary>
+    /// What a plan that differs says, object by object: a warning per operation that changes an object, naming it; one note listing the
+    /// operations DacFx adds for the objects that depend on those (a refresh, an unbind, a rebind), none a difference of its own; a warning
+    /// per alert, quoting DacFx's text, which names types and objects and never a row; and a warning per column line.
+    /// </summary>
+    private static IEnumerable<Finding> Differences(DriftCheck.Answer answer, Drift.Differs differs, string at)
+    {
+        var remedy = "Run estate diff --from " + answer.Target + " --to " + at + " to see each property that differs.";
+        var consequences = differs.Plan.Operations.Where(o => o.Kind.IsConsequence).ToList();
+        return differs.Plan.Operations.Where(o => !o.Kind.IsConsequence)
+            .Select(o => Finding.Warning("drift." + o.Kind.Word, o.Key.ToString(), "The deploy plan against " + answer.Target + " would " + Verb(o.Kind) + " " + o.Key + ".", remedy))
+            .Concat(consequences.Count == 0 ? [] : [Finding.Note("drift.consequence", "the deploy plan", "DacFx also plans, for the objects that depend on those it changes: "
+                + string.Join(", ", consequences.Select(o => o.Kind.Name + " " + o.Key)) + "; none is a difference of its own.")])
+            .Concat(differs.Plan.Alerts.Select(alert => alert.Kind switch
+            {
+                PlanAlertKind.DataIssue => Finding.Warning("drift.data-issue", differs.Plan.Operations.FirstOrDefault(o => alert.Id is { } id && o.Issues.Contains(id))?.Key.ToString() ?? "the deploy plan",
+                    alert.Text, remedy),
+                PlanAlertKind.DataMotion => Finding.Warning("drift.data-motion", alert.Text, "The deploy plan against " + answer.Target + " would copy the rows of " + alert.Text + " into a rebuilt table.", remedy),
+                _ => Finding.Warning("drift." + alert.Kind.Word, "the deploy plan", "DacFx's " + alert.Kind.Name + " alert: " + alert.Text, remedy),
+            }))
+            .Concat(Lines(differs.Columns).Select(line => line.Split(": ", 2) is [var key, var change]
+                ? Finding.Warning("drift.column", key, change + ", from the target to the repository.") : Finding.Warning("drift.column", line, line + ".")));
+    }
+
+    /// <summary>What an operation does, as the message's verb: create, alter, drop, rebuild, rename; for a name estate's list lacks, DacFx's operation by its name.</summary>
+    private static string Verb(PlanOperationKind kind) => kind switch
+    {
+        PlanOperationKind.TableRebuild => "rebuild",
+        PlanOperationKind.Unlisted unlisted => "run DacFx's " + unlisted.Name + " operation on",
+        _ => kind.Word,
+    };
+
+    private static string Counted(int count, string noun) => count.ToString(System.Globalization.CultureInfo.InvariantCulture) + " " + noun + (count == 1 ? "" : "s");
 }

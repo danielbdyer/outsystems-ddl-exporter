@@ -26,8 +26,9 @@ public sealed class CapabilityTests
     /// <summary>
     /// Each forbidden use, one per line, with the compiler error that refuses it: no Publish or Permissive on a named environment or on
     /// the type both databases share (CS1061); and, io's internals being invisible to any assembly but its tests, no Permissive.Of
-    /// (CS0117), no constructor of a Copy, called with as many arguments as io's own takes (CS1729), and no aggregate query made from
-    /// text, which only io's builders make for a named environment (CS0117; DECISIONS.md, 2026-09-25).
+    /// (CS0117), no constructor of a Copy, called with as many arguments as io's own takes (CS1729), no aggregate query made from
+    /// text, which only io's builders make for a named environment (CS0117; DECISIONS.md, 2026-09-25), and no DacFx.Publish to a named
+    /// environment, since it takes a Copy (CS1503).
     /// </summary>
     private static readonly (string Use, string Error)[] Forbidden =
     [
@@ -37,6 +38,7 @@ public sealed class CapabilityTests
         ("_ = PublishProfile.Permissive.Of(strict);", "CS0117"),
         ("_ = new SqlServer.Copy(" + string.Join(", ", Enumerable.Repeat("default!", CopyConstructor().GetParameters().Length)) + ");", "CS1729"),
         ("_ = SqlServer.AggregateQuery.Of(\"SELECT COUNT(*) FROM dbo.Customer;\", \"planted\");", "CS0117"),
+        ("_ = DacFx.Publish(named, null!, strict);", "CS1503"),
     ];
 
     [Fact]
@@ -76,7 +78,7 @@ public sealed class CapabilityTests
         var of = typeof(PublishProfile.Permissive).GetMethod("Of", BindingFlags.NonPublic | BindingFlags.Static)!;
 
         Assert.Equal(["Estate.Io.SqlServer+Copy.Permissive"], Callers(of).Select(Named));
-        Assert.Equal(typeof(PublishProfile.Strict), typeof(SqlServer).GetMethod(nameof(SqlServer.Plan))!.GetParameters().Single(p => typeof(PublishProfile).IsAssignableFrom(p.ParameterType)).ParameterType);
+        Assert.Equal(typeof(PublishProfile.Strict), typeof(DacFx).GetMethod(nameof(DacFx.Plan), BindingFlags.NonPublic | BindingFlags.Static)!.GetParameters().Single(p => typeof(PublishProfile).IsAssignableFrom(p.ParameterType)).ParameterType);
         foreach (var type in (Type[])[typeof(SqlServer.EnvironmentDatabase), typeof(SqlServer.Database)])
         {
             var members = type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
@@ -147,7 +149,11 @@ public sealed class CapabilityTests
     /// <summary>Each method and constructor io compiles, compiler-made ones included, whose IL holds <paramref name="callee"/>'s metadata token.</summary>
     private static IEnumerable<MethodBase> Callers(MethodBase callee) => typeof(SqlServer).Assembly.GetTypes()
         .SelectMany(t => t.GetMethods(Declared).Cast<MethodBase>().Concat(t.GetConstructors(Declared)))
-        .Where(m => m.GetMethodBody()?.GetILAsByteArray() is { } il && il.AsSpan().IndexOf(BitConverter.GetBytes(callee.MetadataToken)) >= 0);
+        .Where(m => m.GetMethodBody()?.GetILAsByteArray() is { } il && Calls(il, callee.MetadataToken));
+
+    /// <summary>Whether IL holds a call, callvirt, newobj, ldftn or ldvirtftn of the member whose metadata token is <paramref name="token"/>: the token after its opcode, never the same four bytes elsewhere.</summary>
+    private static bool Calls(byte[] il, int token) => Enumerable.Range(1, Math.Max(0, il.Length - 4)).Any(i =>
+        il.AsSpan(i, 4).SequenceEqual(BitConverter.GetBytes(token)) && (il[i - 1] is 0x28 or 0x6F or 0x73 || (i >= 2 && il[i - 2] == 0xFE && il[i - 1] is 0x06 or 0x07)));
 
     private static bool Within(Type? type, string name) => type is not null && (type.Name == name || Within(type.DeclaringType, name));
 

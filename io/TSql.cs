@@ -36,7 +36,11 @@ internal static class TSql
         return [.. named.Found.Distinct(StringComparer.Ordinal)];
     }
 
-    private static TSql160Parser Parser() => new(initialQuotedIdentifiers: true);
+    /// <summary>
+    /// The one way io makes a parser: SQL Server 2022's grammar, quoted identifiers on, or off for text a script may have written under
+    /// SET QUOTED_IDENTIFIER OFF (io/SchemaText tries both).
+    /// </summary>
+    internal static TSql160Parser Parser(bool quotedIdentifiers = true) => new(initialQuotedIdentifiers: quotedIdentifiers);
 
     private sealed class Named : TSqlFragmentVisitor
     {

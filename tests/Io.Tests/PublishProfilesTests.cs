@@ -19,12 +19,13 @@ using Xunit;
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// io/Profiles (WP 1.5): estate/posture.json read into named environments, and the pipeline's publish profile read into its
-/// deploy options and SQLCMD values alone. An error in either exits 6 through the CLI's category table, names the key or the file, and
-/// never quotes the value; Strict is the profile as loaded, Permissive differs from it in BlockOnPossibleDataLoss alone and
-/// nothing in io but a Copy makes one, and nothing either prints carries a value a reference names or a literal holds.
+/// io/PublishProfiles and the posture reader in io/Environments (WP 1.5): the pipeline's publish profile read into its deploy options and
+/// SQLCMD values alone, with a note for each element DacFx ignores, and estate/posture.json read into named environments. An error in
+/// either exits 6 through the CLI's category table, names the key, the file or the property, and never quotes the value; Strict is the
+/// profile as loaded, Permissive differs from it in BlockOnPossibleDataLoss alone and nothing in io but a Copy makes one, and nothing
+/// either prints carries a value a reference names or a literal holds.
 /// </summary>
-public sealed class ProfilesTests : IDisposable
+public sealed class PublishProfilesTests : IDisposable
 {
     private const string Planted = "Pa55!planted#7f3a";
 
@@ -39,7 +40,7 @@ public sealed class ProfilesTests : IDisposable
 
     private readonly string scratch = Directory.CreateTempSubdirectory("estate-profiles-").FullName;
 
-    public ProfilesTests() => Telemetry.OptOut();   // before DacFx loads, as estate's Main does
+    public PublishProfilesTests() => Telemetry.OptOut();   // before DacFx loads, as estate's Main does
 
     public static TheoryData<string> Ways => new(RefusalPaths.All.Select(c => c.Label));
 
@@ -49,7 +50,7 @@ public sealed class ProfilesTests : IDisposable
     [Trait("Category", "fast")]
     public void The_sample_posture_reads_into_its_named_environments_each_with_the_pipelines_profile()
     {
-        var posture = Made(Profiles.Environments(Golden));
+        var posture = Made(Posture.Environments(Golden));
         var dev = posture.All.Single(e => e.Name.ToString() == "dev");
 
         Assert.Equal(["dev", "prod", "qa", "uat"], posture.All.Select(e => e.Name.ToString()));
@@ -61,7 +62,7 @@ public sealed class ProfilesTests : IDisposable
         Assert.Equal(("env:ESTATE_DEV", (string?)"file:.estate/principals/dev-ossys.connection"), (dev.Connection.ToString(), dev.Metamodel?.ToString()));
         Assert.Equal("$(EnvironmentTag), a literal | $(ServiceAccountPassword) from env:ESTATE_DEV_SERVICE_PASSWORD", string.Join(" | ", dev.SqlCmd));
         Assert.Equal("dev", dev.SqlCmd[0].Match(text => text, reference => "from " + reference));
-        Assert.All(posture.All, e => Assert.True(Made(Profiles.Of(e, Golden)).Options().BlockOnPossibleDataLoss));
+        Assert.All(posture.All, e => Assert.True(Made(PublishProfiles.Of(e, Golden)).Options().BlockOnPossibleDataLoss));
     }
 
     /// <summary>
@@ -91,17 +92,17 @@ public sealed class ProfilesTests : IDisposable
         const string credential = "Server=db;User ID=estate;Password=" + Planted;
         var error = where switch
         {
-            "connection" => Failed(Profiles.Environments(Estate(Dev(connection: credential)))),
-            "metamodel" => Failed(Profiles.Environments(Estate(Dev("\"metamodel\": \"" + credential + "\"")))),
-            "sqlcmd" => Failed(Profiles.Environments(Estate(Dev("\"sqlcmd\": { \"LinkedServer\": { \"literal\": \"" + credential + "\", \"sensitive\": false } }")))),
-            "reader" => Failed(Profiles.Environments(Estate(Dev("\"readers\": [\"" + credential + "\"]")))),
-            "key" => Failed(Profiles.Environments(Estate(Dev("\"sqlcmd\": { \"" + credential + "\": \"env:ESTATE_LINK\" }")))),
-            "profile" => Failed(Profiles.Load(Profile("inline", "<TargetConnectionString>" + credential + "</TargetConnectionString>"))),
+            "connection" => Failed(Posture.Environments(Estate(Dev(connection: credential)))),
+            "metamodel" => Failed(Posture.Environments(Estate(Dev("\"metamodel\": \"" + credential + "\"")))),
+            "sqlcmd" => Failed(Posture.Environments(Estate(Dev("\"sqlcmd\": { \"LinkedServer\": { \"literal\": \"" + credential + "\", \"sensitive\": false } }")))),
+            "reader" => Failed(Posture.Environments(Estate(Dev("\"readers\": [\"" + credential + "\"]")))),
+            "key" => Failed(Posture.Environments(Estate(Dev("\"sqlcmd\": { \"" + credential + "\": \"env:ESTATE_LINK\" }")))),
+            "profile" => Failed(PublishProfiles.Load(Profile("inline", "<TargetConnectionString>" + credential + "</TargetConnectionString>"))),
             "profile, a comment splitting the password" =>
-                Failed(Profiles.Load(Profile("inline", "<TargetConnectionString>Server=db;User ID=sa;Pass<!-- -->word=" + Planted + "</TargetConnectionString>"))),
-            "profile's SQLCMD value" => Failed(Profiles.Load(Profile("inline", "", ("LinkedServer", "Server=db;UID=sa;PWD=" + Planted)))),
+                Failed(PublishProfiles.Load(Profile("inline", "<TargetConnectionString>Server=db;User ID=sa;Pass<!-- -->word=" + Planted + "</TargetConnectionString>"))),
+            "profile's SQLCMD value" => Failed(PublishProfiles.Load(Profile("inline", "", ("LinkedServer", "Server=db;UID=sa;PWD=" + Planted)))),
             "profile's SQLCMD value, password-free" =>
-                Failed(Profiles.Load(Profile("inline", "", ("LinkedServer", "Data Source=prod-sql;Initial Catalog=Orders;Integrated Security=True")))),
+                Failed(PublishProfiles.Load(Profile("inline", "", ("LinkedServer", "Data Source=prod-sql;Initial Catalog=Orders;Integrated Security=True")))),
             "argument" => Failed(SecretReference.Of("--connection", credential)),   // how a connection argument is read
             "argument after file:" => Failed(SecretReference.Of("--connection", "file:" + credential)),
             _ => Failed(SqlServer.Target(credential, "--target")),            // WP 1.4's target grammar
@@ -121,7 +122,7 @@ public sealed class ProfilesTests : IDisposable
     [InlineData("\"podman\"", "posture.malformed")]
     [InlineData("true", "posture.malformed")]
     public void The_scratch_server_preference_is_docker_or_localdb(string preference, string? code) =>
-        Assert.Equal(code, Profiles.Environments(Estate("{ \"environments\": {}, \"scratchServer\": " + preference + " }", raw: true)).Match<string?>(_ => null, r => r.Code));
+        Assert.Equal(code, Posture.Environments(Estate("{ \"environments\": {}, \"scratchServer\": " + preference + " }", raw: true)).Match<string?>(_ => null, r => r.Code));
 
     [Theory]
     [Trait("Category", "fast")]
@@ -130,7 +131,7 @@ public sealed class ProfilesTests : IDisposable
     [InlineData("{ \"environments\": { \"dev\": { \"host\": \"dev-sql\", \"connection\": \"env:A\", \"profile\": \"estate/p.publish.xml\", \"sqlcmd\": { \"Tag\": { \"literal\": \"dev\", \"sensitive\": false, \"value\": \"x\" } } } } }", "environments.dev.sqlcmd.Tag.value")]
     public void An_unknown_key_is_refused_by_its_place_in_the_posture(string posture, string at)
     {
-        var error = Failed(Profiles.Environments(Estate(posture, raw: true)));
+        var error = Failed(Posture.Environments(Estate(posture, raw: true)));
 
         Assert.Equal(("posture.unknown-key", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains(at, error.Message, StringComparison.Ordinal);
@@ -151,13 +152,43 @@ public sealed class ProfilesTests : IDisposable
     [Trait("Category", "fast")]
     public void The_pipeline_profile_loads_as_Strict_its_deploy_options_exactly_as_DacFx_reads_them()
     {
-        var strict = Made(Profiles.Load(Pipeline));
+        var strict = Made(PublishProfiles.Load(Pipeline));
 
         Assert.Equal(Settings(DacProfile.Load(Pipeline).DeployOptions), Settings(strict.Options()));
         Assert.True(strict.Options().BlockOnPossibleDataLoss);
         Assert.NotSame(strict.Options(), strict.Options());
         Assert.Empty(strict.SqlCmd);
         Assert.Equal("Strict: " + Pipeline, strict.ToString());
+    }
+
+    /// <summary>
+    /// DacProfile reads an element it does not know as nothing (measured): a misspelled BlockOnPossibleDataLos loads, and the option it
+    /// misspells keeps its default. Load names each such element in a note, profile.unknown-option; the golden pipeline profile has none.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_misspelled_option_is_a_note_naming_the_element_and_the_option_keeps_its_default()
+    {
+        var misspelled = Made(PublishProfiles.Load(Profile("misspelled", "<BlockOnPossibleDataLos>False</BlockOnPossibleDataLos><blockonpossibledataloss>True</blockonpossibledataloss>")));
+
+        Assert.True(misspelled.Options().BlockOnPossibleDataLoss);
+        Assert.Equal([("profile.unknown-option", Severity.Note, "BlockOnPossibleDataLos")], misspelled.Notes.Select(n => (n.Code, n.Severity, n.Subject)));
+        Assert.Empty(Made(PublishProfiles.Load(Pipeline)).Notes);
+    }
+
+    /// <summary>
+    /// DacProfile refuses a value it cannot read with a message that quotes it ("Property BlockOnPossibleDataLoss has an invalid value: …",
+    /// measured); profile.unreadable names the property and withholds the value, which can be a secret.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_value_DacFx_cannot_read_is_refused_naming_the_property_and_withholding_the_value()
+    {
+        var error = Failed(PublishProfiles.Load(Profile("unreadable", "<BlockOnPossibleDataLoss>" + Planted + "</BlockOnPossibleDataLoss>")));
+
+        Assert.Equal(("profile.unreadable", 6), (error.Code, Contract.Exit(error)));
+        Assert.Contains("sets BlockOnPossibleDataLoss to a value DacFx does not read", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -170,7 +201,7 @@ public sealed class ProfilesTests : IDisposable
     [Trait("Value", "D3")]
     [Trait("Value", "O2")]
     public void The_pipeline_profile_fingerprints_to_one_committed_value_on_every_operating_system() =>
-        Assert.Equal("139ffe34dbec24fadeab8501028b8a50cab2ba547d7cffd28d8e9b20ac0536d5", Made(Profiles.Load(Pipeline)).Fingerprint.ToString());
+        Assert.Equal("139ffe34dbec24fadeab8501028b8a50cab2ba547d7cffd28d8e9b20ac0536d5", Made(PublishProfiles.Load(Pipeline)).Fingerprint.ToString());
 
     /// <summary>A profile fingerprints by its content: the file saved with CRLF and a byte-order mark, as Visual Studio on Windows can save it, and saved with LF alone fingerprint alike.</summary>
     [Fact]
@@ -183,8 +214,8 @@ public sealed class ProfilesTests : IDisposable
         File.WriteAllText(lf, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         File.WriteAllText(crlf, text.ReplaceLineEndings("\r\n"), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
 
-        Assert.Equal(Made(Profiles.Load(lf)).Fingerprint, Made(Profiles.Load(crlf)).Fingerprint);
-        Assert.Equal(Made(Profiles.Load(Pipeline)).Fingerprint, Made(Profiles.Load(crlf)).Fingerprint);
+        Assert.Equal(Made(PublishProfiles.Load(lf)).Fingerprint, Made(PublishProfiles.Load(crlf)).Fingerprint);
+        Assert.Equal(Made(PublishProfiles.Load(Pipeline)).Fingerprint, Made(PublishProfiles.Load(crlf)).Fingerprint);
     }
 
     /// <summary>§1 fact 10: a profile contributes its deploy options and SQLCMD values; its target is removed at load, and nothing the profile object holds or prints names it.</summary>
@@ -192,7 +223,7 @@ public sealed class ProfilesTests : IDisposable
     [Trait("Category", "fast")]
     public void A_profile_naming_a_target_keeps_its_SQLCMD_values_and_nothing_of_the_target()
     {
-        var strict = Made(Profiles.Load(Profile("target",
+        var strict = Made(PublishProfiles.Load(Profile("target",
             "<BlockOnPossibleDataLoss>True</BlockOnPossibleDataLoss><TargetConnectionString>Data Source=sentinel.invalid;Initial Catalog=elsewhere_db;Integrated Security=True</TargetConnectionString><TargetDatabaseName>elsewhere_db</TargetDatabaseName>",
             ("EnvironmentTag", "dev"))));
 
@@ -211,8 +242,8 @@ public sealed class ProfilesTests : IDisposable
         var root = Estate(Dev(profile: "estate/profiles/relaxed.publish.xml"));
         File.Copy(relaxed, Path.Combine(root, "estate", "profiles", "relaxed.publish.xml"));
 
-        var bare = Failed(Profiles.Load(relaxed));
-        var named = Failed(Profiles.Of(Made(Profiles.Environments(root)).All.Single(), root));
+        var bare = Failed(PublishProfiles.Load(relaxed));
+        var named = Failed(PublishProfiles.Of(Made(Posture.Environments(root)).All.Single(), root));
 
         Assert.Equal(("profile.data-loss-allowed", 6), (bare.Code, Contract.Exit(bare)));
         Assert.Equal(("profile.data-loss-allowed", 6), (named.Code, Contract.Exit(named)));
@@ -224,7 +255,7 @@ public sealed class ProfilesTests : IDisposable
     [Trait("Value", "S1")]
     public void Permissive_differs_from_Strict_in_BlockOnPossibleDataLoss_alone()
     {
-        var strict = Made(Profiles.Load(Profile("tagged", "<BlockOnPossibleDataLoss>True</BlockOnPossibleDataLoss><IgnoreColumnOrder>True</IgnoreColumnOrder>", ("EnvironmentTag", "dev"))));
+        var strict = Made(PublishProfiles.Load(Profile("tagged", "<BlockOnPossibleDataLoss>True</BlockOnPossibleDataLoss><IgnoreColumnOrder>True</IgnoreColumnOrder>", ("EnvironmentTag", "dev"))));
         var permissive = PublishProfile.Permissive.Of(strict);
         var (before, after) = (Settings(strict.Options()), Settings(permissive.Options()));
 
@@ -283,12 +314,12 @@ public sealed class ProfilesTests : IDisposable
     public void Nothing_read_from_the_posture_or_a_profile_prints_a_literal_or_what_a_reference_names()
     {
         var root = Estate(Dev("\"sqlcmd\": { \"EnvironmentTag\": { \"literal\": \"" + Planted + "\", \"sensitive\": false }, \"ServicePassword\": \"env:ESTATE_PW\" }"));
-        var environment = Made(Profiles.Environments(root)).All.Single();
-        var strict = Made(Profiles.Load(Profile("printed", "", ("EnvironmentTag", Planted))));
+        var environment = Made(Posture.Environments(root)).All.Single();
+        var strict = Made(PublishProfiles.Load(Profile("printed", "", ("EnvironmentTag", Planted))));
 
         var printed = string.Join('\n', (object[])[environment, .. environment.SqlCmd, strict, .. strict.SqlCmd, PublishProfile.Permissive.Of(strict)]);
 
-        Assert.Equal(Planted, environment.SqlCmd.Single(v => v.Name == "EnvironmentTag").Match(text => text, reference => "from " + reference));
+        Assert.Equal(Planted, environment.SqlCmd.Single(v => v.Name.ToString() == "EnvironmentTag").Match(text => text, reference => "from " + reference));
         Assert.DoesNotContain(Planted, printed, StringComparison.Ordinal);
         Assert.DoesNotMatch(PasswordSetting, printed);
     }
@@ -296,7 +327,11 @@ public sealed class ProfilesTests : IDisposable
     /// <summary>Each method and constructor io compiles, compiler-made ones included, whose IL holds <paramref name="callee"/>'s metadata token.</summary>
     private static IEnumerable<MethodBase> Callers(MethodBase callee) => typeof(PublishProfile).Assembly.GetTypes()
         .SelectMany(t => t.GetMethods(Declared).Cast<MethodBase>().Concat(t.GetConstructors(Declared)))
-        .Where(m => m.GetMethodBody()?.GetILAsByteArray() is { } il && il.AsSpan().IndexOf(BitConverter.GetBytes(callee.MetadataToken)) >= 0);
+        .Where(m => m.GetMethodBody()?.GetILAsByteArray() is { } il && Calls(il, callee.MetadataToken));
+
+    /// <summary>Whether IL holds a call, callvirt, newobj, ldftn or ldvirtftn of the member whose metadata token is <paramref name="token"/>: the token after its opcode, never the same four bytes elsewhere.</summary>
+    private static bool Calls(byte[] il, int token) => Enumerable.Range(1, Math.Max(0, il.Length - 4)).Any(i =>
+        il.AsSpan(i, 4).SequenceEqual(BitConverter.GetBytes(token)) && (il[i - 1] is 0x28 or 0x6F or 0x73 || (i >= 2 && il[i - 2] == 0xFE && il[i - 1] is 0x06 or 0x07)));
 
     private static bool InCopy(Type? type) => type is not null && (type.Name == "Copy" || InCopy(type.DeclaringType));
 

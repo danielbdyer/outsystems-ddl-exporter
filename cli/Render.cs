@@ -61,11 +61,15 @@ public static class Render
             ["message"] = answer.Message,
             ["blockedBy"] = Blocked(answer.BlockedBy),
             ["findings"] = Array(answer.Findings.Select(f => new JsonObject { ["code"] = f.Code, ["severity"] = Word(f.Severity), ["subject"] = f.Subject, ["message"] = f.Message, ["remedy"] = f.Remedy })),
-            ["engine"] = Stamped(answer.Stamp?.Engine, answer.Stamp),
-            ["receipt"] = answer.Receipt is { } r ? new JsonObject
+            ["version"] = answer.Stamp is null ? null : Contract.Version,
+            ["dacfx"] = answer.Stamp?.DacFx.ToString(),
+            ["pin"] = answer.Stamp?.Pin?.ToString(),
+            ["server"] = Json(answer.Stamp?.Server),
+            ["provenance"] = answer.Provenance is { } p ? new JsonObject
             {
-                ["delta"] = Digest(r.Delta), ["target"] = Digest(r.Target), ["dataFacts"] = r.DataFacts is { } facts ? Digest(facts) : null, ["engine"] = Stamped(r.Engine, answer.Stamp),
-                ["profile"] = Digest(r.Profile), ["where"] = r.Where, ["at"] = r.At.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture), ["lacking"] = Input(r.Lacking),
+                ["change"] = Digest(p.Change), ["schema"] = Digest(p.Schema), ["dataConditions"] = p.DataConditions is { } data ? Digest(data) : null, ["dacfx"] = p.DacFx.ToString(),
+                ["server"] = Json(p.Server), ["publishProfile"] = Digest(p.PublishProfile), ["target"] = p.Target.ToString(),
+                ["at"] = p.At.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture), ["lacking"] = Array(p.Lacking.Select(i => (JsonNode?)Input(i))),
             } : null,
             ["truncated"] = answer.Truncated,
             ["full"] = answer.Full,
@@ -212,7 +216,7 @@ public static class Render
     /// <summary>The schemas the contract generates, by id: the envelope, the help and each verb's; each is committed under cli/schemas/ as <see cref="SchemaFile"/> names it.</summary>
     public static IReadOnlyList<(string Id, JsonObject Schema)> Schemas() =>
     [
-        ("estate.envelope/1", EnvelopeSchema("estate.envelope/1", "What every verb writes with --json: schema, outcome, exit, message, blockedBy, findings, engine, receipt, truncated, full.", null)),
+        ("estate.envelope/1", EnvelopeSchema("estate.envelope/1", "What every verb writes with --json: schema, outcome, exit, message, blockedBy, findings, version, dacfx, pin, server, provenance, truncated, full.", null)),
         ("estate.help/1", HelpSchema()),
         .. Contract.Verbs.Where(v => v.Content is not null).Select(v => (v.Output, EnvelopeSchema(v.Output, "What estate " + v.Name + " --json writes: the envelope, and " + string.Join(" and ", v.Content!.Select(p => p.Key)) + ".", v))),
     ];
@@ -262,8 +266,11 @@ public static class Render
             ["message"] = Text(),
             ["blockedBy"] = Nullable(BlockedBys()),
             ["findings"] = List(Ref("finding")),
-            ["engine"] = Ref("engine"),
-            ["receipt"] = Nullable(Ref("receipt")),
+            ["version"] = Nullable(Text()),
+            ["dacfx"] = Nullable(Pattern(DacFxVersion)),
+            ["pin"] = Nullable(Pattern("^UNPINNED$|" + DacFxVersion)),
+            ["server"] = Nullable(Ref("server")),
+            ["provenance"] = Nullable(Ref("provenance")),
             ["truncated"] = new JsonObject { ["type"] = "boolean" },
             ["full"] = Nullable(Pattern(FullPattern)),
         });
@@ -302,25 +309,42 @@ public static class Render
         });
         finding["if"] = Where("severity", new JsonObject { ["const"] = Word(Severity.Error) });
         finding["then"] = Where("remedy", Text());
+        // The kernel's Provenance: the inputs a claim stands on, the target and when, and the inputs it lacks; an input is null exactly when lacking names it.
+        var provenance = Record(new()
+        {
+            ["change"] = Fingerprint(), ["schema"] = Fingerprint(), ["dataConditions"] = Nullable(Fingerprint()), ["dacfx"] = Pattern(DacFxVersion), ["server"] = Nullable(Ref("server")),
+            ["publishProfile"] = Fingerprint(), ["target"] = Text(), ["at"] = new JsonObject { ["type"] = "string", ["format"] = "date-time" },
+            ["lacking"] = new JsonObject { ["type"] = "array", ["uniqueItems"] = true, ["items"] = Enum(System.Enum.GetValues<Provenance.Input>().Select(i => (JsonNode?)Input(i))) },
+        });
+        provenance["allOf"] = new JsonArray([.. ((Provenance.Input[])[Provenance.Input.DataConditions, Provenance.Input.Server]).Select(Lacks)]);
         envelope["$defs"] = new JsonObject
         {
-            // The kernel's Engine as stamped: the tool, DacFx and the SQL Server image's digest, null when unknown; and the toolchain ledger's pin, UNPINNED while it has none.
-            ["engine"] = Record(new() { ["estate"] = Text(), ["dacfx"] = Nullable(Pattern("^[0-9]+(\\.[0-9]+){1,3}$")), ["sqlserver"] = Nullable(Fingerprint()), ["pin"] = Nullable(Text()) }),
-            // The kernel's Receipt: §3's five inputs, where and when, and the input it lacks.
-            ["receipt"] = Record(new()
+            // The kernel's Server: the product version SQL Server reports, the database's compatibility level, and the image's digest for a copy on the estate-sql container.
+            ["server"] = Record(new()
             {
-                ["delta"] = Fingerprint(), ["target"] = Fingerprint(), ["dataFacts"] = Nullable(Fingerprint()), ["engine"] = Ref("engine"),
-                ["profile"] = Fingerprint(), ["where"] = Text(), ["at"] = new JsonObject { ["type"] = "string", ["format"] = "date-time" },
-                ["lacking"] = Nullable(Enum(System.Enum.GetValues<Receipt.Input>().Select(i => (JsonNode?)Input(i)))),
+                ["version"] = Pattern("^[0-9]{1,5}(\\.[0-9]{1,5}){3}$"), ["compatibilityLevel"] = new JsonObject { ["type"] = "integer" }, ["image"] = Nullable(Fingerprint()),
             }),
+            ["provenance"] = provenance,
             ["finding"] = finding,
         };
         return envelope;
     }
 
-    private static JsonObject Stamped(Engine? engine, Stamp? stamp) => new()
+    /// <summary>A DacFx release version as the envelope writes one: two to four dot-separated groups of digits, 170.5.96.</summary>
+    private const string DacFxVersion = "^[0-9]+(\\.[0-9]+){1,3}$";
+
+    /// <summary>The rule that a provenance's input is null exactly when its lacking names it.</summary>
+    private static JsonObject Lacks(Provenance.Input input)
     {
-        ["estate"] = Contract.Version, ["dacfx"] = engine?.DacFx, ["sqlserver"] = engine?.Image is { } image ? Digest(image) : null, ["pin"] = stamp?.Pin?.ToString(),
+        var rule = If(Where("lacking", new JsonObject { ["contains"] = new JsonObject { ["const"] = Input(input) } }), Where(Input(input), new JsonObject { ["type"] = "null" }));
+        rule["else"] = Where(Input(input), new JsonObject { ["not"] = new JsonObject { ["type"] = "null" } });
+        return rule;
+    }
+
+    /// <summary>A server as the envelope writes it, or null.</summary>
+    private static JsonObject? Json(Server? server) => server is null ? null : new JsonObject
+    {
+        ["version"] = server.Version, ["compatibilityLevel"] = server.CompatibilityLevel, ["image"] = server.Image is { } image ? Digest(image) : null,
     };
 
     private static JsonObject Document(string id, string description, JsonObject properties) => new(
@@ -366,6 +390,10 @@ public static class Render
 
     private static JsonObject BlockedBys() => Enum(System.Enum.GetValues<BlockedBy>().Select(b => (JsonNode?)Word(b)));
 
-    /// <summary>A receipt's input as the envelope names it, camel-cased: delta, target, dataFacts, engine, profile.</summary>
-    private static string? Input(Receipt.Input? input) => input is { } i ? char.ToLowerInvariant(i.ToString()[0]) + i.ToString()[1..] : null;
+    /// <summary>A provenance's input as the envelope names it, camel-cased: change, schema, dataConditions, dacFx, server, publishProfile.</summary>
+    private static string Input(Provenance.Input input) => input switch
+    {
+        Provenance.Input.DacFx => "dacfx",
+        _ => char.ToLowerInvariant(input.ToString()[0]) + input.ToString()[1..],
+    };
 }

@@ -522,7 +522,7 @@ public sealed class ContractTests
         Assert.Equal((6, "degraded"), ((int)json["exit"]!, (string?)json["outcome"]));
         var line = (string)json["message"]!;
         Assert.StartsWith("estate doctor DEGRADED | sdk=", line, StringComparison.Ordinal);
-        Assert.Contains(" | dacfx=" + Doctor.DacFx + " (UNPINNED) | ", line, StringComparison.Ordinal);
+        Assert.Contains(" | dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED) | ", line, StringComparison.Ordinal);
         Assert.DoesNotMatch(@"\bM\d\b", line);
         var findings = json["findings"]!.AsArray().Select(f => ((string)f!["code"]!, (string)f["severity"]!, (string?)f["remedy"])).ToList();
         Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.git", "doctor.scratch-server", "doctor.lfs"], findings.Select(f => f.Item1));
@@ -560,10 +560,10 @@ public sealed class ContractTests
         var json = Render.Json(answer);
         AssertValid("estate.doctor.1.schema.json", json);
         Assert.Equal((0, "ready"), (answer.Exit, answer.Outcome.Word));
-        Assert.Equal("estate doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx=" + Doctor.DacFx + " (UNPINNED) | build=dotnet with the tool folder's targets"
+        Assert.Equal("estate doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED) | build=dotnet with the tool folder's targets"
             + " | git=2.31.1 | scratch-server=estate-sql container (localhost,11433) | image=present | lfs=git-lfs/3.4.0", answer.Message);
         Assert.Empty(answer.Findings);
-        Assert.Equal((Doctor.DacFx, Doctor.ImageDigest, "UNPINNED"), ((string?)json["engine"]!["dacfx"], (string?)json["engine"]!["sqlserver"], (string?)json["engine"]!["pin"]));
+        Assert.Equal((DacFx.Version.Match(v => v.ToString(), e => e.Message), "UNPINNED", null), ((string?)json["dacfx"], (string?)json["pin"], json["server"]));
     }
 
     /// <summary>The first call in Main is Telemetry.OptOut, and no static initializer runs ahead of it; what OptOut sets is TelemetryTests'.</summary>
@@ -619,10 +619,15 @@ public sealed class ContractTests
             ["an answer that names its whole file was cut"] = (WithCut(true, ".estate/runs/20260925T101502Z-4242-0a1b/answer.json"), WithCut(false, ".estate/runs/20260925T101502Z-4242-0a1b/answer.json")),
             ["an answer that was not cut names no file"] = (WithCut(false, null), WithCut(true, ".estate/runs/x/queries.log")),
             ["the whole file is the run's answer.json"] = (WithCut(true, ".estate/runs/20260925T101502Z-4242-0a1b/answer.json"), WithCut(true, "answer.json")),
-            ["a receipt names its data facts, as null when it lacks them"] = (WithReceipt(r => r["dataFacts"] = null), WithReceipt(r => r.Remove("dataFacts"))),
-            ["a receipt's at is a date-time"] = (WithReceipt(_ => { }), WithReceipt(r => r["at"] = "yesterday")),
-            ["a receipt names the input it lacks, as null when it lacks none"] = (WithReceipt(r => r["lacking"] = null), WithReceipt(r => r["lacking"] = "seed")),
-            ["the engine names the SQL Server image by its digest"] = (WithReceipt(_ => { }), WithReceipt(r => r["engine"]!["sqlserver"] = "16.0.4295.3")),
+            ["a provenance's at is a date-time"] = (WithProvenance(_ => { }), WithProvenance(p => p["at"] = "yesterday")),
+            ["a provenance's data conditions are null exactly when it lacks them"] = (WithProvenance(p => (p["dataConditions"], p["lacking"]) = ("sha256:" + new string('3', 64), new JsonArray())),
+                WithProvenance(p => p["dataConditions"] = "sha256:" + new string('3', 64))),
+            ["a provenance's server is null exactly when it lacks it"] = (WithProvenance(p => p["server"] = null, "dataConditions", "server"), WithProvenance(p => p["server"] = null)),
+            ["a provenance lacks only an input it can lack"] = (WithProvenance(_ => { }), WithProvenance(_ => { }, "dataConditions", "seed")),
+            ["the server names the image by its digest"] = (WithProvenance(_ => { }), WithProvenance(p => p["server"]!["image"] = "16.0.4295.3")),
+            ["the server's version is SQL Server's product version"] = (WithStamp(s => s["server"]!["version"] = "15.0.4430.1"), WithStamp(s => s["server"]!["version"] = "SQL Server 2022")),
+            ["the stamp's DacFx is a release version"] = (WithStamp(s => s["dacfx"] = "170.5.96.0"), WithStamp(s => s["dacfx"] = "latest")),
+            ["the stamp's pin is UNPINNED or a release version"] = (WithStamp(s => s["pin"] = "170.5.96"), WithStamp(s => s["pin"] = "unpinned")),
         };
 
         // Instruction architecture §9.1: a remedy is required for severity error and for exits 2, 4, 6 and 9.
@@ -633,24 +638,25 @@ public sealed class ContractTests
             pairs["exit " + code + " gives every finding a remedy"] = (Finds(exit, "warning", "estate doctor"), Finds(exit, "warning", remedy: null));
         }
 
-        // Milestones §3: the receipt's five inputs, where and when; the engine names the tool, DacFx and SQL Server, null when unknown.
-        foreach (var field in (string[])["delta", "target", "engine", "profile", "where", "at", "lacking"])
+        // Milestones §3: a provenance names each input a claim stands on, the target and when, and what it lacks.
+        foreach (var field in (string[])["change", "schema", "dataConditions", "dacfx", "server", "publishProfile", "target", "at", "lacking"])
         {
-            pairs["a receipt carries its " + field] = (WithReceipt(_ => { }), WithReceipt(r => r.Remove(field)));
+            pairs["a provenance carries its " + field] = (WithProvenance(_ => { }), WithProvenance(p => p.Remove(field)));
         }
 
-        foreach (var field in (string[])["estate", "dacfx", "sqlserver", "pin"])
+        // The stamp: the tool's version, DacFx, the pin and the SQL Server, each null where the answer stands on the tool alone.
+        foreach (var field in (string[])["version", "dacfx", "pin", "server"])
         {
-            pairs["the engine names its " + field] = (_ => { }, a => a["engine"]!.AsObject().Remove(field));
+            pairs["the stamp names its " + field] = (WithStamp(_ => { }), a => a.Remove(field));
         }
 
         // The envelope writes a fingerprint as sha256: and the digest's 64 lowercase hex digits, and nothing else.
         (string Name, string Text)[] malformed = [("63 digits", "sha256:" + new string('a', 63)), ("upper case", "sha256:" + new string('A', 64)), ("another algorithm", "md5:" + new string('a', 64)), ("no algorithm", new string('a', 64))];
-        foreach (var field in (string[])["delta", "target", "dataFacts", "profile"])
+        foreach (var field in (string[])["change", "schema", "publishProfile"])
         {
             foreach (var (name, text) in malformed)
             {
-                pairs["a receipt's " + field + " is a sha256 fingerprint, not " + name] = (WithReceipt(_ => { }), WithReceipt(r => r[field] = text));
+                pairs["a provenance's " + field + " is a sha256 fingerprint, not " + name] = (WithProvenance(_ => { }), WithProvenance(p => p[field] = text));
             }
         }
 
@@ -701,18 +707,33 @@ public sealed class ContractTests
         });
     };
 
-    /// <summary>An answer carrying a whole, well-formed receipt (§3's five inputs, where and when), then changed.</summary>
-    private static Action<JsonObject> WithReceipt(Action<JsonObject> change) => answer =>
+    /// <summary>An answer carrying a whole stamp, a copy's server included, then changed.</summary>
+    private static Action<JsonObject> WithStamp(Action<JsonObject> change) => answer =>
     {
-        var receipt = new JsonObject
-        {
-            ["delta"] = "sha256:" + new string('1', 64), ["target"] = "sha256:" + new string('2', 64), ["dataFacts"] = "sha256:" + new string('3', 64),
-            ["engine"] = new JsonObject { ["estate"] = "3.0.0", ["dacfx"] = "170.5.96", ["sqlserver"] = "sha256:" + new string('5', 64), ["pin"] = "UNPINNED" },
-            ["profile"] = "sha256:" + new string('4', 64), ["where"] = "env:dev", ["at"] = "2026-09-23T20:47:51Z", ["lacking"] = "dataFacts",
-        };
-        change(receipt);
-        answer["receipt"] = receipt;
+        answer["version"] = "3.0.0+ffaf717c3121f54aab6ca115af89326343312aa7";
+        answer["dacfx"] = "170.5.96";
+        answer["pin"] = "UNPINNED";
+        answer["server"] = Server();
+        change(answer);
     };
+
+    /// <summary>
+    /// An answer carrying a well-formed drift claim on a copy (§3's inputs, the target and when), lacking its data conditions, then changed;
+    /// <paramref name="lacking"/> replaces what it lacks when any is given.
+    /// </summary>
+    private static Action<JsonObject> WithProvenance(Action<JsonObject> change, params string[] lacking) => answer =>
+    {
+        var provenance = new JsonObject
+        {
+            ["change"] = "sha256:" + new string('1', 64), ["schema"] = "sha256:" + new string('2', 64), ["dataConditions"] = null, ["dacfx"] = "170.5.96",
+            ["server"] = Server(), ["publishProfile"] = "sha256:" + new string('4', 64), ["target"] = "copy:estate_host_4242_0a1b2c3d", ["at"] = "2026-09-25T10:15:44Z",
+            ["lacking"] = new JsonArray([.. (lacking.Length == 0 ? ["dataConditions"] : lacking).Select(input => (JsonNode?)input)]),
+        };
+        change(provenance);
+        answer["provenance"] = provenance;
+    };
+
+    private static JsonObject Server() => new() { ["version"] = "16.0.4295.3", ["compatibilityLevel"] = 160, ["image"] = "sha256:" + new string('5', 64) };
 
     /// <summary>Runs the built estate, as a process, and returns its exit code and standard output alone, which its JSON answer is.</summary>
     private static (int Exit, string Output) Estate(params string[] arguments)

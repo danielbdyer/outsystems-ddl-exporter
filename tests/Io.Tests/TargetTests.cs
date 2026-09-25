@@ -221,9 +221,9 @@ public sealed class TargetTests : IDisposable
         var clear = Registry(Estate(new PostureFile(new Dictionary<string, PostureFile.Environment>())), name, "localhost,11433");
         var named = Registry(Estate(PostureFile.Dev("file:" + Written("dev.connection", "Server=127.0.0.1,1433;Initial Catalog=Dev"), "localhost")), name, "localhost,11433");
 
-        var there = Value(ScratchServer.Registered(clear, name, Profiles.Environments(clear), () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
-        var elsewhere = Failed(ScratchServer.Registered(clear, name, Profiles.Environments(clear), () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver), "copy.unregistered");
-        var onNamedHost = Failed(ScratchServer.Registered(named, name, Profiles.Environments(named), () => throw new Xunit.Sdk.XunitException("the scratch server was chosen before R15 read the row's server"), Resolver), "copy.named-host");
+        var there = Value(ScratchServer.Registered(clear, name, Io.Posture.Environments(clear), () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
+        var elsewhere = Failed(ScratchServer.Registered(clear, name, Io.Posture.Environments(clear), () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver), "copy.unregistered");
+        var onNamedHost = Failed(ScratchServer.Registered(named, name, Io.Posture.Environments(named), () => throw new Xunit.Sdk.XunitException("the scratch server was chosen before R15 read the row's server"), Resolver), "copy.named-host");
 
         Assert.Equal(("copy:" + name, "localhost,11433"), (there.Target.ToString(), ScratchServer.ServerName(null, Written("sql.env", "ESTATE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n.ToString(), r => r.Code)));
         Assert.Contains("copy:" + name, elsewhere.Message, StringComparison.Ordinal);
@@ -604,7 +604,7 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// DacFx's own failure through Database.ErrorOf: DacPackageExtensions.BuildPackage over a view on a table the model lacks throws
+    /// DacFx's own failure through io/DacFx.Failed: DacPackageExtensions.BuildPackage over a view on a table the model lacks throws
     /// DacServicesException, whose Message already holds each of its three SQL71501 messages and which holds no SqlException. The error is
     /// dacfx.failed for a named environment and a copy alike, quoting DacFx's words with each SQL71501 message once.
     /// </summary>
@@ -625,11 +625,11 @@ public sealed class TargetTests : IDisposable
             Microsoft.SqlServer.Dac.DacPackageExtensions.BuildPackage(scratch.Under("unresolved.dacpac"), model, new Microsoft.SqlServer.Dac.PackageMetadata());
         }));
 
-        var error = database.ErrorOf(failure);
+        var error = DacFx.Failed(database, failure);
 
         Assert.Equal(3, failure.Messages.Count(m => m.Prefix + m.Number == "SQL71501"));
         Assert.Equal("dacfx.failed", error.Code);
-        Assert.StartsWith("DacFx failed against " + target + " with no SQL Server error inside: Cannot save package to file.", error.Message, StringComparison.Ordinal);
+        Assert.StartsWith("DacFx failed against " + target + " with no SQL Server error inside: Error SQL71501: ", error.Message, StringComparison.Ordinal);
         Assert.Equal(3, error.Message.Split("SQL71501").Length - 1);
         Assert.Contains("[dbo].[V] has an unresolved reference to object [dbo].[Missing].", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain('\n', error.Message);
@@ -681,7 +681,7 @@ public sealed class TargetTests : IDisposable
     private static PostureFile.Environment Unresolved(string host) => new("env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(), host);
 
     /// <summary>The estate's posture, read.</summary>
-    private static Environments Posture(string root) => Value(Profiles.Environments(root));
+    private static Environments Posture(string root) => Value(Io.Posture.Environments(root));
 
     /// <summary>The estate's root with .estate/copies.json holding one copy, made on the server given.</summary>
     private static string Registry(string root, CopyName name, string server)

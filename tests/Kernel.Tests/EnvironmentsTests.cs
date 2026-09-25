@@ -109,7 +109,7 @@ public sealed class EnvironmentsTests
         var referenced = Expect.Value(SqlCmdVariable.Of(Where, name, Expect.Value(SecretReference.Of(Where, "env:ESTATE_SECRET"))));
 
         Planted.AbsentFrom(error);
-        Assert.Equal((name, "from env:ESTATE_SECRET"), (referenced.Name, Held(referenced)));
+        Assert.Equal((name, "from env:ESTATE_SECRET"), (referenced.Name.ToString(), Held(referenced)));
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public sealed class EnvironmentsTests
     {
         var literal = Expect.Value(SqlCmdVariable.Of(Where, "EnvironmentTag", "dev"));
 
-        Assert.Equal(("EnvironmentTag", "the literal dev"), (literal.Name, Held(literal)));
+        Assert.Equal(("EnvironmentTag", "the literal dev"), (literal.Name.ToString(), Held(literal)));
         foreach (var name in (string[])["", "Environment Tag", "1Tag", "Tag)", "Tag=" + Planted])
         {
             Planted.AbsentFrom(Expect.Failed(SqlCmdVariable.Of(Where, name, "dev"), "sqlcmd.name"));
@@ -132,7 +132,7 @@ public sealed class EnvironmentsTests
         var environment = Expect.Value(Environment("dev", readers: ["leads", "developers"], sqlCmd: [Literal("Tag", "dev"), Referenced("ServicePassword", "env:ESTATE_PW")]));
 
         Assert.Equal(["developers", "leads"], environment.Readers);
-        Assert.Equal(["ServicePassword", "Tag"], environment.SqlCmd.Select(v => v.Name));
+        Assert.Equal(["ServicePassword", "Tag"], environment.SqlCmd.Select(v => v.Name.ToString()));
     }
 
     [Theory]

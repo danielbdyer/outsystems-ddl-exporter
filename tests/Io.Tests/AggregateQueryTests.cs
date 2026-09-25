@@ -67,9 +67,10 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
     }
 
     /// <summary>
-    /// §1 facts 2, 4 and 5 through io, as the read-only principal: Model reads the environment whole, and the plan of the package it was
-    /// published from is empty. The environment's SQLCMD values reach the plan; the kept script holds the literal and never the value a
-    /// reference resolved to, and the run's log holds the one statement estate sent before DacFx's own.
+    /// §1 facts 2, 4 and 5 through io, as the read-only principal: the environment is extracted whole, and the plan of the package it was
+    /// published from against it, package to package, is empty. The environment's SQLCMD values reach the plan; the kept script holds the
+    /// literal and never the value a reference resolved to, and the run's log holds the one statement estate sent, since the plan connects
+    /// to nothing.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
@@ -86,15 +87,18 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
             }));
             var log = SqlServer.QueryLog.Start(root.Path);
 
-            var model = Value(SqlServer.Model(uat, log));
-            var plan = Value(SqlServer.Plan(project.Base, uat, Value(Profiles.Of(uat.Environment, root.Path)), log));
+            Value(SqlServer.Reach(uat, log));
+            using var extracted = Value(DacFx.Extract(uat));
+            using var package = Value(Ssdt.Open(project.Base));
+            var model = Value(extracted.Elements).Elements;
+            var plan = Value(DacFx.Plan(package, extracted, uat.Catalog, Value(PublishProfiles.Of(uat.Environment, root.Path)), Value(SqlServer.SqlCmdValues(uat))));
 
             Assert.Equal(project.Reader.Login, new SqlConnectionStringBuilder(uat.Connection).UserID);
             Assert.Contains(model, e => e.Key.ToString() == "Column [dbo].[Customer].[Email]");
-            Assert.True(plan.IsEmpty, "the plan of the package against the environment it was published to has operations:\n" + plan.Report);
+            Assert.True(plan.Report.IsEmpty, "the plan of the package against the environment it was published to has operations:\n" + string.Join('\n', plan.Report.Operations));
             Assert.Contains(":setvar EnvironmentTag \"uat\"", plan.Script, StringComparison.Ordinal);
             token.AbsentFrom(plan.Script + plan.Report + plan);
-            Assert.Equal([("VIEW DEFINITION", "1"), ("VIEW DEFINITION", "1")], Entries(File.ReadAllText(log.Path)).Select(e => (e.Site, e.Outcome)));
+            Assert.Equal([("VIEW DEFINITION", "1")], Entries(File.ReadAllText(log.Path)).Select(e => (e.Site, e.Outcome)));
         }
         finally
         {
@@ -115,8 +119,8 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
     {
         var (admin, reader) = (Resolved("uat", project.Copy.ConnectionString), Resolved("qa", project.Reader.ConnectionString));
 
-        var (first, second) = (Value(SqlServer.Model(admin)), Value(SqlServer.Model(admin)));
-        var (third, fourth) = (Value(SqlServer.Model(reader)), Value(SqlServer.Model(reader)));
+        var (first, second) = (Extracted(admin), Extracted(admin));
+        var (third, fourth) = (Extracted(reader), Extracted(reader));
 
         Assert.Contains(first, e => e.Key.ToString() == "Login [" + project.Reader.Login + "]");
         Assert.Equal(Fingerprint.Of(first), Fingerprint.Of(second));
@@ -133,7 +137,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
         var wrong = new PlantedValue("Wr0ng!planted#7f3a");
         var qa = Resolved("qa", new SqlConnectionStringBuilder(project.Reader.ConnectionString) { Password = wrong.Text }.ConnectionString);
 
-        var errors = new[] { Failed(SqlServer.Model(qa), "server.denied"), Failed(SqlServer.Measure(qa, Value(SqlServer.AggregateQuery.Of("SELECT 1;", "the login")), SqlServer.QueryLog.Start(root.Path)), "server.denied") };
+        var errors = new[] { Failed(SqlServer.Reach(qa), "server.denied"), Failed(DacFx.Extract(qa), "server.denied"), Failed(SqlServer.Measure(qa, Value(SqlServer.AggregateQuery.Of("SELECT 1;", "the login")), SqlServer.QueryLog.Start(root.Path)), "server.denied") };
 
         Assert.All(errors, error =>
         {
@@ -160,7 +164,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
         {
             var dev = Resolved("dev", new SqlConnectionStringBuilder(project.Reader.ConnectionString) { UserID = login, Password = password }.ConnectionString);
 
-            var error = Failed(SqlServer.Model(dev), "server.denied");
+            var error = Failed(SqlServer.Reach(dev), "server.denied");
 
             Assert.StartsWith("env:dev refused this identity (Msg 300", error.Message, StringComparison.Ordinal);
             new PlantedValue(password).AbsentFrom(error);
@@ -178,7 +182,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
     {
         var dev = Resolved("dev", new SqlConnectionStringBuilder(project.Reader.ConnectionString) { InitialCatalog = "estate_no_such_database_" + Guid.NewGuid().ToString("N")[..8] }.ConnectionString);
 
-        var error = Failed(SqlServer.Model(dev), "server.denied");
+        var error = Failed(SqlServer.Reach(dev), "server.denied");
 
         Assert.StartsWith("env:dev refused this identity (Msg 4060", error.Message, StringComparison.Ordinal);
     }
@@ -200,4 +204,11 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
     /// <summary>queries.log as entries: a header line naming the site and the outcome (a row count, or the failure's number), the statement, then GO.</summary>
     private static (string Site, string Statement, string Outcome)[] Entries(string log) => [.. Regex.Matches(log, @"^-- \S+ \S+ (?<site>.+): (?<outcome>\d+|failed, Msg \d+)(?: rows?)?\n(?<statement>(?:(?!GO\n).*\n)+?)GO\n", RegexOptions.Multiline | RegexOptions.CultureInvariant)
         .Select(m => (m.Groups["site"].Value, m.Groups["statement"].Value.TrimEnd('\n'), m.Groups["outcome"].Value))];
+
+    /// <summary>A database's elements, as io reads one: extracted once, as its identity.</summary>
+    private static SortedArray<Element> Extracted(SqlServer.Database database)
+    {
+        using var package = Value(DacFx.Extract(database));
+        return Value(package.Elements).Elements;
+    }
 }

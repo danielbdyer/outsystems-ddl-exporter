@@ -19,6 +19,9 @@ namespace Estate.Io.Tests;
 /// </summary>
 public sealed class DoctorTests : IDisposable
 {
+    /// <summary>The DacFx release this build carries, as io/DacFx reads it once.</summary>
+    private static string Committed => Value(DacFx.Version).ToString();
+
     private const string Version = "3.0.0+0123456789abcdef";
 
     private readonly ScratchFolder machine = ScratchFolder.Temporary("doctor");
@@ -56,7 +59,7 @@ public sealed class DoctorTests : IDisposable
 
         Assert.All(checks, c => Assert.Null(c.Remedy));
         Assert.Equal(
-            ["sdk=10.0.402", "runtime=" + Environment.Version, "tool=published", "dacfx=" + Doctor.DacFx + " (UNPINNED)", "build=dotnet with the tool folder's targets", "git=2.31.1",
+            ["sdk=10.0.402", "runtime=" + Environment.Version, "tool=published", "dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED)", "build=dotnet with the tool folder's targets", "git=2.31.1",
                 "scratch-server=estate-sql container (localhost,11433)", "image=present", "lfs=git-lfs/3.4.0"],   // the loopback address as SqlServer.Host spells it
             checks.Select(c => c.Item + "=" + c.Found));
     }
@@ -70,7 +73,7 @@ public sealed class DoctorTests : IDisposable
         var pinned = System.Xml.Linq.XDocument.Load(Path.Combine(Repository.Root, "Directory.Packages.props")).Descendants()
             .Single(e => (string?)e.Attribute("Include") == "Microsoft.SqlServer.DacFx").Attribute("Version")!.Value;
 
-        Assert.Equal(pinned, Doctor.DacFx);
+        Assert.Equal(pinned, DacFx.Version.Match(v => v.ToString(), e => e.Message));
     }
 
     /// <summary>
@@ -81,13 +84,13 @@ public sealed class DoctorTests : IDisposable
     /// </summary>
     public static TheoryData<string, string?, string?, string> Windows => new()
     {
-        { "the pin", "| 2026-09-25 | 3.0.0 | " + Doctor.DacFx + " | " + Near(-1) + " |", null, "pinned " + Doctor.DacFx },
-        { "the release before the pin", "| 2026-09-25 | 3.0.0 | " + Near(1) + " | " + Doctor.DacFx + " |", null, "pinned " + Near(1) },
+        { "the pin", "| 2026-09-25 | 3.0.0 | " + Committed + " | " + Near(-1) + " |", null, "pinned " + Committed },
+        { "the release before the pin", "| 2026-09-25 | 3.0.0 | " + Near(1) + " | " + Committed + " |", null, "pinned " + Near(1) },
         { "a pin older than the DacFx", "| 2026-09-25 | 3.0.0 | " + Near(-1) + " | " + Near(-2) + " |", "toolchain.outside-window", "outside the pin " + Near(-1) },
         { "a pin two releases newer", "| 2026-09-25 | 3.0.0 | " + Near(2) + " | " + Near(1) + " |", "toolchain.outside-window", "outside the pin " + Near(2) },
         { "UNPINNED", "| 2026-09-25 | 3.0.0 | UNPINNED | — |", null, "UNPINNED" },
-        { "the latest row of this estate's", "| 2026-09-26 | 3.0.0 | " + Near(-1) + " | " + Near(-2) + " |\n| 2026-09-25 | 3.0.0 | " + Doctor.DacFx + " | — |", "toolchain.outside-window", "outside the pin " + Near(-1) },
-        { "no row for this estate", "| 2026-09-25 | 3.1.0 | " + Doctor.DacFx + " | — |", "toolchain.unrecorded", "has no dated row for estate 3.0.0" },
+        { "the latest row of this estate's", "| 2026-09-26 | 3.0.0 | " + Near(-1) + " | " + Near(-2) + " |\n| 2026-09-25 | 3.0.0 | " + Committed + " | — |", "toolchain.outside-window", "outside the pin " + Near(-1) },
+        { "no row for this estate", "| 2026-09-25 | 3.1.0 | " + Committed + " | — |", "toolchain.unrecorded", "has no dated row for estate 3.0.0" },
         { "a malformed pin", "| 2026-09-25 | 3.0.0 | the latest | — |", "toolchain.malformed", "no DacFx release" },
         { "no ledger", null, null, "UNPINNED" },
     };
@@ -105,7 +108,7 @@ public sealed class DoctorTests : IDisposable
             Ledger(rows);
         }
 
-        var error = Doctor.Toolchain(machine.Path, Version).Match(pin => pin.Rejects(Value(Kernel.Engine.Of(Doctor.DacFx))), r => r);
+        var error = Doctor.Toolchain(machine.Path, Version).Match(pin => pin.Rejects(Value(DacFx.Version)), r => r);
         var dacfx = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.DacFx);
 
         Assert.True(code == error?.Code, what + ": " + error?.Code);
@@ -207,7 +210,7 @@ public sealed class DoctorTests : IDisposable
 
         var tool = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.Tool);
 
-        Assert.Contains("not " + Doctor.DacFx, tool.Found, StringComparison.Ordinal);
+        Assert.Contains("while estate runs DacFx " + DacFx.Version.Match(v => v.ToString(), e => e.Message), tool.Found, StringComparison.Ordinal);
         Assert.Contains("ci/publish.sh", tool.Remedy, StringComparison.Ordinal);
     }
 
@@ -277,7 +280,7 @@ public sealed class DoctorTests : IDisposable
     /// <summary>A DacFx release near the committed one: its second group moved by <paramref name="minors"/>, so the rows above hold whatever release the build pins.</summary>
     private static string Near(int minors)
     {
-        var release = System.Version.Parse(Doctor.DacFx);
+        var release = System.Version.Parse(Committed);
         return string.Create(CultureInfo.InvariantCulture, $"{release.Major}.{release.Minor + minors}.{release.Build}");
     }
 

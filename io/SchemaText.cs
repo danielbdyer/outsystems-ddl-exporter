@@ -57,7 +57,7 @@ public static class SchemaText
         ParseError? first = null;
         foreach (var (parse, quotedIdentifiers, variablesAsLiterals) in attempts)
         {
-            var (fragment, errors) = parse(new TSql160Parser(quotedIdentifiers), new StringReader(variablesAsLiterals ? Quoted(masked) : Lettered(masked)));
+            var (fragment, errors) = parse(TSql.Parser(quotedIdentifiers), new StringReader(variablesAsLiterals ? Quoted(masked) : Lettered(masked)));
             if (errors.Count == 0 && fragment is not null)
             {
                 return Printed(text, fragment, connects);

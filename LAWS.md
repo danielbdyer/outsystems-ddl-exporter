@@ -26,6 +26,7 @@ Whether each is green is the CI run's to say. A law without a green test is not 
 | a named environment cannot be written | A scratch server on the host an environment names is refused | `Estate.Io.Tests.TargetTests.A_scratch_server_on_the_host_an_environment_names_is_refused` |
 | dependencies point one way | Io does not depend on the cli and the kernel on neither | `Estate.Budgets.Tests.DependenciesPointOneWay.Io_does_not_depend_on_the_cli_and_the_kernel_on_neither` |
 | dependencies point one way | No project reaches into the knowledge files or ci | `Estate.Budgets.Tests.DependenciesPointOneWay.No_project_reaches_into_the_knowledge_files_or_ci` |
+| dependencies point one way | The cli references no DacFx type | `Estate.Budgets.Tests.DependenciesPointOneWay.The_cli_references_no_DacFx_type` |
 | the kernel cannot do I/O | Each banned symbol planted in the kernel is a build error | `Estate.Budgets.Tests.BannedSymbolsTests.Each_banned_symbol_planted_in_the_kernel_is_a_build_error` |
 | the kernel cannot do I/O | No public kernel member is asynchronous | `Estate.Budgets.Tests.KernelCannotDoIo.No_public_kernel_member_is_asynchronous` |
 | the kernel cannot do I/O | The kernel references the BCL and nothing else | `Estate.Budgets.Tests.KernelCannotDoIo.The_kernel_references_the_BCL_and_nothing_else` |
@@ -49,8 +50,8 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | D2 | Every v3 project builds with warnings and the culture rules as errors | `Estate.Budgets.Tests.WarningsAsErrors.Every_v3_project_builds_with_warnings_and_the_culture_rules_as_errors` |
 | D2 | A value compares and renders ordinally whatever the culture | `Estate.Kernel.Tests.ElementTests.A_value_compares_and_renders_ordinally_whatever_the_culture` |
 | D2 | A sorted array is in ordinal order whatever the culture | `Estate.Kernel.Tests.SortedArrayTests.A_sorted_array_is_in_ordinal_order_whatever_the_culture` |
-| D3 | A profile saved with CRLF and a byte order mark fingerprints as the same profile saved with LF | `Estate.Io.Tests.ProfilesTests.A_profile_saved_with_CRLF_and_a_byte_order_mark_fingerprints_as_the_same_profile_saved_with_LF` |
-| D3 | The pipeline profile fingerprints to one committed value on every operating system | `Estate.Io.Tests.ProfilesTests.The_pipeline_profile_fingerprints_to_one_committed_value_on_every_operating_system` |
+| D3 | A profile saved with CRLF and a byte order mark fingerprints as the same profile saved with LF | `Estate.Io.Tests.PublishProfilesTests.A_profile_saved_with_CRLF_and_a_byte_order_mark_fingerprints_as_the_same_profile_saved_with_LF` |
+| D3 | The pipeline profile fingerprints to one committed value on every operating system | `Estate.Io.Tests.PublishProfilesTests.The_pipeline_profile_fingerprints_to_one_committed_value_on_every_operating_system` |
 | D3 | A UTF 16 file is rewritten as UTF 8 in the line ending it declares | `Estate.Io.Tests.WriteTests.A_UTF_16_file_is_rewritten_as_UTF_8_in_the_line_ending_it_declares` |
 | D3 | A failed write leaves the old content and no temporary file | `Estate.Io.Tests.WriteTests.A_failed_write_leaves_the_old_content_and_no_temporary_file` |
 | D3 | A reader sees the old content or the new never a part | `Estate.Io.Tests.WriteTests.A_reader_sees_the_old_content_or_the_new_never_a_part` |
@@ -80,7 +81,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | L9 | No test skips itself | `Estate.Budgets.Tests.NoSkips.No_test_skips_itself` |
 | L9 | Every package is allowed and every allowed package is used | `Estate.Budgets.Tests.PackagesAllowlist.Every_package_is_allowed_and_every_allowed_package_is_used` |
 | O2 | A case only rename of a table on a copy plans nothing under either collation and diff reads it under the copy's collation | `Estate.Io.Tests.DriftTests.A_case_only_rename_of_a_table_on_a_copy_plans_nothing_under_either_collation_and_diff_reads_it_under_the_copy_s_collation` |
-| O2 | The pipeline profile fingerprints to one committed value on every operating system | `Estate.Io.Tests.ProfilesTests.The_pipeline_profile_fingerprints_to_one_committed_value_on_every_operating_system` |
+| O2 | The pipeline profile fingerprints to one committed value on every operating system | `Estate.Io.Tests.PublishProfilesTests.The_pipeline_profile_fingerprints_to_one_committed_value_on_every_operating_system` |
 | O2 | A connection file git tracks is refused under each spelling that opens it though gitignore lists it | `Estate.Io.Tests.TargetTests.A_connection_file_git_tracks_is_refused_under_each_spelling_that_opens_it_though_gitignore_lists_it` |
 | O2 | A connection file whose name Windows forbids resolves to nothing on every operating system | `Estate.Io.Tests.TargetTests.A_connection_file_whose_name_Windows_forbids_resolves_to_nothing_on_every_operating_system` |
 | O2 | Writes utf8 without a bom in the line ending on disk | `Estate.Io.Tests.WriteTests.Writes_utf8_without_a_bom_in_the_line_ending_on_disk` |
@@ -99,19 +100,19 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | P2 | The corpus plants every form the work package names | `Estate.Io.Tests.AllowlistTests.The_corpus_plants_every_form_the_work_package_names` |
 | R1 | The committed DacFx is the release Directory Packages props pins | `Estate.Io.Tests.DoctorTests.The_committed_DacFx_is_the_release_Directory_Packages_props_pins` |
 | R1 | The committed DacFx stands inside the ledger's window only at the pin or the release before it | `Estate.Io.Tests.DoctorTests.The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it` |
-| R1 | An engine outside the ledger's window is exit 6 before anything connects | `Estate.Io.Tests.DriftTests.An_engine_outside_the_ledger_s_window_is_exit_6_before_anything_connects` |
-| R1 | Every receipt names its engine | `Estate.Io.Tests.DriftTests.Every_receipt_names_its_engine` |
-| R1 | A release before that is not older than the pin is rejected | `Estate.Kernel.Tests.ReceiptTests.A_release_before_that_is_not_older_than_the_pin_is_rejected` |
-| R1 | An engine is inside the pin's window only at the pin or the release before it | `Estate.Kernel.Tests.ReceiptTests.An_engine_is_inside_the_pin_s_window_only_at_the_pin_or_the_release_before_it` |
-| R1 | Unpinned admits every engine and says so | `Estate.Kernel.Tests.ReceiptTests.Unpinned_admits_every_engine_and_says_so` |
+| R1 | A drift's provenance fingerprints the target's schema and the deploy report | `Estate.Io.Tests.DriftTests.A_drift_s_provenance_fingerprints_the_target_s_schema_and_the_deploy_report` |
+| R1 | The committed DacFx outside the ledger's window is exit 6 before anything connects | `Estate.Io.Tests.DriftTests.The_committed_DacFx_outside_the_ledger_s_window_is_exit_6_before_anything_connects` |
+| R1 | A release before that is not older than the pin is rejected | `Estate.Kernel.Tests.ProvenanceTests.A_release_before_that_is_not_older_than_the_pin_is_rejected` |
+| R1 | The committed DacFx is inside the pin's window only at the pin or the release before it | `Estate.Kernel.Tests.ProvenanceTests.The_committed_DacFx_is_inside_the_pin_s_window_only_at_the_pin_or_the_release_before_it` |
+| R1 | Unpinned admits every DacFx release and says so | `Estate.Kernel.Tests.ProvenanceTests.Unpinned_admits_every_DacFx_release_and_says_so` |
 | R3 | Git lists nothing estate keeps in a repository whose gitignore does not name dot estate | `Estate.Io.Tests.LocalStateTests.Git_lists_nothing_estate_keeps_in_a_repository_whose_gitignore_does_not_name_dot_estate` |
 | R5 | A runtime other than NET 10 is refused with its remedy | `Estate.Io.Tests.DoctorTests.A_runtime_other_than_NET_10_is_refused_with_its_remedy` |
 | R5 | The committed DacFx stands inside the ledger's window only at the pin or the release before it | `Estate.Io.Tests.DoctorTests.The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it` |
 | R5 | The sdk is found only in the band global json names | `Estate.Io.Tests.DoctorTests.The_sdk_is_found_only_in_the_band_global_json_names` |
 | S1 | Permissive never reaches an environment | `Estate.Io.Tests.CapabilityTests.Permissive_never_reaches_an_environment` |
-| S1 | A profile that allows data loss is refused and a named environment using it is refused by its name | `Estate.Io.Tests.ProfilesTests.A_profile_that_allows_data_loss_is_refused_and_a_named_environment_using_it_is_refused_by_its_name` |
-| S1 | Nothing but a Copy makes a Permissive profile | `Estate.Io.Tests.ProfilesTests.Nothing_but_a_Copy_makes_a_Permissive_profile` |
-| S1 | Permissive differs from Strict in BlockOnPossibleDataLoss alone | `Estate.Io.Tests.ProfilesTests.Permissive_differs_from_Strict_in_BlockOnPossibleDataLoss_alone` |
+| S1 | A profile that allows data loss is refused and a named environment using it is refused by its name | `Estate.Io.Tests.PublishProfilesTests.A_profile_that_allows_data_loss_is_refused_and_a_named_environment_using_it_is_refused_by_its_name` |
+| S1 | Nothing but a Copy makes a Permissive profile | `Estate.Io.Tests.PublishProfilesTests.Nothing_but_a_Copy_makes_a_Permissive_profile` |
+| S1 | Permissive differs from Strict in BlockOnPossibleDataLoss alone | `Estate.Io.Tests.PublishProfilesTests.Permissive_differs_from_Strict_in_BlockOnPossibleDataLoss_alone` |
 | S1 | A Permissive publish under a profile naming a sentinel server reaches the copy and never the sentinel | `Estate.Io.Tests.SentinelTests.A_Permissive_publish_under_a_profile_naming_a_sentinel_server_reaches_the_copy_and_never_the_sentinel` |
 | S2 | Every case of a kernel closed hierarchy is sealed and nested inside it | `Estate.Budgets.Tests.ClosedHierarchies.Every_case_of_a_kernel_closed_hierarchy_is_sealed_and_nested_inside_it` |
 | S2 | A verb this build does not have answers exit 6 with verb not built naming the verb | `Estate.Budgets.Tests.ContractTests.A_verb_this_build_does_not_have_answers_exit_6_with_verb_not_built_naming_the_verb` |
@@ -119,12 +120,14 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | S2 | Every error category has an exit of the frozen table and is constructed by some path | `Estate.Budgets.Tests.ContractTests.Every_error_category_has_an_exit_of_the_frozen_table_and_is_constructed_by_some_path` |
 | S2 | An error carries a remedy that is one move in the register | `Estate.Budgets.Tests.Register.Refusals.An_error_carries_a_remedy_that_is_one_move_in_the_register` |
 | S2 | Every error code the kernel io and the cli construct has a driver here | `Estate.Budgets.Tests.Register.Refusals.Every_error_code_the_kernel_io_and_the_cli_construct_has_a_driver_here` |
+| S2 | A check drift whose extract is refused answers the refusal and no column lines | `Estate.Io.Tests.DriftTests.A_check_drift_whose_extract_is_refused_answers_the_refusal_and_no_column_lines` |
+| S2 | Check drift names every differing column of every table the plan alters and nothing else | `Estate.Kernel.Tests.PlanTests.Check_drift_names_every_differing_column_of_every_table_the_plan_alters_and_nothing_else` |
 | S7 | No verb writes to a named environment | `Estate.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |
 | S7 | Nothing but ScratchServer makes a Copy | `Estate.Io.Tests.CapabilityTests.Nothing_but_ScratchServer_makes_a_Copy` |
-| S7 | The read only principal sends no DML no DDL and no EXEC through a full check drift | `Estate.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_a_full_check_drift` |
+| S7 | The read only principal sends no DML no DDL and no EXEC through check drift and read | `Estate.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read` |
 | S7 | A copy the registry does not hold is refused | `Estate.Io.Tests.TargetTests.A_copy_the_registry_does_not_hold_is_refused` |
 | X1 | A literal connection string as a target is exit 6 and printed nowhere | `Estate.Io.Tests.DriftTests.A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere` |
-| X1 | Inline credential refused | `Estate.Io.Tests.ProfilesTests.Inline_credential_refused` |
+| X1 | Inline credential refused | `Estate.Io.Tests.PublishProfilesTests.Inline_credential_refused` |
 | X1 | A connection file git tracks is refused under each spelling that opens it though gitignore lists it | `Estate.Io.Tests.TargetTests.A_connection_file_git_tracks_is_refused_under_each_spelling_that_opens_it_though_gitignore_lists_it` |
 | X1 | A connection file git tracks or does not ignore is refused and one git ignores resolves | `Estate.Io.Tests.TargetTests.A_connection_file_git_tracks_or_does_not_ignore_is_refused_and_one_git_ignores_resolves` |
 | X1 | A connection file its group can read is refused where files carry a Unix mode | `Estate.Io.Tests.TargetTests.A_connection_file_its_group_can_read_is_refused_where_files_carry_a_Unix_mode` |
@@ -142,8 +145,8 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | X2 | A branch that exists or git does not take is refused and an origin that does not answer is unreachable with no credential printed and no branch left | `Estate.Io.Tests.GitTests.A_branch_that_exists_or_git_does_not_take_is_refused_and_an_origin_that_does_not_answer_is_unreachable_with_no_credential_printed_and_no_branch_left` |
 | X2 | A secret planted in every property that holds one reaches no element property | `Estate.Io.Tests.ModelElementsTests.A_secret_planted_in_every_property_that_holds_one_reaches_no_element_property` |
 | X2 | Every text property DacFx declares is a listed secret or reviewed as not a secret | `Estate.Io.Tests.ModelElementsTests.Every_text_property_DacFx_declares_is_a_listed_secret_or_reviewed_as_not_a_secret` |
-| X2 | No output contains Password | `Estate.Io.Tests.ProfilesTests.No_output_contains_Password` |
-| X2 | Nothing read from the posture or a profile prints a literal or what a reference names | `Estate.Io.Tests.ProfilesTests.Nothing_read_from_the_posture_or_a_profile_prints_a_literal_or_what_a_reference_names` |
+| X2 | No output contains Password | `Estate.Io.Tests.PublishProfilesTests.No_output_contains_Password` |
+| X2 | Nothing read from the posture or a profile prints a literal or what a reference names | `Estate.Io.Tests.PublishProfilesTests.Nothing_read_from_the_posture_or_a_profile_prints_a_literal_or_what_a_reference_names` |
 | X2 | A diff of two procedures differing in a password literal alone alters the Definition and prints both values left out | `Estate.Io.Tests.SchemaTextTests.A_diff_of_two_procedures_differing_in_a_password_literal_alone_alters_the_Definition_and_prints_both_values_left_out` |
 | X2 | Each password form planted in a script is printed as left out and named | `Estate.Io.Tests.SchemaTextTests.Each_password_form_planted_in_a_script_is_printed_as_left_out_and_named` |
 | X2 | A named environment's error is withheld and a copy's is kept | `Estate.Io.Tests.TargetTests.A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept` |
@@ -191,16 +194,16 @@ One row per test that runs an exit of `V3_MILESTONES.md`, from its `[Trait("Exit
 | M1.5 | A scratch server on an alias of an environment's host is refused | `Estate.Io.Tests.TargetTests.A_scratch_server_on_an_alias_of_an_environment_s_host_is_refused` |
 | M1.5 | A scratch server on the host an environment names is refused | `Estate.Io.Tests.TargetTests.A_scratch_server_on_the_host_an_environment_names_is_refused` |
 | M1.6 | The committed DacFx stands inside the ledger's window only at the pin or the release before it | `Estate.Io.Tests.DoctorTests.The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it` |
-| M1.6 | An engine outside the ledger's window is exit 6 before anything connects | `Estate.Io.Tests.DriftTests.An_engine_outside_the_ledger_s_window_is_exit_6_before_anything_connects` |
-| M1.6 | Every receipt names its engine | `Estate.Io.Tests.DriftTests.Every_receipt_names_its_engine` |
-| M1.6 | An engine is inside the pin's window only at the pin or the release before it | `Estate.Kernel.Tests.ReceiptTests.An_engine_is_inside_the_pin_s_window_only_at_the_pin_or_the_release_before_it` |
-| M1.6 | Unpinned admits every engine and says so | `Estate.Kernel.Tests.ReceiptTests.Unpinned_admits_every_engine_and_says_so` |
+| M1.6 | A drift's provenance fingerprints the target's schema and the deploy report | `Estate.Io.Tests.DriftTests.A_drift_s_provenance_fingerprints_the_target_s_schema_and_the_deploy_report` |
+| M1.6 | The committed DacFx outside the ledger's window is exit 6 before anything connects | `Estate.Io.Tests.DriftTests.The_committed_DacFx_outside_the_ledger_s_window_is_exit_6_before_anything_connects` |
+| M1.6 | The committed DacFx is inside the pin's window only at the pin or the release before it | `Estate.Kernel.Tests.ProvenanceTests.The_committed_DacFx_is_inside_the_pin_s_window_only_at_the_pin_or_the_release_before_it` |
+| M1.6 | Unpinned admits every DacFx release and says so | `Estate.Kernel.Tests.ProvenanceTests.Unpinned_admits_every_DacFx_release_and_says_so` |
 | M1.7 | A denied login names the environment and quotes nothing | `Estate.Io.Tests.AggregateQueryTests.A_denied_login_names_the_environment_and_quotes_nothing` |
 | M1.7 | A login without VIEW DEFINITION is denied before DacFx runs | `Estate.Io.Tests.AggregateQueryTests.A_login_without_VIEW_DEFINITION_is_denied_before_DacFx_runs` |
 | M1.7 | A denied login prints one sentence naming the environment and a lead's prediction | `Estate.Io.Tests.DriftTests.A_denied_login_prints_one_sentence_naming_the_environment_and_a_lead_s_prediction` |
 | M1.7 | A literal connection string as a target is exit 6 and printed nowhere | `Estate.Io.Tests.DriftTests.A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere` |
-| M1.7 | Inline credential refused | `Estate.Io.Tests.ProfilesTests.Inline_credential_refused` |
+| M1.7 | Inline credential refused | `Estate.Io.Tests.PublishProfilesTests.Inline_credential_refused` |
 | M1.7 | A named environment's error is withheld and a copy's is kept | `Estate.Io.Tests.TargetTests.A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept` |
-| M1.8 | The read only principal sends no DML no DDL and no EXEC through a full check drift | `Estate.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_a_full_check_drift` |
+| M1.8 | The read only principal sends no DML no DDL and no EXEC through check drift and read | `Estate.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read` |
 
 Exits no test declares, which a person or a CI job runs: M0.2, M1.1, M2.1, M2.2, M2.3, M2.4, M2.5, M3.1, M3.2, M3.3, M3.4, M3.5, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, M4.7, M5.1, M5.2, M5.3, M5.4, M5.5, M5.6, M6.1, M6.2, M6.3, M6.4, M6.5, M7.1.

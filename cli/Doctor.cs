@@ -22,13 +22,13 @@ public static partial class Verbs
 
     /// <summary>
     /// One line, READY when nothing is missing and exit 0, else DEGRADED and exit 6 with a finding of severity error and its remedy per item
-    /// missing; the engine stamped as the committed DacFx, with the image's digest where Docker holds it, and the ledger's pin.
+    /// missing; the stamp names the DacFx release estate runs, when it can be named (the dacfx item says why when it cannot), and the ledger's
+    /// pin. The doctor reaches no copy, so it stamps no SQL Server.
     /// </summary>
     public static Envelope Doctor(IReadOnlyList<Io.Doctor.Prerequisite> checks, Result<Pin> pin)
     {
         var ready = checks.All(c => c.Remedy is null);
-        var image = checks.Any(c => c.Item == Io.Doctor.Item.Image && c.Found == "present") ? Io.Doctor.ImageDigest : null;
-        var stamp = Stamped(image, pin.Match<Pin?>(p => p, _ => null));
+        var stamp = DacFx.Version.Match<Stamp?>(dacfx => new Stamp(dacfx, pin.Match<Pin?>(p => p, _ => null)), _ => null);
         return Contract.Answer(Of("doctor").Output, Of("doctor").Outcome(ready ? "ready" : "degraded"), ready ? 0 : 6,
             string.Join(" | ", (string[])["estate doctor " + (ready ? "READY" : "DEGRADED"), .. checks.Select(c => c.Item + "=" + c.Found)]),
             [.. checks.Where(c => c.Remedy is not null).Select(c => Finding.Error("doctor." + c.Item, "estate doctor", c.Item + ": " + c.Found + ".", c.Remedy!))],

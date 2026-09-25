@@ -30,64 +30,73 @@ public static partial class Verbs
     /// <summary>estate read --from &lt;target&gt; [--project &lt;path&gt;]: a ref built at its commit, a package or a database, read whole (V3_ARCHITECTURE.md §8.1).</summary>
     public static Envelope Read(Checkout here, IReadOnlyList<string> words)
     {
-        if (Contract.Flags(words, ["--from"], ["--project"], []).Bind(flags => SqlServer.Target(flags["--from"], "--from")
-            .Bind(from => Pinned(here).Bind(pin => Reading(here, from, flags.GetValueOrDefault("--project")).Map(source => (Source: source, Pin: pin)))))
-            .Failed(out var reading, out var error))
+        if (DacFx.Version.Failed(out var dacfx, out var error))
         {
-            return Contract.Failed(Of("read"), error, Stamped(null, null));
+            return Contract.Failed(Of("read"), error);
         }
 
-        var (source, fingerprint, printer) = (reading.Source, Fingerprint.Of(reading.Source.Model.Elements), new Printer());
+        var stamp = new Stamp(dacfx);
+        if (Contract.Flags(words, ["--from"], ["--project"], []).Bind(flags => SqlServer.Target(flags["--from"], "--from").Map(from => (Flags: flags, From: from)))
+            .Bind(asked => Io.Doctor.Toolchain(here.Root, Contract.Version).Map(pin => (asked.Flags, asked.From, Pin: pin))).Failed(out var asked, out error))
+        {
+            return Contract.Failed(Of("read"), error, stamp);
+        }
+
+        stamp = stamp with { Pin = asked.Pin };
+        if ((asked.Pin.Rejects(dacfx) is { } outside ? Result.Fail<Source>(outside) : Reading(here, asked.From, asked.Flags.GetValueOrDefault("--project"))).Failed(out var source, out error))
+        {
+            return Contract.Failed(Of("read"), error, stamp);
+        }
+
+        var (fingerprint, printer) = (Fingerprint.Of(source.Model.Elements), new Printer());
         var elements = Render.Array(source.Model.Elements.Select(printer.Json));
         return Contract.Answer(Of("read").Output, Of("read").Outcome("done"), 0, source.Target + ": " + source.Model.Elements.Count + " elements, fingerprint " + Render.Digest(fingerprint),
-            printer.Findings, Stamped(source.Image, reading.Pin), content: new JsonObject
+            [.. source.Notes, .. printer.Findings], stamp with { Server = source.Server }, content: new JsonObject
             {
                 ["read"] = new JsonObject { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(fingerprint), ["count"] = source.Model.Elements.Count, ["elements"] = elements },
             });
     }
 
-    /// <summary>
-    /// The collation a model's names compare under (decision 2.26): its DatabaseOptions element's Collation property, which
-    /// io/Ssdt.Elements reads from a package as its project's default collation and from a database as the database's; the comparison
-    /// that follows no database when the model has none.
-    /// </summary>
-    internal static Result<Collation> CollationOf(SortedArray<Element> elements) =>
-        elements.FirstOrDefault(e => e.Key.Type == "DatabaseOptions")?["Collation"] is Value.Text { Content: var name } ? Collation.Of(name) : Result.Ok(Collation.CaseSensitive);
-
     /// <summary>A case-only pair as a note: the collation reads the two spellings as one name, and DacFx plans nothing for the difference.</summary>
     internal static Finding CaseOnly(string code, Rename pair, Collation collation) => Finding.Note(code, pair.After.ToString(),
         pair.Before + " and " + pair.After + " differ in letter case alone, which " + collation.Name + " reads as one name; DacFx plans nothing for it.");
 
-    /// <summary>A target's model read whole into elements, with the SQL Server image a database ran in; a package's model carries its refactorlog's renames.</summary>
-    internal sealed record Source(Target Target, Ssdt.ModelElements Model, string? Image, bool IsDatabase);
+    /// <summary>
+    /// A target's model read whole into elements, with the SQL Server a copy runs on; a package's model carries its refactorlog's renames,
+    /// and a database's read says what the identity could read there.
+    /// </summary>
+    internal sealed record Source(Target Target, Ssdt.ModelElements Model, Server? Server, bool IsDatabase, SqlServer.Readable? Readable = null)
+    {
+        /// <summary>The notes reading the target raised: each error DacFx found in the model, and, for a database, an identity without the server's scope.</summary>
+        public IEnumerable<Finding> Notes => [.. Model.Notes(Target.ToString()), .. Readable?.Notes ?? []];
+    }
 
     internal static Result<Source> Reading(Checkout here, Target target, string? project) => target.Match(
         _ => Modelled(here, target), _ => Modelled(here, target), () => Modelled(here, target),
-        reference => Built(here, reference.Ref.ToString(), project).Bind(built => Packaged(built.Dacpac)).Map(model => new Source(target, model, null, false)),
+        reference => Ssdt.Build(here.Root, reference.Ref.ToString(), project, here.Tool, here.WorkingDirectory).Bind(built => Packaged(built.Built.Path))
+            .Map(model => new Source(target, model, null, false)),
         dacpac => Packaged(Path.GetFullPath(Path.Combine(here.WorkingDirectory, dacpac.Path))).Map(model => new Source(target, model, null, false)));
 
-    /// <summary>A ref's project built at its commit (io/Git.At, io/Ssdt.Build): the package, and the commit.</summary>
-    internal static Result<(string Dacpac, string Commit)> Built(Checkout here, string reference, string? project) => Git.At(here.Root, reference).Bind(at =>
-        Ssdt.Project(at.Path, project).Bind(file => Ssdt.Tool(AppContext.BaseDirectory, here.Tool, here.WorkingDirectory)
-            .Bind(tool => Ssdt.Build(at, file, tool, Path.Combine(here.Root, ".estate", "build")))).Map(built => (built.Path, at.Commit)));
-
-    internal static Result<Ssdt.ModelElements> Packaged(string dacpac) => Ssdt.Load(dacpac).Bind(package =>
+    /// <summary>A package's model read into elements, the package opened once and released.</summary>
+    private static Result<Ssdt.ModelElements> Packaged(string dacpac) => Ssdt.Open(dacpac).Bind(package =>
     {
         using (package)
         {
-            return Ssdt.Elements(package);
+            return package.Elements;
         }
     });
 
-    private static Result<Source> Modelled(Checkout here, Target target) => SqlServer.Resolve(target, here.Root).Bind(database =>
-        SqlServer.Model(database, here.Run).Map(elements => new Source(target, new Ssdt.ModelElements(elements, []), ScratchServer.Image(database), true)));
-
-    /// <summary>The toolchain ledger's pin, which every verb that builds reads (R13), or the rejection of a committed engine outside its window.</summary>
-    internal static Result<Pin> Pinned(Checkout here) => Io.Doctor.Toolchain(here.Root, Contract.Version)
-        .Bind(pin => pin.Rejects(Stamped(null, pin).Engine) is { } outside ? Result.Fail<Pin>(outside) : Result.Ok(pin));
-
-    /// <summary>The engine as stamped: the committed DacFx, the image's digest where a copy ran in the container, and the pin when a ledger was read.</summary>
-    internal static Stamp Stamped(string? image, Pin? pin) => new(Engine.Of(Io.Doctor.DacFx, image).Match(engine => engine, error => throw new UnreachableException(error.Message)), pin);
+    /// <summary>A database read once (io/DacFx.Extract), after this identity is found to hold VIEW DEFINITION there, with a copy's SQL Server and what the identity could read.</summary>
+    private static Result<Source> Modelled(Checkout here, Target target) => SqlServer.Resolve(target, here.Root).Bind(database => SqlServer.Reach(database, here.Run)
+        .Bind(readable => DacFx.Extract(database).Bind(package =>
+        {
+            using (package)
+            {
+                return package.Elements;
+            }
+        })
+        .Bind(model => (database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, here.Run).Map(server => (Server?)server) : Result.Ok<Server?>(null))
+            .Map(server => new Source(target, model, server, true, readable)))));
 
     /// <summary>
     /// The writer of the values an answer prints, and the findings printing raises (decision 2.27): a script is written through

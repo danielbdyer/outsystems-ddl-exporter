@@ -146,7 +146,7 @@ public static class ScratchServer
     /// with its server before its database is made, so a crash leaves a row to follow.
     /// </summary>
     internal static Result<SqlServer.Copy> Create(string estateRoot, string server, SqlServer.QueryLog? log = null, Func<string, IPAddress[]>? resolve = null) =>
-        ServerName(server).Bind(name => Profiles.Environments(estateRoot).Bind(environments => Unnamed(environments, estateRoot, name, resolve ?? Resolved))).Bind(name =>
+        ServerName(server).Bind(name => Posture.Environments(estateRoot).Bind(environments => Unnamed(environments, estateRoot, name, resolve ?? Resolved))).Bind(name =>
         {
             var copy = new SqlServer.Copy(CopyName.Make(Environment.MachineName, Environment.ProcessId, BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, estateRoot);
             var row = new JsonObject
@@ -185,8 +185,8 @@ public static class ScratchServer
     internal static Result<Kernel.ServerName> Unnamed(Environments environments, string estateRoot, Kernel.ServerName server, Func<string, IPAddress[]> resolve) =>
         Result.All(environments.All.Select(environment => SqlServer.DataSource(environment, estateRoot).Bind(source => source is { } read && read.Host != environment.Host
             ? new Error("posture.host", SqlServer.EnvironmentDatabase.Subject(environment) + " names a server on another host than " + environment.Host + ", the host "
-                + Profiles.Posture + " gives " + environment.Target + ", and estate makes no copy on the host the posture gives.",
-                "Write " + environment.Target + "'s host in " + Profiles.Posture + " as its connection string spells the server, or correct the connection string.")
+                + Posture.Json + " gives " + environment.Target + ", and estate makes no copy on the host the posture gives.",
+                "Write " + environment.Target + "'s host in " + Posture.Json + " as its connection string spells the server, or correct the connection string.")
             : Result.Ok(environment))))
         .Bind(compared =>
         {
