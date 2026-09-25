@@ -6,8 +6,8 @@ namespace Estate.Kernel;
 
 /// <summary>
 /// The name of a SQL Server object as the engine reads it: one part (a schema, a column, an index) or two (a
-/// schema-qualified object, <c>[dbo].[Customer]</c>). Two is the most a Name holds and the most it needs: the probe
-/// grammar allows one or two parts, and an object inside a table (a column, an index, a constraint) is named by its
+/// schema-qualified object, <c>[dbo].[Customer]</c>). Two is the most a Name holds and the most it needs: the
+/// aggregate-query allowlist admits one or two parts, and an object inside a table (a column, an index, a constraint) is named by its
 /// table's Name and its own one-part Name, so <c>[dbo].[Customer].[Email]</c> is a path of two Names that an
 /// element composes. Each part is 1 to 128 characters (sysname), not all white space, with no control character.
 /// Parts are held unquoted and compared ordinally with case, so the kernel never loses a difference; a

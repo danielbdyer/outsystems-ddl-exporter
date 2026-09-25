@@ -20,8 +20,8 @@ namespace Estate.Io;
 /// <summary>
 /// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4): the target grammar; EnvironmentDatabase, the database of an
 /// environment estate/posture.json names, and Copy, a database io/ScratchServer made, which alone publishes (§2.1 rule 3); Model through
-/// LoadFromDatabase and io/Ssdt.Elements; Plan through DacServices.Script; and the probe executor, whose closed allowlist admits only
-/// integer answers. A resolved connection is never printed, logged or put in an error, and a named environment's SQL Server messages
+/// LoadFromDatabase and io/Ssdt.Elements; Plan through DacServices.Script; and Measure, which runs an aggregate query its closed
+/// allowlist admits, every answer an integer. A resolved connection is never printed, logged or put in an error, and a named environment's SQL Server messages
 /// are withheld, since they can quote a row (§18). An error's code names what went wrong; cli/Contract.cs maps its category to the exit.
 /// </summary>
 public static class SqlServer
@@ -311,23 +311,23 @@ public static class SqlServer
     private sealed record SqlCmdValue(string Name, string Text, bool Referenced);
 
     /// <summary>
-    /// A statement the allowlist admitted (VALUES.md P2), as ScriptDom writes it back, so what runs is what was checked, with no comment
-    /// and no batch separator; and the claim site it measures. Only Of makes one, and the executor runs nothing else.
+    /// An aggregate query the allowlist admitted (VALUES.md P2): one statement, as ScriptDom writes it back, so what runs is what was
+    /// checked, with no comment and no batch separator; and the site it measures. Only Of makes one, and Measure runs nothing else.
     /// </summary>
-    public sealed class Probe
+    public sealed class AggregateQuery
     {
-        private Probe(string statement, string site) => (Statement, Site) = (statement, site);
+        private AggregateQuery(string statement, string site) => (Statement, Site) = (statement, site);
 
         public string Statement { get; }
 
         public string Site { get; }
 
-        public static Result<Probe> Of(string text, string site) => Allowlist.Admitted(text).Map(statement => new Probe(statement, site));
+        public static Result<AggregateQuery> Of(string text, string site) => Allowlist.Admitted(text).Map(statement => new AggregateQuery(statement, site));
 
         public override string ToString() => Site + ": " + Statement;
     }
 
-    /// <summary>What a probe measured: its rows, every value an integer or null; or its failure, the number and the site, SQL Server's message kept for a copy alone.</summary>
+    /// <summary>What an aggregate query measured: its rows, every value an integer or null; or its failure, the number and the site, SQL Server's message kept for a copy alone.</summary>
     public abstract record Measurement
     {
         private Measurement()
@@ -339,21 +339,21 @@ public static class SqlServer
         public sealed record Failed(string Site, int Number, string? Message) : Measurement
         {
             public override string ToString() =>
-                Site + ": probe failed: Msg " + Number.ToString(CultureInfo.InvariantCulture) + (Message is null ? "; message withheld" : ": " + Message);
+                Site + ": query failed: Msg " + Number.ToString(CultureInfo.InvariantCulture) + (Message is null ? "; message withheld" : ": " + Message);
         }
     }
 
     /// <summary>
-    /// The probe executor (WP 1.4): one admitted statement against the target, read back as integers, and logged with its row count. A
-    /// statement that fails is measured as failed, by its number; a connection that fails is an error.
+    /// One admitted aggregate query against the target (WP 1.4), read back as integers and logged with its row count. A statement
+    /// that fails is measured as failed, by its number; a connection that fails is an error.
     /// </summary>
-    public static Result<Measurement> Measure(Database target, Probe probe, QueryLog log)
+    public static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log)
     {
         using var connection = new SqlConnection(target.Connection);
         try
         {
             connection.Open();
-            using var command = new SqlCommand(probe.Statement, connection) { CommandTimeout = 30 };
+            using var command = new SqlCommand(query.Statement, connection) { CommandTimeout = 30 };
             using var reader = command.ExecuteReader();
             var rows = new List<IReadOnlyList<long?>>();
             while (reader.Read())
@@ -361,13 +361,13 @@ public static class SqlServer
                 rows.Add([.. Enumerable.Range(0, reader.FieldCount).Select(i => reader.IsDBNull(i) ? (long?)null : Integer(reader.GetValue(i)))]);
             }
 
-            log.Add(target, probe, rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows");
-            return new Measurement.Answered(probe.Site, rows);
+            log.Add(target, query, rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows");
+            return new Measurement.Answered(query.Site, rows);
         }
         catch (SqlException e) when (connection.State == System.Data.ConnectionState.Open && e.Class < 20)
         {
-            log.Add(target, probe, "failed, Msg " + e.Number.ToString(CultureInfo.InvariantCulture));
-            return new Measurement.Failed(probe.Site, e.Number, target.Withheld ? null : e.Message);
+            log.Add(target, query, "failed, Msg " + e.Number.ToString(CultureInfo.InvariantCulture));
+            return new Measurement.Failed(query.Site, e.Number, target.Withheld ? null : e.Message);
         }
         catch (Exception e) when (e is SqlException or InvalidOperationException)
         {
@@ -376,7 +376,7 @@ public static class SqlServer
     }
 
     /// <summary>
-    /// A run's log of every statement estate sends, .estate/runs/&lt;id&gt;/queries.log: each probe, and the one statement Model and Plan send
+    /// A run's log of every statement estate sends, .estate/runs/&lt;id&gt;/queries.log: each aggregate query, and the one statement Model and Plan send
     /// before DacFx's own catalog queries, which are DacFx's to answer for. Per statement: the time, the target, the site and the row count
     /// or the failure's number, then the statement and GO, so the log runs as a script. It holds no value a statement read.
     /// </summary>
@@ -394,7 +394,7 @@ public static class SqlServer
             DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture) + "-" + System.Environment.ProcessId.ToString(CultureInfo.InvariantCulture)
             + "-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(2)).ToLowerInvariant(), "queries.log"));
 
-        internal void Add(Database target, Probe probe, string outcome) => Add(target, probe.Site, probe.Statement, outcome);
+        internal void Add(Database target, AggregateQuery query, string outcome) => Add(target, query.Site, query.Statement, outcome);
 
         internal void Add(Database target, string site, string statement, string outcome)
         {
@@ -415,7 +415,7 @@ public static class SqlServer
     internal static Result<string> Connect(string subject, SecretReference reference, string estateRoot) => Read(subject, reference, estateRoot).Bind(read => read is not { } text
         ? new Error("connection.unresolved", subject + " resolves to nothing here.", "Set the variable, or write the file outside git, that " + reference + " names.")
         : Parsed(subject, reference, text).Bind(connection => connection.InitialCatalog.Length == 0
-            ? new Error("connection.malformed", subject + " names no database; Model, Plan and the executor read the database it names.",
+            ? new Error("connection.malformed", subject + " names no database; Model, Plan and Measure read the database it names.",
                 "Give the connection string an Initial Catalog, in the place " + reference + " names.")
             : Result.Ok(Identified(connection))));
 
@@ -640,7 +640,7 @@ public static class SqlServer
     }
 
     private static Error NotADatabase(Target target) => new Error("target.not-a-database",
-        target + " is read as a package; Model, Plan and the executor read a database, env:<name> or copy:<name>.", "Name the database as env:<name> or copy:<name>.");
+        target + " is read as a package; Model, Plan and Measure read a database, env:<name> or copy:<name>.", "Name the database as env:<name> or copy:<name>.");
 
     /// <summary>The target, when it answers this identity with VIEW DEFINITION: what a verb asks before it builds anything, so a denial arrives first.</summary>
     public static Result<Database> Reach(Database target, QueryLog? log = null) => Reached(target, log);
@@ -710,17 +710,17 @@ public static class SqlServer
     private static long Integer(object value) => value switch
     {
         int or long or short or byte => Convert.ToInt64(value, CultureInfo.InvariantCulture),
-        _ => throw new NotSupportedException("A probe answered with a " + value.GetType().Name + ", a type no form of the allowlist yields."),
+        _ => throw new NotSupportedException("An aggregate query answered with a " + value.GetType().Name + ", a type no form of the allowlist yields."),
     };
 
     /// <summary>
-    /// The probe allowlist, closed (WP 1.4): one SELECT whose outermost select list holds COUNT or COUNT_BIG of * or of DISTINCT a
+    /// The aggregate-query allowlist, closed (WP 1.4): one SELECT whose outermost select list holds COUNT or COUNT_BIG of * or of DISTINCT a
     /// column, SUM(CASE WHEN … THEN 1 ELSE 0 END), MIN or MAX over LEN or DATALENGTH of a column, CASE WHEN EXISTS (…) THEN 1 ELSE 0 END
     /// or an integer literal; beneath it, names of one or two parts, TRY_ conversions, and the few functions held here. A boundary is a
     /// length or a literal, never read from the data: each predicate, in a join's ON as in a WHERE, reads at most one value from the data
     /// (a column, a length or an aggregate), save = or &lt;&gt; between two columns, an equi-join or an orphan check; and a subquery's
     /// select list carries only columns, literals and the answers above, so a derived column is never two values combined. Every other
-    /// form is refused with where it stands and what it is, and none of the probe's literals is quoted.
+    /// form is refused with where it stands and what it is, and none of the query's literals is quoted.
     /// </summary>
     private static class Allowlist
     {
@@ -740,20 +740,20 @@ public static class SqlServer
             var parsed = new TSql160Parser(initialQuotedIdentifiers: true).Parse(new StringReader(text), out var errors);
             if (errors.Count > 0)
             {
-                return new Error("probe.refused", string.Create(CultureInfo.InvariantCulture, $"The probe does not parse at line {errors[0].Line}, column {errors[0].Column}."),
-                    "Correct the probe's syntax at that place.");
+                return new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query does not parse at line {errors[0].Line}, column {errors[0].Column}."),
+                    "Correct the query's syntax at that place.");
             }
 
             var statements = ((TSqlScript)parsed).Batches.SelectMany(b => b.Statements).ToList();
             if (statements.Count != 1)
             {
-                return new Error("probe.refused", string.Create(CultureInfo.InvariantCulture, $"The probe holds {statements.Count} statements; the executor runs one statement at a time."),
-                    "Split it into probes of one SELECT each.");
+                return new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query holds {statements.Count} statements; estate runs one statement at a time."),
+                    "Split it into queries of one SELECT each.");
             }
 
             if ((statements[0] is SelectStatement select ? Statement(select) : new Offence(statements[0], Kind(statements[0]))) is { } offence)
             {
-                return new Error("probe.refused", string.Create(CultureInfo.InvariantCulture, $"The probe is refused at line {offence.At.StartLine}, column {offence.At.StartColumn}: {offence.What}."),
+                return new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query is refused at line {offence.At.StartLine}, column {offence.At.StartColumn}: {offence.What}."),
                     "Rewrite it so its select list holds only " + Forms + ".");
             }
 
@@ -883,7 +883,7 @@ public static class SqlServer
         /// <summary>A column as it stands, perhaps in parentheses: one side of an equi-join.</summary>
         private static bool Bare(ScalarExpression x) => x is ColumnReferenceExpression { ColumnType: ColumnType.Regular } || (x is ParenthesisExpression p && Bare(p.Expression));
 
-        /// <summary>A literal of the kinds a probe may write: a number, a string, a binary value or NULL.</summary>
+        /// <summary>A literal of the kinds an aggregate query may write: a number, a string, a binary value or NULL.</summary>
         private static bool Constant(ScalarExpression x) => x is IntegerLiteral or NumericLiteral or RealLiteral or MoneyLiteral or StringLiteral or BinaryLiteral or NullLiteral;
 
         private static Offence? Scalar(ScalarExpression x) => x switch

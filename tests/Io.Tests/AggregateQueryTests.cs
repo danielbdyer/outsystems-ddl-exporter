@@ -13,26 +13,26 @@ namespace Estate.Io.Tests;
 
 /// <summary>
 /// io/SqlServer against a named environment (V3_MILESTONES.md WP 1.4, M1 exit 7, §18; VALUES.md P2, X2): the golden project's
-/// registered database stands in for env:uat, classified real and reached as the read-only principal through a file: reference. The
-/// executor runs each admitted probe of the allowlist's corpus there and reads integers back; every statement and its row count go to
-/// the run's queries.log; a failed probe reports its number and its site and nothing else; Model and Plan read as the same principal;
+/// registered database stands in for env:uat, classified real and reached as the read-only principal through a file: reference. SqlServer.Measure
+/// runs each admitted aggregate query of the allowlist's corpus there and reads integers back; every statement and its row count go to
+/// the run's queries.log; a failed query reports its number and its site and nothing else; Model and Plan read as the same principal;
 /// and a denied login names the environment and quotes nothing.
 /// </summary>
-public sealed class ProbeTests(GoldenProject ground) : IClassFixture<GoldenProject>, IDisposable
+public sealed class AggregateQueryTests(GoldenProject ground) : IClassFixture<GoldenProject>, IDisposable
 {
-    private readonly string root = Directory.CreateDirectory(Path.Combine(Repository.Root, ".estate", "probes-under-test", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8])).FullName;
+    private readonly string root = Directory.CreateDirectory(Path.Combine(Repository.Root, ".estate", "aggregate-queries-under-test", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8])).FullName;
 
     public void Dispose() => Directory.Delete(root, recursive: true);
 
     [Fact]
     [Trait("Category", "fixture")]
-    public void Every_admitted_probe_of_the_corpus_returns_integers_as_the_read_only_principal_and_queries_log_holds_each_statement_and_its_row_count()
+    public void Every_admitted_query_of_the_corpus_returns_integers_as_the_read_only_principal_and_queries_log_holds_each_statement_and_its_row_count()
     {
         var uat = Resolved("uat", ground.Reader.ConnectionString);
         var log = SqlServer.QueryLog.Start(root);
-        var admitted = AllowlistTests.Cases.Where(c => c.Admitted).Select(c => Made(SqlServer.Probe.Of(c.Text, c.Label))).ToList();
+        var admitted = AllowlistTests.Cases.Where(c => c.Admitted).Select(c => Made(SqlServer.AggregateQuery.Of(c.Text, c.Label))).ToList();
 
-        var measured = admitted.Select(probe => Assert.IsType<SqlServer.Measurement.Answered>(Made(SqlServer.Measure(uat, probe, log)))).ToList();
+        var measured = admitted.Select(query => Assert.IsType<SqlServer.Measurement.Answered>(Made(SqlServer.Measure(uat, query, log)))).ToList();
 
         Assert.All(measured, m => Assert.NotEmpty(m.Rows));
         Assert.Contains(measured, m => m.Rows.Any(row => row.Any(value => value > 0)));
@@ -45,7 +45,7 @@ public sealed class ProbeTests(GoldenProject ground) : IClassFixture<GoldenProje
     /// <summary>§18: SQL Server writes the value it fails to convert into Msg 245. Against an environment classified real, the executor records the number and the site, and the value appears in no result, message or line of the log.</summary>
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task A_failed_probe_against_a_real_environment_reports_only_its_number_and_its_site()
+    public async Task A_failed_query_against_a_real_environment_reports_only_its_number_and_its_site()
     {
         var planted = "planted-" + Guid.NewGuid().ToString("N")[..12];
         await SqlServerFixture.ExecuteAsync(ground.Copy.ConnectionString, "CREATE TABLE dbo.Planted (Id INT NOT NULL PRIMARY KEY, Value NVARCHAR(100) NOT NULL); INSERT dbo.Planted (Id, Value) VALUES (1, @name);", planted);
@@ -54,10 +54,10 @@ public sealed class ProbeTests(GoldenProject ground) : IClassFixture<GoldenProje
         var uat = Resolved("uat", ground.Reader.ConnectionString);
         var log = SqlServer.QueryLog.Start(root);
 
-        var failed = Assert.IsType<SqlServer.Measurement.Failed>(Made(SqlServer.Measure(uat, Made(SqlServer.Probe.Of(Statement, "dbo.Planted.Value Fits")), log)));
+        var failed = Assert.IsType<SqlServer.Measurement.Failed>(Made(SqlServer.Measure(uat, Made(SqlServer.AggregateQuery.Of(Statement, "dbo.Planted.Value Fits")), log)));
 
         Assert.Equal((245, "dbo.Planted.Value Fits", (string?)null), (failed.Number, failed.Site, failed.Message));
-        Assert.Equal("dbo.Planted.Value Fits: probe failed: Msg 245; message withheld", failed.ToString());
+        Assert.Equal("dbo.Planted.Value Fits: query failed: Msg 245; message withheld", failed.ToString());
         Assert.Equal("failed, Msg 245", Assert.Single(Entries(File.ReadAllText(log.Path))).Outcome);
         Assert.DoesNotContain(planted, failed + File.ReadAllText(log.Path), StringComparison.Ordinal);
     }
@@ -123,7 +123,7 @@ public sealed class ProbeTests(GoldenProject ground) : IClassFixture<GoldenProje
         const string Wrong = "Wr0ng!planted#7f3a";
         var qa = Resolved("qa", new SqlConnectionStringBuilder(ground.Reader.ConnectionString) { Password = Wrong }.ConnectionString);
 
-        var errors = new[] { Failed(SqlServer.Model(qa)), Failed(SqlServer.Measure(qa, Made(SqlServer.Probe.Of("SELECT 1;", "the login")), SqlServer.QueryLog.Start(root))) };
+        var errors = new[] { Failed(SqlServer.Model(qa)), Failed(SqlServer.Measure(qa, Made(SqlServer.AggregateQuery.Of("SELECT 1;", "the login")), SqlServer.QueryLog.Start(root))) };
 
         Assert.All(errors, error =>
         {

@@ -250,8 +250,8 @@ internal static class RefusalPaths
         new("DacFx failing with no SQL Server error inside", "dacfx.failed", false, (scratch, _) =>
             DevDatabase(scratch).ErrorOf(new DacServicesException("An error occurred during deployment plan generation. Deployment cannot continue.",
                 new InvalidOperationException("A project which specifies SQL Server vNext as the target platform cannot be published to SQL Server 2022.")))),
-        new("a probe the allowlist refuses", "probe.refused", true, (_, planted) =>
-            Failed(SqlServer.Probe.Of("SELECT MAX(Email) FROM dbo.Customer WHERE Name = N'" + planted + "';", "dbo.Customer.Email Fits"))),
+        new("an aggregate query the allowlist refuses", "aggregate-query.refused", true, (_, planted) =>
+            Failed(SqlServer.AggregateQuery.Of("SELECT MAX(Email) FROM dbo.Customer WHERE Name = N'" + planted + "';", "dbo.Customer.Email Fits"))),
         new("a SQLCMD reference that does not resolve", "sqlcmd.unresolved", false, (scratch, _) =>
         {
             var root = Initialized(Estate(scratch, Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\" }",

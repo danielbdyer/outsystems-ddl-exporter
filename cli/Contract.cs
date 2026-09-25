@@ -97,7 +97,7 @@ public static class Contract
     /// configuration (exit 6), whether io or the kernel finds the error, and so is a failure DacFx reports with no SQL Server error
     /// inside it, such as a package whose target platform the server is not. A target of no known form is a bad argument, as is a flag
     /// the verb does not take; a server that does not answer or refuses the identity is exit 4; a copy the registry does not hold, a
-    /// scratch server on a named host, and a probe the allowlist refuses are refused by name.
+    /// scratch server on a named host, and an aggregate query the allowlist refuses are refused by name.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, int> ExitByCategory = new Dictionary<string, int>(StringComparer.Ordinal)
     {
@@ -130,7 +130,7 @@ public static class Contract
         ["build"] = 7,
         ["branch"] = 9,
         ["copy"] = 9,
-        ["probe"] = 9,
+        ["aggregate-query"] = 9,
     };
 
     /// <summary>The exit of a defect in estate itself: an error whose category the category table lacks, or an exception no verb expected.</summary>

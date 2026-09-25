@@ -103,19 +103,19 @@ public static class Ssdt
         ? new Error("build.no-project", project + " is not a path from the repository's root, where a ref's project is found.", "Name the .sqlproj by its path from the repository's root.")
         : Build(Path.Combine(at.Path, project), toolFolder, outputRoot, Doctor.Run, at.Commit);
 
-    public static Result<Dacpac> Build(string project, string toolFolder, string outputRoot, Doctor.Command probe) => Build(project, toolFolder, outputRoot, probe, null);
+    public static Result<Dacpac> Build(string project, string toolFolder, string outputRoot, Doctor.Command run) => Build(project, toolFolder, outputRoot, run, null);
 
     /// <summary>
-    /// Builds a classic .sqlproj as §1 fact 1 does, with the SDK the probe lists: dotnet build against the tool folder's targets
+    /// Builds a classic .sqlproj as §1 fact 1 does, with the SDK that dotnet --list-sdks, through run, lists: dotnet build against the tool folder's targets
     /// and reference stub, telemetry off, its output and intermediate files under outputRoot/&lt;the inputs' fingerprint&gt;/, or
     /// under outputRoot/&lt;commit&gt;/ for a ref's worktree, so nothing is written beside the project and two refs never share a
     /// folder. A missing SDK band or tool folder is an error before anything builds.
     /// </summary>
-    private static Result<Dacpac> Build(string project, string toolFolder, string outputRoot, Doctor.Command probe, string? commit)
+    private static Result<Dacpac> Build(string project, string toolFolder, string outputRoot, Doctor.Command run, string? commit)
     {
         var (file, tool) = (Path.GetFullPath(project), Path.TrimEndingDirectorySeparator(Path.GetFullPath(toolFolder)));
         var directory = Path.GetDirectoryName(file)!;
-        return (File.Exists(file), Doctor.Sdk(directory, probe), Doctor.Tool(tool)) switch
+        return (File.Exists(file), Doctor.Sdk(directory, run), Doctor.Tool(tool)) switch
         {
             (false, _, _) => new Error("build.no-project", "No project at " + file + ".", "Name the .sqlproj to build, by its path from the working directory."),
             (_, { Remedy: { } install } sdk, _) => new Error(
