@@ -115,9 +115,10 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
     }
 
     /// <summary>
-    /// DF-4: DacFx's own failure, with no SqlException inside. A package built for a newer platform than the 2022 substrate (Sql180),
-    /// planned for a named environment on it under the pipeline's profile (AllowIncompatiblePlatform False), is refused as dacfx.failed
-    /// at exit 6, and the refusal quotes DacFx's reason; SQL Server's messages alone are withheld for a named environment.
+    /// DF-4: DacFx's own failure, with no SqlException inside. A package built for a newer platform (Sql180) than the SQL Server it is
+    /// planned against (SQL Server 2022 in the container, an older release in the Windows runner's LocalDB), planned for a named
+    /// environment under the pipeline's profile (AllowIncompatiblePlatform False), is refused as dacfx.failed at exit 6, and the refusal
+    /// quotes DacFx's reason, which names the server's release; SQL Server's messages alone are withheld for a named environment.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
@@ -138,7 +139,7 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
         var refused = Assert.IsType<Result<SqlServer.Deployment>.Refused>(SqlServer.Plan(dacpac, dev, Made(Profiles.Load(ground.Profile)))).Refusal;
 
         Assert.Equal(("dacfx.failed", 6), (refused.Code, Contract.Exit(refused)));
-        Assert.Contains("cannot be published to SQL Server 2022", refused.Message, StringComparison.Ordinal);
+        Assert.Matches(@"cannot be published to SQL Server [0-9]{4}\.", refused.Message);
         Assert.DoesNotContain("withheld", refused.Message, StringComparison.Ordinal);
     }
 
