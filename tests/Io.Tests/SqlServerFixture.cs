@@ -13,7 +13,7 @@ namespace Estate.Io.Tests;
 
 /// <summary>
 /// One SQL Server per test run, and a registered database per test, estate_&lt;host&gt;_&lt;pid&gt;_&lt;rand&gt;, dropped after it, so
-/// concurrent runs and agents sharing a server never collide. The server is io/Substrate's (WP 1.4): ESTATE_SQL when set; else,
+/// concurrent runs and agents sharing a server never collide. The server is io/ScratchServer's (WP 1.4): ESTATE_SQL when set; else,
 /// where docker info answers, the estate-sql container that ci/sql.sh up (ci/sql.ps1 up on Windows) pulls and starts, reached
 /// through ~/.estate/sql.env; else LocalDB's MSSQLLocalDB. With none, every fixture test fails with the remedy; the fixture lane
 /// never skips.
@@ -35,12 +35,12 @@ public static class SqlServerFixture
         + "DECLARE @wait int = 0; WHILE @wait < 50 AND EXISTS (SELECT 1 FROM sys.dm_exec_sessions WHERE login_name = @reader) BEGIN WAITFOR DELAY '00:00:00.200'; SET @wait += 1; END; "
         + "IF EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @reader) BEGIN SET @sql = N'DROP LOGIN ' + QUOTENAME(@reader) + N';'; EXEC (@sql); END;";
 
-    /// <summary>What io/Substrate names this host's databases with, up to the process: estate_&lt;host&gt;_.</summary>
-    private static readonly string Prefix = Substrate.CopyName(Environment.MachineName, 0, "00000000")[..^"0_00000000".Length];
+    /// <summary>What io/ScratchServer names this host's databases with, up to the process: estate_&lt;host&gt;_.</summary>
+    private static readonly string Prefix = ScratchServer.CopyName(Environment.MachineName, 0, "00000000")[..^"0_00000000".Length];
 
     private static readonly Lazy<Task<string>> Master = new(ChooseAsync);
 
-    /// <summary>The run's SQL Server, master as its catalog: where io/Substrate makes the fixture tests' copies.</summary>
+    /// <summary>The run's SQL Server, master as its catalog: where io/ScratchServer makes the fixture tests' copies.</summary>
     public static Task<string> ServerAsync() => Master.Value;
 
     public static async Task<RegisteredDatabase> RegisterAsync()
@@ -51,10 +51,10 @@ public static class SqlServerFixture
         return new RegisteredDatabase(name, new SqlConnectionStringBuilder(master) { InitialCatalog = name, Pooling = false }.ConnectionString, master);
     }
 
-    /// <summary>A registered database is named as io/Substrate names a copy, so one sweep serves both.</summary>
-    public static string DatabaseName(string host, int pid, string random) => Substrate.CopyName(host, pid, random);
+    /// <summary>A registered database is named as io/ScratchServer names a copy, so one sweep serves both.</summary>
+    public static string DatabaseName(string host, int pid, string random) => ScratchServer.CopyName(host, pid, random);
 
-    /// <summary>An estate's root for the copies a test makes: the folder given, its estate/posture.json naming no environment, so R15 reads it and clears the substrate.</summary>
+    /// <summary>An estate's root for the copies a test makes: the folder given, its estate/posture.json naming no environment, so R15 reads it and clears the scratch server.</summary>
     public static string EstateRoot(string folder)
     {
         Directory.CreateDirectory(Path.Combine(folder, "estate"));
@@ -77,13 +77,13 @@ public static class SqlServerFixture
         ReadOnlyPrincipal.Forget(name);
     }
 
-    /// <summary>io/Substrate's choice, once the fixture has started what it chooses: the container when docker info answers, else LocalDB's instance.</summary>
+    /// <summary>io/ScratchServer's choice, once the fixture has started what it chooses: the container when docker info answers, else LocalDB's instance.</summary>
     private static async Task<string> ChooseAsync()
     {
         var given = Environment.GetEnvironmentVariable("ESTATE_SQL");
         var docker = string.IsNullOrEmpty(given) && Command.Run("docker", ["info"], TimeSpan.FromSeconds(30)).Exit == 0 && Up();
         var localDb = string.IsNullOrEmpty(given) && !docker && Command.Run("sqllocaldb", ["start", "MSSQLLocalDB"], TimeSpan.FromMinutes(2)).Exit == 0;
-        var chosen = Substrate.Server(given, docker ? Substrate.SqlEnv : "", localDb).Match(server => server, _ => throw new InvalidOperationException(NoServer));
+        var chosen = ScratchServer.Server(given, docker ? ScratchServer.SqlEnv : "", localDb).Match(server => server, _ => throw new InvalidOperationException(NoServer));
         var master = new SqlConnectionStringBuilder(chosen) { InitialCatalog = "master", ApplicationName = "estate-tests", TrustServerCertificate = true, ConnectTimeout = 60 }.ConnectionString;
         try
         {
@@ -147,8 +147,8 @@ public static class SqlServerFixture
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
-        // The fixture creates and drops databases while other test classes do the same; it waits as long as io/Substrate does.
-        await using var command = new SqlCommand(sql, connection) { CommandTimeout = Substrate.DatabaseStatementSeconds };
+        // The fixture creates and drops databases while other test classes do the same; it waits as long as io/ScratchServer does.
+        await using var command = new SqlCommand(sql, connection) { CommandTimeout = ScratchServer.DatabaseStatementSeconds };
         if (name is not null)
         {
             command.Parameters.Add(new SqlParameter("@name", System.Data.SqlDbType.NVarChar, 128) { Value = name });

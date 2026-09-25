@@ -19,7 +19,7 @@ namespace Estate.Io;
 
 /// <summary>
 /// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4): the target grammar; Named, the database of an
-/// environment estate/posture.json names, and Copy, a database io/Substrate made, which alone publishes (§2.1 rule 3); Model through
+/// environment estate/posture.json names, and Copy, a database io/ScratchServer made, which alone publishes (§2.1 rule 3); Model through
 /// LoadFromDatabase and io/Ssdt.Elements; Plan through DacServices.Script; and the probe executor, whose closed allowlist admits only
 /// integer answers. A resolved connection is never printed, logged or put in an error, and a named environment's SQL Server messages
 /// are withheld, since they can quote a row (§18). An error's code names what went wrong; cli/Contract.cs maps its category to the exit.
@@ -52,8 +52,8 @@ public static class SqlServer
             : text == "twin" ? new Twin()
             : After(text, "env:") is { } name && Environment.IsMatch(name) ? new Env(name)
             : After(text, "copy:") is { } copy ? (Registered.IsMatch(copy) ? new Copy(copy) : new Error("copy.unregistered",
-                subject + " names a copy by a name no copy estate makes can carry, so " + Substrate.Registry + " holds none by it; a copy's name is estate_<host>_<pid>_<rand>, in lowercase letters, digits and '_'.",
-                "Name a copy that " + Substrate.Registry + " holds on this machine."))
+                subject + " names a copy by a name no copy estate makes can carry, so " + ScratchServer.Registry + " holds none by it; a copy's name is estate_<host>_<pid>_<rand>, in lowercase letters, digits and '_'.",
+                "Name a copy that " + ScratchServer.Registry + " holds on this machine."))
             : After(text, "ref:") is { Length: > 0 } reference && !reference.StartsWith('-') && !reference.Any(char.IsControl) ? new Ref(reference)
             : After(text, "dacpac:") is { Length: > 0 } path && !path.Any(char.IsControl) ? new Dacpac(path)
             : new Error("target.unknown", subject + " is none of env:<name>, copy:<name>, twin, ref:<git ref> and dacpac:<path>.",
@@ -150,10 +150,10 @@ public static class SqlServer
             return Denials.Contains(number) ? new Error("server.denied", Where + " refused this identity (" + msg + ", SQL Server's message withheld)"
                     + (this is Named ? "; a lead's prediction will appear on the pull request." : "."), this is Named
                     ? "Ask a lead to predict for " + Where + ", or ask its DBA for VIEW DEFINITION and db_datareader there."
-                    : "Check the substrate's login in ESTATE_SQL or ~/.estate/sql.env, then run estate doctor.")
+                    : "Check the scratch server's login in ESTATE_SQL or ~/.estate/sql.env, then run estate doctor.")
                 : fatal || Silences.Contains(number) ? new Error("server.unreachable", Where + " does not answer (" + msg + ", SQL Server's message withheld).", this is Named
                     ? "Check the network path to " + Where + "'s server and that it runs, then run estate doctor."
-                    : "Start the substrate with ci/sql.sh up, or ci/sql.ps1 up on Windows, then run estate doctor.")
+                    : "Start the scratch server with ci/sql.sh up, or ci/sql.ps1 up on Windows, then run estate doctor.")
                 : new Error("server.failed", Where + " failed the statement: " + msg + (Withheld ? "; SQL Server's message is withheld, since it can quote a row." : ": " + message),
                     "Look the number up in SQL Server's error list, correct what it names, then run the step again.");
         }
@@ -181,8 +181,8 @@ public static class SqlServer
     }
 
     /// <summary>
-    /// A database io/Substrate made on the local substrate and recorded in .estate/copies.json (§2.1 rule 3): the one target that
-    /// publishes, and the one a Permissive profile is made for. Its constructor is io's, and only io/Substrate calls it.
+    /// A database io/ScratchServer made on the scratch server and recorded in .estate/copies.json (§2.1 rule 3): the one target that
+    /// publishes, and the one a Permissive profile is made for. Its constructor is io's, and only io/ScratchServer calls it.
     /// </summary>
     public sealed class Copy : Database
     {
@@ -209,7 +209,7 @@ public static class SqlServer
 
     /// <summary>
     /// A target as a database: env: through estate/posture.json and the environment's connection reference; copy: through
-    /// .estate/copies.json alone (io/Substrate). A git ref and a package are read as packages, and the Twin arrives in M3.
+    /// .estate/copies.json alone (io/ScratchServer). A git ref and a package are read as packages, and the Twin arrives in M3.
     /// </summary>
     public static Result<Database> Resolve(Target target, string estateRoot) => target.Match<Result<Database>>(
         env => Profiles.Environments(estateRoot).Bind(environments => environments.FirstOrDefault(e => e.Name == env.Name) is { } named
@@ -217,7 +217,7 @@ public static class SqlServer
             : new Error("target.unnamed", env + " names no environment of " + Profiles.Posture + ".", environments.Count == 0
                 ? "Add the environment to " + Profiles.Posture + " with its connection reference and profile."
                 : "Name one it holds: " + string.Join(", ", environments.Select(e => "env:" + e.Name)) + ".")),
-        copy => Substrate.Registered(estateRoot, copy.Name).Map(c => (Database)c),
+        copy => ScratchServer.Registered(estateRoot, copy.Name).Map(c => (Database)c),
         () => new Error("twin.not-built", "twin names the Twin, which arrives in M3 (Twin); this build reads env: and copy: databases.",
             "Name an env: or a copy: target; estate --help lists what this build runs."),
         reference => NotADatabase(reference),
@@ -591,7 +591,7 @@ public static class SqlServer
     /// <summary>
     /// Whether this run has read a connection or other reference of a named environment (VALUES.md X2), whose text an exception's message
     /// can then quote. SqlServer.Read records each read, and every one goes through it: Named.Of, which SqlServer.Resolve calls for env:;
-    /// R15's read of each environment's connection in io/Substrate, which copy: and a new copy run; and a named environment's SQLCMD values.
+    /// R15's read of each environment's connection in io/ScratchServer, which copy: and a new copy run; and a named environment's SQLCMD values.
     /// cli/Program.cs begins a run around each command and withholds an unexpected exception's message when the run holds a read. The
     /// record reaches the threads the run's work starts (it is an AsyncLocal); a read outside any run is recorded nowhere, no catch
     /// reading it.

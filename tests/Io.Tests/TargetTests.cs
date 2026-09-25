@@ -117,7 +117,7 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// M1 exit 5, R15: a substrate on the host an environment's reference resolves to is exit 9, before anything connects, whether
+    /// M1 exit 5, R15: a scratch server on the host an environment's reference resolves to is exit 9, before anything connects, whether
     /// or not the reference names a database; a reference that names no server names SqlClient's local default instance. The refusal
     /// names the environment and quotes neither connection.
     /// </summary>
@@ -131,42 +131,42 @@ public sealed class TargetTests : IDisposable
     [InlineData("Data Source=tcp:prod-sql.corp.example,1433", "PROD-SQL.corp.example,1")]
     [InlineData("Initial Catalog=Dev;Integrated Security=true", "localhost,1")]
     [Trait("Law", "a named environment cannot be written")]
-    public void A_substrate_on_a_host_an_environment_s_reference_names_is_exit_9(string reference, string substrate)
+    public void A_scratch_server_on_a_host_an_environment_s_reference_names_is_exit_9(string reference, string server)
     {
         var root = Estate(Dev(Written("dev.connection", reference + ";User ID=reader;Password=" + Planted)));
 
-        var error = Failed(Substrate.Create(root, "Server=" + substrate + ";Initial Catalog=master;User ID=sa;Password=" + Planted + ";TrustServerCertificate=True;Connect Timeout=2"));
+        var error = Failed(ScratchServer.Create(root, "Server=" + server + ";Initial Catalog=master;User ID=sa;Password=" + Planted + ";TrustServerCertificate=True;Connect Timeout=2"));
 
         Assert.Equal(("copy.named-host", 9), (error.Code, Contract.Exit(error)));
         Assert.Contains("env:dev", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
-        Assert.False(File.Exists(Path.Combine(root, ".estate", "copies.json")), "a refused substrate registered a copy");
+        Assert.False(File.Exists(Path.Combine(root, ".estate", "copies.json")), "a refused scratch server registered a copy");
     }
 
     /// <summary>
     /// R15 fails closed: an environment whose reference resolves here to text SqlClient reads no connection string from has a host no
-    /// check can clear, so the substrate is refused at exit 6 by that reference; and without estate/posture.json no environment's host
+    /// check can clear, so the scratch server is refused at exit 6 by that reference; and without estate/posture.json no environment's host
     /// can be read, so no copy is made. Neither refusal quotes a connection, and neither registers a copy.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("an unreadable reference", "connection.malformed")]
     [InlineData("no posture", "posture.missing")]
-    public void A_substrate_whose_environments_cannot_be_read_is_refused_before_anything_connects(string how, string code)
+    public void A_scratch_server_whose_environments_cannot_be_read_is_refused_before_anything_connects(string how, string code)
     {
         var root = how == "no posture" ? Directory.CreateDirectory(Path.Combine(scratch, "no-posture")).FullName
             : Estate(Dev(Written("dev.connection", "Server=dev-sql;Nonsense " + Planted + " = 1")));
 
-        var error = Failed(Substrate.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2"));
+        var error = Failed(ScratchServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2"));
 
         Assert.Equal((code, 6), (error.Code, Contract.Exit(error)));
         Assert.Equal(how != "no posture", error.Message.StartsWith("env:dev's connection", StringComparison.Ordinal));
         Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
-        Assert.False(File.Exists(Path.Combine(root, ".estate", "copies.json")), "a refused substrate registered a copy");
+        Assert.False(File.Exists(Path.Combine(root, ".estate", "copies.json")), "a refused scratch server registered a copy");
     }
 
     /// <summary>
-    /// R15 by address: a substrate is on an environment's host when the two hosts share an address, whatever either spelling, a name
+    /// R15 by address: a scratch server is on an environment's host when the two hosts share an address, whatever either spelling, a name
     /// and its FQDN, a name and its IP address; this machine is every loopback address, LocalDB and each address of its own. DNS is
     /// the resolver given here, so no lookup leaves the test.
     /// </summary>
@@ -181,36 +181,36 @@ public sealed class TargetTests : IDisposable
     [InlineData("(localdb)\\MSSQLLocalDB", "localhost,11433")]
     [InlineData("localhost", "(localdb)\\MSSQLLocalDB")]
     [InlineData("sql.this-machine.example", "localhost,11433")]
-    public void A_substrate_on_an_alias_of_an_environment_s_host_is_exit_9(string environment, string substrate)
+    public void A_scratch_server_on_an_alias_of_an_environment_s_host_is_exit_9(string environment, string server)
     {
         var root = Estate(Dev(Written("dev.connection", "Server=" + environment + ";Initial Catalog=Dev;User ID=reader;Password=" + Planted)));
 
-        var error = Failed(Substrate.Unnamed(root, substrate, Resolver));
+        var error = Failed(ScratchServer.Unnamed(root, server, Resolver));
 
         Assert.Equal(("copy.named-host", 9), (error.Code, Contract.Exit(error)));
         Assert.Contains("env:dev", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
     }
 
-    /// <summary>A substrate whose host shares no address and no spelling with any environment's is cleared; an environment whose reference resolves to nothing here goes uncompared.</summary>
+    /// <summary>A scratch server whose host shares no address and no spelling with any environment's is cleared; an environment whose reference resolves to nothing here goes uncompared.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("Server=prod-sql.corp.example;Initial Catalog=Prod", "localhost,11433")]
     [InlineData("Server=dev-sql;Initial Catalog=Dev", "192.0.2.20,11433")]
     [InlineData("Server=no-such-host.corp.example;Initial Catalog=Dev", "localhost,11433")]
     [InlineData("", "localhost,11433")]
-    public void A_substrate_on_a_host_no_environment_s_reference_names_is_cleared(string reference, string substrate)
+    public void A_scratch_server_on_a_host_no_environment_s_reference_names_is_cleared(string reference, string server)
     {
         var root = Estate(reference.Length == 0 ? "\"dev\": { \"connection\": \"env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }"
             : Dev(Written("dev.connection", reference)));
 
-        Assert.Equal(substrate, Made(Substrate.Unnamed(root, substrate, Resolver)));
+        Assert.Equal(server, Made(ScratchServer.Unnamed(root, server, Resolver)));
     }
 
     /// <summary>
     /// M1 exit 5, the registry bound to its server: a copy's row records the server it was made on, and copy: resolves it only while
-    /// the substrate is that server; on another it is a copy the registry does not hold there. A row whose server an environment's
-    /// reference names is exit 9 before the substrate is chosen.
+    /// the scratch server is that server; on another it is a copy the registry does not hold there. A row whose server an environment's
+    /// reference names is exit 9 before the scratch server is chosen.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -219,11 +219,11 @@ public sealed class TargetTests : IDisposable
         const string Name = "estate_host_1_0a1b2c3d";
         var (clear, named) = (Registry(Estate(""), Name, "localhost,11433"), Registry(Estate(Dev(Written("dev.connection", "Server=127.0.0.1,1433;Initial Catalog=Dev"))), Name, "localhost,11433"));
 
-        var there = Made(Substrate.Registered(clear, Name, () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
-        var elsewhere = Failed(Substrate.Registered(clear, Name, () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver));
-        var onNamedHost = Failed(Substrate.Registered(named, Name, () => throw new Xunit.Sdk.XunitException("the substrate was chosen before R15 read the row's server"), Resolver));
+        var there = Made(ScratchServer.Registered(clear, Name, () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
+        var elsewhere = Failed(ScratchServer.Registered(clear, Name, () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver));
+        var onNamedHost = Failed(ScratchServer.Registered(named, Name, () => throw new Xunit.Sdk.XunitException("the scratch server was chosen before R15 read the row's server"), Resolver));
 
-        Assert.Equal(("copy:" + Name, "localhost,11433"), (there.Where, Substrate.ServerName(null, Written("sql.env", "ESTATE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n, r => r.Code)));
+        Assert.Equal(("copy:" + Name, "localhost,11433"), (there.Where, ScratchServer.ServerName(null, Written("sql.env", "ESTATE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n, r => r.Code)));
         Assert.Equal(("copy.unregistered", 9), (elsewhere.Code, Contract.Exit(elsewhere)));
         Assert.Contains("copy:" + Name, elsewhere.Message, StringComparison.Ordinal);
         Assert.Equal(("copy.named-host", 9), (onNamedHost.Code, Contract.Exit(onNamedHost)));
@@ -301,7 +301,7 @@ public sealed class TargetTests : IDisposable
     /// Windows forbids ? * &lt; &gt; and | in a file name, so no file is at a path whose name holds one; File.Exists answers false and
     /// File.GetAttributes throws an IOException for ERROR_INVALID_NAME. On Linux and macOS the name is legal and no file is there.
     /// On every operating system the reference resolves to nothing: Resolve fails with connection.unresolved, and
-    /// Substrate.Unnamed leaves env:dev uncompared and returns the server, as it does for any path with no file.
+    /// ScratchServer.Unnamed leaves env:dev uncompared and returns the server, as it does for any path with no file.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -317,7 +317,7 @@ public sealed class TargetTests : IDisposable
         var error = Failed(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root));
 
         Assert.Equal(("connection.unresolved", 6), (error.Code, Contract.Exit(error)));
-        Assert.Equal("localhost,11433", Made(Substrate.Unnamed(root, "localhost,11433", Resolver)));
+        Assert.Equal("localhost,11433", Made(ScratchServer.Unnamed(root, "localhost,11433", Resolver)));
     }
 
     /// <summary>
@@ -454,8 +454,8 @@ public sealed class TargetTests : IDisposable
     /// <summary>
     /// M1 exit 5, R15: a connection file that exists, in a folder this identity cannot list, that this identity cannot read, or whose
     /// attributes this identity cannot read, holds a host estate cannot learn. Before this was a refusal it resolved to nothing, so
-    /// env:dev went uncompared and a substrate on dev's host was made. Now Resolve refuses it at exit 6, reference.unlistable,
-    /// reference.unreadable or reference.inaccessible, by the environment and the reference, and Substrate.Unnamed returns that
+    /// env:dev went uncompared and a scratch server on dev's host was made. Now Resolve refuses it at exit 6, reference.unlistable,
+    /// reference.unreadable or reference.inaccessible, by the environment and the reference, and ScratchServer.Unnamed returns that
     /// refusal instead of the server. The denial is a deny entry for RD (list the folder, read the file) on Windows, or mode 0300 or
     /// 0200 on Linux and macOS. For the file whose attributes are withheld, where File.Exists answers false as it does where no file
     /// is, the denial is RD on the folder and RA (read attributes) on the file on Windows, and mode 0600 on the folder, which withholds
@@ -472,7 +472,7 @@ public sealed class TargetTests : IDisposable
         var file = Written(Path.Combine("locked", "dev.connection"), "Server=127.0.0.1,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted);
         var root = Estate(Dev(file));
 
-        var use = () => (SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root), Substrate.Unnamed(root, "localhost,11433", Resolver));
+        var use = () => (SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root), ScratchServer.Unnamed(root, "localhost,11433", Resolver));
         var (resolved, unnamed) = denied switch
         {
             "folder" => RefusalPaths.Denied(Path.Combine(scratch, "locked"), use),

@@ -66,7 +66,7 @@ public static class Profiles
             var root = posture.RootElement;
             return Literal(root, "") is { } at ? new Error("posture.literal-connection", Posture + " holds a literal connection string at " + at + ".",
                     "Move it into an environment variable or a file outside git, and write env:NAME or file:path at " + at + ".")
-                : (Unknown(root, "", ["environments", "substrate"]) ?? Missing(root, "", "environments"))
+                : (Unknown(root, "", ["environments", "scratchServer"]) ?? Missing(root, "", "environments"))
                     ?? Result.All(root.GetProperty("environments").EnumerateObject().Select((e, i) => EnvironmentAt(e.Name, e.Value, Place("environments", e.Name, i))))
                         .Map(environments => SortedArray.Of(environments));
         }
@@ -217,7 +217,7 @@ public static class Profiles
         ("environments" or "sqlcmd", JsonValueKind.Object) or ("sensitive", _) => null,
         ("environments", _) => Malformed(at, "an object of each environment by its name"),
         ("sqlcmd", _) => Malformed(at, "an object of SQLCMD values by variable name"),
-        ("substrate", _) => Text(key.Value) is "docker" or "localdb" ? null : Malformed(at, "docker or localdb"),
+        ("scratchServer", _) => Text(key.Value) is "docker" or "localdb" ? null : Malformed(at, "docker or localdb"),
         _ => key.Value.ValueKind == JsonValueKind.String ? null : Malformed(at, "a string"),
     };
 

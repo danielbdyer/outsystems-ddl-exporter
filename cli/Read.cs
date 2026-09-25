@@ -63,7 +63,7 @@ public static partial class Verbs
     });
 
     private static Result<Source> Modelled(Checkout here, SqlServer.Target target) => SqlServer.Resolve(target, here.Root).Bind(database =>
-        SqlServer.Model(database, SqlServer.QueryLog.Start(here.Root)).Map(elements => new Source(target, new Ssdt.ModelElements(elements, []), Substrate.Image(database), true)));
+        SqlServer.Model(database, SqlServer.QueryLog.Start(here.Root)).Map(elements => new Source(target, new Ssdt.ModelElements(elements, []), ScratchServer.Image(database), true)));
 
     /// <summary>The toolchain ledger's pin, which every verb that builds reads (R13), or the rejection of a committed engine outside its window.</summary>
     internal static Result<Pin> Pinned(Checkout here) => Io.Doctor.Toolchain(here.Root, Contract.Version)

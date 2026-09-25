@@ -14,7 +14,7 @@ using Xunit;
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// A disposable copy (V3_MILESTONES.md WP 1.4, §2.2's Substrate and SqlServer rows, law 3′): io/Substrate makes, registers and drops
+/// A disposable copy (V3_MILESTONES.md WP 1.4, §2.2's rows for io/ScratchServer.cs and io/SqlServer.cs, law 3′): io/ScratchServer makes, registers and drops
 /// it on the run's SQL Server; Publish writes to it; Model reads it back through LoadFromDatabase and Ssdt.Elements; and Plan of a package
 /// against its own published copy is empty. Model fingerprints are compared only between like sources: a package's keys with its
 /// copy's, and one copy's fingerprint with another's.
@@ -27,17 +27,17 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
 
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task Substrate_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row()
+    public async Task ScratchServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row()
     {
         var server = await SqlServerFixture.ServerAsync();
-        var copy = Made(Substrate.Create(root, server));
+        var copy = Made(ScratchServer.Create(root, server));
         try
         {
             Assert.Matches("^" + SqlServerFixture.DatabaseName(Environment.MachineName, Environment.ProcessId, "") + "[0-9a-f]{8}$", copy.Name);
             Assert.True(await SqlServerFixture.ExistsAsync(copy.Name), copy.Name + " was not created");
             var row = Assert.Single(Registry())!.AsObject();
             Assert.Equal(["created", "host", "name", "pid", "server"], row.Select(p => p.Key).Order(StringComparer.Ordinal));
-            Assert.Equal((copy.Name, Environment.ProcessId, Made(Substrate.ServerName(server))), ((string)row["name"]!, (int)row["pid"]!, (string)row["server"]!));
+            Assert.Equal((copy.Name, Environment.ProcessId, Made(ScratchServer.ServerName(server))), ((string)row["name"]!, (int)row["pid"]!, (string)row["server"]!));
             var registry = File.ReadAllText(Path.Combine(root, ".estate", "copies.json"));
             Assert.All(new[] { new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(server).Password }.Where(password => password.Length > 0), password => Assert.DoesNotContain(password, registry, StringComparison.Ordinal));
             Assert.Equal(TimeSpan.Zero, DateTimeOffset.Parse((string)row["created"]!, System.Globalization.CultureInfo.InvariantCulture).Offset);
@@ -45,7 +45,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
         }
         finally
         {
-            Made(Substrate.Drop(copy));
+            Made(ScratchServer.Drop(copy));
         }
 
         Assert.False(await SqlServerFixture.ExistsAsync(copy.Name), copy.Name + " outlived Drop");
@@ -65,7 +65,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
     public async Task A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint()
     {
         var strict = Made(Profiles.Load(ground.Profile));
-        var (one, two) = (Made(Substrate.Create(root, await SqlServerFixture.ServerAsync())), Made(Substrate.Create(root, await SqlServerFixture.ServerAsync())));
+        var (one, two) = (Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync())), Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync())));
         try
         {
             Made(one.Publish(ground.Base, strict));
@@ -83,8 +83,8 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
         }
         finally
         {
-            Made(Substrate.Drop(one));
-            Made(Substrate.Drop(two));
+            Made(ScratchServer.Drop(one));
+            Made(ScratchServer.Drop(two));
         }
     }
 
@@ -95,7 +95,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
     public async Task The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not()
     {
         var strict = Made(Profiles.Load(ground.Profile));
-        var copy = Made(Substrate.Create(root, await SqlServerFixture.ServerAsync()));
+        var copy = Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync()));
         try
         {
             Made(copy.Publish(ground.Base, strict));
@@ -110,7 +110,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
         }
         finally
         {
-            Made(Substrate.Drop(copy));
+            Made(ScratchServer.Drop(copy));
         }
     }
 
@@ -127,7 +127,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
     public async Task A_publish_the_guard_stops_is_server_failed_by_Msg_50000_quoting_DacFx_s_errors_and_not_its_informational_messages()
     {
         var strict = Made(Profiles.Load(ground.Profile));
-        var copy = Made(Substrate.Create(root, await SqlServerFixture.ServerAsync()));
+        var copy = Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync()));
         try
         {
             Made(copy.Publish(ground.Base, strict));
@@ -143,7 +143,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
         }
         finally
         {
-            Made(Substrate.Drop(copy));
+            Made(ScratchServer.Drop(copy));
         }
     }
 

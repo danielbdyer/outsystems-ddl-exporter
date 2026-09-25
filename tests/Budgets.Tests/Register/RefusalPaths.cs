@@ -19,8 +19,8 @@ namespace Estate.Budgets.Tests.Register;
 /// (<see cref="Case.Plants"/>) and searches what comes back. A driver writes only under the scratch folder it is given, one per
 /// case, and leaves it deletable. The kernel's schema errors, io/Ssdt's and io/Git's quote what they reject, a name, a
 /// version, a path, a ref or a branch, and plant nothing. io/Git's are reached in a repository made under the scratch folder.
-/// io/SqlServer's and io/Substrate's reach no server: each is an error before anything connects, and a SQL Server or DacFx error reaches
-/// its code through Database.ErrorOf, the one door every failure against a server passes through. The substrate's own choice
+/// io/SqlServer's and io/ScratchServer's reach no server: each is an error before anything connects, and a SQL Server or DacFx error reaches
+/// its code through Database.ErrorOf, the one door every failure against a server passes through. The scratch server's own choice
 /// and Create on a given server are io's alone, so R15 is reached through copy: and a planted registry row. The cli's reject
 /// arguments, through Contract.Flags and estate check's own answer.
 /// </summary>
@@ -132,8 +132,8 @@ internal static class RefusalPaths
         new("a connection that is no reference", "reference.malformed", true, (scratch, planted) => Posture(scratch, Dev(connection: "env:" + planted))),
         new("a file reference that is a connection string", "reference.malformed", true, (_, planted) =>
             Failed(SecretReference.Of("--connection", "file:Server=db;User ID=sa;Password=" + planted))),
-        new("a substrate that is neither docker nor localdb", "posture.malformed", true, (scratch, planted) =>
-            Failed(Profiles.Environments(Estate(scratch, "{ \"environments\": {}, \"substrate\": " + Quoted(planted) + " }")))),
+        new("a scratch server that is neither docker nor localdb", "posture.malformed", true, (scratch, planted) =>
+            Failed(Profiles.Environments(Estate(scratch, "{ \"environments\": {}, \"scratchServer\": " + Quoted(planted) + " }")))),
         new("an environment misnamed", "posture.environment-name", true, (scratch, planted) => Posture(scratch, Dev("\"cohorts\": [" + Quoted(planted) + "]", name: "DEV"))),
         new("a cohort given twice", "posture.cohort", true, (scratch, planted) => Posture(scratch, Dev("\"cohorts\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
         new("a profile path outside the estate", "posture.profile-path", true, (scratch, planted) => Posture(scratch, Dev(profile: "../" + planted + ".publish.xml"))),
@@ -236,9 +236,9 @@ internal static class RefusalPaths
             Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted))))))))),
         new("a copy beside an environment whose connection SqlClient cannot read", "connection.malformed", true, (scratch, planted) => Failed(SqlServer.Resolve(Target("copy:" + Copied),
             Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Nonsense " + planted + " = 1"))))))))),
-        new("no substrate server anywhere", "substrate.missing", false, (scratch, _) => Failed(Substrate.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
-        new("a substrate server SqlClient cannot read", "substrate.missing", true, (scratch, planted) =>
-            Failed(Substrate.ServerName("Server=db;Password=" + planted + ";Nonsense " + planted + " = 1", Path.Combine(scratch, "no-sql.env"), localDb: false))),
+        new("no scratch server server anywhere", "scratch-server.missing", false, (scratch, _) => Failed(ScratchServer.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
+        new("a scratch server server SqlClient cannot read", "scratch-server.missing", true, (scratch, planted) =>
+            Failed(ScratchServer.ServerName("Server=db;Password=" + planted + ";Nonsense " + planted + " = 1", Path.Combine(scratch, "no-sql.env"), localDb: false))),
         new("a named environment's login denied", "server.denied", true, (scratch, planted) => DevDatabase(scratch).ErrorOf(18456, "Login failed for user '" + planted + "'.")),
         new("a named environment that does not answer", "server.unreachable", true, (scratch, planted) =>
             DevDatabase(scratch).ErrorOf(53, "A network-related or instance-specific error occurred while establishing a connection to " + planted + ".")),
@@ -283,7 +283,7 @@ internal static class RefusalPaths
 
     private static SqlServer.Target Target(string text) => Made(SqlServer.Target.Parse(text));
 
-    /// <summary>The estate's root with .estate/copies.json holding <see cref="Copied"/>, as io/Substrate writes a row, so copy: reaches R15 without a server.</summary>
+    /// <summary>The estate's root with .estate/copies.json holding <see cref="Copied"/>, as io/ScratchServer writes a row, so copy: reaches R15 without a server.</summary>
     private static string Registered(string root)
     {
         Directory.CreateDirectory(Path.Combine(root, ".estate"));

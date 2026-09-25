@@ -14,12 +14,12 @@ namespace Estate.Io;
 
 /// <summary>
 /// Can this machine do the work, read-only (V3_ARCHITECTURE.md §8.12): the .NET SDK in the band global.json names and the runtime;
-/// the committed tool folder and its DacFx against the estate's toolchain ledger; the build route; a substrate (Docker answering, or
+/// the committed tool folder and its DacFx against the estate's toolchain ledger; the build route; a scratch server (Docker answering, or
 /// LocalDB) and the pinned SQL Server image; and Git LFS. Each item missing carries its remedy.
 /// </summary>
 public static class Doctor
 {
-    /// <summary>The substrate's image, pinned by tag and digest (§1 fact 12); ci/sql.sh and ci/sql.ps1 run the same one.</summary>
+    /// <summary>The scratch server's image, pinned by tag and digest (§1 fact 12); ci/sql.sh and ci/sql.ps1 run the same one.</summary>
     public const string SqlServerImage = "mcr.microsoft.com/mssql/server:2022-latest@sha256:4402d880dd4c34bfa7d8705e56a86cd6c88da80a1f6bbbe741f999e76264a090";
 
     /// <summary>The toolchain ledger, from the estate's root: one dated row per estate version, with the pinned engine or UNPINNED.</summary>
@@ -58,7 +58,7 @@ public static class Doctor
             sdk, new("runtime", Environment.Version.ToString(), null), tool, Committed(Profiles.Root(workingDirectory), version),
             sdk.Remedy is null && tool.Remedy is null ? new("build", "dotnet with the tool folder's targets", null)
                 : new("build", "none", "install what the sdk and tool items name; then estate doctor"),
-            Substrate(docker, run), Image(docker, run),
+            ScratchServerCheck(docker, run), Image(docker, run),
             lfs is null ? new("lfs", "absent", "install Git LFS, then run git lfs install; the estate's evidence needs it from M5") : new("lfs", lfs, null),
         ];
     }
@@ -133,10 +133,10 @@ public static class Doctor
             : new("tool", "not a published tool folder (" + string.Join(", ", absent.Select(Path.GetFileName)) + " absent)", "ci/publish.sh, or ci/publish.ps1 on Windows, publishes dist/estate/; run estate from there");
     }
 
-    private static Check Substrate(string? docker, Command run) =>
-        docker is not null ? new("substrate", "docker " + docker, null)
-        : run("sqllocaldb", ["info"]) is (0, _) ? new("substrate", "localdb, CDC not provable here", null)
-        : new("substrate", "none: Docker does not answer and LocalDB is absent", "start Docker until docker info answers; where Docker cannot run, install SQL Server Express LocalDB");
+    private static Check ScratchServerCheck(string? docker, Command run) =>
+        docker is not null ? new("scratch-server", "docker " + docker, null)
+        : run("sqllocaldb", ["info"]) is (0, _) ? new("scratch-server", "localdb, CDC not provable here", null)
+        : new("scratch-server", "none: Docker does not answer and LocalDB is absent", "start Docker until docker info answers; where Docker cannot run, install SQL Server Express LocalDB");
 
     private static Check Image(string? docker, Command run) =>
         docker is null ? new("image", "not needed without Docker", null)

@@ -1,5 +1,5 @@
 {
-  "substrate": "docker",
+  "scratchServer": "docker",
   "environments": {
     "dev": {
       "classification": "synthetic",

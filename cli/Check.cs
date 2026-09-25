@@ -54,7 +54,7 @@ public static partial class Verbs
             return Contract.Failed(verb, error, stamp);
         }
 
-        stamp = Stamped(Substrate.Image(drift.Database), stamp.Pin);
+        stamp = Stamped(ScratchServer.Image(drift.Database), stamp.Pin);
         var log = SqlServer.QueryLog.Start(here.Root);
         var at = drift.Flags["--at"];
         if (SqlServer.Reach(drift.Database, log).Bind(_ => Built(here, at, drift.Flags.GetValueOrDefault("--project"))).Bind(built => Packaged(built.Dacpac)

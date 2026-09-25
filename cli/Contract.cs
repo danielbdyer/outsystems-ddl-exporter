@@ -55,7 +55,7 @@ public static class Contract
 
     public static readonly IReadOnlyList<Verb> Verbs =
     [
-        new("doctor", "Can this machine do the work: the SDK and runtime, the tool and its DacFx against the toolchain ledger, the build route, the substrate, Git LFS. estate doctor",
+        new("doctor", "Can this machine do the work: the SDK and runtime, the tool and its DacFx against the toolchain ledger, the build route, the scratch server, Git LFS. estate doctor",
             1, Cli.Verbs.Doctor, Cli.Verbs.DoctorContent),
         new("read", "What a schema is, from a ref, a package or a database, read whole, with its fingerprint. estate read --from <target> [--project <path>]",
             1, Cli.Verbs.Read, Cli.Verbs.ReadContent),
@@ -80,7 +80,7 @@ public static class Contract
         new(1, "bad-arguments", "Bad arguments: an unknown verb, flag or value.", "estate --help", false),
         new(2, "unparsed-input", "An input could not be parsed: a schema, a configuration file or a project.", "the file and line the finding names", true),
         new(3, "blocked", "Blocked by the data, a finding and not a failure: kind guard, the publish guard refused because the table has rows; or kind violation, the engine refused the change on existing rows (Msg 547, Msg 2628).", "the site the finding names: the operation's two-release shape, or the rows it counts", false),
-        new(4, "unreachable", "The target is unreachable: no substrate, or SQL Server, Docker or LocalDB not answering.", "estate doctor; estate twin up", true),
+        new(4, "unreachable", "The target is unreachable: no scratch server, or SQL Server, Docker or LocalDB not answering.", "estate doctor; estate twin up", true),
         new(5, "differs", "Divergence found: the target differs from the repository; the findings name each differing object.", "the objects the findings name", false),
         new(6, "configuration-refused", "The environment or configuration is refused: the .NET SDK missing, an unknown key, a literal credential, an engine outside the pinned window, a verb this build does not have yet, a failure DacFx reports with no SQL Server error inside (dacfx.failed), or a defect in estate itself (internal.unexpected, internal.unmapped-category).", "estate doctor, or the file or milestone the finding names", true),
         new(7, "build-failed", "The build failed; the findings carry the build's errors.", "the file and error the finding names", false),
@@ -97,7 +97,7 @@ public static class Contract
     /// configuration (exit 6), whether io or the kernel finds the error, and so is a failure DacFx reports with no SQL Server error
     /// inside it, such as a package whose target platform the server is not. A target of no known form is a bad argument, as is a flag
     /// the verb does not take; a server that does not answer or refuses the identity is exit 4; a copy the registry does not hold, a
-    /// substrate on a named host, and a probe the allowlist refuses are refused by name.
+    /// scratch server on a named host, and a probe the allowlist refuses are refused by name.
     /// </summary>
     public static readonly IReadOnlyDictionary<string, int> ExitByCategory = new Dictionary<string, int>(StringComparer.Ordinal)
     {
@@ -114,7 +114,7 @@ public static class Contract
         ["change"] = 2,
         ["origin"] = 4,
         ["server"] = 4,
-        ["substrate"] = 4,
+        ["scratch-server"] = 4,
         ["git"] = 6,
         ["sdk"] = 6,
         ["tool"] = 6,

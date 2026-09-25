@@ -19,10 +19,10 @@ Whether each is green is the CI run's to say. A law without a green test is not 
 | 3′ the read is complete | The fingerprint of a model is independent of the order its elements are given in | `Estate.Kernel.Tests.ElementTests.The_fingerprint_of_a_model_is_independent_of_the_order_its_elements_are_given_in` |
 | 3′ the read is complete | Two models fingerprint equally exactly when their elements are equal | `Estate.Kernel.Tests.ElementTests.Two_models_fingerprint_equally_exactly_when_their_elements_are_equal` |
 | a named environment cannot be written | No verb writes to a named environment | `Estate.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |
-| a named environment cannot be written | Nothing but Substrate makes a Copy | `Estate.Io.Tests.CapabilityTests.Nothing_but_Substrate_makes_a_Copy` |
+| a named environment cannot be written | Nothing but ScratchServer makes a Copy | `Estate.Io.Tests.CapabilityTests.Nothing_but_ScratchServer_makes_a_Copy` |
 | a named environment cannot be written | Permissive never reaches an environment | `Estate.Io.Tests.CapabilityTests.Permissive_never_reaches_an_environment` |
 | a named environment cannot be written | A copy the registry does not hold is exit 9 | `Estate.Io.Tests.TargetTests.A_copy_the_registry_does_not_hold_is_exit_9` |
-| a named environment cannot be written | A substrate on a host an environment's reference names is exit 9 | `Estate.Io.Tests.TargetTests.A_substrate_on_a_host_an_environment_s_reference_names_is_exit_9` |
+| a named environment cannot be written | A scratch server on a host an environment's reference names is exit 9 | `Estate.Io.Tests.TargetTests.A_scratch_server_on_a_host_an_environment_s_reference_names_is_exit_9` |
 | dependencies point one way | Io does not depend on the cli and the kernel on neither | `Estate.Budgets.Tests.DependenciesPointOneWay.Io_does_not_depend_on_the_cli_and_the_kernel_on_neither` |
 | dependencies point one way | No project reaches into the knowledge files or ci | `Estate.Budgets.Tests.DependenciesPointOneWay.No_project_reaches_into_the_knowledge_files_or_ci` |
 | the kernel cannot do I/O | Each banned symbol planted in the kernel is a build error | `Estate.Budgets.Tests.BannedSymbolsTests.Each_banned_symbol_planted_in_the_kernel_is_a_build_error` |

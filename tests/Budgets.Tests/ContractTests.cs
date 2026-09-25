@@ -196,7 +196,7 @@ public sealed class ContractTests
 
     /// <summary>
     /// VALUES.md X2 at the top-level catch, for M2's predict and M6's check environments, which read environments without an env: argument:
-    /// a verb that resolves env:dev (through Named.Of) or a copy (through R15's read of dev's connection in io/Substrate) and then throws has
+    /// a verb that resolves env:dev (through Named.Of) or a copy (through R15's read of dev's connection in io/ScratchServer) and then throws has
     /// its exception's message withheld, its type alone printed; one that resolves a git ref reads no environment and keeps the message.
     /// </summary>
     [Theory]
@@ -421,7 +421,7 @@ public sealed class ContractTests
             Assert.Contains(" | dacfx=" + Doctor.DacFx + " (UNPINNED) | ", line, StringComparison.Ordinal);
             Assert.DoesNotContain("M1", line, StringComparison.Ordinal);
             var findings = json["findings"]!.AsArray().Select(f => ((string)f!["code"]!, (string)f["severity"]!, (string?)f["remedy"])).ToList();
-            Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.substrate", "doctor.lfs"], findings.Select(f => f.Item1));
+            Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.scratch-server", "doctor.lfs"], findings.Select(f => f.Item1));
             Assert.Equal(checks.Where(c => c.Remedy is not null).Select(c => c.Remedy), findings.Select(f => f.Item3));
             Assert.All(findings, f => Assert.Equal("block", f.Item2));
             Assert.Equal(checks.Select(c => c.Item), json["checks"]!.AsArray().Select(c => (string)c!["item"]!));
@@ -432,7 +432,7 @@ public sealed class ContractTests
         }
     }
 
-    /// <summary>WP 1.7's doctor with every item present: READY and exit 0, naming the SDK and runtime, the tool and its DacFx against the ledger, the build route, the substrate and LFS.</summary>
+    /// <summary>WP 1.7's doctor with every item present: READY and exit 0, naming the SDK and runtime, the tool and its DacFx against the ledger, the build route, the scratch server and LFS.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Doctor_with_every_item_present_prints_READY_and_exits_0()
@@ -462,7 +462,7 @@ public sealed class ContractTests
             AssertValid("estate.doctor.1.schema.json", json);
             Assert.Equal((0, "ready"), (answer.Exit, answer.Verdict.Outcome));
             Assert.Equal("estate doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx=" + Doctor.DacFx + " (UNPINNED) | build=dotnet with the tool folder's targets"
-                + " | substrate=docker 29.5.3 | image=present | lfs=git-lfs/3.4.0", answer.Verdict.Message);
+                + " | scratch-server=docker 29.5.3 | image=present | lfs=git-lfs/3.4.0", answer.Verdict.Message);
             Assert.Empty(answer.Findings);
             Assert.Equal(("170.5.96", Doctor.ImageDigest, "UNPINNED"), ((string?)json["engine"]!["dacfx"], (string?)json["engine"]!["sqlserver"], (string?)json["engine"]!["pin"]));
         }

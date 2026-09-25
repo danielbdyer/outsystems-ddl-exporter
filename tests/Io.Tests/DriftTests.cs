@@ -88,7 +88,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         }
         finally
         {
-            GitTests.Ok(Substrate.Drop(copy));
+            GitTests.Ok(ScratchServer.Drop(copy));
         }
     }
 
@@ -109,7 +109,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             ScratchEstate.Valid("estate.check.1.schema.json", answer);
             Assert.Equal(0, exit);
             var receipt = answer["receipt"]!;
-            var container = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ESTATE_SQL")) && File.Exists(Substrate.SqlEnv);
+            var container = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ESTATE_SQL")) && File.Exists(ScratchServer.SqlEnv);
             Assert.Equal(("170.5.96", container ? Doctor.ImageDigest : null, "UNPINNED"),
                 ((string?)receipt["engine"]!["dacfx"], (string?)receipt["engine"]!["sqlserver"], (string?)receipt["engine"]!["pin"]));
             Assert.Equal(("copy:" + copy.Name, "dataFacts", estate.Base), ((string?)receipt["where"], (string?)receipt["lacking"], (string?)answer["check"]!["commit"]));
@@ -120,7 +120,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         }
         finally
         {
-            GitTests.Ok(Substrate.Drop(copy));
+            GitTests.Ok(ScratchServer.Drop(copy));
         }
     }
 
@@ -276,10 +276,10 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         return (string)(await command.ExecuteScalarAsync())!;
     }
 
-    /// <summary>A fresh copy on the run's substrate, registered under the estate's root, with the golden project published to it under the pipeline's profile.</summary>
+    /// <summary>A fresh copy on the run's scratch server, registered under the estate's root, with the golden project published to it under the pipeline's profile.</summary>
     private async Task<SqlServer.Copy> Published()
     {
-        var copy = GitTests.Ok(Substrate.Create(estate.Root, await SqlServerFixture.ServerAsync()));
+        var copy = GitTests.Ok(ScratchServer.Create(estate.Root, await SqlServerFixture.ServerAsync()));
         var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "project/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
         GitTests.Ok(copy.Publish(dacpac, GitTests.Ok(Profiles.Load(Path.Combine(estate.Root, ScratchEstate.Profile)))));
         return copy;

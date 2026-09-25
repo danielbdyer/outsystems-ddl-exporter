@@ -108,7 +108,7 @@ public sealed class ProfilesTests : IDisposable
         Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
     }
 
-    /// <summary>§4 row 14: beside its environments, the posture holds the substrate preference, docker or localdb and nothing else.</summary>
+    /// <summary>§4 row 14: beside its environments, the posture holds the scratch server preference, docker or localdb and nothing else.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("\"docker\"", null)]
@@ -116,8 +116,8 @@ public sealed class ProfilesTests : IDisposable
     [InlineData("\"Docker\"", "posture.malformed")]
     [InlineData("\"podman\"", "posture.malformed")]
     [InlineData("true", "posture.malformed")]
-    public void The_substrate_preference_is_docker_or_localdb(string substrate, string? code) =>
-        Assert.Equal(code, Profiles.Environments(Estate("{ \"environments\": {}, \"substrate\": " + substrate + " }", raw: true)).Match<string?>(_ => null, r => r.Code));
+    public void The_scratch_server_preference_is_docker_or_localdb(string preference, string? code) =>
+        Assert.Equal(code, Profiles.Environments(Estate("{ \"environments\": {}, \"scratchServer\": " + preference + " }", raw: true)).Match<string?>(_ => null, r => r.Code));
 
     [Theory]
     [Trait("Category", "fast")]
