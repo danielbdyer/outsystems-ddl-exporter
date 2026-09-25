@@ -31,7 +31,7 @@ public static class Doctor
     /// <summary>A program's exit code and output, or null when it is not installed or does not answer in time.</summary>
     public delegate (int Exit, string Output)? Command(string file, IReadOnlyList<string> arguments);
 
-    /// <summary>The files a published tool folder holds beside estate: DacFx's SqlTasks targets and the reference stub.</summary>
+    /// <summary>The files a published tool folder holds beside estate: DacFx's SqlTasks targets and the reference assemblies (mscorlib.dll and FrameworkList.xml).</summary>
     private static readonly string[] Published = ["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"];
 
     /// <summary>A ledger row: | date | estate version | pinned DacFx or UNPINNED | the release before the pin, or — |.</summary>

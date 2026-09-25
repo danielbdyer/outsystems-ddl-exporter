@@ -107,7 +107,7 @@ public static class Ssdt
 
     /// <summary>
     /// Builds a classic .sqlproj as §1 fact 1 does, with the SDK that dotnet --list-sdks, through run, lists: dotnet build against the tool folder's targets
-    /// and reference stub, telemetry off, its output and intermediate files under outputRoot/&lt;the inputs' fingerprint&gt;/, or
+    /// and reference assemblies, telemetry off, its output and intermediate files under outputRoot/&lt;the inputs' fingerprint&gt;/, or
     /// under outputRoot/&lt;commit&gt;/ for a ref's worktree, so nothing is written beside the project and two refs never share a
     /// folder. A missing SDK band or tool folder is an error before anything builds.
     /// </summary>

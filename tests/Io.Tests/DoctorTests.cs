@@ -145,7 +145,7 @@ public sealed class DoctorTests : IDisposable
         Assert.All(["sql.sh", "sql.ps1"], script => Assert.Contains(Doctor.SqlServerImage, File.ReadAllText(Path.Combine(Repository.Root, "ci", script)), StringComparison.Ordinal));
     }
 
-    /// <summary>The files a published tool folder holds beside estate: the SqlTasks targets and the reference stub.</summary>
+    /// <summary>The files a published tool folder holds beside estate: the SqlTasks targets and the reference assemblies.</summary>
     private void Publish()
     {
         foreach (var file in (string[])["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"])
