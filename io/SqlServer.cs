@@ -111,7 +111,7 @@ public static class SqlServer
         /// The refusal a SqlClient or DacFx failure against a target takes. With a SqlException inside, by its number, a severity of 20 or
         /// more being a connection lost. With none, DacFx's own failure: when its texts quote a SQL Server number (Msg 50000, the guard;
         /// Msg 2627 inside SQL72014), by that number, since SQL Server's words, which can quote a row, are inside; else dacfx.failed,
-        /// quoting what each exception of the chain and each DacFx message says (SQL72045: …), kept for a named environment too. Any
+        /// quoting what each exception of the chain says, DacFx's messages (SQL71501: …) among it, kept for a named environment too. Any
         /// other failure is refused with no number.
         /// </summary>
         public Refusal Refused(Exception failure)
@@ -133,19 +133,12 @@ public static class SqlServer
 
         private static readonly Regex SqlServerNumber = new(@"\bMsg (\d+)", RegexOptions.CultureInvariant);
 
-        /// <summary>What one exception of a DacFx failure says, on one line: its message, then each DacFx message as its code and text, where the message does not already carry it.</summary>
-        private static IEnumerable<string> Said(Exception x)
-        {
-            var messages = x switch
-            {
-                DacServicesException d => d.Messages.Select(m => (m.Prefix, m.Number, m.Message)),
-                DacModelException d => d.Messages.Select(m => (m.Prefix, m.Number, m.Message)),
-                _ => [],
-            };
-            return [.. ((string[])[x.Message, .. messages.Where(m => !x.Message.Contains(m.Message, StringComparison.Ordinal))
-                    .Select(m => m.Prefix + m.Number.ToString(CultureInfo.InvariantCulture) + ": " + m.Message)])
-                .Select(text => Regex.Replace(text, @"\s*\n\s*", " ", RegexOptions.CultureInvariant).Trim()).Where(text => text.Length > 0)];
-        }
+        /// <summary>
+        /// What one exception of a DacFx failure says, on one line. DacFx writes each of its messages into the exception's Message as
+        /// "Error SQL71501: …" where it has any (BuildPackage's SQL71501, AddObjects' SQL46010), so Message alone is quoted.
+        /// </summary>
+        private static IEnumerable<string> Said(Exception x) =>
+            Regex.Replace(x.Message, @"\s*\n\s*", " ", RegexOptions.CultureInvariant).Trim() is { Length: > 0 } text ? [text] : [];
 
         internal Refusal Refused(int number, string message, bool fatal)
         {
@@ -428,9 +421,10 @@ public static class SqlServer
         return connection.ConnectionString;
     }
 
-    /// <summary>What a reference names: the variable's value, or the file's text trimmed; null when there is none.</summary>
+    /// <summary>What a reference names: the variable's value, or the file's text trimmed; null when there is none. The attempt is recorded in the run's Reads.</summary>
     internal static string? Read(SecretReference reference, string estateRoot)
     {
+        Reads.Record();
         try
         {
             return reference.Match(
@@ -440,6 +434,45 @@ public static class SqlServer
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Whether this run has read a connection or other reference of a named environment (VALUES.md X2), whose text an exception's message
+    /// can then quote. SqlServer.Read records each read, and every one goes through it: Named.Of, which SqlServer.Resolve calls for env:;
+    /// R15's read of each environment's connection in io/Substrate, which copy: and a new copy run; and a named environment's SQLCMD values.
+    /// cli/Program.cs begins a run around each command and withholds an unexpected exception's message when the run holds a read. The
+    /// record reaches the threads the run's work starts (it is an AsyncLocal); a read outside any run is recorded nowhere, no catch
+    /// reading it.
+    /// </summary>
+    public static class Reads
+    {
+        private static readonly AsyncLocal<Run?> Current = new();
+
+        /// <summary>A run begun on this thread, the current one until it is disposed, when the run it began inside is current again.</summary>
+        public static Run Begin() => Current.Value = new Run(Current.Value);
+
+        internal static void Record() => Current.Value?.Record();
+
+        /// <summary>One command's record: whether it has read a named environment's reference.</summary>
+        public sealed class Run : IDisposable
+        {
+            private readonly Run? outer;
+            private int read;
+
+            internal Run(Run? outer) => this.outer = outer;
+
+            /// <summary>Whether a named environment's connection or other reference was read while this run was current.</summary>
+            public bool NamedEnvironment => Volatile.Read(ref read) == 1;
+
+            /// <summary>Recorded here and in each run this one began inside.</summary>
+            internal void Record()
+            {
+                Interlocked.Exchange(ref read, 1);
+                outer?.Record();
+            }
+
+            public void Dispose() => Current.Value = outer;
         }
     }
 

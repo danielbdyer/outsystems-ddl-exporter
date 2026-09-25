@@ -137,7 +137,7 @@ public sealed class ContractTests
 
     /// <summary>
     /// An exception no verb expected answers with an envelope: exit 6, one finding internal.unexpected naming the exception's type, and its
-    /// message kept when the command names no env: or copy: target. A checkout with no working directory makes read throw ArgumentNullException.
+    /// message kept when the command read no named environment. A checkout with no working directory makes read throw ArgumentNullException.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -153,22 +153,135 @@ public sealed class ContractTests
     }
 
     /// <summary>
-    /// VALUES.md X2 at the top-level catch: when the command names an env: or a copy: target, whose resolution reads a named environment's
-    /// connection, the exception's message is withheld and its type alone is printed. A checkout with no root makes check drift throw.
+    /// The withholding rule is keyed to what the run read, not to how the arguments are spelled: check drift naming env:dev or a copy, in a
+    /// checkout with no root, throws ArgumentNullException before it reads any environment's connection, so the message is estate's own and
+    /// is kept.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("env:dev")]
     [InlineData("copy:estate_host_1_0a1b2c3d")]
-    public void An_unexpected_exception_withholds_its_message_when_the_command_names_a_database(string target)
+    public void An_unexpected_exception_keeps_its_message_when_the_command_names_a_database_but_read_no_environment(string target)
     {
         var (exit, answer) = Answered(["check", "drift", "--target", target, "--at", "main", "--json"], new Checkout(null!, Repository.Root, null));
 
         Assert.Equal(6, exit);
         AssertValid("estate.check.1.schema.json", answer);
         var message = (string)Assert.Single(answer["findings"]!.AsArray())!["message"]!;
-        Assert.Contains("ArgumentNullException", message, StringComparison.Ordinal);
-        Assert.DoesNotContain("Value cannot be null", answer.ToJsonString(), StringComparison.Ordinal);
+        Assert.Contains("ArgumentNullException: Value cannot be null.", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// VALUES.md X2 at the top-level catch, for M2's predict and M6's check environments, which read environments without an env: argument:
+    /// a verb that resolves env:dev (through Named.Of) or a copy (through R15's read of dev's connection in io/Substrate) and then throws has
+    /// its exception's message withheld, its type alone printed; one that resolves a git ref reads no environment and keeps the message.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("env:dev", true)]
+    [InlineData("copy:estate_host_1_0a1b2c3d", true)]
+    [InlineData("ref:main", false)]
+    public void An_unexpected_exception_withholds_its_message_when_the_run_read_a_named_environment_with_no_env_argument(string target, bool withheld)
+    {
+        const string Planted = "Server=tcp:192.0.2.10,1433;Password=Pa55!planted#7f3a";
+        var root = Directory.CreateTempSubdirectory("estate-withheld-").FullName;
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "estate"));
+            Directory.CreateDirectory(Path.Combine(root, ".estate"));
+            File.WriteAllText(Path.Combine(root, "dev.connection"), "Server=tcp:192.0.2.10,1433;Initial Catalog=Estate;User ID=estate;Password=Pa55!planted#7f3a");
+            File.WriteAllText(Path.Combine(root, "estate", "posture.json"),
+                "{ \"environments\": { \"dev\": { \"connection\": \"file:dev.connection\", \"profile\": \"estate/profiles/pipeline.publish.xml\" } } }");
+            File.WriteAllText(Path.Combine(root, ".estate", "copies.json"),
+                "{ \"copies\": [ { \"name\": \"estate_host_1_0a1b2c3d\", \"server\": \"localhost,11433\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-25T00:00:00Z\" } ] }");
+            var check = Contract.Verbs.Single(v => v.Name == "check") with
+            {
+                Body = (here, _) =>
+                {
+                    SqlServer.Target.Parse(target).Bind(parsed => SqlServer.Resolve(parsed, here.Root));
+                    throw new InvalidOperationException(Planted);
+                },
+            };
+
+            using var output = new MemoryStream();
+            var exit = Cli.Program.Run(["check", "environments", "--json"], output, () => new Checkout(root, root, null), [check]);
+            var answer = JsonNode.Parse(output.ToArray())!;
+
+            Assert.Equal(6, exit);
+            AssertValid("estate.check.1.schema.json", answer);
+            var message = (string)Assert.Single(answer["findings"]!.AsArray())!["message"]!;
+            Assert.Contains("InvalidOperationException", message, StringComparison.Ordinal);
+            Assert.Equal(withheld, !answer.ToJsonString().Contains("planted", StringComparison.Ordinal));
+            Assert.Equal(withheld, message.Contains("withheld", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The catch holds the whole command, not the verb's body alone: the checkout failing as Directory.GetCurrentDirectory does once the
+    /// working directory is removed (a swept .estate/worktrees/&lt;commit&gt;/) answers internal.unexpected at exit 6 with read's schema.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void An_exception_raised_before_the_verb_body_runs_answers_exit_6_with_an_envelope()
+    {
+        using var output = new MemoryStream();
+        var exit = Cli.Program.Run(["read", "--from", "dacpac:none.dacpac", "--json"], output,
+            () => throw new FileNotFoundException("The working directory was removed."), Contract.Verbs);
+        var answer = JsonNode.Parse(output.ToArray())!;
+
+        Assert.Equal(6, exit);
+        AssertValid("estate.read.1.schema.json", answer);
+        var finding = Assert.Single(answer["findings"]!.AsArray())!;
+        Assert.Equal("internal.unexpected", (string)finding["code"]!);
+        Assert.Contains("FileNotFoundException: The working directory was removed.", (string)finding["message"]!, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Writing the answer is inside the catch too: standard output refusing the first write gets the internal.unexpected answer naming the
+    /// IOException; refusing every write gets nothing, and estate still exits 6 rather than the verb's exit or an unhandled exception.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData(1)]
+    [InlineData(int.MaxValue)]
+    public void Standard_output_refusing_the_answer_exits_6(int refusedWrites)
+    {
+        using var output = new RefusingStream(refusedWrites);
+        var exit = Cli.Program.Run(["no-such-verb", "--json"], output, () => new Checkout(Repository.Root, Repository.Root, null), Contract.Verbs);
+
+        Assert.Equal(6, exit);
+        if (refusedWrites == 1)
+        {
+            var finding = Assert.Single(JsonNode.Parse(output.ToArray())!["findings"]!.AsArray())!;
+            Assert.Equal("internal.unexpected", (string)finding["code"]!);
+            Assert.Contains("IOException: The pipe is closed.", (string)finding["message"]!, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Equal(0, output.Length);
+        }
+    }
+
+    /// <summary>A stream that throws IOException on its first <paramref name="refused"/> writes, as standard output does once its reader has gone, and keeps what it accepts after.</summary>
+    private sealed class RefusingStream(int refused) : MemoryStream
+    {
+        private int refusals;
+
+        public override void Write(ReadOnlySpan<byte> buffer) => Write(buffer.ToArray(), 0, buffer.Length);
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            if (refusals++ < refused)
+            {
+                throw new IOException("The pipe is closed.");
+            }
+
+            base.Write(buffer, offset, count);
+        }
     }
 
     /// <summary>estate run in this process for the checkout given: its exit and its --json answer.</summary>
