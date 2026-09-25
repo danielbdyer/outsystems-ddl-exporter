@@ -1,7 +1,9 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -15,22 +17,67 @@ namespace Estate.Io.Tests;
 /// invocation, another agent in the same clone or the gate proving another branch is. Each step waits for a line on its
 /// standard input: it prints ready; takes the ref's worktree (Git.At) and prints it with the milliseconds At took; then,
 /// when a project is named, builds it there and prints the package. An error is printed as its code and message, exit 1.
+/// The other modes stand in for programs io runs: lock (a holder of a lock file until its input ends), flood (a program
+/// that fills both pipes), sleep and spawn (a program that outlives its timeout, and one that starts a child first),
+/// utf8 (UTF-8 on both streams), env and environment (what a child inherits), and telemetry (the opt-out before DacFx loads).
 /// </summary>
 internal static class EstateProcess
 {
-    /// <summary>Arguments: the repository and the ref; then, to build, the project from the repository's root, the tool folder and the build root.</summary>
+    /// <summary>Arguments: a mode and its argument; or the repository and the ref, then, to build, the project from the repository's root, the tool folder and the build root.</summary>
     public static int Main(string[] arguments)
     {
         Console.OutputEncoding = new UTF8Encoding(false);
-        Console.WriteLine("ready");
-        Console.ReadLine();
-        var clock = Stopwatch.StartNew();
-        var taken = Git.At(arguments[0], arguments[1]);
-        Console.WriteLine(taken.Match(at => at.Path + "\n" + clock.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture), error => Printed(error) + "\n-1"));
-        Console.ReadLine();
-        var built = taken.Bind(at => arguments.Length < 5 ? Result.Ok("") : Ssdt.Build(at, arguments[2], arguments[3], arguments[4]).Map(dacpac => dacpac.Path));
-        Console.WriteLine(built.Match(dacpac => dacpac, Printed));
-        return built is Result<string>.Ok ? 0 : 1;
+        switch (arguments)
+        {
+            case ["lock", var path]:
+                return FileLock.Take(path, TimeSpan.FromMinutes(1)).Match(held =>
+                {
+                    using (held)
+                    {
+                        Console.WriteLine("held");
+                        Console.ReadLine();   // until the input ends or the process is killed
+                    }
+
+                    return 0;
+                }, error => Printed(error).Length > 0 ? 1 : 1);
+            case ["flood", var count]:
+                Flood(int.Parse(count, CultureInfo.InvariantCulture));
+                return 0;
+            case ["sleep", var seconds]:
+                Console.WriteLine(Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+                Thread.Sleep(TimeSpan.FromSeconds(int.Parse(seconds, CultureInfo.InvariantCulture)));
+                return 0;
+            case ["spawn"]:
+                using (var child = Process.Start(new ProcessStartInfo("dotnet", [typeof(EstateProcess).Assembly.Location, "sleep", "60"]))!)
+                {
+                    Console.WriteLine(child.Id.ToString(CultureInfo.InvariantCulture));
+                    Console.Out.Flush();
+                    Thread.Sleep(TimeSpan.FromSeconds(60));
+                }
+
+                return 0;
+            case ["utf8"]:
+                Console.Write("Café-Ω\n");
+                Console.Error.Write("Café-Ω\n");
+                return 0;
+            case ["env", var name]:
+                Console.WriteLine(Environment.GetEnvironmentVariable(name) ?? "<unset>");
+                return 0;
+            case ["environment"]:
+                foreach (DictionaryEntry variable in Environment.GetEnvironmentVariables())
+                {
+                    Console.WriteLine(variable.Key + "=" + variable.Value);
+                }
+
+                return 0;
+            case ["telemetry"]:
+                _ = LocalState.UserSqlEnv;   // the first touch of an io type, and nothing has called Telemetry.OptOut
+                Console.WriteLine((Environment.GetEnvironmentVariable("DACFX_TELEMETRY_OPTOUT") ?? "<unset>") + " " + (Environment.GetEnvironmentVariable("DOTNET_CLI_TELEMETRY_OPTOUT") ?? "<unset>") + " "
+                    + (AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name!.StartsWith("Microsoft.SqlServer.Dac", StringComparison.Ordinal)) ? "dacfx-loaded" : "dacfx-not-loaded"));
+                return 0;
+            default:
+                return Estate(arguments);
+        }
     }
 
     /// <summary>
@@ -40,10 +87,7 @@ internal static class EstateProcess
     /// </summary>
     public static List<(Git.Worktree At, long Took, string Dacpac)> AtOnce(string repository, IReadOnlyList<string> references, long gap, params string[] build)
     {
-        var processes = references.Select(reference => Process.Start(new ProcessStartInfo("dotnet", [typeof(EstateProcess).Assembly.Location, repository, reference, .. build])
-        {
-            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8,
-        })!).Select(process => (Process: process, Errors: process.StandardError.ReadToEndAsync())).ToList();
+        var processes = references.Select(reference => Start([repository, reference, .. build])).Select(process => (Process: process, Errors: process.StandardError.ReadToEndAsync())).ToList();
         try
         {
             foreach (var (process, errors) in processes)
@@ -87,5 +131,48 @@ internal static class EstateProcess
         }
     }
 
-    private static string Printed(Error error) => error.Code + ": " + error.Message.ReplaceLineEndings(" ");
+    /// <summary>
+    /// This assembly started as a program with its input, output and errors redirected and its input kept open, for a test that
+    /// drives it line by line or holds it until it kills it; io's Command closes a program's input by design, so this stays a raw Process.
+    /// </summary>
+    public static Process Start(params string[] arguments) => Process.Start(new ProcessStartInfo("dotnet", [typeof(EstateProcess).Assembly.Location, .. arguments])
+    {
+        RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8,
+    })!;
+
+    private static int Estate(string[] arguments)
+    {
+        Console.WriteLine("ready");
+        Console.ReadLine();
+        var clock = Stopwatch.StartNew();
+        var taken = Git.At(arguments[0], arguments[1]);
+        Console.WriteLine(taken.Match(at => at.Path + "\n" + clock.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture), error => Printed(error) + "\n-1"));
+        Console.ReadLine();
+        var built = taken.Bind(at => arguments.Length < 5 ? Result.Ok("") : Ssdt.Build(at, arguments[2], arguments[3], arguments[4]).Map(dacpac => dacpac.Path));
+        Console.WriteLine(built.Match(dacpac => dacpac, Printed));
+        return built is Result<string>.Ok ? 0 : 1;
+    }
+
+    /// <summary>The count of 'o' on standard output and of 'e' on standard error, the two written at once, so a reader that takes one stream at a time stalls.</summary>
+    private static void Flood(int count)
+    {
+        var errors = new Thread(() =>
+        {
+            using var stream = Console.OpenStandardError();
+            stream.Write(Enumerable.Repeat((byte)'e', count).ToArray());
+        });
+        errors.Start();
+        using (var stream = Console.OpenStandardOutput())
+        {
+            stream.Write(Enumerable.Repeat((byte)'o', count).ToArray());
+        }
+
+        errors.Join();
+    }
+
+    private static string Printed(Error error)
+    {
+        Console.WriteLine(error.Code + ": " + error.Message.ReplaceLineEndings(" "));
+        return error.Code;
+    }
 }

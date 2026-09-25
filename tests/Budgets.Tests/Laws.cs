@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Estate.Io;
 using Xunit;
 
 namespace Estate.Budgets.Tests;
@@ -55,7 +55,7 @@ public sealed class Laws
         var output = Path.Combine(Path.GetTempPath(), "estate-laws-" + Guid.NewGuid().ToString("N") + ".md");
         try
         {
-            var (exit, log) = Run(file, [.. arguments, output.Replace('\\', '/')]);
+            var (exit, log) = Programs.InRepository(file, [.. arguments, output.Replace('\\', '/')]).Finish().Joined();
             Assert.True(exit == 0, file + " " + string.Join(' ', arguments) + " exited " + exit + ":\n" + log);
             return File.ReadAllBytes(output);
         }
@@ -66,37 +66,10 @@ public sealed class Laws
     }
 
     /// <summary>Git for Windows' bash, beside the git on the PATH: git --exec-path is &lt;git&gt;/mingw64/libexec/git-core, and bash is &lt;git&gt;/bin/bash.exe.</summary>
-    private static string? GitBash()
-    {
-        var (exit, path) = Run("git", ["--exec-path"]);
-        var bash = exit == 0 ? Path.GetFullPath(Path.Combine(path.Trim(), "..", "..", "..", "bin", "bash.exe")) : null;
-        return bash is not null && File.Exists(bash) ? bash : null;
-    }
+    private static string? GitBash() =>
+        Programs.InRepository("git", "--exec-path").Run() is Ran.Exited { Code: 0 } exited
+            && Path.GetFullPath(Path.Combine(exited.Output.Trim(), "..", "..", "..", "bin", "bash.exe")) is var bash && File.Exists(bash) ? bash : null;
 
-    private static bool Runs(string file, params string[] arguments)
-    {
-        try
-        {
-            return Run(file, arguments).Exit == 0;
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            return false;
-        }
-    }
-
-    private static (int Exit, string Output) Run(string file, IReadOnlyList<string> arguments)
-    {
-        var start = new ProcessStartInfo(file) { RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = Repository.Root };
-        foreach (var argument in arguments)
-        {
-            start.ArgumentList.Add(argument);
-        }
-
-        using var process = Process.Start(start)!;
-        var errors = process.StandardError.ReadToEndAsync();
-        var output = process.StandardOutput.ReadToEnd();
-        process.WaitForExit();
-        return (process.ExitCode, output + errors.Result);
-    }
+    /// <summary>Whether the program runs here: one that is not installed (Ran.NotFound) does not.</summary>
+    private static bool Runs(string file, params string[] arguments) => Programs.InRepository(file, arguments).Run() is Ran.Exited { Code: 0 };
 }

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Net;
+using Estate.Budgets.Tests;
 using Estate.Budgets.Tests.Register;
 using Estate.Cli;
 using Estate.Kernel;
@@ -681,14 +682,8 @@ public sealed class TargetTests : IDisposable
         }
 
         Directory.CreateDirectory(Path.Combine(root, ".estate"));
-        using var mklink = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", ["/c", "mklink", "/J", link, secrets])
-        {
-            RedirectStandardOutput = true, RedirectStandardError = true,
-        })!;
-        var errors = mklink.StandardError.ReadToEndAsync();
-        mklink.StandardOutput.ReadToEnd();
-        mklink.WaitForExit();
-        Assert.True(mklink.ExitCode == 0, "mklink /J exited " + mklink.ExitCode + ": " + errors.Result);
+        var mklink = new Command("cmd.exe", ["/c", "mklink", "/J", link, secrets], TimeSpan.FromMinutes(1)).Finish();
+        Assert.True(mklink.Code == 0, "mklink /J exited " + mklink.Code + ": " + mklink.Errors);
         return new Removal(() => Directory.Delete(link));
     }
 

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -62,7 +61,7 @@ public sealed class BannedSymbolsTests
             lines.AddRange(["    ];", "}", ""]);
             File.WriteAllText(Path.Combine(plant, "Planted.cs"), string.Join('\n', lines));
 
-            var (exit, output) = Run("dotnet", $"build \"{Path.Combine(plant, "kernel.csproj")}\" -nologo -v q -clp:NoSummary");
+            var (exit, output) = Programs.InRepository("dotnet", "build", Path.Combine(plant, "kernel.csproj"), "-nologo", "-v", "q", "-clp:NoSummary").Finish().Joined();
 
             Assert.NotEqual(0, exit);
             var errorLines = Regex.Matches(output, @"Planted\.cs\((\d+),\d+\): error RS0030")
@@ -79,21 +78,5 @@ public sealed class BannedSymbolsTests
         {
             Directory.Delete(plant, recursive: true);
         }
-    }
-
-    private static (int Exit, string Output) Run(string file, string arguments)
-    {
-        var start = new ProcessStartInfo(file, arguments)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            WorkingDirectory = Repository.Root,
-        };
-        start.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-        using var process = Process.Start(start)!;
-        var stdout = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEndAsync();
-        process.WaitForExit();
-        return (process.ExitCode, stdout.Result + stderr.Result);
     }
 }

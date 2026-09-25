@@ -1,11 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using Estate.Io;
 
 namespace Estate.Budgets.Tests;
 
@@ -75,27 +74,11 @@ internal static class Repository
 
     private static IReadOnlyList<string> ListFiles()
     {
-        var start = new ProcessStartInfo("git")
+        var output = new Command("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], TimeSpan.FromMinutes(10)) { Directory = Root }.Run() switch
         {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            WorkingDirectory = Root,
-            StandardOutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+            Ran.Exited { Code: 0 } listed => listed.Output,
+            var git => throw new InvalidOperationException("git ls-files failed in " + Root + ": " + git),
         };
-        foreach (var argument in (string[])["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
-        {
-            start.ArgumentList.Add(argument);
-        }
-
-        using var git = Process.Start(start)!;
-        var error = git.StandardError.ReadToEndAsync();
-        var output = git.StandardOutput.ReadToEnd();
-        git.WaitForExit();
-        if (git.ExitCode != 0)
-        {
-            throw new InvalidOperationException("git ls-files failed in " + Root + ": " + error.Result);
-        }
-
         return output.Split('\0', StringSplitOptions.RemoveEmptyEntries)
             .Where(f => File.Exists(Path.Combine(Root, f)))
             .Order(StringComparer.Ordinal)

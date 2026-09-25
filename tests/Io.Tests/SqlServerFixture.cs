@@ -81,8 +81,8 @@ public static class SqlServerFixture
     private static async Task<string> ChooseAsync()
     {
         var given = Environment.GetEnvironmentVariable("ESTATE_SQL");
-        var docker = string.IsNullOrEmpty(given) && Command.Run("docker", ["info"], TimeSpan.FromSeconds(30)).Exit == 0 && Up();
-        var localDb = string.IsNullOrEmpty(given) && !docker && Command.Run("sqllocaldb", ["start", "MSSQLLocalDB"], TimeSpan.FromMinutes(2)).Exit == 0;
+        var docker = string.IsNullOrEmpty(given) && new Command("docker", ["info"], TimeSpan.FromSeconds(30)).Run() is Ran.Exited { Code: 0 } && Up();
+        var localDb = string.IsNullOrEmpty(given) && !docker && new Command("sqllocaldb", ["start", "MSSQLLocalDB"], TimeSpan.FromMinutes(2)).Run() is Ran.Exited { Code: 0 };
         var chosen = ScratchServer.Server(given, docker ? ScratchServer.SqlEnv : "", localDb).Match(server => server, _ => throw new InvalidOperationException(NoServer));
         var master = new SqlConnectionStringBuilder(chosen) { InitialCatalog = "master", ApplicationName = "estate-tests", TrustServerCertificate = true, ConnectTimeout = 60 }.ConnectionString;
         try
@@ -100,9 +100,9 @@ public static class SqlServerFixture
     /// <summary>The estate-sql container, up: its port and SA password go into ~/.estate/sql.env, which only the scripts write.</summary>
     private static bool Up()
     {
-        var (exit, output) = OperatingSystem.IsWindows()
-            ? Command.Run("pwsh", ["-NoProfile", "-File", Path.Combine(Repository.Root, "ci", "sql.ps1"), "up"])
-            : Command.Run("bash", [Path.Combine(Repository.Root, "ci", "sql.sh"), "up"]);
+        var (exit, output) = (OperatingSystem.IsWindows()
+            ? Programs.InRepository("pwsh", "-NoProfile", "-File", Path.Combine(Repository.Root, "ci", "sql.ps1"), "up")
+            : Programs.InRepository("bash", Path.Combine(Repository.Root, "ci", "sql.sh"), "up")).Finish().Joined();
         if (exit != 0)
         {
             throw new InvalidOperationException("ci/sql up failed:\n" + output);

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -136,19 +135,8 @@ public sealed class CapabilityTests
         "</Project>",
         "");
 
-    private static (int Exit, string Output) Build(string plant)
-    {
-        var start = new ProcessStartInfo("dotnet", ["build", Path.Combine(plant, "Planted.csproj"), "-nologo", "-v", "q", "-clp:NoSummary", "-nodeReuse:false"])
-        {
-            RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = plant,
-        };
-        start.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-        using var process = Process.Start(start)!;
-        var errors = process.StandardError.ReadToEndAsync();
-        var output = process.StandardOutput.ReadToEnd();
-        process.WaitForExit();
-        return (process.ExitCode, output + errors.Result);
-    }
+    private static (int Exit, string Output) Build(string plant) =>
+        (Programs.InRepository("dotnet", "build", Path.Combine(plant, "Planted.csproj"), "-nologo", "-v", "q", "-clp:NoSummary", "-nodeReuse:false") with { Directory = plant }).Finish().Joined();
 
     /// <summary>Whether a type is, or carries, a profile, a copy or a publish result.</summary>
     private static bool Touches(Type type) => typeof(PublishProfile).IsAssignableFrom(type) || type == typeof(SqlServer.Copy)

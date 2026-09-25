@@ -596,23 +596,10 @@ public sealed class ContractTests
         answer["receipt"] = receipt;
     };
 
-    /// <summary>Runs the built estate, as a process, and returns its exit code and standard output.</summary>
+    /// <summary>Runs the built estate, as a process, and returns its exit code and standard output alone, which its JSON answer is.</summary>
     private static (int Exit, string Output) Estate(params string[] arguments)
     {
-        var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
-        {
-            RedirectStandardOutput = true,
-            StandardOutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-        };
-        start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "estate.dll"));
-        foreach (var argument in arguments)
-        {
-            start.ArgumentList.Add(argument);
-        }
-
-        using var process = Process.Start(start)!;
-        var output = process.StandardOutput.ReadToEnd();
-        process.WaitForExit();
-        return (process.ExitCode, output);
+        var ran = new Command(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet", [Path.Combine(AppContext.BaseDirectory, "estate.dll"), .. arguments], Programs.Default).Finish();
+        return (ran.Code, ran.Output);
     }
 }

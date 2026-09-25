@@ -89,6 +89,15 @@ internal static class RefusalPaths
             return Failed(Ssdt.Elements(model));
         }),
 
+        new("a file standing where a written file's folder should be", "file.unwritable", false, (scratch, _) =>
+            Failed(Write.Text(Path.Combine(Written(scratch, "file", ""), "under.txt"), "x\n"))),
+        new("a lock file another estate process holds past the wait", "lock.timed-out", false, (scratch, _) =>
+        {
+            using var held = Made(FileLock.Take(Path.Combine(scratch, "state.lock"), TimeSpan.Zero));
+            return Failed(FileLock.Take(Path.Combine(scratch, "state.lock"), TimeSpan.Zero));
+        }),
+        new("a lock on Linux or macOS with the runtime's file locking off", "lock.unsupported", false, (_, _) => FileLock.Unsupported),   // Windows share modes ignore the switch, so the error is taken from its maker
+
         new("a git program that does not start", "git.missing", false, (scratch, _) => Failed(Git.At(scratch, "HEAD", git: Path.Combine(scratch, "no-git")))),
         new("a folder in no repository", "git.not-a-repository", false, (scratch, _) => Failed(Git.ChangedPaths(Path.Combine(scratch, "no-repository"), "HEAD~1", "HEAD"))),
         new("a ref that names no commit", "ref.unresolved", false, (scratch, _) => InRepository(scratch, root => Git.At(root, "no-such-tag"))),
@@ -388,13 +397,9 @@ internal static class RefusalPaths
 
     private static void Icacls(params string[] arguments)
     {
-        using var icacls = Process.Start(new ProcessStartInfo("icacls", arguments) { RedirectStandardOutput = true, RedirectStandardError = true })!;
-        var errors = icacls.StandardError.ReadToEndAsync();
-        var output = icacls.StandardOutput.ReadToEnd();
-        icacls.WaitForExit();
-        if (icacls.ExitCode != 0)
+        if (new Command("icacls", arguments, TimeSpan.FromMinutes(1)).Run() is not Ran.Exited { Code: 0 } and var icacls)
         {
-            throw new InvalidOperationException("icacls " + string.Join(' ', arguments) + " exited " + icacls.ExitCode + ": " + output + errors.Result);
+            throw new InvalidOperationException("icacls " + string.Join(' ', arguments) + " did not succeed: " + icacls);
         }
     }
 
