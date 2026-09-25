@@ -38,9 +38,8 @@ internal static class RefusalPaths
 
     public static IReadOnlyList<Case> All { get; } =
     [
-        new("a blank name part", "name.blank", false, (_, _) => Failed(Name.Of(" "))),
+        new("an empty name part", "name.blank", false, (_, _) => Failed(Name.Of(""))),
         new("an overlong name part", "name.too-long", true, (_, planted) => Failed(Name.Of(planted + new string('x', 129)))),
-        new("a control character in a name part", "name.control-character", true, (_, planted) => Failed(Name.Of(planted + "\u0001"))),
         new("a DacFx version that is none", "engine.dacfx-version", false, (_, _) => Failed(Engine.Of("v170"))),
         new("an image digest that is none", "engine.image-digest", false, (_, _) => Failed(Engine.Of("170.5.96", "sha256:0"))),
         new("a fingerprint that is none", "fingerprint.malformed", false, (_, _) => Failed(Fingerprint.Parse("0"))),

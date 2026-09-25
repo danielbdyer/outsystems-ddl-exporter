@@ -1,6 +1,5 @@
 using System;
 using System.Globalization;
-using System.Linq;
 
 namespace Estate.Kernel;
 
@@ -9,10 +8,11 @@ namespace Estate.Kernel;
 /// schema-qualified object, <c>[dbo].[Customer]</c>). Two is the most a Name holds and the most it needs: the
 /// aggregate-query allowlist admits one or two parts, and an object inside a table (a column, an index, a constraint) is named by its
 /// table's Name and its own one-part Name, so <c>[dbo].[Customer].[Email]</c> is a path of two Names that an
-/// element composes. Each part is 1 to 128 characters (sysname), not all white space, with no control character.
-/// Parts are held unquoted and compared ordinally with case, so the kernel never loses a difference; a
-/// case-insensitive match, as SQL Server's usual collation makes one, is the caller's explicit choice.
-/// <see cref="ToString"/> quotes each part as QUOTENAME does. default(Name) is not a name.
+/// element composes. Each part is 1 to 128 UTF-16 code units (sysname), whatever the units are: SQL Server admits white
+/// space and control characters inside brackets (<c>[ ] INT NULL</c> builds with no warning), so a schema it holds is read whole,
+/// and a control character is escaped where text leaves the tool (decision 2.25). Parts are held unquoted and compared ordinally
+/// with case, so the kernel never loses a difference; a case-insensitive match, as SQL Server's usual collation makes one, is the
+/// caller's explicit choice. <see cref="ToString"/> quotes each part as QUOTENAME does. default(Name) is not a name.
 /// </summary>
 public readonly record struct Name : IComparable<Name>
 {
@@ -45,16 +45,11 @@ public readonly record struct Name : IComparable<Name>
 
     private static Error? Invalid(string? part) => part switch
     {
-        _ when string.IsNullOrWhiteSpace(part) =>
-            new Error("name.blank", "A name part is empty or white space.", "Give each part 1 to 128 characters."),
+        null or "" => new Error("name.blank", "A name part is empty.", "Give each part 1 to 128 characters."),
         { Length: > Sysname } => new Error(
             "name.too-long",
             string.Create(CultureInfo.InvariantCulture, $"A name part has {part.Length} characters; SQL Server allows 128."),
             "Shorten the part to 128 characters."),
-        _ when part.Any(char.IsControl) => new Error(
-            "name.control-character",
-            string.Create(CultureInfo.InvariantCulture, $"A name part holds the control character U+{(int)part.First(char.IsControl):X4}."),
-            "Remove the control character from the part."),
         _ => null,
     };
 }

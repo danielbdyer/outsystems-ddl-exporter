@@ -5,20 +5,16 @@ using Xunit;
 
 namespace Estate.Kernel.Tests;
 
-/// <summary>A Name is one or two parts, each 1 to 128 characters, not blank, with no control character.</summary>
+/// <summary>
+/// A Name is one or two parts, each 1 to 128 UTF-16 code units, whatever the units are: SQL Server admits white space and control
+/// characters inside brackets, so a part of spaces alone, or one holding a tab, is a name a schema can hold (decision 2.25).
+/// </summary>
 public sealed class NameTests
 {
-    private static readonly Gen<string> Part =
-        Gen.Char[' ', '\uFFFF'].Where(c => !char.IsControl(c)).Array[1, 128]
-            .Select(cs => new string(cs)).Where(s => !string.IsNullOrWhiteSpace(s));
-
-    // Each invalid form of a part, with the code of the error that names it.
-    private static readonly Gen<(string Part, string Code)> Invalid = Gen.OneOf(
-        Gen.Char[" \u00A0\u2003\u3000"].Array[0, 4].Select(cs => (new string(cs), "name.blank")),
-        Gen.Char['a', 'z'].Array[129, 300].Select(cs => (new string(cs), "name.too-long")),
-        // At least one letter beside the control character: a part that is only \t or U+0085 is white space, so blank.
-        Gen.Select(Gen.Char['a', 'z'].Array[1, 100], Gen.OneOf(Gen.Char['\u0000', '\u001F'], Gen.Char['\u007F', '\u009F']))
-            .Select((cs, c) => (new string(cs).Insert(cs.Length / 2, new string(c, 1)), "name.control-character")));
+    /// <summary>A part of 1 to 128 code units drawn from the whole BMP: control characters (U+0000 to U+001F, U+007F to U+009F), white space and the rest.</summary>
+    private static readonly Gen<string> Part = Gen.OneOf(
+        Gen.Char['\u0000', '￿'].Array[1, 128].Select(cs => new string(cs)),
+        Gen.Char[" \t\r\n\u0000\u001B\u007F\u0085  　"].Array[1, 8].Select(cs => new string(cs)));
 
     private static readonly Gen<Name> Small =
         Gen.Select(Gen.Bool, Gen.Char["aA."].Array[1, 2], Gen.Char["aA."].Array[1, 2])
@@ -26,23 +22,26 @@ public sealed class NameTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_name_is_one_or_two_valid_parts_kept_as_given()
+    public void A_name_is_one_or_two_parts_of_1_to_128_code_units_kept_as_given_white_space_and_control_characters_included()
     {
         Gen.Select(Part, Part).Sample((schema, part) =>
             Name.Of(part) is Result<Name>.Ok(var one) && one.Schema is null && one.Base == part
             && Name.Of(schema, part) is Result<Name>.Ok(var two) && two.Schema == schema && two.Base == part);
+        Assert.Equal(" ", N(" ").Base);
+        Assert.Equal("a\tb", N("dbo", "a\tb").Base);
         Assert.Equal(128, N(new string('x', 128)).Base.Length);
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_name_rejects_a_blank_an_overlong_or_a_control_character_part_in_either_place()
+    public void A_name_rejects_an_empty_part_and_a_part_past_128_code_units_in_either_place()
     {
-        Invalid.Sample(bad =>
-            Code(Name.Of(bad.Part)) == bad.Code
-            && Code(Name.Of(bad.Part, "Customer")) == bad.Code
-            && Code(Name.Of("dbo", bad.Part)) == bad.Code);
+        Gen.Char['a', 'z'].Array[129, 300].Select(cs => new string(cs)).Sample(overlong =>
+            Code(Name.Of(overlong)) == "name.too-long" && Code(Name.Of(overlong, "Customer")) == "name.too-long" && Code(Name.Of("dbo", overlong)) == "name.too-long");
         Assert.Equal("name.too-long", Code(Name.Of(new string('x', 129))));
+        Assert.Equal("name.blank", Code(Name.Of("")));
+        Assert.Equal("name.blank", Code(Name.Of("", "Customer")));
+        Assert.Equal("name.blank", Code(Name.Of("dbo", "")));
         Assert.Equal("name.blank", Code(Name.Of(null!)));
         Assert.Throws<InvalidOperationException>(() => default(Name).Base);
     }

@@ -128,12 +128,13 @@ public sealed class ContractTests
     }
 
     /// <summary>
-    /// The alignment review's reproduction (ARCH-03): a package whose table has a column named by a space, which DacFx builds and the kernel's
-    /// Name rejects (name.blank), read with --json answers exit 2 with an envelope carrying the error, and throws nothing.
+    /// Decision 2.25 on the alignment review's reproduction (ARCH-03): a package whose table has a column named by one space and
+    /// one whose name holds a tab, both of which DacFx builds, is read whole at exit 0. The JSON holds the key with the space as it
+    /// is and the tab as JSON's own escape; a name is refused for its length alone.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Reading_a_package_with_a_column_named_by_a_space_answers_exit_2_with_the_name_blank_error()
+    public void Reading_a_package_with_a_column_named_by_a_space_and_one_holding_a_tab_answers_exit_0_naming_both()
     {
         Telemetry.OptOut();   // before DacFx loads, as estate's Main does
         var scratch = Directory.CreateTempSubdirectory("estate-blank-name-").FullName;
@@ -142,21 +143,28 @@ public sealed class ContractTests
             var dacpac = Path.Combine(scratch, "blank.dacpac");
             using (var model = new Microsoft.SqlServer.Dac.Model.TSqlModel(Microsoft.SqlServer.Dac.Model.SqlServerVersion.Sql160, new Microsoft.SqlServer.Dac.Model.TSqlModelOptions()))
             {
-                model.AddObjects("CREATE TABLE dbo.Customer (Id INT NOT NULL, [ ] INT NULL);");
+                model.AddObjects("CREATE TABLE dbo.Customer (Id INT NOT NULL, [ ] INT NULL, [a\tb] INT NULL);");
                 Microsoft.SqlServer.Dac.DacPackageExtensions.BuildPackage(dacpac, model, new Microsoft.SqlServer.Dac.PackageMetadata());
             }
 
             var (exit, answer) = Answered(["read", "--from", "dacpac:" + dacpac, "--json"], new Checkout(scratch, scratch, null));
 
-            Assert.Equal(2, exit);
+            Assert.Equal(0, exit);
             AssertValid("estate.read.1.schema.json", answer);
-            Assert.Equal(["name.blank"], answer["findings"]!.AsArray().Select(f => (string)f!["code"]!));
+            var keys = Elements(answer, scratch).Select(e => (string)e!["key"]!).ToList();
+            Assert.Contains("Column [dbo].[Customer].[ ]", keys);
+            Assert.Contains("Column [dbo].[Customer].[a\tb]", keys);
+            Assert.Contains("\"Column [dbo].[Customer].[a\\tb]\"", Io.Json.Text(answer), StringComparison.Ordinal);
         }
         finally
         {
             Directory.Delete(scratch, recursive: true);
         }
     }
+
+    /// <summary>The elements a read's answer holds: in the answer itself, or in the run's answer.json when the answer was cut to its first entries.</summary>
+    private static JsonArray Elements(JsonNode answer, string root) =>
+        ((string?)answer["full"] is { } full ? JsonNode.Parse(File.ReadAllText(Path.Combine(root, full)))! : answer)["read"]!["elements"]!.AsArray();
 
     /// <summary>
     /// An exception no verb expected answers with an envelope: exit 6, one finding internal.unexpected naming the exception's type, and its
