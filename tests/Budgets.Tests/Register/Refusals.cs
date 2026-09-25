@@ -11,7 +11,7 @@ namespace Estate.Budgets.Tests.Register;
 
 /// <summary>
 /// The engine's refusals are in the register (V3_INSTRUCTION_ARCHITECTURE.md §10 test 4; VALUES.md S2, O4, L1). Every refusal
-/// the kernel and io construct, reached through <see cref="RefusalPaths"/>, carries a code, a message and a remedy; the remedy is
+/// the kernel, io and the cli construct, reached through <see cref="RefusalPaths"/>, carries a code, a message and a remedy; the remedy is
 /// one move on one line, led by a verb, an estate verb or a file path, never a paragraph; and neither the message nor the remedy
 /// uses a retired word or a banned form of ci/register.json. A code the sources construct with no way to it here fails, so a new
 /// refusal arrives with its driver.
@@ -56,12 +56,13 @@ public sealed class Refusals
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Every_refusal_code_the_kernel_and_io_construct_has_a_way_to_it_here()
+    public void Every_refusal_code_the_kernel_io_and_the_cli_construct_has_a_way_to_it_here()
     {
         var driven = RefusalPaths.All.Select(c => c.Code).ToHashSet(StringComparer.Ordinal);
         var written = RefusalPaths.InTheSources().ToList();
 
         Assert.Contains("posture.literal-connection", written);
+        Assert.Contains("arguments.unknown-check", written);   // the cli's own, in cli/Check.cs
         Assert.Contains("element.", written);   // the start of a composed code: element.property-name, element.relationship-name
         Assert.DoesNotContain(written, code => code.EndsWith('.') ? !driven.Any(d => d.StartsWith(code, StringComparison.Ordinal)) : !driven.Contains(code));
         Assert.DoesNotContain(driven, code => !written.Contains(code) && !written.Any(start => start.EndsWith('.') && code.StartsWith(start, StringComparison.Ordinal)));

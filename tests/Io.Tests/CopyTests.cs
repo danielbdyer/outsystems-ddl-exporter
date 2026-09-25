@@ -6,6 +6,9 @@ using System.Threading.Tasks;
 using Estate.Budgets.Tests;
 using Estate.Cli;
 using Estate.Kernel;
+using Microsoft.SqlServer.Dac;
+using Microsoft.SqlServer.Dac.Model;
+using Contract = Estate.Cli.Contract;
 using Xunit;
 
 namespace Estate.Io.Tests;
@@ -109,6 +112,34 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
         {
             Made(Substrate.Drop(copy));
         }
+    }
+
+    /// <summary>
+    /// DF-4: DacFx's own failure, with no SqlException inside. A package built for a newer platform than the 2022 substrate (Sql180),
+    /// planned for a named environment on it under the pipeline's profile (AllowIncompatiblePlatform False), is refused as dacfx.failed
+    /// at exit 6, and the refusal quotes DacFx's reason; SQL Server's messages alone are withheld for a named environment.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task A_package_for_a_newer_platform_planned_for_a_named_environment_is_refused_with_DacFx_s_reason()
+    {
+        await using var database = await SqlServerFixture.RegisterAsync();
+        File.WriteAllText(Path.Combine(root, "dev.connection"), database.ConnectionString);
+        File.WriteAllText(Path.Combine(root, "estate", "posture.json"),
+            "{ \"environments\": { \"dev\": { \"connection\": \"file:dev.connection\", \"profile\": \"estate/profiles/pipeline.publish.xml\" } } }");
+        var dacpac = Path.Combine(root, "vnext.dacpac");
+        using (var model = new TSqlModel(SqlServerVersion.Sql180, new TSqlModelOptions()))
+        {
+            model.AddObjects("CREATE TABLE dbo.Customer (Id INT NOT NULL);");
+            DacPackageExtensions.BuildPackage(dacpac, model, new PackageMetadata());
+        }
+
+        var dev = Assert.IsType<SqlServer.Named>(Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root)));
+        var refused = Assert.IsType<Result<SqlServer.Deployment>.Refused>(SqlServer.Plan(dacpac, dev, Made(Profiles.Load(ground.Profile)))).Refusal;
+
+        Assert.Equal(("dacfx.failed", 6), (refused.Code, Contract.Exit(refused)));
+        Assert.Contains("cannot be published to SQL Server 2022", refused.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("withheld", refused.Message, StringComparison.Ordinal);
     }
 
     private static bool MakesMandatory(Change.Altered altered) =>

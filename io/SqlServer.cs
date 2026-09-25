@@ -107,6 +107,46 @@ public static class SqlServer
         /// </summary>
         public Refusal Refused(int number, string message) => Refused(number, message, fatal: false);
 
+        /// <summary>
+        /// The refusal a SqlClient or DacFx failure against a target takes. With a SqlException inside, by its number, a severity of 20 or
+        /// more being a connection lost. With none, DacFx's own failure: when its texts quote a SQL Server number (Msg 50000, the guard;
+        /// Msg 2627 inside SQL72014), by that number, since SQL Server's words, which can quote a row, are inside; else dacfx.failed,
+        /// quoting what each exception of the chain and each DacFx message says (SQL72045: …), kept for a named environment too. Any
+        /// other failure is refused with no number.
+        /// </summary>
+        public Refusal Refused(Exception failure)
+        {
+            var chain = new List<Exception>();
+            for (var x = failure; x is not null; x = x.InnerException)
+            {
+                chain.Add(x);
+            }
+
+            var said = chain.SelectMany(Said).Distinct(StringComparer.Ordinal).ToList();
+            return chain.OfType<SqlException>().FirstOrDefault() is { } sql ? Refused(sql.Number, sql.Message, fatal: sql.Class >= 20)
+                : !chain.Any(x => x is DacServicesException or DacModelException) ? Refused(0, failure.Message)
+                : said.Select(s => SqlServerNumber.Match(s)).FirstOrDefault(m => m.Success) is { } number
+                    ? Refused(int.Parse(number.Groups[1].Value, CultureInfo.InvariantCulture), string.Join(' ', said))
+                : new Refusal("dacfx.failed", "DacFx failed against " + Where + " with no SQL Server error inside: " + string.Join(' ', said),
+                    "Correct what DacFx names in the project or the publish profile, then run the step again.");
+        }
+
+        private static readonly Regex SqlServerNumber = new(@"\bMsg (\d+)", RegexOptions.CultureInvariant);
+
+        /// <summary>What one exception of a DacFx failure says, on one line: its message, then each DacFx message as its code and text, where the message does not already carry it.</summary>
+        private static IEnumerable<string> Said(Exception x)
+        {
+            var messages = x switch
+            {
+                DacServicesException d => d.Messages.Select(m => (m.Prefix, m.Number, m.Message)),
+                DacModelException d => d.Messages.Select(m => (m.Prefix, m.Number, m.Message)),
+                _ => [],
+            };
+            return [.. ((string[])[x.Message, .. messages.Where(m => !x.Message.Contains(m.Message, StringComparison.Ordinal))
+                    .Select(m => m.Prefix + m.Number.ToString(CultureInfo.InvariantCulture) + ": " + m.Message)])
+                .Select(text => Regex.Replace(text, @"\s*\n\s*", " ", RegexOptions.CultureInvariant).Trim()).Where(text => text.Length > 0)];
+        }
+
         internal Refusal Refused(int number, string message, bool fatal)
         {
             var msg = number == 0 ? "no SQL Server number" : string.Create(CultureInfo.InvariantCulture, $"Msg {number}");
@@ -196,7 +236,7 @@ public static class SqlServer
         }
         catch (Exception e) when (e is DacServicesException or DacModelException or SqlException or InvalidOperationException)
         {
-            return Failure(target, e);
+            return target.Refused(e);
         }
 
         using (model)
@@ -305,7 +345,7 @@ public static class SqlServer
         }
         catch (Exception e) when (e is SqlException or InvalidOperationException)
         {
-            return Failure(target, e);
+            return target.Refused(e);
         }
     }
 
@@ -439,7 +479,7 @@ public static class SqlServer
         }
         catch (Exception e) when (e is SqlException or InvalidOperationException)
         {
-            return Failure(target, e);
+            return target.Refused(e);
         }
     }
 
@@ -468,27 +508,9 @@ public static class SqlServer
             }
             catch (Exception e) when (e is DacServicesException or SqlException or InvalidOperationException)
             {
-                return Failure(target, e);
+                return target.Refused(e);
             }
         }
-    }
-
-    /// <summary>
-    /// The refusal a SqlClient or DacFx failure against a target takes: by the SqlException inside it, a severity of 20 or more being a
-    /// connection lost; else by the SQL Server number DacFx's own messages carry (Msg 50000, the guard); else with no number.
-    /// </summary>
-    private static Refusal Failure(Database target, Exception e)
-    {
-        var chain = new List<Exception>();
-        for (var x = e; x is not null; x = x.InnerException)
-        {
-            chain.Add(x);
-        }
-
-        return chain.OfType<SqlException>().FirstOrDefault() is { } sql ? target.Refused(sql.Number, sql.Message, fatal: sql.Class >= 20)
-            : chain.OfType<DacServicesException>().FirstOrDefault() is { } dac
-                ? target.Refused(Regex.Match(dac.Message, @"\bMsg (\d+)", RegexOptions.CultureInvariant) is { Success: true } m ? int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) : 0, dac.Message)
-            : target.Refused(0, e.Message);
     }
 
     /// <summary>A named environment's own SQLCMD values, each literal as the posture gives it and each reference resolved in memory; a copy has none.</summary>
