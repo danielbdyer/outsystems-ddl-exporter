@@ -105,7 +105,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
-    /// The rename archetype beside a table dbo.AAA with a column Host and an unnamed CHECK, whose key spells the column's path
+    /// The rename archetype beside a table dbo.AAA with a column Host and an unnamed CHECK on two columns, whose key spells the column's path
     /// ([dbo].[AAA].[Host]) and sorts before it: an entry's model.xml type pairs with the named objects only, so the column
     /// rename stays one rename and is not read as a drop and an add.
     /// </summary>
@@ -192,8 +192,8 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
-    /// Two unnamed checks on one column reference the same things, so their position falls to their own values: the one whose
-    /// Expression sorts first ordinally is Host 1, whichever order the source declares them in.
+    /// Two unnamed checks on one column are keyed under it and reference the same things, so their number falls to their own
+    /// values: the one whose Expression sorts first ordinally is ExpressionDependencies 1, whichever order the source declares them in.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -206,19 +206,18 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
 
         Assert.Equal(forward, backward);
         Assert.True(Ok(Change.Between(forward, backward, [])).IsEmpty);
-        Assert.Contains("A < 100", Expression(forward.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[Host 1]")), StringComparison.Ordinal);
-        Assert.Contains("A > 0", Expression(forward.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[Host 2]")), StringComparison.Ordinal);
+        Assert.Contains("A < 100", Expression(forward.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[A].[ExpressionDependencies 1]")), StringComparison.Ordinal);
+        Assert.Contains("A > 0", Expression(forward.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[A].[ExpressionDependencies 2]")), StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// A model built in memory: two unnamed defaults DacFx meets in one order, then in the other. An unnamed default is keyed
-    /// under the column it targets, SQL Server allowing one default per column; any other unnamed child is keyed by its table,
-    /// its relationship and its position among its kind in the order of what it references, never by DacFx's order or a
-    /// generated name. An index key column's direction is a property of the index.
+    /// A model built in memory: two unnamed defaults DacFx meets in one order, then in the other. An unnamed default, or a check on
+    /// one column, is keyed under that column; the primary key is keyed by its table and its relationship, never by DacFx's order
+    /// or a generated name. An index key column's direction is a property of the index.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void An_unnamed_constraint_is_keyed_by_its_table_its_relationship_and_its_position_whatever_order_DacFx_meets_it()
+    public void An_unnamed_constraint_is_keyed_under_its_column_or_its_table_whatever_order_DacFx_meets_it()
     {
         using var inOrder = Model(reverse: false);
         using var reversed = Model(reverse: true);
@@ -227,7 +226,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
         Assert.Equal(forward, backward);
         var keys = forward.Select(e => e.Key.ToString()).ToList();
         Assert.Superset(
-            new HashSet<string>(["PrimaryKeyConstraint [dbo].[T].[Host]", "CheckConstraint [dbo].[T].[Host]", "DefaultConstraint [dbo].[T].[A].[TargetColumn]",
+            new HashSet<string>(["PrimaryKeyConstraint [dbo].[T].[Host]", "CheckConstraint [dbo].[T].[B].[ExpressionDependencies]", "DefaultConstraint [dbo].[T].[A].[TargetColumn]",
                 "DefaultConstraint [dbo].[T].[B].[TargetColumn]", "DatabaseOptions [DatabaseOptions]"]),
             keys.ToHashSet());
         var onA = forward.Single(e => e.Key.ToString() == "DefaultConstraint [dbo].[T].[A].[TargetColumn]");
@@ -255,23 +254,64 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
-    /// Two unnamed checks, on B and on C, numbered in the order of the columns they reference; C is renamed A, which sorts before
-    /// B by name. The walk orders a reference to a column by the column's position in its table, which the rename leaves as it
-    /// was, so the check on the renamed column keeps its number, and the one difference is that check's own text, which names the column.
+    /// Two unnamed checks, on B and on C, each keyed under its column; C is renamed A, which sorts before B by name. The check on
+    /// the renamed column moves with it, the check on B keeps its key, and the one difference besides the rename is the moved
+    /// check's own text, which names the column.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void An_unnamed_check_on_a_renamed_column_keeps_its_number_and_only_its_own_text_changes()
+    public void An_unnamed_check_on_a_renamed_column_moves_with_it_and_only_its_own_text_changes()
     {
         var before = PackageRead(null, "CREATE TABLE dbo.T (B INT NULL CHECK (B > 0), C INT NULL CHECK (C > 5));");
         var after = PackageRead(RenameCToA, "CREATE TABLE dbo.T (B INT NULL CHECK (B > 0), A INT NULL CHECK (A > 5));");
 
         var change = Ok(Change.Between(before.Elements, after.Elements, after.Renames));
 
-        Assert.Contains("C > 5", Expression(before.Elements.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[Host 2]")), StringComparison.Ordinal);
-        Assert.Contains("A > 5", Expression(after.Elements.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[Host 2]")), StringComparison.Ordinal);
-        Assert.Equal(["CheckConstraint [dbo].[T].[Host 2]: Expression"], Lines(change).Where(line => !line.StartsWith("renamed ", StringComparison.Ordinal) && !line.StartsWith("added ", StringComparison.Ordinal)));
+        Assert.Contains("C > 5", Expression(before.Elements.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[C].[ExpressionDependencies]")), StringComparison.Ordinal);
+        Assert.Contains("A > 5", Expression(after.Elements.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[A].[ExpressionDependencies]")), StringComparison.Ordinal);
+        Assert.Equal(["CheckConstraint [dbo].[T].[A].[ExpressionDependencies]: Expression"], Lines(change).Where(line => !line.StartsWith("renamed ", StringComparison.Ordinal) && !line.StartsWith("added ", StringComparison.Ordinal)));
         Assert.Single(change.Renamed);
+    }
+
+    /// <summary>
+    /// The third alignment review's case (2026-09-25): dbo.T (Id, B INT NULL CHECK (B &gt; 0), A INT NULL CHECK (A &gt; 5)) becomes
+    /// (Id, B …, X INT NULL CHECK (X &lt; 9), A …), a column carrying an unnamed check inserted ahead of another checked column. Each
+    /// check is keyed under its column, so the change is the new column, its check and the table's column list, and neither
+    /// existing check reads as changed.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_checked_column_inserted_before_another_checked_column_adds_its_check_and_changes_no_other()
+    {
+        var before = Packaged("CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B INT NULL CHECK (B > 0), A INT NULL CHECK (A > 5));");
+        var after = Packaged("CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B INT NULL CHECK (B > 0), X INT NULL CHECK (X < 9), A INT NULL CHECK (A > 5));");
+
+        Assert.Equal(
+            ["Table [dbo].[T]: Columns", "added CheckConstraint [dbo].[T].[X].[ExpressionDependencies]", "added Column [dbo].[T].[X]"],
+            Lines(Ok(Change.Between(before, after, []))).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// A model built in memory: an unnamed unique and an unnamed foreign key constraint on one column each are keyed under that
+    /// column by Columns; two unnamed unique constraints and two unnamed checks on two columns each are keyed by the table and
+    /// numbered in the order of the names they reference.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Unnamed_constraints_on_one_column_are_keyed_under_it_and_those_on_several_by_the_table_in_the_order_of_their_references()
+    {
+        using var model = Model(
+            "CREATE TABLE dbo.P (Id INT NOT NULL PRIMARY KEY);",
+            "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, A INT NULL, B INT NULL, C INT NULL, PId INT NULL REFERENCES dbo.P (Id), Code INT NULL UNIQUE,"
+            + " UNIQUE (C, B), UNIQUE (A, B), CHECK (C > B), CHECK (A > B));");
+        var read = Ok(Ssdt.Walk(model));
+
+        string Referenced(string key) => string.Join(", ", read.Single(e => e.Key.ToString() == key).Relationships
+            .Where(r => r.Name is "Columns" or "ExpressionDependencies").SelectMany(r => r.Targets.Select(t => t.Key.Name.Base)).Order(StringComparer.Ordinal));
+        Assert.Equal("Code", Referenced("UniqueConstraint [dbo].[T].[Code].[Columns]"));
+        Assert.Equal("PId", Referenced("ForeignKeyConstraint [dbo].[T].[PId].[Columns]"));
+        Assert.Equal(("A, B", "B, C"), (Referenced("UniqueConstraint [dbo].[T].[Host 1]"), Referenced("UniqueConstraint [dbo].[T].[Host 2]")));
+        Assert.Equal(("A, B", "B, C"), (Referenced("CheckConstraint [dbo].[T].[Host 1]"), Referenced("CheckConstraint [dbo].[T].[Host 2]")));
     }
 
     /// <summary>
@@ -433,6 +473,61 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     }
 
     /// <summary>
+    /// Each clause that sets a password or a secret in T-SQL, and each system procedure parameter that passes one, with the planted
+    /// value as a Unicode, an ASCII or a binary literal and inside dynamic SQL: each value reads as '&lt;left out&gt;', and the text
+    /// around it, a comment and a string that sets nothing included, is as written.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Redacted_leaves_out_the_value_of_each_clause_that_sets_a_password_or_a_secret_and_nothing_else()
+    {
+        // {0} an ASCII literal, {1} a Unicode literal, {2} a binary literal, {3} the text of a literal inside a literal.
+        const string Script = "/* PRINT 'kept'; */\n"
+            + "CREATE LOGIN L WITH PASSWORD = {0}, CHECK_POLICY = OFF;\n"
+            + "ALTER LOGIN L WITH PASSWORD = {1} OLD_PASSWORD = {0};\n"
+            + "ALTER LOGIN L WITH PASSWORD = {2} HASHED;\n"
+            + "OPEN SYMMETRIC KEY K DECRYPTION BY PASSWORD = {1};\n"
+            + "CREATE SYMMETRIC KEY K2 WITH KEY_SOURCE = {0}, IDENTITY_VALUE = {0}, ALGORITHM = AES_256 ENCRYPTION BY PASSWORD = {0};\n"
+            + "CREATE CREDENTIAL C WITH IDENTITY = 'i', SECRET = {0};\n"
+            + "CREATE EXTERNAL DATA SOURCE E WITH (LOCATION = 'sqlserver://r', CONNECTION_OPTIONS = {0});\n"
+            + "EXEC sp_addlinkedsrvlogin @rmtsrvname = N'LS', @useself = N'FALSE', @rmtuser = N'u', @rmtpassword = {1};\n"
+            + "EXEC sp_addlinkedserver @server = N'LS', @provstr = {1};\n"
+            + "EXEC sp_addlogin @loginame = N'L', @passwd = {1};\n"
+            + "EXEC sp_setapprole @rolename = N'R', @password = {1};\n"
+            + "EXEC (N'CREATE LOGIN D WITH PASSWORD = N''{3}''');\n"
+            + "SELECT 'PASSWORD = kept' AS Note;\n";
+        const string Planted = "Pl4nted!clause#7f3a";
+
+        var redacted = Ssdt.Redacted(string.Format(CultureInfo.InvariantCulture, Script, "'PWD=" + Planted + "'", "N'" + Planted + "'", "0x0200AB", Planted));
+
+        Assert.DoesNotContain(Planted, redacted, StringComparison.Ordinal);
+        Assert.DoesNotContain("0x0200AB", redacted, StringComparison.Ordinal);
+        Assert.Equal(string.Format(CultureInfo.InvariantCulture, Script, "'<left out>'", "N'<left out>'", "'<left out>'", "<left out>"), redacted);
+    }
+
+    /// <summary>
+    /// A procedure that opens a symmetric key by password, packaged and walked, and the proving ground's pre-deploy script
+    /// creating a login by password, directly and through dynamic SQL, built and walked: the module's Definition and the
+    /// script's Text hold '&lt;left out&gt;' where the password was written, and the planted value nowhere.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_password_written_in_a_module_s_body_or_a_deploy_script_reaches_no_walked_property()
+    {
+        const string Planted = "Pl4nted!module#7f3a";
+        var read = Packaged(
+            "CREATE SYMMETRIC KEY K WITH ALGORITHM = AES_256 ENCRYPTION BY PASSWORD = '" + Planted + "';",
+            "CREATE PROCEDURE dbo.OpenKey AS OPEN SYMMETRIC KEY K DECRYPTION BY PASSWORD = N'" + Planted + "'; CLOSE SYMMETRIC KEY K;");
+        var script = walks.Reads["a password in the pre-deploy script"].Elements;
+
+        Assert.Contains("DECRYPTION BY PASSWORD = N'<left out>'", ((Value.Text)read.Single(e => e.Key.ToString() == "Procedure [dbo].[OpenKey]")["Definition"]!).Content, StringComparison.Ordinal);
+        Assert.Contains("WITH PASSWORD = N'<left out>'", ((Value.Text)script.Single(e => e.Key.Type == Element.PreDeploymentScript)["Text"]!).Content, StringComparison.Ordinal);
+        Assert.Contains("WITH PASSWORD = N''<left out>''", ((Value.Text)script.Single(e => e.Key.Type == Element.PreDeploymentScript)["Text"]!).Content, StringComparison.Ordinal);
+        Assert.DoesNotContain(read.Concat(script).SelectMany(e => e.Properties), p => p.Value is Value.Text { Content: var text }
+            && (text.Contains(Planted, StringComparison.Ordinal) || text.Contains(ProvingGroundWalks.PlantedPassword, StringComparison.Ordinal)));
+    }
+
+    /// <summary>
     /// The proving ground with a table of unnamed inline constraints, two of them checks on one column, and a procedure over it,
     /// published to a registered copy and read back through SqlServer.Model: the database walk keys every object as the package
     /// walk does, though SQL Server named each constraint, and each unnamed key names the same constraint in both (the same
@@ -450,12 +545,12 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
 
         Assert.Contains(package, e => e.Key.ToString() == "DefaultConstraint [dbo].[Note].[Pinned].[TargetColumn]");
         Assert.Equal(package.Select(e => e.Key), database.Select(e => e.Key));
-        var unnamed = package.Where(e => e.Key.Name.Base is "Host" or "TargetColumn" || e.Key.Name.Base.StartsWith("Host ", StringComparison.Ordinal)).ToList();
+        var unnamed = package.Where(e => e.Key.Name.Base.Split(' ')[0] is "Host" or "TargetColumn" or "ExpressionDependencies" or "Columns").ToList();
         Assert.Equal(8, unnamed.Count(e => e.Key.Path.StartsWith("[dbo].[Note].", StringComparison.Ordinal)));
         Assert.All(unnamed, e => Assert.Equal(e.Relationships, database.Single(d => d.Key == e.Key).Relationships));
-        Assert.All(["CheckConstraint [dbo].[Note].[Host 2]", "CheckConstraint [dbo].[Note].[Host 3]"], (string key) =>
+        Assert.All(["CheckConstraint [dbo].[Note].[Score].[ExpressionDependencies 1]", "CheckConstraint [dbo].[Note].[Score].[ExpressionDependencies 2]"], (string key) =>
             Assert.Equal(Bare(Expression(package.Single(e => e.Key.ToString() == key))), Bare(Expression(database.Single(e => e.Key.ToString() == key)))));
-        var check = package.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[Note].[Host 1]");
+        var check = package.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[Note].[Pinned].[ExpressionDependencies]");
         Assert.NotEqual(check["Expression"], database.Single(e => e.Key == check.Key)["Expression"]);
         var procedure = package.Single(e => e.Key.ToString() == "Procedure [dbo].[NoteCount]");
         Assert.Contains("WHERE CustomerId = @CustomerId", Assert.IsType<Value.Text>(procedure["Definition"]).Content, StringComparison.Ordinal);
@@ -499,12 +594,10 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
                 package = Ok(Ssdt.Walk(loaded)).Elements;
             }
 
-            var database = await PublishedAndRead(dacpac);
+            var database = await PublishedAndRead(new DacDeployOptions(), dacpac);
 
-            string Checked(IEnumerable<Element> read) => string.Join('\n', read.Where(e => e.Key.Type == "CheckConstraint").OrderBy(e => e.Key.ToString(), StringComparer.Ordinal)
-                .Select(e => e.Key + " → " + string.Join(", ", e.Relationships.Where(r => r.Name == "ExpressionDependencies").SelectMany(r => r.Targets.Select(t => t.Key)))));
             output.WriteLine(Checked(database));
-            Assert.Contains("CheckConstraint [dbo].[T].[Host 2] → Column [dbo].[T].[A]", Checked(package), StringComparison.Ordinal);
+            Assert.Contains("CheckConstraint [dbo].[T].[A].[ExpressionDependencies] → Column [dbo].[T].[A]", Checked(package), StringComparison.Ordinal);
             Assert.Equal(Checked(package), Checked(database));
         }
         finally
@@ -513,13 +606,64 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
         }
     }
 
+    /// <summary>
+    /// The third alignment review's two cases (2026-09-25): a first package published to a registered database, then a second
+    /// that inserts a column carrying an unnamed check ahead of a checked column, published over it under the golden pipeline
+    /// profile's deploy options. That profile sets IgnoreColumnOrder, so DacFx appends the new column and the database holds its
+    /// columns in another order than the second package. Each CheckConstraint key names the check on the same column in the
+    /// second package's walk and in the database's walk.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fixture")]
+    [InlineData("CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B INT NULL CHECK (B > 0));",
+        "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, A INT NULL CHECK (A > 5), B INT NULL CHECK (B > 0));")]
+    [InlineData("CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B INT NULL CHECK (B > 0), A INT NULL CHECK (A > 5));",
+        "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B INT NULL CHECK (B > 0), X INT NULL CHECK (X < 9), A INT NULL CHECK (A > 5));")]
+    public async Task Unnamed_checks_are_keyed_alike_in_a_package_and_a_database_that_holds_its_columns_in_another_order(string first, string second)
+    {
+        var (v1, v2) = (Built(null, first), Built(null, second));
+        try
+        {
+            Seq<Element> package;
+            using (var loaded = Ok(Ssdt.Load(v2)))
+            {
+                package = Ok(Ssdt.Walk(loaded)).Elements;
+            }
+
+            var profile = DacProfile.Load(Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml")).DeployOptions;
+            Assert.True(profile.IgnoreColumnOrder);
+            var database = await PublishedAndRead(profile, v1, v2);
+
+            var columns = database.Single(e => e.Key.ToString() == "Table [dbo].[T]").Relationships.Single(r => r.Name == "Columns").Targets.Select(t => t.Key.Name.Base);
+            Assert.NotEqual(package.Single(e => e.Key.ToString() == "Table [dbo].[T]").Relationships.Single(r => r.Name == "Columns").Targets.Select(t => t.Key.Name.Base), columns);
+            output.WriteLine(Checked(database));
+            Assert.Equal(Checked(package), Checked(database));
+        }
+        finally
+        {
+            Delete(v1);
+            Delete(v2);
+        }
+    }
+
+    /// <summary>Each CheckConstraint key of a read, with the keys of the objects its ExpressionDependencies names, one line each in key order.</summary>
+    private static string Checked(IEnumerable<Element> read) => string.Join('\n', read.Where(e => e.Key.Type == "CheckConstraint").OrderBy(e => e.Key.ToString(), StringComparer.Ordinal)
+        .Select(e => e.Key + " → " + string.Join(", ", e.Relationships.Where(r => r.Name == "ExpressionDependencies").SelectMany(r => r.Targets.Select(t => t.Key)))));
+
     private static List<string> Permissions(IEnumerable<Element> read) => [.. read.Where(e => e.Key.Type == "Permission").Select(e => e.Key.ToString())];
 
     /// <summary>A head's package published to a registered database under DacFx's default deploy options, then read back as io reads a copy; the database is dropped after.</summary>
-    private static async Task<Seq<Element>> PublishedAndRead(string dacpac)
+    private static Task<Seq<Element>> PublishedAndRead(string dacpac) => PublishedAndRead(new DacDeployOptions(), dacpac);
+
+    /// <summary>Packages published in turn to one registered database under the deploy options, then read back as io reads a copy; the database is dropped after.</summary>
+    private static async Task<Seq<Element>> PublishedAndRead(DacDeployOptions options, params string[] dacpacs)
     {
         await using var database = await SqlServerFixture.RegisterAsync();
-        ProvingGround.Publish(dacpac, database, new DacDeployOptions());
+        foreach (var dacpac in dacpacs)
+        {
+            ProvingGround.Publish(dacpac, database, options);
+        }
+
         return Ok(SqlServer.Model(new SqlServer.Copy(database.Name, await SqlServerFixture.ServerAsync(), Repository.Root)));
     }
 
@@ -645,6 +789,9 @@ public sealed class ProvingGroundWalks : IAsyncLifetime
 {
     public const string RenameKey = "6d1c1b5e-3f0a-4c2e-9b7d-2a4f8e6c0d13";
 
+    /// <summary>The password the head "a password in the pre-deploy script" writes in its pre-deploy script.</summary>
+    public const string PlantedPassword = "Pl4nted!deploy#7f3a";
+
     /// <summary>The rename archetype: Customer.ContactPhone renamed MobileNumber, with the refactorlog entry SSDT writes for it.</summary>
     private static readonly (string File, string From, string To)[] RenameEdits =
     [
@@ -674,6 +821,10 @@ public sealed class ProvingGroundWalks : IAsyncLifetime
             "CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id),\n    CONSTRAINT FK_Order_Customer_CustomerId FOREIGN KEY (CustomerId) REFERENCES dbo.Customer (Id)")],
         ["a seed edit"] = [("Data/Seed.sql", "(3, N'Initech',", "(3, N'Initech Ltd',")],
         ["a pre-deploy edit"] = [("Script.PreDeployment.sql", "PRINT 'Pre-deploy: no backfill active.", "PRINT 'Pre-deploy: still no backfill active.")],
+        ["a password in the pre-deploy script"] = [("Script.PreDeployment.sql", "PRINT 'Pre-deploy: no backfill active.",
+            "IF SUSER_ID(N'PreDeployLogin') IS NULL CREATE LOGIN PreDeployLogin WITH PASSWORD = N'" + PlantedPassword + "';\nGO\n"
+            + "IF SUSER_ID(N'PreDeployDynamic') IS NULL EXEC (N'CREATE LOGIN PreDeployDynamic WITH PASSWORD = N''" + PlantedPassword + "''');\nGO\n"
+            + "PRINT 'Pre-deploy: no backfill active.")],
         ["rename a column"] = RenameEdits,
         ["unnamed constraints"] = [("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.",
             "CREATE TABLE dbo.Note (Id INT NOT NULL PRIMARY KEY, CustomerId INT NULL REFERENCES dbo.Customer (Id), Body NVARCHAR(200) NOT NULL DEFAULT (N''),"
@@ -682,7 +833,7 @@ public sealed class ProvingGroundWalks : IAsyncLifetime
         ["rename beside a Host column"] =
         [
             .. RenameEdits,
-            ("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.", "CREATE TABLE dbo.AAA (Id INT NOT NULL, Host INT NULL, CHECK (Id > 0));"),
+            ("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.", "CREATE TABLE dbo.AAA (Id INT NOT NULL, Host INT NULL, CHECK (Id > 0 OR Host > 0));"),
         ],
         ["grants"] = [("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.", string.Join("\nGO\n",
             "CREATE ROLE AppReader;", "CREATE ROLE AppWriter;", "GRANT SELECT ON dbo.Account TO AppReader;", "GRANT SELECT ON dbo.Account TO AppWriter;",

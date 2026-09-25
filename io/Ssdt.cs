@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
@@ -289,16 +290,17 @@ public static class Ssdt
     public sealed record Read(Seq<Element> Elements, Seq<Rename> Renames);
 
     /// <summary>
-    /// The model walked, one element for each deploy script and each refactorlog entry, and the entries' renames. An entry's type,
-    /// written as model.xml writes it (SqlSimpleColumn), is the walk's (Column) through a named object model.xml names once, matched
-    /// by its own name and never by a key an unnamed object shares; a type the package no longer holds keys nothing (a drop and an add).
+    /// The model walked, one element for each deploy script (its text <see cref="Redacted"/>) and each refactorlog entry, and the
+    /// entries' renames. An entry's type, written as model.xml writes it (SqlSimpleColumn), is the walk's (Column) through a named
+    /// object model.xml names once, matched by its own name and never by a key an unnamed object shares; a type the package no
+    /// longer holds keys nothing (a drop and an add).
     /// </summary>
     public static Result<Read> Walk(Package package) => Walked(package.Model).Bind(model =>
     {
         var types = model.Where(w => w.Name is { } name && package.Serialized.ContainsKey(name)).GroupBy(w => package.Serialized[w.Name!], StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().Element.Key.Type, StringComparer.Ordinal);
         string TypeOf(string? serialized) => serialized is not null && types.TryGetValue(serialized, out var type) ? type : serialized ?? "";
-        var scripts = new[] { package.PreDeploy is { } pre ? Element.PreDeploy(Lf(pre)) : null, package.PostDeploy is { } post ? Element.PostDeploy(Lf(post)) : null }.OfType<Element>();
+        var scripts = new[] { package.PreDeploy is { } pre ? Element.PreDeploy(Redacted(Lf(pre))) : null, package.PostDeploy is { } post ? Element.PostDeploy(Redacted(Lf(post))) : null }.OfType<Element>();
         return All(package.Refactors.Select(Entry)).Bind(entries =>
             All(package.Refactors.Where(r => r.NewName is not null || r.NewSchema is not null).Select(r => Renaming(r, TypeOf)))
                 .Map(renames => new Read(Seq.Of(model.Select(w => w.Element).Concat(scripts).Concat(entries)), Seq.Of(renames))));
@@ -308,18 +310,19 @@ public static class Ssdt
     /// A model read whole, no code per type (§1 fact 6): each user-defined top-level object but the two grants to public SQL Server
     /// makes in every new database (<see cref="Default"/>) and, depth first, what its composing
     /// relationships reach, each object once, with every property its type declares but a password or a secret (<see cref="Secrets"/>),
-    /// a module's Definition too, and every relationship's targets in DacFx's order; a target's own property (an index column's
-    /// Ascending) is Relationship[position].Property. A key is the name while it has one or two parts and nothing composes the object;
-    /// else the parent's key (the composer, or the hierarchical parent: an index's table, a grant's securable) and the name parts the
-    /// parent's name does not hold. An unnamed default is keyed TargetColumn under the column it targets, SQL Server allowing one
-    /// default per column, so it moves with the column's rename. Any other unnamed object (an inline check, primary key, unique or
-    /// foreign key constraint) is keyed by the relationship to its parent, numbered from 1 among several of one type in the order of
-    /// what they reference, then of their own values, never by a generated name or DacFx's order. A referenced column, or any object
-    /// another composes, is ordered by its composer's name, the relationship and its position there, which a column's rename leaves
-    /// as it was and which a package and the database it was published to share, so the numbers need no refactorlog; any other
-    /// target is ordered by its name. SQL Server normalizes a check's text, so tied siblings (two checks on one column) may number
-    /// apart in a package and its database. Two objects keyed alike are refused; an unresolved
-    /// reference is keyed as the type Unresolved. Reads are compared only between like sources and, for databases, like identities:
+    /// a module's Definition too (<see cref="Redacted"/>), and every relationship's targets in DacFx's order; a target's own property
+    /// (an index column's Ascending) is Relationship[position].Property. A key is the name while it has one or two parts and nothing
+    /// composes the object; else the parent's key (the composer, or the hierarchical parent: an index's table, a grant's securable)
+    /// and the name parts the parent's name does not hold. An unnamed default, check, unique or foreign key constraint on exactly one
+    /// column is keyed under that column by the relationship that names it (TargetColumn, ExpressionDependencies, Columns), so it
+    /// moves with the column's rename, and a column added beside it, or a table whose columns a database holds in another order
+    /// (a publish under IgnoreColumnOrder appends a column the project inserts), leaves its key as it was. Any other unnamed object
+    /// (a primary key, a constraint on several columns) is keyed by the relationship to its table. Several unnamed objects of one
+    /// type under one parent are numbered from 1 in the order of the names they reference, then of their own values, never by a
+    /// generated name or DacFx's order; a package and the database it was published to hold the same names, so they number alike,
+    /// and a rename of a column that a constraint on several columns references can renumber that constraint and its siblings. SQL
+    /// Server normalizes a check's text, so two checks on one column may number apart in a package and its database. Two objects
+    /// keyed alike are refused; an unresolved reference is keyed as the type Unresolved. Reads are compared only between like sources and, for databases, like identities:
     /// SQL Server shows a server-scoped login only to a reader with permission on it (sysadmin, VIEW ANY DEFINITION, or its own), and
     /// a db_datareader login holding VIEW DEFINITION read Query Store's database options differently from sa when measured on 2026-09-24.
     /// </summary>
@@ -339,31 +342,35 @@ public static class Ssdt
     /// <summary>The walk, each element with its object's name as model.xml writes it ([dbo].[Customer].[Email]), null for an unnamed object.</summary>
     private static Result<List<(Element Element, string? Name)>> Walked(TSqlModel model)
     {
-        var composers = new Dictionary<TSqlObject, (TSqlObject Parent, string Relationship, int Position)>();
+        var composers = new Dictionary<TSqlObject, (TSqlObject Parent, string Relationship)>();
         var walked = new HashSet<TSqlObject>();
         void Descend(TSqlObject o)
         {
-            var composed = o.ObjectType.Relationships.Where(r => r.Type == RelationshipType.Composing).SelectMany(r => o.GetReferenced(r, DacQueryScopes.All).Select((c, n) => (r, c, n)));
-            foreach (var (r, child, n) in walked.Add(o) ? composed : [])
+            var composed = o.ObjectType.Relationships.Where(r => r.Type == RelationshipType.Composing).SelectMany(r => o.GetReferenced(r, DacQueryScopes.All).Select(c => (r, c)));
+            foreach (var (r, child) in walked.Add(o) ? composed : [])
             {
-                composers[child] = (o, r.Name, n);
+                composers[child] = (o, r.Name);
                 Descend(child);
             }
         }
 
         model.GetObjects(DacQueryScopes.UserDefined).Where(o => !Default(o)).ToList().ForEach(Descend);
-        (TSqlObject? Parent, string Relationship) Anchor(TSqlObject o) => composers.TryGetValue(o, out var composer) ? (composer.Parent, composer.Relationship)
-            : !o.Name.HasName && o.ObjectType == DefaultConstraint.TypeClass && o.GetReferenced(DefaultConstraint.TargetColumn, DacQueryScopes.All).ToArray() is [var column]
-                ? (column, DefaultConstraint.TargetColumn.Name)
+
+        // The relationship through which each type of unnamed constraint that can sit on one column names its columns.
+        var on = new Dictionary<ModelTypeClass, ModelRelationshipClass>
+        {
+            [DefaultConstraint.TypeClass] = DefaultConstraint.TargetColumn, [CheckConstraint.TypeClass] = CheckConstraint.ExpressionDependencies,
+            [UniqueConstraint.TypeClass] = UniqueConstraint.Columns, [ForeignKeyConstraint.TypeClass] = ForeignKeyConstraint.Columns,
+        };
+        (TSqlObject? Parent, string Relationship) Anchor(TSqlObject o) => composers.TryGetValue(o, out var composer) ? composer
+            : !o.Name.HasName && on.TryGetValue(o.ObjectType, out var through)
+                && o.GetReferenced(through, DacQueryScopes.All).Where(c => c.ObjectType == Column.TypeClass).Distinct().ToArray() is [var column]
+                ? (column, through.Name)
             : o.GetParent(DacQueryScopes.All) is not { } parent ? (null, o.ObjectType.Name)
             : (parent, o.ObjectType.Relationships.FirstOrDefault(r => r.Type == RelationshipType.Hierarchical && o.GetReferenced(r, DacQueryScopes.All).Contains(parent))?.Name ?? o.ObjectType.Name);
 
-        // A target another object composes (a table's column) as its composer's name, the relationship and its position there: a rename
-        // of the column leaves the position as it was, and a database holds its columns in the order the package it was published from does.
-        string Place(ModelRelationshipInstance i) => i.Object is { } target && composers.TryGetValue(target, out var at)
-            ? string.Create(CultureInfo.InvariantCulture, $"{at.Parent.Name} {at.Relationship} {at.Position:D6}") : i.ObjectName.ToString();
         string References(TSqlObject o) => string.Join('\n', o.ObjectType.Relationships.Where(r => r.Type != RelationshipType.Composing)
-            .SelectMany(r => o.GetReferencedRelationshipInstances(r, DacExternalQueryScopes.All).Select(i => r.Name + " " + Place(i))));
+            .SelectMany(r => o.GetReferencedRelationshipInstances(r, DacExternalQueryScopes.All).Select(i => r.Name + " " + i.ObjectName)));
         var secrets = Secrets;
         IEnumerable<ModelPropertyClass> Kept(IEnumerable<ModelPropertyClass> declared) => declared.Where(p => !secrets.Contains(p));
         string Values(TSqlObject o) => string.Join('\n', Kept(o.ObjectType.Properties).Select(p => p.Name + " " + ValueOf(() => o.GetProperty(p), p.DataType)));
@@ -385,7 +392,7 @@ public static class Ssdt
         {
             var relationships = o.ObjectType.Relationships.Select(r => (Class: r, Instances: o.GetReferencedRelationshipInstances(r, DacExternalQueryScopes.All).ToArray())).ToArray();
             var properties = Kept(o.ObjectType.Properties).Select(p => (p.Name, Value: ValueOf(() => o.GetProperty(p), p.DataType)))
-                .Append((Name: "Definition", Value: Module(o.ObjectType) ? ValueOf(() => o.TryGetScript(out var script) ? script : null, typeof(string)) : null))
+                .Append((Name: "Definition", Value: Module(o.ObjectType) ? ValueOf(() => o.TryGetScript(out var script) ? Redacted(script) : null, typeof(string)) : null))
                 .Concat(relationships.SelectMany(r => r.Instances.SelectMany((i, n) => Kept(r.Class.Properties).Select(p =>
                     (Name: string.Create(CultureInfo.InvariantCulture, $"{r.Class.Name}[{n}].{p.Name}"), Value: ValueOf(() => i.GetProperty(p), p.DataType))))))
                 .Where(p => p.Value is not null).Select(p => new Element.Property(p.Name, p.Value!));
@@ -432,6 +439,55 @@ public static class Ssdt
 
     /// <summary>A module, whose body DacFx reads for BodyDependencies and holds in no property of its script type: a procedure, a function, a trigger (a view's is SelectStatement).</summary>
     private static bool Module(ModelTypeClass type) => type.Relationships.Any(r => r.Name == "BodyDependencies") && type.Properties.All(p => p.DataType.Name != "SqlScriptProperty");
+
+    /// <summary>
+    /// The words that open a clause setting a password or a secret, the text values <see cref="Secrets"/> leaves out: PASSWORD
+    /// (CREATE and ALTER LOGIN, USER and APPLICATION ROLE, a master key, ENCRYPTION or DECRYPTION BY PASSWORD, OPEN SYMMETRIC KEY),
+    /// OLD_PASSWORD, SECRET (a credential), KEY_SOURCE and IDENTITY_VALUE (a symmetric key), CONNECTION_OPTIONS (an external data
+    /// source); and the parameters that pass one to a system procedure: sp_addlogin's @passwd, sp_setapprole's @password,
+    /// sp_addlinkedsrvlogin's @rmtpassword and sp_addlinkedserver's @provstr.
+    /// </summary>
+    private static readonly HashSet<string> Setting = new(
+        ["PASSWORD", "OLD_PASSWORD", "SECRET", "KEY_SOURCE", "IDENTITY_VALUE", "CONNECTION_OPTIONS", "@passwd", "@password", "@rmtpassword", "@provstr"], StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A module's text or a deploy script as written, but the value of each clause <see cref="Setting"/> opens, as ScriptDom reads the
+    /// text: a string or binary literal after the word and an equals sign, set as '&lt;left out&gt;' (N'&lt;left out&gt;' for a
+    /// Unicode one). A string literal holding such a clause (EXEC (N'CREATE LOGIN … WITH PASSWORD = ''…''')) is read the same way.
+    /// VALUES.md X2 holds for these texts too; an edit to such a value alone is therefore not seen. Not left out: a value passed by
+    /// position or through a variable, built by concatenation, or written in a comment. Text past a point ScriptDom cannot read (an unclosed string or
+    /// comment, which neither a build nor SQL Server accepts) is left out, with a line saying so.
+    /// </summary>
+    public static string Redacted(string script)
+    {
+        if (!Setting.Any(word => script.Contains(word.TrimStart('@'), StringComparison.OrdinalIgnoreCase)))
+        {
+            return script;
+        }
+
+        var tokens = new TSql160Parser(initialQuotedIdentifiers: true).GetTokenStream(new StringReader(script), out var errors);
+        var text = new StringBuilder(script.Length);
+        var (opened, set) = (false, false);
+        foreach (var token in tokens)
+        {
+            var literal = token.TokenType is TSqlTokenType.AsciiStringLiteral or TSqlTokenType.UnicodeStringLiteral or TSqlTokenType.HexLiteral;
+            text.Append(set && literal ? (token.Text[0] is 'N' or 'n' ? "N" : "") + "'<left out>'" : literal ? Inner(token.Text) : token.Text);
+            (opened, set) = token.TokenType is TSqlTokenType.WhiteSpace or TSqlTokenType.SingleLineComment or TSqlTokenType.MultilineComment ? (opened, set)
+                : (Setting.Contains(token.Text), opened && token.TokenType == TSqlTokenType.EqualsSign);
+        }
+
+        return errors.Count == 0 ? text.ToString()
+            : text.Append(string.Create(CultureInfo.InvariantCulture, $"\n-- estate left out the rest of this text: ScriptDom could not read it past line {errors[0].Line}.")).ToString();
+
+        // A string literal whose text holds a clause, as ScriptDom reads that text, quoted again; a hex literal as it is.
+        static string Inner(string literal)
+        {
+            var unicode = literal[0] is 'N' or 'n';
+            var content = literal[0] == '0' ? "" : literal[(unicode ? 2 : 1)..^1].Replace("''", "'", StringComparison.Ordinal);
+            var inner = Redacted(content);
+            return inner == content ? literal : (unicode ? "N'" : "'") + inner.Replace("'", "''", StringComparison.Ordinal) + "'";
+        }
+    }
 
     /// <summary>A refactorlog entry as an element: its key, and as text each attribute and property the file gives it.</summary>
     private static Result<Element> Entry(RefactorEntry r) => Element.RefactorLogEntry(r.Key, new (string Name, string? Value)[] {

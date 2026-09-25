@@ -84,6 +84,38 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         }
     }
 
+    /// <summary>
+    /// VALUES.md X2 for a module's text: a registered database holding a symmetric key and a procedure that opens it by a planted
+    /// password, read through estate read --from env:uat --json. SQL Server returns the procedure's text as it was written; the
+    /// answer's Definition holds '&lt;left out&gt;' in the password's place and the planted value nowhere.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task Estate_read_of_a_database_whose_procedure_opens_a_key_by_password_prints_no_password()
+    {
+        const string Planted = "Pa55!module#7f3a";
+        await using var database = await SqlServerFixture.RegisterAsync();
+        await SqlServerFixture.ExecuteAsync(database.ConnectionString,
+            "CREATE SYMMETRIC KEY K WITH ALGORITHM = AES_256 ENCRYPTION BY PASSWORD = N'" + Planted + "';");
+        await SqlServerFixture.ExecuteAsync(database.ConnectionString,
+            "CREATE PROCEDURE dbo.OpenKey AS OPEN SYMMETRIC KEY K DECRYPTION BY PASSWORD = N'" + Planted + "'; CLOSE SYMMETRIC KEY K;");
+        var connection = Path.Combine(Path.GetDirectoryName(estate.Root)!, database.Name + ".connection");
+        File.WriteAllText(connection, database.ConnectionString);
+        try
+        {
+            var (exit, output) = estate.EstateAt(estate.Named(("uat", connection)), "read", "--from", "env:uat", "--json");
+
+            Assert.True(exit == 0, output);
+            var procedure = JsonNode.Parse(output)!["read"]!["elements"]!.AsArray().Single(e => (string?)e!["key"] == "Procedure [dbo].[OpenKey]")!;
+            Assert.Contains("DECRYPTION BY PASSWORD = N'<left out>'", (string?)procedure["properties"]!["Definition"], StringComparison.Ordinal);
+            Assert.DoesNotContain(Planted, output, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(connection);
+        }
+    }
+
     [Fact]
     [Trait("Category", "fast")]
     public void Diff_json_validates_against_estate_diff_1_and_carries_the_one_property_both_fingerprints_and_the_engine()
