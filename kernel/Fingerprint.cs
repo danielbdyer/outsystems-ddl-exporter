@@ -82,7 +82,7 @@ public readonly record struct Fingerprint
             : new Error(
                 "fingerprint.malformed",
                 $"'{hex}' is not a fingerprint.",
-                "Give the fingerprint as a receipt prints it: 64 lowercase hex digits.");
+                "Give the fingerprint as estate prints it: 64 lowercase hex digits.");
 
     public override string ToString() =>
         string.Create(CultureInfo.InvariantCulture, $"{_w0:x16}{_w1:x16}{_w2:x16}{_w3:x16}");

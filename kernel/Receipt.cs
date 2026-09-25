@@ -143,8 +143,8 @@ public abstract record Pin
         _ => null,
         pin => engine.Release == pin.Release || engine.Release == pin.Before ? null : new Error(
             "toolchain.outside-window",
-            $"The committed engine, DacFx {engine.DacFx}, is neither the pinned release {pin.Release} nor the release before it{(pin.Before is { } b ? ", " + b : "")}.",
-            $"Publish estate with DacFx {pin.Release}, or record the Octopus step's new engine in estate/ledgers/toolchain.md."));
+            $"The DacFx release estate runs, {engine.DacFx}, is neither the pinned release {pin.Release} nor the release before it{(pin.Before is { } b ? ", " + b : "")}.",
+            $"Publish estate with DacFx {pin.Release}, or record the Octopus step's new DacFx release in estate/ledgers/toolchain.md."));
 
     /// <summary>No engine pinned: the ledger's row reads UNPINNED, or the estate commits no ledger.</summary>
     public sealed record Unpinned : Pin

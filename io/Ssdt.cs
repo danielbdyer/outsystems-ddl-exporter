@@ -68,7 +68,7 @@ public static class Ssdt
 
     /// <summary>
     /// The tool folder: the one estate runs from, when it carries the targets; else the one ESTATE_TOOL names; else dist/estate/
-    /// in the nearest directory at or above the working directory, as in a clone of the engine that ci/publish has run in.
+    /// in the nearest directory at or above the working directory, as in a clone of the tool's repository that ci/publish has run in.
     /// </summary>
     public static Result<string> Tool(string running, string? variable, string workingDirectory) =>
         Doctor.Tool(running).Remedy is null ? running
@@ -79,7 +79,7 @@ public static class Ssdt
         : new Error(
             "tool.missing",
             "estate does not run from a published tool folder, ESTATE_TOOL is unset, and no dist/estate/ lies at or above " + workingDirectory + ".",
-            "run ci/publish.sh, or ci/publish.ps1 on Windows, in a clone of the engine, or set ESTATE_TOOL to a published tool folder; then estate doctor");
+            "run ci/publish.sh, or ci/publish.ps1 on Windows, in a clone of the tool's repository, or set ESTATE_TOOL to a published tool folder; then estate doctor");
 
     /// <summary>dist/estate/ in the nearest directory at or above <paramref name="directory"/> where that is a published tool folder, else null.</summary>
     private static string? Nearest(DirectoryInfo? directory) => directory is null ? null
