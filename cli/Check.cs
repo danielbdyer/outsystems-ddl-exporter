@@ -74,8 +74,7 @@ public static partial class Verbs
                 .. items.Select(i => Finding.Warning("drift." + i.Operation.ToLowerInvariant(), Named(i.Type) + " " + i.Name,
                     "The plan against " + drift.Target + " would " + i.Operation + " " + Named(i.Type) + " " + i.Name + ".",
                     "Run estate diff --from " + drift.Target + " --to ref:" + at + " to see each property that differs.")),
-                .. items.Count == 0 ? [] : Columns(drift.Database, planned.Model, items, log).Select(line => line.Split(": ", 2) is [var key, var change]
-                    ? Finding.Warning("drift.column", key, change + ", from the target to the repository.") : Finding.Warning("drift.column", line, line + ".")),
+                .. items.Count == 0 ? [] : Columns(drift.Database, planned.Model, items, log),
                 .. stamp.Pin is Pin.Unpinned ? new[] { Finding.Note("engine.unpinned", "estate check drift", "This receipt stands on DacFx " + stamp.Engine.DacFx
                     + ", UNPINNED: " + Io.Doctor.Ledger + " pins no engine for estate " + Contract.Version.Split('+')[0] + ".") } : [],
                 Unverified,
@@ -107,15 +106,21 @@ public static partial class Verbs
                 "Name the profile to plan under with estate check drift --profile <the pipeline's .publish.xml>."));
 
     /// <summary>
-    /// The columns that differ under each table the report names, which DacFx's report names only as the table: the target's model read
-    /// and compared with the package's, the column's own properties alone, so text SQL Server keeps as it normalized it plays no part.
+    /// The columns that differ under each table the report names, which DacFx's report names only as the table, as drift.column
+    /// warnings: the target's model read and compared with the package's under the target's collation, the column's own properties alone,
+    /// so text SQL Server keeps as it normalized it plays no part; and each pair of names the collation reads as one, as a note.
     /// </summary>
-    private static IEnumerable<string> Columns(SqlServer.Database database, Ssdt.ModelElements package, IReadOnlyList<(string Operation, string Type, string Name)> items, SqlServer.QueryLog log)
+    private static IReadOnlyList<Finding> Columns(SqlServer.Database database, Ssdt.ModelElements package, IReadOnlyList<(string Operation, string Type, string Name)> items, SqlServer.QueryLog log)
     {
         var tables = items.Where(i => i.Type == "SqlTable").Select(i => "Table " + i.Name).ToHashSet(StringComparer.Ordinal);
         bool Under(ElementKey key) => key.Type == "Column" && tables.Contains(key.Parent?.ToString() ?? "");
-        return SqlServer.Model(database, log).Bind(model => Change.Between(model, package.Elements, [])).Match(
-            change => Lines(new Change(SortedArray.Of(change.Created.Where(e => Under(e.Key))), SortedArray.Of(change.Dropped.Where(e => Under(e.Key))), [], SortedArray.Of(change.Altered.Where(a => Under(a.Key))))),
+        return SqlServer.Model(database, log).Bind(model => CollationOf(model).Bind(collation => Change.Between(model, package.Elements, [], collation).Map(change => (Change: change, Collation: collation)))).Match(
+            found => (IReadOnlyList<Finding>)
+            [
+                .. Lines(new Change(SortedArray.Of(found.Change.Created.Where(e => Under(e.Key))), SortedArray.Of(found.Change.Dropped.Where(e => Under(e.Key))), [], SortedArray.Of(found.Change.Altered.Where(a => Under(a.Key)))))
+                    .Select(line => line.Split(": ", 2) is [var key, var change] ? Finding.Warning("drift.column", key, change + ", from the target to the repository.") : Finding.Warning("drift.column", line, line + ".")),
+                .. found.Change.CaseOnlyRenamed.Select(pair => CaseOnly("drift.case-only-rename", pair, found.Collation)),
+            ],
             _ => []);
     }
 

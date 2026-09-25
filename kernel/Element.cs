@@ -109,10 +109,39 @@ public sealed record ElementKey : IComparable<ElementKey>
 
     public override string ToString() => Type + " " + Path;
 
+    /// <summary>Whether two keys name one object under <paramref name="collation"/>: the same type at every level, the same depth, and each level's name matching.</summary>
+    public bool Matches(ElementKey other, Collation collation)
+    {
+        var (mine, theirs) = (Chain(this), Chain(other));
+        return mine.Length == theirs.Length && mine.Zip(theirs).All(pair => pair.First.Type == pair.Second.Type && pair.First.Name.Matches(pair.Second.Name, collation));
+    }
+
+    /// <summary>Keys as one under <paramref name="collation"/>, for a dictionary or a set: equality by <see cref="Matches"/>, and a hash that agrees with it.</summary>
+    public static IEqualityComparer<ElementKey> Comparer(Collation collation) => collation.IsCaseSensitive ? EqualityComparer<ElementKey>.Default : new IgnoringCase(collation);
+
     /// <summary>This key, moved under <paramref name="parent"/> as the rename of an ancestor moves it.</summary>
     internal ElementKey Under(ElementKey? parent) => parent == Parent ? this : new ElementKey(parent, Type, Name);
 
     private static ElementKey[] Chain(ElementKey key) => key.Parent is null ? [key] : [.. Chain(key.Parent), key];
+
+    /// <summary>Key equality under a case-insensitive collation: each level's type as it is and its name ignoring case.</summary>
+    private sealed class IgnoringCase(Collation collation) : IEqualityComparer<ElementKey>
+    {
+        public bool Equals(ElementKey? x, ElementKey? y) => x is null ? y is null : y is not null && x.Matches(y, collation);
+
+        public int GetHashCode(ElementKey key)
+        {
+            var hash = new HashCode();
+            foreach (var level in Chain(key))
+            {
+                hash.Add(level.Type, StringComparer.Ordinal);
+                hash.Add(level.Name.Schema, StringComparer.OrdinalIgnoreCase);
+                hash.Add(level.Name.Base, StringComparer.OrdinalIgnoreCase);
+            }
+
+            return hash.ToHashCode();
+        }
+    }
 
     private static Error? Invalid(string type, Name name) =>
         string.IsNullOrWhiteSpace(type) ? new Error("element.type-blank", "An element's type is blank.", "Give the DacFx type name, such as Column.")

@@ -59,6 +59,20 @@ public sealed class NameTests
         Assert.Equal("[a]]b].[c.d]", N("a]b", "c.d").ToString());
     }
 
+    /// <summary>Under a case-insensitive collation two spellings match as SQL Server's usual collation reads them, in each part; under a case-sensitive one they match exactly, and equality stays ordinal under either.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Names_match_ignoring_case_under_a_case_insensitive_collation_alone()
+    {
+        var insensitive = Assert.IsType<Result<Collation>.Ok>(Collation.Of("SQL_Latin1_General_CP1_CI_AS")).Value;
+
+        Assert.True(N("dbo", "Customer").Matches(N("DBO", "customer"), insensitive));
+        Assert.False(N("dbo", "Customer").Matches(N("DBO", "customer"), Collation.CaseSensitive));
+        Assert.False(N("Customer").Matches(N("dbo", "Customer"), insensitive));
+        Assert.True(N("Customer").Matches(N("Customer"), Collation.CaseSensitive));
+        Assert.NotEqual(N("Customer"), N("customer"));
+    }
+
     private static string? Code(Result<Name> result) => (result as Result<Name>.Failed)?.Error.Code;
 
     private static Name N(string part) => Assert.IsType<Result<Name>.Ok>(Name.Of(part)).Value;

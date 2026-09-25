@@ -50,6 +50,78 @@ public sealed class ChangeTests
                 && Ok(Change.Between(edit.After, before, Inverted(edit.Renames))) == Mirror(edit.Expected),
             print: x => x.Item2.Kind, iter: 1000);
 
+    /// <summary>
+    /// Decision 2.26: one element's own name flipped in case on a database. Under a case-insensitive collation the pair is one name
+    /// (DacFx plans nothing for it: measured on SQL_Latin1_General_CP1_CI_AS), so the change is empty but for the one case-only pair,
+    /// the element's children and the references to it moving with it; under a case-sensitive one the database reads two names, so
+    /// the element and what is keyed under it are dropped and created, and only relationships that named them are altered. The two
+    /// models fingerprint apart under either, since equality and the fingerprint stay ordinal (law 3′).
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_case_only_rename_is_a_note_under_a_case_insensitive_collation_and_a_drop_and_a_create_under_a_case_sensitive_one() =>
+        Flips.Sample(f =>
+        {
+            var (insensitive, sensitive) = (Ok(Change.Between(f.Before, f.After, [], CaseInsensitive)), Ok(Change.Between(f.Before, f.After, [], Collation.CaseSensitive)));
+            var moved = f.Before.Where(e => e.Key == f.Flip.Before || Beneath(e.Key, f.Flip.Before)).ToList();
+            var referrers = f.Before.Where(e => !moved.Contains(e) && e.Relationships.Any(r => r.Targets.Any(t => moved.Any(m => m.Key == t.Key)))).Select(e => e.Key).ToHashSet();
+
+            Assert.True(insensitive.IsEmpty, "under a case-insensitive collation the flip is a change: " + insensitive);
+            Assert.Equal([f.Flip], insensitive.CaseOnlyRenamed);
+            Assert.Equal(moved.Select(e => e.Key), sensitive.Dropped.Select(e => e.Key));
+            Assert.Equal(moved.Count, sensitive.Created.Count);
+            Assert.Empty(sensitive.Renamed);
+            Assert.Empty(sensitive.CaseOnlyRenamed);
+            Assert.All(sensitive.Altered, a => Assert.True(a.Properties.Count == 0 && referrers.Contains(a.Key), a.Key + " is altered by other than a reference to the flipped element"));
+            Assert.NotEqual(Fingerprint.Of(f.Before), Fingerprint.Of(f.After));
+            Assert.Equal(Mirror(insensitive), Ok(Change.Between(f.After, f.Before, [], CaseInsensitive)));
+        }, print: f => f.Flip.ToString(), iter: 500);
+
+    /// <summary>The mirror property under a case-insensitive collation, over case-distinct sets: the case-only pairs invert with the rest.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_change_between_case_distinct_models_under_a_case_insensitive_collation_mirrors_back() =>
+        Gen.Select(CaseDistinctSets, CaseDistinctSets).Sample((a, b) => Mirror(Ok(Change.Between(a, b, [], CaseInsensitive))) == Ok(Change.Between(b, a, [], CaseInsensitive)));
+
+    /// <summary>A model holding two keys that differ in letter case alone is refused under a case-insensitive collation, which reads them as one name, and read under a case-sensitive one.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Two_elements_whose_keys_differ_in_case_alone_are_one_key_under_a_case_insensitive_collation()
+    {
+        var twice = SortedArray.Of(New(Key("Table", "dbo", "Customer"), []), New(Key("Table", "dbo", "CUSTOMER"), []));
+
+        Assert.Equal("change.duplicate-key", Assert.IsType<Result<Change>.Failed>(Change.Between(twice, [], [], CaseInsensitive)).Error.Code);
+        Assert.True(Ok(Change.Between(twice, twice, [], Collation.CaseSensitive)).IsEmpty);
+    }
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("SQL_Latin1_General_CP1_CI_AS", false, true)]
+    [InlineData("Latin1_General_CS_AS", true, true)]
+    [InlineData("Latin1_General_BIN2", true, true)]
+    [InlineData("Latin1_General_100_CI_AI_SC_UTF8", false, false)]
+    [InlineData("Japanese_XJIS_140_CS_AI", true, false)]
+    public void A_collation_s_name_says_whether_names_compare_with_case(string name, bool caseSensitive, bool accentSensitive)
+    {
+        var collation = Ok(Collation.Of(name));
+
+        Assert.Equal((name, caseSensitive, accentSensitive), (collation.Name, collation.IsCaseSensitive, collation.IsAccentSensitive));
+        Assert.Equal(!caseSensitive, Key("Table", "dbo", "Customer").Matches(Key("Table", "dbo", "customer"), collation));
+        Assert.False(Key("Table", "dbo", "Customer").Matches(Key("View", "dbo", "Customer"), collation));
+    }
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("Latin1_General")]
+    [InlineData("")]
+    [InlineData(null)]
+    [InlineData("Latin1_General_CS_AS; DROP TABLE x")]
+    public void A_collation_name_with_no_case_rule_is_refused(string? name) =>
+        Assert.Equal("model.collation", Assert.IsType<Result<Collation>.Failed>(Collation.Of(name)).Error.Code);
+
+    /// <summary>Whether <paramref name="key"/> lies under <paramref name="ancestor"/>.</summary>
+    private static bool Beneath(ElementKey key, ElementKey ancestor) => key.Parent is { } parent && (parent == ancestor || Beneath(parent, ancestor));
+
     [Fact]
     [Trait("Category", "fast")]
     public void A_rename_renders_and_serializes_the_key_before_and_the_key_after()

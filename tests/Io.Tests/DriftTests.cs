@@ -93,6 +93,110 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     }
 
     /// <summary>
+    /// Decision 2.26's measurement (O2): the golden project built under a case-insensitive and under a case-sensitive collation, each
+    /// published to a copy created under that collation, then dbo.Customer renamed CUSTOMER on each with sp_rename, which sys.tables
+    /// confirms in a binary comparison. DacServices.Script of the package against its copy plans nothing under either collation: DacFx
+    /// matches object names ignoring case even where the database reads [dbo].[Customer] and [dbo].[CUSTOMER] as two names, so a
+    /// case-only rename on a case-sensitive database is a difference no deploy plan will reconcile. estate diff from the copy to the
+    /// package reads names under the copy's collation: one case-only pair with its note under the case-insensitive collation, and the
+    /// table dropped and created under the case-sensitive one. check drift builds the golden ref, a case-insensitive package: against
+    /// the case-insensitive copy it exits 0, and against the case-sensitive copy DacFx refuses the plan (SQL72030, a case-insensitive
+    /// model deployed to a case-sensitive target), dacfx.failed at exit 6.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fixture")]
+    [InlineData("SQL_Latin1_General_CP1_CI_AS", true, 0)]
+    [InlineData("Latin1_General_CS_AS", false, 6)]
+    public async Task A_case_only_rename_of_a_table_on_a_copy_plans_nothing_under_either_collation_and_diff_reads_it_under_the_copy_s_collation(string collation, bool caseInsensitive, int driftExit)
+    {
+        var (copy, dacpac, profile) = await Published(collation);
+        try
+        {
+            await SqlServerFixture.ExecuteAsync(copy.Connection, "EXEC sp_rename 'dbo.Customer', 'CUSTOMER';");
+            Assert.Equal(1, await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.databases WHERE name = @name AND collation_name = N'" + collation + "';", copy.Name));
+            Assert.Equal((1, 0), (
+                await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.tables WHERE name COLLATE Latin1_General_BIN2 = N'CUSTOMER';"),
+                await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.tables WHERE name COLLATE Latin1_General_BIN2 = N'Customer';")));
+
+            var plan = GitTests.Ok(SqlServer.Plan(dacpac, copy, profile));
+            var (exit, output) = Drift("copy:" + copy.Name);
+            var (diffExit, diffOutput) = estate.Estate("diff", "--from", "copy:" + copy.Name, "--to", "dacpac:" + dacpac, "--json");
+
+            Console.WriteLine(collation + ": " + (plan.IsEmpty ? "no operation" : string.Join("; ", plan.Items.Select(i => i.Operation + " " + i.Type + " " + i.Name))));
+            Assert.True(plan.IsEmpty, collation + " planned:\n" + plan.Report);
+            Assert.True(exit == driftExit, output);
+            if (driftExit == 6)
+            {
+                Assert.Contains("`dacfx.failed`", output, StringComparison.Ordinal);
+                Assert.Contains("SQL72030", output, StringComparison.Ordinal);
+            }
+
+            Assert.True(diffExit == 0, diffOutput);
+            var answer = JsonNode.Parse(diffOutput)!;
+            ScratchEstate.Valid("estate.diff.1.schema.json", answer);
+            var change = answer["diff"]!["change"]!;
+            var (dropped, created) = (change["dropped"]!.AsArray().Select(k => (string?)k).ToList(), change["created"]!.AsArray().Select(k => (string?)k).ToList());
+            if (caseInsensitive)
+            {
+                Assert.Equal(["Table [dbo].[CUSTOMER] to Table [dbo].[Customer]"], change["caseOnlyRenamed"]!.AsArray().Select(r => r!["before"] + " to " + r["after"]));
+                Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "diff.case-only-rename" && (string?)f["severity"] == "note"
+                    && ((string?)f["message"])!.Contains(collation + " reads as one name; DacFx plans nothing for it", StringComparison.Ordinal));
+                Assert.DoesNotContain(dropped.Concat(created), key => key!.StartsWith("Table ", StringComparison.Ordinal));
+            }
+            else
+            {
+                Assert.Contains("Table [dbo].[CUSTOMER]", dropped);
+                Assert.Contains("Table [dbo].[Customer]", created);
+                Assert.Empty(change["caseOnlyRenamed"]!.AsArray());
+            }
+        }
+        finally
+        {
+            GitTests.Ok(ScratchServer.Drop(copy));
+        }
+    }
+
+    /// <summary>
+    /// Decision 2.25 on a database: a copy of the golden project given a column named by one space and one whose name holds a tab, which
+    /// SQL Server admits inside brackets, reads whole at exit 0 naming both; diff from the copy to the package, which lacks them, exits 5
+    /// with --fail-on-change and prints each as dropped, the tab escaped as \u0009; and check drift against the golden ref exits 5 naming
+    /// both columns under the altered table, escaped the same way. No raw tab reaches either Markdown output.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task A_copy_holding_a_column_named_by_a_space_and_one_holding_a_tab_is_read_whole_and_each_output_escapes_the_tab()
+    {
+        var (copy, dacpac, _) = await Published(null);
+        try
+        {
+            await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ADD [ ] INT NULL, [a\tb] INT NULL;");
+
+            var (readExit, read) = estate.Estate("read", "--from", "copy:" + copy.Name, "--json");
+            var (diffExit, diff) = estate.Estate("diff", "--from", "copy:" + copy.Name, "--to", "dacpac:" + dacpac, "--fail-on-change");
+            var (driftExit, drift) = Drift("copy:" + copy.Name);
+
+            Assert.True(readExit == 0, read);
+            var answer = JsonNode.Parse(read)!;
+            var whole = (string?)answer["full"] is { } full ? JsonNode.Parse(File.ReadAllText(Path.Combine(estate.Root, full)))! : answer;
+            var keys = whole["read"]!["elements"]!.AsArray().Select(e => (string?)e!["key"]).ToList();
+            Assert.Contains("Column [dbo].[Customer].[ ]", keys);
+            Assert.Contains("Column [dbo].[Customer].[a\tb]", keys);
+            Assert.True(diffExit == 5, diff);
+            Assert.Contains("dropped Column [dbo].[Customer].[ ]", diff.Split('\n'));
+            Assert.Contains("dropped Column [dbo].[Customer].[a\\u0009b]", diff.Split('\n'));
+            Assert.True(driftExit == 5, drift);
+            Assert.Contains("- warning `drift.alter` Table [dbo].[Customer]: ", drift, StringComparison.Ordinal);
+            Assert.Contains("`drift.column` dropped Column [dbo].[Customer].[ ]", drift, StringComparison.Ordinal);
+            Assert.Contains("`drift.column` dropped Column [dbo].[Customer].[a\\u0009b]", drift, StringComparison.Ordinal);
+            Assert.DoesNotContain('\t', diff + drift);
+        }
+        finally
+        {
+            GitTests.Ok(ScratchServer.Drop(copy));
+        }
+    }
+
+    /// <summary>
     /// R13's stamp (M1 exit 6): the receipt names the committed engine, the image's digest where the copy ran in the container, and UNPINNED
     /// while the ledger's row is; and, until S7 lands the Octopus step's profile, that its profile is not verified against it (§17 item 15).
     /// </summary>
@@ -277,12 +381,43 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     }
 
     /// <summary>A fresh copy on the run's scratch server, registered under the estate's root, with the golden project published to it under the pipeline's profile.</summary>
-    private async Task<SqlServer.Copy> Published()
+    private async Task<SqlServer.Copy> Published() => (await Published(null)).Copy;
+
+    /// <summary>
+    /// A fresh copy, its collation set as given while it is still empty (the server's default when null), with the golden project built
+    /// under that collation (its DefaultCollation, the model's; the project as committed when null) published to it under the pipeline's
+    /// profile; the package and the profile too, for a plan against it. DacFx refuses a case-insensitive model deployed to a
+    /// case-sensitive database (SQL72030), so the package's collation follows the copy's.
+    /// </summary>
+    private async Task<(SqlServer.Copy Copy, string Dacpac, PublishProfile.Strict Profile)> Published(string? collation)
     {
-        var copy = GitTests.Ok(ScratchServer.Create(estate.Root, await SqlServerFixture.ServerAsync()));
-        var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "project/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
-        GitTests.Ok(copy.Publish(dacpac, GitTests.Ok(Profiles.Load(Path.Combine(estate.Root, ScratchEstate.Profile)))));
-        return copy;
+        var server = await SqlServerFixture.ServerAsync();
+        var copy = GitTests.Ok(ScratchServer.Create(estate.Root, server));
+        string dacpac;
+        if (collation is null)
+        {
+            dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "project/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
+        }
+        else
+        {
+            await SqlServerFixture.ExecuteAsync(server, "DECLARE @sql nvarchar(max) = N'ALTER DATABASE ' + QUOTENAME(@name) + N' COLLATE " + collation + ";'; EXEC (@sql);", copy.Name);
+            var project = Path.Combine(estate.Root, ".estate", "collation", collation);
+            if (!Directory.Exists(project))
+            {
+                ToolFolderTests.Copy(Path.Combine(GitTests.Ok(Git.At(estate.Root, estate.Base)).Path, "project"), project);   // the golden project as committed, not the head's edit
+                var file = Path.Combine(project, "SampleCatalog.sqlproj");
+                var text = File.ReadAllText(file);
+                File.WriteAllText(file, text.Contains("<DefaultCollation>", StringComparison.Ordinal)
+                    ? System.Text.RegularExpressions.Regex.Replace(text, "<DefaultCollation>[^<]*</DefaultCollation>", "<DefaultCollation>" + collation + "</DefaultCollation>")
+                    : text.Replace("<PropertyGroup>", "<PropertyGroup>\n    <DefaultCollation>" + collation + "</DefaultCollation>", StringComparison.Ordinal));
+            }
+
+            dacpac = GitTests.Ok(Ssdt.Build(Path.Combine(project, "SampleCatalog.sqlproj"), estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
+        }
+
+        var profile = GitTests.Ok(Profiles.Load(Path.Combine(estate.Root, ScratchEstate.Profile)));
+        GitTests.Ok(copy.Publish(dacpac, profile));
+        return (copy, dacpac, profile);
     }
 
     private (int Exit, string Output) Drift(string target, params string[] more) =>

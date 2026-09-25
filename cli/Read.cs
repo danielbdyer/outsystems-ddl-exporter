@@ -46,6 +46,18 @@ public static partial class Verbs
             });
     }
 
+    /// <summary>
+    /// The collation a model's names compare under (decision 2.26): its DatabaseOptions element's Collation property, which
+    /// io/Ssdt.Elements reads from a package as its project's default collation and from a database as the database's; the comparison
+    /// that follows no database when the model has none.
+    /// </summary>
+    internal static Result<Collation> CollationOf(SortedArray<Element> elements) =>
+        elements.FirstOrDefault(e => e.Key.Type == "DatabaseOptions")?["Collation"] is Value.Text { Content: var name } ? Collation.Of(name) : Result.Ok(Collation.CaseSensitive);
+
+    /// <summary>A case-only pair as a note: the collation reads the two spellings as one name, and DacFx plans nothing for the difference.</summary>
+    internal static Finding CaseOnly(string code, Rename pair, Collation collation) => Finding.Note(code, pair.After.ToString(),
+        pair.Before + " and " + pair.After + " differ in letter case alone, which " + collation.Name + " reads as one name; DacFx plans nothing for it.");
+
     /// <summary>A target's model read whole into elements, with the SQL Server image a database ran in; a package's model carries its refactorlog's renames.</summary>
     internal sealed record Source(SqlServer.Target Target, Ssdt.ModelElements Model, string? Image, bool IsDatabase);
 

@@ -117,17 +117,39 @@ internal static class ElementSets
         new([], [], [], [new Change.Alteration(key, properties, relationships)]);
 
     /// <summary>
-    /// What <see cref="Change.Between"/> in the other direction returns: every side swapped, and each altered element
-    /// keyed back, through the rename that moved it or an ancestor, to the key it had before.
+    /// What <see cref="Change.Between"/> in the other direction returns: every side swapped, each rename and case-only pair inverted,
+    /// and each altered element keyed back, through the rename or case-only pair that moved it or an ancestor, to the key it had before.
     /// </summary>
     public static Change Mirror(Change c) => new(
         c.Dropped,
         c.Created,
         SortedArray.Of(c.Renamed.Select(r => r.Inverted())),
         SortedArray.Of(c.Altered.Select(a => new Change.Alteration(
-            Back(a.Key, c.Renamed),
+            Back(a.Key, SortedArray.Of(c.Renamed.Concat(c.CaseOnlyRenamed))),
             SortedArray.Of(a.Properties.Select(p => new Change.Property(p.Name, p.After, p.Before))),
-            SortedArray.Of(a.Relationships.Select(r => new Change.Relationship(r.Name, r.After, r.Before)))))));
+            SortedArray.Of(a.Relationships.Select(r => new Change.Relationship(r.Name, r.After, r.Before)))))),
+        SortedArray.Of(c.CaseOnlyRenamed.Select(r => r.Inverted())));
+
+    /// <summary>The comparer of keys under a case-insensitive collation, and the sets whose keys are distinct under it: what a case-insensitive database can hold.</summary>
+    public static readonly Collation CaseInsensitive = Ok(Collation.Of("SQL_Latin1_General_CP1_CI_AS"));
+
+    public static readonly Gen<SortedArray<Element>> CaseDistinctSets = Sets.Where(set => set.Select(e => e.Key).Distinct(ElementKey.Comparer(CaseInsensitive)).Count() == set.Count);
+
+    /// <summary>
+    /// A set whose keys are distinct ignoring case, and the same set with one element's own name flipped in case (each letter the other
+    /// case; the alphabet abAB gives every letter a partner), its children and the references to it moved with it, where the flipped
+    /// key is one no other element holds. The pair flipped is what a case-only rename on a database makes.
+    /// </summary>
+    public static readonly Gen<(SortedArray<Element> Before, SortedArray<Element> After, Rename Flip)> Flips = CaseDistinctSets
+        .Where(set => set.Any(e => e.Key.Type is not (Element.PreDeploymentScript or Element.PostDeploymentScript)))
+        .SelectMany(set => Gen.Int[0, 1000].Select(pick =>
+        {
+            var named = set.Where(e => e.Key.Type is not (Element.PreDeploymentScript or Element.PostDeploymentScript)).ToArray();
+            var key = named[pick % named.Length].Key;
+            var flipped = Ok(Rename.Of(key, new string([.. key.Name.Base.Select(c => char.IsUpper(c) ? char.ToLowerInvariant(c) : char.ToUpperInvariant(c))]))).After;
+            return (set, Moved(set, key, flipped), new Rename(key, flipped));
+        }))
+        .Where(f => f.Item1.All(e => e.Key != f.Item3.After));
 
     /// <summary>The key an element had before the renames that moved it or one of its ancestors.</summary>
     public static ElementKey Back(ElementKey key, SortedArray<Rename> renames) =>

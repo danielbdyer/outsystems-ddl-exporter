@@ -158,7 +158,8 @@
                 "created",
                 "dropped",
                 "renamed",
-                "altered"
+                "altered",
+                "caseOnlyRenamed"
               ],
               "properties": {
                 "created": {
@@ -176,6 +177,10 @@
                 "altered": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "caseOnlyRenamed": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               }
             },
@@ -186,6 +191,7 @@
                 "created",
                 "dropped",
                 "renamed",
+                "caseOnlyRenamed",
                 "altered"
               ],
               "properties": {
@@ -206,6 +212,28 @@
                   "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
                 },
                 "renamed": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "before",
+                      "after"
+                    ],
+                    "properties": {
+                      "before": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "after": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+                },
+                "caseOnlyRenamed": {
                   "type": "array",
                   "items": {
                     "type": "object",
