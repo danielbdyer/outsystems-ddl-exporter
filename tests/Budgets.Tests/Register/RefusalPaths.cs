@@ -4,21 +4,25 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
+using Estate.Cli;
 using Estate.Io;
 using Estate.Kernel;
+using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
+using Contract = Estate.Cli.Contract;
 
 namespace Estate.Budgets.Tests.Register;
 
 /// <summary>
-/// Every way to a refusal the kernel and io construct, each with an input that takes it there. Register.Refusals reads each
+/// Every way to a refusal the kernel, io and the cli construct, each with an input that takes it there. Register.Refusals reads each
 /// refusal for the register; Io.Tests' "no output contains Password=" plants a password in every input that can carry a value
 /// (<see cref="Case.Plants"/>) and searches what comes back. A driver writes only under the scratch folder it is given, one per
 /// case, and leaves it deletable. The kernel's schema refusals, io/Ssdt's and io/Git's quote what they refuse, a name, a
 /// version, a path, a ref or a branch, and plant nothing. io/Git's are reached in a repository made under the scratch folder.
-/// io/SqlServer's and io/Substrate's reach no server: each is refused before anything connects, and a SQL Server error reaches
+/// io/SqlServer's and io/Substrate's reach no server: each is refused before anything connects, and a SQL Server or DacFx error reaches
 /// its refusal through Database.Refused, the one door every failure against a server passes through. The substrate's own choice
-/// and Create on a given server are io's alone, so R15 is reached through copy: and a planted registry row.
+/// and Create on a given server are io's alone, so R15 is reached through copy: and a planted registry row. The cli's refuse
+/// arguments, through Contract.Flags and estate check's own answer.
 /// </summary>
 internal static class RefusalPaths
 {
@@ -196,6 +200,12 @@ internal static class RefusalPaths
             DevDatabase(scratch).Refused(53, "A network-related or instance-specific error occurred while establishing a connection to " + planted + ".")),
         new("a named environment's statement failing", "server.failed", true, (scratch, planted) =>
             DevDatabase(scratch).Refused(245, "Conversion failed when converting the nvarchar value '" + planted + "' to data type int.")),
+        new("a SQL Server error DacFx quotes by its number, with no SqlException inside", "server.failed", true, (scratch, planted) =>
+            DevDatabase(scratch).Refused(new DacServicesException("Could not deploy package.", new InvalidOperationException("Error SQL72014: Core Microsoft SqlClient Data Provider: "
+                + "Msg 2627, Level 14, State 1, Line 1 Violation of PRIMARY KEY constraint 'PK_Customer'. The duplicate key value is (" + planted + ").")))),
+        new("DacFx failing with no SQL Server error inside", "dacfx.failed", false, (scratch, _) =>
+            DevDatabase(scratch).Refused(new DacServicesException("An error occurred during deployment plan generation. Deployment cannot continue.",
+                new InvalidOperationException("A project which specifies SQL Server vNext as the target platform cannot be published to SQL Server 2022.")))),
         new("a probe the allowlist refuses", "probe.refused", true, (_, planted) =>
             Refused(SqlServer.Probe.Of("SELECT MAX(Email) FROM dbo.Customer WHERE Name = N'" + planted + "';", "dbo.Customer.Email Fits"))),
         new("a SQLCMD reference that does not resolve", "sqlcmd.unresolved", false, (scratch, _) =>
@@ -206,6 +216,10 @@ internal static class RefusalPaths
             var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
             return Refused(SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.Named)dev).Environment, root))));
         }),
+
+        new("a flag the verb does not take", "arguments.unknown-flag", false, (_, _) => Refused(Contract.Flags(["--no-such-flag"], [], [], []))),
+        new("a required flag absent", "arguments.missing-flag", false, (_, _) => Refused(Contract.Flags([], ["--from"], [], []))),
+        new("estate check with no check named", "arguments.unknown-check", false, (scratch, _) => Carried(Verbs.Check(new Checkout(scratch, scratch, null), []))),
     ];
 
     /// <summary>The copy a planted registry holds, made on localhost,11433.</summary>
@@ -229,9 +243,10 @@ internal static class RefusalPaths
     /// <summary>A file: reference to a file written under the scratch folder, its path with '/' so the posture's JSON carries it as it is.</summary>
     private static string Reference(string scratch, string file, string text) => "file:" + Written(scratch, file, text).Replace('\\', '/');
 
-    /// <summary>Each refusal code the kernel and io construct, as their sources write it: a literal code, or the literal start of a composed one (element.).</summary>
+    /// <summary>Each refusal code the kernel, io and the cli construct, as their sources write it: a literal code, or the literal start of a composed one (element.).</summary>
     public static IEnumerable<string> InTheSources() => Repository.Files
-        .Where(f => (f.StartsWith("kernel/", StringComparison.Ordinal) || f.StartsWith("io/", StringComparison.Ordinal)) && f.EndsWith(".cs", StringComparison.Ordinal))
+        .Where(f => (f.StartsWith("kernel/", StringComparison.Ordinal) || f.StartsWith("io/", StringComparison.Ordinal) || f.StartsWith("cli/", StringComparison.Ordinal))
+            && f.EndsWith(".cs", StringComparison.Ordinal))
         .SelectMany(f => System.Text.RegularExpressions.Regex.Matches(Repository.Read(f), @"new\s+Refusal\(\s*""([a-z0-9.-]+)""").Select(m => m.Groups[1].Value))
         .Distinct()
         .Order(StringComparer.Ordinal);
@@ -369,6 +384,11 @@ internal static class RefusalPaths
     }
 
     private static string Quoted(string text) => "\"" + text + "\"";
+
+    /// <summary>The refusal a verb's answer carries as its one blocking finding, where the cli refuses inside a verb rather than in a Result.</summary>
+    private static Refusal Carried(Envelope answer) => answer.Findings is [{ Severity: "block", Remedy: { } remedy } finding]
+        ? new Refusal(finding.Code, finding.Message, remedy)
+        : throw new InvalidOperationException("the answer carries no one refusal: " + answer.Verdict.Message);
 
     private static T Made<T>(Result<T> result) => result.Match(value => value, refusal => throw new InvalidOperationException(refusal.Code + ": " + refusal.Message));
 

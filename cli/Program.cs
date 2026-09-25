@@ -19,7 +19,10 @@ public static class Program
     /// <summary>Answers <paramref name="args"/> on <paramref name="output"/>, as Markdown or, with --json, as one JSON object; returns the exit code.</summary>
     public static int Run(IReadOnlyList<string> args, Stream output) => Run(args, output, Checkout.Here());
 
-    /// <summary>Answers <paramref name="args"/> on <paramref name="output"/> for the estate checkout <paramref name="here"/>; returns the exit code.</summary>
+    /// <summary>
+    /// Answers <paramref name="args"/> on <paramref name="output"/> for the estate checkout <paramref name="here"/>; returns the exit code.
+    /// An exception a verb did not expect is caught here, once, and answered as internal.unexpected at exit 6 (Contract.Unexpected).
+    /// </summary>
     public static int Run(IReadOnlyList<string> args, Stream output, Checkout here)
     {
         var json = args.Contains("--json");
@@ -31,8 +34,21 @@ public static class Program
         }
 
         var verb = Contract.Verbs.FirstOrDefault(v => v.Name == words[0]);
-        var answer = verb is null ? Contract.UnknownVerb(words[0]) : verb.Body is null ? Contract.NotBuilt(verb) : verb.Body(here, words[1..]);
+        Envelope answer;
+        try
+        {
+            answer = verb is null ? Contract.UnknownVerb(words[0]) : verb.Body is null ? Contract.NotBuilt(verb) : verb.Body(here, words[1..]);
+        }
+        catch (Exception e)
+        {
+            answer = Contract.Unexpected(verb, words[0], e, withheld: words.Skip(1).Any(NamesADatabase));
+        }
+
         Write.Text(output, json ? Io.Json.Text(Render.Json(answer)) : Render.Markdown(answer));
         return answer.Exit;
     }
+
+    /// <summary>Whether an argument is an env: or a copy: target, whose resolution reads a named environment's connection (R15 for a copy).</summary>
+    private static bool NamesADatabase(string word) =>
+        SqlServer.Target.Parse(word).Match(target => target is SqlServer.Target.Env or SqlServer.Target.Copy, _ => false);
 }

@@ -8,7 +8,6 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Estate.Cli;
 using Estate.Io;
 using Json.Schema;
@@ -74,22 +73,111 @@ public sealed class ContractTests
         Assert.Empty(table.Except(frozen));    // a new code is frozen in the change that adds it
     }
 
-    /// <summary>io names what it refused; the refusal table alone says which exit that is, by the code's area.</summary>
+    /// <summary>
+    /// The kernel, io and the cli name what they refused; the refusal table alone says which exit that is, by the code's area. The codes
+    /// are Register.RefusalPaths', which Register.Refusals holds to every code the three packages construct, composed ones included, so a
+    /// refusal of a new area fails here until the table gives the area a row; and a row for an area nothing constructs fails too.
+    /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Every_refusal_io_constructs_takes_an_exit_the_table_holds_by_its_codes_area()
+    public void Every_refusal_the_kernel_io_and_the_cli_construct_has_a_row_for_its_area_in_the_refusal_table()
     {
-        var codes = Repository.Files.Where(f => f.StartsWith("io/", StringComparison.Ordinal) && f.EndsWith(".cs", StringComparison.Ordinal))
-            .SelectMany(f => RefusalCode.Matches(Repository.Read(f)).Select(m => m.Groups[1].Value))
-            .ToList();
+        var areas = Register.RefusalPaths.All.Select(c => c.Code.Split('.')[0]).Distinct().Order(StringComparer.Ordinal).ToList();
 
-        Assert.Contains("build.failed", codes);
-        Assert.DoesNotContain(codes, c => !Contract.RefusalExits.ContainsKey(c.Split('.')[0]));
+        Assert.DoesNotContain(areas, area => !Contract.RefusalExits.ContainsKey(area));
+        Assert.Empty(Contract.RefusalExits.Keys.Except(areas));
         Assert.Empty(Contract.RefusalExits.Values.Except(Contract.Exits.Select(e => e.Code)));
-        Assert.Equal([6, 7], ((string[])["sdk.missing", "build.failed"]).Select(c => Contract.Exit(new Kernel.Refusal(c, "Refused.", "Do the other thing."))));
+        Assert.Equal([1, 2, 2, 2, 6, 6, 7], ((string[])["arguments.unknown-flag", "name.blank", "element.property-name", "fingerprint.malformed", "sdk.missing", "dacfx.failed", "build.failed"])
+            .Select(c => Contract.Exit(new Kernel.Refusal(c, "Refused.", "Do the other thing."))));
     }
 
-    private static readonly Regex RefusalCode = new(@"new\s+Refusal\(\s*""([a-z0-9.-]+)""", RegexOptions.CultureInvariant);
+    /// <summary>An area the refusal table lacks still answers with an envelope: exit 6, the refusal's own finding, and one naming the missing row.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_refusal_whose_area_has_no_row_answers_exit_6_with_a_finding_naming_the_area()
+    {
+        var answer = Contract.Refused(Contract.Verbs.Single(v => v.Name == "read"), new Kernel.Refusal("nowhere.refused", "Refused.", "Do the other thing."));
+
+        Assert.Equal(6, answer.Exit);
+        Assert.Equal(["nowhere.refused", "internal.unmapped-area"], answer.Findings.Select(f => f.Code));
+        Assert.Contains("'nowhere'", answer.Findings[1].Message, StringComparison.Ordinal);
+        AssertValid("estate.read.1.schema.json", Render.Json(answer));
+    }
+
+    /// <summary>
+    /// The alignment review's reproduction (ARCH-03): a package whose table has a column named by a space, which DacFx builds and the kernel's
+    /// Name refuses (name.blank), read with --json answers exit 2 with an envelope carrying the refusal, and throws nothing.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Reading_a_package_with_a_column_named_by_a_space_answers_exit_2_with_the_name_refusal()
+    {
+        Telemetry.OptOut();   // before DacFx loads, as estate's Main does
+        var scratch = Directory.CreateTempSubdirectory("estate-blank-name-").FullName;
+        try
+        {
+            var dacpac = Path.Combine(scratch, "blank.dacpac");
+            using (var model = new Microsoft.SqlServer.Dac.Model.TSqlModel(Microsoft.SqlServer.Dac.Model.SqlServerVersion.Sql160, new Microsoft.SqlServer.Dac.Model.TSqlModelOptions()))
+            {
+                model.AddObjects("CREATE TABLE dbo.Customer (Id INT NOT NULL, [ ] INT NULL);");
+                Microsoft.SqlServer.Dac.DacPackageExtensions.BuildPackage(dacpac, model, new Microsoft.SqlServer.Dac.PackageMetadata());
+            }
+
+            var (exit, answer) = Answered(["read", "--from", "dacpac:" + dacpac, "--json"], new Checkout(scratch, scratch, null));
+
+            Assert.Equal(2, exit);
+            AssertValid("estate.read.1.schema.json", answer);
+            Assert.Equal(["name.blank"], answer["findings"]!.AsArray().Select(f => (string)f!["code"]!));
+        }
+        finally
+        {
+            Directory.Delete(scratch, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// An exception no verb expected answers with an envelope: exit 6, one finding internal.unexpected naming the exception's type, and its
+    /// message kept when the command names no env: or copy: target. A checkout with no working directory makes read throw ArgumentNullException.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void An_unexpected_exception_answers_exit_6_with_a_finding_naming_its_type_and_its_message()
+    {
+        var (exit, answer) = Answered(["read", "--from", "dacpac:none.dacpac", "--json"], new Checkout(Repository.Root, null!, null));
+
+        Assert.Equal(6, exit);
+        AssertValid("estate.read.1.schema.json", answer);
+        var finding = Assert.Single(answer["findings"]!.AsArray())!;
+        Assert.Equal(("internal.unexpected", "block"), ((string)finding["code"]!, (string)finding["severity"]!));
+        Assert.Contains("ArgumentNullException: Value cannot be null.", (string)finding["message"]!, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// VALUES.md X2 at the top-level catch: when the command names an env: or a copy: target, whose resolution reads a named environment's
+    /// connection, the exception's message is withheld and its type alone is printed. A checkout with no root makes check drift throw.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("env:dev")]
+    [InlineData("copy:estate_host_1_0a1b2c3d")]
+    public void An_unexpected_exception_withholds_its_message_when_the_command_names_a_database(string target)
+    {
+        var (exit, answer) = Answered(["check", "drift", "--target", target, "--at", "main", "--json"], new Checkout(null!, Repository.Root, null));
+
+        Assert.Equal(6, exit);
+        AssertValid("estate.check.1.schema.json", answer);
+        var message = (string)Assert.Single(answer["findings"]!.AsArray())!["message"]!;
+        Assert.Contains("ArgumentNullException", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Value cannot be null", answer.ToJsonString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>estate run in this process for the checkout given: its exit and its --json answer.</summary>
+    private static (int Exit, JsonNode Answer) Answered(string[] arguments, Checkout here)
+    {
+        using var output = new MemoryStream();
+        var exit = Cli.Program.Run(arguments, output, here);
+        return (exit, JsonNode.Parse(output.ToArray())!);
+    }
 
     [Theory]
     [Trait("Category", "fast")]
