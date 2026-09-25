@@ -21,7 +21,16 @@ public sealed class TargetTests : IDisposable
 
     private readonly string scratch = Directory.CreateTempSubdirectory("estate-targets-").FullName;
 
-    public void Dispose() => Directory.Delete(scratch, recursive: true);
+    private readonly Lazy<Scratch> repository = new(() => new Scratch());
+
+    public void Dispose()
+    {
+        Directory.Delete(scratch, recursive: true);
+        if (repository.IsValueCreated)
+        {
+            repository.Value.Dispose();
+        }
+    }
 
     [Theory]
     [Trait("Category", "fast")]
@@ -287,6 +296,85 @@ public sealed class TargetTests : IDisposable
         Assert.DoesNotContain(Planted, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// kernel/NamedEnvironment.cs documents a file: reference as naming a file outside git, and the estate's own principal
+    /// files sit under .estate/, which .gitignore lists. A connection file git tracks, or one git does not ignore, which the next
+    /// git add would commit, is exit 6 by the environment and the reference, before the file is read, and quotes nothing it holds;
+    /// one git ignores, or one in no git repository while the estate's root is in one, resolves.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("estate/dev.connection", "committed", "reference.tracked")]
+    [InlineData("estate/dev.connection", "written", "reference.not-ignored")]
+    [InlineData(".estate/dev.connection", "written", null)]
+    [InlineData("outside every repository", "written", null)]
+    public void A_connection_file_git_tracks_or_does_not_ignore_is_refused_and_one_git_ignores_resolves(string file, string how, string? code)
+    {
+        using var repository = new Scratch();
+        const string Connection = "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted;
+        var reference = file == "outside every repository" ? Written("dev.connection", Connection) : file;
+        repository.Commit("the estate", (".gitignore", ".estate/\n"), ("estate/posture.json", "{ \"environments\": { " + Dev(reference) + " } }"));
+        if (file != "outside every repository")
+        {
+            repository.Write((file, Connection));
+            OwnerOnly(Path.Combine(repository.Root, file));
+        }
+
+        if (how == "committed")
+        {
+            repository.Commit("the connection file");
+        }
+
+        var resolved = SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), repository.Root);
+
+        Assert.Equal(code, resolved.Match<string?>(_ => null, refusal => refusal.Code));
+        resolved.Match(_ => 0, refusal =>
+        {
+            Assert.Equal(6, Contract.Exit(refusal));
+            Assert.StartsWith("env:dev's connection, file:" + file + ", ", refusal.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(Planted, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
+            return 0;
+        });
+    }
+
+    /// <summary>An estate's root in no git repository leaves git unable to say whether it would commit a connection file, so the reference is refused, saying so, and the file is not read.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_connection_file_of_an_estate_root_in_no_git_repository_is_refused_saying_git_cannot_check_it()
+    {
+        var root = Directory.CreateDirectory(Path.Combine(scratch, "no-repository")).FullName;
+        Directory.CreateDirectory(Path.Combine(root, "estate"));
+        File.WriteAllText(Path.Combine(root, "estate", "posture.json"), "{ \"environments\": { " + Dev(Written("dev.connection", "Server=dev-sql;Initial Catalog=Dev;Password=" + Planted)) + " } }");
+
+        var refusal = Refused(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root));
+
+        Assert.Equal(("reference.no-repository", 6), (refusal.Code, Contract.Exit(refusal)));
+        Assert.Contains(root + " is in no git repository", refusal.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Planted, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// On Linux and macOS a connection file its group or other users can read is refused by its mode, and one its owner alone
+    /// reads resolves. Windows keeps no Unix mode on a file, so there the same file resolves; the Windows and the Ubuntu CI jobs each
+    /// assert their own half.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_connection_file_its_group_can_read_is_refused_where_files_carry_a_Unix_mode()
+    {
+        var file = Written("dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
+        }
+
+        var resolved = SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), Estate(Dev(file)));
+
+        Assert.Equal(OperatingSystem.IsWindows() ? null : "reference.readable-by-others", resolved.Match<string?>(_ => null, refusal => refusal.Code));
+        Assert.Equal(["reference.readable-by-others", "reference.readable-by-others", null], ((int[])[0b110_100_000, 0b110_000_100, 0b110_000_000])   // modes 0640, 0604, 0600
+            .Select(mode => SqlServer.ReadableByOthers("env:dev's connection, file:" + file + ",", (UnixFileMode)mode)?.Code));
+    }
+
     /// <summary>ref: and dacpac: name no database; the Twin arrives in M3.</summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -352,16 +440,27 @@ public sealed class TargetTests : IDisposable
         return root;
     }
 
+    /// <summary>On Linux and macOS, the file's mode set to 0600, so its owner alone reads it, as a connection file must be; Windows keeps no such mode.</summary>
+    private static void OwnerOnly(string file)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+    }
+
+    /// <summary>A connection file under the scratch folder, in no git repository and read by its owner alone; its path with '/'.</summary>
     private string Written(string file, string text)
     {
         File.WriteAllText(Path.Combine(scratch, file), text);
+        OwnerOnly(Path.Combine(scratch, file));
         return Path.Combine(scratch, file).Replace('\\', '/');
     }
 
-    /// <summary>An estate's root under the scratch folder whose estate/posture.json names the environments given.</summary>
+    /// <summary>An estate's root in a git repository of its own, whose estate/posture.json names the environments given; the connection files stay outside it.</summary>
     private string Estate(string environments)
     {
-        var root = Directory.CreateDirectory(Path.Combine(scratch, "estate-" + Guid.NewGuid().ToString("N")[..8])).FullName;
+        var root = Directory.CreateDirectory(Path.Combine(repository.Value.Root, "estate-" + Guid.NewGuid().ToString("N")[..8])).FullName;
         Directory.CreateDirectory(Path.Combine(root, "estate"));
         File.WriteAllText(Path.Combine(root, "estate", "posture.json"), "{ \"environments\": { " + environments + " } }");
         return root;

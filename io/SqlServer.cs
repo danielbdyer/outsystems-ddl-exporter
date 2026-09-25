@@ -346,17 +346,17 @@ public static class SqlServer
     /// root, parsed by SqlClient's own grammar; the caller's integrated identity when it names no other; estate as the application unless
     /// it names one. A refusal names the reference and quotes nothing it read.
     /// </summary>
-    internal static Result<string> Connect(string subject, SecretReference reference, string estateRoot) => Read(reference, estateRoot) is not { } text
+    internal static Result<string> Connect(string subject, SecretReference reference, string estateRoot) => Read(subject, reference, estateRoot).Bind(read => read is not { } text
         ? new Refusal("connection.unresolved", subject + " resolves to nothing here.", "Set the variable, or write the file outside git, that " + reference + " names.")
         : Parsed(subject, reference, text).Bind(connection => connection.InitialCatalog.Length == 0
             ? new Refusal("connection.malformed", subject + " names no database; Model, Plan and the executor read the database it names.",
                 "Give the connection string an Initial Catalog, in the place " + reference + " names.")
-            : Result.Ok(Identified(connection)));
+            : Result.Ok(Identified(connection))));
 
     /// <summary>An environment's server as R15 reads it, a database named or not: null when its reference resolves to nothing here; refused when SqlClient reads nothing from it.</summary>
-    internal static Result<string?> DataSource(NamedEnvironment environment, string estateRoot) => Read(environment.Connection, estateRoot) is not { } text
+    internal static Result<string?> DataSource(NamedEnvironment environment, string estateRoot) => Read(Named.Subject(environment), environment.Connection, estateRoot).Bind(read => read is not { } text
         ? Result.Ok<string?>(null)
-        : Parsed(Named.Subject(environment), environment.Connection, text).Map(connection => (string?)connection.DataSource);
+        : Parsed(Named.Subject(environment), environment.Connection, text).Map(connection => (string?)connection.DataSource));
 
     /// <summary>A reference's text as SqlClient's own grammar reads it; the refusal names the reference and quotes nothing it read.</summary>
     private static Result<SqlConnectionStringBuilder> Parsed(string subject, SecretReference reference, string text)
@@ -388,20 +388,48 @@ public static class SqlServer
         return connection.ConnectionString;
     }
 
-    /// <summary>What a reference names: the variable's value, or the file's text trimmed; null when there is none.</summary>
-    internal static string? Read(SecretReference reference, string estateRoot)
+    /// <summary>
+    /// What a reference names: the variable's value, or the file's text trimmed; null when there is none. A file, a relative path read
+    /// from the estate's root, is read only when git keeps it out of every commit, ignored or in no repository while the estate's root
+    /// is in one, and, where files carry a Unix mode, when its owner alone can read it; a refusal leads with <paramref name="subject"/>.
+    /// </summary>
+    internal static Result<string?> Read(string subject, SecretReference reference, string estateRoot)
     {
         try
         {
             return reference.Match(
-                variable => System.Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value ? value : null,
-                file => System.IO.Path.Combine(estateRoot, file) is var path && File.Exists(path) && File.ReadAllText(path).Trim() is { Length: > 0 } text ? text : null);
+                variable => Result.Ok(System.Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value ? value : null),
+                file => System.IO.Path.Combine(estateRoot, file) is var path && File.Exists(path)
+                    ? Kept(subject, estateRoot, path).Map(_ => File.ReadAllText(path).Trim() is { Length: > 0 } text ? text : null)
+                    : Result.Ok<string?>(null));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return null;
+            return Result.Ok<string?>(null);
         }
     }
+
+    /// <summary>
+    /// The refusal of a file a reference names whose Unix mode lets its group or other users read it, or null: Read asks it of the
+    /// file's mode on Linux and macOS, and Windows keeps no such mode.
+    /// </summary>
+    public static Refusal? ReadableByOthers(string subject, UnixFileMode mode) => (mode & (UnixFileMode.GroupRead | UnixFileMode.OtherRead)) == 0 ? null
+        : new Refusal("reference.readable-by-others", subject + " is a file its group or other users can read (mode "
+            + Convert.ToString((int)mode & 0b111_111_111, 8).PadLeft(4, '0') + "); a file holding a connection string is read by its owner alone.",
+            "Run chmod 600 on the file, so its owner alone reads it.");
+
+    /// <summary>The path of a file a file: reference names, when git keeps it out of every commit and no other user can read it; else the refusal, the file unread.</summary>
+    private static Result<string> Kept(string subject, string estateRoot, string path) => Git.HoldingOf(estateRoot, path).Bind<string>(holding => holding switch
+    {
+        Git.Holding.Tracked => new Refusal("reference.tracked", subject + " is a file git tracks, so every clone of the repository holds what it holds; a file: reference names a file git keeps out of every commit.",
+            "Run git rm --cached on the file, list it in .gitignore, and change the password it held, since the history keeps the commit."),
+        Git.Holding.NotIgnored => new Refusal("reference.not-ignored", subject + " is a file git does not ignore, so the next git add commits it; a file: reference names a file git keeps out of every commit.",
+            "List the file in .gitignore, or move it under a folder .gitignore lists, such as .estate/."),
+        Git.Holding.EstateInNoRepository => new Refusal("reference.no-repository", subject + " names a file, and the estate's root " + estateRoot
+            + " is in no git repository, so git cannot say whether a clone would commit the file; it is not read.",
+            "Run estate in a clone of the estate's repository, or give the reference as env:NAME."),
+        _ => !OperatingSystem.IsWindows() && ReadableByOthers(subject, File.GetUnixFileMode(path)) is { } readable ? readable : path,
+    });
 
     /// <summary>
     /// A server's host as R15 spells it: the data source with its protocol, port and instance set aside, in lower case; this machine,
@@ -495,9 +523,10 @@ public static class SqlServer
     private static Result<List<SqlCmdValue>> Values(Database target) => target is not Named named ? new List<SqlCmdValue>()
         : named.Environment.SqlCmd.Aggregate(Result.Ok(new List<SqlCmdValue>()), (all, variable) => all.Bind(list => variable.Match(
             literal => Result.Ok<List<SqlCmdValue>>([.. list, new(variable.Name, literal, false)]),
-            reference => Read(reference, named.Root) is { } value ? Result.Ok<List<SqlCmdValue>>([.. list, new(variable.Name, value, true)])
+            reference => Read(named + "'s $(" + variable.Name + "), " + reference + ",", reference, named.Root).Bind(read => read is { } value
+                ? Result.Ok<List<SqlCmdValue>>([.. list, new(variable.Name, value, true)])
                 : new Refusal("sqlcmd.unresolved", named + "'s $(" + variable.Name + ") names " + reference + ", which resolves to nothing here.",
-                    "Set the variable, or write the file outside git, that " + reference + " names."))));
+                    "Set the variable, or write the file outside git, that " + reference + " names.")))));
 
     /// <summary>A value the allowlist admits the type of: an integer of any width. Anything else is a defect in the allowlist, named by its type alone.</summary>
     private static long Integer(object value) => value switch

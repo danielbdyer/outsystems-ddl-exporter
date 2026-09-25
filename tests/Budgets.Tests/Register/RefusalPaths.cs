@@ -176,7 +176,25 @@ internal static class RefusalPaths
         new("a connection whose variable is unset", "connection.unresolved", false, (scratch, _) =>
             Refused(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: "env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant())))))),
         new("a connection file holding no connection string", "connection.malformed", true, (scratch, planted) =>
-            Refused(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "garbled " + planted))))))),
+            Refused(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "garbled " + planted)))))))),
+        new("a connection file git tracks", "reference.tracked", true, (scratch, planted) => InRepository(scratch, root =>
+        {
+            Written(root, "estate/posture.json", Environments(Dev(connection: "file:estate/dev.connection")));
+            OwnerOnly(Written(root, "estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
+            Arrange(root, "add", "--", "estate/dev.connection");
+            Arrange(root, "commit", "-q", "-m", "the connection file");
+            return SqlServer.Resolve(Target("env:dev"), root);
+        })),
+        new("a connection file git does not ignore", "reference.not-ignored", true, (scratch, planted) => InRepository(scratch, root =>
+        {
+            Written(root, "estate/posture.json", Environments(Dev(connection: "file:estate/dev.connection")));
+            OwnerOnly(Written(root, "estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
+            return SqlServer.Resolve(Target("env:dev"), root);
+        })),
+        new("a connection file of an estate in no git repository", "reference.no-repository", true, (scratch, planted) =>
+            Refused(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Password=" + planted))))))),
+        new("a connection file its group can read, where files carry a Unix mode", "reference.readable-by-others", false, (_, _) =>
+            SqlServer.ReadableByOthers("env:dev's connection, file:.estate/dev.connection,", (UnixFileMode)0b110_100_000) ?? throw new InvalidOperationException("mode 0640 was not refused")),
         new("a copy the registry does not hold", "copy.unregistered", false, (scratch, _) => Refused(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch))),
         new("a copy registry that is not JSON", "registry.unreadable", true, (scratch, planted) =>
         {
@@ -185,9 +203,9 @@ internal static class RefusalPaths
             return Refused(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch));
         }),
         new("a copy made on the host an environment's reference names", "copy.named-host", true, (scratch, planted) => Refused(SqlServer.Resolve(Target("copy:" + Copied),
-            Registered(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted)))))))),
+            Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted))))))))),
         new("a copy beside an environment whose connection SqlClient cannot read", "connection.malformed", true, (scratch, planted) => Refused(SqlServer.Resolve(Target("copy:" + Copied),
-            Registered(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Nonsense " + planted + " = 1")))))))),
+            Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Nonsense " + planted + " = 1"))))))))),
         new("no substrate server anywhere", "substrate.missing", false, (scratch, _) => Refused(Substrate.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
         new("a substrate server SqlClient cannot read", "substrate.missing", true, (scratch, planted) =>
             Refused(Substrate.ServerName("Server=db;Password=" + planted + ";Nonsense " + planted + " = 1", Path.Combine(scratch, "no-sql.env"), localDb: false))),
@@ -200,8 +218,8 @@ internal static class RefusalPaths
             Refused(SqlServer.Probe.Of("SELECT MAX(Email) FROM dbo.Customer WHERE Name = N'" + planted + "';", "dbo.Customer.Email Fits"))),
         new("a SQLCMD reference that does not resolve", "sqlcmd.unresolved", false, (scratch, _) =>
         {
-            var root = Estate(scratch, Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\" }",
-                connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev"))));
+            var root = Initialized(Estate(scratch, Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\" }",
+                connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev")))));
             File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
             var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
             return Refused(SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.Named)dev).Environment, root))));
@@ -224,10 +242,31 @@ internal static class RefusalPaths
 
     /// <summary>The named environment dev, its connection a file under the scratch folder naming a server that is never reached.</summary>
     private static SqlServer.Database DevDatabase(string scratch) =>
-        Made(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev"))))));
+        Made(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev")))))));
 
-    /// <summary>A file: reference to a file written under the scratch folder, its path with '/' so the posture's JSON carries it as it is.</summary>
-    private static string Reference(string scratch, string file, string text) => "file:" + Written(scratch, file, text).Replace('\\', '/');
+    /// <summary>
+    /// A file: reference to a file written under the scratch folder, outside the estate's root and in no git repository, and read by its
+    /// owner alone; its path with '/' so the posture's JSON carries it as it is.
+    /// </summary>
+    private static string Reference(string scratch, string file, string text) => "file:" + OwnerOnly(Written(scratch, file, text)).Replace('\\', '/');
+
+    /// <summary>On Linux and macOS, the file's mode set to 0600, as io/SqlServer reads a connection file; Windows keeps no such mode.</summary>
+    private static string OwnerOnly(string file)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        return file;
+    }
+
+    /// <summary>The estate's root made a git repository, as a clone is, so io/SqlServer can ask git whether it would commit a file: reference's file.</summary>
+    private static string Initialized(string root)
+    {
+        Arrange(root, "init", "-q");
+        return root;
+    }
 
     /// <summary>Each refusal code the kernel and io construct, as their sources write it: a literal code, or the literal start of a composed one (element.).</summary>
     public static IEnumerable<string> InTheSources() => Repository.Files

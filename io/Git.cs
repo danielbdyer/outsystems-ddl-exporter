@@ -68,6 +68,42 @@ public static class Git
         Step(git, root, ["diff-tree", "-r", "-z", "--name-only", "--no-commit-id", from, to]).Map<IReadOnlyList<string>>(paths => paths.Split('\0', StringSplitOptions.RemoveEmptyEntries).Order(StringComparer.Ordinal).ToList()))));
 
     /// <summary>
+    /// How git holds the file a file: reference names, which must stay out of every commit, since a commit reaches every clone:
+    /// Tracked, committed already; NotIgnored, so the next git add commits it; Ignored; or InNoRepository. EstateInNoRepository when
+    /// the estate's root is in no git repository, where git cannot say what the estate's clones would commit.
+    /// </summary>
+    public enum Holding
+    {
+        Tracked,
+        NotIgnored,
+        Ignored,
+        InNoRepository,
+        EstateInNoRepository,
+    }
+
+    /// <summary>
+    /// How git holds an existing <paramref name="file"/>, asked in the file's own folder, so the repository is the one git finds there
+    /// (the estate's, another, or none) and no path is compared by its spelling. A tracked file is Tracked whatever .gitignore lists.
+    /// </summary>
+    public static Result<Holding> HoldingOf(string estateRoot, string file, string git = "git")
+    {
+        var (folder, name) = (Path.GetDirectoryName(Path.GetFullPath(file))!, Path.GetFileName(file));
+        return Run(git, estateRoot, ["rev-parse", "--show-toplevel"]).Exit switch
+        {
+            -1 => Missing(git),
+            not 0 => Holding.EstateInNoRepository,
+            _ when Run(git, folder, ["rev-parse", "--show-toplevel"]).Exit != 0 => Holding.InNoRepository,
+            _ => Step(git, folder, ["ls-files", "--", ":(literal)" + name]).Bind<Holding>(listed => listed.Length > 0 ? Holding.Tracked
+                : Run(git, folder, ["check-ignore", "--quiet", "--", name]) switch
+                {
+                    (0, _, _) => Holding.Ignored,
+                    (1, _, _) => Holding.NotIgnored,
+                    (_, _, var errors) => Failed("check-ignore", errors),
+                }),
+        };
+    }
+
+    /// <summary>
     /// A new branch holding one commit on HEAD, of HEAD's tree with the paths (from the repository's root) as the working tree
     /// has them, pushed to the origin. The caller's branch, index and working tree stay as they were; a branch that exists
     /// here or at the origin is refused before anything is written, and a push that fails leaves no branch behind.
@@ -148,13 +184,16 @@ public static class Git
     private static Result<string> Root(string git, string repository) => Run(git, repository, ["rev-parse", "--show-toplevel"]) switch
     {
         (0, var root, _) => Path.GetFullPath(root.Trim()),
-        (-1, _, _) => new Refusal("git.missing", "git does not run here: '" + git + "' is not installed or not on the PATH.", "install git and put it on the PATH; then estate doctor"),
+        (-1, _, _) => Missing(git),
         (_, _, var errors) => new Refusal("git.not-a-repository", repository + " is not in a git repository: " + errors.Trim(), "run estate in a clone of the repository, or name the clone's folder"),
     };
 
     private static Result<string> Resolve(string git, string root, string reference) => Run(git, root, ["rev-parse", "--verify", "--quiet", "--end-of-options", reference + "^{commit}"]) is (0, var commit, _)
         ? commit.Trim()
         : new Refusal("ref.unresolved", "'" + reference + "' names no commit in " + root + ".", "name a branch, tag or commit the repository holds; git fetch brings the origin's");
+
+    private static Refusal Missing(string git) =>
+        new Refusal("git.missing", "git does not run here: '" + git + "' is not installed or not on the PATH.", "install git and put it on the PATH; then estate doctor");
 
     private static Refusal Unreachable(string command, string errors) => new Refusal(
         "origin.unreachable", "git " + command + " to the origin failed, and nothing was committed: " + errors.Trim(),
