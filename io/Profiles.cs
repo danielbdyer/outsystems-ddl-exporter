@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Data.Common;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -10,7 +9,6 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using Estate.Kernel;
-using Microsoft.Data.SqlClient;
 using Microsoft.SqlServer.Dac;
 
 namespace Estate.Io;
@@ -27,9 +25,6 @@ public static class Profiles
     public const string Posture = "estate/posture.json";
 
     private static readonly string[] Keys = ["host", "classification", "confirmedBy", "confirmedOn", "readers", "connection", "profile", "sqlcmd", "metamodel"];
-
-    /// <summary>A password set in a connection string, however spelled or spaced.</summary>
-    private static readonly Regex Password = new(@"(?:password|pwd)\s*=", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     /// <summary>A key a message may name as it stands; any other is named by its place among its siblings.</summary>
     private static readonly Regex Nameable = new(@"\A[A-Za-z0-9_-]{1,64}\z", RegexOptions.CultureInvariant);
@@ -102,7 +97,7 @@ public static class Profiles
             using var reader = XmlReader.Create(new MemoryStream(bytes), new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
             profile = XDocument.Load(reader);
             var read = profile.Descendants().SelectMany(e => e.Attributes().Select(a => a.Value).Append(string.Concat(e.Nodes().OfType<XText>().Select(t => t.Value))));
-            if (read.Prepend(Encoding.UTF8.GetString(bytes)).Any(Password.IsMatch))
+            if (read.Prepend(Encoding.UTF8.GetString(bytes)).Any(ConnectionString.Password.IsMatch))
             {
                 return new Error("profile.password", subject + " holds a password in a connection string; a profile gives deploy options and SQLCMD values alone.",
                     "Delete the connection string from " + path + ", and name the connection in " + Posture + " as env:NAME or file:path.");
@@ -146,7 +141,7 @@ public static class Profiles
 
     /// <summary>A SQLCMD value a profile gives: a literal, refused under a name shaped like a credential or when it is a connection string.</summary>
     private static Result<SqlCmdVariable> ProfileValue(string subject, string path, string name, string value) =>
-        SqlCmdVariable.Of(subject, name, value).Bind(literal => IsConnection(value) ? new Error("profile.literal-connection",
+        SqlCmdVariable.Of(subject, name, value).Bind(literal => ConnectionString.IsConnection(value) ? new Error("profile.literal-connection",
             subject + " gives $(" + name + ") a literal connection string.",
             "Give $(" + name + ") as env:NAME or file:path in the environment's sqlcmd in " + Posture + ", and delete its value from " + path + ".") : Result.Ok(literal));
 
@@ -198,26 +193,13 @@ public static class Profiles
     /// <summary>Where the first key or string of the document that is a literal connection string sits, or null.</summary>
     private static string? Literal(JsonElement element, string at) => element.ValueKind switch
     {
-        JsonValueKind.Object => element.EnumerateObject().Select((p, i) => IsConnection(p.Name) ? Place(at, p.Name, i) : Literal(p.Value, Place(at, p.Name, i)))
+        JsonValueKind.Object => element.EnumerateObject().Select((p, i) => ConnectionString.IsConnection(p.Name) ? Place(at, p.Name, i) : Literal(p.Value, Place(at, p.Name, i)))
             .FirstOrDefault(found => found is not null),
         JsonValueKind.Array => element.EnumerateArray().Select((item, i) => Literal(item, string.Create(CultureInfo.InvariantCulture, $"{at}[{i}]")))
             .FirstOrDefault(found => found is not null),
-        JsonValueKind.String => IsConnection(element.GetString()!) ? at : null,
+        JsonValueKind.String => ConnectionString.IsConnection(element.GetString()!) ? at : null,
         _ => null,
     };
-
-    /// <summary>Whether a text is a literal connection string: it sets a password, or SqlClient's grammar reads one of its keywords from it (Server, User ID). io/SqlServer's target grammar asks it of an argument.</summary>
-    internal static bool IsConnection(string text)
-    {
-        try
-        {
-            return Password.IsMatch(text) || new DbConnectionStringBuilder { ConnectionString = text }.Keys.Cast<string>().Any(new SqlConnectionStringBuilder().ContainsKey);
-        }
-        catch (ArgumentException)
-        {
-            return false;
-        }
-    }
 
     /// <summary>The first error in an object of the posture: none at all, a key outside <paramref name="known"/>, or a value of another kind than its key takes.</summary>
     private static Error? Unknown(JsonElement element, string at, string[] known) => element.ValueKind != JsonValueKind.Object ? Malformed(at, "a JSON object")

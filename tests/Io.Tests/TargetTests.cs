@@ -258,6 +258,51 @@ public sealed class TargetTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// estate adds no TLS keyword to a named environment's connection: the reference's own Encrypt and HostNameInCertificate reach the
+    /// server as written, so a corporate certificate check holds, and a reference that names none gets none, so SqlClient's default,
+    /// a certificate the machine trusts, applies. Only the local scratch server's connection trusts its self-signed certificate.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("Server=dev-sql;Initial Catalog=Dev;Encrypt=Strict;HostNameInCertificate=dev-sql.corp.example", "Strict", "dev-sql.corp.example")]
+    [InlineData("Server=dev-sql;Initial Catalog=Dev", null, null)]
+    public void A_reference_reaches_the_server_with_its_own_TLS_keywords_and_no_other(string connection, string? encrypt, string? hostNameInCertificate)
+    {
+        var root = Estate("\"qa\": { \"host\": \"dev-sql\", \"connection\": \"file:" + Written("qa.connection", connection) + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
+
+        var resolved = new SqlConnectionStringBuilder(Made(SqlServer.Resolve(Made(SqlServer.Target("env:qa", "--target")), root)).Connection);
+
+        Assert.Equal((encrypt, hostNameInCertificate), (resolved.ShouldSerialize("Encrypt") ? resolved.Encrypt.ToString() : null, resolved.ShouldSerialize("Host Name In Certificate") ? resolved.HostNameInCertificate : null));
+        Assert.False(resolved.ShouldSerialize("Trust Server Certificate"), "estate set TrustServerCertificate on a named environment's connection");
+    }
+
+    /// <summary>
+    /// Finding R-7: ESTATE_SQL, the scratch server the operator names, is configuration, so a value SqlClient reads no connection string
+    /// from is connection.malformed at exit 6, not a server that does not answer (exit 4); and the same text given as a named
+    /// environment's reference is refused by the one parse, alike, its text withheld from both, since it can hold a password.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_malformed_ESTATE_SQL_is_refused_at_exit_6_as_the_same_text_is_as_a_reference_its_text_withheld()
+    {
+        var malformed = "Server=db;User ID=sa;Password=" + Planted + ";Nonsense " + Planted + " = 1";
+        var root = Estate(Dev(Written("dev.connection", malformed)));
+
+        var scratchServer = Failed(ScratchServer.ServerName(malformed, Path.Combine(scratch, "no-sql.env"), localDb: false));
+        var reference = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root));
+
+        Assert.Equal(("connection.malformed", 6), (scratchServer.Code, Contract.Exit(scratchServer)));
+        Assert.Equal(("connection.malformed", 6), (reference.Code, Contract.Exit(reference)));
+        Assert.StartsWith("ESTATE_SQL", scratchServer.Message, StringComparison.Ordinal);
+        Assert.StartsWith("env:dev's connection", reference.Message, StringComparison.Ordinal);
+        Assert.All(new[] { scratchServer, reference }, error =>
+        {
+            Assert.EndsWith(" is no connection string SqlClient reads; its text is withheld.", error.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        });
+    }
+
     /// <summary>A reference that resolves to nothing, or to no connection string that names its database, is exit 6 by the reference, and quotes nothing it read.</summary>
     [Theory]
     [Trait("Category", "fast")]

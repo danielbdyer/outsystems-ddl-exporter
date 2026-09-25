@@ -37,7 +37,7 @@ public static class SqlServer
     /// only SqlClient's grammar tells from a target, is connection.literal at exit 6, and no part of the argument is quoted.
     /// </summary>
     public static Result<Target> Target(string text, string subject) =>
-        Profiles.IsConnection(text) ? new Error("connection.literal", subject + " is a literal connection string, which no argument carries.",
+        ConnectionString.IsConnection(text) ? new Error("connection.literal", subject + " is a literal connection string, which no argument carries.",
             "Name the target as env:NAME, an environment whose connection estate/posture.json gives as env:VARIABLE or file:path.")
         : Kernel.Target.Parse(text, subject);
 
@@ -52,7 +52,7 @@ public static class SqlServer
         internal string Connection { get; }
 
         /// <summary>The database's name, as DacFx plans against it.</summary>
-        internal string Catalog => new SqlConnectionStringBuilder(Connection).InitialCatalog;
+        internal string Catalog => ConnectionString.CatalogOf(Connection);
 
         /// <summary>Whether SQL Server's messages about a failed statement are withheld: a named environment's rows may be real (VALUES.md X2).</summary>
         internal abstract bool Withheld { get; }
@@ -144,7 +144,7 @@ public static class SqlServer
     public sealed class Copy : Database
     {
         internal Copy(CopyName name, string server, string estateRoot)
-            : base(new Target.RegisteredCopy(name), new SqlConnectionStringBuilder(server) { InitialCatalog = name.ToString() }.ConnectionString) => (Name, Root) = (name, estateRoot);
+            : base(new Target.RegisteredCopy(name), ConnectionString.WithCatalog(server, name.ToString())) => (Name, Root) = (name, estateRoot);
 
         public CopyName Name { get; }
 
@@ -371,50 +371,24 @@ public static class SqlServer
 
     /// <summary>
     /// A reference's connection (§4 row 14, VALUES.md X1): env:NAME's variable or file:path's text, a relative path read from the estate's
-    /// root, parsed by SqlClient's own grammar; the caller's integrated identity when it names no other; estate as the application unless
-    /// it names one. An error names the reference and quotes nothing it read.
+    /// root, parsed by SqlClient's own grammar (io/ConnectionString.cs); the caller's integrated identity when it names no other; estate
+    /// as the application unless it names one. An error names the reference and quotes nothing it read.
     /// </summary>
     internal static Result<string> Connect(string subject, SecretReference reference, string estateRoot) => Read(subject, reference, estateRoot).Bind(read => read is not { } text
         ? new Error("connection.unresolved", subject + " resolves to nothing here.", "Set the variable, or write the file outside git, that " + reference + " names.")
         : Parsed(subject, reference, text).Bind(connection => connection.InitialCatalog.Length == 0
             ? new Error("connection.malformed", subject + " names no database; every read reads the database the connection names.",
                 "Give the connection string an Initial Catalog, in the place " + reference + " names.")
-            : Result.Ok(Identified(connection))));
+            : Result.Ok(ConnectionString.WithDefaults(connection))));
 
     /// <summary>An environment's server as R15 reads it, a database named or not: null when its reference resolves to nothing here; an error when SqlClient reads nothing from it.</summary>
     internal static Result<ServerName?> DataSource(NamedEnvironment environment, string estateRoot) => Read(EnvironmentDatabase.Subject(environment), environment.Connection, estateRoot).Bind(read => read is not { } text
         ? Result.Ok<ServerName?>(null)
-        : Parsed(EnvironmentDatabase.Subject(environment), environment.Connection, text).Map(connection => (ServerName?)ServerName.Of(connection.DataSource, System.Environment.MachineName)));
+        : Parsed(EnvironmentDatabase.Subject(environment), environment.Connection, text).Map(connection => (ServerName?)ConnectionString.ServerOf(connection)));
 
     /// <summary>A reference's text as SqlClient's own grammar reads it; the error names the reference and quotes nothing it read.</summary>
-    private static Result<SqlConnectionStringBuilder> Parsed(string subject, SecretReference reference, string text)
-    {
-        try
-        {
-            return new SqlConnectionStringBuilder(text);
-        }
-        catch (Exception e) when (e is ArgumentException or FormatException or InvalidOperationException)
-        {
-            return new Error("connection.malformed", subject + " is no connection string SqlClient reads; its text is withheld.",
-                "Correct the connection string in the place " + reference + " names.");
-        }
-    }
-
-    /// <summary>The connection as estate opens it: the caller's integrated identity when it names no other, and estate as the application unless it names one.</summary>
-    private static string Identified(SqlConnectionStringBuilder connection)
-    {
-        if (!connection.ShouldSerialize("Integrated Security") && connection.UserID.Length == 0 && connection.Authentication == SqlAuthenticationMethod.NotSpecified)
-        {
-            connection.IntegratedSecurity = true;
-        }
-
-        if (!connection.ShouldSerialize("Application Name"))
-        {
-            connection.ApplicationName = "estate";
-        }
-
-        return connection.ConnectionString;
-    }
+    private static Result<SqlConnectionStringBuilder> Parsed(string subject, SecretReference reference, string text) =>
+        ConnectionString.Parse(subject, text, "Correct the connection string in the place " + reference + " names.");
 
     /// <summary>
     /// What a reference names: the variable's value, or the file's text trimmed; null when the variable is unset or empty, when the

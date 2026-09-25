@@ -85,28 +85,19 @@ public static class ScratchServer
             : [];
         return !string.IsNullOrEmpty(estateSql) ? estateSql
             : env.GetValueOrDefault("MSSQL_SA_PASSWORD") is { Length: > 0 } password && env.GetValueOrDefault("ESTATE_SQL_PORT") is { Length: > 0 } port
-                ? new SqlConnectionStringBuilder { DataSource = "127.0.0.1," + port, UserID = "sa", Password = password, TrustServerCertificate = true }.ConnectionString
+                ? ConnectionString.Container(port, password)
             : localDb ? @"Server=(localdb)\MSSQLLocalDB;Integrated Security=true"
             : new Error("scratch-server.missing", "No scratch server: ESTATE_SQL is unset, " + sqlEnv + " gives no container's port and password, and LocalDB is not installed.",
                 "Start Docker and run ci/sql.sh up, or ci/sql.ps1 up on Windows, or set ESTATE_SQL; then run estate doctor.");
     }
 
-    /// <summary>A server as the registry records it and R15 compares it, read from its connection string on this machine.</summary>
-    internal static Result<Kernel.ServerName> ServerName(string server)
-    {
-        string source;
-        try
-        {
-            source = new SqlConnectionStringBuilder(server).DataSource;
-        }
-        catch (Exception e) when (e is ArgumentException or FormatException or InvalidOperationException)
-        {
-            return new Error("scratch-server.missing", "The scratch server, as ESTATE_SQL gives it, is no connection string SqlClient reads; its text is withheld.",
-                "Correct ESTATE_SQL, or unset it; then run estate doctor.");
-        }
-
-        return Kernel.ServerName.Of(source, Environment.MachineName);
-    }
+    /// <summary>
+    /// A server as the registry records it and R15 compares it, read from its connection string on this machine. Only ESTATE_SQL, which
+    /// the operator writes, can give one SqlClient reads nothing from: connection.malformed, configuration (exit 6) rather than a server
+    /// that does not answer.
+    /// </summary>
+    internal static Result<Kernel.ServerName> ServerName(string server) =>
+        ConnectionString.Parse("ESTATE_SQL", server, "Correct ESTATE_SQL, or unset it; then run estate doctor.").Map(ConnectionString.ServerOf);
 
     /// <summary>
     /// A copy on the server given, refused on a named environment's host (R15 against estate/posture.json, read here once); recorded
@@ -193,7 +184,7 @@ public static class ScratchServer
     {
         try
         {
-            using var connection = new SqlConnection(new SqlConnectionStringBuilder(copy.Connection) { InitialCatalog = "master", Pooling = false }.ConnectionString);
+            using var connection = new SqlConnection(ConnectionString.Unpooled(ConnectionString.WithCatalog(copy.Connection, "master")));
             connection.Open();
             using var command = new SqlCommand(statement, connection) { CommandTimeout = DatabaseStatementSeconds };
             command.Parameters.Add(new SqlParameter("@name", System.Data.SqlDbType.NVarChar, 128) { Value = copy.Name.ToString() });
