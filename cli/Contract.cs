@@ -162,16 +162,16 @@ public static class Contract
 
     public static readonly IReadOnlyList<ExitCode> Exits =
     [
-        new(0, "done", "Done: the verb did its work.", "nothing to do", false),
-        new(1, "bad-arguments", "Bad arguments: an unknown verb, flag or value.", "estate --help", false),
-        new(2, "unparsed-input", "An input could not be parsed: a schema, a configuration file or a project.", "the file and line the finding names", true),
-        new(3, "blocked", "Blocked by the data, a finding and not a failure: blocked by the data-loss check, which stopped the publish because the table has rows; or by a constraint violation, SQL Server refusing the change on existing rows (Msg 547, Msg 2628).", "the site the finding names: the operation's two-release shape, or the rows it counts", false),
-        new(4, "unreachable", "The target is unreachable: no scratch server, or SQL Server, Docker or LocalDB not answering.", "estate doctor; estate synthetic-copy up", true),
-        new(5, "differs", "Divergence found: the target differs from the repository; the findings name each differing object.", "the objects the findings name", false),
-        new(6, "configuration-refused", "The environment or configuration is refused: the .NET SDK missing, an unknown key, a literal credential, an engine outside the pinned window, a verb this build does not have yet, a failure DacFx reports with no SQL Server error inside (dacfx.failed), or a defect in estate itself (internal.unexpected).", "estate doctor, or the file or milestone the finding names", true),
-        new(7, "build-failed", "The build failed; the findings carry the build's errors.", "the file and error the finding names", false),
-        new(9, "refused-by-name", "Refused by name: a named environment, an unregistered copy or a lock; the refusal's code is printed.", "the refusal's own remedy", true),
-        new(130, "interrupted", "Interrupted (Ctrl-C or --timeout); the cleanup ran and the state is as before.", "run the verb again", false),
+        new(0, "done", "Done: the verb did its work.", "Take no action.", false),
+        new(1, "bad-arguments", "Bad arguments: an unknown verb, flag or value.", "Run estate --help to see the verbs and each one's flags.", false),
+        new(2, "unparsed-input", "An input could not be parsed: a schema, a configuration file or a project.", "Correct the file at the line the finding names.", true),
+        new(3, "blocked", "Blocked by the data, a finding and not a failure: blocked by the data-loss check, which stopped the publish because the table has rows; or by a constraint violation, SQL Server refusing the change on existing rows (Msg 547, Msg 2628).", "Change the operation at the site the finding names: its two-release shape, or the rows it counts.", false),
+        new(4, "unreachable", "The target is unreachable: no scratch server, or SQL Server, Docker or LocalDB not answering.", "Run estate doctor, then start the scratch server with ci/sql.sh up (ci/sql.ps1 up on Windows).", true),
+        new(5, "differs", "Divergence found: the target differs from the repository; the findings name each differing object.", "Correct the target or the repository at the objects the findings name.", false),
+        new(6, "configuration-refused", "The environment or configuration is refused: the .NET SDK missing, an unknown key, a literal credential, an engine outside the pinned window, a verb this build does not have yet, a failure DacFx reports with no SQL Server error inside (dacfx.failed), or a defect in estate itself (internal.unexpected).", "Run estate doctor, or correct the file the finding names.", true),
+        new(7, "build-failed", "The build failed; the findings carry the build's errors.", "Fix each error at the file and line the finding names, then build again.", false),
+        new(9, "refused-by-name", "Refused by name: a named environment, an unregistered copy or a lock; the refusal's code is printed.", "Do what the finding's remedy says.", true),
+        new(130, "interrupted", "Interrupted (Ctrl-C or --timeout); the cleanup ran and the state is as before.", "Run the verb again.", false),
     ];
 
     /// <summary>
@@ -267,11 +267,11 @@ public static class Contract
 
     /// <summary>A verb the contract names and this build has no body for: the error verb.not-built, at its category's exit.</summary>
     public static Envelope NotBuilt(Verb verb) => Failed(verb, new Error("verb.not-built",
-        "estate " + verb.Name + " is in the contract; its body arrives in " + Title(verb.Arrives) + ".", "estate --help lists what this build runs"));
+        "estate " + verb.Name + " is in the contract; its body arrives in " + Title(verb.Arrives) + ".", "Run estate --help to see what this build runs."));
 
     /// <summary>A word that names no verb: the error arguments.unknown-verb, at its category's exit, under the generic envelope.</summary>
     public static Envelope UnknownVerb(string word) => Failed("estate.envelope/1", "estate " + word, new Error("arguments.unknown-verb",
-        "'" + word + "' is not a verb of estate: the verb table has no row of that name.", "estate --help"));
+        "'" + word + "' is not a verb of estate: the verb table has no row of that name.", "Run estate --help to see the verbs."));
 
     /// <summary>
     /// The flags a verb reads: each --name followed by its value, or standing alone when it is a switch. A word outside a flag, a flag the
@@ -287,14 +287,14 @@ public static class Contract
             if (!valued && !switches.Contains(word) || flags.ContainsKey(word) || valued && (i + 1 == words.Count || words[i + 1].StartsWith("--", StringComparison.Ordinal)))
             {
                 return new Error("arguments.unknown-flag", "'" + word + "' is " + (flags.ContainsKey(word) ? "given twice" : valued ? "a flag without its value" : "no flag this verb takes") + ".",
-                    "estate --help names each verb's flags");
+                    "Run estate --help to see each verb's flags.");
             }
 
             flags[word] = valued ? words[++i] : "";
         }
 
         return required.FirstOrDefault(r => !flags.ContainsKey(r)) is { } missing
-            ? new Error("arguments.missing-flag", "The verb needs " + missing + ".", "estate --help names each verb's flags")
+            ? new Error("arguments.missing-flag", "The verb needs " + missing + ".", "Run estate --help to see each verb's flags.")
             : Result.Ok<IReadOnlyDictionary<string, string>>(flags);
     }
 }

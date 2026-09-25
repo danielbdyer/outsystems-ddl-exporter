@@ -29,7 +29,7 @@ public static partial class Verbs
     {
         ["drift", ..] => Drift(here, [.. words.Skip(1)]),
         [var kind, ..] when Later.TryGetValue(kind, out var arrives) => Contract.NotBuilt(Of("check") with { Name = "check " + kind, Arrives = arrives }) with { Schema = Of("check").Output },
-        _ => Contract.Failed(Of("check"), new Error("arguments.unknown-check", "estate check needs the check to run; this build runs check drift.", "estate check drift --target <target> --at <ref>")),
+        _ => Contract.Failed(Of("check"), new Error("arguments.unknown-check", "estate check needs the check to run; this build runs check drift.", "Run estate check drift --target <target> --at <ref>.")),
     };
 
     /// <summary>
@@ -72,7 +72,8 @@ public static partial class Verbs
             drift.Target + (items.Count == 0 ? " matches " + at : " differs from " + at + " in each object below."),
             [
                 .. items.Select(i => Finding.Warning("drift." + i.Operation.ToLowerInvariant(), Named(i.Type) + " " + i.Name,
-                    "The plan against " + drift.Target + " would " + i.Operation + " " + Named(i.Type) + " " + i.Name + ".", "estate diff --from " + drift.Target + " --to ref:" + at)),
+                    "The plan against " + drift.Target + " would " + i.Operation + " " + Named(i.Type) + " " + i.Name + ".",
+                    "Run estate diff --from " + drift.Target + " --to ref:" + at + " to see each property that differs.")),
                 .. items.Count == 0 ? [] : Columns(drift.Database, planned.Model, items, log).Select(line => line.Split(": ", 2) is [var key, var change]
                     ? Finding.Warning("drift.column", key, change + ", from the target to the repository.") : Finding.Warning("drift.column", line, line + ".")),
                 .. stamp.Pin is Pin.Unpinned ? new[] { Finding.Note("engine.unpinned", "estate check drift", "This receipt stands on DacFx " + stamp.Engine.DacFx
@@ -103,7 +104,7 @@ public static partial class Verbs
         : Profiles.Environments(here.Root).Bind(environments => environments.Select(e => e.ProfilePath).Distinct().ToList() is [var shared]
             ? Profiles.Load(Path.GetFullPath(Path.Combine(here.Root, shared)))
             : new Error("arguments.missing-flag", database + " is a copy, and " + Profiles.Posture + " names no one profile its environments share.",
-                "estate check drift --profile <the pipeline's .publish.xml> names the profile to plan under"));
+                "Name the profile to plan under with estate check drift --profile <the pipeline's .publish.xml>."));
 
     /// <summary>
     /// The columns that differ under each table the report names, which DacFx's report names only as the table: the target's model read

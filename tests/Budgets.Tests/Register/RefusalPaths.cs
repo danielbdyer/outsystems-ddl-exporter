@@ -434,12 +434,19 @@ internal static class RefusalPaths
     }
 
     /// <summary>Each error code the kernel, io and the cli construct, as their sources write it: a literal code, or the literal start of a composed one (element.).</summary>
-    public static IEnumerable<string> InTheSources() => Repository.Files
+    public static IEnumerable<string> InTheSources() => ConstructedIn().Select(c => c.Code).Distinct().Order(StringComparer.Ordinal);
+
+    /// <summary>Each source file of the kernel, io and the cli with each code, or literal start of a composed code, it constructs an Error of.</summary>
+    public static IEnumerable<(string File, string Code)> ConstructedIn() => Repository.Files
         .Where(f => (f.StartsWith("kernel/", StringComparison.Ordinal) || f.StartsWith("io/", StringComparison.Ordinal) || f.StartsWith("cli/", StringComparison.Ordinal))
             && f.EndsWith(".cs", StringComparison.Ordinal))
-        .SelectMany(f => System.Text.RegularExpressions.Regex.Matches(Repository.Read(f), @"new\s+Error\(\s*""([a-z0-9.-]+)""").Select(m => m.Groups[1].Value))
-        .Distinct()
-        .Order(StringComparer.Ordinal);
+        .SelectMany(f => System.Text.RegularExpressions.Regex.Matches(Repository.Read(f), @"new\s+Error\(\s*""([a-z0-9.-]+)""").Select(m => (File: f, Code: m.Groups[1].Value)))
+        .Distinct();
+
+    /// <summary>Whether a code is constructed by the kernel or the cli alone: the files that write it, or the start of it, lie outside io/.</summary>
+    public static bool KernelOrCli(string code) => ConstructedIn()
+        .Where(c => c.Code == code || (c.Code.EndsWith('.') && code.StartsWith(c.Code, StringComparison.Ordinal)))
+        .ToList() is { Count: > 0 } sites && sites.All(c => !c.File.StartsWith("io/", StringComparison.Ordinal));
 
     private static (int Exit, string Output)? Sdk(string file, IReadOnlyList<string> arguments) =>
         (0, (string)JsonNode.Parse(File.ReadAllText(Path.Combine(Repository.Root, "global.json")))!["sdk"]!["version"]! + " [sdk]\n");
