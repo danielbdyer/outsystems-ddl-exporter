@@ -41,10 +41,10 @@
       "plannedFiles": [
         { "files": ["Write.cs", "Json.cs"], "what": "and the telemetry opt-out", "lines": 250, "milestones": ["M0"] },
         { "files": ["Ssdt.cs"], "what": "build, load, read into elements with scripts and refactorlog, refactorlog read", "lines": 400, "milestones": ["M1"] },
-        { "files": ["SqlServer.cs"], "what": "targets, the registry-bound Copy, model, plan, executor, allowlist, withheld messages", "lines": 700, "milestones": ["M1"] },
+        { "files": ["SqlServer.cs"], "what": "targets, the registry-bound Copy, model, plan, Measure, allowlist, withheld messages", "lines": 700, "milestones": ["M1"] },
         { "files": ["ScratchServer.cs"], "what": "minimal: create, register, drop", "lines": 60, "milestones": ["M1"] },
         { "files": ["Profiles.cs", "Git.cs", "Doctor.cs"], "what": "Profiles.cs: options only; SQLCMD sensitivity", "lines": 440, "milestones": ["M1"] },
-        { "files": ["Probes.cs", "Predict.cs"], "what": "and the data-loss-check reader, the machine block's parser", "lines": 690, "milestones": ["M2"] },
+        { "files": ["AggregateQueries.cs", "Predict.cs"], "what": "and the data-loss-check reader, the machine block's parser", "lines": 690, "milestones": ["M2"] },
         { "files": ["ScratchServer.cs", "Twin.cs", "Realize.cs", "Profile.cs"], "what": "ScratchServer.cs completed", "lines": 1450, "milestones": ["M3"] },
         { "files": ["Prove.cs", "RefactorLog.cs"], "what": null, "lines": 550, "milestones": ["M4"] },
         { "files": ["Gate.cs", "Vendor.cs", "Json.cs"], "what": "Json.cs additions", "lines": 670, "milestones": ["M5"] },

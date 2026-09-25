@@ -22,7 +22,7 @@ public sealed class AllowlistTests
 {
     public static TheoryData<string> Corpus => new(Cases.Select(c => c.Label));
 
-    /// <summary>The corpus under tests/Golden/probes/: each case's kind (admit or refuse), its label and its text.</summary>
+    /// <summary>The corpus under tests/Golden/aggregate-queries/: each case's kind (admit or refuse), its label and its text.</summary>
     internal static IReadOnlyList<(bool Admitted, string Label, string Text)> Cases { get; } = Read();
 
     [Theory]
@@ -103,7 +103,7 @@ public sealed class AllowlistTests
     private static List<(bool, string, string)> Read()
     {
         var cases = new List<(bool, string, string)>();
-        foreach (var line in File.ReadAllLines(Path.Combine(Repository.Root, "tests", "Golden", "probes", "allowlist.txt")))
+        foreach (var line in File.ReadAllLines(Path.Combine(Repository.Root, "tests", "Golden", "aggregate-queries", "allowlist.txt")))
         {
             if (line.StartsWith("=== ", StringComparison.Ordinal))
             {
