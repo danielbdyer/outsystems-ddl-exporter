@@ -109,7 +109,10 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             ScratchEstate.Valid("estate.check.1.schema.json", answer);
             Assert.Equal((0, "matches"), (exit, (string?)answer["verdict"]!["outcome"]));
             var receipt = answer["receipt"]!;
-            var container = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ESTATE_SQL")) && File.Exists(ScratchServer.SqlEnv);
+            // The copy ran in the estate-sql container when its server is the one ~/.estate/sql.env names, whether ESTATE_SQL also names it or
+            // not; ci/sql.sh up, which the fixture runs, keeps that container on the pinned image, whose digest Docker then reports.
+            var container = File.Exists(ScratchServer.SqlEnv) && ScratchServer.ServerName(null, ScratchServer.SqlEnv, localDb: false) is Result<ServerName>.Ok(var inContainer)
+                && ScratchServer.ServerName(copy.Connection) is Result<ServerName>.Ok(var made) && made == inContainer;
             Assert.Equal(("170.5.96", container ? Doctor.ImageDigest : null, "UNPINNED"),
                 ((string?)receipt["engine"]!["dacfx"], (string?)receipt["engine"]!["sqlserver"], (string?)receipt["engine"]!["pin"]));
             Assert.Equal(("copy:" + copy.Name, "dataFacts", estate.Base), ((string?)receipt["where"], (string?)receipt["lacking"], (string?)answer["check"]!["commit"]));

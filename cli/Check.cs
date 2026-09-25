@@ -40,15 +40,16 @@ public static partial class Verbs
     private static Envelope Drift(Checkout here, IReadOnlyList<string> words)
     {
         var (verb, stamp) = (Of("check"), Stamped(null, null));
-        if (Contract.Flags(words, ["--target", "--at"], ["--profile", "--project"], []).Bind(flags => SqlServer.Target.Parse(flags["--target"], "--target").Map(target => (Flags: flags, Target: target)))
+        if (Contract.Flags(words, ["--target", "--at"], ["--profile", "--project"], []).Bind(flags => SqlServer.Target(flags["--target"], "--target").Map(target => (Flags: flags, Target: target)))
             .Bind(asked => Io.Doctor.Toolchain(here.Root, Contract.Version).Map(pin => (asked.Flags, asked.Target, Pin: pin))).Failed(out var asked, out var error))
         {
             return Contract.Failed(verb, error, stamp);
         }
 
         stamp = Stamped(null, asked.Pin);
-        if ((asked.Pin.Rejects(stamp.Engine) is { } outside ? Result.Fail<SqlServer.Database>(outside) : SqlServer.Resolve(asked.Target, here.Root))
-            .Bind(database => Profile(here, database, asked.Flags.GetValueOrDefault("--profile")).Map(profile => (asked.Flags, asked.Target, Database: database, Profile: profile)))
+        var posture = Profiles.Environments(here.Root);
+        if ((asked.Pin.Rejects(stamp.Engine) is { } outside ? Result.Fail<SqlServer.Database>(outside) : SqlServer.Resolve(asked.Target, posture, here.Root))
+            .Bind(database => Profile(here, database, posture, asked.Flags.GetValueOrDefault("--profile")).Map(profile => (asked.Flags, asked.Target, Database: database, Profile: profile)))
             .Failed(out var drift, out error))
         {
             return Contract.Failed(verb, error, stamp);
@@ -96,11 +97,11 @@ public static partial class Verbs
         "This receipt stands on a profile not verified against the Octopus step: S7 has not committed the profile that step applies.", null);
 
     /// <summary>The pipeline's profile: a named environment's own; for a copy, the one --profile names, else the one profile every environment of the posture names.</summary>
-    private static Result<PublishProfile.Strict> Profile(Checkout here, SqlServer.Database database, string? named) =>
+    private static Result<PublishProfile.Strict> Profile(Checkout here, SqlServer.Database database, Result<Environments> posture, string? named) =>
         database is SqlServer.EnvironmentDatabase environment ? Profiles.Of(environment.Environment, here.Root)
         : named is not null ? Profiles.Load(Path.GetFullPath(Path.Combine(here.Root, named)))
-        : Profiles.Environments(here.Root).Bind(environments => environments.Select(e => e.ProfilePath).Distinct().ToList() is [var shared]
-            ? Profiles.Load(Path.GetFullPath(Path.Combine(here.Root, shared)))
+        : posture.Bind(environments => environments.SharedProfile is { } shared
+            ? Profiles.Load(Path.GetFullPath(Path.Combine(here.Root, shared.ToString())))
             : new Error("arguments.missing-flag", database + " is a copy, and " + Profiles.Posture + " names no one profile its environments share.",
                 "estate check drift --profile <the pipeline's .publish.xml> names the profile to plan under"));
 

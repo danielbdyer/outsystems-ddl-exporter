@@ -73,7 +73,7 @@ public sealed class ScratchEstate : IDisposable
         var posture = new JsonObject();
         foreach (var (name, connection) in environments)
         {
-            posture[name] = new JsonObject { ["connection"] = "file:" + connection.Replace('\\', '/'), ["profile"] = "profiles/pipeline.publish.xml" };
+            posture[name] = new JsonObject { ["host"] = "localhost", ["connection"] = "file:" + connection.Replace('\\', '/'), ["profile"] = "profiles/pipeline.publish.xml" };
         }
 
         File.WriteAllText(Path.Combine(root, "estate", "posture.json"), new JsonObject { ["environments"] = posture }.ToJsonString());

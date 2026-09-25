@@ -18,11 +18,16 @@ using ColumnType = Microsoft.SqlServer.TransactSql.ScriptDom.ColumnType;
 namespace Estate.Io;
 
 /// <summary>
-/// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4): the target grammar; EnvironmentDatabase, the database of an
-/// environment estate/posture.json names, and Copy, a database io/ScratchServer made, which alone publishes (§2.1 rule 3); Model through
+/// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4), and the one adapter to SQL Server and SqlClient: an
+/// argument read as a target (kernel/Target.cs); EnvironmentDatabase, the database of an environment estate/posture.json names, and Copy,
+/// a database io/ScratchServer made, which alone publishes (§2.1 rule 3); Query, the one path for the statements estate sends itself;
+/// Database.ErrorOf, the one boundary every SqlClient or DacFx failure passes through, reading SQL Server's numbers once; Model through
 /// LoadFromDatabase and io/Ssdt.Elements; Plan through DacServices.Script; and Measure, which runs an aggregate query its closed
-/// allowlist admits, every answer an integer. A resolved connection is never printed, logged or put in an error, and a named environment's SQL Server messages
-/// are withheld, since they can quote a row (§18). An error's code names what went wrong; cli/Contract.cs maps its category to the exit.
+/// allowlist admits, every answer an integer. A resolved connection is never printed, logged or put in an error, and a named
+/// environment's SQL Server messages are withheld, since they can quote a row (§18). Objects are keyed by kernel/Name, compared ordinally
+/// with case, so two databases whose collations fold case differently read the same schema alike; estate sets no collation and no SET
+/// option of its own, and DacFx reads each database's own. An error's code names what went wrong; cli/Contract.cs maps its category to
+/// the exit.
 /// </summary>
 public static class SqlServer
 {
@@ -32,70 +37,42 @@ public static class SqlServer
     /// <summary>No answer: the network, the instance or a timeout.</summary>
     private static readonly HashSet<int> Silences = [-2, -1, 2, 20, 26, 35, 40, 53, 64, 121, 232, 233, 258, 1225, 10053, 10054, 10060, 10061, 11001, 11004, 17142, 18401, 40613];
 
-    /// <summary>
-    /// Where a verb reads or writes, as an argument writes it (WP 1.4): env:&lt;name&gt;, an environment estate/posture.json names;
-    /// copy:&lt;name&gt;, a copy .estate/copies.json holds; synthetic-copy; ref:&lt;git ref&gt;; dacpac:&lt;path&gt;. The cases are closed.
-    /// </summary>
-    public abstract record Target
+    /// <summary>A statement SQL Server refused on an open connection: its number, its message where a copy's may be kept, and whether the command ran past its timeout.</summary>
+    internal sealed record StatementFailure(int Number, string? Message, bool TimedOut);
+
+    /// <summary>An exception and each exception inside it, outermost first.</summary>
+    private static IEnumerable<Exception> Chain(Exception failure)
     {
-        private static readonly Regex Environment = new(@"\A[a-z][a-z0-9-]{0,31}\z", RegexOptions.CultureInvariant);
-        private static readonly Regex Registered = new(@"\A[a-z0-9_]{1,128}\z", RegexOptions.CultureInvariant);
-
-        private Target()
+        for (var x = failure; x is not null; x = x.InnerException)
         {
+            yield return x;
         }
-
-        /// <summary>A target from an argument: a literal connection string is exit 6, copy: before a name no copy can carry is exit 9 (M1 exit 5), and no part of the argument is quoted.</summary>
-        public static Result<Target> Parse(string text, string subject = "--target") =>
-            Profiles.IsConnection(text) ? new Error("connection.literal", subject + " is a literal connection string, which no argument carries.",
-                "Name the target as env:NAME, an environment whose connection estate/posture.json gives as env:VARIABLE or file:path.")
-            : text == "synthetic-copy" ? new SyntheticCopy()
-            : After(text, "env:") is { } name && Environment.IsMatch(name) ? new Env(name)
-            : After(text, "copy:") is { } copy ? (Registered.IsMatch(copy) ? new Copy(copy) : new Error("copy.unregistered",
-                subject + " names a copy by a name no copy estate makes can carry, so " + ScratchServer.Registry + " holds none by it; a copy's name is estate_<host>_<pid>_<rand>, in lowercase letters, digits and '_'.",
-                "Name a copy that " + ScratchServer.Registry + " holds on this machine."))
-            : After(text, "ref:") is { Length: > 0 } reference && !reference.StartsWith('-') && !reference.Any(char.IsControl) ? new Ref(reference)
-            : After(text, "dacpac:") is { Length: > 0 } path && !path.Any(char.IsControl) ? new Dacpac(path)
-            : new Error("target.unknown", subject + " is none of env:<name>, copy:<name>, synthetic-copy, ref:<git ref> and dacpac:<path>.",
-                "Write the target in one of those forms, such as env:dev or ref:main.");
-
-        public T Match<T>(Func<Env, T> env, Func<Copy, T> copy, Func<T> syntheticCopy, Func<Ref, T> reference, Func<Dacpac, T> dacpac) => this switch
-        {
-            Env e => env(e),
-            Copy c => copy(c),
-            SyntheticCopy => syntheticCopy(),
-            Ref r => reference(r),
-            Dacpac d => dacpac(d),
-            _ => throw new System.Diagnostics.UnreachableException(),
-        };
-
-        public sealed override string ToString() => Match(e => "env:" + e.Name, c => "copy:" + c.Name, () => "synthetic-copy", r => "ref:" + r.Name, d => "dacpac:" + d.Path);
-
-        private static string? After(string text, string prefix) => text.StartsWith(prefix, StringComparison.Ordinal) ? text[prefix.Length..] : null;
-
-        public sealed record Env(string Name) : Target;
-
-        public sealed record Copy(string Name) : Target;
-
-        public sealed record SyntheticCopy : Target;
-
-        public sealed record Ref(string Name) : Target;
-
-        public sealed record Dacpac(string Path) : Target;
     }
+
+    /// <summary>Whether a failure carries a SqlException, however deep: what Database.ErrorOf reads by its number.</summary>
+    private static bool Carries(Exception failure) => Chain(failure).Any(x => x is SqlException);
+
+    /// <summary>
+    /// The target an argument names (kernel/Target.cs), read for the argument <paramref name="subject"/>; a literal connection string, which
+    /// only SqlClient's grammar tells from a target, is connection.literal at exit 6, and no part of the argument is quoted.
+    /// </summary>
+    public static Result<Target> Target(string text, string subject) =>
+        ConnectionString.IsConnection(text) ? new Error("connection.literal", subject + " is a literal connection string, which no argument carries.",
+            "Name the target as env:NAME, an environment whose connection estate/posture.json gives as env:VARIABLE or file:path.")
+        : Kernel.Target.Parse(text, subject);
 
     /// <summary>A live database the tool reads: a named environment's or a copy's. Its resolved connection stays inside io, and it prints as its target.</summary>
     public abstract class Database
     {
-        private protected Database(string target, string connection) => (Target, Connection) = (target, connection);
+        private protected Database(Target target, string connection) => (Target, Connection) = (target, connection);
 
-        /// <summary>The target as an argument writes it: env:dev, copy:estate_host_4242_0a1b2c3d.</summary>
-        public string Target { get; }
+        /// <summary>The target that names it: env:dev, copy:estate_host_4242_0a1b2c3d.</summary>
+        public Target Target { get; }
 
         internal string Connection { get; }
 
         /// <summary>The database's name, as DacFx plans against it.</summary>
-        internal string Catalog => new SqlConnectionStringBuilder(Connection).InitialCatalog;
+        internal string Catalog => ConnectionString.CatalogOf(Connection);
 
         /// <summary>Whether SQL Server's messages about a failed statement are withheld: a named environment's rows may be real (VALUES.md X2).</summary>
         internal abstract bool Withheld { get; }
@@ -103,27 +80,25 @@ public static class SqlServer
         /// <summary>
         /// What a SQL Server error against this database becomes, by its number (M1 exit 7, X2): a login, a database or a permission
         /// refused is server.denied; no answer is server.unreachable; anything else is server.failed. SQL Server's message is kept only for a
-        /// copy's failed statement, a copy's rows being minted; one about a connection can name the server or the login, and is withheld.
+        /// copy's failed statement, a copy's rows being generated; one about a connection can name the server or the login, and is withheld.
         /// </summary>
         public Error ErrorOf(int number, string message) => ErrorOf(number, message, fatal: false);
 
         /// <summary>
-        /// The error a SqlClient or DacFx failure against a target becomes. With a SqlException inside, by its number, a severity of 20 or
-        /// more being a connection lost. With none, DacFx's own failure: when its texts quote a SQL Server number (Msg 50000, the data-loss check;
-        /// Msg 2627 inside SQL72014), by that number, since SQL Server's words, which can quote a row, are inside; else dacfx.failed,
-        /// quoting what each exception of the chain says, DacFx's errors (SQL71501: …) among it, kept for a named environment too. Any
-        /// other failure is server.failed with no number.
+        /// The error a SqlClient or DacFx failure against a target becomes, the one boundary every failure against a server passes
+        /// through. With a SqlException anywhere in the chain, by its number, a severity of 20 or more being a connection lost, and
+        /// <paramref name="opened"/> saying the connection had opened. With none, DacFx's own failure: when its texts quote a SQL Server
+        /// number (Msg 50000, the data-loss check; Msg 2627 inside SQL72014), by that number, since SQL Server's words, which can quote a
+        /// row, are inside; else dacfx.failed, quoting what each exception of the chain says, DacFx's errors (SQL71501: …) among it, kept
+        /// for a named environment too. Any other failure is server.failed with no number.
         /// </summary>
-        public Error ErrorOf(Exception failure)
-        {
-            var chain = new List<Exception>();
-            for (var x = failure; x is not null; x = x.InnerException)
-            {
-                chain.Add(x);
-            }
+        public Error ErrorOf(Exception failure) => ErrorOf(failure, opened: false);
 
+        internal Error ErrorOf(Exception failure, bool opened)
+        {
+            var chain = Chain(failure).ToList();
             var said = chain.SelectMany(Said).Distinct(StringComparer.Ordinal).ToList();
-            return chain.OfType<SqlException>().FirstOrDefault() is { } sql ? ErrorOf(sql.Number, sql.Message, fatal: sql.Class >= 20)
+            return chain.OfType<SqlException>().FirstOrDefault() is { } sql ? ErrorOf(sql.Number, sql.Message, fatal: sql.Class >= 20, opened)
                 : !chain.Any(x => x is DacServicesException or DacModelException) ? ErrorOf(0, failure.Message)
                 : said.Select(s => SqlServerNumber.Match(s)).FirstOrDefault(m => m.Success) is { } number
                     ? ErrorOf(int.Parse(number.Groups[1].Value, CultureInfo.InvariantCulture), string.Join(' ', said))
@@ -144,28 +119,69 @@ public static class SqlServer
         private static IEnumerable<string> Said(Exception x) =>
             Regex.Replace(x.Message, @"\s*\n\s*", " ", RegexOptions.CultureInvariant).Trim() is { Length: > 0 } text ? [text] : [];
 
-        internal Error ErrorOf(int number, string message, bool fatal)
+        /// <summary>
+        /// The error SQL Server's error <paramref name="number"/> against this database becomes, as <see cref="Classify"/> reads it:
+        /// server.denied, server.unreachable, server.timed-out or server.failed. <paramref name="fatal"/> is a severity of 20 or more,
+        /// which closes the connection; <paramref name="opened"/> says the connection had opened before the statement failed.
+        /// </summary>
+        internal Error ErrorOf(int number, string message, bool fatal, bool opened = false)
         {
             var msg = number == 0 ? "no SQL Server number" : string.Create(CultureInfo.InvariantCulture, $"Msg {number}");
-            return Denials.Contains(number) ? new Error("server.denied", Target + " refused this identity (" + msg + ", SQL Server's message withheld)"
+            return Classify(number, fatal, opened) switch
+            {
+                Category.Denied => new Error("server.denied", Target + " refused this identity (" + msg + ", SQL Server's message withheld)"
                     + (this is EnvironmentDatabase ? "; a lead's prediction will appear on the pull request." : "."), this is EnvironmentDatabase
                     ? "Ask a lead to predict for " + Target + ", or ask its DBA for VIEW DEFINITION and db_datareader there."
-                    : "Check the scratch server's login in ESTATE_SQL or ~/.estate/sql.env, then run estate doctor.")
-                : fatal || Silences.Contains(number) ? new Error("server.unreachable", Target + " does not answer (" + msg + ", SQL Server's message withheld).", this is EnvironmentDatabase
+                    : "Check the scratch server's login in ESTATE_SQL or ~/.estate/sql.env, then run estate doctor."),
+                Category.Unreachable => new Error("server.unreachable", Target + " does not answer (" + msg + ", SQL Server's message withheld).", this is EnvironmentDatabase
                     ? "Check the network path to " + Target + "'s server and that it runs, then run estate doctor."
-                    : "Start the scratch server with ci/sql.sh up, or ci/sql.ps1 up on Windows, then run estate doctor.")
-                : new Error("server.failed", Target + " failed the statement: " + msg + (Withheld ? "; SQL Server's message is withheld, since it can quote a row." : ": " + message),
-                    "Look the number up in SQL Server's error list, correct what it names, then run the step again.");
+                    : "Start the scratch server with ci/sql.sh up, or ci/sql.ps1 up on Windows, then run estate doctor."),
+                Category.TimedOut => new Error("server.timed-out", Target + " answered, and the statement ran past its timeout (" + msg + ", SQL Server's message withheld).",
+                    "Run the step again when the server is less busy, or ask its DBA what holds the locks the statement waits on."),
+                _ => new Error("server.failed", Target + " failed the statement: " + msg + (Withheld ? "; SQL Server's message is withheld, since it can quote a row." : ": " + message),
+                    "Look the number up in SQL Server's error list, correct what it names, then run the step again."),
+            };
         }
 
-        public sealed override string ToString() => Target;
+        /// <summary>
+        /// The failure of a statement SQL Server refused on an open connection, below severity 20, which a caller records as the
+        /// statement's outcome (Measure's failed measurement): its number, SQL Server's message for a copy alone, and whether the command
+        /// ran past its timeout. Null for a failure of the connection or the identity, which <see cref="ErrorOf(Exception, bool)"/> maps.
+        /// </summary>
+        internal StatementFailure? FailedStatement(Exception failure, bool opened) =>
+            opened && Chain(failure).OfType<SqlException>().FirstOrDefault() is { Class: < 20 } sql
+                ? new StatementFailure(sql.Number, Withheld ? null : sql.Message, Classify(sql.Number, fatal: false, opened) == Category.TimedOut)
+                : null;
+
+        /// <summary>
+        /// What SQL Server's error number means for a statement estate sent, the one reading of SQL Server's numbers (R4 lifts it into the
+        /// kernel's SqlServerError at M2): a login, a database or a permission refused (<see cref="Denials"/>) is Denied; no answer, a
+        /// login timeout among them, or a severity of 20 or more, which closes the connection (<see cref="Silences"/>), is Unreachable; a
+        /// command timeout (-2) on a connection that had opened is TimedOut, since the server answered; anything else is the statement's
+        /// own Failed, a deadlock (1205) among them.
+        /// </summary>
+        private static Category Classify(int number, bool fatal, bool opened) =>
+            number == -2 && opened && !fatal ? Category.TimedOut
+            : Denials.Contains(number) ? Category.Denied
+            : fatal || Silences.Contains(number) ? Category.Unreachable
+            : Category.Failed;
+
+        private enum Category
+        {
+            Denied,
+            Unreachable,
+            TimedOut,
+            Failed,
+        }
+
+        public sealed override string ToString() => Target.ToString();
     }
 
     /// <summary>The database of an environment estate/posture.json names: read only, and never published to (VALUES.md S7).</summary>
     public sealed class EnvironmentDatabase : Database
     {
         private EnvironmentDatabase(NamedEnvironment environment, string connection, string estateRoot)
-            : base("env:" + environment.Name, connection) => (Environment, Root) = (environment, estateRoot);
+            : base(environment.Target, connection) => (Environment, Root) = (environment, estateRoot);
 
         public NamedEnvironment Environment { get; }
 
@@ -177,7 +193,7 @@ public static class SqlServer
             Connect(Subject(environment), environment.Connection, estateRoot).Map(c => new EnvironmentDatabase(environment, c, estateRoot));
 
         /// <summary>How an error about an environment's connection names it: its environment and its reference, never what the reference resolves to.</summary>
-        internal static string Subject(NamedEnvironment environment) => "env:" + environment.Name + "'s connection, " + environment.Connection + ",";
+        internal static string Subject(NamedEnvironment environment) => environment.Target + "'s connection, " + environment.Connection + ",";
     }
 
     /// <summary>
@@ -186,10 +202,10 @@ public static class SqlServer
     /// </summary>
     public sealed class Copy : Database
     {
-        internal Copy(string name, string server, string estateRoot)
-            : base("copy:" + name, new SqlConnectionStringBuilder(server) { InitialCatalog = name }.ConnectionString) => (Name, Root) = (name, estateRoot);
+        internal Copy(CopyName name, string server, string estateRoot)
+            : base(new Target.RegisteredCopy(name), ConnectionString.OfDatabase(server, name.ToString())) => (Name, Root) = (name, estateRoot);
 
-        public string Name { get; }
+        public CopyName Name { get; }
 
         /// <summary>The estate whose registry holds this copy.</summary>
         internal string Root { get; }
@@ -202,23 +218,28 @@ public static class SqlServer
         /// <summary>The package published to this copy under the profile's options, Strict or this copy's Permissive, the package loaded from a stream.</summary>
         public Result<Copy> Publish(string dacpac, PublishProfile profile) => Reached(this, null).Bind(_ => Loaded(dacpac, this, package =>
         {
-            new DacServices(Connection).Publish(package, Name, new PublishOptions { DeployOptions = profile.Options() });
+            new DacServices(Connection).Publish(package, Name.ToString(), new PublishOptions { DeployOptions = profile.Options() });
             return Result.Ok(this);
         }));
     }
 
+    /// <summary>A target as a database, estate/posture.json read under the estate's root for it.</summary>
+    public static Result<Database> Resolve(Target target, string estateRoot) => Resolve(target, Profiles.Environments(estateRoot), estateRoot);
+
     /// <summary>
-    /// A target as a database: env: through estate/posture.json and the environment's connection reference; copy: through
-    /// .estate/copies.json alone (io/ScratchServer). A git ref and a package are read as packages, and the synthetic copy arrives in M3.
+    /// A target as a database, against estate/posture.json as the verb read it once (<paramref name="posture"/>, whose error counts only
+    /// for a target that needs the posture): env: through the environment's connection reference; copy: through .estate/copies.json
+    /// alone, on a server R15 clears against the posture (io/ScratchServer). A git ref and a package are read as packages, and the
+    /// synthetic copy is not in this build.
     /// </summary>
-    public static Result<Database> Resolve(Target target, string estateRoot) => target.Match<Result<Database>>(
-        env => Profiles.Environments(estateRoot).Bind(environments => environments.FirstOrDefault(e => e.Name == env.Name) is { } named
+    public static Result<Database> Resolve(Target target, Result<Environments> posture, string estateRoot) => target.Match<Result<Database>>(
+        environment => posture.Bind(environments => environments.Named(environment.Name) is { } named
             ? EnvironmentDatabase.Of(named, estateRoot).Map(n => (Database)n)
-            : new Error("target.unnamed", env + " names no environment of " + Profiles.Posture + ".", environments.Count == 0
-                ? "Add the environment to " + Profiles.Posture + " with its connection reference and profile."
-                : "Name one it holds: " + string.Join(", ", environments.Select(e => "env:" + e.Name)) + ".")),
-        copy => ScratchServer.Registered(estateRoot, copy.Name).Map(c => (Database)c),
-        () => new Error("synthetic-copy.not-built", "synthetic-copy names the synthetic copy, which arrives in M3 (Synthetic copy); this build reads env: and copy: databases.",
+            : new Error("target.unnamed", environment + " names no environment of " + Profiles.Posture + ".", environments.All.Count == 0
+                ? "Add the environment to " + Profiles.Posture + " with its host, connection reference and profile."
+                : "Name one it holds: " + string.Join(", ", environments.All.Select(e => e.Target)) + ".")),
+        copy => ScratchServer.Registered(estateRoot, copy.Name, posture).Map(c => (Database)c),
+        () => new Error("synthetic-copy.not-built", "synthetic-copy names the synthetic copy, which is not in this build; this build reads env: and copy: databases.",
             "Name an env: or a copy: target; estate --help lists what this build runs."),
         reference => NotADatabase(reference),
         dacpac => NotADatabase(dacpac));
@@ -312,147 +333,265 @@ public static class SqlServer
 
     /// <summary>
     /// An aggregate query the allowlist admitted (VALUES.md P2): one statement, as ScriptDom writes it back, so what runs is what was
-    /// checked, with no comment and no batch separator; and the site it measures. Only Of makes one, and Measure runs nothing else.
+    /// checked, with no comment and no batch separator; the site it measures; and the tables it reads by name. Only Of makes one, and Of
+    /// is internal to io (DECISIONS.md, 2026-09-25), so only io's builders (WP 2.3) make one for a named environment and no verb or
+    /// file hands one text; Measure runs nothing else.
     /// </summary>
     public sealed class AggregateQuery
     {
-        private AggregateQuery(string statement, string site) => (Statement, Site) = (statement, site);
+        private AggregateQuery(TSqlStatement statement, string site) => (Statement, Site, Tables) = (TSql.Text(statement), site, TSql.TablesNamed(statement));
 
         public string Statement { get; }
 
         public string Site { get; }
 
-        public static Result<AggregateQuery> Of(string text, string site) => Allowlist.Admitted(text).Map(statement => new AggregateQuery(statement, site));
+        /// <summary>Each table the query reads by name, as QUOTENAME writes it: what Measure asks the target whether a synonym stands for.</summary>
+        internal IReadOnlyList<string> Tables { get; }
+
+        internal static Result<AggregateQuery> Of(string text, string site) => Allowlist.Admitted(text).Map(statement => new AggregateQuery(statement, site));
+
+        /// <summary>An aggregate query built as a ScriptDom tree, checked as the tree, and run as the text ScriptDom writes it back as.</summary>
+        internal static Result<AggregateQuery> Of(TSqlStatement tree, string site) => Allowlist.Admitted(tree, site).Map(statement => new AggregateQuery(statement, site));
 
         public override string ToString() => Site + ": " + Statement;
     }
 
-    /// <summary>What an aggregate query measured: its rows, every value an integer or null; or its failure, the number and the site, SQL Server's message kept for a copy alone.</summary>
+    /// <summary>
+    /// What an aggregate query measured, a value: its rows, every value an integer or null, in the order of their values, so two
+    /// measurements of the same rows are equal whatever order SQL Server returned them in; its failure, the number and the site, SQL
+    /// Server's message kept for a copy alone; or its timeout. The cases are closed, and Match reads each.
+    /// </summary>
     public abstract record Measurement
     {
         private Measurement()
         {
         }
 
-        public sealed record Answered(string Site, IReadOnlyList<IReadOnlyList<long?>> Rows) : Measurement;
+        public T Match<T>(Func<Answered, T> answered, Func<Failed, T> failed, Func<TimedOut, T> timedOut) => this switch
+        {
+            Answered a => answered(a),
+            Failed f => failed(f),
+            TimedOut t => timedOut(t),
+            _ => throw new System.Diagnostics.UnreachableException(),
+        };
+
+        public sealed record Answered(string Site, SortedArray<Row> Rows) : Measurement;
 
         public sealed record Failed(string Site, int Number, string? Message) : Measurement
         {
             public override string ToString() =>
                 Site + ": query failed: Msg " + Number.ToString(CultureInfo.InvariantCulture) + (Message is null ? "; message withheld" : ": " + Message);
         }
+
+        /// <summary>SQL Server still running the query when its timeout passed, on a connection that stayed open: the server answered, and the measurement is missing, not failed.</summary>
+        public sealed record TimedOut(string Site, TimeSpan After) : Measurement
+        {
+            public override string ToString() => Site + ": query ran past its timeout of " + After.TotalSeconds.ToString(CultureInfo.InvariantCulture) + " s";
+        }
     }
 
     /// <summary>
-    /// One admitted aggregate query against the target (WP 1.4), read back as integers and logged with its row count. A statement
-    /// that fails is measured as failed, by its number; a connection that fails is an error.
+    /// One row an aggregate query answered: the values of its select list, in order, each an integer or null. Two rows are equal when
+    /// their values are, one by one; rows order by their values, a null before any integer and a shorter row before a longer one it begins.
     /// </summary>
-    public static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log)
+    public sealed class Row : IEquatable<Row>, IComparable<Row>
     {
-        using var connection = new SqlConnection(target.Connection);
-        try
+        private readonly long?[] values;
+
+        private Row(long?[] values) => this.values = values;
+
+        public IReadOnlyList<long?> Values => values;
+
+        public static Row Of(params long?[] values) => new([.. values]);
+
+        public bool Equals(Row? other) => other is not null && values.AsSpan().SequenceEqual(other.values);
+
+        public override bool Equals(object? obj) => Equals(obj as Row);
+
+        public override int GetHashCode()
         {
-            connection.Open();
-            using var command = new SqlCommand(query.Statement, connection) { CommandTimeout = 30 };
-            using var reader = command.ExecuteReader();
-            var rows = new List<IReadOnlyList<long?>>();
-            while (reader.Read())
+            var hash = new HashCode();
+            foreach (var value in values)
             {
-                rows.Add([.. Enumerable.Range(0, reader.FieldCount).Select(i => reader.IsDBNull(i) ? (long?)null : Integer(reader.GetValue(i)))]);
+                hash.Add(value);
             }
 
-            log.Add(target, query, rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows");
-            return new Measurement.Answered(query.Site, rows);
+            return hash.ToHashCode();
         }
-        catch (SqlException e) when (connection.State == System.Data.ConnectionState.Open && e.Class < 20)
+
+        public int CompareTo(Row? other) => other is null ? 1
+            : values.Zip(other.values, Nullable.Compare).FirstOrDefault(c => c != 0) is var byValue and not 0 ? byValue : values.Length.CompareTo(other.values.Length);
+
+        public override string ToString() => string.Join(", ", values.Select(v => v?.ToString(CultureInfo.InvariantCulture) ?? "NULL"));
+    }
+
+    /// <summary>
+    /// How long SQL Server may run an aggregate query before SqlClient cancels it: SqlClient's own default for a command, named here.
+    /// An aggregate query reads each row of a table once, and thirty seconds covers a scan of the estate's largest tables that S3 and S8
+    /// have not yet measured; a query past it is measured as timed out, not as a server that does not answer (finding ARCH-13). The
+    /// measure verb of M3 revisits the figure with the row counts S8 reports; no posture key or flag sets it before then.
+    /// </summary>
+    internal static readonly TimeSpan AggregateQueryTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// One admitted aggregate query against the target (WP 1.4), through the one statement path, read back as integers and logged
+    /// with its row count. A statement SQL Server refuses on the open connection is measured as failed, by its number, and one past
+    /// its timeout as timed out; a connection that fails, or an identity refused, is an error.
+    /// </summary>
+    public static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log) => Measure(target, query, log, AggregateQueryTimeout);
+
+    internal static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log, TimeSpan timeout) =>
+        NoSynonym(target, query, log).Bind(_ => Query(target, new Statement(query.Site, query.Statement) { Timeout = timeout }, log,
+            rows => (Measurement)new Measurement.Answered(query.Site, SortedArray.Of(rows.Select(row => Row.Of([.. row.Select(Integer)])))),
+            failed => failed.TimedOut ? new Measurement.TimedOut(query.Site, timeout) : new Measurement.Failed(query.Site, failed.Number, failed.Message)));
+
+    /// <summary>
+    /// The query, when no table it reads by name is a synonym on the target (DECISIONS.md, 2026-09-25): a synonym can stand for a table
+    /// in another database or on a linked server, which the query's text cannot show, so the target's catalog is asked, in one statement
+    /// through <see cref="Query{T}"/>, before the query runs. A synonym is aggregate-query.refused, named as the query writes it.
+    /// </summary>
+    private static Result<AggregateQuery> NoSynonym(Database target, AggregateQuery query, QueryLog log) => query.Tables.Count == 0 ? query
+        : Query(target, new Statement("Synonyms: " + query.Site, "SELECT t.name FROM (VALUES " + string.Join(", ", query.Tables.Select((_, i) => "(@t" + i.ToString(CultureInfo.InvariantCulture) + ")"))
+                + ") AS t(name) WHERE OBJECT_ID(t.name, N'SN') IS NOT NULL;") { Parameters = [.. query.Tables.Select((table, i) => ("@t" + i.ToString(CultureInfo.InvariantCulture), table))] },
+            log, rows => rows.Select(row => (string)row[0]!).ToList())
+        .Bind(synonyms => synonyms is [var synonym, ..]
+            ? new Error("aggregate-query.refused", "The query " + query.Site + " reads " + synonym + ", a synonym, which can stand for a table in another database or on a linked server; an aggregate query reads the target's own tables.",
+                "Name the table the synonym stands for in the query.")
+            : Result.Ok(query));
+
+    /// <summary>
+    /// A statement estate sends itself (R5): its site, which names it in the run's log; its text; how long SQL Server may take over it
+    /// before SqlClient cancels it; the database it runs in, the target's own unless another is named; whether its connection may come
+    /// from SqlClient's pool; and its parameters, each nvarchar(4000), which holds a quoted two-part name.
+    /// </summary>
+    internal sealed record Statement(string Site, string Text)
+    {
+        /// <summary>SqlClient's own default for a command, named.</summary>
+        public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(30);
+
+        public string? Catalog { get; init; }
+
+        public bool Pooled { get; init; } = true;
+
+        public IReadOnlyList<(string Name, string Value)> Parameters { get; init; } = [];
+    }
+
+    /// <summary>
+    /// The one path for a statement estate sends itself (R5): a SqlConnection of its own opened (io/ConnectionString.cs), the statement
+    /// run under its timeout, every row of its first result read into the answer, its remaining results read so every error the batch
+    /// raises surfaces, its site and row count or failure written to the run's log, and every failure mapped through Database.ErrorOf,
+    /// the one boundary. A caller that records a statement's own failure as its outcome (Measure) passes <paramref name="failed"/>,
+    /// which receives a failure SQL Server raised on the open connection below severity 20 and the command's timeout. No SqlConnection
+    /// serves two statements, so a pooled connection the server broke fails that statement alone and is mapped once. A statement is
+    /// logged once the connection opened, since only then was it sent, its parameters declared before it, so the log runs as a script.
+    /// </summary>
+    internal static Result<T> Query<T>(Database target, Statement statement, QueryLog? log, Func<IReadOnlyList<IReadOnlyList<object?>>, T> answer,
+        Func<StatementFailure, T>? failed = null)
+    {
+        var opened = false;
+        var logged = string.Concat(statement.Parameters.Select(p => "DECLARE " + p.Name + " nvarchar(4000) = N'" + p.Value.Replace("'", "''", StringComparison.Ordinal) + "';\n")) + statement.Text;
+        try
         {
-            log.Add(target, query, "failed, Msg " + e.Number.ToString(CultureInfo.InvariantCulture));
-            return new Measurement.Failed(query.Site, e.Number, target.Withheld ? null : e.Message);
+            using var connection = new SqlConnection(ConnectionString.ForStatement(target.Connection, statement.Catalog, statement.Pooled));
+            connection.Open();
+            opened = true;
+            using var command = new SqlCommand(statement.Text, connection) { CommandTimeout = (int)statement.Timeout.TotalSeconds };
+            foreach (var (name, value) in statement.Parameters)
+            {
+                command.Parameters.Add(new SqlParameter(name, System.Data.SqlDbType.NVarChar, 4000) { Value = value });
+            }
+
+            var rows = new List<IReadOnlyList<object?>>();
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    var values = new object[reader.FieldCount];
+                    reader.GetValues(values);
+                    rows.Add([.. values.Select(v => v is DBNull ? null : (object?)v)]);
+                }
+
+                while (reader.NextResult())
+                {
+                }
+            }
+
+            log?.Add(target, statement.Site, logged, rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows");
+            return answer(rows);
         }
-        catch (Exception e) when (e is SqlException or InvalidOperationException)
+        catch (Exception e) when (e is InvalidOperationException || Carries(e))
         {
-            return target.ErrorOf(e);
+            if (failed is not null && target.FailedStatement(e, opened) is { } statementFailure)
+            {
+                log?.Add(target, statement.Site, logged, statementFailure.TimedOut
+                    ? "timed out after " + statement.Timeout.TotalSeconds.ToString(CultureInfo.InvariantCulture) + " s"
+                    : "failed, Msg " + statementFailure.Number.ToString(CultureInfo.InvariantCulture));
+                return failed(statementFailure);
+            }
+
+            var error = target.ErrorOf(e, opened);
+            if (opened)
+            {
+                log?.Add(target, statement.Site, logged, "failed, " + error.Code);
+            }
+
+            return error;
         }
     }
 
     /// <summary>
-    /// A run's log of every statement estate sends, .estate/runs/&lt;id&gt;/queries.log: each aggregate query, and the one statement Model and Plan send
-    /// before DacFx's own catalog queries, which are DacFx's to answer for. Per statement: the time, the target, the site and the row count
-    /// or the failure's number, then the statement and GO, so the log runs as a script. It holds no value a statement read.
+    /// A run's log of every statement estate sends through <see cref="Query{T}"/>, .estate/runs/&lt;id&gt;/queries.log: each aggregate query, the
+    /// VIEW DEFINITION check Model and Plan send before DacFx's own catalog queries, which are DacFx's to answer for, and a copy's CREATE
+    /// and DROP DATABASE. Per statement: the time, the target, the site and the row count, the failure's number or code, or the timeout,
+    /// then the statement and GO, so the log runs as a script. It holds no value a statement read. Each entry is appended and flushed to
+    /// the file through io/Write.Append as it is made, so a run's statements cost their own bytes once (finding ARCH-08), and a reader
+    /// following the file sees each.
     /// </summary>
     public sealed class QueryLog
     {
         private readonly Lock gate = new();
-        private readonly StringBuilder entries = new();
 
         private QueryLog(string path) => Path = path;
 
         public string Path { get; }
 
         /// <summary>A new run's log under the estate's root, named for the time, the process and a random suffix, so two runs never share one.</summary>
-        public static QueryLog Start(string estateRoot) => new(System.IO.Path.Combine(estateRoot, ".estate", "runs",
+        public static QueryLog Start(string estateRoot) => new(System.IO.Path.Combine(new LocalState(estateRoot).Runs,
             DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture) + "-" + System.Environment.ProcessId.ToString(CultureInfo.InvariantCulture)
             + "-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(2)).ToLowerInvariant(), "queries.log"));
 
-        internal void Add(Database target, AggregateQuery query, string outcome) => Add(target, query.Site, query.Statement, outcome);
-
         internal void Add(Database target, string site, string statement, string outcome)
         {
+            var entry = "-- " + DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture) + " " + target.Target + " " + site + ": " + outcome + "\n"
+                + statement + "\nGO\n";
             lock (gate)
             {
-                entries.Append("-- ").Append(DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)).Append(' ').Append(target.Target).Append(' ')
-                    .Append(site).Append(": ").Append(outcome).Append('\n').Append(statement).Append("\nGO\n");
-                Write.Text(Path, entries.ToString());
+                // A run whose log cannot be written stops: R14's record of every statement is not optional.
+                Write.Append(Path, entry).Match(_ => 0, error => throw new IOException(error.Code + ": " + error.Message));
             }
         }
     }
 
     /// <summary>
     /// A reference's connection (§4 row 14, VALUES.md X1): env:NAME's variable or file:path's text, a relative path read from the estate's
-    /// root, parsed by SqlClient's own grammar; the caller's integrated identity when it names no other; estate as the application unless
-    /// it names one. An error names the reference and quotes nothing it read.
+    /// root, parsed by SqlClient's own grammar (io/ConnectionString.cs); the caller's integrated identity when it names no other; estate
+    /// as the application unless it names one. An error names the reference and quotes nothing it read.
     /// </summary>
     internal static Result<string> Connect(string subject, SecretReference reference, string estateRoot) => Read(subject, reference, estateRoot).Bind(read => read is not { } text
         ? new Error("connection.unresolved", subject + " resolves to nothing here.", "Set the variable, or write the file outside git, that " + reference + " names.")
         : Parsed(subject, reference, text).Bind(connection => connection.InitialCatalog.Length == 0
-            ? new Error("connection.malformed", subject + " names no database; Model, Plan and Measure read the database it names.",
+            ? new Error("connection.malformed", subject + " names no database; every read reads the database the connection names.",
                 "Give the connection string an Initial Catalog, in the place " + reference + " names.")
-            : Result.Ok(Identified(connection))));
+            : Result.Ok(ConnectionString.WithDefaults(connection))));
 
     /// <summary>An environment's server as R15 reads it, a database named or not: null when its reference resolves to nothing here; an error when SqlClient reads nothing from it.</summary>
-    internal static Result<string?> DataSource(NamedEnvironment environment, string estateRoot) => Read(EnvironmentDatabase.Subject(environment), environment.Connection, estateRoot).Bind(read => read is not { } text
-        ? Result.Ok<string?>(null)
-        : Parsed(EnvironmentDatabase.Subject(environment), environment.Connection, text).Map(connection => (string?)connection.DataSource));
+    internal static Result<ServerName?> DataSource(NamedEnvironment environment, string estateRoot) => Read(EnvironmentDatabase.Subject(environment), environment.Connection, estateRoot).Bind(read => read is not { } text
+        ? Result.Ok<ServerName?>(null)
+        : Parsed(EnvironmentDatabase.Subject(environment), environment.Connection, text).Map(connection => (ServerName?)ConnectionString.ServerOf(connection)));
 
     /// <summary>A reference's text as SqlClient's own grammar reads it; the error names the reference and quotes nothing it read.</summary>
-    private static Result<SqlConnectionStringBuilder> Parsed(string subject, SecretReference reference, string text)
-    {
-        try
-        {
-            return new SqlConnectionStringBuilder(text);
-        }
-        catch (Exception e) when (e is ArgumentException or FormatException or InvalidOperationException)
-        {
-            return new Error("connection.malformed", subject + " is no connection string SqlClient reads; its text is withheld.",
-                "Correct the connection string in the place " + reference + " names.");
-        }
-    }
-
-    /// <summary>The connection as estate opens it: the caller's integrated identity when it names no other, and estate as the application unless it names one.</summary>
-    private static string Identified(SqlConnectionStringBuilder connection)
-    {
-        if (!connection.ShouldSerialize("Integrated Security") && connection.UserID.Length == 0 && connection.Authentication == SqlAuthenticationMethod.NotSpecified)
-        {
-            connection.IntegratedSecurity = true;
-        }
-
-        if (!connection.ShouldSerialize("Application Name"))
-        {
-            connection.ApplicationName = "estate";
-        }
-
-        return connection.ConnectionString;
-    }
+    private static Result<SqlConnectionStringBuilder> Parsed(string subject, SecretReference reference, string text) =>
+        ConnectionString.Parse(subject, text, "Correct the connection string in the place " + reference + " names.");
 
     /// <summary>
     /// What a reference names: the variable's value, or the file's text trimmed; null when the variable is unset or empty, when the
@@ -627,20 +766,8 @@ public static class SqlServer
         }
     }
 
-    /// <summary>
-    /// A server's host as R15 spells it: the data source with its protocol, port and instance set aside, in lower case; this machine,
-    /// however spelled (localhost, 127.0.0.1, ::1, '.', (local), its own name, or none, SqlClient's local default), is localhost.
-    /// </summary>
-    public static string Host(string dataSource)
-    {
-        var host = Regex.Replace(dataSource.Trim(), @"\A(?:tcp|np|lpc|admin):", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        host = host.StartsWith(@"\\", StringComparison.Ordinal) ? host[2..].Split('\\')[0] : host.StartsWith("(localdb)", StringComparison.OrdinalIgnoreCase) ? "(localdb)" : host;
-        host = host.Split(',')[0].Split('\\')[0].Trim().Trim('[', ']').ToLowerInvariant();
-        return host is "" or "localhost" or "127.0.0.1" or "::1" or "." or "(local)" || host == System.Environment.MachineName.ToLowerInvariant() ? "localhost" : host;
-    }
-
     private static Error NotADatabase(Target target) => new Error("target.not-a-database",
-        target + " is read as a package; Model, Plan and Measure read a database, env:<name> or copy:<name>.", "Name the database as env:<name> or copy:<name>.");
+        target + " is read as a package, and a database is asked for here: env:<name> or copy:<name>.", "Name the database as env:<name> or copy:<name>.");
 
     /// <summary>The target, when it answers this identity with VIEW DEFINITION: what a verb asks before it builds anything, so a denial arrives first.</summary>
     public static Result<Database> Reach(Database target, QueryLog? log = null) => Reached(target, log);
@@ -649,23 +776,10 @@ public static class SqlServer
     /// Whether the target answers this identity with what reading it takes, before DacFx's own retries begin: a connection opens, and
     /// the identity holds VIEW DEFINITION there (§1 fact 2), whose absence is a denial (Msg 300, SQL Server's number for it).
     /// </summary>
-    private static Result<Database> Reached(Database target, QueryLog? log)
-    {
-        const string Statement = "SELECT HAS_PERMS_BY_NAME(NULL, N'DATABASE', N'VIEW DEFINITION');";
-        try
-        {
-            using var connection = new SqlConnection(target.Connection);
-            connection.Open();
-            using var command = new SqlCommand(Statement, connection);
-            var held = Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture) == 1;
-            log?.Add(target, "VIEW DEFINITION", Statement, "1 row");
-            return held ? Result.Ok(target) : target.ErrorOf(300, "");
-        }
-        catch (Exception e) when (e is SqlException or InvalidOperationException)
-        {
-            return target.ErrorOf(e);
-        }
-    }
+    private static Result<Database> Reached(Database target, QueryLog? log) =>
+        Query(target, new Statement("VIEW DEFINITION", "SELECT HAS_PERMS_BY_NAME(NULL, N'DATABASE', N'VIEW DEFINITION');"), log,
+                rows => rows is [[{ } held]] && Convert.ToInt32(held, CultureInfo.InvariantCulture) == 1)
+            .Bind(held => held ? Result.Ok(target) : target.ErrorOf(300, ""));
 
     /// <summary>A package loaded from a stream, handed to use, then released (a package loaded by path holds the assemblies beside it in this process).</summary>
     private static Result<T> Loaded<T>(string dacpac, Database target, Func<DacPackage, Result<T>> use)
@@ -701,14 +815,18 @@ public static class SqlServer
     private static Result<IReadOnlyList<SqlCmdValue>> Values(Database target) => target is not EnvironmentDatabase named ? Result.Ok<IReadOnlyList<SqlCmdValue>>([])
         : Result.All(named.Environment.SqlCmd.Select(variable => variable.Match(
             literal => Result.Ok(new SqlCmdValue(variable.Name, literal, false)),
-            reference => Read(named + "'s $(" + variable.Name + "), " + reference + ",", reference, named.Root).Bind(read => read is { } value
+            reference => Read(named + "'s " + SqlCmdVariable.Placeholder(variable.Name) + ", " + reference + ",", reference, named.Root).Bind(read => read is { } value
                 ? Result.Ok(new SqlCmdValue(variable.Name, value, true))
-                : new Error("sqlcmd.unresolved", named + "'s $(" + variable.Name + ") names " + reference + ", which resolves to nothing here.",
+                : new Error("sqlcmd.unresolved", named + "'s " + SqlCmdVariable.Placeholder(variable.Name) + " names " + reference + ", which resolves to nothing here.",
                     "Set the variable, or write the file outside git, that " + reference + " names.")))));
 
-    /// <summary>A value the allowlist admits the type of: an integer of any width. Anything else is a defect in the allowlist, named by its type alone.</summary>
-    private static long Integer(object value) => value switch
+    /// <summary>
+    /// A value the allowlist admits the type of: an integer of any width, or NULL. Anything else is a defect in the allowlist, named by
+    /// its type alone and never by the value; it escapes as an exception, which cli/Program.cs answers as internal.unexpected at exit 6.
+    /// </summary>
+    private static long? Integer(object? value) => value switch
     {
+        null => null,
         int or long or short or byte => Convert.ToInt64(value, CultureInfo.InvariantCulture),
         _ => throw new NotSupportedException("An aggregate query answered with a " + value.GetType().Name + ", a type no form of the allowlist yields."),
     };
@@ -735,9 +853,10 @@ public static class SqlServer
         /// <summary>The first form the allowlist does not hold: where it stands, and what it is.</summary>
         private sealed record Offence(TSqlFragment At, string What);
 
-        public static Result<string> Admitted(string text)
+        /// <summary>The one statement <paramref name="text"/> holds, when the allowlist admits it; a refusal names the line and the column of what it refuses.</summary>
+        public static Result<TSqlStatement> Admitted(string text)
         {
-            var parsed = new TSql160Parser(initialQuotedIdentifiers: true).Parse(new StringReader(text), out var errors);
+            var parsed = TSql.Parse(text, out var errors);
             if (errors.Count > 0)
             {
                 return new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query does not parse at line {errors[0].Line}, column {errors[0].Column}."),
@@ -745,21 +864,23 @@ public static class SqlServer
             }
 
             var statements = ((TSqlScript)parsed).Batches.SelectMany(b => b.Statements).ToList();
-            if (statements.Count != 1)
-            {
-                return new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query holds {statements.Count} statements; estate runs one statement at a time."),
-                    "Split it into queries of one SELECT each.");
-            }
-
-            if ((statements[0] is SelectStatement select ? Statement(select) : new Offence(statements[0], Kind(statements[0]))) is { } offence)
-            {
-                return new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query is refused at line {offence.At.StartLine}, column {offence.At.StartColumn}: {offence.What}."),
-                    "Rewrite it so its select list holds only " + Forms + ".");
-            }
-
-            new Sql160ScriptGenerator().GenerateScript(statements[0], out var script);
-            return script.Replace("\r\n", "\n", StringComparison.Ordinal).Trim();
+            return statements.Count != 1
+                ? new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query holds {statements.Count} statements; estate runs one statement at a time."),
+                    "Split it into queries of one SELECT each.")
+                : Admitted(statements[0], site: null);
         }
+
+        /// <summary>
+        /// A statement as a tree, when the allowlist admits it: what M2's builders make, checked without being written as text and read
+        /// again. A tree built in code carries no line and column, so its refusal names <paramref name="site"/> and the kind of node the
+        /// allowlist stops at instead.
+        /// </summary>
+        public static Result<TSqlStatement> Admitted(TSqlStatement statement, string? site) =>
+            (statement is SelectStatement select ? Statement(select) : new Offence(statement, Kind(statement))) is not { } offence ? statement
+            : new Error("aggregate-query.refused", offence.At.StartLine > 0
+                    ? string.Create(CultureInfo.InvariantCulture, $"The query is refused at line {offence.At.StartLine}, column {offence.At.StartColumn}: {offence.What}.")
+                    : "The query " + site + " is refused at its " + Kind(offence.At) + ": " + offence.What + ".",
+                "Rewrite it so its select list holds only " + Forms + ".");
 
         private static Offence? Statement(SelectStatement s) =>
             s.Into is not null ? new Offence(s.Into, "SELECT INTO")

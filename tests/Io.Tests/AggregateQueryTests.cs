@@ -35,11 +35,13 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
         var measured = admitted.Select(query => Assert.IsType<SqlServer.Measurement.Answered>(Made(SqlServer.Measure(uat, query, log)))).ToList();
 
         Assert.All(measured, m => Assert.NotEmpty(m.Rows));
-        Assert.Contains(measured, m => m.Rows.Any(row => row.Any(value => value > 0)));
+        Assert.Contains(measured, m => m.Rows.Any(row => row.Values.Any(value => value > 0)));
         Assert.StartsWith(Path.Combine(root, ".estate", "runs"), log.Path, StringComparison.Ordinal);
         var entries = Entries(File.ReadAllText(log.Path));
-        Assert.Equal(admitted.Select(p => (p.Site, p.Statement)), entries.Select(e => (e.Site, e.Statement)));
-        Assert.Equal(measured.Select(m => m.Rows.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)), entries.Select(e => e.Outcome));
+        var (checks, queries) = (entries.Where(e => e.Site.StartsWith("Synonyms: ", StringComparison.Ordinal)).ToList(), entries.Where(e => !e.Site.StartsWith("Synonyms: ", StringComparison.Ordinal)).ToList());
+        Assert.Equal(admitted.Select(p => (p.Site, p.Statement)), queries.Select(e => (e.Site, e.Statement)));
+        Assert.Equal(measured.Select(m => m.Rows.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)), queries.Select(e => e.Outcome));
+        Assert.Equal(admitted.Where(p => p.Tables.Count > 0).Select(p => ("Synonyms: " + p.Site, "0")), checks.Select(e => (e.Site, e.Outcome)));
     }
 
     /// <summary>§18: SQL Server writes the value it fails to convert into Msg 245. Against an environment classified real, the executor records the number and the site, and the value appears in no result, message or line of the log.</summary>
@@ -58,7 +60,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
 
         Assert.Equal((245, "dbo.Planted.Value Fits", (string?)null), (failed.Number, failed.Site, failed.Message));
         Assert.Equal("dbo.Planted.Value Fits: query failed: Msg 245; message withheld", failed.ToString());
-        Assert.Equal("failed, Msg 245", Assert.Single(Entries(File.ReadAllText(log.Path))).Outcome);
+        Assert.Equal("failed, Msg 245", Assert.Single(Entries(File.ReadAllText(log.Path)), e => e.Site == "dbo.Planted.Value Fits").Outcome);
         Assert.DoesNotContain(planted, failed + File.ReadAllText(log.Path), StringComparison.Ordinal);
     }
 
@@ -147,9 +149,9 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
 
         Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
         File.Copy(project.Profile, Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"), overwrite: true);
-        File.WriteAllText(Path.Combine(root, "estate", "posture.json"), "{ \"environments\": { \"" + name + "\": { \"classification\": \"real\", \"connection\": \"file:"
+        File.WriteAllText(Path.Combine(root, "estate", "posture.json"), "{ \"environments\": { \"" + name + "\": { \"host\": \"localhost\", \"classification\": \"real\", \"connection\": \"file:"
             + file.Replace('\\', '/') + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\"" + extra + " } } }");
-        return Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:" + name)), root));
+        return Made(SqlServer.Resolve(Made(SqlServer.Target("env:" + name, "--target")), root));
     }
 
     /// <summary>queries.log as entries: a header line naming the site and the outcome (a row count, or the failure's number), the statement, then GO.</summary>

@@ -174,6 +174,7 @@ internal static class RefusalPaths
             Failed(SecretReference.Of("--connection", "file:Server=db;User ID=sa;Password=" + planted))),
         new("a scratch server that is neither docker nor localdb", "posture.malformed", true, (scratch, planted) =>
             Failed(Profiles.Environments(Estate(scratch, "{ \"environments\": {}, \"scratchServer\": " + Quoted(planted) + " }")))),
+        new("a host given with its port", "posture.host", true, (_, planted) => Failed(Host.Of("environments.dev.host in estate/posture.json", planted + ",1433"))),
         new("an environment misnamed", "posture.environment-name", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + "]", name: "DEV"))),
         new("a reader group given twice", "posture.readers", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
         new("a profile path outside the estate", "posture.profile-path", true, (scratch, planted) => Posture(scratch, Dev(profile: "../" + planted + ".publish.xml"))),
@@ -205,15 +206,16 @@ internal static class RefusalPaths
         {
             var root = Estate(scratch, Environments(Dev(profile: "estate/profiles/relaxed.publish.xml")));
             File.Move(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted)), Path.Combine(root, "estate", "profiles", "relaxed.publish.xml"));
-            return Failed(Profiles.Of(Made(Profiles.Environments(root)).Single(), root));
+            return Failed(Profiles.Of(Made(Profiles.Environments(root)).All.Single(), root));
         }),
         new("a SQLCMD literal under a credential's name in a profile", "sqlcmd.literal-credential", true, (scratch, planted) =>
             Failed(Profiles.Load(Profile(scratch, "", ("ApiToken", planted))))),
 
-        new("a target of no form the grammar knows", "target.unknown", true, (_, planted) => Failed(SqlServer.Target.Parse("sql:" + planted))),
-        new("a copy named as no copy can be", "copy.unregistered", true, (_, planted) => Failed(SqlServer.Target.Parse("copy:" + planted, "--target"))),
+        new("a target of no form the grammar knows", "target.unknown", true, (_, planted) => Failed(SqlServer.Target("sql:" + planted, "--target"))),
+        new("a copy named as no copy can be", "copy.unregistered", true, (_, planted) => Failed(SqlServer.Target("copy:" + planted, "--target"))),
+        new("a git ref that is none", "ref.malformed", true, (_, planted) => Failed(GitRef.Of("--at", "-" + planted))),
         new("a literal connection string where a target goes", "connection.literal", true, (_, planted) =>
-            Failed(SqlServer.Target.Parse("Server=db;User ID=sa;Password=" + planted, "--target"))),
+            Failed(SqlServer.Target("Server=db;User ID=sa;Password=" + planted, "--target"))),
         new("a git ref where a database is asked for", "target.not-a-database", false, (scratch, _) => Failed(SqlServer.Resolve(Target("ref:main"), scratch))),
         new("an environment the posture does not name", "target.unnamed", false, (scratch, _) => Failed(SqlServer.Resolve(Target("env:qa"), Estate(scratch, Environments(Dev()))))),
         new("the synthetic copy before its milestone", "synthetic-copy.not-built", false, (scratch, _) => Failed(SqlServer.Resolve(Target("synthetic-copy"), scratch))),
@@ -241,7 +243,7 @@ internal static class RefusalPaths
             Written(root, "estate/posture.json", Environments(Dev(connection: "file:.estate/dev.connection::$DATA")));
             var file = OwnerOnly(Written(root, ".estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
             return OperatingSystem.IsWindows()   // Windows opens the default data stream as name::$DATA; elsewhere that name opens no file, and the driver asks io/SqlServer of it directly
-                ? SqlServer.Resolve(Target("env:dev"), root).Map(database => database.Target)
+                ? SqlServer.Resolve(Target("env:dev"), root).Map(database => database.Target.ToString())
                 : SqlServer.Listed("env:dev's connection, file:.estate/dev.connection::$DATA,", file + "::$DATA");
         })),
         new("a connection file in a folder this identity cannot list", "reference.unlistable", true, (scratch, planted) =>
@@ -273,15 +275,17 @@ internal static class RefusalPaths
             return Failed(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch));
         }),
         new("a copy made on the host an environment's reference names", "copy.named-host", true, (scratch, planted) => Failed(SqlServer.Resolve(Target("copy:" + Copied),
-            Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted))))))))),
+            Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted), host: "localhost")))))))),
         new("a copy beside an environment whose connection SqlClient cannot read", "connection.malformed", true, (scratch, planted) => Failed(SqlServer.Resolve(Target("copy:" + Copied),
             Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Nonsense " + planted + " = 1"))))))))),
-        new("no scratch server server anywhere", "scratch-server.missing", false, (scratch, _) => Failed(ScratchServer.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
-        new("a scratch server server SqlClient cannot read", "scratch-server.missing", true, (scratch, planted) =>
+        new("no scratch server anywhere", "scratch-server.missing", false, (scratch, _) => Failed(ScratchServer.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
+        new("an ESTATE_SQL SqlClient reads no connection string from", "connection.malformed", true, (scratch, planted) =>
             Failed(ScratchServer.ServerName("Server=db;Password=" + planted + ";Nonsense " + planted + " = 1", Path.Combine(scratch, "no-sql.env"), localDb: false))),
         new("a named environment's login denied", "server.denied", true, (scratch, planted) => DevDatabase(scratch).ErrorOf(18456, "Login failed for user '" + planted + "'.")),
         new("a named environment that does not answer", "server.unreachable", true, (scratch, planted) =>
             DevDatabase(scratch).ErrorOf(53, "A network-related or instance-specific error occurred while establishing a connection to " + planted + ".")),
+        new("a named environment's statement running past its timeout", "server.timed-out", true, (scratch, planted) =>
+            DevDatabase(scratch).ErrorOf(-2, "Execution Timeout Expired, the statement reading '" + planted + "'.", fatal: false, opened: true)),
         new("a named environment's statement failing", "server.failed", true, (scratch, planted) =>
             DevDatabase(scratch).ErrorOf(245, "Conversion failed when converting the nvarchar value '" + planted + "' to data type int.")),
         new("a SQL Server error DacFx quotes by its number, with no SqlException inside", "server.failed", true, (scratch, planted) =>
@@ -322,7 +326,7 @@ internal static class RefusalPaths
     /// <summary>The copy a planted registry holds, made on localhost,11433.</summary>
     private const string Copied = "estate_host_1_0a1b2c3d";
 
-    private static SqlServer.Target Target(string text) => Made(SqlServer.Target.Parse(text));
+    private static Target Target(string text) => Made(SqlServer.Target(text, "--target"));
 
     /// <summary>The estate's root with .estate/copies.json holding <see cref="Copied"/>, as io/ScratchServer writes a row, so copy: reaches R15 without a server.</summary>
     private static string Registered(string root)
@@ -469,9 +473,9 @@ internal static class RefusalPaths
         ? new Ran.Exited(0, (string)JsonNode.Parse(File.ReadAllText(Path.Combine(Repository.Root, "global.json")))!["sdk"]!["version"]! + " [sdk]\n", "")
         : Command.Run(command, cancel);
 
-    /// <summary>A dev environment in posture JSON: its connection, its profile and whatever else is given.</summary>
-    private static string Dev(string extra = "", string connection = "env:ESTATE_DEV", string profile = Pipeline, string name = "dev") =>
-        Quoted(name) + ": { \"connection\": " + Quoted(connection) + ", \"profile\": " + Quoted(profile) + (extra.Length > 0 ? ", " + extra : "") + " }";
+    /// <summary>A dev environment in posture JSON: its host, its connection, its profile and whatever else is given.</summary>
+    private static string Dev(string extra = "", string connection = "env:ESTATE_DEV", string profile = Pipeline, string name = "dev", string host = "dev-sql") =>
+        Quoted(name) + ": { \"host\": " + Quoted(host) + ", \"connection\": " + Quoted(connection) + ", \"profile\": " + Quoted(profile) + (extra.Length > 0 ? ", " + extra : "") + " }";
 
     private static string Environments(string environments) => "{ \"environments\": { " + environments + " } }";
 

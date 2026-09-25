@@ -5,18 +5,6 @@ using Xunit;
 
 namespace Estate.Io.Tests;
 
-/// <summary>A registered database is named for its host and its process, lower case, in [a-z0-9_] only.</summary>
-public sealed class RegisteredDatabaseNameTests
-{
-    [Theory]
-    [Trait("Category", "fast")]
-    [InlineData("DANNY-PC", 4242, "0a1b2c3d", "estate_danny_pc_4242_0a1b2c3d")]
-    [InlineData("runner.corp.example", 7, "ffffffff", "estate_runner_corp_example_7_ffffffff")]
-    [InlineData("ÉTÉ", 1, "00000000", "estate__t__1_00000000")]
-    public void A_registered_database_is_named_for_its_host_and_process(string host, int pid, string random, string name) =>
-        Assert.Equal(name, SqlServerFixture.DatabaseName(host, pid, random));
-}
-
 /// <summary>
 /// The fixture's promise, proven by two tests xUnit runs at the same time (each class is its own collection): each gets its
 /// own registered database on the one server, each creates a table in it, and each database is dropped after its test.

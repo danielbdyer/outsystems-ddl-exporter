@@ -34,8 +34,8 @@ public static partial class Verbs
     /// </summary>
     public static Envelope Diff(Checkout here, IReadOnlyList<string> words)
     {
-        if (Contract.Flags(words, ["--from", "--to"], ["--project"], ["--fail-on-change"]).Bind(flags => SqlServer.Target.Parse(flags["--from"], "--from")
-            .Bind(from => SqlServer.Target.Parse(flags["--to"], "--to").Bind(to => Pinned(here).Bind(pin => Reading(here, from, flags.GetValueOrDefault("--project"))
+        if (Contract.Flags(words, ["--from", "--to"], ["--project"], ["--fail-on-change"]).Bind(flags => SqlServer.Target(flags["--from"], "--from")
+            .Bind(from => SqlServer.Target(flags["--to"], "--to").Bind(to => Pinned(here).Bind(pin => Reading(here, from, flags.GetValueOrDefault("--project"))
             .Bind(before => Reading(here, to, flags.GetValueOrDefault("--project")).Bind(after =>
                 Change.Between(before.Model.Elements, after.Model.Elements, SortedArray.Of(before.Model.Renames.Concat(after.Model.Renames).Distinct()))
                     .Map(change => (Before: before, After: after, Change: change, Fail: flags.ContainsKey("--fail-on-change"), Pin: pin))))))))

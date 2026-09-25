@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Data.Common;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -10,7 +9,6 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using Estate.Kernel;
-using Microsoft.Data.SqlClient;
 using Microsoft.SqlServer.Dac;
 
 namespace Estate.Io;
@@ -26,10 +24,7 @@ public static class Profiles
 {
     public const string Posture = "estate/posture.json";
 
-    private static readonly string[] Keys = ["classification", "confirmedBy", "confirmedOn", "readers", "connection", "profile", "sqlcmd", "metamodel"];
-
-    /// <summary>A password set in a connection string, however spelled or spaced.</summary>
-    private static readonly Regex Password = new(@"(?:password|pwd)\s*=", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly string[] Keys = ["host", "classification", "confirmedBy", "confirmedOn", "readers", "connection", "profile", "sqlcmd", "metamodel"];
 
     /// <summary>A key a message may name as it stands; any other is named by its place among its siblings.</summary>
     private static readonly Regex Nameable = new(@"\A[A-Za-z0-9_-]{1,64}\z", RegexOptions.CultureInvariant);
@@ -57,8 +52,11 @@ public static class Profiles
         return Path.GetFullPath(workingDirectory);
     }
 
-    /// <summary>The environments estate/posture.json names under the estate's root, in name order.</summary>
-    public static Result<SortedArray<NamedEnvironment>> Environments(string estateRoot)
+    /// <summary>
+    /// estate/posture.json under the estate's root, read once for a verb: the environments it names, in name order, each with the host
+    /// its SQL Server runs on, and the scratch server it prefers.
+    /// </summary>
+    public static Result<Environments> Environments(string estateRoot)
     {
         try
         {
@@ -68,7 +66,10 @@ public static class Profiles
                     "Move it into an environment variable or a file outside git, and write env:NAME or file:path at " + at + ".")
                 : (Unknown(root, "", ["environments", "scratchServer"]) ?? Missing(root, "", "environments"))
                     ?? Result.All(root.GetProperty("environments").EnumerateObject().Select((e, i) => EnvironmentAt(e.Name, e.Value, Place("environments", e.Name, i))))
-                        .Map(environments => SortedArray.Of(environments));
+                        .Bind(environments => (root.TryGetProperty("scratchServer", out var kind)
+                                ? ScratchServerKind.Of(Where("scratchServer"), kind.GetString()).Map(k => (ScratchServerKind?)k)
+                                : Result.Ok<ScratchServerKind?>(null))
+                            .Bind(scratchServer => Kernel.Environments.Of(Posture, environments, scratchServer)));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -96,7 +97,7 @@ public static class Profiles
             using var reader = XmlReader.Create(new MemoryStream(bytes), new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
             profile = XDocument.Load(reader);
             var read = profile.Descendants().SelectMany(e => e.Attributes().Select(a => a.Value).Append(string.Concat(e.Nodes().OfType<XText>().Select(t => t.Value))));
-            if (read.Prepend(Encoding.UTF8.GetString(bytes)).Any(Password.IsMatch))
+            if (read.Prepend(Encoding.UTF8.GetString(bytes)).Any(ConnectionString.Password.IsMatch))
             {
                 return new Error("profile.password", subject + " holds a password in a connection string; a profile gives deploy options and SQLCMD values alone.",
                     "Delete the connection string from " + path + ", and name the connection in " + Posture + " as env:NAME or file:path.");
@@ -136,11 +137,11 @@ public static class Profiles
 
     /// <summary>A named environment's profile, its errors led by the environment; io/SqlServer.Plan sets the environment's own SQLCMD values over the profile's.</summary>
     public static Result<PublishProfile.Strict> Of(NamedEnvironment environment, string estateRoot) =>
-        Load(Path.GetFullPath(Path.Combine(estateRoot, environment.ProfilePath)), "env:" + environment.Name + "'s profile " + environment.ProfilePath);
+        Load(Path.GetFullPath(Path.Combine(estateRoot, environment.Profile.ToString())), environment.Target + "'s profile " + environment.Profile);
 
     /// <summary>A SQLCMD value a profile gives: a literal, refused under a name shaped like a credential or when it is a connection string.</summary>
     private static Result<SqlCmdVariable> ProfileValue(string subject, string path, string name, string value) =>
-        SqlCmdVariable.Of(subject, name, value).Bind(literal => IsConnection(value) ? new Error("profile.literal-connection",
+        SqlCmdVariable.Of(subject, name, value).Bind(literal => ConnectionString.IsConnection(value) ? new Error("profile.literal-connection",
             subject + " gives $(" + name + ") a literal connection string.",
             "Give $(" + name + ") as env:NAME or file:path in the environment's sqlcmd in " + Posture + ", and delete its value from " + path + ".") : Result.Ok(literal));
 
@@ -163,8 +164,18 @@ public static class Profiles
             : default(SortedArray<SqlCmdVariable>);
         return confirmation.Bind(confirmed => Classification.Of(subject, Given("classification"), confirmed)).Bind(classification =>
             SecretReference.Of(Where(at + ".connection"), Given("connection")).Bind(connection => metamodel.Bind(meta => sqlCmd.Bind(variables =>
-                NamedEnvironment.Of(subject, name, classification, readers, connection, Given("profile")!, variables, meta)))));
+                EnvironmentName.Of(subject, name).Bind(environment => HostOf(entry, at).Bind(host => PublishProfilePath.Of(subject, Given("profile")).Bind(profile =>
+                    NamedEnvironment.Of(subject, environment, host, classification, readers, connection, profile, variables, meta))))))));
     }
+
+    /// <summary>
+    /// The host an environment's SQL Server runs on (DECISIONS.md, 2026-09-25): each environment names one, so R15 compares every
+    /// environment with the scratch server, its reference resolving on this machine or not; posture.host when the key is absent.
+    /// </summary>
+    private static Result<Host> HostOf(JsonElement entry, string at) => entry.TryGetProperty("host", out var host)
+        ? Host.Of(Where(at + ".host"), host.GetString())
+        : new Error("posture.host", Where(at) + " names no host; each environment names the host its SQL Server runs on, so estate makes no copy on it.",
+            "Give " + Where(at) + " its host, the server's name as its connection string spells it, such as dev-sql.corp.example.");
 
     /// <summary>A SQLCMD value in the posture: a string is a reference, and an object a literal, taken only when marked "sensitive": false.</summary>
     private static Result<SqlCmdVariable> PostureValue(string name, JsonElement value, string at) => value.ValueKind switch
@@ -182,26 +193,13 @@ public static class Profiles
     /// <summary>Where the first key or string of the document that is a literal connection string sits, or null.</summary>
     private static string? Literal(JsonElement element, string at) => element.ValueKind switch
     {
-        JsonValueKind.Object => element.EnumerateObject().Select((p, i) => IsConnection(p.Name) ? Place(at, p.Name, i) : Literal(p.Value, Place(at, p.Name, i)))
+        JsonValueKind.Object => element.EnumerateObject().Select((p, i) => ConnectionString.IsConnection(p.Name) ? Place(at, p.Name, i) : Literal(p.Value, Place(at, p.Name, i)))
             .FirstOrDefault(found => found is not null),
         JsonValueKind.Array => element.EnumerateArray().Select((item, i) => Literal(item, string.Create(CultureInfo.InvariantCulture, $"{at}[{i}]")))
             .FirstOrDefault(found => found is not null),
-        JsonValueKind.String => IsConnection(element.GetString()!) ? at : null,
+        JsonValueKind.String => ConnectionString.IsConnection(element.GetString()!) ? at : null,
         _ => null,
     };
-
-    /// <summary>Whether a text is a literal connection string: it sets a password, or SqlClient's grammar reads one of its keywords from it (Server, User ID). io/SqlServer's target grammar asks it of an argument.</summary>
-    internal static bool IsConnection(string text)
-    {
-        try
-        {
-            return Password.IsMatch(text) || new DbConnectionStringBuilder { ConnectionString = text }.Keys.Cast<string>().Any(new SqlConnectionStringBuilder().ContainsKey);
-        }
-        catch (ArgumentException)
-        {
-            return false;
-        }
-    }
 
     /// <summary>The first error in an object of the posture: none at all, a key outside <paramref name="known"/>, or a value of another kind than its key takes.</summary>
     private static Error? Unknown(JsonElement element, string at, string[] known) => element.ValueKind != JsonValueKind.Object ? Malformed(at, "a JSON object")
@@ -217,7 +215,6 @@ public static class Profiles
         ("environments" or "sqlcmd", JsonValueKind.Object) or ("sensitive", _) => null,
         ("environments", _) => Malformed(at, "an object of each environment by its name"),
         ("sqlcmd", _) => Malformed(at, "an object of SQLCMD values by variable name"),
-        ("scratchServer", _) => Text(key.Value) is "docker" or "localdb" ? null : Malformed(at, "docker or localdb"),
         _ => key.Value.ValueKind == JsonValueKind.String ? null : Malformed(at, "a string"),
     };
 

@@ -214,14 +214,14 @@ public sealed class ContractTests
             Directory.CreateDirectory(Path.Combine(root, ".estate"));
             File.WriteAllText(Path.Combine(root, "dev.connection"), "Server=tcp:192.0.2.10,1433;Initial Catalog=Estate;User ID=estate;Password=Pa55!planted#7f3a");
             File.WriteAllText(Path.Combine(root, "estate", "posture.json"),
-                "{ \"environments\": { \"dev\": { \"connection\": \"file:dev.connection\", \"profile\": \"estate/profiles/pipeline.publish.xml\" } } }");
+                "{ \"environments\": { \"dev\": { \"host\": \"192.0.2.10\", \"connection\": \"file:dev.connection\", \"profile\": \"estate/profiles/pipeline.publish.xml\" } } }");
             File.WriteAllText(Path.Combine(root, ".estate", "copies.json"),
                 "{ \"copies\": [ { \"name\": \"estate_host_1_0a1b2c3d\", \"server\": \"localhost,11433\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-25T00:00:00Z\" } ] }");
             var check = Contract.Verbs.Single(v => v.Name == "check") with
             {
                 Body = (here, _) =>
                 {
-                    SqlServer.Target.Parse(target).Bind(parsed => SqlServer.Resolve(parsed, here.Root));
+                    SqlServer.Target(target, "--target").Bind(parsed => SqlServer.Resolve(parsed, here.Root));
                     throw new InvalidOperationException(Planted);
                 },
             };

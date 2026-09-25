@@ -26,7 +26,7 @@ public static partial class Verbs
     /// <summary>estate read --from &lt;target&gt; [--project &lt;path&gt;]: a ref built at its commit, a package or a database, read whole (V3_ARCHITECTURE.md §8.1).</summary>
     public static Envelope Read(Checkout here, IReadOnlyList<string> words)
     {
-        if (Contract.Flags(words, ["--from"], ["--project"], []).Bind(flags => SqlServer.Target.Parse(flags["--from"], "--from")
+        if (Contract.Flags(words, ["--from"], ["--project"], []).Bind(flags => SqlServer.Target(flags["--from"], "--from")
             .Bind(from => Pinned(here).Bind(pin => Reading(here, from, flags.GetValueOrDefault("--project")).Map(source => (Source: source, Pin: pin)))))
             .Failed(out var reading, out var error))
         {
@@ -42,11 +42,11 @@ public static partial class Verbs
     }
 
     /// <summary>A target's model read whole into elements, with the SQL Server image a database ran in; a package's model carries its refactorlog's renames.</summary>
-    internal sealed record Source(SqlServer.Target Target, Ssdt.ModelElements Model, string? Image, bool IsDatabase);
+    internal sealed record Source(Target Target, Ssdt.ModelElements Model, string? Image, bool IsDatabase);
 
-    internal static Result<Source> Reading(Checkout here, SqlServer.Target target, string? project) => target.Match(
+    internal static Result<Source> Reading(Checkout here, Target target, string? project) => target.Match(
         _ => Modelled(here, target), _ => Modelled(here, target), () => Modelled(here, target),
-        reference => Built(here, reference.Name, project).Bind(built => Packaged(built.Dacpac)).Map(model => new Source(target, model, null, false)),
+        reference => Built(here, reference.Ref.ToString(), project).Bind(built => Packaged(built.Dacpac)).Map(model => new Source(target, model, null, false)),
         dacpac => Packaged(Path.GetFullPath(Path.Combine(here.WorkingDirectory, dacpac.Path))).Map(model => new Source(target, model, null, false)));
 
     /// <summary>A ref's project built at its commit (io/Git.At, io/Ssdt.Build): the package, and the commit.</summary>
@@ -62,7 +62,7 @@ public static partial class Verbs
         }
     });
 
-    private static Result<Source> Modelled(Checkout here, SqlServer.Target target) => SqlServer.Resolve(target, here.Root).Bind(database =>
+    private static Result<Source> Modelled(Checkout here, Target target) => SqlServer.Resolve(target, here.Root).Bind(database =>
         SqlServer.Model(database, SqlServer.QueryLog.Start(here.Root)).Map(elements => new Source(target, new Ssdt.ModelElements(elements, []), ScratchServer.Image(database), true)));
 
     /// <summary>The toolchain ledger's pin, which every verb that builds reads (R13), or the rejection of a committed engine outside its window.</summary>

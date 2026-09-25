@@ -4,9 +4,9 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Estate.Budgets.Tests;
+using Estate.Kernel;
 using Microsoft.Data.SqlClient;
 
 namespace Estate.Io.Tests;
@@ -35,8 +35,8 @@ public static class SqlServerFixture
         + "DECLARE @wait int = 0; WHILE @wait < 50 AND EXISTS (SELECT 1 FROM sys.dm_exec_sessions WHERE login_name = @reader) BEGIN WAITFOR DELAY '00:00:00.200'; SET @wait += 1; END; "
         + "IF EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @reader) BEGIN SET @sql = N'DROP LOGIN ' + QUOTENAME(@reader) + N';'; EXEC (@sql); END;";
 
-    /// <summary>What io/ScratchServer names this host's databases with, up to the process: estate_&lt;host&gt;_.</summary>
-    private static readonly string Prefix = ScratchServer.CopyName(Environment.MachineName, 0, "00000000")[..^"0_00000000".Length];
+    /// <summary>This machine's name as the names of the databases made here carry it.</summary>
+    private static readonly string Machine = CopyName.Make(Environment.MachineName, 0, 0).Machine;
 
     private static readonly Lazy<Task<string>> Master = new(ChooseAsync);
 
@@ -46,13 +46,10 @@ public static class SqlServerFixture
     public static async Task<RegisteredDatabase> RegisterAsync()
     {
         var master = await Master.Value;
-        var name = DatabaseName(Environment.MachineName, Environment.ProcessId, Convert.ToHexString(RandomNumberGenerator.GetBytes(4)));
+        var name = CopyName.Make(Environment.MachineName, Environment.ProcessId, BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))).ToString();
         await ExecuteAsync(master, Create, name);
         return new RegisteredDatabase(name, new SqlConnectionStringBuilder(master) { InitialCatalog = name, Pooling = false }.ConnectionString, master);
     }
-
-    /// <summary>A registered database is named as io/ScratchServer names a copy, so one sweep serves both.</summary>
-    public static string DatabaseName(string host, int pid, string random) => ScratchServer.CopyName(host, pid, random);
 
     /// <summary>An estate's root for the copies a test makes: the folder given, its estate/posture.json naming no environment, so R15 reads it and clears the scratch server.</summary>
     public static string EstateRoot(string folder)
@@ -108,6 +105,12 @@ public static class SqlServerFixture
             throw new InvalidOperationException("ci/sql up failed:\n" + output);
         }
 
+        // Finding NFR-13: the scripts leave the SA password readable by its owner alone, mode 0600; Windows keeps no such mode.
+        if (!OperatingSystem.IsWindows() && File.GetUnixFileMode(ScratchServer.SqlEnv) is var mode && mode != (UnixFileMode.UserRead | UnixFileMode.UserWrite))
+        {
+            throw new InvalidOperationException(ScratchServer.SqlEnv + " is mode " + Convert.ToString((int)mode, 8) + " after ci/sql up, and the SA password it holds is read by its owner alone (0600).");
+        }
+
         return true;
     }
 
@@ -120,10 +123,10 @@ public static class SqlServerFixture
             + "FROM sys.server_principals WHERE name LIKE N'estate[_]%' AND RIGHT(name, LEN(@suffix)) = @suffix;", connection);
         list.Parameters.Add(new SqlParameter("@suffix", System.Data.SqlDbType.NVarChar, 128) { Value = ReadOnlyPrincipal.Suffix });
         await using var reader = await list.ExecuteReaderAsync();
-        var owned = new Regex("^" + Regex.Escape(Prefix) + "([0-9]+)_[0-9a-f]{8}$", RegexOptions.CultureInvariant);
         while (await reader.ReadAsync())
         {
-            if (owned.Match(reader.GetString(0)) is { Success: true } match && !Running(int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture)))
+            // A registered database is named as io/ScratchServer names a copy (CopyName.Make), so one sweep serves both.
+            if (CopyName.Of("a database on the scratch server", reader.GetString(0)) is Result<CopyName>.Ok(var named) && named.Machine == Machine && !Running(named.Pid))
             {
                 await DropAsync(master, reader.GetString(0));
             }

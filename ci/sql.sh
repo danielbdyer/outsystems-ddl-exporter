@@ -2,7 +2,8 @@
 # The machine's shared SQL Server for tests and sessions (V3_MILESTONES.md WP 0.7, section 1 fact 12): one container, estate-sql,
 # from the image pinned by tag and digest, SQL Server Agent on (CDC needs it), published on 127.0.0.1 only. Its SA password
 # is generated once per machine and kept only in ~/.estate/sql.env; nothing here prints it. ci/sql.ps1 is the same on Windows.
-#   ci/sql.sh up     pull the image when absent, create or start the container, wait until SQL Server answers
+#   ci/sql.sh up     pull the image when absent, make the container again when it runs another image, create or start it,
+#                    wait until SQL Server answers
 #   ci/sql.sh down   remove the container; the password stays for the next up
 #   ci/sql.sh conn   a command that sets ESTATE_SQL, for eval "$(ci/sql.sh conn)"; it names the file, never the password
 set -euo pipefail
@@ -32,11 +33,19 @@ lock() {
 up() {
   docker info >/dev/null 2>&1 || fail "Docker does not answer (docker info): start Docker, or set ESTATE_SQL to another SQL Server" 4
   lock
+  docker image inspect "$image" >/dev/null 2>&1 || docker pull "$image" >&2
+  # A container made from another image than the pinned one (an older pin, or one made by hand) is removed and made again from the
+  # pinned image, so the image a copy ran in is the one pinned; the copies it held go with it, and sql.env keeps the password.
+  if [ -n "$(state)" ] && [ "$(docker container inspect --format '{{.Image}}' "$name")" != "$(docker image inspect --format '{{.Id}}' "$image")" ]; then
+    echo "ci/sql.sh: $name runs another image than $image; it is made again from the pinned image" >&2
+    docker rm -f "$name" >/dev/null
+  fi
   if [ -z "$(state)" ]; then
     password="$(value MSSQL_SA_PASSWORD)"
     [ -n "$password" ] || password="Est!$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')"
+    # umask sets the mode of a new file; chmod sets that of one an earlier run wrote, so its owner alone reads it either way.
     (umask 077; printf 'MSSQL_SA_PASSWORD=%s\nESTATE_SQL_PORT=%s\n' "$password" "${ESTATE_SQL_PORT:-11433}" > "$env")
-    docker image inspect "$image" >/dev/null 2>&1 || docker pull "$image" >&2
+    chmod 600 "$env"
     if ! docker run -d --name "$name" --env-file "$env" -e ACCEPT_EULA=Y -e MSSQL_AGENT_ENABLED=true \
       -p "127.0.0.1:$(value ESTATE_SQL_PORT):1433" "$image" >/dev/null; then
       docker rm -f "$name" >/dev/null 2>&1 || true

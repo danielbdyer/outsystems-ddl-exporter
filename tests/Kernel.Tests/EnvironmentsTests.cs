@@ -7,12 +7,13 @@ using Xunit;
 namespace Estate.Kernel.Tests;
 
 /// <summary>
-/// A named environment is data (WP 1.5): a reference is env:NAME or file:path and prints as itself, and no connection string passes
-/// as a path; an environment is real until a named lead's dated confirmation says synthetic; a SQLCMD value is a literal or a
-/// reference, read through Match, and a name shaped like a credential never holds a literal; and substitution is a pure function
-/// whose text exists only in the string it returns. No error quotes the value it rejected.
+/// estate/posture.json as data (WP 1.5, §4 row 14): the environments it names, each once and each with the host its server runs on, a
+/// publish profile's path inside the estate, and the scratch server it prefers; a reference is env:NAME or file:path and prints as
+/// itself, and no connection string passes as a path; an environment is real until a named lead's dated confirmation says synthetic;
+/// and a SQLCMD value is a literal or a reference, read through Match, and a name shaped like a credential never holds a literal.
+/// No error quotes the value it rejected.
 /// </summary>
-public sealed class NamedEnvironmentTests
+public sealed class EnvironmentsTests
 {
     private const string Where = "environments.dev in estate/posture.json";
 
@@ -128,70 +129,91 @@ public sealed class NamedEnvironmentTests
     [Trait("Category", "fast")]
     public void A_named_environment_holds_what_the_posture_gives_it_in_order()
     {
-        var environment = Made(Environment("dev", Pipeline, readers: ["leads", "developers"], sqlCmd: [Literal("Tag", "dev"), Referenced("ServicePassword", "env:ESTATE_PW")]));
+        var environment = Made(Environment("dev", readers: ["leads", "developers"], sqlCmd: [Literal("Tag", "dev"), Referenced("ServicePassword", "env:ESTATE_PW")]));
 
-        Assert.Equal("dev", environment.Name);
+        Assert.Equal(("dev", "dev-sql.corp.example", "env:dev"), (environment.Name.ToString(), environment.Host.ToString(), environment.Target.ToString()));
         Assert.Equal(["developers", "leads"], environment.Readers);
         Assert.Equal(["ServicePassword", "Tag"], environment.SqlCmd.Select(v => v.Name));
-        Assert.Equal(("env:ESTATE_DEV", Pipeline, (string?)"file:.estate/dev-ossys.connection"), (environment.Connection.ToString(), environment.ProfilePath, environment.Metamodel?.ToString()));
+        Assert.Equal(("env:ESTATE_DEV", Pipeline, (string?)"file:.estate/dev-ossys.connection"), (environment.Connection.ToString(), environment.Profile.ToString(), environment.Metamodel?.ToString()));
         Assert.Equal(new Classification.Real(null), environment.Classification);
     }
 
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("Dev", Pipeline, "posture.environment-name")]
-    [InlineData("dev qa", Pipeline, "posture.environment-name")]
-    [InlineData("-dev", Pipeline, "posture.environment-name")]
-    [InlineData("dev\n", Pipeline, "posture.environment-name")]
-    [InlineData("a-name-longer-than-thirty-two-chars", Pipeline, "posture.environment-name")]
-    [InlineData("dev", "/estate/profiles/pipeline.publish.xml", "posture.profile-path")]
-    [InlineData("dev", "C:/estate/pipeline.publish.xml", "posture.profile-path")]
-    [InlineData("dev", "estate\\profiles\\pipeline.publish.xml", "posture.profile-path")]
-    [InlineData("dev", "../elsewhere/pipeline.publish.xml", "posture.profile-path")]
-    [InlineData("dev", "estate//pipeline.publish.xml", "posture.profile-path")]
-    [InlineData("dev", "estate/profiles/pipeline.xml", "posture.profile-path")]
-    [InlineData("dev", "", "posture.profile-path")]
-    public void A_named_environment_rejects_a_name_env_cannot_carry_and_a_profile_path_outside_the_estate(string name, string profile, string code) =>
-        Assert.Equal(code, Failed(Environment(name, profile)).Code);
+    [InlineData("Dev")]
+    [InlineData("dev qa")]
+    [InlineData("-dev")]
+    [InlineData("dev\n")]
+    [InlineData("a-name-longer-than-thirty-two-chars")]
+    [InlineData("")]
+    public void An_environment_s_name_env_cannot_carry_is_refused(string name) =>
+        Assert.Equal("posture.environment-name", Failed(EnvironmentName.Of(Where, name)).Code);
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("/estate/profiles/pipeline.publish.xml")]
+    [InlineData("C:/estate/pipeline.publish.xml")]
+    [InlineData("estate\\profiles\\pipeline.publish.xml")]
+    [InlineData("../elsewhere/pipeline.publish.xml")]
+    [InlineData("estate//pipeline.publish.xml")]
+    [InlineData("estate/profiles/pipeline.xml")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void A_profile_path_outside_the_estate_or_naming_no_publish_profile_is_refused(string? path) =>
+        Assert.Equal("posture.profile-path", Failed(PublishProfilePath.Of(Where, path)).Code);
 
     [Fact]
     [Trait("Category", "fast")]
     public void A_named_environment_rejects_a_blank_or_repeated_reader_group_and_a_SQLCMD_variable_given_twice_in_any_case()
     {
-        Assert.Equal("posture.readers", Failed(Environment("dev", Pipeline, readers: ["leads", "leads"])).Code);
-        Assert.Equal("posture.readers", Failed(Environment("dev", Pipeline, readers: ["leads", " "])).Code);
-        Assert.Equal("posture.sqlcmd-repeated", Failed(Environment("dev", Pipeline, sqlCmd: [Literal("Tag", "a"), Literal("tag", "b")])).Code);
+        Assert.Equal("posture.readers", Failed(Environment("dev", readers: ["leads", "leads"])).Code);
+        Assert.Equal("posture.readers", Failed(Environment("dev", readers: ["leads", " "])).Code);
+        Assert.Equal("posture.sqlcmd-repeated", Failed(Environment("dev", sqlCmd: [Literal("Tag", "a"), Literal("tag", "b")])).Code);
     }
 
+    /// <summary>The posture names each environment once; one environment is found by its name, and another name finds none.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Substitution_replaces_each_variable_as_sqlcmd_does_ignoring_case_and_never_twice()
+    public void The_posture_names_each_environment_once_and_finds_one_by_its_name()
     {
-        const string script = "PRINT N'$(EnvironmentTag)'; -- $(environmenttag)\nALTER USER [$(ServiceUser)] WITH DEFAULT_SCHEMA = dbo;";
-        var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["EnvironmentTag"] = "dev", ["ServiceUser"] = "svc$(EnvironmentTag)" };
+        var (dev, qa) = (Made(Environment("dev")), Made(Environment("qa")));
+        var environments = Made(Environments.Of("estate/posture.json", [qa, dev], null));
 
-        Assert.Equal("PRINT N'dev'; -- dev\nALTER USER [svc$(EnvironmentTag)] WITH DEFAULT_SCHEMA = dbo;", Made(SqlCmdVariable.Substitute(script, values)));
-        Assert.Equal("no variables here", Made(SqlCmdVariable.Substitute("no variables here", new Dictionary<string, string>())));
+        Assert.Equal([dev, qa], environments.All);
+        Assert.Same(qa, environments.Named(Made(EnvironmentName.Of(Where, "qa"))));
+        Assert.Null(environments.Named(Made(EnvironmentName.Of(Where, "uat"))));
+        Assert.Equal("posture.environment-name", Failed(Environments.Of("estate/posture.json", [dev, qa, Made(Environment("dev", profile: "estate/other.publish.xml"))], null)).Code);
     }
 
+    /// <summary>The profile a copy is planned under when no --profile names one: the one every environment names, else none (cli/Check.cs).</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Substitution_fails_on_a_variable_with_no_value_naming_it_and_quotes_no_value()
+    public void The_shared_profile_is_the_one_path_every_environment_names_and_else_none()
     {
-        var error = Failed(SqlCmdVariable.Substitute("PRINT '$(Tag)'; PRINT '$(Missing)';", new Dictionary<string, string> { ["Tag"] = Planted }));
+        var shared = Made(Environments.Of("estate/posture.json", [Made(Environment("dev")), Made(Environment("qa"))], null)).SharedProfile;
+        var differing = Made(Environments.Of("estate/posture.json", [Made(Environment("dev")), Made(Environment("qa", profile: "estate/qa.publish.xml"))], null)).SharedProfile;
+        var none = Made(Environments.Of("estate/posture.json", [], null)).SharedProfile;
 
-        Assert.Equal("sqlcmd.undefined", error.Code);
-        Assert.Contains("$(Missing)", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        Assert.Equal((Pipeline, null, null), (shared?.ToString(), differing?.ToString(), none?.ToString()));
     }
+
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("docker", "docker")]
+    [InlineData("localdb", "localdb")]
+    [InlineData("Docker", null)]
+    [InlineData("podman", null)]
+    [InlineData(null, null)]
+    public void The_scratch_server_the_posture_prefers_is_docker_or_localdb(string? text, string? kind) =>
+        Assert.Equal(kind ?? "posture.malformed", ScratchServerKind.Of("scratchServer in estate/posture.json", text).Match(k => k.ToString(), error => error.Code));
 
     [Fact]
     [Trait("Category", "fast")]
     public void Nothing_a_named_environment_prints_carries_a_literal_or_what_a_reference_names()
     {
         var confirmed = Made(Confirmation.Of(Where, "the dev lead", "2026-09-20"));
-        var environment = Made(NamedEnvironment.Of(Where, "dev", new Classification.Synthetic(confirmed), ["leads"], Reference("env:ESTATE_DEV"), Pipeline,
-            [Literal("Tag", Planted), Referenced("ServicePassword", "file:.estate/dev.password")], null));
+        var environment = Made(NamedEnvironment.Of(Where, Made(EnvironmentName.Of(Where, "dev")), Made(Host.Of(Where, "dev-sql")), new Classification.Synthetic(confirmed), ["leads"],
+            Reference("env:ESTATE_DEV"), Made(PublishProfilePath.Of(Where, Pipeline)), [Literal("Tag", Planted), Referenced("ServicePassword", "file:.estate/dev.password")], null));
 
         var printed = string.Join("\n", environment.ToString(), string.Join(" ", environment.SqlCmd), environment.Classification, environment.Connection);
 
@@ -200,8 +222,9 @@ public sealed class NamedEnvironmentTests
         Assert.DoesNotContain(Planted, printed, StringComparison.Ordinal);
     }
 
-    private static Result<NamedEnvironment> Environment(string name, string profile, IEnumerable<string>? readers = null, IEnumerable<SqlCmdVariable>? sqlCmd = null) =>
-        NamedEnvironment.Of(Where, name, new Classification.Real(null), readers ?? [], Reference("env:ESTATE_DEV"), profile, sqlCmd ?? [], Reference("file:.estate/dev-ossys.connection"));
+    private static Result<NamedEnvironment> Environment(string name, string profile = Pipeline, IEnumerable<string>? readers = null, IEnumerable<SqlCmdVariable>? sqlCmd = null) =>
+        NamedEnvironment.Of(Where, Made(EnvironmentName.Of(Where, name)), Made(Host.Of(Where, "dev-sql.corp.example")), new Classification.Real(null), readers ?? [],
+            Reference("env:ESTATE_DEV"), Made(PublishProfilePath.Of(Where, profile)), sqlCmd ?? [], Reference("file:.estate/dev-ossys.connection"));
 
     private static SecretReference Reference(string text) => Made(SecretReference.Of(Where, text));
 

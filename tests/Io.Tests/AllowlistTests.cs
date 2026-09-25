@@ -6,6 +6,7 @@ using CsCheck;
 using Estate.Budgets.Tests;
 using Estate.Cli;
 using Estate.Kernel;
+using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Xunit;
 
 namespace Estate.Io.Tests;
@@ -99,6 +100,54 @@ public sealed class AllowlistTests
         Assert.Equal("SELECT count_big(*)\nFROM   dbo.Customer", query.Statement);
         Assert.Equal("dbo.Customer Presence", query.Site);
     }
+
+    /// <summary>
+    /// A query M2's builders make as a ScriptDom tree is checked as the tree, without being written as text and read again: the same
+    /// query built in code and read from text runs as one statement, byte for byte; and the refusal of a built tree, which carries no
+    /// line and column, names the site and the node the allowlist stops at.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_query_built_as_a_tree_is_checked_as_the_tree_and_runs_as_the_same_query_read_from_text()
+    {
+        var built = Assert.IsType<Result<SqlServer.AggregateQuery>.Ok>(SqlServer.AggregateQuery.Of(Built(Call("COUNT_BIG", new ColumnReferenceExpression { ColumnType = ColumnType.Wildcard })), "dbo.Customer Rows")).Value;
+        var read = Assert.IsType<Result<SqlServer.AggregateQuery>.Ok>(SqlServer.AggregateQuery.Of("SELECT COUNT_BIG(*) FROM dbo.Customer;", "dbo.Customer Rows")).Value;
+        var refused = Assert.IsType<Result<SqlServer.AggregateQuery>.Failed>(SqlServer.AggregateQuery.Of(Built(Call("MAX", ColumnOf("Email"))), "dbo.Customer.Email Fits")).Error;
+
+        Assert.Equal(read.Statement, built.Statement);
+        Assert.Equal(("aggregate-query.refused", 9), (refused.Code, Contract.Exit(refused)));
+        Assert.Equal("The query dbo.Customer.Email Fits is refused at its FunctionCall: MAX over a bare column.", refused.Message);
+    }
+
+    /// <summary>An object's name as ScriptDom reads it: its parts unquoted, a doubled bracket read as one, and no name past four parts.</summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("[dbo].[Cust]]omer]", "dbo|Cust]omer")]
+    [InlineData("Orders.dbo.Customer", "Orders|dbo|Customer")]
+    [InlineData("a.b.c.d.e", null)]
+    [InlineData("dbo.", null)]
+    public void An_object_s_name_reads_into_its_parts_unquoted(string name, string? parts) =>
+        Assert.Equal(parts, TSql.NameParts(name) is { } read ? string.Join('|', read) : null);
+
+    /// <summary>SELECT item FROM dbo.Customer, built in code as M2's builders build a query, so no node carries a line or a column.</summary>
+    private static SelectStatement Built(ScalarExpression item) => new()
+    {
+        QueryExpression = new QuerySpecification
+        {
+            SelectElements = { new SelectScalarExpression { Expression = item } },
+            FromClause = new FromClause
+            {
+                TableReferences = { new NamedTableReference { SchemaObject = new SchemaObjectName { Identifiers = { new Identifier { Value = "dbo" }, new Identifier { Value = "Customer" } } } } },
+            },
+        },
+    };
+
+    private static FunctionCall Call(string name, ScalarExpression parameter) => new() { FunctionName = new Identifier { Value = name }, Parameters = { parameter } };
+
+    private static ColumnReferenceExpression ColumnOf(string name) => new()
+    {
+        ColumnType = ColumnType.Regular, MultiPartIdentifier = new MultiPartIdentifier { Identifiers = { new Identifier { Value = name } } },
+    };
 
     private static List<(bool, string, string)> Read()
     {
