@@ -13,13 +13,14 @@ public static partial class Verbs
     /// <summary>The checks the verb table names beyond drift, and the milestone each arrives in.</summary>
     private static readonly Dictionary<string, int> Later = new(StringComparer.Ordinal) { ["cdc"] = 2, ["evidence"] = 3, ["inflight"] = 5, ["outsystems"] = 6, ["environments"] = 6 };
 
-    /// <summary>What check adds to the envelope: the kind of check, the target, the ref and its commit, and each operation the plan holds.</summary>
+    /// <summary>What check adds to the envelope: the kind of check, the target, the ref and its commit, how many operations the plan holds, and each, a list that can be long.</summary>
     public static JsonObject CheckContent => new()
     {
         ["check"] = Render.Record(new()
         {
             ["kind"] = Render.Enum(["drift"]), ["target"] = Render.Text(), ["at"] = Render.Text(), ["commit"] = Render.Pattern("^[0-9a-f]{40,64}$"),
-            ["operations"] = Render.List(Render.Record(new() { ["operation"] = Render.Text(), ["type"] = Render.Text(), ["name"] = Render.Text() })),
+            ["counts"] = Render.Record(new() { ["operations"] = Count() }),
+            ["operations"] = Render.Long(Render.Record(new() { ["operation"] = Render.Text(), ["type"] = Render.Text(), ["name"] = Render.Text() })),
         }),
     };
 
@@ -28,7 +29,7 @@ public static partial class Verbs
     {
         ["drift", ..] => Drift(here, [.. words.Skip(1)]),
         [var kind, ..] when Later.TryGetValue(kind, out var arrives) => Contract.NotBuilt(Of("check") with { Name = "check " + kind, Arrives = arrives }) with { Schema = Of("check").Output },
-        _ => Contract.Failed(Of("check"), new Error("arguments.unknown-check", "estate check needs the check to run; this build runs check drift.", "estate check drift --target <target> --at <ref>")),
+        _ => Contract.Failed(Of("check"), new Error("arguments.unknown-check", "estate check needs the check to run; this build runs check drift.", "Run estate check drift --target <target> --at <ref>.")),
     };
 
     /// <summary>
@@ -56,7 +57,7 @@ public static partial class Verbs
         }
 
         stamp = Stamped(ScratchServer.Image(drift.Database), stamp.Pin);
-        var log = SqlServer.QueryLog.Start(here.Root);
+        var log = here.Run;
         var at = drift.Flags["--at"];
         if (SqlServer.Reach(drift.Database, log).Bind(_ => Built(here, at, drift.Flags.GetValueOrDefault("--project"))).Bind(built => Packaged(built.Dacpac)
                 .Bind(model => SqlServer.Plan(built.Dacpac, drift.Database, drift.Profile, log).Map(plan => (built.Commit, Model: model, Plan: plan))))
@@ -68,22 +69,22 @@ public static partial class Verbs
         var receipt = new Receipt(Fingerprint.Of(planned.Model.Elements), Fingerprint.Of(planned.Plan.Report), null, stamp.Engine, drift.Profile.Fingerprint, drift.Target.ToString(),
             DateTimeOffset.UtcNow);
         var items = planned.Plan.Items;
-        return Contract.Answer(verb.Output, items.Count == 0 ? "matches" : "differs",
+        return Contract.Answer(verb.Output, verb.Outcome(items.Count == 0 ? "matches" : "differs"), items.Count == 0 ? 0 : 5,
             drift.Target + (items.Count == 0 ? " matches " + at : " differs from " + at + " in each object below."),
             [
-                .. items.Select(i => new Finding("drift." + i.Operation.ToLowerInvariant(), "warning", Named(i.Type) + " " + i.Name,
-                    "The plan against " + drift.Target + " would " + i.Operation + " " + Named(i.Type) + " " + i.Name + ".", "estate diff --from " + drift.Target + " --to ref:" + at)),
-                .. items.Count == 0 ? [] : Columns(drift.Database, planned.Model, items, log).Select(line => line.Split(": ", 2) is [var key, var change]
-                    ? new Finding("drift.column", "warning", key, change + ", from the target to the repository.", null) : new Finding("drift.column", "warning", line, line + ".", null)),
-                .. stamp.Pin is Pin.Unpinned ? new[] { new Finding("engine.unpinned", "note", "estate check drift", "This receipt stands on DacFx " + stamp.Engine.DacFx
-                    + ", UNPINNED: " + Io.Doctor.Ledger + " pins no engine for estate " + Contract.Version.Split('+')[0] + ".", null) } : [],
+                .. items.Select(i => Finding.Warning("drift." + i.Operation.ToLowerInvariant(), Named(i.Type) + " " + i.Name,
+                    "The plan against " + drift.Target + " would " + i.Operation + " " + Named(i.Type) + " " + i.Name + ".",
+                    "Run estate diff --from " + drift.Target + " --to ref:" + at + " to see each property that differs.")),
+                .. items.Count == 0 ? [] : Columns(drift.Database, planned.Model, items, log),
+                .. stamp.Pin is Pin.Unpinned ? new[] { Finding.Note("engine.unpinned", "estate check drift", "This receipt stands on DacFx " + stamp.Engine.DacFx
+                    + ", UNPINNED: " + Io.Doctor.Ledger + " pins no engine for estate " + Contract.Version.Split('+')[0] + ".") } : [],
                 Unverified,
             ],
-            items.Count == 0 ? 0 : 5, stamp, receipt, new JsonObject
+            stamp, receipt, new JsonObject
             {
                 ["check"] = new JsonObject
                 {
-                    ["kind"] = "drift", ["target"] = drift.Target.ToString(), ["at"] = at, ["commit"] = planned.Commit,
+                    ["kind"] = "drift", ["target"] = drift.Target.ToString(), ["at"] = at, ["commit"] = planned.Commit, ["counts"] = new JsonObject { ["operations"] = items.Count },
                     ["operations"] = Render.Array(items.Select(i => new JsonObject { ["operation"] = i.Operation, ["type"] = Named(i.Type), ["name"] = i.Name })),
                 },
             });
@@ -93,8 +94,8 @@ public static partial class Verbs
     /// §17 item 15's default, on every receipt: until S7 commits the profile the Octopus step applies, the profile a receipt stands on is
     /// the golden project's Pipeline profile or the estate's own, and neither is verified against that step.
     /// </summary>
-    private static Finding Unverified => new("profile.unverified", "note", "estate check drift",
-        "This receipt stands on a profile not verified against the Octopus step: S7 has not committed the profile that step applies.", null);
+    private static Finding Unverified => Finding.Note("profile.unverified", "estate check drift",
+        "This receipt stands on a profile not verified against the Octopus step: S7 has not committed the profile that step applies.");
 
     /// <summary>The pipeline's profile: a named environment's own; for a copy, the one --profile names, else the one profile every environment of the posture names.</summary>
     private static Result<PublishProfile.Strict> Profile(Checkout here, SqlServer.Database database, Result<Environments> posture, string? named) =>
@@ -103,18 +104,24 @@ public static partial class Verbs
         : posture.Bind(environments => environments.SharedProfile is { } shared
             ? Profiles.Load(Path.GetFullPath(Path.Combine(here.Root, shared.ToString())))
             : new Error("arguments.missing-flag", database + " is a copy, and " + Profiles.Posture + " names no one profile its environments share.",
-                "estate check drift --profile <the pipeline's .publish.xml> names the profile to plan under"));
+                "Name the profile to plan under with estate check drift --profile <the pipeline's .publish.xml>."));
 
     /// <summary>
-    /// The columns that differ under each table the report names, which DacFx's report names only as the table: the target's model read
-    /// and compared with the package's, the column's own properties alone, so text SQL Server keeps as it normalized it plays no part.
+    /// The columns that differ under each table the report names, which DacFx's report names only as the table, as drift.column
+    /// warnings: the target's model read and compared with the package's under the target's collation, the column's own properties alone,
+    /// so text SQL Server keeps as it normalized it plays no part; and each pair of names the collation reads as one, as a note.
     /// </summary>
-    private static IEnumerable<string> Columns(SqlServer.Database database, Ssdt.ModelElements package, IReadOnlyList<(string Operation, string Type, string Name)> items, SqlServer.QueryLog log)
+    private static IReadOnlyList<Finding> Columns(SqlServer.Database database, Ssdt.ModelElements package, IReadOnlyList<(string Operation, string Type, string Name)> items, SqlServer.QueryLog log)
     {
         var tables = items.Where(i => i.Type == "SqlTable").Select(i => "Table " + i.Name).ToHashSet(StringComparer.Ordinal);
         bool Under(ElementKey key) => key.Type == "Column" && tables.Contains(key.Parent?.ToString() ?? "");
-        return SqlServer.Model(database, log).Bind(model => Change.Between(model, package.Elements, [])).Match(
-            change => Lines(new Change(SortedArray.Of(change.Created.Where(e => Under(e.Key))), SortedArray.Of(change.Dropped.Where(e => Under(e.Key))), [], SortedArray.Of(change.Altered.Where(a => Under(a.Key))))),
+        return SqlServer.Model(database, log).Bind(model => CollationOf(model).Bind(collation => Change.Between(model, package.Elements, [], collation).Map(change => (Change: change, Collation: collation)))).Match(
+            found => (IReadOnlyList<Finding>)
+            [
+                .. Lines(new Change(SortedArray.Of(found.Change.Created.Where(e => Under(e.Key))), SortedArray.Of(found.Change.Dropped.Where(e => Under(e.Key))), [], SortedArray.Of(found.Change.Altered.Where(a => Under(a.Key)))))
+                    .Select(line => line.Split(": ", 2) is [var key, var change] ? Finding.Warning("drift.column", key, change + ", from the target to the repository.") : Finding.Warning("drift.column", line, line + ".")),
+                .. found.Change.CaseOnlyRenamed.Select(pair => CaseOnly("drift.case-only-rename", pair, found.Collation)),
+            ],
             _ => []);
     }
 

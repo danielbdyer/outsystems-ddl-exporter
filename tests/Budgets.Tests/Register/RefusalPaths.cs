@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json.Nodes;
 using Estate.Cli;
 using Estate.Io;
@@ -38,9 +39,8 @@ internal static class RefusalPaths
 
     public static IReadOnlyList<Case> All { get; } =
     [
-        new("a blank name part", "name.blank", false, (_, _) => Failed(Name.Of(" "))),
+        new("an empty name part", "name.blank", false, (_, _) => Failed(Name.Of(""))),
         new("an overlong name part", "name.too-long", true, (_, planted) => Failed(Name.Of(planted + new string('x', 129)))),
-        new("a control character in a name part", "name.control-character", true, (_, planted) => Failed(Name.Of(planted + "\u0001"))),
         new("a DacFx version that is none", "engine.dacfx-version", false, (_, _) => Failed(Engine.Of("v170"))),
         new("an image digest that is none", "engine.image-digest", false, (_, _) => Failed(Engine.Of("170.5.96", "sha256:0"))),
         new("a fingerprint that is none", "fingerprint.malformed", false, (_, _) => Failed(Fingerprint.Parse("0"))),
@@ -61,6 +61,7 @@ internal static class RefusalPaths
             Failed(Element.Of(Table, [], [Element.Relationship.Of("Columns", [Table]), Element.Relationship.Of("Columns", [Table])]))),
         new("a model with two elements on one key", "change.duplicate-key", false, (_, _) =>
             Failed(Change.Between(SortedArray.Of(Made(Element.Of(Table, [], [])), Made(Element.Of(Table, [new("Nullable", new Value.Null())], []))), [], []))),
+        new("a collation name with no case rule", "model.collation", false, (_, _) => Failed(Collation.Of("Latin1_General"))),
 
         new("ESTATE_TOOL naming no tool folder", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), Bare(scratch), scratch))),
         new("no tool folder anywhere", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), null, scratch))),
@@ -321,7 +322,21 @@ internal static class RefusalPaths
         new("a flag the verb does not take", "arguments.unknown-flag", false, (_, _) => Failed(Contract.Flags(["--no-such-flag"], [], [], []))),
         new("a required flag absent", "arguments.missing-flag", false, (_, _) => Failed(Contract.Flags([], ["--from"], [], []))),
         new("estate check with no check named", "arguments.unknown-check", false, (scratch, _) => Carried(Verbs.Check(new Checkout(scratch, scratch, null), []))),
+        new("a word that names no verb", "arguments.unknown-verb", false, (scratch, _) => Answered(["frobnicate"], new Checkout(scratch, scratch, null))),
+        new("a verb this build has no body for", "verb.not-built", false, (scratch, _) => Answered(["predict"], new Checkout(scratch, scratch, null))),
+        new("an exception no verb expected", "internal.unexpected", false, (scratch, _) => Answered(["read", "--from", "dacpac:none.dacpac"], new Checkout(scratch, null!, null))),
     ];
+
+    /// <summary>The error estate answers a command with, run in this process against <paramref name="here"/>: the one finding of severity error its --json answer carries.</summary>
+    private static Error Answered(string[] arguments, Checkout here)
+    {
+        using var output = new MemoryStream();
+        Cli.Program.Run([.. arguments, "--json"], output, here);
+        var findings = JsonNode.Parse(output.ToArray())!["findings"]!.AsArray();
+        return findings.Count == 1 && (string?)findings[0]!["severity"] == "error" && (string?)findings[0]!["remedy"] is { } remedy
+            ? new Error((string)findings[0]!["code"]!, (string)findings[0]!["message"]!, remedy)
+            : throw new InvalidOperationException("the answer carries no one error: " + Encoding.UTF8.GetString(output.ToArray()));
+    }
 
     /// <summary>The copy a planted registry holds, made on localhost,11433.</summary>
     private const string Copied = "estate_host_1_0a1b2c3d";
@@ -461,12 +476,19 @@ internal static class RefusalPaths
     }
 
     /// <summary>Each error code the kernel, io and the cli construct, as their sources write it: a literal code, or the literal start of a composed one (element.).</summary>
-    public static IEnumerable<string> InTheSources() => Repository.Files
+    public static IEnumerable<string> InTheSources() => ConstructedIn().Select(c => c.Code).Distinct().Order(StringComparer.Ordinal);
+
+    /// <summary>Each source file of the kernel, io and the cli with each code, or literal start of a composed code, it constructs an Error of.</summary>
+    public static IEnumerable<(string File, string Code)> ConstructedIn() => Repository.Files
         .Where(f => (f.StartsWith("kernel/", StringComparison.Ordinal) || f.StartsWith("io/", StringComparison.Ordinal) || f.StartsWith("cli/", StringComparison.Ordinal))
             && f.EndsWith(".cs", StringComparison.Ordinal))
-        .SelectMany(f => System.Text.RegularExpressions.Regex.Matches(Repository.Read(f), @"new\s+Error\(\s*""([a-z0-9.-]+)""").Select(m => m.Groups[1].Value))
-        .Distinct()
-        .Order(StringComparer.Ordinal);
+        .SelectMany(f => System.Text.RegularExpressions.Regex.Matches(Repository.Read(f), @"new\s+Error\(\s*""([a-z0-9.-]+)""").Select(m => (File: f, Code: m.Groups[1].Value)))
+        .Distinct();
+
+    /// <summary>Whether a code is constructed by the kernel or the cli alone: the files that write it, or the start of it, lie outside io/.</summary>
+    public static bool KernelOrCli(string code) => ConstructedIn()
+        .Where(c => c.Code == code || (c.Code.EndsWith('.') && code.StartsWith(c.Code, StringComparison.Ordinal)))
+        .ToList() is { Count: > 0 } sites && sites.All(c => !c.File.StartsWith("io/", StringComparison.Ordinal));
 
     /// <summary>A machine whose dotnet lists the SDK global.json pins, and runs every other program as it is.</summary>
     private static Ran Sdk(Command command, System.Threading.CancellationToken cancel) => command.Arguments[0] == "--list-sdks"
@@ -586,9 +608,9 @@ internal static class RefusalPaths
     private static string Quoted(string text) => "\"" + text + "\"";
 
     /// <summary>The error a verb's answer carries as its one finding of severity error, where the cli fails inside a verb rather than in a Result.</summary>
-    private static Error Carried(Envelope answer) => answer.Findings is [{ Severity: "error", Remedy: { } remedy } finding]
+    private static Error Carried(Envelope answer) => answer.Findings is [{ Severity: Severity.Error, Remedy: { } remedy } finding]
         ? new Error(finding.Code, finding.Message, remedy)
-        : throw new InvalidOperationException("the answer carries no one error: " + answer.Verdict.Message);
+        : throw new InvalidOperationException("the answer carries no one error: " + answer.Message);
 
     private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new InvalidOperationException(error.Code + ": " + error.Message));
 

@@ -40,7 +40,8 @@
           "summary",
           "arrives",
           "status",
-          "output"
+          "output",
+          "outcomes"
         ],
         "properties": {
           "name": {
@@ -78,6 +79,45 @@
           "output": {
             "type": "string",
             "pattern": "^estate\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$"
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "outcome",
+                "exits",
+                "meaning"
+              ],
+              "properties": {
+                "outcome": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "exits": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      0,
+                      1,
+                      2,
+                      3,
+                      4,
+                      5,
+                      6,
+                      7,
+                      9,
+                      130
+                    ]
+                  }
+                },
+                "meaning": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
           }
         }
       }

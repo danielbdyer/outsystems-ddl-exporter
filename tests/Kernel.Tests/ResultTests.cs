@@ -9,9 +9,9 @@ namespace Estate.Kernel.Tests;
 /// <summary>A result carries a value or the error in its place, and an error passes through Map and Bind.</summary>
 public sealed class ResultTests
 {
-    private static readonly Error Why = new("test.failed", "Failed for the test.", "Nothing to do.");
+    private static readonly Error Why = new("internal.failed", "Failed for the test.", "Nothing to do.");
 
-    private static readonly Error Later = new("test.later", "Failed after the first error.", "Nothing to do.");
+    private static readonly Error Later = new("internal.later", "Failed after the first error.", "Nothing to do.");
 
     [Fact]
     [Trait("Category", "fast")]
@@ -22,7 +22,7 @@ public sealed class ResultTests
         Assert.Equal(Result.Fail<int>(Why), failed.Map(x => x + 3));
         Assert.Equal(Result.Fail<int>(Why), ok.Bind(_ => Result.Fail<int>(Why)));
         Assert.Equal(Result.Ok("2"), ok.Bind(x => Result.Ok(x.ToString(CultureInfo.InvariantCulture))));
-        Assert.Equal("test.failed", failed.Match(_ => "", e => e.Code));
+        Assert.Equal("internal.failed", failed.Match(_ => "", e => e.Code));
     }
 
     /// <summary>

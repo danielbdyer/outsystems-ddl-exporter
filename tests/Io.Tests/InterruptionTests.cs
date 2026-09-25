@@ -35,8 +35,8 @@ public sealed class InterruptionTests : IDisposable
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), "the interrupted verb answered after " + clock.Elapsed);
         Assert.Equal(130, exit);
         ScratchEstate.Valid("estate.read.1.schema.json", answer);
-        Assert.Equal(("interrupted", 130), ((string?)answer["verdict"]!["outcome"], (int)answer["exit"]!));
-        Assert.Equal("estate read stopped after --timeout 1: it ended the programs it had started and released its locks.", (string?)answer["verdict"]!["message"]);
+        Assert.Equal(("interrupted", 130), ((string?)answer["outcome"], (int)answer["exit"]!));
+        Assert.Equal("estate read stopped after --timeout 1: it ended the programs it had started and released its locks.", (string?)answer["message"]);
         Assert.Empty(answer["findings"]!.AsArray());
         Assert.False(Directory.Exists(state.Worktree(commit)), "the interrupted verb made the worktree");
         Assert.Equal("lock.timed-out", GitTests.Failed(FileLock.Take(state.WorktreesLock, TimeSpan.Zero)).Code);   // still this test's
@@ -86,8 +86,8 @@ public sealed class InterruptedProcessTests(PublishedTool tool) : IDisposable
 
             var answer = JsonNode.Parse(output)!;
             Assert.Equal(130, exit);
-            Assert.Equal("interrupted", (string?)answer["verdict"]!["outcome"]);
-            Assert.Contains(cause, (string?)answer["verdict"]!["message"], StringComparison.Ordinal);
+            Assert.Equal("interrupted", (string?)answer["outcome"]);
+            Assert.Contains(cause, (string?)answer["message"], StringComparison.Ordinal);
         }
     }
 

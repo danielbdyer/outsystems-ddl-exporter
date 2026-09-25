@@ -81,7 +81,7 @@ public sealed class ToolFolderTests(PublishedTool tool)
         var (exit, output) = tool.Run("doctor", "--json");
 
         var answer = JsonNode.Parse(output)!;
-        var line = (string)answer["verdict"]!["message"]!;
+        var line = (string)answer["message"]!;
         var findings = answer["findings"]!.AsArray().Select(f => f!).ToList();
         Assert.Equal(findings.Count == 0 ? (0, "estate doctor READY | ") : (6, "estate doctor DEGRADED | "), (exit, line[..(line.IndexOf('|', StringComparison.Ordinal) + 2)]));
         Assert.Contains(" | tool=published | dacfx=" + Doctor.DacFx + " (", line, StringComparison.Ordinal);

@@ -46,24 +46,27 @@ public static class Program
 
     /// <summary>
     /// Answers <paramref name="args"/> from <paramref name="verbs"/> for the checkout <paramref name="here"/> gives, asked for only when a
-    /// verb's body runs; returns the exit code. The whole command runs inside one catch: the checkout, the --help renderers, the verb's
+    /// verb's body runs; returns the exit code. The global switches are --json, --summary and --timeout <seconds>. A verb's body runs with
+    /// the run's query log begun, and its answer is cut to the default form (Render.Cut), the whole answer written to the run's
+    /// answer.json when anything was left out. The whole command runs inside one catch: the checkout, the --help renderers, the verb's
     /// body, the rendering and the write. A run the interruption stopped (a signal, or --timeout) is answered as interrupted at exit 130,
     /// once the verb has released its locks and ended the programs it started. Any other exception there is answered as internal.unexpected
-    /// at exit 6 (Contract.Unexpected), its message withheld when the run read a named environment's connection or other reference
-    /// (SqlServer.Reads), and exit 6 is returned even when writing that answer fails as well, since standard output is then all the answer had.
+    /// at its category's exit (Contract.Unexpected), its message withheld when the run read a named environment's connection or other
+    /// reference (SqlServer.Reads), and that exit is returned even when writing that answer fails as well, since standard output is then all
+    /// the answer had.
     /// </summary>
     private static int Run(IReadOnlyList<string> args, Stream output, Func<Checkout> here, IReadOnlyList<Verb> verbs, Interruption interruption)
     {
         using var reads = SqlServer.Reads.Begin();
-        var (json, word) = (false, "");
+        var (json, summary, word) = (false, false, "");
         Verb? verb = null;
         try
         {
-            json = args.Contains("--json");
+            (json, summary) = (args.Contains("--json"), args.Contains("--summary"));
             var words = Words(args);
             if (words.Length == 0 || words.Contains("--help"))
             {
-                Write.Text(output, json ? Io.Json.Text(Render.Help()) : Render.HelpMarkdown());
+                Write.Text(output, json ? Render.JsonText(Render.Help()) : Render.HelpMarkdown());
                 return words.Length == 0 ? 1 : 0;
             }
 
@@ -71,7 +74,7 @@ public static class Program
             var timeout = Timeout(args);
             var answer = verb is null ? Contract.UnknownVerb(word)
                 : timeout is Result<TimeSpan?>.Failed { Error: var badTimeout } ? Contract.Failed(verb, badTimeout)
-                : Answered(verb, here, words[1..], ((Result<TimeSpan?>.Ok)timeout).Value, interruption);
+                : Answered(verb, here, words[1..], ((Result<TimeSpan?>.Ok)timeout).Value, interruption, summary);
             Write.Text(output, Rendered(answer, json));
             return answer.Exit;
         }
@@ -79,8 +82,8 @@ public static class Program
         {
             var stopped = Contract.Exits.Single(e => e.Name == "interrupted");
             var command = word.Length == 0 ? "estate" : "estate " + word;
-            var answer = Contract.Answer(verb?.Output ?? "estate.envelope/1", stopped.Name,
-                command + " stopped after " + (interruption.Cause ?? "an interruption") + ": it ended the programs it had started and released its locks.", [], stopped.Code);
+            var answer = Contract.Answer(verb?.Output ?? "estate.envelope/1", Outcome.Of(stopped), stopped.Code,
+                command + " stopped after " + (interruption.Cause ?? "an interruption") + ": it ended the programs it had started and released its locks.", []);
             try
             {
                 Write.Text(output, Rendered(answer, json));
@@ -103,22 +106,48 @@ public static class Program
                 // Standard output refused the answer too; the exit code is what still reaches the caller.
             }
 
-            return Contract.Defect;
+            return Contract.ExitByCategory(ErrorCategory.Internal);
         }
     }
 
-    /// <summary>The verb's body, or its not-built answer, with --timeout begun just before it and counted from there.</summary>
-    private static Envelope Answered(Verb verb, Func<Checkout> here, IReadOnlyList<string> words, TimeSpan? timeout, Interruption interruption)
+    /// <summary>
+    /// A verb's answer for the run: --timeout begun just before the body and counted from there; the body run with the run's query log;
+    /// the answer cut to the default form or the summary; and, when anything was left out, the whole answer written to the run's
+    /// answer.json, which the cut answer names as full. A write the file system refuses leaves full null and adds the note
+    /// run.full-unwritten, so the answer on standard output says so instead of being lost.
+    /// </summary>
+    private static Envelope Answered(Verb verb, Func<Checkout> here, IReadOnlyList<string> words, TimeSpan? timeout, Interruption interruption, bool summary)
     {
         if (timeout is { } after)
         {
             interruption.After(after);
         }
 
-        return verb.Body is null ? Contract.NotBuilt(verb) : verb.Body(here(), words);
+        if (verb.Body is null)
+        {
+            return Contract.NotBuilt(verb);
+        }
+
+        var checkout = here();
+        var run = checkout.Run;
+        var answer = verb.Body(checkout with { Log = run }, words);
+        var shown = Render.Cut(answer, summary);
+        if (!shown.Truncated)
+        {
+            return answer;
+        }
+
+        var full = Path.Combine(Path.GetDirectoryName(run.Path)!, "answer.json");
+        var named = Path.GetRelativePath(checkout.Root, full).Replace('\\', '/');
+        return Write.Text(full, Render.JsonText(Render.Json(answer))).Match(
+            _ => shown with { Full = named },
+            error => shown with
+            {
+                Findings = [.. shown.Findings, Finding.Note("run.full-unwritten", named, "The answer was cut to its first entries, and the whole answer could not be written to " + named + ": " + error.Message)],
+            });
     }
 
-    /// <summary>The arguments less --json and less --timeout with its value, which every verb takes and none reads.</summary>
+    /// <summary>The arguments less the global switches --json and --summary, and less --timeout with its value, which every verb takes and none reads.</summary>
     private static string[] Words(IReadOnlyList<string> args)
     {
         var words = new List<string>();
@@ -128,7 +157,7 @@ public static class Program
             {
                 i++;
             }
-            else if (args[i] != "--json")
+            else if (args[i] is not ("--json" or "--summary"))
             {
                 words.Add(args[i]);
             }
@@ -137,5 +166,5 @@ public static class Program
         return [.. words];
     }
 
-    private static string Rendered(Envelope answer, bool json) => json ? Io.Json.Text(Render.Json(answer)) : Render.Markdown(answer);
+    private static string Rendered(Envelope answer, bool json) => json ? Render.JsonText(Render.Json(answer)) : Render.Markdown(answer);
 }

@@ -56,6 +56,7 @@ public readonly record struct Fingerprint
                     n => Write(to, 3) + Write(to, n),
                     s => Write(to, 4) + Write(to, s),
                     (type, member) => Write(to, 5) + Write(to, type) + Write(to, member),
+                    s => Write(to, 6) + Write(to, s),
                     () => Write(to, 0));
             }
 

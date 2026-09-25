@@ -7,66 +7,34 @@
   "additionalProperties": false,
   "required": [
     "schema",
+    "outcome",
+    "exit",
+    "message",
+    "blockedBy",
+    "findings",
     "engine",
     "receipt",
-    "verdict",
-    "findings",
-    "exit",
+    "truncated",
+    "full",
     "read"
   ],
   "properties": {
     "schema": {
       "const": "estate.read/1"
     },
-    "engine": {
-      "$ref": "#/$defs/engine"
-    },
-    "receipt": {
-      "anyOf": [
-        {
-          "type": "null"
-        },
-        {
-          "$ref": "#/$defs/receipt"
-        }
+    "outcome": {
+      "enum": [
+        "bad-arguments",
+        "blocked",
+        "build-failed",
+        "configuration-refused",
+        "differs",
+        "done",
+        "interrupted",
+        "refused-by-name",
+        "unparsed-input",
+        "unreachable"
       ]
-    },
-    "verdict": {
-      "type": "object",
-      "required": [
-        "outcome",
-        "message",
-        "kind"
-      ],
-      "properties": {
-        "outcome": {
-          "type": "string",
-          "minLength": 1
-        },
-        "message": {
-          "type": "string",
-          "minLength": 1
-        },
-        "kind": {
-          "anyOf": [
-            {
-              "type": "null"
-            },
-            {
-              "enum": [
-                "guard",
-                "violation"
-              ]
-            }
-          ]
-        }
-      }
-    },
-    "findings": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/finding"
-      }
     },
     "exit": {
       "enum": [
@@ -82,6 +50,56 @@
         130
       ]
     },
+    "message": {
+      "type": "string",
+      "minLength": 1
+    },
+    "blockedBy": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "enum": [
+            "data-loss-check",
+            "constraint-violation"
+          ]
+        }
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "engine": {
+      "$ref": "#/$defs/engine"
+    },
+    "receipt": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/receipt"
+        }
+      ]
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "full": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^\\.estate/runs/[^/]+/answer\\.json$"
+        }
+      ]
+    },
     "read": {
       "anyOf": [
         {
@@ -93,6 +111,7 @@
           "required": [
             "from",
             "fingerprint",
+            "count",
             "elements"
           ],
           "properties": {
@@ -103,6 +122,10 @@
             "fingerprint": {
               "type": "string",
               "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 0
             },
             "elements": {
               "type": "array",
@@ -141,7 +164,8 @@
                     }
                   }
                 }
-              }
+              },
+              "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
             }
           }
         }
@@ -188,26 +212,230 @@
       },
       "then": {
         "properties": {
-          "verdict": {
-            "properties": {
-              "kind": {
-                "enum": [
-                  "guard",
-                  "violation"
-                ]
-              }
-            }
+          "blockedBy": {
+            "enum": [
+              "data-loss-check",
+              "constraint-violation"
+            ]
           }
         }
       },
       "else": {
         "properties": {
-          "verdict": {
-            "properties": {
-              "kind": {
-                "type": "null"
-              }
-            }
+          "blockedBy": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "bad-arguments"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              1
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "blocked"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              3
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "build-failed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              7
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "configuration-refused"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              6
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "differs"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              5
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "done"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "interrupted"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              130
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "refused-by-name"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              9
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "unparsed-input"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              2
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "unreachable"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              4
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "full": {
+            "type": "string"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "truncated": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "truncated": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "full": {
+            "type": "null"
           }
         }
       }
