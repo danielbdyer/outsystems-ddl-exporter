@@ -8,8 +8,8 @@ using static Estate.Kernel.Tests.ElementSets;
 namespace Estate.Kernel.Tests;
 
 /// <summary>
-/// An element is one DacFx object as the walk reads it, keyed by its type and name path, with its properties and
-/// relationships in canonical order; a read is a SortedArray of them, and its fingerprint is law 3′'s kernel half: stable
+/// An element is one DacFx object as io/Ssdt.Elements reads it, keyed by its type and name path, with its properties and
+/// relationships in canonical order; a model is a SortedArray of them, and its fingerprint is law 3′'s kernel half: stable
 /// whatever the order of construction, and changed by any edit. Its law tests carry that law as a trait.
 /// </summary>
 public sealed class ElementTests
@@ -17,7 +17,7 @@ public sealed class ElementTests
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "3′ the read is complete")]
-    public void The_fingerprint_of_a_read_is_independent_of_the_order_its_elements_are_given_in() =>
+    public void The_fingerprint_of_a_model_is_independent_of_the_order_its_elements_are_given_in() =>
         Sets.SelectMany(set => Gen.Shuffle(set.ToArray()).Select(shuffled => (set, shuffled))).Sample((set, shuffled) =>
             Fingerprint.Of(SortedArray.Of(shuffled.Select(Rebuilt))) == Fingerprint.Of(set)
             && SortedArray.Of(shuffled.Select(Rebuilt)) == set);
@@ -25,7 +25,7 @@ public sealed class ElementTests
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "3′ the read is complete")]
-    public void Two_reads_fingerprint_equally_exactly_when_their_elements_are_equal()
+    public void Two_models_fingerprint_equally_exactly_when_their_elements_are_equal()
     {
         Gen.Select(Sets, Sets).Sample((a, b) => (Fingerprint.Of(a) == Fingerprint.Of(b)) == (a == b));
         Assert.Equal(Fingerprint.Of(Archetypes.Model()), Fingerprint.Of(Archetypes.Model()));
@@ -60,7 +60,7 @@ public sealed class ElementTests
     [InlineData("counts: one relationship of two targets and two of one", 5)]
     [InlineData("code units: two lone surrogates", 6)]
     [InlineData("parents: a child key and a top-level key", 7)]
-    public void Reads_a_careless_serialization_would_confuse_fingerprint_differently(string what, int pair)
+    public void Models_a_careless_serialization_would_confuse_fingerprint_differently(string what, int pair)
     {
         var t = Key("Table", "dbo", "T");
         var (a, b) = pair switch

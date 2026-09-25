@@ -19,8 +19,8 @@ namespace Estate.Io;
 
 /// <summary>
 /// The SSDT project and its package, read whole (V3_MILESTONES.md §2.2): Build runs the project's own build against the
-/// published tool folder's DacFx targets (§1 fact 1), Load reads what the build wrote, RefactorLog reads a refactorlog, and Walk
-/// reads a package or a model into kernel Elements. An error's code names what went wrong; cli/Contract.cs maps its category to the exit.
+/// published tool folder's DacFx targets (§1 fact 1), Load reads what the build wrote, RefactorLog reads a refactorlog, and Elements
+/// reads a package's model or a database's into kernel Elements. An error's code names what went wrong; cli/Contract.cs maps its category to the exit.
 /// </summary>
 /// <remarks>
 /// No Visual Studio fallback: S1's windows-latest half answered that the committed route builds a classic project there.
@@ -262,12 +262,12 @@ public static class Ssdt
     }
 
     /// <summary>
-    /// The properties the walk leaves out, each holding a password or a secret: SQL Server never returns one, so DacFx makes up a new
-    /// value for a login's password on each database read, and a package carries whatever its script wrote. Besides the passwords and
+    /// The properties Elements leaves out, each holding a password or a secret: SQL Server never returns one, so DacFx makes up a new
+    /// value for a login's password each time it loads a model from a database, and a package carries whatever its script wrote. Besides the passwords and
     /// credential secrets: a symmetric key's KEY_SOURCE and IDENTITY_VALUE, from which SQL Server derives the key; a linked server's
     /// provider string (sp_addlinkedserver's @provstr) and an external data source's CONNECTION_OPTIONS, each a connection string
     /// whose documented form carries PWD=, left out whole, so an edit to either is not seen. DacFx 170.5.96's metadata marks none of
-    /// them as secret, so the list is kept here; Io.Tests' WalkTests plants each, and lists every other string-typed property DacFx declares
+    /// them as secret, so the list is kept here; Io.Tests' ModelElementsTests plants each, and lists every other string-typed property DacFx declares
     /// with the reason it is not a secret. DacFx fills these static fields when its model schema initializes, which the first
     /// TSqlModel a process makes does, so the list is made on first use, after one.
     /// </summary>
@@ -285,23 +285,23 @@ public static class Ssdt
         ];
     });
 
-    /// <summary>A package read whole (§2.1 rule 1): its elements, and the renames its refactorlog records, as Change.Between takes them.</summary>
-    public sealed record Read(SortedArray<Element> Elements, SortedArray<Rename> Renames);
+    /// <summary>A model read whole into elements (§2.1 rule 1), and the renames its package's refactorlog records, as Change.Between takes them; a database's model has none.</summary>
+    public sealed record ModelElements(SortedArray<Element> Elements, SortedArray<Rename> Renames);
 
     /// <summary>
-    /// The model walked, one element for each deploy script and each refactorlog entry, and the entries' renames. An entry's type,
-    /// written as model.xml writes it (SqlSimpleColumn), is the walk's (Column) through a named object model.xml names once, matched
+    /// The package's model read into elements, one element for each deploy script and each refactorlog entry, and the entries' renames.
+    /// An entry's type, written as model.xml writes it (SqlSimpleColumn), is the element's (Column) through a named object model.xml names once, matched
     /// by its own name and never by a key an unnamed object shares; a type the package no longer holds keys nothing (a drop and an add).
     /// </summary>
-    public static Result<Read> Walk(Package package) => Walked(package.Model).Bind(model =>
+    public static Result<ModelElements> Elements(Package package) => ModelObjects(package.Model).Bind(objects =>
     {
-        var types = model.Where(w => w.Name is { } name && package.Serialized.ContainsKey(name)).GroupBy(w => package.Serialized[w.Name!], StringComparer.Ordinal)
+        var types = objects.Where(o => o.Name is { } name && package.Serialized.ContainsKey(name)).GroupBy(o => package.Serialized[o.Name!], StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().Element.Key.Type, StringComparer.Ordinal);
         string TypeOf(string? serialized) => serialized is not null && types.TryGetValue(serialized, out var type) ? type : serialized ?? "";
         var scripts = new[] { package.PreDeploy is { } pre ? Element.PreDeploy(Lf(pre)) : null, package.PostDeploy is { } post ? Element.PostDeploy(Lf(post)) : null }.OfType<Element>();
         return Result.All(package.Refactors.Select(Entry)).Bind(entries =>
             Result.All(package.Refactors.Where(r => r.NewName is not null || r.NewSchema is not null).Select(r => Renaming(r, TypeOf)))
-                .Map(renames => new Read(SortedArray.Of(model.Select(w => w.Element).Concat(scripts).Concat(entries)), SortedArray.Of(renames))));
+                .Map(renames => new ModelElements(SortedArray.Of(objects.Select(o => o.Element).Concat(scripts).Concat(entries)), SortedArray.Of(renames))));
     });
 
     /// <summary>
@@ -320,16 +320,16 @@ public static class Ssdt
     /// generated name or DacFx's order; a package and the database it was published to hold the same names, so they number alike,
     /// and a rename of a column that a constraint on several columns references can renumber that constraint and its siblings. SQL
     /// Server normalizes a check's text, so two checks on one column may number apart in a package and its database. Two objects
-    /// keyed alike are the error walk.duplicate-key; an unresolved reference is keyed as the type Unresolved. Reads are compared only between like sources and, for databases, like identities:
+    /// keyed alike are the error model.duplicate-key; an unresolved reference is keyed as the type Unresolved. Models are compared only between like sources and, for databases, like identities:
     /// SQL Server shows a server-scoped login only to a reader with permission on it (sysadmin, VIEW ANY DEFINITION, or its own), and
     /// a db_datareader login holding VIEW DEFINITION read Query Store's database options differently from sa when measured on 2026-09-24.
     /// </summary>
-    public static Result<SortedArray<Element>> Walk(TSqlModel model) => Walked(model).Map(walked => SortedArray.Of(walked.Select(w => w.Element)));
+    public static Result<SortedArray<Element>> Elements(TSqlModel model) => ModelObjects(model).Map(objects => SortedArray.Of(objects.Select(o => o.Element)));
 
     /// <summary>
     /// A grant SQL Server makes in every new database, copying it from model: VIEW ANY COLUMN ENCRYPTION KEY DEFINITION and VIEW ANY
     /// COLUMN MASTER KEY DEFINITION to public, which Always Encrypted's client drivers read. A database holds both whatever its project
-    /// says, and a project imported from a database may hold them too, so the walk leaves both out of every read; a REVOKE of either
+    /// says, and a project imported from a database may hold them too, so Elements leaves both out of every model; a REVOKE of either
     /// is therefore not seen.
     /// </summary>
     private static bool Default(TSqlObject o) => o.ObjectType == Permission.TypeClass
@@ -337,15 +337,15 @@ public static class Ssdt
         && o.GetProperty<PermissionType>(Permission.PermissionType) is PermissionType.ViewAnyColumnEncryptionKeyDefinition or PermissionType.ViewAnyColumnMasterKeyDefinition
         && o.GetReferenced(Permission.Grantee, DacQueryScopes.All).ToArray() is [var grantee] && grantee.Name.Parts is [var role] && string.Equals(role, "public", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>The walk, each element with its object's name as model.xml writes it ([dbo].[Customer].[Email]), null for an unnamed object.</summary>
-    private static Result<IReadOnlyList<(Element Element, string? Name)>> Walked(TSqlModel model)
+    /// <summary>Each object of the model as an element, with the object's name as model.xml writes it ([dbo].[Customer].[Email]), null for an unnamed object.</summary>
+    private static Result<IReadOnlyList<(Element Element, string? Name)>> ModelObjects(TSqlModel model)
     {
         var composers = new Dictionary<TSqlObject, (TSqlObject Parent, string Relationship)>();
-        var walked = new HashSet<TSqlObject>();
+        var reached = new HashSet<TSqlObject>();
         void Descend(TSqlObject o)
         {
             var composed = o.ObjectType.Relationships.Where(r => r.Type == RelationshipType.Composing).SelectMany(r => o.GetReferenced(r, DacQueryScopes.All).Select(c => (r, c)));
-            foreach (var (r, child) in walked.Add(o) ? composed : [])
+            foreach (var (r, child) in reached.Add(o) ? composed : [])
             {
                 composers[child] = (o, r.Name);
                 Descend(child);
@@ -372,7 +372,7 @@ public static class Ssdt
         var secrets = Secrets;
         IEnumerable<ModelPropertyClass> Kept(IEnumerable<ModelPropertyClass> declared) => declared.Where(p => !secrets.Contains(p));
         string Values(TSqlObject o) => string.Join('\n', Kept(o.ObjectType.Properties).Select(p => p.Name + " " + ValueOf(() => o.GetProperty(p), p.DataType)));
-        var unnamed = walked.Where(o => !o.Name.HasName).GroupBy(o => (Anchor: Anchor(o), Type: o.ObjectType.Name))
+        var unnamed = reached.Where(o => !o.Name.HasName).GroupBy(o => (Anchor: Anchor(o), Type: o.ObjectType.Name))
             .SelectMany(g => g.OrderBy(References, StringComparer.Ordinal).ThenBy(Values, StringComparer.Ordinal)
                 .Select((o, i) => (Object: o, Name: g.Count() == 1 ? g.Key.Anchor.Relationship : string.Create(CultureInfo.InvariantCulture, $"{g.Key.Anchor.Relationship} {i + 1}"))))
             .ToDictionary(u => u.Object, u => u.Name);
@@ -386,7 +386,7 @@ public static class Ssdt
             return parent is null ? Keyed(o.ObjectType.Name, own, null) : Key(parent).Bind(home => Keyed(o.ObjectType.Name, Beneath(own, [.. parent.Name.Parts]), home));
         }
 
-        Result<Element> Read(TSqlObject o)
+        Result<Element> ElementOf(TSqlObject o)
         {
             var relationships = o.ObjectType.Relationships.Select(r => (Class: r, Instances: o.GetReferencedRelationshipInstances(r, DacExternalQueryScopes.All).ToArray())).ToArray();
             var properties = Kept(o.ObjectType.Properties).Select(p => (p.Name, Value: ValueOf(() => o.GetProperty(p), p.DataType)))
@@ -399,14 +399,14 @@ public static class Ssdt
             return Key(o).Bind(key => Result.All(targets).Bind(rs => Element.Of(key, properties, rs)));
         }
 
-        return Result.All(walked.Select(o => Read(o).Map(e => (Element: e, Name: o.Name.HasName ? Keyed(o.ObjectType.Name, [.. o.Name.Parts], null).Match<string?>(k => k.Path, _ => null) : null))))
-            .Bind(read => read.GroupBy(w => w.Element.Key).FirstOrDefault(g => g.Count() > 1) is not { } alike ? Result.Ok(read) : new Error("walk.duplicate-key",
-                $"{alike.Count()} {alike.Key.Type} objects of the model are keyed alike, as {alike.Key}: {string.Join(", ", alike.Select(w => w.Name ?? "unnamed"))}.",
-                "Report the model's source with this error: a key names one object, so the walk keys this type ambiguously, a defect in io/Ssdt.Walk."));
+        return Result.All(reached.Select(o => ElementOf(o).Map(e => (Element: e, Name: o.Name.HasName ? Keyed(o.ObjectType.Name, [.. o.Name.Parts], null).Match<string?>(k => k.Path, _ => null) : null))))
+            .Bind(elements => elements.GroupBy(e => e.Element.Key).FirstOrDefault(g => g.Count() > 1) is not { } alike ? Result.Ok(elements) : new Error("model.duplicate-key",
+                $"{alike.Count()} {alike.Key.Type} objects of the model are keyed alike, as {alike.Key}: {string.Join(", ", alike.Select(e => e.Name ?? "unnamed"))}.",
+                "Report the model's source with this error: a key names one object, so io/Ssdt.Elements keys this type ambiguously, a defect in estate."));
     }
 
     /// <summary>
-    /// An object's property as the kernel's closed Value, or null where DacFx cannot read it, and the walk skips it. An enumeration
+    /// An object's property as the kernel's closed Value, or null where DacFx cannot read it, and Elements skips it. An enumeration
     /// reaches an untyped read as its integer, so the declared type names its member; any other type (a double, as a spatial
     /// index's bounds) is its invariant string, so no value is dropped for its type. Text has CRLF and a lone CR made LF.
     /// </summary>
@@ -444,7 +444,7 @@ public static class Ssdt
         ("ParentElementName", r.ParentName), ("ParentElementType", r.ParentType), ("NewName", r.NewName), ("NewSchema", r.NewSchema) }
         .Where(p => p.Value is not null).Select(p => new Element.Property(p.Name, new Value.Text(p.Value!))));
 
-    /// <summary>An entry's rename: its element's key (past two parts, under its parent's, as the walk keys it) to the key its NewName or NewSchema gives; ScriptDom reads the names.</summary>
+    /// <summary>An entry's rename: its element's key (past two parts, under its parent's, as Elements keys it) to the key its NewName or NewSchema gives; ScriptDom reads the names.</summary>
     private static Result<Rename> Renaming(RefactorEntry r, Func<string?, string> typeOf) =>
         Parts(r.ElementName).Bind(parts => parts.Length > 2 && r.ParentName is { } parent
                 ? Parts(parent).Bind(home => Keyed(typeOf(r.ParentType), home, null).Bind(key => Keyed(typeOf(r.ElementType), Beneath(parts, home), key)))

@@ -58,13 +58,13 @@ public static partial class Verbs
         var log = SqlServer.QueryLog.Start(here.Root);
         var at = drift.Flags["--at"];
         if (SqlServer.Reach(drift.Database, log).Bind(_ => Built(here, at, drift.Flags.GetValueOrDefault("--project"))).Bind(built => Packaged(built.Dacpac)
-                .Bind(read => SqlServer.Plan(built.Dacpac, drift.Database, drift.Profile, log).Map(plan => (built.Commit, Read: read, Plan: plan))))
+                .Bind(model => SqlServer.Plan(built.Dacpac, drift.Database, drift.Profile, log).Map(plan => (built.Commit, Model: model, Plan: plan))))
             .Failed(out var planned, out error))
         {
             return Contract.Failed(verb, error, stamp);
         }
 
-        var receipt = new Receipt(Fingerprint.Of(planned.Read.Elements), Fingerprint.Of(planned.Plan.Report), null, stamp.Engine, drift.Profile.Fingerprint, drift.Target.ToString(),
+        var receipt = new Receipt(Fingerprint.Of(planned.Model.Elements), Fingerprint.Of(planned.Plan.Report), null, stamp.Engine, drift.Profile.Fingerprint, drift.Target.ToString(),
             DateTimeOffset.UtcNow);
         var items = planned.Plan.Items;
         return Contract.Answer(verb.Output, items.Count == 0 ? "converged" : "differs",
@@ -72,7 +72,7 @@ public static partial class Verbs
             [
                 .. items.Select(i => new Finding("drift." + i.Operation.ToLowerInvariant(), "warn", Named(i.Type) + " " + i.Name,
                     "The plan against " + drift.Target + " would " + i.Operation + " " + Named(i.Type) + " " + i.Name + ".", "estate diff --from " + drift.Target + " --to ref:" + at)),
-                .. items.Count == 0 ? [] : Columns(drift.Database, planned.Read, items, log).Select(line => line.Split(": ", 2) is [var key, var change]
+                .. items.Count == 0 ? [] : Columns(drift.Database, planned.Model, items, log).Select(line => line.Split(": ", 2) is [var key, var change]
                     ? new Finding("drift.column", "warn", key, change + ", from the target to the repository.", null) : new Finding("drift.column", "warn", line, line + ".", null)),
                 .. stamp.Pin is Pin.Unpinned ? new[] { new Finding("engine.unpinned", "note", "estate check drift", "This receipt stands on DacFx " + stamp.Engine.DacFx
                     + ", UNPINNED: " + Io.Doctor.Ledger + " pins no engine for estate " + Contract.Version.Split('+')[0] + ".", null) } : [],
@@ -108,7 +108,7 @@ public static partial class Verbs
     /// The columns that differ under each table the report names, which DacFx's report names only as the table: the target's model read
     /// and compared with the package's, the column's own properties alone, so text SQL Server keeps as it normalized it plays no part.
     /// </summary>
-    private static IEnumerable<string> Columns(SqlServer.Database database, Ssdt.Read package, IReadOnlyList<(string Operation, string Type, string Name)> items, SqlServer.QueryLog log)
+    private static IEnumerable<string> Columns(SqlServer.Database database, Ssdt.ModelElements package, IReadOnlyList<(string Operation, string Type, string Name)> items, SqlServer.QueryLog log)
     {
         var tables = items.Where(i => i.Type == "SqlTable").Select(i => "Table " + i.Name).ToHashSet(StringComparer.Ordinal);
         bool Under(ElementKey key) => key.Type == "Column" && tables.Contains(key.Parent?.ToString() ?? "");
@@ -117,6 +117,6 @@ public static partial class Verbs
             _ => []);
     }
 
-    /// <summary>A type as the deploy report serializes it (SqlTable), as the walk names it (Table).</summary>
+    /// <summary>A type as the deploy report serializes it (SqlTable), as io/Ssdt.Elements names it (Table).</summary>
     private static string Named(string type) => type.StartsWith("Sql", StringComparison.Ordinal) ? type[3..] : type;
 }

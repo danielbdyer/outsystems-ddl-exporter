@@ -6,7 +6,7 @@ using CsCheck;
 namespace Estate.Kernel.Tests;
 
 /// <summary>
-/// Builders and generators for the kernel's view of a read: element sets with tables, their columns and indexes,
+/// Builders and generators for the kernel's view of a model: element sets with tables, their columns and indexes,
 /// properties of every value case, relationships whose targets are the set's own keys or strangers, and both deploy
 /// scripts. Names come from a four-letter alphabet so sets share keys often; an edit writes "~", which no generated
 /// name holds, so an edited key or value is always new.
@@ -49,7 +49,7 @@ internal static class ElementSets
         Gen.Select(TopKey, TopKey).Select((a, b) => new Rename(a, b)).Array[0, 4].Select(rs => SortedArray.Of(rs));
 
     /// <summary>
-    /// Two reads and the refactorlog between them. The second is the first with elements dropped (fate 0), others
+    /// Two models and the refactorlog between them. The second is the first with elements dropped (fate 0), others
     /// given generated properties (fate 1) and another set's elements added; then up to five renames, made one at a
     /// time and each recorded under the keys of its moment, so a column's entry may name its table's old key, its new
     /// key or a key the table held between the two.
@@ -63,19 +63,19 @@ internal static class ElementSets
                 1 => Ok(Element.Of(e.Key, properties[i].DistinctBy(p => p.Item1).Select(p => new Element.Property(p.Item1, p.Item2)), e.Relationships)),
                 _ => e,
             }).OfType<Element>().ToArray();
-            var read = SortedArray.Of(kept.Concat(other.Where(o => a.All(e => e.Key != o.Key))));
+            var after = SortedArray.Of(kept.Concat(other.Where(o => a.All(e => e.Key != o.Key))));
             var entries = new List<Rename>();
-            foreach (var pick in read.Count == 0 ? [] : picks)
+            foreach (var pick in after.Count == 0 ? [] : picks)
             {
-                var e = read[pick % read.Count];
-                (read, var made) = Renamed(read, (e.Key, e.Key.Name.Base + "~"));
+                var e = after[pick % after.Count];
+                (after, var made) = Renamed(after, (e.Key, e.Key.Name.Base + "~"));
                 entries.AddRange(made);
             }
 
-            return new Renaming(a, read, entries, [.. a.Where((_, i) => fates[i] == 0)], [.. kept.Select(e => e.Key)]);
+            return new Renaming(a, after, entries, [.. a.Where((_, i) => fates[i] == 0)], [.. kept.Select(e => e.Key)]);
         }));
 
-    /// <summary>A generated renaming: both reads, the entries in the order they were made, what was dropped and what was kept.</summary>
+    /// <summary>A generated renaming: both models, the entries in the order they were made, what was dropped and what was kept.</summary>
     public sealed record Renaming(SortedArray<Element> Before, SortedArray<Element> After, IReadOnlyList<Rename> Entries, Element[] Dropped, ElementKey[] Kept)
     {
         public SortedArray<Rename> Renames => SortedArray.Of(Entries);
@@ -199,7 +199,7 @@ internal static class ElementSets
                 var rekeyed = Ok(Element.Of(Ok(Rename.Of(e.Key, e.Key.Name.Base + "~")).After, e.Properties, e.Relationships));
                 return new Edit("a key", Replaced(set, e, rekeyed), new Change([rekeyed], [e], [], []), []);
             case 4:
-                // The refactorlog's history may name the dropped key, renamed to a key both reads hold: that changes nothing.
+                // The refactorlog's history may name the dropped key, renamed to a key both models hold: that changes nothing.
                 SortedArray<Rename> history = set.FirstOrDefault(x => x != e) is { } other ? [new Rename(e.Key, other.Key)] : [];
                 return new Edit("an element removed", Replaced(set, e), new Change([], [e], [], []), history);
             case 5:

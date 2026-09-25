@@ -24,8 +24,8 @@ public sealed record Rename(ElementKey Before, ElementKey After) : IComparable<R
 }
 
 /// <summary>
-/// What changes between two reads, for every element type the walk reads, the deploy scripts and the refactorlog
-/// entries included: the elements created and dropped, the renames, and each element in both reads that is altered,
+/// What changes between two models, for every element type io/Ssdt.Elements reads, the deploy scripts and the refactorlog
+/// entries included: the elements created and dropped, the renames, and each element in both models that is altered,
 /// property by property and relationship by relationship. An element continues under its own key, or under the key a
 /// rename gives it or one of its ancestors; so a renamed table's columns and indexes move with it, a column renamed in
 /// a renamed table is one rename, and a reference to a renamed element is unchanged when it names the new key.
@@ -39,7 +39,7 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
     /// under its parent's key after, is gone after, and a rename of it leads, directly or through later renames, to a
     /// key that is new after and continues no other element; the rest of the refactorlog's history changes nothing.
     /// SSDT records each entry under the keys of its moment, so an entry may name the element under any key its parent
-    /// held, old, new or between, and its new key is read under the parent's key after. A read in which two
+    /// held, old, new or between, and its new key is read under the parent's key after. A model in which two
     /// elements share a key is the error change.duplicate-key.
     /// </summary>
     public static Result<Change> Between(SortedArray<Element> before, SortedArray<Element> after, SortedArray<Rename> renames)
@@ -131,15 +131,15 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
         element.Relationships.FirstOrDefault(r => r.Name == name)?.Targets ?? default;
 
     // A SortedArray sorts elements by key first, so two elements with one key sit side by side.
-    private static Error? Duplicate(SortedArray<Element> read) => Enumerable.Range(1, Math.Max(0, read.Count - 1))
-        .Where(i => read[i].Key == read[i - 1].Key)
+    private static Error? Duplicate(SortedArray<Element> model) => Enumerable.Range(1, Math.Max(0, model.Count - 1))
+        .Where(i => model[i].Key == model[i - 1].Key)
         .Select(i => new Error(
             "change.duplicate-key",
-            $"Two elements of one read have the key {read[i].Key}.",
-            "Report the read's source: a key names one element, so the walk that produced this read has a defect."))
+            $"Two elements of one model have the key {model[i].Key}.",
+            "Report the model's source: a key names one element, so what read this model into elements has a defect."))
         .FirstOrDefault();
 
-    /// <summary>An element in both reads that is altered: its key after, and each property and relationship that differs.</summary>
+    /// <summary>An element in both models that is altered: its key after, and each property and relationship that differs.</summary>
     public sealed record Alteration(ElementKey Key, SortedArray<Property> Properties, SortedArray<Relationship> Relationships) : IComparable<Alteration>
     {
         public int CompareTo(Alteration? other) =>

@@ -34,10 +34,10 @@ public readonly record struct Fingerprint
     public static Fingerprint Of(string text) => Of(Utf8.GetBytes(Canonical(text)));
 
     /// <summary>
-    /// The fingerprint of a read: its elements in the SortedArray's canonical order, serialized so no two element sets serialize
+    /// The fingerprint of a model: its elements in the SortedArray's canonical order, serialized so no two element sets serialize
     /// alike. Every list leads with its count, every string with its length and is written as UTF-16 code units (a lone
     /// surrogate survives), every value with a tag, every name with its part count and every key with whether it has a
-    /// parent; integers are big-endian. Text values are hashed exactly as the elements hold them, so two reads
+    /// parent; integers are big-endian. Text values are hashed exactly as the elements hold them, so two models
     /// fingerprint equally exactly when their elements are equal.
     /// </summary>
     public static Fingerprint Of(SortedArray<Element> elements)

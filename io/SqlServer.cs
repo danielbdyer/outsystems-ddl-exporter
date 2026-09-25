@@ -20,7 +20,7 @@ namespace Estate.Io;
 /// <summary>
 /// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4): the target grammar; Named, the database of an
 /// environment estate/posture.json names, and Copy, a database io/Substrate made, which alone publishes (§2.1 rule 3); Model through
-/// LoadFromDatabase and io/Ssdt's walk; Plan through DacServices.Script; and the probe executor, whose closed allowlist admits only
+/// LoadFromDatabase and io/Ssdt.Elements; Plan through DacServices.Script; and the probe executor, whose closed allowlist admits only
 /// integer answers. A resolved connection is never printed, logged or put in an error, and a named environment's SQL Server messages
 /// are withheld, since they can quote a row (§18). An error's code names what went wrong; cli/Contract.cs maps its category to the exit.
 /// </summary>
@@ -229,7 +229,7 @@ public static class SqlServer
     /// </summary>
     internal static ModelExtractOptions Extraction => new()
     {
-        // A package keeps its GRANT, DENY and REVOKE statements and the walk keys each one; the default, true, drops every permission.
+        // A package keeps its GRANT, DENY and REVOKE statements and Ssdt.Elements keys each one; the default, true, drops every permission.
         IgnorePermissions = false,
         // A package keeps its sp_addextendedproperty values (MS_Description); the default, false, keeps them.
         IgnoreExtendedProperties = false,
@@ -241,10 +241,10 @@ public static class SqlServer
         ExtractReferencedServerScopedElements = true,
         // Table.RowCount, the data and index sizes and the page counts change with the rows, not the schema; the default is false.
         ExtractUsageProperties = false,
-        // The walk reads properties and each module's script, which a model loaded from a database gives without a scripted copy of
+        // Ssdt.Elements reads properties and each module's script, which a model loaded from a database gives without a scripted copy of
         // every object; the default, false, skips that copy's one-time cost.
         LoadAsScriptBackedModel = false,
-        // Verification validates the model as a package build would; the walk reads what the database holds, valid or not. Default false.
+        // Verification validates the model as a package build would; Ssdt.Elements reads what the database holds, valid or not. Default false.
         VerifyExtraction = false,
         // The model is held in memory, as Ssdt.Load holds a package's; the default is Memory.
         Storage = DacSchemaModelStorageType.Memory,
@@ -252,7 +252,7 @@ public static class SqlServer
         HashObjectNamesInLogs = false,
     };
 
-    /// <summary>A database read whole (§1 fact 5): TSqlModel.LoadFromDatabase as the target's identity under <see cref="Extraction"/>, then io/Ssdt's walk; the run's log, when given, holds the statement estate sends first.</summary>
+    /// <summary>A database read whole (§1 fact 5): TSqlModel.LoadFromDatabase as the target's identity under <see cref="Extraction"/>, then io/Ssdt.Elements; the run's log, when given, holds the statement estate sends first.</summary>
     public static Result<SortedArray<Element>> Model(Database target, QueryLog? log = null) => Reached(target, log).Bind(_ =>
     {
         TSqlModel model;
@@ -267,7 +267,7 @@ public static class SqlServer
 
         using (model)
         {
-            return Ssdt.Walk(model);
+            return Ssdt.Elements(model);
         }
     });
 

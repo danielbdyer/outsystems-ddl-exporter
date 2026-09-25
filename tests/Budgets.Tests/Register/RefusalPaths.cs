@@ -59,7 +59,7 @@ internal static class RefusalPaths
             Failed(Element.Of(Table, [new("Nullable", new Value.Boolean(true)), new("Nullable", new Value.Boolean(false))], []))),
         new("an element with a relationship given twice", "element.relationship-name", false, (_, _) =>
             Failed(Element.Of(Table, [], [Element.Relationship.Of("Columns", [Table]), Element.Relationship.Of("Columns", [Table])]))),
-        new("a read with two elements on one key", "change.duplicate-key", false, (_, _) =>
+        new("a model with two elements on one key", "change.duplicate-key", false, (_, _) =>
             Failed(Change.Between(SortedArray.Of(Made(Element.Of(Table, [], [])), Made(Element.Of(Table, [new("Nullable", new Value.Null())], []))), [], []))),
 
         new("ESTATE_TOOL naming no tool folder", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), Bare(scratch), scratch))),
@@ -81,12 +81,12 @@ internal static class RefusalPaths
             using var package = new Ssdt.Package(Model(), null, null,
                 [new Ssdt.RefactorEntry("0a1b2c3d-0000-4000-8000-000000000001", "Rename Refactor", null, "[dbo].[Customer", "SqlTable", null, null, "[Client]", null)],
                 new Dictionary<string, string>(StringComparer.Ordinal));
-            return Failed(Ssdt.Walk(package));
+            return Failed(Ssdt.Elements(package));
         }),
-        new("two objects of a model keyed alike", "walk.duplicate-key", false, (_, _) =>
+        new("two objects of a model keyed alike", "model.duplicate-key", false, (_, _) =>
         {
             using var model = Model("CREATE TABLE dbo.Customer (Id INT NOT NULL);", "CREATE TABLE dbo.Customer (Id INT NOT NULL);");
-            return Failed(Ssdt.Walk(model));
+            return Failed(Ssdt.Elements(model));
         }),
 
         new("a git program that does not start", "git.missing", false, (scratch, _) => Failed(Git.At(scratch, "HEAD", git: Path.Combine(scratch, "no-git")))),
@@ -485,7 +485,7 @@ internal static class RefusalPaths
         return Path.Combine(scratch, "golden", "classic-minimal", "ClassicMinimal.sqlproj");
     }
 
-    /// <summary>A model built in memory, each script added as its own source, as io/Ssdt.Walk reads one.</summary>
+    /// <summary>A model built in memory, each script added as its own source, as io/Ssdt.Elements reads one.</summary>
     private static TSqlModel Model(params string[] scripts)
     {
         var model = new TSqlModel(SqlServerVersion.Sql160, new TSqlModelOptions());

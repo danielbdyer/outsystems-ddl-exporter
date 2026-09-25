@@ -28,42 +28,42 @@ public static partial class Verbs
     {
         if (Contract.Flags(words, ["--from"], ["--project"], []).Bind(flags => SqlServer.Target.Parse(flags["--from"], "--from")
             .Bind(from => Pinned(here).Bind(pin => Reading(here, from, flags.GetValueOrDefault("--project")).Map(source => (Source: source, Pin: pin)))))
-            .Failed(out var read, out var error))
+            .Failed(out var reading, out var error))
         {
             return Contract.Failed(Of("read"), error, Stamped(null, null));
         }
 
-        var (source, fingerprint) = (read.Source, Fingerprint.Of(read.Source.Read.Elements));
-        return Contract.Answer(Of("read").Output, "done", source.Target + ": " + source.Read.Elements.Count + " elements, fingerprint " + Render.Digest(fingerprint), [], 0,
-            Stamped(source.Image, read.Pin), content: new JsonObject
+        var (source, fingerprint) = (reading.Source, Fingerprint.Of(reading.Source.Model.Elements));
+        return Contract.Answer(Of("read").Output, "done", source.Target + ": " + source.Model.Elements.Count + " elements, fingerprint " + Render.Digest(fingerprint), [], 0,
+            Stamped(source.Image, reading.Pin), content: new JsonObject
             {
-                ["read"] = new JsonObject { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(fingerprint), ["elements"] = Render.Array(source.Read.Elements.Select(Json)) },
+                ["read"] = new JsonObject { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(fingerprint), ["elements"] = Render.Array(source.Model.Elements.Select(Json)) },
             });
     }
 
-    /// <summary>A target read whole, with the SQL Server image a database ran in; a package's read carries its refactorlog's renames.</summary>
-    internal sealed record Source(SqlServer.Target Target, Ssdt.Read Read, string? Image, bool IsDatabase);
+    /// <summary>A target's model read whole into elements, with the SQL Server image a database ran in; a package's model carries its refactorlog's renames.</summary>
+    internal sealed record Source(SqlServer.Target Target, Ssdt.ModelElements Model, string? Image, bool IsDatabase);
 
     internal static Result<Source> Reading(Checkout here, SqlServer.Target target, string? project) => target.Match(
         _ => Modelled(here, target), _ => Modelled(here, target), () => Modelled(here, target),
-        reference => Built(here, reference.Name, project).Bind(built => Packaged(built.Dacpac)).Map(read => new Source(target, read, null, false)),
-        dacpac => Packaged(Path.GetFullPath(Path.Combine(here.WorkingDirectory, dacpac.Path))).Map(read => new Source(target, read, null, false)));
+        reference => Built(here, reference.Name, project).Bind(built => Packaged(built.Dacpac)).Map(model => new Source(target, model, null, false)),
+        dacpac => Packaged(Path.GetFullPath(Path.Combine(here.WorkingDirectory, dacpac.Path))).Map(model => new Source(target, model, null, false)));
 
     /// <summary>A ref's project built at its commit (io/Git.At, io/Ssdt.Build): the package, and the commit.</summary>
     internal static Result<(string Dacpac, string Commit)> Built(Checkout here, string reference, string? project) => Git.At(here.Root, reference).Bind(at =>
         Ssdt.Project(at.Path, project).Bind(file => Ssdt.Tool(AppContext.BaseDirectory, here.Tool, here.WorkingDirectory)
             .Bind(tool => Ssdt.Build(at, file, tool, Path.Combine(here.Root, ".estate", "build")))).Map(built => (built.Path, at.Commit)));
 
-    internal static Result<Ssdt.Read> Packaged(string dacpac) => Ssdt.Load(dacpac).Bind(package =>
+    internal static Result<Ssdt.ModelElements> Packaged(string dacpac) => Ssdt.Load(dacpac).Bind(package =>
     {
         using (package)
         {
-            return Ssdt.Walk(package);
+            return Ssdt.Elements(package);
         }
     });
 
     private static Result<Source> Modelled(Checkout here, SqlServer.Target target) => SqlServer.Resolve(target, here.Root).Bind(database =>
-        SqlServer.Model(database, SqlServer.QueryLog.Start(here.Root)).Map(elements => new Source(target, new Ssdt.Read(elements, []), Substrate.Image(database), true)));
+        SqlServer.Model(database, SqlServer.QueryLog.Start(here.Root)).Map(elements => new Source(target, new Ssdt.ModelElements(elements, []), Substrate.Image(database), true)));
 
     /// <summary>The toolchain ledger's pin, which every verb that builds reads (R13), or the rejection of a committed engine outside its window.</summary>
     internal static Result<Pin> Pinned(Checkout here) => Io.Doctor.Toolchain(here.Root, Contract.Version)

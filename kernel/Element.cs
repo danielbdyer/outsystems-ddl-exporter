@@ -7,7 +7,7 @@ using System.Linq;
 namespace Estate.Kernel;
 
 /// <summary>
-/// A property's value as the walk reads it from DacFx: a boolean, an integer, a string, an enumeration's member with
+/// A property's value as io/Ssdt.Elements reads it from DacFx: a boolean, an integer, a string, an enumeration's member with
 /// its enumeration type, or null. The cases are closed. Equality and order are ordinal and culture-free: null first,
 /// then booleans, integers, strings and enumerations, each in its own order.
 /// </summary>
@@ -113,10 +113,10 @@ public sealed record ElementKey : IComparable<ElementKey>
 }
 
 /// <summary>
-/// One object of a read, as the walk (io/Ssdt) reads it from DacFx for every consumer: its key, its properties as
+/// One object of a model, as io/Ssdt.Elements reads it from DacFx for every consumer: its key, its properties as
 /// (name, value) and its relationships as (name, the target keys in DacFx's order), each sorted by name, so the order
-/// the walk met them in never matters. A relationship with no target is no relationship. The deploy scripts and the
-/// refactorlog entries are elements too, each of its own type. A SortedArray of elements, sorted by key, is a read.
+/// DacFx gives them in never matters. A relationship with no target is no relationship. The deploy scripts and the
+/// refactorlog entries are elements too, each of its own type. A SortedArray of elements, sorted by key, is a model.
 /// </summary>
 public sealed record Element : IComparable<Element>
 {

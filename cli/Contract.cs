@@ -93,7 +93,7 @@ public static class Contract
     /// name what went wrong (name.blank, sdk.missing, build.failed), and this table alone says how estate exits for it; ContractTests
     /// holds a row here for the category of every code Register.RefusalPaths reaches. A name, an element, a fingerprint or a change the
     /// kernel rejects while reading a package or a database is input that could not be parsed (exit 2), as is a package, a refactorlog,
-    /// a walk or the copy registry. The posture, a profile, a reference, a connection, a SQLCMD value and the toolchain ledger are
+    /// a model two of whose objects share a key, or the copy registry. The posture, a profile, a reference, a connection, a SQLCMD value and the toolchain ledger are
     /// configuration (exit 6), whether io or the kernel finds the error, and so is a failure DacFx reports with no SQL Server error
     /// inside it, such as a package whose target platform the server is not. A target of no known form is a bad argument, as is a flag
     /// the verb does not take; a server that does not answer or refuses the identity is exit 4; a copy the registry does not hold, a
@@ -109,7 +109,7 @@ public static class Contract
         ["fingerprint"] = 2,
         ["package"] = 2,
         ["refactorlog"] = 2,
-        ["walk"] = 2,
+        ["model"] = 2,
         ["registry"] = 2,
         ["change"] = 2,
         ["origin"] = 4,

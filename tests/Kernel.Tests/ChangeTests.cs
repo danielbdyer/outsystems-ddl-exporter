@@ -8,7 +8,7 @@ using static Estate.Kernel.Tests.ElementSets;
 namespace Estate.Kernel.Tests;
 
 /// <summary>
-/// The change between two reads names what was created, dropped, renamed (a pair the refactorlog records, whose
+/// The change between two models names what was created, dropped, renamed (a pair the refactorlog records, whose
 /// children and references move with it) and altered, property by property and relationship by relationship, the
 /// deploy scripts included. Generated sets pin the algebra; the archetype pairs pin what each archetype names.
 /// </summary>
@@ -16,14 +16,14 @@ public sealed class ChangeTests
 {
     [Fact]
     [Trait("Category", "fast")]
-    public void The_change_between_equal_reads_is_empty_whatever_the_refactorlog_holds() =>
+    public void The_change_between_equal_models_is_empty_whatever_the_refactorlog_holds() =>
         Gen.Select(Sets, Renames).Sample((set, renames) =>
             Ok(Change.Between(set, SortedArray.Of(set.Reverse().Select(Rebuilt)), renames)).IsEmpty
             && Ok(Change.Between(Archetypes.Model(), Archetypes.Model(), renames)).IsEmpty);
 
     [Fact]
     [Trait("Category", "fast")]
-    public void The_change_from_one_read_to_another_mirrors_the_change_back_through_the_inverted_renames()
+    public void The_change_from_one_model_to_another_mirrors_the_change_back_through_the_inverted_renames()
     {
         Gen.Select(Sets, Sets).Sample((a, b) => Mirror(Ok(Change.Between(a, b, []))) == Ok(Change.Between(b, a, [])));
         Renamings.Sample(
@@ -160,7 +160,7 @@ public sealed class ChangeTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Two_elements_of_one_read_with_one_key_fail_with_change_duplicate_key()
+    public void Two_elements_of_one_model_with_one_key_fail_with_change_duplicate_key()
     {
         var twice = SortedArray.Of(New(Archetypes.Customer, [("IsMemoryOptimized", Bool(false))]), New(Archetypes.Customer, []));
 
@@ -170,7 +170,7 @@ public sealed class ChangeTests
 
     private static SortedArray<Rename> Inverted(SortedArray<Rename> renames) => SortedArray.Of(renames.Select(r => r.Inverted()));
 
-    // A failing renaming, printed as its reads' keys and its entries in the order they were made.
+    // A failing renaming, printed as its models' keys and its entries in the order they were made.
     private static string Print(Renaming r) =>
         string.Join(", ", r.Before.Select(e => e.Key)) + " => " + string.Join(", ", r.After.Select(e => e.Key)) + " by " + string.Join("; ", r.Entries);
 

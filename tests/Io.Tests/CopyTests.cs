@@ -15,8 +15,8 @@ namespace Estate.Io.Tests;
 
 /// <summary>
 /// A disposable copy (V3_MILESTONES.md WP 1.4, §2.2's Substrate and SqlServer rows, law 3′): io/Substrate makes, registers and drops
-/// it on the run's SQL Server; Publish writes to it; Model reads it back through LoadFromDatabase and the walk; and Plan of a package
-/// against its own published copy is empty. Walk fingerprints are compared only between like sources: a package's keys with its
+/// it on the run's SQL Server; Publish writes to it; Model reads it back through LoadFromDatabase and Ssdt.Elements; and Plan of a package
+/// against its own published copy is empty. Model fingerprints are compared only between like sources: a package's keys with its
 /// copy's, and one copy's fingerprint with another's.
 /// </summary>
 public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGround>, IDisposable
@@ -73,7 +73,7 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
             var (first, second) = (Made(SqlServer.Model(one)), Made(SqlServer.Model(two)));
             using var basePackage = Made(Ssdt.Load(ground.Base));
             using var headPackage = Made(Ssdt.Load(ground.Mandatory));
-            var (packaged, head) = (Made(Ssdt.Walk(basePackage)), Made(Ssdt.Walk(headPackage)));
+            var (packaged, head) = (Made(Ssdt.Elements(basePackage)), Made(Ssdt.Elements(headPackage)));
             var schema = SortedArray.Of(packaged.Elements.Where(e => e.Key.Type is not (Element.PreDeploymentScript or Element.PostDeploymentScript or Element.RefactorLogOperation)));
 
             Assert.Equal(schema.Select(e => e.Key), first.Select(e => e.Key));

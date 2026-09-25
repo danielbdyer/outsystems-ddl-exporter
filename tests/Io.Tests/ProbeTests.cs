@@ -98,12 +98,12 @@ public sealed class ProbeTests(ProvingGround ground) : IClassFixture<ProvingGrou
     /// <summary>
     /// The golden project's copy holds the read-only principal's SQL login and a user for it. Read twice as the fixture's admin
     /// identity, who sees the login, and twice as the read-only principal, it fingerprints once per identity: SQL Server never
-    /// returns a login's password, DacFx makes a new one up on each load, and the walk leaves that property out.
+    /// returns a login's password, DacFx makes a new one up on each load, and Ssdt.Elements leaves that property out.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
     [Trait("Law", "3′ the read is complete")]
-    public void Two_reads_of_one_database_by_one_identity_fingerprint_equally()
+    public void One_database_read_twice_by_one_identity_fingerprints_equally()
     {
         var (admin, reader) = (Resolved("uat", ground.Copy.ConnectionString), Resolved("qa", ground.Reader.ConnectionString));
 

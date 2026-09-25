@@ -53,9 +53,9 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
     /// registered database holding a SQL login and a user for it, read through estate read --from env:uat --json as the fixture's
     /// admin identity, who sees the login. What the test asserts is that the answer names the login and that no property in it is
     /// named after a member of <see cref="Ssdt.Secrets"/>: DacFx makes up a new Login.Password on each read, since SQL Server keeps
-    /// only a hash of the one the login was made with, and the walk leaves that property out. The answer is also searched for a
+    /// only a hash of the one the login was made with, and Ssdt.Elements leaves that property out. The answer is also searched for a
     /// password setting (<see cref="ProfilesTests.PasswordSetting"/>): on the container the fixture's identity signs in as sa with a
-    /// password, the env:uat connection file holds that connection string with its Password=, and the search fails if the read
+    /// password, the env:uat connection file holds that connection string with its Password=, and the search fails if estate read
     /// printed it.
     /// </summary>
     [Fact]
@@ -121,7 +121,7 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         Assert.Equal("No change from ref:" + estate.Base + " to ref:" + estate.Base + ".\n", output);
     }
 
-    /// <summary>A ref and the package its build wrote read to one fingerprint, the walk's; read's JSON validates against estate.read/1.</summary>
+    /// <summary>A ref and the package its build wrote read into one model and one fingerprint; read's JSON validates against estate.read/1.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Read_of_a_ref_and_of_the_package_its_build_wrote_fingerprint_alike_and_validate_against_estate_read_1()
@@ -135,13 +135,13 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         ScratchEstate.Valid("estate.read.1.schema.json", fromPackage);
         Assert.Equal((0, 0), (exit, packageExit));
         using var loaded = GitTests.Ok(Ssdt.Load(dacpac));
-        var walked = GitTests.Ok(Ssdt.Walk(loaded)).Elements;
-        Assert.Equal("sha256:" + Fingerprint.Of(walked), (string?)fromRef["read"]!["fingerprint"]);
+        var elements = GitTests.Ok(Ssdt.Elements(loaded)).Elements;
+        Assert.Equal("sha256:" + Fingerprint.Of(elements), (string?)fromRef["read"]!["fingerprint"]);
         Assert.Equal((string?)fromRef["read"]!["fingerprint"], (string?)fromPackage["read"]!["fingerprint"]);
-        Assert.Equal(walked.Count, fromRef["read"]!["elements"]!.AsArray().Count);
+        Assert.Equal(elements.Count, fromRef["read"]!["elements"]!.AsArray().Count);
         var email = fromRef["read"]!["elements"]!.AsArray().Single(e => (string?)e!["key"] == "Column [dbo].[Customer].[Email]")!;
         Assert.True((bool)email["properties"]!["Nullable"]!);
-        Assert.StartsWith("ref:" + estate.Base + ": " + walked.Count + " elements, fingerprint sha256:", estate.Estate("read", "--from", "ref:" + estate.Base).Output, StringComparison.Ordinal);
+        Assert.StartsWith("ref:" + estate.Base + ": " + elements.Count + " elements, fingerprint sha256:", estate.Estate("read", "--from", "ref:" + estate.Base).Output, StringComparison.Ordinal);
     }
 
     /// <summary>Bad arguments are exit 1 and still validate against the verb's schema, with what it adds null.</summary>

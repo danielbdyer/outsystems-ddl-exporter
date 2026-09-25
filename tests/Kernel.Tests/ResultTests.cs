@@ -36,12 +36,12 @@ public sealed class ResultTests
         Gen.Select(Gen.Int.Array[0, 8], Gen.Int[-1, 8], Gen.Bool.Array[8]).Sample((values, first, laterFails) =>
         {
             var fails = first < values.Length ? first : -1;
-            var read = 0;
+            var made = 0;
             IEnumerable<Result<int>> Results()
             {
                 for (var i = 0; i < values.Length; i++)
                 {
-                    read = i + 1;
+                    made = i + 1;
                     yield return i == fails ? Result.Fail<int>(Why)
                         : fails >= 0 && i > fails && laterFails[i] ? Result.Fail<int>(Later)
                         : Result.Ok(values[i]);
@@ -50,7 +50,7 @@ public sealed class ResultTests
 
             var all = Result.All(Results());
             return fails < 0
-                ? all is Result<IReadOnlyList<int>>.Ok ok && ok.Value.SequenceEqual(values) && read == values.Length
-                : all == Result.Fail<IReadOnlyList<int>>(Why) && read == fails + 1;
+                ? all is Result<IReadOnlyList<int>>.Ok ok && ok.Value.SequenceEqual(values) && made == values.Length
+                : all == Result.Fail<IReadOnlyList<int>>(Why) && made == fails + 1;
         });
 }
