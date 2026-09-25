@@ -71,6 +71,7 @@
     return '<article class="card" tabindex="0" id="' + docId(d.id) + '" data-kind="decision" data-id="' + esc(d.id) + '" data-state="' + state + '">'
       + '<div class="card-head"><span class="cid">' + esc(d.id) + '</span><h3 class="ctitle">' + inline(d.title) + '</h3><span class="pill">' + pill + "</span></div>"
       + field("Situation", d.situation) + field("Complication", d.complication) + field("Where the build stands", d.current)
+      + (d.examplesHtml ? '<div class="field"><span class="fl">Worked examples</span><div class="ft prose">' + d.examplesHtml + "</div></div>" : "")
       + field("Question", d.question) + field("Recommendation", d.recommendation, "rec-field")
       + '<div class="opt-bar" role="group" aria-label="Options for ' + esc(d.id) + '">'
       + d.options.map((o, i) => '<button type="button" class="opt" data-id="' + esc(d.id) + '" data-i="' + i + '" aria-pressed="' + (choice === i) + '">'

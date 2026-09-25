@@ -15,7 +15,7 @@
 //   id, title (the <title>: a name, 2-4 words), eyebrow [[label, value]], heading, dek, answer (markdown)
 //   glossary  {Term: definition}; write {{Term}} in any text to make the term tappable
 //   decisions [{id, when, title, situation, complication, question, recommendation, refs [finding id suffixes],
-//               options [{k, d, c, rec}]}]   rendered in that order: the situation before the question
+//               examples (markdown, tables allowed), options [{k, d, c, rec}]}]   rendered in that order
 //   findings  [{id "<lens>-<ID>", severity blocker|major|minor|note, title, situation, where, evidence, designSays,
 //               recommendation (the fix), lens, skeptic (the second review's reason)}]
 //   actions   {id, title, count, intro (markdown), steps [markdown], fields [{f, label, hint, wide, rows}],
@@ -35,7 +35,9 @@ const here = __dirname;
 const css = fs.readFileSync(path.join(here, "app.css"), "utf8");
 const client = fs.readFileSync(path.join(here, "app.client.js"), "utf8");
 
-const decisions = spec.decisions || [], findings = spec.findings || [];
+// A decision may carry worked examples as Markdown (tables allowed); they are rendered here, once.
+const decisions = (spec.decisions || []).map(d => d.examples ? Object.assign({}, d, { examplesHtml: render(d.examples) }) : d);
+const findings = spec.findings || [];
 const count = s => findings.filter(f => f.severity === s).length;
 const lenses = [...new Set(findings.map(f => f.lens))];
 const data = JSON.stringify({ id: spec.id, glossary: spec.glossary || {}, decisions, findings, gate: spec.gate, actions: spec.actions ? { id: spec.actions.id } : null }).replace(/</g, "\\u003c");
@@ -45,6 +47,19 @@ const out = [];
 if (spec.answer) {
   nav.push(`<a href="#answer">Summary</a>`);
   out.push(`<section class="sec" id="answer"><div class="sec-head"><h2>Summary</h2>${findings.length ? `<span class="sec-count">${findings.length} findings · ${count("blocker")} blocker · ${count("major")} major</span>` : ""}</div><div class="prose">${render(spec.answer)}</div></section>`);
+}
+// The operator's own actions come right after the summary, before anything they are asked to decide.
+if (spec.actions) {
+  const a = spec.actions;
+  const field = x => `<label${x.wide ? ' class="wide"' : ""}>${esc(x.label)}${x.hint ? ` <small>${esc(x.hint)}</small>` : ""}${x.rows
+    ? `<textarea id="af-${esc(x.f)}" data-f="${esc(x.f)}" rows="${x.rows}"></textarea>` : `<input type="text" id="af-${esc(x.f)}" data-f="${esc(x.f)}">`}</label>`;
+  nav.push(`<a href="#actions-sec">${esc(a.title)}</a>`);
+  out.push(`<section class="sec" id="actions-sec"><div class="sec-head"><h2>${esc(a.title)}</h2>${a.count ? `<span class="sec-count">${esc(a.count)}</span>` : ""}</div>
+${a.intro ? `<div class="sec-intro prose">${render(a.intro)}</div>` : ""}
+${(a.steps || []).length ? `<ol class="steps">${a.steps.map(s => `<li><span>${inline(s)}</span></li>`).join("")}</ol>` : ""}
+<div class="form-grid" id="act-form">${(a.fields || []).map(field).join("")}
+${(a.checks || []).length ? `<div class="wide checks" id="act-checks">${a.checks.map(c => `<label><input type="checkbox" data-o="${esc(c.o)}"> ${inline(c.label)}</label>`).join("")}</div>` : ""}
+<span class="saved wide" id="act-saved" aria-live="polite"></span></div></section>`);
 }
 if (decisions.length) {
   nav.push(`<a href="#decisions-sec">Decisions<span class="c" id="j-dec"></span></a>`);
@@ -61,18 +76,6 @@ if (findings.length) {
   <div class="fgroup"><select id="flens" aria-label="Lens"><option value="all">every lens</option>${lenses.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join("")}</select><input type="text" id="fq" placeholder="Search findings" aria-label="Search findings"></div>
   <button type="button" class="bulk" id="bulk" data-n="0" hidden>Mark untriaged as fix</button><span class="fcount" id="fcount"></span>
 </div><div class="stack" id="findings"></div></section>`);
-}
-if (spec.actions) {
-  const a = spec.actions;
-  const field = x => `<label${x.wide ? ' class="wide"' : ""}>${esc(x.label)}${x.hint ? ` <small>${esc(x.hint)}</small>` : ""}${x.rows
-    ? `<textarea id="af-${esc(x.f)}" data-f="${esc(x.f)}" rows="${x.rows}"></textarea>` : `<input type="text" id="af-${esc(x.f)}" data-f="${esc(x.f)}">`}</label>`;
-  nav.push(`<a href="#actions-sec">${esc(a.title)}</a>`);
-  out.push(`<section class="sec" id="actions-sec"><div class="sec-head"><h2>${esc(a.title)}</h2>${a.count ? `<span class="sec-count">${esc(a.count)}</span>` : ""}</div>
-${a.intro ? `<div class="sec-intro prose">${render(a.intro)}</div>` : ""}
-${(a.steps || []).length ? `<ol class="steps">${a.steps.map(s => `<li><span>${inline(s)}</span></li>`).join("")}</ol>` : ""}
-<div class="form-grid" id="act-form">${(a.fields || []).map(field).join("")}
-${(a.checks || []).length ? `<div class="wide checks" id="act-checks">${a.checks.map(c => `<label><input type="checkbox" data-o="${esc(c.o)}"> ${inline(c.label)}</label>`).join("")}</div>` : ""}
-<span class="saved wide" id="act-saved" aria-live="polite"></span></div></section>`);
 }
 if (spec.gate) {
   const g = spec.gate;
