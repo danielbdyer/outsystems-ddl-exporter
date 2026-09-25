@@ -1535,7 +1535,7 @@ default and JSON with `--json`, and exits with one of ten codes shared across al
 | 5 | divergence found (`check`, `diff --fail-on-change`) |
 | 6 | configuration refused (unknown key, credential inline, toolchain pin mismatch) |
 | 7 | build failed |
-| 9 | refused by name (a `Refusal` the kernel raised; the code is printed) |
+| 9 | refused by name: a named environment, an unregistered copy, a git branch, a probe outside the allowlist. Every other refusal exits on the code whose meaning it has, chosen by the part of its code before the dot (`cli/Contract.cs`, `RefusalExits`; the operator's ruling, 2026-09-25) |
 | 130 | interrupted (Ctrl-C or `--timeout`); the cleanup ran and the state is as before |
 
 These are the `ssdt-agent` tree's `prove.mjs` codes and the Twin's codes, merged; v2's
@@ -1659,7 +1659,7 @@ repository's own `read --from ssdt` must be a no-op (byte-identical), which is t
 estate diff --from <schema.json | ssdt:… | sql:…> --to <…> [--renames refactor.json] [--fail-on-change]
 ```
 
-`Delta.between`, rendered as Markdown: added, removed, renamed, changed per channel, with
+`Delta.between`, rendered as Markdown: added, dropped, renamed, changed per channel, with
 facets named; `dataLoss` steps listed under a heading the record reuses verbatim; `inverse`
 rendered as the rollback where it exists. `--json` gives the `Delta`. Exit 5 with
 `--fail-on-change` when the delta is non-empty (the drift check in CI).

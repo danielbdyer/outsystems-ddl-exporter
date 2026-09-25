@@ -73,9 +73,9 @@
       "about": "C# in every test project; the corpus under tests/Golden/ is data and has its own budget.",
       "include": ["tests/**/*.cs"],
       "exclude": ["tests/Golden/**"],
-      "ceiling": 10500,
-      "planned": 10200,
-      "plannedByMilestone": { "M0": 700, "M1": 1500, "M2": 1300, "M3": 2300, "M4": 1600, "M5": 1200, "M6": 700, "M7": 900 }
+      "ceiling": 20000,
+      "planned": 20000,
+      "plannedByMilestone": { "M0": 2491, "M1": 5302, "M2": 1984, "M3": 3510, "M4": 2441, "M5": 1831, "M6": 1068, "M7": 1373 }
     },
     "golden": {
       "about": "the corpus under tests/Golden/: data, every file, held as V3_ARCHITECTURE.md section 6.5 sets it; S2 contributes the extracted guards, never whole scripts.",

@@ -26,7 +26,9 @@ Without the session hook, `dotnet run --project cli -- doctor` runs it.
 - The past: `archive/` holds v1 and v2, indexed in `archive/INDEX.md`. It is provenance: cite it as
   archive, and re-verify against the current files before relying on it. It stays readable until
   M8 because v2 is the specification a port reads: a work package that ports names its v2 files,
-  ports their tests first, and is reviewed against them. Editing `archive/` is denied.
+  ports their tests first, and is reviewed against them. Editing `archive/` is denied. The root
+  `.ignore` hides it from search: search it with `rg --no-ignore <pattern> archive/`, or read a file
+  by its path.
 
 ## Building and testing
 

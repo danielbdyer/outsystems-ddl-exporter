@@ -51,3 +51,19 @@
 2026-09-24 · M1's exit 1 is the one exit no session can run, because it needs Dev and a developer's identity; it is carried as S3's run in NEXT.md, and M0 and M1 close together once the operator's settings land and CI is green on the tip · #704
 2026-09-24 · an operator review or intake goes to one interactive Artifact page built by `ci/review/build.js`, its answers read back before acting; `CLAUDE.md`'s budget rises to 30 lines to say so · #704
 2026-09-24 · the register asks for plain technical language, circumstances and background before the point, top-down order, a literal phrase instead of a metaphor, no announcements of what follows, and no reference or test that only restates itself; a register pass over every document and code string precedes M2 · #704
+2026-09-25 · M1 exit 8 admits the one `EXEC` DacFx's `Script` sends as the read-only login, `xp_instance_regread` of DefaultData and DefaultLog; R14 is amended by row 17 of `V3_MILESTONES.md` §4, and S3 asks whether the developers' group may execute it · #704
+2026-09-25 · the tests ceiling rises to 20,000 lines, planned figures re-based on M1's measured lines; io and cli keep their ceilings until a reflow to 140-character lines is measured; each milestone's pull request reports per-file actuals · #704
+2026-09-25 · the exit routing by refusal area stands, and `V3_ARCHITECTURE.md` §8's row 9 now says so; a verb this build lacks exits 6 · #704
+2026-09-25 · a receipt's Target is the fingerprint of the target's schema, and its Delta the fingerprint of the change claimed (for drift the deploy report; for predict and prove the Change from base to head), each claim kind with its own constructor · #704
+2026-09-25 · `Probe.Of` becomes internal to io, so only io's typed builders make a probe for a named environment, and a synonym is refused · #704
+2026-09-25 · from M2, check drift also lists, as notes, the objects a database holds that the tag lacks, from a report-only plan with DropObjectsNotInSource · #704
+2026-09-25 · from M2, check drift's `--at` also takes `dacpac:<the artifact Octopus deployed>` · #704
+2026-09-25 · v2's proof lane stays red on its one failing fact, and the archive is not edited for it · #704
+2026-09-25 · check drift reuses a commit's built dacpac and reads the database once; S3 reports the build, `Script` and `LoadFromDatabase` times · #704
+2026-09-25 · diff and the record say "dropped", as DacFx does; `V3_ARCHITECTURE.md` §8.5 amended · #704
+2026-09-25 · each environment in `estate/posture.json` names its server host, so R15 compares every environment; a `copy:` name must match `estate_<host>_<pid>_<hex>` · #704
+2026-09-25 · whether probes on UAT and Prod read at READ COMMITTED SNAPSHOT or inside a window is decided before M3's profiling, once S8 reports `is_read_committed_snapshot_on` · #704
+2026-09-25 · pull-request review in the estate decides who may mark an environment synthetic · #704
+2026-09-25 · `archive/` stays readable until M8 (row 18 of `V3_MILESTONES.md` §4) and the root `.ignore` hides it from search; the plan's manifest budget rises to its new size · #704
+2026-09-25 · X5 names the DNS lookups R15 makes and git's LFS setting; S6 is answered before M2's developer-facing exit · #704
+2026-09-25 · the operator reviews the kernel and the contract through a standalone explainer, kept out of the repository · #704

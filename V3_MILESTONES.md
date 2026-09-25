@@ -263,6 +263,8 @@ Five consequences, each a line of a later milestone:
 | 14 | The estate's configuration | `estate/posture.json` (the publish posture, the writable targets, the substrate) and two mirrored profiles, `estate/profiles/{strict,permissive}.publish.xml` | `estate/posture.json` keeps its name and holds each environment (classification, cohorts, references, the profile's path, SQLCMD values, the metamodel's reference) and the substrate preference; `estate/profiles/` holds the pipeline's one profile | §1 fact 10: a hand-kept Strict copy had already drifted from the pipeline's | — |
 | 15 | What exit 3 means | blocked: the publish guard refused | blocked by the data: `kind: guard` (the row-presence guard) or `kind: violation` (the engine refused the change on existing rows, such as Msg 547 or Msg 2628); anything else is a tooling failure | the operation catalog already says a foreign key over orphans "blocks"; one code with a kind keeps both honest | — |
 | 16 | The substrate's engine | LocalDB on every machine; Docker optional and never pulled (the lifecycle prompt) | Docker with the SQL Server image pinned by tag and digest (pulled when absent) wherever Docker is installed, including cloud sessions and the gate; LocalDB where it is not | §1 fact 12: the pull works and the container runs CDC, which LocalDB cannot; one engine for laptops, cloud sessions and CI | a machine has no Docker: LocalDB, with CDC reported *not provable here* |
+| 17 | The read-only principal's one `EXEC` | R14: never a write, DDL, `EXEC`, or a `SELECT` that returns row values | the read-only login may run the one `EXEC` that DacFx's own `Script` sends, `master.dbo.xp_instance_regread` of the DefaultData and DefaultLog registry values; M1 exit 8's Extended Events test admits exactly that call and refuses every other `EXEC` | `Script` cannot plan without it, and the two values reach only the script's `:setvar DefaultDataPath` and `DefaultLogPath`, never row data (the operator's ruling, 2026-09-25) | a DacFx release plans without the call, or S3 finds the developers' group cannot execute it |
+| 18 | The archive while v3 is built | X6: `archive/` denied to file reads and hidden from search | `archive/` stays readable until M8, because v2 is the specification a port reads; editing it is denied, and a root `.ignore` hides it from search | ports read v2's files by path (the operator's ruling, 2026-09-25) | M8 moves the archive off `main` |
 
 Everything else in the design documents stands: the thesis (§5), the C# encoding and its toolchain
 (§6.6), the exit codes and the versioned JSON contract, the kernel's purity and the dependency laws,
@@ -300,7 +302,7 @@ where they assumed a feed, a store or the wing:
 | M8 | One tool | use one tool and one set of documents; the archive leaves `main` | — | all of them, generated into `LAWS.md` | the archive's CI | ~0 | Prod's cutover + 30 days | M7 |
 | W | The wing | only if a consumer exists: re-emit from OSSYS; decide; move data | — | 1–5 in their emit forms; oracles 1 and 4 | v2 | §6.6 | on a decision | §17, item 9 |
 
-The C# column sums to about 13,970 against the 14,900 ceiling; tests are budgeted at ≤ 10,500
+The C# column sums to about 13,970 against the 14,900 ceiling; tests are budgeted at ≤ 20,000 (raised from 10,500 when M1 closed)
 (Appendix F). The days assume agents writing against executable exit checks, one independent
 review per pull request, the operator reviewing the kernel and contract pull requests, and four
 lanes running at once. A workflow on a 4-CPU container runs two agents at a time, which stretches
@@ -1027,7 +1029,7 @@ M6 160 · M7 60).
 **Per milestone (code):** M0 1,120 · M1 2,560 · M2 1,880 · M3 4,840 · M4 790 · M5 1,440 · M6 880 ·
 M7 460; about 13,970 in all, against a ceiling of 14,900.
 
-**Tests (ceiling 10,500; planned 10,200):** M0 700 · M1 1,500 · M2 1,300 · M3 2,300 · M4 1,600 ·
+**Tests (ceiling 20,000, raised from 10,500 when M1 closed; measured M0 2,491 · M1 5,302; the rest planned from the original shares):** M2 1,984 · M3 3,510 · M4 2,441 · M5 1,831 · M6 1,068 · M7 1,373. The original plan read M0 700 · M1 1,500 · M2 1,300 · M3 2,300 · M4 1,600 ·
 M5 1,200 · M6 700 · M7 900. The corpus under `tests/Golden/` is data, not code, and is held to
 ≤ 3,000 lines as `V3_ARCHITECTURE.md` §6.5 sets; S2 contributes the extracted guards, not whole
 scripts.
