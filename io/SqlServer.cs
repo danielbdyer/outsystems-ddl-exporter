@@ -18,11 +18,16 @@ using ColumnType = Microsoft.SqlServer.TransactSql.ScriptDom.ColumnType;
 namespace Estate.Io;
 
 /// <summary>
-/// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4): the target grammar; EnvironmentDatabase, the database of an
-/// environment estate/posture.json names, and Copy, a database io/ScratchServer made, which alone publishes (§2.1 rule 3); Model through
+/// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4), and the one adapter to SQL Server and SqlClient: an
+/// argument read as a target (kernel/Target.cs); EnvironmentDatabase, the database of an environment estate/posture.json names, and Copy,
+/// a database io/ScratchServer made, which alone publishes (§2.1 rule 3); Query, the one path for the statements estate sends itself;
+/// Database.ErrorOf, the one boundary every SqlClient or DacFx failure passes through, reading SQL Server's numbers once; Model through
 /// LoadFromDatabase and io/Ssdt.Elements; Plan through DacServices.Script; and Measure, which runs an aggregate query its closed
-/// allowlist admits, every answer an integer. A resolved connection is never printed, logged or put in an error, and a named environment's SQL Server messages
-/// are withheld, since they can quote a row (§18). An error's code names what went wrong; cli/Contract.cs maps its category to the exit.
+/// allowlist admits, every answer an integer. A resolved connection is never printed, logged or put in an error, and a named
+/// environment's SQL Server messages are withheld, since they can quote a row (§18). Objects are keyed by kernel/Name, compared ordinally
+/// with case, so two databases whose collations fold case differently read the same schema alike; estate sets no collation and no SET
+/// option of its own, and DacFx reads each database's own. An error's code names what went wrong; cli/Contract.cs maps its category to
+/// the exit.
 /// </summary>
 public static class SqlServer
 {
@@ -75,7 +80,7 @@ public static class SqlServer
         /// <summary>
         /// What a SQL Server error against this database becomes, by its number (M1 exit 7, X2): a login, a database or a permission
         /// refused is server.denied; no answer is server.unreachable; anything else is server.failed. SQL Server's message is kept only for a
-        /// copy's failed statement, a copy's rows being minted; one about a connection can name the server or the login, and is withheld.
+        /// copy's failed statement, a copy's rows being generated; one about a connection can name the server or the login, and is withheld.
         /// </summary>
         public Error ErrorOf(int number, string message) => ErrorOf(number, message, fatal: false);
 
@@ -472,18 +477,19 @@ public static class SqlServer
     }
 
     /// <summary>
-    /// The one path for a statement estate sends itself (R5): a connection of its own opened (io/ConnectionString.cs), the statement run
-    /// under its timeout, every row of its first result read into the answer, its remaining results read so every error the batch
-    /// raises surfaces, its site and row count or failure written to the run's log, and every failure mapped through
-    /// Database.ErrorOf, the one boundary. A caller that records a statement's own failure as its outcome (Measure) passes
-    /// <paramref name="failed"/>, which receives a failure SQL Server raised on the open connection below severity 20 and the
-    /// command's timeout. A connection is never reused across statements, so a broken pooled connection surfaces as that statement's
-    /// own failure and is mapped once. A statement is logged once the connection opened, since only then was it sent.
+    /// The one path for a statement estate sends itself (R5): a SqlConnection of its own opened (io/ConnectionString.cs), the statement
+    /// run under its timeout, every row of its first result read into the answer, its remaining results read so every error the batch
+    /// raises surfaces, its site and row count or failure written to the run's log, and every failure mapped through Database.ErrorOf,
+    /// the one boundary. A caller that records a statement's own failure as its outcome (Measure) passes <paramref name="failed"/>,
+    /// which receives a failure SQL Server raised on the open connection below severity 20 and the command's timeout. No SqlConnection
+    /// serves two statements, so a pooled connection the server broke fails that statement alone and is mapped once. A statement is
+    /// logged once the connection opened, since only then was it sent, its parameters declared before it, so the log runs as a script.
     /// </summary>
     internal static Result<T> Query<T>(Database target, Statement statement, QueryLog? log, Func<IReadOnlyList<IReadOnlyList<object?>>, T> answer,
         Func<StatementFailure, T>? failed = null)
     {
         var opened = false;
+        var logged = string.Concat(statement.Parameters.Select(p => "DECLARE " + p.Name + " nvarchar(4000) = N'" + p.Value.Replace("'", "''", StringComparison.Ordinal) + "';\n")) + statement.Text;
         try
         {
             using var connection = new SqlConnection(ConnectionString.ForStatement(target.Connection, statement.Catalog, statement.Pooled));
@@ -510,14 +516,14 @@ public static class SqlServer
                 }
             }
 
-            log?.Add(target, statement.Site, statement.Text, rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows");
+            log?.Add(target, statement.Site, logged, rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows");
             return answer(rows);
         }
         catch (Exception e) when (e is InvalidOperationException || Carries(e))
         {
             if (failed is not null && target.FailedStatement(e, opened) is { } statementFailure)
             {
-                log?.Add(target, statement.Site, statement.Text, statementFailure.TimedOut
+                log?.Add(target, statement.Site, logged, statementFailure.TimedOut
                     ? "timed out after " + statement.Timeout.TotalSeconds.ToString(CultureInfo.InvariantCulture) + " s"
                     : "failed, Msg " + statementFailure.Number.ToString(CultureInfo.InvariantCulture));
                 return failed(statementFailure);
@@ -526,7 +532,7 @@ public static class SqlServer
             var error = target.ErrorOf(e, opened);
             if (opened)
             {
-                log?.Add(target, statement.Site, statement.Text, "failed, " + error.Code);
+                log?.Add(target, statement.Site, logged, "failed, " + error.Code);
             }
 
             return error;
@@ -537,12 +543,12 @@ public static class SqlServer
     /// A run's log of every statement estate sends through <see cref="Query{T}"/>, .estate/runs/&lt;id&gt;/queries.log: each aggregate query, the
     /// VIEW DEFINITION check Model and Plan send before DacFx's own catalog queries, which are DacFx's to answer for, and a copy's CREATE
     /// and DROP DATABASE. Per statement: the time, the target, the site and the row count, the failure's number or code, or the timeout,
-    /// then the statement and GO, so the log runs as a script. It holds no value a statement read.
+    /// then the statement and GO, so the log runs as a script. It holds no value a statement read. Each entry is appended and flushed to
+    /// disk as it is made, so a run's statements cost their own bytes once (finding ARCH-08), and a reader following the file sees each.
     /// </summary>
     public sealed class QueryLog
     {
         private readonly Lock gate = new();
-        private readonly StringBuilder entries = new();
 
         private QueryLog(string path) => Path = path;
 
@@ -555,11 +561,14 @@ public static class SqlServer
 
         internal void Add(Database target, string site, string statement, string outcome)
         {
+            var entry = "-- " + DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture) + " " + target.Target + " " + site + ": " + outcome + "\n"
+                + statement + "\nGO\n";
             lock (gate)
             {
-                entries.Append("-- ").Append(DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)).Append(' ').Append(target.Target).Append(' ')
-                    .Append(site).Append(": ").Append(outcome).Append('\n').Append(statement).Append("\nGO\n");
-                Write.Text(Path, entries.ToString());
+                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
+                using var file = new FileStream(Path, FileMode.Append, FileAccess.Write, FileShare.Read);
+                file.Write(new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(entry));
+                file.Flush(flushToDisk: true);
             }
         }
     }

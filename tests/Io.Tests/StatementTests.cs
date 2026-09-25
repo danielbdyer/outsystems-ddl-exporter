@@ -127,6 +127,30 @@ public sealed class StatementTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// Finding ARCH-08: each entry is appended to the log, where the whole log was written again and replaced for each statement, so a
+    /// run of N statements wrote bytes in proportion to N². A reader that holds the log open, as a person following a run does, reads
+    /// each entry as it is added; a log replaced whole leaves that reader on the old file on Linux and cannot be replaced under it on
+    /// Windows.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Each_entry_is_appended_to_the_log_a_reader_holds_open()
+    {
+        var log = SqlServer.QueryLog.Start(root);
+        var copy = new SqlServer.Copy(CopyName.Make("host", 1, 1), "Server=127.0.0.1,11433;User ID=sa", root);
+        log.Add(copy, "first", "SELECT 1;", "1 row");
+        using var reader = new StreamReader(new FileStream(log.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete));
+        var first = reader.ReadToEnd();
+
+        log.Add(copy, "second", "SELECT 2;", "1 row");
+        var second = reader.ReadToEnd();
+
+        Assert.Equal(["first"], Entries(first).Select(e => e.Site));
+        Assert.Equal(["second"], Entries(second).Select(e => e.Site));
+        Assert.Equal(first + second, File.ReadAllText(log.Path));
+    }
+
     /// <summary>queries.log as entries: a header line naming the target, the site and the outcome, the statement, then GO.</summary>
     private static (string Target, string Site, string Outcome)[] Entries(string log) =>
         [.. Regex.Matches(log, @"^-- \S+ (?<target>\S+) (?<site>.+): (?<outcome>[^\n]+)\n(?:(?!GO\n).*\n)+?GO\n", RegexOptions.Multiline | RegexOptions.CultureInvariant)

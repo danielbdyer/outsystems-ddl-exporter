@@ -21,8 +21,8 @@ namespace Estate.Io;
 /// ESTATE_SQL names, else the estate-sql container through ~/.estate/sql.env, else LocalDB, chosen inside io, so no caller holds its
 /// login or makes a copy anywhere else; Create, which names a copy for this host and process, records it and its server in
 /// .estate/copies.json and makes its database; Drop, which removes both; and the registry, against which alone copy: resolves, on the
-/// server its row records. A scratch server on a host an environment's reference resolves to, by spelling or by address, is refused before
-/// anything connects (R15).
+/// server its row records. A scratch server on the host an environment names in estate/posture.json, by spelling or by address, is
+/// refused before anything connects (R15). Its CREATE and DROP DATABASE go through io/SqlServer.Query, the one statement path.
 /// </summary>
 public static class ScratchServer
 {
