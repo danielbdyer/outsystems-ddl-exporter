@@ -276,7 +276,7 @@ public static class SqlServer
     {
         private static readonly XNamespace Dac = "http://schemas.microsoft.com/sqlserver/dac/DeployReport/2012/02";
 
-        /// <summary>The report's operations; none is convergence (§1 fact 4).</summary>
+        /// <summary>The report's operations; none is the empty deploy plan, a database that matches the package (§1 fact 4).</summary>
         public int Operations => XDocument.Parse(Report).Descendants(Dac + "Operation").Count();
 
         /// <summary>Each object the report names, by the operation on it (Alter, Create, Drop, TableRebuild), its type as the model serializes it (SqlTable) and its name.</summary>

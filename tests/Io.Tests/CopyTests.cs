@@ -88,7 +88,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
         }
     }
 
-    /// <summary>§1 fact 4 through io: the convergence oracle is an empty plan under the pipeline's profile; the make-mandatory head's plan against the same copy is one Alter, its guard in the script.</summary>
+    /// <summary>§1 fact 4 through io: a copy matches its package when the deploy plan under the pipeline's profile is empty; the make-mandatory head's plan against the same copy is one Alter, its guard in the script.</summary>
     [Fact]
     [Trait("Category", "fixture")]
     [Trait("Law", "3′ the read is complete")]

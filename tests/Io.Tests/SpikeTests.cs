@@ -64,7 +64,7 @@ public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProje
 
     [Fact]
     [Trait("Category", "fixture")]
-    public void Fact_4_the_deploy_report_of_a_converged_copy_has_no_operations()
+    public void Fact_4_the_deploy_report_of_a_copy_that_matches_its_package_has_no_operations()
     {
         var (_, report) = ground.Plan(ground.Base);
 

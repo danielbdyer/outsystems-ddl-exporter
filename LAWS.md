@@ -6,7 +6,7 @@ Whether each is green is the CI run's to say. A law without a green test is not 
 
 | Law | The test, in English | The test |
 |---|---|---|
-| 2′ a published copy converges | A published copy converges and one column altered on it is exit 5 naming it | `Estate.Io.Tests.DriftTests.A_published_copy_converges_and_one_column_altered_on_it_is_exit_5_naming_it` |
+| 2′ a published copy matches its package | A published copy matches its package and one column altered on it is exit 5 naming it | `Estate.Io.Tests.DriftTests.A_published_copy_matches_its_package_and_one_column_altered_on_it_is_exit_5_naming_it` |
 | 3′ the read is complete | One database read twice by one identity fingerprints equally | `Estate.Io.Tests.AggregateQueryTests.One_database_read_twice_by_one_identity_fingerprints_equally` |
 | 3′ the read is complete | A copy published from a package models to the package's keys and two copies of it to one fingerprint | `Estate.Io.Tests.CopyTests.A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint` |
 | 3′ the read is complete | The plan of a package against its own published copy is empty and of the make mandatory head is not | `Estate.Io.Tests.CopyTests.The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not` |

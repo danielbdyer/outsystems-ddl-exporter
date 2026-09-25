@@ -31,7 +31,7 @@ public sealed class Laws
         Assert.Contains("| 3′ the read is complete | The fingerprint of a model is independent of the order its elements are given in | `Estate.Kernel.Tests.ElementTests.The_fingerprint_of_a_model_is_independent_of_the_order_its_elements_are_given_in` |", text, StringComparison.Ordinal);
         Assert.Contains("| the kernel cannot do I/O | ", text, StringComparison.Ordinal);
         Assert.Contains("| dependencies point one way | ", text, StringComparison.Ordinal);
-        Assert.Contains("| 2′ a published copy converges | ", text, StringComparison.Ordinal);
+        Assert.Contains("| 2′ a published copy matches its package | ", text, StringComparison.Ordinal);
     }
 
     /// <summary>Each generator this machine can run: ci/laws.ps1 through pwsh, and ci/laws.sh through bash (on Windows, Git's own bash, never another on the PATH).</summary>

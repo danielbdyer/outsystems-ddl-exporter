@@ -67,7 +67,7 @@ public static partial class Verbs
         var receipt = new Receipt(Fingerprint.Of(planned.Model.Elements), Fingerprint.Of(planned.Plan.Report), null, stamp.Engine, drift.Profile.Fingerprint, drift.Target.ToString(),
             DateTimeOffset.UtcNow);
         var items = planned.Plan.Items;
-        return Contract.Answer(verb.Output, items.Count == 0 ? "converged" : "differs",
+        return Contract.Answer(verb.Output, items.Count == 0 ? "matches" : "differs",
             drift.Target + (items.Count == 0 ? " matches " + at : " differs from " + at + " in each object below."),
             [
                 .. items.Select(i => new Finding("drift." + i.Operation.ToLowerInvariant(), "warning", Named(i.Type) + " " + i.Name,

@@ -22,7 +22,7 @@
         { "files": ["Change.cs"], "what": "the deploy scripts and refactorlog included", "lines": 280, "milestones": ["M1"] },
         { "files": ["NamedEnvironment.cs"], "what": "classification and its confirmation", "lines": 160, "milestones": ["M1"] },
         { "files": ["Claims.cs"], "what": "claims, Branch, baseline drift", "lines": 320, "milestones": ["M2"] },
-        { "files": ["Outcome.cs"], "what": "predict, prove, transfer, converged", "lines": 320, "milestones": ["M2", "M4"] },
+        { "files": ["Outcome.cs"], "what": "predict, prove, transfer, matches", "lines": 320, "milestones": ["M2", "M4"] },
         { "files": ["Classify.cs"], "what": "renames of three kinds, shapes from recognize:", "lines": 450, "milestones": ["M2"] },
         { "files": ["Schema.cs"], "what": null, "lines": 520, "milestones": ["M3"] },
         { "files": ["Order.cs"], "what": null, "lines": 180, "milestones": ["M3"] },

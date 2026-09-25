@@ -64,11 +64,11 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         }
     }
 
-    /// <summary>Law 2′ (M1 exit 3): the golden project published to a fresh copy converges, check drift exit 0; one column altered on the copy is exit 5 naming its table and the column.</summary>
+    /// <summary>Law 2′ (M1 exit 3): the golden project published to a fresh copy matches it, check drift exit 0; one column altered on the copy is exit 5 naming its table and the column.</summary>
     [Fact]
     [Trait("Category", "fixture")]
-    [Trait("Law", "2′ a published copy converges")]
-    public async Task A_published_copy_converges_and_one_column_altered_on_it_is_exit_5_naming_it()
+    [Trait("Law", "2′ a published copy matches its package")]
+    public async Task A_published_copy_matches_its_package_and_one_column_altered_on_it_is_exit_5_naming_it()
     {
         var copy = await Published();
         try
@@ -107,7 +107,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
 
             var answer = JsonNode.Parse(output)!;
             ScratchEstate.Valid("estate.check.1.schema.json", answer);
-            Assert.Equal(0, exit);
+            Assert.Equal((0, "matches"), (exit, (string?)answer["verdict"]!["outcome"]));
             var receipt = answer["receipt"]!;
             var container = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ESTATE_SQL")) && File.Exists(ScratchServer.SqlEnv);
             Assert.Equal(("170.5.96", container ? Doctor.ImageDigest : null, "UNPINNED"),
