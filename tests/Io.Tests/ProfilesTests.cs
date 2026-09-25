@@ -156,6 +156,30 @@ public sealed class ProfilesTests : IDisposable
         Assert.Equal("Strict: " + Pipeline, strict.ToString());
     }
 
+    /// <summary>
+    /// A receipt's profile input is the fingerprint of the profile as kept, and §3's transfer compares two receipts' profiles for
+    /// equality, so a receipt written on Windows and one written on Linux must agree. The Windows and the Ubuntu CI jobs both run this
+    /// test against the one constant; XDocument.Save's defaults had written CRLF and a byte-order mark on Windows and LF on Linux.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_pipeline_profile_fingerprints_to_one_committed_value_on_every_operating_system() =>
+        Assert.Equal("a59812bcb859aac82a849eac1abbc76effe192735025192850dd05b4792a628f", Made(Profiles.Load(Pipeline)).Fingerprint.ToString());
+
+    /// <summary>A profile fingerprints by its content: the file saved with CRLF and a byte-order mark, as Visual Studio on Windows can save it, and saved with LF alone fingerprint alike.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_profile_saved_with_CRLF_and_a_byte_order_mark_fingerprints_as_the_same_profile_saved_with_LF()
+    {
+        var text = File.ReadAllText(Pipeline).ReplaceLineEndings("\n");
+        var (lf, crlf) = (Path.Combine(scratch, "lf.publish.xml"), Path.Combine(scratch, "crlf.publish.xml"));
+        File.WriteAllText(lf, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        File.WriteAllText(crlf, text.ReplaceLineEndings("\r\n"), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+        Assert.Equal(Made(Profiles.Load(lf)).Fingerprint, Made(Profiles.Load(crlf)).Fingerprint);
+        Assert.Equal(Made(Profiles.Load(Pipeline)).Fingerprint, Made(Profiles.Load(crlf)).Fingerprint);
+    }
+
     /// <summary>§1 fact 10: a profile contributes its deploy options and SQLCMD values; its target is removed at load, and nothing the profile object holds or prints names it.</summary>
     [Fact]
     [Trait("Category", "fast")]

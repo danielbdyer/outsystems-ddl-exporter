@@ -126,6 +126,11 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
     {
         await using var database = await SqlServerFixture.RegisterAsync();
         File.WriteAllText(Path.Combine(root, "dev.connection"), database.ConnectionString);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(Path.Combine(root, "dev.connection"), UnixFileMode.UserRead | UnixFileMode.UserWrite);   // io/SqlServer refuses a connection file others can read
+        }
+
         File.WriteAllText(Path.Combine(root, "estate", "posture.json"),
             "{ \"environments\": { \"dev\": { \"connection\": \"file:dev.connection\", \"profile\": \"estate/profiles/pipeline.publish.xml\" } } }");
         var dacpac = Path.Combine(root, "vnext.dacpac");

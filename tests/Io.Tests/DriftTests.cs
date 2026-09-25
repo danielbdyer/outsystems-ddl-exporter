@@ -136,6 +136,10 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             DataSource = server.DataSource, InitialCatalog = "master", UserID = "estate_nobody_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(4)), Password = "Denied1!planted",
             TrustServerCertificate = true, Pooling = false,
         }.ConnectionString);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(connection, UnixFileMode.UserRead | UnixFileMode.UserWrite);   // io/SqlServer refuses a connection file others can read
+        }
 
         var (exit, output) = estate.EstateAt(estate.Named(("uat", connection)), "check", "drift", "--target", "env:uat", "--at", estate.Base);
 

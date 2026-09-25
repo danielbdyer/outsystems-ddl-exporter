@@ -168,6 +168,48 @@ public sealed class GitTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(scratch.Root, ".estate", "worktrees")) && Directory.EnumerateDirectories(Path.Combine(scratch.Root, ".estate", "worktrees")).Any());
     }
 
+    /// <summary>
+    /// io/Git reads git's English "not a git repository (or any ...)" to tell a folder in no repository from a failed search, so git
+    /// runs with LC_ALL=C, and without LANGUAGE and LC_MESSAGES, which GNU gettext would otherwise read to choose a translation. A
+    /// stand-in for git prints the environment it is given to its error stream and exits 2, so HoldingOf refuses as git.failed and
+    /// quotes that environment: LC_ALL=C is in it, and LANGUAGE and LC_MESSAGES, set in this process, are not.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Git_runs_with_LC_ALL_C_and_without_the_callers_LANGUAGE_and_LC_MESSAGES()
+    {
+        var git = Path.Combine(scratch.Root, OperatingSystem.IsWindows() ? "git-environment.cmd" : "git-environment.sh");
+        if (OperatingSystem.IsWindows())
+        {
+            File.WriteAllText(git, "@set 1>&2\r\n@exit /b 2\r\n");
+        }
+        else
+        {
+            File.WriteAllText(git, "#!/bin/sh\nenv >&2\nexit 2\n");
+            File.SetUnixFileMode(git, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        var asked = (Language: Environment.GetEnvironmentVariable("LANGUAGE"), Messages: Environment.GetEnvironmentVariable("LC_MESSAGES"));
+        Environment.SetEnvironmentVariable("LANGUAGE", "de");
+        Environment.SetEnvironmentVariable("LC_MESSAGES", "de_DE.UTF-8");
+        Refusal refusal;
+        try
+        {
+            refusal = Refused(Git.HoldingOf(scratch.Root, Path.Combine(scratch.Root, "dev.connection"), git));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("LANGUAGE", asked.Language);
+            Environment.SetEnvironmentVariable("LC_MESSAGES", asked.Messages);
+        }
+
+        Assert.Equal("git.failed", refusal.Code);
+        Assert.StartsWith("git rev-parse failed: ", refusal.Message, StringComparison.Ordinal);
+        var variables = refusal.Message["git rev-parse failed: ".Length..].Split('\n').Select(line => line.Trim()).ToList();
+        Assert.Contains("LC_ALL=C", variables);
+        Assert.DoesNotContain(variables, line => line.StartsWith("LANGUAGE=", StringComparison.OrdinalIgnoreCase) || line.StartsWith("LC_MESSAGES=", StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>The id of a process that has exited, as an estate's has once it ends.</summary>
     private static int Exited()
     {

@@ -68,6 +68,11 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
             + "Pa55!planted#7f3a''; CREATE USER ' + QUOTENAME(@name) + N' FOR LOGIN ' + QUOTENAME(@name) + N';'; EXEC (@sql);", login);
         var connection = Path.Combine(Path.GetDirectoryName(estate.Root)!, database.Name + ".connection");
         File.WriteAllText(connection, database.ConnectionString);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(connection, UnixFileMode.UserRead | UnixFileMode.UserWrite);   // io/SqlServer refuses a connection file others can read
+        }
+
         try
         {
             var (exit, output) = estate.EstateAt(estate.Named(("uat", connection)), "read", "--from", "env:uat", "--json");

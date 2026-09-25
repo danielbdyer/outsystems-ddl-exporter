@@ -68,6 +68,58 @@ public static class Git
         Step(git, root, ["diff-tree", "-r", "-z", "--name-only", "--no-commit-id", from, to]).Map<IReadOnlyList<string>>(paths => paths.Split('\0', StringSplitOptions.RemoveEmptyEntries).Order(StringComparer.Ordinal).ToList()))));
 
     /// <summary>
+    /// How git holds the file a file: reference names, which must stay out of every commit, since a commit reaches every clone:
+    /// Tracked, committed already; NotIgnored, so the next git add commits it; Ignored; or InNoRepository. EstateInNoRepository when
+    /// the estate's root is in no git repository, where git cannot say what the estate's clones would commit.
+    /// </summary>
+    public enum Holding
+    {
+        Tracked,
+        NotIgnored,
+        Ignored,
+        InNoRepository,
+        EstateInNoRepository,
+    }
+
+    /// <summary>
+    /// How git holds an existing <paramref name="file"/>, asked in the file's own folder, so the repository is the one git finds there
+    /// (the estate's, another, or none), and by the name the caller gives, which io/SqlServer takes from the folder's listing
+    /// (SqlServer.Listed), since git never sees another spelling Windows opens. A tracked file is Tracked whatever .gitignore lists. Where the file system opens a file
+    /// whatever the case of its name (Windows, macOS, or core.ignorecase true), git's index is searched for the name without case, as
+    /// .gitignore already is, so estate/Dev.connection finds a tracked estate/dev.connection. InNoRepository and EstateInNoRepository
+    /// come only from git's own "not a git repository" at the end of its search; any other failure of the search is git.failed, and
+    /// the file is not read.
+    /// </summary>
+    public static Result<Holding> HoldingOf(string estateRoot, string file, string git = "git")
+    {
+        var (folder, name) = (Path.GetDirectoryName(Path.GetFullPath(file))!, Path.GetFileName(file));
+        return Searched(git, estateRoot).Bind(estate => !estate ? Result.Ok(Holding.EstateInNoRepository) : Searched(git, folder).Bind(found => !found ? Result.Ok(Holding.InNoRepository)
+            : Step(git, folder, ["ls-files", "--", (CaseBlind(git, folder) ? ":(literal,icase)" : ":(literal)") + name]).Bind<Holding>(listed => listed.Length > 0 ? Holding.Tracked
+                : Run(git, folder, ["check-ignore", "--quiet", "--", name]) switch
+                {
+                    (0, _, _) => Holding.Ignored,
+                    (1, _, _) => Holding.NotIgnored,
+                    (_, _, var errors) => Failed("check-ignore", errors),
+                })));
+    }
+
+    /// <summary>
+    /// Whether git's search upward from the folder finds a repository: false only when git ends the search with "not a git repository
+    /// (or any ...)"; a search git refuses for another reason, such as a .git file naming no repository or one it does not trust, is git.failed.
+    /// </summary>
+    private static Result<bool> Searched(string git, string folder) => Run(git, folder, ["rev-parse", "--show-toplevel"]) switch
+    {
+        (0, _, _) => true,
+        (-1, _, _) => Missing(git),
+        (_, _, var errors) when errors.Contains("not a git repository (or any ", StringComparison.Ordinal) => false,
+        (_, _, var errors) => Failed("rev-parse", errors),
+    };
+
+    /// <summary>Whether the file system opens a file in the folder whatever the case of its name: on Windows and macOS, and wherever git's core.ignorecase is true.</summary>
+    private static bool CaseBlind(string git, string folder) => OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+        || Run(git, folder, ["config", "--bool", "core.ignorecase"]) is (0, var value, _) && value.Trim() == "true";
+
+    /// <summary>
     /// A new branch holding one commit on HEAD, of HEAD's tree with the paths (from the repository's root) as the working tree
     /// has them, pushed to the origin. The caller's branch, index and working tree stay as they were; a branch that exists
     /// here or at the origin is refused before anything is written, and a push that fails leaves no branch behind.
@@ -148,13 +200,16 @@ public static class Git
     private static Result<string> Root(string git, string repository) => Run(git, repository, ["rev-parse", "--show-toplevel"]) switch
     {
         (0, var root, _) => Path.GetFullPath(root.Trim()),
-        (-1, _, _) => new Refusal("git.missing", "git does not run here: '" + git + "' is not installed or not on the PATH.", "install git and put it on the PATH; then estate doctor"),
+        (-1, _, _) => Missing(git),
         (_, _, var errors) => new Refusal("git.not-a-repository", repository + " is not in a git repository: " + errors.Trim(), "run estate in a clone of the repository, or name the clone's folder"),
     };
 
     private static Result<string> Resolve(string git, string root, string reference) => Run(git, root, ["rev-parse", "--verify", "--quiet", "--end-of-options", reference + "^{commit}"]) is (0, var commit, _)
         ? commit.Trim()
         : new Refusal("ref.unresolved", "'" + reference + "' names no commit in " + root + ".", "name a branch, tag or commit the repository holds; git fetch brings the origin's");
+
+    private static Refusal Missing(string git) =>
+        new Refusal("git.missing", "git does not run here: '" + git + "' is not installed or not on the PATH.", "install git and put it on the PATH; then estate doctor");
 
     private static Refusal Unreachable(string command, string errors) => new Refusal(
         "origin.unreachable", "git " + command + " to the origin failed, and nothing was committed: " + errors.Trim(),
@@ -171,7 +226,9 @@ public static class Git
 
     /// <summary>
     /// The git program -C the directory, as the caller: its exit (-1 when it does not start), output, and errors less any credential
-    /// in a URL. The caller's GIT_DIR and index never reach it, it never prompts on the terminal, and LFS pointers stay unfetched.
+    /// in a URL. The caller's GIT_DIR, index and GIT_CEILING_DIRECTORIES never reach it, its search for a repository crosses file
+    /// systems, its messages are in English (LC_ALL=C, and neither LANGUAGE nor LC_MESSAGES, which choose a translation), which
+    /// Searched reads, it never prompts on the terminal, and LFS pointers stay unfetched.
     /// </summary>
     private static (int Exit, string Output, string Errors) Run(string git, string directory, IReadOnlyList<string> arguments, string? index = null)
     {
@@ -179,12 +236,13 @@ public static class Git
         {
             RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
         };
-        foreach (var variable in (string[])["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"])
+        foreach (var variable in (string[])["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES", "LANGUAGE", "LC_MESSAGES"])
         {
             start.Environment.Remove(variable);
         }
 
         (start.Environment["GIT_TERMINAL_PROMPT"], start.Environment["GIT_LFS_SKIP_SMUDGE"]) = ("0", "1");
+        (start.Environment["GIT_DISCOVERY_ACROSS_FILESYSTEM"], start.Environment["LC_ALL"]) = ("1", "C");
         if (index is not null)
         {
             start.Environment["GIT_INDEX_FILE"] = index;

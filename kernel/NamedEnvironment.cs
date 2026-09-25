@@ -65,7 +65,8 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 }
 
 /// <summary>
-/// Where a value the repository must never hold lives: an environment variable (env:NAME) or a file outside git (file:path). It holds
+/// Where a value the repository must never hold lives: an environment variable (env:NAME) or a file outside git (file:path), which
+/// io/SqlServer reads only when git ignores it or it is in no repository, and, on Linux and macOS, when its owner alone can read it. It holds
 /// and prints the reference, never the value, which io resolves where it connects; anything else, a connection string or a password,
 /// file: before it or not, is refused unquoted, since a path holds no '=' or ';'. A class, as Refusal is: a struct's default would
 /// be a reference to nothing.

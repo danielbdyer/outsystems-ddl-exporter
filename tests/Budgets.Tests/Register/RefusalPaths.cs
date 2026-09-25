@@ -180,7 +180,51 @@ internal static class RefusalPaths
         new("a connection whose variable is unset", "connection.unresolved", false, (scratch, _) =>
             Refused(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: "env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant())))))),
         new("a connection file holding no connection string", "connection.malformed", true, (scratch, planted) =>
-            Refused(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "garbled " + planted))))))),
+            Refused(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "garbled " + planted)))))))),
+        new("a connection file git tracks", "reference.tracked", true, (scratch, planted) => InRepository(scratch, root =>
+        {
+            Written(root, "estate/posture.json", Environments(Dev(connection: "file:estate/dev.connection")));
+            OwnerOnly(Written(root, "estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
+            Arrange(root, "add", "--", "estate/dev.connection");
+            Arrange(root, "commit", "-q", "-m", "the connection file");
+            return SqlServer.Resolve(Target("env:dev"), root);
+        })),
+        new("a connection file git does not ignore", "reference.not-ignored", true, (scratch, planted) => InRepository(scratch, root =>
+        {
+            Written(root, "estate/posture.json", Environments(Dev(connection: "file:estate/dev.connection")));
+            OwnerOnly(Written(root, "estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
+            return SqlServer.Resolve(Target("env:dev"), root);
+        })),
+        new("a connection file named by a spelling its folder does not list", "reference.unlisted", OperatingSystem.IsWindows(), (scratch, planted) => InRepository(scratch, root =>
+        {
+            Written(root, ".gitignore", ".estate/\n");
+            Written(root, "estate/posture.json", Environments(Dev(connection: "file:.estate/dev.connection::$DATA")));
+            var file = OwnerOnly(Written(root, ".estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
+            return OperatingSystem.IsWindows()   // Windows opens the default data stream as name::$DATA; elsewhere that name opens no file, and the driver asks io/SqlServer of it directly
+                ? SqlServer.Resolve(Target("env:dev"), root).Map(database => database.Where)
+                : SqlServer.Listed("env:dev's connection, file:.estate/dev.connection::$DATA,", file + "::$DATA");
+        })),
+        new("a connection file in a folder this identity cannot list", "reference.unlistable", true, (scratch, planted) =>
+        {
+            var root = Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "locked/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
+            return Denied(Path.Combine(scratch, "locked"), () => Refused(SqlServer.Resolve(Target("env:dev"), root)));
+        }),
+        new("a connection file this identity cannot read", "reference.unreadable", true, (scratch, planted) =>
+        {
+            var root = Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
+            return Denied(Path.Combine(scratch, "dev.connection"), () => Refused(SqlServer.Resolve(Target("env:dev"), root)));
+        }),
+        new("a connection file whose attributes this identity cannot read", "reference.inaccessible", true, (scratch, planted) =>
+        {
+            var root = Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "locked/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
+            return Unexaminable(Path.Combine(scratch, "locked", "dev.connection"), () => Refused(SqlServer.Resolve(Target("env:dev"), root)));
+        }),
+        new("a connection file of an estate in no git repository", "reference.no-repository", true, (scratch, planted) =>
+            Refused(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Password=" + planted))))))),
+        new("a connection file its group can read, where files carry a Unix mode", "reference.readable-by-others", !OperatingSystem.IsWindows(), (scratch, planted) => OperatingSystem.IsWindows()
+            ? SqlServer.ReadableByOthers("env:dev's connection, file:.estate/dev.connection,", (UnixFileMode)0b110_100_000) ?? throw new InvalidOperationException("mode 0640 was not refused")
+            : Refused(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection:
+                GroupReadable(Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted))))))))),
         new("a copy the registry does not hold", "copy.unregistered", false, (scratch, _) => Refused(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch))),
         new("a copy registry that is not JSON", "registry.unreadable", true, (scratch, planted) =>
         {
@@ -189,9 +233,9 @@ internal static class RefusalPaths
             return Refused(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch));
         }),
         new("a copy made on the host an environment's reference names", "copy.named-host", true, (scratch, planted) => Refused(SqlServer.Resolve(Target("copy:" + Copied),
-            Registered(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted)))))))),
+            Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted))))))))),
         new("a copy beside an environment whose connection SqlClient cannot read", "connection.malformed", true, (scratch, planted) => Refused(SqlServer.Resolve(Target("copy:" + Copied),
-            Registered(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Nonsense " + planted + " = 1")))))))),
+            Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Nonsense " + planted + " = 1"))))))))),
         new("no substrate server anywhere", "substrate.missing", false, (scratch, _) => Refused(Substrate.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
         new("a substrate server SqlClient cannot read", "substrate.missing", true, (scratch, planted) =>
             Refused(Substrate.ServerName("Server=db;Password=" + planted + ";Nonsense " + planted + " = 1", Path.Combine(scratch, "no-sql.env"), localDb: false))),
@@ -210,12 +254,24 @@ internal static class RefusalPaths
             Refused(SqlServer.Probe.Of("SELECT MAX(Email) FROM dbo.Customer WHERE Name = N'" + planted + "';", "dbo.Customer.Email Fits"))),
         new("a SQLCMD reference that does not resolve", "sqlcmd.unresolved", false, (scratch, _) =>
         {
-            var root = Estate(scratch, Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\" }",
-                connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev"))));
+            var root = Initialized(Estate(scratch, Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\" }",
+                connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev")))));
             File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
             var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
             return Refused(SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.Named)dev).Environment, root))));
         }),
+        new("a SQLCMD reference to a file git tracks", "reference.tracked", true, (scratch, planted) => InRepository(scratch, root =>
+        {
+            Written(root, "estate/posture.json", Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"file:estate/token.txt\" }",
+                connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev"))));
+            OwnerOnly(Written(root, "estate/token.txt", planted));
+            Arrange(root, "add", "--", "estate/token.txt");
+            Arrange(root, "commit", "-q", "-m", "the token");
+            Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
+            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "proving-ground", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
+            var dev = Made(SqlServer.Resolve(Target("env:dev"), root));
+            return SqlServer.Plan(Path.Combine(scratch, "none.dacpac"), dev, Made(Profiles.Of(((SqlServer.Named)dev).Environment, root)));
+        })),
 
         new("a flag the verb does not take", "arguments.unknown-flag", false, (_, _) => Refused(Contract.Flags(["--no-such-flag"], [], [], []))),
         new("a required flag absent", "arguments.missing-flag", false, (_, _) => Refused(Contract.Flags([], ["--from"], [], []))),
@@ -238,10 +294,130 @@ internal static class RefusalPaths
 
     /// <summary>The named environment dev, its connection a file under the scratch folder naming a server that is never reached.</summary>
     private static SqlServer.Database DevDatabase(string scratch) =>
-        Made(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev"))))));
+        Made(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev")))))));
 
-    /// <summary>A file: reference to a file written under the scratch folder, its path with '/' so the posture's JSON carries it as it is.</summary>
-    private static string Reference(string scratch, string file, string text) => "file:" + Written(scratch, file, text).Replace('\\', '/');
+    /// <summary>
+    /// A file: reference to a file written under the scratch folder, outside the estate's root and in no git repository, and read by its
+    /// owner alone; its path with '/' so the posture's JSON carries it as it is.
+    /// </summary>
+    private static string Reference(string scratch, string file, string text) => "file:" + OwnerOnly(Written(scratch, file, text)).Replace('\\', '/');
+
+    /// <summary>On Linux and macOS, the file's mode set to 0600, as io/SqlServer reads a connection file; Windows keeps no such mode.</summary>
+    private static string OwnerOnly(string file)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        return file;
+    }
+
+    /// <summary>
+    /// What <paramref name="use"/> returns while this identity may not list the folder, or read the file, at <paramref name="path"/>:
+    /// on Windows a deny entry for RD (FILE_LIST_DIRECTORY on a folder, FILE_READ_DATA on a file) in its ACL, made and removed by
+    /// icacls; on Linux and macOS mode 0300 for a folder and 0200 for a file, then 0700 or 0600 again. The denial is undone
+    /// however use ends, so the scratch folder deletes.
+    /// </summary>
+    internal static T Denied<T>(string path, Func<T> use)
+    {
+        var (full, folder) = (Path.GetFullPath(path), Directory.Exists(path));
+        var identity = Environment.UserDomainName + "\\" + Environment.UserName;
+        var execute = folder ? UnixFileMode.UserExecute : UnixFileMode.None;
+        if (OperatingSystem.IsWindows())
+        {
+            Icacls(full, "/deny", identity + ":(RD)");
+        }
+        else
+        {
+            File.SetUnixFileMode(full, UnixFileMode.UserWrite | execute);
+        }
+
+        try
+        {
+            return use();
+        }
+        finally
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Icacls(full, "/remove:d", identity);
+            }
+            else
+            {
+                File.SetUnixFileMode(full, UnixFileMode.UserRead | UnixFileMode.UserWrite | execute);
+            }
+        }
+    }
+
+    /// <summary>
+    /// What <paramref name="use"/> returns while this identity may not read the attributes of <paramref name="file"/>, so File.Exists
+    /// answers false for it, as it does where no file is: on Windows a deny entry for RA (FILE_READ_ATTRIBUTES) on the file and one
+    /// for RD (FILE_LIST_DIRECTORY) on its folder, since the right to list the folder also grants its files' attributes; on Linux and
+    /// macOS mode 0600 on the folder, which withholds the search that stat needs, then 0700 again. The denial is undone however use
+    /// ends, so the scratch folder deletes.
+    /// </summary>
+    internal static T Unexaminable<T>(string file, Func<T> use)
+    {
+        var full = Path.GetFullPath(file);
+        var folder = Path.GetDirectoryName(full)!;
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            try
+            {
+                return use();
+            }
+            finally
+            {
+                File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+        }
+
+        var identity = Environment.UserDomainName + "\\" + Environment.UserName;
+        Icacls(full, "/deny", identity + ":(RA)");
+        try
+        {
+            return Denied(folder, use);
+        }
+        finally
+        {
+            Icacls(full, "/remove:d", identity);
+        }
+    }
+
+    private static void Icacls(params string[] arguments)
+    {
+        using var icacls = Process.Start(new ProcessStartInfo("icacls", arguments) { RedirectStandardOutput = true, RedirectStandardError = true })!;
+        var errors = icacls.StandardError.ReadToEndAsync();
+        var output = icacls.StandardOutput.ReadToEnd();
+        icacls.WaitForExit();
+        if (icacls.ExitCode != 0)
+        {
+            throw new InvalidOperationException("icacls " + string.Join(' ', arguments) + " exited " + icacls.ExitCode + ": " + output + errors.Result);
+        }
+    }
+
+    /// <summary>
+    /// On Linux and macOS, the mode of the file a file: reference names set to 0640, so its group can read it; the reference as given.
+    /// Windows keeps no such mode, and there the driver asks io/SqlServer of the mode directly.
+    /// </summary>
+    private static string GroupReadable(string reference)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(reference["file:".Length..], UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
+        }
+
+        return reference;
+    }
+
+    /// <summary>The estate's root made a git repository, as a clone is, so io/SqlServer can ask git whether it would commit a file: reference's file.</summary>
+    private static string Initialized(string root)
+    {
+        Arrange(root, "init", "-q");
+        return root;
+    }
 
     /// <summary>Each refusal code the kernel, io and the cli construct, as their sources write it: a literal code, or the literal start of a composed one (element.).</summary>
     public static IEnumerable<string> InTheSources() => Repository.Files

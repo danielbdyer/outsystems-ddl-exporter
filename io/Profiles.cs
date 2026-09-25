@@ -34,6 +34,15 @@ public static class Profiles
     /// <summary>A key a message may name as it stands; any other is named by its place among its siblings.</summary>
     private static readonly Regex Nameable = new(@"\A[A-Za-z0-9_-]{1,64}\z", RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// How a profile is kept, and so fingerprinted: UTF-8 with no byte-order mark, LF line ends, two-space indent. XDocument.Save's
+    /// defaults follow Environment.NewLine and write a byte-order mark, so one profile kept on Windows and on Linux hashed apart.
+    /// </summary>
+    private static readonly XmlWriterSettings Kept = new()
+    {
+        Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), Indent = true, NewLineChars = "\n", NewLineHandling = NewLineHandling.Replace,
+    };
+
     /// <summary>The estate's root: the nearest directory at or above <paramref name="workingDirectory"/> holding estate/posture.json, else the working directory.</summary>
     public static string Root(string workingDirectory)
     {
@@ -103,7 +112,11 @@ public static class Profiles
 
         profile.Descendants().Where(e => e.Name.LocalName is "TargetConnectionString" or "TargetDatabaseName").Remove();
         using var kept = new MemoryStream();
-        profile.Save(kept);
+        using (var writer = XmlWriter.Create(kept, Kept))
+        {
+            profile.Save(writer);
+        }
+
         try
         {
             var options = DacProfile.Load(new MemoryStream(kept.ToArray(), writable: false)).DeployOptions;
@@ -242,7 +255,7 @@ public abstract class PublishProfile
     /// <summary>The profile's own SQLCMD values: literals, none under a name shaped like a credential and none a connection string.</summary>
     public Seq<SqlCmdVariable> SqlCmd { get; }
 
-    /// <summary>A receipt's profile input: the fingerprint of the profile as kept, its target removed.</summary>
+    /// <summary>A receipt's profile input: the fingerprint of the profile as kept, its target removed, in UTF-8 with LF line ends and no byte-order mark on every operating system.</summary>
     public Fingerprint Fingerprint => Fingerprint.Of(_profile);
 
     public override string ToString() => (this is Strict ? "Strict: " : "Permissive: ") + Source;

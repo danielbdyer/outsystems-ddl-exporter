@@ -140,6 +140,11 @@ public sealed class ProbeTests(ProvingGround ground) : IClassFixture<ProvingGrou
     {
         var file = Path.Combine(root, name + ".connection");
         File.WriteAllText(file, connection);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);   // io/SqlServer refuses a connection file others can read
+        }
+
         Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
         File.Copy(ground.Profile, Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"), overwrite: true);
         File.WriteAllText(Path.Combine(root, "estate", "posture.json"), "{ \"environments\": { \"" + name + "\": { \"classification\": \"real\", \"connection\": \"file:"
