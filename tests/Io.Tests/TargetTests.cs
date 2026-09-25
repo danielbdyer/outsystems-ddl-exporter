@@ -429,24 +429,33 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// M1 exit 5, R15: a connection file that exists, in a folder this identity cannot list, or that this identity cannot read, holds
-    /// a host estate cannot learn. Before this was a refusal it resolved to nothing, so env:dev went uncompared and a substrate on dev's
-    /// host was made. Now Resolve refuses it at exit 6, reference.unlistable or reference.unreadable by the environment and the
-    /// reference, and Substrate.Unnamed returns that refusal instead of the server. The denial is a deny entry for RD (list the folder,
-    /// read the file) on Windows, and mode 0300 or 0200 on Linux and macOS, undone after.
+    /// M1 exit 5, R15: a connection file that exists, in a folder this identity cannot list, that this identity cannot read, or whose
+    /// attributes this identity cannot read, holds a host estate cannot learn. Before this was a refusal it resolved to nothing, so
+    /// env:dev went uncompared and a substrate on dev's host was made. Now Resolve refuses it at exit 6, reference.unlistable,
+    /// reference.unreadable or reference.inaccessible, by the environment and the reference, and Substrate.Unnamed returns that
+    /// refusal instead of the server. The denial is a deny entry for RD (list the folder, read the file) on Windows, or mode 0300 or
+    /// 0200 on Linux and macOS. For the file whose attributes are withheld, where File.Exists answers false as it does where no file
+    /// is, the denial is RD on the folder and RA (read attributes) on the file on Windows, and mode 0600 on the folder, which withholds
+    /// search, on Linux and macOS. Each denial is undone after.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("folder", "reference.unlistable")]
     [InlineData("file", "reference.unreadable")]
+    [InlineData("attributes", "reference.inaccessible")]
     public void A_connection_file_this_identity_cannot_list_or_read_is_refused_and_leaves_no_environment_uncompared(string denied, string code)
     {
         Directory.CreateDirectory(Path.Combine(scratch, "locked"));
         var file = Written(Path.Combine("locked", "dev.connection"), "Server=127.0.0.1,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted);
         var root = Estate(Dev(file));
 
-        var (resolved, unnamed) = RefusalPaths.Denied(denied == "folder" ? Path.Combine(scratch, "locked") : file, () =>
-            (SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root), Substrate.Unnamed(root, "localhost,11433", Resolver)));
+        var use = () => (SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root), Substrate.Unnamed(root, "localhost,11433", Resolver));
+        var (resolved, unnamed) = denied switch
+        {
+            "folder" => RefusalPaths.Denied(Path.Combine(scratch, "locked"), use),
+            "file" => RefusalPaths.Denied(file, use),
+            _ => RefusalPaths.Unexaminable(file, use),
+        };
 
         var refusal = Refused(resolved);
         Assert.Equal((code, 6), (refusal.Code, Contract.Exit(refusal)));
@@ -456,9 +465,9 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// io/Git tells a folder in no repository from a failed search by git's English "not a git repository (or any ...)". LANGUAGE and
-    /// LC_MESSAGES, which choose a translation of git's messages, never reach git, so with both set to German a connection file in
-    /// no repository still resolves, and is not refused as git.failed.
+    /// With LANGUAGE and LC_MESSAGES set to German in estate's own process, a connection file in no repository resolves and is not
+    /// refused as git.failed: io/Git still finds git's "not a git repository (or any ...)". A git that carries no German translation
+    /// passes this whatever variables reach it; GitTests' stand-in for git shows which variables reach it.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]

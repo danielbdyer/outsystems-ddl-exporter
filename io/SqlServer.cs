@@ -389,22 +389,50 @@ public static class SqlServer
     }
 
     /// <summary>
-    /// What a reference names: the variable's value, or the file's text trimmed; null when the variable is unset or empty, when no
-    /// file is at the path, or when the file holds only white space. A file, a relative path read from the estate's root, is read only
-    /// when git keeps it out of every commit, ignored or in no repository while the estate's root is in one, and, where files carry a
-    /// Unix mode, when its owner alone can read it; a refusal leads with <paramref name="subject"/>. git is asked about the file by the
-    /// name its folder lists (<see cref="Listed"/>), and that name is the one read. A file that exists but whose folder this identity
-    /// cannot list is reference.unlistable, and one it cannot read is reference.unreadable: its host is unknown here, and R15 must not
-    /// leave the environment uncompared as it does one that resolves to nothing. The check covers the path the reference names, since
-    /// git tracks paths: a hard link to a committed file, or a plain copy of one, under a folder .gitignore lists such as .estate/ is
-    /// read, though the commit holds what it holds.
+    /// What a reference names: the variable's value, or the file's text trimmed; null when the variable is unset or empty, when the
+    /// file system reports that no file or folder is at the path or that a folder is, or when the file holds only white space. A file,
+    /// a relative path read from the estate's root, is read only when git keeps it out of every commit, ignored or in no repository
+    /// while the estate's root is in one, and, where files carry a Unix mode, when its owner alone can read it; a refusal leads with
+    /// <paramref name="subject"/>. git is asked about the file by the name its folder lists (<see cref="Listed"/>), and that name is the
+    /// one read. Whatever the file system withholds is a refusal, never null, since the host of a file that may be there is unknown
+    /// here and R15 must not leave the environment uncompared as it does one that resolves to nothing: a path whose attributes this
+    /// identity cannot read, where File.Exists answers false as it does where no file is, is reference.inaccessible; a file whose
+    /// folder it cannot list is reference.unlistable; and one it cannot read is reference.unreadable. The check covers the path the
+    /// reference names, since git tracks paths: a hard link to a committed file, or a plain copy of one, under a folder .gitignore
+    /// lists such as .estate/ is read, though the commit holds what it holds.
     /// </summary>
     internal static Result<string?> Read(string subject, SecretReference reference, string estateRoot) => reference.Match(
         variable => Result.Ok(System.Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value ? value : null),
         file => System.IO.Path.Combine(estateRoot, file) is var path && File.Exists(path)
             ? Opened(() => Listed(subject, path), () => Unlistable(subject))
                 .Bind(listed => Opened(() => Kept(subject, estateRoot, listed).Map(kept => File.ReadAllText(kept).Trim() is { Length: > 0 } text ? text : null), () => Unreadable(subject)))
-            : Result.Ok<string?>(null));
+            : Absent(subject, path));
+
+    /// <summary>
+    /// Null for a path File.Exists does not open, when the file system says why: no such file (FileNotFoundException), no such folder
+    /// on the way (DirectoryNotFoundException), or a folder at the path; a path no file could have (ArgumentException) is absent too.
+    /// File.Exists also answers false for a file whose attributes this identity cannot read (on Windows, RA denied on the file and RD
+    /// on its folder; on Linux and macOS, a folder on the path without search permission); File.GetAttributes then throws
+    /// UnauthorizedAccessException, or IOException for a path it cannot reach, and that is reference.inaccessible.
+    /// </summary>
+    private static Result<string?> Absent(string subject, string path)
+    {
+        try
+        {
+            File.GetAttributes(path);
+            return Result.Ok<string?>(null);
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException or ArgumentException)
+        {
+            return Result.Ok<string?>(null);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new Refusal("reference.inaccessible", subject + " names a path whose attributes this identity cannot read, or that it cannot reach,"
+                + " so whether a file is there, and what it holds, is unknown here; it is not read.",
+                "Grant this identity the right to list the file's folder and read the file's attributes (on Linux and macOS, search permission on every folder of the path), or move the file under a folder it can list, such as .estate/.");
+        }
+    }
 
     /// <summary>A step on a file that exists; the refusal given when the file system refuses the step (IOException, UnauthorizedAccessException).</summary>
     private static Result<T> Opened<T>(Func<Result<T>> step, Func<Refusal> refused)

@@ -210,6 +210,11 @@ internal static class RefusalPaths
             var root = Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
             return Denied(Path.Combine(scratch, "dev.connection"), () => Refused(SqlServer.Resolve(Target("env:dev"), root)));
         }),
+        new("a connection file whose attributes this identity cannot read", "reference.inaccessible", true, (scratch, planted) =>
+        {
+            var root = Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "locked/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
+            return Unexaminable(Path.Combine(scratch, "locked", "dev.connection"), () => Refused(SqlServer.Resolve(Target("env:dev"), root)));
+        }),
         new("a connection file of an estate in no git repository", "reference.no-repository", true, (scratch, planted) =>
             Refused(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Password=" + planted))))))),
         new("a connection file its group can read, where files carry a Unix mode", "reference.readable-by-others", !OperatingSystem.IsWindows(), (scratch, planted) => OperatingSystem.IsWindows()
@@ -328,6 +333,42 @@ internal static class RefusalPaths
             {
                 File.SetUnixFileMode(full, UnixFileMode.UserRead | UnixFileMode.UserWrite | execute);
             }
+        }
+    }
+
+    /// <summary>
+    /// What <paramref name="use"/> returns while this identity may not read the attributes of <paramref name="file"/>, so File.Exists
+    /// answers false for it, as it does where no file is: on Windows a deny entry for RA (FILE_READ_ATTRIBUTES) on the file and one
+    /// for RD (FILE_LIST_DIRECTORY) on its folder, since the right to list the folder also grants its files' attributes; on Linux and
+    /// macOS mode 0600 on the folder, which withholds the search that stat needs, then 0700 again. The denial is undone however use
+    /// ends, so the scratch folder deletes.
+    /// </summary>
+    internal static T Unexaminable<T>(string file, Func<T> use)
+    {
+        var full = Path.GetFullPath(file);
+        var folder = Path.GetDirectoryName(full)!;
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            try
+            {
+                return use();
+            }
+            finally
+            {
+                File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+        }
+
+        var identity = Environment.UserDomainName + "\\" + Environment.UserName;
+        Icacls(full, "/deny", identity + ":(RA)");
+        try
+        {
+            return Denied(folder, use);
+        }
+        finally
+        {
+            Icacls(full, "/remove:d", identity);
         }
     }
 
