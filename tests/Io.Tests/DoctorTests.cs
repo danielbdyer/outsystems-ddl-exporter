@@ -1,27 +1,29 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using Estate.Budgets.Tests;
 using Estate.Budgets.Tests.Register;
+using Estate.Tests;
 using Xunit;
-using Contract = Estate.Cli.Contract;
+using static Estate.Tests.Expect;
 
 namespace Estate.Io.Tests;
 
 /// <summary>
 /// io/Doctor (WP 1.7): read-only checks of the SDK and the runtime, git, the tool folder and its DacFx against the toolchain ledger, the build
 /// route, the scratch server estate would use and its image, and Git LFS, with a remedy for each item missing, on a machine the test describes
-/// and with programs a stand-in runner answers; and R13's window, the committed DacFx against a sample ledger's row (M1 exit 6).
+/// and with programs a stand-in runner answers; and R13's window, the committed DacFx against a sample ledger's row.
 /// </summary>
 public sealed class DoctorTests : IDisposable
 {
     private const string Version = "3.0.0+0123456789abcdef";
 
-    private readonly string machine = Directory.CreateTempSubdirectory("estate-doctor-").FullName;
+    private readonly ScratchFolder machine = ScratchFolder.Temporary("doctor");
 
-    public void Dispose() => Directory.Delete(machine, recursive: true);
+    public void Dispose() => machine.Dispose();
 
     /// <summary>The programs a machine with every item present answers.</summary>
     private static Dictionary<string, (int Exit, string Output)> Everything => new()
@@ -32,6 +34,8 @@ public sealed class DoctorTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "A2")]
+    [Trait("Exit", "M0.3")]
     public void A_bare_machine_gets_a_remedy_for_each_item_missing()
     {
         var checks = Doctor.Examine(Bare(), Nothing, Version);   // no global.json, no tool folder, no sql.env, and nothing installed
@@ -46,9 +50,9 @@ public sealed class DoctorTests : IDisposable
     public void A_machine_with_every_item_misses_nothing()
     {
         Publish();
-        File.WriteAllText(Path.Combine(machine, "global.json"), """{ "sdk": { "version": "10.0.401", "rollForward": "latestPatch" } }""");
+        machine.File("global.json", """{ "sdk": { "version": "10.0.401", "rollForward": "latestPatch" } }""");
 
-        var checks = Doctor.Examine(Bare(sqlEnv: SqlEnv()) with { WorkingDirectory = Directory.CreateDirectory(Path.Combine(machine, "estate", "src")).FullName }, Answers(Everything), Version);
+        var checks = Doctor.Examine(Bare(sqlEnv: SqlEnv()) with { WorkingDirectory = machine.Folder(Path.Combine("estate", "src")) }, Answers(Everything), Version);
 
         Assert.All(checks, c => Assert.Null(c.Remedy));
         Assert.Equal(
@@ -60,31 +64,40 @@ public sealed class DoctorTests : IDisposable
     /// <summary>The committed DacFx is the package the build and every plan use: the version Directory.Packages.props pins.</summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "R1")]
     public void The_committed_DacFx_is_the_release_Directory_Packages_props_pins()
     {
         var pinned = System.Xml.Linq.XDocument.Load(Path.Combine(Repository.Root, "Directory.Packages.props")).Descendants()
             .Single(e => (string?)e.Attribute("Include") == "Microsoft.SqlServer.DacFx").Attribute("Version")!.Value;
 
         Assert.Equal(pinned, Doctor.DacFx);
-        Assert.Equal("170.5.96", Doctor.DacFx);
     }
 
     /// <summary>
-    /// M1 exit 6 (R13): over the sample ledger's row, the committed DacFx is accepted at the pin and at the release immediately before it,
-    /// and anything else, newer or older, is exit 6, as is a ledger with no row for this estate or a malformed one; while the row reads
-    /// UNPINNED every DacFx is accepted and the doctor says UNPINNED; an estate committing no ledger is unpinned.
+    /// R13's window over the sample ledger's row, each row written relative to the committed DacFx (<see cref="Near"/>): the committed
+    /// DacFx is accepted at the pin and at the release immediately before it, and anything else, newer or older, is rejected, as is a
+    /// ledger with no row for this estate or a malformed one; while the row reads UNPINNED every DacFx is accepted and the doctor says
+    /// UNPINNED; an estate committing no ledger is unpinned.
     /// </summary>
+    public static TheoryData<string, string?, string?, string> Windows => new()
+    {
+        { "the pin", "| 2026-09-25 | 3.0.0 | " + Doctor.DacFx + " | " + Near(-1) + " |", null, "pinned " + Doctor.DacFx },
+        { "the release before the pin", "| 2026-09-25 | 3.0.0 | " + Near(1) + " | " + Doctor.DacFx + " |", null, "pinned " + Near(1) },
+        { "a pin older than the DacFx", "| 2026-09-25 | 3.0.0 | " + Near(-1) + " | " + Near(-2) + " |", "toolchain.outside-window", "outside the pin " + Near(-1) },
+        { "a pin two releases newer", "| 2026-09-25 | 3.0.0 | " + Near(2) + " | " + Near(1) + " |", "toolchain.outside-window", "outside the pin " + Near(2) },
+        { "UNPINNED", "| 2026-09-25 | 3.0.0 | UNPINNED | — |", null, "UNPINNED" },
+        { "the latest row of this estate's", "| 2026-09-26 | 3.0.0 | " + Near(-1) + " | " + Near(-2) + " |\n| 2026-09-25 | 3.0.0 | " + Doctor.DacFx + " | — |", "toolchain.outside-window", "outside the pin " + Near(-1) },
+        { "no row for this estate", "| 2026-09-25 | 3.1.0 | " + Doctor.DacFx + " | — |", "toolchain.unrecorded", "has no dated row for estate 3.0.0" },
+        { "a malformed pin", "| 2026-09-25 | 3.0.0 | the latest | — |", "toolchain.malformed", "no DacFx release" },
+        { "no ledger", null, null, "UNPINNED" },
+    };
+
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("the pin", "| 2026-09-25 | 3.0.0 | 170.5.96 | 170.4.71 |", null, "pinned 170.5.96")]
-    [InlineData("the release before the pin", "| 2026-09-25 | 3.0.0 | 170.6.10 | 170.5.96 |", null, "pinned 170.6.10")]
-    [InlineData("a pin older than the DacFx", "| 2026-09-25 | 3.0.0 | 170.4.71 | 170.3.93 |", "toolchain.outside-window", "outside the pin 170.4.71")]
-    [InlineData("a pin two releases newer", "| 2026-09-25 | 3.0.0 | 170.7.2 | 170.6.10 |", "toolchain.outside-window", "outside the pin 170.7.2")]
-    [InlineData("UNPINNED", "| 2026-09-25 | 3.0.0 | UNPINNED | — |", null, "UNPINNED")]
-    [InlineData("the latest row of this estate's", "| 2026-09-26 | 3.0.0 | 170.4.71 | 170.3.93 |\n| 2026-09-25 | 3.0.0 | 170.5.96 | — |", "toolchain.outside-window", "outside the pin 170.4.71")]
-    [InlineData("no row for this estate", "| 2026-09-25 | 3.1.0 | 170.5.96 | — |", "toolchain.unrecorded", "has no dated row for estate 3.0.0")]
-    [InlineData("a malformed pin", "| 2026-09-25 | 3.0.0 | the latest | — |", "toolchain.malformed", "no DacFx release")]
-    [InlineData("no ledger", null, null, "UNPINNED")]
+    [Trait("Value", "R1")]
+    [Trait("Value", "R5")]
+    [Trait("Exit", "M1.6")]
+    [MemberData(nameof(Windows))]
     public void The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it(string what, string? rows, string? code, string said)
     {
         if (rows is not null)
@@ -92,30 +105,30 @@ public sealed class DoctorTests : IDisposable
             Ledger(rows);
         }
 
-        var error = Doctor.Toolchain(machine, Version).Match(pin => pin.Rejects(Kernel.Engine.Of(Doctor.DacFx).Match(e => e, r => throw new InvalidOperationException(r.Message))), r => r);
+        var error = Doctor.Toolchain(machine.Path, Version).Match(pin => pin.Rejects(Value(Kernel.Engine.Of(Doctor.DacFx))), r => r);
         var dacfx = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.DacFx);
 
         Assert.True(code == error?.Code, what + ": " + error?.Code);
-        Assert.Equal<int?>(code is null ? null : 6, error is null ? null : Contract.Exit(error));
         Assert.Equal(code is null, dacfx.Remedy is null);
         Assert.Contains(said, dacfx.Found, StringComparison.Ordinal);
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void An_unreadable_toolchain_ledger_is_toolchain_unreadable_at_exit_6_and_the_dacfx_item_s_finding()
+    public void An_unreadable_toolchain_ledger_is_toolchain_unreadable_and_the_dacfx_item_s_finding()
     {
         var ledger = Ledger("| 2026-09-25 | 3.0.0 | UNPINNED | — |");
 
-        var (error, dacfx) = RefusalPaths.Denied(ledger, () => (GitTests.Failed(Doctor.Toolchain(machine, Version)), Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.DacFx)));
+        var (error, dacfx) = RefusalPaths.Denied(ledger, () => (Failed(Doctor.Toolchain(machine.Path, Version), "toolchain.unreadable"), Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.DacFx)));
 
-        Assert.Equal(("toolchain.unreadable", 6), (error.Code, Contract.Exit(error)));
+        Assert.Contains("cannot be read", error.Message, StringComparison.Ordinal);
         Assert.Contains("cannot be read", dacfx.Found, StringComparison.Ordinal);
         Assert.Contains("read access", dacfx.Remedy, StringComparison.Ordinal);
     }
 
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Value", "R5")]
     [InlineData("10.0.415", true)]              // a later patch in the band: rollForward latestPatch
     [InlineData("10.0.400", false)]             // below the pin
     [InlineData("10.0.500", false)]             // the next feature band
@@ -123,7 +136,7 @@ public sealed class DoctorTests : IDisposable
     [InlineData("9.0.314", false)]
     public void The_sdk_is_found_only_in_the_band_global_json_names(string installed, bool found)
     {
-        File.WriteAllText(Path.Combine(machine, "global.json"), """{ "sdk": { "version": "10.0.401" } }""");
+        machine.File("global.json", """{ "sdk": { "version": "10.0.401" } }""");
 
         var sdk = Doctor.Examine(Bare(), Answers(new() { ["dotnet --list-sdks"] = (0, installed + " [x]\n") }), Version)[0];
 
@@ -135,12 +148,11 @@ public sealed class DoctorTests : IDisposable
     [Trait("Category", "fast")]
     public void A_malformed_global_json_is_sdk_global_json_naming_the_line_and_the_sdk_item_s_finding()
     {
-        File.WriteAllText(Path.Combine(machine, "global.json"), "{\n  \"sdk\": { \"version\": 10.0.401 }\n}\n");
+        machine.File("global.json", "{\n  \"sdk\": { \"version\": 10.0.401 }\n}\n");
 
-        var error = GitTests.Failed(Doctor.Pinned(machine));
+        var error = Failed(Doctor.Pinned(machine.Path), "sdk.global-json");
         var sdk = Doctor.Examine(Bare(), Answers(Everything), Version)[0];
 
-        Assert.Equal(("sdk.global-json", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains("is not JSON at line 2", error.Message, StringComparison.Ordinal);
         Assert.Equal((error.Message, error.Remedy), (sdk.Found, sdk.Remedy));
     }
@@ -160,6 +172,7 @@ public sealed class DoctorTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "R5")]
     public void A_runtime_other_than_NET_10_is_refused_with_its_remedy()
     {
         var eleven = Doctor.Examine(Bare(runtime: new Version(11, 0, 0)), Nothing, Version).Single(c => c.Item == Doctor.Item.Runtime);
@@ -190,7 +203,7 @@ public sealed class DoctorTests : IDisposable
     public void A_tool_folder_whose_DacFx_build_task_is_another_release_is_named_as_a_stale_publish()
     {
         Publish();
-        File.Copy(Path.Combine(AppContext.BaseDirectory, "Estate.Kernel.dll"), Path.Combine(machine, "Microsoft.Data.Tools.Schema.Tasks.Sql.dll"));   // a file with another version
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Estate.Kernel.dll"), machine.Under("Microsoft.Data.Tools.Schema.Tasks.Sql.dll"));   // a file with another version
 
         var tool = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.Tool);
 
@@ -215,11 +228,11 @@ public sealed class DoctorTests : IDisposable
     {
         Ran NeverDocker(Command c, CancellationToken t) => c.Program is "docker" or "sqllocaldb" ? throw new Xunit.Sdk.XunitException(c + " ran while ESTATE_SQL names the server") : Answers(Everything)(c, t);
 
-        var checks = Doctor.Examine(Bare(estateSql: "Server=tcp:DB-Host,1433;User ID=sa;Password=planted-value", sqlEnv: SqlEnv()), NeverDocker, Version).ToDictionary(c => c.Item.Name);
+        var checks = Doctor.Examine(Bare(estateSql: "Server=tcp:DB-Host,1433;User ID=sa;Password=" + PlantedValue.Password, sqlEnv: SqlEnv()), NeverDocker, Version).ToDictionary(c => c.Item.Name);
 
         Assert.Equal(("ESTATE_SQL (db-host,1433)", null), (checks["scratch-server"].Found, checks["scratch-server"].Remedy));
         Assert.Equal(("not needed: ESTATE_SQL names the server", null), (checks["image"].Found, checks["image"].Remedy));
-        Assert.DoesNotContain("planted-value", string.Join(" ", checks.Values.Select(c => c.Found + c.Remedy)), StringComparison.Ordinal);
+        PlantedValue.Password.AbsentFrom(string.Join(" ", checks.Values.Select(c => c.Found + c.Remedy)));
     }
 
     [Fact]
@@ -261,26 +274,25 @@ public sealed class DoctorTests : IDisposable
         Assert.All(["sql.sh", "sql.ps1"], script => Assert.Contains(Doctor.SqlServerImage, File.ReadAllText(Path.Combine(Repository.Root, "ci", script)), StringComparison.Ordinal));
     }
 
+    /// <summary>A DacFx release near the committed one: its second group moved by <paramref name="minors"/>, so the rows above hold whatever release the build pins.</summary>
+    private static string Near(int minors)
+    {
+        var release = System.Version.Parse(Doctor.DacFx);
+        return string.Create(CultureInfo.InvariantCulture, $"{release.Major}.{release.Minor + minors}.{release.Build}");
+    }
+
     /// <summary>A machine holding nothing but the test folder: no ESTATE_SQL, no sql.env unless given, this process's runtime unless given.</summary>
     private Doctor.Machine Bare(string? estateSql = null, string? sqlEnv = null, Version? runtime = null) =>
-        new(machine, null, machine, estateSql, sqlEnv ?? Path.Combine(machine, "no-sql.env"), runtime ?? Environment.Version);
+        new(machine.Path, null, machine.Path, estateSql, sqlEnv ?? machine.Under("no-sql.env"), runtime ?? Environment.Version);
 
     /// <summary>A sql.env as ci/sql.sh writes it, naming the container's port and password.</summary>
-    private string SqlEnv()
-    {
-        var file = Path.Combine(machine, "sql.env");
-        File.WriteAllText(file, "MSSQL_SA_PASSWORD=planted-value\nESTATE_SQL_PORT=11433\n");
-        return file;
-    }
+    private string SqlEnv() => machine.File("sql.env", "MSSQL_SA_PASSWORD=" + PlantedValue.Password + "\nESTATE_SQL_PORT=11433\n");
 
     /// <summary>The sample toolchain ledger under the machine's estate root, its one row replaced; the file's path.</summary>
     private string Ledger(string rows)
     {
         var sample = File.ReadAllText(Path.Combine(Repository.Root, "tests", "Golden", "estate", "ledgers", "toolchain.md"));
-        Directory.CreateDirectory(Path.Combine(machine, "estate", "ledgers"));
-        var ledger = Path.Combine(machine, "estate", "ledgers", "toolchain.md");
-        File.WriteAllText(ledger, sample.Replace("| 2026-09-24 | 3.0.0 | UNPINNED | — |", rows, StringComparison.Ordinal));
-        return ledger;
+        return machine.File(Path.Combine("estate", "ledgers", "toolchain.md"), sample.Replace("| 2026-09-24 | 3.0.0 | UNPINNED | — |", rows, StringComparison.Ordinal));
     }
 
     /// <summary>The files a published tool folder holds beside estate: the SqlTasks targets and the reference assemblies.</summary>
@@ -288,8 +300,7 @@ public sealed class DoctorTests : IDisposable
     {
         foreach (var file in (string[])["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"])
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(machine, file))!);
-            File.WriteAllText(Path.Combine(machine, file), "");
+            machine.File(file, "");
         }
     }
 

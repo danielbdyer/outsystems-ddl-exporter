@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using Estate.Budgets.Tests;
+using Estate.Tests;
 using Xunit;
 
 namespace Estate.Io.Tests;
@@ -19,24 +20,24 @@ public sealed class CommandTests : IDisposable
 {
     private static readonly string Assembly = typeof(EstateProcess).Assembly.Location;
 
-    private readonly string scratch = Directory.CreateTempSubdirectory("estate-command-").FullName;
+    private readonly ScratchFolder scratch = ScratchFolder.Temporary("command");
 
-    public void Dispose() => Directory.Delete(scratch, recursive: true);
+    public void Dispose() => scratch.Dispose();
 
     [Fact]
     [Trait("Category", "fast")]
     public void A_program_on_no_folder_of_the_PATH_is_NotFound_and_its_reason_names_the_folders_searched_and_never_the_working_directory()
     {
         var name = "estate-no-such-program-" + Guid.NewGuid().ToString("N")[..8];
-        File.WriteAllText(Path.Combine(scratch, name + (OperatingSystem.IsWindows() ? ".exe" : "")), "");
+        scratch.File(name + (OperatingSystem.IsWindows() ? ".exe" : ""), "");
         var first = Environment.GetEnvironmentVariable("PATH")!.Split(Path.PathSeparator).First(Path.IsPathFullyQualified);
 
-        var ran = new Command(name, [], TimeSpan.FromSeconds(10)) { Directory = scratch }.Run();
+        var ran = new Command(name, [], TimeSpan.FromSeconds(10)) { Directory = scratch.Path }.Run();
 
         var notFound = Assert.IsType<Ran.NotFound>(ran);
         Assert.Equal(name, notFound.Program);
         Assert.Contains(first, notFound.Why, StringComparison.Ordinal);
-        Assert.DoesNotContain(scratch, notFound.Why, StringComparison.Ordinal);
+        Assert.DoesNotContain(scratch.Path, notFound.Why, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -48,9 +49,9 @@ public sealed class CommandTests : IDisposable
     [Trait("Category", "fast")]
     public void A_bare_name_never_runs_a_program_from_the_working_directory()
     {
-        Plant(scratch, "git");
+        Plant(scratch.Path, "git");
 
-        var ran = new Command("git", ["--version"], TimeSpan.FromSeconds(30)) { Directory = scratch }.Run();
+        var ran = new Command("git", ["--version"], TimeSpan.FromSeconds(30)) { Directory = scratch.Path }.Run();
 
         var exited = Assert.IsType<Ran.Exited>(ran);
         Assert.Equal(0, exited.Code);
@@ -63,7 +64,7 @@ public sealed class CommandTests : IDisposable
     [Trait("Category", "fast")]
     public void A_rooted_program_that_does_not_exist_and_a_cmd_or_bat_named_bare_are_NotFound_with_the_reason()
     {
-        var missing = Assert.IsType<Ran.NotFound>(new Command(Path.Combine(scratch, "none" + (OperatingSystem.IsWindows() ? ".exe" : "")), [], TimeSpan.FromSeconds(10)).Run());
+        var missing = Assert.IsType<Ran.NotFound>(new Command(scratch.Under("none" + (OperatingSystem.IsWindows() ? ".exe" : "")), [], TimeSpan.FromSeconds(10)).Run());
         var batch = Assert.IsType<Ran.NotFound>(new Command("estate-stand-in.cmd", [], TimeSpan.FromSeconds(10)).Run());
 
         Assert.Contains("cannot be started", missing.Why, StringComparison.Ordinal);
@@ -71,7 +72,7 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
-    [Trait("Category", "fast")]
+    [Trait("Category", "build")]
     public void A_program_past_its_timeout_is_TimedOut_carrying_what_it_wrote_and_every_process_it_started_has_ended()
     {
         var clock = Stopwatch.StartNew();
@@ -86,7 +87,7 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
-    [Trait("Category", "fast")]
+    [Trait("Category", "build")]
     public void Output_and_errors_arrive_separately_whole_and_as_UTF_8_past_a_pipe_s_capacity()
     {
         const int Megabyte = 1 << 20;
@@ -100,7 +101,7 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
-    [Trait("Category", "fast")]
+    [Trait("Category", "build")]
     public void A_cancelled_run_ends_the_program_and_throws_within_a_second_of_the_cancellation()
     {
         using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
@@ -114,7 +115,7 @@ public sealed class CommandTests : IDisposable
 
     /// <summary>The run's interruption (Interruption) ends a command its caller passed no token to, and a cleanup command marked Interruptible = false still runs after it.</summary>
     [Fact]
-    [Trait("Category", "fast")]
+    [Trait("Category", "build")]
     public void The_run_s_interruption_ends_a_command_given_no_token_and_a_cleanup_command_runs_after_it()
     {
         using var run = Interruption.Quiet();
@@ -128,7 +129,7 @@ public sealed class CommandTests : IDisposable
     }
 
     [Fact]
-    [Trait("Category", "fast")]
+    [Trait("Category", "build")]
     public void The_environment_given_is_applied_over_estate_s_own_and_a_null_value_removes_the_variable()
     {
         var (set, removed) = ("ESTATE_TEST_SET_" + Guid.NewGuid().ToString("N")[..8], "ESTATE_TEST_REMOVED_" + Guid.NewGuid().ToString("N")[..8]);

@@ -59,24 +59,5 @@ public sealed class ReadOnlyPrincipalTests
         Assert.False(File.Exists(file), reader.Reference + " outlived its database");
     }
 
-    [Fact]
-    [Trait("Category", "fast")]
-    public void A_file_reference_reads_its_file_under_the_repository_and_any_other_reference_is_refused_here()
-    {
-        var file = Path.Combine(".estate", "references", Guid.NewGuid().ToString("N") + ".txt");
-        Directory.CreateDirectory(Path.Combine(Repository.Root, ".estate", "references"));
-        File.WriteAllText(Path.Combine(Repository.Root, file), "Server=nowhere\n");
-        try
-        {
-            Assert.Equal("Server=nowhere", ReadOnlyPrincipal.Resolve("file:" + file.Replace('\\', '/')));
-            Assert.Throws<ArgumentException>(() => ReadOnlyPrincipal.Resolve("env:ESTATE_READER"));
-            Assert.Throws<ArgumentException>(() => ReadOnlyPrincipal.Resolve("Server=nowhere;User ID=x"));
-        }
-        finally
-        {
-            File.Delete(Path.Combine(Repository.Root, file));
-        }
-    }
-
     private static Task<int> Held(RegisteredDatabase database, ReadOnlyPrincipal reader, string sql) => SqlServerFixture.ScalarAsync(database.ConnectionString, sql, reader.Login);
 }

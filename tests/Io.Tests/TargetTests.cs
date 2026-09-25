@@ -1,92 +1,97 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
 using Estate.Budgets.Tests;
 using Estate.Budgets.Tests.Register;
-using Estate.Cli;
 using Estate.Kernel;
+using Estate.Tests;
 using Microsoft.Data.SqlClient;
 using Xunit;
+using static Estate.Tests.Expect;
 
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// io/SqlServer's targets and connections (V3_MILESTONES.md WP 1.4, M1 exits 5 and 7; VALUES.md X1, X2): the target grammar as a
-/// closed type; env: resolved against estate/posture.json and copy: against .estate/copies.json alone, on the server its row records;
-/// R15 by spelling and by address, failing closed on what it cannot read; a connection reference resolved to the caller's integrated
-/// identity unless it names another; and no error or printed value carrying what a reference resolves to.
+/// io/SqlServer's targets and connections (V3_MILESTONES.md WP 1.4; VALUES.md X1, X2): the target grammar as a closed type; env:
+/// resolved against estate/posture.json and copy: against .estate/copies.json alone, on the server its row records; R15 by spelling
+/// and by address, failing closed on what it cannot read; a connection reference resolved to the caller's integrated identity unless it
+/// names another; and no error or printed value carrying what a reference resolves to.
 /// </summary>
 public sealed class TargetTests : IDisposable
 {
-    private const string Planted = "Pa55!planted#7f3a";
+    private static readonly PlantedValue Planted = PlantedValue.Password;
 
-    private readonly string scratch = Directory.CreateTempSubdirectory("estate-targets-").FullName;
+    private readonly ScratchFolder scratch = ScratchFolder.Temporary("targets");
 
     private readonly Lazy<Scratch> repository = new(() => new Scratch());
 
     public void Dispose()
     {
-        Directory.Delete(scratch, recursive: true);
+        scratch.Dispose();
         if (repository.IsValueCreated)
         {
             repository.Value.Dispose();
         }
     }
 
-    /// <summary>VALUES.md X1, M1 exit 7: a literal connection string given where a target goes is exit 6, and nothing of it is quoted.</summary>
+    /// <summary>VALUES.md X1: a literal connection string given where a target goes is refused as one, and nothing of it is quoted.</summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("Server=db;User ID=estate;Password=" + Planted)]
-    [InlineData("Data Source=db;Initial Catalog=Orders;Integrated Security=True;Application Name=" + Planted)]
-    [InlineData("env:dev;Pwd=" + Planted)]
-    public void A_literal_connection_string_as_a_target_is_exit_6_and_quoted_nowhere(string text)
+    [Trait("Value", "X1")]
+    [InlineData("Server=db;User ID=estate;Password=" + PlantedValue.PasswordText)]
+    [InlineData("Data Source=db;Initial Catalog=Orders;Integrated Security=True;Application Name=" + PlantedValue.PasswordText)]
+    [InlineData("env:dev;Pwd=" + PlantedValue.PasswordText)]
+    public void A_literal_connection_string_as_a_target_is_connection_literal_and_quoted_nowhere(string text)
     {
-        var error = Failed(SqlServer.Target(text, "--target"));
+        var error = Failed(SqlServer.Target(text, "--target"), "connection.literal");
 
-        Assert.Equal(("connection.literal", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains("--target", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(error);
     }
 
-    /// <summary>M1 exit 5: copy: resolves against .estate/copies.json alone, and a name it does not hold is exit 9.</summary>
+    /// <summary>copy: resolves against .estate/copies.json alone, and a name it does not hold is refused.</summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "a named environment cannot be written")]
-    public void A_copy_the_registry_does_not_hold_is_exit_9()
+    [Trait("Value", "S7")]
+    [Trait("Exit", "M1.5")]
+    public void A_copy_the_registry_does_not_hold_is_refused()
     {
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("copy:estate_nowhere_1_00000000", "--target")), scratch));
+        var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("copy:estate_nowhere_1_00000000", "--target")), scratch.Path), "copy.unregistered");
 
-        Assert.Equal(("copy.unregistered", 9), (error.Code, Contract.Exit(error)));
         Assert.Contains("copy:estate_nowhere_1_00000000", error.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>M1 exit 5: copy: before a name no copy estate makes can carry names a copy the registry does not hold, so it is exit 9 as well, and the name is quoted nowhere.</summary>
+    /// <summary>copy: before a name no copy estate makes can carry names a copy the registry does not hold, so it is refused as one, and the name is quoted nowhere.</summary>
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Exit", "M1.5")]
     [InlineData("copy:")]
     [InlineData("copy:Estate-Copy")]
     [InlineData("copy:Estate_host_1_0a1b2c3d")]
     [InlineData("copy:estate-host")]
     [InlineData("copy:estate host")]
     [InlineData("copy:estate_host_1_0a1b2c3d\n")]
-    public void A_copy_named_as_no_copy_can_be_is_exit_9_and_its_name_is_quoted_nowhere(string text)
+    public void A_copy_named_as_no_copy_can_be_is_refused_and_its_name_is_quoted_nowhere(string text)
     {
-        var error = Failed(SqlServer.Target(text, "--target"));
+        var error = Failed(SqlServer.Target(text, "--target"), "copy.unregistered");
 
-        Assert.Equal(("copy.unregistered", 9), (error.Code, Contract.Exit(error)));
         Assert.Contains("--target", error.Message, StringComparison.Ordinal);
         Assert.Contains(".estate/copies.json", error.Message, StringComparison.Ordinal);
         Assert.All(new[] { text["copy:".Length..].Trim() }.Where(name => name.Length > 0), name => Assert.DoesNotContain(name, error.Message + error.Remedy, StringComparison.Ordinal));
     }
 
     /// <summary>
-    /// M1 exit 5, R15: a scratch server on the host an environment names in estate/posture.json is exit 9, before anything connects, the
-    /// environment's reference agreeing with that host, whether or not it names a database; a reference that names no server names
-    /// SqlClient's local default instance. The refusal names the environment and quotes neither connection.
+    /// R15: a scratch server on the host an environment names in estate/posture.json is refused, before anything connects, the environment's
+    /// reference agreeing with that host, whether or not it names a database; a reference that names no server names SqlClient's local
+    /// default instance. The refusal names the environment and quotes neither connection.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Law", "a named environment cannot be written")]
+    [Trait("Exit", "M1.5")]
     [InlineData("Server=tcp:127.0.0.1,1433;Initial Catalog=Dev", "127.0.0.1", "localhost,11433")]
     [InlineData("Server=localhost;Initial Catalog=Dev", "localhost", "127.0.0.1,11433")]
     [InlineData("Server=(local)\\SQLEXPRESS;Initial Catalog=Dev", "localhost", ".")]
@@ -94,16 +99,14 @@ public sealed class TargetTests : IDisposable
     [InlineData("Server=prod-sql.corp.example;Integrated Security=true", "prod-sql.corp.example", "prod-sql.corp.example,1")]
     [InlineData("Data Source=tcp:prod-sql.corp.example,1433", "prod-sql.corp.example", "PROD-SQL.corp.example,1")]
     [InlineData("Initial Catalog=Dev;Integrated Security=true", "localhost", "localhost,1")]
-    [Trait("Law", "a named environment cannot be written")]
-    public void A_scratch_server_on_the_host_an_environment_names_is_exit_9(string reference, string host, string server)
+    public void A_scratch_server_on_the_host_an_environment_names_is_refused(string reference, string host, string server)
     {
-        var root = Estate(Dev(Written("dev.connection", reference + ";User ID=reader;Password=" + Planted), host));
+        var root = Estate(PostureFile.Dev("file:" + Written("dev.connection", reference + ";User ID=reader;Password=" + Planted), host));
 
-        var error = Failed(ScratchServer.Create(root, "Server=" + server + ";Initial Catalog=master;User ID=sa;Password=" + Planted + ";TrustServerCertificate=True;Connect Timeout=2"));
+        var error = Failed(ScratchServer.Create(root, "Server=" + server + ";Initial Catalog=master;User ID=sa;Password=" + Planted + ";TrustServerCertificate=True;Connect Timeout=2"), "copy.named-host");
 
-        Assert.Equal(("copy.named-host", 9), (error.Code, Contract.Exit(error)));
         Assert.Contains("env:dev", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(error);
         Assert.False(File.Exists(Path.Combine(root, ".estate", "copies.json")), "a refused scratch server registered a copy");
     }
 
@@ -113,21 +116,20 @@ public sealed class TargetTests : IDisposable
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void A_scratch_server_on_the_host_of_an_environment_whose_reference_resolves_to_nothing_here_is_exit_9()
+    public void A_scratch_server_on_the_host_of_an_environment_whose_reference_resolves_to_nothing_here_is_refused()
     {
-        var root = Estate(Unresolved("dev", "localhost") + ", " + Unresolved("uat", "dev-sql"));
+        var root = Estate(new PostureFile(new Dictionary<string, PostureFile.Environment> { ["dev"] = Unresolved("localhost"), ["uat"] = Unresolved("dev-sql") }));
 
-        var local = Failed(ScratchServer.Unnamed(Posture(root), root, Server("localhost,11433"), Resolver));
-        var aliased = Failed(ScratchServer.Unnamed(Posture(root), root, Server("192.0.2.10,1433"), Resolver));
+        var local = Failed(ScratchServer.Unnamed(Posture(root), root, Server("localhost,11433"), Resolver), "copy.named-host");
+        var aliased = Failed(ScratchServer.Unnamed(Posture(root), root, Server("192.0.2.10,1433"), Resolver), "copy.named-host");
 
-        Assert.Equal(("copy.named-host", 9, "copy.named-host"), (local.Code, Contract.Exit(local), aliased.Code));
         Assert.Contains("env:dev", local.Message, StringComparison.Ordinal);
         Assert.Contains("env:uat", aliased.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
     /// R15 fails closed: an environment whose reference resolves here to text SqlClient reads no connection string from has a server no
-    /// check can place, so the scratch server is refused at exit 6 by that reference; and without estate/posture.json no environment's host
+    /// check can place, so the scratch server is refused by that reference; and without estate/posture.json no environment's host
     /// can be read, so no copy is made. Neither refusal quotes a connection, and neither registers a copy.
     /// </summary>
     [Theory]
@@ -136,35 +138,32 @@ public sealed class TargetTests : IDisposable
     [InlineData("no posture", "posture.missing")]
     public void A_scratch_server_whose_environments_cannot_be_read_is_refused_before_anything_connects(string how, string code)
     {
-        var root = how == "no posture" ? Directory.CreateDirectory(Path.Combine(scratch, "no-posture")).FullName
-            : Estate(Dev(Written("dev.connection", "Server=dev-sql;Nonsense " + Planted + " = 1")));
+        var root = how == "no posture" ? scratch.Folder("no-posture") : Estate(PostureFile.Dev("file:" + Written("dev.connection", "Server=dev-sql;Nonsense " + Planted + " = 1")));
 
-        var error = Failed(ScratchServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2"));
+        var error = Failed(ScratchServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2"), code);
 
-        Assert.Equal((code, 6), (error.Code, Contract.Exit(error)));
         Assert.Equal(how != "no posture", error.Message.StartsWith("env:dev's connection", StringComparison.Ordinal));
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(error);
         Assert.False(File.Exists(Path.Combine(root, ".estate", "copies.json")), "a refused scratch server registered a copy");
     }
 
     /// <summary>
     /// R15 compares the host the posture names, so a reference that resolves here to a server on another host is refused by the
-    /// environment at exit 6 (posture.host) before a copy is made: the posture and the connection disagree about where the environment
+    /// environment (posture.host) before a copy is made: the posture and the connection disagree about where the environment
     /// is. The refusal names the posture's host, which the repository holds, and not the host the reference names.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_reference_to_a_server_on_another_host_than_the_posture_names_is_refused_by_the_environment()
     {
-        var root = Estate(Dev(Written("dev.connection", "Server=prod-sql.corp.example,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted), "dev-sql"));
+        var root = Estate(PostureFile.Dev("file:" + Written("dev.connection", "Server=prod-sql.corp.example,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted), "dev-sql"));
 
-        var error = Failed(ScratchServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2"));
+        var error = Failed(ScratchServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2"), "posture.host");
 
-        Assert.Equal(("posture.host", 6), (error.Code, Contract.Exit(error)));
         Assert.StartsWith("env:dev's connection", error.Message, StringComparison.Ordinal);
         Assert.Contains("dev-sql", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("prod-sql", error.Message + error.Remedy, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(error);
         Assert.False(File.Exists(Path.Combine(root, ".estate", "copies.json")), "a refused scratch server registered a copy");
     }
 
@@ -175,6 +174,7 @@ public sealed class TargetTests : IDisposable
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Exit", "M1.5")]
     [InlineData("dev-sql", "dev-sql.corp.example,11433")]
     [InlineData("dev-sql.corp.example", "dev-sql,11433")]
     [InlineData("192.0.2.10", "dev-sql,11433")]
@@ -184,13 +184,12 @@ public sealed class TargetTests : IDisposable
     [InlineData("(localdb)", "localhost,11433")]
     [InlineData("localhost", "(localdb)\\MSSQLLocalDB")]
     [InlineData("sql.this-machine.example", "localhost,11433")]
-    public void A_scratch_server_on_an_alias_of_an_environment_s_host_is_exit_9(string host, string server)
+    public void A_scratch_server_on_an_alias_of_an_environment_s_host_is_refused(string host, string server)
     {
-        var root = Estate(Unresolved("dev", host));
+        var root = Estate(PostureFile.Of("dev", Unresolved(host)));
 
-        var error = Failed(ScratchServer.Unnamed(Posture(root), root, Server(server), Resolver));
+        var error = Failed(ScratchServer.Unnamed(Posture(root), root, Server(server), Resolver), "copy.named-host");
 
-        Assert.Equal(("copy.named-host", 9), (error.Code, Contract.Exit(error)));
         Assert.Contains("env:dev", error.Message, StringComparison.Ordinal);
     }
 
@@ -203,55 +202,55 @@ public sealed class TargetTests : IDisposable
     [InlineData("", "prod-sql.corp.example", "localhost,11433")]
     public void A_scratch_server_on_a_host_no_environment_names_is_cleared(string reference, string host, string server)
     {
-        var root = Estate(reference.Length == 0 ? Unresolved("dev", host) : Dev(Written("dev.connection", reference), host));
+        var root = Estate(reference.Length == 0 ? PostureFile.Of("dev", Unresolved(host)) : PostureFile.Dev("file:" + Written("dev.connection", reference), host));
 
-        Assert.Equal(Server(server), Made(ScratchServer.Unnamed(Posture(root), root, Server(server), Resolver)));
+        Assert.Equal(Server(server), Value(ScratchServer.Unnamed(Posture(root), root, Server(server), Resolver)));
     }
 
     /// <summary>
-    /// M1 exit 5, the registry bound to its server: a copy's row records the server it was made on, and copy: resolves it only while
-    /// the scratch server is that server; on another it is a copy the registry does not hold there. A row whose server is on the host an
-    /// environment names is exit 9 before the scratch server is chosen.
+    /// The registry bound to its server: a copy's row records the server it was made on, and copy: resolves it only while the scratch
+    /// server is that server; on another it is a copy the registry does not hold there. A row whose server is on the host an
+    /// environment names is refused before the scratch server is chosen.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Exit", "M1.5")]
     public void A_copy_resolves_only_on_the_server_its_row_records_and_never_on_a_named_host()
     {
         var name = CopyName.Make("host", 1, 0x0a1b2c3d);
-        var (clear, named) = (Registry(Estate(""), name, "localhost,11433"), Registry(Estate(Dev(Written("dev.connection", "Server=127.0.0.1,1433;Initial Catalog=Dev"), "localhost")), name, "localhost,11433"));
+        var clear = Registry(Estate(new PostureFile(new Dictionary<string, PostureFile.Environment>())), name, "localhost,11433");
+        var named = Registry(Estate(PostureFile.Dev("file:" + Written("dev.connection", "Server=127.0.0.1,1433;Initial Catalog=Dev"), "localhost")), name, "localhost,11433");
 
-        var there = Made(ScratchServer.Registered(clear, name, Profiles.Environments(clear), () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
-        var elsewhere = Failed(ScratchServer.Registered(clear, name, Profiles.Environments(clear), () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver));
-        var onNamedHost = Failed(ScratchServer.Registered(named, name, Profiles.Environments(named), () => throw new Xunit.Sdk.XunitException("the scratch server was chosen before R15 read the row's server"), Resolver));
+        var there = Value(ScratchServer.Registered(clear, name, Profiles.Environments(clear), () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
+        var elsewhere = Failed(ScratchServer.Registered(clear, name, Profiles.Environments(clear), () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver), "copy.unregistered");
+        var onNamedHost = Failed(ScratchServer.Registered(named, name, Profiles.Environments(named), () => throw new Xunit.Sdk.XunitException("the scratch server was chosen before R15 read the row's server"), Resolver), "copy.named-host");
 
         Assert.Equal(("copy:" + name, "localhost,11433"), (there.Target.ToString(), ScratchServer.ServerName(null, Written("sql.env", "ESTATE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n.ToString(), r => r.Code)));
-        Assert.Equal(("copy.unregistered", 9), (elsewhere.Code, Contract.Exit(elsewhere)));
         Assert.Contains("copy:" + name, elsewhere.Message, StringComparison.Ordinal);
-        Assert.Equal(("copy.named-host", 9), (onNamedHost.Code, Contract.Exit(onNamedHost)));
-        Assert.DoesNotContain(Planted, elsewhere.Message + elsewhere.Remedy + onNamedHost.Message + onNamedHost.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(elsewhere);
+        Planted.AbsentFrom(onNamedHost);
     }
 
     /// <summary>The caller's integrated identity by default; SQL authentication where the reference names it; and an EnvironmentDatabase prints as its environment alone.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("Server=dev-sql;Initial Catalog=Dev", true)]
-    [InlineData("Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted, false)]
+    [InlineData("Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + PlantedValue.PasswordText, false)]
     public void A_reference_resolves_to_the_caller_s_integrated_identity_unless_it_names_another(string connection, bool integrated)
     {
         var variable = "ESTATE_TEST_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
         Environment.SetEnvironmentVariable(variable, connection);
         try
         {
-            var root = Estate("\"qa\": { \"host\": \"dev-sql\", \"connection\": \"env:" + variable + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
+            var root = Estate(PostureFile.Of("qa", new("env:" + variable)));
 
-            var named = Assert.IsType<SqlServer.EnvironmentDatabase>(Made(SqlServer.Resolve(Made(SqlServer.Target("env:qa", "--target")), root)));
+            var named = Assert.IsType<SqlServer.EnvironmentDatabase>(Value(SqlServer.Resolve(Value(SqlServer.Target("env:qa", "--target")), root)));
 
             var resolved = new SqlConnectionStringBuilder(named.Connection);
             Assert.Equal((integrated, "Dev"), (resolved.IntegratedSecurity, resolved.InitialCatalog));
             Assert.Equal(integrated ? "" : "reader", resolved.UserID);
-            Assert.Equal("env:qa", named.ToString());
             Assert.Equal("env:qa", named.Target.ToString());
-            Assert.DoesNotContain(Planted, named.ToString() + named.Target + named.Environment, StringComparison.Ordinal);
+            Planted.AbsentFrom(named.ToString() + named.Target + named.Environment);
         }
         finally
         {
@@ -270,9 +269,9 @@ public sealed class TargetTests : IDisposable
     [InlineData("Server=dev-sql;Initial Catalog=Dev", null, null)]
     public void A_reference_reaches_the_server_with_its_own_TLS_keywords_and_no_other(string connection, string? encrypt, string? hostNameInCertificate)
     {
-        var root = Estate("\"qa\": { \"host\": \"dev-sql\", \"connection\": \"file:" + Written("qa.connection", connection) + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
+        var root = Estate(PostureFile.Of("qa", new("file:" + Written("qa.connection", connection))));
 
-        var resolved = new SqlConnectionStringBuilder(Made(SqlServer.Resolve(Made(SqlServer.Target("env:qa", "--target")), root)).Connection);
+        var resolved = new SqlConnectionStringBuilder(Value(SqlServer.Resolve(Value(SqlServer.Target("env:qa", "--target")), root)).Connection);
 
         Assert.Equal((encrypt, hostNameInCertificate), (resolved.ShouldSerialize("Encrypt") ? resolved.Encrypt.ToString() : null, resolved.ShouldSerialize("Host Name In Certificate") ? resolved.HostNameInCertificate : null));
         Assert.False(resolved.ShouldSerialize("Trust Server Certificate"), "estate set TrustServerCertificate on a named environment's connection");
@@ -280,53 +279,50 @@ public sealed class TargetTests : IDisposable
 
     /// <summary>
     /// Finding R-7: ESTATE_SQL, the scratch server the operator names, is configuration, so a value SqlClient reads no connection string
-    /// from is connection.malformed at exit 6, not a server that does not answer (exit 4); and the same text given as a named
-    /// environment's reference is refused by the one parse, alike, its text withheld from both, since it can hold a password.
+    /// from is connection.malformed, not a server that does not answer; and the same text given as a named environment's reference is
+    /// refused by the one parse, alike, its text withheld from both, since it can hold a password.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void A_malformed_ESTATE_SQL_is_refused_at_exit_6_as_the_same_text_is_as_a_reference_its_text_withheld()
+    public void A_malformed_ESTATE_SQL_is_connection_malformed_as_the_same_text_is_as_a_reference_its_text_withheld()
     {
         var malformed = "Server=db;User ID=sa;Password=" + Planted + ";Nonsense " + Planted + " = 1";
-        var root = Estate(Dev(Written("dev.connection", malformed)));
+        var root = Estate(PostureFile.Dev("file:" + Written("dev.connection", malformed)));
 
-        var scratchServer = Failed(ScratchServer.ServerName(malformed, Path.Combine(scratch, "no-sql.env"), localDb: false));
-        var reference = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root));
+        var scratchServer = Failed(ScratchServer.ServerName(malformed, scratch.Under("no-sql.env"), localDb: false), "connection.malformed");
+        var reference = Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), root), "connection.malformed");
 
-        Assert.Equal(("connection.malformed", 6), (scratchServer.Code, Contract.Exit(scratchServer)));
-        Assert.Equal(("connection.malformed", 6), (reference.Code, Contract.Exit(reference)));
         Assert.StartsWith("ESTATE_SQL", scratchServer.Message, StringComparison.Ordinal);
         Assert.StartsWith("env:dev's connection", reference.Message, StringComparison.Ordinal);
         Assert.All(new[] { scratchServer, reference }, error =>
         {
             Assert.EndsWith(" is no connection string SqlClient reads; its text is withheld.", error.Message, StringComparison.Ordinal);
-            Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+            Planted.AbsentFrom(error);
         });
     }
 
-    /// <summary>A reference that resolves to nothing, or to no connection string that names its database, is exit 6 by the reference, and quotes nothing it read.</summary>
+    /// <summary>A reference that resolves to nothing, or to no connection string that names its database, is refused by the reference, and quotes nothing it read.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("env", "connection.unresolved")]
     [InlineData("missing file", "connection.unresolved")]
     [InlineData("not a connection string", "connection.malformed")]
     [InlineData("no database", "connection.malformed")]
-    public void A_reference_that_resolves_to_no_connection_is_exit_6_and_quotes_nothing_it_read(string how, string code)
+    public void A_reference_that_resolves_to_no_connection_is_refused_by_the_reference_and_quotes_nothing_it_read(string how, string code)
     {
         var reference = how switch
         {
             "env" => "env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(),
-            "missing file" => "file:" + Path.Combine(scratch, "absent.connection"),
+            "missing file" => "file:" + scratch.Under("absent.connection"),
             "not a connection string" => "file:" + Written("garbled.connection", "Nonsense " + Planted + " = 1"),
             _ => "file:" + Written("bare.connection", "Server=dev-sql;User ID=reader;Password=" + Planted),
         };
-        var root = Estate("\"qa\": { \"host\": \"dev-sql\", \"connection\": \"" + reference.Replace("\\", "\\\\", StringComparison.Ordinal) + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
+        var root = Estate(PostureFile.Of("qa", new(reference)));
 
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:qa", "--target")), root));
+        var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("env:qa", "--target")), root), code);
 
-        Assert.Equal((code, 6), (error.Code, Contract.Exit(error)));
         Assert.Contains("env:qa", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(error);
     }
 
     /// <summary>
@@ -337,6 +333,7 @@ public sealed class TargetTests : IDisposable
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Value", "O2")]
     [InlineData("dev?.connection")]
     [InlineData("dev*.connection")]
     [InlineData("dev<.connection")]
@@ -344,22 +341,21 @@ public sealed class TargetTests : IDisposable
     [InlineData("dev|.connection")]
     public void A_connection_file_whose_name_Windows_forbids_resolves_to_nothing_on_every_operating_system(string name)
     {
-        var root = Estate(Dev(scratch.Replace('\\', '/') + "/" + name));
+        var root = Estate(PostureFile.Dev("file:" + scratch.Path.Replace('\\', '/') + "/" + name));
 
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root));
-
-        Assert.Equal(("connection.unresolved", 6), (error.Code, Contract.Exit(error)));
-        Assert.Equal(Server("localhost,11433"), Made(ScratchServer.Unnamed(Posture(root), root, Server("localhost,11433"), Resolver)));
+        Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), root), "connection.unresolved");
+        Assert.Equal(Server("localhost,11433"), Value(ScratchServer.Unnamed(Posture(root), root, Server("localhost,11433"), Resolver)));
     }
 
     /// <summary>
-    /// kernel/NamedEnvironment.cs documents a file: reference as naming a file outside git, and the estate's own principal
-    /// files sit under .estate/, which .gitignore lists. A connection file git tracks, or one git does not ignore, which the next
-    /// git add would commit, is exit 6 by the environment and the reference, before the file is read, and quotes nothing it holds;
-    /// one git ignores, or one in no git repository while the estate's root is in one, resolves.
+    /// kernel/Environments.cs documents a file: reference as naming a file outside git, and the estate's own principal files sit under
+    /// .estate/, which .gitignore lists. A connection file git tracks, or one git does not ignore, which the next git add would commit,
+    /// is refused by the environment and the reference, before the file is read, and quotes nothing it holds; one git ignores, or one in
+    /// no git repository while the estate's root is in one, resolves.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Value", "X1")]
     [InlineData("estate/dev.connection", "committed", "reference.tracked")]
     [InlineData("estate/dev.connection", "written", "reference.not-ignored")]
     [InlineData(".estate/dev.connection", "written", null)]
@@ -367,12 +363,12 @@ public sealed class TargetTests : IDisposable
     public void A_connection_file_git_tracks_or_does_not_ignore_is_refused_and_one_git_ignores_resolves(string file, string how, string? code)
     {
         using var repository = new Scratch();
-        const string Connection = "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted;
-        var reference = file == "outside every repository" ? Written("dev.connection", Connection) : file;
-        repository.Commit("the estate", (".gitignore", ".estate/\n"), ("estate/posture.json", "{ \"environments\": { " + Dev(reference) + " } }"));
+        var connection = "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted;
+        var reference = file == "outside every repository" ? Written("dev.connection", connection) : file;
+        repository.Commit("the estate", (".gitignore", ".estate/\n"), ("estate/posture.json", PostureFile.Dev("file:" + reference).Json()));
         if (file != "outside every repository")
         {
-            repository.Write((file, Connection));
+            repository.Write((file, connection));
             OwnerOnly(Path.Combine(repository.Root, file));
         }
 
@@ -381,14 +377,13 @@ public sealed class TargetTests : IDisposable
             repository.Commit("the connection file");
         }
 
-        var resolved = SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), repository.Root);
+        var resolved = SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), repository.Root);
 
         Assert.Equal(code, resolved.Match<string?>(_ => null, error => error.Code));
         resolved.Match(_ => 0, error =>
         {
-            Assert.Equal(6, Contract.Exit(error));
             Assert.StartsWith("env:dev's connection, file:" + file + ", ", error.Message, StringComparison.Ordinal);
-            Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+            Planted.AbsentFrom(error);
             return 0;
         });
     }
@@ -406,6 +401,8 @@ public sealed class TargetTests : IDisposable
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Value", "X1")]
+    [Trait("Value", "O2")]
     [InlineData("estate/secrets/dev.connection", "reference.tracked")]
     [InlineData("estate/secrets/Dev.connection", "reference.tracked")]
     [InlineData("estate/secrets/dev.connection.", "reference.tracked")]
@@ -416,7 +413,7 @@ public sealed class TargetTests : IDisposable
     public void A_connection_file_git_tracks_is_refused_under_each_spelling_that_opens_it_though_gitignore_lists_it(string reference, string code)
     {
         using var repository = new Scratch();
-        repository.Commit("the estate", (".gitignore", ".estate/\nestate/secrets/\n*.connection\n"), ("estate/posture.json", "{ \"environments\": { " + Dev(reference) + " } }"));
+        repository.Commit("the estate", (".gitignore", ".estate/\nestate/secrets/\n*.connection\n"), ("estate/posture.json", PostureFile.Dev("file:" + reference).Json()));
         repository.Write(("estate/secrets/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
         OwnerOnly(Path.Combine(repository.Root, "estate", "secrets", "dev.connection"));
         repository.Git("add", "--force", "--", "estate/secrets/dev.connection");
@@ -424,11 +421,10 @@ public sealed class TargetTests : IDisposable
         using var link = reference == ".estate/link/dev.connection" ? Linked(repository.Root) : null;
 
         var opens = File.Exists(Path.Combine(repository.Root, reference));
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), repository.Root));
+        var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), repository.Root), opens ? code : "connection.unresolved");
 
         Assert.True(opens || !OperatingSystem.IsWindows() || reference.Contains('~', StringComparison.Ordinal), reference + " opens no file on Windows");
-        Assert.Equal((opens ? code : "connection.unresolved", 6), (error.Code, Contract.Exit(error)));
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(error);
     }
 
     /// <summary>
@@ -441,7 +437,7 @@ public sealed class TargetTests : IDisposable
     public void A_connection_file_git_does_not_ignore_is_refused_when_GIT_CEILING_DIRECTORIES_stops_the_search_below_its_repository()
     {
         using var repository = new Scratch();
-        repository.Commit("the estate", (".gitignore", ".estate/\n"), ("estate/posture.json", "{ \"environments\": { " + Dev("estate/secrets/uat.txt") + " } }"));
+        repository.Commit("the estate", (".gitignore", ".estate/\n"), ("estate/posture.json", PostureFile.Dev("file:estate/secrets/uat.txt").Json()));
         repository.Write(("estate/secrets/uat.txt", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
         OwnerOnly(Path.Combine(repository.Root, "estate", "secrets", "uat.txt"));
         var ceiling = Environment.GetEnvironmentVariable("GIT_CEILING_DIRECTORIES");
@@ -449,22 +445,19 @@ public sealed class TargetTests : IDisposable
         Result<SqlServer.Database> resolved;
         try
         {
-            resolved = SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), repository.Root);
+            resolved = SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), repository.Root);
         }
         finally
         {
             Environment.SetEnvironmentVariable("GIT_CEILING_DIRECTORIES", ceiling);
         }
 
-        var error = Failed(resolved);
-
-        Assert.Equal(("reference.not-ignored", 6), (error.Code, Contract.Exit(error)));
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(Failed(resolved, "reference.not-ignored"));
     }
 
     /// <summary>
     /// A .git file whose gitdir names no repository makes git fail its search in the connection file's folder with an error other
-    /// than "not a git repository (or any ...)", so git cannot say whether a commit would hold the file: git.failed, exit 6, the file
+    /// than "not a git repository (or any ...)", so git cannot say whether a commit would hold the file: git.failed, the file
     /// unread. The message leads with the environment and the reference, then quotes git's own error.
     /// </summary>
     [Fact]
@@ -472,21 +465,20 @@ public sealed class TargetTests : IDisposable
     public void A_connection_file_in_a_folder_git_cannot_search_is_refused_as_git_failed()
     {
         using var repository = new Scratch();
-        repository.Commit("the estate", (".gitignore", ".estate/\n"), ("estate/posture.json", "{ \"environments\": { " + Dev("estate/broken/dev.connection") + " } }"));
+        repository.Commit("the estate", (".gitignore", ".estate/\n"), ("estate/posture.json", PostureFile.Dev("file:estate/broken/dev.connection").Json()));
         repository.Write(("estate/broken/.git", "gitdir: nowhere\n"), ("estate/broken/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
         OwnerOnly(Path.Combine(repository.Root, "estate", "broken", "dev.connection"));
 
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), repository.Root));
+        var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), repository.Root), "git.failed");
 
-        Assert.Equal(("git.failed", 6), (error.Code, Contract.Exit(error)));
         Assert.StartsWith("env:dev's connection, file:estate/broken/dev.connection, cannot be checked against git: git rev-parse failed: ", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(error);
     }
 
     /// <summary>
-    /// M1 exit 5, R15: a connection file that exists, in a folder this identity cannot list, that this identity cannot read, or whose
+    /// R15: a connection file that exists, in a folder this identity cannot list, that this identity cannot read, or whose
     /// attributes this identity cannot read, holds a host estate cannot learn. Before this was a refusal it resolved to nothing, so
-    /// env:dev went uncompared and a scratch server on dev's host was made. Now Resolve refuses it at exit 6, reference.unlistable,
+    /// env:dev went uncompared and a scratch server on dev's host was made. Now Resolve refuses it as reference.unlistable,
     /// reference.unreadable or reference.inaccessible, by the environment and the reference, and ScratchServer.Unnamed returns that
     /// refusal instead of the server. The denial is a deny entry for RD (list the folder, read the file) on Windows, or mode 0300 or
     /// 0200 on Linux and macOS. For the file whose attributes are withheld, where File.Exists answers false as it does where no file
@@ -495,55 +487,28 @@ public sealed class TargetTests : IDisposable
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Exit", "M1.5")]
     [InlineData("folder", "reference.unlistable")]
     [InlineData("file", "reference.unreadable")]
     [InlineData("attributes", "reference.inaccessible")]
     public void A_connection_file_this_identity_cannot_list_or_read_is_refused_and_leaves_no_environment_uncompared(string denied, string code)
     {
-        Directory.CreateDirectory(Path.Combine(scratch, "locked"));
+        scratch.Folder("locked");
         var file = Written(Path.Combine("locked", "dev.connection"), "Server=127.0.0.1,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted);
-        var root = Estate(Dev(file));
+        var root = Estate(PostureFile.Dev("file:" + file));
 
-        var use = () => (SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root), ScratchServer.Unnamed(Posture(root), root, Server("localhost,11433"), Resolver));
+        var use = () => (SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), root), ScratchServer.Unnamed(Posture(root), root, Server("localhost,11433"), Resolver));
         var (resolved, unnamed) = denied switch
         {
-            "folder" => RefusalPaths.Denied(Path.Combine(scratch, "locked"), use),
+            "folder" => RefusalPaths.Denied(scratch.Under("locked"), use),
             "file" => RefusalPaths.Denied(file, use),
             _ => RefusalPaths.Unexaminable(file, use),
         };
 
-        var error = Failed(resolved);
-        Assert.Equal((code, 6), (error.Code, Contract.Exit(error)));
+        var error = Failed(resolved, code);
         Assert.StartsWith("env:dev's connection, file:" + file + ", ", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(error);
         Assert.Equal(error, Failed(unnamed));
-    }
-
-    /// <summary>
-    /// With LANGUAGE and LC_MESSAGES set to German in estate's own process, a connection file in no repository resolves and is not
-    /// refused as git.failed: io/Git still finds git's "not a git repository (or any ...)". A git that carries no German translation
-    /// passes this whatever variables reach it; GitTests' stand-in for git shows which variables reach it.
-    /// </summary>
-    [Fact]
-    [Trait("Category", "fast")]
-    public void A_connection_file_in_no_repository_resolves_while_the_caller_asks_for_git_s_messages_in_German()
-    {
-        var root = Estate(Dev(Written("dev.connection", "Server=dev-sql;Initial Catalog=Dev")));
-        var asked = (Language: Environment.GetEnvironmentVariable("LANGUAGE"), Messages: Environment.GetEnvironmentVariable("LC_MESSAGES"));
-        (string?, string?) resolved;
-        Environment.SetEnvironmentVariable("LANGUAGE", "de");
-        Environment.SetEnvironmentVariable("LC_MESSAGES", "de_DE.UTF-8");
-        try
-        {
-            resolved = SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root).Match<(string?, string?)>(database => (database.Target.ToString(), null), error => (null, error.Code + ": " + error.Message));
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("LANGUAGE", asked.Language);
-            Environment.SetEnvironmentVariable("LC_MESSAGES", asked.Messages);
-        }
-
-        Assert.Equal(("env:dev", null), resolved);
     }
 
     /// <summary>An estate's root in no git repository leaves git unable to say whether it would commit a connection file, so the reference is refused, saying so, and the file is not read.</summary>
@@ -551,15 +516,12 @@ public sealed class TargetTests : IDisposable
     [Trait("Category", "fast")]
     public void A_connection_file_of_an_estate_root_in_no_git_repository_is_refused_saying_git_cannot_check_it()
     {
-        var root = Directory.CreateDirectory(Path.Combine(scratch, "no-repository")).FullName;
-        Directory.CreateDirectory(Path.Combine(root, "estate"));
-        File.WriteAllText(Path.Combine(root, "estate", "posture.json"), "{ \"environments\": { " + Dev(Written("dev.connection", "Server=dev-sql;Initial Catalog=Dev;Password=" + Planted)) + " } }");
+        var root = PostureFile.Dev("file:" + Written("dev.connection", "Server=dev-sql;Initial Catalog=Dev;Password=" + Planted)).WriteTo(scratch.Folder("no-repository"));
 
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root));
+        var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), root), "reference.no-repository");
 
-        Assert.Equal(("reference.no-repository", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains(root + " is in no git repository", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(error);
     }
 
     /// <summary>
@@ -569,6 +531,7 @@ public sealed class TargetTests : IDisposable
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "X1")]
     public void A_connection_file_its_group_can_read_is_refused_where_files_carry_a_Unix_mode()
     {
         var file = Written("dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted);
@@ -577,12 +540,12 @@ public sealed class TargetTests : IDisposable
             File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
         }
 
-        var resolved = SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), Estate(Dev(file)));
+        var resolved = SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), Estate(PostureFile.Dev("file:" + file)));
 
         Assert.Equal(OperatingSystem.IsWindows() ? null : "reference.readable-by-others", resolved.Match<string?>(_ => null, error => error.Code));
         resolved.Match(_ => 0, error =>
         {
-            Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+            Planted.AbsentFrom(error);
             return 0;
         });
         Assert.Equal(["reference.readable-by-others", "reference.readable-by-others", null], ((int[])[0b110_100_000, 0b110_000_100, 0b110_000_000])   // modes 0640, 0604, 0600
@@ -592,25 +555,23 @@ public sealed class TargetTests : IDisposable
     /// <summary>ref: and dacpac: name no database; the synthetic copy arrives in M3.</summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("ref:main", "target.not-a-database", 1)]
-    [InlineData("dacpac:build/x.dacpac", "target.not-a-database", 1)]
-    [InlineData("synthetic-copy", "synthetic-copy.not-built", 6)]
-    public void A_target_that_is_no_database_this_build_reads_is_refused_where_a_database_is_asked_for(string text, string code, int exit)
-    {
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target(text, "--target")), scratch));
-
-        Assert.Equal((code, exit), (error.Code, Contract.Exit(error)));
-    }
+    [InlineData("ref:main", "target.not-a-database")]
+    [InlineData("dacpac:build/x.dacpac", "target.not-a-database")]
+    [InlineData("synthetic-copy", "synthetic-copy.not-built")]
+    public void A_target_that_is_no_database_this_build_reads_is_refused_where_a_database_is_asked_for(string text, string code) =>
+        Failed(SqlServer.Resolve(Value(SqlServer.Target(text, "--target")), scratch.Path), code);
 
     /// <summary>
-    /// VALUES.md X2, M1 exit 7, §18: a named environment's SQL Server error is withheld whatever its number, and a denied login says a lead's
-    /// prediction will appear on the pull request; a copy's rows are minted, so a copy's failure keeps the engine's message. The rows pin
-    /// the one classifier of SQL Server's numbers (R4 lifts it into the kernel at M2): a login, a database or a permission refused; no
-    /// answer, or a timeout before the connection opened; a timeout of a statement on an open connection; and a statement that failed,
-    /// a deadlock among them.
+    /// VALUES.md X2, §18: a named environment's SQL Server error is withheld whatever its number, and a denied login says a lead's
+    /// prediction will appear on the pull request; a copy's rows are generated, so a copy's failure keeps SQL Server's message. The rows
+    /// pin the one classifier of SQL Server's numbers: a login, a database or a permission refused; no answer, or a timeout before the
+    /// connection opened; a timeout of a statement on an open connection; and a statement that failed, a deadlock among them. Every
+    /// error of the classifier is of the category server, whatever its detail.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Value", "X2")]
+    [Trait("Exit", "M1.7")]
     [InlineData(18456, false, "server.denied")]
     [InlineData(4060, false, "server.denied")]
     [InlineData(229, false, "server.denied")]
@@ -626,25 +587,26 @@ public sealed class TargetTests : IDisposable
     [InlineData(2628, false, "server.failed")]
     public void A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept(int number, bool opened, string code)
     {
-        var root = Estate("\"qa\": { \"host\": \"qa-sql\", \"connection\": \"file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa") + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
-        var named = Made(SqlServer.Resolve(Made(SqlServer.Target("env:qa", "--target")), root));
+        var root = Estate(PostureFile.Of("qa", new("file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa"), "qa-sql")));
+        var named = Value(SqlServer.Resolve(Value(SqlServer.Target("env:qa", "--target")), root));
         var copy = new SqlServer.Copy(CopyName.Make("host", 1, 0x0a1b2c3d), "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
         var message = "Conversion failed when converting the nvarchar value '" + Planted + "' to data type int.";
 
         var (fromNamed, fromCopy) = (named.ErrorOf(number, message, fatal: false, opened), copy.ErrorOf(number, message, fatal: false, opened));
 
-        Assert.Equal((code, 4, code), (fromNamed.Code, Contract.Exit(fromNamed), fromCopy.Code));
+        Assert.Equal((code, ErrorCategory.Server, code), (fromNamed.Code, fromNamed.Category, fromCopy.Code));
         Assert.StartsWith("env:qa ", fromNamed.Message, StringComparison.Ordinal);
         Assert.Contains(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Msg {number}"), fromNamed.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, fromNamed.Message + fromNamed.Remedy + fromCopy.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(fromNamed);
+        Assert.DoesNotContain(Planted.Text, fromCopy.Remedy, StringComparison.Ordinal);
         Assert.Equal(code == "server.denied", fromNamed.Message.Contains("a lead's prediction will appear on the pull request", StringComparison.Ordinal));
-        Assert.Equal(code == "server.failed", fromCopy.Message.Contains(Planted, StringComparison.Ordinal));
+        Assert.Equal(code == "server.failed", fromCopy.Message.Contains(Planted.Text, StringComparison.Ordinal));
     }
 
     /// <summary>
     /// DacFx's own failure through Database.ErrorOf: DacPackageExtensions.BuildPackage over a view on a table the model lacks throws
     /// DacServicesException, whose Message already holds each of its three SQL71501 messages and which holds no SqlException. The error is
-    /// dacfx.failed at exit 6 for a named environment and a copy alike, quoting DacFx's words with each SQL71501 message once.
+    /// dacfx.failed for a named environment and a copy alike, quoting DacFx's words with each SQL71501 message once.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -652,26 +614,55 @@ public sealed class TargetTests : IDisposable
     [InlineData("copy:estate_host_1_0a1b2c3d")]
     public void A_DacFx_failure_with_no_SQL_Server_error_inside_is_dacfx_failed_quoting_its_SQL7_codes(string target)
     {
-        Telemetry.OptOut();
-        var root = Estate("\"qa\": { \"host\": \"qa-sql\", \"connection\": \"file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa") + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
+        var root = Estate(PostureFile.Of("qa", new("file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa"), "qa-sql")));
         SqlServer.Database database = target == "env:qa"
-            ? Made(SqlServer.Resolve(Made(SqlServer.Target(target, "--target")), root))
+            ? Value(SqlServer.Resolve(Value(SqlServer.Target(target, "--target")), root))
             : new SqlServer.Copy(CopyName.Make("host", 1, 0x0a1b2c3d), "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
         var failure = Assert.IsType<Microsoft.SqlServer.Dac.DacServicesException>(Record.Exception(() =>
         {
             using var model = new Microsoft.SqlServer.Dac.Model.TSqlModel(Microsoft.SqlServer.Dac.Model.SqlServerVersion.Sql160, new Microsoft.SqlServer.Dac.Model.TSqlModelOptions());
             model.AddObjects("CREATE VIEW dbo.V AS SELECT Id FROM dbo.Missing;");
-            Microsoft.SqlServer.Dac.DacPackageExtensions.BuildPackage(Path.Combine(scratch, "unresolved.dacpac"), model, new Microsoft.SqlServer.Dac.PackageMetadata());
+            Microsoft.SqlServer.Dac.DacPackageExtensions.BuildPackage(scratch.Under("unresolved.dacpac"), model, new Microsoft.SqlServer.Dac.PackageMetadata());
         }));
 
         var error = database.ErrorOf(failure);
 
         Assert.Equal(3, failure.Messages.Count(m => m.Prefix + m.Number == "SQL71501"));
-        Assert.Equal(("dacfx.failed", 6), (error.Code, Contract.Exit(error)));
+        Assert.Equal("dacfx.failed", error.Code);
         Assert.StartsWith("DacFx failed against " + target + " with no SQL Server error inside: Cannot save package to file.", error.Message, StringComparison.Ordinal);
         Assert.Equal(3, error.Message.Split("SQL71501").Length - 1);
         Assert.Contains("[dbo].[V] has an unresolved reference to object [dbo].[Missing].", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain('\n', error.Message);
+    }
+
+    /// <summary>
+    /// The scratch server named by a ~/.estate/sql.env whose port nothing listens on, as after the container stopped: creating a copy
+    /// is refused as a server that does not answer, with the remedy that starts the container, and the row written before the CREATE
+    /// DATABASE is taken out of the registry again. A closed port answers at once, so no server is needed.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_scratch_server_that_does_not_answer_names_ci_sql_up_and_leaves_no_registry_row()
+    {
+        var root = Estate(new PostureFile(new Dictionary<string, PostureFile.Environment>()));
+        var port = ClosedPort();
+        var server = Value(ScratchServer.Server(null, Written("sql.env", "MSSQL_SA_PASSWORD=" + Planted + "\nESTATE_SQL_PORT=" + port + "\n"), localDb: false));
+
+        var error = Failed(ScratchServer.Create(root, server), "server.unreachable");
+
+        Assert.Contains("ci/sql.sh up", error.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(error);
+        Assert.Empty(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(root, ".estate", "copies.json")))!["copies"]!.AsArray());
+    }
+
+    /// <summary>A loopback port nothing listens on: bound and released, so a connection to it is refused at once.</summary>
+    private static int ClosedPort()
+    {
+        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
     }
 
     /// <summary>A server as this machine reads its data source.</summary>
@@ -686,16 +677,11 @@ public sealed class TargetTests : IDisposable
         _ => [],
     };
 
-    /// <summary>The environment dev in posture JSON, on the host given, its connection the file given.</summary>
-    private static string Dev(string connectionFile, string host = "dev-sql") =>
-        "\"dev\": { \"host\": \"" + host + "\", \"connection\": \"file:" + connectionFile + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }";
-
-    /// <summary>An environment in posture JSON on the host given, whose connection is a variable no process sets, so it resolves to nothing here.</summary>
-    private static string Unresolved(string name, string host) => "\"" + name + "\": { \"host\": \"" + host + "\", \"connection\": \"env:ESTATE_UNSET_"
-        + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }";
+    /// <summary>An environment on the host given whose connection is a variable no process sets, so it resolves to nothing here.</summary>
+    private static PostureFile.Environment Unresolved(string host) => new("env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(), host);
 
     /// <summary>The estate's posture, read.</summary>
-    private static Environments Posture(string root) => Made(Profiles.Environments(root));
+    private static Environments Posture(string root) => Value(Profiles.Environments(root));
 
     /// <summary>The estate's root with .estate/copies.json holding one copy, made on the server given.</summary>
     private static string Registry(string root, CopyName name, string server)
@@ -745,21 +731,10 @@ public sealed class TargetTests : IDisposable
     /// <summary>A connection file under the scratch folder, in no git repository and read by its owner alone; its path with '/'.</summary>
     private string Written(string file, string text)
     {
-        File.WriteAllText(Path.Combine(scratch, file), text);
-        OwnerOnly(Path.Combine(scratch, file));
-        return Path.Combine(scratch, file).Replace('\\', '/');
+        OwnerOnly(scratch.File(file, text));
+        return scratch.Under(file).Replace('\\', '/');
     }
 
-    /// <summary>An estate's root in a git repository of its own, whose estate/posture.json names the environments given; the connection files stay outside it.</summary>
-    private string Estate(string environments)
-    {
-        var root = Directory.CreateDirectory(Path.Combine(repository.Value.Root, "estate-" + Guid.NewGuid().ToString("N")[..8])).FullName;
-        Directory.CreateDirectory(Path.Combine(root, "estate"));
-        File.WriteAllText(Path.Combine(root, "estate", "posture.json"), "{ \"environments\": { " + environments + " } }");
-        return root;
-    }
-
-    private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
-
-    private static Error Failed<T>(Result<T> result) => Assert.IsType<Result<T>.Failed>(result).Error;
+    /// <summary>An estate's root in a git repository of its own, holding the posture given; the connection files stay outside it.</summary>
+    private string Estate(PostureFile posture) => posture.WriteTo(Directory.CreateDirectory(Path.Combine(repository.Value.Root, "estate-" + Guid.NewGuid().ToString("N")[..8])).FullName);
 }

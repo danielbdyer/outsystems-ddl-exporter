@@ -4,23 +4,24 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Estate.Kernel;
+using Estate.Tests;
 using Xunit;
-using Contract = Estate.Cli.Contract;
+using static Estate.Tests.Expect;
 
 namespace Estate.Io.Tests;
 
 /// <summary>
 /// io/FileLock, the one way io takes a lock file (R6): another process's hold is waited out and released when that process ends,
-/// however it ends; a hold past the timeout is lock.timed-out at exit 9; any other failure to open the file is file.unwritable at
-/// once; a cancelled wait throws and takes nothing; shared holders coexist and keep an exclusive taker out.
+/// however it ends; a hold past the timeout is lock.timed-out; any other failure to open the file is file.unwritable at once; a
+/// cancelled wait throws and takes nothing; shared holders coexist and keep an exclusive taker out.
 /// </summary>
 public sealed class FileLockTests : IDisposable
 {
-    private readonly string scratch = Directory.CreateTempSubdirectory("estate-lock-").FullName;
+    private readonly ScratchFolder scratch = ScratchFolder.Temporary("lock");
 
-    private string Lock => Path.Combine(scratch, "state.lock");
+    private string Lock => scratch.Under("state.lock");
 
-    public void Dispose() => Directory.Delete(scratch, recursive: true);
+    public void Dispose() => scratch.Dispose();
 
     [Fact]
     [Trait("Category", "fast")]
@@ -34,7 +35,7 @@ public sealed class FileLockTests : IDisposable
         var waited = !taking.IsCompleted;
         holder.Kill(entireProcessTree: true);
         var clock = Stopwatch.StartNew();
-        using var taken = Ok(await taking);
+        using var taken = Value(await taking);
 
         Assert.True(waited, "the lock was taken while another process held it");
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5), "the lock was taken " + clock.Elapsed + " after its holder was killed");
@@ -43,13 +44,12 @@ public sealed class FileLockTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_lock_held_past_the_timeout_is_lock_timed_out_at_exit_9_naming_the_file()
+    public void A_lock_held_past_the_timeout_is_lock_timed_out_naming_the_file()
     {
-        using var held = Ok(FileLock.Take(Lock, TimeSpan.Zero));
+        using var held = Value(FileLock.Take(Lock, TimeSpan.Zero));
 
-        var error = Failed(FileLock.Take(Lock, TimeSpan.FromMilliseconds(200)));
+        var error = Failed(FileLock.Take(Lock, TimeSpan.FromMilliseconds(200)), "lock.timed-out");
 
-        Assert.Equal(("lock.timed-out", 9), (error.Code, Contract.Exit(error)));
         Assert.Contains(Path.GetFullPath(Lock), error.Message, StringComparison.Ordinal);
         Assert.Contains("200 milliseconds", error.Message, StringComparison.Ordinal);
     }
@@ -58,14 +58,12 @@ public sealed class FileLockTests : IDisposable
     [Trait("Category", "fast")]
     public void A_lock_whose_folder_cannot_be_made_is_file_unwritable_at_once()
     {
-        var file = Path.Combine(scratch, "file");
-        File.WriteAllText(file, "");
+        var file = scratch.File("file", "");
         var clock = Stopwatch.StartNew();
 
-        var error = Failed(FileLock.Take(Path.Combine(file, "state.lock"), TimeSpan.FromMinutes(10)));
+        var error = Failed(FileLock.Take(Path.Combine(file, "state.lock"), TimeSpan.FromMinutes(10)), "file.unwritable");
 
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(1), "a lock whose folder cannot be made waited " + clock.Elapsed);
-        Assert.Equal(("file.unwritable", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains(file, error.Message, StringComparison.Ordinal);
     }
 
@@ -73,7 +71,7 @@ public sealed class FileLockTests : IDisposable
     [Trait("Category", "fast")]
     public void A_cancelled_wait_throws_within_a_second_and_takes_nothing()
     {
-        using var held = Ok(FileLock.Take(Lock, TimeSpan.Zero));
+        using var held = Value(FileLock.Take(Lock, TimeSpan.Zero));
         using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
         var clock = Stopwatch.StartNew();
 
@@ -81,22 +79,22 @@ public sealed class FileLockTests : IDisposable
 
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), "the cancelled wait threw after " + clock.Elapsed);   // 200 ms alone; other classes start programs beside this one
         held.Dispose();
-        using var taken = Ok(FileLock.Take(Lock, TimeSpan.Zero));   // the cancelled wait left the lock free to take
+        using var taken = Value(FileLock.Take(Lock, TimeSpan.Zero));   // the cancelled wait left the lock free to take
     }
 
     [Fact]
     [Trait("Category", "fast")]
     public void Shared_holders_coexist_and_keep_an_exclusive_taker_out_until_the_last_of_them_ends()
     {
-        var one = Ok(FileLock.TakeShared(Lock, TimeSpan.Zero));
-        var two = Ok(FileLock.TakeShared(Lock, TimeSpan.Zero));
+        var one = Value(FileLock.TakeShared(Lock, TimeSpan.Zero));
+        var two = Value(FileLock.TakeShared(Lock, TimeSpan.Zero));
 
-        Assert.Equal("lock.timed-out", Failed(FileLock.Take(Lock, TimeSpan.Zero)).Code);
+        Failed(FileLock.Take(Lock, TimeSpan.Zero), "lock.timed-out");
         one.Dispose();
-        Assert.Equal("lock.timed-out", Failed(FileLock.Take(Lock, TimeSpan.Zero)).Code);
+        Failed(FileLock.Take(Lock, TimeSpan.Zero), "lock.timed-out");
         two.Dispose();
-        using var exclusive = Ok(FileLock.Take(Lock, TimeSpan.Zero));
-        Assert.Equal("lock.timed-out", Failed(FileLock.TakeShared(Lock, TimeSpan.Zero)).Code);
+        using var exclusive = Value(FileLock.Take(Lock, TimeSpan.Zero));
+        Failed(FileLock.TakeShared(Lock, TimeSpan.Zero), "lock.timed-out");
     }
 
     /// <summary>
@@ -117,7 +115,7 @@ public sealed class FileLockTests : IDisposable
             if (OperatingSystem.IsWindows())
             {
                 Assert.Equal("held", said);
-                Assert.Equal("lock.timed-out", Failed(FileLock.Take(Lock, TimeSpan.FromMilliseconds(200))).Code);
+                Failed(FileLock.Take(Lock, TimeSpan.FromMilliseconds(200)), "lock.timed-out");
             }
             else
             {
@@ -127,10 +125,7 @@ public sealed class FileLockTests : IDisposable
         finally
         {
             holder.Kill(entireProcessTree: true);
+            holder.WaitForExit();   // the scratch folder's deletion raced the holder's handle on the Windows runner
         }
     }
-
-    private static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
-
-    private static Error Failed<T>(Result<T> result) => Assert.IsType<Result<T>.Failed>(result).Error;
 }

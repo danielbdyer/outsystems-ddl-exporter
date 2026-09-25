@@ -9,7 +9,8 @@ namespace Estate.Io.Tests;
 public sealed class TelemetryTests
 {
     [Fact]
-    [Trait("Category", "fast")]
+    [Trait("Category", "build")]
+    [Trait("Value", "X5")]
     public void Loading_io_opts_out_of_telemetry_before_DacFx_loads()
     {
         var ran = new Command("dotnet", [typeof(EstateProcess).Assembly.Location, "telemetry"], Programs.Default)

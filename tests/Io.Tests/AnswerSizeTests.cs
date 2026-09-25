@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Estate.Cli;
 using Estate.Kernel;
+using Estate.Tests;
 using Xunit;
 
 namespace Estate.Io.Tests;
@@ -18,9 +19,9 @@ public sealed class AnswerSizeTests : IDisposable
 {
     private const int Columns = 3000;
 
-    private readonly string root = Directory.CreateTempSubdirectory("estate-answer-size-").FullName;
+    private readonly ScratchFolder root = ScratchFolder.Temporary("answer-size");
 
-    public void Dispose() => Directory.Delete(root, recursive: true);
+    public void Dispose() => root.Dispose();
 
     /// <summary>
     /// A change of 3,000 altered columns, built in memory and rendered as diff's answer: the Markdown holds the first entries and ends
@@ -48,7 +49,7 @@ public sealed class AnswerSizeTests : IDisposable
         Assert.Equal((Columns, true), ((int)answer["diff"]!["counts"]!["altered"]!, (bool)answer["truncated"]!));
         var full = (string)answer["full"]!;
         Assert.Matches("^\\.estate/runs/[^/]+/answer\\.json$", full);
-        var whole = JsonNode.Parse(File.ReadAllText(Path.Combine(root, full)))!;
+        var whole = JsonNode.Parse(File.ReadAllText(root.Under(full)))!;
         ScratchEstate.Valid("estate.diff.1.schema.json", whole);
         Assert.Equal((Columns, false, (string?)null), (whole["diff"]!["change"]!["altered"]!.AsArray().Count, (bool)whole["truncated"]!, (string?)whole["full"]));
 
@@ -63,16 +64,16 @@ public sealed class AnswerSizeTests : IDisposable
     {
         var diff = Contract.Verbs.Single(v => v.Name == "diff") with { Body = (_, _) => Verbs.Diff(Side("dacpac:before.dacpac"), Side("dacpac:after.dacpac"), Large(), Collation.CaseSensitive, false, Verbs.Stamped(null, null)) };
         using var output = new MemoryStream();
-        var exit = Cli.Program.Run(arguments, output, () => new Checkout(root, root, null), [diff]);
+        var exit = Cli.Program.Run(arguments, output, () => new Checkout(root.Path, root.Path, null), [diff]);
         return (exit, Encoding.UTF8.GetString(output.ToArray()));
     }
 
-    private static Verbs.Source Side(string target) => new(Ok(SqlServer.Target(target, "--from")), new Ssdt.ModelElements([], []), null, false);
+    private static Verbs.Source Side(string target) => new(Expect.Value(SqlServer.Target(target, "--from")), new Ssdt.ModelElements([], []), null, false);
 
     /// <summary>One column of each of 3,000 tables, its Length altered from 300 to 256.</summary>
     private static Change Large() => new([], [], [], SortedArray.Of(Enumerable.Range(0, Columns).Select(i =>
         new Change.Alteration(
-            Ok(ElementKey.Of(Ok(ElementKey.Of("Table", Ok(Name.Of("dbo", "T" + i.ToString("D4", System.Globalization.CultureInfo.InvariantCulture))))), "Column", Ok(Name.Of("C")))),
+            Expect.Value(ElementKey.Of(Expect.Value(ElementKey.Of("Table", Expect.Value(Name.Of("dbo", "T" + i.ToString("D4", System.Globalization.CultureInfo.InvariantCulture))))), "Column", Expect.Value(Name.Of("C")))),
             [new Change.Property("Length", new Value.Integer(300), new Value.Integer(256))],
             []))));
 

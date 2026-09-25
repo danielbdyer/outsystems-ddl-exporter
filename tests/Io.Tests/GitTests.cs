@@ -7,9 +7,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Estate.Budgets.Tests;
 using Estate.Kernel;
+using Estate.Tests;
 using Microsoft.SqlServer.Dac.Model;
 using Xunit;
-using Contract = Estate.Cli.Contract;
 
 namespace Estate.Io.Tests;
 
@@ -51,7 +51,71 @@ public sealed class GitTests : IDisposable
         Assert.False(File.Exists(marker), "a changed worktree was reused instead of made afresh");
         Assert.Equal("HEAD", scratch.GitAt(at.Path, "rev-parse", "--abbrev-ref", "HEAD"));
         Assert.Equal(2, scratch.Worktrees().Count);
-        Assert.Equal("build.no-project", Failed(Ssdt.Build(at, Path.Combine(scratch.Root, "a.sqlproj"), scratch.Root, scratch.Root)).Code);   // a ref's project is named from its root
+        Failed(Ssdt.Build(at, Path.Combine(scratch.Root, "a.sqlproj"), scratch.Root, scratch.Root), "build.no-project");   // a ref's project is named from its root
+    }
+
+    /// <summary>A worktree left standing at another commit, as a checkout in it leaves it, is removed and made again at the ref's commit.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void At_replaces_a_worktree_that_stands_at_another_commit()
+    {
+        var first = scratch.Commit("first", ("a.sql", "SELECT 1;\n"));
+        var second = scratch.Commit("second", ("a.sql", "SELECT 2;\n"));
+        var at = Ok(Git.At(scratch.Root, first));
+        scratch.GitAt(at.Path, "checkout", "-q", "--detach", second);
+
+        var again = Ok(Git.At(scratch.Root, first));
+
+        Assert.Equal(at, again);
+        Assert.Equal(first, scratch.GitAt(again.Path, "rev-parse", "HEAD"));
+        Assert.Equal("SELECT 1;\n", File.ReadAllText(Path.Combine(again.Path, "a.sql")));
+    }
+
+    /// <summary>
+    /// A stale worktree git cannot remove: on Windows a file under it held open by another program, elsewhere a folder under it whose
+    /// contents its owner may not delete. At names the folder to delete by hand instead of building a worktree that stands at the wrong commit.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void At_names_the_folder_to_delete_when_git_cannot_remove_a_stale_worktree()
+    {
+        var commit = scratch.Commit("first", ("a.sql", "SELECT 1;\n"), ("held/b.sql", "SELECT 2;\n"));
+        var at = Ok(Git.At(scratch.Root, commit));
+        File.WriteAllText(Path.Combine(at.Path, "a.sql"), "SELECT 3;\n");   // changed, so the worktree is made afresh
+        using var open = OperatingSystem.IsWindows() ? new FileStream(Path.Combine(at.Path, "held", "b.sql"), FileMode.Open, FileAccess.Read, FileShare.None) : null;
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(Path.Combine(at.Path, "held"), UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        }
+
+        try
+        {
+            var error = Failed(Git.At(scratch.Root, commit), "git.failed");
+
+            Assert.Contains(at.Path + " is not at " + commit + " unchanged, and git cannot remove it.", error.Message, StringComparison.Ordinal);
+            Assert.Contains("delete the folder", error.Remedy, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(Path.Combine(at.Path, "held"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+        }
+    }
+
+    /// <summary>A tag object is peeled to the commit it tags: the worktree stands at that commit, and is named for it.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void At_resolves_an_annotated_tag_to_its_commit()
+    {
+        var commit = scratch.Commit("first", ("a.sql", "SELECT 1;\n"));
+        scratch.Git("tag", "-a", "v1", "-m", "release 1");
+        Assert.NotEqual(commit, scratch.Git("rev-parse", "v1"));   // the tag object, not the commit
+
+        var at = Ok(Git.At(scratch.Root, "v1"));
+
+        Assert.Equal(new Git.Worktree(Path.Combine(scratch.Root, ".estate", "worktrees", commit), commit), at);
     }
 
     /// <summary>
@@ -154,17 +218,15 @@ public sealed class GitTests : IDisposable
         scratch.Git("switch", "-q", "--orphan", "unrelated");
         scratch.Commit("unrelated", ("c.sql", "SELECT 6;\n"));
 
-        var shallow = Failed(Git.MergeBase(clone, "main", "feature"));
-        var unrelated = Failed(Git.MergeBase(scratch.Root, "main", "unrelated"));
+        var shallow = Failed(Git.MergeBase(clone, "main", "feature"), "git.shallow-clone");
+        Failed(Git.MergeBase(scratch.Root, "main", "unrelated"), "ref.unrelated");
 
-        Assert.Equal(("git.shallow-clone", 6), (shallow.Code, Contract.Exit(shallow)));
         Assert.Contains("--unshallow", shallow.Remedy, StringComparison.Ordinal);
-        Assert.Equal(("ref.unrelated", 1), (unrelated.Code, Contract.Exit(unrelated)));
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void CommitAndPush_publishes_exactly_the_named_branch_with_exactly_the_given_paths_and_leaves_the_callers_checkout_as_it_was()
+    public void CommitAndPush_publishes_exactly_the_named_branch_with_exactly_the_given_paths_and_leaves_the_caller_s_checkout_as_it_was()
     {
         var origin = scratch.Origin();
         var head = scratch.Commit("the estate", ("estate/evidence.shape.json", "{}\n"), ("README.md", "estate\n"));
@@ -172,12 +234,12 @@ public sealed class GitTests : IDisposable
         scratch.Write(("estate/evidence.shape.json", "{ \"sites\": [] }\n"), ("estate/ledgers/row-tiers.md", "| table | tier |\n"), ("README.md", "estate, edited\n"));
         scratch.Git("add", "README.md");   // the caller's own staged change stays theirs
 
-        var pushed = Ok(Git.CommitAndPush(scratch.Root, ["estate/evidence.shape.json", "estate/ledgers/row-tiers.md"], "profile: dev's evidence", "estate/evidence-dev"));
+        var pushed = Ok(Git.CommitAndPush(scratch.Root, ["estate/evidence.shape.json", "estate/ledgers/row-tiers.md"], "measure: dev's evidence", "estate/evidence-dev"));
 
         Assert.Equal("estate/evidence-dev", pushed.Branch);
         Assert.Equal(["refs/heads/estate/evidence-dev " + pushed.Commit, "refs/heads/main " + head], scratch.GitAt(origin, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads").Split('\n'));
         Assert.Equal(["estate/evidence.shape.json", "estate/ledgers/row-tiers.md"], scratch.GitAt(origin, "diff-tree", "-r", "--name-only", "--no-commit-id", head, pushed.Commit).Split('\n'));
-        Assert.Equal(head + "\nEstate Test\nprofile: dev's evidence", scratch.GitAt(origin, "log", "-1", "--format=%P%n%an%n%B", pushed.Commit));
+        Assert.Equal(head + "\nEstate Test\nmeasure: dev's evidence", scratch.GitAt(origin, "log", "-1", "--format=%P%n%an%n%B", pushed.Commit));
         Assert.Equal("{ \"sites\": [] }", scratch.GitAt(origin, "show", pushed.Commit + ":estate/evidence.shape.json"));
         Assert.Equal(("refs/heads/main", head), (scratch.Git("symbolic-ref", "HEAD"), scratch.Git("rev-parse", "HEAD")));
         Assert.Equal(["M  README.md", " M estate/evidence.shape.json", "?? estate/ledgers/"], scratch.Git("status", "--porcelain").Split('\n'));
@@ -186,7 +248,8 @@ public sealed class GitTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void An_existing_or_malformed_branch_is_exit_9_and_an_origin_that_does_not_answer_is_exit_4_with_no_credential_printed_and_no_branch_left()
+    [Trait("Value", "X2")]
+    public void A_branch_that_exists_or_git_does_not_take_is_refused_and_an_origin_that_does_not_answer_is_unreachable_with_no_credential_printed_and_no_branch_left()
     {
         scratch.Origin();
         scratch.Commit("the estate", ("estate/evidence.shape.json", "{}\n"));
@@ -194,19 +257,15 @@ public sealed class GitTests : IDisposable
         string[] paths = ["estate/evidence.shape.json"];
         Ok(Git.CommitAndPush(scratch.Root, paths, "first", "estate/evidence"));
 
-        var existing = Failed(Git.CommitAndPush(scratch.Root, paths, "again", "estate/evidence"));
+        Failed(Git.CommitAndPush(scratch.Root, paths, "again", "estate/evidence"), "git-branch.exists");
         scratch.Git("branch", "-q", "-D", "estate/evidence");
-        var existingAtOrigin = Failed(Git.CommitAndPush(scratch.Root, paths, "again", "estate/evidence"));
-        var malformed = Failed(Git.CommitAndPush(scratch.Root, paths, "again", "estate/..evidence"));
+        var existingAtOrigin = Failed(Git.CommitAndPush(scratch.Root, paths, "again", "estate/evidence"), "git-branch.exists");
+        Failed(Git.CommitAndPush(scratch.Root, paths, "again", "estate/..evidence"), "git-branch.malformed");
         scratch.Git("remote", "set-url", "origin", "https://estate:s3cret-token@127.0.0.1:9/estate.git");
-        var silent = Failed(Git.CommitAndPush(scratch.Root, paths, "again", "estate/elsewhere"));
+        var silent = Failed(Git.CommitAndPush(scratch.Root, paths, "again", "estate/elsewhere"), "origin.unreachable");
 
-        Assert.Equal(("git-branch.exists", 9), (existing.Code, Contract.Exit(existing)));
-        Assert.Equal(("git-branch.exists", 9), (existingAtOrigin.Code, Contract.Exit(existingAtOrigin)));
         Assert.Contains("the origin", existingAtOrigin.Message, StringComparison.Ordinal);
-        Assert.Equal(("git-branch.malformed", 9), (malformed.Code, Contract.Exit(malformed)));
-        Assert.Equal(("origin.unreachable", 4), (silent.Code, Contract.Exit(silent)));
-        Assert.DoesNotContain("s3cret-token", silent.Message + silent.Remedy, StringComparison.Ordinal);
+        new PlantedValue("s3cret-token").AbsentFrom(silent);
         Assert.Equal("", scratch.Git("branch", "--list", "estate/elsewhere", "estate/..evidence"));
         Assert.Equal("", scratch.Git("diff", "--cached", "--name-only"));
     }
@@ -227,9 +286,8 @@ public sealed class GitTests : IDisposable
         scratch.Commit("the estate", ("estate/evidence.shape.json", "{}\n"));
         scratch.Write(("estate/evidence.shape.json", "{ }\n"));
 
-        var rejected = Failed(Git.CommitAndPush(scratch.Root, ["estate/evidence.shape.json"], "evidence", "estate/evidence"));
+        var rejected = Failed(Git.CommitAndPush(scratch.Root, ["estate/evidence.shape.json"], "evidence", "estate/evidence"), "origin.rejected");
 
-        Assert.Equal(("origin.rejected", 4), (rejected.Code, Contract.Exit(rejected)));
         Assert.Contains("pre-receive hook declined", rejected.Message, StringComparison.Ordinal);
         Assert.Equal("", scratch.Git("branch", "--list", "estate/evidence"));
         Assert.Equal("", scratch.GitAt(origin, "for-each-ref", "refs/heads"));
@@ -242,9 +300,8 @@ public sealed class GitTests : IDisposable
         scratch.Commit("the estate", ("estate/evidence.shape.json", "{}\n"));
         scratch.Write(("estate/evidence.shape.json", "{ }\n"));
 
-        var error = Failed(Git.CommitAndPush(scratch.Root, ["estate/evidence.shape.json"], "evidence", "estate/evidence"));
+        var error = Failed(Git.CommitAndPush(scratch.Root, ["estate/evidence.shape.json"], "evidence", "estate/evidence"), "git.no-origin");
 
-        Assert.Equal(("git.no-origin", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains("git remote add origin", error.Remedy, StringComparison.Ordinal);
         Assert.Equal("", scratch.Git("branch", "--list", "estate/evidence"));
     }
@@ -267,26 +324,23 @@ public sealed class GitTests : IDisposable
             : Command.Run(c, t);
         Ran Interrupted(Command c, CancellationToken t) => c.Arguments.Contains("push") ? throw new OperationCanceledException() : Command.Run(c, t);
 
-        var gained = Failed(Git.CommitAndPush(scratch.Root, paths, "evidence", "estate/evidence", Stale));
+        var gained = Failed(Git.CommitAndPush(scratch.Root, paths, "evidence", "estate/evidence", Stale), "git-branch.exists");
         Assert.Throws<OperationCanceledException>(() => Git.CommitAndPush(scratch.Root, paths, "evidence", "estate/evidence", Interrupted));
 
-        Assert.Equal(("git-branch.exists", 9), (gained.Code, Contract.Exit(gained)));
         Assert.Contains("appeared there while estate pushed", gained.Message, StringComparison.Ordinal);
         Assert.Equal("", scratch.Git("branch", "--list", "estate/evidence"));
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_ref_that_names_no_commit_is_exit_1_and_a_folder_that_is_no_repository_is_exit_6()
+    public void A_ref_that_names_no_commit_is_ref_unresolved_and_a_folder_that_is_no_repository_is_git_not_a_repository()
     {
         scratch.Commit("main", ("a.sql", "SELECT 1;\n"));
 
-        var unresolved = Failed(Git.At(scratch.Root, "no-such-tag"));
-        var nowhere = Failed(Git.ChangedPaths(Path.Combine(scratch.Root, "no-such-folder"), "main", "HEAD"));
+        var unresolved = Failed(Git.At(scratch.Root, "no-such-tag"), "ref.unresolved");
+        Failed(Git.ChangedPaths(Path.Combine(scratch.Root, "no-such-folder"), "main", "HEAD"), "git.not-a-repository");
 
-        Assert.Equal(("ref.unresolved", 1), (unresolved.Code, Contract.Exit(unresolved)));
         Assert.Contains("'no-such-tag'", unresolved.Message, StringComparison.Ordinal);
-        Assert.Equal(("git.not-a-repository", 6), (nowhere.Code, Contract.Exit(nowhere)));
         Assert.False(Directory.Exists(Path.Combine(scratch.Root, ".estate", "worktrees")) && Directory.EnumerateDirectories(Path.Combine(scratch.Root, ".estate", "worktrees")).Any());
     }
 
@@ -310,6 +364,28 @@ public sealed class GitTests : IDisposable
         Assert.Equal(("git.failed", "git rev-parse exited 137 and wrote no error."), (killed.Code, killed.Message));
     }
 
+    /// <summary>
+    /// A machine with no git identity anywhere, as a CI runner is: commit-tree exits 128 with "Author identity unknown" (read from a
+    /// stand-in, since the scratch repository sets its own identity). io/Git names no error for it and answers git.failed quoting git, the
+    /// branch never made; the state is listed for a named error of its own.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_commit_with_no_git_identity_anywhere_is_git_failed_quoting_git_and_makes_no_branch()
+    {
+        scratch.Origin();
+        scratch.Commit("the estate", ("estate/evidence.shape.json", "{}\n"));
+        scratch.Write(("estate/evidence.shape.json", "{ }\n"));
+        Ran NoIdentity(Command c, CancellationToken t) => c.Arguments.Contains("commit-tree")
+            ? new Ran.Exited(128, "", "Author identity unknown\n\n*** Please tell me who you are.\n\nRun\n\n  git config --global user.email \"you@example.com\"\n")
+            : Command.Run(c, t);
+
+        var error = Failed(Git.CommitAndPush(scratch.Root, ["estate/evidence.shape.json"], "evidence", "estate/evidence", NoIdentity), "git.failed");
+
+        Assert.StartsWith("git commit-tree failed: Author identity unknown", error.Message, StringComparison.Ordinal);
+        Assert.Equal("", scratch.Git("branch", "--list", "estate/evidence"));
+    }
+
     /// <summary>git 2.35.2's safe.directory refusal, as git prints it, read from a stand-in since this machine's git predates it.</summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -318,9 +394,8 @@ public sealed class GitTests : IDisposable
         const string Refusal = "fatal: detected dubious ownership in repository at 'C:/share/estate'\nTo add an exception for this directory, call:\n\n\tgit config --global --add safe.directory C:/share/estate\n";
         Ran Refuses(Command c, CancellationToken t) => new Ran.Exited(128, "", Refusal);
 
-        var error = Failed(Git.At(scratch.Root, "HEAD", Refuses));
+        var error = Failed(Git.At(scratch.Root, "HEAD", Refuses), "git.dubious-ownership");
 
-        Assert.Equal(("git.dubious-ownership", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains("C:/share/estate", error.Message, StringComparison.Ordinal);
         Assert.Contains("git config --global --add safe.directory C:/share/estate", error.Remedy, StringComparison.Ordinal);
     }
@@ -335,14 +410,11 @@ public sealed class GitTests : IDisposable
         Ran Hangs(Command c, CancellationToken t) => new Ran.TimedOut(c.Timeout, "", "");
         Ran OriginHangs(Command c, CancellationToken t) => c.Arguments.Contains("ls-remote") ? new Ran.TimedOut(c.Timeout, "", "") : Command.Run(c, t);
 
-        var missing = Failed(Git.At(scratch.Root, "HEAD", Missing));
-        var hung = Failed(Git.At(scratch.Root, "HEAD", Hangs));
-        var unreachable = Failed(Git.CommitAndPush(scratch.Root, ["estate/evidence.shape.json"], "evidence", "estate/evidence", OriginHangs));
+        Failed(Git.At(scratch.Root, "HEAD", Missing), "git.missing");
+        var hung = Failed(Git.At(scratch.Root, "HEAD", Hangs), "git.timed-out");
+        var unreachable = Failed(Git.CommitAndPush(scratch.Root, ["estate/evidence.shape.json"], "evidence", "estate/evidence", OriginHangs), "origin.unreachable");
 
-        Assert.Equal(("git.missing", 6), (missing.Code, Contract.Exit(missing)));
-        Assert.Equal(("git.timed-out", 6), (hung.Code, Contract.Exit(hung)));
         Assert.Contains("5 minutes", hung.Message, StringComparison.Ordinal);
-        Assert.Equal(("origin.unreachable", 4), (unreachable.Code, Contract.Exit(unreachable)));
         Assert.Contains("did not answer in 5 minutes", unreachable.Message, StringComparison.Ordinal);
     }
 
@@ -384,13 +456,15 @@ public sealed class GitTests : IDisposable
 
     /// <summary>
     /// io/Git reads git's English "not a git repository" to tell a folder in no repository from a failed search, so git runs with
-    /// LC_ALL=C and without LANGUAGE and LC_MESSAGES, which GNU gettext would otherwise read to choose a translation. A stand-in for
-    /// git prints the environment it is given to its error stream and exits 2, so HoldingOf fails with git.failed and quotes that
-    /// environment: LC_ALL=C is in it, and LANGUAGE and LC_MESSAGES, set in this process, are not.
+    /// LC_ALL=C and without LANGUAGE and LC_MESSAGES, which GNU gettext would otherwise read to choose a translation; and it runs with
+    /// the terminal prompt off and Git LFS's smudge off (VALUES.md X5), so no push waits on a prompt and no pointer is fetched. A stand-in
+    /// for git prints the environment it is given to its error stream and exits 2, so HoldingOf fails with git.failed and quotes that
+    /// environment: LC_ALL=C and the two settings are in it, and LANGUAGE and LC_MESSAGES, set in this process, are not.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Git_runs_with_LC_ALL_C_and_without_the_callers_LANGUAGE_and_LC_MESSAGES()
+    [Trait("Value", "X5")]
+    public void Git_runs_with_LC_ALL_C_and_without_the_caller_s_LANGUAGE_and_LC_MESSAGES()
     {
         var git = Path.Combine(scratch.Root, OperatingSystem.IsWindows() ? "git-environment.cmd" : "git-environment.sh");
         if (OperatingSystem.IsWindows())
@@ -422,12 +496,17 @@ public sealed class GitTests : IDisposable
         Assert.StartsWith("git rev-parse failed: ", error.Message, StringComparison.Ordinal);
         var variables = error.Message["git rev-parse failed: ".Length..].Split('\n').Select(line => line.Trim()).ToList();
         Assert.Contains("LC_ALL=C", variables);
+        Assert.Contains("GIT_TERMINAL_PROMPT=0", variables);
+        Assert.Contains("GIT_LFS_SKIP_SMUDGE=1", variables);
         Assert.DoesNotContain(variables, line => line.StartsWith("LANGUAGE=", StringComparison.OrdinalIgnoreCase) || line.StartsWith("LC_MESSAGES=", StringComparison.OrdinalIgnoreCase));
     }
 
-    internal static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
+    /// <summary>Expect.Value and Expect.Failed under the names the classes that read a ref's worktree beside this one use.</summary>
+    internal static T Ok<T>(Result<T> result) => Expect.Value(result);
 
-    internal static Error Failed<T>(Result<T> result) => Assert.IsType<Result<T>.Failed>(result).Error;
+    internal static Error Failed<T>(Result<T> result) => Expect.Failed(result);
+
+    internal static Error Failed<T>(Result<T> result, string code) => Expect.Failed(result, code);
 }
 
 /// <summary>
@@ -492,7 +571,7 @@ public sealed class RefBuildTests(PublishedTool tool) : IDisposable
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void A_refs_build_reads_its_own_directory_build_props_and_not_the_enclosing_checkouts()
+    public void A_ref_s_build_reads_its_own_Directory_Build_props_alone_and_never_the_enclosing_checkout_s()
     {
         var golden = Path.Combine(Repository.Root, "tests", "Golden");
         foreach (var file in (string[])[Project, "classic-minimal/ClassicMinimal.refactorlog", "classic-minimal/Script.PostDeployment.sql", "classic-minimal/dbo/Tables/Customer.sql"])
@@ -580,12 +659,14 @@ public sealed class RefBuildTests(PublishedTool tool) : IDisposable
 /// </summary>
 internal sealed class Scratch : IDisposable
 {
-    private readonly string parent = Directory.CreateTempSubdirectory("estate-git-").FullName;
+    private readonly ScratchFolder folder = ScratchFolder.Temporary("git");
+
+    private string Parent => folder.Path;
 
     public Scratch()
     {
-        var root = Path.Combine(parent, "repository");
-        Run(parent, "init", "-q", "--initial-branch=main", root);
+        var root = Path.Combine(Parent, "repository");
+        Run(Parent, "init", "-q", "--initial-branch=main", root);
         Root = Path.GetFullPath(Run(root, "rev-parse", "--show-toplevel"));
         Assert.Equal(root, Root, ignoreCase: true);   // git found this repository, and no other
         foreach (var (key, value) in ((string, string)[])[("user.name", "Estate Test"), ("user.email", "estate-test@example.invalid"), ("commit.gpgsign", "false"), ("core.autocrlf", "false")])
@@ -601,15 +682,15 @@ internal sealed class Scratch : IDisposable
     /// <summary>git in a folder of this scratch: a worktree of the repository, the origin, or a clone.</summary>
     public string GitAt(string directory, params string[] arguments)
     {
-        Assert.StartsWith(parent, Path.GetFullPath(directory), StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(Parent, Path.GetFullPath(directory), StringComparison.OrdinalIgnoreCase);
         return Run(directory, arguments);
     }
 
     /// <summary>A bare repository beside this one, added as its origin.</summary>
     public string Origin()
     {
-        var origin = Path.Combine(parent, "origin.git");
-        Run(parent, "init", "-q", "--bare", origin);
+        var origin = Path.Combine(Parent, "origin.git");
+        Run(Parent, "init", "-q", "--bare", origin);
         Git("remote", "add", "origin", origin);
         return origin;
     }
@@ -617,8 +698,8 @@ internal sealed class Scratch : IDisposable
     /// <summary>A clone beside this repository, made with the options given before the URL; its root.</summary>
     public string Clone(params string[] arguments)
     {
-        var clone = Path.Combine(parent, "clone");
-        Run(parent, ["clone", "-q", .. arguments, clone]);
+        var clone = Path.Combine(Parent, "clone");
+        Run(Parent, ["clone", "-q", .. arguments, clone]);
         return clone;
     }
 
@@ -646,13 +727,8 @@ internal sealed class Scratch : IDisposable
     public void Dispose()
     {
         Io.Git.Release(Root);
-        foreach (var file in Directory.EnumerateFiles(parent, "*", SearchOption.AllDirectories))
-        {
-            File.SetAttributes(file, FileAttributes.Normal);   // git writes its objects read-only
-        }
-
-        Directory.Delete(parent, recursive: true);
+        folder.Dispose();
     }
 
-    private string Run(string directory, params string[] arguments) => Programs.TestGit(directory, parent, arguments);
+    private string Run(string directory, params string[] arguments) => Programs.TestGit(directory, Parent, arguments);
 }

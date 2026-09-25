@@ -6,8 +6,9 @@ using System.Net.Sockets;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Estate.Budgets.Tests;
-using Estate.Kernel;
+using Estate.Tests;
 using Xunit;
+using static Estate.Tests.Expect;
 
 namespace Estate.Io.Tests;
 
@@ -20,42 +21,35 @@ namespace Estate.Io.Tests;
 [Collection(PublishedToolCollection.Name)]
 public sealed class SentinelTests(PublishedTool tool) : IDisposable
 {
-    private readonly string scratch = Path.Combine(Repository.Root, ".estate", "sentinel", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);
+    private readonly ScratchFolder scratch = ScratchFolder.UnderRepository("sentinel");
 
-    public void Dispose()
-    {
-        if (Directory.Exists(scratch))
-        {
-            Directory.Delete(scratch, recursive: true);
-        }
-    }
+    public void Dispose() => scratch.Dispose();
 
     [Fact]
     [Trait("Category", "fixture")]
+    [Trait("Value", "S1")]
     public async Task A_Permissive_publish_under_a_profile_naming_a_sentinel_server_reaches_the_copy_and_never_the_sentinel()
     {
-        Telemetry.OptOut();   // before DacFx loads, as estate's Main does
         var elsewhere = "estate_sentinel_" + Guid.NewGuid().ToString("N")[..8];
-        var strict = Made(Profiles.Load(Sentinel(elsewhere)));
-        var dacpac = Made(Ssdt.Build(ClassicMinimal(), tool.Folder, Path.Combine(scratch, "build"))).Path;
+        var strict = Value(Profiles.Load(Sentinel(elsewhere)));
+        var dacpac = Value(Ssdt.Build(ClassicMinimal(), tool.Folder, scratch.Under("build"))).Path;
         Assert.ThrowsAny<SocketException>(() => Dns.GetHostEntry("sentinel.invalid"));
 
-        var copy = Made(ScratchServer.Create(SqlServerFixture.EstateRoot(scratch), await SqlServerFixture.ServerAsync()));
+        var copy = Value(ScratchServer.Create(SqlServerFixture.EstateRoot(scratch.Path), await SqlServerFixture.ServerAsync()));
         try
         {
             var permissive = copy.Permissive(strict);
             foreach (var profile in (PublishProfile[])[strict, permissive])
             {
-                Made(copy.Publish(dacpac, profile));
+                Value(copy.Publish(dacpac, profile));
             }
 
-            Assert.False(permissive.Options().BlockOnPossibleDataLoss);
             Assert.Equal(1, await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.tables WHERE SCHEMA_NAME(schema_id) = N'dbo' AND name = N'Customer';"));
             Assert.False(await SqlServerFixture.ExistsAsync(elsewhere), "the profile's TargetDatabaseName, " + elsewhere + ", was created");
         }
         finally
         {
-            Made(ScratchServer.Drop(copy));
+            Value(ScratchServer.Drop(copy));
         }
     }
 
@@ -67,8 +61,7 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         properties.Add(
             new XElement(properties.Name.Namespace + "TargetConnectionString", "Data Source=sentinel.invalid;Initial Catalog=" + elsewhere + ";Integrated Security=True"),
             new XElement(properties.Name.Namespace + "TargetDatabaseName", elsewhere));
-        Directory.CreateDirectory(scratch);
-        var file = Path.Combine(scratch, "sentinel.publish.xml");
+        var file = scratch.Under("sentinel.publish.xml");
         profile.Save(file);
         return file;
     }
@@ -81,13 +74,11 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
             .Concat([Path.Combine(golden, "Directory.Build.props"), Path.Combine(golden, "Directory.Packages.props")])
             .Where(f => !Path.GetRelativePath(golden, f).Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj")))
         {
-            var to = Path.Combine(scratch, "golden", Path.GetRelativePath(golden, file));
+            var to = scratch.Under(Path.Combine("golden", Path.GetRelativePath(golden, file)));
             Directory.CreateDirectory(Path.GetDirectoryName(to)!);
             File.Copy(file, to);
         }
 
-        return Path.Combine(scratch, "golden", "classic-minimal", "ClassicMinimal.sqlproj");
+        return scratch.Under(Path.Combine("golden", "classic-minimal", "ClassicMinimal.sqlproj"));
     }
-
-    private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 }

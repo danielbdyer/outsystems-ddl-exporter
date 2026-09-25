@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using Estate.Budgets.Tests;
 using Estate.Kernel;
+using Estate.Tests;
 using Xunit;
 
 namespace Estate.Io.Tests;
@@ -39,31 +40,26 @@ public sealed class CapabilityTests
     ];
 
     [Fact]
-    [Trait("Category", "fast")]
+    [Trait("Category", "build")]
     [Trait("Law", "a named environment cannot be written")]
+    [Trait("Value", "S7")]
+    [Trait("Value", "G6")]
+    [Trait("Exit", "M1.5")]
     public void No_verb_writes_to_a_named_environment()
     {
-        var plant = Path.Combine(Repository.Root, ".estate", "plant", "capabilities-" + Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(plant);
-        try
-        {
-            var (first, lines) = Planted(Forbidden.Select(f => f.Use));
-            File.WriteAllText(Path.Combine(plant, "Planted.csproj"), Project());
-            File.WriteAllText(Path.Combine(plant, "Planted.cs"), string.Join('\n', lines));
-            var (refusedExit, refused) = Build(plant);
+        using var plant = ScratchFolder.UnderRepository("plant");
+        var (first, lines) = Planted(Forbidden.Select(f => f.Use));
+        plant.File("Planted.csproj", Project());
+        plant.File("Planted.cs", string.Join('\n', lines));
+        var (refusedExit, refused) = Build(plant.Path);
 
-            var errors = Regex.Matches(refused, @"Planted\.cs\((\d+),\d+\): error (CS\d+)").Select(m => (Line: int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), Code: m.Groups[2].Value)).ToHashSet();
-            Assert.NotEqual(0, refusedExit);
-            Assert.Equal(Forbidden.Select((f, i) => (first + i, f.Error)).ToHashSet(), errors);
+        var errors = Regex.Matches(refused, @"Planted\.cs\((\d+),\d+\): error (CS\d+)").Select(m => (Line: int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), Code: m.Groups[2].Value)).ToHashSet();
+        Assert.NotEqual(0, refusedExit);
+        Assert.Equal(Forbidden.Select((f, i) => (first + i, f.Error)).ToHashSet(), errors);
 
-            File.WriteAllText(Path.Combine(plant, "Planted.cs"), string.Join('\n', Planted([]).Lines));
-            var (builtExit, built) = Build(plant);
-            Assert.True(builtExit == 0, "publishing to a Copy that ScratchServer.Create made does not build:\n" + built);
-        }
-        finally
-        {
-            Directory.Delete(plant, recursive: true);
-        }
+        plant.File("Planted.cs", string.Join('\n', Planted([]).Lines));
+        var (builtExit, built) = Build(plant.Path);
+        Assert.True(builtExit == 0, "publishing to a Copy that ScratchServer.Create made does not build:\n" + built);
     }
 
     /// <summary>
@@ -73,6 +69,8 @@ public sealed class CapabilityTests
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "a named environment cannot be written")]
+    [Trait("Value", "S1")]
+    [Trait("Exit", "M1.5")]
     public void Permissive_never_reaches_an_environment()
     {
         var of = typeof(PublishProfile.Permissive).GetMethod("Of", BindingFlags.NonPublic | BindingFlags.Static)!;
@@ -94,6 +92,8 @@ public sealed class CapabilityTests
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "a named environment cannot be written")]
+    [Trait("Value", "S7")]
+    [Trait("Exit", "M1.5")]
     public void Nothing_but_ScratchServer_makes_a_Copy()
     {
         var made = CopyConstructor();
