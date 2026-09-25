@@ -61,12 +61,12 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         GitTests.Ok(Ssdt.BuildTargets.Of(estate.Tool.Folder)).Fingerprint.ToString()[..16], "SampleCatalog.dacpac");
 
     /// <summary>
-    /// VALUES.md X2 for a database read, the other half of ProfilesTests.No_output_contains_Password's search of every error: a
+    /// VALUES.md X2 for a database read, the other half of PublishProfilesTests.No_output_contains_Password's search of every error: a
     /// registered database holding a SQL login and a user for it, read through estate read --from env:uat --json as the fixture's
     /// admin identity, who sees the login. What the test asserts is that the answer names the login and that no property in it is
     /// named after a member of <see cref="Ssdt.Secrets"/>: DacFx makes up a new Login.Password on each read, since SQL Server keeps
     /// only a hash of the one the login was made with, and Ssdt.Elements leaves that property out. The answer is also searched for a
-    /// password setting (<see cref="ProfilesTests.PasswordSetting"/>): on the container the fixture's identity signs in as sa with a
+    /// password setting (<see cref="PublishProfilesTests.PasswordSetting"/>): on the container the fixture's identity signs in as sa with a
     /// password, the env:uat connection file holds that connection string with its Password=, and the search fails if estate read
     /// printed it.
     /// </summary>
@@ -97,8 +97,8 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
             Assert.Contains(elements, e => (string?)e!["key"] == "Login [" + login + "]");
             var secrets = Ssdt.Secrets.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
             Assert.DoesNotContain(elements.SelectMany(e => e!["properties"]!.AsObject().Select(p => (string?)e["key"] + " " + p.Key)), p => secrets.Contains(p.Split('.', ' ')[^1]));
-            Assert.DoesNotMatch(ProfilesTests.PasswordSetting, output);
-            Assert.DoesNotMatch(ProfilesTests.PasswordSetting, whole);
+            Assert.DoesNotMatch(PublishProfilesTests.PasswordSetting, output);
+            Assert.DoesNotMatch(PublishProfilesTests.PasswordSetting, whole);
         }
         finally
         {

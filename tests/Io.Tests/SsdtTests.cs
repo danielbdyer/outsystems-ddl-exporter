@@ -494,7 +494,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         var pipeline = Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml");
         if (values.Length == 0)
         {
-            return Ok(Profiles.Load(pipeline));
+            return Ok(PublishProfiles.Load(pipeline));
         }
 
         var profile = XDocument.Load(pipeline);
@@ -502,7 +502,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         var path = Path.Combine(scratch, "given.publish.xml");
         Directory.CreateDirectory(scratch);
         profile.Save(path);
-        return Ok(Profiles.Load(path));
+        return Ok(PublishProfiles.Load(path));
     }
 
     private static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));

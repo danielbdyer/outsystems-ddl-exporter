@@ -86,7 +86,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
             using var extracted = Made(DacFx.Extract(uat));
             using var package = Made(Ssdt.Open(project.Base));
             var model = Made(extracted.Elements).Elements;
-            var plan = Made(DacFx.Plan(package, extracted, uat.Catalog, Made(Profiles.Of(uat.Environment, root)), Made(SqlServer.SqlCmdValues(uat))));
+            var plan = Made(DacFx.Plan(package, extracted, uat.Catalog, Made(PublishProfiles.Of(uat.Environment, root)), Made(SqlServer.SqlCmdValues(uat))));
 
             Assert.Equal(project.Reader.Login, new SqlConnectionStringBuilder(uat.Connection).UserID);
             Assert.Contains(model, e => e.Key.ToString() == "Column [dbo].[Customer].[Email]");

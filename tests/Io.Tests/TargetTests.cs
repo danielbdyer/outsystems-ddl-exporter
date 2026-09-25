@@ -220,9 +220,9 @@ public sealed class TargetTests : IDisposable
         var name = CopyName.Make("host", 1, 0x0a1b2c3d);
         var (clear, named) = (Registry(Estate(""), name, "localhost,11433"), Registry(Estate(Dev(Written("dev.connection", "Server=127.0.0.1,1433;Initial Catalog=Dev"), "localhost")), name, "localhost,11433"));
 
-        var there = Made(ScratchServer.Registered(clear, name, Profiles.Environments(clear), () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
-        var elsewhere = Failed(ScratchServer.Registered(clear, name, Profiles.Environments(clear), () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver));
-        var onNamedHost = Failed(ScratchServer.Registered(named, name, Profiles.Environments(named), () => throw new Xunit.Sdk.XunitException("the scratch server was chosen before R15 read the row's server"), Resolver));
+        var there = Made(ScratchServer.Registered(clear, name, Io.Posture.Environments(clear), () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
+        var elsewhere = Failed(ScratchServer.Registered(clear, name, Io.Posture.Environments(clear), () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver));
+        var onNamedHost = Failed(ScratchServer.Registered(named, name, Io.Posture.Environments(named), () => throw new Xunit.Sdk.XunitException("the scratch server was chosen before R15 read the row's server"), Resolver));
 
         Assert.Equal(("copy:" + name, "localhost,11433"), (there.Target.ToString(), ScratchServer.ServerName(null, Written("sql.env", "ESTATE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n.ToString(), r => r.Code)));
         Assert.Equal(("copy.unregistered", 9), (elsewhere.Code, Contract.Exit(elsewhere)));
@@ -695,7 +695,7 @@ public sealed class TargetTests : IDisposable
         + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }";
 
     /// <summary>The estate's posture, read.</summary>
-    private static Environments Posture(string root) => Made(Profiles.Environments(root));
+    private static Environments Posture(string root) => Made(Io.Posture.Environments(root));
 
     /// <summary>The estate's root with .estate/copies.json holding one copy, made on the server given.</summary>
     private static string Registry(string root, CopyName name, string server)

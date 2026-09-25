@@ -201,7 +201,7 @@ public static class SqlServer
     }
 
     /// <summary>A target as a database, estate/posture.json read under the estate's root for it.</summary>
-    public static Result<Database> Resolve(Target target, string estateRoot) => Resolve(target, Profiles.Environments(estateRoot), estateRoot);
+    public static Result<Database> Resolve(Target target, string estateRoot) => Resolve(target, Posture.Environments(estateRoot), estateRoot);
 
     /// <summary>
     /// A target as a database, against estate/posture.json as the verb read it once (<paramref name="posture"/>, whose error counts only
@@ -212,8 +212,8 @@ public static class SqlServer
     public static Result<Database> Resolve(Target target, Result<Environments> posture, string estateRoot) => target.Match<Result<Database>>(
         environment => posture.Bind(environments => environments.Named(environment.Name) is { } named
             ? EnvironmentDatabase.Of(named, estateRoot).Map(n => (Database)n)
-            : new Error("target.unnamed", environment + " names no environment of " + Profiles.Posture + ".", environments.All.Count == 0
-                ? "Add the environment to " + Profiles.Posture + " with its host, connection reference and profile."
+            : new Error("target.unnamed", environment + " names no environment of " + Posture.Json + ".", environments.All.Count == 0
+                ? "Add the environment to " + Posture.Json + " with its host, connection reference and profile."
                 : "Name one it holds: " + string.Join(", ", environments.All.Select(e => e.Target)) + ".")),
         copy => ScratchServer.Registered(estateRoot, copy.Name, posture).Map(c => (Database)c),
         () => new Error("synthetic-copy.not-built", "synthetic-copy names the synthetic copy, which is not in this build; this build reads env: and copy: databases.",

@@ -37,13 +37,13 @@ public sealed record Outcome(string Word, IReadOnlyList<int> Exits, string Meani
 }
 
 /// <summary>
-/// Where estate runs: the estate's root (Profiles.Root of the working directory), the working directory, the tool folder ESTATE_TOOL
+/// Where estate runs: the estate's root (Posture.Root of the working directory), the working directory, the tool folder ESTATE_TOOL
 /// names, if any, and the run's query log, which names the run's folder under .estate/runs/ and which Program.Run begins once per
 /// command, so a verb's statements and the whole answer it was cut from sit in one folder.
 /// </summary>
 public sealed record Checkout(string Root, string WorkingDirectory, string? Tool, Io.SqlServer.QueryLog? Log = null)
 {
-    public static Checkout Here() => new(Io.Profiles.Root(Directory.GetCurrentDirectory()), Directory.GetCurrentDirectory(), Environment.GetEnvironmentVariable("ESTATE_TOOL"));
+    public static Checkout Here() => new(Io.Posture.Root(Directory.GetCurrentDirectory()), Directory.GetCurrentDirectory(), Environment.GetEnvironmentVariable("ESTATE_TOOL"));
 
     /// <summary>The run's query log: the one begun for the command, or a new one when this checkout was made outside Program.Run.</summary>
     public Io.SqlServer.QueryLog Run => Log ?? Io.SqlServer.QueryLog.Start(Root);

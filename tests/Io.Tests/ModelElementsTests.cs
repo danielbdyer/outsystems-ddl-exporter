@@ -648,7 +648,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     public async Task The_package_to_package_plan_reports_the_operations_the_live_plan_reports()
     {
         await using var database = await SqlServerFixture.RegisterAsync();
-        var profile = Ok(Profiles.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml")));
+        var profile = Ok(PublishProfiles.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml")));
         GoldenProject.Publish(heads.Dacpacs["base"], database, profile.Options());
         var copy = new SqlServer.Copy(Ok(CopyName.Of("the registered database", database.Name)), await SqlServerFixture.ServerAsync(), Repository.Root);
         using var extracted = Ok(DacFx.Extract(copy));

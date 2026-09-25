@@ -194,7 +194,7 @@ public sealed class DacFxTests : IDisposable
         return dacpac;
     }
 
-    private static PublishProfile.Strict Strict() => Ok(Profiles.Load(Path.Combine(Repository.Root, Pipeline)));
+    private static PublishProfile.Strict Strict() => Ok(PublishProfiles.Load(Path.Combine(Repository.Root, Pipeline)));
 
     private static ElementKey Keyed(string report, SortedArray<Element> source, SortedArray<Element> target) => Ok(DacFx.Report(report, source, target)).Report.Operations.Single().Key;
 

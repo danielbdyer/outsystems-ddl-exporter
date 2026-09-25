@@ -124,7 +124,7 @@ public static class DacFx
         {
             return new Error("sqlcmd.undefined", source.Source + " declares " + string.Join(", ", undefined.Select(n => SqlCmdVariable.Placeholder(n.ToString())))
                 + ", and neither " + profile.Source + " nor the environment gives " + (undefined.Count == 1 ? "it" : "them") + " a value.",
-                "Give " + string.Join(", ", undefined) + " a value in the environment's sqlcmd in estate/posture.json, or in the pipeline's profile.");
+                "Give " + string.Join(", ", undefined) + " a value in the environment's sqlcmd in " + Posture.Json + ", or in the pipeline's profile.");
         }
 
         var options = profile.Options();

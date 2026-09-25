@@ -64,7 +64,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
     [Trait("Law", "3′ the model is complete")]
     public async Task A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint()
     {
-        var strict = Made(Profiles.Load(project.Profile));
+        var strict = Made(PublishProfiles.Load(project.Profile));
         var (one, two) = (Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync())), Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync())));
         try
         {
@@ -97,7 +97,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
     [Trait("Law", "3′ the model is complete")]
     public async Task The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not()
     {
-        var strict = Made(Profiles.Load(project.Profile));
+        var strict = Made(PublishProfiles.Load(project.Profile));
         var copy = Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync()));
         try
         {
@@ -129,7 +129,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
     [Trait("Category", "fixture")]
     public async Task A_publish_returns_the_report_and_script_DacFx_deployed()
     {
-        var strict = Made(Profiles.Load(project.Profile));
+        var strict = Made(PublishProfiles.Load(project.Profile));
         var copy = Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync()));
         try
         {
@@ -159,7 +159,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
     [Trait("Category", "fixture")]
     public async Task A_publish_the_data_loss_check_stops_is_server_failed_by_Msg_50000_quoting_DacFx_s_errors_and_not_its_informational_messages()
     {
-        var strict = Made(Profiles.Load(project.Profile));
+        var strict = Made(PublishProfiles.Load(project.Profile));
         var copy = Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync()));
         try
         {
@@ -209,7 +209,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
         var dev = Assert.IsType<SqlServer.EnvironmentDatabase>(Made(SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root)));
         using var extracted = Made(DacFx.Extract(dev));
         using var vnext = Made(Ssdt.Open(dacpac));
-        var error = Assert.IsType<Result<Plan>.Failed>(DacFx.Plan(vnext, extracted, dev.Catalog, Made(Profiles.Load(project.Profile)), [])).Error;
+        var error = Assert.IsType<Result<Plan>.Failed>(DacFx.Plan(vnext, extracted, dev.Catalog, Made(PublishProfiles.Load(project.Profile)), [])).Error;
 
         Assert.Equal(("plan.platform", 6), (error.Code, Contract.Exit(error)));
         // The platform of the server differs between the container and the Windows runner's LocalDB; a failure prints the whole message.

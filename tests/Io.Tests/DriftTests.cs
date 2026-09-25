@@ -517,7 +517,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             dacpac = GitTests.Ok(Ssdt.Build(Path.Combine(project, "SampleCatalog.sqlproj"), estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
         }
 
-        var profile = GitTests.Ok(Profiles.Load(Path.Combine(estate.Root, ScratchEstate.Profile)));
+        var profile = GitTests.Ok(PublishProfiles.Load(Path.Combine(estate.Root, ScratchEstate.Profile)));
         GitTests.Ok(copy.Publish(dacpac, profile));
         return (copy, dacpac, profile);
     }

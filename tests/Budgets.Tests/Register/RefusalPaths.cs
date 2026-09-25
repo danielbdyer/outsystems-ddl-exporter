@@ -185,8 +185,8 @@ internal static class RefusalPaths
             return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence");
         })),
 
-        new("no posture", "posture.missing", false, (scratch, _) => Failed(Profiles.Environments(scratch))),
-        new("a posture that is not JSON", "posture.unreadable", true, (scratch, planted) => Failed(Profiles.Environments(Estate(scratch, "{ \"environments\": { \"dev\": " + planted + " } }")))),
+        new("no posture", "posture.missing", false, (scratch, _) => Failed(Io.Posture.Environments(scratch))),
+        new("a posture that is not JSON", "posture.unreadable", true, (scratch, planted) => Failed(Io.Posture.Environments(Estate(scratch, "{ \"environments\": { \"dev\": " + planted + " } }")))),
         new("a posture giving a key twice", "posture.unreadable", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + "], \"readers\": []"))),
         new("a literal connection string", "posture.literal-connection", true, (scratch, planted) => Posture(scratch, Dev(connection: "Server=db;User ID=estate;Password=" + planted))),
         new("a literal connection string as a key", "posture.literal-connection", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Data Source=db;Password=" + planted + "\": \"env:A\" }"))),
@@ -202,7 +202,7 @@ internal static class RefusalPaths
         new("a file reference that is a connection string", "reference.malformed", true, (_, planted) =>
             Failed(SecretReference.Of("--connection", "file:Server=db;User ID=sa;Password=" + planted))),
         new("a scratch server that is neither docker nor localdb", "posture.malformed", true, (scratch, planted) =>
-            Failed(Profiles.Environments(Estate(scratch, "{ \"environments\": {}, \"scratchServer\": " + Quoted(planted) + " }")))),
+            Failed(Io.Posture.Environments(Estate(scratch, "{ \"environments\": {}, \"scratchServer\": " + Quoted(planted) + " }")))),
         new("a host given with its port", "posture.host", true, (_, planted) => Failed(Host.Of("environments.dev.host in estate/posture.json", planted + ",1433"))),
         new("an environment misnamed", "posture.environment-name", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + "]", name: "DEV"))),
         new("a reader group given twice", "posture.readers", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
@@ -219,26 +219,26 @@ internal static class RefusalPaths
         new("a script using a variable with no value", "sqlcmd.undefined", true, (_, planted) =>
             Failed(SqlCmdVariable.Substitute("PRINT '$(Missing)';", new Dictionary<string, string>(StringComparer.Ordinal) { ["Tag"] = planted }))),
 
-        new("no profile", "profile.missing", false, (scratch, _) => Failed(Profiles.Load(Path.Combine(scratch, "none.publish.xml")))),
-        new("a profile that is not XML", "profile.unreadable", true, (scratch, planted) => Failed(Profiles.Load(Written(scratch, "broken.publish.xml", "<Project>" + planted + "</Projec>")))),
+        new("no profile", "profile.missing", false, (scratch, _) => Failed(PublishProfiles.Load(Path.Combine(scratch, "none.publish.xml")))),
+        new("a profile that is not XML", "profile.unreadable", true, (scratch, planted) => Failed(PublishProfiles.Load(Written(scratch, "broken.publish.xml", "<Project>" + planted + "</Projec>")))),
         new("a profile DacFx does not read", "profile.unreadable", true, (scratch, planted) =>
-            Failed(Profiles.Load(Profile(scratch, "<BlockOnPossibleDataLoss>" + planted + "</BlockOnPossibleDataLoss>")))),
+            Failed(PublishProfiles.Load(Profile(scratch, "<BlockOnPossibleDataLoss>" + planted + "</BlockOnPossibleDataLoss>")))),
         new("a profile holding a password", "profile.password", true, (scratch, planted) =>
-            Failed(Profiles.Load(Profile(scratch, "<TargetConnectionString>Data Source=db;User ID=sa;Password=" + planted + "</TargetConnectionString>")))),
+            Failed(PublishProfiles.Load(Profile(scratch, "<TargetConnectionString>Data Source=db;User ID=sa;Password=" + planted + "</TargetConnectionString>")))),
         new("a profile holding a password a comment splits", "profile.password", true, (scratch, planted) =>
-            Failed(Profiles.Load(Profile(scratch, "", ("LinkedServer", "Server=db;User ID=sa;Pass<!-- -->word=" + planted))))),
+            Failed(PublishProfiles.Load(Profile(scratch, "", ("LinkedServer", "Server=db;User ID=sa;Pass<!-- -->word=" + planted))))),
         new("a profile giving a SQLCMD value that is a connection string", "profile.literal-connection", true, (scratch, planted) =>
-            Failed(Profiles.Load(Profile(scratch, "", ("LinkedServer", "Data Source=" + planted + ";Initial Catalog=Orders;Integrated Security=True"))))),
+            Failed(PublishProfiles.Load(Profile(scratch, "", ("LinkedServer", "Data Source=" + planted + ";Initial Catalog=Orders;Integrated Security=True"))))),
         new("a profile that allows data loss", "profile.data-loss-allowed", true, (scratch, planted) =>
-            Failed(Profiles.Load(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted))))),
+            Failed(PublishProfiles.Load(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted))))),
         new("a named environment whose profile allows data loss", "profile.data-loss-allowed", true, (scratch, planted) =>
         {
             var root = Estate(scratch, Environments(Dev(profile: "estate/profiles/relaxed.publish.xml")));
             File.Move(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted)), Path.Combine(root, "estate", "profiles", "relaxed.publish.xml"));
-            return Failed(Profiles.Of(Made(Profiles.Environments(root)).All.Single(), root));
+            return Failed(PublishProfiles.Of(Made(Io.Posture.Environments(root)).All.Single(), root));
         }),
         new("a SQLCMD literal under a credential's name in a profile", "sqlcmd.literal-credential", true, (scratch, planted) =>
-            Failed(Profiles.Load(Profile(scratch, "", ("ApiToken", planted))))),
+            Failed(PublishProfiles.Load(Profile(scratch, "", ("ApiToken", planted))))),
 
         new("a target of no form the grammar knows", "target.unknown", true, (_, planted) => Failed(SqlServer.Target("sql:" + planted, "--target"))),
         new("a copy named as no copy can be", "copy.unregistered", true, (_, planted) => Failed(SqlServer.Target("copy:" + planted, "--target"))),
@@ -326,13 +326,13 @@ internal static class RefusalPaths
         {
             using var newer = Made(Ssdt.Open(Packaged(scratch, "newer", SqlServerVersion.Sql170)));
             using var older = Made(Ssdt.Open(Packaged(scratch, "older", SqlServerVersion.Sql160)));
-            return Failed(DacFx.Plan(newer, older, "Target", Made(Profiles.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"))), []));
+            return Failed(DacFx.Plan(newer, older, "Target", Made(PublishProfiles.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"))), []));
         }),
         new("a case-insensitive package planned against a case-sensitive one", "plan.collation", false, (scratch, _) =>
         {
             using var insensitive = Made(Ssdt.Open(Packaged(scratch, "insensitive", SqlServerVersion.Sql160, "SQL_Latin1_General_CP1_CI_AS")));
             using var sensitive = Made(Ssdt.Open(Packaged(scratch, "sensitive", SqlServerVersion.Sql160, "Latin1_General_CS_AS")));
-            return Failed(DacFx.Plan(insensitive, sensitive, "Target", Made(Profiles.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"))), []));
+            return Failed(DacFx.Plan(insensitive, sensitive, "Target", Made(PublishProfiles.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"))), []));
         }),
         new("a deploy report of another shape", "plan.report-unread", false, (_, _) =>
             Failed(DacFx.Report("<DeploymentReport xmlns=\"http://schemas.microsoft.com/sqlserver/dac/DeployReport/2012/02\"><Warnings /></DeploymentReport>", [], []))),
@@ -540,7 +540,7 @@ internal static class RefusalPaths
 
     private static string Environments(string environments) => "{ \"environments\": { " + environments + " } }";
 
-    private static Error Posture(string scratch, string environments) => Failed(Profiles.Environments(Estate(scratch, Environments(environments))));
+    private static Error Posture(string scratch, string environments) => Failed(Io.Posture.Environments(Estate(scratch, Environments(environments))));
 
     /// <summary>An estate's root under the scratch folder, holding estate/posture.json with the text given.</summary>
     private static string Estate(string scratch, string posture)

@@ -21,7 +21,7 @@ public static class DriftCheck
 
     /// <summary>
     /// What check drift answers: the target and the ref; the ref's commit; the drift; the collation the target's names compare under; the
-    /// provenance of the claim; the profile the plan ran under; and the notes the read and the plan raised.
+    /// provenance of the claim; the profile the plan ran under; and the notes the profile, the package and the plan raised.
     /// </summary>
     public sealed record Answer(Target Target, GitRef At, string Commit, Drift Drift, Collation Collation, Provenance Provenance, string Profile, IReadOnlyList<Finding> Notes);
 
@@ -52,7 +52,7 @@ public static class DriftCheck
             return new(stamp, outside);
         }
 
-        var posture = Profiles.Environments(estate.Root);
+        var posture = Posture.Environments(estate.Root);
         var reached = SqlServer.Resolve(request.Target, posture, estate.Root)
             .Bind(database => Profile(estate.Root, database, posture, request.Profile).Map(profile => (Database: database, Profile: profile)))
             .Bind(chosen => SqlServer.Reach(chosen.Database, log).Map(_ => chosen))
@@ -88,7 +88,7 @@ public static class DriftCheck
             Ssdt.CollationOf(target.Elements).Bind(collation => Drift.Of(plan.Report, target.Elements, source.Elements, collation).Map(drift =>
                 new Answer(request.Target, request.At, commit, drift, collation,
                     Provenance.Drift(Fingerprint.Of(target.Elements), Fingerprint.Of(plan.Report), stamp.DacFx, stamp.Server, profile.Fingerprint, request.Target, DateTimeOffset.UtcNow),
-                    profile.Source, [.. Notes(package), .. plan.Notes]))))));
+                    profile.Source, [.. profile.Notes, .. Notes(package), .. plan.Notes]))))));
 
     /// <summary>What the ref's package says that a plan package to package leaves out: a pre-plan script, which a live deploy runs and this plan does not.</summary>
     private static IEnumerable<Finding> Notes(Ssdt.Package package) => package.PrePlan is null ? [] : [Finding.Note("package.pre-plan-script", package.Source,
@@ -99,10 +99,10 @@ public static class DriftCheck
     /// the one profile every environment of the posture names.
     /// </summary>
     private static Result<PublishProfile.Strict> Profile(string root, SqlServer.Database database, Result<Environments> posture, string? named) =>
-        database is SqlServer.EnvironmentDatabase environment ? Profiles.Of(environment.Environment, root)
-        : named is not null ? Profiles.Load(Path.GetFullPath(Path.Combine(root, named)))
+        database is SqlServer.EnvironmentDatabase environment ? PublishProfiles.Of(environment.Environment, root)
+        : named is not null ? PublishProfiles.Load(Path.GetFullPath(Path.Combine(root, named)))
         : posture.Bind(environments => environments.SharedProfile is { } shared
-            ? Profiles.Load(Path.GetFullPath(Path.Combine(root, shared.ToString())))
-            : new Error("arguments.missing-flag", database + " is a copy, and " + Profiles.Posture + " names no one profile its environments share.",
+            ? PublishProfiles.Load(Path.GetFullPath(Path.Combine(root, shared.ToString())))
+            : new Error("arguments.missing-flag", database + " is a copy, and " + Posture.Json + " names no one profile its environments share.",
                 "Name the profile to plan under with estate check drift --profile <the pipeline's .publish.xml>."));
 }

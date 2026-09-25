@@ -36,7 +36,7 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
     {
         Telemetry.OptOut();   // before DacFx loads, as estate's Main does
         var elsewhere = "estate_sentinel_" + Guid.NewGuid().ToString("N")[..8];
-        var strict = Made(Profiles.Load(Sentinel(elsewhere)));
+        var strict = Made(PublishProfiles.Load(Sentinel(elsewhere)));
         var dacpac = Made(Ssdt.Build(ClassicMinimal(), tool.Folder, Path.Combine(scratch, "build"))).Path;
         Assert.ThrowsAny<SocketException>(() => Dns.GetHostEntry("sentinel.invalid"));
 
