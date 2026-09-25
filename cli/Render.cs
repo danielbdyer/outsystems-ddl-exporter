@@ -46,7 +46,7 @@ public static class Render
                 ["profile"] = Digest(r.Profile), ["where"] = r.Where, ["at"] = r.At.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture), ["lacking"] = Input(r.Lacking),
             } : null,
             ["verdict"] = new JsonObject { ["outcome"] = answer.Verdict.Outcome, ["message"] = answer.Verdict.Message, ["kind"] = Kind(answer.Verdict.Kind) },
-            ["findings"] = Array(answer.Findings.Select(f => new JsonObject { ["code"] = f.Code, ["severity"] = f.Severity, ["subject"] = f.Subject, ["message"] = f.Message, ["remedy"] = f.Remedy })),
+            ["findings"] = Array(answer.Findings.Select(f => new JsonObject { ["code"] = f.Code, ["severity"] = Word(f.Severity), ["subject"] = f.Subject, ["message"] = f.Message, ["remedy"] = f.Remedy })),
             ["exit"] = answer.Exit,
         };
         foreach (var added in Contract.Verbs.FirstOrDefault(v => v.Output == answer.Schema)?.Content ?? new JsonObject())
@@ -61,7 +61,7 @@ public static class Render
     public static string Markdown(Envelope answer) => string.Concat((string[])
     [
         answer.Verdict.Message, "\n",
-        .. answer.Findings.Select(f => "\n- " + f.Severity + " `" + f.Code + "` " + f.Subject + (f.Message == answer.Verdict.Message ? "." : ": " + f.Message) + (f.Remedy is null ? "" : " Remedy: " + f.Remedy) + "\n"),
+        .. answer.Findings.Select(f => "\n- " + Word(f.Severity) + " `" + f.Code + "` " + f.Subject + (f.Message == answer.Verdict.Message ? "." : ": " + f.Message) + (f.Remedy is null ? "" : " Remedy: " + f.Remedy) + "\n"),
     ]);
 
     /// <summary>A fingerprint as the envelope writes it: sha256: and its 64 hex digits.</summary>
@@ -129,15 +129,16 @@ public static class Render
         envelope["allOf"] = new JsonArray(
             If(Where("exit", Enum(Contract.Exits.Where(e => e.RemedyRequired).Select(e => (JsonNode?)e.Code))), Where("findings", new JsonObject { ["minItems"] = 1, ["items"] = Where("remedy", Text()) })),
             blocked);
+        // The kernel's Finding: its code in the one code pattern, its severity one of the three words, and, on every error, a remedy, which the kernel requires by construction and the schema states.
         var finding = Record(new()
         {
             ["code"] = Pattern(ErrorCode.Pattern),
-            ["severity"] = Enum(["error", "warning", "note"]),
+            ["severity"] = Enum(System.Enum.GetValues<Severity>().Select(s => (JsonNode?)Word(s))),
             ["subject"] = Text(),
             ["message"] = Text(),
             ["remedy"] = Nullable(Text()),
         });
-        finding["if"] = Where("severity", new JsonObject { ["const"] = "error" });
+        finding["if"] = Where("severity", new JsonObject { ["const"] = Word(Severity.Error) });
         finding["then"] = Where("remedy", Text());
         envelope["$defs"] = new JsonObject
         {
@@ -180,6 +181,16 @@ public static class Render
     internal static JsonObject Pattern(string pattern) => new() { ["type"] = "string", ["pattern"] = pattern };
     internal static JsonObject Fingerprint() => Pattern("^sha256:[0-9a-f]{64}$");
     internal static JsonArray Array(IEnumerable<JsonNode?> items) => new([.. items]);
+
+    /// <summary>A severity as the envelope writes it: error, warning, note.</summary>
+#pragma warning disable CS8524
+    private static string Word(Severity severity) => severity switch
+    {
+        Severity.Error => "error",
+        Severity.Warning => "warning",
+        Severity.Note => "note",
+    };
+#pragma warning restore CS8524
 
     /// <summary>A kind as the envelope writes it, null for a verdict the data did not block; the schema's words are these.</summary>
     private static string? Kind(Blocked? kind) => kind switch { null => null, Blocked.DataLossCheck => "guard", Blocked.Violation => "violation", _ => throw new System.ArgumentOutOfRangeException(nameof(kind)) };

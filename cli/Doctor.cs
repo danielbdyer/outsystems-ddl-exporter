@@ -32,7 +32,7 @@ public static partial class Verbs
         var stamp = Stamped(image, pin.Match<Pin?>(p => p, _ => null));
         return Contract.Answer(Of("doctor").Output, ready ? "ready" : "degraded",
             string.Join(" | ", (string[])["estate doctor " + (ready ? "READY" : "DEGRADED"), .. checks.Select(c => c.Item + "=" + c.Found)]),
-            [.. checks.Where(c => c.Remedy is not null).Select(c => new Finding("doctor." + c.Item, "error", "estate doctor", c.Item + ": " + c.Found + ".", c.Remedy))],
+            [.. checks.Where(c => c.Remedy is not null).Select(c => Finding.Error("doctor." + c.Item, "estate doctor", c.Item + ": " + c.Found + ".", c.Remedy!))],
             ready ? 0 : 6, stamp, content: new JsonObject
             {
                 ["checks"] = Render.Array(checks.Select(c => new JsonObject { ["item"] = c.Item, ["found"] = c.Found, ["remedy"] = c.Remedy })),

@@ -576,7 +576,7 @@ internal static class RefusalPaths
     private static string Quoted(string text) => "\"" + text + "\"";
 
     /// <summary>The error a verb's answer carries as its one finding of severity error, where the cli fails inside a verb rather than in a Result.</summary>
-    private static Error Carried(Envelope answer) => answer.Findings is [{ Severity: "error", Remedy: { } remedy } finding]
+    private static Error Carried(Envelope answer) => answer.Findings is [{ Severity: Severity.Error, Remedy: { } remedy } finding]
         ? new Error(finding.Code, finding.Message, remedy)
         : throw new InvalidOperationException("the answer carries no one error: " + answer.Verdict.Message);
 

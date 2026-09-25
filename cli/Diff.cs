@@ -46,8 +46,8 @@ public static partial class Verbs
 
         var (lines, fails) = (Lines(diff.Change).ToList(), diff.Fail && !diff.Change.IsEmpty);
         return Contract.Answer(Of("diff").Output, fails ? "differs" : "done", lines.Count == 0 ? "No change from " + diff.Before.Target + " to " + diff.After.Target + "." : string.Join('\n', lines),
-            diff.Before.IsDatabase == diff.After.IsDatabase ? [] : [new("diff.unlike-sources", "note", "estate diff", diff.Before.Target + " and " + diff.After.Target
-                + " are read one from a package and one from a database, and SQL Server keeps a check's or a default's text as it normalized it, so such text can differ where the schemas agree.", null)],
+            diff.Before.IsDatabase == diff.After.IsDatabase ? [] : [Finding.Note("diff.unlike-sources", "estate diff", diff.Before.Target + " and " + diff.After.Target
+                + " are read one from a package and one from a database, and SQL Server keeps a check's or a default's text as it normalized it, so such text can differ where the schemas agree.")],
             fails ? 5 : 0, Stamped(diff.Before.Image ?? diff.After.Image, diff.Pin), content: new JsonObject
             {
                 ["diff"] = new JsonObject { ["from"] = Side(diff.Before), ["to"] = Side(diff.After), ["change"] = Json(diff.Change) },

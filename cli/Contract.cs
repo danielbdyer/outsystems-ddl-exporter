@@ -40,9 +40,6 @@ public sealed record Verdict(string Outcome, string Message, Blocked? Kind = nul
 /// <summary>How the data blocked (§4 row 15): the data-loss check (BlockOnPossibleDataLoss) stopped the publish because the table has rows, or SQL Server refused the change on existing rows (Msg 547, Msg 2628).</summary>
 public enum Blocked { DataLossCheck, Violation }
 
-/// <summary>A finding, of severity error, warning or note (SARIF's levels); its remedy is a verb or a file path, and one of severity error carries one.</summary>
-public sealed record Finding(string Code, string Severity, string Subject, string Message, string? Remedy);
-
 /// <summary>The contract as data: the verb table and the exit table. --help --json and cli/schemas/ are generated from them.</summary>
 public static class Contract
 {
@@ -159,7 +156,7 @@ public static class Contract
 
     /// <summary>An error as an answer under <paramref name="schema"/>: the outcome its exit's name, its message the verdict, and one finding of severity error with <paramref name="subject"/>.</summary>
     public static Envelope Failed(string schema, string subject, Error error, Stamp? stamp = null) =>
-        Answer(schema, Exits.Single(e => e.Code == Exit(error)).Name, error.Message, [new(error.Code, "error", subject, error.Message, error.Remedy)], Exit(error), stamp);
+        Answer(schema, Exits.Single(e => e.Code == Exit(error)).Name, error.Message, [Finding.Of(error, subject)], Exit(error), stamp);
 
     /// <summary>
     /// An exception no verb expected, as an answer: the error internal.unexpected, naming the exception's type, at its category's exit. Its
