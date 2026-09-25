@@ -23,14 +23,19 @@ public sealed class BannedSymbolsTests
         ("P:System.DateTime.UtcNow", "System.DateTime.UtcNow"),
         ("P:System.DateTimeOffset.Now", "System.DateTimeOffset.Now"),
         ("P:System.DateTimeOffset.UtcNow", "System.DateTimeOffset.UtcNow"),
+        ("P:System.DateTime.Today", "System.DateTime.Today"),
+        ("P:System.TimeProvider.System", "System.TimeProvider.System"),
         ("M:System.Guid.NewGuid", "System.Guid.NewGuid()"),
         ("T:System.Random", "new System.Random(1)"),
         ("T:System.Security.Cryptography.RandomNumberGenerator", "System.Security.Cryptography.RandomNumberGenerator.Create()"),
         ("T:System.Diagnostics.Stopwatch", "System.Diagnostics.Stopwatch.StartNew()"),
         ("T:System.Environment", "System.Environment.ProcessorCount"),
+        ("T:System.Console", "System.Console.Out"),
+        ("T:System.Diagnostics.Process", "System.Diagnostics.Process.GetCurrentProcess()"),
         ("P:System.Globalization.CultureInfo.CurrentCulture", "System.Globalization.CultureInfo.CurrentCulture"),
         ("T:System.Threading.Tasks.Task", "System.Threading.Tasks.Task.CompletedTask"),
         ("T:System.Threading.Tasks.Task`1", "System.Threading.Tasks.Task<int>.Factory"),
+        ("T:System.Threading.Thread", "System.Threading.Thread.CurrentThread"),
     ];
 
     private const int FirstPlantedLine = 6;

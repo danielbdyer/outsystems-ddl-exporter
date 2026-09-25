@@ -4,11 +4,16 @@ P:System.DateTime.Now;the kernel has no clock: the caller passes the time
 P:System.DateTime.UtcNow;the kernel has no clock: the caller passes the time
 P:System.DateTimeOffset.Now;the kernel has no clock: the caller passes the time
 P:System.DateTimeOffset.UtcNow;the kernel has no clock: the caller passes the time
+P:System.DateTime.Today;the kernel has no clock: the caller passes the time
+P:System.TimeProvider.System;the kernel has no clock: the caller passes the time
 M:System.Guid.NewGuid;the kernel is deterministic: derive identity from content
 T:System.Random;the kernel is deterministic: take the generator as a parameter
 T:System.Security.Cryptography.RandomNumberGenerator;the kernel is deterministic: take the generator as a parameter
 T:System.Diagnostics.Stopwatch;the kernel has no clock
 T:System.Environment;the kernel reads no machine state
+T:System.Console;the kernel writes nothing: cli renders the answer
+T:System.Diagnostics.Process;the kernel starts no program: io/ runs git, dotnet and docker
 P:System.Globalization.CultureInfo.CurrentCulture;the kernel is culture-invariant: use CultureInfo.InvariantCulture or ordinal comparison
 T:System.Threading.Tasks.Task;the kernel is synchronous: effects and their scheduling live in io/
 T:System.Threading.Tasks.Task`1;the kernel is synchronous: effects and their scheduling live in io/
+T:System.Threading.Thread;the kernel is synchronous: it neither sleeps nor starts a thread
