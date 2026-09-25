@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -9,9 +10,12 @@ namespace Estate.Cli;
 /// <summary>The renderers: the help and every answer, as Markdown or as JSON, and the JSON schemas generated from the contract.</summary>
 public static class Render
 {
-    public const string Usage = "estate <verb> [arguments] [--json] | estate --help [--json] | estate --version";
+    public const string Usage = "estate <verb> [arguments] [--json] [--summary] | estate --help [--json] | estate --version";
 
     private const string SchemaId = "^estate\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$";
+
+    /// <summary>The whole answer's file, under the run's folder: what full names when an answer was cut.</summary>
+    private const string FullPattern = "^\\.estate/runs/[^/]+/answer\\.json$";
 
     public static JsonObject Help() => new()
     {
@@ -19,35 +23,47 @@ public static class Render
         ["version"] = Contract.Version,
         ["milestone"] = Contract.M(Contract.Milestone),
         ["usage"] = Usage,
-        ["verbs"] = Array(Contract.Verbs.Select(v => new JsonObject { ["name"] = v.Name, ["summary"] = v.Summary, ["arrives"] = Contract.M(v.Arrives), ["status"] = v.Status, ["output"] = v.Output })),
+        ["verbs"] = Array(Contract.Verbs.Select(v => new JsonObject
+        {
+            ["name"] = v.Name, ["summary"] = v.Summary, ["arrives"] = Contract.M(v.Arrives), ["status"] = v.Status, ["output"] = v.Output,
+            ["outcomes"] = Array(v.Answers.Select(o => new JsonObject { ["outcome"] = o.Word, ["exits"] = Array(o.Exits.Select(e => (JsonNode?)e)), ["meaning"] = o.Meaning })),
+        })),
         ["exits"] = Array(Contract.Exits.Select(e => new JsonObject { ["code"] = e.Code, ["name"] = e.Name, ["meaning"] = e.Meaning, ["remedy"] = e.Remedy })),
         ["schemas"] = new JsonObject(Schemas().Select(s => KeyValuePair.Create<string, JsonNode?>(s.Id, s.Schema))),
     };
 
     public static string HelpMarkdown() => string.Join('\n', (string[])
     [
-        "# estate " + Contract.Version, "", "Usage: `" + Usage + "`", "", "| Verb | Answers | Status |", "|---|---|---|",
-        .. Contract.Verbs.Select(v => "| `" + v.Name + "` | " + v.Summary + " | " + (v.Status == "built" ? "built" : v.Status + ", arrives in " + Contract.Title(v.Arrives)) + " |"),
+        "# estate " + Contract.Version, "", "Usage: `" + Usage + "`", "", "| Verb | Answers | Outcomes | Status |", "|---|---|---|---|",
+        .. Contract.Verbs.Select(v => "| `" + v.Name + "` | " + v.Summary + " | " + string.Join(", ", v.Answers.Select(o => o.Word + " (exit " + string.Join(" or ", o.Exits.Select(e => e.ToString(CultureInfo.InvariantCulture))) + ")"))
+            + " | " + (v.Status == "built" ? "built" : v.Status + ", arrives in " + Contract.Title(v.Arrives)) + " |"),
         "", "| Exit | Name | Meaning | Remedy |", "|---:|---|---|---|",
         .. Contract.Exits.Select(e => "| " + e.Code.ToString(CultureInfo.InvariantCulture) + " | " + e.Name + " | " + e.Meaning + " | " + e.Remedy + " |"),
         "",
     ]);
 
-    /// <summary>An answer as JSON: the envelope, then each property its verb adds, null where this answer carries none.</summary>
+    /// <summary>
+    /// An answer as JSON: the envelope's fields in the order the schema lists them, then each property its verb adds, null where this
+    /// answer carries none.
+    /// </summary>
     public static JsonObject Json(Envelope answer)
     {
         var json = new JsonObject
         {
             ["schema"] = answer.Schema,
+            ["outcome"] = answer.Outcome.Word,
+            ["exit"] = answer.Exit,
+            ["message"] = answer.Message,
+            ["blockedBy"] = Blocked(answer.BlockedBy),
+            ["findings"] = Array(answer.Findings.Select(f => new JsonObject { ["code"] = f.Code, ["severity"] = Word(f.Severity), ["subject"] = f.Subject, ["message"] = f.Message, ["remedy"] = f.Remedy })),
             ["engine"] = Stamped(answer.Stamp?.Engine, answer.Stamp),
             ["receipt"] = answer.Receipt is { } r ? new JsonObject
             {
                 ["delta"] = Digest(r.Delta), ["target"] = Digest(r.Target), ["dataFacts"] = r.DataFacts is { } facts ? Digest(facts) : null, ["engine"] = Stamped(r.Engine, answer.Stamp),
                 ["profile"] = Digest(r.Profile), ["where"] = r.Where, ["at"] = r.At.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture), ["lacking"] = Input(r.Lacking),
             } : null,
-            ["verdict"] = new JsonObject { ["outcome"] = answer.Verdict.Outcome, ["message"] = answer.Verdict.Message, ["kind"] = Kind(answer.Verdict.Kind) },
-            ["findings"] = Array(answer.Findings.Select(f => new JsonObject { ["code"] = f.Code, ["severity"] = Word(f.Severity), ["subject"] = f.Subject, ["message"] = f.Message, ["remedy"] = f.Remedy })),
-            ["exit"] = answer.Exit,
+            ["truncated"] = answer.Truncated,
+            ["full"] = answer.Full,
         };
         foreach (var added in Contract.Verbs.FirstOrDefault(v => v.Output == answer.Schema)?.Content ?? new JsonObject())
         {
@@ -57,12 +73,74 @@ public static class Render
         return json;
     }
 
-    /// <summary>An answer as Markdown: the verdict's message, then each finding, its message left out where it repeats the verdict's.</summary>
+    /// <summary>
+    /// An answer as Markdown: the message, or the verb's lines in its place when it has any (diff's change lines, one per line, so M1
+    /// exit 2's one line is the whole output); then each finding, its message left out where it repeats the answer's. Every field
+    /// passes through <see cref="Printable"/>; the line feeds and list markers written here are structure and are not escaped.
+    /// </summary>
     public static string Markdown(Envelope answer) => string.Concat((string[])
     [
-        answer.Verdict.Message, "\n",
-        .. answer.Findings.Select(f => "\n- " + Word(f.Severity) + " `" + f.Code + "` " + f.Subject + (f.Message == answer.Verdict.Message ? "." : ": " + f.Message) + (f.Remedy is null ? "" : " Remedy: " + f.Remedy) + "\n"),
+        .. answer.Lines.Count == 0 ? [Printable(answer.Message) + "\n"] : answer.Lines.Select(line => Printable(line) + "\n"),
+        .. answer.Findings.Select(f => "\n- " + Word(f.Severity) + " `" + Printable(f.Code) + "` " + Printable(f.Subject) + (f.Message == answer.Message ? "." : ": " + Printable(f.Message))
+            + (f.Remedy is null ? "" : " Remedy: " + Printable(f.Remedy)) + "\n"),
     ]);
+
+    /// <summary>
+    /// A JSON answer as text: io/Json's canonical form, with each bidirectional control character written as \uXXXX as well.
+    /// System.Text.Json escapes category Cc itself and writes U+200E, U+202E and the rest of Unicode's Bidi_Control raw; JSON's
+    /// structure is ASCII, so those twelve code points occur only inside strings, where the escape is valid and a parser restores
+    /// the character. A lone surrogate is written as � by System.Text.Json; the kernel's comparison and fingerprint keep the exact name.
+    /// </summary>
+    public static string JsonText(JsonObject json)
+    {
+        var text = Io.Json.Text(json);
+        var escaped = new System.Text.StringBuilder(text.Length);
+        foreach (var c in text)
+        {
+            if (BidiControl(c))
+            {
+                escaped.Append("\\u").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                escaped.Append(c);
+            }
+        }
+
+        return escaped.ToString();
+    }
+
+    /// <summary>
+    /// Text as Markdown and a terminal may show it (decision 2.25): each character of category Cc (U+0000 to U+001F, U+007F to
+    /// U+009F), each with the Bidi_Control property (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069, which reorder what
+    /// a terminal or a pull-request page shows) and each lone surrogate written as \u and four upper-case hex digits, and every other
+    /// character as it is, so a name holding ESC, a tab or a line break reads on one line and a surrogate pair prints whole.
+    /// </summary>
+    public static string Printable(string text)
+    {
+        var printable = new System.Text.StringBuilder(text.Length);
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (char.IsHighSurrogate(c) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+            {
+                printable.Append(c).Append(text[++i]);
+            }
+            else if (char.IsControl(c) || char.IsSurrogate(c) || BidiControl(c))
+            {
+                printable.Append("\\u").Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                printable.Append(c);
+            }
+        }
+
+        return printable.ToString();
+    }
+
+    /// <summary>Unicode's Bidi_Control property: the twelve characters that change the direction text is shown in.</summary>
+    private static bool BidiControl(char c) => c is '؜' or '‎' or '‏' or (>= '‪' and <= '‮') or (>= '⁦' and <= '⁩');
 
     /// <summary>A fingerprint as the envelope writes it: sha256: and its 64 hex digits.</summary>
     public static string Digest(Fingerprint fingerprint) => "sha256:" + fingerprint;
@@ -70,9 +148,9 @@ public static class Render
     /// <summary>The schemas the contract generates, by id: the envelope, the help and each verb's; each is committed under cli/schemas/ as <see cref="SchemaFile"/> names it.</summary>
     public static IReadOnlyList<(string Id, JsonObject Schema)> Schemas() =>
     [
-        ("estate.envelope/1", EnvelopeSchema("estate.envelope/1", "What every verb writes with --json: schema, engine, receipt, verdict, findings, exit.", new JsonObject())),
+        ("estate.envelope/1", EnvelopeSchema("estate.envelope/1", "What every verb writes with --json: schema, outcome, exit, message, blockedBy, findings, engine, receipt, truncated, full.", null)),
         ("estate.help/1", HelpSchema()),
-        .. Contract.Verbs.Where(v => v.Content is not null).Select(v => (v.Output, EnvelopeSchema(v.Output, "What estate " + v.Name + " --json writes: the envelope, and " + string.Join(" and ", v.Content!.Select(p => p.Key)) + ".", v.Content!))),
+        .. Contract.Verbs.Where(v => v.Content is not null).Select(v => (v.Output, EnvelopeSchema(v.Output, "What estate " + v.Name + " --json writes: the envelope, and " + string.Join(" and ", v.Content!.Select(p => p.Key)) + ".", v))),
     ];
 
     public static string SchemaFile(string id) => id.Replace('/', '.') + ".schema.json";
@@ -90,6 +168,7 @@ public static class Render
             ["arrives"] = Pattern("^M[0-9]$"),
             ["status"] = Enum(["built", "stub", "pending"]),
             ["output"] = Pattern(SchemaId),
+            ["outcomes"] = List(Record(new() { ["outcome"] = Text(), ["exits"] = List(Enum(Contract.Exits.Select(e => (JsonNode?)e.Code))), ["meaning"] = Text() })),
         })),
         ["exits"] = List(Record(new()
         {
@@ -101,34 +180,55 @@ public static class Render
         ["schemas"] = new JsonObject { ["type"] = "object", ["additionalProperties"] = new JsonObject { ["type"] = "object" } },
     });
 
-    /// <summary>The envelope's schema, with the properties a verb adds, each null where an answer carries none (an error).</summary>
-    private static JsonObject EnvelopeSchema(string id, string description, JsonObject added)
+    /// <summary>
+    /// The envelope's schema: the generic one, which admits every verb's outcome word and any verb's property, or a verb's own, which
+    /// admits its words and closes its properties, each null where an answer carries none (an error). Each rule is a minimal pair in
+    /// ContractTests.EnvelopePairs.
+    /// </summary>
+    private static JsonObject EnvelopeSchema(string id, string description, Verb? verb)
     {
+        // An outcome word and the exits it may take: each verb row's words with their exits, and each failure exit's name at that exit, where 0 is no failure.
+        var outcomes = (verb is null ? Contract.Verbs : [verb]).SelectMany(v => v.Answers.Select(o => (Word: o.Word, Exits: o.Exits.AsEnumerable())))
+            .Concat(Contract.Exits.Where(e => e.Code != 0).Select(e => (Word: e.Name, Exits: (IEnumerable<int>)[e.Code])))
+            .GroupBy(o => o.Word, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => (Word: g.Key, Exits: g.SelectMany(o => o.Exits).Distinct().Order().ToList())).ToList();
         var envelope = Document(id, description, new()
         {
-            ["schema"] = id == "estate.envelope/1" ? Pattern(SchemaId) : new JsonObject { ["const"] = id },
+            ["schema"] = verb is null ? Pattern(SchemaId) : new JsonObject { ["const"] = id },
+            ["outcome"] = Enum(outcomes.Select(o => (JsonNode?)o.Word)),
+            ["exit"] = Enum(Contract.Exits.Select(e => (JsonNode?)e.Code)),
+            ["message"] = Text(),
+            ["blockedBy"] = Nullable(BlockedBys()),
+            ["findings"] = List(Ref("finding")),
             ["engine"] = Ref("engine"),
             ["receipt"] = Nullable(Ref("receipt")),
-            ["verdict"] = new JsonObject { ["type"] = "object", ["required"] = new JsonArray("outcome", "message", "kind"), ["properties"] = new JsonObject { ["outcome"] = Text(), ["message"] = Text(), ["kind"] = Nullable(Kinds()) } },
-            ["findings"] = List(Ref("finding")),
-            ["exit"] = Enum(Contract.Exits.Select(e => (JsonNode?)e.Code)),
+            ["truncated"] = new JsonObject { ["type"] = "boolean" },
+            ["full"] = Nullable(Pattern(FullPattern)),
         });
-        foreach (var property in added)
+        foreach (var property in verb?.Content ?? new JsonObject())
         {
             ((JsonArray)envelope["required"]!).Add(property.Key);
             envelope["properties"]![property.Key] = Nullable((JsonObject)property.Value!.DeepClone());
         }
 
         // The envelope alone admits what a verb adds, which the verb's own schema closes.
-        envelope["additionalProperties"] = id == "estate.envelope/1";
+        envelope["additionalProperties"] = verb is null;
 
-        // Every error carries a remedy: an exit that requires one names at least one finding, each with its remedy.
-        // Blocked (§4 row 15) is blocked by the data and names its kind, the data-loss check or a violation on existing rows; no other exit has a kind.
-        var blocked = If(Where("exit", new JsonObject { ["const"] = Contract.Exits.Single(e => e.Name == "blocked").Code }), Where("verdict", Where("kind", Kinds())));
-        blocked["else"] = Where("verdict", Where("kind", new JsonObject { ["type"] = "null" }));
+        // Blocked (§4 row 15) names what blocked it, the data-loss check or a constraint violation, at exit 3 and at no other.
+        var blocked = If(Where("exit", new JsonObject { ["const"] = Contract.Exits.Single(e => e.Name == "blocked").Code }), Where("blockedBy", BlockedBys()));
+        blocked["else"] = Where("blockedBy", new JsonObject { ["type"] = "null" });
         envelope["allOf"] = new JsonArray(
+        [
+            // Every error carries a remedy: an exit that requires one names at least one finding, each with its remedy.
             If(Where("exit", Enum(Contract.Exits.Where(e => e.RemedyRequired).Select(e => (JsonNode?)e.Code))), Where("findings", new JsonObject { ["minItems"] = 1, ["items"] = Where("remedy", Text()) })),
-            blocked);
+            blocked,
+            // Each outcome word ties to the exits it may take.
+            .. outcomes.Select(o => If(Where("outcome", new JsonObject { ["const"] = o.Word }), Where("exit", Enum(o.Exits.Select(e => (JsonNode?)e))))),
+            // An answer that names its whole file was cut; an answer that was not cut names none.
+            If(Where("full", new JsonObject { ["type"] = "string" }), Where("truncated", new JsonObject { ["const"] = true })),
+            If(Where("truncated", new JsonObject { ["const"] = false }), Where("full", new JsonObject { ["type"] = "null" })),
+        ]);
+
         // The kernel's Finding: its code in the one code pattern, its severity one of the three words, and, on every error, a remedy, which the kernel requires by construction and the schema states.
         var finding = Record(new()
         {
@@ -190,11 +290,19 @@ public static class Render
         Severity.Warning => "warning",
         Severity.Note => "note",
     };
+
+    /// <summary>What blocked an answer, as the envelope writes it: data-loss-check or constraint-violation.</summary>
+    private static string Word(BlockedBy blockedBy) => blockedBy switch
+    {
+        BlockedBy.DataLossCheck => "data-loss-check",
+        BlockedBy.ConstraintViolation => "constraint-violation",
+    };
 #pragma warning restore CS8524
 
-    /// <summary>A kind as the envelope writes it, null for a verdict the data did not block; the schema's words are these.</summary>
-    private static string? Kind(Blocked? kind) => kind switch { null => null, Blocked.DataLossCheck => "guard", Blocked.Violation => "violation", _ => throw new System.ArgumentOutOfRangeException(nameof(kind)) };
-    private static JsonObject Kinds() => Enum(System.Enum.GetValues<Blocked>().Select(k => (JsonNode?)Kind(k)));
+    /// <summary>What blocked an answer, or null off exit 3.</summary>
+    private static string? Blocked(BlockedBy? blockedBy) => blockedBy is { } b ? Word(b) : null;
+
+    private static JsonObject BlockedBys() => Enum(System.Enum.GetValues<BlockedBy>().Select(b => (JsonNode?)Word(b)));
 
     /// <summary>A receipt's input as the envelope names it, camel-cased: delta, target, dataFacts, engine, profile.</summary>
     private static string? Input(Receipt.Input? input) => input is { } i ? char.ToLowerInvariant(i.ToString()[0]) + i.ToString()[1..] : null;

@@ -9,14 +9,31 @@ using Estate.Kernel;
 
 namespace Estate.Cli;
 
-/// <summary>A row of the verb table: the verb, the question it answers, the milestone it arrives in, its body once built, and the schema of what it adds to the envelope.</summary>
-public sealed record Verb(string Name, string Summary, int Arrives, Func<Checkout, IReadOnlyList<string>, Envelope>? Body = null, JsonObject? Content = null)
+/// <summary>
+/// A row of the verb table: the verb, the question it answers, the milestone it arrives in, its body once built, the schema of what it
+/// adds to the envelope, and the outcomes its answers take. A failure's outcome is its exit's name and is not listed here.
+/// </summary>
+public sealed record Verb(string Name, string Summary, int Arrives, Func<Checkout, IReadOnlyList<string>, Envelope>? Body = null, JsonObject? Content = null, IReadOnlyList<Outcome>? Outcomes = null)
 {
     /// <summary>The schema its --json answer names, such as estate.doctor/1.</summary>
     public string Output => "estate." + Name.TrimStart('-') + "/1";
 
     /// <summary>built; stub, a body ahead of its milestone; pending, no body yet.</summary>
     public string Status => Body is null ? "pending" : Arrives > Contract.Milestone ? "stub" : "built";
+
+    /// <summary>The outcomes this verb's answers take, a closed set its schema enumerates and ties to its exits; none for a verb with no body.</summary>
+    public IReadOnlyList<Outcome> Answers => Outcomes ?? [];
+
+    /// <summary>The outcome of this verb's answer that reads as <paramref name="word"/>; a word the row does not list is a defect in estate, found by the first test that renders it.</summary>
+    public Outcome Outcome(string word) => Answers.FirstOrDefault(o => o.Word == word)
+        ?? throw new InvalidOperationException("estate " + Name + " answers " + string.Join(", ", Answers.Select(o => o.Word)) + ", and '" + word + "' is none of them.");
+}
+
+/// <summary>An outcome an answer takes: the word the envelope writes, the exits it may take, and what it means to the reader.</summary>
+public sealed record Outcome(string Word, IReadOnlyList<int> Exits, string Meaning)
+{
+    /// <summary>A failure's outcome: its exit's name, at that exit alone.</summary>
+    public static Outcome Of(ExitCode exit) => new(exit.Name, [exit.Code], exit.Meaning);
 }
 
 /// <summary>Where estate runs: the estate's root (Profiles.Root of the working directory), the working directory, and the tool folder ESTATE_TOOL names, if any.</summary>
@@ -31,14 +48,72 @@ public sealed record ExitCode(int Code, string Name, string Meaning, string Reme
 /// <summary>The engine an answer stands on (R13), and the pin the toolchain ledger gives it; the pin is null where no ledger was read.</summary>
 public sealed record Stamp(Engine Engine, Pin? Pin);
 
-/// <summary>What every verb writes with --json: the kernel's engine as stamped, its receipt when it claims anything, the verdict, the findings, the exit, and what the verb adds (its Content).</summary>
-public sealed record Envelope(string Schema, Stamp? Stamp, Receipt? Receipt, Verdict Verdict, IReadOnlyList<Finding> Findings, int Exit, JsonObject? Content = null);
+/// <summary>
+/// How the data blocked (§4 row 15), at exit 3 alone: the data-loss check (BlockOnPossibleDataLoss) stopped the publish because the
+/// table has rows, or SQL Server refused the change on existing rows (Msg 547, Msg 2628), a constraint violation. Written as
+/// data-loss-check and constraint-violation; no built verb exits 3, and prove (M4) is its first user.
+/// </summary>
+public enum BlockedBy
+{
+    DataLossCheck,
+    ConstraintViolation,
+}
 
-/// <summary>The answer in a line; at exit 3 its kind says how the data blocked, and no other verdict has one.</summary>
-public sealed record Verdict(string Outcome, string Message, Blocked? Kind = null);
+/// <summary>
+/// What every verb writes with --json: its schema; the outcome, a word of the verb's closed set or a failure's exit name, with the
+/// exit the outcome admits; the answer in one line; what blocked it, at exit 3 alone; the findings; the engine as stamped and the
+/// receipt when the answer claims anything; whether the answer was cut to its first entries and where the whole one is; and what the
+/// verb adds (its Content), with the lines a verb prints after its message (diff's change lines). The constructor refuses an exit its
+/// outcome does not list and a blockedBy off exit 3, so an answer that says matches at exit 5 is a defect found by the first test that
+/// renders it.
+/// </summary>
+public sealed record Envelope
+{
+    public Envelope(string schema, Outcome outcome, int exit, string message, IReadOnlyList<Finding> findings, BlockedBy? blockedBy = null, Stamp? stamp = null,
+        Receipt? receipt = null, JsonObject? content = null, IReadOnlyList<string>? lines = null)
+    {
+        if (!outcome.Exits.Contains(exit))
+        {
+            throw new ArgumentException("An answer whose outcome is '" + outcome.Word + "' exits " + string.Join(" or ", outcome.Exits.Select(e => e.ToString(CultureInfo.InvariantCulture)))
+                + ", and this one exits " + exit.ToString(CultureInfo.InvariantCulture) + ".", nameof(exit));
+        }
 
-/// <summary>How the data blocked (§4 row 15): the data-loss check (BlockOnPossibleDataLoss) stopped the publish because the table has rows, or SQL Server refused the change on existing rows (Msg 547, Msg 2628).</summary>
-public enum Blocked { DataLossCheck, Violation }
+        if ((exit == 3) != blockedBy.HasValue)
+        {
+            throw new ArgumentException("An answer names what blocked it exactly at exit 3, and this one exits " + exit.ToString(CultureInfo.InvariantCulture) + ".", nameof(blockedBy));
+        }
+
+        (Schema, Outcome, Exit, Message, Findings, BlockedBy, Stamp, Receipt, Content, Lines) = (schema, outcome, exit, message, findings, blockedBy, stamp, receipt, content, lines ?? []);
+    }
+
+    public string Schema { get; init; }
+
+    public Outcome Outcome { get; init; }
+
+    public int Exit { get; init; }
+
+    /// <summary>The answer in one line.</summary>
+    public string Message { get; init; }
+
+    public IReadOnlyList<Finding> Findings { get; init; }
+
+    public BlockedBy? BlockedBy { get; init; }
+
+    public Stamp? Stamp { get; init; }
+
+    public Receipt? Receipt { get; init; }
+
+    public JsonObject? Content { get; init; }
+
+    /// <summary>The Markdown body a verb prints in its message's place: diff's change lines; empty for the others.</summary>
+    public IReadOnlyList<string> Lines { get; init; }
+
+    /// <summary>Whether the answer was cut to its first entries and warnings (Render.Shown); the whole answer is then in <see cref="Full"/>.</summary>
+    public bool Truncated { get; init; }
+
+    /// <summary>The run's answer.json holding the whole answer, from the estate's root, when the answer was cut and the file could be written.</summary>
+    public string? Full { get; init; }
+}
 
 /// <summary>The contract as data: the verb table and the exit table. --help --json and cli/schemas/ are generated from them.</summary>
 public static class Contract
@@ -53,11 +128,13 @@ public static class Contract
     public static readonly IReadOnlyList<Verb> Verbs =
     [
         new("doctor", "Can this machine do the work: the SDK and runtime, the tool and its DacFx against the toolchain ledger, the build route, the scratch server, Git LFS. estate doctor",
-            1, Cli.Verbs.Doctor, Cli.Verbs.DoctorContent),
+            1, Cli.Verbs.Doctor, Cli.Verbs.DoctorContent,
+            [new("ready", [0], "every prerequisite is present"), new("degraded", [6], "a prerequisite is missing; a finding names each, with its remedy")]),
         new("read", "What a schema is, from a ref, a package or a database, read whole, with its fingerprint. estate read --from <target> [--project <path>]",
-            1, Cli.Verbs.Read, Cli.Verbs.ReadContent),
+            1, Cli.Verbs.Read, Cli.Verbs.ReadContent, [new("done", [0], "the target was read whole; read holds its elements and fingerprint")]),
         new("diff", "What changes between two schemas, property by property, deploy scripts and refactorlog included. estate diff --from <target> --to <target> [--project <path>] [--fail-on-change]",
-            1, Cli.Verbs.Diff, Cli.Verbs.DiffContent),
+            1, Cli.Verbs.Diff, Cli.Verbs.DiffContent,
+            [new("matches", [0], "the two schemas hold the same elements"), new("differs", [0, 5], "the two schemas differ; exit 5 only with --fail-on-change")]),
         new("classify", "Which operation a change is, provisionally, from the committed evidence.", 2),
         new("predict", "Whether a change blocks or applies on each environment the caller can read, and why.", 2),
         new("measure", "What an environment's data looks like, as the evidence the synthetic copy is generated from.", 3),
@@ -66,9 +143,11 @@ public static class Contract
         new("describe", "The pull request description, rendered from the receipts.", 5),
         new("gate", "The pull request's proof, reproduced from the clone.", 5),
         new("check", "Whether a database has drifted from the repository at a ref; the platform, the evidence and the locks arrive later. estate check drift --target <target> --at <ref> "
-            + "[--profile <path>] [--project <path>]", 1, Cli.Verbs.Check, Cli.Verbs.CheckContent),
+            + "[--profile <path>] [--project <path>]", 1, Cli.Verbs.Check, Cli.Verbs.CheckContent,
+            [new("matches", [0], "the deploy plan against the target is empty"), new("differs", [5], "the deploy plan holds operations; a finding names each object")]),
         new("knowledge", "The knowledge tree, packaged for each agent and vendored to the estate.", 5),
-        new("--version", "The tool's version.", 0, (_, _) => Answer("estate.version/1", "done", "estate " + Version, [], 0)),
+        new("--version", "The tool's version.", 0, (_, _) => Answer("estate.version/1", new Outcome("done", [0], "the message is the tool's version"), 0, "estate " + Version, []),
+            Outcomes: [new("done", [0], "the message is the tool's version")]),
     ];
 
     public static readonly IReadOnlyList<ExitCode> Exits =
@@ -76,7 +155,7 @@ public static class Contract
         new(0, "done", "Done: the verb did its work.", "nothing to do", false),
         new(1, "bad-arguments", "Bad arguments: an unknown verb, flag or value.", "estate --help", false),
         new(2, "unparsed-input", "An input could not be parsed: a schema, a configuration file or a project.", "the file and line the finding names", true),
-        new(3, "blocked", "Blocked by the data, a finding and not a failure: kind guard, the data-loss check stopped the publish because the table has rows; or kind violation, SQL Server refused the change on existing rows (Msg 547, Msg 2628).", "the site the finding names: the operation's two-release shape, or the rows it counts", false),
+        new(3, "blocked", "Blocked by the data, a finding and not a failure: blocked by the data-loss check, which stopped the publish because the table has rows; or by a constraint violation, SQL Server refusing the change on existing rows (Msg 547, Msg 2628).", "the site the finding names: the operation's two-release shape, or the rows it counts", false),
         new(4, "unreachable", "The target is unreachable: no scratch server, or SQL Server, Docker or LocalDB not answering.", "estate doctor; estate synthetic-copy up", true),
         new(5, "differs", "Divergence found: the target differs from the repository; the findings name each differing object.", "the objects the findings name", false),
         new(6, "configuration-refused", "The environment or configuration is refused: the .NET SDK missing, an unknown key, a literal credential, an engine outside the pinned window, a verb this build does not have yet, a failure DacFx reports with no SQL Server error inside (dacfx.failed), or a defect in estate itself (internal.unexpected).", "estate doctor, or the file or milestone the finding names", true),
@@ -133,8 +212,8 @@ public static class Contract
         ErrorCategory.GitBranch => 9,
         ErrorCategory.Copy => 9,
         ErrorCategory.AggregateQuery => 9,
-#pragma warning restore CS8524
     };
+#pragma warning restore CS8524
 
     /// <summary>The remedy a defect in estate itself carries: the defect is estate's to fix, and the envelope is what its maintainers need.</summary>
     private const string ReportIt = "Report this envelope and the command that produced it to estate's maintainers.";
@@ -148,15 +227,19 @@ public static class Contract
     public static string Title(int milestone) => M(milestone) + " (" + Milestones[milestone] + ")";
 
     /// <summary>An answer; with no stamp it stands on the tool alone, nothing here having loaded DacFx or reached SQL Server.</summary>
-    public static Envelope Answer(string schema, string outcome, string message, IReadOnlyList<Finding> findings, int exit, Stamp? stamp = null, Receipt? receipt = null, JsonObject? content = null) =>
-        new(schema, stamp, receipt, new Verdict(outcome, message), findings, exit, content);
+    public static Envelope Answer(string schema, Outcome outcome, int exit, string message, IReadOnlyList<Finding> findings, Stamp? stamp = null, Receipt? receipt = null,
+        JsonObject? content = null, IReadOnlyList<string>? lines = null) =>
+        new(schema, outcome, exit, message, findings, null, stamp, receipt, content, lines);
 
-    /// <summary>An error as a verb's answer: its message the verdict, one finding of severity error carrying its code and remedy, and the exit of its category.</summary>
+    /// <summary>An error as a verb's answer: its message the answer's, one finding of severity error carrying its code and remedy, and the exit of its category.</summary>
     public static Envelope Failed(Verb verb, Error error, Stamp? stamp = null) => Failed(verb.Output, "estate " + verb.Name, error, stamp);
 
-    /// <summary>An error as an answer under <paramref name="schema"/>: the outcome its exit's name, its message the verdict, and one finding of severity error with <paramref name="subject"/>.</summary>
-    public static Envelope Failed(string schema, string subject, Error error, Stamp? stamp = null) =>
-        Answer(schema, Exits.Single(e => e.Code == Exit(error)).Name, error.Message, [Finding.Of(error, subject)], Exit(error), stamp);
+    /// <summary>An error as an answer under <paramref name="schema"/>: the outcome its exit's name, its message the answer's, and one finding of severity error with <paramref name="subject"/>.</summary>
+    public static Envelope Failed(string schema, string subject, Error error, Stamp? stamp = null)
+    {
+        var exit = Exits.Single(e => e.Code == Exit(error));
+        return Answer(schema, Outcome.Of(exit), exit.Code, error.Message, [Finding.Of(error, subject)], stamp);
+    }
 
     /// <summary>
     /// An exception no verb expected, as an answer: the error internal.unexpected, naming the exception's type, at its category's exit. Its

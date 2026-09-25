@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
 using Estate.Io;
@@ -30,7 +31,7 @@ public static partial class Verbs
 
     /// <summary>
     /// estate diff --from &lt;target&gt; --to &lt;target&gt; [--project &lt;path&gt;] [--fail-on-change]: Change.Between the two models with the renames
-    /// their refactorlogs record (V3_ARCHITECTURE.md §8.5), one line per change; exit 5 with --fail-on-change when anything changes.
+    /// their refactorlogs record (V3_ARCHITECTURE.md §8.5); matches at exit 0, or differs with one line per change, at exit 5 with --fail-on-change.
     /// </summary>
     public static Envelope Diff(Checkout here, IReadOnlyList<string> words)
     {
@@ -44,14 +45,25 @@ public static partial class Verbs
             return Contract.Failed(Of("diff"), error, Stamped(null, null));
         }
 
-        var (lines, fails) = (Lines(diff.Change).ToList(), diff.Fail && !diff.Change.IsEmpty);
-        return Contract.Answer(Of("diff").Output, fails ? "differs" : "done", lines.Count == 0 ? "No change from " + diff.Before.Target + " to " + diff.After.Target + "." : string.Join('\n', lines),
-            diff.Before.IsDatabase == diff.After.IsDatabase ? [] : [Finding.Note("diff.unlike-sources", "estate diff", diff.Before.Target + " and " + diff.After.Target
+        return Diff(diff.Before, diff.After, diff.Change, diff.Fail, Stamped(diff.Before.Image ?? diff.After.Image, diff.Pin));
+    }
+
+    /// <summary>
+    /// The answer of a diff whose sides are read: matches (exit 0) when the change is empty, else differs, at exit 5 only with
+    /// --fail-on-change; the message counts the changes, and the change's lines are the Markdown body.
+    /// </summary>
+    internal static Envelope Diff(Source before, Source after, Change change, bool failOnChange, Stamp stamp)
+    {
+        var lines = Lines(change).ToList();
+        var message = lines.Count == 0 ? "No change from " + before.Target + " to " + after.Target + "."
+            : lines.Count.ToString(CultureInfo.InvariantCulture) + (lines.Count == 1 ? " change from " : " changes from ") + before.Target + " to " + after.Target + ".";
+        return Contract.Answer(Of("diff").Output, Of("diff").Outcome(change.IsEmpty ? "matches" : "differs"), failOnChange && !change.IsEmpty ? 5 : 0, message,
+            before.IsDatabase == after.IsDatabase ? [] : [Finding.Note("diff.unlike-sources", "estate diff", before.Target + " and " + after.Target
                 + " are read one from a package and one from a database, and SQL Server keeps a check's or a default's text as it normalized it, so such text can differ where the schemas agree.")],
-            fails ? 5 : 0, Stamped(diff.Before.Image ?? diff.After.Image, diff.Pin), content: new JsonObject
+            stamp, content: new JsonObject
             {
-                ["diff"] = new JsonObject { ["from"] = Side(diff.Before), ["to"] = Side(diff.After), ["change"] = Json(diff.Change) },
-            });
+                ["diff"] = new JsonObject { ["from"] = Side(before), ["to"] = Side(after), ["change"] = Json(change) },
+            }, lines: lines);
     }
 
     /// <summary>A change as lines: each element created, dropped or renamed, then each property (with its values, a text's left out) or relationship that is altered.</summary>

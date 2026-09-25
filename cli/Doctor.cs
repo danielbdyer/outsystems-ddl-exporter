@@ -30,10 +30,10 @@ public static partial class Verbs
         var ready = checks.All(c => c.Remedy is null);
         var image = checks.Any(c => c.Item == "image" && c.Found == "present") ? Io.Doctor.ImageDigest : null;
         var stamp = Stamped(image, pin.Match<Pin?>(p => p, _ => null));
-        return Contract.Answer(Of("doctor").Output, ready ? "ready" : "degraded",
+        return Contract.Answer(Of("doctor").Output, Of("doctor").Outcome(ready ? "ready" : "degraded"), ready ? 0 : 6,
             string.Join(" | ", (string[])["estate doctor " + (ready ? "READY" : "DEGRADED"), .. checks.Select(c => c.Item + "=" + c.Found)]),
             [.. checks.Where(c => c.Remedy is not null).Select(c => Finding.Error("doctor." + c.Item, "estate doctor", c.Item + ": " + c.Found + ".", c.Remedy!))],
-            ready ? 0 : 6, stamp, content: new JsonObject
+            stamp, content: new JsonObject
             {
                 ["checks"] = Render.Array(checks.Select(c => new JsonObject { ["item"] = c.Item, ["found"] = c.Found, ["remedy"] = c.Remedy })),
             });

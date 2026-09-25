@@ -107,7 +107,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
 
             var answer = JsonNode.Parse(output)!;
             ScratchEstate.Valid("estate.check.1.schema.json", answer);
-            Assert.Equal((0, "matches"), (exit, (string?)answer["verdict"]!["outcome"]));
+            Assert.Equal((0, "matches"), (exit, (string?)answer["outcome"]));
             var receipt = answer["receipt"]!;
             var container = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ESTATE_SQL")) && File.Exists(ScratchServer.SqlEnv);
             Assert.Equal(("170.5.96", container ? Doctor.ImageDigest : null, "UNPINNED"),

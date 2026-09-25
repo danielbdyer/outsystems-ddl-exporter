@@ -67,7 +67,7 @@ public static partial class Verbs
         var receipt = new Receipt(Fingerprint.Of(planned.Model.Elements), Fingerprint.Of(planned.Plan.Report), null, stamp.Engine, drift.Profile.Fingerprint, drift.Target.ToString(),
             DateTimeOffset.UtcNow);
         var items = planned.Plan.Items;
-        return Contract.Answer(verb.Output, items.Count == 0 ? "matches" : "differs",
+        return Contract.Answer(verb.Output, verb.Outcome(items.Count == 0 ? "matches" : "differs"), items.Count == 0 ? 0 : 5,
             drift.Target + (items.Count == 0 ? " matches " + at : " differs from " + at + " in each object below."),
             [
                 .. items.Select(i => Finding.Warning("drift." + i.Operation.ToLowerInvariant(), Named(i.Type) + " " + i.Name,
@@ -78,7 +78,7 @@ public static partial class Verbs
                     + ", UNPINNED: " + Io.Doctor.Ledger + " pins no engine for estate " + Contract.Version.Split('+')[0] + ".") } : [],
                 Unverified,
             ],
-            items.Count == 0 ? 0 : 5, stamp, receipt, new JsonObject
+            stamp, receipt, new JsonObject
             {
                 ["check"] = new JsonObject
                 {

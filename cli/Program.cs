@@ -64,5 +64,5 @@ public static class Program
         }
     }
 
-    private static string Rendered(Envelope answer, bool json) => json ? Io.Json.Text(Render.Json(answer)) : Render.Markdown(answer);
+    private static string Rendered(Envelope answer, bool json) => json ? Render.JsonText(Render.Json(answer)) : Render.Markdown(answer);
 }

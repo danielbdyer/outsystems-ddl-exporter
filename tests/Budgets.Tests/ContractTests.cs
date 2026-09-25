@@ -133,14 +133,13 @@ public sealed class ContractTests
         var scratch = Directory.CreateTempSubdirectory("estate-blank-name-").FullName;
         try
         {
-            var dacpac = Path.Combine(scratch, "blank.dacpac");
-            using (var model = new Microsoft.SqlServer.Dac.Model.TSqlModel(Microsoft.SqlServer.Dac.Model.SqlServerVersion.Sql160, new Microsoft.SqlServer.Dac.Model.TSqlModelOptions()))
-            {
-                model.AddObjects("CREATE TABLE dbo.Customer (Id INT NOT NULL, [ ] INT NULL, [a\tb] INT NULL);");
-                Microsoft.SqlServer.Dac.DacPackageExtensions.BuildPackage(dacpac, model, new Microsoft.SqlServer.Dac.PackageMetadata());
-            }
+            var (dacpac, bare) = (Path.Combine(scratch, "blank.dacpac"), Path.Combine(scratch, "bare.dacpac"));
+            Package(dacpac, "CREATE TABLE dbo.Customer (Id INT NOT NULL, [ ] INT NULL, [a\tb] INT NULL);");
+            Package(bare, "CREATE TABLE dbo.Customer (Id INT NOT NULL);");
 
             var (exit, answer) = Answered(["read", "--from", "dacpac:" + dacpac, "--json"], new Checkout(scratch, scratch, null));
+            using var diff = new MemoryStream();
+            var diffExit = Cli.Program.Run(["diff", "--from", "dacpac:" + bare, "--to", "dacpac:" + dacpac], diff, new Checkout(scratch, scratch, null));
 
             Assert.Equal(0, exit);
             AssertValid("estate.read.1.schema.json", answer);
@@ -148,11 +147,68 @@ public sealed class ContractTests
             Assert.Contains("Column [dbo].[Customer].[ ]", keys);
             Assert.Contains("Column [dbo].[Customer].[a\tb]", keys);
             Assert.Contains("\"Column [dbo].[Customer].[a\\tb]\"", Io.Json.Text(answer), StringComparison.Ordinal);
+            Assert.Equal(0, diffExit);
+            var lines = Encoding.UTF8.GetString(diff.ToArray()).Split('\n');
+            Assert.Contains("created Column [dbo].[Customer].[ ]", lines);
+            Assert.Contains("created Column [dbo].[Customer].[a\\u0009b]", lines);
         }
         finally
         {
             Directory.Delete(scratch, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// Decision 2.25's other half (C3): what leaves the tool as Markdown is escaped. A finding whose subject holds ESC and a
+    /// right-to-left override (U+202E) and whose message holds a line feed and a lone surrogate renders as one line holding
+    /// \u001B, ‮, \u000A and \uD800 and none of the raw characters, written through io/Write without throwing on the
+    /// surrogate; an accented letter and an arrow print as they are.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Markdown_escapes_each_control_bidirectional_and_lone_surrogate_character_and_prints_the_rest_as_it_is()
+    {
+        var read = Contract.Verbs.Single(v => v.Name == "read");
+        var answer = Contract.Answer(read.Output, read.Outcome("done"), 0, "Length 300 → 256 for café.",
+            [Finding.Warning("drift.column", "Column [dbo].[Customer].[a\u001Bb‮c]", "line one\nline two \uD800 end", "Run estate diff\u0009now.")]);
+
+        using var output = new MemoryStream();
+        Write.Text(output, Render.Markdown(answer));
+        var markdown = Encoding.UTF8.GetString(output.ToArray());
+
+        var line = Assert.Single(markdown.Split('\n'), l => l.StartsWith("- warning", StringComparison.Ordinal));
+        Assert.Contains("[a\\u001Bb\\u202Ec]", line, StringComparison.Ordinal);
+        Assert.Contains("line one\\u000Aline two \\uD800 end", line, StringComparison.Ordinal);
+        Assert.Contains("Remedy: Run estate diff\\u0009now.", line, StringComparison.Ordinal);
+        Assert.StartsWith("Length 300 → 256 for café.\n", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain(markdown, c => c is '\u001B' or '‮' or '\uD800' or '\t');
+    }
+
+    /// <summary>JSON escapes a bidirectional control as ‮, which System.Text.Json's own encoder writes raw, and a parser restores the character.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Json_escapes_a_bidirectional_control_and_a_parser_restores_it()
+    {
+        var read = Contract.Verbs.Single(v => v.Name == "read");
+        var answer = Contract.Answer(read.Output, read.Outcome("done"), 0, "dacpac:a‮b.dacpac: 3 elements", []);
+
+        var text = Render.JsonText(Render.Json(answer));
+
+        Assert.Contains("\\u202E", text, StringComparison.Ordinal);
+        Assert.DoesNotContain('‮', text);
+        Assert.Equal("dacpac:a‮b.dacpac: 3 elements", (string?)JsonNode.Parse(text)!["message"]);
+    }
+
+    /// <summary>A package DacFx builds from the scripts, under the path given.</summary>
+    private static void Package(string dacpac, params string[] scripts)
+    {
+        using var model = new Microsoft.SqlServer.Dac.Model.TSqlModel(Microsoft.SqlServer.Dac.Model.SqlServerVersion.Sql160, new Microsoft.SqlServer.Dac.Model.TSqlModelOptions());
+        foreach (var script in scripts)
+        {
+            model.AddObjects(script);
+        }
+
+        Microsoft.SqlServer.Dac.DacPackageExtensions.BuildPackage(dacpac, model, new Microsoft.SqlServer.Dac.PackageMetadata());
     }
 
     /// <summary>The elements a read's answer holds: in the answer itself, or in the run's answer.json when the answer was cut to its first entries.</summary>
@@ -372,22 +428,41 @@ public sealed class ContractTests
         Assert.False(Evaluate("estate.envelope.1.schema.json", Answer(refused)).IsValid, "the envelope schema admits an answer that breaks: " + rule);
     }
 
-    /// <summary>§4 row 15, through the contract's own types: exit 3 names how the data blocked, and no other exit has a kind.</summary>
+    /// <summary>
+    /// §4 row 15, through the contract's own types: an answer at exit 3 names what blocked it, the data-loss check or a constraint
+    /// violation, written as data-loss-check and constraint-violation; one at exit 3 naming nothing, or at another exit naming
+    /// something, cannot be constructed, and the schema refuses the same answers written by hand.
+    /// </summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData(3, Blocked.DataLossCheck, "guard")]
-    [InlineData(3, Blocked.Violation, "violation")]
-    [InlineData(3, null, null)]
-    [InlineData(0, null, null)]
-    [InlineData(0, Blocked.DataLossCheck, "guard")]
-    public void A_verdict_names_its_kind_exactly_when_the_data_blocked(int exit, Blocked? kind, string? written)
+    [InlineData(BlockedBy.DataLossCheck, "data-loss-check")]
+    [InlineData(BlockedBy.ConstraintViolation, "constraint-violation")]
+    public void A_blocking_answer_names_what_blocked_it_exactly_at_exit_3(BlockedBy blockedBy, string written)
     {
-        var answer = Contract.Answer("estate.prove/1", "blocked", "Msg 50000: rows were detected.", [], exit);
+        var blocked = new Outcome("blocked", [3], "the data blocked the change");
+        var answer = new Envelope("estate.prove/1", blocked, 3, "Msg 50000: rows were detected.", [], blockedBy);
 
-        var json = Render.Json(answer with { Verdict = answer.Verdict with { Kind = kind } });
+        var json = Render.Json(answer);
 
-        Assert.Equal(written, (string?)json["verdict"]!["kind"]);
-        Assert.Equal((exit == 3) == kind.HasValue, Evaluate("estate.envelope.1.schema.json", json).IsValid);
+        Assert.Equal(written, (string?)json["blockedBy"]);
+        AssertValid("estate.envelope.1.schema.json", json);
+        Assert.Throws<ArgumentException>("blockedBy", () => new Envelope("estate.prove/1", blocked, 3, "Msg 50000: rows were detected.", []));
+        Assert.Throws<ArgumentException>("blockedBy", () => new Envelope("estate.version/1", new Outcome("done", [0], "done"), 0, "estate 3.0.0", [], blockedBy));
+        json["blockedBy"] = null;
+        Assert.False(Evaluate("estate.envelope.1.schema.json", json).IsValid, "the schema admits exit 3 naming nothing");
+    }
+
+    /// <summary>An outcome's word and its exit are one decision: check drift's matches is exit 0 and differs exit 5, and an answer that pairs them otherwise cannot be constructed.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void An_answer_whose_exit_its_outcome_does_not_list_cannot_be_constructed()
+    {
+        var check = Contract.Verbs.Single(v => v.Name == "check");
+
+        Assert.Throws<ArgumentException>("exit", () => new Envelope(check.Output, check.Outcome("matches"), 5, "env:dev matches ref:main.", []));
+        Assert.Equal(5, new Envelope(check.Output, check.Outcome("differs"), 5, "env:dev differs from ref:main.", []).Exit);
+        Assert.Equal([0, 5], Contract.Verbs.Single(v => v.Name == "diff").Outcome("differs").Exits);
+        Assert.Throws<InvalidOperationException>(() => check.Outcome("done"));
     }
 
     [Fact]
@@ -416,8 +491,8 @@ public sealed class ContractTests
             var json = Render.Json(Verbs.Doctor(checks, Doctor.Toolchain(bare, Contract.Version)));
 
             AssertValid("estate.doctor.1.schema.json", json);
-            Assert.Equal(6, (int)json["exit"]!);
-            var line = (string)json["verdict"]!["message"]!;
+            Assert.Equal((6, "degraded"), ((int)json["exit"]!, (string?)json["outcome"]));
+            var line = (string)json["message"]!;
             Assert.StartsWith("estate doctor DEGRADED | sdk=", line, StringComparison.Ordinal);
             Assert.Contains(" | dacfx=" + Doctor.DacFx + " (UNPINNED) | ", line, StringComparison.Ordinal);
             Assert.DoesNotContain("M1", line, StringComparison.Ordinal);
@@ -461,9 +536,9 @@ public sealed class ContractTests
 
             var json = Render.Json(answer);
             AssertValid("estate.doctor.1.schema.json", json);
-            Assert.Equal((0, "ready"), (answer.Exit, answer.Verdict.Outcome));
+            Assert.Equal((0, "ready"), (answer.Exit, answer.Outcome.Word));
             Assert.Equal("estate doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx=" + Doctor.DacFx + " (UNPINNED) | build=dotnet with the tool folder's targets"
-                + " | scratch-server=docker 29.5.3 | image=present | lfs=git-lfs/3.4.0", answer.Verdict.Message);
+                + " | scratch-server=docker 29.5.3 | image=present | lfs=git-lfs/3.4.0", answer.Message);
             Assert.Empty(answer.Findings);
             Assert.Equal(("170.5.96", Doctor.ImageDigest, "UNPINNED"), ((string?)json["engine"]!["dacfx"], (string?)json["engine"]!["sqlserver"], (string?)json["engine"]!["pin"]));
         }
@@ -503,8 +578,8 @@ public sealed class ContractTests
             .Evaluate(instance, new EvaluationOptions { OutputFormat = OutputFormat.List, RequireFormatValidation = true });
 
     /// <summary>
-    /// The envelope's rules, each named by the sentence it pins, as (admitted, refused). The exit codes and the field
-    /// names are written out rather than read from the contract, so a rule narrowed there fails here.
+    /// The envelope's rules, each named by the sentence it pins, as (admitted, refused). The exit codes, the outcome words and the
+    /// field names are written out rather than read from the contract, so a rule narrowed there fails here.
     /// </summary>
     private static readonly Dictionary<string, (Action<JsonObject> Admitted, Action<JsonObject> Failed)> EnvelopePairs = Pairs();
 
@@ -512,12 +587,23 @@ public sealed class ContractTests
     {
         var pairs = new Dictionary<string, (Action<JsonObject> Admitted, Action<JsonObject> Failed)>(StringComparer.Ordinal)
         {
-            ["exit is a code of the frozen table"] = (a => a["exit"] = 7, a => a["exit"] = 8),
-            ["exit 3 names its kind"] = (BlockedBy("guard"), BlockedBy(null)),
-            ["exit 3's kind is guard or violation"] = (BlockedBy("violation"), BlockedBy("other")),
-            ["no other exit has a kind"] = (_ => { }, a => a["verdict"]!["kind"] = "guard"),
-            ["a verdict names its kind, as null when the data did not block"] = (_ => { }, a => a["verdict"]!.AsObject().Remove("kind")),
+            ["exit is a code of the frozen table"] = (WithOutcome("build-failed", 7), a => a["exit"] = 8),
+            ["outcome is a word of a verb's set or a failure exit's name"] = (WithOutcome("matches", 0), WithOutcome("converged", 0)),
+            ["outcome ties to its exits: a failure's name at its exit alone"] = (WithOutcome("unreachable", 4), WithOutcome("unreachable", 6)),
+            ["outcome ties to its exits: differs at 0 or 5 and at no other"] = (WithOutcome("differs", 5), WithOutcome("differs", 6)),
+            ["outcome ties to its exits: matches at 0 alone"] = (WithOutcome("matches", 0), WithOutcome("matches", 5)),
+            ["outcome ties to its exits: ready at 0 and degraded at 6"] = (WithOutcome("degraded", 6), WithOutcome("ready", 6)),
+            ["the message is present"] = (a => a["message"] = "estate 3.0.0", a => a["message"] = ""),
+            ["exit 3 names what blocked it"] = (WithBlocked("data-loss-check"), WithBlocked(null)),
+            ["what blocked it is the data-loss check or a constraint violation"] = (WithBlocked("constraint-violation"), WithBlocked("guard")),
+            ["no other exit names what blocked it"] = (_ => { }, a => a["blockedBy"] = "data-loss-check"),
+            ["an answer says what blocked it, as null when the data did not block"] = (_ => { }, a => a.Remove("blockedBy")),
+            ["a finding's severity is error, warning or note"] = (Finds(1, "note", remedy: null), Finds(1, "warn", remedy: null)),
             ["a finding of severity error carries a remedy"] = (Finds(1, "warning", remedy: null), Finds(1, "error", remedy: null)),
+            ["a finding's code is in the one code pattern"] = (Finds(1, "note", code: "scratch-server.missing"), Finds(1, "note", code: "Scratch-Server.missing")),
+            ["an answer that names its whole file was cut"] = (WithCut(true, ".estate/runs/20260925T101502Z-4242-0a1b/answer.json"), WithCut(false, ".estate/runs/20260925T101502Z-4242-0a1b/answer.json")),
+            ["an answer that was not cut names no file"] = (WithCut(false, null), WithCut(true, ".estate/runs/x/queries.log")),
+            ["the whole file is the run's answer.json"] = (WithCut(true, ".estate/runs/20260925T101502Z-4242-0a1b/answer.json"), WithCut(true, "answer.json")),
             ["a receipt names its data facts, as null when it lacks them"] = (WithReceipt(r => r["dataFacts"] = null), WithReceipt(r => r.Remove("dataFacts"))),
             ["a receipt's at is a date-time"] = (WithReceipt(_ => { }), WithReceipt(r => r["at"] = "yesterday")),
             ["a receipt names the input it lacks, as null when it lacks none"] = (WithReceipt(r => r["lacking"] = null), WithReceipt(r => r["lacking"] = "seed")),
@@ -566,17 +652,33 @@ public sealed class ContractTests
         return answer;
     }
 
-    /// <summary>Blocked by the data: exit 3, with the verdict's kind, or with none.</summary>
-    private static Action<JsonObject> BlockedBy(string? kind) => answer =>
+    /// <summary>An answer whose outcome reads as <paramref name="word"/> at <paramref name="exit"/>, with a finding carrying a remedy where the exit requires one.</summary>
+    private static Action<JsonObject> WithOutcome(string word, int exit) => answer =>
     {
-        answer["exit"] = 3;
-        answer["verdict"]!["kind"] = kind;
+        Finds(exit, exit is 2 or 4 or 6 or 9 ? "error" : null, "estate doctor")(answer);
+        answer["outcome"] = word;
     };
 
-    /// <summary>An answer at <paramref name="exit"/> with one finding of <paramref name="severity"/> and <paramref name="code"/>, or with none when the severity is null.</summary>
+    /// <summary>Blocked by the data: exit 3, naming what blocked it, or naming nothing.</summary>
+    private static Action<JsonObject> WithBlocked(string? blockedBy) => answer =>
+    {
+        answer["outcome"] = "blocked";
+        answer["exit"] = 3;
+        answer["blockedBy"] = blockedBy;
+    };
+
+    /// <summary>An answer cut or not, naming its whole file or none.</summary>
+    private static Action<JsonObject> WithCut(bool truncated, string? full) => answer =>
+    {
+        answer["truncated"] = truncated;
+        answer["full"] = full;
+    };
+
+    /// <summary>An answer at <paramref name="exit"/> with one finding of <paramref name="severity"/> and <paramref name="code"/>, or with none when the severity is null; the outcome follows the exit.</summary>
     private static Action<JsonObject> Finds(int exit, string? severity, string? remedy = null, string code = "data-loss-check.rows-present") => answer =>
     {
         answer["exit"] = exit;
+        answer["outcome"] = exit switch { 0 => "done", 1 => "bad-arguments", 2 => "unparsed-input", 4 => "unreachable", 6 => "configuration-refused", 7 => "build-failed", 9 => "refused-by-name", var other => (string?)answer["outcome"] ?? "done" };
         answer["findings"] = severity is null ? new JsonArray() : new JsonArray(new JsonObject
         {
             ["code"] = code, ["severity"] = severity, ["subject"] = "dbo.Customer.Email",
