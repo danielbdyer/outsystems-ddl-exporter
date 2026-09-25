@@ -35,12 +35,13 @@ Without the session hook, `dotnet run --project cli -- doctor` runs it.
 
 - `dotnet build Estate.sln` — warnings are errors; `kernel/BannedSymbols.txt` keeps I/O, the
   clock, randomness and `Task` out of the kernel.
-- `dotnet test Estate.sln --filter Category=fast` before every push: no SQL Server, under five
-  minutes.
+- `dotnet test Estate.sln --filter "Category=fast|Category=build"` before every push: no SQL
+  Server; the `fast` tests alone run under five minutes.
 - `dotnet test Estate.sln --filter Category=fixture` when `io/` changed: needs a SQL Server, the
   container from the pinned image where Docker runs, LocalDB where it does not.
-- Every test carries `[Trait("Category", "fast")]`, or `[Trait("Category", "fixture")]` when it
-  needs SQL Server. No test skips itself, and none retries.
+- Every test carries one category: `fixture` when it needs SQL Server, `build` when it runs
+  `dotnet build` or `dotnet publish` or starts estate as a process, `fast` otherwise. No test
+  skips itself, and none retries.
 - The scale lane (from M3) and the proof lane (from M4) run in CI. Run them locally only when the
   task is about them, and never both in one `dotnet test`.
 - A stale build after switching branches: `dotnet clean`; an old RID-specific output directory
@@ -60,9 +61,10 @@ Without the session hook, `dotnet run --project cli -- doctor` runs it.
   `ci/budgets.json` with a decision line in the same pull request.
 - A new package is a decision line, a `PackageVersion` in `Directory.Packages.props` and a line in
   `ci/packages.allow`, in the same pull request.
-- A new law is a test with an English name and a `[Trait("Law", "<the law>")]`; `ci/laws.sh`
-  (`ci/laws.ps1` on Windows) regenerates `LAWS.md`, and `Budgets.Tests: Laws` fails until the
-  regenerated file is committed. A law without a green test is not a law.
+- A new law is a test with an English name and a `[Trait("Law", "<the law>")]`; a test that holds
+  a `VALUES.md` row declares `[Trait("Value", "<row>")]`, one that runs a milestone exit
+  `[Trait("Exit", "M<n>.<k>")]`. `ci/laws.sh` (`ci/laws.ps1` on Windows) regenerates `LAWS.md` from
+  the three, and `Budgets.Tests: Laws` fails until the regenerated file is committed.
 
 ## What a session writes
 
