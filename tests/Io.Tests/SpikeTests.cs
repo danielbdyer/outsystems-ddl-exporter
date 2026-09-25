@@ -20,7 +20,7 @@ namespace Estate.Io.Tests;
 /// committed engine (DacFx 170.5.96, used directly). Every read runs as the read-only principal; only the fixture's copies
 /// are written.
 /// </summary>
-public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProject>
+public sealed class SpikeTests(GoldenProject project) : IClassFixture<GoldenProject>
 {
     private static readonly XNamespace Report = "http://schemas.microsoft.com/sqlserver/dac/DeployReport/2012/02";
 
@@ -28,7 +28,7 @@ public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProje
     [Trait("Category", "fixture")]
     public void Fact_1_the_classic_build_of_the_golden_project_carries_the_refactorlog_and_both_deploy_scripts()
     {
-        using var dacpac = ZipFile.OpenRead(ground.Base);
+        using var dacpac = ZipFile.OpenRead(project.Base);
 
         Assert.Superset(new HashSet<string>(["model.xml", "refactor.xml", "predeploy.sql", "postdeploy.sql"]), dacpac.Entries.Select(e => e.FullName).ToHashSet());
         Assert.Contains("MERGE dbo.Customer AS target", ToolFolderTests.Text(dacpac, "postdeploy.sql"), StringComparison.Ordinal);   // Data/Seed.sql, inlined from its :r
@@ -39,9 +39,9 @@ public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProje
     [Trait("Category", "fixture")]
     public void Fact_2_Script_of_a_head_against_a_published_copy_runs_as_the_read_only_login()
     {
-        var (script, report) = ground.Plan(ground.Mandatory);
+        var (script, report) = project.Plan(project.Mandatory);
 
-        Assert.Equal(ground.Reader.Login, new SqlConnectionStringBuilder(ground.Reader.ConnectionString).UserID);
+        Assert.Equal(project.Reader.Login, new SqlConnectionStringBuilder(project.Reader.ConnectionString).UserID);
         Assert.Contains("ALTER COLUMN [Email] NVARCHAR (256) NOT NULL", script, StringComparison.Ordinal);
         Assert.NotEmpty(report.Descendants(Report + "Operation"));
     }
@@ -50,7 +50,7 @@ public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProje
     [Trait("Category", "fixture")]
     public async Task Fact_3_the_data_loss_check_is_found_at_state_127_and_its_predicate_returns_1_as_the_read_only_login()
     {
-        var (script, _) = ground.Plan(ground.Mandatory);
+        var (script, _) = project.Plan(project.Mandatory);
         var body = string.Join('\n', script.Split('\n').Where(l => !l.TrimStart().StartsWith(':')));
         var parsed = new TSql160Parser(initialQuotedIdentifiers: true).Parse(new StringReader(body), out var errors);
         var checks = new List<QueryExpression>();
@@ -59,14 +59,14 @@ public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProje
         Assert.Empty(errors);
         new Sql160ScriptGenerator().GenerateScript(Assert.Single(checks), out var predicate);
         Assert.Contains("[dbo].[Customer]", predicate, StringComparison.Ordinal);
-        Assert.Equal(1, await SqlServerFixture.ScalarAsync(ground.Reader.ConnectionString, "SELECT CASE WHEN EXISTS (" + predicate + ") THEN 1 ELSE 0 END;"));
+        Assert.Equal(1, await SqlServerFixture.ScalarAsync(project.Reader.ConnectionString, "SELECT CASE WHEN EXISTS (" + predicate + ") THEN 1 ELSE 0 END;"));
     }
 
     [Fact]
     [Trait("Category", "fixture")]
     public void Fact_4_the_deploy_report_of_a_copy_that_matches_its_package_has_no_operations()
     {
-        var (_, report) = ground.Plan(ground.Base);
+        var (_, report) = project.Plan(project.Base);
 
         Assert.Empty(report.Descendants(Report + "Operation"));
     }
@@ -75,8 +75,8 @@ public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProje
     [Trait("Category", "fixture")]
     public void Fact_5_LoadFromDatabase_runs_as_the_read_only_login_into_the_model_the_build_produced()
     {
-        using var database = TSqlModel.LoadFromDatabase(ground.Reader.ConnectionString, new ModelExtractOptions());
-        using var package = TSqlModel.LoadFromDacpac(ground.Base, new ModelLoadOptions());
+        using var database = TSqlModel.LoadFromDatabase(project.Reader.ConnectionString, new ModelExtractOptions());
+        using var package = TSqlModel.LoadFromDacpac(project.Base, new ModelLoadOptions());
 
         Assert.Contains("[dbo].[Customer]", Tables(database));
         Assert.Equal(Tables(package), Tables(database));
@@ -86,8 +86,8 @@ public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProje
     [Trait("Category", "fixture")]
     public void Fact_6_the_property_walk_finds_Nullable_true_to_false_and_nothing_else()
     {
-        using var before = TSqlModel.LoadFromDacpac(ground.Base, new ModelLoadOptions());
-        using var after = TSqlModel.LoadFromDacpac(ground.Mandatory, new ModelLoadOptions());
+        using var before = TSqlModel.LoadFromDacpac(project.Base, new ModelLoadOptions());
+        using var after = TSqlModel.LoadFromDacpac(project.Mandatory, new ModelLoadOptions());
 
         Assert.Equal(("[dbo].[Customer].[Email]", "Nullable", (object?)true, (object?)false), Assert.Single(Changes(before, after)));
     }
@@ -96,7 +96,7 @@ public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProje
     [Trait("Category", "fixture")]
     public void Fact_7_the_deploy_report_stays_coarse_one_Alter_on_the_table_and_no_alert()
     {
-        var (_, report) = ground.Plan(ground.Mandatory);
+        var (_, report) = project.Plan(project.Mandatory);
 
         var operation = Assert.Single(report.Descendants(Report + "Operation"));
         var item = Assert.Single(operation.Elements(Report + "Item"));
@@ -108,12 +108,12 @@ public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProje
     [Trait("Category", "fixture")]
     public void Fact_10_the_pipeline_profile_loads_as_deploy_options_names_no_target_and_is_the_only_profile()
     {
-        var profile = DacProfile.Load(ground.Profile);
+        var profile = DacProfile.Load(project.Profile);
         var options = profile.DeployOptions;
 
         Assert.True(string.IsNullOrEmpty(profile.TargetConnectionString) && string.IsNullOrEmpty(profile.TargetDatabaseName));
         Assert.Equal((true, false, true, false), (options.BlockOnPossibleDataLoss, options.GenerateSmartDefaults, options.IgnoreColumnOrder, options.DropObjectsNotInSource));
-        Assert.Equal(["pipeline.publish.xml"], Directory.GetFiles(Path.GetDirectoryName(ground.Profile)!).Select(Path.GetFileName));
+        Assert.Equal(["pipeline.publish.xml"], Directory.GetFiles(Path.GetDirectoryName(project.Profile)!).Select(Path.GetFileName));
     }
 
     [Fact]
@@ -131,10 +131,10 @@ public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProje
     private async Task<int> NotTrustedAfterPublishing(DacDeployOptions options)
     {
         await using var copy = await SqlServerFixture.RegisterAsync();
-        GoldenProject.Publish(ground.Base, copy, ground.Pipeline);
+        GoldenProject.Publish(project.Base, copy, project.Pipeline);
         Assert.True(await SqlServerFixture.ScalarAsync(copy.ConnectionString, "SELECT COUNT(*) FROM dbo.Customer WHERE AccountId IS NOT NULL;") > 0, "the child table is not populated");
 
-        GoldenProject.Publish(ground.ForeignKey, copy, options);
+        GoldenProject.Publish(project.ForeignKey, copy, options);
         return await SqlServerFixture.ScalarAsync(copy.ConnectionString, "SELECT CAST(is_not_trusted AS int) FROM sys.foreign_keys WHERE name = N'FK_Customer_Account_AccountId';");
     }
 

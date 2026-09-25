@@ -18,7 +18,7 @@ namespace Estate.Io.Tests;
 /// the run's queries.log; a failed query reports its number and its site and nothing else; Model and Plan read as the same principal;
 /// and a denied login names the environment and quotes nothing.
 /// </summary>
-public sealed class AggregateQueryTests(GoldenProject ground) : IClassFixture<GoldenProject>, IDisposable
+public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<GoldenProject>, IDisposable
 {
     private readonly string root = Directory.CreateDirectory(Path.Combine(Repository.Root, ".estate", "aggregate-queries-under-test", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8])).FullName;
 
@@ -28,7 +28,7 @@ public sealed class AggregateQueryTests(GoldenProject ground) : IClassFixture<Go
     [Trait("Category", "fixture")]
     public void Every_admitted_query_of_the_corpus_returns_integers_as_the_read_only_principal_and_queries_log_holds_each_statement_and_its_row_count()
     {
-        var uat = Resolved("uat", ground.Reader.ConnectionString);
+        var uat = Resolved("uat", project.Reader.ConnectionString);
         var log = SqlServer.QueryLog.Start(root);
         var admitted = AllowlistTests.Cases.Where(c => c.Admitted).Select(c => Made(SqlServer.AggregateQuery.Of(c.Text, c.Label))).ToList();
 
@@ -48,10 +48,10 @@ public sealed class AggregateQueryTests(GoldenProject ground) : IClassFixture<Go
     public async Task A_failed_query_against_a_real_environment_reports_only_its_number_and_its_site()
     {
         var planted = "planted-" + Guid.NewGuid().ToString("N")[..12];
-        await SqlServerFixture.ExecuteAsync(ground.Copy.ConnectionString, "CREATE TABLE dbo.Planted (Id INT NOT NULL PRIMARY KEY, Value NVARCHAR(100) NOT NULL); INSERT dbo.Planted (Id, Value) VALUES (1, @name);", planted);
+        await SqlServerFixture.ExecuteAsync(project.Copy.ConnectionString, "CREATE TABLE dbo.Planted (Id INT NOT NULL PRIMARY KEY, Value NVARCHAR(100) NOT NULL); INSERT dbo.Planted (Id, Value) VALUES (1, @name);", planted);
         const string Statement = "SELECT SUM(CASE WHEN Value > 0 THEN 1 ELSE 0 END) FROM dbo.Planted;";
-        Assert.Contains(planted, (await Assert.ThrowsAsync<SqlException>(() => SqlServerFixture.ScalarAsync(ground.Copy.ConnectionString, Statement))).Message, StringComparison.Ordinal);
-        var uat = Resolved("uat", ground.Reader.ConnectionString);
+        Assert.Contains(planted, (await Assert.ThrowsAsync<SqlException>(() => SqlServerFixture.ScalarAsync(project.Copy.ConnectionString, Statement))).Message, StringComparison.Ordinal);
+        var uat = Resolved("uat", project.Reader.ConnectionString);
         var log = SqlServer.QueryLog.Start(root);
 
         var failed = Assert.IsType<SqlServer.Measurement.Failed>(Made(SqlServer.Measure(uat, Made(SqlServer.AggregateQuery.Of(Statement, "dbo.Planted.Value Fits")), log)));
@@ -75,14 +75,14 @@ public sealed class AggregateQueryTests(GoldenProject ground) : IClassFixture<Go
         System.Environment.SetEnvironmentVariable(variable, token);
         try
         {
-            var uat = Assert.IsType<SqlServer.EnvironmentDatabase>(Resolved("uat", ground.Reader.ConnectionString,
+            var uat = Assert.IsType<SqlServer.EnvironmentDatabase>(Resolved("uat", project.Reader.ConnectionString,
                 ", \"sqlcmd\": { \"EnvironmentTag\": { \"literal\": \"uat\", \"sensitive\": false }, \"ServiceToken\": \"env:" + variable + "\" }"));
             var log = SqlServer.QueryLog.Start(root);
 
             var model = Made(SqlServer.Model(uat, log));
-            var plan = Made(SqlServer.Plan(ground.Base, uat, Made(Profiles.Of(uat.Environment, root)), log));
+            var plan = Made(SqlServer.Plan(project.Base, uat, Made(Profiles.Of(uat.Environment, root)), log));
 
-            Assert.Equal(ground.Reader.Login, new SqlConnectionStringBuilder(uat.Connection).UserID);
+            Assert.Equal(project.Reader.Login, new SqlConnectionStringBuilder(uat.Connection).UserID);
             Assert.Contains(model, e => e.Key.ToString() == "Column [dbo].[Customer].[Email]");
             Assert.True(plan.IsEmpty, "the plan of the package against the environment it was published to has operations:\n" + plan.Report);
             Assert.Contains(":setvar EnvironmentTag \"uat\"", plan.Script, StringComparison.Ordinal);
@@ -105,12 +105,12 @@ public sealed class AggregateQueryTests(GoldenProject ground) : IClassFixture<Go
     [Trait("Law", "3′ the model is complete")]
     public void One_database_read_twice_by_one_identity_fingerprints_equally()
     {
-        var (admin, reader) = (Resolved("uat", ground.Copy.ConnectionString), Resolved("qa", ground.Reader.ConnectionString));
+        var (admin, reader) = (Resolved("uat", project.Copy.ConnectionString), Resolved("qa", project.Reader.ConnectionString));
 
         var (first, second) = (Made(SqlServer.Model(admin)), Made(SqlServer.Model(admin)));
         var (third, fourth) = (Made(SqlServer.Model(reader)), Made(SqlServer.Model(reader)));
 
-        Assert.Contains(first, e => e.Key.ToString() == "Login [" + ground.Reader.Login + "]");
+        Assert.Contains(first, e => e.Key.ToString() == "Login [" + project.Reader.Login + "]");
         Assert.Equal(Fingerprint.Of(first), Fingerprint.Of(second));
         Assert.Equal(Fingerprint.Of(third), Fingerprint.Of(fourth));
     }
@@ -121,7 +121,7 @@ public sealed class AggregateQueryTests(GoldenProject ground) : IClassFixture<Go
     public void A_denied_login_names_the_environment_and_quotes_nothing()
     {
         const string Wrong = "Wr0ng!planted#7f3a";
-        var qa = Resolved("qa", new SqlConnectionStringBuilder(ground.Reader.ConnectionString) { Password = Wrong }.ConnectionString);
+        var qa = Resolved("qa", new SqlConnectionStringBuilder(project.Reader.ConnectionString) { Password = Wrong }.ConnectionString);
 
         var errors = new[] { Failed(SqlServer.Model(qa)), Failed(SqlServer.Measure(qa, Made(SqlServer.AggregateQuery.Of("SELECT 1;", "the login")), SqlServer.QueryLog.Start(root))) };
 
@@ -131,7 +131,7 @@ public sealed class AggregateQueryTests(GoldenProject ground) : IClassFixture<Go
             Assert.StartsWith("env:qa ", error.Message, StringComparison.Ordinal);
             Assert.Contains("a lead's prediction will appear on the pull request", error.Message, StringComparison.Ordinal);
             Assert.DoesNotContain(Wrong, error.Message + error.Remedy, StringComparison.Ordinal);
-            Assert.DoesNotContain(ground.Reader.Login, error.Message + error.Remedy, StringComparison.Ordinal);
+            Assert.DoesNotContain(project.Reader.Login, error.Message + error.Remedy, StringComparison.Ordinal);
         });
     }
 
@@ -146,7 +146,7 @@ public sealed class AggregateQueryTests(GoldenProject ground) : IClassFixture<Go
         }
 
         Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
-        File.Copy(ground.Profile, Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"), overwrite: true);
+        File.Copy(project.Profile, Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"), overwrite: true);
         File.WriteAllText(Path.Combine(root, "estate", "posture.json"), "{ \"environments\": { \"" + name + "\": { \"classification\": \"real\", \"connection\": \"file:"
             + file.Replace('\\', '/') + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\"" + extra + " } } }");
         return Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:" + name)), root));

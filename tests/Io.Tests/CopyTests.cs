@@ -19,7 +19,7 @@ namespace Estate.Io.Tests;
 /// against its own published copy is empty. Model fingerprints are compared only between like sources: a package's keys with its
 /// copy's, and one copy's fingerprint with another's.
 /// </summary>
-public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProject>, IDisposable
+public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProject>, IDisposable
 {
     private readonly string root = SqlServerFixture.EstateRoot(Path.Combine(Repository.Root, ".estate", "copies-under-test", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]));
 
@@ -64,15 +64,15 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
     [Trait("Law", "3′ the model is complete")]
     public async Task A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint()
     {
-        var strict = Made(Profiles.Load(ground.Profile));
+        var strict = Made(Profiles.Load(project.Profile));
         var (one, two) = (Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync())), Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync())));
         try
         {
-            Made(one.Publish(ground.Base, strict));
-            Made(two.Publish(ground.Base, strict));
+            Made(one.Publish(project.Base, strict));
+            Made(two.Publish(project.Base, strict));
             var (first, second) = (Made(SqlServer.Model(one)), Made(SqlServer.Model(two)));
-            using var basePackage = Made(Ssdt.Load(ground.Base));
-            using var headPackage = Made(Ssdt.Load(ground.Mandatory));
+            using var basePackage = Made(Ssdt.Load(project.Base));
+            using var headPackage = Made(Ssdt.Load(project.Mandatory));
             var (packaged, head) = (Made(Ssdt.Elements(basePackage)), Made(Ssdt.Elements(headPackage)));
             var schema = SortedArray.Of(packaged.Elements.Where(e => e.Key.Type is not (Element.PreDeploymentScript or Element.PostDeploymentScript or Element.RefactorLogOperation)));
 
@@ -94,14 +94,14 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
     [Trait("Law", "3′ the model is complete")]
     public async Task The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not()
     {
-        var strict = Made(Profiles.Load(ground.Profile));
+        var strict = Made(Profiles.Load(project.Profile));
         var copy = Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync()));
         try
         {
-            Made(copy.Publish(ground.Base, strict));
+            Made(copy.Publish(project.Base, strict));
 
-            var own = Made(SqlServer.Plan(ground.Base, copy, strict));
-            var head = Made(SqlServer.Plan(ground.Mandatory, copy, strict));
+            var own = Made(SqlServer.Plan(project.Base, copy, strict));
+            var head = Made(SqlServer.Plan(project.Mandatory, copy, strict));
 
             Assert.True(own.IsEmpty, "the plan of the package against its own copy has operations:\n" + own.Report);
             Assert.Equal(1, head.Operations);
@@ -126,13 +126,13 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
     [Trait("Category", "fixture")]
     public async Task A_publish_the_data_loss_check_stops_is_server_failed_by_Msg_50000_quoting_DacFx_s_errors_and_not_its_informational_messages()
     {
-        var strict = Made(Profiles.Load(ground.Profile));
+        var strict = Made(Profiles.Load(project.Profile));
         var copy = Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync()));
         try
         {
-            Made(copy.Publish(ground.Base, strict));
+            Made(copy.Publish(project.Base, strict));
 
-            var error = Assert.IsType<Result<SqlServer.Copy>.Failed>(copy.Publish(ground.Mandatory, strict)).Error;
+            var error = Assert.IsType<Result<SqlServer.Copy>.Failed>(copy.Publish(project.Mandatory, strict)).Error;
 
             Assert.Equal(("server.failed", 4), (error.Code, Contract.Exit(error)));
             Assert.StartsWith("copy:" + copy.Name + " failed the statement: Msg 50000: ", error.Message, StringComparison.Ordinal);
@@ -174,7 +174,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
         }
 
         var dev = Assert.IsType<SqlServer.EnvironmentDatabase>(Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root)));
-        var error = Assert.IsType<Result<SqlServer.Deployment>.Failed>(SqlServer.Plan(dacpac, dev, Made(Profiles.Load(ground.Profile)))).Error;
+        var error = Assert.IsType<Result<SqlServer.Deployment>.Failed>(SqlServer.Plan(dacpac, dev, Made(Profiles.Load(project.Profile)))).Error;
 
         Assert.Equal(("dacfx.failed", 6), (error.Code, Contract.Exit(error)));
         // The release DacFx names after these words differs between the container and the Windows runner's LocalDB; a failure prints the whole message.
