@@ -390,7 +390,7 @@ public static class Ssdt
         {
             var relationships = o.ObjectType.Relationships.Select(r => (Class: r, Instances: o.GetReferencedRelationshipInstances(r, DacExternalQueryScopes.All).ToArray())).ToArray();
             var properties = Kept(o.ObjectType.Properties).Select(p => (p.Name, Value: ValueOf(() => o.GetProperty(p), p.DataType)))
-                .Append((Name: "Definition", Value: Module(o.ObjectType) ? ValueOf(() => o.TryGetScript(out var script) ? script : null, typeof(string)) : null))
+                .Append((Name: "Definition", Value: Module(o.ObjectType) ? ScriptOf(() => o.TryGetScript(out var script) ? script : null) : null))
                 .Concat(relationships.SelectMany(r => r.Instances.SelectMany((i, n) => Kept(r.Class.Properties).Select(p =>
                     (Name: string.Create(CultureInfo.InvariantCulture, $"{r.Class.Name}[{n}].{p.Name}"), Value: ValueOf(() => i.GetProperty(p), p.DataType))))))
                 .Where(p => p.Value is not null).Select(p => new Element.Property(p.Name, p.Value!));
@@ -406,11 +406,16 @@ public static class Ssdt
     }
 
     /// <summary>
-    /// An object's property as the kernel's closed Value, or null where DacFx cannot read it, and Elements skips it. An enumeration
-    /// reaches an untyped read as its integer, so the declared type names its member; any other type (a double, as a spatial
-    /// index's bounds) is its invariant string, so no value is dropped for its type. Text has CRLF and a lone CR made LF.
+    /// An object's property as the kernel's closed Value, or null where DacFx cannot read it, and Elements skips it. A property DacFx
+    /// declares as its SqlScriptProperty (a default's or a check's expression, a computed column's, an extended property's value) is
+    /// T-SQL text and reads as a Value.Script, which the printer alone prints (decision 2.27). An enumeration reaches an untyped read
+    /// as its integer, so the declared type names its member; any other type (a double, as a spatial index's bounds) is its
+    /// invariant string, so no value is dropped for its type. Text has CRLF and a lone CR made LF.
     /// </summary>
     public static Value? ValueOf(TSqlObject o, ModelPropertyClass property) => ValueOf(() => o.GetProperty(property), property.DataType);
+
+    /// <summary>A module's script (a procedure's, a function's, a trigger's body) as a Value.Script, or null where DacFx gives none.</summary>
+    private static Value? ScriptOf(Func<string?> read) => read() is { } script ? new Value.Script(Lf(script)) : null;
 
     private static Value? ValueOf(Func<object?> read, Type declared)
     {
@@ -422,6 +427,7 @@ public static class Ssdt
             {
                 null => new Value.Null(),
                 bool b => new Value.Boolean(b),
+                string s when type.Name == "SqlScriptProperty" => new Value.Script(Lf(s)),
                 string s => new Value.Text(Lf(s)),
                 Enum or sbyte or byte or short or ushort or int or uint or long when type.IsEnum => new Value.Enumeration(type.Name, Enum.Format(type, Enum.ToObject(type, value), "G")),
                 sbyte or byte or short or ushort or int or uint or long => new Value.Integer(Convert.ToInt64(value, CultureInfo.InvariantCulture)),

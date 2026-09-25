@@ -60,6 +60,7 @@ public sealed class ElementTests
     [InlineData("counts: one relationship of two targets and two of one", 5)]
     [InlineData("code units: two lone surrogates", 6)]
     [InlineData("parents: a child key and a top-level key", 7)]
+    [InlineData("tags: a text and a script of one content", 8)]
     public void Models_a_careless_serialization_would_confuse_fingerprint_differently(string what, int pair)
     {
         var t = Key("Table", "dbo", "T");
@@ -72,7 +73,8 @@ public sealed class ElementTests
             4 => (New(t, [("Collation", new Value.Null())]), New(t, [])),
             5 => (New(t, [], [("Columns", [t, t])]), New(t, [], [("Columns", [t]), ("Keys", [t])])),
             6 => (New(t, [("Text", Text("\uD800"))]), New(t, [("Text", Text("\uD801"))])),
-            _ => (New(Key(t, "Column", "c"), []), New(Key("Column", "dbo", "T.c"), [])),
+            7 => (New(Key(t, "Column", "c"), []), New(Key("Column", "dbo", "T.c"), [])),
+            _ => (New(t, [("Expression", Text("(0)"))]), New(t, [("Expression", new Value.Script("(0)"))])),
         };
         Assert.NotEqual(Fingerprint.Of([a]), Fingerprint.Of([b]));
         Assert.NotEqual(a, b);
@@ -102,9 +104,10 @@ public sealed class ElementTests
             Assert.NotEqual(Text("i"), Text("I"));
             Assert.NotEqual<Value>(Text("1"), Int(1));
             Assert.Equal(
-                new[] { "NULL", "false", "true", "-1234567", "'it''s'", "SqlDataType.NVarChar" },
-                SortedArray.Of<Value>(new Value.Enumeration("SqlDataType", "NVarChar"), Text("it's"), Int(-1234567), Bool(true), Bool(false), new Value.Null())
+                new[] { "NULL", "false", "true", "-1234567", "'it''s'", "SqlDataType.NVarChar", "'SELECT 1;'" },
+                SortedArray.Of<Value>(new Value.Script("SELECT 1;"), new Value.Enumeration("SqlDataType", "NVarChar"), Text("it's"), Int(-1234567), Bool(true), Bool(false), new Value.Null())
                     .Select(v => v.ToString()));
+            Assert.NotEqual<Value>(Text("(0)"), new Value.Script("(0)"));
         }
         finally
         {
@@ -169,7 +172,7 @@ public sealed class ElementTests
 
         Assert.Equal(Element.PreDeploymentScript, Element.PreDeploy("PRINT 1;").Key.Type);
         Assert.Equal(Element.PostDeploymentScript, Element.PostDeploy("PRINT 1;").Key.Type);
-        Assert.Equal(Text("PRINT 1;"), Element.PostDeploy("PRINT 1;")["Text"]);
+        Assert.Equal(new Value.Script("PRINT 1;"), Element.PostDeploy("PRINT 1;")["Text"]);
         Assert.NotEqual(Element.PreDeploy("PRINT 1;"), Element.PostDeploy("PRINT 1;"));
         Assert.Equal("RefactorLogOperation [7f1a2c3e-0b4d-4e5f-8a9b-0c1d2e3f4a5b]", entry.Key.ToString());
         Assert.Equal(Text("[EmailAddress]"), entry["NewName"]);

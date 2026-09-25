@@ -22,12 +22,14 @@ internal static class ElementSets
         Gen.Select(TopKey, Gen.Select(Gen.OneOfConst("Column", "Index"), Word).Array[0, 3]).Array[0, 5]
             .Select(tops => tops.SelectMany(t => t.Item2.Select(c => Key(t.Item1, c.Item1, c.Item2)).Prepend(t.Item1)).Distinct().ToArray());
 
+    /// <summary>A value of every case; a text and a script draw from one alphabet, so a serialization that tagged them alike would fingerprint two unequal models alike.</summary>
     public static readonly Gen<Value> Values = Gen.OneOf(
         Gen.Const<Value>(new Value.Null()),
         Gen.Bool.Select(b => (Value)new Value.Boolean(b)),
         Gen.Long[-2, 2].Select(n => (Value)new Value.Integer(n)),
         Word.Select(s => (Value)new Value.Text(s)),
-        Gen.Select(Gen.OneOfConst("SqlDataType", "SortOrder"), Word).Select((type, member) => (Value)new Value.Enumeration(type, member)));
+        Gen.Select(Gen.OneOfConst("SqlDataType", "SortOrder"), Word).Select((type, member) => (Value)new Value.Enumeration(type, member)),
+        Word.Select(s => (Value)new Value.Script(s)));
 
     private static readonly Gen<(string, Value)[]> Properties =
         Gen.Select(Gen.OneOfConst("Nullable", "Length", "Collation", "IsClustered", "SqlDataType"), Values).Array[0, 4];
@@ -192,7 +194,7 @@ internal static class ElementSets
                 return new Edit("a relationship target", Replaced(set, e, withTarget), Altered(e.Key, relationships: [new Change.Relationship(relationship.Name, relationship.Targets, targets)]), []);
             case 2:
                 var script = set.First(x => x.Key.Type == (pick % 2 == 0 ? Element.PreDeploymentScript : Element.PostDeploymentScript));
-                var text = ((Value.Text)script["Text"]!).Content;
+                var text = ((Value.Script)script["Text"]!).Content;
                 var edited = pick % 2 == 0 ? Element.PreDeploy(text.Insert(pick % (text.Length + 1), "~")) : Element.PostDeploy(text.Insert(pick % (text.Length + 1), "~"));
                 return new Edit("a script's text", Replaced(set, script, edited), Altered(script.Key, [new Change.Property("Text", script["Text"], edited["Text"])]), []);
             case 3:

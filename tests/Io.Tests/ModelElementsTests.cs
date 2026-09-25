@@ -64,7 +64,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         Assert.Contains(first.Elements, e => e.Key.ToString() == "Column [dbo].[Customer].[Email]" && e["Nullable"] == new Value.Boolean(true));
         Assert.Contains("MERGE dbo.Customer AS target", Text(first, Element.PostDeploymentScript), StringComparison.Ordinal);
         Assert.Contains("Pre-deploy: no backfill active.", Text(first, Element.PreDeploymentScript), StringComparison.Ordinal);
-        Assert.DoesNotContain(first.Elements.SelectMany(e => e.Properties), p => p.Value is Value.Text { Content: var t } && t.Contains('\r', StringComparison.Ordinal));
+        Assert.DoesNotContain(first.Elements.SelectMany(e => e.Properties), p => Content(p.Value) is { } t && t.Contains('\r', StringComparison.Ordinal));
         output.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"the golden project's model: {first.Elements.Count} elements, {first.Elements.Sum(e => e.Properties.Count)} properties, "
             + $"{first.Elements.Sum(e => e.Relationships.Sum(r => r.Targets.Count))} relationship targets, read into elements in {heads.ReadingTime.TotalMilliseconds:0} ms"));
@@ -230,7 +230,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
                 "DefaultConstraint [dbo].[T].[B].[TargetColumn]", "DatabaseOptions [DatabaseOptions]"]),
             keys.ToHashSet());
         var onA = forward.Single(e => e.Key.ToString() == "DefaultConstraint [dbo].[T].[A].[TargetColumn]");
-        Assert.Equal(new Value.Text("(0)"), onA["Expression"]);
+        Assert.Equal(new Value.Script("(0)"), onA["Expression"]);
         var index = forward.Single(e => e.Key.ToString() == "Index [dbo].[T].[IX_T_A]");
         Assert.Equal((new Value.Boolean(true), new Value.Boolean(false)), (index["Columns[0].Ascending"], index["Columns[1].Ascending"]));
     }
@@ -351,7 +351,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         Assert.All(Ssdt.Secrets, secret => Assert.True(Held(model, secret, Planted), Qualified(secret) + " holds no planted value"));
         Assert.Contains(elements, e => e.Key.ToString() == "Login [L]");
         Assert.Contains(elements, e => e.Key.ToString() == "LinkedServer [LS]");
-        Assert.DoesNotContain(elements.SelectMany(e => e.Properties), p => p.Value is Value.Text { Content: var text } && text.Contains(Planted, StringComparison.Ordinal));
+        Assert.DoesNotContain(elements.SelectMany(e => e.Properties), p => Content(p.Value) is { } text && text.Contains(Planted, StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -453,8 +453,9 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
     /// <summary>
     /// DacFx declares no property holding a procedure's, a trigger's or a function's body, so Ssdt.Elements reads each such module's
-    /// Definition, the script DacFx gives it; a view's body is its SelectStatement property and is read once, there. An edit to
-    /// the body alone, read from a package on each side, changes the fingerprint and is that one property.
+    /// Definition, the script DacFx gives it; a view's body is its SelectStatement property and is read once, there. Each is a
+    /// Value.Script, T-SQL text kept as written. An edit to the body alone, read from a package on each side, changes the fingerprint
+    /// and is that one property.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -471,7 +472,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
         Assert.NotEqual(Fingerprint.Of(before), Fingerprint.Of(after));
         Assert.Equal([key + ": " + property], Lines(Ok(Change.Between(before, after, []))));
-        Assert.Contains(" 2", ((Value.Text)after.Single(e => e.Key.ToString() == key)[property]!).Content, StringComparison.Ordinal);
+        Assert.Contains(" 2", ((Value.Script)after.Single(e => e.Key.ToString() == key)[property]!).Content, StringComparison.Ordinal);
         Assert.DoesNotContain(after, e => e.Key.Type == "Table" && e["Definition"] is not null);
     }
 
@@ -491,8 +492,8 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         var (before, after) = (Packaged(Expired), Packaged(Reset));
 
         Assert.Equal(["Procedure [dbo].[P]: Definition"], Lines(Ok(Change.Between(before, after, []))));
-        Assert.Equal(new Value.Text(Expired), before.Single(e => e.Key.ToString() == "Procedure [dbo].[P]")["Definition"]);
-        Assert.Equal(new Value.Text(Reset), after.Single(e => e.Key.ToString() == "Procedure [dbo].[P]")["Definition"]);
+        Assert.Equal(new Value.Script(Expired), before.Single(e => e.Key.ToString() == "Procedure [dbo].[P]")["Definition"]);
+        Assert.Equal(new Value.Script(Reset), after.Single(e => e.Key.ToString() == "Procedure [dbo].[P]")["Definition"]);
     }
 
     /// <summary>
@@ -521,7 +522,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         var check = package.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[Note].[Pinned].[ExpressionDependencies]");
         Assert.NotEqual(check["Expression"], database.Single(e => e.Key == check.Key)["Expression"]);
         var procedure = package.Single(e => e.Key.ToString() == "Procedure [dbo].[NoteCount]");
-        Assert.Contains("WHERE CustomerId = @CustomerId", Assert.IsType<Value.Text>(procedure["Definition"]).Content, StringComparison.Ordinal);
+        Assert.Contains("WHERE CustomerId = @CustomerId", Assert.IsType<Value.Script>(procedure["Definition"]).Content, StringComparison.Ordinal);
         Assert.Equal(procedure["Definition"], database.Single(e => e.Key == procedure.Key)["Definition"]);
     }
 
@@ -724,7 +725,10 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     private static IEnumerable<TSqlObject> Composed(TSqlObject o) =>
         [o, .. o.ObjectType.Relationships.Where(r => r.Type == RelationshipType.Composing).SelectMany(r => o.GetReferenced(r, DacQueryScopes.All)).SelectMany(Composed)];
 
-    private static string Expression(Element check) => ((Value.Text)check["Expression"]!).Content;
+    private static string Expression(Element check) => ((Value.Script)check["Expression"]!).Content;
+
+    /// <summary>The text a string or a script value holds; null for the other cases.</summary>
+    private static string? Content(Value value) => value switch { Value.Text t => t.Content, Value.Script s => s.Content, _ => null };
 
     /// <summary>A check's text with the brackets, parentheses and spaces SQL Server's normalization adds set aside: <c>([A]&lt;(100))</c> as <c>A&lt;100</c>.</summary>
     private static string Bare(string expression) => new([.. expression.Where(c => c is not ('[' or ']' or '(' or ')' or ' '))]);
@@ -738,12 +742,12 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
             .Concat(change.Dropped.Select(e => "dropped " + e.Key))
             .Concat(change.Renamed.Select(r => "renamed " + r.Before + " to " + r.After))
             .Concat(change.Altered.SelectMany(a => a.Properties
-                .Select(p => a.Key + ": " + p.Name + (p.Before is Value.Text || p.After is Value.Text ? "" : " " + p.Before + " → " + p.After))
+                .Select(p => a.Key + ": " + p.Name + (p.Before is Value.Text or Value.Script || p.After is Value.Text or Value.Script ? "" : " " + p.Before + " → " + p.After))
                 .Concat(a.Relationships.Select(r => a.Key + ": " + r.Name))));
 
     private static ElementKey Key(Ssdt.ModelElements model, string key) => model.Elements.Single(e => e.Key.ToString() == key).Key;
 
-    private static string Text(Ssdt.ModelElements model, string type) => ((Value.Text)model.Elements.Single(e => e.Key.Type == type)["Text"]!).Content;
+    private static string Text(Ssdt.ModelElements model, string type) => ((Value.Script)model.Elements.Single(e => e.Key.Type == type)["Text"]!).Content;
 
     private static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 }

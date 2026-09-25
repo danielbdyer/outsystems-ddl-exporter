@@ -193,7 +193,7 @@ public sealed class ChangeTests
     {
         var (before, after, _) = SampleChanges.Pair(type == Element.PreDeploymentScript ? "a pre-deploy edit" : "a post-deploy seed edit");
         var (was, now) = (before.Single(e => e.Key.Type == type), after.Single(e => e.Key.Type == type));
-        Assert.Contains(edit, ((Value.Text)now["Text"]!).Content, StringComparison.Ordinal);
+        Assert.Contains(edit, ((Value.Script)now["Text"]!).Content, StringComparison.Ordinal);
         return Altered(was.Key, [new Change.Property("Text", was["Text"], now["Text"])]);
     }
 }

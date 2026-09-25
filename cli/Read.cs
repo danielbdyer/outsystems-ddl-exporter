@@ -80,8 +80,8 @@ public static partial class Verbs
         ["relationships"] = new JsonObject(element.Relationships.Select(r => KeyValuePair.Create<string, JsonNode?>(r.Name, Render.Array(r.Targets.Select(t => (JsonNode?)t.Key.ToString()))))),
     };
 
-    /// <summary>A value as JSON: a boolean, an integer, a string, an enumeration as Type.Member, or null.</summary>
-    internal static JsonNode? Json(Value? value) => value?.Match<JsonNode?>(b => b, n => n, s => s, (type, member) => type + "." + member, () => null);
+    /// <summary>A value as JSON: a boolean, an integer, a string, an enumeration as Type.Member, a script as its text, or null.</summary>
+    internal static JsonNode? Json(Value? value) => value?.Match<JsonNode?>(b => b, n => n, s => s, (type, member) => type + "." + member, s => s, () => null);
 
     internal static JsonObject Values() => new() { ["type"] = new JsonArray("boolean", "integer", "string", "null") };
 

@@ -8,8 +8,10 @@ namespace Estate.Kernel;
 
 /// <summary>
 /// A property's value as io/Ssdt.Elements reads it from DacFx: a boolean, an integer, a string, an enumeration's member with
-/// its enumeration type, or null. The cases are closed. Equality and order are ordinal and culture-free: null first,
-/// then booleans, integers, strings and enumerations, each in its own order.
+/// its enumeration type, T-SQL text DacFx holds as a script (a module's definition, a default's or a check's expression, a deploy
+/// script), or null. The cases are closed. A script is kept as written, so a change confined to a password literal is a change
+/// (law 3′); the value a password form sets is left out where text leaves the tool, never here (decision 2.27). Equality and order
+/// are ordinal and culture-free: null first, then booleans, integers, strings, enumerations and scripts, each in its own order.
 /// </summary>
 public abstract record Value : IComparable<Value>
 {
@@ -17,13 +19,14 @@ public abstract record Value : IComparable<Value>
     {
     }
 
-    public T Match<T>(Func<bool, T> boolean, Func<long, T> integer, Func<string, T> text, Func<string, string, T> enumeration, Func<T> none) =>
+    public T Match<T>(Func<bool, T> boolean, Func<long, T> integer, Func<string, T> text, Func<string, string, T> enumeration, Func<string, T> script, Func<T> none) =>
         this switch
         {
             Boolean b => boolean(b.IsTrue),
             Integer i => integer(i.Number),
             Text t => text(t.Content),
             Enumeration e => enumeration(e.Type, e.Member),
+            Script s => script(s.Content),
             Null => none(),
             _ => throw new UnreachableException(),
         };
@@ -35,18 +38,20 @@ public abstract record Value : IComparable<Value>
         (Integer a, Integer b) => a.Number.CompareTo(b.Number),
         (Text a, Text b) => string.CompareOrdinal(a.Content, b.Content),
         (Enumeration a, Enumeration b) => string.CompareOrdinal(a.Type, b.Type) is var t and not 0 ? t : string.CompareOrdinal(a.Member, b.Member),
+        (Script a, Script b) => string.CompareOrdinal(a.Content, b.Content),
         _ => Rank(this).CompareTo(Rank(other)),
     };
 
-    /// <summary>Culture-free: <c>true</c>, <c>-12</c>, <c>'it''s'</c>, <c>SqlDataType.NVarChar</c>, <c>NULL</c>.</summary>
+    /// <summary>Culture-free: <c>true</c>, <c>-12</c>, <c>'it''s'</c>, <c>SqlDataType.NVarChar</c>, a script as its text quoted, <c>NULL</c>.</summary>
     public sealed override string ToString() => Match(
         b => b ? "true" : "false",
         n => n.ToString(CultureInfo.InvariantCulture),
         s => "'" + s.Replace("'", "''", StringComparison.Ordinal) + "'",
         (type, member) => type + "." + member,
+        s => "'" + s.Replace("'", "''", StringComparison.Ordinal) + "'",
         () => "NULL");
 
-    private static int Rank(Value value) => value.Match(_ => 1, _ => 2, _ => 3, (_, _) => 4, () => 0);
+    private static int Rank(Value value) => value.Match(_ => 1, _ => 2, _ => 3, (_, _) => 4, _ => 5, () => 0);
 
     public sealed record Boolean(bool IsTrue) : Value;
 
@@ -55,6 +60,9 @@ public abstract record Value : IComparable<Value>
     public sealed record Text(string Content) : Value;
 
     public sealed record Enumeration(string Type, string Member) : Value;
+
+    /// <summary>T-SQL text DacFx holds as a script, as written: compared exactly, and printed through the password printer alone.</summary>
+    public sealed record Script(string Content) : Value;
 
     public sealed record Null : Value;
 }
@@ -161,7 +169,7 @@ public sealed record Element : IComparable<Element>
         : SortedArray.Compare(Relationships, other.Relationships);
 
     private static Element Script(string type, string name, string text) =>
-        Known(Of(Known(ElementKey.Of(type, Known(Name.Of(name)))), [new Property("Text", new Value.Text(text))], []));
+        Known(Of(Known(ElementKey.Of(type, Known(Name.Of(name)))), [new Property("Text", new Value.Script(text))], []));
 
     private static T Known<T>(Result<T> result) => result.Match(value => value, error => throw new UnreachableException(error.Message));
 

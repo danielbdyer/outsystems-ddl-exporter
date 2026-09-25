@@ -66,13 +66,13 @@ public static partial class Verbs
             }, lines: lines);
     }
 
-    /// <summary>A change as lines: each element created, dropped or renamed, then each property (with its values, a text's left out) or relationship that is altered.</summary>
+    /// <summary>A change as lines: each element created, dropped or renamed, then each property (with its values, a text's or a script's left out) or relationship that is altered.</summary>
     internal static IEnumerable<string> Lines(Change change) =>
         change.Created.Select(e => "created " + e.Key)
             .Concat(change.Dropped.Select(e => "dropped " + e.Key))
             .Concat(change.Renamed.Select(r => "renamed " + r.Before + " to " + r.After))
             .Concat(change.Altered.SelectMany(a => a.Properties
-                .Select(p => a.Key + ": " + p.Name + (p.Before is Value.Text || p.After is Value.Text ? "" : " " + (p.Before?.ToString() ?? "none") + " → " + (p.After?.ToString() ?? "none")))
+                .Select(p => a.Key + ": " + p.Name + (p.Before is Value.Text or Value.Script || p.After is Value.Text or Value.Script ? "" : " " + (p.Before?.ToString() ?? "none") + " → " + (p.After?.ToString() ?? "none")))
                 .Concat(a.Relationships.Select(r => a.Key + ": " + r.Name))));
 
     private static JsonObject Json(Change change) => new()
