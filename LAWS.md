@@ -26,6 +26,7 @@ Whether each is green is the CI run's to say. A law without a green test is not 
 | a named environment cannot be written | A scratch server on the host an environment names is exit 9 | `Estate.Io.Tests.TargetTests.A_scratch_server_on_the_host_an_environment_names_is_exit_9` |
 | dependencies point one way | Io does not depend on the cli and the kernel on neither | `Estate.Budgets.Tests.DependenciesPointOneWay.Io_does_not_depend_on_the_cli_and_the_kernel_on_neither` |
 | dependencies point one way | No project reaches into the knowledge files or ci | `Estate.Budgets.Tests.DependenciesPointOneWay.No_project_reaches_into_the_knowledge_files_or_ci` |
+| dependencies point one way | The cli references no DacFx type | `Estate.Budgets.Tests.DependenciesPointOneWay.The_cli_references_no_DacFx_type` |
 | the kernel cannot do I/O | Each banned symbol planted in the kernel is a build error | `Estate.Budgets.Tests.BannedSymbolsTests.Each_banned_symbol_planted_in_the_kernel_is_a_build_error` |
 | the kernel cannot do I/O | No public kernel member is asynchronous | `Estate.Budgets.Tests.KernelCannotDoIo.No_public_kernel_member_is_asynchronous` |
 | the kernel cannot do I/O | The kernel references the bcl and nothing else | `Estate.Budgets.Tests.KernelCannotDoIo.The_kernel_references_the_bcl_and_nothing_else` |

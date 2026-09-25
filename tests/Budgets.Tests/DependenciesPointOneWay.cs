@@ -28,6 +28,21 @@ public sealed class DependenciesPointOneWay
         Assert.False(Types.InAssembly(typeof(Contract).Assembly).ShouldNot().HaveDependencyOn("Estate.Io").GetResult().IsSuccessful);   // the rule goes red the other way
     }
 
+    /// <summary>
+    /// The cli renders and decides nothing of DacFx's (spec C11): no type it compiles depends on DacFx's namespaces, so a deploy report, a
+    /// serialized type name or a DacFx exception is read in io alone.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    [Trait("Law", "dependencies point one way")]
+    public void The_cli_references_no_DacFx_type()
+    {
+        var cli = Types.InAssembly(typeof(Contract).Assembly).ShouldNot().HaveDependencyOnAny("Microsoft.SqlServer.Dac", "Microsoft.SqlServer.Dac.Model").GetResult();
+
+        Assert.True(cli.IsSuccessful, "the cli depends on DacFx: " + string.Join(", ", cli.FailingTypeNames ?? []));
+        Assert.False(Types.InAssembly(typeof(Write).Assembly).ShouldNot().HaveDependencyOn("Microsoft.SqlServer.Dac").GetResult().IsSuccessful);   // the rule goes red on io, which does
+    }
+
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "dependencies point one way")]
