@@ -30,7 +30,9 @@ internal static class TwoTestsAtOnce
     public static async Task<string> Meet(TaskCompletionSource<string> mine, TaskCompletionSource<string> theirs, RegisteredDatabase database)
     {
         mine.SetResult(database.Name);
-        var other = await theirs.Task.WaitAsync(TimeSpan.FromMinutes(3));   // a timeout: the other test was not running at the same time
+        // xUnit starts the other test's class when a slot is free; on the four-core Windows runner that can come only after the copy
+        // and spike classes finish on LocalDB, well past three minutes. A timeout means the other test never ran while this one waited.
+        var other = await theirs.Task.WaitAsync(TimeSpan.FromMinutes(15));
 
         Assert.NotEqual(database.Name, other);
         await SqlServerFixture.ExecuteAsync(database.ConnectionString, "CREATE TABLE dbo.Proof (Id INT NOT NULL PRIMARY KEY); INSERT dbo.Proof (Id) VALUES (1);");
