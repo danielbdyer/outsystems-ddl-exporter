@@ -72,12 +72,24 @@ public sealed class FileLockTests : IDisposable
     public void A_cancelled_wait_throws_within_a_second_and_takes_nothing()
     {
         using var held = Value(FileLock.Take(Lock, TimeSpan.Zero));
-        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        using var cancel = new CancellationTokenSource();
         var clock = Stopwatch.StartNew();
+        var cancelledAt = TimeSpan.MaxValue;
+
+        // A thread of its own cancels after 200 ms: a CancellationTokenSource's own timer runs on the thread pool, which the other test
+        // classes' programs can hold for seconds on a CI runner, and the wait's response to its token is what this test measures.
+        var canceller = new Thread(() =>
+        {
+            Thread.Sleep(200);
+            cancelledAt = clock.Elapsed;
+            cancel.Cancel();
+        });
+        canceller.Start();
 
         Assert.Throws<OperationCanceledException>(() => FileLock.Take(Lock, TimeSpan.FromMinutes(1), cancel.Token));
 
-        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), "the cancelled wait threw after " + clock.Elapsed);   // 200 ms alone; other classes start programs beside this one
+        canceller.Join();
+        Assert.True(clock.Elapsed - cancelledAt < TimeSpan.FromSeconds(1), "the wait threw " + (clock.Elapsed - cancelledAt) + " after its token was cancelled");
         held.Dispose();
         using var taken = Value(FileLock.Take(Lock, TimeSpan.Zero));   // the cancelled wait left the lock free to take
     }
