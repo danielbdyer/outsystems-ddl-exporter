@@ -185,7 +185,7 @@ public sealed class TargetTests : IDisposable
     {
         var root = Estate(Dev(Written("dev.connection", "Server=" + environment + ";Initial Catalog=Dev;User ID=reader;Password=" + Planted)));
 
-        var error = Failed(ScratchServer.Unnamed(root, server, Resolver));
+        var error = Failed(ScratchServer.Unnamed(root, Server(server), Resolver));
 
         Assert.Equal(("copy.named-host", 9), (error.Code, Contract.Exit(error)));
         Assert.Contains("env:dev", error.Message, StringComparison.Ordinal);
@@ -204,7 +204,7 @@ public sealed class TargetTests : IDisposable
         var root = Estate(reference.Length == 0 ? "\"dev\": { \"connection\": \"env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }"
             : Dev(Written("dev.connection", reference)));
 
-        Assert.Equal(server, Made(ScratchServer.Unnamed(root, server, Resolver)));
+        Assert.Equal(Server(server), Made(ScratchServer.Unnamed(root, Server(server), Resolver)));
     }
 
     /// <summary>
@@ -223,25 +223,11 @@ public sealed class TargetTests : IDisposable
         var elsewhere = Failed(ScratchServer.Registered(clear, Name, () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver));
         var onNamedHost = Failed(ScratchServer.Registered(named, Name, () => throw new Xunit.Sdk.XunitException("the scratch server was chosen before R15 read the row's server"), Resolver));
 
-        Assert.Equal(("copy:" + Name, "localhost,11433"), (there.Target, ScratchServer.ServerName(null, Written("sql.env", "ESTATE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n, r => r.Code)));
+        Assert.Equal(("copy:" + Name, "localhost,11433"), (there.Target, ScratchServer.ServerName(null, Written("sql.env", "ESTATE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n.ToString(), r => r.Code)));
         Assert.Equal(("copy.unregistered", 9), (elsewhere.Code, Contract.Exit(elsewhere)));
         Assert.Contains("copy:" + Name, elsewhere.Message, StringComparison.Ordinal);
         Assert.Equal(("copy.named-host", 9), (onNamedHost.Code, Contract.Exit(onNamedHost)));
         Assert.DoesNotContain(Planted, elsewhere.Message + elsewhere.Remedy + onNamedHost.Message + onNamedHost.Remedy, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    [Trait("Category", "fast")]
-    public void A_host_is_this_machine_however_the_connection_spells_it_and_otherwise_its_name_in_lower_case()
-    {
-        foreach (var local in (string[])["", "localhost", "127.0.0.1,11433", "tcp:127.0.0.1,1433", ".", "(local)", "[::1],1433", Environment.MachineName + "\\SQLEXPRESS", "tcp:" + Environment.MachineName.ToLowerInvariant()])
-        {
-            Assert.Equal("localhost", SqlServer.Host(local));
-        }
-
-        Assert.Equal("dev-sql.corp.example", SqlServer.Host("tcp:DEV-SQL.corp.example,1433"));
-        Assert.Equal("dev-sql", SqlServer.Host("np:\\\\DEV-SQL\\pipe\\sql\\query"));
-        Assert.Equal("(localdb)", SqlServer.Host("(localdb)\\MSSQLLocalDB"));
     }
 
     /// <summary>The caller's integrated identity by default; SQL authentication where the reference names it; and an EnvironmentDatabase prints as its environment alone.</summary>
@@ -317,7 +303,7 @@ public sealed class TargetTests : IDisposable
         var error = Failed(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root));
 
         Assert.Equal(("connection.unresolved", 6), (error.Code, Contract.Exit(error)));
-        Assert.Equal("localhost,11433", Made(ScratchServer.Unnamed(root, "localhost,11433", Resolver)));
+        Assert.Equal(Server("localhost,11433"), Made(ScratchServer.Unnamed(root, Server("localhost,11433"), Resolver)));
     }
 
     /// <summary>
@@ -472,7 +458,7 @@ public sealed class TargetTests : IDisposable
         var file = Written(Path.Combine("locked", "dev.connection"), "Server=127.0.0.1,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted);
         var root = Estate(Dev(file));
 
-        var use = () => (SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root), ScratchServer.Unnamed(root, "localhost,11433", Resolver));
+        var use = () => (SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root), ScratchServer.Unnamed(root, Server("localhost,11433"), Resolver));
         var (resolved, unnamed) = denied switch
         {
             "folder" => RefusalPaths.Denied(Path.Combine(scratch, "locked"), use),
@@ -633,6 +619,9 @@ public sealed class TargetTests : IDisposable
         Assert.Contains("[dbo].[V] has an unresolved reference to object [dbo].[Missing].", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain('\n', error.Message);
     }
+
+    /// <summary>A server as this machine reads its data source.</summary>
+    private static ServerName Server(string dataSource) => ServerName.Of(dataSource, Environment.MachineName);
 
     /// <summary>DNS as these tests have it: dev-sql and its FQDN at one TEST-NET address, prod-sql at another, a name of this machine at loopback, and nothing else.</summary>
     private static IPAddress[] Resolver(string host) => host switch

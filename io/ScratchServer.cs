@@ -10,7 +10,6 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using System.Threading;
 using Estate.Kernel;
 using Microsoft.Data.SqlClient;
@@ -58,7 +57,7 @@ public static class ScratchServer
     public static string SqlEnv { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".estate", "sql.env");
 
     /// <summary>The scratch server, from the sources given, as the registry records it and R15 compares it (localhost,11433); nothing of its login.</summary>
-    public static Result<string> ServerName(string? estateSql, string sqlEnv, bool localDb) => Server(estateSql, sqlEnv, localDb).Bind(ServerName);
+    public static Result<Kernel.ServerName> ServerName(string? estateSql, string sqlEnv, bool localDb) => Server(estateSql, sqlEnv, localDb).Bind(ServerName);
 
     /// <summary>A copy on this machine's scratch server, refused on a named environment's host (R15).</summary>
     public static Result<SqlServer.Copy> Create(string estateRoot) => Server().Bind(server => Create(estateRoot, server));
@@ -72,8 +71,8 @@ public static class ScratchServer
 
     /// <summary>The digest of the SQL Server image a database runs in: the pinned image's for a copy on the estate-sql container; none on LocalDB or a server ESTATE_SQL names.</summary>
     public static string? Image(SqlServer.Database target) => target is SqlServer.Copy copy && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ESTATE_SQL"))
-        && Server(null, SqlEnv, localDb: false).Bind(ServerName) is Result<string>.Ok { Value: var container }
-        && ServerName(copy.Connection) is Result<string>.Ok { Value: var made } && made == container ? Doctor.ImageDigest : null;
+        && Server(null, SqlEnv, localDb: false).Bind(ServerName) is Result<Kernel.ServerName>.Ok { Value: var container }
+        && ServerName(copy.Connection) is Result<Kernel.ServerName>.Ok { Value: var made } && made == container ? Doctor.ImageDigest : null;
 
     /// <summary>A copy's name: estate_&lt;host&gt;_&lt;pid&gt;_&lt;rand&gt;, lower case and [a-z0-9_] only.</summary>
     public static string CopyName(string host, int pid, string random) =>
@@ -96,8 +95,8 @@ public static class ScratchServer
                 "Start Docker and run ci/sql.sh up, or ci/sql.ps1 up on Windows, or set ESTATE_SQL; then run estate doctor.");
     }
 
-    /// <summary>A server as the registry records it and R15 compares it: its host as SqlServer.Host spells it, then its port or instance, in lower case.</summary>
-    internal static Result<string> ServerName(string server)
+    /// <summary>A server as the registry records it and R15 compares it, read from its connection string on this machine.</summary>
+    internal static Result<Kernel.ServerName> ServerName(string server)
     {
         string source;
         try
@@ -110,9 +109,7 @@ public static class ScratchServer
                 "Correct ESTATE_SQL, or unset it; then run estate doctor.");
         }
 
-        var bare = Regex.Replace(source.Trim(), @"\A(?:tcp|np|lpc|admin):", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        var rest = bare.IndexOfAny([',', '\\'], bare.StartsWith(@"\\", StringComparison.Ordinal) ? 2 : 0) is >= 0 and var at ? bare[at..] : "";
-        return SqlServer.Host(source) + Regex.Replace(rest, @"\s", "").ToLowerInvariant();
+        return Kernel.ServerName.Of(source, Environment.MachineName);
     }
 
     /// <summary>A copy on the server given, refused on a named environment's host; recorded with its server before its database is made, so a crash leaves a row to follow.</summary>
@@ -122,7 +119,7 @@ public static class ScratchServer
             var copy = new SqlServer.Copy(CopyName(Environment.MachineName, Environment.ProcessId, Convert.ToHexString(RandomNumberGenerator.GetBytes(4))), server, estateRoot);
             var row = new JsonObject
             {
-                ["name"] = copy.Name, ["server"] = name, ["host"] = Host(Environment.MachineName), ["pid"] = Environment.ProcessId,
+                ["name"] = copy.Name, ["server"] = name.ToString(), ["host"] = Host(Environment.MachineName), ["pid"] = Environment.ProcessId,
                 ["created"] = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
             };
             return Change(estateRoot, rows => [.. rows, row]).Bind(_ => Run(copy, Make).Match(
@@ -137,7 +134,7 @@ public static class ScratchServer
         Rows(estateRoot).Bind(rows => rows.FirstOrDefault(r => (string?)r["name"] == name) is not { } row
             ? new Error("copy.unregistered", "copy:" + name + " is no copy " + Registry + " holds, and copy: names only a database estate made and recorded there.",
                 "Name a copy that " + Registry + " holds on this machine.")
-            : Unnamed(estateRoot, (string)row["server"]!, resolve).Bind(made => chosen().Bind(server => ServerName(server).Bind(now => now == made
+            : Unnamed(estateRoot, Kernel.ServerName.Of((string)row["server"]!, Environment.MachineName), resolve).Bind(made => chosen().Bind(server => ServerName(server).Bind(now => now == made
                 ? Result.Ok(new SqlServer.Copy(name, server, estateRoot))
                 : new Error("copy.unregistered", "copy:" + name + " was made on another server than the scratch server this machine names now, so " + Registry + " holds no such copy here.",
                     "Set ESTATE_SQL back to the server that made the copy, or make a new copy on this one.")))));
@@ -147,24 +144,23 @@ public static class ScratchServer
     /// every loopback address and each of its own. An environment whose reference resolves to nothing on this machine goes uncompared,
     /// its host unknown here; one SqlClient reads no connection string from is an error, and so is an estate without its posture.
     /// </summary>
-    internal static Result<string> Unnamed(string estateRoot, string serverName, Func<string, IPAddress[]> resolve) =>
+    internal static Result<Kernel.ServerName> Unnamed(string estateRoot, Kernel.ServerName server, Func<string, IPAddress[]> resolve) =>
         Profiles.Environments(estateRoot).Bind(environments => Result.All(environments.Select(environment => SqlServer.DataSource(environment, estateRoot)
             .Map(source => (Environment: environment, Source: source)))))
         .Bind(sources =>
         {
-            var hosts = sources.Where(s => s.Source is not null).Select(s => (s.Environment, Host: SqlServer.Host(s.Source!))).ToList();
-            var host = SqlServer.Host(serverName);
-            var addresses = new Lazy<HashSet<IPAddress>>(() => Addresses(host, resolve));
-            return hosts.Where(h => h.Host == host).Concat(hosts.Where(h => h.Host != host && Addresses(h.Host, resolve).Overlaps(addresses.Value))).Select(h => h.Environment).FirstOrDefault() is { } named
+            var hosts = sources.Where(s => s.Source is not null).Select(s => (s.Environment, s.Source!.Value.Host)).ToList();
+            var addresses = new Lazy<HashSet<IPAddress>>(() => Addresses(server.Host, resolve));
+            return hosts.Where(h => h.Host == server.Host).Concat(hosts.Where(h => h.Host != server.Host && Addresses(h.Host, resolve).Overlaps(addresses.Value))).Select(h => h.Environment).FirstOrDefault() is { } named
                 ? new Error("copy.named-host", "The scratch server is on the host env:" + named.Name + "'s connection resolves to, and a copy is made only where no named environment lives.",
                     "Point ESTATE_SQL at a local SQL Server, or unset it and run ci/sql.sh up (ci/sql.ps1 up on Windows).")
-                : Result.Ok(serverName);
+                : Result.Ok(server);
         });
 
     /// <summary>A host's addresses: this machine's, for a host spelled as this machine or LocalDB or resolving to any of this machine's; else what it resolves to.</summary>
-    private static HashSet<IPAddress> Addresses(string host, Func<string, IPAddress[]> resolve)
+    private static HashSet<IPAddress> Addresses(Host host, Func<string, IPAddress[]> resolve)
     {
-        HashSet<IPAddress> found = [.. (host is "localhost" or "(localdb)" ? [IPAddress.Loopback] : IPAddress.TryParse(host, out var literal) ? [literal] : resolve(host)).Select(Plain)];
+        HashSet<IPAddress> found = [.. (host == Kernel.Host.Localhost || host == Kernel.Host.LocalDb ? [IPAddress.Loopback] : IPAddress.TryParse(host.ToString(), out var literal) ? [literal] : resolve(host.ToString())).Select(Plain)];
         return found.Any(a => IPAddress.IsLoopback(a) || Local.Value.Contains(a)) ? [.. found, .. Local.Value] : found;
     }
 

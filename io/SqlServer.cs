@@ -420,9 +420,9 @@ public static class SqlServer
             : Result.Ok(Identified(connection))));
 
     /// <summary>An environment's server as R15 reads it, a database named or not: null when its reference resolves to nothing here; an error when SqlClient reads nothing from it.</summary>
-    internal static Result<string?> DataSource(NamedEnvironment environment, string estateRoot) => Read(EnvironmentDatabase.Subject(environment), environment.Connection, estateRoot).Bind(read => read is not { } text
-        ? Result.Ok<string?>(null)
-        : Parsed(EnvironmentDatabase.Subject(environment), environment.Connection, text).Map(connection => (string?)connection.DataSource));
+    internal static Result<ServerName?> DataSource(NamedEnvironment environment, string estateRoot) => Read(EnvironmentDatabase.Subject(environment), environment.Connection, estateRoot).Bind(read => read is not { } text
+        ? Result.Ok<ServerName?>(null)
+        : Parsed(EnvironmentDatabase.Subject(environment), environment.Connection, text).Map(connection => (ServerName?)ServerName.Of(connection.DataSource, System.Environment.MachineName)));
 
     /// <summary>A reference's text as SqlClient's own grammar reads it; the error names the reference and quotes nothing it read.</summary>
     private static Result<SqlConnectionStringBuilder> Parsed(string subject, SecretReference reference, string text)
@@ -625,18 +625,6 @@ public static class SqlServer
 
             public void Dispose() => Current.Value = outer;
         }
-    }
-
-    /// <summary>
-    /// A server's host as R15 spells it: the data source with its protocol, port and instance set aside, in lower case; this machine,
-    /// however spelled (localhost, 127.0.0.1, ::1, '.', (local), its own name, or none, SqlClient's local default), is localhost.
-    /// </summary>
-    public static string Host(string dataSource)
-    {
-        var host = Regex.Replace(dataSource.Trim(), @"\A(?:tcp|np|lpc|admin):", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        host = host.StartsWith(@"\\", StringComparison.Ordinal) ? host[2..].Split('\\')[0] : host.StartsWith("(localdb)", StringComparison.OrdinalIgnoreCase) ? "(localdb)" : host;
-        host = host.Split(',')[0].Split('\\')[0].Trim().Trim('[', ']').ToLowerInvariant();
-        return host is "" or "localhost" or "127.0.0.1" or "::1" or "." or "(local)" || host == System.Environment.MachineName.ToLowerInvariant() ? "localhost" : host;
     }
 
     private static Error NotADatabase(Target target) => new Error("target.not-a-database",
