@@ -241,7 +241,7 @@ public sealed class ProfilesTests : IDisposable
         var made = typeof(PublishProfile.Permissive).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();
 
         Assert.True(made.IsPrivate && of.IsAssembly);
-        Assert.Equal(["Estate.Io.Tests"], typeof(PublishProfile).Assembly.GetCustomAttributes<InternalsVisibleToAttribute>().Select(a => a.AssemblyName));
+        Assert.Equal(["Estate.Budgets.Tests", "Estate.Io.Tests"], typeof(PublishProfile).Assembly.GetCustomAttributes<InternalsVisibleToAttribute>().Select(a => a.AssemblyName).Order(StringComparer.Ordinal));
         Assert.Equal(["Estate.Io.PublishProfile+Permissive.Of"], Callers(made).Select(Named));
         Assert.NotEmpty(Callers(of));
         Assert.Empty(Callers(of).Where(caller => !InCopy(caller.DeclaringType)).Select(Named));

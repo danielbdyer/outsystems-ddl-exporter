@@ -244,6 +244,8 @@ internal static class RefusalPaths
         new("a named environment's login denied", "server.denied", true, (scratch, planted) => DevDatabase(scratch).ErrorOf(18456, "Login failed for user '" + planted + "'.")),
         new("a named environment that does not answer", "server.unreachable", true, (scratch, planted) =>
             DevDatabase(scratch).ErrorOf(53, "A network-related or instance-specific error occurred while establishing a connection to " + planted + ".")),
+        new("a named environment's statement running past its timeout", "server.timed-out", true, (scratch, planted) =>
+            DevDatabase(scratch).ErrorOf(-2, "Execution Timeout Expired, the statement reading '" + planted + "'.", fatal: false, opened: true)),
         new("a named environment's statement failing", "server.failed", true, (scratch, planted) =>
             DevDatabase(scratch).ErrorOf(245, "Conversion failed when converting the nvarchar value '" + planted + "' to data type int.")),
         new("a SQL Server error DacFx quotes by its number, with no SqlException inside", "server.failed", true, (scratch, planted) =>

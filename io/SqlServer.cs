@@ -32,6 +32,9 @@ public static class SqlServer
     /// <summary>No answer: the network, the instance or a timeout.</summary>
     private static readonly HashSet<int> Silences = [-2, -1, 2, 20, 26, 35, 40, 53, 64, 121, 232, 233, 258, 1225, 10053, 10054, 10060, 10061, 11001, 11004, 17142, 18401, 40613];
 
+    /// <summary>A statement SQL Server refused on an open connection: its number, its message where a copy's may be kept, and whether the command ran past its timeout.</summary>
+    internal sealed record StatementFailure(int Number, string? Message, bool TimedOut);
+
     /// <summary>
     /// The target an argument names (kernel/Target.cs), read for the argument <paramref name="subject"/>; a literal connection string, which
     /// only SqlClient's grammar tells from a target, is connection.literal at exit 6, and no part of the argument is quoted.
@@ -65,22 +68,20 @@ public static class SqlServer
         public Error ErrorOf(int number, string message) => ErrorOf(number, message, fatal: false);
 
         /// <summary>
-        /// The error a SqlClient or DacFx failure against a target becomes. With a SqlException inside, by its number, a severity of 20 or
-        /// more being a connection lost. With none, DacFx's own failure: when its texts quote a SQL Server number (Msg 50000, the data-loss check;
-        /// Msg 2627 inside SQL72014), by that number, since SQL Server's words, which can quote a row, are inside; else dacfx.failed,
-        /// quoting what each exception of the chain says, DacFx's errors (SQL71501: …) among it, kept for a named environment too. Any
-        /// other failure is server.failed with no number.
+        /// The error a SqlClient or DacFx failure against a target becomes, the one boundary every failure against a server passes
+        /// through. With a SqlException anywhere in the chain, by its number, a severity of 20 or more being a connection lost, and
+        /// <paramref name="opened"/> saying the connection had opened. With none, DacFx's own failure: when its texts quote a SQL Server
+        /// number (Msg 50000, the data-loss check; Msg 2627 inside SQL72014), by that number, since SQL Server's words, which can quote a
+        /// row, are inside; else dacfx.failed, quoting what each exception of the chain says, DacFx's errors (SQL71501: …) among it, kept
+        /// for a named environment too. Any other failure is server.failed with no number.
         /// </summary>
-        public Error ErrorOf(Exception failure)
-        {
-            var chain = new List<Exception>();
-            for (var x = failure; x is not null; x = x.InnerException)
-            {
-                chain.Add(x);
-            }
+        public Error ErrorOf(Exception failure) => ErrorOf(failure, opened: false);
 
+        internal Error ErrorOf(Exception failure, bool opened)
+        {
+            var chain = Chain(failure).ToList();
             var said = chain.SelectMany(Said).Distinct(StringComparer.Ordinal).ToList();
-            return chain.OfType<SqlException>().FirstOrDefault() is { } sql ? ErrorOf(sql.Number, sql.Message, fatal: sql.Class >= 20)
+            return chain.OfType<SqlException>().FirstOrDefault() is { } sql ? ErrorOf(sql.Number, sql.Message, fatal: sql.Class >= 20, opened)
                 : !chain.Any(x => x is DacServicesException or DacModelException) ? ErrorOf(0, failure.Message)
                 : said.Select(s => SqlServerNumber.Match(s)).FirstOrDefault(m => m.Success) is { } number
                     ? ErrorOf(int.Parse(number.Groups[1].Value, CultureInfo.InvariantCulture), string.Join(' ', said))
@@ -101,18 +102,67 @@ public static class SqlServer
         private static IEnumerable<string> Said(Exception x) =>
             Regex.Replace(x.Message, @"\s*\n\s*", " ", RegexOptions.CultureInvariant).Trim() is { Length: > 0 } text ? [text] : [];
 
-        internal Error ErrorOf(int number, string message, bool fatal)
+        /// <summary>
+        /// The error SQL Server's error <paramref name="number"/> against this database becomes, as <see cref="Classify"/> reads it:
+        /// server.denied, server.unreachable, server.timed-out or server.failed. <paramref name="fatal"/> is a severity of 20 or more,
+        /// which closes the connection; <paramref name="opened"/> says the connection had opened before the statement failed.
+        /// </summary>
+        internal Error ErrorOf(int number, string message, bool fatal, bool opened = false)
         {
             var msg = number == 0 ? "no SQL Server number" : string.Create(CultureInfo.InvariantCulture, $"Msg {number}");
-            return Denials.Contains(number) ? new Error("server.denied", Target + " refused this identity (" + msg + ", SQL Server's message withheld)"
+            return Classify(number, fatal, opened) switch
+            {
+                Category.Denied => new Error("server.denied", Target + " refused this identity (" + msg + ", SQL Server's message withheld)"
                     + (this is EnvironmentDatabase ? "; a lead's prediction will appear on the pull request." : "."), this is EnvironmentDatabase
                     ? "Ask a lead to predict for " + Target + ", or ask its DBA for VIEW DEFINITION and db_datareader there."
-                    : "Check the scratch server's login in ESTATE_SQL or ~/.estate/sql.env, then run estate doctor.")
-                : fatal || Silences.Contains(number) ? new Error("server.unreachable", Target + " does not answer (" + msg + ", SQL Server's message withheld).", this is EnvironmentDatabase
+                    : "Check the scratch server's login in ESTATE_SQL or ~/.estate/sql.env, then run estate doctor."),
+                Category.Unreachable => new Error("server.unreachable", Target + " does not answer (" + msg + ", SQL Server's message withheld).", this is EnvironmentDatabase
                     ? "Check the network path to " + Target + "'s server and that it runs, then run estate doctor."
-                    : "Start the scratch server with ci/sql.sh up, or ci/sql.ps1 up on Windows, then run estate doctor.")
-                : new Error("server.failed", Target + " failed the statement: " + msg + (Withheld ? "; SQL Server's message is withheld, since it can quote a row." : ": " + message),
-                    "Look the number up in SQL Server's error list, correct what it names, then run the step again.");
+                    : "Start the scratch server with ci/sql.sh up, or ci/sql.ps1 up on Windows, then run estate doctor."),
+                Category.TimedOut => new Error("server.timed-out", Target + " answered, and the statement ran past its timeout (" + msg + ", SQL Server's message withheld).",
+                    "Run the step again when the server is less busy, or ask its DBA what holds the locks the statement waits on."),
+                _ => new Error("server.failed", Target + " failed the statement: " + msg + (Withheld ? "; SQL Server's message is withheld, since it can quote a row." : ": " + message),
+                    "Look the number up in SQL Server's error list, correct what it names, then run the step again."),
+            };
+        }
+
+        /// <summary>
+        /// The failure of a statement SQL Server refused on an open connection, below severity 20, which a caller records as the
+        /// statement's outcome (Measure's failed measurement): its number, SQL Server's message for a copy alone, and whether the command
+        /// ran past its timeout. Null for a failure of the connection or the identity, which <see cref="ErrorOf(Exception, bool)"/> maps.
+        /// </summary>
+        internal StatementFailure? FailedStatement(Exception failure, bool opened) =>
+            opened && Chain(failure).OfType<SqlException>().FirstOrDefault() is { Class: < 20 } sql
+                ? new StatementFailure(sql.Number, Withheld ? null : sql.Message, Classify(sql.Number, fatal: false, opened) == Category.TimedOut)
+                : null;
+
+        /// <summary>
+        /// What SQL Server's error number means for a statement estate sent, the one reading of SQL Server's numbers (R4 lifts it into the
+        /// kernel's SqlServerError at M2): a login, a database or a permission refused (<see cref="Denials"/>) is Denied; no answer, a
+        /// login timeout among them, or a severity of 20 or more, which closes the connection (<see cref="Silences"/>), is Unreachable; a
+        /// command timeout (-2) on a connection that had opened is TimedOut, since the server answered; anything else is the statement's
+        /// own Failed, a deadlock (1205) among them.
+        /// </summary>
+        private static Category Classify(int number, bool fatal, bool opened) =>
+            number == -2 && opened && !fatal ? Category.TimedOut
+            : Denials.Contains(number) ? Category.Denied
+            : fatal || Silences.Contains(number) ? Category.Unreachable
+            : Category.Failed;
+
+        private static IEnumerable<Exception> Chain(Exception failure)
+        {
+            for (var x = failure; x is not null; x = x.InnerException)
+            {
+                yield return x;
+            }
+        }
+
+        private enum Category
+        {
+            Denied,
+            Unreachable,
+            TimedOut,
+            Failed,
         }
 
         public sealed override string ToString() => Target.ToString();

@@ -603,28 +603,36 @@ public sealed class TargetTests : IDisposable
 
     /// <summary>
     /// VALUES.md X2, M1 exit 7, §18: a named environment's SQL Server error is withheld whatever its number, and a denied login says a lead's
-    /// prediction will appear on the pull request; a copy's rows are minted, so a copy's failure keeps the engine's message.
+    /// prediction will appear on the pull request; a copy's rows are minted, so a copy's failure keeps the engine's message. The rows pin
+    /// the one classifier of SQL Server's numbers (R4 lifts it into the kernel at M2): a login, a database or a permission refused; no
+    /// answer, or a timeout before the connection opened; a timeout of a statement on an open connection; and a statement that failed,
+    /// a deadlock among them.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData(18456, "server.denied")]
-    [InlineData(4060, "server.denied")]
-    [InlineData(229, "server.denied")]
-    [InlineData(-2, "server.unreachable")]
-    [InlineData(53, "server.unreachable")]
-    [InlineData(258, "server.unreachable")]
-    [InlineData(245, "server.failed")]
-    [InlineData(2628, "server.failed")]
-    public void A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept(int number, string code)
+    [InlineData(18456, false, "server.denied")]
+    [InlineData(4060, false, "server.denied")]
+    [InlineData(229, false, "server.denied")]
+    [InlineData(-2, false, "server.unreachable")]
+    [InlineData(53, false, "server.unreachable")]
+    [InlineData(258, false, "server.unreachable")]
+    [InlineData(40613, false, "server.unreachable")]
+    [InlineData(-2, true, "server.timed-out")]
+    [InlineData(18456, true, "server.denied")]
+    [InlineData(245, false, "server.failed")]
+    [InlineData(1205, false, "server.failed")]
+    [InlineData(1205, true, "server.failed")]
+    [InlineData(2628, false, "server.failed")]
+    public void A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept(int number, bool opened, string code)
     {
         var root = Estate("\"qa\": { \"host\": \"qa-sql\", \"connection\": \"file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa") + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
         var named = Made(SqlServer.Resolve(Made(SqlServer.Target("env:qa", "--target")), root));
         var copy = new SqlServer.Copy(CopyName.Make("host", 1, 0x0a1b2c3d), "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
         var message = "Conversion failed when converting the nvarchar value '" + Planted + "' to data type int.";
 
-        var (fromNamed, fromCopy) = (named.ErrorOf(number, message), copy.ErrorOf(number, message));
+        var (fromNamed, fromCopy) = (named.ErrorOf(number, message, fatal: false, opened), copy.ErrorOf(number, message, fatal: false, opened));
 
-        Assert.Equal((code, 4), (fromNamed.Code, Contract.Exit(fromNamed)));
+        Assert.Equal((code, 4, code), (fromNamed.Code, Contract.Exit(fromNamed), fromCopy.Code));
         Assert.StartsWith("env:qa ", fromNamed.Message, StringComparison.Ordinal);
         Assert.Contains(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Msg {number}"), fromNamed.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(Planted, fromNamed.Message + fromNamed.Remedy + fromCopy.Remedy, StringComparison.Ordinal);

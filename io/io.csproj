@@ -9,8 +9,10 @@
     <ProjectReference Include="../kernel/kernel.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- A profile's options and Permissive's maker stay internal to io; its own tests publish with them, and nothing else does. -->
+    <!-- A profile's options, Permissive's maker and AggregateQuery.Of stay internal to io; its own tests reach them, and nothing else does.
+         Budgets.Tests' register drives each error, the aggregate-query refusal and a statement's timeout among them. -->
     <InternalsVisibleTo Include="Estate.Io.Tests" />
+    <InternalsVisibleTo Include="Estate.Budgets.Tests" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.SqlServer.DacFx" />
