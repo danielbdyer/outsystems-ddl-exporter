@@ -37,8 +37,8 @@ public sealed record Envelope(string Schema, Stamp? Stamp, Receipt? Receipt, Ver
 /// <summary>The answer in a line; at exit 3 its kind says how the data blocked, and no other verdict has one.</summary>
 public sealed record Verdict(string Outcome, string Message, Blocked? Kind = null);
 
-/// <summary>How the data blocked (§4 row 15): the publish guard refused because the table has rows, or the engine refused the change on existing rows (Msg 547, Msg 2628).</summary>
-public enum Blocked { Guard, Violation }
+/// <summary>How the data blocked (§4 row 15): the data-loss check (BlockOnPossibleDataLoss) stopped the publish because the table has rows, or SQL Server refused the change on existing rows (Msg 547, Msg 2628).</summary>
+public enum Blocked { DataLossCheck, Violation }
 
 /// <summary>A finding, of severity error, warning or note (SARIF's levels); its remedy is a verb or a file path, and one of severity error carries one.</summary>
 public sealed record Finding(string Code, string Severity, string Subject, string Message, string? Remedy);
@@ -79,7 +79,7 @@ public static class Contract
         new(0, "done", "Done: the verb did its work.", "nothing to do", false),
         new(1, "bad-arguments", "Bad arguments: an unknown verb, flag or value.", "estate --help", false),
         new(2, "unparsed-input", "An input could not be parsed: a schema, a configuration file or a project.", "the file and line the finding names", true),
-        new(3, "blocked", "Blocked by the data, a finding and not a failure: kind guard, the publish guard refused because the table has rows; or kind violation, the engine refused the change on existing rows (Msg 547, Msg 2628).", "the site the finding names: the operation's two-release shape, or the rows it counts", false),
+        new(3, "blocked", "Blocked by the data, a finding and not a failure: kind guard, the data-loss check stopped the publish because the table has rows; or kind violation, SQL Server refused the change on existing rows (Msg 547, Msg 2628).", "the site the finding names: the operation's two-release shape, or the rows it counts", false),
         new(4, "unreachable", "The target is unreachable: no scratch server, or SQL Server, Docker or LocalDB not answering.", "estate doctor; estate synthetic-copy up", true),
         new(5, "differs", "Divergence found: the target differs from the repository; the findings name each differing object.", "the objects the findings name", false),
         new(6, "configuration-refused", "The environment or configuration is refused: the .NET SDK missing, an unknown key, a literal credential, an engine outside the pinned window, a verb this build does not have yet, a failure DacFx reports with no SQL Server error inside (dacfx.failed), or a defect in estate itself (internal.unexpected, internal.unmapped-category).", "estate doctor, or the file or milestone the finding names", true),

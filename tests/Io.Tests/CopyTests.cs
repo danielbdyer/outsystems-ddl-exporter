@@ -88,7 +88,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
         }
     }
 
-    /// <summary>§1 fact 4 through io: a copy matches its package when the deploy plan under the pipeline's profile is empty; the make-mandatory head's plan against the same copy is one Alter, its guard in the script.</summary>
+    /// <summary>§1 fact 4 through io: a copy matches its package when the deploy plan under the pipeline's profile is empty; the make-mandatory head's plan against the same copy is one Alter, its data-loss check in the script.</summary>
     [Fact]
     [Trait("Category", "fixture")]
     [Trait("Law", "3′ the read is complete")]
@@ -116,7 +116,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
 
     /// <summary>
     /// A failed DacServices.Publish through Copy.Publish and Database.ErrorOf. The copy holds the seed's Customer rows, so the
-    /// make-mandatory head's guard (BlockOnPossibleDataLoss True in the pipeline's profile) raises Msg 50000 and DacFx throws
+    /// make-mandatory head's data-loss check (BlockOnPossibleDataLoss True in the pipeline's profile) raises Msg 50000 and DacFx throws
     /// DacServicesException with no SqlException inside. Its Message holds DacFx's errors (SQL72014 quoting Msg 50000, SQL72045), and
     /// its Messages adds informational entries of number 0 that Message leaves out: the pre-deployment script's PRINT output and "An
     /// error occurred while the batch was being executed.". The error is routed by the number inside SQL72014, which Message alone
@@ -124,7 +124,7 @@ public sealed class CopyTests(GoldenProject ground) : IClassFixture<GoldenProjec
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task A_publish_the_guard_stops_is_server_failed_by_Msg_50000_quoting_DacFx_s_errors_and_not_its_informational_messages()
+    public async Task A_publish_the_data_loss_check_stops_is_server_failed_by_Msg_50000_quoting_DacFx_s_errors_and_not_its_informational_messages()
     {
         var strict = Made(Profiles.Load(ground.Profile));
         var copy = Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync()));

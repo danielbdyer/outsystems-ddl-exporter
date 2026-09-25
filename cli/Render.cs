@@ -123,7 +123,7 @@ public static class Render
         envelope["additionalProperties"] = id == "estate.envelope/1";
 
         // Every error carries a remedy: an exit that requires one names at least one finding, each with its remedy.
-        // Blocked (§4 row 15) is blocked by the data and names its kind, the row-presence guard or a violation on existing rows; no other exit has a kind.
+        // Blocked (§4 row 15) is blocked by the data and names its kind, the data-loss check or a violation on existing rows; no other exit has a kind.
         var blocked = If(Where("exit", new JsonObject { ["const"] = Contract.Exits.Single(e => e.Name == "blocked").Code }), Where("verdict", Where("kind", Kinds())));
         blocked["else"] = Where("verdict", Where("kind", new JsonObject { ["type"] = "null" }));
         envelope["allOf"] = new JsonArray(
@@ -182,7 +182,7 @@ public static class Render
     internal static JsonArray Array(IEnumerable<JsonNode?> items) => new([.. items]);
 
     /// <summary>A kind as the envelope writes it, null for a verdict the data did not block; the schema's words are these.</summary>
-    private static string? Kind(Blocked? kind) => kind switch { null => null, Blocked.Guard => "guard", Blocked.Violation => "violation", _ => throw new System.ArgumentOutOfRangeException(nameof(kind)) };
+    private static string? Kind(Blocked? kind) => kind switch { null => null, Blocked.DataLossCheck => "guard", Blocked.Violation => "violation", _ => throw new System.ArgumentOutOfRangeException(nameof(kind)) };
     private static JsonObject Kinds() => Enum(System.Enum.GetValues<Blocked>().Select(k => (JsonNode?)Kind(k)));
 
     /// <summary>A receipt's input as the envelope names it, camel-cased: delta, target, dataFacts, engine, profile.</summary>

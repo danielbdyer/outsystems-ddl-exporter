@@ -159,9 +159,9 @@ internal static class RefusalPaths
             Failed(Profiles.Load(Profile(scratch, "", ("LinkedServer", "Server=db;User ID=sa;Pass<!-- -->word=" + planted))))),
         new("a profile giving a SQLCMD value that is a connection string", "profile.literal-connection", true, (scratch, planted) =>
             Failed(Profiles.Load(Profile(scratch, "", ("LinkedServer", "Data Source=" + planted + ";Initial Catalog=Orders;Integrated Security=True"))))),
-        new("a profile with the guard off", "profile.guard-off", true, (scratch, planted) =>
+        new("a profile that allows data loss", "profile.data-loss-allowed", true, (scratch, planted) =>
             Failed(Profiles.Load(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted))))),
-        new("a named environment whose profile has the guard off", "profile.guard-off", true, (scratch, planted) =>
+        new("a named environment whose profile allows data loss", "profile.data-loss-allowed", true, (scratch, planted) =>
         {
             var root = Estate(scratch, Environments(Dev(profile: "estate/profiles/relaxed.publish.xml")));
             File.Move(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted)), Path.Combine(root, "estate", "profiles", "relaxed.publish.xml"));

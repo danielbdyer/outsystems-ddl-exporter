@@ -48,16 +48,16 @@ public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProje
 
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task Fact_3_the_data_loss_guard_is_found_at_state_127_and_its_predicate_returns_1_as_the_read_only_login()
+    public async Task Fact_3_the_data_loss_check_is_found_at_state_127_and_its_predicate_returns_1_as_the_read_only_login()
     {
         var (script, _) = ground.Plan(ground.Mandatory);
         var body = string.Join('\n', script.Split('\n').Where(l => !l.TrimStart().StartsWith(':')));
         var parsed = new TSql160Parser(initialQuotedIdentifiers: true).Parse(new StringReader(body), out var errors);
-        var guards = new List<QueryExpression>();
-        parsed.Accept(new Guards(guards));
+        var checks = new List<QueryExpression>();
+        parsed.Accept(new DataLossChecks(checks));
 
         Assert.Empty(errors);
-        new Sql160ScriptGenerator().GenerateScript(Assert.Single(guards), out var predicate);
+        new Sql160ScriptGenerator().GenerateScript(Assert.Single(checks), out var predicate);
         Assert.Contains("[dbo].[Customer]", predicate, StringComparison.Ordinal);
         Assert.Equal(1, await SqlServerFixture.ScalarAsync(ground.Reader.ConnectionString, "SELECT CASE WHEN EXISTS (" + predicate + ") THEN 1 ELSE 0 END;"));
     }
@@ -153,8 +153,8 @@ public sealed class SpikeTests(GoldenProject ground) : IClassFixture<GoldenProje
                select (column.Name.ToString(), property.Name, pair.Before, pair.After);
     }
 
-    /// <summary>DacFx's data-loss guard, IF EXISTS (…) RAISERROR (…, 16, 127); the script's other IF EXISTS blocks check database options.</summary>
-    private sealed class Guards(List<QueryExpression> found) : TSqlFragmentVisitor
+    /// <summary>DacFx's data-loss check, IF EXISTS (…) RAISERROR (…, 16, 127); the script's other IF EXISTS blocks check database options.</summary>
+    private sealed class DataLossChecks(List<QueryExpression> found) : TSqlFragmentVisitor
     {
         public override void ExplicitVisit(IfStatement node)
         {

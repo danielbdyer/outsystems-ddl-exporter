@@ -374,11 +374,11 @@ public sealed class ContractTests
     /// <summary>§4 row 15, through the contract's own types: exit 3 names how the data blocked, and no other exit has a kind.</summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData(3, Blocked.Guard, "guard")]
+    [InlineData(3, Blocked.DataLossCheck, "guard")]
     [InlineData(3, Blocked.Violation, "violation")]
     [InlineData(3, null, null)]
     [InlineData(0, null, null)]
-    [InlineData(0, Blocked.Guard, "guard")]
+    [InlineData(0, Blocked.DataLossCheck, "guard")]
     public void A_verdict_names_its_kind_exactly_when_the_data_blocked(int exit, Blocked? kind, string? written)
     {
         var answer = Contract.Answer("estate.prove/1", "blocked", "Msg 50000: rows were detected.", [], exit);
@@ -573,13 +573,13 @@ public sealed class ContractTests
     };
 
     /// <summary>An answer at <paramref name="exit"/> with one finding of <paramref name="severity"/> and <paramref name="code"/>, or with none when the severity is null.</summary>
-    private static Action<JsonObject> Finds(int exit, string? severity, string? remedy = null, string code = "guard.row-presence") => answer =>
+    private static Action<JsonObject> Finds(int exit, string? severity, string? remedy = null, string code = "data-loss-check.rows-present") => answer =>
     {
         answer["exit"] = exit;
         answer["findings"] = severity is null ? new JsonArray() : new JsonArray(new JsonObject
         {
             ["code"] = code, ["severity"] = severity, ["subject"] = "dbo.Customer.Email",
-            ["message"] = "The publish guard refused: the table has rows.", ["remedy"] = remedy,
+            ["message"] = "The data-loss check stopped the publish: the table has rows.", ["remedy"] = remedy,
         });
     };
 

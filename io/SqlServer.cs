@@ -109,7 +109,7 @@ public static class SqlServer
 
         /// <summary>
         /// The error a SqlClient or DacFx failure against a target becomes. With a SqlException inside, by its number, a severity of 20 or
-        /// more being a connection lost. With none, DacFx's own failure: when its texts quote a SQL Server number (Msg 50000, the guard;
+        /// more being a connection lost. With none, DacFx's own failure: when its texts quote a SQL Server number (Msg 50000, the data-loss check;
         /// Msg 2627 inside SQL72014), by that number, since SQL Server's words, which can quote a row, are inside; else dacfx.failed,
         /// quoting what each exception of the chain says, DacFx's errors (SQL71501: …) among it, kept for a named environment too. Any
         /// other failure is server.failed with no number.
@@ -196,7 +196,7 @@ public static class SqlServer
 
         internal override bool Withheld => false;
 
-        /// <summary>The pipeline's profile with the guard off (§1 fact 10), made for this copy: the one maker of a Permissive profile.</summary>
+        /// <summary>The pipeline's profile with the data-loss check off (§1 fact 10), made for this copy: the one maker of a Permissive profile.</summary>
         public PublishProfile.Permissive Permissive(PublishProfile.Strict strict) => PublishProfile.Permissive.Of(strict);
 
         /// <summary>The package published to this copy under the profile's options, Strict or this copy's Permissive, the package loaded from a stream.</summary>

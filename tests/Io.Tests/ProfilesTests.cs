@@ -197,7 +197,7 @@ public sealed class ProfilesTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_profile_with_the_guard_off_is_refused_and_a_named_environment_using_it_is_refused_by_its_name()
+    public void A_profile_that_allows_data_loss_is_refused_and_a_named_environment_using_it_is_refused_by_its_name()
     {
         var relaxed = Profile("relaxed", "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>");
         var root = Estate(Dev(profile: "estate/profiles/relaxed.publish.xml"));
@@ -206,8 +206,8 @@ public sealed class ProfilesTests : IDisposable
         var bare = Failed(Profiles.Load(relaxed));
         var named = Failed(Profiles.Of(Made(Profiles.Environments(root)).Single(), root));
 
-        Assert.Equal(("profile.guard-off", 6), (bare.Code, Contract.Exit(bare)));
-        Assert.Equal(("profile.guard-off", 6), (named.Code, Contract.Exit(named)));
+        Assert.Equal(("profile.data-loss-allowed", 6), (bare.Code, Contract.Exit(bare)));
+        Assert.Equal(("profile.data-loss-allowed", 6), (named.Code, Contract.Exit(named)));
         Assert.StartsWith("env:dev's profile estate/profiles/relaxed.publish.xml", named.Message, StringComparison.Ordinal);
     }
 

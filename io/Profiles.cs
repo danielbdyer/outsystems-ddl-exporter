@@ -121,9 +121,9 @@ public static class Profiles
         try
         {
             var options = DacProfile.Load(new MemoryStream(kept.ToArray(), writable: false)).DeployOptions;
-            return !options.BlockOnPossibleDataLoss ? new Error("profile.guard-off",
-                    subject + " sets BlockOnPossibleDataLoss to False; Strict is the pipeline's profile with the guard on.",
-                    "Set BlockOnPossibleDataLoss to True in " + path + "; only a copy publishes with the guard off, as Permissive.")
+            return !options.BlockOnPossibleDataLoss ? new Error("profile.data-loss-allowed",
+                    subject + " sets BlockOnPossibleDataLoss to False; Strict is the pipeline's profile with the data-loss check on.",
+                    "Set BlockOnPossibleDataLoss to True in " + path + "; only a copy publishes with the data-loss check off, as Permissive.")
                 : Result.All(options.SqlCommandVariableValues.OrderBy(v => v.Key, StringComparer.Ordinal).Select(v => ProfileValue(subject, path, v.Key, v.Value ?? "")))
                     .Map(values => new PublishProfile.Strict(path, kept.ToArray(), SortedArray.Of(values)));
         }
@@ -240,7 +240,7 @@ public static class Profiles
 /// <summary>
 /// A publish profile as the engine uses it (§1 fact 10): DacFx's deploy options and the profile's SQLCMD values, nothing else. It keeps
 /// the profile's XML, its target removed, and reads a fresh copy of the options on each call, so a change a caller makes to one copy
-/// reaches no other. Its two cases are closed: Strict, the pipeline's profile as loaded, and Permissive, the same with the guard off.
+/// reaches no other. Its two cases are closed: Strict, the pipeline's profile as loaded, and Permissive, the same with the data-loss check off.
 /// </summary>
 public abstract class PublishProfile
 {
@@ -259,7 +259,7 @@ public abstract class PublishProfile
 
     public override string ToString() => (this is Strict ? "Strict: " : "Permissive: ") + Source;
 
-    /// <summary>A fresh copy of the options, the guard on for Strict and off for Permissive, for io/SqlServer's calls into DacFx that plan and publish.</summary>
+    /// <summary>A fresh copy of the options, the data-loss check on for Strict and off for Permissive, for io/SqlServer's calls into DacFx that plan and publish.</summary>
     internal DacDeployOptions Options()
     {
         var options = DacProfile.Load(new MemoryStream(_profile, writable: false)).DeployOptions;
@@ -267,7 +267,7 @@ public abstract class PublishProfile
         return options;
     }
 
-    /// <summary>The pipeline's profile as loaded, the guard on: every plan uses it, and every publish unless a copy asks for Permissive.</summary>
+    /// <summary>The pipeline's profile as loaded, the data-loss check on: every plan uses it, and every publish unless a copy asks for Permissive.</summary>
     public sealed class Strict : PublishProfile
     {
         internal Strict(string source, byte[] profile, SortedArray<SqlCmdVariable> sqlCmd)
@@ -278,7 +278,7 @@ public abstract class PublishProfile
 
     /// <summary>
     /// Strict with BlockOnPossibleDataLoss off and nothing else changed (§1 fact 10), for a copy alone (§2.1 rule 3), to see what the
-    /// guard would have stopped. SqlServer.Copy.Permissive is Of's one caller, so a Permissive profile exists only for a copy;
+    /// data-loss check would have stopped. SqlServer.Copy.Permissive is Of's one caller, so a Permissive profile exists only for a copy;
     /// ProfilesTests' "nothing but a Copy makes a Permissive profile" fails on a call from anywhere else in io.
     /// </summary>
     public sealed class Permissive : PublishProfile
