@@ -4,6 +4,8 @@
     <AssemblyName>Estate.Io</AssemblyName>
     <RootNamespace>Estate.Io</RootNamespace>
     <ImplicitUsings>disable</ImplicitUsings>
+    <!-- Process, ProcessStartInfo and Console stay out of io except in Command.cs, the one place io starts a program (BannedSymbols.txt). -->
+    <EstateBannedSymbols>$(MSBuildThisFileDirectory)BannedSymbols.txt</EstateBannedSymbols>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../kernel/kernel.csproj" />
