@@ -134,6 +134,7 @@ internal static class RefusalPaths
             Failed(SecretReference.Of("--connection", "file:Server=db;User ID=sa;Password=" + planted))),
         new("a scratch server that is neither docker nor localdb", "posture.malformed", true, (scratch, planted) =>
             Failed(Profiles.Environments(Estate(scratch, "{ \"environments\": {}, \"scratchServer\": " + Quoted(planted) + " }")))),
+        new("a host given with its port", "posture.host", true, (_, planted) => Failed(Host.Of("environments.dev.host in estate/posture.json", planted + ",1433"))),
         new("an environment misnamed", "posture.environment-name", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + "]", name: "DEV"))),
         new("a reader group given twice", "posture.readers", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
         new("a profile path outside the estate", "posture.profile-path", true, (scratch, planted) => Posture(scratch, Dev(profile: "../" + planted + ".publish.xml"))),
@@ -170,10 +171,11 @@ internal static class RefusalPaths
         new("a SQLCMD literal under a credential's name in a profile", "sqlcmd.literal-credential", true, (scratch, planted) =>
             Failed(Profiles.Load(Profile(scratch, "", ("ApiToken", planted))))),
 
-        new("a target of no form the grammar knows", "target.unknown", true, (_, planted) => Failed(SqlServer.Target.Parse("sql:" + planted))),
-        new("a copy named as no copy can be", "copy.unregistered", true, (_, planted) => Failed(SqlServer.Target.Parse("copy:" + planted, "--target"))),
+        new("a target of no form the grammar knows", "target.unknown", true, (_, planted) => Failed(SqlServer.Target("sql:" + planted, "--target"))),
+        new("a copy named as no copy can be", "copy.unregistered", true, (_, planted) => Failed(SqlServer.Target("copy:" + planted, "--target"))),
+        new("a git ref that is none", "ref.malformed", true, (_, planted) => Failed(GitRef.Of("--at", "-" + planted))),
         new("a literal connection string where a target goes", "connection.literal", true, (_, planted) =>
-            Failed(SqlServer.Target.Parse("Server=db;User ID=sa;Password=" + planted, "--target"))),
+            Failed(SqlServer.Target("Server=db;User ID=sa;Password=" + planted, "--target"))),
         new("a git ref where a database is asked for", "target.not-a-database", false, (scratch, _) => Failed(SqlServer.Resolve(Target("ref:main"), scratch))),
         new("an environment the posture does not name", "target.unnamed", false, (scratch, _) => Failed(SqlServer.Resolve(Target("env:qa"), Estate(scratch, Environments(Dev()))))),
         new("the synthetic copy before its milestone", "synthetic-copy.not-built", false, (scratch, _) => Failed(SqlServer.Resolve(Target("synthetic-copy"), scratch))),
@@ -201,7 +203,7 @@ internal static class RefusalPaths
             Written(root, "estate/posture.json", Environments(Dev(connection: "file:.estate/dev.connection::$DATA")));
             var file = OwnerOnly(Written(root, ".estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
             return OperatingSystem.IsWindows()   // Windows opens the default data stream as name::$DATA; elsewhere that name opens no file, and the driver asks io/SqlServer of it directly
-                ? SqlServer.Resolve(Target("env:dev"), root).Map(database => database.Target)
+                ? SqlServer.Resolve(Target("env:dev"), root).Map(database => database.Target.ToString())
                 : SqlServer.Listed("env:dev's connection, file:.estate/dev.connection::$DATA,", file + "::$DATA");
         })),
         new("a connection file in a folder this identity cannot list", "reference.unlistable", true, (scratch, planted) =>
@@ -281,7 +283,7 @@ internal static class RefusalPaths
     /// <summary>The copy a planted registry holds, made on localhost,11433.</summary>
     private const string Copied = "estate_host_1_0a1b2c3d";
 
-    private static SqlServer.Target Target(string text) => Made(SqlServer.Target.Parse(text));
+    private static Target Target(string text) => Made(SqlServer.Target(text, "--target"));
 
     /// <summary>The estate's root with .estate/copies.json holding <see cref="Copied"/>, as io/ScratchServer writes a row, so copy: reaches R15 without a server.</summary>
     private static string Registered(string root)

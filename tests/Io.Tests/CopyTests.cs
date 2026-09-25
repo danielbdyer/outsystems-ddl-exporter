@@ -33,24 +33,24 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
         var copy = Made(ScratchServer.Create(root, server));
         try
         {
-            Assert.Matches("^" + SqlServerFixture.DatabaseName(Environment.MachineName, Environment.ProcessId, "") + "[0-9a-f]{8}$", copy.Name);
-            Assert.True(await SqlServerFixture.ExistsAsync(copy.Name), copy.Name + " was not created");
+            Assert.Equal((CopyName.Make(Environment.MachineName, 0, 0).Machine, Environment.ProcessId), (copy.Name.Machine, copy.Name.Pid));
+            Assert.True(await SqlServerFixture.ExistsAsync(copy.Name.ToString()), copy.Name + " was not created");
             var row = Assert.Single(Registry())!.AsObject();
             Assert.Equal(["created", "host", "name", "pid", "server"], row.Select(p => p.Key).Order(StringComparer.Ordinal));
-            Assert.Equal((copy.Name, Environment.ProcessId, Made(ScratchServer.ServerName(server)).ToString()), ((string)row["name"]!, (int)row["pid"]!, (string)row["server"]!));
+            Assert.Equal((copy.Name.ToString(), Environment.ProcessId, Made(ScratchServer.ServerName(server)).ToString()), ((string)row["name"]!, (int)row["pid"]!, (string)row["server"]!));
             var registry = File.ReadAllText(Path.Combine(root, ".estate", "copies.json"));
             Assert.All(new[] { new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(server).Password }.Where(password => password.Length > 0), password => Assert.DoesNotContain(password, registry, StringComparison.Ordinal));
             Assert.Equal(TimeSpan.Zero, DateTimeOffset.Parse((string)row["created"]!, System.Globalization.CultureInfo.InvariantCulture).Offset);
-            Assert.Equal(copy.Name, Assert.IsType<SqlServer.Copy>(Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("copy:" + copy.Name)), root))).Name);
+            Assert.Equal(copy.Name, Assert.IsType<SqlServer.Copy>(Made(SqlServer.Resolve(Made(SqlServer.Target("copy:" + copy.Name, "--target")), root))).Name);
         }
         finally
         {
             Made(ScratchServer.Drop(copy));
         }
 
-        Assert.False(await SqlServerFixture.ExistsAsync(copy.Name), copy.Name + " outlived Drop");
+        Assert.False(await SqlServerFixture.ExistsAsync(copy.Name.ToString()), copy.Name + " outlived Drop");
         Assert.Empty(Registry());
-        var gone = Assert.IsType<Result<SqlServer.Database>.Failed>(SqlServer.Resolve(Made(SqlServer.Target.Parse("copy:" + copy.Name)), root)).Error;
+        var gone = Assert.IsType<Result<SqlServer.Database>.Failed>(SqlServer.Resolve(Made(SqlServer.Target("copy:" + copy.Name, "--target")), root)).Error;
         Assert.Equal(("copy.unregistered", 9), (gone.Code, Contract.Exit(gone)));
     }
 
@@ -173,7 +173,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
             DacPackageExtensions.BuildPackage(dacpac, model, new PackageMetadata());
         }
 
-        var dev = Assert.IsType<SqlServer.EnvironmentDatabase>(Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root)));
+        var dev = Assert.IsType<SqlServer.EnvironmentDatabase>(Made(SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root)));
         var error = Assert.IsType<Result<SqlServer.Deployment>.Failed>(SqlServer.Plan(dacpac, dev, Made(Profiles.Load(project.Profile)))).Error;
 
         Assert.Equal(("dacfx.failed", 6), (error.Code, Contract.Exit(error)));

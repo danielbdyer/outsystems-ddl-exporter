@@ -50,9 +50,9 @@ public sealed class ProfilesTests : IDisposable
     public void The_sample_posture_reads_into_its_named_environments_each_with_the_pipelines_profile()
     {
         var environments = Made(Profiles.Environments(Golden));
-        var dev = environments.Single(e => e.Name == "dev");
+        var dev = environments.Single(e => e.Name.ToString() == "dev");
 
-        Assert.Equal(["dev", "prod", "qa", "uat"], environments.Select(e => e.Name));
+        Assert.Equal(["dev", "prod", "qa", "uat"], environments.Select(e => e.Name.ToString()));
         Assert.Equal("env:dev (synthetic, confirmed by the dev lead on 2026-09-20)", dev.ToString());
         Assert.Equal(["env:prod (real)", "env:qa (real)", "env:uat (real)"], environments.Where(e => e != dev).Select(e => e.ToString()));
         Assert.Equal(["developers", "leads"], dev.Readers);
@@ -100,7 +100,7 @@ public sealed class ProfilesTests : IDisposable
                 Failed(Profiles.Load(Profile("inline", "", ("LinkedServer", "Data Source=prod-sql;Initial Catalog=Orders;Integrated Security=True")))),
             "argument" => Failed(SecretReference.Of("--connection", credential)),   // how a connection argument is read
             "argument after file:" => Failed(SecretReference.Of("--connection", "file:" + credential)),
-            _ => Failed(SqlServer.Target.Parse(credential, "--target")),            // WP 1.4's target grammar
+            _ => Failed(SqlServer.Target(credential, "--target")),            // WP 1.4's target grammar
         };
 
         Assert.Equal((code, 6), (error.Code, Contract.Exit(error)));

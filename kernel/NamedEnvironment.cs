@@ -15,14 +15,15 @@ namespace Estate.Kernel;
 /// </summary>
 public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 {
-    private static readonly Regex Named = new(@"\A[a-z][a-z0-9-]{0,31}\z", RegexOptions.CultureInvariant);
-
-    private NamedEnvironment(string name, Classification classification, SortedArray<string> readers, SecretReference connection, string profilePath,
+    private NamedEnvironment(EnvironmentName name, Classification classification, SortedArray<string> readers, SecretReference connection, string profilePath,
         SortedArray<SqlCmdVariable> sqlCmd, SecretReference? metamodel) => (Name, Classification, Readers, Connection, ProfilePath, SqlCmd, Metamodel) =
         (name, classification, readers, connection, profilePath, sqlCmd, metamodel);
 
-    /// <summary>1 to 32 lowercase letters, digits and hyphens, from a letter: dev, qa, uat.</summary>
-    public string Name { get; }
+    /// <summary>The key estate/posture.json gives it: dev, qa, uat.</summary>
+    public EnvironmentName Name { get; }
+
+    /// <summary>The target that names it, env:&lt;name&gt;.</summary>
+    public Target Target => new Target.Environment(Name);
 
     public Classification Classification { get; }
 
@@ -41,10 +42,8 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
         SecretReference connection, string profilePath, IEnumerable<SqlCmdVariable> sqlCmd, SecretReference? metamodel)
     {
         var (groups, values) = (SortedArray.Of(readers), SortedArray.Of(sqlCmd));
-        return !Named.IsMatch(name)
-            ? new Error("posture.environment-name", subject + " names an environment in other than 1 to 32 lowercase letters, digits and hyphens.",
-                "Rename it with lowercase letters, digits and hyphens from a letter, such as dev or uat.")
-            : groups.Where((g, i) => string.IsNullOrWhiteSpace(g) || g.Any(char.IsControl) || (i > 0 && groups[i - 1] == g)).Any()
+        return EnvironmentName.Of(subject, name).Bind(environment =>
+            groups.Where((g, i) => string.IsNullOrWhiteSpace(g) || g.Any(char.IsControl) || (i > 0 && groups[i - 1] == g)).Any()
                 ? new Error("posture.readers", subject + " names a reader group that is blank or given twice.", "Name each group that reads the environment once.")
             : !InsideTheEstate(profilePath)
                 ? new Error("posture.profile-path", subject + " gives its profile a path that leaves the estate or names no .publish.xml.",
@@ -52,13 +51,13 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
             : values.Where((v, i) => i > 0 && string.Equals(values[i - 1].Name, v.Name, StringComparison.OrdinalIgnoreCase)).Any()
                 ? new Error("posture.sqlcmd-repeated", subject + " gives one SQLCMD variable twice; sqlcmd reads names in any case as one.",
                     "Keep one value for each SQLCMD variable.")
-            : new NamedEnvironment(name, classification, groups, connection, profilePath, values, metamodel);
+            : Result.Ok(new NamedEnvironment(environment, classification, groups, connection, profilePath, values, metamodel)));
     }
 
     /// <summary>By name, which the posture gives each environment once.</summary>
-    public int CompareTo(NamedEnvironment? other) => string.CompareOrdinal(Name, other?.Name);
+    public int CompareTo(NamedEnvironment? other) => other is null ? 1 : Name.CompareTo(other.Name);
 
-    public override string ToString() => "env:" + Name + " (" + Classification + ")";
+    public override string ToString() => Target + " (" + Classification + ")";
 
     private static bool InsideTheEstate(string? path) =>
         path is { Length: > 0 } && path.EndsWith(".publish.xml", StringComparison.Ordinal) && !path.StartsWith('/')

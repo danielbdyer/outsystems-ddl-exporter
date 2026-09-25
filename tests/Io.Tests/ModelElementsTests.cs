@@ -632,7 +632,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
             GoldenProject.Publish(dacpac, database, options);
         }
 
-        return Ok(SqlServer.Model(new SqlServer.Copy(database.Name, await SqlServerFixture.ServerAsync(), Repository.Root)));
+        return Ok(SqlServer.Model(new SqlServer.Copy(Ok(CopyName.Of("the registered database", database.Name)), await SqlServerFixture.ServerAsync(), Repository.Root)));
     }
 
     [Fact]

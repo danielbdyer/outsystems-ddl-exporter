@@ -221,7 +221,7 @@ public sealed class ContractTests
             {
                 Body = (here, _) =>
                 {
-                    SqlServer.Target.Parse(target).Bind(parsed => SqlServer.Resolve(parsed, here.Root));
+                    SqlServer.Target(target, "--target").Bind(parsed => SqlServer.Resolve(parsed, here.Root));
                     throw new InvalidOperationException(Planted);
                 },
             };

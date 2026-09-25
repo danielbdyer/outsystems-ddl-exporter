@@ -149,7 +149,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
         File.Copy(project.Profile, Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"), overwrite: true);
         File.WriteAllText(Path.Combine(root, "estate", "posture.json"), "{ \"environments\": { \"" + name + "\": { \"classification\": \"real\", \"connection\": \"file:"
             + file.Replace('\\', '/') + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\"" + extra + " } } }");
-        return Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:" + name)), root));
+        return Made(SqlServer.Resolve(Made(SqlServer.Target("env:" + name, "--target")), root));
     }
 
     /// <summary>queries.log as entries: a header line naming the site and the outcome (a row count, or the failure's number), the statement, then GO.</summary>

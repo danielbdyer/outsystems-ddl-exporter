@@ -40,7 +40,7 @@ public static partial class Verbs
     private static Envelope Drift(Checkout here, IReadOnlyList<string> words)
     {
         var (verb, stamp) = (Of("check"), Stamped(null, null));
-        if (Contract.Flags(words, ["--target", "--at"], ["--profile", "--project"], []).Bind(flags => SqlServer.Target.Parse(flags["--target"], "--target").Map(target => (Flags: flags, Target: target)))
+        if (Contract.Flags(words, ["--target", "--at"], ["--profile", "--project"], []).Bind(flags => SqlServer.Target(flags["--target"], "--target").Map(target => (Flags: flags, Target: target)))
             .Bind(asked => Io.Doctor.Toolchain(here.Root, Contract.Version).Map(pin => (asked.Flags, asked.Target, Pin: pin))).Failed(out var asked, out var error))
         {
             return Contract.Failed(verb, error, stamp);

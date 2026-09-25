@@ -33,43 +33,6 @@ public sealed class TargetTests : IDisposable
         }
     }
 
-    [Theory]
-    [Trait("Category", "fast")]
-    [InlineData("env:dev", "Env", "dev")]
-    [InlineData("env:uat-2", "Env", "uat-2")]
-    [InlineData("copy:estate_danny_pc_4242_0a1b2c3d", "Copy", "estate_danny_pc_4242_0a1b2c3d")]
-    [InlineData("synthetic-copy", "SyntheticCopy", "")]
-    [InlineData("ref:main", "Ref", "main")]
-    [InlineData("ref:origin/release/2026.09", "Ref", "origin/release/2026.09")]
-    [InlineData("dacpac:.estate/build/0a1b/SampleCatalog.dacpac", "Dacpac", ".estate/build/0a1b/SampleCatalog.dacpac")]
-    public void The_target_grammar_reads_each_form_into_its_case_and_writes_it_back(string text, string form, string named)
-    {
-        var target = Made(SqlServer.Target.Parse(text));
-
-        Assert.Equal(form, target.GetType().Name);
-        Assert.Equal(named, target.Match(e => e.Name, c => c.Name, () => "", r => r.Name, d => d.Path));
-        Assert.Equal(text, target.ToString());
-    }
-
-    [Theory]
-    [Trait("Category", "fast")]
-    [InlineData("sql:dev")]
-    [InlineData("dev")]
-    [InlineData("env:")]
-    [InlineData("env:DEV")]
-    [InlineData("env:ESTATE_DEV")]
-    [InlineData("synthetic-copy:dev")]
-    [InlineData("ref:")]
-    [InlineData("ref:-n")]
-    [InlineData("dacpac:")]
-    [InlineData("")]
-    public void An_unknown_target_form_is_a_bad_argument_at_exit_1(string text)
-    {
-        var error = Failed(SqlServer.Target.Parse(text));
-
-        Assert.Equal(("target.unknown", 1), (error.Code, Contract.Exit(error)));
-    }
-
     /// <summary>VALUES.md X1, M1 exit 7: a literal connection string given where a target goes is exit 6, and nothing of it is quoted.</summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -78,7 +41,7 @@ public sealed class TargetTests : IDisposable
     [InlineData("env:dev;Pwd=" + Planted)]
     public void A_literal_connection_string_as_a_target_is_exit_6_and_quoted_nowhere(string text)
     {
-        var error = Failed(SqlServer.Target.Parse(text, "--target"));
+        var error = Failed(SqlServer.Target(text, "--target"));
 
         Assert.Equal(("connection.literal", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains("--target", error.Message, StringComparison.Ordinal);
@@ -91,7 +54,7 @@ public sealed class TargetTests : IDisposable
     [Trait("Law", "a named environment cannot be written")]
     public void A_copy_the_registry_does_not_hold_is_exit_9()
     {
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target.Parse("copy:estate_nowhere_1_00000000")), scratch));
+        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("copy:estate_nowhere_1_00000000", "--target")), scratch));
 
         Assert.Equal(("copy.unregistered", 9), (error.Code, Contract.Exit(error)));
         Assert.Contains("copy:estate_nowhere_1_00000000", error.Message, StringComparison.Ordinal);
@@ -108,7 +71,7 @@ public sealed class TargetTests : IDisposable
     [InlineData("copy:estate_host_1_0a1b2c3d\n")]
     public void A_copy_named_as_no_copy_can_be_is_exit_9_and_its_name_is_quoted_nowhere(string text)
     {
-        var error = Failed(SqlServer.Target.Parse(text, "--target"));
+        var error = Failed(SqlServer.Target(text, "--target"));
 
         Assert.Equal(("copy.unregistered", 9), (error.Code, Contract.Exit(error)));
         Assert.Contains("--target", error.Message, StringComparison.Ordinal);
@@ -216,16 +179,16 @@ public sealed class TargetTests : IDisposable
     [Trait("Category", "fast")]
     public void A_copy_resolves_only_on_the_server_its_row_records_and_never_on_a_named_host()
     {
-        const string Name = "estate_host_1_0a1b2c3d";
-        var (clear, named) = (Registry(Estate(""), Name, "localhost,11433"), Registry(Estate(Dev(Written("dev.connection", "Server=127.0.0.1,1433;Initial Catalog=Dev"))), Name, "localhost,11433"));
+        var name = CopyName.Make("host", 1, 0x0a1b2c3d);
+        var (clear, named) = (Registry(Estate(""), name, "localhost,11433"), Registry(Estate(Dev(Written("dev.connection", "Server=127.0.0.1,1433;Initial Catalog=Dev"))), name, "localhost,11433"));
 
-        var there = Made(ScratchServer.Registered(clear, Name, () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
-        var elsewhere = Failed(ScratchServer.Registered(clear, Name, () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver));
-        var onNamedHost = Failed(ScratchServer.Registered(named, Name, () => throw new Xunit.Sdk.XunitException("the scratch server was chosen before R15 read the row's server"), Resolver));
+        var there = Made(ScratchServer.Registered(clear, name, () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
+        var elsewhere = Failed(ScratchServer.Registered(clear, name, () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver));
+        var onNamedHost = Failed(ScratchServer.Registered(named, name, () => throw new Xunit.Sdk.XunitException("the scratch server was chosen before R15 read the row's server"), Resolver));
 
-        Assert.Equal(("copy:" + Name, "localhost,11433"), (there.Target, ScratchServer.ServerName(null, Written("sql.env", "ESTATE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n.ToString(), r => r.Code)));
+        Assert.Equal(("copy:" + name, "localhost,11433"), (there.Target.ToString(), ScratchServer.ServerName(null, Written("sql.env", "ESTATE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n.ToString(), r => r.Code)));
         Assert.Equal(("copy.unregistered", 9), (elsewhere.Code, Contract.Exit(elsewhere)));
-        Assert.Contains("copy:" + Name, elsewhere.Message, StringComparison.Ordinal);
+        Assert.Contains("copy:" + name, elsewhere.Message, StringComparison.Ordinal);
         Assert.Equal(("copy.named-host", 9), (onNamedHost.Code, Contract.Exit(onNamedHost)));
         Assert.DoesNotContain(Planted, elsewhere.Message + elsewhere.Remedy + onNamedHost.Message + onNamedHost.Remedy, StringComparison.Ordinal);
     }
@@ -243,13 +206,13 @@ public sealed class TargetTests : IDisposable
         {
             var root = Estate("\"qa\": { \"connection\": \"env:" + variable + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
 
-            var named = Assert.IsType<SqlServer.EnvironmentDatabase>(Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:qa")), root)));
+            var named = Assert.IsType<SqlServer.EnvironmentDatabase>(Made(SqlServer.Resolve(Made(SqlServer.Target("env:qa", "--target")), root)));
 
             var resolved = new SqlConnectionStringBuilder(named.Connection);
             Assert.Equal((integrated, "Dev"), (resolved.IntegratedSecurity, resolved.InitialCatalog));
             Assert.Equal(integrated ? "" : "reader", resolved.UserID);
             Assert.Equal("env:qa", named.ToString());
-            Assert.Equal("env:qa", named.Target);
+            Assert.Equal("env:qa", named.Target.ToString());
             Assert.DoesNotContain(Planted, named.ToString() + named.Target + named.Environment, StringComparison.Ordinal);
         }
         finally
@@ -276,7 +239,7 @@ public sealed class TargetTests : IDisposable
         };
         var root = Estate("\"qa\": { \"connection\": \"" + reference.Replace("\\", "\\\\", StringComparison.Ordinal) + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
 
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:qa")), root));
+        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:qa", "--target")), root));
 
         Assert.Equal((code, 6), (error.Code, Contract.Exit(error)));
         Assert.Contains("env:qa", error.Message, StringComparison.Ordinal);
@@ -300,7 +263,7 @@ public sealed class TargetTests : IDisposable
     {
         var root = Estate(Dev(scratch.Replace('\\', '/') + "/" + name));
 
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root));
+        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root));
 
         Assert.Equal(("connection.unresolved", 6), (error.Code, Contract.Exit(error)));
         Assert.Equal(Server("localhost,11433"), Made(ScratchServer.Unnamed(root, Server("localhost,11433"), Resolver)));
@@ -335,7 +298,7 @@ public sealed class TargetTests : IDisposable
             repository.Commit("the connection file");
         }
 
-        var resolved = SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), repository.Root);
+        var resolved = SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), repository.Root);
 
         Assert.Equal(code, resolved.Match<string?>(_ => null, error => error.Code));
         resolved.Match(_ => 0, error =>
@@ -378,7 +341,7 @@ public sealed class TargetTests : IDisposable
         using var link = reference == ".estate/link/dev.connection" ? Linked(repository.Root) : null;
 
         var opens = File.Exists(Path.Combine(repository.Root, reference));
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), repository.Root));
+        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), repository.Root));
 
         Assert.True(opens || !OperatingSystem.IsWindows() || reference.Contains('~', StringComparison.Ordinal), reference + " opens no file on Windows");
         Assert.Equal((opens ? code : "connection.unresolved", 6), (error.Code, Contract.Exit(error)));
@@ -403,7 +366,7 @@ public sealed class TargetTests : IDisposable
         Result<SqlServer.Database> resolved;
         try
         {
-            resolved = SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), repository.Root);
+            resolved = SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), repository.Root);
         }
         finally
         {
@@ -430,7 +393,7 @@ public sealed class TargetTests : IDisposable
         repository.Write(("estate/broken/.git", "gitdir: nowhere\n"), ("estate/broken/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
         OwnerOnly(Path.Combine(repository.Root, "estate", "broken", "dev.connection"));
 
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), repository.Root));
+        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), repository.Root));
 
         Assert.Equal(("git.failed", 6), (error.Code, Contract.Exit(error)));
         Assert.StartsWith("env:dev's connection, file:estate/broken/dev.connection, cannot be checked against git: git rev-parse failed: ", error.Message, StringComparison.Ordinal);
@@ -458,7 +421,7 @@ public sealed class TargetTests : IDisposable
         var file = Written(Path.Combine("locked", "dev.connection"), "Server=127.0.0.1,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted);
         var root = Estate(Dev(file));
 
-        var use = () => (SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root), ScratchServer.Unnamed(root, Server("localhost,11433"), Resolver));
+        var use = () => (SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root), ScratchServer.Unnamed(root, Server("localhost,11433"), Resolver));
         var (resolved, unnamed) = denied switch
         {
             "folder" => RefusalPaths.Denied(Path.Combine(scratch, "locked"), use),
@@ -489,7 +452,7 @@ public sealed class TargetTests : IDisposable
         Environment.SetEnvironmentVariable("LC_MESSAGES", "de_DE.UTF-8");
         try
         {
-            resolved = SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root).Match<(string?, string?)>(database => (database.Target, null), error => (null, error.Code + ": " + error.Message));
+            resolved = SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root).Match<(string?, string?)>(database => (database.Target.ToString(), null), error => (null, error.Code + ": " + error.Message));
         }
         finally
         {
@@ -509,7 +472,7 @@ public sealed class TargetTests : IDisposable
         Directory.CreateDirectory(Path.Combine(root, "estate"));
         File.WriteAllText(Path.Combine(root, "estate", "posture.json"), "{ \"environments\": { " + Dev(Written("dev.connection", "Server=dev-sql;Initial Catalog=Dev;Password=" + Planted)) + " } }");
 
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), root));
+        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), root));
 
         Assert.Equal(("reference.no-repository", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains(root + " is in no git repository", error.Message, StringComparison.Ordinal);
@@ -531,7 +494,7 @@ public sealed class TargetTests : IDisposable
             File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
         }
 
-        var resolved = SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), Estate(Dev(file)));
+        var resolved = SqlServer.Resolve(Made(SqlServer.Target("env:dev", "--target")), Estate(Dev(file)));
 
         Assert.Equal(OperatingSystem.IsWindows() ? null : "reference.readable-by-others", resolved.Match<string?>(_ => null, error => error.Code));
         resolved.Match(_ => 0, error =>
@@ -551,7 +514,7 @@ public sealed class TargetTests : IDisposable
     [InlineData("synthetic-copy", "synthetic-copy.not-built", 6)]
     public void A_target_that_is_no_database_this_build_reads_is_refused_where_a_database_is_asked_for(string text, string code, int exit)
     {
-        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target.Parse(text)), scratch));
+        var error = Failed(SqlServer.Resolve(Made(SqlServer.Target(text, "--target")), scratch));
 
         Assert.Equal((code, exit), (error.Code, Contract.Exit(error)));
     }
@@ -573,8 +536,8 @@ public sealed class TargetTests : IDisposable
     public void A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept(int number, string code)
     {
         var root = Estate("\"qa\": { \"connection\": \"file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa") + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
-        var named = Made(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:qa")), root));
-        var copy = new SqlServer.Copy("estate_host_1_0a1b2c3d", "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
+        var named = Made(SqlServer.Resolve(Made(SqlServer.Target("env:qa", "--target")), root));
+        var copy = new SqlServer.Copy(CopyName.Make("host", 1, 0x0a1b2c3d), "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
         var message = "Conversion failed when converting the nvarchar value '" + Planted + "' to data type int.";
 
         var (fromNamed, fromCopy) = (named.ErrorOf(number, message), copy.ErrorOf(number, message));
@@ -601,8 +564,8 @@ public sealed class TargetTests : IDisposable
         Telemetry.OptOut();
         var root = Estate("\"qa\": { \"connection\": \"file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa") + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }");
         SqlServer.Database database = target == "env:qa"
-            ? Made(SqlServer.Resolve(Made(SqlServer.Target.Parse(target)), root))
-            : new SqlServer.Copy("estate_host_1_0a1b2c3d", "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
+            ? Made(SqlServer.Resolve(Made(SqlServer.Target(target, "--target")), root))
+            : new SqlServer.Copy(CopyName.Make("host", 1, 0x0a1b2c3d), "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
         var failure = Assert.IsType<Microsoft.SqlServer.Dac.DacServicesException>(Record.Exception(() =>
         {
             using var model = new Microsoft.SqlServer.Dac.Model.TSqlModel(Microsoft.SqlServer.Dac.Model.SqlServerVersion.Sql160, new Microsoft.SqlServer.Dac.Model.TSqlModelOptions());
@@ -636,7 +599,7 @@ public sealed class TargetTests : IDisposable
     private static string Dev(string connectionFile) => "\"dev\": { \"connection\": \"file:" + connectionFile + "\", \"profile\": \"estate/profiles/pipeline.publish.xml\" }";
 
     /// <summary>The estate's root with .estate/copies.json holding one copy, made on the server given.</summary>
-    private static string Registry(string root, string name, string server)
+    private static string Registry(string root, CopyName name, string server)
     {
         Directory.CreateDirectory(Path.Combine(root, ".estate"));
         File.WriteAllText(Path.Combine(root, ".estate", "copies.json"),

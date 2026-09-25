@@ -33,64 +33,21 @@ public static class SqlServer
     private static readonly HashSet<int> Silences = [-2, -1, 2, 20, 26, 35, 40, 53, 64, 121, 232, 233, 258, 1225, 10053, 10054, 10060, 10061, 11001, 11004, 17142, 18401, 40613];
 
     /// <summary>
-    /// Where a verb reads or writes, as an argument writes it (WP 1.4): env:&lt;name&gt;, an environment estate/posture.json names;
-    /// copy:&lt;name&gt;, a copy .estate/copies.json holds; synthetic-copy; ref:&lt;git ref&gt;; dacpac:&lt;path&gt;. The cases are closed.
+    /// The target an argument names (kernel/Target.cs), read for the argument <paramref name="subject"/>; a literal connection string, which
+    /// only SqlClient's grammar tells from a target, is connection.literal at exit 6, and no part of the argument is quoted.
     /// </summary>
-    public abstract record Target
-    {
-        private static readonly Regex Environment = new(@"\A[a-z][a-z0-9-]{0,31}\z", RegexOptions.CultureInvariant);
-        private static readonly Regex Registered = new(@"\A[a-z0-9_]{1,128}\z", RegexOptions.CultureInvariant);
-
-        private Target()
-        {
-        }
-
-        /// <summary>A target from an argument: a literal connection string is exit 6, copy: before a name no copy can carry is exit 9 (M1 exit 5), and no part of the argument is quoted.</summary>
-        public static Result<Target> Parse(string text, string subject = "--target") =>
-            Profiles.IsConnection(text) ? new Error("connection.literal", subject + " is a literal connection string, which no argument carries.",
-                "Name the target as env:NAME, an environment whose connection estate/posture.json gives as env:VARIABLE or file:path.")
-            : text == "synthetic-copy" ? new SyntheticCopy()
-            : After(text, "env:") is { } name && Environment.IsMatch(name) ? new Env(name)
-            : After(text, "copy:") is { } copy ? (Registered.IsMatch(copy) ? new Copy(copy) : new Error("copy.unregistered",
-                subject + " names a copy by a name no copy estate makes can carry, so " + ScratchServer.Registry + " holds none by it; a copy's name is estate_<host>_<pid>_<rand>, in lowercase letters, digits and '_'.",
-                "Name a copy that " + ScratchServer.Registry + " holds on this machine."))
-            : After(text, "ref:") is { Length: > 0 } reference && !reference.StartsWith('-') && !reference.Any(char.IsControl) ? new Ref(reference)
-            : After(text, "dacpac:") is { Length: > 0 } path && !path.Any(char.IsControl) ? new Dacpac(path)
-            : new Error("target.unknown", subject + " is none of env:<name>, copy:<name>, synthetic-copy, ref:<git ref> and dacpac:<path>.",
-                "Write the target in one of those forms, such as env:dev or ref:main.");
-
-        public T Match<T>(Func<Env, T> env, Func<Copy, T> copy, Func<T> syntheticCopy, Func<Ref, T> reference, Func<Dacpac, T> dacpac) => this switch
-        {
-            Env e => env(e),
-            Copy c => copy(c),
-            SyntheticCopy => syntheticCopy(),
-            Ref r => reference(r),
-            Dacpac d => dacpac(d),
-            _ => throw new System.Diagnostics.UnreachableException(),
-        };
-
-        public sealed override string ToString() => Match(e => "env:" + e.Name, c => "copy:" + c.Name, () => "synthetic-copy", r => "ref:" + r.Name, d => "dacpac:" + d.Path);
-
-        private static string? After(string text, string prefix) => text.StartsWith(prefix, StringComparison.Ordinal) ? text[prefix.Length..] : null;
-
-        public sealed record Env(string Name) : Target;
-
-        public sealed record Copy(string Name) : Target;
-
-        public sealed record SyntheticCopy : Target;
-
-        public sealed record Ref(string Name) : Target;
-
-        public sealed record Dacpac(string Path) : Target;
-    }
+    public static Result<Target> Target(string text, string subject) =>
+        Profiles.IsConnection(text) ? new Error("connection.literal", subject + " is a literal connection string, which no argument carries.",
+            "Name the target as env:NAME, an environment whose connection estate/posture.json gives as env:VARIABLE or file:path.")
+        : Kernel.Target.Parse(text, subject);
 
     /// <summary>A live database the tool reads: a named environment's or a copy's. Its resolved connection stays inside io, and it prints as its target.</summary>
     public abstract class Database
     {
-        private protected Database(string target, string connection) => (Target, Connection) = (target, connection);
+        private protected Database(Target target, string connection) => (Target, Connection) = (target, connection);
 
-        /// <summary>The target as an argument writes it: env:dev, copy:estate_host_4242_0a1b2c3d.</summary>
-        public string Target { get; }
+        /// <summary>The target that names it: env:dev, copy:estate_host_4242_0a1b2c3d.</summary>
+        public Target Target { get; }
 
         internal string Connection { get; }
 
@@ -158,14 +115,14 @@ public static class SqlServer
                     "Look the number up in SQL Server's error list, correct what it names, then run the step again.");
         }
 
-        public sealed override string ToString() => Target;
+        public sealed override string ToString() => Target.ToString();
     }
 
     /// <summary>The database of an environment estate/posture.json names: read only, and never published to (VALUES.md S7).</summary>
     public sealed class EnvironmentDatabase : Database
     {
         private EnvironmentDatabase(NamedEnvironment environment, string connection, string estateRoot)
-            : base("env:" + environment.Name, connection) => (Environment, Root) = (environment, estateRoot);
+            : base(environment.Target, connection) => (Environment, Root) = (environment, estateRoot);
 
         public NamedEnvironment Environment { get; }
 
@@ -177,7 +134,7 @@ public static class SqlServer
             Connect(Subject(environment), environment.Connection, estateRoot).Map(c => new EnvironmentDatabase(environment, c, estateRoot));
 
         /// <summary>How an error about an environment's connection names it: its environment and its reference, never what the reference resolves to.</summary>
-        internal static string Subject(NamedEnvironment environment) => "env:" + environment.Name + "'s connection, " + environment.Connection + ",";
+        internal static string Subject(NamedEnvironment environment) => environment.Target + "'s connection, " + environment.Connection + ",";
     }
 
     /// <summary>
@@ -186,10 +143,10 @@ public static class SqlServer
     /// </summary>
     public sealed class Copy : Database
     {
-        internal Copy(string name, string server, string estateRoot)
-            : base("copy:" + name, new SqlConnectionStringBuilder(server) { InitialCatalog = name }.ConnectionString) => (Name, Root) = (name, estateRoot);
+        internal Copy(CopyName name, string server, string estateRoot)
+            : base(new Target.RegisteredCopy(name), new SqlConnectionStringBuilder(server) { InitialCatalog = name.ToString() }.ConnectionString) => (Name, Root) = (name, estateRoot);
 
-        public string Name { get; }
+        public CopyName Name { get; }
 
         /// <summary>The estate whose registry holds this copy.</summary>
         internal string Root { get; }
@@ -202,23 +159,24 @@ public static class SqlServer
         /// <summary>The package published to this copy under the profile's options, Strict or this copy's Permissive, the package loaded from a stream.</summary>
         public Result<Copy> Publish(string dacpac, PublishProfile profile) => Reached(this, null).Bind(_ => Loaded(dacpac, this, package =>
         {
-            new DacServices(Connection).Publish(package, Name, new PublishOptions { DeployOptions = profile.Options() });
+            new DacServices(Connection).Publish(package, Name.ToString(), new PublishOptions { DeployOptions = profile.Options() });
             return Result.Ok(this);
         }));
     }
 
     /// <summary>
     /// A target as a database: env: through estate/posture.json and the environment's connection reference; copy: through
-    /// .estate/copies.json alone (io/ScratchServer). A git ref and a package are read as packages, and the synthetic copy arrives in M3.
+    /// .estate/copies.json alone (io/ScratchServer). A git ref and a package are read as packages, and the synthetic copy is not in
+    /// this build.
     /// </summary>
     public static Result<Database> Resolve(Target target, string estateRoot) => target.Match<Result<Database>>(
-        env => Profiles.Environments(estateRoot).Bind(environments => environments.FirstOrDefault(e => e.Name == env.Name) is { } named
+        environment => Profiles.Environments(estateRoot).Bind(environments => environments.FirstOrDefault(e => e.Name == environment.Name) is { } named
             ? EnvironmentDatabase.Of(named, estateRoot).Map(n => (Database)n)
-            : new Error("target.unnamed", env + " names no environment of " + Profiles.Posture + ".", environments.Count == 0
+            : new Error("target.unnamed", environment + " names no environment of " + Profiles.Posture + ".", environments.Count == 0
                 ? "Add the environment to " + Profiles.Posture + " with its connection reference and profile."
-                : "Name one it holds: " + string.Join(", ", environments.Select(e => "env:" + e.Name)) + ".")),
+                : "Name one it holds: " + string.Join(", ", environments.Select(e => e.Target)) + ".")),
         copy => ScratchServer.Registered(estateRoot, copy.Name).Map(c => (Database)c),
-        () => new Error("synthetic-copy.not-built", "synthetic-copy names the synthetic copy, which arrives in M3 (Synthetic copy); this build reads env: and copy: databases.",
+        () => new Error("synthetic-copy.not-built", "synthetic-copy names the synthetic copy, which is not in this build; this build reads env: and copy: databases.",
             "Name an env: or a copy: target; estate --help lists what this build runs."),
         reference => NotADatabase(reference),
         dacpac => NotADatabase(dacpac));
@@ -415,7 +373,7 @@ public static class SqlServer
     internal static Result<string> Connect(string subject, SecretReference reference, string estateRoot) => Read(subject, reference, estateRoot).Bind(read => read is not { } text
         ? new Error("connection.unresolved", subject + " resolves to nothing here.", "Set the variable, or write the file outside git, that " + reference + " names.")
         : Parsed(subject, reference, text).Bind(connection => connection.InitialCatalog.Length == 0
-            ? new Error("connection.malformed", subject + " names no database; Model, Plan and Measure read the database it names.",
+            ? new Error("connection.malformed", subject + " names no database; every read reads the database the connection names.",
                 "Give the connection string an Initial Catalog, in the place " + reference + " names.")
             : Result.Ok(Identified(connection))));
 
@@ -628,7 +586,7 @@ public static class SqlServer
     }
 
     private static Error NotADatabase(Target target) => new Error("target.not-a-database",
-        target + " is read as a package; Model, Plan and Measure read a database, env:<name> or copy:<name>.", "Name the database as env:<name> or copy:<name>.");
+        target + " is read as a package, and a database is asked for here: env:<name> or copy:<name>.", "Name the database as env:<name> or copy:<name>.");
 
     /// <summary>The target, when it answers this identity with VIEW DEFINITION: what a verb asks before it builds anything, so a denial arrives first.</summary>
     public static Result<Database> Reach(Database target, QueryLog? log = null) => Reached(target, log);

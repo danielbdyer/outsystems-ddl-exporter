@@ -130,7 +130,7 @@ public sealed class NamedEnvironmentTests
     {
         var environment = Made(Environment("dev", Pipeline, readers: ["leads", "developers"], sqlCmd: [Literal("Tag", "dev"), Referenced("ServicePassword", "env:ESTATE_PW")]));
 
-        Assert.Equal("dev", environment.Name);
+        Assert.Equal("dev", environment.Name.ToString());
         Assert.Equal(["developers", "leads"], environment.Readers);
         Assert.Equal(["ServicePassword", "Tag"], environment.SqlCmd.Select(v => v.Name));
         Assert.Equal(("env:ESTATE_DEV", Pipeline, (string?)"file:.estate/dev-ossys.connection"), (environment.Connection.ToString(), environment.ProfilePath, environment.Metamodel?.ToString()));
