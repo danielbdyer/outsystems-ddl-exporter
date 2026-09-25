@@ -72,10 +72,45 @@ public static class ScratchServer
         return Run(copy, "DROP DATABASE", Unmake, log).Bind(_ => Change(copy.Root, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())])).Map(_ => copy.Name);
     }
 
-    /// <summary>The digest of the SQL Server image a database runs in: the pinned image's for a copy on the estate-sql container; none on LocalDB or a server ESTATE_SQL names.</summary>
-    public static string? Image(SqlServer.Database target) => target is SqlServer.Copy copy && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ESTATE_SQL"))
-        && Server(null, SqlEnv, localDb: false).Bind(ServerName) is Result<Kernel.ServerName>.Ok { Value: var container }
-        && ServerName(copy.Connection) is Result<Kernel.ServerName>.Ok { Value: var made } && made == container ? Doctor.ImageDigest : null;
+    /// <summary>
+    /// The digest of the SQL Server image a database runs in, as Docker reports it for the running estate-sql container (finding
+    /// ARCH-07), for a copy whose server is the port that container publishes on this machine, however ESTATE_SQL or ~/.estate/sql.env
+    /// reached it: the registry digest the image was pulled by (docker image inspect's RepoDigests), which Doctor.ImageDigest pins; or,
+    /// for an image built or loaded on the machine, which no registry names, its image id. Null for a named environment, a copy on
+    /// another server (LocalDB among them), and where Docker or the container does not answer.
+    /// </summary>
+    public static string? Image(SqlServer.Database target) => Image(target, Doctor.Run);
+
+    internal static string? Image(SqlServer.Database target, Doctor.Command run)
+    {
+        if (target is not SqlServer.Copy copy || ServerName(copy.Connection) is not Result<Kernel.ServerName>.Ok { Value: { Host: var host } server } || host != Host.Localhost
+            || run("docker", ["container", "inspect", "--format", "{{.Image}} {{json .NetworkSettings.Ports}}", Container]) is not (0, var inspected)
+            || inspected.Trim().Split(' ', 2) is not [var id, var ports])
+        {
+            return null;
+        }
+
+        try
+        {
+            var published = JsonNode.Parse(ports)?["1433/tcp"]?.AsArray().Select(binding => (string?)binding?["HostPort"]).OfType<string>() ?? [];
+            return !published.Any(port => Kernel.ServerName.Of("127.0.0.1," + port, Environment.MachineName) == server) ? null
+                : run("docker", ["image", "inspect", "--format", "{{json .RepoDigests}}", id]) is (0, var digests)
+                    && JsonNode.Parse(digests)?.AsArray().Select(d => ((string?)d)?.Split('@', 2)).OfType<string[]>()
+                        .Where(d => d.Length == 2 && d[1].StartsWith("sha256:", StringComparison.Ordinal)).ToList() is { } pulled
+                    ? (pulled.FirstOrDefault(d => d[0] == PinnedRepository) ?? pulled.FirstOrDefault())?[1] ?? id
+                : null;
+        }
+        catch (Exception e) when (e is JsonException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The container ci/sql.sh and ci/sql.ps1 run the scratch server in.</summary>
+    private const string Container = "estate-sql";
+
+    /// <summary>The repository of the pinned image (Doctor.SqlServerImage without its tag and digest), whose registry digest is preferred where an image was pulled from several.</summary>
+    private static readonly string PinnedRepository = Doctor.SqlServerImage.Split('@')[0] is var reference ? reference[..reference.LastIndexOf(':')] : "";
 
     internal static Result<string> Server() =>
         Server(Environment.GetEnvironmentVariable("ESTATE_SQL"), SqlEnv, OperatingSystem.IsWindows() && Doctor.Run("sqllocaldb", ["info", "MSSQLLocalDB"]) is (0, _));
