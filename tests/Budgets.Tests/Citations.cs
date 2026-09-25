@@ -74,7 +74,7 @@ public sealed class Citations
     [InlineData("LAWS.md", true)]
     [InlineData("packages.lock.json", true)]
     [InlineData(".estate/copies.json", true)]
-    [InlineData("knowledge/record.md", true)]
+    [InlineData("knowledge/description.md", true)]
     [InlineData("estate/ledgers/in-flight.md", false)]
     [InlineData("tools/estate/", false)]
     [InlineData("STATE.md", false)]

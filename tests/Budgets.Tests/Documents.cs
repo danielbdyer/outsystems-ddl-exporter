@@ -60,7 +60,7 @@ internal static class Documents
     /// <summary>
     /// The engine's own documents, VALUES.md first: the hand-written markdown less DECISIONS.md, a dated log whose
     /// lines never change and often name what a decision rejected, and less a row a later milestone generates, whose
-    /// register is the record's. Register.Prose and Citations read these.
+    /// register is knowledge/description.md's. Register.Prose and Citations read these.
     /// </summary>
     public static IEnumerable<string> Engine => HandWritten
         .Where(p => p != "DECISIONS.md" && Rows.Single(r => r.Path == p).Becomes is null)

@@ -11,7 +11,7 @@ namespace Estate.Budgets.Tests.Register;
 /// <summary>
 /// The engine's documents are in the register: no retired word, no numbered axis, no antithesis tic, as
 /// ci/register.json lists them from the instruction architecture's Appendix A. VALUES.md first, because a register of
-/// one-sentence values is the document most likely to break the register's own rules. knowledge/record.md replaces
+/// one-sentence values is the document most likely to break the register's own rules. knowledge/description.md replaces
 /// the list at M7; the five root design documents are excluded until M8.
 /// </summary>
 public sealed class Prose
