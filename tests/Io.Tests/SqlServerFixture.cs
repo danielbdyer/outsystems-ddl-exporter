@@ -105,6 +105,12 @@ public static class SqlServerFixture
             throw new InvalidOperationException("ci/sql up failed:\n" + output);
         }
 
+        // Finding NFR-13: the scripts leave the SA password readable by its owner alone, mode 0600; Windows keeps no such mode.
+        if (!OperatingSystem.IsWindows() && File.GetUnixFileMode(ScratchServer.SqlEnv) is var mode && mode != (UnixFileMode.UserRead | UnixFileMode.UserWrite))
+        {
+            throw new InvalidOperationException(ScratchServer.SqlEnv + " is mode " + Convert.ToString((int)mode, 8) + " after ci/sql up, and the SA password it holds is read by its owner alone (0600).");
+        }
+
         return true;
     }
 

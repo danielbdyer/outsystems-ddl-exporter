@@ -2,7 +2,8 @@
 # The machine's shared SQL Server for tests and sessions (V3_MILESTONES.md WP 0.7, section 1 fact 12): one container, estate-sql,
 # from the image pinned by tag and digest, SQL Server Agent on (CDC needs it), published on 127.0.0.1 only. Its SA password
 # is generated once per machine and kept only in ~/.estate/sql.env; nothing here prints it. ci/sql.sh is the same elsewhere.
-#   ci/sql.ps1 up     pull the image when absent, create or start the container, wait until SQL Server answers
+#   ci/sql.ps1 up     pull the image when absent, make the container again when it runs another image, create or start it,
+#                     wait until SQL Server answers
 #   ci/sql.ps1 down   remove the container; the password stays for the next up
 #   ci/sql.ps1 conn   set ESTATE_SQL for this PowerShell session (run it as ./ci/sql.ps1 conn); nothing is printed
 param([Parameter(Mandatory)][ValidateSet('up', 'down', 'conn')][string]$Verb)
@@ -46,13 +47,25 @@ function Up {
     docker info *> $null
     if ($LASTEXITCODE -ne 0) { Fail 'Docker does not answer (docker info): start Docker, or set ESTATE_SQL to another SQL Server' 4 }
     Lock
+    docker image inspect $image *> $null
+    if ($LASTEXITCODE -ne 0) {
+        docker pull $image | Out-Host
+        if ($LASTEXITCODE -ne 0) { Fail "docker pull $image failed; its output is above" }
+    }
+    # A container made from another image than the pinned one (an older pin, or one made by hand) is removed and made again from the
+    # pinned image, so the image a copy ran in is the one pinned; the copies it held go with it, and sql.env keeps the password.
+    if ((State) -and (docker container inspect --format '{{.Image}}' $name) -ne (docker image inspect --format '{{.Id}}' $image)) {
+        [Console]::Error.WriteLine("ci/sql.ps1: $name runs another image than $image; it is made again from the pinned image")
+        docker rm -f $name *> $null
+    }
     if (-not (State)) {
         $password = Value 'MSSQL_SA_PASSWORD'
         if (-not $password) { $password = 'Est!' + [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(16)).ToLowerInvariant() }
         $port = if ($env:ESTATE_SQL_PORT) { $env:ESTATE_SQL_PORT } else { '11433' }
         [IO.File]::WriteAllText($envFile, "MSSQL_SA_PASSWORD=$password`nESTATE_SQL_PORT=$port`n")
-        docker image inspect $image *> $null
-        if ($LASTEXITCODE -ne 0) { docker pull $image | Out-Host }
+        # Its owner alone reads the password, as ci/sql.sh's umask and chmod make it; Windows keeps no such mode, and the file inherits
+        # the private ACL of the user's profile folder there.
+        if (-not $IsWindows) { [IO.File]::SetUnixFileMode($envFile, [IO.UnixFileMode]'UserRead, UserWrite') }
         docker run -d --name $name --env-file $envFile -e ACCEPT_EULA=Y -e MSSQL_AGENT_ENABLED=true -p "127.0.0.1:${port}:1433" $image | Out-Null
         if ($LASTEXITCODE -ne 0) {
             docker rm -f $name *> $null
