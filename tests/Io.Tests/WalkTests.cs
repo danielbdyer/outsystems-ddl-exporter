@@ -24,19 +24,19 @@ namespace Estate.Io.Tests;
 [Collection(PublishedToolCollection.Name)]
 public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output) : IClassFixture<ProvingGroundWalks>
 {
-    /// <summary>What each archetype's change names, one line per element added, removed, renamed or changed.</summary>
+    /// <summary>What each archetype's change names, one line per element created, dropped, renamed or altered.</summary>
     private static readonly Dictionary<string, string[]> Named = new()
     {
         ["make-mandatory"] = ["Column [dbo].[Customer].[Email]: Nullable true → false"],
-        ["add a nullable column"] = ["added Column [dbo].[Customer].[Nickname]", "Table [dbo].[Customer]: Columns"],
-        ["drop a column"] = ["removed Column [dbo].[Product].[LegacyCode]", "removed DefaultConstraint [dbo].[DF_Product_LegacyCode]", "Table [dbo].[Product]: Columns"],
+        ["add a nullable column"] = ["created Column [dbo].[Customer].[Nickname]", "Table [dbo].[Customer]: Columns"],
+        ["drop a column"] = ["dropped Column [dbo].[Product].[LegacyCode]", "dropped DefaultConstraint [dbo].[DF_Product_LegacyCode]", "Table [dbo].[Product]: Columns"],
         ["widen a column"] = ["Column [dbo].[Product].[Code]: Length 50 → 100"],
-        ["add a check constraint"] = ["added CheckConstraint [dbo].[CK_Product_Code]"],
-        ["add a foreign key"] = ["added ForeignKeyConstraint [dbo].[FK_Order_Customer_CustomerId]"],
+        ["add a check constraint"] = ["created CheckConstraint [dbo].[CK_Product_Code]"],
+        ["add a foreign key"] = ["created ForeignKeyConstraint [dbo].[FK_Order_Customer_CustomerId]"],
         ["a seed edit"] = ["PostDeploymentScript [PostDeploy]: Text"],
         ["a pre-deploy edit"] = ["PreDeploymentScript [PreDeploy]: Text"],
         ["rename a column"] = [
-            "added RefactorLogOperation [" + ProvingGroundWalks.RenameKey + "]",
+            "created RefactorLogOperation [" + ProvingGroundWalks.RenameKey + "]",
             "renamed Column [dbo].[Customer].[ContactPhone] to Column [dbo].[Customer].[MobileNumber]"],
     };
 
@@ -100,8 +100,8 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
         Assert.Equal([new Rename(phone, mobile)], after.Renames);
         Assert.Equal([new Rename(phone, mobile)], Between("base", "rename a column").Renamed);
         var lost = Ok(Change.Between(before.Elements, SortedArray.Of(after.Elements.Where(e => e.Key.Type != Element.RefactorLogOperation)), []));
-        Assert.Equal([mobile], lost.Added.Select(e => e.Key));
-        Assert.Equal([phone], lost.Removed.Select(e => e.Key));
+        Assert.Equal([mobile], lost.Created.Select(e => e.Key));
+        Assert.Equal([phone], lost.Dropped.Select(e => e.Key));
     }
 
     /// <summary>
@@ -121,7 +121,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
         Assert.Contains(after.Elements, e => e.Key.ToString() == "Column [dbo].[AAA].[Host]");
         Assert.Equal([rename], after.Renames);
         Assert.Equal([rename], change.Renamed);
-        Assert.Empty(change.Removed);
+        Assert.Empty(change.Dropped);
     }
 
     /// <summary>
@@ -237,7 +237,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
 
     /// <summary>
     /// The M1 alignment review's case (2026-09-24): dbo.T (B INT DEFAULT 0, C INT DEFAULT 5) becomes (B INT DEFAULT 0, A INT DEFAULT 5)
-    /// with the refactorlog's entry renaming C to A. Keyed by position, the two defaults swapped keys and read as two changed
+    /// with the refactorlog's entry renaming C to A. Keyed by position, the two defaults swapped keys and read as two altered
     /// Expressions; keyed under their columns, the change is the rename and the refactorlog's new entry, nothing else.
     /// </summary>
     [Fact]
@@ -250,7 +250,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
         var change = Ok(Change.Between(before.Elements, after.Elements, after.Renames));
 
         Assert.Equal(["renamed Column [dbo].[T].[C] to Column [dbo].[T].[A]"], change.Renamed.Select(r => "renamed " + r.Before + " to " + r.After));
-        Assert.Equal(["added RefactorLogOperation [" + RenameKey + "]"], Lines(change).Where(line => !line.StartsWith("renamed ", StringComparison.Ordinal)));
+        Assert.Equal(["created RefactorLogOperation [" + RenameKey + "]"], Lines(change).Where(line => !line.StartsWith("renamed ", StringComparison.Ordinal)));
     }
 
     /// <summary>
@@ -269,7 +269,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
 
         Assert.Contains("C > 5", Expression(before.Elements.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[C].[ExpressionDependencies]")), StringComparison.Ordinal);
         Assert.Contains("A > 5", Expression(after.Elements.Single(e => e.Key.ToString() == "CheckConstraint [dbo].[T].[A].[ExpressionDependencies]")), StringComparison.Ordinal);
-        Assert.Equal(["CheckConstraint [dbo].[T].[A].[ExpressionDependencies]: Expression"], Lines(change).Where(line => !line.StartsWith("renamed ", StringComparison.Ordinal) && !line.StartsWith("added ", StringComparison.Ordinal)));
+        Assert.Equal(["CheckConstraint [dbo].[T].[A].[ExpressionDependencies]: Expression"], Lines(change).Where(line => !line.StartsWith("renamed ", StringComparison.Ordinal) && !line.StartsWith("created ", StringComparison.Ordinal)));
         Assert.Single(change.Renamed);
     }
 
@@ -277,7 +277,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     /// The case from the review of H1's second round (2026-09-25): dbo.T (Id, B INT NULL CHECK (B &gt; 0), A INT NULL CHECK (A &gt; 5)) becomes
     /// (Id, B …, X INT NULL CHECK (X &lt; 9), A …), a column carrying an unnamed check inserted ahead of another checked column. Each
     /// check is keyed under its column, so the change is the new column, its check and the table's column list, and neither
-    /// existing check reads as changed.
+    /// existing check reads as altered.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -287,7 +287,7 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
         var after = Packaged("CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, B INT NULL CHECK (B > 0), X INT NULL CHECK (X < 9), A INT NULL CHECK (A > 5));");
 
         Assert.Equal(
-            ["Table [dbo].[T]: Columns", "added CheckConstraint [dbo].[T].[X].[ExpressionDependencies]", "added Column [dbo].[T].[X]"],
+            ["Table [dbo].[T]: Columns", "created CheckConstraint [dbo].[T].[X].[ExpressionDependencies]", "created Column [dbo].[T].[X]"],
             Lines(Ok(Change.Between(before, after, []))).Order(StringComparer.Ordinal));
     }
 
@@ -732,12 +732,12 @@ public sealed class WalkTests(ProvingGroundWalks walks, ITestOutputHelper output
     private Change Between(string before, string after) =>
         Ok(Change.Between(walks.Reads[before].Elements, walks.Reads[after].Elements, walks.Reads[after].Renames));
 
-    /// <summary>A change as lines: each element added, removed or renamed, and each property (with its values, a script's text left out) or relationship that differs.</summary>
+    /// <summary>A change as lines: each element created, dropped or renamed, and each property (with its values, a script's text left out) or relationship that is altered.</summary>
     private static IEnumerable<string> Lines(Change change) =>
-        change.Added.Select(e => "added " + e.Key)
-            .Concat(change.Removed.Select(e => "removed " + e.Key))
+        change.Created.Select(e => "created " + e.Key)
+            .Concat(change.Dropped.Select(e => "dropped " + e.Key))
             .Concat(change.Renamed.Select(r => "renamed " + r.Before + " to " + r.After))
-            .Concat(change.Changed.SelectMany(a => a.Properties
+            .Concat(change.Altered.SelectMany(a => a.Properties
                 .Select(p => a.Key + ": " + p.Name + (p.Before is Value.Text || p.After is Value.Text ? "" : " " + p.Before + " → " + p.After))
                 .Concat(a.Relationships.Select(r => a.Key + ": " + r.Name))));
 

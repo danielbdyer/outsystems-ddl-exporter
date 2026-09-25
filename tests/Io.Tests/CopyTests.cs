@@ -78,8 +78,8 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
 
             Assert.Equal(schema.Select(e => e.Key), first.Select(e => e.Key));
             Assert.Equal(Fingerprint.Of(first), Fingerprint.Of(second));
-            Assert.DoesNotContain(Made(Change.Between(schema, first, [])).Changed, MakesMandatory);
-            Assert.Contains(Made(Change.Between(packaged.Elements, head.Elements, head.Renames)).Changed, MakesMandatory);
+            Assert.DoesNotContain(Made(Change.Between(schema, first, [])).Altered, MakesMandatory);
+            Assert.Contains(Made(Change.Between(packaged.Elements, head.Elements, head.Renames)).Altered, MakesMandatory);
         }
         finally
         {
@@ -182,7 +182,7 @@ public sealed class CopyTests(ProvingGround ground) : IClassFixture<ProvingGroun
         Assert.DoesNotContain("withheld", error.Message, StringComparison.Ordinal);
     }
 
-    private static bool MakesMandatory(Change.Altered altered) =>
+    private static bool MakesMandatory(Change.Alteration altered) =>
         altered.Key.ToString() == "Column [dbo].[Customer].[Email]" && altered.Properties.Any(p => p.Name == "Nullable");
 
     private JsonArray Registry() => File.Exists(Path.Combine(root, ".estate", "copies.json"))

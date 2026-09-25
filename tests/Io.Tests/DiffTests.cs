@@ -99,9 +99,9 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         var answer = JsonNode.Parse(output)!;
         ScratchEstate.Valid("estate.diff.1.schema.json", answer);
         Assert.Equal(0, exit);
-        var changed = Assert.Single(answer["diff"]!["change"]!["changed"]!.AsArray())!;
-        Assert.Equal("Column [dbo].[Customer].[Email]", (string?)changed["key"]);
-        var property = Assert.Single(changed["properties"]!.AsArray())!;
+        var altered = Assert.Single(answer["diff"]!["change"]!["altered"]!.AsArray())!;
+        Assert.Equal("Column [dbo].[Customer].[Email]", (string?)altered["key"]);
+        var property = Assert.Single(altered["properties"]!.AsArray())!;
         Assert.Equal(("Nullable", true, false), ((string?)property["name"], (bool)property["before"]!, (bool)property["after"]!));
         Assert.NotEqual((string?)answer["diff"]!["from"]!["fingerprint"], (string?)answer["diff"]!["to"]!["fingerprint"]);
         Assert.Equal(Doctor.DacFx, (string?)answer["engine"]!["dacfx"]);

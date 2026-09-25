@@ -8,8 +8,8 @@ using static Estate.Kernel.Tests.ElementSets;
 namespace Estate.Kernel.Tests;
 
 /// <summary>
-/// The change between two reads names what was added, removed, renamed (a pair the refactorlog records, whose
-/// children and references move with it) and changed, property by property and relationship by relationship, the
+/// The change between two reads names what was created, dropped, renamed (a pair the refactorlog records, whose
+/// children and references move with it) and altered, property by property and relationship by relationship, the
 /// deploy scripts included. Generated sets pin the algebra; the archetype pairs pin what each archetype names.
 /// </summary>
 public sealed class ChangeTests
@@ -37,8 +37,8 @@ public sealed class ChangeTests
         Renamings.Sample(
             r => Ok(Change.Between(r.Before, r.After, r.Renames)) is var change
                 && change.Renamed == r.Expected
-                && change.Removed == SortedArray.Of(r.Dropped)
-                && change.Added == SortedArray.Of(r.After.Where(e => !r.Kept.Any(k => Final(k, r.Entries) == e.Key))),
+                && change.Dropped == SortedArray.Of(r.Dropped)
+                && change.Created == SortedArray.Of(r.After.Where(e => !r.Kept.Any(k => Final(k, r.Entries) == e.Key))),
             print: Print, iter: 1000);
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class ChangeTests
         var change = Between("make-mandatory");
 
         Assert.Equal(Altered(Archetypes.Email, [new Change.Property("Nullable", Bool(true), Bool(false))]), change);
-        var line = change.Changed.SelectMany(a => a.Properties.Select(p => a.Key + ": " + p.Name + " " + p.Before + " → " + p.After));
+        var line = change.Altered.SelectMany(a => a.Properties.Select(p => a.Key + ": " + p.Name + " " + p.Before + " → " + p.After));
         Assert.Equal("Column [dbo].[Customer].[Email]: Nullable true → false", Assert.Single(line));
     }
 
@@ -142,10 +142,10 @@ public sealed class ChangeTests
         var address = Key(Archetypes.Customer, "Column", "EmailAddress");
         var change = Ok(Change.Between(before, SortedArray.Of(after.Where(e => e != Archetypes.EmailEntry)), []));
 
-        Assert.Equal(new[] { after.Single(e => e.Key == address) }, change.Added);
-        Assert.Equal(new[] { before.Single(e => e.Key == Archetypes.Email) }, change.Removed);
+        Assert.Equal(new[] { after.Single(e => e.Key == address) }, change.Created);
+        Assert.Equal(new[] { before.Single(e => e.Key == Archetypes.Email) }, change.Dropped);
         Assert.Empty(change.Renamed);
-        Assert.Equal(new[] { Archetypes.Customer, Archetypes.EmailIndex }, change.Changed.Select(a => a.Key));
+        Assert.Equal(new[] { Archetypes.Customer, Archetypes.EmailIndex }, change.Altered.Select(a => a.Key));
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public sealed class ChangeTests
         return Ok(Change.Between(before, after, renames));
     }
 
-    private static Change.Altered Columns(string[] before, string[] after) => new(
+    private static Change.Alteration Columns(string[] before, string[] after) => new(
         Archetypes.Customer,
         [],
         [new Change.Relationship("Columns", Targets(before), Targets(after))]);

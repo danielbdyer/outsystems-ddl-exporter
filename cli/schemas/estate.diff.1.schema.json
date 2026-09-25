@@ -136,20 +136,20 @@
               "type": "object",
               "additionalProperties": false,
               "required": [
-                "added",
-                "removed",
+                "created",
+                "dropped",
                 "renamed",
-                "changed"
+                "altered"
               ],
               "properties": {
-                "added": {
+                "created": {
                   "type": "array",
                   "items": {
                     "type": "string",
                     "minLength": 1
                   }
                 },
-                "removed": {
+                "dropped": {
                   "type": "array",
                   "items": {
                     "type": "string",
@@ -177,7 +177,7 @@
                     }
                   }
                 },
-                "changed": {
+                "altered": {
                   "type": "array",
                   "items": {
                     "type": "object",

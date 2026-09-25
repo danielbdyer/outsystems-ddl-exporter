@@ -16,9 +16,9 @@ public static partial class Verbs
             ["from"] = Side(), ["to"] = Side(),
             ["change"] = Render.Record(new()
             {
-                ["added"] = Render.List(Render.Text()), ["removed"] = Render.List(Render.Text()),
+                ["created"] = Render.List(Render.Text()), ["dropped"] = Render.List(Render.Text()),
                 ["renamed"] = Render.List(Render.Record(new() { ["before"] = Render.Text(), ["after"] = Render.Text() })),
-                ["changed"] = Render.List(Render.Record(new()
+                ["altered"] = Render.List(Render.Record(new()
                 {
                     ["key"] = Render.Text(),
                     ["properties"] = Render.List(Render.Record(new() { ["name"] = Render.Text(), ["before"] = Values(), ["after"] = Values() })),
@@ -54,21 +54,21 @@ public static partial class Verbs
             });
     }
 
-    /// <summary>A change as lines: each element added, removed or renamed, then each property (with its values, a text's left out) or relationship that differs.</summary>
+    /// <summary>A change as lines: each element created, dropped or renamed, then each property (with its values, a text's left out) or relationship that is altered.</summary>
     internal static IEnumerable<string> Lines(Change change) =>
-        change.Added.Select(e => "added " + e.Key)
-            .Concat(change.Removed.Select(e => "removed " + e.Key))
+        change.Created.Select(e => "created " + e.Key)
+            .Concat(change.Dropped.Select(e => "dropped " + e.Key))
             .Concat(change.Renamed.Select(r => "renamed " + r.Before + " to " + r.After))
-            .Concat(change.Changed.SelectMany(a => a.Properties
+            .Concat(change.Altered.SelectMany(a => a.Properties
                 .Select(p => a.Key + ": " + p.Name + (p.Before is Value.Text || p.After is Value.Text ? "" : " " + (p.Before?.ToString() ?? "none") + " → " + (p.After?.ToString() ?? "none")))
                 .Concat(a.Relationships.Select(r => a.Key + ": " + r.Name))));
 
     private static JsonObject Json(Change change) => new()
     {
-        ["added"] = Render.Array(change.Added.Select(e => (JsonNode?)e.Key.ToString())),
-        ["removed"] = Render.Array(change.Removed.Select(e => (JsonNode?)e.Key.ToString())),
+        ["created"] = Render.Array(change.Created.Select(e => (JsonNode?)e.Key.ToString())),
+        ["dropped"] = Render.Array(change.Dropped.Select(e => (JsonNode?)e.Key.ToString())),
         ["renamed"] = Render.Array(change.Renamed.Select(r => new JsonObject { ["before"] = r.Before.ToString(), ["after"] = r.After.ToString() })),
-        ["changed"] = Render.Array(change.Changed.Select(a => new JsonObject
+        ["altered"] = Render.Array(change.Altered.Select(a => new JsonObject
         {
             ["key"] = a.Key.ToString(),
             ["properties"] = Render.Array(a.Properties.Select(p => new JsonObject { ["name"] = p.Name, ["before"] = Json(p.Before), ["after"] = Json(p.After) })),

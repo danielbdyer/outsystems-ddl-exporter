@@ -25,14 +25,14 @@ public sealed record Rename(ElementKey Before, ElementKey After) : IComparable<R
 
 /// <summary>
 /// What changes between two reads, for every element type the walk reads, the deploy scripts and the refactorlog
-/// entries included: the elements added and removed, the renames, and each element in both reads that differs,
+/// entries included: the elements created and dropped, the renames, and each element in both reads that is altered,
 /// property by property and relationship by relationship. An element continues under its own key, or under the key a
 /// rename gives it or one of its ancestors; so a renamed table's columns and indexes move with it, a column renamed in
 /// a renamed table is one rename, and a reference to a renamed element is unchanged when it names the new key.
 /// </summary>
-public sealed record Change(SortedArray<Element> Added, SortedArray<Element> Removed, SortedArray<Rename> Renamed, SortedArray<Change.Altered> Changed)
+public sealed record Change(SortedArray<Element> Created, SortedArray<Element> Dropped, SortedArray<Rename> Renamed, SortedArray<Change.Alteration> Altered)
 {
-    public bool IsEmpty => Added.Count + Removed.Count + Renamed.Count + Changed.Count == 0;
+    public bool IsEmpty => Created.Count + Dropped.Count + Renamed.Count + Altered.Count == 0;
 
     /// <summary>
     /// The change from <paramref name="before"/> to <paramref name="after"/>. A rename applies when an element's key,
@@ -109,14 +109,14 @@ public sealed record Change(SortedArray<Element> Added, SortedArray<Element> Rem
             SortedArray.Of(after.Where(e => !continues.ContainsKey(e.Key))),
             SortedArray.Of(before.Where(e => continues.GetValueOrDefault(Image(e.Key)) != e.Key)),
             SortedArray.Of(renamed),
-            SortedArray.Of(pairs.Select(p => Alteration(p.Was, p.Now, Image)).OfType<Altered>()));
+            SortedArray.Of(pairs.Select(p => AlterationOf(p.Was, p.Now, Image)).OfType<Alteration>()));
     }
 
     // Where a key is after, and every key the refactorlog may name it by: each key it held, under each key its parent held.
     private sealed record Place(ElementKey Image, ElementKey?[] Held);
 
-    // How an element differs from the one it continues as, its old targets read through the renames; null when alike.
-    private static Altered? Alteration(Element was, Element now, Func<ElementKey, ElementKey> image)
+    // How an element is altered from the one it continues as, its old targets read through the renames; null when alike.
+    private static Alteration? AlterationOf(Element was, Element now, Func<ElementKey, ElementKey> image)
     {
         var properties = SortedArray.Of(was.Properties.Select(p => p.Name).Union(now.Properties.Select(p => p.Name))
             .Select(name => new Property(name, was[name], now[name]))
@@ -124,7 +124,7 @@ public sealed record Change(SortedArray<Element> Added, SortedArray<Element> Rem
         var relationships = SortedArray.Of(was.Relationships.Select(r => r.Name).Union(now.Relationships.Select(r => r.Name))
             .Select(name => new Relationship(name, Targets(was, name), Targets(now, name)))
             .Where(r => SortedArray.Of(r.Before.Select(t => t with { Key = image(t.Key) })) != r.After));
-        return properties.Count + relationships.Count == 0 ? null : new Altered(now.Key, properties, relationships);
+        return properties.Count + relationships.Count == 0 ? null : new Alteration(now.Key, properties, relationships);
     }
 
     private static SortedArray<Element.Relationship.Target> Targets(Element element, string name) =>
@@ -139,10 +139,10 @@ public sealed record Change(SortedArray<Element> Added, SortedArray<Element> Rem
             "Report the read's source: a key names one element, so the walk that produced this read has a defect."))
         .FirstOrDefault();
 
-    /// <summary>An element in both reads that differs.</summary>
-    public sealed record Altered(ElementKey Key, SortedArray<Property> Properties, SortedArray<Relationship> Relationships) : IComparable<Altered>
+    /// <summary>An element in both reads that is altered: its key after, and each property and relationship that differs.</summary>
+    public sealed record Alteration(ElementKey Key, SortedArray<Property> Properties, SortedArray<Relationship> Relationships) : IComparable<Alteration>
     {
-        public int CompareTo(Altered? other) =>
+        public int CompareTo(Alteration? other) =>
             other is null ? 1
             : Key.CompareTo(other.Key) is var k and not 0 ? k
             : SortedArray.Compare(Properties, other.Properties) is var p and not 0 ? p

@@ -113,7 +113,7 @@ public static partial class Verbs
         var tables = items.Where(i => i.Type == "SqlTable").Select(i => "Table " + i.Name).ToHashSet(StringComparer.Ordinal);
         bool Under(ElementKey key) => key.Type == "Column" && tables.Contains(key.Parent?.ToString() ?? "");
         return SqlServer.Model(database, log).Bind(model => Change.Between(model, package.Elements, [])).Match(
-            change => Lines(new Change(SortedArray.Of(change.Added.Where(e => Under(e.Key))), SortedArray.Of(change.Removed.Where(e => Under(e.Key))), [], SortedArray.Of(change.Changed.Where(a => Under(a.Key))))),
+            change => Lines(new Change(SortedArray.Of(change.Created.Where(e => Under(e.Key))), SortedArray.Of(change.Dropped.Where(e => Under(e.Key))), [], SortedArray.Of(change.Altered.Where(a => Under(a.Key))))),
             _ => []);
     }
 

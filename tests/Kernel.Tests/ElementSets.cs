@@ -112,17 +112,17 @@ internal static class ElementSets
 
     /// <summary>A change with one altered element.</summary>
     public static Change Altered(ElementKey key, SortedArray<Change.Property> properties = default, SortedArray<Change.Relationship> relationships = default) =>
-        new([], [], [], [new Change.Altered(key, properties, relationships)]);
+        new([], [], [], [new Change.Alteration(key, properties, relationships)]);
 
     /// <summary>
-    /// What <see cref="Change.Between"/> in the other direction returns: every side swapped, and each changed element
+    /// What <see cref="Change.Between"/> in the other direction returns: every side swapped, and each altered element
     /// keyed back, through the rename that moved it or an ancestor, to the key it had before.
     /// </summary>
     public static Change Mirror(Change c) => new(
-        c.Removed,
-        c.Added,
+        c.Dropped,
+        c.Created,
         SortedArray.Of(c.Renamed.Select(r => r.Inverted())),
-        SortedArray.Of(c.Changed.Select(a => new Change.Altered(
+        SortedArray.Of(c.Altered.Select(a => new Change.Alteration(
             Back(a.Key, c.Renamed),
             SortedArray.Of(a.Properties.Select(p => new Change.Property(p.Name, p.After, p.Before))),
             SortedArray.Of(a.Relationships.Select(r => new Change.Relationship(r.Name, r.After, r.Before)))))));
@@ -199,7 +199,7 @@ internal static class ElementSets
                 var rekeyed = Ok(Element.Of(Ok(Rename.Of(e.Key, e.Key.Name.Base + "~")).After, e.Properties, e.Relationships));
                 return new Edit("a key", Replaced(set, e, rekeyed), new Change([rekeyed], [e], [], []), []);
             case 4:
-                // The refactorlog's history may name the removed key, renamed to a key both reads hold: that changes nothing.
+                // The refactorlog's history may name the dropped key, renamed to a key both reads hold: that changes nothing.
                 SortedArray<Rename> history = set.FirstOrDefault(x => x != e) is { } other ? [new Rename(e.Key, other.Key)] : [];
                 return new Edit("an element removed", Replaced(set, e), new Change([], [e], [], []), history);
             case 5:
