@@ -148,10 +148,11 @@ public static class Substrate
     /// its host unknown here; one SqlClient reads no connection string from is an error, and so is an estate without its posture.
     /// </summary>
     internal static Result<string> Unnamed(string estateRoot, string serverName, Func<string, IPAddress[]> resolve) =>
-        Profiles.Environments(estateRoot).Bind(environments => environments.Aggregate(Result.Ok(new List<(NamedEnvironment Environment, string Host)>()), (hosts, environment) =>
-            hosts.Bind(found => SqlServer.DataSource(environment, estateRoot).Map(source => source is null ? found : [.. found, (environment, SqlServer.Host(source))]))))
-        .Bind(hosts =>
+        Profiles.Environments(estateRoot).Bind(environments => Result.All(environments.Select(environment => SqlServer.DataSource(environment, estateRoot)
+            .Map(source => (Environment: environment, Source: source)))))
+        .Bind(sources =>
         {
+            var hosts = sources.Where(s => s.Source is not null).Select(s => (s.Environment, Host: SqlServer.Host(s.Source!))).ToList();
             var host = SqlServer.Host(serverName);
             var addresses = new Lazy<HashSet<IPAddress>>(() => Addresses(host, resolve));
             return hosts.Where(h => h.Host == host).Concat(hosts.Where(h => h.Host != host && Addresses(h.Host, resolve).Overlaps(addresses.Value))).Select(h => h.Environment).FirstOrDefault() is { } named

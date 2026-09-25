@@ -698,11 +698,11 @@ public static class SqlServer
     }
 
     /// <summary>A named environment's own SQLCMD values, each literal as the posture gives it and each reference resolved in memory; a copy has none.</summary>
-    private static Result<List<SqlCmdValue>> Values(Database target) => target is not Named named ? new List<SqlCmdValue>()
-        : named.Environment.SqlCmd.Aggregate(Result.Ok(new List<SqlCmdValue>()), (all, variable) => all.Bind(list => variable.Match(
-            literal => Result.Ok<List<SqlCmdValue>>([.. list, new(variable.Name, literal, false)]),
+    private static Result<IReadOnlyList<SqlCmdValue>> Values(Database target) => target is not Named named ? Result.Ok<IReadOnlyList<SqlCmdValue>>([])
+        : Result.All(named.Environment.SqlCmd.Select(variable => variable.Match(
+            literal => Result.Ok(new SqlCmdValue(variable.Name, literal, false)),
             reference => Read(named + "'s $(" + variable.Name + "), " + reference + ",", reference, named.Root).Bind(read => read is { } value
-                ? Result.Ok<List<SqlCmdValue>>([.. list, new(variable.Name, value, true)])
+                ? Result.Ok(new SqlCmdValue(variable.Name, value, true))
                 : new Error("sqlcmd.unresolved", named + "'s $(" + variable.Name + ") names " + reference + ", which resolves to nothing here.",
                     "Set the variable, or write the file outside git, that " + reference + " names.")))));
 

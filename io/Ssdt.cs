@@ -299,8 +299,8 @@ public static class Ssdt
             .ToDictionary(g => g.Key, g => g.First().Element.Key.Type, StringComparer.Ordinal);
         string TypeOf(string? serialized) => serialized is not null && types.TryGetValue(serialized, out var type) ? type : serialized ?? "";
         var scripts = new[] { package.PreDeploy is { } pre ? Element.PreDeploy(Lf(pre)) : null, package.PostDeploy is { } post ? Element.PostDeploy(Lf(post)) : null }.OfType<Element>();
-        return All(package.Refactors.Select(Entry)).Bind(entries =>
-            All(package.Refactors.Where(r => r.NewName is not null || r.NewSchema is not null).Select(r => Renaming(r, TypeOf)))
+        return Result.All(package.Refactors.Select(Entry)).Bind(entries =>
+            Result.All(package.Refactors.Where(r => r.NewName is not null || r.NewSchema is not null).Select(r => Renaming(r, TypeOf)))
                 .Map(renames => new Read(Seq.Of(model.Select(w => w.Element).Concat(scripts).Concat(entries)), Seq.Of(renames))));
     });
 
@@ -338,7 +338,7 @@ public static class Ssdt
         && o.GetReferenced(Permission.Grantee, DacQueryScopes.All).ToArray() is [var grantee] && grantee.Name.Parts is [var role] && string.Equals(role, "public", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The walk, each element with its object's name as model.xml writes it ([dbo].[Customer].[Email]), null for an unnamed object.</summary>
-    private static Result<List<(Element Element, string? Name)>> Walked(TSqlModel model)
+    private static Result<IReadOnlyList<(Element Element, string? Name)>> Walked(TSqlModel model)
     {
         var composers = new Dictionary<TSqlObject, (TSqlObject Parent, string Relationship)>();
         var walked = new HashSet<TSqlObject>();
@@ -394,12 +394,12 @@ public static class Ssdt
                 .Concat(relationships.SelectMany(r => r.Instances.SelectMany((i, n) => Kept(r.Class.Properties).Select(p =>
                     (Name: string.Create(CultureInfo.InvariantCulture, $"{r.Class.Name}[{n}].{p.Name}"), Value: ValueOf(() => i.GetProperty(p), p.DataType))))))
                 .Where(p => p.Value is not null).Select(p => new Element.Property(p.Name, p.Value!));
-            var targets = relationships.Select(r => All(r.Instances.Select(i => i.Object is { } target ? Key(target) : Keyed("Unresolved", [.. i.ObjectName.ExternalParts ?? [], .. i.ObjectName.Parts], null)))
+            var targets = relationships.Select(r => Result.All(r.Instances.Select(i => i.Object is { } target ? Key(target) : Keyed("Unresolved", [.. i.ObjectName.ExternalParts ?? [], .. i.ObjectName.Parts], null)))
                 .Map(to => Element.Relationship.Of(r.Class.Name, to)));
-            return Key(o).Bind(key => All(targets).Bind(rs => Element.Of(key, properties, rs)));
+            return Key(o).Bind(key => Result.All(targets).Bind(rs => Element.Of(key, properties, rs)));
         }
 
-        return All(walked.Select(o => Read(o).Map(e => (Element: e, Name: o.Name.HasName ? Keyed(o.ObjectType.Name, [.. o.Name.Parts], null).Match<string?>(k => k.Path, _ => null) : null))))
+        return Result.All(walked.Select(o => Read(o).Map(e => (Element: e, Name: o.Name.HasName ? Keyed(o.ObjectType.Name, [.. o.Name.Parts], null).Match<string?>(k => k.Path, _ => null) : null))))
             .Bind(read => read.GroupBy(w => w.Element.Key).FirstOrDefault(g => g.Count() > 1) is not { } alike ? Result.Ok(read) : new Error("walk.duplicate-key",
                 $"{alike.Count()} {alike.Key.Type} objects of the model are keyed alike, as {alike.Key}: {string.Join(", ", alike.Select(w => w.Name ?? "unnamed"))}.",
                 "Report the model's source with this error: a key names one object, so the walk keys this type ambiguously, a defect in io/Ssdt.Walk."));
@@ -466,10 +466,6 @@ public static class Ssdt
     /// <summary>A name's parts less the run of its parent's name parts (ignoring case) where that run leaves one or more; else all of them.</summary>
     private static string[] Beneath(string[] own, string[] home) => Enumerable.Range(0, Math.Max(0, own.Length - home.Length + 1))
         .Where(i => own.Skip(i).Take(home.Length).SequenceEqual(home, StringComparer.OrdinalIgnoreCase)).Select(i => (string[])[.. own[..i], .. own[(i + home.Length)..]]).FirstOrDefault(rest => rest.Length > 0) ?? own;
-
-    /// <summary>Every value, in order, or the first error.</summary>
-    private static Result<List<T>> All<T>(IEnumerable<Result<T>> results) =>
-        results.Aggregate(Result.Ok(new List<T>()), (all, next) => all.Bind(list => next.Map(value => { list.Add(value); return list; })));
 
     /// <summary>XML's end-of-line rule (CRLF and a lone CR to LF), which DacFx's own model values arrive under, so a build on Windows reads as one on Linux.</summary>
     private static string Lf(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');

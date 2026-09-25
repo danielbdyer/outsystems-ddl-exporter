@@ -67,7 +67,8 @@ public static class Profiles
             return Literal(root, "") is { } at ? new Error("posture.literal-connection", Posture + " holds a literal connection string at " + at + ".",
                     "Move it into an environment variable or a file outside git, and write env:NAME or file:path at " + at + ".")
                 : (Unknown(root, "", ["environments", "substrate"]) ?? Missing(root, "", "environments"))
-                    ?? All(root.GetProperty("environments").EnumerateObject().Select((e, i) => EnvironmentAt(e.Name, e.Value, Place("environments", e.Name, i))));
+                    ?? Result.All(root.GetProperty("environments").EnumerateObject().Select((e, i) => EnvironmentAt(e.Name, e.Value, Place("environments", e.Name, i))))
+                        .Map(environments => Seq.Of(environments));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -123,8 +124,8 @@ public static class Profiles
             return !options.BlockOnPossibleDataLoss ? new Error("profile.guard-off",
                     subject + " sets BlockOnPossibleDataLoss to False; Strict is the pipeline's profile with the guard on.",
                     "Set BlockOnPossibleDataLoss to True in " + path + "; only a copy publishes with the guard off, as Permissive.")
-                : All(options.SqlCommandVariableValues.OrderBy(v => v.Key, StringComparer.Ordinal).Select(v => ProfileValue(subject, path, v.Key, v.Value ?? "")))
-                    .Map(values => new PublishProfile.Strict(path, kept.ToArray(), values));
+                : Result.All(options.SqlCommandVariableValues.OrderBy(v => v.Key, StringComparer.Ordinal).Select(v => ProfileValue(subject, path, v.Key, v.Value ?? "")))
+                    .Map(values => new PublishProfile.Strict(path, kept.ToArray(), Seq.Of(values)));
         }
         catch (Exception e) when (e is DacServicesException or ArgumentException or FormatException or InvalidOperationException or XmlException)
         {
@@ -158,7 +159,8 @@ public static class Profiles
         var metamodel = Given("metamodel") is { } reference
             ? SecretReference.Of(Where(at + ".metamodel"), reference).Map(m => (SecretReference?)m) : Result.Ok<SecretReference?>(null);
         var sqlCmd = entry.TryGetProperty("sqlcmd", out var values)
-            ? All(values.EnumerateObject().Select((v, i) => PostureValue(v.Name, v.Value, Place(at + ".sqlcmd", v.Name, i)))) : default(Seq<SqlCmdVariable>);
+            ? Result.All(values.EnumerateObject().Select((v, i) => PostureValue(v.Name, v.Value, Place(at + ".sqlcmd", v.Name, i)))).Map(variables => Seq.Of(variables))
+            : default(Seq<SqlCmdVariable>);
         return confirmation.Bind(confirmed => Classification.Of(subject, Given("classification"), confirmed)).Bind(classification =>
             SecretReference.Of(Where(at + ".connection"), Given("connection")).Bind(connection => metamodel.Bind(meta => sqlCmd.Bind(variables =>
                 NamedEnvironment.Of(subject, name, classification, cohorts, connection, Given("profile")!, variables, meta)))));
@@ -233,9 +235,6 @@ public static class Profiles
 
     private static string? Text(JsonElement value) => value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
-    /// <summary>Each value, sorted, or the first error among the results.</summary>
-    private static Result<Seq<T>> All<T>(IEnumerable<Result<T>> results) where T : IComparable<T> =>
-        results.Aggregate(Result.Ok(new List<T>()), (all, next) => all.Bind(made => next.Map(value => (List<T>)[.. made, value]))).Map(made => Seq.Of(made));
 }
 
 /// <summary>

@@ -1,4 +1,7 @@
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
+using CsCheck;
 using Xunit;
 
 namespace Estate.Kernel.Tests;
@@ -7,6 +10,8 @@ namespace Estate.Kernel.Tests;
 public sealed class ResultTests
 {
     private static readonly Error Why = new("test.failed", "Failed for the test.", "Nothing to do.");
+
+    private static readonly Error Later = new("test.later", "Failed after the first error.", "Nothing to do.");
 
     [Fact]
     [Trait("Category", "fast")]
@@ -19,4 +24,33 @@ public sealed class ResultTests
         Assert.Equal(Result.Ok("2"), ok.Bind(x => Result.Ok(x.ToString(CultureInfo.InvariantCulture))));
         Assert.Equal("test.failed", failed.Match(_ => "", e => e.Code));
     }
+
+    /// <summary>
+    /// Result.All over results built from values and the place of the first error, if any: every value, in the order given, when each
+    /// result holds one; else the first error in that order, whatever errors follow it, with no result after it read. io relies on the
+    /// last: a SQLCMD reference after one that does not resolve is never read (VALUES.md X2).
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void All_is_every_value_in_order_or_the_first_error_and_reads_no_result_after_it() =>
+        Gen.Select(Gen.Int.Array[0, 8], Gen.Int[-1, 8], Gen.Bool.Array[8]).Sample((values, first, laterFails) =>
+        {
+            var fails = first < values.Length ? first : -1;
+            var read = 0;
+            IEnumerable<Result<int>> Results()
+            {
+                for (var i = 0; i < values.Length; i++)
+                {
+                    read = i + 1;
+                    yield return i == fails ? Result.Fail<int>(Why)
+                        : fails >= 0 && i > fails && laterFails[i] ? Result.Fail<int>(Later)
+                        : Result.Ok(values[i]);
+                }
+            }
+
+            var all = Result.All(Results());
+            return fails < 0
+                ? all is Result<IReadOnlyList<int>>.Ok ok && ok.Value.SequenceEqual(values) && read == values.Length
+                : all == Result.Fail<IReadOnlyList<int>>(Why) && read == fails + 1;
+        });
 }

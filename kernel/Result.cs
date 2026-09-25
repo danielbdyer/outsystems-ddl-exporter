@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 
 namespace Estate.Kernel;
@@ -43,4 +44,24 @@ public static class Result
     public static Result<T> Ok<T>(T value) => new Result<T>.Ok(value);
 
     public static Result<T> Fail<T>(Error error) => new Result<T>.Failed(error);
+
+    /// <summary>
+    /// Every value of <paramref name="results"/>, in their order, when each holds one; else the first error in that order. The results
+    /// are read one at a time and none after the first error, so a result whose making reads a file or a reference is not made past it.
+    /// </summary>
+    public static Result<IReadOnlyList<T>> All<T>(IEnumerable<Result<T>> results)
+    {
+        var values = new List<T>();
+        foreach (var result in results)
+        {
+            if (result is Result<T>.Failed failed)
+            {
+                return failed.Error;
+            }
+
+            values.Add(((Result<T>.Ok)result).Value);
+        }
+
+        return Ok<IReadOnlyList<T>>(values);
+    }
 }
