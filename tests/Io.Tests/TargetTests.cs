@@ -337,6 +337,81 @@ public sealed class TargetTests : IDisposable
         });
     }
 
+    /// <summary>
+    /// git ls-files matches a name with case and .gitignore matches it without, where core.ignorecase is true. A committed
+    /// estate/dev.connection is refused as tracked though .gitignore lists *.connection, and, on Windows and macOS, where the file
+    /// system opens it as estate/Dev.connection too, under that spelling as well; on Linux estate/Dev.connection opens no file and
+    /// resolves to nothing. Either way the file's text reaches no connection.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData("estate/dev.connection")]
+    [InlineData("estate/Dev.connection")]
+    public void A_connection_file_git_tracks_is_refused_though_gitignore_lists_it_under_any_spelling_that_opens_it(string reference)
+    {
+        using var repository = new Scratch();
+        repository.Commit("the estate", (".gitignore", "*.connection\n"), ("estate/posture.json", "{ \"environments\": { " + Dev(reference) + " } }"));
+        repository.Write(("estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
+        OwnerOnly(Path.Combine(repository.Root, "estate", "dev.connection"));
+        repository.Git("add", "--force", "--", "estate/dev.connection");
+        repository.Git("commit", "-q", "-m", "the connection file");
+
+        var refusal = Refused(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), repository.Root));
+
+        Assert.Equal((File.Exists(Path.Combine(repository.Root, reference)) ? "reference.tracked" : "connection.unresolved", 6), (refusal.Code, Contract.Exit(refusal)));
+        Assert.DoesNotContain(Planted, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// GIT_CEILING_DIRECTORIES set to the repository's root stops git's search for a repository in estate/secrets/, though
+    /// git status at the root lists estate/secrets/uat.txt as untracked. io/Git clears the variable, so the file is still refused
+    /// as one the next git add commits.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_connection_file_git_does_not_ignore_is_refused_when_GIT_CEILING_DIRECTORIES_stops_the_search_below_its_repository()
+    {
+        using var repository = new Scratch();
+        repository.Commit("the estate", (".gitignore", ".estate/\n"), ("estate/posture.json", "{ \"environments\": { " + Dev("estate/secrets/uat.txt") + " } }"));
+        repository.Write(("estate/secrets/uat.txt", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
+        OwnerOnly(Path.Combine(repository.Root, "estate", "secrets", "uat.txt"));
+        var ceiling = Environment.GetEnvironmentVariable("GIT_CEILING_DIRECTORIES");
+        Environment.SetEnvironmentVariable("GIT_CEILING_DIRECTORIES", repository.Root);
+        Result<SqlServer.Database> resolved;
+        try
+        {
+            resolved = SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), repository.Root);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("GIT_CEILING_DIRECTORIES", ceiling);
+        }
+
+        var refusal = Refused(resolved);
+
+        Assert.Equal(("reference.not-ignored", 6), (refusal.Code, Contract.Exit(refusal)));
+        Assert.DoesNotContain(Planted, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A .git file whose gitdir names no repository makes git fail its search in the connection file's folder with an error other
+    /// than "not a git repository (or any ...)", so git cannot say whether a commit would hold the file: git.failed, exit 6, the file unread.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_connection_file_in_a_folder_git_cannot_search_is_refused_as_git_failed()
+    {
+        using var repository = new Scratch();
+        repository.Commit("the estate", (".gitignore", ".estate/\n"), ("estate/posture.json", "{ \"environments\": { " + Dev("estate/broken/dev.connection") + " } }"));
+        repository.Write(("estate/broken/.git", "gitdir: nowhere\n"), ("estate/broken/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
+        OwnerOnly(Path.Combine(repository.Root, "estate", "broken", "dev.connection"));
+
+        var refusal = Refused(SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), repository.Root));
+
+        Assert.Equal(("git.failed", 6), (refusal.Code, Contract.Exit(refusal)));
+        Assert.DoesNotContain(Planted, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
+    }
+
     /// <summary>An estate's root in no git repository leaves git unable to say whether it would commit a connection file, so the reference is refused, saying so, and the file is not read.</summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -371,6 +446,11 @@ public sealed class TargetTests : IDisposable
         var resolved = SqlServer.Resolve(Made(SqlServer.Target.Parse("env:dev")), Estate(Dev(file)));
 
         Assert.Equal(OperatingSystem.IsWindows() ? null : "reference.readable-by-others", resolved.Match<string?>(_ => null, refusal => refusal.Code));
+        resolved.Match(_ => 0, refusal =>
+        {
+            Assert.DoesNotContain(Planted, refusal.Message + refusal.Remedy, StringComparison.Ordinal);
+            return 0;
+        });
         Assert.Equal(["reference.readable-by-others", "reference.readable-by-others", null], ((int[])[0b110_100_000, 0b110_000_100, 0b110_000_000])   // modes 0640, 0604, 0600
             .Select(mode => SqlServer.ReadableByOthers("env:dev's connection, file:" + file + ",", (UnixFileMode)mode)?.Code));
     }

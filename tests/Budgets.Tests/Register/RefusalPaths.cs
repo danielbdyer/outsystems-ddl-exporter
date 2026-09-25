@@ -193,8 +193,10 @@ internal static class RefusalPaths
         })),
         new("a connection file of an estate in no git repository", "reference.no-repository", true, (scratch, planted) =>
             Refused(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Password=" + planted))))))),
-        new("a connection file its group can read, where files carry a Unix mode", "reference.readable-by-others", false, (_, _) =>
-            SqlServer.ReadableByOthers("env:dev's connection, file:.estate/dev.connection,", (UnixFileMode)0b110_100_000) ?? throw new InvalidOperationException("mode 0640 was not refused")),
+        new("a connection file its group can read, where files carry a Unix mode", "reference.readable-by-others", !OperatingSystem.IsWindows(), (scratch, planted) => OperatingSystem.IsWindows()
+            ? SqlServer.ReadableByOthers("env:dev's connection, file:.estate/dev.connection,", (UnixFileMode)0b110_100_000) ?? throw new InvalidOperationException("mode 0640 was not refused")
+            : Refused(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection:
+                GroupReadable(Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted))))))))),
         new("a copy the registry does not hold", "copy.unregistered", false, (scratch, _) => Refused(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch))),
         new("a copy registry that is not JSON", "registry.unreadable", true, (scratch, planted) =>
         {
@@ -259,6 +261,20 @@ internal static class RefusalPaths
         }
 
         return file;
+    }
+
+    /// <summary>
+    /// On Linux and macOS, the mode of the file a file: reference names set to 0640, so its group can read it; the reference as given.
+    /// Windows keeps no such mode, and there the driver asks io/SqlServer of the mode directly.
+    /// </summary>
+    private static string GroupReadable(string reference)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(reference["file:".Length..], UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
+        }
+
+        return reference;
     }
 
     /// <summary>The estate's root made a git repository, as a clone is, so io/SqlServer can ask git whether it would commit a file: reference's file.</summary>
