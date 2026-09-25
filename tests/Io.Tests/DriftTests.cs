@@ -82,8 +82,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
 
             Assert.True(exit == 5, output);
             Assert.StartsWith("copy:" + copy.Name + " differs from " + estate.Base, output, StringComparison.Ordinal);
-            Assert.Contains("- warn `drift.alter` Table [dbo].[Customer]: ", output, StringComparison.Ordinal);
-            Assert.Equal(["- warn `drift.column` Column [dbo].[Customer].[Email]: Length 300 → 256, from the target to the repository."],
+            Assert.Contains("- warning `drift.alter` Table [dbo].[Customer]: ", output, StringComparison.Ordinal);
+            Assert.Equal(["- warning `drift.column` Column [dbo].[Customer].[Email]: Length 300 → 256, from the target to the repository."],
                 output.Split('\n').Where(l => l.Contains("`drift.column`", StringComparison.Ordinal)));
         }
         finally

@@ -70,10 +70,10 @@ public static partial class Verbs
         return Contract.Answer(verb.Output, items.Count == 0 ? "converged" : "differs",
             drift.Target + (items.Count == 0 ? " matches " + at : " differs from " + at + " in each object below."),
             [
-                .. items.Select(i => new Finding("drift." + i.Operation.ToLowerInvariant(), "warn", Named(i.Type) + " " + i.Name,
+                .. items.Select(i => new Finding("drift." + i.Operation.ToLowerInvariant(), "warning", Named(i.Type) + " " + i.Name,
                     "The plan against " + drift.Target + " would " + i.Operation + " " + Named(i.Type) + " " + i.Name + ".", "estate diff --from " + drift.Target + " --to ref:" + at)),
                 .. items.Count == 0 ? [] : Columns(drift.Database, planned.Model, items, log).Select(line => line.Split(": ", 2) is [var key, var change]
-                    ? new Finding("drift.column", "warn", key, change + ", from the target to the repository.", null) : new Finding("drift.column", "warn", line, line + ".", null)),
+                    ? new Finding("drift.column", "warning", key, change + ", from the target to the repository.", null) : new Finding("drift.column", "warning", line, line + ".", null)),
                 .. stamp.Pin is Pin.Unpinned ? new[] { new Finding("engine.unpinned", "note", "estate check drift", "This receipt stands on DacFx " + stamp.Engine.DacFx
                     + ", UNPINNED: " + Io.Doctor.Ledger + " pins no engine for estate " + Contract.Version.Split('+')[0] + ".", null) } : [],
                 Unverified,

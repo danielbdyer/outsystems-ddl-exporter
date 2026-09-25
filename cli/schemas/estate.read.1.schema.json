@@ -346,8 +346,8 @@
         },
         "severity": {
           "enum": [
-            "block",
-            "warn",
+            "error",
+            "warning",
             "note"
           ]
         },
@@ -374,7 +374,7 @@
       "if": {
         "properties": {
           "severity": {
-            "const": "block"
+            "const": "error"
           }
         }
       },

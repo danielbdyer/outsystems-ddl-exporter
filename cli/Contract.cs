@@ -40,7 +40,7 @@ public sealed record Verdict(string Outcome, string Message, Blocked? Kind = nul
 /// <summary>How the data blocked (§4 row 15): the publish guard refused because the table has rows, or the engine refused the change on existing rows (Msg 547, Msg 2628).</summary>
 public enum Blocked { Guard, Violation }
 
-/// <summary>A finding; its remedy is a verb or a file path, and one that blocks carries one.</summary>
+/// <summary>A finding, of severity error, warning or note (SARIF's levels); its remedy is a verb or a file path, and one of severity error carries one.</summary>
 public sealed record Finding(string Code, string Severity, string Subject, string Message, string? Remedy);
 
 /// <summary>The contract as data: the verb table and the exit table. --help --json and cli/schemas/ are generated from them.</summary>
@@ -154,13 +154,13 @@ public static class Contract
         new(schema, stamp, receipt, new Verdict(outcome, message), findings, exit, content);
 
     /// <summary>
-    /// An error as an answer: its message the verdict, and one blocking finding carrying its code and remedy; the exit its category's. An
+    /// An error as an answer: its message the verdict, and one finding of severity error carrying its code and remedy; the exit its category's. An
     /// error whose category the category table lacks takes exit 6, with a second finding, internal.unmapped-category, naming the category.
     /// </summary>
     public static Envelope Failed(Verb verb, Error error, Stamp? stamp = null) => Answer(verb.Output, Exits.Single(e => e.Code == Exit(error)).Name, error.Message,
         [
-            new(error.Code, "block", "estate " + verb.Name, error.Message, error.Remedy),
-            .. ExitByCategory.ContainsKey(Category(error)) ? [] : new Finding[] { new("internal.unmapped-category", "block", "estate " + verb.Name,
+            new(error.Code, "error", "estate " + verb.Name, error.Message, error.Remedy),
+            .. ExitByCategory.ContainsKey(Category(error)) ? [] : new Finding[] { new("internal.unmapped-category", "error", "estate " + verb.Name,
                 "The error's category '" + Category(error) + "' has no row in the category table of cli/Contract.cs, so estate exits 6.", ReportIt) },
         ], Exit(error), stamp);
 
@@ -175,14 +175,14 @@ public static class Contract
         var command = word.Length == 0 ? "estate" : "estate " + word;
         var what = command + " stopped on an unexpected " + exception.GetType().Name;
         var said = withheld ? "; its message is withheld, since the command read a named environment's connection and the message can quote what that environment holds." : ": " + exception.Message;
-        return Answer(verb?.Output ?? "estate.envelope/1", "unexpected", what + ".", [new("internal.unexpected", "block", command, what + said, ReportIt)], Defect);
+        return Answer(verb?.Output ?? "estate.envelope/1", "unexpected", what + ".", [new("internal.unexpected", "error", command, what + said, ReportIt)], Defect);
     }
 
     public static Envelope NotBuilt(Verb verb) => Answer(verb.Output, "not-built", "estate " + verb.Name + " arrives in " + Title(verb.Arrives) + ".",
-        [new("verb.not-built", "block", "estate " + verb.Name, "The verb is in the contract; its body arrives in " + Title(verb.Arrives) + ".", "estate --help lists what this build runs")], 6);
+        [new("verb.not-built", "error", "estate " + verb.Name, "The verb is in the contract; its body arrives in " + Title(verb.Arrives) + ".", "estate --help lists what this build runs")], 6);
 
     public static Envelope UnknownVerb(string word) => Answer("estate.envelope/1", "bad-arguments", "'" + word + "' is not a verb of estate.",
-        [new("arguments.unknown-verb", "block", "estate " + word, "The verb table has no row named '" + word + "'.", "estate --help")], 1);
+        [new("arguments.unknown-verb", "error", "estate " + word, "The verb table has no row named '" + word + "'.", "estate --help")], 1);
 
     /// <summary>
     /// The flags a verb reads: each --name followed by its value, or standing alone when it is a switch. A word outside a flag, a flag the

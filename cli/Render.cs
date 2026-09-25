@@ -132,12 +132,12 @@ public static class Render
         var finding = Record(new()
         {
             ["code"] = Pattern(Error.CodePattern),
-            ["severity"] = Enum(["block", "warn", "note"]),
+            ["severity"] = Enum(["error", "warning", "note"]),
             ["subject"] = Text(),
             ["message"] = Text(),
             ["remedy"] = Nullable(Text()),
         });
-        finding["if"] = Where("severity", new JsonObject { ["const"] = "block" });
+        finding["if"] = Where("severity", new JsonObject { ["const"] = "error" });
         finding["then"] = Where("remedy", Text());
         envelope["$defs"] = new JsonObject
         {

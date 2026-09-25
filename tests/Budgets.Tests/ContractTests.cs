@@ -171,7 +171,7 @@ public sealed class ContractTests
         Assert.Equal(6, exit);
         AssertValid("estate.read.1.schema.json", answer);
         var finding = Assert.Single(answer["findings"]!.AsArray())!;
-        Assert.Equal(("internal.unexpected", "block"), ((string)finding["code"]!, (string)finding["severity"]!));
+        Assert.Equal(("internal.unexpected", "error"), ((string)finding["code"]!, (string)finding["severity"]!));
         Assert.Contains("ArgumentNullException: Value cannot be null.", (string)finding["message"]!, StringComparison.Ordinal);
     }
 
@@ -402,7 +402,7 @@ public sealed class ContractTests
         Assert.Contains("M6 (After deploy)", check, StringComparison.Ordinal);
     }
 
-    /// <summary>WP 1.7's doctor on a bare machine: DEGRADED, exit 6, one blocking finding with its remedy per missing item, and no milestone deferred to.</summary>
+    /// <summary>WP 1.7's doctor on a bare machine: DEGRADED, exit 6, one finding of severity error with its remedy per missing item, and no milestone deferred to.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Doctor_on_a_bare_machine_prints_DEGRADED_with_a_remedy_per_missing_item()
@@ -423,7 +423,7 @@ public sealed class ContractTests
             var findings = json["findings"]!.AsArray().Select(f => ((string)f!["code"]!, (string)f["severity"]!, (string?)f["remedy"])).ToList();
             Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.scratch-server", "doctor.lfs"], findings.Select(f => f.Item1));
             Assert.Equal(checks.Where(c => c.Remedy is not null).Select(c => c.Remedy), findings.Select(f => f.Item3));
-            Assert.All(findings, f => Assert.Equal("block", f.Item2));
+            Assert.All(findings, f => Assert.Equal("error", f.Item2));
             Assert.Equal(checks.Select(c => c.Item), json["checks"]!.AsArray().Select(c => (string)c!["item"]!));
         }
         finally
@@ -516,19 +516,19 @@ public sealed class ContractTests
             ["exit 3's kind is guard or violation"] = (BlockedBy("violation"), BlockedBy("other")),
             ["no other exit has a kind"] = (_ => { }, a => a["verdict"]!["kind"] = "guard"),
             ["a verdict names its kind, as null when the data did not block"] = (_ => { }, a => a["verdict"]!.AsObject().Remove("kind")),
-            ["a blocking finding carries a remedy"] = (Finds(1, "warn", remedy: null), Finds(1, "block", remedy: null)),
+            ["a finding of severity error carries a remedy"] = (Finds(1, "warning", remedy: null), Finds(1, "error", remedy: null)),
             ["a receipt names its data facts, as null when it lacks them"] = (WithReceipt(r => r["dataFacts"] = null), WithReceipt(r => r.Remove("dataFacts"))),
             ["a receipt's at is a date-time"] = (WithReceipt(_ => { }), WithReceipt(r => r["at"] = "yesterday")),
             ["a receipt names the input it lacks, as null when it lacks none"] = (WithReceipt(r => r["lacking"] = null), WithReceipt(r => r["lacking"] = "seed")),
             ["the engine names the SQL Server image by its digest"] = (WithReceipt(_ => { }), WithReceipt(r => r["engine"]!["sqlserver"] = "16.0.4295.3")),
         };
 
-        // Instruction architecture §9.1: a remedy is required for severity block and for exits 2, 4, 6 and 9.
+        // Instruction architecture §9.1: a remedy is required for severity error and for exits 2, 4, 6 and 9.
         foreach (var exit in (int[])[2, 4, 6, 9])
         {
             var code = exit.ToString(CultureInfo.InvariantCulture);
-            pairs["exit " + code + " names a finding"] = (Finds(exit, "block", "estate doctor"), Finds(exit, severity: null));
-            pairs["exit " + code + " gives every finding a remedy"] = (Finds(exit, "warn", "estate doctor"), Finds(exit, "warn", remedy: null));
+            pairs["exit " + code + " names a finding"] = (Finds(exit, "error", "estate doctor"), Finds(exit, severity: null));
+            pairs["exit " + code + " gives every finding a remedy"] = (Finds(exit, "warning", "estate doctor"), Finds(exit, "warning", remedy: null));
         }
 
         // Milestones §3: the receipt's five inputs, where and when; the engine names the tool, DacFx and SQL Server, null when unknown.
