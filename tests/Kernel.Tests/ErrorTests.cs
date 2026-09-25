@@ -8,36 +8,38 @@ namespace Estate.Kernel.Tests;
 /// <summary>An error is a code of a closed category, a message and a remedy; one without a remedy, or of a category the set lacks, cannot be constructed.</summary>
 public sealed class ErrorTests
 {
-    private static readonly Gen<string> Category = Gen.OneOfConst(Enum.GetValues<ErrorCategory>().Select(ErrorCode.Text).ToArray());
+    private static readonly Gen<ErrorCategory> Member = Gen.OneOfConst(Enum.GetValues<ErrorCategory>());
 
-    private static readonly Gen<string> Code = Gen.Select(Category, Gen.Char["az09"].Array[1, 4].Select(cs => new string(cs)).Array[1, 3])
-        .Select((category, details) => category + "." + string.Join('.', details));
+    /// <summary>A word of the code grammar: runs of lowercase letters and digits joined by single hyphens, as scratch-server and too-long are.</summary>
+    private static readonly Gen<string> Word = Gen.Char["az09"].Array[1, 3].Select(cs => new string(cs)).Array[1, 3].Select(runs => string.Join('-', runs));
+
+    /// <summary>A member's word, then one to three words of detail: every code the grammar admits under a category the set holds.</summary>
+    private static readonly Gen<(ErrorCategory Category, string Code)> Code = Gen.Select(Member, Word.Array[1, 3])
+        .Select((category, details) => (category, ErrorCode.Text(category) + "." + string.Join('.', details)));
 
     private static readonly Gen<string> Text = Gen.String.Where(s => !string.IsNullOrWhiteSpace(s));
 
     private static readonly Gen<string?> Blank = Gen.OneOf(
         Gen.Const((string?)null),
-        Gen.Char[" \t\n 　"].Array[0, 4].Select(cs => (string?)new string(cs)));
+        Gen.Char[" \t\n 　"].Array[0, 4].Select(cs => (string?)new string(cs)));
 
     [Fact]
     [Trait("Category", "fast")]
     public void An_error_without_a_remedy_cannot_be_constructed() =>
         Gen.Select(Code, Text, Blank).Sample((code, message, remedy) =>
-            Assert.Throws<ArgumentException>("remedy", () => new Error(code, message, remedy!)));
+            Assert.Throws<ArgumentException>("remedy", () => new Error(code.Code, message, remedy!)));
 
     [Fact]
     [Trait("Category", "fast")]
     public void An_error_without_a_message_cannot_be_constructed() =>
         Gen.Select(Code, Blank, Text).Sample((code, message, remedy) =>
-            Assert.Throws<ArgumentException>("message", () => new Error(code, message!, remedy)));
+            Assert.Throws<ArgumentException>("message", () => new Error(code.Code, message!, remedy)));
 
+    /// <summary>Over the whole grammar, hyphenated words and digits included, a code under a member's word constructs, and the error reads that member as its category.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void An_error_keeps_its_code_message_and_remedy_and_reads_its_category_from_the_code() =>
-        Gen.Select(Code, Text, Text).Sample((code, message, remedy) =>
-            new Error(code, message, remedy) is var error
-            && error.Code == code && error.Message == message && error.Remedy == remedy
-            && ErrorCode.Text(error.Category) == code.Split('.')[0]);
+    public void Every_code_the_grammar_admits_under_a_member_s_word_constructs_an_error_of_that_category() =>
+        Code.Sample(code => new Error(code.Code, "Failed.", "Do the other thing.").Category == code.Category, print: code => code.Code);
 
     [Theory]
     [Trait("Category", "fast")]
@@ -60,17 +62,6 @@ public sealed class ErrorTests
     [InlineData("scratch-server")]
     public void An_error_code_is_a_category_and_a_detail_in_lowercase_words(string code) =>
         Assert.Throws<ArgumentException>("code", () => new Error(code, "Failed.", "Do the other thing."));
-
-    /// <summary>Every word of a code, the category included, may hold digits and single hyphens, as scratch-server and git-branch do.</summary>
-    [Theory]
-    [Trait("Category", "fast")]
-    [InlineData("scratch-server.missing")]
-    [InlineData("git-branch.exists")]
-    [InlineData("toolchain.window-order")]
-    [InlineData("name.too-long")]
-    [InlineData("dacfx.sql-72014.detail")]
-    public void Each_word_of_an_error_code_may_hold_digits_and_single_hyphens(string code) =>
-        Assert.Equal(code, new Error(code, "Failed.", "Do the other thing.").Code);
 
     /// <summary>The category set is closed: a well-formed code whose first word no member writes as cannot be made into an error, and the error names the word.</summary>
     [Fact]

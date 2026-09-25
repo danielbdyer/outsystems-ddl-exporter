@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Estate.Kernel;
+using Estate.Tests;
 using Xunit;
 
 namespace Estate.Io.Tests;
@@ -13,7 +14,7 @@ namespace Estate.Io.Tests;
 /// </summary>
 public sealed class SchemaTextTests
 {
-    private const string Planted = "Pa55!planted#7f3a";
+    private const string Planted = PlantedValue.PasswordText;
 
     /// <summary>One sample script per form, the planted value where the form sets a password; a form without a sample fails the theory.</summary>
     private static readonly Dictionary<string, string> Samples = new(StringComparer.Ordinal)
@@ -150,33 +151,25 @@ public sealed class SchemaTextTests
     [Trait("Law", "3′ the model is complete")]
     public void A_diff_of_two_procedures_differing_in_a_password_literal_alone_alters_the_Definition_and_prints_both_values_left_out()
     {
-        Telemetry.OptOut();   // before DacFx loads, as estate's Main does
-        var scratch = System.IO.Directory.CreateTempSubdirectory("estate-printed-").FullName;
-        try
-        {
-            var (before, after) = (System.IO.Path.Combine(scratch, "before.dacpac"), System.IO.Path.Combine(scratch, "after.dacpac"));
-            Package(before, "CREATE PROCEDURE dbo.Rotate AS CREATE LOGIN [svc] WITH PASSWORD = '" + Planted + "1';");
-            Package(after, "CREATE PROCEDURE dbo.Rotate AS CREATE LOGIN [svc] WITH PASSWORD = '" + Planted + "2';");
+        using var scratch = ScratchFolder.Temporary("printed");
+        var (before, after) = (scratch.Under("before.dacpac"), scratch.Under("after.dacpac"));
+        Package(before, "CREATE PROCEDURE dbo.Rotate AS CREATE LOGIN [svc] WITH PASSWORD = '" + Planted + "1';");
+        Package(after, "CREATE PROCEDURE dbo.Rotate AS CREATE LOGIN [svc] WITH PASSWORD = '" + Planted + "2';");
 
-            using var output = new System.IO.MemoryStream();
-            var exit = Cli.Program.Run(["diff", "--from", "dacpac:" + before, "--to", "dacpac:" + after, "--json"], output, new Cli.Checkout(scratch, scratch, null));
-            var text = System.Text.Encoding.UTF8.GetString(output.ToArray());
-            var answer = System.Text.Json.Nodes.JsonNode.Parse(text)!;
+        using var output = new System.IO.MemoryStream();
+        var exit = Cli.Program.Run(["diff", "--from", "dacpac:" + before, "--to", "dacpac:" + after, "--json"], output, new Cli.Checkout(scratch.Path, scratch.Path, null));
+        var text = System.Text.Encoding.UTF8.GetString(output.ToArray());
+        var answer = System.Text.Json.Nodes.JsonNode.Parse(text)!;
 
-            Assert.Equal((0, "differs"), (exit, (string?)answer["outcome"]));
-            var altered = Assert.Single(answer["diff"]!["change"]!["altered"]!.AsArray())!;
-            var property = Assert.Single(altered["properties"]!.AsArray())!;
-            Assert.Equal(("Procedure [dbo].[Rotate]", "Definition"), ((string?)altered["key"], (string?)property["name"]));
-            Assert.All(new[] { (string?)property["before"], (string?)property["after"] }, value => Assert.Contains("WITH PASSWORD = " + SchemaText.LeftOut, value, StringComparison.Ordinal));
-            Assert.DoesNotContain(Planted, text, StringComparison.Ordinal);
-            var warning = Assert.Single(answer["findings"]!.AsArray())!;
-            Assert.Equal(("schema.password-literal", "warning", "Procedure [dbo].[Rotate]"), ((string?)warning["code"], (string?)warning["severity"], (string?)warning["subject"]));
-            Assert.Contains("CREATE LOGIN … WITH PASSWORD", (string?)warning["message"], StringComparison.Ordinal);
-        }
-        finally
-        {
-            System.IO.Directory.Delete(scratch, recursive: true);
-        }
+        Assert.Equal((0, "differs"), (exit, (string?)answer["outcome"]));
+        var altered = Assert.Single(answer["diff"]!["change"]!["altered"]!.AsArray())!;
+        var property = Assert.Single(altered["properties"]!.AsArray())!;
+        Assert.Equal(("Procedure [dbo].[Rotate]", "Definition"), ((string?)altered["key"], (string?)property["name"]));
+        Assert.All(new[] { (string?)property["before"], (string?)property["after"] }, value => Assert.Contains("WITH PASSWORD = " + SchemaText.LeftOut, value, StringComparison.Ordinal));
+        PlantedValue.Password.AbsentFrom(text);
+        var warning = Assert.Single(answer["findings"]!.AsArray())!;
+        Assert.Equal(("schema.password-literal", "warning", "Procedure [dbo].[Rotate]"), ((string?)warning["code"], (string?)warning["severity"], (string?)warning["subject"]));
+        Assert.Contains("CREATE LOGIN … WITH PASSWORD", (string?)warning["message"], StringComparison.Ordinal);
     }
 
     /// <summary>A package DacFx builds from the scripts, under the path given.</summary>

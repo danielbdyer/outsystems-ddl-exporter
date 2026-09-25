@@ -16,6 +16,7 @@ public sealed class Decisions
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "A8")]
     public void Every_line_under_the_heading_is_one_dated_decision_with_its_pull_request()
     {
         var lines = Repository.Lines("DECISIONS.md");

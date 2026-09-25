@@ -14,7 +14,7 @@ public sealed class ArchiveExclusion
 {
     [Fact]
     [Trait("Category", "fast")]
-    public void The_archive_stops_the_walk_up_from_every_v3_setting()
+    public void The_archive_stops_MSBuild_s_search_upward_for_every_v3_setting()
     {
         var packages = Repository.Xml("archive/Directory.Packages.props").Descendants().Where(e => e.Name.LocalName == "ManagePackageVersionsCentrally");
         var editor = Repository.Lines("archive/.editorconfig").Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#'));

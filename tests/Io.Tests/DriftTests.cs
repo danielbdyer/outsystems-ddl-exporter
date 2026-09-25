@@ -28,6 +28,9 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     [Trait("Category", "fast")]
     [InlineData("check drift --target")]
     [InlineData("read --from")]
+    [Trait("Value", "X1")]
+    [Trait("Value", "X2")]
+    [Trait("Exit", "M1.7")]
     public void A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere(string verb)
     {
         var asked = verb.Split(' ');
@@ -42,6 +45,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     /// <summary>M1 exit 6 through the verb: a ledger whose pin the committed engine is neither, nor the release before, is exit 6 before anything connects, the engine stamped.</summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "R1")]
+    [Trait("Exit", "M1.6")]
     public void An_engine_outside_the_ledger_s_window_is_exit_6_before_anything_connects()
     {
         var root = Directory.CreateTempSubdirectory("estate-window-").FullName;
@@ -68,6 +73,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     [Fact]
     [Trait("Category", "fixture")]
     [Trait("Law", "2′ a published copy matches its package")]
+    [Trait("Exit", "M1.3")]
     public async Task A_published_copy_matches_its_package_and_one_column_altered_on_it_is_exit_5_naming_it()
     {
         var copy = await Published();
@@ -107,6 +113,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     [Trait("Category", "fixture")]
     [InlineData("SQL_Latin1_General_CP1_CI_AS", true, 0)]
     [InlineData("Latin1_General_CS_AS", false, 6)]
+    [Trait("Value", "O2")]
     public async Task A_case_only_rename_of_a_table_on_a_copy_plans_nothing_under_either_collation_and_diff_reads_it_under_the_copy_s_collation(string collation, bool caseInsensitive, int driftExit)
     {
         var (copy, dacpac, profile) = await Published(collation);
@@ -202,6 +209,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
+    [Trait("Value", "R1")]
+    [Trait("Exit", "M1.6")]
     public async Task Every_receipt_names_its_engine()
     {
         var copy = await Published();
@@ -234,6 +243,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     /// <summary>M1 exit 7's second half (R16): a denied login prints one sentence naming the environment and saying a lead's prediction will appear on the pull request, before anything builds.</summary>
     [Fact]
     [Trait("Category", "fixture")]
+    [Trait("Value", "X2")]
+    [Trait("Exit", "M1.7")]
     public async Task A_denied_login_prints_one_sentence_naming_the_environment_and_a_lead_s_prediction()
     {
         var server = new SqlConnectionStringBuilder(await SqlServerFixture.ServerAsync());
@@ -263,6 +274,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
+    [Trait("Value", "S7")]
+    [Trait("Exit", "M1.8")]
     public async Task The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_a_full_check_drift()
     {
         await using var database = await SqlServerFixture.RegisterAsync();

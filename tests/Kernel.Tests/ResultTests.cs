@@ -15,7 +15,7 @@ public sealed class ResultTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_result_carries_a_value_or_the_error_in_its_place()
+    public void Map_and_Bind_apply_the_function_to_a_value_and_pass_an_error_through_unchanged()
     {
         Result<int> ok = 2, failed = Why;
         Assert.Equal(Result.Ok(5), ok.Map(x => x + 3));

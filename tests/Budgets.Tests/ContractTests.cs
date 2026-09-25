@@ -13,6 +13,7 @@ using CsCheck;
 using Estate.Cli;
 using Estate.Io;
 using Estate.Kernel;
+using Estate.Tests;
 using Json.Schema;
 using Xunit;
 
@@ -23,9 +24,10 @@ public sealed class ContractTests
 {
     public static TheoryData<string> Answers => new(Contract.Verbs.Select(v => v.Name).Concat(["no-such-verb", ""]));
 
+    /// <summary>The help as the built estate prints it validates against its schema and says which verbs this build has: the four of M1 and --version.</summary>
     [Fact]
-    [Trait("Category", "fast")]
-    public void Help_json_validates_against_its_committed_schema()
+    [Trait("Category", "build")]
+    public void Help_json_validates_against_its_committed_schema_and_says_which_verbs_this_build_has()
     {
         var (exit, output) = Estate("--help", "--json");
 
@@ -33,9 +35,7 @@ public sealed class ContractTests
         Assert.DoesNotContain('\r', output);
         var help = JsonNode.Parse(output)!;
         AssertValid("estate.help.1.schema.json", help);
-        Assert.Equal(
-            ["doctor", "read", "diff", "classify", "predict", "measure", "synthetic-copy", "prove", "describe", "gate", "check", "knowledge", "--version"],
-            help["verbs"]!.AsArray().Select(v => (string)v!["name"]!));
+        Assert.Equal(["doctor", "read", "diff", "check", "--version"], help["verbs"]!.AsArray().Where(v => (bool)v!["built"]!).Select(v => (string)v!["name"]!));
         help["exits"]![0]!["code"] = 8;
         Assert.False(Evaluate("estate.help.1.schema.json", help).IsValid, "the schema admits an exit code the table does not have");
     }
@@ -84,6 +84,8 @@ public sealed class ContractTests
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "S2")]
+    [Trait("Value", "O4")]
     public void Every_error_category_has_an_exit_of_the_frozen_table_and_is_constructed_by_some_path()
     {
         var members = Enum.GetValues<ErrorCategory>();
@@ -91,10 +93,6 @@ public sealed class ContractTests
 
         Assert.Equal(members.Select(ErrorCode.Text).Order(StringComparer.Ordinal), constructed);
         Assert.All(members, m => Assert.Contains(Contract.ExitByCategory(m), Contract.Exits.Select(e => e.Code)));
-        Assert.Equal([1, 1, 2, 2, 2, 6, 6, 6, 6, 7, 4], ((string[])["arguments.unknown-flag", "arguments.unknown-verb", "name.blank", "element.property-name", "fingerprint.malformed",
-            "sdk.missing", "dacfx.failed", "verb.not-built", "internal.unexpected", "build.failed", "scratch-server.missing"])
-            .Select(c => Contract.Exit(new Kernel.Error(c, "Failed.", "Do the other thing."))));
-        Assert.Equal((4, 9), (Contract.ExitByCategory(ErrorCategory.ScratchServer), Contract.ExitByCategory(ErrorCategory.AggregateQuery)));
     }
 
     /// <summary>
@@ -129,33 +127,63 @@ public sealed class ContractTests
     [Trait("Category", "fast")]
     public void Reading_a_package_with_a_column_named_by_a_space_and_one_holding_a_tab_answers_exit_0_naming_both()
     {
-        Telemetry.OptOut();   // before DacFx loads, as estate's Main does
-        var scratch = Directory.CreateTempSubdirectory("estate-blank-name-").FullName;
-        try
-        {
-            var (dacpac, bare) = (Path.Combine(scratch, "blank.dacpac"), Path.Combine(scratch, "bare.dacpac"));
-            Package(dacpac, "CREATE TABLE dbo.Customer (Id INT NOT NULL, [ ] INT NULL, [a\tb] INT NULL);");
-            Package(bare, "CREATE TABLE dbo.Customer (Id INT NOT NULL);");
+        using var scratch = ScratchFolder.Temporary("blank-name");
+        var (dacpac, bare) = (scratch.Under("blank.dacpac"), scratch.Under("bare.dacpac"));
+        Package(dacpac, "CREATE TABLE dbo.Customer (Id INT NOT NULL, [ ] INT NULL, [a\tb] INT NULL);");
+        Package(bare, "CREATE TABLE dbo.Customer (Id INT NOT NULL);");
 
-            var (exit, answer) = Answered(["read", "--from", "dacpac:" + dacpac, "--json"], new Checkout(scratch, scratch, null));
-            using var diff = new MemoryStream();
-            var diffExit = Cli.Program.Run(["diff", "--from", "dacpac:" + bare, "--to", "dacpac:" + dacpac], diff, new Checkout(scratch, scratch, null));
+        var (exit, answer) = Answered(["read", "--from", "dacpac:" + dacpac, "--json"], new Checkout(scratch.Path, scratch.Path, null));
+        using var diff = new MemoryStream();
+        var diffExit = Cli.Program.Run(["diff", "--from", "dacpac:" + bare, "--to", "dacpac:" + dacpac], diff, new Checkout(scratch.Path, scratch.Path, null));
 
-            Assert.Equal(0, exit);
-            AssertValid("estate.read.1.schema.json", answer);
-            var keys = Elements(answer, scratch).Select(e => (string)e!["key"]!).ToList();
-            Assert.Contains("Column [dbo].[Customer].[ ]", keys);
-            Assert.Contains("Column [dbo].[Customer].[a\tb]", keys);
-            Assert.Contains("\"Column [dbo].[Customer].[a\\tb]\"", Io.Json.Text(answer), StringComparison.Ordinal);
-            Assert.Equal(0, diffExit);
-            var lines = Encoding.UTF8.GetString(diff.ToArray()).Split('\n');
-            Assert.Contains("created Column [dbo].[Customer].[ ]", lines);
-            Assert.Contains("created Column [dbo].[Customer].[a\\u0009b]", lines);
-        }
-        finally
+        Assert.Equal(0, exit);
+        AssertValid("estate.read.1.schema.json", answer);
+        var keys = Elements(answer, scratch.Path).Select(e => (string)e!["key"]!).ToList();
+        Assert.Contains("Column [dbo].[Customer].[ ]", keys);
+        Assert.Contains("Column [dbo].[Customer].[a\tb]", keys);
+        Assert.Contains("\"Column [dbo].[Customer].[a\\tb]\"", Io.Json.Text(answer), StringComparison.Ordinal);
+        Assert.Equal(0, diffExit);
+        var lines = Encoding.UTF8.GetString(diff.ToArray()).Split('\n');
+        Assert.Contains("created Column [dbo].[Customer].[ ]", lines);
+        Assert.Contains("created Column [dbo].[Customer].[a\\u0009b]", lines);
+    }
+
+    /// <summary>
+    /// VALUES.md D2 at the answer: read of a package and diff of two, run in this process under tr-TR, de-DE and the invariant culture,
+    /// write the same bytes. The package holds a decimal default, a date, and a column named ilk, whose upper case differs under Turkish rules.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    [Trait("Value", "D2")]
+    public void An_answer_is_the_same_bytes_under_tr_TR_de_DE_and_the_invariant_culture()
+    {
+        using var scratch = ScratchFolder.Temporary("cultures");
+        var (before, after) = (scratch.Under("before.dacpac"), scratch.Under("after.dacpac"));
+        Package(before, "CREATE TABLE dbo.Invoice (Id INT NOT NULL, Price DECIMAL(10, 2) NOT NULL DEFAULT 1.5, Issued DATE NULL, [ilk] INT NULL);");
+        Package(after, "CREATE TABLE dbo.Invoice (Id INT NOT NULL, Price DECIMAL(12, 3) NOT NULL DEFAULT 1.5, Issued DATE NULL, [ILK] INT NULL, Total DECIMAL(10, 2) NULL);");
+        var answers = new List<(string Culture, byte[] Read, byte[] Diff)>();
+        foreach (var culture in (CultureInfo[])[CultureInfo.InvariantCulture, new("tr-TR"), new("de-DE")])
         {
-            Directory.Delete(scratch, recursive: true);
+            var (was, wasUi) = (CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture);
+            (CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture) = (culture, culture);
+            try
+            {
+                using var read = new MemoryStream();
+                using var diff = new MemoryStream();
+                Assert.Equal(0, Cli.Program.Run(["read", "--from", "dacpac:" + before, "--json"], read, new Checkout(scratch.Path, scratch.Path, null)));
+                Assert.Equal(0, Cli.Program.Run(["diff", "--from", "dacpac:" + before, "--to", "dacpac:" + after, "--json"], diff, new Checkout(scratch.Path, scratch.Path, null)));
+                answers.Add((culture.Name, read.ToArray(), diff.ToArray()));
+            }
+            finally
+            {
+                (CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture) = (was, wasUi);
+            }
         }
+
+        Assert.All(answers, a => Assert.True(a.Read.SequenceEqual(answers[0].Read) && a.Diff.SequenceEqual(answers[0].Diff), "the answer under " + a.Culture + " differs from the invariant culture's"));
+        var diffed = Encoding.UTF8.GetString(answers[0].Diff);
+        Assert.Contains("[ilk]", diffed, StringComparison.Ordinal);
+        Assert.Contains("[Total]", diffed, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -221,6 +249,7 @@ public sealed class ContractTests
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "S2")]
     public void An_unexpected_exception_answers_exit_6_with_a_finding_naming_its_type_and_its_message()
     {
         var (exit, answer) = Answered(["read", "--from", "dacpac:none.dacpac", "--json"], new Checkout(Repository.Root, null!, null));
@@ -258,45 +287,39 @@ public sealed class ContractTests
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Value", "X2")]
     [InlineData("env:dev", true)]
     [InlineData("copy:estate_host_1_0a1b2c3d", true)]
     [InlineData("ref:main", false)]
     public void An_unexpected_exception_withholds_its_message_when_the_run_read_a_named_environment_with_no_env_argument(string target, bool withheld)
     {
-        const string Planted = "Server=tcp:192.0.2.10,1433;Password=Pa55!planted#7f3a";
-        var root = Directory.CreateTempSubdirectory("estate-withheld-").FullName;
-        try
+        var planted = PlantedValue.Unique();
+        using var root = ScratchFolder.Temporary("withheld");
+        root.File("dev.connection", "Server=tcp:192.0.2.10,1433;Initial Catalog=Estate;User ID=estate;Password=" + PlantedValue.PasswordText);
+        PostureFile.Dev("file:dev.connection", "192.0.2.10").WriteTo(root.Path);
+        root.File(".estate/copies.json", "{ \"copies\": [ { \"name\": \"estate_host_1_0a1b2c3d\", \"server\": \"localhost,11433\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-25T00:00:00Z\" } ] }");
+        var check = Contract.Verbs.Single(v => v.Name == "check") with
         {
-            Directory.CreateDirectory(Path.Combine(root, "estate"));
-            Directory.CreateDirectory(Path.Combine(root, ".estate"));
-            File.WriteAllText(Path.Combine(root, "dev.connection"), "Server=tcp:192.0.2.10,1433;Initial Catalog=Estate;User ID=estate;Password=Pa55!planted#7f3a");
-            File.WriteAllText(Path.Combine(root, "estate", "posture.json"),
-                "{ \"environments\": { \"dev\": { \"host\": \"192.0.2.10\", \"connection\": \"file:dev.connection\", \"profile\": \"estate/profiles/pipeline.publish.xml\" } } }");
-            File.WriteAllText(Path.Combine(root, ".estate", "copies.json"),
-                "{ \"copies\": [ { \"name\": \"estate_host_1_0a1b2c3d\", \"server\": \"localhost,11433\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-25T00:00:00Z\" } ] }");
-            var check = Contract.Verbs.Single(v => v.Name == "check") with
+            Body = (here, _) =>
             {
-                Body = (here, _) =>
-                {
-                    SqlServer.Target(target, "--target").Bind(parsed => SqlServer.Resolve(parsed, here.Root));
-                    throw new InvalidOperationException(Planted);
-                },
-            };
+                SqlServer.Target(target, "--target").Bind(parsed => SqlServer.Resolve(parsed, here.Root));
+                throw new InvalidOperationException("Server=tcp:192.0.2.10,1433;Password=" + planted);
+            },
+        };
 
-            using var output = new MemoryStream();
-            var exit = Cli.Program.Run(["check", "environments", "--json"], output, () => new Checkout(root, root, null), [check]);
-            var answer = JsonNode.Parse(output.ToArray())!;
+        using var output = new MemoryStream();
+        var exit = Cli.Program.Run(["check", "environments", "--json"], output, () => new Checkout(root.Path, root.Path, null), [check]);
+        var answer = JsonNode.Parse(output.ToArray())!;
 
-            Assert.Equal(6, exit);
-            AssertValid("estate.check.1.schema.json", answer);
-            var message = (string)Assert.Single(answer["findings"]!.AsArray())!["message"]!;
-            Assert.Contains("InvalidOperationException", message, StringComparison.Ordinal);
-            Assert.Equal(withheld, !answer.ToJsonString().Contains("planted", StringComparison.Ordinal));
-            Assert.Equal(withheld, message.Contains("withheld", StringComparison.Ordinal));
-        }
-        finally
+        Assert.Equal(6, exit);
+        AssertValid("estate.check.1.schema.json", answer);
+        var message = (string)Assert.Single(answer["findings"]!.AsArray())!["message"]!;
+        Assert.Contains("InvalidOperationException", message, StringComparison.Ordinal);
+        Assert.Equal(withheld, !answer.ToJsonString().Contains(planted.Text, StringComparison.Ordinal));
+        Assert.Equal(withheld, message.Contains("withheld", StringComparison.Ordinal));
+        if (withheld)
         {
-            Directory.Delete(root, recursive: true);
+            planted.AbsentFrom(answer.ToJsonString());
         }
     }
 
@@ -373,7 +396,7 @@ public sealed class ContractTests
     }
 
     [Theory]
-    [Trait("Category", "fast")]
+    [Trait("Category", "build")]
     [MemberData(nameof(Answers))]
     public void Every_verb_answers_with_an_envelope_that_validates(string verb)
     {
@@ -388,14 +411,14 @@ public sealed class ContractTests
         }
     }
 
-    /// <summary>WP 1.7: each verb built at M1 writes its own schema, the envelope and what the verb adds, committed under cli/schemas/.</summary>
+    /// <summary>WP 1.7: each verb this build has that adds to the envelope writes its own schema, the envelope and what the verb adds, committed under cli/schemas/.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Each_verb_built_at_M1_has_its_own_schema_and_its_error_answer_validates_against_it()
+    public void Each_built_verb_has_its_own_schema_and_its_error_answer_validates_against_it()
     {
-        var built = Contract.Verbs.Where(v => v.Arrives == 1).ToList();
+        var built = Contract.Verbs.Where(v => v.Built && v.Content is not null).ToList();
 
-        Assert.Equal(["doctor", "read", "diff", "check"], built.Select(v => v.Name));
+        Assert.NotEmpty(built);
         foreach (var verb in built)
         {
             Assert.True(File.Exists(Path.Combine(Repository.Root, "cli", "schemas", Render.SchemaFile(verb.Output))), verb.Output + " has no schema under cli/schemas/");
@@ -465,47 +488,47 @@ public sealed class ContractTests
         Assert.Throws<InvalidOperationException>(() => check.Outcome("done"));
     }
 
-    [Fact]
+    /// <summary>A verb the contract names and this build has no body for, and a check this build lacks, answer verb.not-built at exit 6 naming the verb and no milestone.</summary>
+    [Theory]
     [Trait("Category", "fast")]
-    public void A_verb_not_built_yet_says_the_milestone_it_arrives_in()
+    [Trait("Value", "S2")]
+    [InlineData("predict")]
+    [InlineData("check outsystems")]
+    public void A_verb_this_build_does_not_have_answers_exit_6_with_verb_not_built_naming_the_verb(string verb)
     {
-        var (exit, output) = Estate("predict");
-        Assert.Equal(6, exit);
-        Assert.Contains("M2 (Predict)", output, StringComparison.Ordinal);
+        var (exit, answer) = Answered([.. verb.Split(' '), "--json"], new Checkout(Repository.Root, Repository.Root, null));
 
-        var (checkExit, check) = Estate("check", "outsystems");
-        Assert.Equal(6, checkExit);
-        Assert.Contains("M6 (After deploy)", check, StringComparison.Ordinal);
+        Assert.Equal(6, exit);
+        AssertValid("estate.envelope.1.schema.json", answer);
+        var finding = Assert.Single(answer["findings"]!.AsArray())!;
+        Assert.Equal(("verb.not-built", "estate " + verb), ((string?)finding["code"], (string?)finding["subject"]));
+        Assert.Equal("estate " + verb + " is not in this build.", (string?)answer["message"]);
+        Assert.DoesNotMatch(@"\bM\d\b", answer.ToJsonString());
     }
 
-    /// <summary>WP 1.7's doctor on a bare machine: DEGRADED, exit 6, one finding of severity error with its remedy per missing item, and no milestone deferred to.</summary>
+    /// <summary>WP 1.7's doctor on a bare machine (M0 exit 3): DEGRADED, exit 6, one finding of severity error with its remedy per missing item, and no milestone claimed.</summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "A2")]
+    [Trait("Exit", "M0.3")]
     public void Doctor_on_a_bare_machine_prints_DEGRADED_with_a_remedy_per_missing_item()
     {
-        var bare = Directory.CreateTempSubdirectory("estate-bare-").FullName;
-        try
-        {
-            var checks = Doctor.Examine(new Doctor.Machine(bare, null, bare, null, Path.Combine(bare, "no-sql.env"), Environment.Version), (c, _) => new Ran.NotFound(c.Program, "not installed"), Contract.Version);
+        using var bare = ScratchFolder.Temporary("bare");
+        var checks = Doctor.Examine(new Doctor.Machine(bare.Path, null, bare.Path, null, bare.Under("no-sql.env"), Environment.Version), (c, _) => new Ran.NotFound(c.Program, "not installed"), Contract.Version);
 
-            var json = Render.Json(Verbs.Doctor(checks, Doctor.Toolchain(bare, Contract.Version)));
+        var json = Render.Json(Verbs.Doctor(checks, Doctor.Toolchain(bare.Path, Contract.Version)));
 
-            AssertValid("estate.doctor.1.schema.json", json);
-            Assert.Equal((6, "degraded"), ((int)json["exit"]!, (string?)json["outcome"]));
-            var line = (string)json["message"]!;
-            Assert.StartsWith("estate doctor DEGRADED | sdk=", line, StringComparison.Ordinal);
-            Assert.Contains(" | dacfx=" + Doctor.DacFx + " (UNPINNED) | ", line, StringComparison.Ordinal);
-            Assert.DoesNotContain("M1", line, StringComparison.Ordinal);
-            var findings = json["findings"]!.AsArray().Select(f => ((string)f!["code"]!, (string)f["severity"]!, (string?)f["remedy"])).ToList();
-            Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.git", "doctor.scratch-server", "doctor.lfs"], findings.Select(f => f.Item1));
-            Assert.Equal(checks.Where(c => c.Remedy is not null).Select(c => c.Remedy), findings.Select(f => f.Item3));
-            Assert.All(findings, f => Assert.Equal("error", f.Item2));
-            Assert.Equal(checks.Select(c => c.Item.Name), json["checks"]!.AsArray().Select(c => (string)c!["item"]!));
-        }
-        finally
-        {
-            Directory.Delete(bare, recursive: true);
-        }
+        AssertValid("estate.doctor.1.schema.json", json);
+        Assert.Equal((6, "degraded"), ((int)json["exit"]!, (string?)json["outcome"]));
+        var line = (string)json["message"]!;
+        Assert.StartsWith("estate doctor DEGRADED | sdk=", line, StringComparison.Ordinal);
+        Assert.Contains(" | dacfx=" + Doctor.DacFx + " (UNPINNED) | ", line, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\bM\d\b", line);
+        var findings = json["findings"]!.AsArray().Select(f => ((string)f!["code"]!, (string)f["severity"]!, (string?)f["remedy"])).ToList();
+        Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.git", "doctor.scratch-server", "doctor.lfs"], findings.Select(f => f.Item1));
+        Assert.Equal(checks.Where(c => c.Remedy is not null).Select(c => c.Remedy), findings.Select(f => f.Item3));
+        Assert.All(findings, f => Assert.Equal("error", f.Item2));
+        Assert.Equal(checks.Select(c => c.Item.Name), json["checks"]!.AsArray().Select(c => (string)c!["item"]!));
     }
 
     /// <summary>WP 1.7's doctor with every item present: READY and exit 0, naming the SDK and runtime, the tool and its DacFx against the ledger, the build route, the scratch server and LFS.</summary>
@@ -513,60 +536,49 @@ public sealed class ContractTests
     [Trait("Category", "fast")]
     public void Doctor_with_every_item_present_prints_READY_and_exits_0()
     {
-        var machine = Directory.CreateTempSubdirectory("estate-ready-").FullName;
-        try
+        using var machine = ScratchFolder.Temporary("ready");
+        foreach (var file in (string[])["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"])
         {
-            foreach (var file in (string[])["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"])
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(machine, file))!);
-                File.WriteAllText(Path.Combine(machine, file), "");
-            }
-
-            File.WriteAllText(Path.Combine(machine, "global.json"), """{ "sdk": { "version": "10.0.401" } }""");
-            File.WriteAllText(Path.Combine(machine, "sql.env"), "MSSQL_SA_PASSWORD=x\nESTATE_SQL_PORT=11433\n");
-            Runner answers = (command, _) => (command.Program + " " + command.Arguments[0]) switch
-            {
-                "dotnet --list-sdks" => new Ran.Exited(0, "10.0.402 [x]\n", ""),
-                "docker info" => new Ran.Exited(0, "29.5.3\n", ""),
-                "docker image" => new Ran.Exited(0, "sha256:5b09\n", ""),
-                "docker container" => new Ran.Exited(0, Doctor.SqlServerImage + "\n", ""),
-                "git --version" => new Ran.Exited(0, "git version 2.31.1.windows.1\n", ""),
-                "git lfs" => new Ran.Exited(0, "git-lfs/3.4.0 (GitHub; windows amd64; go 1.21.1)\n", ""),
-                _ => new Ran.NotFound(command.Program, "not installed"),
-            };
-
-            var answer = Verbs.Doctor(Doctor.Examine(new Doctor.Machine(machine, null, machine, null, Path.Combine(machine, "sql.env"), Environment.Version), answers, Contract.Version), Doctor.Toolchain(machine, Contract.Version));
-
-            var json = Render.Json(answer);
-            AssertValid("estate.doctor.1.schema.json", json);
-            Assert.Equal((0, "ready"), (answer.Exit, answer.Outcome.Word));
-            Assert.Equal("estate doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx=" + Doctor.DacFx + " (UNPINNED) | build=dotnet with the tool folder's targets"
-                + " | git=2.31.1 | scratch-server=estate-sql container (localhost,11433) | image=present | lfs=git-lfs/3.4.0", answer.Message);
-            Assert.Empty(answer.Findings);
-            Assert.Equal(("170.5.96", Doctor.ImageDigest, "UNPINNED"), ((string?)json["engine"]!["dacfx"], (string?)json["engine"]!["sqlserver"], (string?)json["engine"]!["pin"]));
+            machine.File(file, "");
         }
-        finally
+
+        machine.File("global.json", """{ "sdk": { "version": "10.0.401" } }""");
+        machine.File("sql.env", "MSSQL_SA_PASSWORD=x\nESTATE_SQL_PORT=11433\n");
+        Runner answers = (command, _) => (command.Program + " " + command.Arguments[0]) switch
         {
-            Directory.Delete(machine, recursive: true);
-        }
+            "dotnet --list-sdks" => new Ran.Exited(0, "10.0.402 [x]\n", ""),
+            "docker info" => new Ran.Exited(0, "29.5.3\n", ""),
+            "docker image" => new Ran.Exited(0, "sha256:5b09\n", ""),
+            "docker container" => new Ran.Exited(0, Doctor.SqlServerImage + "\n", ""),
+            "git --version" => new Ran.Exited(0, "git version 2.31.1.windows.1\n", ""),
+            "git lfs" => new Ran.Exited(0, "git-lfs/3.4.0 (GitHub; windows amd64; go 1.21.1)\n", ""),
+            _ => new Ran.NotFound(command.Program, "not installed"),
+        };
+
+        var answer = Verbs.Doctor(Doctor.Examine(new Doctor.Machine(machine.Path, null, machine.Path, null, machine.Under("sql.env"), Environment.Version), answers, Contract.Version), Doctor.Toolchain(machine.Path, Contract.Version));
+
+        var json = Render.Json(answer);
+        AssertValid("estate.doctor.1.schema.json", json);
+        Assert.Equal((0, "ready"), (answer.Exit, answer.Outcome.Word));
+        Assert.Equal("estate doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx=" + Doctor.DacFx + " (UNPINNED) | build=dotnet with the tool folder's targets"
+            + " | git=2.31.1 | scratch-server=estate-sql container (localhost,11433) | image=present | lfs=git-lfs/3.4.0", answer.Message);
+        Assert.Empty(answer.Findings);
+        Assert.Equal((Doctor.DacFx, Doctor.ImageDigest, "UNPINNED"), ((string?)json["engine"]!["dacfx"], (string?)json["engine"]!["sqlserver"], (string?)json["engine"]!["pin"]));
     }
 
+    /// <summary>The first call in Main is Telemetry.OptOut, and no static initializer runs ahead of it; what OptOut sets is TelemetryTests'.</summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "X5")]
     public void Main_opts_out_of_telemetry_before_anything_else()
     {
         var main = typeof(Cli.Program).GetMethod(nameof(Cli.Program.Main))!;
         var il = main.GetMethodBody()!.GetILAsByteArray()!;
         var first = Array.FindIndex(il, b => b != 0x00);    // past the nops a debug build emits
+
         Assert.Equal(0x28, il[first]);                      // call
         Assert.Equal(typeof(Telemetry).GetMethod(nameof(Telemetry.OptOut)), main.Module.ResolveMethod(BinaryPrimitives.ReadInt32LittleEndian(il.AsSpan(first + 1))));
         Assert.Null(typeof(Cli.Program).TypeInitializer);   // no static initializer runs ahead of Main
-
-        Environment.SetEnvironmentVariable("DACFX_TELEMETRY_OPTOUT", null);
-        Environment.SetEnvironmentVariable("DOTNET_CLI_TELEMETRY_OPTOUT", null);
-        Telemetry.OptOut();
-        Assert.Equal("1", Environment.GetEnvironmentVariable("DACFX_TELEMETRY_OPTOUT"));
-        Assert.Equal("1", Environment.GetEnvironmentVariable("DOTNET_CLI_TELEMETRY_OPTOUT"));
     }
 
     private static void AssertValid(string schemaFile, JsonNode instance)

@@ -35,7 +35,8 @@ jobs:
           global-json-file: global.json
       - run: dotnet restore Estate.sln --locked-mode
       - run: dotnet build Estate.sln --no-restore
-      - run: dotnet test Estate.sln --no-build --filter Category=fast
+      # M0 exit 1: the fast tests, and with them the build tests, which run dotnet build or publish or start estate as a process.
+      - run: dotnet test Estate.sln --no-build --filter "Category=fast|Category=build"
       - name: Publish the tool folder
         if: runner.os == 'Linux'
         run: bash ci/publish.sh

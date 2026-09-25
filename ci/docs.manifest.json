@@ -69,7 +69,7 @@
       "reader": ["a maintainer", "a review bot"],
       "moment": ["a change", "a pull request to this repository"],
       "budget": null,
-      "generator": "ci/laws.sh, or ci/laws.ps1 on Windows, from the tests' Law traits; Budgets.Tests: Laws holds the committed file to its output",
+      "generator": "ci/laws.sh, or ci/laws.ps1 on Windows, from the tests' Law, Value and Exit traits; Budgets.Tests: Laws holds the committed file to its output",
       "ancestor": ["archive/v2/AXIOMS.md", "archive/v2/PRODUCT_AXIOMS.md"]
     },
     {

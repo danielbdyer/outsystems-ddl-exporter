@@ -28,6 +28,7 @@ public sealed class NoRestatedCounts
 
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Value", "L2")]
     [MemberData(nameof(HandWritten))]
     public void A_hand_written_document_restates_no_count_the_build_computes(string document) =>
         Assert.Empty(Documents.Blocks(document)

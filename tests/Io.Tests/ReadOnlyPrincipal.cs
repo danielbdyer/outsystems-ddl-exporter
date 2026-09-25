@@ -3,6 +3,8 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Estate.Budgets.Tests;
+using Estate.Kernel;
+using Estate.Tests;
 using Microsoft.Data.SqlClient;
 
 namespace Estate.Io.Tests;
@@ -10,10 +12,10 @@ namespace Estate.Io.Tests;
 /// <summary>
 /// The read-only principal (V3_MILESTONES.md WP 1.8, R14) for a registered database: a SQL login and its user holding only
 /// VIEW DEFINITION at the database's scope and db_datareader, nothing server-wide beyond the CONNECT SQL a login carries.
-/// Its connection string lives only in a file under .estate/principals/ (ignored), reached through a file: reference; the
-/// password is generated here, per principal, and never printed. The login is named for its database, and dropping the
-/// database drops the login and the file (<see cref="SqlServerFixture"/>), a killed run's at the next run's sweep. It prints
-/// as its login and its reference only.
+/// Its connection string lives only in a file under .estate/principals/ (ignored), reached through a file: reference, which
+/// io/SqlServer's own reading of a reference resolves; the password is generated here, per principal, and never printed. The login
+/// is named for its database, and dropping the database drops the login and the file (<see cref="SqlServerFixture"/>), a killed run's
+/// at the next run's sweep. It prints as its login and its reference only.
 /// </summary>
 public sealed class ReadOnlyPrincipal(string login, string reference)
 {
@@ -32,8 +34,9 @@ public sealed class ReadOnlyPrincipal(string login, string reference)
 
     public string Reference => reference;
 
-    /// <summary>The connection string the reference names: read when asked for, never kept or printed.</summary>
-    public string ConnectionString => Resolve(reference);
+    /// <summary>The connection string the reference names, read as io/SqlServer reads a file: reference (git keeps the file out of every commit, and its owner alone reads it): never kept or printed.</summary>
+    public string ConnectionString => SqlServer.Read("the read-only principal's connection, " + reference + ",", Expect.Value(SecretReference.Of("the read-only principal", reference)), Repository.Root)
+        .Match(text => text ?? throw new InvalidOperationException(reference + " resolves to nothing"), error => throw new InvalidOperationException(error.Code + ": " + error.Message));
 
     public static async Task<ReadOnlyPrincipal> CreateAsync(RegisteredDatabase database)
     {
@@ -44,15 +47,7 @@ public sealed class ReadOnlyPrincipal(string login, string reference)
 
         var login = database.Name + Suffix;
         var password = "Ro1!" + Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
-        await using (var connection = new SqlConnection(database.ConnectionString))
-        {
-            await connection.OpenAsync();
-            await using var command = new SqlCommand(Grant, connection);
-            command.Parameters.Add(new SqlParameter("@login", System.Data.SqlDbType.NVarChar, 128) { Value = login });
-            command.Parameters.Add(new SqlParameter("@password", System.Data.SqlDbType.NVarChar, 128) { Value = password });
-            await command.ExecuteNonQueryAsync();
-        }
-
+        await SqlServerFixture.ExecuteAsync(database.ConnectionString, Grant, null, ("@login", login), ("@password", password));
         var file = FileOf(database.Name);
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         File.WriteAllText(file, new SqlConnectionStringBuilder(database.ConnectionString)
@@ -70,14 +65,6 @@ public sealed class ReadOnlyPrincipal(string login, string reference)
 
         return new ReadOnlyPrincipal(login, "file:" + Path.GetRelativePath(Repository.Root, file).Replace('\\', '/'));
     }
-
-    /// <summary>
-    /// The file: half of WP 1.4's reference grammar, for tests only: the named file's text, its path relative to the
-    /// repository's root. Anything else, a literal connection string included, is refused.
-    /// </summary>
-    public static string Resolve(string reference) => reference.StartsWith("file:", StringComparison.Ordinal)
-        ? File.ReadAllText(Path.Combine(Repository.Root, reference["file:".Length..])).Trim()
-        : throw new ArgumentException("not a file: reference", nameof(reference));
 
     /// <summary>Deletes a database's principal file, if it has one; its login is dropped with the database.</summary>
     internal static void Forget(string database)

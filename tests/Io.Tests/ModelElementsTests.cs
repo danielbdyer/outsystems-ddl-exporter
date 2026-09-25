@@ -55,6 +55,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "3′ the model is complete")]
+    [Trait("Exit", "M1.4")]
     public void Two_builds_of_the_golden_project_read_into_equal_models_and_one_fingerprint()
     {
         var (first, second) = (heads.Models["base"], heads.Models["again"]);
@@ -74,6 +75,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     [Trait("Category", "fast")]
     [MemberData(nameof(SampleChanges))]
     [Trait("Law", "3′ the model is complete")]
+    [Trait("Exit", "M1.4")]
     public void Each_sample_change_to_the_golden_project_changes_the_fingerprint(string sample) =>
         Assert.NotEqual(Fingerprint.Of(heads.Models["base"].Elements), Fingerprint.Of(heads.Models[sample].Elements));
 
@@ -325,6 +327,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "X2")]
     public void A_secret_planted_in_every_property_that_holds_one_reaches_no_element_property()
     {
         const string Planted = "Pl4nted!secret#7f3a";
@@ -415,6 +418,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "X2")]
     public void Every_text_property_DacFx_declares_is_a_listed_secret_or_reviewed_as_not_a_secret()
     {
         var reviewed = NotSecret.Values.SelectMany(names => names).ToList();

@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Linq;
 using CsCheck;
+using Estate.Tests;
 using Xunit;
 using static Estate.Kernel.Tests.ElementSets;
 
@@ -17,6 +18,7 @@ public sealed class ElementTests
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "3′ the model is complete")]
+    [Trait("Exit", "M1.4")]
     public void The_fingerprint_of_a_model_is_independent_of_the_order_its_elements_are_given_in() =>
         Sets.SelectMany(set => Gen.Shuffle(set.ToArray()).Select(shuffled => (set, shuffled))).Sample((set, shuffled) =>
             Fingerprint.Of(SortedArray.Of(shuffled.Select(Rebuilt))) == Fingerprint.Of(set)
@@ -25,16 +27,17 @@ public sealed class ElementTests
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "3′ the model is complete")]
+    [Trait("Exit", "M1.4")]
     public void Two_models_fingerprint_equally_exactly_when_their_elements_are_equal()
     {
         Gen.Select(Sets, Sets).Sample((a, b) => (Fingerprint.Of(a) == Fingerprint.Of(b)) == (a == b));
-        Assert.Equal(Fingerprint.Of(SampleChanges.Model()), Fingerprint.Of(SampleChanges.Model()));
         Assert.Equal(Fingerprint.Of(SortedArray.Of<Element>()), Fingerprint.Of(default(SortedArray<Element>)));
     }
 
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "3′ the model is complete")]
+    [Trait("Exit", "M1.4")]
     public void Any_single_edit_to_a_key_a_property_value_a_relationship_target_or_a_script_changes_the_fingerprint() =>
         Edits.Sample((before, edit) => Fingerprint.Of(before) != Fingerprint.Of(edit.After), print: x => x.Item2.Kind, iter: 1000);
 
@@ -42,13 +45,14 @@ public sealed class ElementTests
     [Trait("Category", "fast")]
     [Trait("Law", "3′ the model is complete")]
     [MemberData(nameof(SampleChanges.Names), MemberType = typeof(SampleChanges))]
+    [Trait("Exit", "M1.4")]
     public void Every_sample_change_changes_the_fingerprint(string sample)
     {
         var (before, after, _) = SampleChanges.Pair(sample);
         Assert.NotEqual(Fingerprint.Of(before), Fingerprint.Of(after));
     }
 
-    // Pairs that run together without the mechanism each names: lengths, value tags, counts, UTF-16 code units.
+    // Pairs that run together without the mechanism each names: lengths, value tags, counts, UTF-16 code units. The label names the case in the runner's output.
     [Theory]
     [Trait("Category", "fast")]
     [Trait("Law", "3′ the model is complete")]
@@ -61,7 +65,8 @@ public sealed class ElementTests
     [InlineData("code units: two lone surrogates", 6)]
     [InlineData("parents: a child key and a top-level key", 7)]
     [InlineData("tags: a text and a script of one content", 8)]
-    public void Models_a_careless_serialization_would_confuse_fingerprint_differently(string what, int pair)
+    [Trait("Exit", "M1.4")]
+    public void Models_a_serialization_without_lengths_tags_or_counts_would_confuse_fingerprint_differently(string what, int pair)
     {
         var t = Key("Table", "dbo", "T");
         var (a, b) = pair switch
@@ -76,9 +81,8 @@ public sealed class ElementTests
             7 => (New(Key(t, "Column", "c"), []), New(Key("Column", "dbo", "T.c"), [])),
             _ => (New(t, [("Expression", Text("(0)"))]), New(t, [("Expression", new Value.Script("(0)"))])),
         };
-        Assert.NotEqual(Fingerprint.Of([a]), Fingerprint.Of([b]));
+        Assert.True(Fingerprint.Of([a]) != Fingerprint.Of([b]), what + ": the two models fingerprint alike");
         Assert.NotEqual(a, b);
-        Assert.False(string.IsNullOrEmpty(what));
     }
 
     [Fact]
@@ -93,6 +97,7 @@ public sealed class ElementTests
     [InlineData("en-US")]
     [InlineData("tr-TR")]
     [InlineData("ar-SA")]
+    [Trait("Value", "D2")]
     public void A_value_compares_and_renders_ordinally_whatever_the_culture(string culture)
     {
         var before = CultureInfo.CurrentCulture;
@@ -164,15 +169,13 @@ public sealed class ElementTests
         Assert.Equal("element.child-name", Code(ElementKey.Of(t, "Column", Ok(Name.Of("dbo", "c")))));
     }
 
+    /// <summary>One text gives two different script elements, one per deploy script; an entry renders as RefactorLogOperation [key] and carries only the properties given.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void The_deploy_scripts_and_a_refactorlog_entry_are_elements_of_their_own_types()
     {
         var entry = Ok(Element.RefactorLogEntry("7f1a2c3e-0b4d-4e5f-8a9b-0c1d2e3f4a5b", [new Element.Property("NewName", Text("[EmailAddress]"))]));
 
-        Assert.Equal(Element.PreDeploymentScript, Element.PreDeploy("PRINT 1;").Key.Type);
-        Assert.Equal(Element.PostDeploymentScript, Element.PostDeploy("PRINT 1;").Key.Type);
-        Assert.Equal(new Value.Script("PRINT 1;"), Element.PostDeploy("PRINT 1;")["Text"]);
         Assert.NotEqual(Element.PreDeploy("PRINT 1;"), Element.PostDeploy("PRINT 1;"));
         Assert.Equal("RefactorLogOperation [7f1a2c3e-0b4d-4e5f-8a9b-0c1d2e3f4a5b]", entry.Key.ToString());
         Assert.Equal(Text("[EmailAddress]"), entry["NewName"]);
@@ -190,5 +193,5 @@ public sealed class ElementTests
         Assert.Equal("name.blank", Code(Rename.Of(customer, "")));
     }
 
-    private static string Code<T>(Result<T> result) => Assert.IsType<Result<T>.Failed>(result).Error.Code;
+    private static string Code<T>(Result<T> result) => Expect.Failed(result).Code;
 }

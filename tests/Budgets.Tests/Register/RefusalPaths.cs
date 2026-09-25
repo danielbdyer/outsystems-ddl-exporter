@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using Estate.Cli;
 using Estate.Io;
 using Estate.Kernel;
+using Estate.Tests;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Contract = Estate.Cli.Contract;
@@ -74,6 +75,7 @@ internal static class RefusalPaths
             return Failed(Ssdt.Project(scratch, null));
         }),
         new("a build without the SDK band", "sdk.missing", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Bare(scratch), Output(scratch), (_, _) => new Ran.Exited(0, "8.0.100 [sdk]\n", "")))),
+        new("a build with no dotnet on the PATH", "sdk.missing", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Bare(scratch), Output(scratch), (c, _) => new Ran.NotFound(c.Program, "'dotnet' is on no folder of the PATH.")))),
         new("a build that fails", "build.failed", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Hollow(scratch), Output(scratch), Sdk))),
         new("a build past its timeout", "build.timed-out", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Hollow(scratch), Output(scratch),
             (c, t) => c.Arguments[0] == "build" ? new Ran.TimedOut(c.Timeout, "  Determining projects to restore...\n", "") : Sdk(c, t)))),
@@ -81,7 +83,12 @@ internal static class RefusalPaths
         new("a toolchain ledger this identity cannot read", "toolchain.unreadable", false, (scratch, _) =>
             Denied(Path.Combine(Ledger(scratch, "| 2026-09-24 | 3.0.0 | UNPINNED | — |"), Doctor.Ledger), () => Failed(Doctor.Toolchain(scratch, "3.0.0")))),
         new("a package that is none", "package.unreadable", false, (scratch, _) => Failed(Ssdt.Load(Written(scratch, "not.dacpac", "not a package")))),
+        new("a package holding no model.xml", "package.unreadable", false, (scratch, _) => Failed(Ssdt.Load(Zipped(scratch, "hollow.dacpac", ("Origin.xml", "<DacOrigin />"))))),
+        new("a package whose refactorlog holds an operation without its Key", "package.unreadable", false, (scratch, _) => Failed(Ssdt.Load(Packaged(scratch, "keyless.dacpac",
+            ("refactor.xml", "<Operations xmlns=\"http://schemas.microsoft.com/sqlserver/dac/Serialization/2012/02\"><Operation Name=\"Rename Refactor\"><Property Name=\"ElementName\" Value=\"[dbo].[T]\" /></Operation></Operations>"))))),
         new("a refactorlog that is none", "refactorlog.unreadable", false, (scratch, _) => Failed(Ssdt.RefactorLog(Written(scratch, "not.refactorlog", "not a refactorlog")))),
+        new("a refactorlog carrying a DOCTYPE with an external entity", "refactorlog.unreadable", true, (scratch, planted) => Failed(Ssdt.RefactorLog(Written(scratch, "entity.refactorlog",
+            "<?xml version=\"1.0\"?><!DOCTYPE Operations [<!ENTITY secret SYSTEM \"file:///" + Written(scratch, "secret.txt", planted).Replace('\\', '/') + "\">]><Operations>&secret;</Operations>")))),
         new("a refactorlog entry naming no object", "refactorlog.name", false, (_, _) =>
         {
             using var package = new Ssdt.Package(Model(), null, null,
@@ -180,7 +187,7 @@ internal static class RefusalPaths
         new("a reader group given twice", "posture.readers", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
         new("a profile path outside the estate", "posture.profile-path", true, (scratch, planted) => Posture(scratch, Dev(profile: "../" + planted + ".publish.xml"))),
         new("a SQLCMD variable given twice in two cases", "posture.sqlcmd-repeated", true, (scratch, planted) =>
-            Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": \"env:A\", \"tag\": \"env:B\" }, \"readers\": [" + Quoted(planted) + "]"))),
+            Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": \"env:A\", \"Version\": \"env:C\", \"tag\": \"env:B\" }, \"readers\": [" + Quoted(planted) + "]"))),
         new("a classification that is none", "posture.classification", true, (scratch, planted) => Posture(scratch, Dev("\"classification\": " + Quoted(planted)))),
         new("a synthetic environment unconfirmed", "posture.unconfirmed", true, (scratch, planted) =>
             Posture(scratch, Dev("\"classification\": \"synthetic\", \"readers\": [" + Quoted(planted) + "]"))),
@@ -192,6 +199,8 @@ internal static class RefusalPaths
             Failed(SqlCmdVariable.Substitute("PRINT '$(Missing)';", new Dictionary<string, string>(StringComparer.Ordinal) { ["Tag"] = planted }))),
 
         new("no profile", "profile.missing", false, (scratch, _) => Failed(Profiles.Load(Path.Combine(scratch, "none.publish.xml")))),
+        new("a profile carrying a DOCTYPE with an external entity", "profile.unreadable", true, (scratch, planted) => Failed(Profiles.Load(Written(scratch, "entity.publish.xml",
+            "<?xml version=\"1.0\"?><!DOCTYPE Project [<!ENTITY secret SYSTEM \"file:///" + Written(scratch, "secret.txt", planted).Replace('\\', '/') + "\">]><Project>&secret;</Project>")))),
         new("a profile that is not XML", "profile.unreadable", true, (scratch, planted) => Failed(Profiles.Load(Written(scratch, "broken.publish.xml", "<Project>" + planted + "</Projec>")))),
         new("a profile DacFx does not read", "profile.unreadable", true, (scratch, planted) =>
             Failed(Profiles.Load(Profile(scratch, "<BlockOnPossibleDataLoss>" + planted + "</BlockOnPossibleDataLoss>")))),
@@ -482,8 +491,15 @@ internal static class RefusalPaths
     public static IEnumerable<(string File, string Code)> ConstructedIn() => Repository.Files
         .Where(f => (f.StartsWith("kernel/", StringComparison.Ordinal) || f.StartsWith("io/", StringComparison.Ordinal) || f.StartsWith("cli/", StringComparison.Ordinal))
             && f.EndsWith(".cs", StringComparison.Ordinal))
-        .SelectMany(f => System.Text.RegularExpressions.Regex.Matches(Repository.Read(f), @"new\s+Error\(\s*""([a-z0-9.-]+)""").Select(m => (File: f, Code: m.Groups[1].Value)))
+        .SelectMany(f => CodesIn(Repository.Read(f)).Select(code => (File: f, Code: code)))
         .Distinct();
+
+    /// <summary>
+    /// The codes a source text constructs an Error of: the first argument of <c>new Error("…"</c>, or of a target-typed <c>new("…"</c>
+    /// (finding D6) when it is a code, a word and a dot at least; a composed code's literal start (element.) counts as the start alone.
+    /// </summary>
+    public static IEnumerable<string> CodesIn(string source) =>
+        System.Text.RegularExpressions.Regex.Matches(source, @"new(?:\s+Error)?\s*\(\s*""([a-z0-9-]+\.[a-z0-9.-]*)""").Select(m => m.Groups[1].Value).Where(code => !code.Contains('/', StringComparison.Ordinal));
 
     /// <summary>Whether a code is constructed by the kernel or the cli alone: the files that write it, or the start of it, lie outside io/.</summary>
     public static bool KernelOrCli(string code) => ConstructedIn()
@@ -518,6 +534,44 @@ internal static class RefusalPaths
         + properties + "\n  </PropertyGroup>\n  <ItemGroup>\n"
         + string.Concat(sqlCmd.Select(v => "    <SqlCmdVariable Include=\"" + v.Name + "\">\n      <Value>" + v.Value + "</Value>\n    </SqlCmdVariable>\n"))
         + "  </ItemGroup>\n</Project>\n");
+
+    /// <summary>A zip under the scratch folder holding the entries given and nothing DacFx needs: what Ssdt.Load opens as a package.</summary>
+    private static string Zipped(string scratch, string file, params (string Entry, string Text)[] entries)
+    {
+        var path = Path.Combine(scratch, file);
+        using (var zip = new System.IO.Compression.ZipArchive(File.Create(path), System.IO.Compression.ZipArchiveMode.Create))
+        {
+            Added(zip, entries);
+        }
+
+        return path;
+    }
+
+    /// <summary>A package DacFx built from an empty model, under the scratch folder, with the entries given added to it, as a build adds its refactor.xml.</summary>
+    private static string Packaged(string scratch, string file, params (string Entry, string Text)[] entries)
+    {
+        var path = Path.Combine(scratch, file);
+        using (var model = Model())
+        {
+            DacPackageExtensions.BuildPackage(path, model, new PackageMetadata());
+        }
+
+        using (var zip = new System.IO.Compression.ZipArchive(File.Open(path, FileMode.Open, FileAccess.ReadWrite), System.IO.Compression.ZipArchiveMode.Update))
+        {
+            Added(zip, entries);
+        }
+
+        return path;
+    }
+
+    private static void Added(System.IO.Compression.ZipArchive zip, (string Entry, string Text)[] entries)
+    {
+        foreach (var (entry, text) in entries)
+        {
+            using var writer = new StreamWriter(zip.CreateEntry(entry).Open());
+            writer.Write(text);
+        }
+    }
 
     private static string Written(string scratch, string file, string text)
     {
@@ -572,7 +626,7 @@ internal static class RefusalPaths
         try
         {
             Arrange(root, "init", "-q", "--initial-branch=main");
-            // estate's own commit runs git with the repository's configuration alone; a runner with no global identity must not fail it first.
+            // estate's own commit (the push drivers) reads the repository's configuration alone, and a CI runner has no global identity.
             Arrange(root, "config", "user.name", "Estate Test");
             Arrange(root, "config", "user.email", "estate-test@example.invalid");
             Arrange(root, "commit", "-q", "--allow-empty", "-m", "estate");
@@ -615,7 +669,7 @@ internal static class RefusalPaths
         ? new Error(finding.Code, finding.Message, remedy)
         : throw new InvalidOperationException("the answer carries no one error: " + answer.Message);
 
-    private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new InvalidOperationException(error.Code + ": " + error.Message));
+    private static T Made<T>(Result<T> result) => Expect.Value(result);
 
-    private static Error Failed<T>(Result<T> result) => result.Match(value => throw new InvalidOperationException("accepted where an error was due: " + value), error => error);
+    private static Error Failed<T>(Result<T> result) => Expect.Failed(result);
 }

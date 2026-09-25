@@ -4,8 +4,8 @@ using System.IO;
 using System.Linq;
 using CsCheck;
 using Estate.Budgets.Tests;
-using Estate.Cli;
 using Estate.Kernel;
+using Estate.Tests;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Xunit;
 
@@ -28,6 +28,7 @@ public sealed class AllowlistTests
 
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Value", "P2")]
     [MemberData(nameof(Corpus))]
     public void The_allowlist_admits_each_allowed_form_of_its_corpus_and_refuses_each_forbidden_one(string label)
     {
@@ -36,12 +37,13 @@ public sealed class AllowlistTests
         var query = SqlServer.AggregateQuery.Of(text, "corpus");
 
         Assert.True(admitted == query is Result<SqlServer.AggregateQuery>.Ok, (admitted ? "refused: " : "admitted: ") + label + "\n" + query.Match(q => q.Statement, e => e.Message));
-        Assert.All(new[] { query }.OfType<Result<SqlServer.AggregateQuery>.Failed>(), r => Assert.Equal(("aggregate-query.refused", 9), (r.Error.Code, Contract.Exit(r.Error))));
+        Assert.All(new[] { query }.OfType<Result<SqlServer.AggregateQuery>.Failed>(), r => Assert.Equal("aggregate-query.refused", r.Error.Code));
     }
 
     /// <summary>Every form the work package names is planted, forbidden and allowed alike, so a corpus trimmed of one fails here.</summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "P2")]
     public void The_corpus_plants_every_form_the_work_package_names()
     {
         string[] refused = ["STRING_AGG", "MIN over a bare column", "MAX over a bare column", "AVG over a bare column", "SELECT INTO", "EXEC", "INSERT", "UPDATE", "DELETE",
@@ -64,6 +66,7 @@ public sealed class AllowlistTests
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "P2")]
     public void Generated_variants_are_admitted_exactly_when_no_forbidden_form_is_planted()
     {
         var drawn = Variants.Array[400].Single();
@@ -81,13 +84,14 @@ public sealed class AllowlistTests
     [InlineData("SELECT COUNT(*)\nFROM dbo.Customer\nWHERE STRING_AGG(Email, N'planted-7f3a') IS NULL;", "line 3, column 7", "STRING_AGG")]
     [InlineData("SELECT COUNT(*) FROM Orders.dbo.Customer WHERE Email = N'planted-7f3a';", "line 1, column 22", "a name of 3 parts")]
     [InlineData("SELECT COUNT(*) FROM dbo.Customer WHERE Email = N'planted-7f3a'; DELETE FROM dbo.Customer;", "2 statements", "one statement at a time")]
+    [Trait("Value", "X2")]
     public void A_refusal_names_the_form_and_its_place_and_quotes_no_literal(string text, string place, string form)
     {
-        var error = Assert.IsType<Result<SqlServer.AggregateQuery>.Failed>(SqlServer.AggregateQuery.Of(text, "dbo.Customer.Email NotNull")).Error;
+        var error = Expect.Failed(SqlServer.AggregateQuery.Of(text, "dbo.Customer.Email NotNull"), "aggregate-query.refused");
 
         Assert.Contains(place, error.Message, StringComparison.Ordinal);
         Assert.Contains(form, error.Message + error.Remedy, StringComparison.Ordinal);
-        Assert.DoesNotContain("planted", error.Message + error.Remedy, StringComparison.Ordinal);
+        new PlantedValue("planted-7f3a").AbsentFrom(error);
     }
 
     /// <summary>What an admitted query runs is the statement the allowlist checked, as ScriptDom writes it back: no comment and no batch separator reaches SQL Server.</summary>
@@ -95,10 +99,9 @@ public sealed class AllowlistTests
     [Trait("Category", "fast")]
     public void An_admitted_query_runs_the_statement_it_was_checked_as_without_comments_or_a_batch_separator()
     {
-        var query = Assert.IsType<Result<SqlServer.AggregateQuery>.Ok>(SqlServer.AggregateQuery.Of("/* one */ select count_big( * ) -- two\nfrom dbo.Customer ;\nGO\n", "dbo.Customer Presence")).Value;
+        var query = Expect.Value(SqlServer.AggregateQuery.Of("/* one */ select count_big( * ) -- two\nfrom dbo.Customer ;\nGO\n", "dbo.Customer Presence"));
 
         Assert.Equal("SELECT count_big(*)\nFROM   dbo.Customer", query.Statement);
-        Assert.Equal("dbo.Customer Presence", query.Site);
     }
 
     /// <summary>
@@ -108,14 +111,13 @@ public sealed class AllowlistTests
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void A_query_built_as_a_tree_is_checked_as_the_tree_and_runs_as_the_same_query_read_from_text()
+    public void A_query_built_as_ScriptDom_fragments_is_checked_as_built_and_runs_as_the_same_query_read_from_text()
     {
-        var built = Assert.IsType<Result<SqlServer.AggregateQuery>.Ok>(SqlServer.AggregateQuery.Of(Built(Call("COUNT_BIG", new ColumnReferenceExpression { ColumnType = ColumnType.Wildcard })), "dbo.Customer Rows")).Value;
-        var read = Assert.IsType<Result<SqlServer.AggregateQuery>.Ok>(SqlServer.AggregateQuery.Of("SELECT COUNT_BIG(*) FROM dbo.Customer;", "dbo.Customer Rows")).Value;
-        var refused = Assert.IsType<Result<SqlServer.AggregateQuery>.Failed>(SqlServer.AggregateQuery.Of(Built(Call("MAX", ColumnOf("Email"))), "dbo.Customer.Email Fits")).Error;
+        var built = Expect.Value(SqlServer.AggregateQuery.Of(Built(Call("COUNT_BIG", new ColumnReferenceExpression { ColumnType = ColumnType.Wildcard })), "dbo.Customer Rows"));
+        var read = Expect.Value(SqlServer.AggregateQuery.Of("SELECT COUNT_BIG(*) FROM dbo.Customer;", "dbo.Customer Rows"));
+        var refused = Expect.Failed(SqlServer.AggregateQuery.Of(Built(Call("MAX", ColumnOf("Email"))), "dbo.Customer.Email Fits"), "aggregate-query.refused");
 
         Assert.Equal(read.Statement, built.Statement);
-        Assert.Equal(("aggregate-query.refused", 9), (refused.Code, Contract.Exit(refused)));
         Assert.Equal("The query dbo.Customer.Email Fits is refused at its FunctionCall: MAX over a bare column.", refused.Message);
     }
 

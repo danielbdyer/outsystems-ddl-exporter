@@ -22,8 +22,9 @@ public sealed class Prose
 
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Value", "L1")]
     [MemberData(nameof(EngineDocuments))]
-    public void An_engine_document_uses_no_retired_word_and_no_banned_form(string document)
+    public void A_document_of_the_repository_uses_no_retired_word_and_no_banned_form(string document)
     {
         var text = Repository.Read(document);
 

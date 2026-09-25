@@ -21,6 +21,7 @@ public sealed class InterruptionTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "O7")]
     public void A_verb_waiting_on_a_held_lock_and_given_timeout_1_answers_interrupted_at_exit_130_within_3_seconds_and_changes_nothing()
     {
         var commit = scratch.Commit("first", ("a.sql", "SELECT 1;\n"));
@@ -39,7 +40,7 @@ public sealed class InterruptionTests : IDisposable
         Assert.Equal("estate read stopped after --timeout 1: it ended the programs it had started and released its locks.", (string?)answer["message"]);
         Assert.Empty(answer["findings"]!.AsArray());
         Assert.False(Directory.Exists(state.Worktree(commit)), "the interrupted verb made the worktree");
-        Assert.Equal("lock.timed-out", GitTests.Failed(FileLock.Take(state.WorktreesLock, TimeSpan.Zero)).Code);   // still this test's
+        GitTests.Failed(FileLock.Take(state.WorktreesLock, TimeSpan.Zero), "lock.timed-out");   // still this test's
     }
 
     [Theory]
@@ -73,7 +74,8 @@ public sealed class InterruptedProcessTests(PublishedTool tool) : IDisposable
     public void Dispose() => scratch.Dispose();
 
     [Fact]
-    [Trait("Category", "fast")]
+    [Trait("Category", "build")]
+    [Trait("Value", "O7")]
     public void A_signal_or_a_timeout_stops_a_waiting_estate_with_exit_130_and_an_interrupted_answer()
     {
         scratch.Commit("first", ("a.sql", "SELECT 1;\n"));

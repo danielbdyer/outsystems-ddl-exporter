@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using CsCheck;
+using Estate.Tests;
 using Xunit;
 
 namespace Estate.Kernel.Tests;
@@ -82,7 +83,7 @@ public sealed class ServerNameTests
     [InlineData("(LocalDB)", "(localdb)")]
     [InlineData("SQL_PROD01", "sql_prod01")]
     public void A_posture_host_is_read_in_lower_case_and_this_machine_as_localhost(string text, string host) =>
-        Assert.Equal(host, Made(Host.Of("environments.dev.host in estate/posture.json", text)).ToString());
+        Assert.Equal(host, Expect.Value(Host.Of("environments.dev.host in estate/posture.json", text)).ToString());
 
     [Theory]
     [Trait("Category", "fast")]
@@ -98,9 +99,8 @@ public sealed class ServerNameTests
     [InlineData(null)]
     public void A_posture_host_with_a_port_an_instance_a_protocol_or_white_space_is_refused(string? text)
     {
-        var error = Assert.IsType<Result<Host>.Failed>(Host.Of("environments.dev.host in estate/posture.json", text)).Error;
+        var error = Expect.Failed(Host.Of("environments.dev.host in estate/posture.json", text), "posture.host");
 
-        Assert.Equal("posture.host", error.Code);
         Assert.StartsWith("environments.dev.host in estate/posture.json", error.Message, StringComparison.Ordinal);
     }
 
@@ -120,6 +120,4 @@ public sealed class ServerNameTests
 
         Assert.Equal(["(localdb)\\mssqllocaldb", "dev-sql,1433", "localhost,11433", "prod-sql"], SortedArray.Of(names).Select(n => n.ToString()));
     }
-
-    private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 }

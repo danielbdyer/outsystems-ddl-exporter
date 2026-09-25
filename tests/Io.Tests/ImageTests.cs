@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Estate.Kernel;
+using Estate.Tests;
 using Xunit;
 
 namespace Estate.Io.Tests;
@@ -18,9 +19,9 @@ public sealed class ImageTests : IDisposable
 
     private static readonly string Built = "sha256:" + new string('b', 64);
 
-    private readonly string root = Directory.CreateTempSubdirectory("estate-image-").FullName;
+    private readonly ScratchFolder root = ScratchFolder.Temporary("image");
 
-    public void Dispose() => Directory.Delete(root, recursive: true);
+    public void Dispose() => root.Dispose();
 
     [Fact]
     [Trait("Category", "fast")]
@@ -54,7 +55,7 @@ public sealed class ImageTests : IDisposable
         Assert.Null(ScratchServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), (command, _) => new Ran.TimedOut(command.Timeout, "", "")));
     }
 
-    private SqlServer.Copy Copy(string server) => new(CopyName.Make("host", 1, 1), server + ";Initial Catalog=master", root);
+    private SqlServer.Copy Copy(string server) => new(CopyName.Make("host", 1, 1), server + ";Initial Catalog=master", root.Path);
 
     /// <summary>docker as it answers for a running estate-sql container publishing 1433 on 127.0.0.1:11433, from an image of id <see cref="Built"/> pulled by the registry digests given.</summary>
     private static Runner Docker(IReadOnlyList<string> repoDigests) => (command, _) => (command.Program, command.Arguments) switch

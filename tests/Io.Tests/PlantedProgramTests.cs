@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
+using Estate.Tests;
 using Xunit;
 
 namespace Estate.Io.Tests;
@@ -15,19 +16,19 @@ namespace Estate.Io.Tests;
 [Collection(PublishedToolCollection.Name)]
 public sealed class PlantedProgramTests(PublishedTool tool) : IDisposable
 {
-    private readonly string scratch = Directory.CreateTempSubdirectory("estate-cwd-").FullName;
+    private readonly ScratchFolder scratch = ScratchFolder.Temporary("cwd");
 
-    public void Dispose() => Directory.Delete(scratch, recursive: true);
+    public void Dispose() => scratch.Dispose();
 
     [Fact]
-    [Trait("Category", "fast")]
+    [Trait("Category", "build")]
     public void The_published_estate_runs_the_PATH_s_git_and_never_a_git_planted_in_its_working_directory()
     {
-        CommandTests.Plant(scratch, "git");
+        CommandTests.Plant(scratch.Path, "git");
 
         var ran = new Command("dotnet", [Path.Combine(tool.Folder, "estate.dll"), "read", "--from", "ref:HEAD", "--json"], TimeSpan.FromMinutes(2))
         {
-            Directory = scratch, Environment = new Dictionary<string, string?>(StringComparer.Ordinal) { ["NoDefaultCurrentDirectoryInExePath"] = null },
+            Directory = scratch.Path, Environment = new Dictionary<string, string?>(StringComparer.Ordinal) { ["NoDefaultCurrentDirectoryInExePath"] = null },
         }.Run();
 
         var exited = Assert.IsType<Ran.Exited>(ran);

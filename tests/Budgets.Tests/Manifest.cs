@@ -18,6 +18,9 @@ public sealed class Manifest
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "L4")]
+    [Trait("Value", "A4")]
+    [Trait("Value", "A10")]
     public void Every_markdown_file_outside_the_archive_and_every_ci_file_is_a_row()
     {
         var rows = Documents.Rows.Select(r => r.Path).ToHashSet(StringComparer.Ordinal);
@@ -31,6 +34,8 @@ public sealed class Manifest
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "L4")]
+    [Trait("Value", "A10")]
     public void Every_row_names_a_file_that_exists_and_says_who_reads_it_and_when()
     {
         var wrong = Documents.Rows.Where(r => !Repository.Files.Contains(r.Path)
@@ -61,6 +66,8 @@ public sealed class Manifest
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "L3")]
+    [Trait("Value", "A4")]
     public void Every_hand_written_file_holds_its_budget()
     {
         var over = Documents.Rows

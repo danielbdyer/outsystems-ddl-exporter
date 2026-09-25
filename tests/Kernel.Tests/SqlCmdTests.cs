@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using CsCheck;
+using Estate.Tests;
 using Xunit;
 
 namespace Estate.Kernel.Tests;
@@ -12,7 +13,7 @@ namespace Estate.Kernel.Tests;
 /// </summary>
 public sealed class SqlCmdTests
 {
-    private const string Planted = "Pa55!planted#7f3a";
+    private static readonly PlantedValue Planted = PlantedValue.Password;
 
     /// <summary>A name the grammar admits: a letter or '_', then up to 127 letters, digits, '_' and '-'.</summary>
     private static readonly Gen<string> Name = Gen.Select(Gen.Char["abcXYZ_"], Gen.Char["abcXYZ019_-"].Array[0, 127]).Select((first, rest) => first + new string(rest));
@@ -30,19 +31,18 @@ public sealed class SqlCmdTests
         const string script = "PRINT N'$(EnvironmentTag)'; -- $(environmenttag)\nALTER USER [$(ServiceUser)] WITH DEFAULT_SCHEMA = dbo;";
         var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["EnvironmentTag"] = "dev", ["ServiceUser"] = "svc$(EnvironmentTag)" };
 
-        Assert.Equal("PRINT N'dev'; -- dev\nALTER USER [svc$(EnvironmentTag)] WITH DEFAULT_SCHEMA = dbo;", Made(SqlCmdVariable.Substitute(script, values)));
-        Assert.Equal("no variables here", Made(SqlCmdVariable.Substitute("no variables here", new Dictionary<string, string>())));
+        Assert.Equal("PRINT N'dev'; -- dev\nALTER USER [svc$(EnvironmentTag)] WITH DEFAULT_SCHEMA = dbo;", Expect.Value(SqlCmdVariable.Substitute(script, values)));
+        Assert.Equal("no variables here", Expect.Value(SqlCmdVariable.Substitute("no variables here", new Dictionary<string, string>())));
     }
 
     [Fact]
     [Trait("Category", "fast")]
     public void Substitution_fails_on_a_variable_with_no_value_naming_it_and_quotes_no_value()
     {
-        var error = Assert.IsType<Result<string>.Failed>(SqlCmdVariable.Substitute("PRINT '$(Tag)'; PRINT '$(Missing)';", new Dictionary<string, string> { ["Tag"] = Planted })).Error;
+        var error = Expect.Failed(SqlCmdVariable.Substitute("PRINT '$(Tag)'; PRINT '$(Missing)';", new Dictionary<string, string> { ["Tag"] = Planted.Text }), "sqlcmd.undefined");
 
-        Assert.Equal("sqlcmd.undefined", error.Code);
         Assert.Contains("$(Missing)", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        Planted.AbsentFrom(error);
     }
 
     /// <summary>
@@ -54,24 +54,22 @@ public sealed class SqlCmdTests
     [Trait("Category", "fast")]
     public void Unset_leaves_out_the_setvar_lines_of_the_names_given_and_keeps_every_other_line_as_it_was()
     {
-        const string Script = ":setvar Tag \"dev\"\r\n:SETVAR ServiceToken \"" + Planted + "\"\r\n:setvar TagSuffix \"keep\"\r\n:setvar Other \"keep\"\r\n"
+        var script = ":setvar Tag \"dev\"\r\n:SETVAR ServiceToken \"" + Planted + "\"\r\n:setvar TagSuffix \"keep\"\r\n:setvar Other \"keep\"\r\n"
             + "-- :setvar Tag \"commented\"\r\nPRINT N'$(Tag)';\r\nGO\r\n:setvar Empty\nPRINT 1;\n";
 
-        var kept = SqlCmdVariable.Unset(Script, ["tag", "ServiceToken", "empty"]);
+        var kept = SqlCmdVariable.Unset(script, ["tag", "ServiceToken", "empty"]);
 
         Assert.Equal(":setvar TagSuffix \"keep\"\r\n:setvar Other \"keep\"\r\n-- :setvar Tag \"commented\"\r\nPRINT N'$(Tag)';\r\nGO\r\nPRINT 1;\n", kept);
-        Assert.Equal(Script, SqlCmdVariable.Unset(Script, []));
+        Assert.Equal(script, SqlCmdVariable.Unset(script, []));
     }
 
     /// <summary>What is left of a script once sqlcmd's own lines go: every line whose first non-blank character is ':' (:setvar, :r, :on error, :connect) goes, and every other line stays, GO included.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void A_script_without_its_directives_keeps_its_statements_and_GO_and_drops_each_sqlcmd_line()
+    public void A_script_with_its_sqlcmd_commands_removed_keeps_its_statements_and_GO_and_drops_each_sqlcmd_line()
     {
         const string Script = ":setvar DatabaseName \"Estate\"\n:on error exit\n  :r .\\Seed.sql\n:CONNECT dev-sql\nUSE [$(DatabaseName)];\nGO\nPRINT N'a: b';\n";
 
         Assert.Equal("USE [$(DatabaseName)];\nGO\nPRINT N'a: b';\n", SqlCmdVariable.WithoutDirectives(Script));
     }
-
-    private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 }

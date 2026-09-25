@@ -36,6 +36,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Exit", "M0.4")]
     public void The_classic_minimal_project_builds_into_the_folder_its_inputs_name_with_its_refactorlog_and_post_deploy_script()
     {
         var project = Golden();

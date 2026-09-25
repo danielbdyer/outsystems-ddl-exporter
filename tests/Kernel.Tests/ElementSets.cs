@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CsCheck;
+using Estate.Tests;
 
 namespace Estate.Kernel.Tests;
 
@@ -89,8 +90,8 @@ internal static class ElementSets
     /// <summary>One edit: its kind, the set after it, the change it makes, and the renames that explain it.</summary>
     public sealed record Edit(string Kind, SortedArray<Element> After, Change Expected, SortedArray<Rename> Renames);
 
-    public static T Ok<T>(Result<T> result) =>
-        result.Match(value => value, error => throw new InvalidOperationException(error.Code + ": " + error.Message));
+    /// <summary>The value of a kernel result, as tests of the kernel read one: Expect.Value under the name every builder here uses.</summary>
+    public static T Ok<T>(Result<T> result) => Expect.Value(result);
 
     public static ElementKey Key(string type, string schema, string name) => Ok(ElementKey.Of(type, Ok(Name.Of(schema, name))));
 

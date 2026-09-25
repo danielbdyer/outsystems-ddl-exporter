@@ -3,7 +3,7 @@ using System.IO;
 using System.Linq;
 using Estate.Kernel;
 using Xunit;
-using Contract = Estate.Cli.Contract;
+using static Estate.Tests.Expect;
 
 namespace Estate.Io.Tests;
 
@@ -22,14 +22,15 @@ public sealed class LocalStateTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "R3")]
     public void Git_lists_nothing_estate_keeps_in_a_repository_whose_gitignore_does_not_name_dot_estate()
     {
         var commit = scratch.Commit("first", ("a.sql", "SELECT 1;\n"));   // no .gitignore
         var state = new LocalState(scratch.Root);
 
-        Ok(Git.At(scratch.Root, commit));
-        Ok(Write.Text(state.Copies, "{ \"copies\": [] }\n"));
-        Ok(Write.Append(Path.Combine(state.Runs, "20260925T000000Z-1-ab", "queries.log"), "-- one\nSELECT 1;\nGO\n"));
+        Value(Git.At(scratch.Root, commit));
+        Value(Write.Text(state.Copies, "{ \"copies\": [] }\n"));
+        Value(Write.Append(Path.Combine(state.Runs, "20260925T000000Z-1-ab", "queries.log"), "-- one\nSELECT 1;\nGO\n"));
 
         Assert.Equal("", scratch.Git("status", "--porcelain", "--ignored=no", "--untracked-files=all"));
         Assert.Equal(".estate/.gitignore:1:*\t.estate/copies.json", scratch.Git("check-ignore", "-v", ".estate/copies.json"));
@@ -41,13 +42,13 @@ public sealed class LocalStateTests : IDisposable
     {
         var state = new LocalState(scratch.Root);
 
-        Ok(state.Made(state.Runs));
+        Value(state.Made(state.Runs));
         var elsewhere = Stops.Where(stop => File.Exists(Path.Combine(state.Runs, stop)) || File.Exists(Path.Combine(state.Folder, stop))).ToList();
-        Ok(state.Made(state.Worktree("0123")));
+        Value(state.Made(state.Worktree("0123")));
         var written = Stops.Select(stop => File.ReadAllText(Path.Combine(state.Worktrees, stop))).ToList();
         File.WriteAllText(Path.Combine(state.Worktrees, "Directory.Build.rsp"), "-v:n\n");
         File.WriteAllText(Path.Combine(state.Folder, ".gitignore"), "*\n!keep\n");
-        Ok(state.Made(state.Worktrees));
+        Value(state.Made(state.Worktrees));
 
         Assert.Empty(elsewhere);
         Assert.Equal(["<Project />\n", "<Project />\n", "<Project />\n", ""], written);
@@ -62,13 +63,8 @@ public sealed class LocalStateTests : IDisposable
         File.WriteAllText(Path.Combine(scratch.Root, ".estate"), "");
         var state = new LocalState(scratch.Root);
 
-        var error = Failed(state.Made(state.Worktrees));
+        var error = Failed(state.Made(state.Worktrees), "file.unwritable");
 
-        Assert.Equal(("file.unwritable", 6), (error.Code, Contract.Exit(error)));
         Assert.StartsWith(state.Worktrees + " cannot be written: ", error.Message, StringComparison.Ordinal);
     }
-
-    private static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
-
-    private static Error Failed<T>(Result<T> result) => Assert.IsType<Result<T>.Failed>(result).Error;
 }

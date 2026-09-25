@@ -16,7 +16,7 @@ namespace Estate.Io.Tests;
 /// concurrent runs and agents sharing a server never collide. The server is io/ScratchServer's (WP 1.4): ESTATE_SQL when set; else,
 /// where docker info answers, the estate-sql container that ci/sql.sh up (ci/sql.ps1 up on Windows) pulls and starts, reached
 /// through ~/.estate/sql.env; else LocalDB's MSSQLLocalDB. With none, every fixture test fails with the remedy; the fixture lane
-/// never skips.
+/// never skips. Every login made for a database is named after it, &lt;database&gt;_&lt;role&gt;, and is dropped with it.
 /// </summary>
 public static class SqlServerFixture
 {
@@ -25,15 +25,15 @@ public static class SqlServerFixture
 
     private const string Create = "DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql);";
 
-    /// <summary>The database, then its read-only principal's login, once no session holds it (a session that ended first is no error).</summary>
+    /// <summary>The database, then each login named after it, once no session holds it (a session that ended first is no error).</summary>
     private const string Drop = "DECLARE @sql nvarchar(max) = N'ALTER DATABASE ' + QUOTENAME(@name) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ' + QUOTENAME(@name) + N';'; "
         + "IF DB_ID(@name) IS NOT NULL EXEC (@sql); "
-        + "DECLARE @reader sysname = @name + N'" + ReadOnlyPrincipal.Suffix + "'; SET @sql = N''; "
-        + "SELECT @sql += N'BEGIN TRY KILL ' + CAST(session_id AS nvarchar(10)) + N'; END TRY BEGIN CATCH END CATCH; ' FROM sys.dm_exec_sessions WHERE login_name = @reader; "
-        + "EXEC (@sql); "
+        + "DECLARE @login sysname, @wait int; DECLARE logins CURSOR LOCAL FAST_FORWARD FOR SELECT name FROM sys.server_principals WHERE name LIKE @name + N'[_]%' AND type = 'S'; "
+        + "OPEN logins; FETCH NEXT FROM logins INTO @login; WHILE @@FETCH_STATUS = 0 BEGIN "
+        + "SET @sql = N''; SELECT @sql += N'BEGIN TRY KILL ' + CAST(session_id AS nvarchar(10)) + N'; END TRY BEGIN CATCH END CATCH; ' FROM sys.dm_exec_sessions WHERE login_name = @login; EXEC (@sql); "
         // KILL returns before the session is gone, so the drop waits (up to ten seconds) until no session of the login remains.
-        + "DECLARE @wait int = 0; WHILE @wait < 50 AND EXISTS (SELECT 1 FROM sys.dm_exec_sessions WHERE login_name = @reader) BEGIN WAITFOR DELAY '00:00:00.200'; SET @wait += 1; END; "
-        + "IF EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @reader) BEGIN SET @sql = N'DROP LOGIN ' + QUOTENAME(@reader) + N';'; EXEC (@sql); END;";
+        + "SET @wait = 0; WHILE @wait < 50 AND EXISTS (SELECT 1 FROM sys.dm_exec_sessions WHERE login_name = @login) BEGIN WAITFOR DELAY '00:00:00.200'; SET @wait += 1; END; "
+        + "SET @sql = N'DROP LOGIN ' + QUOTENAME(@login) + N';'; EXEC (@sql); FETCH NEXT FROM logins INTO @login; END; CLOSE logins; DEALLOCATE logins;";
 
     /// <summary>This machine's name as the names of the databases made here carry it.</summary>
     private static readonly string Machine = CopyName.Make(Environment.MachineName, 0, 0).Machine;
@@ -63,10 +63,12 @@ public static class SqlServerFixture
 
     public static async Task<bool> LoginExistsAsync(string name) => await ScalarAsync(await Master.Value, "SELECT COUNT(*) FROM sys.server_principals WHERE name = @name;", name) == 1;
 
-    public static async Task ExecuteAsync(string connectionString, string sql, string? name = null) => await RunAsync(connectionString, sql, name, c => c.ExecuteNonQueryAsync());
+    /// <summary>The statement run with @name and any further parameter given, each nvarchar(128).</summary>
+    public static async Task ExecuteAsync(string connectionString, string sql, string? name = null, params (string Name, string Value)[] parameters) =>
+        await RunAsync(connectionString, sql, name, parameters, c => c.ExecuteNonQueryAsync());
 
     public static async Task<int> ScalarAsync(string connectionString, string sql, string? name = null) =>
-        Convert.ToInt32(await RunAsync(connectionString, sql, name, c => c.ExecuteScalarAsync()), CultureInfo.InvariantCulture);
+        Convert.ToInt32(await RunAsync(connectionString, sql, name, [], c => c.ExecuteScalarAsync()), CultureInfo.InvariantCulture);
 
     internal static async Task DropAsync(string master, string name)
     {
@@ -114,14 +116,14 @@ public static class SqlServerFixture
         return true;
     }
 
-    /// <summary>Drops what this host registered for a process no longer running: a killed run's databases and their principals' logins.</summary>
+    /// <summary>Drops what this host registered for a process no longer running: a killed run's databases, and the logins named after them.</summary>
     private static async Task SweepAsync(string master)
     {
         await using var connection = new SqlConnection(master);
         await connection.OpenAsync();
-        await using var list = new SqlCommand("SELECT name FROM sys.databases WHERE name LIKE N'estate[_]%' UNION SELECT LEFT(name, LEN(name) - LEN(@suffix)) "
-            + "FROM sys.server_principals WHERE name LIKE N'estate[_]%' AND RIGHT(name, LEN(@suffix)) = @suffix;", connection);
-        list.Parameters.Add(new SqlParameter("@suffix", System.Data.SqlDbType.NVarChar, 128) { Value = ReadOnlyPrincipal.Suffix });
+        // A login named after a database is <database>_<role>, so the database's name is the login's up to its last underscore.
+        await using var list = new SqlCommand("SELECT name FROM sys.databases WHERE name LIKE N'estate[_]%' UNION SELECT LEFT(name, LEN(name) - CHARINDEX(N'_', REVERSE(name))) "
+            + "FROM sys.server_principals WHERE name LIKE N'estate[_]%';", connection);
         await using var reader = await list.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
@@ -146,22 +148,22 @@ public static class SqlServerFixture
         }
     }
 
-    private static async Task<T> RunAsync<T>(string connectionString, string sql, string? name, Func<SqlCommand, Task<T>> run)
+    private static async Task<T> RunAsync<T>(string connectionString, string sql, string? name, (string Name, string Value)[] parameters, Func<SqlCommand, Task<T>> run)
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
         // The fixture creates and drops databases while other test classes do the same; it waits as long as io/ScratchServer does.
         await using var command = new SqlCommand(sql, connection) { CommandTimeout = ScratchServer.DatabaseStatementSeconds };
-        if (name is not null)
+        foreach (var (parameter, value) in parameters.Concat(name is null ? [] : [("@name", name)]))
         {
-            command.Parameters.Add(new SqlParameter("@name", System.Data.SqlDbType.NVarChar, 128) { Value = name });
+            command.Parameters.Add(new SqlParameter(parameter, System.Data.SqlDbType.NVarChar, 128) { Value = value });
         }
 
         return await run(command);
     }
 }
 
-/// <summary>A test's own database on the run's SQL Server; disposing it drops it, and a second disposal does nothing.</summary>
+/// <summary>A test's own database on the run's SQL Server; disposing it drops it and every login named after it, and a second disposal does nothing.</summary>
 public sealed class RegisteredDatabase(string name, string connectionString, string master) : IAsyncDisposable
 {
     public string Name => name;

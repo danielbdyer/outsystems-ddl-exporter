@@ -3,20 +3,26 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Estate.Io;
 using Xunit;
 
 namespace Estate.Budgets.Tests;
 
 /// <summary>
-/// LAWS.md is generated (V3_INSTRUCTION_ARCHITECTURE.md §6.10, VALUES.md L6): ci/laws.sh, and ci/laws.ps1 where Windows runs it,
-/// write one row per test carrying a [Trait("Law", …)], with the law, the test's name in English and its full name, the generated
-/// banner first and no timestamp, so the committed file is exactly what either generator writes, run after run.
+/// LAWS.md is generated (V3_INSTRUCTION_ARCHITECTURE.md §6.10, VALUES.md L6; DECISIONS.md, 2026-09-25): ci/laws.sh, and ci/laws.ps1 where
+/// Windows runs it, write one row per test carrying a [Trait("Law", …)], a [Trait("Value", …)] or a [Trait("Exit", …)], with the trait's
+/// value, the test's name in English and its full name, in three tables, then the rows of VALUES.md and the exits of V3_MILESTONES.md no
+/// test declares; the generated banner first and no timestamp. The committed file is exactly what either generator writes, run after
+/// run, and what the generators read from the sources is what <see cref="TestTraits"/> reads.
 /// </summary>
 public sealed class Laws
 {
+    private static readonly Regex TableRow = new(@"^\| (.+?) \| (.+?) \| `(.+?)` \|$", RegexOptions.CultureInvariant);
+
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "L6")]
     public void LAWS_md_is_what_the_generators_write_from_the_tests_and_regenerates_byte_identically()
     {
         var committed = File.ReadAllBytes(Path.Combine(Repository.Root, "LAWS.md"));
@@ -28,10 +34,34 @@ public sealed class Laws
         var text = Encoding.UTF8.GetString(committed);
         Assert.Matches(Manifest.Banner, text.Split('\n')[0]);
         Assert.DoesNotContain('\r', text);
-        Assert.Contains("| 3′ the model is complete | The fingerprint of a model is independent of the order its elements are given in | `Estate.Kernel.Tests.ElementTests.The_fingerprint_of_a_model_is_independent_of_the_order_its_elements_are_given_in` |", text, StringComparison.Ordinal);
-        Assert.Contains("| the kernel cannot do I/O | ", text, StringComparison.Ordinal);
-        Assert.Contains("| dependencies point one way | ", text, StringComparison.Ordinal);
-        Assert.Contains("| 2′ a published copy matches its package | ", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    [Trait("Value", "L6")]
+    public void LAWS_md_lists_each_Law_Value_and_Exit_trait_the_tests_declare_and_names_each_row_and_exit_none_declares()
+    {
+        var sections = File.ReadAllText(Path.Combine(Repository.Root, "LAWS.md")).Split("\n## ");
+        string[] kinds = ["Law", "Value", "Exit"];
+
+        Assert.Equal(kinds.Length, sections.Length);
+        var listed = sections.SelectMany((s, i) => Rows(s).Select(r => kinds[i] + "\t" + r)).Order(StringComparer.Ordinal);
+        var declared = TestTraits.All.SelectMany(t => t.Traits.Where(tr => kinds.Contains(tr.Name)).Select(tr => tr.Name + "\t" + tr.Value + "\t" + t.English + "\t" + t.FullName)).Order(StringComparer.Ordinal);
+        Assert.Equal(declared, listed);
+        var declaredValues = TestTraits.All.SelectMany(t => t.Values("Value")).ToHashSet(StringComparer.Ordinal);
+        Assert.Equal(Documents.Values.Where(v => !declaredValues.Contains(v)).Order(StringComparer.Ordinal), Named(sections[1], "Rows of `VALUES.md` no test declares: ").Order(StringComparer.Ordinal));
+        Assert.Equal(Documents.EveryExit.Where(e => !Documents.DeclaredExits.Contains(e)).Order(StringComparer.Ordinal), Named(sections[2], "Exits no test declares, which a person or a CI job runs: ").Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>A section's table rows as value, English name and full name, tab-separated.</summary>
+    private static IEnumerable<string> Rows(string section) =>
+        section.Split('\n').Select(l => TableRow.Match(l)).Where(m => m.Success).Select(m => m.Groups[1].Value + "\t" + m.Groups[2].Value + "\t" + m.Groups[3].Value);
+
+    /// <summary>What the section's line opening with <paramref name="prefix"/> names, comma-separated and ending in a full stop; nothing for none.</summary>
+    private static IEnumerable<string> Named(string section, string prefix)
+    {
+        var named = section.Split('\n').Single(l => l.StartsWith(prefix, StringComparison.Ordinal))[prefix.Length..].TrimEnd('.');
+        return named == "none" ? [] : named.Split(", ");
     }
 
     /// <summary>Each generator this machine can run: ci/laws.ps1 through pwsh, and ci/laws.sh through bash (on Windows, Git's own bash, never another on the PATH).</summary>

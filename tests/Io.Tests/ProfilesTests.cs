@@ -84,6 +84,8 @@ public sealed class ProfilesTests : IDisposable
     [InlineData("argument", "reference.malformed", "--connection")]
     [InlineData("argument after file:", "reference.malformed", "--connection")]
     [InlineData("target", "connection.literal", "--target")]
+    [Trait("Value", "X1")]
+    [Trait("Exit", "M1.7")]
     public void Inline_credential_refused(string where, string code, string named)
     {
         const string credential = "Server=db;User ID=estate;Password=" + Planted;
@@ -165,12 +167,15 @@ public sealed class ProfilesTests : IDisposable
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "D3")]
+    [Trait("Value", "O2")]
     public void The_pipeline_profile_fingerprints_to_one_committed_value_on_every_operating_system() =>
         Assert.Equal("139ffe34dbec24fadeab8501028b8a50cab2ba547d7cffd28d8e9b20ac0536d5", Made(Profiles.Load(Pipeline)).Fingerprint.ToString());
 
     /// <summary>A profile fingerprints by its content: the file saved with CRLF and a byte-order mark, as Visual Studio on Windows can save it, and saved with LF alone fingerprint alike.</summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "D3")]
     public void A_profile_saved_with_CRLF_and_a_byte_order_mark_fingerprints_as_the_same_profile_saved_with_LF()
     {
         var text = File.ReadAllText(Pipeline).ReplaceLineEndings("\n");
@@ -199,6 +204,7 @@ public sealed class ProfilesTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "S1")]
     public void A_profile_that_allows_data_loss_is_refused_and_a_named_environment_using_it_is_refused_by_its_name()
     {
         var relaxed = Profile("relaxed", "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>");
@@ -215,6 +221,7 @@ public sealed class ProfilesTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "S1")]
     public void Permissive_differs_from_Strict_in_BlockOnPossibleDataLoss_alone()
     {
         var strict = Made(Profiles.Load(Profile("tagged", "<BlockOnPossibleDataLoss>True</BlockOnPossibleDataLoss><IgnoreColumnOrder>True</IgnoreColumnOrder>", ("EnvironmentTag", "dev"))));
@@ -235,6 +242,7 @@ public sealed class ProfilesTests : IDisposable
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "S1")]
     public void Nothing_but_a_Copy_makes_a_Permissive_profile()
     {
         var of = typeof(PublishProfile.Permissive).GetMethod("Of", BindingFlags.NonPublic | BindingFlags.Static)!;
@@ -256,6 +264,7 @@ public sealed class ProfilesTests : IDisposable
     [Theory]
     [Trait("Category", "fast")]
     [MemberData(nameof(Ways))]
+    [Trait("Value", "X2")]
     public void No_output_contains_Password(string label)
     {
         var way = RefusalPaths.All.Single(c => c.Label == label);
@@ -270,6 +279,7 @@ public sealed class ProfilesTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "X2")]
     public void Nothing_read_from_the_posture_or_a_profile_prints_a_literal_or_what_a_reference_names()
     {
         var root = Estate(Dev("\"sqlcmd\": { \"EnvironmentTag\": { \"literal\": \"" + Planted + "\", \"sensitive\": false }, \"ServicePassword\": \"env:ESTATE_PW\" }"));

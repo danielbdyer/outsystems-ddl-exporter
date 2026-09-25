@@ -19,6 +19,7 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
     /// <summary>M1 exit 2: the diff of the make-mandatory sample change prints Customer.Email's Nullable true → false, and nothing else.</summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Exit", "M1.2")]
     public void Diff_from_the_base_ref_to_the_make_mandatory_head_prints_Customer_Email_s_Nullable_true_to_false_and_nothing_else()
     {
         var (exit, output) = estate.Estate("diff", "--from", "ref:" + estate.Base, "--to", "ref:" + estate.Head);
@@ -33,6 +34,7 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Exit", "M1.2")]
     public void The_published_estate_as_its_own_process_prints_the_make_mandatory_diff_and_reads_the_package()
     {
         var (exit, output) = estate.Tool.RunAt(estate.Root, "diff", "--from", "ref:" + estate.Base, "--to", "ref:" + estate.Head);
@@ -68,6 +70,7 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
+    [Trait("Value", "X2")]
     public async Task Estate_read_of_a_database_holding_a_SQL_login_prints_no_password()
     {
         await using var database = await SqlServerFixture.RegisterAsync();

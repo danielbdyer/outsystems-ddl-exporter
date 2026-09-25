@@ -17,13 +17,14 @@ namespace Estate.Budgets.Tests;
 /// or directory (<c>DECISION.md</c>, <c>kernal/</c>) is a citation, and it fails.</item>
 /// <item>It resolves when the file or directory exists, a bare file name when some file outside archive/ carries that
 /// name; when it lies under a run-time root or is a file a verb writes at run time, which git never holds; when its
-/// own clause says the milestone that creates it (<c>pending M3</c>, <c>from M7</c>, <c>at M8</c>) and that milestone
-/// has not exited; or when it lies under a directory the plan creates, until that milestone's exit.</item>
+/// own clause says the milestone that creates it (<c>pending M3</c>, <c>from M7</c>, <c>at M8</c>, <c>not held yet: WP 3.4</c>,
+/// <c>not held yet: the cutover tools</c>) and that milestone is not complete (<see cref="Documents.Complete(int)"/>: an exit no test
+/// declares and no NEXT.md line names); or when it lies under a directory the plan creates, until that milestone is complete.</item>
 /// <item>A clause ends at a ';', at a sentence's end and at a table cell's edge, so a milestone elsewhere on the line
 /// excuses nothing. <c>until M8</c> and <c>M0's exit</c> never excuse a path: neither says the path arrives. Nor does
 /// any milestone excuse a missing path one edit from an existing one, which is a misspelling.</item>
 /// </list>
-/// The five root design documents are excluded until M8; knowledge/ joins at M7.
+/// The five root design documents are excluded until M8 starts; knowledge/ joins at M7.
 /// </summary>
 public sealed class Citations
 {
@@ -49,18 +50,21 @@ public sealed class Citations
     /// <summary>A clause's edge outside backticks: a ';', a table cell's '|', or the space after a sentence's end.</summary>
     private static readonly Regex ClauseEdge = new(@"(?:;|\||(?<=[.!?])\s)(?=(?:[^`]*`[^`]*`)*[^`]*$)", RegexOptions.CultureInvariant);
 
-    /// <summary>A milestone that creates what its clause cites: pending M3, from M7, at M8; never M0's exit.</summary>
-    private static readonly Regex Arrives = new(@"\b(?:[Pp]ending|[Ff]rom|[Aa]t) M(\d+)\b(?!['’]s\b)", RegexOptions.CultureInvariant);
+    /// <summary>A milestone that creates what its clause cites: pending M3, from M7, at M8, not held yet: WP 3.4; never M0's exit.</summary>
+    private static readonly Regex Arrives = new(@"\b(?:(?:[Pp]ending|[Ff]rom|[Aa]t) M(\d+)(?!['’]s\b)|not held yet: WP (\d)\.\d+)", RegexOptions.CultureInvariant);
+
+    /// <summary>The cutover tools, which arrive as M8 starts, if the operator decides to build them.</summary>
+    private static readonly Regex CutoverTools = new(@"not held yet: the cutover tools", RegexOptions.CultureInvariant);
 
     public static TheoryData<string> EngineDocuments => new(Documents.Engine);
 
     [Theory]
     [Trait("Category", "fast")]
     [MemberData(nameof(EngineDocuments))]
-    public void Every_path_an_engine_document_cites_exists_or_names_the_milestone_that_creates_it(string document)
+    public void Every_path_a_document_of_the_repository_cites_exists_or_names_the_milestone_that_creates_it(string document)
     {
         var directory = Path.GetDirectoryName(document)!.Replace('\\', '/');
-        var unresolved = Documents.Blocks(document).SelectMany(b => Unresolved(b.Text, directory, Documents.Milestone)
+        var unresolved = Documents.Blocks(document).SelectMany(b => Unresolved(b.Text, directory, Documents.Complete)
             .Select(p => document + ":" + b.Line.ToString(CultureInfo.InvariantCulture) + ": " + p + " does not exist; fix the path, or say in its clause the milestone that creates it"));
 
         Assert.Empty(unresolved);
@@ -89,6 +93,7 @@ public sealed class Citations
     public void A_citation_is_any_path_shaped_span_not_named_as_elsewhere(string span, bool cited) =>
         Assert.Equal(cited, Backticked.IsMatch("`" + span + "`") && IsCitation(span));
 
+    /// <summary>Each row names the milestones complete: every one below <paramref name="milestone"/>, as the build stands when M&lt;milestone&gt; is in progress.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("`DECISION.md` is the log, one line per decision.", 0, "DECISION.md")]
@@ -108,35 +113,40 @@ public sealed class Citations
     [InlineData("the operator adds `.claude/hooks/` at M0 with `.claude/setings.json`", 0, ".claude/setings.json")]
     [InlineData("From M1, `DECISION.md` is the log.", 0, "DECISION.md")]
     [InlineData("from M3, `kernel/BannedSymbosl.txt` bans the clock", 0, "kernel/BannedSymbosl.txt")]
-    [InlineData("| D2 | … | `CultureInfo.CurrentCulture` is in `kernel/BannedSymbols.txt`; law 1′ runs under `tr-TR` | `BannedSymbolsTests`; `Kernel.Tests: \"law 1′ under tr-TR\"` — pending M3 |", 0, "")]
-    [InlineData("| D2 | … | `CultureInfo.CurrentCulture` is in `kernel/BannedSymbol.txt`; law 1′ runs under `tr-TR` | `BannedSymbolsTests`; `Kernel.Tests: \"law 1′ under tr-TR\"` — pending M3 |", 0, "kernel/BannedSymbol.txt")]
-    [InlineData("| O1 | … | `io/SyntheticCopy.cs` over both | `Io.Tests` on both scratch servers — pending M3 |", 0, "io/SyntheticCopy.cs")]
-    [InlineData("| O1 | … | `io/SyntheticCopy.cs` over both, from M3 | `Io.Tests` on both scratch servers — pending M3 |", 0, "")]
-    [InlineData("| O1 | … | `io/SyntheticCopy.cs` over both, from M3 | `Io.Tests` on both scratch servers — pending M3 |", 4, "io/SyntheticCopy.cs")]
+    [InlineData("| D2 | … | `CultureInfo.CurrentCulture` is in `kernel/BannedSymbols.txt`; law 1′ runs under `tr-TR` | `BannedSymbolsTests`; `Kernel.Tests: \"law 1′ under tr-TR\"` — not held yet: WP 3.3 |", 0, "")]
+    [InlineData("| D2 | … | `CultureInfo.CurrentCulture` is in `kernel/BannedSymbol.txt`; law 1′ runs under `tr-TR` | `BannedSymbolsTests`; `Kernel.Tests: \"law 1′ under tr-TR\"` — not held yet: WP 3.3 |", 0, "kernel/BannedSymbol.txt")]
+    [InlineData("| O1 | … | `io/SyntheticCopy.cs` over both | `Io.Tests` on both scratch servers — not held yet: WP 3.4 |", 0, "io/SyntheticCopy.cs")]
+    [InlineData("| O1 | … | `io/SyntheticCopy.cs` over both, from M3 | `Io.Tests` on both scratch servers — not held yet: WP 3.4 |", 0, "")]
+    [InlineData("| O1 | … | `io/SyntheticCopy.cs` over both, from M3 | `Io.Tests` on both scratch servers — not held yet: WP 3.4 |", 4, "io/SyntheticCopy.cs")]
+    [InlineData("| O1 | … | `io/SyntheticCopy.cs`, not held yet: WP 3.4 | … |", 0, "")]
+    [InlineData("| O1 | … | `io/SyntheticCopy.cs`, not held yet: WP 3.4 | … |", 4, "io/SyntheticCopy.cs")]
+    [InlineData("| E4 | … | `io/Emit.cs`, not held yet: the cutover tools | … |", 7, "")]
+    [InlineData("| E4 | … | `io/Emit.cs`, not held yet: the cutover tools | … |", 8, "io/Emit.cs")]
     [InlineData("extract the data-loss checks into `tests/Golden/data-loss-checks/`", 0, "")]
     [InlineData("extract the data-loss checks into `tests/Golden/data-loss-checks/`", 1, "tests/Golden/data-loss-checks/")]
     [InlineData("builds `cli` into `.estate/bin/` when stale; no `gate.json` carries a password", 0, "")]
     [InlineData("`packages.lock.json` in every project", 0, "")]
     public void A_missing_path_resolves_only_through_a_milestone_its_own_clause_names(string line, int milestone, string unresolved) =>
-        Assert.Equal(unresolved, string.Join(", ", Unresolved(line, "", milestone)));
+        Assert.Equal(unresolved, string.Join(", ", Unresolved(line, "", n => n < milestone)));
 
-    /// <summary>The paths a logical line cites that do not resolve at the given milestone.</summary>
-    private static IEnumerable<string> Unresolved(string line, string directory, int milestone) =>
+    /// <summary>The paths a logical line cites that do not resolve, under <paramref name="complete"/> saying which milestones are.</summary>
+    private static IEnumerable<string> Unresolved(string line, string directory, Func<int, bool> complete) =>
         ClauseEdge.Split(line).SelectMany(clause => Backticked.Matches(clause).Select(m => m.Groups[1].Value).Where(IsCitation)
             .Concat(Link.Matches(clause).Select(m => Path.Join(directory, m.Groups[1].Value).Replace('\\', '/')))
-            .Where(path => !Resolves(path, clause, milestone)));
+            .Where(path => !Resolves(path, clause, complete)));
 
     private static bool IsCitation(string span) =>
         (span.Contains('/', StringComparison.Ordinal) || Extensions.Any(e => span.EndsWith(e, StringComparison.Ordinal)))
         && !Elsewhere.Any(e => span.StartsWith(e, StringComparison.Ordinal));
 
-    private static bool Resolves(string path, string clause, int milestone) =>
+    private static bool Resolves(string path, string clause, Func<int, bool> complete) =>
         Repository.Contains(path)
         || (!path.Contains('/', StringComparison.Ordinal) && FileNames.Value.Contains(path))
         || RunTime.Any(r => path.StartsWith(r, StringComparison.Ordinal))
         || (!IsNearMiss(path) && (
-            Arrives.Matches(clause).Any(m => Documents.NotYetExited(int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), milestone))
-            || PlannedDirectories.Any(d => (path.TrimEnd('/') + "/").StartsWith(d.Path, StringComparison.Ordinal) && Documents.NotYetExited(d.Milestone, milestone))));
+            Arrives.Matches(clause).Any(m => !complete(int.Parse(m.Groups[m.Groups[1].Success ? 1 : 2].Value, CultureInfo.InvariantCulture)))
+            || (CutoverTools.IsMatch(clause) && !Documents.Started(Documents.OneTool, complete))
+            || PlannedDirectories.Any(d => (path.TrimEnd('/') + "/").StartsWith(d.Path, StringComparison.Ordinal) && !complete(d.Milestone))));
 
     /// <summary>
     /// A missing path one edit from an existing one is a misspelling, which no milestone excuses: a clause that says

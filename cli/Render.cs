@@ -27,11 +27,10 @@ public static class Render
     {
         ["schema"] = "estate.help/1",
         ["version"] = Contract.Version,
-        ["milestone"] = Contract.M(Contract.Milestone),
         ["usage"] = Usage,
         ["verbs"] = Array(Contract.Verbs.Select(v => new JsonObject
         {
-            ["name"] = v.Name, ["summary"] = v.Summary, ["arrives"] = Contract.M(v.Arrives), ["status"] = v.Status, ["output"] = v.Output,
+            ["name"] = v.Name, ["summary"] = v.Summary, ["built"] = v.Built, ["output"] = v.Output,
             ["outcomes"] = Array(v.Answers.Select(o => new JsonObject { ["outcome"] = o.Word, ["exits"] = Array(o.Exits.Select(e => (JsonNode?)e)), ["meaning"] = o.Meaning })),
         })),
         ["exits"] = Array(Contract.Exits.Select(e => new JsonObject { ["code"] = e.Code, ["name"] = e.Name, ["meaning"] = e.Meaning, ["remedy"] = e.Remedy })),
@@ -40,9 +39,9 @@ public static class Render
 
     public static string HelpMarkdown() => string.Join('\n', (string[])
     [
-        "# estate " + Contract.Version, "", "Usage: `" + Usage + "`", "", "| Verb | Answers | Outcomes | Status |", "|---|---|---|---|",
+        "# estate " + Contract.Version, "", "Usage: `" + Usage + "`", "", "| Verb | Answers | Outcomes | Built |", "|---|---|---|---|",
         .. Contract.Verbs.Select(v => "| `" + v.Name + "` | " + v.Summary + " | " + string.Join(", ", v.Answers.Select(o => o.Word + " (exit " + string.Join(" or ", o.Exits.Select(e => e.ToString(CultureInfo.InvariantCulture))) + ")"))
-            + " | " + (v.Status == "built" ? "built" : v.Status + ", arrives in " + Contract.Title(v.Arrives)) + " |"),
+            + " | " + (v.Built ? "yes" : "no") + " |"),
         "", "| Exit | Name | Meaning | Remedy |", "|---:|---|---|---|",
         .. Contract.Exits.Select(e => "| " + e.Code.ToString(CultureInfo.InvariantCulture) + " | " + e.Name + " | " + e.Meaning + " | " + e.Remedy + " |"),
         "",
@@ -224,14 +223,12 @@ public static class Render
     {
         ["schema"] = new JsonObject { ["const"] = "estate.help/1" },
         ["version"] = Text(),
-        ["milestone"] = Pattern("^M[0-9]$"),
         ["usage"] = Text(),
         ["verbs"] = List(Record(new()
         {
             ["name"] = Enum(Contract.Verbs.Select(v => (JsonNode?)v.Name)),
             ["summary"] = Text(),
-            ["arrives"] = Pattern("^M[0-9]$"),
-            ["status"] = Enum(["built", "stub", "pending"]),
+            ["built"] = new JsonObject { ["type"] = "boolean" },
             ["output"] = Pattern(SchemaId),
             ["outcomes"] = List(Record(new() { ["outcome"] = Text(), ["exits"] = List(Enum(Contract.Exits.Select(e => (JsonNode?)e.Code))), ["meaning"] = Text() })),
         })),

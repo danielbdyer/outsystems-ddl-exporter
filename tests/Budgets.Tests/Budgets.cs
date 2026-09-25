@@ -21,6 +21,7 @@ public sealed class Budgets
 
     [Theory]
     [Trait("Category", "fast")]
+    [Trait("Value", "L3")]
     [MemberData(nameof(Packages))]
     public void Each_budget_holds_its_ceiling(string budget)
     {
@@ -34,6 +35,7 @@ public sealed class Budgets
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "L3")]
     public void The_code_together_holds_its_ceiling()
     {
         var files = Strings(Data["code"]!["budgets"]).SelectMany(b => Counted(Data["budgets"]![b]!)).OrderByDescending(f => f.Lines).ToList();

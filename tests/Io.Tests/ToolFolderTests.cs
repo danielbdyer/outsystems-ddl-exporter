@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using Estate.Budgets.Tests;
 using Xunit;
+using Contract = Estate.Cli.Contract;
 
 namespace Estate.Io.Tests;
 
@@ -60,23 +61,26 @@ public sealed class PublishedToolCollection : ICollectionFixture<PublishedTool>
 [Collection(PublishedToolCollection.Name)]
 public sealed class ToolFolderTests(PublishedTool tool)
 {
+    /// <summary>The published estate is this commit's: its version is the one the test's own build carries, so a stale dist/estate/ from another commit fails here.</summary>
     [Fact]
-    [Trait("Category", "fast")]
+    [Trait("Category", "build")]
     public void The_published_estate_answers_its_version_and_the_publish_prints_the_folder_size_and_how_to_run_it()
     {
         var (exit, output) = tool.Run("--version");
 
         Assert.True(exit == 0, output);
-        Assert.StartsWith("estate 3.0.0", output, StringComparison.Ordinal);
+        Assert.StartsWith("estate " + Contract.Version + "\n", output, StringComparison.Ordinal);
         Assert.Matches(@"dist/estate: \d+ files, \d+ MB", tool.Output);
         Assert.Contains("dotnet dist/estate/estate.dll", tool.Output, StringComparison.Ordinal);
         Assert.Contains("DOTNET_ROOT", tool.Output, StringComparison.Ordinal);
     }
 
-    /// <summary>WP 1.7 from the published folder: READY and exit 0, or DEGRADED and exit 6 with a remedy on every block; the tool folder found beside it, its DacFx named.</summary>
+    /// <summary>WP 1.7 from the published folder: READY and exit 0, or DEGRADED and exit 6 with a remedy on every finding; the tool folder found beside it, its DacFx named, and no milestone claimed.</summary>
     [Fact]
-    [Trait("Category", "fast")]
-    public void The_published_doctor_finds_its_tool_folder_and_names_its_engine()
+    [Trait("Category", "build")]
+    [Trait("Value", "A2")]
+    [Trait("Exit", "M0.3")]
+    public void The_published_doctor_finds_its_tool_folder_and_names_its_DacFx_release()
     {
         var (exit, output) = tool.Run("doctor", "--json");
 

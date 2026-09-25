@@ -21,6 +21,8 @@ public sealed class PackagesAllowlist
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "X3")]
+    [Trait("Value", "L9")]
     public void Every_package_is_allowed_and_every_allowed_package_is_used()
     {
         var versions = Named("Directory.Packages.props", "PackageVersion");
@@ -34,6 +36,7 @@ public sealed class PackagesAllowlist
 
     [Fact]
     [Trait("Category", "fast")]
+    [Trait("Value", "X3")]
     public void Every_project_restores_from_its_lock_file_and_CI_restores_locked()
     {
         var unlocked = Repository.MsBuildFiles

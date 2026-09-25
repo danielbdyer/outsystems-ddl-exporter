@@ -1,71 +1,41 @@
-using System;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using Xunit;
 
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// The fixture's promise, proven by two tests xUnit runs at the same time (each class is its own collection): each gets its
-/// own registered database on the one server, each creates a table in it, and each database is dropped after its test.
+/// The fixture's promise, proven inside one test rather than by two tests the runner schedules at once: two databases registered at
+/// the same time get two names on the one server, each holds a table of its own, both are gone once disposed, and a second disposal
+/// is no error.
 /// </summary>
-internal static class TwoTestsAtOnce
+public sealed class SqlServerFixtureTests
 {
-    public static readonly TaskCompletionSource<string> First = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    public static readonly TaskCompletionSource<string> Second = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-    /// <summary>Shows this test's database to the other test and waits for the other's, then makes a table in its own; returns the other's name.</summary>
-    public static async Task<string> Meet(TaskCompletionSource<string> mine, TaskCompletionSource<string> theirs, RegisteredDatabase database)
-    {
-        mine.SetResult(database.Name);
-        // xUnit starts the other test's class when a slot is free; on the four-core Windows runner that can come only after the copy
-        // and spike classes finish on LocalDB, well past three minutes. A timeout means the other test never ran while this one waited.
-        var other = await theirs.Task.WaitAsync(TimeSpan.FromMinutes(15));
-
-        Assert.NotEqual(database.Name, other);
-        await SqlServerFixture.ExecuteAsync(database.ConnectionString, "CREATE TABLE dbo.Proof (Id INT NOT NULL PRIMARY KEY); INSERT dbo.Proof (Id) VALUES (1);");
-        Assert.Equal(1, await SqlServerFixture.ScalarAsync(database.ConnectionString, "SELECT COUNT(*) FROM dbo.Proof;"));
-        return other;
-    }
-}
-
-public sealed class FirstOfTwoTestsAtOnce : IAsyncLifetime
-{
-    private RegisteredDatabase? database;
-
-    public async Task InitializeAsync() => database = await SqlServerFixture.RegisterAsync();
-
-    public async Task DisposeAsync() => await database!.DisposeAsync();
-
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task Two_tests_at_once_get_two_databases_each_makes_a_table_and_each_database_is_dropped_after()
+    public async Task Two_databases_registered_at_once_get_two_names_each_holds_its_own_table_and_both_are_dropped_when_disposed()
     {
-        var other = await TwoTestsAtOnce.Meet(TwoTestsAtOnce.First, TwoTestsAtOnce.Second, database!);
-
-        // The other test's database goes when that test ends; this one's goes by the same disposal, here, so it can be seen gone.
-        var waited = Stopwatch.StartNew();
-        while (await SqlServerFixture.ExistsAsync(other) && waited.Elapsed < TimeSpan.FromMinutes(2))
+        var registered = await Task.WhenAll(SqlServerFixture.RegisterAsync(), SqlServerFixture.RegisterAsync());
+        try
         {
-            await Task.Delay(250);
+            Assert.NotEqual(registered[0].Name, registered[1].Name);
+            foreach (var database in registered)
+            {
+                await SqlServerFixture.ExecuteAsync(database.ConnectionString, "CREATE TABLE dbo.Proof (Id INT NOT NULL PRIMARY KEY); INSERT dbo.Proof (Id) VALUES (1);");
+                Assert.Equal(1, await SqlServerFixture.ScalarAsync(database.ConnectionString, "SELECT COUNT(*) FROM dbo.Proof;"));
+            }
+        }
+        finally
+        {
+            foreach (var database in registered)
+            {
+                await database.DisposeAsync();
+            }
         }
 
-        Assert.False(await SqlServerFixture.ExistsAsync(other), other + " was not dropped after its test");
-        await database!.DisposeAsync();
-        Assert.False(await SqlServerFixture.ExistsAsync(database.Name), database.Name + " was not dropped");
+        foreach (var database in registered)
+        {
+            Assert.False(await SqlServerFixture.ExistsAsync(database.Name), database.Name + " was not dropped");
+            await database.DisposeAsync();
+        }
     }
-}
-
-public sealed class SecondOfTwoTestsAtOnce : IAsyncLifetime
-{
-    private RegisteredDatabase? database;
-
-    public async Task InitializeAsync() => database = await SqlServerFixture.RegisterAsync();
-
-    public async Task DisposeAsync() => await database!.DisposeAsync();
-
-    [Fact]
-    [Trait("Category", "fixture")]
-    public async Task The_second_test_gets_its_own_database_and_makes_a_table_in_it() =>
-        await TwoTestsAtOnce.Meet(TwoTestsAtOnce.Second, TwoTestsAtOnce.First, database!);
 }
