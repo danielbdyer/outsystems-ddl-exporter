@@ -5,7 +5,6 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -22,14 +21,12 @@ namespace DbChange.Io.Tests;
 /// io/PublishProfiles and the environments file reader in io/Environments (WP 1.5): the pipeline's publish profile read into its deploy options and
 /// SQLCMD values alone, with a note for each element DacFx ignores, and dbchange/environments.json read into named environments. An error in
 /// either exits 6 through the CLI's category table, names the key, the file or the property, and never quotes the value; Strict is the
-/// profile as loaded, Permissive differs from it in BlockOnPossibleDataLoss alone and nothing in io but a Copy makes one, and nothing
+/// profile as loaded, Permissive differs from it in BlockOnPossibleDataLoss alone (CapabilityTests holds that only a Copy makes one), and nothing
 /// either prints carries a value a reference names or a literal holds.
 /// </summary>
 public sealed class PublishProfilesTests : IDisposable
 {
     private const string Planted = "Pa55!planted#7f3a";
-
-    private const BindingFlags Declared = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
 
     private static readonly string Golden = Path.Combine(Repository.Root, "tests", "Golden");
 
@@ -264,27 +261,6 @@ public sealed class PublishProfilesTests : IDisposable
     }
 
     /// <summary>
-    /// §2.1 rule 3: the Permissive profile is made only for a copy. Its constructor is private and Of internal to io, which no
-    /// assembly but its tests sees into; and the IL of every method io compiles is searched for a call to either. Of alone calls the
-    /// constructor, and WP 1.4's Copy, through Copy.Permissive, alone calls Of: a call from Copy, or from a type nested in it, passes
-    /// here and a call from anywhere else in io fails.
-    /// </summary>
-    [Fact]
-    [Trait("Category", "fast")]
-    [Trait("Value", "S1")]
-    public void Nothing_but_a_Copy_makes_a_Permissive_profile()
-    {
-        var of = typeof(PublishProfile.Permissive).GetMethod("Of", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var made = typeof(PublishProfile.Permissive).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();
-
-        Assert.True(made.IsPrivate && of.IsAssembly);
-        Assert.Equal(["DbChange.Budgets.Tests", "DbChange.Io.Tests"], typeof(PublishProfile).Assembly.GetCustomAttributes<InternalsVisibleToAttribute>().Select(a => a.AssemblyName).Order(StringComparer.Ordinal));
-        Assert.Equal(["DbChange.Io.PublishProfile+Permissive.Of"], Callers(made).Select(Named));
-        Assert.NotEmpty(Callers(of));
-        Assert.Empty(Callers(of).Where(caller => !InCopy(caller.DeclaringType)).Select(Named));
-    }
-
-    /// <summary>
     /// VALUES.md X2: every error, driven with a password planted in its input wherever the input can carry one, returns neither the
     /// password nor a password setting in its code, its message or its remedy, and throws nothing. The other half of the search is
     /// <see cref="DiffTests.DbChange_read_of_a_database_holding_a_SQL_login_prints_no_password"/>, which searches dbchange read's answer
@@ -321,19 +297,6 @@ public sealed class PublishProfilesTests : IDisposable
         Assert.DoesNotContain(Planted, printed, StringComparison.Ordinal);
         Assert.DoesNotMatch(PasswordSetting, printed);
     }
-
-    /// <summary>Each method and constructor io compiles, compiler-made ones included, whose IL holds <paramref name="callee"/>'s metadata token.</summary>
-    private static IEnumerable<MethodBase> Callers(MethodBase callee) => typeof(PublishProfile).Assembly.GetTypes()
-        .SelectMany(t => t.GetMethods(Declared).Cast<MethodBase>().Concat(t.GetConstructors(Declared)))
-        .Where(m => m.GetMethodBody()?.GetILAsByteArray() is { } il && Calls(il, callee.MetadataToken));
-
-    /// <summary>Whether IL holds a call, callvirt, newobj, ldftn or ldvirtftn of the member whose metadata token is <paramref name="token"/>: the token after its opcode, never the same four bytes elsewhere.</summary>
-    private static bool Calls(byte[] il, int token) => Enumerable.Range(1, Math.Max(0, il.Length - 4)).Any(i =>
-        il.AsSpan(i, 4).SequenceEqual(BitConverter.GetBytes(token)) && (il[i - 1] is 0x28 or 0x6F or 0x73 || (i >= 2 && il[i - 2] == 0xFE && il[i - 1] is 0x06 or 0x07)));
-
-    private static bool InCopy(Type? type) => type is not null && (type.Name == "Copy" || InCopy(type.DeclaringType));
-
-    private static string Named(MethodBase method) => method.DeclaringType!.FullName + "." + method.Name;
 
     /// <summary>Every public property of the options, rendered culture-free, by name: what DacFx publishes with.</summary>
     private static Dictionary<string, string> Settings(DacDeployOptions options) =>

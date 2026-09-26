@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using DbChange.Budgets.Tests;
 using DbChange.Kernel;
 using DbChange.Tests;
@@ -98,6 +99,27 @@ public sealed class CapabilityTests
         Assert.Empty(typeof(SqlServer.Copy).GetConstructors(BindingFlags.Public | BindingFlags.Instance));
         Assert.NotEmpty(Callers(made));
         Assert.Empty(Callers(made).Where(caller => !Within(caller.DeclaringType, nameof(LocalServer))).Select(Named));
+    }
+
+    /// <summary>
+    /// §2.1 rule 3: the Permissive profile is made only for a copy. Its constructor is private and Of internal to io, which no
+    /// assembly but its tests sees into; and the IL of every method io compiles is searched for a call to either. Of alone calls the
+    /// constructor, and WP 1.4's Copy, through Copy.Permissive, alone calls Of: a call from Copy, or from a type nested in it, passes
+    /// here and a call from anywhere else in io fails.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    [Trait("Value", "S1")]
+    public void Nothing_but_a_Copy_makes_a_Permissive_profile()
+    {
+        var of = typeof(PublishProfile.Permissive).GetMethod("Of", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var made = typeof(PublishProfile.Permissive).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();
+
+        Assert.True(made.IsPrivate && of.IsAssembly);
+        Assert.Equal(["DbChange.Budgets.Tests", "DbChange.Io.Tests"], typeof(PublishProfile).Assembly.GetCustomAttributes<InternalsVisibleToAttribute>().Select(a => a.AssemblyName).Order(StringComparer.Ordinal));
+        Assert.Equal(["DbChange.Io.PublishProfile+Permissive.Of"], Callers(made).Select(Named));
+        Assert.NotEmpty(Callers(of));
+        Assert.Empty(Callers(of).Where(caller => !Within(caller.DeclaringType, "Copy")).Select(Named));
     }
 
     private static ConstructorInfo CopyConstructor() => typeof(SqlServer.Copy).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();

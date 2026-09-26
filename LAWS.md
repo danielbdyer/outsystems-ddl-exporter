@@ -109,9 +109,9 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | R5 | A runtime other than NET 10 is refused with its remedy | `DbChange.Io.Tests.DoctorTests.A_runtime_other_than_NET_10_is_refused_with_its_remedy` |
 | R5 | The committed DacFx stands inside the ledger's window only at the pin or the release before it | `DbChange.Io.Tests.DoctorTests.The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it` |
 | R5 | The sdk is found only in the band global json names | `DbChange.Io.Tests.DoctorTests.The_sdk_is_found_only_in_the_band_global_json_names` |
+| S1 | Nothing but a Copy makes a Permissive profile | `DbChange.Io.Tests.CapabilityTests.Nothing_but_a_Copy_makes_a_Permissive_profile` |
 | S1 | Permissive never reaches an environment | `DbChange.Io.Tests.CapabilityTests.Permissive_never_reaches_an_environment` |
 | S1 | A profile that allows data loss is refused and a named environment using it is refused by its name | `DbChange.Io.Tests.PublishProfilesTests.A_profile_that_allows_data_loss_is_refused_and_a_named_environment_using_it_is_refused_by_its_name` |
-| S1 | Nothing but a Copy makes a Permissive profile | `DbChange.Io.Tests.PublishProfilesTests.Nothing_but_a_Copy_makes_a_Permissive_profile` |
 | S1 | Permissive differs from Strict in BlockOnPossibleDataLoss alone | `DbChange.Io.Tests.PublishProfilesTests.Permissive_differs_from_Strict_in_BlockOnPossibleDataLoss_alone` |
 | S1 | A Permissive publish under a profile naming a sentinel server reaches the copy and never the sentinel | `DbChange.Io.Tests.SentinelTests.A_Permissive_publish_under_a_profile_naming_a_sentinel_server_reaches_the_copy_and_never_the_sentinel` |
 | S2 | Every case of a kernel closed hierarchy is sealed and nested inside it | `DbChange.Budgets.Tests.ClosedHierarchies.Every_case_of_a_kernel_closed_hierarchy_is_sealed_and_nested_inside_it` |
