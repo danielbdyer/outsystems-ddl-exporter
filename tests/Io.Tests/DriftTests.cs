@@ -386,8 +386,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             Assert.True(readExit == 0, read);
             var sent = await Events(master, file[..file.LastIndexOf('_')] + "*.xel");
             Assert.Contains(sent, s => s.Text.Contains("HAS_PERMS_BY_NAME", StringComparison.Ordinal));   // the session saw the run: estate's own first statement
-            // The container's SQL Server shows DacFx's catalog batch masked (*encrypt---); the Windows runner's LocalDB shows it as written,
-            // and then its text is read below like every other. A masked text is admitted only as DacFx's sp_executesql, one per read at most:
+            // The container's SQL Server shows DacFx's catalog batch masked (*encrypt---); the Windows runner's LocalDB shows it as written
+            // but cut off, and Writes reads it token by token. A masked text is admitted only as DacFx's sp_executesql, one per read at most:
             // the two checks and the read.
             var masked = sent.Where(s => Masked(s.Text)).ToList();
             Assert.All(masked, s => Assert.Equal(("rpc_completed", "sp_executesql"), (s.Event, s.Object)));
@@ -414,6 +414,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     [InlineData("SELECT * INTO #kept FROM dbo.Customer;", true)]
     [InlineData("CREATE TABLE #t (Id int);", true)]
     [InlineData("GRANT SELECT ON dbo.Customer TO public;", true)]
+    [InlineData("SELECT [is_merge_published], create_date FROM sys.databases OPTION (USE HINT('FORCE_LEGACY_CARDINALI", false)]
+    [InlineData("SELECT name FROM sys.tables; UPDATE dbo.Customer SET Email = NULL; SELECT name FROM sys.tables WHERE name = N'cut", true)]
     public void The_principal_test_finds_every_write_and_passes_every_read(string sent, bool writes) => Assert.Equal(writes, Writes(sent).Any());
 
     /// <summary>The form SQL Server gives a masked text, an asterisk, the word it matched and dashes, beside texts that only resemble it.</summary>
@@ -429,13 +431,19 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     /// <summary>Whether SQL Server masked a statement's text in the event: an asterisk, a lower-case word, then dashes to the end.</summary>
     private static bool Masked(string text) => System.Text.RegularExpressions.Regex.IsMatch(text, @"\A\*[a-z_]+-+\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
-    /// <summary>What a batch or a call does beyond reading: each DML, DDL or EXEC statement in it, sp_executesql read through to the statement it carries.</summary>
+    /// <summary>
+    /// What a batch or a call does beyond reading: each DML, DDL or EXEC statement in it, sp_executesql read through to the statement it
+    /// carries. A text ScriptDom cannot parse is read token by token, and each keyword that starts a write counts: the Windows runner's
+    /// LocalDB records DacFx's catalog query cut off after 500,000 characters (CI run 36202422744), and nothing past the cut is read.
+    /// </summary>
     private static IEnumerable<string> Writes(string sent)
     {
-        var script = new TSql160Parser(initialQuotedIdentifiers: true).Parse(new StringReader(sent), out var errors);
+        var parser = new TSql160Parser(initialQuotedIdentifiers: true);
+        var script = parser.Parse(new StringReader(sent), out var errors);
         if (errors.Count > 0)
         {
-            return ["unparsed: " + sent];
+            return parser.GetTokenStream(new StringReader(sent), out _).Where(t => WriteKeywords.Contains(t.TokenType))
+                .Select(t => t.TokenType + " in a text that does not parse: " + sent[..Math.Min(sent.Length, 200)]);
         }
 
         var statements = new Statements();
@@ -451,6 +459,14 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             _ => [],
         });
     }
+
+    /// <summary>The keywords that start a write, or a SELECT … INTO, in a text read token by token.</summary>
+    private static readonly HashSet<TSqlTokenType> WriteKeywords =
+    [
+        TSqlTokenType.Insert, TSqlTokenType.Update, TSqlTokenType.Delete, TSqlTokenType.Merge, TSqlTokenType.Truncate, TSqlTokenType.Bulk,
+        TSqlTokenType.Into, TSqlTokenType.Create, TSqlTokenType.Alter, TSqlTokenType.Drop, TSqlTokenType.Exec, TSqlTokenType.Execute,
+        TSqlTokenType.Grant, TSqlTokenType.Revoke, TSqlTokenType.Deny,
+    ];
 
     /// <summary>Every statement a script holds, nested ones included.</summary>
     private sealed class Statements : TSqlFragmentVisitor
