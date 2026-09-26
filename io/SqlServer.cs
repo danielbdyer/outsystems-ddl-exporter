@@ -191,7 +191,7 @@ public static class SqlServer
         public PublishProfile.Permissive Permissive(PublishProfile.Strict strict) => PublishProfile.Permissive.Of(strict);
 
         /// <summary>The package at <paramref name="dacpac"/> published to this copy under the profile's options, Strict or this copy's Permissive, through io/DacFx.Publish.</summary>
-        public Result<Copy> Publish(string dacpac, PublishProfile profile) => Reached(this, null).Bind(_ => Ssdt.Open(dacpac).Bind(package =>
+        public Result<Copy> Publish(string dacpac, PublishProfile profile, QueryLog log) => Reached(this, log).Bind(_ => Ssdt.Open(dacpac).Bind(package =>
         {
             using (package)
             {
@@ -380,7 +380,7 @@ public static class SqlServer
     /// serves two statements, so a pooled connection the server broke fails that statement alone and is mapped once. A statement is
     /// logged once the connection opened, since only then was it sent, its parameters declared before it, so the log runs as a script.
     /// </summary>
-    internal static Result<T> Query<T>(Database target, Statement statement, QueryLog? log, Func<IReadOnlyList<IReadOnlyList<object?>>, T> answer,
+    internal static Result<T> Query<T>(Database target, Statement statement, QueryLog log, Func<IReadOnlyList<IReadOnlyList<object?>>, T> answer,
         Func<StatementFailure, T>? failed = null)
     {
         var opened = false;
@@ -412,20 +412,20 @@ public static class SqlServer
             }
 
             var outcome = rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows";
-            return log is null ? Result.Ok(answer(rows)) : log.Add(target, statement.Site, logged, outcome).Map(_ => answer(rows));
+            return log.Add(target, statement.Site, logged, outcome).Map(_ => answer(rows));
         }
         catch (Exception e) when (e is InvalidOperationException || Carries(e))
         {
             if (failed is not null && target.FailedStatement(e, opened) is { } statementFailure)
             {
-                var unlogged = log?.Add(target, statement.Site, logged, statementFailure.TimedOut
+                var unlogged = log.Add(target, statement.Site, logged, statementFailure.TimedOut
                     ? "timed out after " + statement.Timeout.TotalSeconds.ToString(CultureInfo.InvariantCulture) + " s"
                     : "failed, Msg " + statementFailure.Number.ToString(CultureInfo.InvariantCulture)) as Result<string>.Failed;
                 return unlogged is null ? failed(statementFailure) : unlogged.Error;
             }
 
             var error = target.ErrorOf(e, opened);
-            return opened && log?.Add(target, statement.Site, logged, "failed, " + error.Code) is Result<string>.Failed { Error: var unwritten } ? unwritten : error;
+            return opened && log.Add(target, statement.Site, logged, "failed, " + error.Code) is Result<string>.Failed { Error: var unwritten } ? unwritten : error;
         }
     }
 
@@ -709,14 +709,14 @@ public static class SqlServer
     }
 
     /// <summary>The target, when it answers this identity with VIEW DEFINITION, and whether the identity reads the server's scope too: what a verb asks before it builds anything, so a denial arrives first.</summary>
-    public static Result<Readable> Reach(Database target, QueryLog? log = null) => Reached(target, log);
+    public static Result<Readable> Reach(Database target, QueryLog log) => Reached(target, log);
 
     /// <summary>
     /// A copy's SQL Server (R1), which a claim on the copy records: the product version and the copy's compatibility level, read in one
     /// statement through <see cref="Query{T}"/>, and the digest of the image the dbchange-sql container runs, which Docker reports
     /// (LocalServer.Image). A named environment's server is read by S8, and nothing here reads it.
     /// </summary>
-    public static Result<Server> ServerOf(Copy copy, QueryLog? log = null) =>
+    public static Result<Server> ServerOf(Copy copy, QueryLog log) =>
         Query(copy, new Statement("SQL Server", "SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128)), compatibility_level FROM sys.databases WHERE database_id = DB_ID();"), log,
                 rows => rows is [[string version, byte level]] ? (Version: version, Level: (int)level) : (Version: (string?)null, Level: 0))
             .Bind(read => Server.Of(read.Version, read.Level, LocalServer.Image(copy)));
@@ -726,7 +726,7 @@ public static class SqlServer
     /// the identity holds VIEW DEFINITION there (§1 fact 2), whose absence is a denial (Msg 300, SQL Server's number for it); and, in the
     /// same statement, whether it holds VIEW ANY DEFINITION on the server.
     /// </summary>
-    private static Result<Readable> Reached(Database target, QueryLog? log) =>
+    private static Result<Readable> Reached(Database target, QueryLog log) =>
         Query(target, new Statement("VIEW DEFINITION", "SELECT HAS_PERMS_BY_NAME(NULL, N'DATABASE', N'VIEW DEFINITION'), HAS_PERMS_BY_NAME(NULL, NULL, N'VIEW ANY DEFINITION');"), log,
                 rows => rows is [[{ } database, var server]]
                     ? (Database: Convert.ToInt32(database, CultureInfo.InvariantCulture) == 1, Server: server is not null && Convert.ToInt32(server, CultureInfo.InvariantCulture) == 1)

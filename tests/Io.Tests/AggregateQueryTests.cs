@@ -137,7 +137,7 @@ public sealed class AggregateQueryTests(PublishedGoldenProject project) : IClass
         var wrong = new PlantedValue("Wr0ng!planted#7f3a");
         var qa = Resolved("qa", new SqlConnectionStringBuilder(project.Reader.ConnectionString) { Password = wrong.Text }.ConnectionString);
 
-        var errors = new[] { Failed(SqlServer.Reach(qa), "server.denied"), Failed(DacFx.Extract(qa), "server.denied"), Failed(SqlServer.Measure(qa, Value(SqlServer.AggregateQuery.Of("SELECT 1;", "the login")), SqlServer.QueryLog.Start(root.Path)), "server.denied") };
+        var errors = new[] { Failed(SqlServer.Reach(qa, SqlServer.QueryLog.Start(root.Path)), "server.denied"), Failed(DacFx.Extract(qa), "server.denied"), Failed(SqlServer.Measure(qa, Value(SqlServer.AggregateQuery.Of("SELECT 1;", "the login")), SqlServer.QueryLog.Start(root.Path)), "server.denied") };
 
         Assert.All(errors, error =>
         {
@@ -164,7 +164,7 @@ public sealed class AggregateQueryTests(PublishedGoldenProject project) : IClass
         {
             var dev = Resolved("dev", new SqlConnectionStringBuilder(project.Reader.ConnectionString) { UserID = login, Password = password }.ConnectionString);
 
-            var error = Failed(SqlServer.Reach(dev), "server.denied");
+            var error = Failed(SqlServer.Reach(dev, SqlServer.QueryLog.Start(root.Path)), "server.denied");
 
             Assert.StartsWith("env:dev refused this identity (Msg 300", error.Message, StringComparison.Ordinal);
             new PlantedValue(password).AbsentFrom(error);
@@ -182,7 +182,7 @@ public sealed class AggregateQueryTests(PublishedGoldenProject project) : IClass
     {
         var dev = Resolved("dev", new SqlConnectionStringBuilder(project.Reader.ConnectionString) { InitialCatalog = "dbchange_no_such_database_" + Guid.NewGuid().ToString("N")[..8] }.ConnectionString);
 
-        var error = Failed(SqlServer.Reach(dev), "server.denied");
+        var error = Failed(SqlServer.Reach(dev, SqlServer.QueryLog.Start(root.Path)), "server.denied");
 
         Assert.StartsWith("env:dev refused this identity (Msg 4060", error.Message, StringComparison.Ordinal);
     }

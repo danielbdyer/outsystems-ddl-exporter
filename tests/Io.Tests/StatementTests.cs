@@ -76,7 +76,7 @@ public sealed class StatementTests : IDisposable
     public async Task An_aggregate_query_past_its_timeout_is_measured_as_timed_out_and_the_server_still_answers()
     {
         var log = SqlServer.QueryLog.Start(Root);
-        var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync()));
+        var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync(), SqlServer.QueryLog.Start(Root)));
         try
         {
             var slow = Value(SqlServer.AggregateQuery.Of("SELECT SUM(CASE WHEN a.object_id = b.object_id OR c.object_id = d.object_id THEN 1 ELSE 0 END) "
@@ -90,7 +90,7 @@ public sealed class StatementTests : IDisposable
         }
         finally
         {
-            Value(LocalServer.Drop(copy));
+            Value(LocalServer.Drop(copy, SqlServer.QueryLog.Start(Root)));
         }
     }
 
@@ -104,7 +104,7 @@ public sealed class StatementTests : IDisposable
     public async Task An_aggregate_query_that_reads_a_synonym_is_refused_before_it_runs()
     {
         var log = SqlServer.QueryLog.Start(Root);
-        var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync()));
+        var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync(), SqlServer.QueryLog.Start(Root)));
         try
         {
             await SqlServerFixture.ExecuteAsync(copy.Connection, "CREATE TABLE dbo.Person (Id INT NOT NULL PRIMARY KEY); INSERT dbo.Person (Id) VALUES (1), (2); CREATE SYNONYM dbo.People FOR dbo.Person;");
@@ -118,7 +118,7 @@ public sealed class StatementTests : IDisposable
         }
         finally
         {
-            Value(LocalServer.Drop(copy));
+            Value(LocalServer.Drop(copy, SqlServer.QueryLog.Start(Root)));
         }
     }
 
@@ -131,18 +131,18 @@ public sealed class StatementTests : IDisposable
     [Trait("Category", "fixture")]
     public async Task A_SqlException_inside_another_exception_is_read_by_its_number()
     {
-        var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync()));
+        var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync(), SqlServer.QueryLog.Start(Root)));
         try
         {
             var divided = await Assert.ThrowsAsync<SqlException>(() => SqlServerFixture.ScalarAsync(copy.Connection, "SELECT 1 / 0;"));
 
-            var error = Failed(SqlServer.Query<int>(copy, new SqlServer.Statement("a wrapped failure", "SELECT 1;"), null, _ => throw new InvalidOperationException("An outer failure.", divided)), "server.failed");
+            var error = Failed(SqlServer.Query<int>(copy, new SqlServer.Statement("a wrapped failure", "SELECT 1;"), SqlServer.QueryLog.Start(Root), _ => throw new InvalidOperationException("An outer failure.", divided)), "server.failed");
 
             Assert.StartsWith("copy:" + copy.Name + " failed the statement: Msg 8134", error.Message, StringComparison.Ordinal);
         }
         finally
         {
-            Value(LocalServer.Drop(copy));
+            Value(LocalServer.Drop(copy, SqlServer.QueryLog.Start(Root)));
         }
     }
 
@@ -151,10 +151,10 @@ public sealed class StatementTests : IDisposable
     [Trait("Category", "fixture")]
     public async Task Dropping_a_copy_twice_is_no_error_and_leaves_no_row()
     {
-        var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync()));
+        var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync(), SqlServer.QueryLog.Start(Root)));
 
-        Value(LocalServer.Drop(copy));
-        Value(LocalServer.Drop(copy));
+        Value(LocalServer.Drop(copy, SqlServer.QueryLog.Start(Root)));
+        Value(LocalServer.Drop(copy, SqlServer.QueryLog.Start(Root)));
 
         Assert.False(await SqlServerFixture.ExistsAsync(copy.Name.ToString()), copy.Name + " outlived Drop");
         Assert.Empty(Registry());
@@ -171,7 +171,7 @@ public sealed class StatementTests : IDisposable
         await using var database = await SqlServerFixture.RegisterAsync();
         var reader = await ReadOnlyPrincipal.CreateAsync(database);
 
-        var error = Failed(LocalServer.Create(Root, reader.ConnectionString), "server.denied");
+        var error = Failed(LocalServer.Create(Root, reader.ConnectionString, SqlServer.QueryLog.Start(Root)), "server.denied");
 
         Assert.Contains("Msg 262", error.Message, StringComparison.Ordinal);
         Assert.Empty(Registry());
@@ -189,7 +189,7 @@ public sealed class StatementTests : IDisposable
         var wrong = new PlantedValue("Wr0ng!planted#7f3a");
         var server = new SqlConnectionStringBuilder(await SqlServerFixture.ServerAsync()) { IntegratedSecurity = false, UserID = "dbchange_nobody", Password = wrong.Text }.ConnectionString;
 
-        var error = Failed(LocalServer.Create(Root, server), "server.denied");
+        var error = Failed(LocalServer.Create(Root, server, SqlServer.QueryLog.Start(Root)), "server.denied");
 
         Assert.Contains("sql.env", error.Remedy, StringComparison.Ordinal);
         wrong.AbsentFrom(error);

@@ -329,7 +329,7 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
     private async Task<(SqlServer.Copy Copy, string Dacpac, PublishProfile.Strict Profile)> Published(string? collation)
     {
         var server = await SqlServerFixture.ServerAsync();
-        var copy = GitTests.Ok(LocalServer.Create(repository.Root, server));
+        var copy = GitTests.Ok(LocalServer.Create(repository.Root, server, SqlServer.QueryLog.Start(repository.Root)));
         string dacpac;
         if (collation is null)
         {
@@ -353,7 +353,7 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         }
 
         var profile = GitTests.Ok(PublishProfiles.Load(Path.Combine(repository.Root, ScratchRepository.Profile)));
-        GitTests.Ok(copy.Publish(dacpac, profile));
+        GitTests.Ok(copy.Publish(dacpac, profile, SqlServer.QueryLog.Start(repository.Root)));
         return (copy, dacpac, profile);
     }
 

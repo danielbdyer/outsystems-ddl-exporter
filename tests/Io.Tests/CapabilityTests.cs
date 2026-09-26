@@ -129,7 +129,7 @@ public sealed class CapabilityTests
     [
         "using DbChange.Io;", "using DbChange.Kernel;", "", "namespace Planted;", "", "public static class Uses", "{",
         "    public static Result<SqlServer.Copy> Made(string root, string dacpac, PublishProfile.Strict strict) =>",
-        "        LocalServer.Create(root).Bind(copy => copy.Publish(dacpac, strict)).Bind(copy => copy.Publish(dacpac, copy.Permissive(strict)));",
+        "        LocalServer.Create(root, SqlServer.QueryLog.Start(root)).Bind(copy => copy.Publish(dacpac, strict, SqlServer.QueryLog.Start(root))).Bind(copy => copy.Publish(dacpac, copy.Permissive(strict), SqlServer.QueryLog.Start(root)));",
         "", "    public static void Refused(SqlServer.EnvironmentDatabase named, string dacpac, PublishProfile.Strict strict)", "    {",
     ];
 

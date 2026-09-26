@@ -19,7 +19,7 @@ internal sealed class DisposableCopy : IDisposable
 
     public static DisposableCopy Create(string repositoryRoot, string server, string? dacpac = null, PublishProfile.Strict? profile = null)
     {
-        var made = new DisposableCopy(Expect.Value(LocalServer.Create(repositoryRoot, server)));
+        var made = new DisposableCopy(Expect.Value(LocalServer.Create(repositoryRoot, server, SqlServer.QueryLog.Start(repositoryRoot))));
         if (dacpac is null)
         {
             return made;
@@ -27,7 +27,7 @@ internal sealed class DisposableCopy : IDisposable
 
         try
         {
-            Expect.Value(made.Copy.Publish(dacpac, profile ?? throw new ArgumentNullException(nameof(profile))));
+            Expect.Value(made.Copy.Publish(dacpac, profile ?? throw new ArgumentNullException(nameof(profile)), SqlServer.QueryLog.Start(repositoryRoot)));
             return made;
         }
         catch
@@ -37,7 +37,7 @@ internal sealed class DisposableCopy : IDisposable
         }
     }
 
-    public void Dispose() => Expect.Value(LocalServer.Drop(Copy));
+    public void Dispose() => Expect.Value(LocalServer.Drop(Copy, SqlServer.QueryLog.Start(Copy.Root)));
 
     public override string ToString() => Copy.ToString();
 }

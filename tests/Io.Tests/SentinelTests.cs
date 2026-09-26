@@ -35,13 +35,13 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         var dacpac = Value(Ssdt.Build(ClassicMinimal(), tool.Folder, scratch.Under("build"))).Path;
         Assert.ThrowsAny<SocketException>(() => Dns.GetHostEntry("sentinel.invalid"));
 
-        var copy = Value(LocalServer.Create(SqlServerFixture.RepositoryRoot(scratch.Path), await SqlServerFixture.ServerAsync()));
+        var copy = Value(LocalServer.Create(SqlServerFixture.RepositoryRoot(scratch.Path), await SqlServerFixture.ServerAsync(), SqlServer.QueryLog.Start(scratch.Path)));
         try
         {
             var permissive = copy.Permissive(strict);
             foreach (var profile in (PublishProfile[])[strict, permissive])
             {
-                Value(copy.Publish(dacpac, profile));
+                Value(copy.Publish(dacpac, profile, SqlServer.QueryLog.Start(scratch.Path)));
             }
 
             Assert.Equal(1, await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.tables WHERE SCHEMA_NAME(schema_id) = N'dbo' AND name = N'Customer';"));
@@ -49,7 +49,7 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         }
         finally
         {
-            Value(LocalServer.Drop(copy));
+            Value(LocalServer.Drop(copy, SqlServer.QueryLog.Start(scratch.Path)));
         }
     }
 

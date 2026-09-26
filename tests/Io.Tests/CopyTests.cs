@@ -31,7 +31,7 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
     public async Task LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row()
     {
         var server = await SqlServerFixture.ServerAsync();
-        var copy = Made(LocalServer.Create(root, server));
+        var copy = Made(LocalServer.Create(root, server, SqlServer.QueryLog.Start(root)));
         try
         {
             Assert.Equal((CopyName.Make(Environment.MachineName, 0, 0).Machine, Environment.ProcessId), (copy.Name.Machine, copy.Name.Pid));
@@ -46,7 +46,7 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
         }
         finally
         {
-            Made(LocalServer.Drop(copy));
+            Made(LocalServer.Drop(copy, SqlServer.QueryLog.Start(root)));
         }
 
         Assert.False(await SqlServerFixture.ExistsAsync(copy.Name.ToString()), copy.Name + " outlived Drop");
@@ -85,11 +85,11 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
     public async Task A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint()
     {
         var strict = Made(PublishProfiles.Load(project.Profile));
-        var (one, two) = (Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync())), Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync())));
+        var (one, two) = (Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync(), SqlServer.QueryLog.Start(root))), Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync(), SqlServer.QueryLog.Start(root))));
         try
         {
-            Made(one.Publish(project.Base, strict));
-            Made(two.Publish(project.Base, strict));
+            Made(one.Publish(project.Base, strict, SqlServer.QueryLog.Start(root)));
+            Made(two.Publish(project.Base, strict, SqlServer.QueryLog.Start(root)));
             var (first, second) = (Extracted(one), Extracted(two));
             using var basePackage = Made(Ssdt.Open(project.Base));
             using var headPackage = Made(Ssdt.Open(project.Mandatory));
@@ -103,8 +103,8 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
         }
         finally
         {
-            Made(LocalServer.Drop(one));
-            Made(LocalServer.Drop(two));
+            Made(LocalServer.Drop(one, SqlServer.QueryLog.Start(root)));
+            Made(LocalServer.Drop(two, SqlServer.QueryLog.Start(root)));
         }
     }
 
@@ -119,10 +119,10 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
     public async Task The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not()
     {
         var strict = Made(PublishProfiles.Load(project.Profile));
-        var copy = Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync()));
+        var copy = Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync(), SqlServer.QueryLog.Start(root)));
         try
         {
-            Made(copy.Publish(project.Base, strict));
+            Made(copy.Publish(project.Base, strict, SqlServer.QueryLog.Start(root)));
             using var extracted = Made(DacFx.Extract(copy));
             using var basePackage = Made(Ssdt.Open(project.Base));
             using var headPackage = Made(Ssdt.Open(project.Mandatory));
@@ -137,7 +137,7 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
         }
         finally
         {
-            Made(LocalServer.Drop(copy));
+            Made(LocalServer.Drop(copy, SqlServer.QueryLog.Start(root)));
         }
     }
 
@@ -151,10 +151,10 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
     public async Task A_publish_returns_the_report_and_script_DacFx_deployed()
     {
         var strict = Made(PublishProfiles.Load(project.Profile));
-        var copy = Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync()));
+        var copy = Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync(), SqlServer.QueryLog.Start(root)));
         try
         {
-            Made(copy.Publish(project.Base, strict));
+            Made(copy.Publish(project.Base, strict, SqlServer.QueryLog.Start(root)));
             using var head = Made(Ssdt.Open(project.ForeignKey));
 
             var published = Made(DacFx.Publish(copy, head, copy.Permissive(strict)));
@@ -164,7 +164,7 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
         }
         finally
         {
-            Made(LocalServer.Drop(copy));
+            Made(LocalServer.Drop(copy, SqlServer.QueryLog.Start(root)));
         }
     }
 
@@ -181,12 +181,12 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
     public async Task A_publish_the_data_loss_check_stops_is_server_failed_by_Msg_50000_quoting_DacFx_s_errors_and_not_its_informational_messages()
     {
         var strict = Made(PublishProfiles.Load(project.Profile));
-        var copy = Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync()));
+        var copy = Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync(), SqlServer.QueryLog.Start(root)));
         try
         {
-            Made(copy.Publish(project.Base, strict));
+            Made(copy.Publish(project.Base, strict, SqlServer.QueryLog.Start(root)));
 
-            var error = Assert.IsType<Result<SqlServer.Copy>.Failed>(copy.Publish(project.Mandatory, strict)).Error;
+            var error = Assert.IsType<Result<SqlServer.Copy>.Failed>(copy.Publish(project.Mandatory, strict, SqlServer.QueryLog.Start(root))).Error;
 
             Assert.Equal("server.failed", error.Code);
             Assert.StartsWith("copy:" + copy.Name + " failed the statement: Msg 50000: ", error.Message, StringComparison.Ordinal);
@@ -197,7 +197,7 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
         }
         finally
         {
-            Made(LocalServer.Drop(copy));
+            Made(LocalServer.Drop(copy, SqlServer.QueryLog.Start(root)));
         }
     }
 

@@ -61,14 +61,14 @@ public static class LocalServer
     /// <summary>The local server, from the sources given, as the registry records it and R15 compares it (localhost,11433); nothing of its login.</summary>
     public static Result<Kernel.ServerName> ServerName(string? dbChangeSql, string? sqlEnv, bool localDb) => Server(dbChangeSql, sqlEnv, localDb).Bind(ServerName);
 
-    /// <summary>A copy on this machine's local server, refused on a named environment's host (R15); its CREATE DATABASE goes to the run's log, when given.</summary>
-    public static Result<SqlServer.Copy> Create(string repositoryRoot, SqlServer.QueryLog? log = null) => Server().Bind(server => Create(repositoryRoot, server, log));
+    /// <summary>A copy on this machine's local server, refused on a named environment's host (R15); its CREATE DATABASE goes to the run's log.</summary>
+    public static Result<SqlServer.Copy> Create(string repositoryRoot, SqlServer.QueryLog log) => Server().Bind(server => Create(repositoryRoot, server, log));
 
     /// <summary>
     /// The copy's database dropped, its sessions ended first, then its row; a database already gone is no error. The DROP DATABASE goes
-    /// to the run's log, when given.
+    /// to the run's log.
     /// </summary>
-    public static Result<CopyName> Drop(SqlServer.Copy copy, SqlServer.QueryLog? log = null)
+    public static Result<CopyName> Drop(SqlServer.Copy copy, SqlServer.QueryLog log)
     {
         SqlConnection.ClearPool(new SqlConnection(copy.Connection));
         return Run(copy, "DROP DATABASE", Unmake, log).Bind(_ => Change(copy.Root, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())])).Map(_ => copy.Name);
@@ -165,7 +165,7 @@ public static class LocalServer
     /// A copy on the server given, refused on a named environment's host (R15 against dbchange/environments.json, read here once); recorded
     /// with its server before its database is made, so a crash leaves a row to follow.
     /// </summary>
-    internal static Result<SqlServer.Copy> Create(string repositoryRoot, string server, SqlServer.QueryLog? log = null, Func<string, IPAddress[]>? resolve = null) =>
+    internal static Result<SqlServer.Copy> Create(string repositoryRoot, string server, SqlServer.QueryLog log, Func<string, IPAddress[]>? resolve = null) =>
         ServerName(server).Bind(name => EnvironmentsFile.Read(repositoryRoot).Bind(environments => Unnamed(environments, repositoryRoot, name, resolve ?? Resolved))).Bind(name =>
         {
             var copy = new SqlServer.Copy(CopyName.Make(Environment.MachineName, Environment.ProcessId, BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, repositoryRoot);
@@ -245,7 +245,7 @@ public static class LocalServer
     /// A statement about the copy's database, through the one statement path (io/SqlServer.Query): run against master on its server, on
     /// a connection of its own outside SqlClient's pool, with the copy's name as @name, waiting up to <see cref="DatabaseStatementTimeout"/>.
     /// </summary>
-    private static Result<SqlServer.Copy> Run(SqlServer.Copy copy, string site, string statement, SqlServer.QueryLog? log) =>
+    private static Result<SqlServer.Copy> Run(SqlServer.Copy copy, string site, string statement, SqlServer.QueryLog log) =>
         SqlServer.Query(copy, new SqlServer.Statement(site, statement)
         {
             Timeout = DatabaseStatementTimeout, Catalog = "master", Pooled = false, Parameters = [("@name", copy.Name.ToString())],

@@ -103,7 +103,7 @@ public sealed class TargetTests : IDisposable
     {
         var root = RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", reference + ";User ID=reader;Password=" + Planted), host));
 
-        var error = Failed(LocalServer.Create(root, "Server=" + server + ";Initial Catalog=master;User ID=sa;Password=" + Planted + ";TrustServerCertificate=True;Connect Timeout=2"), "copy.named-host");
+        var error = Failed(LocalServer.Create(root, "Server=" + server + ";Initial Catalog=master;User ID=sa;Password=" + Planted + ";TrustServerCertificate=True;Connect Timeout=2", SqlServer.QueryLog.Start(root)), "copy.named-host");
 
         Assert.Contains("env:dev", error.Message, StringComparison.Ordinal);
         Planted.AbsentFrom(error);
@@ -140,7 +140,7 @@ public sealed class TargetTests : IDisposable
     {
         var root = how == "no environments file" ? scratch.Folder("no-environments-file") : RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=dev-sql;Nonsense " + Planted + " = 1")));
 
-        var error = Failed(LocalServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2"), code);
+        var error = Failed(LocalServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2", SqlServer.QueryLog.Start(root)), code);
 
         Assert.Equal(how != "no environments file", error.Message.StartsWith("env:dev's connection", StringComparison.Ordinal));
         Planted.AbsentFrom(error);
@@ -158,7 +158,7 @@ public sealed class TargetTests : IDisposable
     {
         var root = RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=prod-sql.corp.example,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted), "dev-sql"));
 
-        var error = Failed(LocalServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2"), "environments.host");
+        var error = Failed(LocalServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2", SqlServer.QueryLog.Start(root)), "environments.host");
 
         Assert.StartsWith("env:dev's connection", error.Message, StringComparison.Ordinal);
         Assert.Contains("dev-sql", error.Message, StringComparison.Ordinal);
@@ -648,7 +648,7 @@ public sealed class TargetTests : IDisposable
         var port = ClosedPort();
         var server = Value(LocalServer.Server(null, Written("sql.env", "MSSQL_SA_PASSWORD=" + Planted + "\nDBCHANGE_SQL_PORT=" + port + "\n"), localDb: false));
 
-        var error = Failed(LocalServer.Create(root, server), "server.unreachable");
+        var error = Failed(LocalServer.Create(root, server, SqlServer.QueryLog.Start(root)), "server.unreachable");
 
         Assert.Contains("ci/sql.sh up", error.Remedy, StringComparison.Ordinal);
         Planted.AbsentFrom(error);
