@@ -27,7 +27,7 @@ public sealed record Checkout(string Root, string WorkingDirectory, string? Tool
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return new Error("file.no-working-directory", "The working directory no longer exists, or this identity may not read it: " + e.Message.TrimEnd('.') + ".",
-                "Change to the SSDT repository's folder, then run dbchange again.");
+                "Change to the SSDT repository's folder, then run the command again.");
         }
 
         return new Checkout(EnvironmentsFile.Root(workingDirectory), workingDirectory, Environment.GetEnvironmentVariable("DBCHANGE_TOOL"), version);

@@ -86,7 +86,7 @@ public static class Git
                         return Swept(git, root, state, cancel).Bind(_ => Current(git, path, commit, cancel)).Bind<Worktree>(current =>
                             current ? new Worktree(path, commit)
                             : Directory.Exists(path) && !Removed(git, root, path, cancel) ? new Error("git.failed", path + " is not at " + commit + " unchanged, and git cannot remove it.",
-                                "Close any program that holds a file under " + path + " open, delete the folder, and run dbchange again.")
+                                "Close any program that holds a file under " + path + " open, delete the folder, and run the command again.")
                             : Step(git, root, ["worktree", "add", "--force", "--detach", path, commit], cancel).Map(_ => new Worktree(path, commit)));
                     });
                 }
@@ -202,7 +202,7 @@ public static class Git
                     ? Exists(branch, "in this repository")
                     : Answered(git, root, ["remote", "get-url", "origin"], cancel).Bind<Pushed>(remote => remote.Code switch
                     {
-                        2 => new Error("git.no-origin", "The repository at " + root + " has no remote named origin, so " + branch + " cannot be pushed.", "Add the remote with git remote add origin <url>, then run dbchange again."),
+                        2 => new Error("git.no-origin", "The repository at " + root + " has no remote named origin, so " + branch + " cannot be pushed.", "Add the remote with git remote add origin <url>, then run the command again."),
                         not 0 => Failed("remote get-url", remote),
                         _ => Answered(git, root, ["ls-remote", "--exit-code", "origin", name], cancel).Bind<Pushed>(listed => listed.Code switch   // exit 2: the origin has no such branch
                         {
@@ -244,7 +244,7 @@ public static class Git
                 "Ask the repository's administrators which branch names its policy accepts, then name one.")
             : push.Errors.Contains("Authentication failed", StringComparison.Ordinal) || push.Errors.Contains("403", StringComparison.Ordinal) || push.Errors.Contains("Permission denied", StringComparison.Ordinal)
                 ? new Error("origin.denied", "The origin refused this identity's credential: " + push.Errors.Trim() + "; nothing was committed.",
-                    "Sign in through git's credential helper by running git fetch once in the repository, then run dbchange again.")
+                    "Sign in through git's credential helper by running git fetch once in the repository, then run the command again.")
             : Unreachable("push", push.Errors);
     }
 
@@ -332,10 +332,10 @@ public static class Git
     private static Result<string> Root(Runner git, string directory, CancellationToken cancel) => Answered(git, directory, ["rev-parse", "--show-toplevel"], cancel).Bind<string>(top =>
         top.Code == 0 ? Path.GetFullPath(top.Output.Trim())
         : top.Errors.Contains("not a git repository (or any ", StringComparison.Ordinal) || top.Errors.Contains("cannot change to", StringComparison.Ordinal)
-            ? new Error("git.not-a-repository", directory + " is not in a git repository: " + top.Errors.Trim(), "Run dbchange in a clone of the repository, or name the clone's folder.")
+            ? new Error("git.not-a-repository", directory + " is not in a git repository: " + top.Errors.Trim(), "Change to a clone of the repository, or name the clone's folder.")
         : top.Errors.Contains("detected dubious ownership", StringComparison.Ordinal) && (Refused.Match(top.Errors) is var named && named.Success ? named.Groups["path"].Value : directory) is var refused
             ? new Error("git.dubious-ownership", "git refuses " + refused + ": the repository belongs to another user, and git's safe.directory setting does not name it.",
-                "Run git config --global --add safe.directory " + refused + " when you trust the repository, then run dbchange again.")
+                "Run git config --global --add safe.directory " + refused + " when you trust the repository, then run the command again.")
         : Failed("rev-parse", top));
 
     /// <summary>The commit a ref names: exit 1 is the one answer rev-parse --verify --quiet gives for a ref that names none; any other failure is git's, such as an old git refusing --end-of-options.</summary>
@@ -350,14 +350,14 @@ public static class Git
 
     private static Error Unreachable(string command, string errors) => new Error(
         "origin.unreachable", "git " + command + " to the origin failed, and nothing was committed: " + errors.Trim(),
-        "Check that git fetch reaches the origin, signing in through git's own credential helper when it asks, then run dbchange again.");
+        "Check that git fetch reaches the origin, signing in through git's own credential helper when it asks, then run the command again.");
 
     /// <summary>A git command that failed: its error quoted, or its exit code named when it wrote nothing (a git killed by a signal, or one that ended by itself).</summary>
     private static Error Failed(string command, Ran.Exited git, string? directory = null) => git.Errors.Trim() is { Length: > 0 } errors
         ? NoIdentity(errors) ? new Error("git.no-identity", "git " + command + " needs a committer's name and email, and git has none configured"
-                + (directory is null ? "." : " for " + directory + "."), "Run git config user.name and git config user.email in the repository, then run dbchange again.")
-            : new Error("git.failed", "git " + command + " failed: " + errors, "Fix what git names, then run dbchange again.")
-        : new Error("git.failed", "git " + command + " exited " + git.Code + " and wrote no error.", "Run git " + command + " by hand to see why it exits " + git.Code + ", then run dbchange again.");
+                + (directory is null ? "." : " for " + directory + "."), "Run git config user.name and git config user.email in the repository, then run the command again.")
+            : new Error("git.failed", "git " + command + " failed: " + errors, "Fix what git names, then run the command again.")
+        : new Error("git.failed", "git " + command + " exited " + git.Code + " and wrote no error.", "Run git " + command + " by hand to see why it exits " + git.Code + ", then run the command again.");
 
     /// <summary>git that must succeed: its output less the final line break; a failure quotes git's error.</summary>
     private static Result<string> Step(Runner git, string directory, IReadOnlyList<string> arguments, CancellationToken cancel, string? index = null) =>
@@ -377,7 +377,7 @@ public static class Git
         Ran.NotFound notFound => new Error("git.missing", "git does not run here: " + notFound.Why, "Install git and put it on the PATH, then run dbchange doctor."),
         Ran.TimedOut when arguments[0] is "ls-remote" or "push" => new Error("origin.unreachable",
             "git " + arguments[0] + " to the origin did not answer in " + Command.Written(Timeout) + ", and nothing was committed.",
-            "Check that git fetch reaches the origin, signing in through git's own credential helper when it asks, then run dbchange again."),
+            "Check that git fetch reaches the origin, signing in through git's own credential helper when it asks, then run the command again."),
         Ran.TimedOut => new Error("git.timed-out", "git " + arguments[0] + " in " + directory + " ran for " + Command.Written(Timeout) + " without finishing, and dbchange stopped it.",
             "Run git " + arguments[0] + " in " + directory + " by hand to see what it waits for, such as a credential prompt or a lock another program holds."),
         _ => throw new UnreachableException(),

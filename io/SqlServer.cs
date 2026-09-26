@@ -639,7 +639,7 @@ public static class SqlServer
             "List the file in .gitignore, or move it under a folder .gitignore lists, such as .dbchange/."),
         Git.Holding.RootInNoRepository => new Error("reference.no-repository", subject + " names a file, and the repository root " + repositoryRoot
             + " is in no git repository, so git cannot say whether a clone would commit the file; it is not read.",
-            "Run dbchange in a clone of the SSDT repository, or give the reference as env:NAME."),
+            "Change to a clone of the SSDT repository, or give the reference as env:NAME."),
         Git.Holding.Ignored => OwnerOnly(subject, path),
         Git.Holding.InNoRepository => OwnerOnly(subject, path),
         _ => throw new System.Diagnostics.UnreachableException(),

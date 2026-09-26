@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using DbChange.Cli;
+using DbChange.Io;
 using DbChange.Tests;
 using Xunit;
 
@@ -27,9 +28,6 @@ public sealed class Errors
         "did", "has", "have", "had", "not", "no", "nothing", "none", "cannot", "unable", "error", "failed", "if", "when", "because", "since", "maybe", "perhaps",
     };
 
-    /// <summary>The flaws of the one form, which io's remedies take in the adapters' pass; a code io alone constructs is not held to them yet.</summary>
-    private static readonly string[] Form = ["starts in lower case", "has no period", "names no verb of dbchange"];
-
     private static readonly Regex RunsDbChange = new(@"\b[Rr]un dbchange (\S+)", RegexOptions.CultureInvariant);
 
     public static TheoryData<string> Cases => new(ErrorPaths.All.Select(c => c.Label));
@@ -49,7 +47,7 @@ public sealed class Errors
 
         Assert.Equal(way.Code, error.Code);
         var flaw = Flaw(error.Remedy);
-        Assert.True(flaw is null || (!ErrorPaths.KernelOrCli(way.Code) && Form.Contains(flaw)), error.Code + ": the remedy " + flaw + ": " + error.Remedy);
+        Assert.True(flaw is null, error.Code + ": the remedy " + flaw + ": " + error.Remedy);
         Assert.Empty(Prose.Findings(error.Message).Concat(Prose.Findings(error.Remedy)).Select(f => error.Code + ": " + f));
     }
 
@@ -67,7 +65,34 @@ public sealed class Errors
         Assert.Contains("element.", written);   // the start of a composed code: element.property-name, element.relationship-name
         Assert.DoesNotContain(written, code => code.EndsWith('.') ? !driven.Any(d => d.StartsWith(code, StringComparison.Ordinal)) : !driven.Contains(code));
         Assert.DoesNotContain(driven, code => !written.Contains(code) && !written.Any(start => start.EndsWith('.') && code.StartsWith(start, StringComparison.Ordinal)));
-        Assert.True(ErrorPaths.KernelOrCli("name.blank") && ErrorPaths.KernelOrCli("arguments.unknown-verb") && !ErrorPaths.KernelOrCli("tool.missing"));
+    }
+
+    /// <summary>
+    /// S27 of the pre-M2 review: each remedy the doctor gives, on a bare machine and on one whose Docker does not answer or answers past its
+    /// timeout, is one move in the register, as an error's is; the doctor's remedies are no error's, so the drivers above never read them.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [Trait("Value", "O4")]
+    [InlineData("nothing installed")]
+    [InlineData("Docker not answering")]
+    [InlineData("Docker past its timeout")]
+    public void Every_remedy_the_doctor_gives_is_one_move_in_the_register(string machine)
+    {
+        using var bare = ScratchFolder.Temporary("doctor-register");
+        Runner run = machine switch
+        {
+            "nothing installed" => (c, _) => new Ran.NotFound(c.Program, "not installed"),
+            "Docker not answering" => (c, _) => c.Program == "docker" ? new Ran.Exited(1, "", "Cannot connect to the Docker daemon") : new Ran.NotFound(c.Program, "not installed"),
+            _ => (c, _) => c.Program == "docker" ? new Ran.TimedOut(c.Timeout, "", "") : new Ran.NotFound(c.Program, "not installed"),
+        };
+
+        var remedies = Doctor.Examine(new Doctor.Machine(new Checkout(bare.Path, bare.Path, null, Contract.Version), bare.Path, null, bare.Under("no-sql.env"), Environment.Version), run)
+            .Where(p => p.Remedy is not null).Select(p => (p.Item.Name, Remedy: p.Remedy!)).ToList();
+
+        Assert.NotEmpty(remedies);
+        Assert.Empty(remedies.Where(r => Flaw(r.Remedy) is not null).Select(r => r.Name + ": the remedy " + Flaw(r.Remedy) + ": " + r.Remedy));
+        Assert.Empty(remedies.SelectMany(r => Prose.Findings(r.Remedy).Select(f => r.Name + ": " + f)));
     }
 
     /// <summary>The scan reads a code from a construction that names the type and from a target-typed one (finding D6), and reads no code from a string that is none.</summary>

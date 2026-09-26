@@ -90,6 +90,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | O4 | Every error category has an exit of the frozen table and is constructed by some path | `DbChange.Budgets.Tests.ContractTests.Every_error_category_has_an_exit_of_the_frozen_table_and_is_constructed_by_some_path` |
 | O4 | An error carries a remedy that is one move in the register | `DbChange.Budgets.Tests.Register.Errors.An_error_carries_a_remedy_that_is_one_move_in_the_register` |
 | O4 | Every error code the kernel io and the cli construct has a driver here | `DbChange.Budgets.Tests.Register.Errors.Every_error_code_the_kernel_io_and_the_cli_construct_has_a_driver_here` |
+| O4 | Every remedy the doctor gives is one move in the register | `DbChange.Budgets.Tests.Register.Errors.Every_remedy_the_doctor_gives_is_one_move_in_the_register` |
 | O5 | LocalServer names a copy for its host and process registers it and Drop removes the database and its row | `DbChange.Io.Tests.CopyTests.LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row` |
 | O7 | A publish whose token is cancelled publishes nothing and throws | `DbChange.Io.Tests.CopyTests.A_publish_whose_token_is_cancelled_publishes_nothing_and_throws` |
 | O7 | A signal or a timeout stops a waiting dbchange with exit 130 and an interrupted answer | `DbChange.Io.Tests.InterruptedProcessTests.A_signal_or_a_timeout_stops_a_waiting_dbchange_with_exit_130_and_an_interrupted_answer` |

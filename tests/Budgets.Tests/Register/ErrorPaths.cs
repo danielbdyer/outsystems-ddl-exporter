@@ -552,11 +552,6 @@ internal static class ErrorPaths
     public static IEnumerable<string> CodesIn(string source) =>
         System.Text.RegularExpressions.Regex.Matches(source, @"new(?:\s+Error)?\s*\(\s*""([a-z0-9-]+\.[a-z0-9.-]*)""").Select(m => m.Groups[1].Value).Where(code => !code.Contains('/', StringComparison.Ordinal));
 
-    /// <summary>Whether a code is constructed by the kernel or the cli alone: the files that write it, or the start of it, lie outside io/.</summary>
-    public static bool KernelOrCli(string code) => ConstructedIn()
-        .Where(c => c.Code == code || (c.Code.EndsWith('.') && code.StartsWith(c.Code, StringComparison.Ordinal)))
-        .ToList() is { Count: > 0 } sites && sites.All(c => !c.File.StartsWith("io/", StringComparison.Ordinal));
-
     /// <summary>A machine whose dotnet lists the SDK global.json pins, and runs every other program as it is.</summary>
     private static Ran Sdk(Command command, System.Threading.CancellationToken cancel) => command.Arguments[0] == "--list-sdks"
         ? new Ran.Exited(0, (string)JsonNode.Parse(File.ReadAllText(Path.Combine(Repository.Root, "global.json")))!["sdk"]!["version"]! + " [sdk]\n", "")

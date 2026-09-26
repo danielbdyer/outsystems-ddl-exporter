@@ -222,7 +222,7 @@ public static class Doctor
         var absent = Published.Where(file => !File.Exists(Path.Combine(toolFolder, file))).ToList();
         return absent.Count == 0
             ? new(Item.Tool, "published", null)
-            : new(Item.Tool, "not a published tool folder (" + string.Join(", ", absent.Select(Path.GetFileName)) + " absent)", "ci/publish.sh, or ci/publish.ps1 on Windows, publishes dist/dbchange/; run dbchange from there");
+            : new(Item.Tool, "not a published tool folder (" + string.Join(", ", absent.Select(Path.GetFileName)) + " absent)", "Run ci/publish.sh, or ci/publish.ps1 on Windows, then run dbchange from dist/dbchange/.");
     }
 
     /// <summary>
@@ -266,7 +266,7 @@ public static class Doctor
             null => (false, null),
             Ran.Exited { Code: 0 } => (true, null),
             Ran.Exited => (false, "Docker does not answer (docker info): start Docker Desktop, or the docker service, then run dbchange doctor."),
-            Ran.TimedOut => (false, "docker info did not answer in " + Command.Written(Command.ProbeTimeout) + ": restart Docker, then run dbchange doctor."),
+            Ran.TimedOut => (false, "Restart Docker, which did not answer docker info in " + Command.Written(Command.ProbeTimeout) + ", then run dbchange doctor."),
             _ => (false, "Install Docker, or use SQL Server Express LocalDB on Windows, then run dbchange doctor."),
         };
         var localDb = machine.DbChangeSql is { Length: > 0 } || LocalServer.Server(null, machine.SqlEnv, localDb: false) is Result<string>.Ok || !LocalDbInstalled(run, cancel) ? false : true;

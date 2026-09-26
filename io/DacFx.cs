@@ -83,7 +83,7 @@ public static class DacFx
         location.Length > 0 && File.Exists(location) && ReleaseOf(location) is { } release ? release
         : informational?.Split('+')[0] is { Length: > 0 } text ? DacFxVersion.Of(text)
         : new Error("toolchain.dacfx-version", "Microsoft.SqlServer.Dac.dll carries no file version and no informational version, so dbchange cannot name the DacFx release it runs.",
-            "Run dbchange from a tool folder ci/publish wrote, whose DacFx assemblies carry their versions.");
+            "Run the dbchange that ci/publish wrote to dist/dbchange/, whose DacFx assemblies carry their versions.");
 
     /// <summary>The DacFx release an assembly on disk is, from its file version as major.minor.build; null when the file carries no file version.</summary>
     internal static Result<DacFxVersion>? ReleaseOf(string path) => FileVersionInfo.GetVersionInfo(path) is { FileVersion: not null } file

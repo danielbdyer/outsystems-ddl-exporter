@@ -168,7 +168,7 @@ public sealed class DoctorTests : IDisposable
 
         Assert.Equal("dotnet did not answer in 20 seconds", checks["sdk"].Found);
         Assert.Equal("git did not answer in 20 seconds", checks["git"].Found);
-        Assert.Contains("restart Docker", checks["local-server"].Remedy, StringComparison.Ordinal);
+        Assert.Contains("Restart Docker", checks["local-server"].Remedy, StringComparison.Ordinal);
         Assert.DoesNotContain("absent", checks["sdk"].Found + checks["git"].Found + checks["local-server"].Found, StringComparison.Ordinal);
     }
 
