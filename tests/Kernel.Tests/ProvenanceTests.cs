@@ -23,20 +23,20 @@ public sealed class ProvenanceTests
         var drift = Provenance.Drift(schema, report, Version("170.5.96"), null, profile, Dev, At);
 
         Assert.Equal((report, schema, profile), (drift.Change, drift.Schema, drift.PublishProfile));
-        Assert.Null(drift.DataConditions);
+        Assert.Null(drift.ExistingData);
         Assert.Equal(("env:dev", At), (drift.Target.ToString(), drift.At));
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_claim_lacks_its_data_conditions_and_its_server_where_each_is_null_and_nothing_once_both_are_given()
+    public void A_claim_lacks_its_existing_data_and_its_server_where_each_is_null_and_nothing_once_both_are_given()
     {
         var onDev = Provenance.Drift(Fingerprint.Of("schema"), Fingerprint.Of("report"), Version("170.5.96"), null, Fingerprint.Of("profile"), Dev, At);
         var onCopy = onDev with { Server = Server("16.0.4295.3", 160, Digest) };
 
-        Assert.Equal(new[] { Provenance.Input.DataConditions, Provenance.Input.Server }, onDev.Lacking);
-        Assert.Equal(new[] { Provenance.Input.DataConditions }, onCopy.Lacking);
-        Assert.Empty((onCopy with { DataConditions = Fingerprint.Of("the data conditions") }).Lacking);
+        Assert.Equal(new[] { Provenance.Input.ExistingData, Provenance.Input.Server }, onDev.Lacking);
+        Assert.Equal(new[] { Provenance.Input.ExistingData }, onCopy.Lacking);
+        Assert.Empty((onCopy with { ExistingData = Fingerprint.Of("the existing data") }).Lacking);
     }
 
     /// <summary>R1: a claim transfers between servers of one major version and compatibility level, whatever their build or image.</summary>

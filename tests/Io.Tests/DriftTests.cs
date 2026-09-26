@@ -245,7 +245,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     /// <summary>
     /// R1 and DECISIONS.md, 2026-09-25: a drift's provenance holds the fingerprint of the target's schema, its elements as the copy extracts,
     /// and of the deploy report, the change the claim is about; neither is the package's. It names the committed DacFx and the copy's server,
-    /// with the image's digest where the copy ran in the container, and lacks only the data conditions; the stamp says UNPINNED while the
+    /// with the image's digest where the copy ran in the container, and lacks only the existing data; the stamp says UNPINNED while the
     /// ledger's row does, and until S7 lands the Octopus step's profile, a note says the profile is not verified against it (§17 item 15).
     /// </summary>
     [Fact]
@@ -275,7 +275,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             var container = File.Exists(ScratchServer.SqlEnv) && ScratchServer.ServerName(null, ScratchServer.SqlEnv, localDb: false) is Result<ServerName>.Ok(var inContainer)
                 && ScratchServer.ServerName(copy.Connection) is Result<ServerName>.Ok(var made) && made == inContainer;
             Assert.Equal(("170.5.96", container ? Doctor.ImageDigest : null, "UNPINNED"), ((string?)provenance["dacfx"], (string?)provenance["server"]!["image"], (string?)answer["pin"]));
-            Assert.Equal(("copy:" + copy.Name, "[\"dataConditions\"]", estate.Base), ((string?)provenance["target"], provenance["lacking"]!.ToJsonString(), (string?)answer["check"]!["commit"]));
+            Assert.Equal(("copy:" + copy.Name, "[\"existingData\"]", estate.Base), ((string?)provenance["target"], provenance["lacking"]!.ToJsonString(), (string?)answer["check"]!["commit"]));
             Assert.Equal(answer["server"]!.ToJsonString(), provenance["server"]!.ToJsonString());
             Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "toolchain.unpinned" && ((string?)f["message"])!.Contains("UNPINNED", StringComparison.Ordinal));
             Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "profile.unverified" && (string?)f["severity"] == "note"

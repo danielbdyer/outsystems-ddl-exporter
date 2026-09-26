@@ -705,7 +705,7 @@
       "required": [
         "change",
         "schema",
-        "dataConditions",
+        "existingData",
         "dacfx",
         "server",
         "publishProfile",
@@ -722,7 +722,7 @@
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "dataConditions": {
+        "existingData": {
           "anyOf": [
             {
               "type": "null"
@@ -766,7 +766,7 @@
             "enum": [
               "change",
               "schema",
-              "dataConditions",
+              "existingData",
               "dacfx",
               "server",
               "publishProfile"
@@ -780,21 +780,21 @@
             "properties": {
               "lacking": {
                 "contains": {
-                  "const": "dataConditions"
+                  "const": "existingData"
                 }
               }
             }
           },
           "then": {
             "properties": {
-              "dataConditions": {
+              "existingData": {
                 "type": "null"
               }
             }
           },
           "else": {
             "properties": {
-              "dataConditions": {
+              "existingData": {
                 "not": {
                   "type": "null"
                 }

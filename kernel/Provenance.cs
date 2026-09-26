@@ -7,24 +7,24 @@ using System.Text.RegularExpressions;
 namespace Estate.Kernel;
 
 /// <summary>
-/// What a claim stands on (V3_MILESTONES.md §3, law 5′): the change claimed, the target's schema and its data conditions, each by its
+/// What a claim stands on (V3_MILESTONES.md §3, law 5′): the change claimed, the target's schema and its existing data, each by its
 /// fingerprint; the DacFx release that planned; the SQL Server; the publish profile, by its fingerprint; and the target the claim is about
 /// and when it was made. Two claims agree on an input exactly when its values are equal. A claim made without reading the data lacks its
-/// data conditions, and a claim on a named environment lacks its server until S8 reports it; <see cref="Lacking"/> names each input
+/// existing data, and a claim on a named environment lacks its server until S8 reports it; <see cref="Lacking"/> names each input
 /// that is null, so a reader is told rather than left to infer it. Each claim kind has its own constructor, which puts each fingerprint
 /// in its field: <see cref="Drift"/> now; a prediction's (WP 2.1) and a proof's (WP 4.1) arrive with their milestones.
 /// </summary>
 public sealed record Provenance
 {
-    private Provenance(Fingerprint change, Fingerprint schema, Fingerprint? dataConditions, DacFxVersion dacFx, Server? server, Fingerprint publishProfile, Target target, DateTimeOffset at) =>
-        (Change, Schema, DataConditions, DacFx, Server, PublishProfile, Target, At) = (change, schema, dataConditions, dacFx, server, publishProfile, target, at);
+    private Provenance(Fingerprint change, Fingerprint schema, Fingerprint? existingData, DacFxVersion dacFx, Server? server, Fingerprint publishProfile, Target target, DateTimeOffset at) =>
+        (Change, Schema, ExistingData, DacFx, Server, PublishProfile, Target, At) = (change, schema, existingData, dacFx, server, publishProfile, target, at);
 
     /// <summary>The inputs a claim stands on, in the order the envelope writes them.</summary>
     public enum Input
     {
         Change,
         Schema,
-        DataConditions,
+        ExistingData,
         DacFx,
         Server,
         PublishProfile,
@@ -36,8 +36,8 @@ public sealed record Provenance
     /// <summary>The fingerprint of the target's schema, its elements as read.</summary>
     public Fingerprint Schema { get; init; }
 
-    /// <summary>The fingerprint of the target's data conditions, or null when the claim was made without reading the data.</summary>
-    public Fingerprint? DataConditions { get; init; }
+    /// <summary>The fingerprint of the target's existing data, or null when the claim was made without reading the data.</summary>
+    public Fingerprint? ExistingData { get; init; }
 
     public DacFxVersion DacFx { get; init; }
 
@@ -51,8 +51,8 @@ public sealed record Provenance
 
     public DateTimeOffset At { get; init; }
 
-    /// <summary>The inputs this claim lacks, in the order of <see cref="Input"/>: its data conditions and its server where each is null.</summary>
-    public SortedArray<Input> Lacking => new([.. ((Input?[])[DataConditions is null ? Input.DataConditions : null, Server is null ? Input.Server : null]).OfType<Input>()]);
+    /// <summary>The inputs this claim lacks, in the order of <see cref="Input"/>: its existing data and its server where each is null.</summary>
+    public SortedArray<Input> Lacking => new([.. ((Input?[])[ExistingData is null ? Input.ExistingData : null, Server is null ? Input.Server : null]).OfType<Input>()]);
 
     /// <summary>
     /// A drift check's claim (DECISIONS.md, 2026-09-25): its change is the deploy report of the package against the target, and its

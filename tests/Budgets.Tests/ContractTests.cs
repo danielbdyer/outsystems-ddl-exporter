@@ -620,10 +620,10 @@ public sealed class ContractTests
             ["an answer that was not cut names no file"] = (WithCut(false, null), WithCut(true, ".estate/runs/x/queries.log")),
             ["the whole file is the run's answer.json"] = (WithCut(true, ".estate/runs/20260925T101502Z-4242-0a1b/answer.json"), WithCut(true, "answer.json")),
             ["a provenance's at is a date-time"] = (WithProvenance(_ => { }), WithProvenance(p => p["at"] = "yesterday")),
-            ["a provenance's data conditions are null exactly when it lacks them"] = (WithProvenance(p => (p["dataConditions"], p["lacking"]) = ("sha256:" + new string('3', 64), new JsonArray())),
-                WithProvenance(p => p["dataConditions"] = "sha256:" + new string('3', 64))),
-            ["a provenance's server is null exactly when it lacks it"] = (WithProvenance(p => p["server"] = null, "dataConditions", "server"), WithProvenance(p => p["server"] = null)),
-            ["a provenance lacks only an input it can lack"] = (WithProvenance(_ => { }), WithProvenance(_ => { }, "dataConditions", "seed")),
+            ["a provenance's existing data is null exactly when it lacks it"] = (WithProvenance(p => (p["existingData"], p["lacking"]) = ("sha256:" + new string('3', 64), new JsonArray())),
+                WithProvenance(p => p["existingData"] = "sha256:" + new string('3', 64))),
+            ["a provenance's server is null exactly when it lacks it"] = (WithProvenance(p => p["server"] = null, "existingData", "server"), WithProvenance(p => p["server"] = null)),
+            ["a provenance lacks only an input it can lack"] = (WithProvenance(_ => { }), WithProvenance(_ => { }, "existingData", "seed")),
             ["the server names the image by its digest"] = (WithProvenance(_ => { }), WithProvenance(p => p["server"]!["image"] = "16.0.4295.3")),
             ["the server's version is SQL Server's product version"] = (WithStamp(s => s["server"]!["version"] = "15.0.4430.1"), WithStamp(s => s["server"]!["version"] = "SQL Server 2022")),
             ["the stamp's DacFx is a release version"] = (WithStamp(s => s["dacfx"] = "170.5.96.0"), WithStamp(s => s["dacfx"] = "latest")),
@@ -639,7 +639,7 @@ public sealed class ContractTests
         }
 
         // Milestones §3: a provenance names each input a claim stands on, the target and when, and what it lacks.
-        foreach (var field in (string[])["change", "schema", "dataConditions", "dacfx", "server", "publishProfile", "target", "at", "lacking"])
+        foreach (var field in (string[])["change", "schema", "existingData", "dacfx", "server", "publishProfile", "target", "at", "lacking"])
         {
             pairs["a provenance carries its " + field] = (WithProvenance(_ => { }), WithProvenance(p => p.Remove(field)));
         }
@@ -718,16 +718,16 @@ public sealed class ContractTests
     };
 
     /// <summary>
-    /// An answer carrying a well-formed drift claim on a copy (§3's inputs, the target and when), lacking its data conditions, then changed;
+    /// An answer carrying a well-formed drift claim on a copy (§3's inputs, the target and when), lacking its existing data, then changed;
     /// <paramref name="lacking"/> replaces what it lacks when any is given.
     /// </summary>
     private static Action<JsonObject> WithProvenance(Action<JsonObject> change, params string[] lacking) => answer =>
     {
         var provenance = new JsonObject
         {
-            ["change"] = "sha256:" + new string('1', 64), ["schema"] = "sha256:" + new string('2', 64), ["dataConditions"] = null, ["dacfx"] = "170.5.96",
+            ["change"] = "sha256:" + new string('1', 64), ["schema"] = "sha256:" + new string('2', 64), ["existingData"] = null, ["dacfx"] = "170.5.96",
             ["server"] = Server(), ["publishProfile"] = "sha256:" + new string('4', 64), ["target"] = "copy:estate_host_4242_0a1b2c3d", ["at"] = "2026-09-25T10:15:44Z",
-            ["lacking"] = new JsonArray([.. (lacking.Length == 0 ? ["dataConditions"] : lacking).Select(input => (JsonNode?)input)]),
+            ["lacking"] = new JsonArray([.. (lacking.Length == 0 ? ["existingData"] : lacking).Select(input => (JsonNode?)input)]),
         };
         change(provenance);
         answer["provenance"] = provenance;

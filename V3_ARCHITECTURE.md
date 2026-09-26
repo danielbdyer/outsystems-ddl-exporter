@@ -2634,7 +2634,7 @@ read is the identity"; the word survives only as the test's nickname).
 Retired by the pre-M2 pass (2026-09-25), each → its replacement: walk → `Ssdt.Elements`, a model
 read into elements; the type `Refusal` → `Error` (the verb "refuse" stays for a refusal by policy);
 receipt → `Provenance`; engine → `Provenance`'s `DacFx` and `Server` fields, and in prose DacFx, SQL
-Server or `estate`; branch, branch site, claim site, transfers → `DataConditions`, `PreconditionState`,
+Server or `estate`; branch, branch site, claim site, transfers → `ExistingData`, `PreconditionState`,
 `Precondition`, `AppliesTo`; cohorts → readerGroups; substrate → the scratch server; the Twin, twin → the synthetic copy, `synthetic-copy`;
 σ, mint, Synth → `SyntheticData.generate`, a generated set; `SqlServer.Named`, `Database.Where` →
 `EnvironmentDatabase`, `Database.Target`; `Seq<T>` → `SortedArray<T>`; added, removed, changed →

@@ -67,7 +67,7 @@ public static class Render
             ["server"] = Json(answer.Stamp?.Server),
             ["provenance"] = answer.Provenance is { } p ? new JsonObject
             {
-                ["change"] = Digest(p.Change), ["schema"] = Digest(p.Schema), ["dataConditions"] = p.DataConditions is { } data ? Digest(data) : null, ["dacfx"] = p.DacFx.ToString(),
+                ["change"] = Digest(p.Change), ["schema"] = Digest(p.Schema), ["existingData"] = p.ExistingData is { } data ? Digest(data) : null, ["dacfx"] = p.DacFx.ToString(),
                 ["server"] = Json(p.Server), ["publishProfile"] = Digest(p.PublishProfile), ["target"] = p.Target.ToString(),
                 ["at"] = p.At.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture), ["lacking"] = Array(p.Lacking.Select(i => (JsonNode?)Input(i))),
             } : null,
@@ -312,11 +312,11 @@ public static class Render
         // The kernel's Provenance: the inputs a claim stands on, the target and when, and the inputs it lacks; an input is null exactly when lacking names it.
         var provenance = Record(new()
         {
-            ["change"] = Fingerprint(), ["schema"] = Fingerprint(), ["dataConditions"] = Nullable(Fingerprint()), ["dacfx"] = Pattern(DacFxVersion), ["server"] = Nullable(Ref("server")),
+            ["change"] = Fingerprint(), ["schema"] = Fingerprint(), ["existingData"] = Nullable(Fingerprint()), ["dacfx"] = Pattern(DacFxVersion), ["server"] = Nullable(Ref("server")),
             ["publishProfile"] = Fingerprint(), ["target"] = Text(), ["at"] = new JsonObject { ["type"] = "string", ["format"] = "date-time" },
             ["lacking"] = new JsonObject { ["type"] = "array", ["uniqueItems"] = true, ["items"] = Enum(System.Enum.GetValues<Provenance.Input>().Select(i => (JsonNode?)Input(i))) },
         });
-        provenance["allOf"] = new JsonArray([.. ((Provenance.Input[])[Provenance.Input.DataConditions, Provenance.Input.Server]).Select(Lacks)]);
+        provenance["allOf"] = new JsonArray([.. ((Provenance.Input[])[Provenance.Input.ExistingData, Provenance.Input.Server]).Select(Lacks)]);
         envelope["$defs"] = new JsonObject
         {
             // The kernel's Server: the product version SQL Server reports, the database's compatibility level, and the image's digest for a copy on the estate-sql container.
@@ -390,7 +390,7 @@ public static class Render
 
     private static JsonObject BlockedBys() => Enum(System.Enum.GetValues<BlockedBy>().Select(b => (JsonNode?)Word(b)));
 
-    /// <summary>A provenance's input as the envelope names it, camel-cased: change, schema, dataConditions, dacFx, server, publishProfile.</summary>
+    /// <summary>A provenance's input as the envelope names it, camel-cased: change, schema, existingData, dacFx, server, publishProfile.</summary>
     private static string Input(Provenance.Input input) => input switch
     {
         Provenance.Input.DacFx => "dacfx",
