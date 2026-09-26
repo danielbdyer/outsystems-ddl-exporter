@@ -11,15 +11,14 @@ using DbChange.Kernel;
 using DbChange.Tests;
 using Microsoft.SqlServer.Dac.Model;
 using Xunit;
-using Contract = DbChange.Cli.Contract;
 
 namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/Ssdt's build and load (WP 1.1): a classic project builds against the published tool folder with no Visual Studio,
 /// into a folder under .dbchange/build/ that its inputs' fingerprint names; its package carries the refactorlog and both
-/// deploy scripts, and Open reads them back. A broken .sql is exit 7 naming its file and line; a machine without the SDK
-/// band global.json names is exit 6 with the remedy. Each test builds its own copy of tests/Golden/ under .dbchange/.
+/// deploy scripts, and Open reads them back. A broken .sql is build.failed naming its file and line; a machine without the SDK
+/// band global.json names is sdk.missing with the remedy. Each test builds its own copy of tests/Golden/ under .dbchange/.
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
 public sealed class SsdtTests(PublishedTool tool) : IDisposable
@@ -118,7 +117,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         var malformed = Failed(Ssdt.Open(dacpac));
         var missing = Failed(Ssdt.Open(Path.Combine(scratch, "none.dacpac")));
 
-        Assert.Equal(("refactorlog.unreadable", 2), (malformed.Code, Contract.Exit(malformed)));
+        Assert.Equal("refactorlog.unreadable", malformed.Code);
         Assert.StartsWith("refactor.xml inside " + dacpac + " is not a refactorlog SSDT reads:", malformed.Message, StringComparison.Ordinal);
         Assert.Equal(("package.unreadable", "No package at " + Path.Combine(scratch, "none.dacpac") + "."), (missing.Code, missing.Message));
     }
@@ -145,7 +144,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         var undefined = Failed(DacFx.Plan(tagged, tagged, "ClassicMinimal", Strict(), []));
 
         Assert.Equal(["Tag"], tagged.Declared.Select(n => n.ToString()));
-        Assert.Equal(("sqlcmd.undefined", 6), (undefined.Code, Contract.Exit(undefined)));
+        Assert.Equal("sqlcmd.undefined", undefined.Code);
         Assert.Contains("$(Tag)", undefined.Message, StringComparison.Ordinal);
         Assert.Contains(":setvar Tag \"dev\"", Ok(DacFx.Plan(tagged, tagged, "ClassicMinimal", given, [])).Script, StringComparison.Ordinal);
     }
@@ -173,27 +172,27 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_syntax_error_in_a_sql_file_is_the_build_failed_error_exit_7_naming_the_file_and_line()
+    public void A_syntax_error_in_a_sql_file_is_build_failed_naming_the_file_and_line()
     {
         var project = Golden();
         File.WriteAllText(Path.Combine(Path.GetDirectoryName(project)!, "dbo", "Tables", "Customer.sql"), "CREATE TABLE [dbo].[Customer]\n(\n    [Id] INT NOT NULL,,\n);\n");
 
         var error = Failed(Ssdt.Build(project, tool.Folder, Output));
 
-        Assert.Equal(("build.failed", 7), (error.Code, Contract.Exit(error)));
+        Assert.Equal("build.failed", error.Code);
         Assert.Contains("dbo/Tables/Customer.sql(3,", error.Message, StringComparison.Ordinal);
         Assert.Contains("SQL46010", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_machine_without_the_SDK_band_global_json_names_fails_before_the_build_with_exit_6_and_the_remedy()
+    public void A_machine_without_the_SDK_band_global_json_names_fails_before_the_build_with_sdk_missing_and_the_remedy()
     {
         var pin = (string)JsonNode.Parse(File.ReadAllText(Path.Combine(Repository.Root, "global.json")))!["sdk"]!["version"]!;
 
         var error = Failed(Ssdt.Build(Golden(), tool.Folder, Output, (_, _) => new Ran.Exited(0, "8.0.100 [sdk]\n9.0.314 [sdk]\n", "")));
 
-        Assert.Equal(("sdk.missing", 6), (error.Code, Contract.Exit(error)));
+        Assert.Equal("sdk.missing", error.Code);
         Assert.Contains(pin[..^2] + "xx", error.Message, StringComparison.Ordinal);
         Assert.Contains("Install the .NET SDK " + pin, error.Remedy, StringComparison.Ordinal);
         Assert.Contains("dbchange doctor", error.Remedy, StringComparison.Ordinal);
@@ -263,13 +262,13 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_build_past_its_timeout_is_build_timed_out_at_exit_7_quoting_its_last_lines()
+    public void A_build_past_its_timeout_is_build_timed_out_quoting_its_last_lines()
     {
         Ran Hangs(Command c, System.Threading.CancellationToken t) => c.Arguments[0] == "build" ? new Ran.TimedOut(c.Timeout, "  Determining projects to restore...\n  ClassicMinimal -> building\n", "") : Command.Run(c, t);
 
         var error = Failed(Ssdt.Build(Golden(), tool.Folder, Output, Hangs));
 
-        Assert.Equal(("build.timed-out", 7), (error.Code, Contract.Exit(error)));
+        Assert.Equal("build.timed-out", error.Code);
         Assert.Contains("10 minutes", error.Message, StringComparison.Ordinal);
         Assert.EndsWith("ClassicMinimal -> building", error.Message, StringComparison.Ordinal);
         Assert.Contains("dotnet build ClassicMinimal.sqlproj -v:n", error.Remedy, StringComparison.Ordinal);
@@ -364,12 +363,12 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
 
         var error = Failed(Ssdt.Build(Golden(), tool.Folder, Output, Quiet));
 
-        Assert.Equal(("build.no-package", 7), (error.Code, Contract.Exit(error)));
+        Assert.Equal("build.no-package", error.Code);
         Assert.Contains("OutputType", error.Remedy, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// §1.1: a tool folder whose build task is not the DacFx dbchange runs is refused before the build, as toolchain.targets-mismatch at exit 6:
+    /// §1.1: a tool folder whose build task is not the DacFx dbchange runs is refused before the build, as toolchain.targets-mismatch:
     /// an empty file in the task's place carries no file version, and a task of another release names both releases.
     /// </summary>
     [Fact]
@@ -393,7 +392,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         }));
         var older = Failed(Ssdt.BuildTargets.Of(tool.Folder, DacFxVersion.Of("170.4.71")));
 
-        Assert.Equal(("toolchain.targets-mismatch", 6, 0), (empty.Code, Contract.Exit(empty), builds));
+        Assert.Equal(("toolchain.targets-mismatch", 0), (empty.Code, builds));
         Assert.Contains("no file version", empty.Message, StringComparison.Ordinal);
         Assert.Equal("The tool folder's build task is DacFx 170.5.96 and dbchange runs DacFx 170.4.71.", older.Message);
         Assert.Contains("ci/publish.sh", older.Remedy, StringComparison.Ordinal);
@@ -423,17 +422,17 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_file_that_is_not_a_package_or_a_refactorlog_is_unparsed_input_at_exit_2()
+    public void A_file_that_is_not_a_package_or_a_refactorlog_is_package_unreadable_or_refactorlog_unreadable()
     {
         var sql = Path.Combine(Path.GetDirectoryName(Golden())!, "dbo", "Tables", "Customer.sql");
 
-        Assert.Equal(("package.unreadable", 2), (Failed(Ssdt.Open(sql)).Code, Contract.Exit(Failed(Ssdt.Open(sql)))));
-        Assert.Equal(("refactorlog.unreadable", 2), (Failed(Ssdt.RefactorLog(sql)).Code, Contract.Exit(Failed(Ssdt.RefactorLog(sql)))));
+        Assert.Equal("package.unreadable", Failed(Ssdt.Open(sql)).Code);
+        Assert.Equal("refactorlog.unreadable", Failed(Ssdt.RefactorLog(sql)).Code);
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void The_tool_folder_is_the_running_dbchange_s_then_DBCHANGE_TOOL_s_then_the_repository_s_dist_dbchange_and_otherwise_exit_6()
+    public void The_tool_folder_is_the_running_dbchange_s_then_DBCHANGE_TOOL_s_then_the_repository_s_dist_dbchange_and_otherwise_tool_missing()
     {
         var machine = Directory.CreateTempSubdirectory("dbchange-tool-").FullName;   // outside the repository, so no dist/dbchange above it
         try
@@ -445,7 +444,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
             Assert.Equal(running, Ok(Ssdt.Tool(running, named, inside)));
             Assert.Equal(named, Ok(Ssdt.Tool(bare, named, inside)));
             Assert.Equal(dist, Ok(Ssdt.Tool(bare, null, inside)));
-            Assert.All([Ssdt.Tool(bare, bare, inside), Ssdt.Tool(bare, null, bare)], r => Assert.Equal(("tool.missing", 6), (Failed(r).Code, Contract.Exit(Failed(r)))));
+            Assert.All([Ssdt.Tool(bare, bare, inside), Ssdt.Tool(bare, null, bare)], r => Assert.Equal("tool.missing", Failed(r).Code));
         }
         finally
         {

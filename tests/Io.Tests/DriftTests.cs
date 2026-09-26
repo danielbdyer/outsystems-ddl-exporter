@@ -231,7 +231,6 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         var drift = DriftCheck.Run(new DriftCheck.Checkout(repository.Root, repository.Root, repository.Tool.Folder, Cli.Contract.Version), request, SqlServer.QueryLog.Start(repository.Root), _ => refusal);
 
         Assert.Equal(refusal, Assert.IsType<Result<DriftCheck.Answer>.Failed>(drift.Result).Error);
-        Assert.Equal(4, Cli.Contract.Exit(refusal));
         Assert.Equal("UNPINNED", drift.Stamp?.Pin?.ToString());
         Assert.NotNull(drift.Stamp?.Server);
     }

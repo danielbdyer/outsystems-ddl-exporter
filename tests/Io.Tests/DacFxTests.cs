@@ -7,7 +7,6 @@ using DbChange.Tests;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Xunit;
-using Contract = DbChange.Cli.Contract;
 
 namespace DbChange.Io.Tests;
 
@@ -29,7 +28,7 @@ public sealed class DacFxTests : IDisposable
     public void The_version_falls_back_to_the_informational_version_when_the_assembly_has_no_location()
     {
         Assert.Equal("170.5.96.0", Ok(DacFx.VersionOf("", "170.5.96.0+734bf28f08f22c5b8c346dc5eb7137b4593b6a07")).ToString());
-        Assert.Equal(("toolchain.dacfx-version", 6), (Failed(DacFx.VersionOf("", null)).Code, Contract.Exit(Failed(DacFx.VersionOf("", null)))));
+        Assert.Equal("toolchain.dacfx-version", Failed(DacFx.VersionOf("", null)).Code);
         Assert.Equal("toolchain.dacfx-version", Failed(DacFx.VersionOf("", "")).Code);
         Assert.Equal("170.5.96", Ok(DacFx.Version).ToString());
     }
@@ -89,7 +88,7 @@ public sealed class DacFxTests : IDisposable
         Assert.Equal(["AddSystemVersioning UnlistedType [dbo].[T] []", "Alter Table [dbo].[T] [1]"],
             read.Report.Operations.Select(o => o.Kind + " " + o.Key + " [" + string.Join(",", o.Issues) + "]").Order(StringComparer.Ordinal));
         Assert.Equal(["plan.unlisted-type"], read.Notes.Select(n => n.Code));
-        Assert.Equal(("plan.report-unread", 6), (unread.Code, Contract.Exit(unread)));
+        Assert.Equal("plan.report-unread", unread.Code);
         Assert.Contains("Warnings", unread.Message, StringComparison.Ordinal);
     }
 
@@ -111,7 +110,7 @@ public sealed class DacFxTests : IDisposable
         var fromChain = DacFx.Failure(chain);
         var fromMessages = DacFx.Failure([new DacMessage(DacMessageType.Error, 71501, "[dbo].[V] has an unresolved reference to object [dbo].[Missing].", "SQL", "SqlView")], chain);
 
-        Assert.Equal(("plan.platform", 6), (refused.Code, Contract.Exit(refused)));
+        Assert.Equal("plan.platform", refused.Code);
         Assert.StartsWith("The package targets Sql170 and " + older.Source + " is Sql160;", refused.Message, StringComparison.Ordinal);
         Assert.Empty(fromChain.Messages);
         Assert.Equal(refused, DacFx.Unplanned(fromChain, newer, older));
@@ -133,7 +132,7 @@ public sealed class DacFxTests : IDisposable
 
         var error = DacFx.Failed(copy, failure);
 
-        Assert.Equal(("server.failed", 4), (error.Code, Contract.Exit(error)));
+        Assert.Equal("server.failed", error.Code);
         Assert.Contains("Error SQL72014: ", error.Message, StringComparison.Ordinal);
         Assert.Contains("Warning SQL72015: The deployment script was stopped.", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("Generated 12 rows", error.Message, StringComparison.Ordinal);
@@ -157,7 +156,7 @@ public sealed class DacFxTests : IDisposable
     /// <summary>
     /// DacFx checks a live plan and refuses a model whose collation ignores case against a database whose collation does not (Error SQL72030,
     /// measured on DacFx 170.5.96 whether or not a name differs in case); package to package it checks nothing and plans dbo.Customer against
-    /// dbo.CUSTOMER as one table. DacFx.Plan makes the live plan's check: plan.collation at exit 6, naming both collations and SQL72030; the
+    /// dbo.CUSTOMER as one table. DacFx.Plan makes the live plan's check: plan.collation, naming both collations and SQL72030; the
     /// reverse, a case-sensitive package against a case-insensitive target, plans.
     /// </summary>
     [Fact]
@@ -169,7 +168,7 @@ public sealed class DacFxTests : IDisposable
 
         var refused = Failed(DacFx.Plan(insensitive, sensitive, "Target", Strict(), []));
 
-        Assert.Equal(("plan.collation", 6), (refused.Code, Contract.Exit(refused)));
+        Assert.Equal("plan.collation", refused.Code);
         Assert.Contains("(SQL_Latin1_General_CP1_CI_AS)", refused.Message, StringComparison.Ordinal);
         Assert.Contains("(Latin1_General_CS_AS)", refused.Message, StringComparison.Ordinal);
         Assert.Contains("SQL72030", refused.Message, StringComparison.Ordinal);

@@ -9,7 +9,6 @@ using System.Text;
 using System.Xml.Linq;
 using DbChange.Budgets.Tests;
 using DbChange.Budgets.Tests.Register;
-using DbChange.Cli;
 using DbChange.Kernel;
 using DbChange.Tests;
 using Microsoft.SqlServer.Dac;
@@ -20,7 +19,7 @@ namespace DbChange.Io.Tests;
 /// <summary>
 /// io/PublishProfiles and the environments file reader in io/Environments (WP 1.5): the pipeline's publish profile read into its deploy options and
 /// SQLCMD values alone, with a note for each element DacFx ignores, and dbchange/environments.json read into named environments. An error in
-/// either exits 6 through the CLI's category table, names the key, the file or the property, and never quotes the value; Strict is the
+/// either names the key, the file or the property, and never quotes the value; Strict is the
 /// profile as loaded, Permissive differs from it in BlockOnPossibleDataLoss alone (CapabilityTests holds that only a Copy makes one), and nothing
 /// either prints carries a value a reference names or a literal holds.
 /// </summary>
@@ -59,7 +58,7 @@ public sealed class PublishProfilesTests : IDisposable
 
     /// <summary>
     /// VALUES.md X1: a literal connection string in the environments file, a SQLCMD value a profile gives, or an argument where a reference goes,
-    /// file: before it or not, is exit 6, and so is a password anywhere in a profile, a comment splitting it or not; the refusal names its
+    /// file: before it or not, is refused, and so is a password anywhere in a profile, a comment splitting it or not; the refusal names its
     /// place and quotes nothing. A profile's password-free target is removed at load instead, as WP 1.5 has it and DECISIONS.md reads X1:
     /// "a profile naming a target keeps its SQLCMD values and nothing of the target".
     /// </summary>
@@ -100,7 +99,7 @@ public sealed class PublishProfilesTests : IDisposable
             _ => Failed(SqlServer.Target(credential, "--target")),            // WP 1.4's target grammar
         };
 
-        Assert.Equal((code, 6), (error.Code, Contract.Exit(error)));
+        Assert.Equal(code, error.Code);
         Assert.Contains(named, error.Message, StringComparison.Ordinal);
         PlantedValue.Password.AbsentFrom(error);
     }
@@ -125,19 +124,8 @@ public sealed class PublishProfilesTests : IDisposable
     {
         var error = Failed(EnvironmentsFile.Read(RepositoryAt(environmentsFile, raw: true)));
 
-        Assert.Equal(("environments.unknown-key", 6), (error.Code, Contract.Exit(error)));
+        Assert.Equal("environments.unknown-key", error.Code);
         Assert.Contains(at, error.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    [Trait("Category", "fast")]
-    public void Every_error_of_the_environments_file_and_the_profile_is_exit_6()
-    {
-        foreach (var way in ErrorPaths.All.Where(c => c.Code.Split('.')[0] is "environments" or "profile" or "reference" or "sqlcmd"))
-        {
-            var error = way.Drive(Directory.CreateDirectory(Path.Combine(scratch, way.Label)).FullName, Planted);
-            Assert.True(Contract.Exit(error) == 6, way.Label + " takes exit " + Contract.Exit(error));
-        }
     }
 
     [Fact]
@@ -178,7 +166,7 @@ public sealed class PublishProfilesTests : IDisposable
     {
         var error = Failed(PublishProfiles.Load(Profile("unreadable", "<BlockOnPossibleDataLoss>" + Planted + "</BlockOnPossibleDataLoss>")));
 
-        Assert.Equal(("profile.unreadable", 6), (error.Code, Contract.Exit(error)));
+        Assert.Equal("profile.unreadable", error.Code);
         Assert.Contains("sets BlockOnPossibleDataLoss to a value DacFx does not read", error.Message, StringComparison.Ordinal);
         PlantedValue.Password.AbsentFrom(error);
     }
@@ -237,8 +225,8 @@ public sealed class PublishProfilesTests : IDisposable
         var bare = Failed(PublishProfiles.Load(relaxed));
         var named = Failed(PublishProfiles.Of(Made(EnvironmentsFile.Read(root)).All.Single(), root));
 
-        Assert.Equal(("profile.data-loss-allowed", 6), (bare.Code, Contract.Exit(bare)));
-        Assert.Equal(("profile.data-loss-allowed", 6), (named.Code, Contract.Exit(named)));
+        Assert.Equal("profile.data-loss-allowed", bare.Code);
+        Assert.Equal("profile.data-loss-allowed", named.Code);
         Assert.StartsWith("env:dev's profile dbchange/profiles/relaxed.publish.xml", named.Message, StringComparison.Ordinal);
     }
 

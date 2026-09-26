@@ -4,12 +4,10 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using DbChange.Budgets.Tests;
-using DbChange.Cli;
 using DbChange.Kernel;
 using DbChange.Tests;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
-using Contract = DbChange.Cli.Contract;
 using Xunit;
 
 namespace DbChange.Io.Tests;
@@ -54,7 +52,7 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
         Assert.False(await SqlServerFixture.ExistsAsync(copy.Name.ToString()), copy.Name + " outlived Drop");
         Assert.Empty(Registry());
         var gone = Assert.IsType<Result<SqlServer.Database>.Failed>(SqlServer.Resolve(Made(SqlServer.Target("copy:" + copy.Name, "--target")), root)).Error;
-        Assert.Equal(("copy.unregistered", 9), (gone.Code, Contract.Exit(gone)));
+        Assert.Equal("copy.unregistered", gone.Code);
     }
 
     /// <summary>
@@ -172,7 +170,7 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
 
             var error = Assert.IsType<Result<SqlServer.Copy>.Failed>(copy.Publish(project.Mandatory, strict)).Error;
 
-            Assert.Equal(("server.failed", 4), (error.Code, Contract.Exit(error)));
+            Assert.Equal("server.failed", error.Code);
             Assert.StartsWith("copy:" + copy.Name + " failed the statement: Msg 50000: ", error.Message, StringComparison.Ordinal);
             Assert.Contains("SQL72014", error.Message, StringComparison.Ordinal);
             Assert.Contains("Rows were detected", error.Message, StringComparison.Ordinal);
@@ -188,7 +186,7 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
     /// <summary>
     /// DF-4: DacFx's own failure, with no SqlException inside. A package built for a newer platform (Sql180) than the SQL Server it is
     /// planned against (SQL Server 2022 in the container, an older release in the Windows runner's LocalDB), planned against a named
-    /// environment's extracted package under the pipeline's profile (AllowIncompatiblePlatform False), is plan.platform at exit 6, naming
+    /// environment's extracted package under the pipeline's profile (AllowIncompatiblePlatform False), is plan.platform, naming
     /// both platforms; nothing SQL Server says is in it.
     /// </summary>
     [Fact]
@@ -216,7 +214,7 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
         using var vnext = Made(Ssdt.Open(dacpac));
         var error = Assert.IsType<Result<Plan>.Failed>(DacFx.Plan(vnext, extracted, dev.Catalog, Made(PublishProfiles.Load(project.Profile)), [])).Error;
 
-        Assert.Equal(("plan.platform", 6), (error.Code, Contract.Exit(error)));
+        Assert.Equal("plan.platform", error.Code);
         // The platform of the server differs between the container and the Windows runner's LocalDB; a failure prints the whole message.
         Assert.True(error.Message.StartsWith("The package targets Sql180 and env:dev is Sql", StringComparison.Ordinal), error.Message);
         Assert.DoesNotContain("withheld", error.Message, StringComparison.Ordinal);
