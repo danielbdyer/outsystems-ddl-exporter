@@ -64,17 +64,16 @@ public sealed class DoctorTests : IDisposable
             checks.Select(c => c.Item + "=" + c.Found));
     }
 
+    /// <summary>The DacFx release Directory.Packages.props pins, which the build and every plan use.</summary>
+    internal static string PinnedDacFx => System.Xml.Linq.XDocument.Load(Path.Combine(Repository.Root, "Directory.Packages.props")).Descendants()
+        .Single(e => (string?)e.Attribute("Include") == "Microsoft.SqlServer.DacFx").Attribute("Version")!.Value;
+
     /// <summary>The committed DacFx is the package the build and every plan use: the version Directory.Packages.props pins.</summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Value", "R1")]
-    public void The_committed_DacFx_is_the_release_Directory_Packages_props_pins()
-    {
-        var pinned = System.Xml.Linq.XDocument.Load(Path.Combine(Repository.Root, "Directory.Packages.props")).Descendants()
-            .Single(e => (string?)e.Attribute("Include") == "Microsoft.SqlServer.DacFx").Attribute("Version")!.Value;
-
-        Assert.Equal(pinned, DacFx.Version.Match(v => v.ToString(), e => e.Message));
-    }
+    public void The_committed_DacFx_is_the_release_Directory_Packages_props_pins() =>
+        Assert.Equal(PinnedDacFx, DacFx.Version.Match(v => v.ToString(), e => e.Message));
 
     /// <summary>
     /// R13's window over the sample ledger's row, each row written relative to the committed DacFx (<see cref="Near"/>): the committed

@@ -243,10 +243,13 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         Assert.Equal(("sha256:" + schema, "sha256:" + Fingerprint.Of(plan.Report)), ((string?)provenance["schema"], (string?)provenance["change"]));
         Assert.DoesNotContain("sha256:" + packaged, new[] { (string?)provenance["schema"], (string?)provenance["change"] });
         // The copy ran in the dbchange-sql container when its server is the one ~/.dbchange/sql.env names, whether DBCHANGE_SQL also names it or
-        // not; ci/sql.sh up, which the fixture runs, keeps that container on the pinned image, whose digest Docker then reports.
+        // not; its image is then one of the names Docker gives the image that container runs (ImageTests holds which), and otherwise none.
         var container = File.Exists(LocalServer.SqlEnv) && LocalServer.ServerName(null, LocalServer.SqlEnv, localDb: false) is Result<ServerName>.Ok(var inContainer)
             && LocalServer.ServerName(copy.Connection) is Result<ServerName>.Ok(var made) && made == inContainer;
-        Assert.Equal(("170.5.96", container ? Doctor.ImageDigest : null, "UNPINNED"), ((string?)provenance["dacfx"], (string?)provenance["server"]!["image"], (string?)answer["pin"]));
+        var (version, level) = await Reported(copy.Connection);
+        Assert.Equal((DoctorTests.PinnedDacFx, "UNPINNED"), ((string?)provenance["dacfx"], (string?)answer["pin"]));
+        Assert.Equal((version, level), ((string?)provenance["server"]!["version"], (int?)provenance["server"]!["compatibilityLevel"]));
+        Assert.Contains((string?)provenance["server"]!["image"], container ? RunningImage() : [null]);
         Assert.Equal(("copy:" + copy.Name, "[\"existingData\"]", repository.Base), ((string?)provenance["target"], provenance["lacking"]!.ToJsonString(), (string?)answer["check"]!["commit"]));
         Assert.Equal(answer["server"]!.ToJsonString(), provenance["server"]!.ToJsonString());
         Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "toolchain.unpinned" && ((string?)f["message"])!.Contains("UNPINNED", StringComparison.Ordinal));
@@ -396,4 +399,26 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
 
     private (int Exit, string Output) Drift(string target, params string[] more) =>
         repository.Run(["check", "drift", "--target", target, "--at", repository.Base, "--profile", ScratchRepository.Profile, .. more]);
+
+    /// <summary>What SQL Server reports of itself on a connection: SERVERPROPERTY('ProductVersion') and the database's compatibility level.</summary>
+    private static async Task<(string Version, int Level)> Reported(string connection)
+    {
+        await using var sql = new SqlConnection(connection);
+        await sql.OpenAsync();
+        await using var command = new SqlCommand("SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128)), compatibility_level FROM sys.databases WHERE database_id = DB_ID();", sql);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return (reader.GetString(0), reader.GetByte(1));
+    }
+
+    /// <summary>The names Docker gives the image the dbchange-sql container runs: its image id, and each registry digest it was pulled by.</summary>
+    private static IReadOnlyList<string?> RunningImage()
+    {
+        var id = Docker("container", "inspect", "--format", "{{.Image}}", "dbchange-sql");
+        return [id, .. JsonNode.Parse(Docker("image", "inspect", "--format", "{{json .RepoDigests}}", id))!.AsArray().Select(d => ((string)d!).Split('@')[1])];
+    }
+
+    private static string Docker(params string[] arguments) =>
+        new Command("docker", arguments, TimeSpan.FromSeconds(30)).Run() is Ran.Exited { Code: 0 } ran ? ran.Output.Trim()
+            : throw new Xunit.Sdk.XunitException("docker " + string.Join(' ', arguments) + " failed");
 }
