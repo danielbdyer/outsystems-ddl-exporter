@@ -1,0 +1,14 @@
+=== Modules/Customer.sql
+--- ContactPhone    NVARCHAR(40)    NULL,
++++ MobileNumber    NVARCHAR(40)    NULL,
+
+=== SampleCatalog.refactorlog
+--- </Operations>
++++   <Operation Name="Rename Refactor" Key="6d1c1b5e-3f0a-4c2e-9b7d-2a4f8e6c0d13" ChangeDateTime="09/24/2026 10:00:00">
++++     <Property Name="ElementName" Value="[dbo].[Customer].[ContactPhone]" />
++++     <Property Name="ElementType" Value="SqlSimpleColumn" />
++++     <Property Name="ParentElementName" Value="[dbo].[Customer]" />
++++     <Property Name="ParentElementType" Value="SqlTable" />
++++     <Property Name="NewName" Value="[MobileNumber]" />
++++   </Operation>
++++ </Operations>

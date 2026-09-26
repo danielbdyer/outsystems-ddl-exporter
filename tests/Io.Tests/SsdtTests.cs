@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using DbChange.Budgets.Tests;
 using DbChange.Kernel;
+using DbChange.Tests;
 using Microsoft.SqlServer.Dac.Model;
 using Xunit;
 using Contract = DbChange.Cli.Contract;
@@ -493,7 +494,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
     /// <summary>The golden pipeline profile; with values given, a copy of it under the scratch folder that gives each as a SQLCMD variable.</summary>
     private PublishProfile.Strict Strict(params (string Name, string Value)[] values)
     {
-        var pipeline = Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml");
+        var pipeline = GoldenProject.Profile;
         if (values.Length == 0)
         {
             return Ok(PublishProfiles.Load(pipeline));

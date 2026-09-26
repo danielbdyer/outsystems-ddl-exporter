@@ -336,13 +336,13 @@ internal static class ErrorPaths
         {
             using var newer = Made(Ssdt.Open(Packaged(scratch, "newer", SqlServerVersion.Sql170)));
             using var older = Made(Ssdt.Open(Packaged(scratch, "older", SqlServerVersion.Sql160)));
-            return Failed(DacFx.Plan(newer, older, "Target", Made(PublishProfiles.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"))), []));
+            return Failed(DacFx.Plan(newer, older, "Target", Made(PublishProfiles.Load(GoldenProject.Profile)), []));
         }),
         new("a case-insensitive package planned against a case-sensitive one", "plan.collation", false, (scratch, _) =>
         {
             using var insensitive = Made(Ssdt.Open(Packaged(scratch, "insensitive", SqlServerVersion.Sql160, "SQL_Latin1_General_CP1_CI_AS")));
             using var sensitive = Made(Ssdt.Open(Packaged(scratch, "sensitive", SqlServerVersion.Sql160, "Latin1_General_CS_AS")));
-            return Failed(DacFx.Plan(insensitive, sensitive, "Target", Made(PublishProfiles.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"))), []));
+            return Failed(DacFx.Plan(insensitive, sensitive, "Target", Made(PublishProfiles.Load(GoldenProject.Profile)), []));
         }),
         new("a deploy report of another shape", "plan.report-unread", false, (_, _) =>
             Failed(DacFx.Report("<DeploymentReport xmlns=\"http://schemas.microsoft.com/sqlserver/dac/DeployReport/2012/02\"><Warnings /></DeploymentReport>", [], []))),
@@ -352,7 +352,7 @@ internal static class ErrorPaths
         {
             var root = Initialized(RepositoryAt(scratch, Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"env:DBCHANGE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\" }",
                 connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev")))));
-            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "dbchange", "profiles", "pipeline.publish.xml"));
+            File.Copy(GoldenProject.Profile, Path.Combine(root, "dbchange", "profiles", "pipeline.publish.xml"));
             return Failed(SqlServer.SqlCmdValues(Made(SqlServer.Resolve(Target("env:dev"), root))));
         }),
         new("a SQLCMD reference to a file git tracks", "reference.tracked", true, (scratch, planted) => InRepository(scratch, root =>
@@ -363,7 +363,7 @@ internal static class ErrorPaths
             Arrange(root, "add", "--", "dbchange/token.txt");
             Arrange(root, "commit", "-q", "-m", "the token");
             Directory.CreateDirectory(Path.Combine(root, "dbchange", "profiles"));
-            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "dbchange", "profiles", "pipeline.publish.xml"));
+            File.Copy(GoldenProject.Profile, Path.Combine(root, "dbchange", "profiles", "pipeline.publish.xml"));
             return SqlServer.SqlCmdValues(Made(SqlServer.Resolve(Target("env:dev"), root)));
         })),
 

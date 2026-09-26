@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using DbChange.Budgets.Tests;
 using DbChange.Io;
+using DbChange.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
@@ -20,7 +21,7 @@ namespace DbChange.Io.Tests;
 /// committed engine (DacFx 170.5.96, used directly). Every read runs as the read-only principal; only the fixture's copies
 /// are written.
 /// </summary>
-public sealed class SpikeTests(GoldenProject project) : IClassFixture<GoldenProject>
+public sealed class SpikeTests(PublishedGoldenProject project) : IClassFixture<PublishedGoldenProject>
 {
     private static readonly XNamespace Report = "http://schemas.microsoft.com/sqlserver/dac/DeployReport/2012/02";
 
@@ -169,55 +170,37 @@ public sealed class SpikeTests(GoldenProject project) : IClassFixture<GoldenProj
 }
 
 /// <summary>
-/// The golden project (tests/Golden/project/) built the classic way against dist/dbchange/, with two heads built beside
-/// it from edited copies: make-mandatory (Customer.Email NOT NULL) and a clean foreign key (Customer.AccountId to Account).
-/// The base is published to one registered database, the copy, as the fixture's admin identity, and the read-only principal
-/// is created on it. Everything is dropped after the class: the build tree under .dbchange/golden/, the copy and its principal.
+/// The golden project published: its base, the make-mandatory head (Customer.Email NOT NULL) and the head that adds a clean foreign
+/// key on a populated child (Customer.AccountId to Account), each built once per test run by GoldenProject; the base published to one
+/// registered database, the copy, as the fixture's admin identity, and the read-only principal created on it. The copy and its principal
+/// are dropped after the class.
 /// </summary>
-public sealed class GoldenProject : IAsyncLifetime
+public sealed class PublishedGoldenProject : IAsyncLifetime
 {
-    private readonly string root = Path.Combine(Repository.Root, ".dbchange", "golden", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);
     private RegisteredDatabase? copy;
     private ReadOnlyPrincipal? reader;
 
-    public string Profile { get; } = Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml");
+    public string Profile => GoldenProject.Profile;
 
-    public string Base => Dacpac("base");
+    public string Base { get; private set; } = "";
 
-    public string Mandatory => Dacpac("mandatory");
+    public string Mandatory { get; private set; } = "";
 
-    public string ForeignKey => Dacpac("foreign-key");
+    public string ForeignKey { get; private set; } = "";
 
     public RegisteredDatabase Copy => copy!;
 
     public ReadOnlyPrincipal Reader => reader!;
 
     /// <summary>The pipeline profile's deploy options, and nothing else from it.</summary>
-    public DacDeployOptions Pipeline => DacProfile.Load(Profile).DeployOptions;
+    public DacDeployOptions Pipeline => GoldenProject.Pipeline();
 
     public async Task InitializeAsync()
     {
-        var tool = new PublishedTool();
-        var golden = Path.Combine(Repository.Root, "tests", "Golden");
-        Directory.CreateDirectory(root);
-        foreach (var stop in (string[])["Directory.Build.props", "Directory.Packages.props"])
-        {
-            File.Copy(Path.Combine(golden, stop), Path.Combine(root, stop));
-        }
-
-        foreach (var head in (string[])["base", "mandatory", "foreign-key"])
-        {
-            ToolFolderTests.Copy(Path.Combine(golden, "project"), Path.Combine(root, head));
-        }
-
-        Edit(Path.Combine(root, "mandatory", "Modules", "Customer.sql"), "Email           NVARCHAR(256)   NULL,", "Email           NVARCHAR(256)   NOT NULL,");
-        Edit(Path.Combine(root, "foreign-key", "Modules", "Customer.sql"), "CONSTRAINT PK_Customer_Id PRIMARY KEY CLUSTERED (Id)",
-            "CONSTRAINT PK_Customer_Id PRIMARY KEY CLUSTERED (Id),\n    CONSTRAINT FK_Customer_Account_AccountId FOREIGN KEY (AccountId) REFERENCES dbo.Account (Id)");
-        var builds = await Task.WhenAll(((string[])["base", "mandatory", "foreign-key"]).Select(head => Task.Run(() => tool.Build(Path.Combine(root, head, "SampleCatalog.sqlproj")))));
-        Assert.All(builds, build => Assert.True(build.Exit == 0, build.Output));
-
+        (Base, Mandatory, ForeignKey) = (await GoldenProject.Built(), await GoldenProject.Built(GoldenProject.Change("make-mandatory")),
+            await GoldenProject.Built(GoldenProject.Change("add-a-foreign-key-on-a-populated-child")));
         copy = await SqlServerFixture.RegisterAsync();
-        Publish(Base, copy, Pipeline);
+        GoldenProject.Publish(Base, copy, Pipeline);
         reader = await ReadOnlyPrincipal.CreateAsync(copy);
     }
 
@@ -227,23 +210,6 @@ public sealed class GoldenProject : IAsyncLifetime
         {
             await copy.DisposeAsync();
         }
-
-        if (Directory.Exists(root))
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
-    /// <summary>
-    /// A package published to a registered database as the fixture's admin identity: copies only. Packages load from a
-    /// stream: a publish of a package loaded by path loads the assemblies beside the dacpac (the build's SampleCatalog.dll)
-    /// into this process and holds them until it exits.
-    /// </summary>
-    public static void Publish(string dacpac, RegisteredDatabase database, DacDeployOptions options)
-    {
-        using var stream = File.OpenRead(dacpac);
-        using var package = DacPackage.Load(stream);
-        new DacServices(database.ConnectionString).Publish(package, database.Name, new PublishOptions { DeployOptions = options });
     }
 
     /// <summary>DacServices.Script of a package, loaded from a stream, against the copy, as the read-only principal, under the pipeline profile's options only.</summary>
@@ -258,15 +224,5 @@ public sealed class GoldenProject : IAsyncLifetime
             DeployOptions = Pipeline,
         });
         return (plan.DatabaseScript, XDocument.Parse(plan.DeploymentReport));
-    }
-
-    private string Dacpac(string head) => Path.Combine(root, head, "bin", "Release", "SampleCatalog.dacpac");
-
-    /// <summary>One edit to a copied file; the text must occur exactly once, so a golden that drifts fails here and not later.</summary>
-    private static void Edit(string file, string from, string to)
-    {
-        var text = File.ReadAllText(file);
-        Assert.True(text.Split(from).Length == 2, file + " does not hold exactly one '" + from + "'");
-        File.WriteAllText(file, text.Replace(from, to, StringComparison.Ordinal));
     }
 }

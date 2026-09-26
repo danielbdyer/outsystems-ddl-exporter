@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using DbChange.Budgets.Tests;
 using DbChange.Kernel;
+using DbChange.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
@@ -358,150 +359,31 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
     public async Task The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read()
     {
         await using var database = await SqlServerFixture.RegisterAsync();
-        var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(repository.Root, repository.Base)), "project/SampleCatalog.sqlproj", repository.Tool.Folder, Path.Combine(repository.Root, ".dbchange", "build"))).Path;
-        GoldenProject.Publish(dacpac, database, DacProfile.Load(Path.Combine(repository.Root, ScratchRepository.Profile)).DeployOptions);
+        GoldenProject.Publish(await GoldenProject.Built(), database, GoldenProject.Pipeline());
         var reader = await ReadOnlyPrincipal.CreateAsync(database);
-        var master = await SqlServerFixture.ServerAsync();
-        var session = "dbchange_xe_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
-        var only = "WHERE ([sqlserver].[server_principal_name] = N'" + reader.Login + "')";
-        await SqlServerFixture.ExecuteAsync(master, "CREATE EVENT SESSION [" + session + "] ON SERVER ADD EVENT sqlserver.sql_batch_completed(" + only + "), "
-            + "ADD EVENT sqlserver.rpc_completed(" + only + ") ADD TARGET package0.event_file(SET filename = N'" + session + ".xel') "
-            + "WITH (MAX_DISPATCH_LATENCY = 1 SECONDS, EVENT_RETENTION_MODE = NO_EVENT_LOSS); ALTER EVENT SESSION [" + session + "] ON SERVER STATE = START;");
-        try
-        {
-            var file = await Scalar(master, "SELECT CAST(t.target_data AS xml).value('(EventFileTarget/File/@name)[1]', 'nvarchar(400)') FROM sys.dm_xe_session_targets t "
-                + "JOIN sys.dm_xe_sessions s ON s.address = t.event_session_address WHERE s.name = @name AND t.target_name = N'event_file';", session);
-            var root = repository.Named(("dev", Path.Combine(Repository.Root, reader.Reference["file:".Length..])));
+        await using var trace = await ReadOnlyLoginTrace.StartAsync(reader.Login);
+        var root = repository.Named(("dev", Path.Combine(Repository.Root, reader.Reference["file:".Length..])));
 
-            var (matchExit, matching) = repository.RunAt(root, "check", "drift", "--target", "env:dev", "--at", repository.Base);
-            await SqlServerFixture.ExecuteAsync(database.ConnectionString, "ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(300) NULL;");
-            var (driftExit, drifted) = repository.RunAt(root, "check", "drift", "--target", "env:dev", "--at", repository.Base);
-            var (readExit, read) = repository.RunAt(root, "read", "--from", "env:dev");
-            await SqlServerFixture.ExecuteAsync(master, "ALTER EVENT SESSION [" + session + "] ON SERVER STATE = STOP;");
+        var (matchExit, matching) = repository.RunAt(root, "check", "drift", "--target", "env:dev", "--at", repository.Base);
+        await SqlServerFixture.ExecuteAsync(database.ConnectionString, "ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(300) NULL;");
+        var (driftExit, drifted) = repository.RunAt(root, "check", "drift", "--target", "env:dev", "--at", repository.Base);
+        var (readExit, read) = repository.RunAt(root, "read", "--from", "env:dev");
+        var sent = await trace.StopAsync();
 
-            Assert.True(matchExit == 0, matching);
-            Assert.StartsWith("env:dev is in sync with ref:" + repository.Base, matching, StringComparison.Ordinal);
-            Assert.True(driftExit == 5, drifted);
-            Assert.Contains("`drift.column` Column [dbo].[Customer].[Email]: Length 300 → 256", drifted, StringComparison.Ordinal);
-            Assert.True(readExit == 0, read);
-            var sent = await Events(master, file[..file.LastIndexOf('_')] + "*.xel");
-            Assert.Contains(sent, s => s.Text.Contains("HAS_PERMS_BY_NAME", StringComparison.Ordinal));   // the session saw the run: dbchange's own first statement
-            // The container's SQL Server shows DacFx's catalog batch masked (*encrypt---); the Windows runner's LocalDB shows it as written
-            // but cut off, and Writes reads it token by token. A masked text is admitted only as DacFx's sp_executesql, one per read at most:
-            // the two checks and the read.
-            var masked = sent.Where(s => Masked(s.Text)).ToList();
-            Assert.All(masked, s => Assert.Equal(("rpc_completed", "sp_executesql"), (s.Event, s.Object)));
-            Assert.True(masked.Count <= 3, masked.Count + " masked calls for three reads");
-            var writes = sent.Where(s => !Masked(s.Text)).SelectMany(s => Writes(s.Text)).ToList();
-            Assert.True(writes.Count == 0, string.Join("\n----\n", writes));
-        }
-        finally
-        {
-            await SqlServerFixture.ExecuteAsync(master, "IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = N'" + session + "') DROP EVENT SESSION [" + session + "] ON SERVER;");
-        }
-    }
-
-    /// <summary>The principal test's reading of what a login sent, as minimal pairs: each write it finds, beside the read it passes.</summary>
-    [Theory]
-    [Trait("Category", "fast")]
-    [InlineData("SELECT name FROM sys.tables;", false)]
-    [InlineData("SELECT HAS_PERMS_BY_NAME(NULL, N'DATABASE', N'VIEW DEFINITION');", false)]
-    [InlineData("exec sp_executesql N'SELECT 1 WHERE @p = 1', N'@p int', @p = 1", false)]
-    [InlineData("DECLARE @filepath nvarchar(260); EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE',N'Software\\Microsoft\\MSSQLServer\\MSSQLServer',N'DefaultLog', @filepath output, 'no_output'", true)]
-    [InlineData("exec sp_executesql N'DELETE dbo.Customer WHERE Id = @p', N'@p int', @p = 1", true)]
-    [InlineData("EXEC dbo.usp_Anything;", true)]
-    [InlineData("IF 1 = 1 BEGIN UPDATE dbo.Customer SET Email = NULL; END", true)]
-    [InlineData("SELECT * INTO #kept FROM dbo.Customer;", true)]
-    [InlineData("CREATE TABLE #t (Id int);", true)]
-    [InlineData("GRANT SELECT ON dbo.Customer TO public;", true)]
-    [InlineData("SELECT [is_merge_published], create_date FROM sys.databases OPTION (USE HINT('FORCE_LEGACY_CARDINALI", false)]
-    [InlineData("SELECT name FROM sys.tables; UPDATE dbo.Customer SET Email = NULL; SELECT name FROM sys.tables WHERE name = N'cut", true)]
-    public void The_principal_test_finds_every_write_and_passes_every_read(string sent, bool writes) => Assert.Equal(writes, Writes(sent).Any());
-
-    /// <summary>The form SQL Server gives a masked text, an asterisk, the word it matched and dashes, beside texts that only resemble it.</summary>
-    [Theory]
-    [Trait("Category", "fast")]
-    [InlineData("*encrypt------------------------------", true)]
-    [InlineData("*password----------", true)]
-    [InlineData("*encrypt", false)]
-    [InlineData("SELECT '*encrypt----' AS masked;", false)]
-    [InlineData("", false)]
-    public void The_principal_test_reads_a_masked_text_only_in_SQL_Server_s_form(string sent, bool masked) => Assert.Equal(masked, Masked(sent));
-
-    /// <summary>Whether SQL Server masked a statement's text in the event: an asterisk, a lower-case word, then dashes to the end.</summary>
-    private static bool Masked(string text) => System.Text.RegularExpressions.Regex.IsMatch(text, @"\A\*[a-z_]+-+\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-
-    /// <summary>
-    /// What a batch or a call does beyond reading: each DML, DDL or EXEC statement in it, sp_executesql read through to the statement it
-    /// carries. A text ScriptDom cannot parse is read token by token, and each keyword that starts a write counts: the Windows runner's
-    /// LocalDB records DacFx's catalog query cut off after 500,000 characters (CI run 36202422744), and nothing past the cut is read.
-    /// </summary>
-    private static IEnumerable<string> Writes(string sent)
-    {
-        var parser = new TSql160Parser(initialQuotedIdentifiers: true);
-        var script = parser.Parse(new StringReader(sent), out var errors);
-        if (errors.Count > 0)
-        {
-            return parser.GetTokenStream(new StringReader(sent), out _).Where(t => WriteKeywords.Contains(t.TokenType))
-                .Select(t => t.TokenType + " in a text that does not parse: " + sent[..Math.Min(sent.Length, 200)]);
-        }
-
-        var statements = new Statements();
-        script.Accept(statements);
-        return statements.Found.SelectMany(s => s switch
-        {
-            ExecuteStatement { ExecuteSpecification.ExecutableEntity: ExecutableProcedureReference { ProcedureReference.ProcedureReference.Name.BaseIdentifier.Value: var name } call }
-                when string.Equals(name, "sp_executesql", StringComparison.OrdinalIgnoreCase) && call.Parameters is [{ ParameterValue: StringLiteral inner }, ..] => Writes(inner.Value),
-            ExecuteStatement or InsertStatement or UpdateStatement or DeleteStatement or MergeStatement or TruncateTableStatement or BulkInsertStatement => [s.GetType().Name + ": " + sent],
-            SelectStatement { Into: not null } => ["SELECT INTO: " + sent],
-            _ when s.GetType().Name.StartsWith("Create", StringComparison.Ordinal) || s.GetType().Name.StartsWith("Alter", StringComparison.Ordinal)
-                || s.GetType().Name.StartsWith("Drop", StringComparison.Ordinal) || s is GrantStatement or RevokeStatement or DenyStatement => [s.GetType().Name + ": " + sent],
-            _ => [],
-        });
-    }
-
-    /// <summary>The keywords that start a write, or a SELECT … INTO, in a text read token by token.</summary>
-    private static readonly HashSet<TSqlTokenType> WriteKeywords =
-    [
-        TSqlTokenType.Insert, TSqlTokenType.Update, TSqlTokenType.Delete, TSqlTokenType.Merge, TSqlTokenType.Truncate, TSqlTokenType.Bulk,
-        TSqlTokenType.Into, TSqlTokenType.Create, TSqlTokenType.Alter, TSqlTokenType.Drop, TSqlTokenType.Exec, TSqlTokenType.Execute,
-        TSqlTokenType.Grant, TSqlTokenType.Revoke, TSqlTokenType.Deny,
-    ];
-
-    /// <summary>Every statement a script holds, nested ones included.</summary>
-    private sealed class Statements : TSqlFragmentVisitor
-    {
-        public List<TSqlStatement> Found { get; } = [];
-
-        public override void Visit(TSqlStatement node) => Found.Add(node);
-    }
-
-    /// <summary>Each batch's text and each call's statement the session wrote to its files, with the event's name and, for a call, the procedure called.</summary>
-    private static async Task<List<(string Event, string Object, string Text)>> Events(string master, string files)
-    {
-        var sent = new List<(string Event, string Object, string Text)>();
-        await using var connection = new SqlConnection(master);
-        await connection.OpenAsync();
-        await using var read = new SqlCommand("SELECT CAST(event_data AS nvarchar(max)) FROM sys.fn_xe_file_target_read_file(@files, NULL, NULL, NULL);", connection);
-        read.Parameters.Add(new SqlParameter("@files", System.Data.SqlDbType.NVarChar, 400) { Value = files });
-        await using var events = await read.ExecuteReaderAsync();
-        while (await events.ReadAsync())
-        {
-            var @event = XElement.Parse(events.GetString(0));
-            var data = @event.Elements("data").ToDictionary(d => (string)d.Attribute("name")!, d => (string?)d.Element("value") ?? "");
-            sent.Add(((string?)@event.Attribute("name") ?? "", data.GetValueOrDefault("object_name") ?? "", data.GetValueOrDefault("batch_text") ?? data.GetValueOrDefault("statement") ?? ""));
-        }
-
-        return sent;
-    }
-
-    private static async Task<string> Scalar(string master, string sql, string name)
-    {
-        await using var connection = new SqlConnection(master);
-        await connection.OpenAsync();
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.Add(new SqlParameter("@name", System.Data.SqlDbType.NVarChar, 128) { Value = name });
-        return (string)(await command.ExecuteScalarAsync())!;
+        Assert.True(matchExit == 0, matching);
+        Assert.StartsWith("env:dev is in sync with ref:" + repository.Base, matching, StringComparison.Ordinal);
+        Assert.True(driftExit == 5, drifted);
+        Assert.Contains("`drift.column` Column [dbo].[Customer].[Email]: Length 300 → 256", drifted, StringComparison.Ordinal);
+        Assert.True(readExit == 0, read);
+        Assert.Contains(sent, s => s.Text.Contains("HAS_PERMS_BY_NAME", StringComparison.Ordinal));   // the session saw the run: dbchange's own first statement
+        // The container's SQL Server shows DacFx's catalog batch masked (*encrypt---); the Windows runner's LocalDB shows it as written
+        // but cut off, and Writes reads it token by token. A masked text is admitted only as DacFx's sp_executesql, one per read at most:
+        // the two checks and the read.
+        var masked = sent.Where(s => ReadOnlyLoginTrace.Masked(s.Text)).ToList();
+        Assert.All(masked, s => Assert.Equal(("rpc_completed", "sp_executesql"), (s.Event, s.Object)));
+        Assert.True(masked.Count <= 3, masked.Count + " masked calls for three reads");
+        var writes = sent.Where(s => !ReadOnlyLoginTrace.Masked(s.Text)).SelectMany(s => ReadOnlyLoginTrace.Writes(s.Text)).ToList();
+        Assert.True(writes.Count == 0, string.Join("\n----\n", writes));
     }
 
     /// <summary>The plan of the package at <paramref name="dacpac"/> against the copy, extracted, package to package, as check drift plans.</summary>

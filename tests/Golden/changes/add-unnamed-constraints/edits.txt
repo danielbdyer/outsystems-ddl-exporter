@@ -1,0 +1,7 @@
+=== Modules/OrderStatusText.sql
+--- -- Intentionally no schema object. The column lives in Modules/Order.sql.
++++ CREATE TABLE dbo.Note (Id INT NOT NULL PRIMARY KEY, CustomerId INT NULL REFERENCES dbo.Customer (Id), Body NVARCHAR(200) NOT NULL DEFAULT (N''), Pinned BIT NOT NULL DEFAULT (0) CHECK (Pinned IN (0, 1)), Code NVARCHAR(10) NULL UNIQUE, Score INT NULL, CHECK (Score > 0), CHECK (Score < 100));
++++ GO
++++ CREATE PROCEDURE dbo.NoteCount @CustomerId INT
++++ AS
++++     SELECT COUNT_BIG(*) AS Notes FROM dbo.Note WHERE CustomerId = @CustomerId;

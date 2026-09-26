@@ -18,7 +18,7 @@ namespace DbChange.Io.Tests;
 /// the run's queries.log; a failed query reports its number and its site and nothing else; Model and Plan read as the same principal;
 /// and a login the server refuses, or one that lacks what reading takes, is denied naming the environment and quoting nothing.
 /// </summary>
-public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<GoldenProject>, IDisposable
+public sealed class AggregateQueryTests(PublishedGoldenProject project) : IClassFixture<PublishedGoldenProject>, IDisposable
 {
     private readonly ScratchFolder root = ScratchFolder.UnderRepository("aggregate-queries-under-test");
 

@@ -1,10 +1,12 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DbChange.Budgets.Tests;
 using DbChange.Cli;
+using DbChange.Tests;
 using Json.Schema;
 using Xunit;
 
@@ -24,19 +26,12 @@ public sealed class ScratchRepository : IDisposable
     public ScratchRepository()
     {
         Tool = new PublishedTool();
-        var golden = Path.Combine(Repository.Root, "tests", "Golden");
-        foreach (var stop in (string[])["Directory.Build.props", "Directory.Packages.props"])
-        {
-            File.Copy(Path.Combine(golden, stop), Path.Combine(Root, stop));
-        }
-
-        ToolFolderTests.Copy(Path.Combine(golden, "project"), Path.Combine(Root, "project"));
+        GoldenProject.CopyTo(Root);
         Ledger(Root);
         Base = scratch.Commit("the golden project", (".gitignore", ".dbchange/\n"), ("dbchange/environments.json", "{ \"environments\": {} }\n"));
-        var customer = Path.Combine(Root, "project", "Modules", "Customer.sql");
-        var text = File.ReadAllText(customer);
-        Assert.True(text.Split("Email           NVARCHAR(256)   NULL,").Length == 2, customer + " does not hold Email's declaration once");
-        Head = scratch.Commit("Customer.Email made mandatory", ("project/Modules/Customer.sql", text.Replace("Email           NVARCHAR(256)   NULL,", "Email           NVARCHAR(256)   NOT NULL,", StringComparison.Ordinal)));
+        var mandatory = GoldenProject.Change("make-mandatory").Edits.Single();
+        mandatory.ApplyTo(Path.Combine(Root, "project"));
+        Head = scratch.Commit("Customer.Email made mandatory", ("project/" + mandatory.File, File.ReadAllText(Path.Combine(Root, "project", mandatory.File))));
     }
 
     public PublishedTool Tool { get; }

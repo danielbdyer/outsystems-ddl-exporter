@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using DbChange.Budgets.Tests;
 using DbChange.Kernel;
+using DbChange.Tests;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Xunit;
@@ -612,7 +613,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
                 package = Ok(Ssdt.ReadModel(loaded)).Elements;
             }
 
-            var profile = DacProfile.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml")).DeployOptions;
+            var profile = DacProfile.Load(GoldenProject.Profile).DeployOptions;
             Assert.True(profile.IgnoreColumnOrder);
             var database = await PublishedAndRead(profile, v1, v2);
 
@@ -661,7 +662,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     public async Task The_package_to_package_plan_reports_the_operations_the_live_plan_reports()
     {
         await using var database = await SqlServerFixture.RegisterAsync();
-        var profile = Ok(PublishProfiles.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml")));
+        var profile = Ok(PublishProfiles.Load(GoldenProject.Profile));
         GoldenProject.Publish(heads.Dacpacs["base"], database, profile.Options());
         var copy = new SqlServer.Copy(Ok(CopyName.Of("the registered database", database.Name)), await SqlServerFixture.ServerAsync(), Repository.Root);
         using var extracted = Ok(DacFx.Extract(copy));
@@ -934,65 +935,33 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 }
 
 /// <summary>
-/// The golden project built twice from two copies, and once per head from a copy with the head's edits, all against
-/// dist/dbchange/ and in parallel, each loaded and read into elements; then the base read again, alone, for the reading's time. The tree
-/// under .dbchange/models/ is dropped after.
+/// The golden project's heads by the names these tests use, each the sample changes of tests/Golden/changes/ it applies, built once per
+/// test run by GoldenProject, and the base built a second time into a folder of its own; then the base read again, alone, for the
+/// reading's time.
 /// </summary>
 public sealed class GoldenProjectModels : IAsyncLifetime
 {
+    /// <summary>The refactorlog key of the rename sample change, tests/Golden/changes/rename-a-column/edits.txt.</summary>
     public const string RenameKey = "6d1c1b5e-3f0a-4c2e-9b7d-2a4f8e6c0d13";
 
-    /// <summary>The rename sample change: Customer.ContactPhone renamed MobileNumber, with the refactorlog entry SSDT writes for it.</summary>
-    private static readonly (string File, string From, string To)[] RenameEdits =
-    [
-        ("Modules/Customer.sql", "ContactPhone    NVARCHAR(40)    NULL,", "MobileNumber    NVARCHAR(40)    NULL,"),
-        ("SampleCatalog.refactorlog", "</Operations>",
-            "  <Operation Name=\"Rename Refactor\" Key=\"" + RenameKey + "\" ChangeDateTime=\"09/24/2026 10:00:00\">\n"
-            + "    <Property Name=\"ElementName\" Value=\"[dbo].[Customer].[ContactPhone]\" />\n"
-            + "    <Property Name=\"ElementType\" Value=\"SqlSimpleColumn\" />\n"
-            + "    <Property Name=\"ParentElementName\" Value=\"[dbo].[Customer]\" />\n"
-            + "    <Property Name=\"ParentElementType\" Value=\"SqlTable\" />\n"
-            + "    <Property Name=\"NewName\" Value=\"[MobileNumber]\" />\n"
-            + "  </Operation>\n</Operations>"),
-    ];
-
-    /// <summary>Each head's edits: a file, text that occurs in it exactly once, and its replacement.</summary>
-    private static readonly Dictionary<string, (string File, string From, string To)[]> Edits = new()
+    /// <summary>Each head by its name here, and the sample changes that make it, none for the base.</summary>
+    private static readonly Dictionary<string, string[]> Heads = new()
     {
         ["base"] = [],
-        ["again"] = [],
-        ["make-mandatory"] = [("Modules/Customer.sql", "Email           NVARCHAR(256)   NULL,", "Email           NVARCHAR(256)   NOT NULL,")],
-        ["add a nullable column"] = [("Modules/Customer.sql", "AccountId       INT             NULL,", "AccountId       INT             NULL,\n    Nickname        NVARCHAR(40)    NULL,")],
-        ["drop a column"] = [("Modules/Product.sql", "LegacyCode NVARCHAR(40)  NOT NULL CONSTRAINT DF_Product_LegacyCode DEFAULT (N'LEGACY'),", "")],
-        ["widen a column"] = [("Modules/Product.sql", "Code    NVARCHAR(50)    NOT NULL,", "Code    NVARCHAR(100)   NOT NULL,")],
-        ["add a check constraint"] = [("Modules/Product.sql", "CONSTRAINT PK_Product_Id PRIMARY KEY CLUSTERED (Id)",
-            "CONSTRAINT PK_Product_Id PRIMARY KEY CLUSTERED (Id),\n    CONSTRAINT CK_Product_Code CHECK (LEN(Code) > 0)")],
-        ["add a foreign key"] = [("Modules/Order.sql", "CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id)",
-            "CONSTRAINT PK_Order_Id PRIMARY KEY CLUSTERED (Id),\n    CONSTRAINT FK_Order_Customer_CustomerId FOREIGN KEY (CustomerId) REFERENCES dbo.Customer (Id)")],
-        ["a seed edit"] = [("Data/Seed.sql", "(3, N'Initech',", "(3, N'Initech Ltd',")],
-        ["a pre-deploy edit"] = [("Script.PreDeployment.sql", "PRINT 'Pre-deploy: no backfill active.", "PRINT 'Pre-deploy: still no backfill active.")],
-        ["rename a column"] = RenameEdits,
-        ["unnamed constraints"] = [("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.",
-            "CREATE TABLE dbo.Note (Id INT NOT NULL PRIMARY KEY, CustomerId INT NULL REFERENCES dbo.Customer (Id), Body NVARCHAR(200) NOT NULL DEFAULT (N''),"
-            + " Pinned BIT NOT NULL DEFAULT (0) CHECK (Pinned IN (0, 1)), Code NVARCHAR(10) NULL UNIQUE, Score INT NULL, CHECK (Score > 0), CHECK (Score < 100));"
-            + "\nGO\nCREATE PROCEDURE dbo.NoteCount @CustomerId INT\nAS\n    SELECT COUNT_BIG(*) AS Notes FROM dbo.Note WHERE CustomerId = @CustomerId;")],
-        ["rename beside a Host column"] =
-        [
-            .. RenameEdits,
-            ("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.", "CREATE TABLE dbo.AAA (Id INT NOT NULL, Host INT NULL, CHECK (Id > 0 OR Host > 0));"),
-        ],
-        ["grants"] = [("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.", string.Join("\nGO\n",
-            "CREATE ROLE AppReader;", "CREATE ROLE AppWriter;", "GRANT SELECT ON dbo.Account TO AppReader;", "GRANT SELECT ON dbo.Account TO AppWriter;",
-            "GRANT INSERT ON dbo.Account TO AppWriter;", "GRANT VIEW DEFINITION TO AppReader;", "GRANT VIEW DEFINITION TO AppWriter;"))],
-        ["every serialized form"] = [("Modules/OrderStatusText.sql", "-- Intentionally no schema object. The column lives in Modules/Order.sql.", string.Join("\nGO\n",
-            "CREATE TYPE dbo.Code FROM NVARCHAR(10) NOT NULL;", "CREATE TYPE dbo.Lines AS TABLE (Id INT NOT NULL, Doubled AS Id * 2);",
-            "CREATE TABLE dbo.Measured (Id INT NOT NULL PRIMARY KEY, Doubled AS Id * 2, Kept INT SPARSE NULL, Everything XML COLUMN_SET FOR ALL_SPARSE_COLUMNS);",
-            "CREATE STATISTICS ST_Measured_Id ON dbo.Measured (Id);", "CREATE FUNCTION dbo.Inline() RETURNS TABLE AS RETURN SELECT 1 AS One;",
-            "CREATE FUNCTION dbo.Multi() RETURNS @t TABLE (One INT) AS BEGIN INSERT @t VALUES (1); RETURN; END",
-            "CREATE PROCEDURE dbo.WithParameter @Id INT AS SELECT @Id AS Id;", "CREATE ROLE MeasuredReader;", "GRANT SELECT ON dbo.Measured TO MeasuredReader;"))],
+        ["make-mandatory"] = ["make-mandatory"],
+        ["add a nullable column"] = ["add-a-nullable-column"],
+        ["drop a column"] = ["drop-a-column"],
+        ["widen a column"] = ["widen-a-column"],
+        ["add a check constraint"] = ["add-a-check-constraint"],
+        ["add a foreign key"] = ["add-a-foreign-key"],
+        ["a seed edit"] = ["edit-the-post-deploy-seed"],
+        ["a pre-deploy edit"] = ["edit-the-pre-deploy-script"],
+        ["rename a column"] = ["rename-a-column"],
+        ["unnamed constraints"] = ["add-unnamed-constraints"],
+        ["rename beside a Host column"] = ["rename-a-column", "add-a-table-with-an-unnamed-check-on-two-columns"],
+        ["grants"] = ["grant-two-roles"],
+        ["every serialized form"] = ["add-one-object-of-each-serialized-type"],
     };
-
-    private readonly string root = Path.Combine(Repository.Root, ".dbchange", "models", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);
 
     public Dictionary<string, Ssdt.ModelElements> Models { get; } = [];
 
@@ -1002,30 +971,11 @@ public sealed class GoldenProjectModels : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        var tool = new PublishedTool();
-        var golden = Path.Combine(Repository.Root, "tests", "Golden");
-        Directory.CreateDirectory(root);
-        foreach (var stop in (string[])["Directory.Build.props", "Directory.Packages.props"])
+        var built = await Task.WhenAll(Heads.Select(async head =>
         {
-            File.Copy(Path.Combine(golden, stop), Path.Combine(root, stop));
-        }
-
-        var built = await Task.WhenAll(Edits.Select(head => Task.Run(() =>
-        {
-            var directory = Path.Combine(root, "heads", head.Key.Replace(' ', '-'));
-            ToolFolderTests.Copy(Path.Combine(golden, "project"), directory);
-            foreach (var (file, from, to) in head.Value)
-            {
-                var path = Path.Combine(directory, file);
-                var text = File.ReadAllText(path);
-                Assert.True(text.Split(from).Length == 2, path + " does not hold exactly one '" + from + "'");
-                File.WriteAllText(path, text.Replace(from, to, StringComparison.Ordinal));
-            }
-
-            var dacpac = Ok(Ssdt.Build(Path.Combine(directory, "SampleCatalog.sqlproj"), tool.Folder, Path.Combine(root, "build", head.Key.Replace(' ', '-'))));
-            using var package = Ok(Ssdt.Open(dacpac.Path));
-            return (Head: head.Key, Dacpac: dacpac.Path, Model: Ok(Ssdt.ReadModel(package)));
-        })));
+            SampleChange[] changes = [.. head.Value.Select(GoldenProject.Change)];
+            return (Head: head.Key, Dacpac: await GoldenProject.Built(changes), Model: await GoldenProject.Model(changes));
+        }).Append(Again()));
         foreach (var (head, dacpac, model) in built)
         {
             (Models[head], Dacpacs[head]) = (model, dacpac);
@@ -1038,15 +988,9 @@ public sealed class GoldenProjectModels : IAsyncLifetime
         ReadingTime = clock.Elapsed;
     }
 
-    public Task DisposeAsync()
-    {
-        if (Directory.Exists(root))
-        {
-            Directory.Delete(root, recursive: true);
-        }
+    private static async Task<(string Head, string Dacpac, Ssdt.ModelElements Model)> Again() => ("again", await GoldenProject.BuiltAgain(), await GoldenProject.ModelAgain());
 
-        return Task.CompletedTask;
-    }
+    public Task DisposeAsync() => Task.CompletedTask;
 
     private static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 }

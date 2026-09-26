@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using DbChange.Budgets.Tests;
 using DbChange.Kernel;
+using DbChange.Tests;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Xunit;
@@ -17,7 +18,6 @@ namespace DbChange.Io.Tests;
 /// </summary>
 public sealed class DacFxTests : IDisposable
 {
-    private const string Pipeline = "tests/Golden/project/profiles/pipeline.publish.xml";
 
     private readonly string scratch = Directory.CreateTempSubdirectory("dbchange-dacfx-").FullName;
 
@@ -192,7 +192,7 @@ public sealed class DacFxTests : IDisposable
         return dacpac;
     }
 
-    private static PublishProfile.Strict Strict() => Ok(PublishProfiles.Load(Path.Combine(Repository.Root, Pipeline)));
+    private static PublishProfile.Strict Strict() => Ok(PublishProfiles.Load(GoldenProject.Profile));
 
     private static ElementKey Keyed(string report, SortedArray<Element> source, SortedArray<Element> target) => Ok(DacFx.Report(report, source, target)).Report.Operations.Single().Key;
 

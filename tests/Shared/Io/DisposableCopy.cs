@@ -1,0 +1,40 @@
+using System;
+using DbChange.Io;
+
+namespace DbChange.Tests;
+
+/// <summary>
+/// A copy a test makes on the run's SQL Server through io/LocalServer.Create, registered under a repository root and, when a package is
+/// given, published to under the profile given; disposing it drops the database and its registry row through LocalServer.Drop, and a
+/// drop that fails fails the test, naming the error's code.
+/// </summary>
+internal sealed class DisposableCopy : IDisposable
+{
+    private DisposableCopy(SqlServer.Copy copy) => Copy = copy;
+
+    public SqlServer.Copy Copy { get; }
+
+    public static DisposableCopy Create(string repositoryRoot, string server, string? dacpac = null, PublishProfile.Strict? profile = null)
+    {
+        var made = new DisposableCopy(Expect.Value(LocalServer.Create(repositoryRoot, server)));
+        if (dacpac is null)
+        {
+            return made;
+        }
+
+        try
+        {
+            Expect.Value(made.Copy.Publish(dacpac, profile ?? throw new ArgumentNullException(nameof(profile))));
+            return made;
+        }
+        catch
+        {
+            made.Dispose();
+            throw;
+        }
+    }
+
+    public void Dispose() => Expect.Value(LocalServer.Drop(Copy));
+
+    public override string ToString() => Copy.ToString();
+}

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using DbChange.Budgets.Tests;
 using DbChange.Cli;
 using DbChange.Kernel;
+using DbChange.Tests;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Contract = DbChange.Cli.Contract;
@@ -19,7 +20,7 @@ namespace DbChange.Io.Tests;
 /// Ssdt.ReadModel reads; and the plan of a package against its own published copy, package to package, is empty. Model fingerprints are
 /// compared only between like sources: a package's keys with its copy's, and one copy's fingerprint with another's.
 /// </summary>
-public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProject>, IDisposable
+public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<PublishedGoldenProject>, IDisposable
 {
     private readonly string root = SqlServerFixture.RepositoryRoot(Path.Combine(Repository.Root, ".dbchange", "copies-under-test", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]));
 
