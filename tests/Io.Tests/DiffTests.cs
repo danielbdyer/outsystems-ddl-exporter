@@ -71,7 +71,7 @@ public sealed class DiffTests(ScratchRepository repository) : IClassFixture<Scra
     /// admin identity, who sees the login. What the test asserts is that the answer names the login and that no property in it is
     /// named after a member of <see cref="Ssdt.Secrets"/>: DacFx makes up a new Login.Password on each read, since SQL Server keeps
     /// only a hash of the one the login was made with, and Ssdt.ReadModel leaves that property out. The answer is also searched for a
-    /// password setting (<see cref="PublishProfilesTests.PasswordSetting"/>): on the container the fixture's identity signs in as sa with a
+    /// password setting (<see cref="PlantedValue.PasswordSetting"/>): on the container the fixture's identity signs in as sa with a
     /// password, the env:uat connection file holds that connection string with its Password=, and the search fails if dbchange read
     /// printed it.
     /// </summary>
@@ -83,7 +83,7 @@ public sealed class DiffTests(ScratchRepository repository) : IClassFixture<Scra
         await using var database = await SqlServerFixture.RegisterAsync();
         var login = database.Name + ReadOnlyPrincipal.Suffix;   // the fixture drops the login of this name with the database
         await SqlServerFixture.ExecuteAsync(database.ConnectionString, "DECLARE @sql nvarchar(max) = N'CREATE LOGIN ' + QUOTENAME(@name) + N' WITH PASSWORD = N''"
-            + "Pa55!planted#7f3a''; CREATE USER ' + QUOTENAME(@name) + N' FOR LOGIN ' + QUOTENAME(@name) + N';'; EXEC (@sql);", login);
+            + PlantedValue.PasswordText + "''; CREATE USER ' + QUOTENAME(@name) + N' FOR LOGIN ' + QUOTENAME(@name) + N';'; EXEC (@sql);", login);
         var connection = Path.Combine(Path.GetDirectoryName(repository.Root)!, database.Name + ".connection");
         File.WriteAllText(connection, database.ConnectionString);
         if (!OperatingSystem.IsWindows())
@@ -103,8 +103,8 @@ public sealed class DiffTests(ScratchRepository repository) : IClassFixture<Scra
             Assert.Contains(elements, e => (string?)e!["key"] == "Login [" + login + "]");
             var secrets = Ssdt.Secrets.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
             Assert.DoesNotContain(elements.SelectMany(e => e!["properties"]!.AsObject().Select(p => (string?)e["key"] + " " + p.Key)), p => secrets.Contains(p.Split('.', ' ')[^1]));
-            Assert.DoesNotMatch(PublishProfilesTests.PasswordSetting, output);
-            Assert.DoesNotMatch(PublishProfilesTests.PasswordSetting, whole);
+            PlantedValue.Password.AbsentFrom(output);
+            PlantedValue.Password.AbsentFrom(whole);
         }
         finally
         {

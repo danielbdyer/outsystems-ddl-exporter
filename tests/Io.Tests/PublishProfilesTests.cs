@@ -6,12 +6,12 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using DbChange.Budgets.Tests;
 using DbChange.Budgets.Tests.Register;
 using DbChange.Cli;
 using DbChange.Kernel;
+using DbChange.Tests;
 using Microsoft.SqlServer.Dac;
 using Xunit;
 
@@ -26,14 +26,11 @@ namespace DbChange.Io.Tests;
 /// </summary>
 public sealed class PublishProfilesTests : IDisposable
 {
-    private const string Planted = "Pa55!planted#7f3a";
+    private const string Planted = PlantedValue.PasswordText;
 
     private static readonly string Golden = Path.Combine(Repository.Root, "tests", "Golden");
 
     private static readonly string Pipeline = Path.Combine(Golden, "project", "profiles", "pipeline.publish.xml");
-
-    /// <summary>A password set in any connection string, however spelled or spaced: what no output may carry.</summary>
-    internal static readonly Regex PasswordSetting = new(@"(?:password|pwd)\s*=", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     private readonly string scratch = Directory.CreateTempSubdirectory("dbchange-profiles-").FullName;
 
@@ -105,7 +102,7 @@ public sealed class PublishProfilesTests : IDisposable
 
         Assert.Equal((code, 6), (error.Code, Contract.Exit(error)));
         Assert.Contains(named, error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        PlantedValue.Password.AbsentFrom(error);
     }
 
     /// <summary>§4 row 14: beside its environments, the environments file holds the local server preference, docker or localdb and nothing else.</summary>
@@ -183,7 +180,7 @@ public sealed class PublishProfilesTests : IDisposable
 
         Assert.Equal(("profile.unreadable", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains("sets BlockOnPossibleDataLoss to a value DacFx does not read", error.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
+        PlantedValue.Password.AbsentFrom(error);
     }
 
     /// <summary>
@@ -275,11 +272,9 @@ public sealed class PublishProfilesTests : IDisposable
         var way = ErrorPaths.All.Single(c => c.Label == label);
 
         var error = way.Drive(Directory.CreateDirectory(Path.Combine(scratch, "way")).FullName, Planted);
-        var output = string.Join('\n', error.Code, error.Message, error.Remedy, error);
 
         Assert.Equal(way.Code, error.Code);
-        Assert.DoesNotContain(Planted, output, StringComparison.Ordinal);
-        Assert.DoesNotMatch(PasswordSetting, output);
+        PlantedValue.Password.AbsentFrom(error);
     }
 
     [Fact]
@@ -294,8 +289,7 @@ public sealed class PublishProfilesTests : IDisposable
         var printed = string.Join('\n', (object[])[environment, .. environment.SqlCmd, strict, .. strict.SqlCmd, PublishProfile.Permissive.Of(strict)]);
 
         Assert.Equal(Planted, environment.SqlCmd.Single(v => v.Name.ToString() == "EnvironmentTag").Match(text => text, reference => "from " + reference));
-        Assert.DoesNotContain(Planted, printed, StringComparison.Ordinal);
-        Assert.DoesNotMatch(PasswordSetting, printed);
+        PlantedValue.Password.AbsentFrom(printed);
     }
 
     /// <summary>Every public property of the options, rendered culture-free, by name: what DacFx publishes with.</summary>
