@@ -96,7 +96,7 @@ public static class Ssdt
 
         internal DacPackage Dac { get; }
 
-        public TSqlModel Model { get; }
+        internal TSqlModel Model { get; }
 
         public string? PreDeploy { get; }
 
@@ -540,7 +540,7 @@ public static class Ssdt
     /// with the reason it is not a secret. DacFx fills these static fields when its model schema initializes, which the first
     /// TSqlModel a process makes does, so the list is made on first use, after one.
     /// </summary>
-    public static IReadOnlySet<ModelPropertyClass> Secrets => Secret.Value;
+    internal static IReadOnlySet<ModelPropertyClass> Secrets => Secret.Value;
 
     private static readonly Lazy<HashSet<ModelPropertyClass>> Secret = new(() =>
     {
@@ -619,7 +619,7 @@ public static class Ssdt
     /// SQL Server shows a server-scoped login only to a reader with permission on it (sysadmin, VIEW ANY DEFINITION, or its own), and
     /// a db_datareader login holding VIEW DEFINITION read Query Store's database options differently from sa when measured on 2026-09-24.
     /// </summary>
-    public static Result<SortedArray<Element>> ReadModel(TSqlModel model) => ModelObjects(model).Map(objects => SortedArray.Of(objects.Select(o => o.Element)));
+    internal static Result<SortedArray<Element>> ReadModel(TSqlModel model) => ModelObjects(model).Map(objects => SortedArray.Of(objects.Select(o => o.Element)));
 
     /// <summary>
     /// A grant SQL Server makes in every new database, copying it from model: VIEW ANY COLUMN ENCRYPTION KEY DEFINITION and VIEW ANY
@@ -711,7 +711,7 @@ public static class Ssdt
     /// as its integer, so the declared type names its member; any other type (a double, as a spatial index's bounds) is its
     /// invariant string, so no value is dropped for its type. Text has CRLF and a lone CR made LF.
     /// </summary>
-    public static Value? ValueOf(TSqlObject o, ModelPropertyClass property) => ValueOf(() => o.GetProperty(property), property.DataType);
+    internal static Value? ValueOf(TSqlObject o, ModelPropertyClass property) => ValueOf(() => o.GetProperty(property), property.DataType);
 
     /// <summary>A module's script (a procedure's, a function's, a trigger's body) as a Value.Script, or null where DacFx gives none.</summary>
     private static Value? ScriptOf(Func<string?> read) => read() is { } script ? new Value.Script(LineEndings.Lf(script)) : null;

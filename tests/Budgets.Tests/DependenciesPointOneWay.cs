@@ -34,17 +34,18 @@ public sealed class DependenciesPointOneWay
     }
 
     /// <summary>
-    /// The cli renders and decides nothing of DacFx's (spec C11): no type it compiles depends on DacFx's namespaces, so a deploy report, a
-    /// serialized type name or a DacFx exception is read in io alone.
+    /// The cli renders and decides nothing of DacFx's, ScriptDom's or SqlClient's (spec C11, S23 of the pre-M2 review): no type it compiles
+    /// depends on their namespaces, so a deploy report, a serialized type name, a parsed script or a SqlException is read in io alone.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "dependencies point one way")]
-    public void The_cli_references_no_DacFx_type()
+    public void The_cli_references_no_DacFx_ScriptDom_or_SqlClient_type()
     {
-        var cli = Types.InAssembly(typeof(Contract).Assembly).ShouldNot().HaveDependencyOnAny("Microsoft.SqlServer.Dac", "Microsoft.SqlServer.Dac.Model").GetResult();
+        var cli = Types.InAssembly(typeof(Contract).Assembly).ShouldNot()
+            .HaveDependencyOnAny("Microsoft.SqlServer.Dac", "Microsoft.SqlServer.Dac.Model", "Microsoft.SqlServer.TransactSql.ScriptDom", "Microsoft.Data.SqlClient").GetResult();
 
-        Assert.True(cli.IsSuccessful, "the cli depends on DacFx: " + string.Join(", ", cli.FailingTypeNames ?? []));
+        Assert.True(cli.IsSuccessful, "the cli depends on DacFx, ScriptDom or SqlClient: " + string.Join(", ", cli.FailingTypeNames ?? []));
         Assert.False(Types.InAssembly(typeof(Write).Assembly).ShouldNot().HaveDependencyOn("Microsoft.SqlServer.Dac").GetResult().IsSuccessful);   // the rule goes red on io, which does
     }
 
