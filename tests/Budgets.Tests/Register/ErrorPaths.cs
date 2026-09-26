@@ -382,6 +382,8 @@ internal static class ErrorPaths
         new("a word that names no verb", "arguments.unknown-verb", false, (scratch, _) => Answered(["frobnicate"], new Checkout(scratch, scratch, null, Cli.Contract.Version))),
         new("a verb this build has no body for", "verb.not-built", false, (scratch, _) => Answered(["predict"], new Checkout(scratch, scratch, null, Cli.Contract.Version))),
         new("an aggregate query answered with a type the allowlist never yields", "internal.answer-type", true, (_, planted) => Failed(SqlServer.Integer(planted))),
+        new("a working directory that no longer exists", "file.no-working-directory", false, (_, _) =>
+            Failed(Checkout.Here(Cli.Contract.Version, () => throw new DirectoryNotFoundException("Could not find a part of the path.")))),
         new("an exception no verb expected", "internal.unexpected", false, (scratch, _) => Answered(["read", "--from", "dacpac:none.dacpac"], new Checkout(scratch, null!, null, Cli.Contract.Version))),
     ];
 

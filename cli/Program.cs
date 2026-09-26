@@ -26,10 +26,10 @@ public static class Program
     public static int Run(IReadOnlyList<string> args, Stream output) => Run(args, output, () => Checkout.Here(Contract.Version), Contract.Verbs);
 
     /// <summary>Answers <paramref name="args"/> on <paramref name="output"/> for the SSDT repository checkout <paramref name="here"/>; returns the exit code.</summary>
-    public static int Run(IReadOnlyList<string> args, Stream output, Checkout here) => Run(args, output, () => here, Contract.Verbs);
+    public static int Run(IReadOnlyList<string> args, Stream output, Checkout here) => Run(args, output, () => Result.Ok(here), Contract.Verbs);
 
     /// <summary>A run inside another process (a test's): no signal reaches it, and --timeout alone interrupts it.</summary>
-    internal static int Run(IReadOnlyList<string> args, Stream output, Func<Checkout> here, IReadOnlyList<Verb> verbs)
+    internal static int Run(IReadOnlyList<string> args, Stream output, Func<Result<Checkout>> here, IReadOnlyList<Verb> verbs)
     {
         using var interruption = Interruption.Quiet();
         return Run(args, output, here, verbs, interruption);
@@ -55,7 +55,7 @@ public static class Program
     /// reference (SqlServer.Reads), and that exit is returned even when writing that answer fails as well, since standard output is then all
     /// the answer had.
     /// </summary>
-    private static int Run(IReadOnlyList<string> args, Stream output, Func<Checkout> here, IReadOnlyList<Verb> verbs, Interruption interruption)
+    private static int Run(IReadOnlyList<string> args, Stream output, Func<Result<Checkout>> here, IReadOnlyList<Verb> verbs, Interruption interruption)
     {
         using var reads = SqlServer.Reads.Begin();
         var (json, summary, word) = (false, false, "");
@@ -116,7 +116,7 @@ public static class Program
     /// answer.json, which the cut answer names as full. A write the file system refuses leaves full null and adds the note
     /// run.full-unwritten, so the answer on standard output says so instead of being lost.
     /// </summary>
-    private static Envelope Answered(Verb verb, Func<Checkout> here, IReadOnlyList<string> words, TimeSpan? timeout, Interruption interruption, bool summary)
+    private static Envelope Answered(Verb verb, Func<Result<Checkout>> here, IReadOnlyList<string> words, TimeSpan? timeout, Interruption interruption, bool summary)
     {
         if (timeout is { } after)
         {
@@ -128,7 +128,11 @@ public static class Program
             return Contract.NotBuilt(verb);
         }
 
-        var checkout = here();
+        if (here().Failed(out var checkout, out var nowhere))
+        {
+            return Contract.Failed(verb, nowhere);
+        }
+
         var run = SqlServer.QueryLog.Start(checkout.Root);
         var answer = verb.Body(checkout, run, words);
         var shown = Render.Cut(answer, summary);
