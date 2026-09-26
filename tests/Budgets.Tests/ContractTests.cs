@@ -172,7 +172,7 @@ public sealed class ContractTests
                 using var diff = new MemoryStream();
                 Assert.Equal(0, Cli.Program.Run(["read", "--from", "dacpac:" + before, "--json"], read, new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version)));
                 Assert.Equal(0, Cli.Program.Run(["diff", "--from", "dacpac:" + before, "--to", "dacpac:" + after, "--json"], diff, new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version)));
-                answers.Add((culture.Name, read.ToArray(), diff.ToArray()));
+                answers.Add((culture.Name, Timeless(read.ToArray()), Timeless(diff.ToArray())));
             }
             finally
             {
@@ -611,6 +611,10 @@ public sealed class ContractTests
             ["an answer that names its whole file was cut"] = (WithCut(true, ".dbchange/runs/20260925T101502Z-4242-0a1b/answer.json"), WithCut(false, ".dbchange/runs/20260925T101502Z-4242-0a1b/answer.json")),
             ["an answer that was not cut names no file"] = (WithCut(false, null), WithCut(true, ".dbchange/runs/x/queries.log")),
             ["the whole file is the run's answer.json"] = (WithCut(true, ".dbchange/runs/20260925T101502Z-4242-0a1b/answer.json"), WithCut(true, "answer.json")),
+            ["the log is the run's queries.log"] = (a => a["log"] = ".dbchange/runs/20260925T101502Z-4242-0a1b/queries.log", a => a["log"] = ".dbchange/runs/20260925T101502Z-4242-0a1b/answer.json"),
+            ["an answer names its log, as null when the run sent no statement"] = (a => a["log"] = null, a => a.Remove("log")),
+            ["the time taken is a whole number of milliseconds, 0 or more"] = (a => a["elapsedMs"] = 1250, a => a["elapsedMs"] = -1),
+            ["an answer names the time taken"] = (_ => { }, a => a.Remove("elapsedMs")),
             ["a provenance's at is a date-time"] = (WithProvenance(_ => { }), WithProvenance(p => p["at"] = "yesterday")),
             ["a provenance's existing data is null exactly when it lacks it"] = (WithProvenance(p => (p["existingData"], p["lacking"]) = ("sha256:" + new string('3', 64), new JsonArray())),
                 WithProvenance(p => p["existingData"] = "sha256:" + new string('3', 64))),
@@ -654,6 +658,10 @@ public sealed class ContractTests
 
         return pairs;
     }
+
+    /// <summary>An answer with its time taken set aside, the one field that differs from run to run.</summary>
+    private static byte[] Timeless(byte[] answer) =>
+        Encoding.UTF8.GetBytes(Regex.Replace(Encoding.UTF8.GetString(answer), "\"elapsedMs\": [0-9]+", "\"elapsedMs\": 0", RegexOptions.CultureInvariant));
 
     /// <summary>The answer dbchange writes to --version --json, then changed.</summary>
     private static JsonNode Answer(Action<JsonObject> change)

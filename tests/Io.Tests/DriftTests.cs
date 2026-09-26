@@ -211,6 +211,8 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         Assert.Contains((string?)provenance["server"]!["image"], container ? RunningImage() : [null]);
         Assert.Equal(("copy:" + copy.Name, "[\"existingData\"]", repository.Base), ((string?)provenance["target"], provenance["lacking"]!.ToJsonString(), (string?)answer["check"]!["commit"]));
         Assert.Equal(answer["server"]!.ToJsonString(), provenance["server"]!.ToJsonString());
+        Assert.True(File.Exists(Path.Combine(repository.Root, (string)answer["log"]!)), "the answer names no query log that exists: " + answer["log"]);   // S30: the run sent statements
+        Assert.Contains("VIEW DEFINITION", File.ReadAllText(Path.Combine(repository.Root, (string)answer["log"]!)), StringComparison.Ordinal);
         Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "toolchain.unpinned" && ((string?)f["message"])!.Contains("UNPINNED", StringComparison.Ordinal));
         Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "profile.unverified" && (string?)f["severity"] == "note"
             && (string?)f["message"] == "The SSDT repository commits no copy of the publish profile the Octopus step applies, so " + ScratchRepository.Profile + " is not verified against it.");

@@ -54,8 +54,8 @@ public enum BlockedBy
 /// What every verb writes with --json: its schema; the outcome, a word of the verb's closed set or a failure's exit name, with the
 /// exit the outcome admits; the answer in one line; what blocked it, at exit 3 alone; the findings; the stamp (DacFx, the pin and the
 /// SQL Server, as far as the verb's work got) and the provenance of the claim, when the answer makes one; whether the answer was cut
-/// to its first entries and where the whole one is; and what the verb adds (its Content), with the lines a verb prints after its
-/// message (diff's change lines). The constructor refuses an exit its outcome does not list and a blockedBy off exit 3, so an answer
+/// to its first entries and where the whole one is; the run's query log, when the run sent a statement, and how long the command took;
+/// and what the verb adds (its Content), with the lines a verb prints after its message (diff's change lines). The constructor refuses an exit its outcome does not list and a blockedBy off exit 3, so an answer
 /// that says matches at exit 5 is a defect found by the first test that renders it.
 /// </summary>
 public sealed record Envelope
@@ -109,6 +109,12 @@ public sealed record Envelope
 
     /// <summary>The run's answer.json holding the whole answer, from the repository root with '/', when the answer was cut and the file could be written.</summary>
     public string? Full { get; init; }
+
+    /// <summary>The run's queries.log, from the repository root with '/', when the run sent SQL Server a statement of its own; null when it sent none.</summary>
+    public string? Log { get; init; }
+
+    /// <summary>How long the command took, in whole milliseconds, from Program.Run's start to the answer; null for an answer rendered outside a run.</summary>
+    public long? ElapsedMs { get; init; }
 }
 
 /// <summary>The contract as data: the verb table and the exit table. --help --json and cli/schemas/ are generated from them.</summary>

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -57,6 +58,7 @@ public static class Program
     /// </summary>
     private static int Run(IReadOnlyList<string> args, Stream output, Func<Result<Checkout>> here, IReadOnlyList<Verb> verbs, Interruption interruption)
     {
+        var clock = Stopwatch.StartNew();
         using var reads = SqlServer.Reads.Begin();
         var (json, summary, word) = (false, false, "");
         Verb? verb = null;
@@ -75,7 +77,7 @@ public static class Program
             var answer = verb is null ? Contract.UnknownVerb(word)
                 : timeout is Result<TimeSpan?>.Failed { Error: var badTimeout } ? Contract.Failed(verb, badTimeout)
                 : Answered(verb, here, words[1..], ((Result<TimeSpan?>.Ok)timeout).Value, interruption, summary);
-            Write.Text(output, Rendered(answer, json));
+            Write.Text(output, Rendered(answer with { ElapsedMs = clock.ElapsedMilliseconds }, json));
             return answer.Exit;
         }
         catch (OperationCanceledException) when (interruption.Token.IsCancellationRequested)
@@ -86,7 +88,7 @@ public static class Program
                 command + " stopped after " + (interruption.Cause ?? "an interruption") + ": it ended the programs it had started and released its locks.", []);
             try
             {
-                Write.Text(output, Rendered(answer, json));
+                Write.Text(output, Rendered(answer with { ElapsedMs = clock.ElapsedMilliseconds }, json));
             }
             catch (Exception)
             {
@@ -99,7 +101,7 @@ public static class Program
         {
             try
             {
-                Write.Text(output, Rendered(Contract.Unexpected(verb, word, e, withheld: reads.NamedEnvironment), json));
+                Write.Text(output, Rendered(Contract.Unexpected(verb, word, e, withheld: reads.NamedEnvironment) with { ElapsedMs = clock.ElapsedMilliseconds }, json));
             }
             catch (Exception)
             {
@@ -134,7 +136,7 @@ public static class Program
         }
 
         var run = SqlServer.QueryLog.Start(checkout.Root);
-        var answer = verb.Body(checkout, run, words);
+        var answer = verb.Body(checkout, run, words) with { Log = run.Written ? Path.GetRelativePath(checkout.Root, run.Path).Replace('\\', '/') : null };
         var shown = Render.Cut(answer, summary);
         if (!shown.Truncated)
         {

@@ -447,6 +447,9 @@ public static class SqlServer
 
         public string Path { get; }
 
+        /// <summary>Whether the log holds an entry: whether the run sent SQL Server a statement of its own.</summary>
+        public bool Written { get; private set; }
+
         /// <summary>A new run's log under the repository root, named for the time, the process and a random suffix, so two runs never share one; its folder is made with its first write.</summary>
         public static QueryLog Start(string repositoryRoot)
         {
@@ -466,7 +469,9 @@ public static class SqlServer
                 + statement + "\nGO\n";
             lock (gate)
             {
-                return Folder().Bind(_ => Write.Append(Path, entry));
+                var appended = Folder().Bind(_ => Write.Append(Path, entry));
+                Written |= appended is Result<string>.Ok;
+                return appended;
             }
         }
 

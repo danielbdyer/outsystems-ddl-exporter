@@ -21,6 +21,9 @@ public static class Render
     /// <summary>The whole answer's file, under the run's folder: what full names when an answer was cut.</summary>
     private static readonly string FullPattern = "^" + Regex.Escape(Io.LocalState.Name) + "/runs/[^/]+/answer\\.json$";
 
+    /// <summary>The run's query log, under the run's folder: what log names when the run sent a statement.</summary>
+    private static readonly string LogPattern = "^" + Regex.Escape(Io.LocalState.Name) + "/runs/[^/]+/queries\\.log$";
+
     /// <summary>How a content schema marks a list that can be long, so Cut finds it: the default answer holds its first entries.</summary>
     private const string LongList = "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list";
 
@@ -74,6 +77,8 @@ public static class Render
             } : null,
             ["truncated"] = answer.Truncated,
             ["full"] = answer.Full,
+            ["log"] = answer.Log,
+            ["elapsedMs"] = answer.ElapsedMs,
         };
         foreach (var added in Contract.Verbs.FirstOrDefault(v => v.Output == answer.Schema)?.Content ?? new JsonObject())
         {
@@ -274,6 +279,8 @@ public static class Render
             ["provenance"] = Nullable(Ref("provenance")),
             ["truncated"] = new JsonObject { ["type"] = "boolean" },
             ["full"] = Nullable(Pattern(FullPattern)),
+            ["log"] = Nullable(Pattern(LogPattern)),
+            ["elapsedMs"] = Nullable(new JsonObject { ["type"] = "integer", ["minimum"] = 0 }),
         });
         foreach (var property in verb?.Content ?? new JsonObject())
         {

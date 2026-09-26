@@ -19,6 +19,8 @@
     "provenance",
     "truncated",
     "full",
+    "log",
+    "elapsedMs",
     "diff"
   ],
   "properties": {
@@ -140,6 +142,28 @@
         {
           "type": "string",
           "pattern": "^\\.dbchange/runs/[^/]+/answer\\.json$"
+        }
+      ]
+    },
+    "log": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^\\.dbchange/runs/[^/]+/queries\\.log$"
+        }
+      ]
+    },
+    "elapsedMs": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "integer",
+          "minimum": 0
         }
       ]
     },
