@@ -195,15 +195,15 @@ internal static class RefusalPaths
 
         new("no posture", "posture.missing", false, (scratch, _) => Failed(Io.Posture.Environments(scratch))),
         new("a posture that is not JSON", "posture.unreadable", true, (scratch, planted) => Failed(Io.Posture.Environments(Estate(scratch, "{ \"environments\": { \"dev\": " + planted + " } }")))),
-        new("a posture giving a key twice", "posture.unreadable", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + "], \"readers\": []"))),
+        new("a posture giving a key twice", "posture.unreadable", true, (scratch, planted) => Posture(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + "], \"readerGroups\": []"))),
         new("a literal connection string", "posture.literal-connection", true, (scratch, planted) => Posture(scratch, Dev(connection: "Server=db;User ID=estate;Password=" + planted))),
         new("a literal connection string as a key", "posture.literal-connection", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Data Source=db;Password=" + planted + "\": \"env:A\" }"))),
         new("an unknown key", "posture.unknown-key", true, (scratch, planted) => Posture(scratch, Dev("\"password\": " + Quoted(planted)))),
         new("an unknown key beside a SQLCMD literal", "posture.unknown-key", true, (scratch, planted) =>
             Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": { \"literal\": \"dev\", \"sensitive\": false, \"secret\": " + Quoted(planted) + " } }"))),
-        new("a value of the wrong JSON kind", "posture.malformed", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": " + Quoted(planted)))),
+        new("a value of the wrong JSON kind", "posture.malformed", true, (scratch, planted) => Posture(scratch, Dev("\"readerGroups\": " + Quoted(planted)))),
         new("an environment with no connection", "posture.malformed", true, (scratch, planted) =>
-            Posture(scratch, "\"dev\": { \"profile\": \"" + Pipeline + "\", \"readers\": [" + Quoted(planted) + "] }")),
+            Posture(scratch, "\"dev\": { \"profile\": \"" + Pipeline + "\", \"readerGroups\": [" + Quoted(planted) + "] }")),
         new("a SQLCMD literal not marked non-sensitive", "posture.unmarked-literal", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": { \"literal\": " + Quoted(planted) + " } }"))),
         new("a SQLCMD value that is a bare literal", "posture.unmarked-literal", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": " + Quoted(planted) + " }"))),
         new("a connection that is no reference", "reference.malformed", true, (scratch, planted) => Posture(scratch, Dev(connection: "env:" + planted))),
@@ -212,16 +212,16 @@ internal static class RefusalPaths
         new("a scratch server that is neither docker nor localdb", "posture.malformed", true, (scratch, planted) =>
             Failed(Io.Posture.Environments(Estate(scratch, "{ \"environments\": {}, \"scratchServer\": " + Quoted(planted) + " }")))),
         new("a host given with its port", "posture.host", true, (_, planted) => Failed(Host.Of("environments.dev.host in estate/posture.json", planted + ",1433"))),
-        new("an environment misnamed", "posture.environment-name", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + "]", name: "DEV"))),
-        new("a reader group given twice", "posture.readers", true, (scratch, planted) => Posture(scratch, Dev("\"readers\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
+        new("an environment misnamed", "posture.environment-name", true, (scratch, planted) => Posture(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + "]", name: "DEV"))),
+        new("a reader group given twice", "posture.reader-groups", true, (scratch, planted) => Posture(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
         new("a profile path outside the estate", "posture.profile-path", true, (scratch, planted) => Posture(scratch, Dev(profile: "../" + planted + ".publish.xml"))),
         new("a SQLCMD variable given twice in two cases", "posture.sqlcmd-repeated", true, (scratch, planted) =>
-            Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": \"env:A\", \"Version\": \"env:C\", \"tag\": \"env:B\" }, \"readers\": [" + Quoted(planted) + "]"))),
+            Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": \"env:A\", \"Version\": \"env:C\", \"tag\": \"env:B\" }, \"readerGroups\": [" + Quoted(planted) + "]"))),
         new("a classification that is none", "posture.classification", true, (scratch, planted) => Posture(scratch, Dev("\"classification\": " + Quoted(planted)))),
         new("a synthetic environment unconfirmed", "posture.unconfirmed", true, (scratch, planted) =>
-            Posture(scratch, Dev("\"classification\": \"synthetic\", \"readers\": [" + Quoted(planted) + "]"))),
+            Posture(scratch, Dev("\"classification\": \"synthetic\", \"readerGroups\": [" + Quoted(planted) + "]"))),
         new("a confirmation with no date", "posture.confirmation", true, (scratch, planted) => Posture(scratch, Dev("\"classification\": \"synthetic\", \"confirmedBy\": " + Quoted(planted)))),
-        new("a SQLCMD variable misnamed", "sqlcmd.name", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Tag Name\": \"env:A\" }, \"readers\": [" + Quoted(planted) + "]"))),
+        new("a SQLCMD variable misnamed", "sqlcmd.name", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Tag Name\": \"env:A\" }, \"readerGroups\": [" + Quoted(planted) + "]"))),
         new("a SQLCMD literal under a credential's name in the posture", "sqlcmd.literal-credential", true, (scratch, planted) =>
             Posture(scratch, Dev("\"sqlcmd\": { \"ServicePassword\": { \"literal\": " + Quoted(planted) + ", \"sensitive\": false } }"))),
         new("a script using a variable with no value", "sqlcmd.undefined", true, (_, planted) =>

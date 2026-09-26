@@ -74,15 +74,15 @@ public abstract record ScratchServerKind
 /// <summary>
 /// An environment as estate/posture.json names it (V3_MILESTONES.md WP 1.5, §4 row 14): its name; the host its SQL Server runs on, which
 /// R15 compares with the scratch server's whether or not the environment's reference resolves on this machine (DECISIONS.md,
-/// 2026-09-25); its classification and readers (the groups that may read it); the reference its connection resolves from; its publish
+/// 2026-09-25); its classification and reader groups (the groups that may read it); the reference its connection resolves from; its publish
 /// profile's path; its SQLCMD values; and, where the posture names one, the metamodel's reference. Data only (§2.1 rule 3), holding no
 /// value a reference names. Each error leads with the subject its caller gives, where in the posture the value sits, and quotes no value.
 /// </summary>
 public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 {
-    private NamedEnvironment(EnvironmentName name, Host host, Classification classification, SortedArray<string> readers, SecretReference connection,
+    private NamedEnvironment(EnvironmentName name, Host host, Classification classification, SortedArray<string> readerGroups, SecretReference connection,
         PublishProfilePath profile, SortedArray<SqlCmdVariable> sqlCmd, SecretReference? metamodel) =>
-        (Name, Host, Classification, Readers, Connection, Profile, SqlCmd, Metamodel) = (name, host, classification, readers, connection, profile, sqlCmd, metamodel);
+        (Name, Host, Classification, ReaderGroups, Connection, Profile, SqlCmd, Metamodel) = (name, host, classification, readerGroups, connection, profile, sqlCmd, metamodel);
 
     /// <summary>The key estate/posture.json gives it: dev, qa, uat.</summary>
     public EnvironmentName Name { get; }
@@ -96,7 +96,7 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
     public Classification Classification { get; }
 
     /// <summary>The groups that may read the environment, such as the Active Directory groups of its leads.</summary>
-    public SortedArray<string> Readers { get; }
+    public SortedArray<string> ReaderGroups { get; }
 
     public SecretReference Connection { get; }
 
@@ -108,12 +108,12 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
     public SecretReference? Metamodel { get; }
 
     /// <summary>An environment of the values given, or the error of a reader group blank or given twice, or of a SQLCMD variable given twice in any case.</summary>
-    public static Result<NamedEnvironment> Of(string subject, EnvironmentName name, Host host, Classification classification, IEnumerable<string> readers,
+    public static Result<NamedEnvironment> Of(string subject, EnvironmentName name, Host host, Classification classification, IEnumerable<string> readerGroups,
         SecretReference connection, PublishProfilePath profile, IEnumerable<SqlCmdVariable> sqlCmd, SecretReference? metamodel)
     {
-        var (groups, values) = (SortedArray.Of(readers), SortedArray.Of(sqlCmd));
+        var (groups, values) = (SortedArray.Of(readerGroups), SortedArray.Of(sqlCmd));
         return groups.Where((g, i) => string.IsNullOrWhiteSpace(g) || g.Any(char.IsControl) || (i > 0 && groups[i - 1] == g)).Any()
-                ? new Error("posture.readers", subject + " names a reader group that is blank or given twice.", "Name each group that reads the environment once.")
+                ? new Error("posture.reader-groups", subject + " names a reader group that is blank or given twice.", "Name each group that reads the environment once.")
             : values.Where((v, i) => i > 0 && values[i - 1].Name == v.Name).Any()
                 ? new Error("posture.sqlcmd-repeated", subject + " gives one SQLCMD variable twice; sqlcmd reads names in any case as one.",
                     "Keep one value for each SQLCMD variable.")

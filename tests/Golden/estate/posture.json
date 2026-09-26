@@ -6,7 +6,7 @@
       "classification": "synthetic",
       "confirmedBy": "the dev lead",
       "confirmedOn": "2026-09-20",
-      "readers": ["developers", "leads"],
+      "readerGroups": ["developers", "leads"],
       "connection": "env:ESTATE_DEV",
       "profile": "project/profiles/pipeline.publish.xml",
       "sqlcmd": {
@@ -17,14 +17,14 @@
     },
     "qa": {
       "host": "qa-sql.corp.example",
-      "readers": ["leads"],
+      "readerGroups": ["leads"],
       "connection": "env:ESTATE_QA",
       "profile": "project/profiles/pipeline.publish.xml"
     },
     "uat": {
       "host": "uat-sql.corp.example",
       "classification": "real",
-      "readers": ["leads"],
+      "readerGroups": ["leads"],
       "connection": "file:.estate/principals/uat.connection",
       "profile": "project/profiles/pipeline.publish.xml",
       "metamodel": "env:ESTATE_UAT_OSSYS"

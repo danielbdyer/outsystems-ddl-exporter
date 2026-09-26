@@ -18,7 +18,7 @@ public static class Posture
     /// <summary>The posture's path from the estate's root, as messages name it.</summary>
     public const string Json = "estate/posture.json";
 
-    private static readonly string[] Keys = ["host", "classification", "confirmedBy", "confirmedOn", "readers", "connection", "profile", "sqlcmd", "metamodel"];
+    private static readonly string[] Keys = ["host", "classification", "confirmedBy", "confirmedOn", "readerGroups", "connection", "profile", "sqlcmd", "metamodel"];
 
     /// <summary>A key a message may name as it stands; any other is named by its place among its siblings.</summary>
     private static readonly Regex Nameable = new(@"\A[A-Za-z0-9_-]{1,64}\z", RegexOptions.CultureInvariant);
@@ -76,7 +76,7 @@ public static class Posture
 
         var subject = Where(at);
         string? Given(string key) => entry.TryGetProperty(key, out var value) ? value.GetString() : null;
-        string[] readers = entry.TryGetProperty("readers", out var names) ? [.. names.EnumerateArray().Select(g => g.GetString()!)] : [];
+        string[] readerGroups = entry.TryGetProperty("readerGroups", out var names) ? [.. names.EnumerateArray().Select(g => g.GetString()!)] : [];
         var confirmation = Given("confirmedBy") is null && Given("confirmedOn") is null ? Result.Ok<Confirmation?>(null)
             : Confirmation.Of(subject, Given("confirmedBy"), Given("confirmedOn")).Map(c => (Confirmation?)c);
         var metamodel = Given("metamodel") is { } reference
@@ -87,7 +87,7 @@ public static class Posture
         return confirmation.Bind(confirmed => Classification.Of(subject, Given("classification"), confirmed)).Bind(classification =>
             SecretReference.Of(Where(at + ".connection"), Given("connection")).Bind(connection => metamodel.Bind(meta => sqlCmd.Bind(variables =>
                 EnvironmentName.Of(subject, name).Bind(environment => HostOf(entry, at).Bind(host => PublishProfilePath.Of(subject, Given("profile")).Bind(profile =>
-                    NamedEnvironment.Of(subject, environment, host, classification, readers, connection, profile, variables, meta))))))));
+                    NamedEnvironment.Of(subject, environment, host, classification, readerGroups, connection, profile, variables, meta))))))));
     }
 
     /// <summary>
@@ -132,8 +132,8 @@ public static class Posture
     /// <summary>The error of a value of another kind than its key takes, or null: a string, unless the key takes another.</summary>
     private static Error? Kind(JsonProperty key, string at) => (key.Name, key.Value.ValueKind) switch
     {
-        ("readers", JsonValueKind.Array) when key.Value.EnumerateArray().All(g => g.ValueKind == JsonValueKind.String) => null,
-        ("readers", _) => Malformed(at, "an array of group names"),
+        ("readerGroups", JsonValueKind.Array) when key.Value.EnumerateArray().All(g => g.ValueKind == JsonValueKind.String) => null,
+        ("readerGroups", _) => Malformed(at, "an array of group names"),
         ("environments" or "sqlcmd", JsonValueKind.Object) or ("sensitive", _) => null,
         ("environments", _) => Malformed(at, "an object of each environment by its name"),
         ("sqlcmd", _) => Malformed(at, "an object of SQLCMD values by variable name"),

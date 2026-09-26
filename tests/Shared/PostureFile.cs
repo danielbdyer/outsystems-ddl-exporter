@@ -21,7 +21,7 @@ internal sealed record PostureFile(IReadOnlyDictionary<string, PostureFile.Envir
 
     /// <summary>One environment of the posture, in the file's own names: its host, its connection reference and its profile, and whatever else it gives.</summary>
     internal sealed record Environment(string Connection, string Host = "dev-sql", string Profile = Pipeline, string? Classification = null, string? ConfirmedBy = null,
-        string? ConfirmedOn = null, IReadOnlyList<string>? Readers = null, IReadOnlyDictionary<string, SqlCmd>? Sqlcmd = null, string? Metamodel = null);
+        string? ConfirmedOn = null, IReadOnlyList<string>? ReaderGroups = null, IReadOnlyDictionary<string, SqlCmd>? Sqlcmd = null, string? Metamodel = null);
 
     /// <summary>A SQLCMD value as the posture gives it: a reference (env:NAME or file:path), or a literal marked non-sensitive.</summary>
     internal abstract record SqlCmd
@@ -61,7 +61,7 @@ internal sealed record PostureFile(IReadOnlyDictionary<string, PostureFile.Envir
             var entry = new JsonObject
             {
                 ["host"] = e.Host, ["classification"] = e.Classification, ["confirmedBy"] = e.ConfirmedBy, ["confirmedOn"] = e.ConfirmedOn,
-                ["readers"] = e.Readers is null ? null : new JsonArray([.. e.Readers.Select(r => (JsonNode?)r)]),
+                ["readerGroups"] = e.ReaderGroups is null ? null : new JsonArray([.. e.ReaderGroups.Select(r => (JsonNode?)r)]),
                 ["connection"] = e.Connection, ["profile"] = e.Profile,
                 ["sqlcmd"] = e.Sqlcmd is null ? null : new JsonObject(e.Sqlcmd.Select(v => KeyValuePair.Create(v.Key, v.Value switch
                 {

@@ -101,7 +101,7 @@
     { "term": "ClaimSite", "exact": true, "instead": "Precondition" },
     { "term": "`Transfers`", "exact": true, "instead": "`AppliesTo`" },
     { "term": "branch.taken", "instead": "git-branch.exists" },
-    { "term": "cohort", "instead": "readers: the groups that may read an environment" },
+    { "term": "cohort", "instead": "readerGroups: the groups that may read an environment" },
     { "term": "substrate", "instead": "the scratch server (io/ScratchServer.cs): the SQL Server that holds copies" },
     { "term": "twin", "instead": "the synthetic copy; the verb and target synthetic-copy" },
     { "term": "mint", "instead": "generate; a generated set (`SyntheticData.Generate`)" },

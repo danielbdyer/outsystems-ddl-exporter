@@ -2636,7 +2636,7 @@ read into elements; the type `Refusal` → `Error` (the verb "refuse" stays for 
 receipt → `Provenance`; engine → `Provenance`'s `DacFx` and `Server` fields, and in prose DacFx, SQL
 Server or `estate`; branch, branch site, claim site, transfers → `DataConditions`, `PreconditionState`,
 `Precondition`, `AppliesTo`; profile (data measurement) → measure, a profile being a `.publish.xml`;
-cohorts → readers; substrate → the scratch server; the Twin, twin → the synthetic copy, `synthetic-copy`;
+cohorts → readerGroups; substrate → the scratch server; the Twin, twin → the synthetic copy, `synthetic-copy`;
 σ, mint, Synth → `SyntheticData.generate`, a generated set; `SqlServer.Named`, `Database.Where` →
 `EnvironmentDatabase`, `Database.Target`; `Seq<T>` → `SortedArray<T>`; added, removed, changed →
 created, dropped, altered, as DacFx says; the envelope's verdict → `outcome`, `message`, `blockedBy`;

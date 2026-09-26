@@ -127,11 +127,11 @@ public sealed class EnvironmentsTests
 
     [Fact]
     [Trait("Category", "fast")]
-    public void A_named_environment_sorts_its_readers_and_its_SQLCMD_variables()
+    public void A_named_environment_sorts_its_reader_groups_and_its_SQLCMD_variables()
     {
-        var environment = Expect.Value(Environment("dev", readers: ["leads", "developers"], sqlCmd: [Literal("Tag", "dev"), Referenced("ServicePassword", "env:ESTATE_PW")]));
+        var environment = Expect.Value(Environment("dev", readerGroups: ["leads", "developers"], sqlCmd: [Literal("Tag", "dev"), Referenced("ServicePassword", "env:ESTATE_PW")]));
 
-        Assert.Equal(["developers", "leads"], environment.Readers);
+        Assert.Equal(["developers", "leads"], environment.ReaderGroups);
         Assert.Equal(["ServicePassword", "Tag"], environment.SqlCmd.Select(v => v.Name.ToString()));
     }
 
@@ -165,8 +165,8 @@ public sealed class EnvironmentsTests
     [Trait("Category", "fast")]
     public void A_named_environment_rejects_a_blank_or_repeated_reader_group_and_a_SQLCMD_variable_given_twice_in_any_case()
     {
-        Expect.Failed(Environment("dev", readers: ["leads", "leads"]), "posture.readers");
-        Expect.Failed(Environment("dev", readers: ["leads", " "]), "posture.readers");
+        Expect.Failed(Environment("dev", readerGroups: ["leads", "leads"]), "posture.reader-groups");
+        Expect.Failed(Environment("dev", readerGroups: ["leads", " "]), "posture.reader-groups");
         Expect.Failed(Environment("dev", sqlCmd: [Literal("Tag", "a"), Literal("Version", "b"), Literal("tag", "c")]), "posture.sqlcmd-repeated");
     }
 
@@ -222,8 +222,8 @@ public sealed class EnvironmentsTests
         Planted.AbsentFrom(printed);
     }
 
-    private static Result<NamedEnvironment> Environment(string name, string profile = Pipeline, IEnumerable<string>? readers = null, IEnumerable<SqlCmdVariable>? sqlCmd = null) =>
-        NamedEnvironment.Of(Where, Expect.Value(EnvironmentName.Of(Where, name)), Expect.Value(Host.Of(Where, "dev-sql.corp.example")), new Classification.Real(null), readers ?? [],
+    private static Result<NamedEnvironment> Environment(string name, string profile = Pipeline, IEnumerable<string>? readerGroups = null, IEnumerable<SqlCmdVariable>? sqlCmd = null) =>
+        NamedEnvironment.Of(Where, Expect.Value(EnvironmentName.Of(Where, name)), Expect.Value(Host.Of(Where, "dev-sql.corp.example")), new Classification.Real(null), readerGroups ?? [],
             Reference("env:ESTATE_DEV"), Expect.Value(PublishProfilePath.Of(Where, profile)), sqlCmd ?? [], Reference("file:.estate/dev-ossys.connection"));
 
     private static SecretReference Reference(string text) => Expect.Value(SecretReference.Of(Where, text));

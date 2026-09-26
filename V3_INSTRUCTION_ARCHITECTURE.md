@@ -1668,7 +1668,7 @@ FK Check*, *Refactorlog Cleanup*) stay; only *Naked Rename* is retired, for its 
 | `Receipt` and its fields `Delta`, `Target`, `DataFacts`, `Engine`, `Profile`, `Where`; `Engine`; `Ssdt.Engine`; the JSON `engine` and the codes `engine.*` | `Provenance` with `Change`, `Schema`, `DataConditions`, `DacFx`, `Server`, `PublishProfile`, `Target`, `At`; `DacFx` (a `DacFxVersion`) and `Server` (product version, compatibility level, image digest); `BuildTargets`; `dacfx`, `server` and `pin`; `server.image-digest`, `toolchain.dacfx-version`, `toolchain.unpinned`. In prose: DacFx, SQL Server, or the tool's name |
 | `Branch`, `BranchSite`, `ClaimSite`, `Transfers` (the M2 types); `branch.malformed`, `branch.taken` | `DataConditions`, `PreconditionState`, `Precondition`, `AppliesTo`; `git-branch.malformed`, `git-branch.exists`; git keeps the word branch (decision 2.8) |
 | `profile` (the verb), profiling, the profiler | `measure`; profile keeps the `.publish.xml` meaning alone |
-| `cohorts` | `readers`; the code `posture.readers` |
+| `cohorts` | `readerGroups`; the code `posture.reader-groups` |
 | the substrate, `io/Substrate.cs`, the category and doctor item `substrate` | the scratch server, `io/ScratchServer.cs`, `scratch-server` |
 | the Twin, the verb and target `twin`, `twin.not-built`, `io/Twin` | the synthetic copy, `SyntheticCopy`, `synthetic-copy`, `synthetic-copy.not-built`, `io/SyntheticCopy` |
 | σ, mint, `Synth`, `Realize.cs` | `SyntheticData.Generate`; a generated set; `GenerateViolatingRow` |
