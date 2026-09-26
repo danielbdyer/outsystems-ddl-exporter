@@ -336,8 +336,10 @@ public static class SqlServer
 
     internal static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log, TimeSpan timeout) =>
         NoSynonym(target, query, log).Bind(_ => Query(target, new Statement(query.Site, query.Statement) { Timeout = timeout }, log,
-            rows => (Measurement)new Measurement.Answered(query.Site, SortedArray.Of(rows.Select(row => Row.Of([.. row.Select(Integer)])))),
-            failed => failed.TimedOut ? new Measurement.TimedOut(query.Site, timeout) : new Measurement.Raised(query.Site, failed.Number, failed.Message)));
+            rows => Result.All(rows.Select(row => Result.All(row.Select(Integer)).Map(values => Row.Of([.. values]))))
+                .Map(read => (Measurement)new Measurement.Answered(query.Site, SortedArray.Of(read))),
+            failed => Result.Ok<Measurement>(failed.TimedOut ? new Measurement.TimedOut(query.Site, timeout) : new Measurement.Raised(query.Site, failed.Number, failed.Message))))
+        .Bind(measured => measured);
 
     /// <summary>
     /// The query, when no table it reads by name is a synonym on the target (DECISIONS.md, 2026-09-25): a synonym can stand for a table
@@ -721,14 +723,15 @@ public static class SqlServer
                     "Set the variable, or write the file outside git, that " + reference + " names.")))));
 
     /// <summary>
-    /// A value the allowlist admits the type of: an integer of any width, or NULL. Anything else is a defect in the allowlist, named by
-    /// its type alone and never by the value; it escapes as an exception, which cli/Program.cs answers as internal.unexpected at exit 6.
+    /// A value the allowlist admits the type of: an integer of any width, or NULL. Anything else is a defect in the allowlist,
+    /// internal.answer-type, named by its type alone and never by the value; it once escaped the adapter as an exception.
     /// </summary>
-    private static long? Integer(object? value) => value switch
+    internal static Result<long?> Integer(object? value) => value switch
     {
-        null => null,
+        null => Result.Ok<long?>(null),
         int or long or short or byte => Convert.ToInt64(value, CultureInfo.InvariantCulture),
-        _ => throw new NotSupportedException("An aggregate query answered with a " + value.GetType().Name + ", a type no form of the allowlist yields."),
+        _ => new Error("internal.answer-type", "An aggregate query answered with a " + value.GetType().Name + ", a type no form of the allowlist yields; the value is withheld.",
+            "Report this answer and the aggregate query's site to dbchange's maintainers: the allowlist admitted a query whose answer is not an integer."),
     };
 
     /// <summary>

@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using DbChange.Kernel;
+using DbChange.Tests;
 using Xunit;
+using static DbChange.Tests.Expect;
 
 namespace DbChange.Io.Tests;
 
@@ -40,5 +42,22 @@ public sealed class MeasurementTests
         Assert.Equal(["rows answered 1 row", "conversion failed with Msg 245", "scan ran past 30 s"], measured.Select(m => m.Match(
             answered => answered.Site + " answered " + answered.Rows.Count + " row", failed => failed.Site + " failed with Msg " + failed.Number,
             timedOut => timedOut.Site + " ran past " + timedOut.After.TotalSeconds + " s")));
+    }
+
+    /// <summary>
+    /// N12 of the pre-M2 review: an aggregate query's answer of a type the allowlist never yields is internal.answer-type, naming the type and
+    /// withholding the value; it once escaped the adapter as an exception. An integer of any width reads as a long.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void An_answer_of_a_type_the_allowlist_never_yields_is_internal_answer_type_withholding_the_value()
+    {
+        var planted = PlantedValue.Unique();
+
+        var error = Failed(SqlServer.Integer(planted.Text), "internal.answer-type");
+
+        Assert.Contains("with a String,", error.Message, StringComparison.Ordinal);
+        planted.AbsentFrom(error);
+        Assert.Equal(((long?)12, (long?)null), (Value(SqlServer.Integer((short)12)), Value(SqlServer.Integer(null))));
     }
 }
