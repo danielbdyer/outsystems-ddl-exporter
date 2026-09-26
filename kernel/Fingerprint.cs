@@ -159,8 +159,6 @@ public readonly record struct Fingerprint
         + (key.Name.Schema is { } schema ? Write(to, 2) + Write(to, schema) : Write(to, 1))
         + Write(to, key.Name.Base);
 
-    private static string Canonical(string text) =>
-        (text.StartsWith('\uFEFF') ? text[1..] : text)
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n');
+    /// <summary>A text as it is hashed: without a byte-order mark, its line endings LF (LineEndings.Lf).</summary>
+    private static string Canonical(string text) => LineEndings.Lf(text.StartsWith('\uFEFF') ? text[1..] : text);
 }

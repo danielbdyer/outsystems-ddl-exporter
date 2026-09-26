@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using DbChange.Kernel;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 
 namespace DbChange.Io;
@@ -21,7 +22,7 @@ internal static class TSql
     internal static string Text(TSqlFragment fragment)
     {
         new Sql160ScriptGenerator().GenerateScript(fragment, out var script);
-        return script.Replace("\r\n", "\n", StringComparison.Ordinal).Trim();
+        return LineEndings.Lf(script).Trim();
     }
 
     /// <summary>The parts of an object's name of one to four parts, unquoted as ScriptDom reads them ([a]]b] is a]b); null when the text is no such name.</summary>
