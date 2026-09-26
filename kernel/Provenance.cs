@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Immutable;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -52,7 +52,7 @@ public sealed record Provenance
     public DateTimeOffset At { get; init; }
 
     /// <summary>The inputs this claim lacks, in the order of <see cref="Input"/>: its existing data and its server where each is null.</summary>
-    public SortedArray<Input> Lacking => new([.. ((Input?[])[ExistingData is null ? Input.ExistingData : null, Server is null ? Input.Server : null]).OfType<Input>()]);
+    public IReadOnlyList<Input> Lacking => [.. ((Input?[])[ExistingData is null ? Input.ExistingData : null, Server is null ? Input.Server : null]).OfType<Input>()];
 
     /// <summary>
     /// A drift check's claim (DECISIONS.md, 2026-09-25): its change is the deploy report of the package against the target, and its

@@ -215,7 +215,11 @@ public sealed record Element : IComparable<Element>
 
     public sealed record Relationship(string Name, SortedArray<Relationship.Target> Targets) : IComparable<Relationship>
     {
-        /// <summary>A relationship whose targets keep the order given, as DacFx gives a key's columns.</summary>
+        /// <summary>
+        /// A relationship whose targets keep the order given, as DacFx gives a key's columns: each target's position is its place in that
+        /// order, so two reads of one relationship agree while DacFx gives its targets in one order, which the golden package's committed
+        /// fingerprint in ModelElementsTests holds across reads and across Linux and Windows.
+        /// </summary>
         public static Relationship Of(string name, IEnumerable<ElementKey> targets) => new(name, SortedArray.Of(targets.Select((key, i) => new Target(i, key))));
 
         public int CompareTo(Relationship? other) =>

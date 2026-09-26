@@ -128,6 +128,24 @@ public sealed class PublishProfilesTests : IDisposable
         Assert.Contains(at, error.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// N11 of the pre-M2 review, measured on DacFx 170.5.96: DacDeployOptions.SqlCommandVariableValues matches a name ignoring case, so a
+    /// value the environment gives under another spelling than the profile's replaces the profile's instead of standing beside it, and
+    /// DacFx.Plan, which writes the environment's values after the profile's, plans with the environment's.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_environment_s_SQLCMD_value_replaces_the_profile_s_under_any_spelling_of_its_name()
+    {
+        var options = Made(PublishProfiles.Load(Pipeline)).Options();
+
+        options.SqlCommandVariableValues["EnvironmentTag"] = "from the profile";
+        options.SqlCommandVariableValues["environmenttag"] = "from the environment";
+
+        Assert.Equal([("EnvironmentTag", "from the environment")],
+            options.SqlCommandVariableValues.Where(p => p.Key.Equals("EnvironmentTag", StringComparison.OrdinalIgnoreCase)).Select(p => (p.Key, p.Value)));
+    }
+
     [Fact]
     [Trait("Category", "fast")]
     public void The_pipeline_profile_loads_as_Strict_its_deploy_options_exactly_as_DacFx_reads_them()

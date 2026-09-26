@@ -5,7 +5,9 @@ using System.Linq;
 namespace DbChange.Kernel;
 
 /// <summary>
-/// A rename the refactorlog records: the key an element had, and the key it has now.
+/// A rename the refactorlog records: the key an element had, and the key it has now. <see cref="Of"/> keeps the element's type and
+/// parent across the rename, as a refactorlog entry does; the positional constructor takes two keys as given and checks nothing, for
+/// Change.Between, which pairs keys it has already matched, and io's schema moves.
 /// </summary>
 public sealed record Rename(ElementKey Before, ElementKey After) : IComparable<Rename>
 {
@@ -31,7 +33,9 @@ public sealed record Rename(ElementKey Before, ElementKey After) : IComparable<R
 /// a renamed table is one rename, and a reference to a renamed element is unchanged when it names the new key. Under a
 /// case-insensitive collation an element also continues under a key that differs from its own in letter case alone, which
 /// the collation reads as one name and DacFx plans nothing for: such a pair is a <see cref="CaseOnlyRenamed"/> entry and no
-/// change (decision 2.26), so <see cref="IsEmpty"/> leaves it out. Output keys are the after model's spellings.
+/// change (decision 2.26), so <see cref="IsEmpty"/> leaves it out. Output keys are the after model's spellings. <see cref="Between"/>
+/// puts no key in two of the lists; a Change built by hand (check drift's empty set of columns, Drift.Of's columns) keeps that by its
+/// builder's care, since the positional constructor checks nothing.
 /// </summary>
 public sealed record Change(SortedArray<Element> Created, SortedArray<Element> Dropped, SortedArray<Rename> Renamed, SortedArray<Change.Alteration> Altered,
     SortedArray<Rename> CaseOnlyRenamed = default)

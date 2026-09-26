@@ -522,8 +522,6 @@ public static class Ssdt
     private static Error Unreadable(string source, string why) => new Error("package.unreadable", source + " is not a package DacFx reads: " + why,
         "Name a .dacpac a build wrote, or build its project again.");
 
-    /// <summary>A DacFx failure as a message quotes it: its messages, or the chain's text where it has none.</summary>
-
     private static string? Text(Stream? script)
     {
         using var reader = script is null ? null : new StreamReader(script);
