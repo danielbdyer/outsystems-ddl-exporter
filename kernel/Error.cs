@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace DbChange.Kernel;
 
 /// <summary>
-/// What the engine could not do or will not do, said so that a person can act on it: a <see cref="Code"/> that records cite
+/// What dbchange could not do or will not do, said so that a person can act on it: a <see cref="Code"/> that records cite
 /// and tests assert (a category and a detail in lowercase words, such as <c>name.too-long</c>; the category chooses the exit), a
 /// <see cref="Message"/> saying what went wrong, and a <see cref="Remedy"/> saying what to do instead. An error without a
 /// remedy cannot be constructed: the constructor throws on a blank one, and <c>with</c> reaches no property. Its category is a

@@ -634,7 +634,7 @@ internal static class ErrorPaths
         return scratch;
     }
 
-    /// <summary>A copy of the classic-minimal project with the corpus's stop files, so the engine's build settings stay out.</summary>
+    /// <summary>A copy of the classic-minimal project with the corpus's stop files, so dbchange's own build settings stay out.</summary>
     private static string Project(string scratch)
     {
         var golden = Path.Combine(Repository.Root, "tests", "Golden");

@@ -9,7 +9,7 @@
     <!-- Cultures on: DacFx builds no model in globalization-invariant mode (its collation map needs LCIDs such as 3076), and Microsoft.Data.SqlClient refuses it. -->
     <InvariantGlobalization>false</InvariantGlobalization>
     <PredefinedCulturesOnly>false</PredefinedCulturesOnly>
-    <!-- v3; the build appends the commit (3.0.0+<sha>), which is what a receipt stamps. -->
+    <!-- v3; the build appends the commit (3.0.0+<sha>), which every answer names as dbchange's version. -->
     <VersionPrefix>3.0.0</VersionPrefix>
   </PropertyGroup>
   <ItemGroup>

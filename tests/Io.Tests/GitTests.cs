@@ -17,7 +17,7 @@ namespace DbChange.Io.Tests;
 /// io/Git (WP 1.6), over temporary repositories only: a ref as a detached worktree under .dbchange/worktrees/&lt;commit&gt;/, reused
 /// while unchanged, held by a shared lock and swept; the merge base of two refs; the paths two refs differ in; a commit on a
 /// named branch pushed to a local bare origin; and git's answers classified at the boundary, from git's own exit codes and
-/// messages, through a stand-in runner where the real git cannot give the answer here. No test runs git in the engine's own repository.
+/// messages, through a stand-in runner where the real git cannot give the answer here. No test runs git in dbchange's own repository.
 /// </summary>
 public sealed class GitTests : IDisposable
 {

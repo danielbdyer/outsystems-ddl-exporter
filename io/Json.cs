@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 namespace DbChange.Io;
 
 /// <summary>
-/// JSON as the engine writes it on every operating system: two-space indent, LF, a final newline, and
+/// JSON as dbchange writes it on every operating system: two-space indent, LF, a final newline, and
 /// only the escaping JSON itself requires (nothing here is embedded in HTML), so one document is one
 /// sequence of bytes.
 /// </summary>

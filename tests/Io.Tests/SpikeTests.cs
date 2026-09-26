@@ -18,7 +18,7 @@ namespace DbChange.Io.Tests;
 
 /// <summary>
 /// V3_MILESTONES.md Appendix E as tests: section 1's measured facts 1 to 7, 10 and 11, one assertion each, against the
-/// committed engine (DacFx 170.5.96, used directly). Every read runs as the read-only principal; only the fixture's copies
+/// committed DacFx, used directly. Every read runs as the read-only principal; only the fixture's copies
 /// are written.
 /// </summary>
 public sealed class SpikeTests(PublishedGoldenProject project) : IClassFixture<PublishedGoldenProject>

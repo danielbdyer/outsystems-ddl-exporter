@@ -452,7 +452,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         }
     }
 
-    /// <summary>A fresh copy of tests/Golden/ under the scratch folder's <paramref name="under"/>, its stop files included so the engine's build settings stay out; its classic-minimal project.</summary>
+    /// <summary>A fresh copy of tests/Golden/ under the scratch folder's <paramref name="under"/>, its stop files included so dbchange's own build settings stay out; its classic-minimal project.</summary>
     private string Golden(string under = "golden")
     {
         var from = Path.Combine(Repository.Root, "tests", "Golden");

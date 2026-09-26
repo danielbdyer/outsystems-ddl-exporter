@@ -172,8 +172,8 @@ public sealed class PublishProfilesTests : IDisposable
     }
 
     /// <summary>
-    /// A receipt's profile input is the fingerprint of the profile as kept, and §3's transfer compares two receipts' profiles for
-    /// equality, so a receipt written on Windows and one written on Linux must agree. The Windows and the Ubuntu CI jobs both run this
+    /// A provenance record's profile input is the fingerprint of the profile as kept, and §3's transfer compares two records' profiles for
+    /// equality, so a record written on Windows and one written on Linux must agree. The Windows and the Ubuntu CI jobs both run this
     /// test against the one constant; XDocument.Save's defaults had written CRLF and a byte-order mark on Windows and LF on Linux.
     /// </summary>
     [Fact]

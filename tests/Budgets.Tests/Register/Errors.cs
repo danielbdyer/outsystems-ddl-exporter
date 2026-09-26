@@ -10,7 +10,7 @@ using Xunit;
 namespace DbChange.Budgets.Tests.Register;
 
 /// <summary>
-/// The engine's errors are in the register (V3_INSTRUCTION_ARCHITECTURE.md §10 test 4; VALUES.md S2, O4, L1). Every error
+/// dbchange's errors are in the register (V3_INSTRUCTION_ARCHITECTURE.md §10 test 4; VALUES.md S2, O4, L1). Every error
 /// the kernel, io and the cli construct, reached through <see cref="ErrorPaths"/>, carries a code, a message and a remedy; the remedy is
 /// one imperative sentence on one line, starting with a capital letter and ending with a period, led by a verb, with any dbchange verb it
 /// runs one of the verb table's, never a paragraph (finding D13); and neither the message nor the remedy uses a retired word or a banned

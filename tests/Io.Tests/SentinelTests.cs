@@ -66,7 +66,7 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         return file;
     }
 
-    /// <summary>A copy of the classic-minimal project with the corpus's stop files, so the engine's build settings stay out.</summary>
+    /// <summary>A copy of the classic-minimal project with the corpus's stop files, so dbchange's own build settings stay out.</summary>
     private string ClassicMinimal()
     {
         var golden = Path.Combine(Repository.Root, "tests", "Golden");

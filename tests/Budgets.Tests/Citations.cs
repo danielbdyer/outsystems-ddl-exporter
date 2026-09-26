@@ -9,7 +9,7 @@ using Xunit;
 namespace DbChange.Budgets.Tests;
 
 /// <summary>
-/// Every path an engine document cites resolves. The rule, as small as it can be and still honest:
+/// Every path a document of the tool cites resolves. The rule, as small as it can be and still honest:
 /// <list type="bullet">
 /// <item>A citation is a relative markdown link, or a backticked span of one word of path characters that holds a '/'
 /// or ends in an extension this repository's files carry. Only the spans named in <see cref="Elsewhere"/> are skipped:
@@ -56,11 +56,11 @@ public sealed class Citations
     /// <summary>The cutover tools, which arrive as M8 starts, if the operator decides to build them.</summary>
     private static readonly Regex CutoverTools = new(@"not held yet: the cutover tools", RegexOptions.CultureInvariant);
 
-    public static TheoryData<string> EngineDocuments => new(Documents.Engine);
+    public static TheoryData<string> ToolDocuments => new(Documents.Tool);
 
     [Theory]
     [Trait("Category", "fast")]
-    [MemberData(nameof(EngineDocuments))]
+    [MemberData(nameof(ToolDocuments))]
     public void Every_path_a_document_of_the_repository_cites_exists_or_names_the_milestone_that_creates_it(string document)
     {
         var directory = Path.GetDirectoryName(document)!.Replace('\\', '/');

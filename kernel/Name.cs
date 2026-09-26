@@ -4,7 +4,7 @@ using System.Globalization;
 namespace DbChange.Kernel;
 
 /// <summary>
-/// The name of a SQL Server object as the engine reads it: one part (a schema, a column, an index) or two (a
+/// The name of a SQL Server object as SQL Server reads it: one part (a schema, a column, an index) or two (a
 /// schema-qualified object, <c>[dbo].[Customer]</c>). Two is the most a Name holds and the most it needs: the
 /// aggregate-query allowlist admits one or two parts, and an object inside a table (a column, an index, a constraint) is named by its
 /// table's Name and its own one-part Name, so <c>[dbo].[Customer].[Email]</c> is a path of two Names that an

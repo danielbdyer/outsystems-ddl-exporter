@@ -9,7 +9,7 @@ using Xunit;
 namespace DbChange.Budgets.Tests.Register;
 
 /// <summary>
-/// The engine's documents are in the register: no retired word, no numbered axis, no antithesis tic, as
+/// The tool's documents are in the register: no retired word, no numbered axis, no antithesis tic, as
 /// ci/register.json lists them from the instruction architecture's Appendix A. VALUES.md first, because a register of
 /// one-sentence values is the document most likely to break the register's own rules. knowledge/description.md replaces
 /// the list at M7; the five root design documents are excluded until M8.
@@ -18,12 +18,12 @@ public sealed class Prose
 {
     private static readonly IReadOnlyList<(Regex Pattern, string Name, string Instead)> Banned = Read();
 
-    public static TheoryData<string> EngineDocuments => new(Documents.Engine);
+    public static TheoryData<string> ToolDocuments => new(Documents.Tool);
 
     [Theory]
     [Trait("Category", "fast")]
     [Trait("Value", "L1")]
-    [MemberData(nameof(EngineDocuments))]
+    [MemberData(nameof(ToolDocuments))]
     public void A_document_of_the_repository_uses_no_retired_word_and_no_banned_form(string document)
     {
         var text = Repository.Read(document);
