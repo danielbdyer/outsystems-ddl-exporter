@@ -59,7 +59,7 @@ public sealed class DependenciesPointOneWay
     [Trait("Law", "dependencies point one way")]
     public void The_cli_reaches_io_through_its_use_cases_alone()
     {
-        var referenced = IoReferences(typeof(Contract).Assembly.Location);
+        var referenced = References(typeof(Contract).Assembly.Location, typeof(Write).Assembly.GetName().Name!);
 
         Assert.Equal([], referenced.Where(r => !Admitted(r)).Order(StringComparer.Ordinal));
         Assert.Contains("DbChange.Io.ModelRead.Run", referenced);   // the scan reads member references: the use case read calls is among them
@@ -84,19 +84,39 @@ public sealed class DependenciesPointOneWay
     }
 
     /// <summary>
-    /// Each io type an assembly's metadata references (a TypeRef whose resolution scope is io, nested types as Outer+Inner) and each io
-    /// member (a MemberRef whose parent is such a type), as Type.Member: what the assembly's IL and signatures can reach of io.
+    /// S28 of the pre-M2 review, VALUES.md X5: neither io nor the cli calls DacServices.EnableTelemetry, a method of three overloads.
+    /// dbchange opts out of DacFx's telemetry through the environment variables Telemetry.OptOut sets before DacFx loads, and a call of
+    /// EnableTelemetry in either assembly would turn it back on. Read from each assembly's metadata, which holds a reference to every member
+    /// its IL calls in DacFx.
     /// </summary>
-    private static IReadOnlySet<string> IoReferences(string assembly)
+    [Fact]
+    [Trait("Category", "fast")]
+    [Trait("Value", "X5")]
+    public void Neither_io_nor_the_cli_calls_DacFx_s_EnableTelemetry()
+    {
+        var dacfx = typeof(Microsoft.SqlServer.Dac.DacServices).Assembly.GetName().Name!;
+        var io = References(typeof(Write).Assembly.Location, dacfx);
+        var cli = References(typeof(Contract).Assembly.Location, dacfx);
+
+        Assert.NotEmpty(typeof(Microsoft.SqlServer.Dac.DacServices).GetMember("EnableTelemetry"));
+        Assert.DoesNotContain("Microsoft.SqlServer.Dac.DacServices.EnableTelemetry", io.Concat(cli));
+        Assert.Contains("Microsoft.SqlServer.Dac.DacServices.Extract", io);   // the scan reads io's references into DacFx
+    }
+
+    /// <summary>
+    /// Each type of the assembly named <paramref name="referenced"/> that an assembly's metadata references (a TypeRef whose resolution scope is
+    /// that assembly, nested types as Outer+Inner) and each of its members (a MemberRef whose parent is such a type), as Type.Member: what the
+    /// assembly's IL and signatures can reach of it.
+    /// </summary>
+    private static IReadOnlySet<string> References(string assembly, string referenced)
     {
         using var stream = File.OpenRead(assembly);
         using var pe = new PEReader(stream);
         var metadata = pe.GetMetadataReader();
-        var io = typeof(Write).Assembly.GetName().Name;
-        bool FromIo(EntityHandle scope) => scope.Kind switch
+        bool FromThere(EntityHandle scope) => scope.Kind switch
         {
-            HandleKind.TypeReference => FromIo(metadata.GetTypeReference((TypeReferenceHandle)scope).ResolutionScope),
-            HandleKind.AssemblyReference => metadata.GetString(metadata.GetAssemblyReference((AssemblyReferenceHandle)scope).Name) == io,
+            HandleKind.TypeReference => FromThere(metadata.GetTypeReference((TypeReferenceHandle)scope).ResolutionScope),
+            HandleKind.AssemblyReference => metadata.GetString(metadata.GetAssemblyReference((AssemblyReferenceHandle)scope).Name) == referenced,
             _ => false,
         };
         string Named(TypeReferenceHandle handle)
@@ -107,9 +127,9 @@ public sealed class DependenciesPointOneWay
                 : metadata.GetString(type.Namespace) + "." + metadata.GetString(type.Name);
         }
 
-        var types = metadata.TypeReferences.Where(t => FromIo(t)).Select(Named);
+        var types = metadata.TypeReferences.Where(t => FromThere(t)).Select(Named);
         var members = metadata.MemberReferences.Select(metadata.GetMemberReference)
-            .Where(m => m.Parent.Kind == HandleKind.TypeReference && FromIo(m.Parent))
+            .Where(m => m.Parent.Kind == HandleKind.TypeReference && FromThere(m.Parent))
             .Select(m => Named((TypeReferenceHandle)m.Parent) + "." + metadata.GetString(m.Name));
         return types.Concat(members).ToHashSet(StringComparer.Ordinal);
     }

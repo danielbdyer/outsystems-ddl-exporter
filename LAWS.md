@@ -161,6 +161,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | X3 | Every project restores from its lock file and CI restores locked | `DbChange.Budgets.Tests.PackagesAllowlist.Every_project_restores_from_its_lock_file_and_CI_restores_locked` |
 | X5 | Each banned symbol planted in the kernel is a build error | `DbChange.Budgets.Tests.BannedSymbolsTests.Each_banned_symbol_planted_in_the_kernel_is_a_build_error` |
 | X5 | Main opts out of telemetry before anything else | `DbChange.Budgets.Tests.ContractTests.Main_opts_out_of_telemetry_before_anything_else` |
+| X5 | Neither io nor the cli calls DacFx's EnableTelemetry | `DbChange.Budgets.Tests.DependenciesPointOneWay.Neither_io_nor_the_cli_calls_DacFx_s_EnableTelemetry` |
 | X5 | Git runs with LC ALL C and without the caller's LANGUAGE and LC MESSAGES | `DbChange.Io.Tests.GitTests.Git_runs_with_LC_ALL_C_and_without_the_caller_s_LANGUAGE_and_LC_MESSAGES` |
 | X5 | Loading io opts out of telemetry before DacFx loads | `DbChange.Io.Tests.TelemetryTests.Loading_io_opts_out_of_telemetry_before_DacFx_loads` |
 
