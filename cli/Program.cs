@@ -13,12 +13,14 @@ namespace DbChange.Cli;
 public static class Program
 {
     /// <summary>
-    /// The telemetry opt-out is the first statement, before anything can load DacFx; Program has no static state to run ahead of it. The run
-    /// then listens for Ctrl-C, Ctrl-Break, SIGTERM and SIGHUP (io/Interruption), which stop a verb at its next program or lock wait.
+    /// The telemetry opt-out is the first statement, before anything can load DacFx; Program has no static state to run ahead of it. Every
+    /// thread the command starts then takes the invariant culture (VALUES.md D2), and the run listens for Ctrl-C, Ctrl-Break, SIGTERM and
+    /// SIGHUP (io/Interruption), which stop a verb at its next program or lock wait.
     /// </summary>
     public static int Main(string[] args)
     {
         Telemetry.OptOut();
+        (CultureInfo.DefaultThreadCurrentCulture, CultureInfo.DefaultThreadCurrentUICulture) = (CultureInfo.InvariantCulture, CultureInfo.InvariantCulture);
         using var interruption = Interruption.Listen();
         return Run(args, Console.OpenStandardOutput(), () => Checkout.Here(Contract.Version), Contract.Verbs, interruption);
     }
@@ -59,6 +61,7 @@ public static class Program
     private static int Run(IReadOnlyList<string> args, Stream output, Func<Result<Checkout>> here, IReadOnlyList<Verb> verbs, Interruption interruption)
     {
         var clock = Stopwatch.StartNew();
+        using var invariant = InvariantCulture.Enter();
         using var reads = SqlServer.Reads.Begin();
         var (json, summary, word) = (false, false, "");
         Verb? verb = null;
@@ -172,4 +175,16 @@ public static class Program
     }
 
     private static string Rendered(Envelope answer, bool json) => json ? Render.JsonText(Render.Json(answer)) : Render.Markdown(answer);
+
+    /// <summary>The calling thread's cultures set to the invariant one for a command (VALUES.md D2), and the caller's restored when it ends.</summary>
+    private sealed class InvariantCulture : IDisposable
+    {
+        private readonly (CultureInfo Culture, CultureInfo Ui) was = (CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture);
+
+        private InvariantCulture() => (CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture) = (CultureInfo.InvariantCulture, CultureInfo.InvariantCulture);
+
+        public static InvariantCulture Enter() => new();
+
+        public void Dispose() => (CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture) = was;
+    }
 }

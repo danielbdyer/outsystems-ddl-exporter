@@ -149,6 +149,33 @@ public sealed class ContractTests
     }
 
     /// <summary>
+    /// S26 of the pre-M2 review, VALUES.md D2 at its mechanism: a command runs under the invariant culture whatever the caller's thread
+    /// culture is, and the caller's is as it was once the command ends; Main also sets the invariant culture for every thread a command starts.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    [Trait("Value", "D2")]
+    public void A_command_runs_under_the_invariant_culture_and_leaves_the_caller_s_as_it_was()
+    {
+        var (during, was) = ((CultureInfo?)null, CultureInfo.CurrentCulture);
+        var doctor = Contract.Verbs.Single(v => v.Name == "doctor");
+        var probe = doctor with { Body = (_, _, _) => { during = CultureInfo.CurrentCulture; return Contract.Answer(doctor.Output, doctor.Outcome("ready"), 0, "ready", []); } };
+        CultureInfo.CurrentCulture = new CultureInfo("tr-TR");
+        try
+        {
+            using var output = new MemoryStream();
+            Cli.Program.Run(["doctor", "--json"], output, () => new Checkout(Repository.Root, Repository.Root, null, Contract.Version), [probe]);
+
+            Assert.Equal(CultureInfo.InvariantCulture, during);
+            Assert.Equal("tr-TR", CultureInfo.CurrentCulture.Name);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = was;
+        }
+    }
+
+    /// <summary>
     /// VALUES.md D2 at the answer: read of a package and diff of two, run in this process under tr-TR, de-DE and the invariant culture,
     /// write the same bytes. The package holds a decimal default, a date, and a column named ilk, whose upper case differs under Turkish rules.
     /// </summary>

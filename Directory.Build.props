@@ -10,7 +10,6 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <InvariantGlobalization>true</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- Lock files everywhere; CI restores locked. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>

@@ -48,6 +48,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | A10 | Every markdown file outside the archive and every ci file is a row | `DbChange.Budgets.Tests.Manifest.Every_markdown_file_outside_the_archive_and_every_ci_file_is_a_row` |
 | A10 | Every row names a file that exists and says who reads it and when | `DbChange.Budgets.Tests.Manifest.Every_row_names_a_file_that_exists_and_says_who_reads_it_and_when` |
 | D2 | Each banned symbol planted in the kernel is a build error | `DbChange.Budgets.Tests.BannedSymbolsTests.Each_banned_symbol_planted_in_the_kernel_is_a_build_error` |
+| D2 | A command runs under the invariant culture and leaves the caller's as it was | `DbChange.Budgets.Tests.ContractTests.A_command_runs_under_the_invariant_culture_and_leaves_the_caller_s_as_it_was` |
 | D2 | An answer is the same bytes under tr TR de DE and the invariant culture | `DbChange.Budgets.Tests.ContractTests.An_answer_is_the_same_bytes_under_tr_TR_de_DE_and_the_invariant_culture` |
 | D2 | Every v3 project builds with warnings and the culture rules as errors | `DbChange.Budgets.Tests.WarningsAsErrors.Every_v3_project_builds_with_warnings_and_the_culture_rules_as_errors` |
 | D2 | A value compares and renders ordinally whatever the culture | `DbChange.Kernel.Tests.ElementTests.A_value_compares_and_renders_ordinally_whatever_the_culture` |
