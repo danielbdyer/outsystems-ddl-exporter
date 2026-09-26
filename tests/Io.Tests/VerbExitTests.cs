@@ -65,7 +65,7 @@ public sealed class VerbExitTests : IDisposable
     public void A_copy_the_registry_does_not_hold_or_one_on_a_named_environment_s_host_is_exit_9(string copy, string code)
     {
         EnvironmentsJson.Dev("env:DBCHANGE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(), host: "localhost").WriteTo(root.Path);
-        root.File(".dbchange/copies.json", "{ \"copies\": [ { \"name\": \"dbchange_host_1_0a1b2c3d\", \"server\": \"localhost,11433\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-24T00:00:00Z\" } ] }");
+        root.File(".dbchange/copies.json", "{ \"copies\": [ { \"name\": \"dbchange_host_1_0a1b2c3d\", \"server\": \"localhost,11433\", \"machine\": \"host\", \"pid\": 1, \"created\": \"2026-09-24T00:00:00Z\" } ] }");
 
         var (exit, answer) = VerbAnswer.Of(Here, "check", "drift", "--target", "copy:" + copy, "--at", "main");
 

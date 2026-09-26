@@ -37,7 +37,7 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
             Assert.Equal((CopyName.Make(Environment.MachineName, 0, 0).Machine, Environment.ProcessId), (copy.Name.Machine, copy.Name.Pid));
             Assert.True(await SqlServerFixture.ExistsAsync(copy.Name.ToString()), copy.Name + " was not created");
             var row = Assert.Single(Registry())!.AsObject();
-            Assert.Equal(["created", "host", "name", "pid", "server"], row.Select(p => p.Key).Order(StringComparer.Ordinal));
+            Assert.Equal(["created", "machine", "name", "pid", "server"], row.Select(p => p.Key).Order(StringComparer.Ordinal));
             Assert.Equal((copy.Name.ToString(), Environment.ProcessId, Made(LocalServer.ServerName(server)).ToString()), ((string)row["name"]!, (int)row["pid"]!, (string)row["server"]!));
             var registry = File.ReadAllText(Path.Combine(root, ".dbchange", "copies.json"));
             Assert.All(new[] { new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(server).Password }.Where(password => password.Length > 0), password => Assert.DoesNotContain(password, registry, StringComparison.Ordinal));

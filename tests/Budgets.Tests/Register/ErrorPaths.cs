@@ -405,7 +405,7 @@ internal static class ErrorPaths
     {
         Directory.CreateDirectory(Path.Combine(root, ".dbchange"));
         File.WriteAllText(Path.Combine(root, ".dbchange", "copies.json"),
-            "{ \"copies\": [ { \"name\": \"" + Copied + "\", \"server\": \"localhost,11433\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-24T00:00:00Z\" } ] }");
+            "{ \"copies\": [ { \"name\": \"" + Copied + "\", \"server\": \"localhost,11433\", \"machine\": \"host\", \"pid\": 1, \"created\": \"2026-09-24T00:00:00Z\" } ] }");
         return root;
     }
 

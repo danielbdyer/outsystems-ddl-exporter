@@ -175,7 +175,7 @@ public static class LocalServer
             var copy = new SqlServer.Copy(CopyName.Make(Environment.MachineName, Environment.ProcessId, BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, repositoryRoot);
             var row = new JsonObject
             {
-                ["name"] = copy.Name.ToString(), ["server"] = name.ToString(), ["host"] = copy.Name.Machine, ["pid"] = Environment.ProcessId,
+                ["name"] = copy.Name.ToString(), ["server"] = name.ToString(), ["machine"] = copy.Name.Machine, ["pid"] = Environment.ProcessId,
                 ["created"] = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
             };
             return Change(repositoryRoot, rows => [.. rows, row]).Bind(_ => Run(copy, "CREATE DATABASE", Make, log).Match(
