@@ -406,26 +406,21 @@ public static class SqlServer
                 }
             }
 
-            log?.Add(target, statement.Site, logged, rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows");
-            return answer(rows);
+            var outcome = rows.Count == 1 ? "1 row" : rows.Count.ToString(CultureInfo.InvariantCulture) + " rows";
+            return log is null ? Result.Ok(answer(rows)) : log.Add(target, statement.Site, logged, outcome).Map(_ => answer(rows));
         }
         catch (Exception e) when (e is InvalidOperationException || Carries(e))
         {
             if (failed is not null && target.FailedStatement(e, opened) is { } statementFailure)
             {
-                log?.Add(target, statement.Site, logged, statementFailure.TimedOut
+                var unlogged = log?.Add(target, statement.Site, logged, statementFailure.TimedOut
                     ? "timed out after " + statement.Timeout.TotalSeconds.ToString(CultureInfo.InvariantCulture) + " s"
-                    : "failed, Msg " + statementFailure.Number.ToString(CultureInfo.InvariantCulture));
-                return failed(statementFailure);
+                    : "failed, Msg " + statementFailure.Number.ToString(CultureInfo.InvariantCulture)) as Result<string>.Failed;
+                return unlogged is null ? failed(statementFailure) : unlogged.Error;
             }
 
             var error = target.ErrorOf(e, opened);
-            if (opened)
-            {
-                log?.Add(target, statement.Site, logged, "failed, " + error.Code);
-            }
-
-            return error;
+            return opened && log?.Add(target, statement.Site, logged, "failed, " + error.Code) is Result<string>.Failed { Error: var unwritten } ? unwritten : error;
         }
     }
 
@@ -440,26 +435,40 @@ public static class SqlServer
     public sealed class QueryLog
     {
         private readonly Lock gate = new();
+        private readonly LocalState state;
 
-        private QueryLog(string path) => Path = path;
+        private QueryLog(LocalState state, string path) => (this.state, Path) = (state, path);
 
         public string Path { get; }
 
-        /// <summary>A new run's log under the repository root, named for the time, the process and a random suffix, so two runs never share one.</summary>
-        public static QueryLog Start(string repositoryRoot) => new(System.IO.Path.Combine(new LocalState(repositoryRoot).Runs,
-            DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture) + "-" + System.Environment.ProcessId.ToString(CultureInfo.InvariantCulture)
-            + "-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(2)).ToLowerInvariant(), "queries.log"));
+        /// <summary>A new run's log under the repository root, named for the time, the process and a random suffix, so two runs never share one; its folder is made with its first write.</summary>
+        public static QueryLog Start(string repositoryRoot)
+        {
+            var state = new LocalState(repositoryRoot);
+            return new(state, System.IO.Path.Combine(state.Runs, DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture) + "-"
+                + System.Environment.ProcessId.ToString(CultureInfo.InvariantCulture) + "-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(2)).ToLowerInvariant(), "queries.log"));
+        }
 
-        internal void Add(Database target, string site, string statement, string outcome)
+        /// <summary>
+        /// The entry appended, the run's folder made first through LocalState, so .dbchange/.gitignore stands beside it: the log's path, or
+        /// file.unwritable naming why, which Query answers in place of the statement's result, since R14's record of every statement is not
+        /// optional.
+        /// </summary>
+        internal Result<string> Add(Database target, string site, string statement, string outcome)
         {
             var entry = "-- " + DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture) + " " + target.Target + " " + site + ": " + outcome + "\n"
                 + statement + "\nGO\n";
             lock (gate)
             {
-                // A run whose log cannot be written stops: R14's record of every statement is not optional.
-                Write.Append(Path, entry).Match(_ => 0, error => throw new IOException(error.Code + ": " + error.Message));
+                return state.Made(System.IO.Path.GetDirectoryName(Path)!).Bind(_ => Write.Append(Path, entry));
             }
         }
+
+        /// <summary>The run's whole answer, answer.json beside its log, which a cut answer names as full.</summary>
+        public string Answer => System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Path)!, "answer.json");
+
+        /// <summary>The whole answer written to <see cref="Answer"/>, the run's folder made as Add makes it: the full path written, or file.unwritable.</summary>
+        public Result<string> WriteAnswer(string json) => state.Made(System.IO.Path.GetDirectoryName(Path)!).Bind(_ => Write.Text(Answer, json));
     }
 
     /// <summary>

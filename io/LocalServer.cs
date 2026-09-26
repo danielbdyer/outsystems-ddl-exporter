@@ -251,13 +251,17 @@ public static class LocalServer
     }
 
     /// <summary>The registry changed under a lock this process alone holds while it reads, changes and writes the file back through io/Write.</summary>
-    private static Result<List<JsonObject>> Change(string repositoryRoot, Func<List<JsonObject>, List<JsonObject>> change) => Held(new LocalState(repositoryRoot).CopiesLock).Bind(held =>
+    private static Result<List<JsonObject>> Change(string repositoryRoot, Func<List<JsonObject>, List<JsonObject>> change)
     {
-        using (held)
+        var state = new LocalState(repositoryRoot);
+        return state.Made(state.Folder).Bind(_ => Held(state.CopiesLock)).Bind(held =>
         {
-            return Rows(repositoryRoot).Map(change).Bind(rows => Write.Text(Path.Combine(repositoryRoot, Registry), Json.Text(new JsonObject { ["copies"] = new JsonArray([.. rows]) })).Map(_ => rows));
-        }
-    });
+            using (held)
+            {
+                return Rows(repositoryRoot).Map(change).Bind(rows => Write.Text(state.Copies, Json.Text(new JsonObject { ["copies"] = new JsonArray([.. rows]) })).Map(_ => rows));
+            }
+        });
+    }
 
     /// <summary>How long a registry change waits for another dbchange process's: a change takes milliseconds.</summary>
     private static readonly TimeSpan RegistryTimeout = TimeSpan.FromMinutes(1);

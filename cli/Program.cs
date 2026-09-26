@@ -137,9 +137,8 @@ public static class Program
             return answer;
         }
 
-        var full = Path.Combine(Path.GetDirectoryName(run.Path)!, "answer.json");
-        var named = Path.GetRelativePath(checkout.Root, full).Replace('\\', '/');
-        return Write.Text(full, Render.JsonText(Render.Json(answer))).Match(
+        var named = Path.GetRelativePath(checkout.Root, run.Answer).Replace('\\', '/');
+        return run.WriteAnswer(Render.JsonText(Render.Json(answer))).Match(
             _ => shown with { Full = named },
             error => shown with
             {

@@ -108,6 +108,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | R1 | A ledger row is rejected for a text that is no version or a release before that is not older than the pin | `DbChange.Kernel.Tests.ProvenanceTests.A_ledger_row_is_rejected_for_a_text_that_is_no_version_or_a_release_before_that_is_not_older_than_the_pin` |
 | R1 | The committed DacFx is inside the pin's window only at the pin or the release before it | `DbChange.Kernel.Tests.ProvenanceTests.The_committed_DacFx_is_inside_the_pin_s_window_only_at_the_pin_or_the_release_before_it` |
 | R1 | Unpinned admits every DacFx release | `DbChange.Kernel.Tests.ProvenanceTests.Unpinned_admits_every_DacFx_release` |
+| R3 | Each file a run keeps under dot dbchange leaves git listing nothing with no worktree made first | `DbChange.Io.Tests.LocalStateTests.Each_file_a_run_keeps_under_dot_dbchange_leaves_git_listing_nothing_with_no_worktree_made_first` |
 | R3 | Git lists nothing dbchange keeps in a repository whose gitignore does not name dot dbchange | `DbChange.Io.Tests.LocalStateTests.Git_lists_nothing_dbchange_keeps_in_a_repository_whose_gitignore_does_not_name_dot_dbchange` |
 | R5 | A runtime other than NET 10 is refused with its remedy | `DbChange.Io.Tests.DoctorTests.A_runtime_other_than_NET_10_is_refused_with_its_remedy` |
 | R5 | The committed DacFx stands inside the ledger's window only at the pin or the release before it | `DbChange.Io.Tests.DoctorTests.The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it` |

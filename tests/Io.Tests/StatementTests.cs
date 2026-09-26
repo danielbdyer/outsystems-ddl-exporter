@@ -50,6 +50,22 @@ public sealed class StatementTests : IDisposable
     }
 
     /// <summary>
+    /// M2 of the pre-M2 review: a statement SQL Server answered whose entry the run's log cannot take answers the log's file.unwritable in
+    /// place of its result, since R14's record of every statement is not optional. The log once threw, and the verb answered
+    /// internal.unexpected, a defect in dbchange, with no cause named.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    public async Task A_statement_whose_entry_the_run_s_log_cannot_take_answers_file_unwritable()
+    {
+        using var copy = DisposableCopy.Create(Root, await SqlServerFixture.ServerAsync());
+        using var blocked = ScratchFolder.Temporary("blocked-log");
+        blocked.File(".dbchange/runs", "a file where the runs folder goes\n");
+
+        Failed(SqlServer.Reach(copy.Copy, SqlServer.QueryLog.Start(blocked.Path)), "file.unwritable");
+    }
+
+    /// <summary>
     /// ARCH-13: an aggregate query that SQL Server is still running when its timeout of one second passes is measured as timed out,
     /// where it was a failed measurement reading Msg -2 as though the query had failed; the server answers the next statement.
     /// The query tests a condition on each of the trillions of combinations of four sys.all_objects rows, a condition on all four, so
