@@ -102,9 +102,9 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | R1 | The committed DacFx stands inside the ledger's window only at the pin or the release before it | `DbChange.Io.Tests.DoctorTests.The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it` |
 | R1 | A drift's provenance fingerprints the target's schema and the deploy report | `DbChange.Io.Tests.DriftTests.A_drift_s_provenance_fingerprints_the_target_s_schema_and_the_deploy_report` |
 | R1 | The committed DacFx outside the ledger's window is exit 6 before anything connects | `DbChange.Io.Tests.DriftTests.The_committed_DacFx_outside_the_ledger_s_window_is_exit_6_before_anything_connects` |
-| R1 | A release before that is not older than the pin is rejected | `DbChange.Kernel.Tests.ProvenanceTests.A_release_before_that_is_not_older_than_the_pin_is_rejected` |
+| R1 | A ledger row is rejected for a text that is no version or a release before that is not older than the pin | `DbChange.Kernel.Tests.ProvenanceTests.A_ledger_row_is_rejected_for_a_text_that_is_no_version_or_a_release_before_that_is_not_older_than_the_pin` |
 | R1 | The committed DacFx is inside the pin's window only at the pin or the release before it | `DbChange.Kernel.Tests.ProvenanceTests.The_committed_DacFx_is_inside_the_pin_s_window_only_at_the_pin_or_the_release_before_it` |
-| R1 | Unpinned admits every DacFx release and says so | `DbChange.Kernel.Tests.ProvenanceTests.Unpinned_admits_every_DacFx_release_and_says_so` |
+| R1 | Unpinned admits every DacFx release | `DbChange.Kernel.Tests.ProvenanceTests.Unpinned_admits_every_DacFx_release` |
 | R3 | Git lists nothing dbchange keeps in a repository whose gitignore does not name dot dbchange | `DbChange.Io.Tests.LocalStateTests.Git_lists_nothing_dbchange_keeps_in_a_repository_whose_gitignore_does_not_name_dot_dbchange` |
 | R5 | A runtime other than NET 10 is refused with its remedy | `DbChange.Io.Tests.DoctorTests.A_runtime_other_than_NET_10_is_refused_with_its_remedy` |
 | R5 | The committed DacFx stands inside the ledger's window only at the pin or the release before it | `DbChange.Io.Tests.DoctorTests.The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it` |
@@ -197,7 +197,7 @@ One row per test that runs an exit of `V3_MILESTONES.md`, from its `[Trait("Exit
 | M1.6 | A drift's provenance fingerprints the target's schema and the deploy report | `DbChange.Io.Tests.DriftTests.A_drift_s_provenance_fingerprints_the_target_s_schema_and_the_deploy_report` |
 | M1.6 | The committed DacFx outside the ledger's window is exit 6 before anything connects | `DbChange.Io.Tests.DriftTests.The_committed_DacFx_outside_the_ledger_s_window_is_exit_6_before_anything_connects` |
 | M1.6 | The committed DacFx is inside the pin's window only at the pin or the release before it | `DbChange.Kernel.Tests.ProvenanceTests.The_committed_DacFx_is_inside_the_pin_s_window_only_at_the_pin_or_the_release_before_it` |
-| M1.6 | Unpinned admits every DacFx release and says so | `DbChange.Kernel.Tests.ProvenanceTests.Unpinned_admits_every_DacFx_release_and_says_so` |
+| M1.6 | Unpinned admits every DacFx release | `DbChange.Kernel.Tests.ProvenanceTests.Unpinned_admits_every_DacFx_release` |
 | M1.7 | A denied login names the environment and quotes nothing | `DbChange.Io.Tests.AggregateQueryTests.A_denied_login_names_the_environment_and_quotes_nothing` |
 | M1.7 | A login without VIEW DEFINITION is denied before DacFx runs | `DbChange.Io.Tests.AggregateQueryTests.A_login_without_VIEW_DEFINITION_is_denied_before_DacFx_runs` |
 | M1.7 | A denied login prints one sentence naming the environment and a lead's prediction | `DbChange.Io.Tests.DriftTests.A_denied_login_prints_one_sentence_naming_the_environment_and_a_lead_s_prediction` |

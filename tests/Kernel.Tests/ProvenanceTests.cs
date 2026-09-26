@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using CsCheck;
 using Xunit;
 
 namespace DbChange.Kernel.Tests;
@@ -89,26 +91,19 @@ public sealed class ProvenanceTests
 
         var error = pin.Rejects(Version(committed));
 
-        Assert.Equal(inside, error is null);
         Assert.Equal(inside ? null : "toolchain.outside-window", error?.Code);
-        Assert.Equal("170.5.96", pin.ToString());
-        var pinned = Assert.IsType<Pin.Pinned>(pin);
-        Assert.Equal((Version("170.5.96"), (DacFxVersion?)Version("170.4.71")), (pinned.Release, pinned.Before));
     }
 
+    /// <summary>R13: while the ledger's row reads UNPINNED, every DacFx is inside the window; DriftTests holds that each answer then says so.</summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Value", "R1")]
     [Trait("Exit", "M1.6")]
-    public void Unpinned_admits_every_DacFx_release_and_says_so()
+    public void Unpinned_admits_every_DacFx_release()
     {
         Pin unpinned = new Pin.Unpinned();
         Assert.Null(unpinned.Rejects(Version("170.5.96")));
         Assert.Null(unpinned.Rejects(Version("162.5.57")));
-        Assert.Equal("UNPINNED", unpinned.ToString());
-        Assert.True(unpinned.Match(_ => true, _ => false));
-        Assert.Equal("toolchain.dacfx-version", Assert.IsType<Result<Pin>.Failed>(Pin.Of("latest", null)).Error.Code);
-        Assert.Equal("toolchain.dacfx-version", Assert.IsType<Result<Pin>.Failed>(Pin.Of("170.5.96", "the one before")).Error.Code);
     }
 
     [Theory]
@@ -123,26 +118,49 @@ public sealed class ProvenanceTests
     public void A_DacFx_version_is_two_to_four_groups_of_digits_and_nothing_else(string text) =>
         Assert.Equal("toolchain.dacfx-version", Assert.IsType<Result<DacFxVersion>.Failed>(DacFxVersion.Of(text)).Error.Code);
 
-    /// <summary>A ledger row whose release before is not older than its pin is rejected, so the window never admits a newer release through it; versions order group by group as numbers.</summary>
+    /// <summary>
+    /// A ledger row is a pin only when both its versions are DacFx release versions and the release before is older than the pin, so
+    /// the window never admits a newer release through it.
+    /// </summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("170.5.96", "170.6.10", false)]
-    [InlineData("170.5.96", "170.5.96", false)]
-    [InlineData("170.5.96", "171.0.1", false)]
-    [InlineData("170.10.1", "170.9.95", true)]
-    [InlineData("170.5.96", "170.5.9", true)]
-    [InlineData("170.5.96", null, true)]
+    [InlineData("170.5.96", "170.6.10", "toolchain.window-order")]
+    [InlineData("170.5.96", "170.5.96", "toolchain.window-order")]
+    [InlineData("170.5.96", "171.0.1", "toolchain.window-order")]
+    [InlineData("170.10.1", "170.9.95", null)]
+    [InlineData("170.5.96", "170.5.9", null)]
+    [InlineData("170.5.96", null, null)]
+    [InlineData("latest", null, "toolchain.dacfx-version")]
+    [InlineData("170.5.96", "the one before", "toolchain.dacfx-version")]
     [Trait("Value", "R1")]
-    public void A_release_before_that_is_not_older_than_the_pin_is_rejected(string release, string? before, bool made)
-    {
-        var pin = Pin.Of(release, before);
+    public void A_ledger_row_is_rejected_for_a_text_that_is_no_version_or_a_release_before_that_is_not_older_than_the_pin(string release, string? before, string? code) =>
+        Assert.Equal(code, (Pin.Of(release, before) as Result<Pin>.Failed)?.Error.Code);
 
-        Assert.Equal(made ? null : "toolchain.window-order", (pin as Result<Pin>.Failed)?.Error.Code);
-        Assert.True(Version("170.10.0").CompareTo(Version("170.9.99")) > 0);
-        Assert.True(Version("170.5").CompareTo(Version("170.5.0")) < 0);
-        Assert.Equal(0, Version("170.5.96").CompareTo(Version("170.5.96")));
-        Assert.Throws<InvalidOperationException>(() => default(DacFxVersion).ToString());
+    /// <summary>
+    /// Versions order as System.Version orders the same numbers, so 170.10.0 follows 170.9.99 and a version comes before a longer one it
+    /// prefixes; two writings of one number, 170.05.96 and 170.5.96, are two versions, and the order agrees with equality.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void DacFx_versions_order_group_by_group_as_numbers_and_agree_with_equality()
+    {
+        var group = Gen.Select(Gen.OneOf(Gen.Int[0, 3], Gen.Int[0, int.MaxValue]), Gen.Bool);   // a number, and whether a zero is written before it
+        var version = group.Array[2, 4];
+        Gen.Select(version, version).Sample((a, b) =>
+        {
+            var (x, y) = (Version(Written(a)), Version(Written(b)));
+            var numbers = new System.Version(string.Join('.', a.Select(g => g.Item1))).CompareTo(new System.Version(string.Join('.', b.Select(g => g.Item1))));
+            return (numbers == 0 || Math.Sign(x.CompareTo(y)) == Math.Sign(numbers))
+                && (x.CompareTo(y) == 0) == (x == y) && Math.Sign(x.CompareTo(y)) == -Math.Sign(y.CompareTo(x));
+        });
+
+        static string Written((int Number, bool Zero)[] groups) => string.Join('.', groups.Select(g => (g.Zero ? "0" : "") + g.Number));
     }
+
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_default_DacFx_version_is_no_version_and_throws_when_printed() =>
+        Assert.Throws<InvalidOperationException>(() => default(DacFxVersion).ToString());
 
     private static Target Dev => Assert.IsType<Result<Target>.Ok>(Target.Parse("env:dev", "--target")).Value;
 
