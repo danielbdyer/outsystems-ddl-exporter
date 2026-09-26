@@ -387,6 +387,24 @@ public sealed class GitTests : IDisposable
         Assert.Equal("", scratch.Git("branch", "--list", "dbchange/evidence"));
     }
 
+    /// <summary>
+    /// N14 of the pre-M2 review: a git that times out inside a worktree dbchange keeps is git.timed-out, and the worktree stays. Git.At once
+    /// read any failure there as a worktree that is not current, removed it and made it again, and the new one met the same failure.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_git_that_times_out_inside_a_kept_worktree_is_git_timed_out_and_the_worktree_stays()
+    {
+        var commit = scratch.Commit("first", ("a.sql", "SELECT 1;\n"));
+        var worktree = Ok(Git.At(scratch.Root, commit)).Path;
+        Ran Stalls(Command c, CancellationToken t) => c.Arguments.Contains(worktree) && c.Arguments.Contains("rev-parse") ? new Ran.TimedOut(c.Timeout, "", "") : Command.Run(c, t);
+
+        Failed(Git.At(scratch.Root, commit, Stalls), "git.timed-out");
+
+        Assert.True(File.Exists(Path.Combine(worktree, "a.sql")), "the worktree was removed");
+        Assert.Equal(worktree, Ok(Git.At(scratch.Root, commit)).Path);
+    }
+
     /// <summary>git 2.35.2's safe.directory refusal, as git prints it, read from a stand-in since this machine's git predates it.</summary>
     [Fact]
     [Trait("Category", "fast")]

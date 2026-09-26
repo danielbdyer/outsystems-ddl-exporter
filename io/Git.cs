@@ -83,8 +83,8 @@ public static class Git
                         }
 
                         var path = state.Worktree(commit);
-                        return Swept(git, root, state, cancel).Bind<Worktree>(_ =>
-                            Current(git, path, commit, cancel) ? new Worktree(path, commit)
+                        return Swept(git, root, state, cancel).Bind(_ => Current(git, path, commit, cancel)).Bind<Worktree>(current =>
+                            current ? new Worktree(path, commit)
                             : Directory.Exists(path) && !Removed(git, root, path, cancel) ? new Error("git.failed", path + " is not at " + commit + " unchanged, and git cannot remove it.",
                                 "Close any program that holds a file under " + path + " open, delete the folder, and run dbchange again.")
                             : Step(git, root, ["worktree", "add", "--force", "--detach", path, commit], cancel).Map(_ => new Worktree(path, commit)));
@@ -263,11 +263,16 @@ public static class Git
         }
     });
 
-    /// <summary>Whether a worktree stands at its commit with nothing changed or added, so a build of it reads the commit's files alone.</summary>
-    private static bool Current(Runner git, string path, string commit, CancellationToken cancel) =>
-        File.Exists(Path.Combine(path, ".git"))
-        && Step(git, path, ["rev-parse", "HEAD"], cancel) is Result<string>.Ok { Value: var head } && head == commit
-        && Step(git, path, ["status", "--porcelain", "--untracked-files=all"], cancel) is Result<string>.Ok { Value: "" };
+    /// <summary>
+    /// Whether a worktree stands at its commit with nothing changed or added, so a build of it reads the commit's files alone. A worktree
+    /// git cannot read as one (git.failed) is not current, and is made again; any other failure of git there (a timeout, dubious
+    /// ownership, no git at all) is that failure, and the worktree stays.
+    /// </summary>
+    private static Result<bool> Current(Runner git, string path, string commit, CancellationToken cancel) =>
+        !File.Exists(Path.Combine(path, ".git")) ? false
+        : Step(git, path, ["rev-parse", "HEAD"], cancel).Bind(head => head != commit ? false
+                : Step(git, path, ["status", "--porcelain", "--untracked-files=all"], cancel).Map(status => status.Length == 0))
+            .Match<Result<bool>>(current => current, error => error.Code == "git.failed" ? false : error);
 
     /// <summary>
     /// The sweep itself, under the worktrees lock: each worktree whose holders' lock can be taken exclusively (no running dbchange holds it
