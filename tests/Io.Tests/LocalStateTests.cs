@@ -86,6 +86,24 @@ public sealed class LocalStateTests : IDisposable
         Assert.Contains(Path.GetDirectoryName(log.Path)!, error.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// N4 of the pre-M2 review: a run's folder, made for its first write, leaves the newest fifty run folders, its own among them, and deletes
+    /// the older ones with what they hold; .dbchange/runs/ once grew by a folder per command for good.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_new_run_s_folder_leaves_the_newest_fifty_run_folders()
+    {
+        var state = new LocalState(scratch.Root);
+        var older = Enumerable.Range(0, 55).Select(i => Path.Combine(state.Runs, "20260925T0000" + i.ToString("D2", System.Globalization.CultureInfo.InvariantCulture) + "Z-1-ab")).ToList();
+        older.ForEach(run => File.WriteAllText(Path.Combine(Directory.CreateDirectory(run).FullName, "queries.log"), "-- one\n"));
+        var newest = Path.Combine(state.Runs, "20260926T000000Z-1-ab");
+
+        Value(state.Made(newest));
+
+        Assert.Equal([.. older.Skip(6), newest], Directory.GetDirectories(state.Runs).Order(StringComparer.Ordinal));
+    }
+
     [Fact]
     [Trait("Category", "fast")]
     public void Made_writes_the_stop_files_for_the_worktrees_alone_and_never_over_a_file_that_exists()

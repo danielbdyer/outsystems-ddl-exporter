@@ -441,6 +441,7 @@ public static class SqlServer
     {
         private readonly Lock gate = new();
         private readonly LocalState state;
+        private bool made;
 
         private QueryLog(LocalState state, string path) => (this.state, Path) = (state, path);
 
@@ -465,7 +466,7 @@ public static class SqlServer
                 + statement + "\nGO\n";
             lock (gate)
             {
-                return state.Made(System.IO.Path.GetDirectoryName(Path)!).Bind(_ => Write.Append(Path, entry));
+                return Folder().Bind(_ => Write.Append(Path, entry));
             }
         }
 
@@ -473,7 +474,24 @@ public static class SqlServer
         public string Answer => System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Path)!, "answer.json");
 
         /// <summary>The whole answer written to <see cref="Answer"/>, the run's folder made as Add makes it: the full path written, or file.unwritable.</summary>
-        public Result<string> WriteAnswer(string json) => state.Made(System.IO.Path.GetDirectoryName(Path)!).Bind(_ => Write.Text(Answer, json));
+        public Result<string> WriteAnswer(string json)
+        {
+            lock (gate)
+            {
+                return Folder().Bind(_ => Write.Text(Answer, json));
+            }
+        }
+
+        /// <summary>The run's folder, made through LocalState on the run's first write alone, which also prunes the oldest runs.</summary>
+        private Result<string> Folder()
+        {
+            var folder = System.IO.Path.GetDirectoryName(Path)!;
+            return made ? folder : state.Made(folder).Map(madeNow =>
+            {
+                made = true;
+                return madeNow;
+            });
+        }
     }
 
     /// <summary>

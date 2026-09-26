@@ -38,6 +38,9 @@ public sealed record LocalState(string Root)
 
     public string Runs => Path.Combine(Folder, "runs");
 
+    /// <summary>How many run folders .dbchange/runs/ keeps: the newest, by their names, which begin with the run's UTC time.</summary>
+    public const int KeptRuns = 50;
+
     public string Copies => Path.Combine(Folder, "copies.json");
 
     public string CopiesLock => Path.Combine(Folder, "copies.lock");
@@ -55,7 +58,11 @@ public sealed record LocalState(string Root)
     /// <summary>A build's folder, by the commit or by the inputs' fingerprint.</summary>
     public string Build(string key) => Path.Combine(Builds, key);
 
-    /// <summary>The folder made, with .dbchange/.gitignore and, for the worktrees, the stop files, each written only when absent; the folder's path.</summary>
+    /// <summary>
+    /// The folder made, with .dbchange/.gitignore and, for the worktrees, the stop files, each written only when absent; the folder's path.
+    /// A run's folder, made for its first write, leaves the newest <see cref="KeptRuns"/> run folders and deletes the rest, each as far as
+    /// the file system lets it: a folder another program holds stays for the next run.
+    /// </summary>
     public Result<string> Made(string folder)
     {
         try
@@ -73,6 +80,27 @@ public sealed record LocalState(string Root)
             files = files.Concat(StopFiles.Select(stop => (Path.Combine(Worktrees, stop.File), stop.Text)));
         }
 
+        if (Path.GetDirectoryName(Path.GetFullPath(folder)) == Path.GetFullPath(Runs))
+        {
+            foreach (var old in new DirectoryInfo(Runs).GetDirectories().Select(d => d.FullName).Order(StringComparer.Ordinal).SkipLast(KeptRuns))
+            {
+                Discard(old);
+            }
+        }
+
         return Result.All(files.Where(f => !File.Exists(f.Path)).Select(f => Write.Text(f.Path, f.Text))).Map(_ => folder);
+    }
+
+    /// <summary>A folder deleted with what it holds; one the file system will not release (a program holds a file in it) is left.</summary>
+    private static void Discard(string folder)
+    {
+        try
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+        catch (Exception e) when (Write.FileSystemFailure(e))
+        {
+            // the next run's pruning meets it again
+        }
     }
 }
