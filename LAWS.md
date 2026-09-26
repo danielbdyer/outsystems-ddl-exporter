@@ -27,6 +27,7 @@ Whether each is green is the CI run's to say. A law without a green test is not 
 | a named environment cannot be written | A copy the registry does not hold or one on a named environment's host is exit 9 | `DbChange.Io.Tests.VerbExitTests.A_copy_the_registry_does_not_hold_or_one_on_a_named_environment_s_host_is_exit_9` |
 | dependencies point one way | Io does not depend on the cli and the kernel on neither | `DbChange.Budgets.Tests.DependenciesPointOneWay.Io_does_not_depend_on_the_cli_and_the_kernel_on_neither` |
 | dependencies point one way | No project reaches into the knowledge files or ci | `DbChange.Budgets.Tests.DependenciesPointOneWay.No_project_reaches_into_the_knowledge_files_or_ci` |
+| dependencies point one way | The cli reaches io through its use cases alone | `DbChange.Budgets.Tests.DependenciesPointOneWay.The_cli_reaches_io_through_its_use_cases_alone` |
 | dependencies point one way | The cli references no DacFx type | `DbChange.Budgets.Tests.DependenciesPointOneWay.The_cli_references_no_DacFx_type` |
 | the kernel cannot do I/O | Each banned symbol planted in the kernel is a build error | `DbChange.Budgets.Tests.BannedSymbolsTests.Each_banned_symbol_planted_in_the_kernel_is_a_build_error` |
 | the kernel cannot do I/O | No public kernel member is asynchronous | `DbChange.Budgets.Tests.KernelCannotDoIo.No_public_kernel_member_is_asynchronous` |

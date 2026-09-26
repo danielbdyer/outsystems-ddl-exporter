@@ -41,39 +41,24 @@ public static partial class Verbs
     /// </summary>
     public static Envelope Diff(Checkout here, SqlServer.QueryLog log, IReadOnlyList<string> words)
     {
-        if (DacFx.Version.Failed(out var dacfx, out var error))
-        {
-            return Contract.Failed(Of("diff"), error);
-        }
-
-        var stamp = new Stamp(dacfx);
         if (Contract.Flags(words, ["--from", "--to"], ["--project"], ["--fail-on-change"]).Bind(flags => SqlServer.Target(flags["--from"], "--from")
-            .Bind(from => SqlServer.Target(flags["--to"], "--to").Bind(to => Io.Doctor.Toolchain(here.Root, here.Version).Map(pin => (Flags: flags, From: from, To: to, Pin: pin)))))
-            .Failed(out var asked, out error))
+            .Bind(from => SqlServer.Target(flags["--to"], "--to").Map(to => (Flags: flags, From: from, To: to))))
+            .Failed(out var asked, out var error))
         {
-            return Contract.Failed(Of("diff"), error, stamp);
+            return Contract.Failed(Of("diff"), error, Standing.Committed);
         }
 
-        stamp = stamp with { Pin = asked.Pin };
-        if ((asked.Pin.Rejects(dacfx) is { } outside ? Result.Fail<Source>(outside) : Reading(here, log, asked.From, asked.Flags.GetValueOrDefault("--project")))
-                .Bind(before => Reading(here, log, asked.To, asked.Flags.GetValueOrDefault("--project"))
-                .Bind(after => Ssdt.CollationOf(before.Model.Elements).Bind(collation =>
-                    Change.Between(before.Model.Elements, after.Model.Elements, SortedArray.Of(before.Model.Renames.Concat(after.Model.Renames).Distinct()), collation)
-                        .Map(change => (Before: before, After: after, Change: change, Collation: collation)))))
-            .Failed(out var diff, out error))
-        {
-            return Contract.Failed(Of("diff"), error, stamp);
-        }
-
-        return Diff(diff.Before, diff.After, diff.Change, diff.Collation, asked.Flags.ContainsKey("--fail-on-change"), stamp with { Server = diff.Before.Server ?? diff.After.Server });
+        var diff = ModelDiff.Run(here, asked.From, asked.To, asked.Flags.GetValueOrDefault("--project"), log);
+        return diff.Result.Failed(out var answer, out error) ? Contract.Failed(Of("diff"), error, diff.Stamp) : Diff(answer, asked.Flags.ContainsKey("--fail-on-change"), diff.Stamp!);
     }
 
     /// <summary>
     /// The answer of a diff whose sides are read: matches (exit 0) when the change is empty, else differs, at exit 5 only with
     /// --fail-on-change; the message counts the changes, the change's lines are the Markdown body, and each case-only pair is a note.
     /// </summary>
-    internal static Envelope Diff(Source before, Source after, Change change, Collation collation, bool failOnChange, Stamp stamp)
+    internal static Envelope Diff(ModelDiff.Answer diff, bool failOnChange, Stamp stamp)
     {
+        var (before, after, change, collation) = (diff.From, diff.To, diff.Change, diff.Collation);
         var (lines, printer) = (Lines(change).ToList(), new Printer());
         var message = lines.Count == 0 ? "No change from " + before.Target + " to " + after.Target + "."
             : lines.Count.ToString(CultureInfo.InvariantCulture) + (lines.Count == 1 ? " change from " : " changes from ") + before.Target + " to " + after.Target + ".";
@@ -124,5 +109,5 @@ public static partial class Verbs
 
     private static JsonObject Side() => Render.Record(new() { ["from"] = Render.Text(), ["fingerprint"] = Render.Fingerprint() });
 
-    private static JsonObject Side(Source source) => new() { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(Fingerprint.Of(source.Model.Elements)) };
+    private static JsonObject Side(ModelRead.Source source) => new() { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(Fingerprint.Of(source.Model.Elements)) };
 }

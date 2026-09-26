@@ -31,24 +31,13 @@ public static class DriftCheck
     /// <summary>check drift, the database read by <paramref name="extract"/>, as a test gives it.</summary>
     internal static Stamped<Answer> Run(Checkout checkout, Request request, SqlServer.QueryLog log, Func<SqlServer.Database, Result<Ssdt.Package>> extract)
     {
-        if (DacFx.Version is not Result<DacFxVersion>.Ok { Value: var dacfx })
+        var standing = Standing.Of(checkout);
+        if (standing.Result is Result<Pin>.Failed { Error: var refused })
         {
-            return new(null, ((Result<DacFxVersion>.Failed)DacFx.Version).Error);
+            return new(standing.Stamp, refused);
         }
 
-        var stamp = new Stamp(dacfx);
-        var pinned = Doctor.Toolchain(checkout.Root, checkout.Version);
-        if (pinned is not Result<Pin>.Ok { Value: var pin })
-        {
-            return new(stamp, ((Result<Pin>.Failed)pinned).Error);
-        }
-
-        stamp = stamp with { Pin = pin };
-        if (pin.Rejects(dacfx) is { } outside)
-        {
-            return new(stamp, outside);
-        }
-
+        var stamp = standing.Stamp!;
         var environmentsFile = EnvironmentsFile.Read(checkout.Root);
         var reached = SqlServer.Resolve(request.Target, environmentsFile, checkout.Root)
             .Bind(database => Profile(checkout.Root, database, environmentsFile, request.Profile).Map(profile => (Database: database, Profile: profile)))

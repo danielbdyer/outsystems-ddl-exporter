@@ -50,7 +50,7 @@ public static partial class Verbs
                     .Map(at => new DriftCheck.Request(target, at, flags.GetValueOrDefault("--profile"), flags.GetValueOrDefault("--project")))))
             .Failed(out var request, out var error))
         {
-            return Contract.Failed(verb, error, DacFx.Version.Match<Stamp?>(dacfx => new Stamp(dacfx), _ => null));
+            return Contract.Failed(verb, error, Standing.Committed);
         }
 
         var drift = DriftCheck.Run(here, request, log);

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
 using DbChange.Io;
@@ -30,28 +29,22 @@ public static partial class Verbs
     /// <summary>dbchange read --from &lt;target&gt; [--project &lt;path&gt;]: a ref built at its commit, a package or a database, read whole (V3_ARCHITECTURE.md §8.1).</summary>
     public static Envelope Read(Checkout here, SqlServer.QueryLog log, IReadOnlyList<string> words)
     {
-        if (DacFx.Version.Failed(out var dacfx, out var error))
-        {
-            return Contract.Failed(Of("read"), error);
-        }
-
-        var stamp = new Stamp(dacfx);
         if (Contract.Flags(words, ["--from"], ["--project"], []).Bind(flags => SqlServer.Target(flags["--from"], "--from").Map(from => (Flags: flags, From: from)))
-            .Bind(asked => Io.Doctor.Toolchain(here.Root, here.Version).Map(pin => (asked.Flags, asked.From, Pin: pin))).Failed(out var asked, out error))
+            .Failed(out var asked, out var error))
         {
-            return Contract.Failed(Of("read"), error, stamp);
+            return Contract.Failed(Of("read"), error, Standing.Committed);
         }
 
-        stamp = stamp with { Pin = asked.Pin };
-        if ((asked.Pin.Rejects(dacfx) is { } outside ? Result.Fail<Source>(outside) : Reading(here, log, asked.From, asked.Flags.GetValueOrDefault("--project"))).Failed(out var source, out error))
+        var read = ModelRead.Run(here, asked.From, asked.Flags.GetValueOrDefault("--project"), log);
+        if (read.Result.Failed(out var source, out error))
         {
-            return Contract.Failed(Of("read"), error, stamp);
+            return Contract.Failed(Of("read"), error, read.Stamp);
         }
 
         var (fingerprint, printer) = (Fingerprint.Of(source.Model.Elements), new Printer());
         var elements = Render.Array(source.Model.Elements.Select(printer.Json));
         return Contract.Answer(Of("read").Output, Of("read").Outcome("done"), 0, source.Target + ": " + source.Model.Elements.Count + " elements, fingerprint " + Render.Digest(fingerprint),
-            [.. source.Notes, .. printer.Findings], stamp with { Server = source.Server }, content: new JsonObject
+            [.. source.Notes, .. printer.Findings], read.Stamp, content: new JsonObject
             {
                 ["read"] = new JsonObject { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(fingerprint), ["count"] = source.Model.Elements.Count, ["elements"] = elements },
             });
@@ -60,43 +53,6 @@ public static partial class Verbs
     /// <summary>A case-only pair as a note: the collation reads the two spellings as one name, and DacFx plans nothing for the difference.</summary>
     internal static Finding CaseOnly(string code, Rename pair, Collation collation) => Finding.Note(code, pair.After.ToString(),
         pair.Before + " and " + pair.After + " differ in letter case alone, which " + collation.Name + " reads as one name; DacFx plans nothing for it.");
-
-    /// <summary>
-    /// A target's model read whole into elements, with the SQL Server a copy runs on; a package's model carries its refactorlog's renames,
-    /// and a database's read says what the identity could read there.
-    /// </summary>
-    internal sealed record Source(Target Target, Ssdt.ModelElements Model, Server? Server, bool IsDatabase, SqlServer.Readable? Readable = null)
-    {
-        /// <summary>The notes reading the target raised: each error DacFx found in the model, and, for a database, an identity without the server's scope.</summary>
-        public IEnumerable<Finding> Notes => [.. Model.Notes(Target.ToString()), .. Readable?.Notes ?? []];
-    }
-
-    internal static Result<Source> Reading(Checkout here, SqlServer.QueryLog log, Target target, string? project) => target.Match(
-        _ => Modelled(here, log, target), _ => Modelled(here, log, target), () => Modelled(here, log, target),
-        reference => Ssdt.Build(here.Root, reference.Ref.ToString(), project, here.Tool, here.WorkingDirectory).Bind(built => Packaged(built.Built.Path))
-            .Map(model => new Source(target, model, null, false)),
-        dacpac => Packaged(Path.GetFullPath(Path.Combine(here.WorkingDirectory, dacpac.Path))).Map(model => new Source(target, model, null, false)));
-
-    /// <summary>A package's model read into elements, the package opened once and released.</summary>
-    private static Result<Ssdt.ModelElements> Packaged(string dacpac) => Ssdt.Open(dacpac).Bind(package =>
-    {
-        using (package)
-        {
-            return package.Elements;
-        }
-    });
-
-    /// <summary>A database read once (io/DacFx.Extract), after this identity is found to hold VIEW DEFINITION there, with a copy's SQL Server and what the identity could read.</summary>
-    private static Result<Source> Modelled(Checkout here, SqlServer.QueryLog log, Target target) => SqlServer.Resolve(target, here.Root).Bind(database => SqlServer.Reach(database, log)
-        .Bind(readable => DacFx.Extract(database).Bind(package =>
-        {
-            using (package)
-            {
-                return package.Elements;
-            }
-        })
-        .Bind(model => (database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, log).Map(server => (Server?)server) : Result.Ok<Server?>(null))
-            .Map(server => new Source(target, model, server, true, readable)))));
 
     /// <summary>
     /// The writer of the values an answer prints, and the findings printing raises (decision 2.27): a script is written through

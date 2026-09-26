@@ -82,6 +82,24 @@ public static class Doctor
     /// <summary>What the examination of one item found, and its remedy when the item is missing.</summary>
     public sealed record Prerequisite(Item Item, string Found, string? Remedy);
 
+    /// <summary>What the doctor found of each item, in the order it examines them, and whether nothing is missing.</summary>
+    public sealed record Readiness(IReadOnlyList<Prerequisite> Prerequisites)
+    {
+        /// <summary>Every item present: READY, exit 0; else DEGRADED, exit 6.</summary>
+        public bool Ready => Prerequisites.All(p => p.Remedy is null);
+    }
+
+    /// <summary>doctor as a use case, for the machine around <paramref name="checkout"/>.</summary>
+    public static Stamped<Readiness> Run(Checkout checkout, Runner run, CancellationToken cancel = default) => Run(Machine.Here(checkout), run, cancel);
+
+    /// <summary>
+    /// doctor as a use case: the machine examined, stamped with the committed DacFx when it can be named (the dacfx item says why when it
+    /// cannot) and the ledger's pin when it can be read. The doctor reaches no copy, so it stamps no SQL Server.
+    /// </summary>
+    public static Stamped<Readiness> Run(Machine machine, Runner run, CancellationToken cancel = default) =>
+        new(DacFx.Version.Match<Stamp?>(dacfx => new Stamp(dacfx, Toolchain(machine.Checkout.Root, machine.Checkout.Version).Match<Pin?>(pin => pin, _ => null)), _ => null),
+            new Readiness(Examine(machine, run, cancel)));
+
     /// <summary>The pinned image's digest, which the image item compares the dbchange-sql container's image with.</summary>
     public static string ImageDigest => SqlServerImage[(SqlServerImage.IndexOf('@', StringComparison.Ordinal) + 1)..];
 

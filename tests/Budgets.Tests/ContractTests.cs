@@ -514,10 +514,11 @@ public sealed class ContractTests
     public void Doctor_on_a_bare_machine_prints_DEGRADED_with_a_remedy_per_missing_item()
     {
         using var bare = ScratchFolder.Temporary("bare");
-        var checks = Doctor.Examine(new Doctor.Machine(new Checkout(bare.Path, bare.Path, null, Contract.Version), bare.Path, null, bare.Under("no-sql.env"), Environment.Version), (c, _) => new Ran.NotFound(c.Program, "not installed"));
+        var doctor = Doctor.Run(new Doctor.Machine(new Checkout(bare.Path, bare.Path, null, Contract.Version), bare.Path, null, bare.Under("no-sql.env"), Environment.Version), (c, _) => new Ran.NotFound(c.Program, "not installed"));
 
-        var json = Render.Json(Verbs.Doctor(checks, Doctor.Toolchain(bare.Path, Contract.Version)));
+        var json = Render.Json(Verbs.Doctor(doctor));
 
+        var checks = Expect.Value(doctor.Result).Prerequisites;
         VerbAnswer.Valid("dbchange.doctor.1.schema.json", json);
         Assert.Equal((6, "degraded"), ((int)json["exit"]!, (string?)json["outcome"]));
         var line = (string)json["message"]!;
@@ -555,7 +556,7 @@ public sealed class ContractTests
             _ => new Ran.NotFound(command.Program, "not installed"),
         };
 
-        var answer = Verbs.Doctor(Doctor.Examine(new Doctor.Machine(new Checkout(machine.Path, machine.Path, null, Contract.Version), machine.Path, null, machine.Under("sql.env"), Environment.Version), answers), Doctor.Toolchain(machine.Path, Contract.Version));
+        var answer = Verbs.Doctor(Doctor.Run(new Doctor.Machine(new Checkout(machine.Path, machine.Path, null, Contract.Version), machine.Path, null, machine.Under("sql.env"), Environment.Version), answers));
 
         var json = Render.Json(answer);
         VerbAnswer.Valid("dbchange.doctor.1.schema.json", json);

@@ -62,13 +62,13 @@ public sealed class AnswerSizeTests : IDisposable
     /// <summary>dbchange diff run in this process with a body that answers the large change, from a checkout under the scratch folder.</summary>
     private (int Exit, string Output) Run(string[] arguments)
     {
-        var diff = Contract.Verbs.Single(v => v.Name == "diff") with { Body = (_, _, _) => Verbs.Diff(Side("dacpac:before.dacpac"), Side("dacpac:after.dacpac"), Large(), Collation.CaseSensitive, false, new Stamp(Ok(DacFx.Version))) };
+        var diff = Contract.Verbs.Single(v => v.Name == "diff") with { Body = (_, _, _) => Verbs.Diff(new ModelDiff.Answer(Side("dacpac:before.dacpac"), Side("dacpac:after.dacpac"), Large(), Collation.CaseSensitive), false, new Stamp(Ok(DacFx.Version))) };
         using var output = new MemoryStream();
         var exit = Cli.Program.Run(arguments, output, () => new Checkout(root.Path, root.Path, null, Cli.Contract.Version), [diff]);
         return (exit, Encoding.UTF8.GetString(output.ToArray()));
     }
 
-    private static Verbs.Source Side(string target) => new(Expect.Value(SqlServer.Target(target, "--from")), new Ssdt.ModelElements([], []), null, false);
+    private static ModelRead.Source Side(string target) => new(Expect.Value(SqlServer.Target(target, "--from")), new Ssdt.ModelElements([], []), null, false);
 
     /// <summary>One column of each of 3,000 tables, its Length altered from 300 to 256.</summary>
     private static Change Large() => new([], [], [], SortedArray.Of(Enumerable.Range(0, Columns).Select(i =>
