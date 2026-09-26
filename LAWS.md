@@ -63,6 +63,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | D3 | Text is fingerprinted in its canonical form | `DbChange.Kernel.Tests.FingerprintTests.Text_is_fingerprinted_in_its_canonical_form` |
 | G6 | No verb writes to a named environment | `DbChange.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |
 | L1 | An error carries a remedy that is one move in the register | `DbChange.Budgets.Tests.Register.Errors.An_error_carries_a_remedy_that_is_one_move_in_the_register` |
+| L1 | Every text a finding writes is in the register | `DbChange.Budgets.Tests.Register.Findings.Every_text_a_finding_writes_is_in_the_register` |
 | L1 | A document of the repository uses no retired word and no banned form | `DbChange.Budgets.Tests.Register.Prose.A_document_of_the_repository_uses_no_retired_word_and_no_banned_form` |
 | L1 | Every test name read as words is in the register | `DbChange.Budgets.Tests.Register.TestNames.Every_test_name_read_as_words_is_in_the_register` |
 | L1 | Every text the help prints is in the register | `DbChange.Budgets.Tests.Register.TestNames.Every_text_the_help_prints_is_in_the_register` |

@@ -77,7 +77,7 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
             && f.Message == "The column [dbo].[Product].[LegacyNote] is being dropped, data loss could occur.");
         Assert.DoesNotContain(findings, f => f.Code == "drift.refresh");
         Assert.All(findings.Where(f => f.Code == "drift.consequence"), f => Assert.Equal("note", f.Severity));
-        Assert.Contains("`drift.column` Column [dbo].[Product].[LegacyNote]: on the target, not in the repository.", Drift("copy:" + copy.Name).Output, StringComparison.Ordinal);
+        Assert.Contains("`drift.column` Column [dbo].[Product].[LegacyNote]: only on the target.", Drift("copy:" + copy.Name).Output, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -168,9 +168,9 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         Assert.Contains("dropped Column [dbo].[Customer].[a\\u0009b]", diff.Split('\n'));
         Assert.True(driftExit == 5, drift);
         Assert.Contains("- warning `drift.alter` Table [dbo].[Customer]: ", drift, StringComparison.Ordinal);
-        Assert.Contains("`drift.column` Column [dbo].[Customer].[ ]: on the target, not in the repository.", drift, StringComparison.Ordinal);
-        Assert.Contains("`drift.column` Column [dbo].[Customer].[a\\u0009b]: on the target, not in the repository.", drift, StringComparison.Ordinal);
-        Assert.Contains("`drift.column` Column [dbo].[Customer].[a: b]: on the target, not in the repository.", drift, StringComparison.Ordinal);
+        Assert.Contains("`drift.column` Column [dbo].[Customer].[ ]: only on the target.", drift, StringComparison.Ordinal);
+        Assert.Contains("`drift.column` Column [dbo].[Customer].[a\\u0009b]: only on the target.", drift, StringComparison.Ordinal);
+        Assert.Contains("`drift.column` Column [dbo].[Customer].[a: b]: only on the target.", drift, StringComparison.Ordinal);
         Assert.DoesNotContain('\t', diff + drift);
     }
 

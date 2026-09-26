@@ -127,8 +127,8 @@ public static partial class Verbs
     /// and relationship of one altered, from the target to the repository.
     /// </summary>
     private static IEnumerable<Finding> Columns(Change columns) =>
-        columns.Created.Select(e => Finding.Warning("drift.column", e.Key.ToString(), "in the repository, not on the target."))
-            .Concat(columns.Dropped.Select(e => Finding.Warning("drift.column", e.Key.ToString(), "on the target, not in the repository.")))
+        columns.Created.Select(e => Finding.Warning("drift.column", e.Key.ToString(), "only in the repository."))
+            .Concat(columns.Dropped.Select(e => Finding.Warning("drift.column", e.Key.ToString(), "only on the target.")))
             .Concat(columns.Renamed.Select(r => Finding.Warning("drift.column", r.Before.ToString(), "renamed to " + r.After + " in the repository.")))
             .Concat(columns.Altered.SelectMany(a => a.Properties.Select(p => Finding.Warning("drift.column", a.Key.ToString(), Changed(p) + ", from the target to the repository."))
                 .Concat(a.Relationships.Select(r => Finding.Warning("drift.column", a.Key.ToString(), r.Name + ", from the target to the repository.")))));
