@@ -139,7 +139,8 @@ public sealed class WriteTests : IDisposable
     /// one that lets go within the few attempts made is waited out, and one that stays is named, the old content kept and no temporary
     /// file left. On Linux and macOS a rename replaces an open file, so both writes succeed. The brief reader lets go 40 ms after the
     /// write's temporary file appears beside the target, past the first attempts and inside the last, from a thread of its own, so a busy
-    /// thread pool cannot hold it open past the attempts.
+    /// thread pool cannot hold it open past the attempts; it also stops waiting once the write has returned, since on Linux the rename
+    /// can replace the temporary file before the thread sees it.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -148,20 +149,22 @@ public sealed class WriteTests : IDisposable
         var path = directory.Under("file.json");
         Value(Write.Text(path, "old\n"));
         var brief = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var returned = new ManualResetEventSlim();
         var closing = new Thread(() =>
         {
-            while (Directory.GetFiles(directory.Path).Length < 2)
+            while (Directory.GetFiles(directory.Path).Length < 2 && !returned.IsSet)
             {
                 Thread.Sleep(1);
             }
 
             Thread.Sleep(40);
             brief.Dispose();
-        });
+        }) { IsBackground = true };
         closing.Start();
 
         Value(Write.Text(path, "new\n"));
-        closing.Join();
+        returned.Set();
+        Assert.True(closing.Join(TimeSpan.FromSeconds(10)), "the brief reader did not let go within ten seconds of the write");
         var waitedOut = Read(path);
         using var stays = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         var written = Write.Text(path, "newer\n");
