@@ -14,6 +14,9 @@ internal sealed class DisposableCopy : IDisposable
 
     public SqlServer.Copy Copy { get; }
 
+    /// <summary>A copy already made, dropped when this is disposed.</summary>
+    public static DisposableCopy Of(SqlServer.Copy copy) => new(copy);
+
     public static DisposableCopy Create(string repositoryRoot, string server, string? dacpac = null, PublishProfile.Strict? profile = null)
     {
         var made = new DisposableCopy(Expect.Value(LocalServer.Create(repositoryRoot, server)));

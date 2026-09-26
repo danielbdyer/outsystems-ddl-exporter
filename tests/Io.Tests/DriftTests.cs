@@ -5,13 +5,11 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
-using System.Xml.Linq;
 using DbChange.Budgets.Tests;
 using DbChange.Kernel;
 using DbChange.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.SqlServer.Dac;
-using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Xunit;
 
 namespace DbChange.Io.Tests;
@@ -81,25 +79,19 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
     public async Task A_published_copy_is_in_sync_with_its_package_and_one_column_altered_on_it_is_exit_5_naming_it()
     {
         var copy = await Published();
-        try
-        {
-            var (exit, output) = Drift("copy:" + copy.Name);
-            Assert.True(exit == 0, output);
-            Assert.StartsWith("copy:" + copy.Name + " is in sync with ref:" + repository.Base + " (commit " + repository.Base[..8] + ").\n", output, StringComparison.Ordinal);
+        using var disposable = DisposableCopy.Of(copy);
+        var (exit, output) = Drift("copy:" + copy.Name);
+        Assert.True(exit == 0, output);
+        Assert.StartsWith("copy:" + copy.Name + " is in sync with ref:" + repository.Base + " (commit " + repository.Base[..8] + ").\n", output, StringComparison.Ordinal);
 
-            await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(300) NULL;");
-            (exit, output) = Drift("copy:" + copy.Name);
+        await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(300) NULL;");
+        (exit, output) = Drift("copy:" + copy.Name);
 
-            Assert.True(exit == 5, output);
-            Assert.StartsWith("copy:" + copy.Name + " differs from ref:" + repository.Base + " (commit " + repository.Base[..8] + "): the deploy plan holds 1 operation.", output, StringComparison.Ordinal);
-            Assert.Contains("- warning `drift.alter` Table [dbo].[Customer]: The deploy plan against copy:" + copy.Name + " would alter Table [dbo].[Customer].", output, StringComparison.Ordinal);
-            Assert.Equal(["- warning `drift.column` Column [dbo].[Customer].[Email]: Length 300 → 256, from the target to the repository."],
-                output.Split('\n').Where(l => l.Contains("`drift.column`", StringComparison.Ordinal)));
-        }
-        finally
-        {
-            GitTests.Ok(LocalServer.Drop(copy));
-        }
+        Assert.True(exit == 5, output);
+        Assert.StartsWith("copy:" + copy.Name + " differs from ref:" + repository.Base + " (commit " + repository.Base[..8] + "): the deploy plan holds 1 operation.", output, StringComparison.Ordinal);
+        Assert.Contains("- warning `drift.alter` Table [dbo].[Customer]: The deploy plan against copy:" + copy.Name + " would alter Table [dbo].[Customer].", output, StringComparison.Ordinal);
+        Assert.Equal(["- warning `drift.column` Column [dbo].[Customer].[Email]: Length 300 → 256, from the target to the repository."],
+            output.Split('\n').Where(l => l.Contains("`drift.column`", StringComparison.Ordinal)));
     }
 
     /// <summary>
@@ -113,30 +105,24 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
     public async Task A_column_the_package_drops_is_named_with_DacFx_s_data_issue_and_a_dependent_s_refresh_is_a_note()
     {
         var copy = await Published();
-        try
-        {
-            await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Product ADD LegacyNote NVARCHAR(40) NOT NULL CONSTRAINT DF_Product_LegacyNote DEFAULT (N'x');");
-            await SqlServerFixture.ExecuteAsync(copy.Connection, "CREATE VIEW dbo.ProductNotes AS SELECT Id, LegacyNote FROM dbo.Product;");
+        using var disposable = DisposableCopy.Of(copy);
+        await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Product ADD LegacyNote NVARCHAR(40) NOT NULL CONSTRAINT DF_Product_LegacyNote DEFAULT (N'x');");
+        await SqlServerFixture.ExecuteAsync(copy.Connection, "CREATE VIEW dbo.ProductNotes AS SELECT Id, LegacyNote FROM dbo.Product;");
 
-            var (exit, output) = Drift("copy:" + copy.Name, "--json");
+        var (exit, output) = Drift("copy:" + copy.Name, "--json");
 
-            var answer = JsonNode.Parse(output)!;
-            ScratchRepository.Valid("dbchange.check.1.schema.json", answer);
-            var findings = answer["findings"]!.AsArray().Select(f => (Code: (string)f!["code"]!, Severity: (string)f["severity"]!, Subject: (string)f["subject"]!, Message: (string)f["message"]!)).ToList();
-            Console.WriteLine(string.Join('\n', findings));
-            Assert.True(exit == 5, output);
-            Assert.Contains(("drift.alter", "warning", "Table [dbo].[Product]"), findings.Select(f => (f.Code, f.Severity, f.Subject)));
-            Assert.Contains(("drift.drop", "warning", "DefaultConstraint [dbo].[DF_Product_LegacyNote]"), findings.Select(f => (f.Code, f.Severity, f.Subject)));
-            Assert.Contains(findings, f => f is { Code: "drift.data-issue", Severity: "warning", Subject: "Table [dbo].[Product]" }
-                && f.Message == "The column [dbo].[Product].[LegacyNote] is being dropped, data loss could occur.");
-            Assert.DoesNotContain(findings, f => f.Code == "drift.refresh");
-            Assert.All(findings.Where(f => f.Code == "drift.consequence"), f => Assert.Equal("note", f.Severity));
-            Assert.Contains("`drift.column` dropped Column [dbo].[Product].[LegacyNote]", Drift("copy:" + copy.Name).Output, StringComparison.Ordinal);
-        }
-        finally
-        {
-            GitTests.Ok(LocalServer.Drop(copy));
-        }
+        var answer = JsonNode.Parse(output)!;
+        ScratchRepository.Valid("dbchange.check.1.schema.json", answer);
+        var findings = answer["findings"]!.AsArray().Select(f => (Code: (string)f!["code"]!, Severity: (string)f["severity"]!, Subject: (string)f["subject"]!, Message: (string)f["message"]!)).ToList();
+        Console.WriteLine(string.Join('\n', findings));
+        Assert.True(exit == 5, output);
+        Assert.Contains(("drift.alter", "warning", "Table [dbo].[Product]"), findings.Select(f => (f.Code, f.Severity, f.Subject)));
+        Assert.Contains(("drift.drop", "warning", "DefaultConstraint [dbo].[DF_Product_LegacyNote]"), findings.Select(f => (f.Code, f.Severity, f.Subject)));
+        Assert.Contains(findings, f => f is { Code: "drift.data-issue", Severity: "warning", Subject: "Table [dbo].[Product]" }
+            && f.Message == "The column [dbo].[Product].[LegacyNote] is being dropped, data loss could occur.");
+        Assert.DoesNotContain(findings, f => f.Code == "drift.refresh");
+        Assert.All(findings.Where(f => f.Code == "drift.consequence"), f => Assert.Equal("note", f.Severity));
+        Assert.Contains("`drift.column` dropped Column [dbo].[Product].[LegacyNote]", Drift("copy:" + copy.Name).Output, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -158,48 +144,42 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
     public async Task A_case_only_rename_of_a_table_on_a_copy_plans_nothing_under_either_collation_and_diff_reads_it_under_the_copy_s_collation(string collation, bool caseInsensitive, int driftExit)
     {
         var (copy, dacpac, profile) = await Published(collation);
-        try
+        using var disposable = DisposableCopy.Of(copy);
+        await SqlServerFixture.ExecuteAsync(copy.Connection, "EXEC sp_rename 'dbo.Customer', 'CUSTOMER';");
+        Assert.Equal(1, await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.databases WHERE name = @name AND collation_name = N'" + collation + "';", copy.Name.ToString()));
+        Assert.Equal((1, 0), (
+            await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.tables WHERE name COLLATE Latin1_General_BIN2 = N'CUSTOMER';"),
+            await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.tables WHERE name COLLATE Latin1_General_BIN2 = N'Customer';")));
+
+        var plan = Planned(dacpac, copy, profile);
+        var (exit, output) = Drift("copy:" + copy.Name);
+        var (diffExit, diffOutput) = repository.Run("diff", "--from", "copy:" + copy.Name, "--to", "dacpac:" + dacpac, "--json");
+
+        Assert.True(plan.Report.IsEmpty, collation + " planned:\n" + string.Join('\n', plan.Report.Operations));
+        Assert.True(exit == driftExit, output);
+        if (driftExit == 6)
         {
-            await SqlServerFixture.ExecuteAsync(copy.Connection, "EXEC sp_rename 'dbo.Customer', 'CUSTOMER';");
-            Assert.Equal(1, await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.databases WHERE name = @name AND collation_name = N'" + collation + "';", copy.Name.ToString()));
-            Assert.Equal((1, 0), (
-                await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.tables WHERE name COLLATE Latin1_General_BIN2 = N'CUSTOMER';"),
-                await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.tables WHERE name COLLATE Latin1_General_BIN2 = N'Customer';")));
-
-            var plan = Planned(dacpac, copy, profile);
-            var (exit, output) = Drift("copy:" + copy.Name);
-            var (diffExit, diffOutput) = repository.Run("diff", "--from", "copy:" + copy.Name, "--to", "dacpac:" + dacpac, "--json");
-
-            Assert.True(plan.Report.IsEmpty, collation + " planned:\n" + string.Join('\n', plan.Report.Operations));
-            Assert.True(exit == driftExit, output);
-            if (driftExit == 6)
-            {
-                Assert.Contains("`plan.collation`", output, StringComparison.Ordinal);
-                Assert.Contains("SQL72030", output, StringComparison.Ordinal);
-            }
-
-            Assert.True(diffExit == 0, diffOutput);
-            var answer = JsonNode.Parse(diffOutput)!;
-            ScratchRepository.Valid("dbchange.diff.1.schema.json", answer);
-            var change = answer["diff"]!["change"]!;
-            var (dropped, created) = (change["dropped"]!.AsArray().Select(k => (string?)k).ToList(), change["created"]!.AsArray().Select(k => (string?)k).ToList());
-            if (caseInsensitive)
-            {
-                Assert.Equal(["Table [dbo].[CUSTOMER] to Table [dbo].[Customer]"], change["caseOnlyRenamed"]!.AsArray().Select(r => r!["before"] + " to " + r["after"]));
-                Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "diff.case-only-rename" && (string?)f["severity"] == "note"
-                    && ((string?)f["message"])!.Contains(collation + " reads as one name; DacFx plans nothing for it", StringComparison.Ordinal));
-                Assert.DoesNotContain(dropped.Concat(created), key => key!.StartsWith("Table ", StringComparison.Ordinal));
-            }
-            else
-            {
-                Assert.Contains("Table [dbo].[CUSTOMER]", dropped);
-                Assert.Contains("Table [dbo].[Customer]", created);
-                Assert.Empty(change["caseOnlyRenamed"]!.AsArray());
-            }
+            Assert.Contains("`plan.collation`", output, StringComparison.Ordinal);
+            Assert.Contains("SQL72030", output, StringComparison.Ordinal);
         }
-        finally
+
+        Assert.True(diffExit == 0, diffOutput);
+        var answer = JsonNode.Parse(diffOutput)!;
+        ScratchRepository.Valid("dbchange.diff.1.schema.json", answer);
+        var change = answer["diff"]!["change"]!;
+        var (dropped, created) = (change["dropped"]!.AsArray().Select(k => (string?)k).ToList(), change["created"]!.AsArray().Select(k => (string?)k).ToList());
+        if (caseInsensitive)
         {
-            GitTests.Ok(LocalServer.Drop(copy));
+            Assert.Equal(["Table [dbo].[CUSTOMER] to Table [dbo].[Customer]"], change["caseOnlyRenamed"]!.AsArray().Select(r => r!["before"] + " to " + r["after"]));
+            Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "diff.case-only-rename" && (string?)f["severity"] == "note"
+                && ((string?)f["message"])!.Contains(collation + " reads as one name; DacFx plans nothing for it", StringComparison.Ordinal));
+            Assert.DoesNotContain(dropped.Concat(created), key => key!.StartsWith("Table ", StringComparison.Ordinal));
+        }
+        else
+        {
+            Assert.Contains("Table [dbo].[CUSTOMER]", dropped);
+            Assert.Contains("Table [dbo].[Customer]", created);
+            Assert.Empty(change["caseOnlyRenamed"]!.AsArray());
         }
     }
 
@@ -214,33 +194,27 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
     public async Task A_copy_holding_a_column_named_by_a_space_and_one_holding_a_tab_is_read_whole_and_each_output_escapes_the_tab()
     {
         var (copy, dacpac, _) = await Published(null);
-        try
-        {
-            await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ADD [ ] INT NULL, [a\tb] INT NULL;");
+        using var disposable = DisposableCopy.Of(copy);
+        await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ADD [ ] INT NULL, [a\tb] INT NULL;");
 
-            var (readExit, read) = repository.Run("read", "--from", "copy:" + copy.Name, "--json");
-            var (diffExit, diff) = repository.Run("diff", "--from", "copy:" + copy.Name, "--to", "dacpac:" + dacpac, "--fail-on-change");
-            var (driftExit, drift) = Drift("copy:" + copy.Name);
+        var (readExit, read) = repository.Run("read", "--from", "copy:" + copy.Name, "--json");
+        var (diffExit, diff) = repository.Run("diff", "--from", "copy:" + copy.Name, "--to", "dacpac:" + dacpac, "--fail-on-change");
+        var (driftExit, drift) = Drift("copy:" + copy.Name);
 
-            Assert.True(readExit == 0, read);
-            var answer = JsonNode.Parse(read)!;
-            var whole = (string?)answer["full"] is { } full ? JsonNode.Parse(File.ReadAllText(Path.Combine(repository.Root, full)))! : answer;
-            var keys = whole["read"]!["elements"]!.AsArray().Select(e => (string?)e!["key"]).ToList();
-            Assert.Contains("Column [dbo].[Customer].[ ]", keys);
-            Assert.Contains("Column [dbo].[Customer].[a\tb]", keys);
-            Assert.True(diffExit == 5, diff);
-            Assert.Contains("dropped Column [dbo].[Customer].[ ]", diff.Split('\n'));
-            Assert.Contains("dropped Column [dbo].[Customer].[a\\u0009b]", diff.Split('\n'));
-            Assert.True(driftExit == 5, drift);
-            Assert.Contains("- warning `drift.alter` Table [dbo].[Customer]: ", drift, StringComparison.Ordinal);
-            Assert.Contains("`drift.column` dropped Column [dbo].[Customer].[ ]", drift, StringComparison.Ordinal);
-            Assert.Contains("`drift.column` dropped Column [dbo].[Customer].[a\\u0009b]", drift, StringComparison.Ordinal);
-            Assert.DoesNotContain('\t', diff + drift);
-        }
-        finally
-        {
-            GitTests.Ok(LocalServer.Drop(copy));
-        }
+        Assert.True(readExit == 0, read);
+        var answer = JsonNode.Parse(read)!;
+        var whole = (string?)answer["full"] is { } full ? JsonNode.Parse(File.ReadAllText(Path.Combine(repository.Root, full)))! : answer;
+        var keys = whole["read"]!["elements"]!.AsArray().Select(e => (string?)e!["key"]).ToList();
+        Assert.Contains("Column [dbo].[Customer].[ ]", keys);
+        Assert.Contains("Column [dbo].[Customer].[a\tb]", keys);
+        Assert.True(diffExit == 5, diff);
+        Assert.Contains("dropped Column [dbo].[Customer].[ ]", diff.Split('\n'));
+        Assert.Contains("dropped Column [dbo].[Customer].[a\\u0009b]", diff.Split('\n'));
+        Assert.True(driftExit == 5, drift);
+        Assert.Contains("- warning `drift.alter` Table [dbo].[Customer]: ", drift, StringComparison.Ordinal);
+        Assert.Contains("`drift.column` dropped Column [dbo].[Customer].[ ]", drift, StringComparison.Ordinal);
+        Assert.Contains("`drift.column` dropped Column [dbo].[Customer].[a\\u0009b]", drift, StringComparison.Ordinal);
+        Assert.DoesNotContain('\t', diff + drift);
     }
 
     /// <summary>
@@ -256,36 +230,30 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
     public async Task A_drift_s_provenance_fingerprints_the_target_s_schema_and_the_deploy_report()
     {
         var (copy, dacpac, profile) = await Published(null);
-        try
-        {
-            await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(300) NULL;");
-            var (exit, output) = Drift("copy:" + copy.Name, "--json");
-            var plan = Planned(dacpac, copy, profile);
-            using var extracted = GitTests.Ok(DacFx.Extract(copy));
-            using var package = GitTests.Ok(Ssdt.Open(dacpac));
-            var (schema, packaged) = (Fingerprint.Of(GitTests.Ok(extracted.Elements).Elements), Fingerprint.Of(GitTests.Ok(package.Elements).Elements));
+        using var disposable = DisposableCopy.Of(copy);
+        await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(300) NULL;");
+        var (exit, output) = Drift("copy:" + copy.Name, "--json");
+        var plan = Planned(dacpac, copy, profile);
+        using var extracted = GitTests.Ok(DacFx.Extract(copy));
+        using var package = GitTests.Ok(Ssdt.Open(dacpac));
+        var (schema, packaged) = (Fingerprint.Of(GitTests.Ok(extracted.Elements).Elements), Fingerprint.Of(GitTests.Ok(package.Elements).Elements));
 
-            var answer = JsonNode.Parse(output)!;
-            ScratchRepository.Valid("dbchange.check.1.schema.json", answer);
-            Assert.Equal((5, "differs"), (exit, (string?)answer["outcome"]));
-            var provenance = answer["provenance"]!;
-            Assert.Equal(("sha256:" + schema, "sha256:" + Fingerprint.Of(plan.Report)), ((string?)provenance["schema"], (string?)provenance["change"]));
-            Assert.DoesNotContain("sha256:" + packaged, new[] { (string?)provenance["schema"], (string?)provenance["change"] });
-            // The copy ran in the dbchange-sql container when its server is the one ~/.dbchange/sql.env names, whether DBCHANGE_SQL also names it or
-            // not; ci/sql.sh up, which the fixture runs, keeps that container on the pinned image, whose digest Docker then reports.
-            var container = File.Exists(LocalServer.SqlEnv) && LocalServer.ServerName(null, LocalServer.SqlEnv, localDb: false) is Result<ServerName>.Ok(var inContainer)
-                && LocalServer.ServerName(copy.Connection) is Result<ServerName>.Ok(var made) && made == inContainer;
-            Assert.Equal(("170.5.96", container ? Doctor.ImageDigest : null, "UNPINNED"), ((string?)provenance["dacfx"], (string?)provenance["server"]!["image"], (string?)answer["pin"]));
-            Assert.Equal(("copy:" + copy.Name, "[\"existingData\"]", repository.Base), ((string?)provenance["target"], provenance["lacking"]!.ToJsonString(), (string?)answer["check"]!["commit"]));
-            Assert.Equal(answer["server"]!.ToJsonString(), provenance["server"]!.ToJsonString());
-            Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "toolchain.unpinned" && ((string?)f["message"])!.Contains("UNPINNED", StringComparison.Ordinal));
-            Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "profile.unverified" && (string?)f["severity"] == "note"
-                && (string?)f["message"] == "The SSDT repository commits no copy of the publish profile the Octopus step applies, so " + ScratchRepository.Profile + " is not verified against it.");
-        }
-        finally
-        {
-            GitTests.Ok(LocalServer.Drop(copy));
-        }
+        var answer = JsonNode.Parse(output)!;
+        ScratchRepository.Valid("dbchange.check.1.schema.json", answer);
+        Assert.Equal((5, "differs"), (exit, (string?)answer["outcome"]));
+        var provenance = answer["provenance"]!;
+        Assert.Equal(("sha256:" + schema, "sha256:" + Fingerprint.Of(plan.Report)), ((string?)provenance["schema"], (string?)provenance["change"]));
+        Assert.DoesNotContain("sha256:" + packaged, new[] { (string?)provenance["schema"], (string?)provenance["change"] });
+        // The copy ran in the dbchange-sql container when its server is the one ~/.dbchange/sql.env names, whether DBCHANGE_SQL also names it or
+        // not; ci/sql.sh up, which the fixture runs, keeps that container on the pinned image, whose digest Docker then reports.
+        var container = File.Exists(LocalServer.SqlEnv) && LocalServer.ServerName(null, LocalServer.SqlEnv, localDb: false) is Result<ServerName>.Ok(var inContainer)
+            && LocalServer.ServerName(copy.Connection) is Result<ServerName>.Ok(var made) && made == inContainer;
+        Assert.Equal(("170.5.96", container ? Doctor.ImageDigest : null, "UNPINNED"), ((string?)provenance["dacfx"], (string?)provenance["server"]!["image"], (string?)answer["pin"]));
+        Assert.Equal(("copy:" + copy.Name, "[\"existingData\"]", repository.Base), ((string?)provenance["target"], provenance["lacking"]!.ToJsonString(), (string?)answer["check"]!["commit"]));
+        Assert.Equal(answer["server"]!.ToJsonString(), provenance["server"]!.ToJsonString());
+        Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "toolchain.unpinned" && ((string?)f["message"])!.Contains("UNPINNED", StringComparison.Ordinal));
+        Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "profile.unverified" && (string?)f["severity"] == "note"
+            && (string?)f["message"] == "The SSDT repository commits no copy of the publish profile the Octopus step applies, so " + ScratchRepository.Profile + " is not verified against it.");
     }
 
     /// <summary>
@@ -298,22 +266,16 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
     public async Task A_check_drift_whose_extract_is_refused_answers_the_refusal_and_no_column_lines()
     {
         var copy = await Published();
-        try
-        {
-            var refusal = new Error("server.failed", "copy:" + copy.Name + " failed the statement: Msg 245.", "Look the number up in SQL Server's error list.");
-            var request = new DriftCheck.Request(new Target.RegisteredCopy(copy.Name), GitTests.Ok(GitRef.Of("--at", repository.Base)), ScratchRepository.Profile, null);
+        using var disposable = DisposableCopy.Of(copy);
+        var refusal = new Error("server.failed", "copy:" + copy.Name + " failed the statement: Msg 245.", "Look the number up in SQL Server's error list.");
+        var request = new DriftCheck.Request(new Target.RegisteredCopy(copy.Name), GitTests.Ok(GitRef.Of("--at", repository.Base)), ScratchRepository.Profile, null);
 
-            var drift = DriftCheck.Run(new DriftCheck.Checkout(repository.Root, repository.Root, repository.Tool.Folder, Cli.Contract.Version), request, SqlServer.QueryLog.Start(repository.Root), _ => refusal);
+        var drift = DriftCheck.Run(new DriftCheck.Checkout(repository.Root, repository.Root, repository.Tool.Folder, Cli.Contract.Version), request, SqlServer.QueryLog.Start(repository.Root), _ => refusal);
 
-            Assert.Equal(refusal, Assert.IsType<Result<DriftCheck.Answer>.Failed>(drift.Result).Error);
-            Assert.Equal(4, Cli.Contract.Exit(refusal));
-            Assert.Equal("UNPINNED", drift.Stamp?.Pin?.ToString());
-            Assert.NotNull(drift.Stamp?.Server);
-        }
-        finally
-        {
-            GitTests.Ok(LocalServer.Drop(copy));
-        }
+        Assert.Equal(refusal, Assert.IsType<Result<DriftCheck.Answer>.Failed>(drift.Result).Error);
+        Assert.Equal(4, Cli.Contract.Exit(refusal));
+        Assert.Equal("UNPINNED", drift.Stamp?.Pin?.ToString());
+        Assert.NotNull(drift.Stamp?.Server);
     }
 
     /// <summary>M1 exit 7's second half (R16): a denied login prints one sentence naming the environment and saying a lead's prediction will appear on the pull request, before anything builds.</summary>
