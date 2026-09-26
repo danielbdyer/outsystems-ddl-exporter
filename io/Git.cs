@@ -348,13 +348,19 @@ public static class Git
         "Check that git fetch reaches the origin, signing in through git's own credential helper when it asks, then run dbchange again.");
 
     /// <summary>A git command that failed: its error quoted, or its exit code named when it wrote nothing (a git killed by a signal, or one that ended by itself).</summary>
-    private static Error Failed(string command, Ran.Exited git) => git.Errors.Trim() is { Length: > 0 } errors
-        ? new Error("git.failed", "git " + command + " failed: " + errors, "Fix what git names, then run dbchange again.")
+    private static Error Failed(string command, Ran.Exited git, string? directory = null) => git.Errors.Trim() is { Length: > 0 } errors
+        ? NoIdentity(errors) ? new Error("git.no-identity", "git " + command + " needs a committer's name and email, and git has none configured"
+                + (directory is null ? "." : " for " + directory + "."), "Run git config user.name and git config user.email in the repository, then run dbchange again.")
+            : new Error("git.failed", "git " + command + " failed: " + errors, "Fix what git names, then run dbchange again.")
         : new Error("git.failed", "git " + command + " exited " + git.Code + " and wrote no error.", "Run git " + command + " by hand to see why it exits " + git.Code + ", then run dbchange again.");
 
     /// <summary>git that must succeed: its output less the final line break; a failure quotes git's error.</summary>
     private static Result<string> Step(Runner git, string directory, IReadOnlyList<string> arguments, CancellationToken cancel, string? index = null) =>
-        Answered(git, directory, arguments, cancel, index).Bind<string>(step => step.Code == 0 ? step.Output.TrimEnd('\n') : Failed(arguments[0], step));
+        Answered(git, directory, arguments, cancel, index).Bind<string>(step => step.Code == 0 ? step.Output.TrimEnd('\n') : Failed(arguments[0], step, directory));
+
+    /// <summary>Whether git refused to write a commit for want of a committer's name and email, as on a fresh machine or a CI runner: git says so in these words under LC_ALL=C.</summary>
+    private static bool NoIdentity(string errors) => errors.Contains("Please tell me who you are", StringComparison.Ordinal)
+        || errors.Contains("Author identity unknown", StringComparison.Ordinal) || errors.Contains("Committer identity unknown", StringComparison.Ordinal);
 
     /// <summary>
     /// git -C the directory, run: its exit, output and errors less any credential in a URL, or the error when no git runs (git.missing) or

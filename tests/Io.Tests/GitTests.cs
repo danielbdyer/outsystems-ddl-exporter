@@ -366,12 +366,12 @@ public sealed class GitTests : IDisposable
 
     /// <summary>
     /// A machine with no git identity anywhere, as a CI runner is: commit-tree exits 128 with "Author identity unknown" (read from a
-    /// stand-in, since the scratch repository sets its own identity). io/Git names no error for it and answers git.failed quoting git, the
-    /// branch never made; the state is listed for a named error of its own.
+    /// stand-in, since the scratch repository sets its own identity). It is git.no-identity, naming the repository and the two settings,
+    /// where it was git.failed with the remedy "Fix what git names"; the branch is never made.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void A_commit_with_no_git_identity_anywhere_is_git_failed_quoting_git_and_makes_no_branch()
+    public void A_commit_with_no_git_identity_anywhere_is_git_no_identity_naming_the_repository_and_makes_no_branch()
     {
         scratch.Origin();
         scratch.Commit("the estate", ("dbchange/evidence.shape.json", "{}\n"));
@@ -380,9 +380,10 @@ public sealed class GitTests : IDisposable
             ? new Ran.Exited(128, "", "Author identity unknown\n\n*** Please tell me who you are.\n\nRun\n\n  git config --global user.email \"you@example.com\"\n")
             : Command.Run(c, t);
 
-        var error = Failed(Git.CommitAndPush(scratch.Root, ["dbchange/evidence.shape.json"], "evidence", "dbchange/evidence", NoIdentity), "git.failed");
+        var error = Failed(Git.CommitAndPush(scratch.Root, ["dbchange/evidence.shape.json"], "evidence", "dbchange/evidence", NoIdentity), "git.no-identity");
 
-        Assert.StartsWith("git commit-tree failed: Author identity unknown", error.Message, StringComparison.Ordinal);
+        Assert.Equal("git commit-tree needs a committer's name and email, and git has none configured for " + scratch.Root + ".", error.Message);
+        Assert.Contains("git config user.name", error.Remedy, StringComparison.Ordinal);
         Assert.Equal("", scratch.Git("branch", "--list", "dbchange/evidence"));
     }
 

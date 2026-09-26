@@ -186,6 +186,14 @@ internal static class ErrorPaths
             return Git.CommitAndPush(root, Evidence, "evidence", "dbchange/evidence",
                 (c, t) => c.Arguments.Contains("push") ? new Ran.Exited(1, "To origin\n!\tHEAD:refs/heads/dbchange/evidence\t[remote rejected] (pre-receive hook declined)\nDone\n", "") : Command.Run(c, t));
         })),
+        new("a commit on a machine with no git identity", "git.no-identity", false, (scratch, _) => InRepository(scratch, root =>
+        {
+            Arrange(root, "init", "-q", "--bare", Path.Combine(scratch, "origin.git"));
+            Arrange(root, "remote", "add", "origin", Path.Combine(scratch, "origin.git"));
+            Written(root, "dbchange/evidence.shape.json", "{}\n");
+            return Git.CommitAndPush(root, Evidence, "evidence", "dbchange/evidence",
+                (c, t) => c.Arguments.Contains("commit-tree") ? new Ran.Exited(128, "", "Author identity unknown\n\n*** Please tell me who you are.\n") : Command.Run(c, t));
+        })),
         new("a commit of a path the working tree lacks", "git.failed", false, (scratch, _) => InRepository(scratch, root =>
         {
             Arrange(root, "init", "-q", "--bare", Path.Combine(scratch, "origin.git"));
