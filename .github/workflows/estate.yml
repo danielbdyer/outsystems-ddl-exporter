@@ -35,8 +35,9 @@ jobs:
           global-json-file: global.json
       - run: dotnet restore Estate.sln --locked-mode
       - run: dotnet build Estate.sln --no-restore
-      # M0 exit 1: the fast tests, and with them the build tests, which run dotnet build or publish or start estate as a process.
-      - run: dotnet test Estate.sln --no-build --filter "Category=fast|Category=build"
+      # M0 exit 1: the fast tests, and with them the build tests, which run dotnet build or publish or start estate as a process. A test
+      # host that runs one test for eight minutes is stopped and the test named, since the lane takes two and its job stops at fifteen.
+      - run: dotnet test Estate.sln --no-build --filter "Category=fast|Category=build" --blame-hang-timeout 8m --blame-hang-dump-type none
       - name: Publish the tool folder
         if: runner.os == 'Linux'
         run: bash ci/publish.sh
