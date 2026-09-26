@@ -92,6 +92,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | O5 | LocalServer names a copy for its host and process registers it and Drop removes the database and its row | `DbChange.Io.Tests.CopyTests.LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row` |
 | O7 | A signal or a timeout stops a waiting dbchange with exit 130 and an interrupted answer | `DbChange.Io.Tests.InterruptedProcessTests.A_signal_or_a_timeout_stops_a_waiting_dbchange_with_exit_130_and_an_interrupted_answer` |
 | O7 | A verb waiting on a held lock and given timeout 1 answers interrupted at exit 130 within 3 seconds and changes nothing | `DbChange.Io.Tests.InterruptionTests.A_verb_waiting_on_a_held_lock_and_given_timeout_1_answers_interrupted_at_exit_130_within_3_seconds_and_changes_nothing` |
+| O7 | A wait the timeout wakes reads the timeout as its cause | `DbChange.Io.Tests.InterruptionTests.A_wait_the_timeout_wakes_reads_the_timeout_as_its_cause` |
 | O11 | A large change renders short | `DbChange.Io.Tests.AnswerSizeTests.A_large_change_renders_short` |
 | O12 | Each banned symbol planted in the kernel is a build error | `DbChange.Budgets.Tests.BannedSymbolsTests.Each_banned_symbol_planted_in_the_kernel_is_a_build_error` |
 | O12 | LocalServer names a copy for its host and process registers it and Drop removes the database and its row | `DbChange.Io.Tests.CopyTests.LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row` |

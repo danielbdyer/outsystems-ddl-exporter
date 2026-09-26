@@ -44,6 +44,30 @@ public sealed class InterruptionTests : IDisposable
         GitTests.Failed(FileLock.Take(state.WorktreesLock, TimeSpan.Zero), "lock.timed-out");   // still this test's
     }
 
+    /// <summary>
+    /// A wait the timeout wakes reads the timeout as its cause. A token runs its callbacks newest first, so a wait registered after After,
+    /// as FileLock's is, wakes before any callback After registered itself; the cause was once set by such a callback, and a verb the
+    /// timeout stopped could answer "stopped after an interruption".
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    [Trait("Value", "O7")]
+    public void A_wait_the_timeout_wakes_reads_the_timeout_as_its_cause()
+    {
+        using var interruption = Interruption.Quiet();
+        interruption.After(TimeSpan.FromSeconds(1));
+        string? cause = null;
+        using var woken = new ManualResetEventSlim();
+        using var waiting = interruption.Token.Register(() =>
+        {
+            cause = interruption.Cause;
+            woken.Set();
+        });
+
+        Assert.True(woken.Wait(TimeSpan.FromSeconds(30)), "the timeout did not wake the wait");
+        Assert.Equal("--timeout 1", cause);
+    }
+
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("--timeout", "0", "arguments.timeout")]
