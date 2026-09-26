@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Text.RegularExpressions;
 using DbChange.Budgets.Tests;
 using DbChange.Kernel;
 using DbChange.Tests;
@@ -50,17 +48,13 @@ public sealed class CapabilityTests
     public void No_verb_writes_to_a_named_environment()
     {
         using var plant = ScratchFolder.UnderRepository("plant");
-        var (first, lines) = Planted(Forbidden.Select(f => f.Use));
-        plant.File("Planted.csproj", Project());
-        plant.File("Planted.cs", string.Join('\n', lines));
-        var (refusedExit, refused) = Build(plant.Path);
+        var project = plant.File("Planted.csproj", Project());
 
-        var errors = Regex.Matches(refused, @"Planted\.cs\((\d+),\d+\): error (CS\d+)").Select(m => (Line: int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture), Code: m.Groups[2].Value)).ToHashSet();
-        Assert.NotEqual(0, refusedExit);
-        Assert.Equal(Forbidden.Select((f, i) => (first + i, f.Error)).ToHashSet(), errors);
+        var (refusedExit, refused, errors) = PlantedProject.Build(project, Before, [.. Forbidden.Select(f => "        " + f.Use)], After);
+        var (builtExit, built, _) = PlantedProject.Build(project, Before, [], After);
 
-        plant.File("Planted.cs", string.Join('\n', Planted([]).Lines));
-        var (builtExit, built) = Build(plant.Path);
+        Assert.True(refusedExit != 0, refused);
+        Assert.Equal(Forbidden.Select(f => (string?)f.Error), errors);
         Assert.True(builtExit == 0, "publishing to a Copy that LocalServer.Create made does not build:\n" + built);
     }
 
@@ -108,21 +102,16 @@ public sealed class CapabilityTests
 
     private static ConstructorInfo CopyConstructor() => typeof(SqlServer.Copy).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();
 
-    /// <summary>A planted file: a Copy made by LocalServer.Create and published to, Strict then Permissive, then the uses given, one per line from the first line it returns.</summary>
-    private static (int First, List<string> Lines) Planted(IEnumerable<string> uses)
-    {
-        var lines = new List<string>
-        {
-            "using DbChange.Io;", "using DbChange.Kernel;", "", "namespace Planted;", "", "public static class Uses", "{",
-            "    public static Result<SqlServer.Copy> Made(string root, string dacpac, PublishProfile.Strict strict) =>",
-            "        LocalServer.Create(root).Bind(copy => copy.Publish(dacpac, strict)).Bind(copy => copy.Publish(dacpac, copy.Permissive(strict)));",
-            "", "    public static void Refused(SqlServer.EnvironmentDatabase named, string dacpac, PublishProfile.Strict strict)", "    {",
-        };
-        var first = lines.Count + 1;
-        lines.AddRange(uses.Select(use => "        " + use));
-        lines.AddRange(["    }", "}", ""]);
-        return (first, lines);
-    }
+    /// <summary>The planted file around the uses: a Copy made by LocalServer.Create and published to, Strict then Permissive, then a method the uses stand in.</summary>
+    private static readonly string[] Before =
+    [
+        "using DbChange.Io;", "using DbChange.Kernel;", "", "namespace Planted;", "", "public static class Uses", "{",
+        "    public static Result<SqlServer.Copy> Made(string root, string dacpac, PublishProfile.Strict strict) =>",
+        "        LocalServer.Create(root).Bind(copy => copy.Publish(dacpac, strict)).Bind(copy => copy.Publish(dacpac, copy.Permissive(strict)));",
+        "", "    public static void Refused(SqlServer.EnvironmentDatabase named, string dacpac, PublishProfile.Strict strict)", "    {",
+    ];
+
+    private static readonly string[] After = ["    }", "}", ""];
 
     /// <summary>A library referencing the io and kernel assemblies this test runs against, restored without a lock file, so CI's locked restore has nothing to check.</summary>
     private static string Project() => string.Join('\n',
@@ -138,9 +127,6 @@ public sealed class CapabilityTests
         "  </ItemGroup>",
         "</Project>",
         "");
-
-    private static (int Exit, string Output) Build(string plant) =>
-        (Programs.InRepository("dotnet", "build", Path.Combine(plant, "Planted.csproj"), "-nologo", "-v", "q", "-clp:NoSummary", "-nodeReuse:false") with { Directory = plant }).Finish().Joined();
 
     /// <summary>Whether a type is, or carries, a profile, a copy or a publish result.</summary>
     private static bool Touches(Type type) => typeof(PublishProfile).IsAssignableFrom(type) || type == typeof(SqlServer.Copy)

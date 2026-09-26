@@ -38,8 +38,6 @@ public sealed class BannedSymbolsTests
         ("T:System.Threading.Thread", "System.Threading.Thread.CurrentThread"),
     ];
 
-    private const int FirstPlantedLine = 6;
-
     [Fact]
     [Trait("Category", "fast")]
     public void The_banned_list_is_exactly_the_planted_list()
@@ -63,22 +61,11 @@ public sealed class BannedSymbolsTests
         using var plant = ScratchFolder.UnderRepository("plant");
         File.Copy(Path.Combine(Repository.Root, "kernel", "kernel.csproj"), plant.Under("kernel.csproj"));
         File.Copy(Path.Combine(Repository.Root, "kernel", "BannedSymbols.txt"), plant.Under("BannedSymbols.txt"));
-        var lines = new List<string> { "namespace Planted;", "", "public static class Uses", "{", "    public static object[] All() =>", "    [" };
-        lines.AddRange(Planted.Select(p => $"        {p.Use},"));
-        lines.AddRange(["    ];", "}", ""]);
-        plant.File("Planted.cs", string.Join('\n', lines));
-
-        var (exit, output) = Programs.InRepository("dotnet", "build", plant.Under("kernel.csproj"), "-nologo", "-v", "q", "-clp:NoSummary").Finish().Joined();
+        var (exit, output, errors) = PlantedProject.Build(plant.Under("kernel.csproj"),
+            ["namespace Planted;", "", "public static class Uses", "{", "    public static object[] All() =>", "    ["], [.. Planted.Select(p => $"        {p.Use},")], ["    ];", "}", ""]);
 
         Assert.NotEqual(0, exit);
-        var errorLines = Regex.Matches(output, @"Planted\.cs\((\d+),\d+\): error RS0030")
-            .Select(m => int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))
-            .ToHashSet();
-        var missing = Planted
-            .Select((p, i) => (p.Symbol, Line: FirstPlantedLine + 1 + i))
-            .Where(p => !errorLines.Contains(p.Line))
-            .Select(p => p.Symbol)
-            .ToList();
+        var missing = Planted.Where((_, i) => errors[i] != "RS0030").Select(p => p.Symbol).ToList();
         Assert.True(missing.Count == 0, $"not refused by the build: {string.Join(", ", missing)}\n{output}");
     }
 
