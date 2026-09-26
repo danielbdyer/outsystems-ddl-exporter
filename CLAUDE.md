@@ -13,7 +13,7 @@
   deny both from M0.
 - Allowed without asking: `estate doctor`, `read`, `diff`, `classify`, `predict`, `check`,
   `synthetic-copy up`, `synthetic-copy down`; `dotnet build`, `dotnet test`, `dotnet clean`.
-- Always asked: every verb that pushes (`measure --commit`, `check cdc --commit`,
+- Always asked: every verb that pushes (`profile --commit`, `check cdc --commit`,
   `check environments --page --commit`, `knowledge vendor`).
 
 ## Operator reviews and intake

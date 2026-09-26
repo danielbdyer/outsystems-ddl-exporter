@@ -144,7 +144,7 @@ the SQL Server version the environments run, which the pinned image must match.
 | What changes? | `diff` | any two of those | the refactorlog | `Change.Between` | `estate.diff/1` |
 | What is it, provisionally? | `classify` | the diff and the committed evidence | the `recognize:` block in each `knowledge/ops/*.md`; `estate/ledgers/cdc-tracked.md` | `Classify.Of` | `estate.classify/1` |
 | What data conditions does each environment present? | `predict` | the head package; each reachable environment's plan and data | `estate/posture.json` | `Preconditions.Of`, `DataConditions.Of`, `Outcome.Predict` | `estate.predict/1`, and a Markdown block carrying a machine block |
-| What does the data look like? | `measure` | an environment's data | its classification (what may be read) | `Evidence.Of` | `estate/evidence.shape.json`; row tiers for real environments |
+| What does the data look like? | `profile` | an environment's data | its classification (what may be read) | `Evidence.Of` | `estate/evidence.shape.json`; row tiers for real environments |
 | A current synthetic copy | `synthetic-copy` | a ref, the evidence, the seed, optionally the data conditions | the tier | `SyntheticData.Generate` | `estate.synthetic-copy/1` |
 | What does DacFx do? | `prove` | a fresh copy per set of data conditions, restored from the synthetic copy | the pipeline's profile (Strict and Permissive differ in `BlockOnPossibleDataLoss` alone) | `Outcome.Prove`, `AppliesTo` | `estate.prove/1` |
 | The pull request description | `describe` | the provenance records | `knowledge/description.md` | `PullRequestDescription.Of` | the description |
@@ -222,7 +222,7 @@ estate predict --env qa,uat ─► conditions(qa) │                           
    copy is rebuilt from the repository at the ref. Data drift matters only when it changes the data
    conditions, and every prediction re-reads the live conditions for exactly the tables the change
    touches. `check evidence` compares the committed evidence's data conditions with the live ones and
-   asks for `estate measure` only when they differ. The seed is the ISO week of the head commit, so
+   asks for `estate profile` only when they differ. The seed is the ISO week of the head commit, so
    the population changes weekly by itself, and the gate reproduces the author's rows exactly.
 3. **A lead proves at UAT's data conditions without UAT's data.** They are a list of booleans derived
    from counts, which the privacy closure admits; the copy generated at them holds only synthetic rows.
@@ -501,7 +501,7 @@ The generator's port (3.1 to 3.3) needs only M0; `synthetic-copy up` (3.5) needs
 | 3.4 | B | `io/ScratchServer`, completed from M1's minimal form: Docker with the SQL Server image pinned by tag and digest in `estate/ledgers/toolchain.md` (pulled when absent; SQL Server Agent enabled, so CDC works), wherever Docker is installed; LocalDB through `sqllocaldb` where it is not; or a local developer-edition instance. The image's digest joins `Server` in every provenance record. Every copy registered in `.estate/copies.json` under `estate_<host>_<pid>_<rand>`; the sweep drops only this host's registered names older than a day; a scratch server on a host that any environment's reference resolves to is exit 9; backup and restore into `.estate/cache/`. | two concurrent runs share nothing; a killed run is swept by the next |
 | 3.5 | T | `io/SyntheticCopy`, and `synthetic-copy up [--tier conditions\|shape\|scale] [--at <ref>] [--conditions <file>]`: build at the ref (M1); create a database named from its fingerprints (`estate_synthetic_<schema>_<evidence>_<seed>_<tier>[_<conditions>]`, §4 row 13) under a lock file in `.estate/` (`FileLock.Take(path, timeout)`); publish under the pipeline's profile with drop-not-in-source, so the post-deploy seeds run as they do in every environment; generate; bulk-load in `Order`'s order; fill the deferred legs; validate every constraint `WITH CHECK CHECK` and refuse by name on a violation; back it up into the cache. Shape-tier values are generated with Bogus in `io`, never in the kernel. The synthetic copy carries no state table, so its schema is exactly the repository's and `check drift --target synthetic-copy` is its health check. | after `synthetic-copy up --at <Dev's deployed tag>`, `check drift --target synthetic-copy --at <that tag>` exits 0 (R12, the synthetic copy's half) |
 | 3.6 | T | `synthetic-copy check`, `status`, `down`: generate twice with identical digests; every trusted reference resolves, and orphans exist exactly where the evidence records them; measuring the generated set again recovers the evidence within ε; the deploy plan against it is empty; `status` reads the fingerprints from the name and verifies them; `down --if-idle` drops this host's synthetic copies and stops the LocalDB instance only when no `estate` process holds the lock. | law 11′ green |
-| 3.7 | T | `io/Measure` and the verbs `measure` and `check evidence`. `estate measure --env dev [--vocabulary] [--counts] [--commit]` runs M2's builders over every standing site the schema declares, plus buckets, and writes `estate/evidence.shape.json`. `--vocabulary` is exit 9 until the environment is confirmed synthetic. An environment classified real is always measured as `--counts`: row tiers only, into `estate/ledgers/row-tiers.md`, with the environment and the date on every row. `--commit` commits on a new branch, pushes it with the caller's git credential, and prints the URL that opens the pull request. `check evidence` compares the committed evidence's standing sites with the live data conditions over the same sites, and refuses a file that is not literal-free. | law 12′ green; the planted-value scan's second half passes |
+| 3.7 | T | `io/Profile` and the verbs `profile` and `check evidence`. `estate profile --env dev [--vocabulary] [--counts] [--commit]` runs M2's builders over every standing site the schema declares, plus buckets, and writes `estate/evidence.shape.json`. `--vocabulary` is exit 9 until the environment is confirmed synthetic. An environment classified real is always measured as `--counts`: row tiers only, into `estate/ledgers/row-tiers.md`, with the environment and the date on every row. `--commit` commits on a new branch, pushes it with the caller's git credential, and prints the URL that opens the pull request. `check evidence` compares the committed evidence's standing sites with the live data conditions over the same sites, and refuses a file that is not literal-free. | law 12′ green; the planted-value scan's second half passes |
 
 **Exit.**
 1. On a clean laptop with Docker or LocalDB and nothing but the estate's clone, `estate
@@ -510,7 +510,7 @@ The generator's port (3.1 to 3.3) needs only M0; `synthetic-copy up` (3.5) needs
 2. `estate synthetic-copy check` passes; two generated sets under one seed are byte-identical (R8; law 11′).
 3. At the conditions tier, aggregate queries on the synthetic copy find each of R6's population rules met.
 4. A lead's `estate measure --env dev --commit` ends at a pull request that changes only
-   `estate/evidence.shape.json`. The planted-value scan's second half: `measure` against the
+   `estate/evidence.shape.json`. The planted-value scan's second half: `profile` against the
    fixture classified `real` stores no value, and `check evidence` refuses a file carrying a
    planted literal (R3, R7; law 12′).
 5. No `.bak`, `.bacpac`, `.dacpac` or generated file is tracked, and `.estate/` is ignored (R4).
@@ -598,7 +598,7 @@ in under ten minutes, and posts the table.
    binaries; the estate's non-LFS size grew by under a megabyte (R1, R2).
 5. `check drift` is exact on the estate's checkout on Windows with `core.autocrlf=true` and on
    Linux (R24).
-6. R16's check: the whole chain (`read`, `diff`, `check drift`, `predict`, `measure`, `prove`,
+6. R16's check: the whole chain (`read`, `diff`, `check drift`, `predict`, `profile`, `prove`,
    `describe`, `gate`) runs in CI through a `file:` reference whose connection string carries a
    planted password. A search of every output, log, provenance record, block, `gate.json`,
    `changelog.json` and description finds neither the password nor the connection string.
@@ -714,7 +714,7 @@ requirements alone.
    the one fetch is Docker pulling the pinned SQL Server image when it is absent.
 5. **The estate owns** `estate/posture.json`, `estate/ledgers/`, `estate/evidence.shape.json`,
    `estate/profiles/`, `.gitattributes`, `.editorconfig` and the SSDT project. Vendoring seeds what
-   is absent and never overwrites (M5's test); the verbs that propose a change to one (`measure`,
+   is absent and never overwrites (M5's test); the verbs that propose a change to one (`profile`,
    `check cdc`, a new tool version's toolchain row, the line-ending lines) do it as a commit on a
    new branch, for review.
 6. **The corporate agent's `STATE.md`** answers S1, S3, S5, S6, S7 and S8 on its first day. Those
@@ -1016,7 +1016,7 @@ Code only; tests are budgeted separately below. `ci/budgets.json` carries these 
 | a minimal `ScratchServer.cs` (create, register, drop) | 60 | M1 |
 | `Profiles.cs` (options only; SQLCMD sensitivity), `Git.cs`, `Doctor.cs` | 440 | M1 |
 | the data-loss-check reader, `AggregateQueries.cs`, `Predict.cs`, the machine block's parser | 690 | M2 |
-| `ScratchServer.cs` completed, `SyntheticCopy.cs` (with the shape tier's Bogus values), `Measure.cs` | 1,450 | M3 |
+| `ScratchServer.cs` completed, `SyntheticCopy.cs` (with the shape tier's Bogus values), `Profile.cs` | 1,450 | M3 |
 | `Prove.cs`, `RefactorLog.cs` | 550 | M4 |
 | `Gate.cs`, `Vendor.cs`, `Json.cs` additions | 670 | M5 |
 | `Ossys.cs` (the allowlist), the page's commit and `deployments.md` | 370 | M6 |

@@ -45,7 +45,7 @@
         { "files": ["ScratchServer.cs"], "what": "minimal: create, register, drop", "lines": 60, "milestones": ["M1"] },
         { "files": ["Profiles.cs", "Git.cs", "Doctor.cs"], "what": "Profiles.cs: options only; SQLCMD sensitivity", "lines": 440, "milestones": ["M1"] },
         { "files": ["AggregateQueries.cs", "Predict.cs"], "what": "and the data-loss-check reader, the machine block's parser", "lines": 690, "milestones": ["M2"] },
-        { "files": ["ScratchServer.cs", "SyntheticCopy.cs", "Realize.cs", "Measure.cs"], "what": "ScratchServer.cs completed", "lines": 1450, "milestones": ["M3"] },
+        { "files": ["ScratchServer.cs", "SyntheticCopy.cs", "Realize.cs", "Profile.cs"], "what": "ScratchServer.cs completed", "lines": 1450, "milestones": ["M3"] },
         { "files": ["Prove.cs", "RefactorLog.cs"], "what": null, "lines": 550, "milestones": ["M4"] },
         { "files": ["Gate.cs", "Vendor.cs", "Json.cs"], "what": "Json.cs additions", "lines": 670, "milestones": ["M5"] },
         { "files": ["Ossys.cs"], "what": "the allowlist; and the page's commit and deployments.md", "lines": 370, "milestones": ["M6"] },

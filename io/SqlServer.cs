@@ -319,7 +319,7 @@ public static class SqlServer
     /// How long SQL Server may run an aggregate query before SqlClient cancels it: SqlClient's own default for a command, named here.
     /// An aggregate query reads each row of a table once, and thirty seconds covers a scan of the estate's largest tables that S3 and S8
     /// have not yet measured; a query past it is measured as timed out, not as a server that does not answer (finding ARCH-13). The
-    /// measure verb of M3 revisits the figure with the row counts S8 reports; no posture key or flag sets it before then.
+    /// profile verb of M3 revisits the figure with the row counts S8 reports; no posture key or flag sets it before then.
     /// </summary>
     internal static readonly TimeSpan AggregateQueryTimeout = TimeSpan.FromSeconds(30);
 

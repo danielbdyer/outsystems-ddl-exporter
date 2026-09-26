@@ -234,7 +234,7 @@ public sealed class GitTests : IDisposable
         scratch.Write(("estate/evidence.shape.json", "{ \"sites\": [] }\n"), ("estate/ledgers/row-tiers.md", "| table | tier |\n"), ("README.md", "estate, edited\n"));
         scratch.Git("add", "README.md");   // the caller's own staged change stays theirs
 
-        var pushed = Ok(Git.CommitAndPush(scratch.Root, ["estate/evidence.shape.json", "estate/ledgers/row-tiers.md"], "measure: dev's evidence", "estate/evidence-dev"));
+        var pushed = Ok(Git.CommitAndPush(scratch.Root, ["estate/evidence.shape.json", "estate/ledgers/row-tiers.md"], "profile: dev's evidence", "estate/evidence-dev"));
 
         Assert.Equal("estate/evidence-dev", pushed.Branch);
         Assert.Equal(["refs/heads/estate/evidence-dev " + pushed.Commit, "refs/heads/main " + head], scratch.GitAt(origin, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads").Split('\n'));

@@ -45,7 +45,7 @@
               "diff",
               "classify",
               "predict",
-              "measure",
+              "profile",
               "synthetic-copy",
               "prove",
               "describe",

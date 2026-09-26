@@ -142,7 +142,7 @@ public static class Contract
             [new("in-sync", [0], "the two schemas hold the same elements"), new("differs", [0, 5], "the two schemas differ; exit 5 only with --fail-on-change")]),
         new("classify", "Which operation a change is, provisionally, from the committed evidence."),
         new("predict", "Whether a change blocks or applies on each environment the caller can read, and why."),
-        new("measure", "What an environment's data looks like, as the evidence the synthetic copy is generated from."),
+        new("profile", "What an environment's data looks like, as the evidence the synthetic copy is generated from."),
         new("synthetic-copy", "A copy on the scratch server, built from the repository at a ref and filled with rows generated from the measured data."),
         new("prove", "What the engine does with a change on a fresh copy, with a receipt."),
         new("describe", "The pull request description, rendered from the receipts."),
