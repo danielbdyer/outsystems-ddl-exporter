@@ -40,9 +40,7 @@ public sealed class PublishProfilesTests : IDisposable
 
     private readonly string scratch = Directory.CreateTempSubdirectory("dbchange-profiles-").FullName;
 
-    public PublishProfilesTests() => Telemetry.OptOut();   // before DacFx loads, as dbchange's Main does
-
-    public static TheoryData<string> Ways => new(RefusalPaths.All.Select(c => c.Label));
+    public static TheoryData<string> Ways => new(ErrorPaths.All.Select(c => c.Label));
 
     public void Dispose() => Directory.Delete(scratch, recursive: true);
 
@@ -141,7 +139,7 @@ public sealed class PublishProfilesTests : IDisposable
     [Trait("Category", "fast")]
     public void Every_error_of_the_environments_file_and_the_profile_is_exit_6()
     {
-        foreach (var way in RefusalPaths.All.Where(c => c.Code.Split('.')[0] is "environments" or "profile" or "reference" or "sqlcmd"))
+        foreach (var way in ErrorPaths.All.Where(c => c.Code.Split('.')[0] is "environments" or "profile" or "reference" or "sqlcmd"))
         {
             var error = way.Drive(Directory.CreateDirectory(Path.Combine(scratch, way.Label)).FullName, Planted);
             Assert.True(Contract.Exit(error) == 6, way.Label + " takes exit " + Contract.Exit(error));
@@ -298,7 +296,7 @@ public sealed class PublishProfilesTests : IDisposable
     [Trait("Value", "X2")]
     public void No_output_contains_Password(string label)
     {
-        var way = RefusalPaths.All.Single(c => c.Label == label);
+        var way = ErrorPaths.All.Single(c => c.Label == label);
 
         var error = way.Drive(Directory.CreateDirectory(Path.Combine(scratch, "way")).FullName, Planted);
         var output = string.Join('\n', error.Code, error.Message, error.Remedy, error);

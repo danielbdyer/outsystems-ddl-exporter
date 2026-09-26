@@ -31,7 +31,7 @@
     <Compile Include="../Budgets.Tests/Repository.cs" Link="Repository.cs" />
     <!-- The tests' program runs through io/Command: a program that does not run, or overruns, fails the test naming it. -->
     <Compile Include="../Budgets.Tests/Programs.cs" Link="Programs.cs" />
-    <!-- The ways to every error, which Register.Refusals reads for the register and "no output contains Password=" plants a password in. -->
-    <Compile Include="../Budgets.Tests/Register/RefusalPaths.cs" Link="RefusalPaths.cs" />
+    <!-- The ways to every error, which Register.Errors reads for the register and "no output contains Password=" plants a password in. -->
+    <Compile Include="../Budgets.Tests/Register/ErrorPaths.cs" Link="ErrorPaths.cs" />
   </ItemGroup>
 </Project>

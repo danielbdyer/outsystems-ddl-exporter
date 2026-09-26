@@ -6,7 +6,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <!-- Cultures on: DacFx builds no model in globalization-invariant mode, and Register.Refusals builds one to reach the errors of io/Ssdt.ReadModel. -->
+    <!-- Cultures on: DacFx builds no model in globalization-invariant mode, and Register.Errors builds one to reach the errors of io/Ssdt.ReadModel. -->
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>

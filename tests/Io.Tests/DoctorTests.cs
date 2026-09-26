@@ -122,7 +122,7 @@ public sealed class DoctorTests : IDisposable
     {
         var ledger = Ledger("| 2026-09-25 | 3.0.0 | UNPINNED | — |");
 
-        var (error, dacfx) = RefusalPaths.Denied(ledger, () => (Failed(Doctor.Toolchain(machine.Path, Version), "toolchain.unreadable"), Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.DacFx)));
+        var (error, dacfx) = ErrorPaths.Denied(ledger, () => (Failed(Doctor.Toolchain(machine.Path, Version), "toolchain.unreadable"), Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.DacFx)));
 
         Assert.Contains("cannot be read", error.Message, StringComparison.Ordinal);
         Assert.Contains("cannot be read", dacfx.Found, StringComparison.Ordinal);

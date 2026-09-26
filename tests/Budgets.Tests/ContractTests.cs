@@ -78,8 +78,8 @@ public sealed class ContractTests
 
     /// <summary>
     /// The kernel, io and the cli name what went wrong; the exit is the category's arm of Contract.ExitByCategory, a switch over the
-    /// kernel's closed ErrorCategory with no discard arm, so a member without an arm fails the build. The codes are Register.RefusalPaths',
-    /// which Register.Refusals holds to every code the three packages construct, composed ones included: a member no path constructs
+    /// kernel's closed ErrorCategory with no discard arm, so a member without an arm fails the build. The codes are Register.ErrorPaths',
+    /// which Register.Errors holds to every code the three packages construct, composed ones included: a member no path constructs
     /// fails here, as does a path whose code names a word no member writes as, and every arm names a code of the frozen exit table.
     /// </summary>
     [Fact]
@@ -89,7 +89,7 @@ public sealed class ContractTests
     public void Every_error_category_has_an_exit_of_the_frozen_table_and_is_constructed_by_some_path()
     {
         var members = Enum.GetValues<ErrorCategory>();
-        var constructed = Register.RefusalPaths.All.Select(c => c.Code.Split('.')[0]).Distinct().Order(StringComparer.Ordinal).ToList();
+        var constructed = Register.ErrorPaths.All.Select(c => c.Code.Split('.')[0]).Distinct().Order(StringComparer.Ordinal).ToList();
 
         Assert.Equal(members.Select(ErrorCode.Text).Order(StringComparer.Ordinal), constructed);
         Assert.All(members, m => Assert.Contains(Contract.ExitByCategory(m), Contract.Exits.Select(e => e.Code)));

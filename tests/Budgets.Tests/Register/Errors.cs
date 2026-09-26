@@ -10,14 +10,14 @@ namespace DbChange.Budgets.Tests.Register;
 
 /// <summary>
 /// The engine's errors are in the register (V3_INSTRUCTION_ARCHITECTURE.md §10 test 4; VALUES.md S2, O4, L1). Every error
-/// the kernel, io and the cli construct, reached through <see cref="RefusalPaths"/>, carries a code, a message and a remedy; the remedy is
+/// the kernel, io and the cli construct, reached through <see cref="ErrorPaths"/>, carries a code, a message and a remedy; the remedy is
 /// one imperative sentence on one line, starting with a capital letter and ending with a period, led by a verb, with any dbchange verb it
 /// runs one of the verb table's, never a paragraph (finding D13); and neither the message nor the remedy uses a retired word or a banned
 /// form of ci/register.json. A code the sources construct with no way to it here fails, so a new error arrives with its driver. The
 /// kernel's and the cli's remedies hold the one form now; io's take it in the adapters' pass, until which the two form checks and the
 /// verb scan are not applied to a code io alone constructs.
 /// </summary>
-public sealed class Refusals
+public sealed class Errors
 {
     /// <summary>Words that lead a description or a hedge, never a move: an article, a pronoun, an auxiliary, a condition.</summary>
     private static readonly HashSet<string> NoMove = new(StringComparer.OrdinalIgnoreCase)
@@ -32,7 +32,7 @@ public sealed class Refusals
 
     private static readonly Regex RunsDbChange = new(@"\b[Rr]un dbchange (\S+)", RegexOptions.CultureInvariant);
 
-    public static TheoryData<string> Cases => new(RefusalPaths.All.Select(c => c.Label));
+    public static TheoryData<string> Cases => new(ErrorPaths.All.Select(c => c.Label));
 
     [Theory]
     [Trait("Category", "fast")]
@@ -42,14 +42,14 @@ public sealed class Refusals
     [MemberData(nameof(Cases))]
     public void An_error_carries_a_remedy_that_is_one_move_in_the_register(string label)
     {
-        var way = RefusalPaths.All.Single(c => c.Label == label);
+        var way = ErrorPaths.All.Single(c => c.Label == label);
         using var scratch = ScratchFolder.Temporary("register");
 
         var error = way.Drive(scratch.Path, "planted-value");
 
         Assert.Equal(way.Code, error.Code);
         var flaw = Flaw(error.Remedy);
-        Assert.True(flaw is null || (!RefusalPaths.KernelOrCli(way.Code) && Form.Contains(flaw)), error.Code + ": the remedy " + flaw + ": " + error.Remedy);
+        Assert.True(flaw is null || (!ErrorPaths.KernelOrCli(way.Code) && Form.Contains(flaw)), error.Code + ": the remedy " + flaw + ": " + error.Remedy);
         Assert.Empty(Prose.Findings(error.Message).Concat(Prose.Findings(error.Remedy)).Select(f => error.Code + ": " + f));
     }
 
@@ -59,15 +59,15 @@ public sealed class Refusals
     [Trait("Value", "O4")]
     public void Every_error_code_the_kernel_io_and_the_cli_construct_has_a_driver_here()
     {
-        var driven = RefusalPaths.All.Select(c => c.Code).ToHashSet(StringComparer.Ordinal);
-        var written = RefusalPaths.InTheSources().ToList();
+        var driven = ErrorPaths.All.Select(c => c.Code).ToHashSet(StringComparer.Ordinal);
+        var written = ErrorPaths.InTheSources().ToList();
 
         Assert.Contains("environments.literal-connection", written);
         Assert.Contains("arguments.unknown-check", written);   // the cli's own, in cli/Check.cs
         Assert.Contains("element.", written);   // the start of a composed code: element.property-name, element.relationship-name
         Assert.DoesNotContain(written, code => code.EndsWith('.') ? !driven.Any(d => d.StartsWith(code, StringComparison.Ordinal)) : !driven.Contains(code));
         Assert.DoesNotContain(driven, code => !written.Contains(code) && !written.Any(start => start.EndsWith('.') && code.StartsWith(start, StringComparison.Ordinal)));
-        Assert.True(RefusalPaths.KernelOrCli("name.blank") && RefusalPaths.KernelOrCli("arguments.unknown-verb") && !RefusalPaths.KernelOrCli("tool.missing"));
+        Assert.True(ErrorPaths.KernelOrCli("name.blank") && ErrorPaths.KernelOrCli("arguments.unknown-verb") && !ErrorPaths.KernelOrCli("tool.missing"));
     }
 
     /// <summary>The scan reads a code from a construction that names the type and from a target-typed one (finding D6), and reads no code from a string that is none.</summary>
@@ -79,7 +79,7 @@ public sealed class Refusals
     [InlineData("new(\"dbchange.doctor/1\", outcome, 0, message, [])", null)]
     [InlineData("new(\"done\", [0], \"the message is the tool's version\")", null)]
     public void The_scan_reads_a_code_from_a_named_and_a_target_typed_construction_alike(string source, string? code) =>
-        Assert.Equal(code, RefusalPaths.CodesIn(source).SingleOrDefault());
+        Assert.Equal(code, ErrorPaths.CodesIn(source).SingleOrDefault());
 
     /// <summary>The remedy check as minimal pairs: each remedy the register keeps, beside one it refuses and why.</summary>
     [Theory]

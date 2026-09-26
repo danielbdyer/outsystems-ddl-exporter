@@ -16,7 +16,7 @@ using Contract = DbChange.Cli.Contract;
 namespace DbChange.Budgets.Tests.Register;
 
 /// <summary>
-/// Every way to an error the kernel, io and the cli construct, each with an input that takes it there. Register.Refusals reads each
+/// Every way to an error the kernel, io and the cli construct, each with an input that takes it there. Register.Errors reads each
 /// error for the register; Io.Tests' "no output contains Password=" plants a password in every input that can carry a value
 /// (<see cref="Case.Plants"/>) and searches what comes back. A driver writes only under the scratch folder it is given, one per
 /// case, and leaves it deletable. The kernel's schema errors, io/Ssdt's and io/Git's quote what they reject, a name, a
@@ -27,7 +27,7 @@ namespace DbChange.Budgets.Tests.Register;
 /// and Create on a given server are io's alone, so R15 is reached through copy: and a planted registry row. The cli's reject
 /// arguments, through Contract.Flags and dbchange check's own answer.
 /// </summary>
-internal static class RefusalPaths
+internal static class ErrorPaths
 {
     /// <summary>One way to an error: what it is, the code it must take, whether its input carries the planted value, and its driver (scratch, planted).</summary>
     public sealed record Case(string Label, string Code, bool Plants, Func<string, string, Error> Drive);

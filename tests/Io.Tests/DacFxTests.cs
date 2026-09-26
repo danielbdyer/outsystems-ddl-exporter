@@ -21,8 +21,6 @@ public sealed class DacFxTests : IDisposable
 
     private readonly string scratch = Directory.CreateTempSubdirectory("dbchange-dacfx-").FullName;
 
-    public DacFxTests() => Telemetry.OptOut();   // before DacFx loads, as dbchange's Main does
-
     public void Dispose() => Directory.Delete(scratch, recursive: true);
 
     /// <summary>A host that bundles DacFx into one file gives its assembly no path; the informational version, before its '+', names the release then.</summary>

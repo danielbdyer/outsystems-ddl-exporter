@@ -197,7 +197,6 @@ public sealed class GoldenProject : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        Telemetry.OptOut();   // before DacFx loads, as dbchange's Main does
         var tool = new PublishedTool();
         var golden = Path.Combine(Repository.Root, "tests", "Golden");
         Directory.CreateDirectory(root);

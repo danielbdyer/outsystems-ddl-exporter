@@ -60,8 +60,8 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | D3 | Writes utf8 without a bom in the line ending on disk | `DbChange.Io.Tests.WriteTests.Writes_utf8_without_a_bom_in_the_line_ending_on_disk` |
 | D3 | Text is fingerprinted in its canonical form | `DbChange.Kernel.Tests.FingerprintTests.Text_is_fingerprinted_in_its_canonical_form` |
 | G6 | No verb writes to a named environment | `DbChange.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |
+| L1 | An error carries a remedy that is one move in the register | `DbChange.Budgets.Tests.Register.Errors.An_error_carries_a_remedy_that_is_one_move_in_the_register` |
 | L1 | A document of the repository uses no retired word and no banned form | `DbChange.Budgets.Tests.Register.Prose.A_document_of_the_repository_uses_no_retired_word_and_no_banned_form` |
-| L1 | An error carries a remedy that is one move in the register | `DbChange.Budgets.Tests.Register.Refusals.An_error_carries_a_remedy_that_is_one_move_in_the_register` |
 | L1 | Every test name read as words is in the register | `DbChange.Budgets.Tests.Register.TestNames.Every_test_name_read_as_words_is_in_the_register` |
 | L2 | A hand written document restates no count the build computes | `DbChange.Budgets.Tests.NoRestatedCounts.A_hand_written_document_restates_no_count_the_build_computes` |
 | L3 | Each budget holds its ceiling | `DbChange.Budgets.Tests.Budgets.Each_budget_holds_its_ceiling` |
@@ -86,8 +86,8 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | O2 | A connection file whose name Windows forbids resolves to nothing on every operating system | `DbChange.Io.Tests.TargetTests.A_connection_file_whose_name_Windows_forbids_resolves_to_nothing_on_every_operating_system` |
 | O2 | Writes utf8 without a bom in the line ending on disk | `DbChange.Io.Tests.WriteTests.Writes_utf8_without_a_bom_in_the_line_ending_on_disk` |
 | O4 | Every error category has an exit of the frozen table and is constructed by some path | `DbChange.Budgets.Tests.ContractTests.Every_error_category_has_an_exit_of_the_frozen_table_and_is_constructed_by_some_path` |
-| O4 | An error carries a remedy that is one move in the register | `DbChange.Budgets.Tests.Register.Refusals.An_error_carries_a_remedy_that_is_one_move_in_the_register` |
-| O4 | Every error code the kernel io and the cli construct has a driver here | `DbChange.Budgets.Tests.Register.Refusals.Every_error_code_the_kernel_io_and_the_cli_construct_has_a_driver_here` |
+| O4 | An error carries a remedy that is one move in the register | `DbChange.Budgets.Tests.Register.Errors.An_error_carries_a_remedy_that_is_one_move_in_the_register` |
+| O4 | Every error code the kernel io and the cli construct has a driver here | `DbChange.Budgets.Tests.Register.Errors.Every_error_code_the_kernel_io_and_the_cli_construct_has_a_driver_here` |
 | O5 | LocalServer names a copy for its host and process registers it and Drop removes the database and its row | `DbChange.Io.Tests.CopyTests.LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row` |
 | O7 | A signal or a timeout stops a waiting dbchange with exit 130 and an interrupted answer | `DbChange.Io.Tests.InterruptedProcessTests.A_signal_or_a_timeout_stops_a_waiting_dbchange_with_exit_130_and_an_interrupted_answer` |
 | O7 | A verb waiting on a held lock and given timeout 1 answers interrupted at exit 130 within 3 seconds and changes nothing | `DbChange.Io.Tests.InterruptionTests.A_verb_waiting_on_a_held_lock_and_given_timeout_1_answers_interrupted_at_exit_130_within_3_seconds_and_changes_nothing` |
@@ -118,8 +118,8 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | S2 | A verb this build does not have answers exit 6 with verb not built naming the verb | `DbChange.Budgets.Tests.ContractTests.A_verb_this_build_does_not_have_answers_exit_6_with_verb_not_built_naming_the_verb` |
 | S2 | An unexpected exception answers exit 6 with a finding naming its type and its message | `DbChange.Budgets.Tests.ContractTests.An_unexpected_exception_answers_exit_6_with_a_finding_naming_its_type_and_its_message` |
 | S2 | Every error category has an exit of the frozen table and is constructed by some path | `DbChange.Budgets.Tests.ContractTests.Every_error_category_has_an_exit_of_the_frozen_table_and_is_constructed_by_some_path` |
-| S2 | An error carries a remedy that is one move in the register | `DbChange.Budgets.Tests.Register.Refusals.An_error_carries_a_remedy_that_is_one_move_in_the_register` |
-| S2 | Every error code the kernel io and the cli construct has a driver here | `DbChange.Budgets.Tests.Register.Refusals.Every_error_code_the_kernel_io_and_the_cli_construct_has_a_driver_here` |
+| S2 | An error carries a remedy that is one move in the register | `DbChange.Budgets.Tests.Register.Errors.An_error_carries_a_remedy_that_is_one_move_in_the_register` |
+| S2 | Every error code the kernel io and the cli construct has a driver here | `DbChange.Budgets.Tests.Register.Errors.Every_error_code_the_kernel_io_and_the_cli_construct_has_a_driver_here` |
 | S2 | A check drift whose extract is refused answers the refusal and no column lines | `DbChange.Io.Tests.DriftTests.A_check_drift_whose_extract_is_refused_answers_the_refusal_and_no_column_lines` |
 | S2 | Check drift names every differing column of every table the plan alters and nothing else | `DbChange.Kernel.Tests.PlanTests.Check_drift_names_every_differing_column_of_every_table_the_plan_alters_and_nothing_else` |
 | S7 | No verb writes to a named environment | `DbChange.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |

@@ -500,9 +500,9 @@ public sealed class TargetTests : IDisposable
         var use = () => (SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), root), LocalServer.Unnamed(EnvironmentsAt(root), root, Server("localhost,11433"), Resolver));
         var (resolved, unnamed) = denied switch
         {
-            "folder" => RefusalPaths.Denied(scratch.Under("locked"), use),
-            "file" => RefusalPaths.Denied(file, use),
-            _ => RefusalPaths.Unexaminable(file, use),
+            "folder" => ErrorPaths.Denied(scratch.Under("locked"), use),
+            "file" => ErrorPaths.Denied(file, use),
+            _ => ErrorPaths.Unexaminable(file, use),
         };
 
         var error = Failed(resolved, code);
