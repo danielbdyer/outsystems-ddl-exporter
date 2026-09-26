@@ -9,7 +9,8 @@ namespace DbChange.Kernel.Tests;
 /// The sample changes, hand-built as io/Ssdt.ReadModel reads them: a Customer table with its columns in order, an index
 /// on Email, a primary key, both deploy scripts, and a refactorlog holding one old rename (Mail to Email) that every
 /// pair carries, so a rename the refactorlog already applied is shown to change nothing. Each sample change is the same
-/// model built again with one edit.
+/// model built again with one edit. The four the golden project's registry also holds (tests/Golden/changes/) carry its names and
+/// its column (Customer.Nickname, NVARCHAR(40)), and Io.Tests' SampleChangeTests holds them to what DacFx reads of the built project.
 /// </summary>
 internal static class SampleChanges
 {
@@ -28,15 +29,16 @@ internal static class SampleChanges
     private static readonly Element OldEntry = Entry("0d1c7b1e-2a3f-4b5c-9d8e-7f6a5b4c3d2e", "[dbo].[Customer].[Mail]", "SqlSimpleColumn", "[dbo].[Customer]", "[Email]");
     private static readonly Rename OldRename = Ok(Rename.Of(Key(Customer, "Column", "Mail"), "Email"));
 
-    public static TheoryData<string> Names => new(
-        "make-mandatory", "add a column", "drop a column", "rename a column", "rename a table", "rename a table and a column",
-        "a post-deploy seed edit", "a pre-deploy edit");
+    /// <summary>The sample changes the golden project's registry also holds, by its names.</summary>
+    public static readonly string[] Registered = ["make-mandatory", "add-a-nullable-column", "edit-the-post-deploy-seed", "edit-the-pre-deploy-script"];
+
+    public static TheoryData<string> Names => new([.. Registered, "drop a column", "rename a column", "rename a table", "rename a table and a column"]);
 
     /// <summary>A sample change's model before and after, and the renames the refactorlog after it pairs.</summary>
     public static (SortedArray<Element> Before, SortedArray<Element> After, SortedArray<Rename> Renames) Pair(string sample) => sample switch
     {
         "make-mandatory" => (Model(), Model(emailNullable: false), [OldRename]),
-        "add a column" => (Model(), Model(phone: true), [OldRename]),
+        "add-a-nullable-column" => (Model(), Model(nickname: true), [OldRename]),
         "drop a column" => (Model(), Model(notes: false), [OldRename]),
         "rename a column" => (Model(), Model(email: "EmailAddress", entries: [EmailEntry]), [OldRename, Ok(Rename.Of(Email, "EmailAddress"))]),
         "rename a table" => (Model(), Model(table: "Client", entries: [TableEntry]), [OldRename, Ok(Rename.Of(Customer, "Client"))]),
@@ -46,20 +48,20 @@ internal static class SampleChanges
             Model(),
             Model(table: "Client", email: "EmailAddress", entries: [EmailEntry, TableEntry]),
             [OldRename, Ok(Rename.Of(Email, "EmailAddress")), Ok(Rename.Of(Customer, "Client"))]),
-        "a post-deploy seed edit" => (Model(), Model(post: Seed.Replace("(1, N'Active')", "(1, N'Active'), (2, N'Closed')", System.StringComparison.Ordinal)), [OldRename]),
-        "a pre-deploy edit" => (Model(), Model(pre: "PRINT N'Checking the Status and Customer tables';\n"), [OldRename]),
+        "edit-the-post-deploy-seed" => (Model(), Model(post: Seed.Replace("(1, N'Active')", "(1, N'Active'), (2, N'Closed')", System.StringComparison.Ordinal)), [OldRename]),
+        "edit-the-pre-deploy-script" => (Model(), Model(pre: "PRINT N'Checking the Status and Customer tables';\n"), [OldRename]),
         _ => throw new KeyNotFoundException(sample),
     };
 
     /// <summary>The model, with each sample change's edit as a parameter.</summary>
     public static SortedArray<Element> Model(
-        string table = "Customer", string email = "Email", bool emailNullable = true, bool notes = true, bool phone = false,
+        string table = "Customer", string email = "Email", bool emailNullable = true, bool notes = true, bool nickname = false,
         string pre = PreDeploy, string post = Seed, Element[]? entries = null)
     {
         var t = Key("Table", "dbo", table);
         var id = Key(t, "Column", "Id");
         var mail = Key(t, "Column", email);
-        var columns = new[] { id, mail }.Concat(notes ? [Key(t, "Column", "Notes")] : []).Concat(phone ? [Key(t, "Column", "Phone")] : []).ToArray();
+        var columns = new[] { id, mail }.Concat(notes ? [Key(t, "Column", "Notes")] : []).Concat(nickname ? [Key(t, "Column", "Nickname")] : []).ToArray();
         var elements = new List<Element>
         {
             New(t, [("IsMemoryOptimized", Bool(false))], [("Schema", [Dbo]), ("Columns", columns)]),
@@ -71,7 +73,7 @@ internal static class SampleChanges
             Element.PostDeploy(post),
             OldEntry,
         };
-        elements.AddRange(columns.Skip(2).Select(c => New(c, [("Nullable", Bool(true)), ("Length", Int(c.Name.Base == "Notes" ? -1 : 20))], [("DataType", [NVarCharType])])));
+        elements.AddRange(columns.Skip(2).Select(c => New(c, [("Nullable", Bool(true)), ("Length", Int(c.Name.Base == "Notes" ? -1 : 40))], [("DataType", [NVarCharType])])));
         elements.AddRange(entries ?? []);
         return SortedArray.Of(elements);
     }

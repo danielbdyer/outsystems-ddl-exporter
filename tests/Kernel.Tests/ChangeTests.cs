@@ -145,12 +145,12 @@ public sealed class ChangeTests
     [Trait("Category", "fast")]
     public void Adding_a_column_reports_it_created_and_appends_it_to_its_table_s_columns()
     {
-        var (_, after, _) = SampleChanges.Pair("add a column");
-        var phone = after.Single(e => e.Key.Name.Base == "Phone");
+        var (_, after, _) = SampleChanges.Pair("add-a-nullable-column");
+        var nickname = after.Single(e => e.Key.Name.Base == "Nickname");
 
         Assert.Equal(
-            new Change([phone], [], [], [Columns(["Id", "Email", "Notes"], ["Id", "Email", "Notes", "Phone"])]),
-            Between("add a column"));
+            new Change([nickname], [], [], [Columns(["Id", "Email", "Notes"], ["Id", "Email", "Notes", "Nickname"])]),
+            Between("add-a-nullable-column"));
     }
 
     [Fact]
@@ -216,12 +216,12 @@ public sealed class ChangeTests
     [Fact]
     [Trait("Category", "fast")]
     public void A_post_deploy_seed_edit_changes_the_post_deploy_script_alone() =>
-        Assert.Equal(Script(Element.PostDeploymentScript, "(2, N'Closed')"), Between("a post-deploy seed edit"));
+        Assert.Equal(Script(Element.PostDeploymentScript, "(2, N'Closed')"), Between("edit-the-post-deploy-seed"));
 
     [Fact]
     [Trait("Category", "fast")]
     public void A_pre_deploy_edit_changes_the_pre_deploy_script_alone() =>
-        Assert.Equal(Script(Element.PreDeploymentScript, "Customer"), Between("a pre-deploy edit"));
+        Assert.Equal(Script(Element.PreDeploymentScript, "Customer"), Between("edit-the-pre-deploy-script"));
 
     [Fact]
     [Trait("Category", "fast")]
@@ -256,7 +256,7 @@ public sealed class ChangeTests
     // The one change a script edit makes: its Text, before and after, and nothing else.
     private static Change Script(string type, string edit)
     {
-        var (before, after, _) = SampleChanges.Pair(type == Element.PreDeploymentScript ? "a pre-deploy edit" : "a post-deploy seed edit");
+        var (before, after, _) = SampleChanges.Pair(type == Element.PreDeploymentScript ? "edit-the-pre-deploy-script" : "edit-the-post-deploy-seed");
         var (was, now) = (before.Single(e => e.Key.Type == type), after.Single(e => e.Key.Type == type));
         Assert.Contains(edit, ((Value.Script)now["Text"]!).Content, StringComparison.Ordinal);
         return Altered(was.Key, [new Change.Property("Text", was["Text"], now["Text"])]);

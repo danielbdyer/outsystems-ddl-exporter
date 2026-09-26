@@ -29,6 +29,9 @@
     <Compile Include="../Shared/*.cs" LinkBase="Shared" />
     <Compile Include="../Shared/Io/*.cs" LinkBase="Shared/Io" />
     <Compile Include="../Budgets.Tests/Repository.cs" Link="Repository.cs" />
+    <!-- The kernel's hand-built sample changes, which SampleChangeTests holds to the built golden project. -->
+    <Compile Include="../Kernel.Tests/ElementSets.cs" Link="Kernel/ElementSets.cs" />
+    <Compile Include="../Kernel.Tests/SampleChanges.cs" Link="Kernel/SampleChanges.cs" />
     <!-- The tests' program runs through io/Command: a program that does not run, or overruns, fails the test naming it. -->
     <Compile Include="../Budgets.Tests/Programs.cs" Link="Programs.cs" />
     <!-- The ways to every error, which Register.Errors reads for the register and "no output contains Password=" plants a password in. -->
