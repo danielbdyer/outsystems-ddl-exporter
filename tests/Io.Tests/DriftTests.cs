@@ -17,55 +17,12 @@ namespace DbChange.Io.Tests;
 /// <summary>
 /// dbchange check drift (WP 1.7, V3_ARCHITECTURE.md §8.8, contract C7): the ref built, the target extracted once, the ref's package planned
 /// against it package to package under the pipeline's profile; exit 0 when the deploy plan is empty and 5 naming each object when it is
-/// not; law 2′ (M1 exit 3), R13's stamp and window (exit 6), R16's refusals (exit 7), and R14's watch on the read-only principal (exit 8).
+/// not; law 2′ (M1 exit 3), R13's stamp (exit 6), R16's denied login (exit 7), and R14's watch on the read-only principal (exit 8).
+/// VerbExitTests holds the refusals check drift makes before it connects.
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
 public sealed class DriftTests(ScratchRepository repository) : IClassFixture<ScratchRepository>
 {
-    /// <summary>M1 exit 7's first half: a literal connection string where a target goes is exit 6, and no part of it is printed.</summary>
-    [Theory]
-    [Trait("Category", "fast")]
-    [InlineData("check drift --target")]
-    [InlineData("read --from")]
-    [Trait("Value", "X1")]
-    [Trait("Value", "X2")]
-    [Trait("Exit", "M1.7")]
-    public void A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere(string verb)
-    {
-        var asked = verb.Split(' ');
-        var (exit, output) = repository.Run([.. asked, "Server=db;User ID=sa;Password=planted-7f3a", .. asked[0] == "check" ? ["--at", repository.Base] : Array.Empty<string>(), "--json"]);
-
-        Assert.Equal(6, exit);
-        Assert.Equal("connection.literal", (string?)JsonNode.Parse(output)!["findings"]![0]!["code"]);
-        Assert.DoesNotContain("planted-7f3a", output, StringComparison.Ordinal);
-        Assert.DoesNotContain("Server=db", output, StringComparison.Ordinal);
-    }
-
-    /// <summary>M1 exit 6 through the verb: a ledger whose pin the committed DacFx is neither, nor the release before, is exit 6 before anything connects, the stamp naming both.</summary>
-    [Fact]
-    [Trait("Category", "fast")]
-    [Trait("Value", "R1")]
-    [Trait("Exit", "M1.6")]
-    public void The_committed_DacFx_outside_the_ledger_s_window_is_exit_6_before_anything_connects()
-    {
-        var root = Directory.CreateTempSubdirectory("dbchange-window-").FullName;
-        try
-        {
-            Directory.CreateDirectory(Path.Combine(root, "dbchange", "ledgers"));
-            File.WriteAllText(Path.Combine(root, "dbchange", "ledgers", "toolchain.md"), "| Date | dbchange | Pinned DacFx | Release before |\n|---|---|---|---|\n| 2026-09-25 | 3.0.0 | 170.7.2 | 170.6.10 |\n");
-
-            var (exit, answer) = repository.AnswerAt(root, "check", "drift", "--target", "copy:dbchange_nowhere_1_00000000", "--at", "main");
-
-            Assert.Equal(6, exit);
-            Assert.Equal("toolchain.outside-window", (string?)answer["findings"]![0]!["code"]);
-            Assert.Equal(("170.5.96", "170.7.2", null), ((string?)answer["dacfx"], (string?)answer["pin"], answer["server"]));
-        }
-        finally
-        {
-            Directory.Delete(root, recursive: true);
-        }
-    }
-
     /// <summary>
     /// Law 2′ (M1 exit 3): the golden project published to a fresh copy is in sync with it, check drift exit 0 and the deploy plan empty; one column
     /// altered on the copy is exit 5 naming its table and that column, the column's Length from the target to the repository.

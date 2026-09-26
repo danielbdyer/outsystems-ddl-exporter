@@ -24,6 +24,7 @@ Whether each is green is the CI run's to say. A law without a green test is not 
 | a named environment cannot be written | Permissive never reaches an environment | `DbChange.Io.Tests.CapabilityTests.Permissive_never_reaches_an_environment` |
 | a named environment cannot be written | A copy the registry does not hold is refused | `DbChange.Io.Tests.TargetTests.A_copy_the_registry_does_not_hold_is_refused` |
 | a named environment cannot be written | A local server on the host an environment names is refused | `DbChange.Io.Tests.TargetTests.A_local_server_on_the_host_an_environment_names_is_refused` |
+| a named environment cannot be written | A copy the registry does not hold or one on a named environment's host is exit 9 | `DbChange.Io.Tests.VerbExitTests.A_copy_the_registry_does_not_hold_or_one_on_a_named_environment_s_host_is_exit_9` |
 | dependencies point one way | Io does not depend on the cli and the kernel on neither | `DbChange.Budgets.Tests.DependenciesPointOneWay.Io_does_not_depend_on_the_cli_and_the_kernel_on_neither` |
 | dependencies point one way | No project reaches into the knowledge files or ci | `DbChange.Budgets.Tests.DependenciesPointOneWay.No_project_reaches_into_the_knowledge_files_or_ci` |
 | dependencies point one way | The cli references no DacFx type | `DbChange.Budgets.Tests.DependenciesPointOneWay.The_cli_references_no_DacFx_type` |
@@ -101,7 +102,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | R1 | The committed DacFx is the release Directory Packages props pins | `DbChange.Io.Tests.DoctorTests.The_committed_DacFx_is_the_release_Directory_Packages_props_pins` |
 | R1 | The committed DacFx stands inside the ledger's window only at the pin or the release before it | `DbChange.Io.Tests.DoctorTests.The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it` |
 | R1 | A drift's provenance fingerprints the target's schema and the deploy report | `DbChange.Io.Tests.DriftTests.A_drift_s_provenance_fingerprints_the_target_s_schema_and_the_deploy_report` |
-| R1 | The committed DacFx outside the ledger's window is exit 6 before anything connects | `DbChange.Io.Tests.DriftTests.The_committed_DacFx_outside_the_ledger_s_window_is_exit_6_before_anything_connects` |
+| R1 | The committed DacFx outside the ledger's window is exit 6 before anything connects | `DbChange.Io.Tests.VerbExitTests.The_committed_DacFx_outside_the_ledger_s_window_is_exit_6_before_anything_connects` |
 | R1 | A ledger row is rejected for a text that is no version or a release before that is not older than the pin | `DbChange.Kernel.Tests.ProvenanceTests.A_ledger_row_is_rejected_for_a_text_that_is_no_version_or_a_release_before_that_is_not_older_than_the_pin` |
 | R1 | The committed DacFx is inside the pin's window only at the pin or the release before it | `DbChange.Kernel.Tests.ProvenanceTests.The_committed_DacFx_is_inside_the_pin_s_window_only_at_the_pin_or_the_release_before_it` |
 | R1 | Unpinned admits every DacFx release | `DbChange.Kernel.Tests.ProvenanceTests.Unpinned_admits_every_DacFx_release` |
@@ -126,12 +127,13 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | S7 | Nothing but LocalServer makes a Copy | `DbChange.Io.Tests.CapabilityTests.Nothing_but_LocalServer_makes_a_Copy` |
 | S7 | The read only principal sends no DML no DDL and no EXEC through check drift and read | `DbChange.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read` |
 | S7 | A copy the registry does not hold is refused | `DbChange.Io.Tests.TargetTests.A_copy_the_registry_does_not_hold_is_refused` |
-| X1 | A literal connection string as a target is exit 6 and printed nowhere | `DbChange.Io.Tests.DriftTests.A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere` |
+| S7 | A copy the registry does not hold or one on a named environment's host is exit 9 | `DbChange.Io.Tests.VerbExitTests.A_copy_the_registry_does_not_hold_or_one_on_a_named_environment_s_host_is_exit_9` |
 | X1 | Inline credential refused | `DbChange.Io.Tests.PublishProfilesTests.Inline_credential_refused` |
 | X1 | A connection file git tracks is refused under each spelling that opens it though gitignore lists it | `DbChange.Io.Tests.TargetTests.A_connection_file_git_tracks_is_refused_under_each_spelling_that_opens_it_though_gitignore_lists_it` |
 | X1 | A connection file git tracks or does not ignore is refused and one git ignores resolves | `DbChange.Io.Tests.TargetTests.A_connection_file_git_tracks_or_does_not_ignore_is_refused_and_one_git_ignores_resolves` |
 | X1 | A connection file its group can read is refused where files carry a Unix mode | `DbChange.Io.Tests.TargetTests.A_connection_file_its_group_can_read_is_refused_where_files_carry_a_Unix_mode` |
 | X1 | A literal connection string as a target is connection literal and quoted nowhere | `DbChange.Io.Tests.TargetTests.A_literal_connection_string_as_a_target_is_connection_literal_and_quoted_nowhere` |
+| X1 | A literal connection string as a target is exit 6 and printed nowhere | `DbChange.Io.Tests.VerbExitTests.A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere` |
 | X1 | A SQLCMD name shaped like a credential never holds a literal and takes a reference | `DbChange.Kernel.Tests.EnvironmentsTests.A_SQLCMD_name_shaped_like_a_credential_never_holds_a_literal_and_takes_a_reference` |
 | X1 | Anything else given as a reference is refused without being quoted | `DbChange.Kernel.Tests.EnvironmentsTests.Anything_else_given_as_a_reference_is_refused_without_being_quoted` |
 | X2 | An unexpected exception withholds its message when the run read a named environment with no env argument | `DbChange.Budgets.Tests.ContractTests.An_unexpected_exception_withholds_its_message_when_the_run_read_a_named_environment_with_no_env_argument` |
@@ -141,7 +143,6 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | X2 | A refusal names the form and its place and quotes no literal | `DbChange.Io.Tests.AllowlistTests.A_refusal_names_the_form_and_its_place_and_quotes_no_literal` |
 | X2 | DbChange read of a database holding a SQL login prints no password | `DbChange.Io.Tests.DiffTests.DbChange_read_of_a_database_holding_a_SQL_login_prints_no_password` |
 | X2 | A denied login prints one sentence naming the environment and a lead's prediction | `DbChange.Io.Tests.DriftTests.A_denied_login_prints_one_sentence_naming_the_environment_and_a_lead_s_prediction` |
-| X2 | A literal connection string as a target is exit 6 and printed nowhere | `DbChange.Io.Tests.DriftTests.A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere` |
 | X2 | A branch that exists or git does not take is refused and an origin that does not answer is unreachable with no credential printed and no branch left | `DbChange.Io.Tests.GitTests.A_branch_that_exists_or_git_does_not_take_is_refused_and_an_origin_that_does_not_answer_is_unreachable_with_no_credential_printed_and_no_branch_left` |
 | X2 | A secret planted in every property that holds one reaches no element property | `DbChange.Io.Tests.ModelElementsTests.A_secret_planted_in_every_property_that_holds_one_reaches_no_element_property` |
 | X2 | Every text property DacFx declares is a listed secret or reviewed as not a secret | `DbChange.Io.Tests.ModelElementsTests.Every_text_property_DacFx_declares_is_a_listed_secret_or_reviewed_as_not_a_secret` |
@@ -150,6 +151,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | X2 | A diff of two procedures differing in a password literal alone alters the Definition and prints both values left out | `DbChange.Io.Tests.SchemaTextTests.A_diff_of_two_procedures_differing_in_a_password_literal_alone_alters_the_Definition_and_prints_both_values_left_out` |
 | X2 | Each password form planted in a script is printed as left out and named | `DbChange.Io.Tests.SchemaTextTests.Each_password_form_planted_in_a_script_is_printed_as_left_out_and_named` |
 | X2 | A named environment's error is withheld and a copy's is kept | `DbChange.Io.Tests.TargetTests.A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept` |
+| X2 | A literal connection string as a target is exit 6 and printed nowhere | `DbChange.Io.Tests.VerbExitTests.A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere` |
 | X2 | Nothing a named environment prints carries a literal or what a reference names | `DbChange.Kernel.Tests.EnvironmentsTests.Nothing_a_named_environment_prints_carries_a_literal_or_what_a_reference_names` |
 | X3 | Every package is allowed and every allowed package is used | `DbChange.Budgets.Tests.PackagesAllowlist.Every_package_is_allowed_and_every_allowed_package_is_used` |
 | X3 | Every project restores from its lock file and CI restores locked | `DbChange.Budgets.Tests.PackagesAllowlist.Every_project_restores_from_its_lock_file_and_CI_restores_locked` |
@@ -193,17 +195,18 @@ One row per test that runs an exit of `V3_MILESTONES.md`, from its `[Trait("Exit
 | M1.5 | A copy the registry does not hold is refused | `DbChange.Io.Tests.TargetTests.A_copy_the_registry_does_not_hold_is_refused` |
 | M1.5 | A local server on an alias of an environment's host is refused | `DbChange.Io.Tests.TargetTests.A_local_server_on_an_alias_of_an_environment_s_host_is_refused` |
 | M1.5 | A local server on the host an environment names is refused | `DbChange.Io.Tests.TargetTests.A_local_server_on_the_host_an_environment_names_is_refused` |
+| M1.5 | A copy the registry does not hold or one on a named environment's host is exit 9 | `DbChange.Io.Tests.VerbExitTests.A_copy_the_registry_does_not_hold_or_one_on_a_named_environment_s_host_is_exit_9` |
 | M1.6 | The committed DacFx stands inside the ledger's window only at the pin or the release before it | `DbChange.Io.Tests.DoctorTests.The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it` |
 | M1.6 | A drift's provenance fingerprints the target's schema and the deploy report | `DbChange.Io.Tests.DriftTests.A_drift_s_provenance_fingerprints_the_target_s_schema_and_the_deploy_report` |
-| M1.6 | The committed DacFx outside the ledger's window is exit 6 before anything connects | `DbChange.Io.Tests.DriftTests.The_committed_DacFx_outside_the_ledger_s_window_is_exit_6_before_anything_connects` |
+| M1.6 | The committed DacFx outside the ledger's window is exit 6 before anything connects | `DbChange.Io.Tests.VerbExitTests.The_committed_DacFx_outside_the_ledger_s_window_is_exit_6_before_anything_connects` |
 | M1.6 | The committed DacFx is inside the pin's window only at the pin or the release before it | `DbChange.Kernel.Tests.ProvenanceTests.The_committed_DacFx_is_inside_the_pin_s_window_only_at_the_pin_or_the_release_before_it` |
 | M1.6 | Unpinned admits every DacFx release | `DbChange.Kernel.Tests.ProvenanceTests.Unpinned_admits_every_DacFx_release` |
 | M1.7 | A denied login names the environment and quotes nothing | `DbChange.Io.Tests.AggregateQueryTests.A_denied_login_names_the_environment_and_quotes_nothing` |
 | M1.7 | A login without VIEW DEFINITION is denied before DacFx runs | `DbChange.Io.Tests.AggregateQueryTests.A_login_without_VIEW_DEFINITION_is_denied_before_DacFx_runs` |
 | M1.7 | A denied login prints one sentence naming the environment and a lead's prediction | `DbChange.Io.Tests.DriftTests.A_denied_login_prints_one_sentence_naming_the_environment_and_a_lead_s_prediction` |
-| M1.7 | A literal connection string as a target is exit 6 and printed nowhere | `DbChange.Io.Tests.DriftTests.A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere` |
 | M1.7 | Inline credential refused | `DbChange.Io.Tests.PublishProfilesTests.Inline_credential_refused` |
 | M1.7 | A named environment's error is withheld and a copy's is kept | `DbChange.Io.Tests.TargetTests.A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept` |
+| M1.7 | A literal connection string as a target is exit 6 and printed nowhere | `DbChange.Io.Tests.VerbExitTests.A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere` |
 | M1.8 | The read only principal sends no DML no DDL and no EXEC through check drift and read | `DbChange.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read` |
 
 Exits no test declares, which a person or a CI job runs: M0.2, M1.1, M2.1, M2.2, M2.3, M2.4, M2.5, M3.1, M3.2, M3.3, M3.4, M3.5, M4.1, M4.2, M4.3, M4.4, M4.5, M4.6, M4.7, M5.1, M5.2, M5.3, M5.4, M5.5, M5.6, M6.1, M6.2, M6.3, M6.4, M6.5, M7.1.

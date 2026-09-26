@@ -277,7 +277,7 @@ public sealed class DoctorTests : IDisposable
     }
 
     /// <summary>A DacFx release near the committed one: its second group moved by <paramref name="minors"/>, so the rows above hold whatever release the build pins.</summary>
-    private static string Near(int minors)
+    internal static string Near(int minors)
     {
         var release = System.Version.Parse(Committed);
         return string.Create(CultureInfo.InvariantCulture, $"{release.Major}.{release.Minor + minors}.{release.Build}");
