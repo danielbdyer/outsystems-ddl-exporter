@@ -42,9 +42,6 @@ public static class Doctor
     /// <summary>The files a published tool folder holds beside dbchange: DacFx's SqlTasks targets and the reference assemblies (mscorlib.dll and FrameworkList.xml).</summary>
     private static readonly string[] Published = ["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"];
 
-    /// <summary>The DacFx build task a published tool folder carries, whose file version names the DacFx release the folder's targets run.</summary>
-    private const string BuildTask = "Microsoft.Data.Tools.Schema.Tasks.Sql.dll";
-
     /// <summary>A ledger row: | date | dbchange version | pinned DacFx or UNPINNED | the release before the pin, or — |.</summary>
     private static readonly Regex Row = new(@"^\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|\s*$", RegexOptions.CultureInvariant);
 
@@ -231,11 +228,14 @@ public static class Doctor
             : new(Item.Tool, "not a published tool folder (" + string.Join(", ", absent.Select(Path.GetFileName)) + " absent)", "ci/publish.sh, or ci/publish.ps1 on Windows, publishes dist/dbchange/; run dbchange from there");
     }
 
-    /// <summary>The tool folder dbchange would build with (Ssdt.Tool), and whether its DacFx build task is the committed DacFx: a stale publish under another DacFx is named.</summary>
+    /// <summary>
+    /// The tool folder dbchange would build with (Ssdt.Tool), and whether its DacFx build task is the committed DacFx, by the check a
+    /// build makes (Ssdt.BuildTargets.Of): a stale publish, or a task that carries no file version, is named with the remedy to publish
+    /// again. Where dbchange cannot name its own DacFx, the dacfx item says so and this one does not repeat it.
+    /// </summary>
     private static Prerequisite Tool(Machine machine) => Ssdt.Tool(machine.Running, machine.Checkout.Tool, machine.Checkout.WorkingDirectory).Match(
-        folder => FileVersion(Path.Combine(folder, BuildTask)) is { } task && DacFx.Version is Result<DacFxVersion>.Ok(var running) && task != running.ToString()
-            ? new Prerequisite(Item.Tool, (folder == machine.Running ? "published" : folder) + ", whose DacFx build task is " + task + " while dbchange runs DacFx " + running,
-                "Run ci/publish.sh, or ci/publish.ps1 on Windows, again so the tool folder carries DacFx " + running + ", then run dbchange doctor.")
+        folder => Ssdt.BuildTargets.Of(folder) is Result<Ssdt.BuildTargets>.Failed { Error: { Code: "toolchain.targets-mismatch" } mismatch }
+            ? new Prerequisite(Item.Tool, mismatch.Message.TrimEnd('.'), mismatch.Remedy)
             : new Prerequisite(Item.Tool, folder == machine.Running ? "published" : folder, null),
         error => new Prerequisite(Item.Tool, "missing", error.Remedy));
 
@@ -293,14 +293,4 @@ public static class Doctor
     private static Command Program(string program, params string[] arguments) => new(program, arguments, Command.ProbeTimeout);
 
     /// <summary>A file's version as major.minor.build, or null for a file that is absent or carries none.</summary>
-    private static string? FileVersion(string path)
-    {
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
-        var v = FileVersionInfo.GetVersionInfo(path);
-        return v.FileVersion is null ? null : string.Create(CultureInfo.InvariantCulture, $"{v.FileMajorPart}.{v.FileMinorPart}.{v.FileBuildPart}");
-    }
 }

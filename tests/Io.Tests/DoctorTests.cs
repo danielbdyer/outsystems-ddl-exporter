@@ -199,17 +199,17 @@ public sealed class DoctorTests : IDisposable
         Assert.Equal(("2.43.0", null), (linux.Found, linux.Remedy));
     }
 
-    /// <summary>The tool folder's DacFx build task names the release its targets run: one other than the committed DacFx is a stale publish.</summary>
+    /// <summary>The tool folder's DacFx build task names the release its targets run: one other than the committed DacFx is a stale publish, named as a build names it (Ssdt.BuildTargets.Of).</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_tool_folder_whose_DacFx_build_task_is_another_release_is_named_as_a_stale_publish()
     {
         Publish();
-        File.Copy(Path.Combine(AppContext.BaseDirectory, "DbChange.Kernel.dll"), machine.Under("Microsoft.Data.Tools.Schema.Tasks.Sql.dll"));   // a file with another version
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "DbChange.Kernel.dll"), machine.Under(Ssdt.BuildTargets.Task), overwrite: true);   // a file with another version
 
         var tool = Doctor.Examine(Bare(), Nothing).Single(c => c.Item == Doctor.Item.Tool);
 
-        Assert.Contains("while dbchange runs DacFx " + DacFx.Version.Match(v => v.ToString(), e => e.Message), tool.Found, StringComparison.Ordinal);
+        Assert.Contains("and dbchange runs DacFx " + DacFx.Version.Match(v => v.ToString(), e => e.Message), tool.Found, StringComparison.Ordinal);
         Assert.Contains("ci/publish.sh", tool.Remedy, StringComparison.Ordinal);
     }
 
@@ -304,6 +304,26 @@ public sealed class DoctorTests : IDisposable
         {
             machine.File(file, "");
         }
+
+        File.Copy(Path.Combine(AppContext.BaseDirectory, Ssdt.BuildTargets.Task), machine.Under(Ssdt.BuildTargets.Task));   // the committed DacFx's build task, as ci/publish copies it
+    }
+
+    /// <summary>
+    /// S14 of the pre-M2 review: the tool item makes the check a build makes, so a tool folder whose DacFx build task carries no file
+    /// version is named with the remedy to publish again, as a build refuses it; the doctor read the version with a reader of its own,
+    /// which passed a task that carries none.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_tool_folder_whose_build_task_carries_no_file_version_is_named_with_the_remedy_to_publish_again()
+    {
+        Publish();
+        machine.File(Ssdt.BuildTargets.Task, "");
+
+        var tool = Doctor.Examine(Bare(), Nothing).Single(c => c.Item == Doctor.Item.Tool);
+
+        Assert.Contains("carries no file version", tool.Found, StringComparison.Ordinal);
+        Assert.Contains("ci/publish.sh", tool.Remedy, StringComparison.Ordinal);
     }
 
     /// <summary>A machine on which no program is installed.</summary>

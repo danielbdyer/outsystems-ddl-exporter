@@ -543,6 +543,8 @@ public sealed class ContractTests
             machine.File(file, "");
         }
 
+        File.Copy(Path.Combine(AppContext.BaseDirectory, Ssdt.BuildTargets.Task), machine.Under(Ssdt.BuildTargets.Task));
+
         machine.File("global.json", """{ "sdk": { "version": "10.0.401" } }""");
         machine.File("sql.env", "MSSQL_SA_PASSWORD=x\nDBCHANGE_SQL_PORT=11433\n");
         Runner answers = (command, _) => (command.Program + " " + command.Arguments[0]) switch
