@@ -16,7 +16,7 @@ using Xunit.Abstractions;
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// io/Ssdt.Elements (WP 1.2) against real builds: law 3′'s io half (M1 exit 4) and WP 1.3's sample-change properties, each
+/// io/Ssdt.ReadModel (WP 1.2) against real builds: law 3′'s io half (M1 exit 4) and WP 1.3's sample-change properties, each
 /// sample change an edited copy of the golden project built against dist/estate/ and read into elements. A package's model is compared
 /// with a package's only. Make-mandatory edits Customer.Email, the golden project's own populated nullable column (the seed
 /// plants rows with and without an Email).
@@ -73,7 +73,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
     /// <summary>
     /// Finding NFR-12: the golden project's model, as one fingerprint committed here, which the Windows and the Ubuntu CI jobs both compute;
-    /// a model that differs between the two operating systems, or a change to what Ssdt.Elements keeps, fails here and prints the new value.
+    /// a model that differs between the two operating systems, or a change to what Ssdt.ReadModel keeps, fails here and prints the new value.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -170,7 +170,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
             "GRANT SELECT ON SCHEMA::dbo TO r1;", "GRANT EXECUTE ON SCHEMA::dbo TO r2;", "GRANT VIEW DEFINITION TO u1;", "GRANT VIEW DEFINITION TO u2;",
             "EXEC sys.sp_addextendedproperty @name = N'MS_Description', @value = N'P', @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'P';",
             "EXEC sys.sp_addextendedproperty @name = N'MS_Description', @value = N'A', @level0type = N'SCHEMA', @level0name = N'dbo', @level1type = N'TABLE', @level1name = N'P', @level2type = N'COLUMN', @level2name = N'A';");
-        var elements = Ok(Ssdt.Elements(model));
+        var elements = Ok(Ssdt.ReadModel(model));
         var keyed = elements.Where(e => e.Key.Type is "Permission" or "ExtendedProperty").Select(e => e.Key.ToString()).ToList();
         output.WriteLine(string.Join('\n', keyed));
 
@@ -186,7 +186,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
     /// <summary>
     /// SQL Server grants VIEW ANY COLUMN ENCRYPTION KEY DEFINITION and VIEW ANY COLUMN MASTER KEY DEFINITION to public in every new
-    /// database, so a database holds them whether its project does or not. Ssdt.Elements leaves out those two grants to public and keeps
+    /// database, so a database holds them whether its project does or not. Ssdt.ReadModel leaves out those two grants to public and keeps
     /// the same permissions granted to a role, and any other grant to public.
     /// </summary>
     [Fact]
@@ -197,7 +197,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
             "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY);", "CREATE ROLE r1;", "GRANT VIEW ANY COLUMN ENCRYPTION KEY DEFINITION TO public;",
             "GRANT VIEW ANY COLUMN MASTER KEY DEFINITION TO public;", "GRANT VIEW ANY COLUMN MASTER KEY DEFINITION TO r1;", "GRANT SELECT ON dbo.T TO public;");
 
-        var permissions = Ok(Ssdt.Elements(model)).Where(e => e.Key.Type == "Permission").Select(e => e.Key.ToString());
+        var permissions = Ok(Ssdt.ReadModel(model)).Where(e => e.Key.Type == "Permission").Select(e => e.Key.ToString());
 
         Assert.Equal(["Permission [DatabaseOptions].[Grant.ViewAnyColumnMasterKeyDefinition.Database].[r1].[dbo]", "Permission [dbo].[T].[Grant.Select.Object].[public].[dbo]"], permissions);
     }
@@ -213,7 +213,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         string[] checks = ["ALTER TABLE dbo.T ADD CHECK (A > 0);", "ALTER TABLE dbo.T ADD CHECK (A < 100);"];
         using var inOrder = Model(["CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, A INT NULL);", .. checks]);
         using var reversed = Model(["CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, A INT NULL);", .. checks.Reverse()]);
-        var (forward, backward) = (Ok(Ssdt.Elements(inOrder)), Ok(Ssdt.Elements(reversed)));
+        var (forward, backward) = (Ok(Ssdt.ReadModel(inOrder)), Ok(Ssdt.ReadModel(reversed)));
 
         Assert.Equal(forward, backward);
         Assert.True(Ok(Change.Between(forward, backward, [])).IsEmpty);
@@ -232,7 +232,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     {
         using var inOrder = Model(reverse: false);
         using var reversed = Model(reverse: true);
-        var (forward, backward) = (Ok(Ssdt.Elements(inOrder)), Ok(Ssdt.Elements(reversed)));
+        var (forward, backward) = (Ok(Ssdt.ReadModel(inOrder)), Ok(Ssdt.ReadModel(reversed)));
 
         Assert.Equal(forward, backward);
         var keys = forward.Select(e => e.Key.ToString()).ToList();
@@ -315,7 +315,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
             "CREATE TABLE dbo.P (Id INT NOT NULL PRIMARY KEY);",
             "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, A INT NULL, B INT NULL, C INT NULL, PId INT NULL REFERENCES dbo.P (Id), Code INT NULL UNIQUE,"
             + " UNIQUE (C, B), UNIQUE (A, B), CHECK (C > B), CHECK (A > B));");
-        var elements = Ok(Ssdt.Elements(model));
+        var elements = Ok(Ssdt.ReadModel(model));
 
         string Referenced(string key) => string.Join(", ", elements.Single(e => e.Key.ToString() == key).Relationships
             .Where(r => r.Name is "Columns" or "ExpressionDependencies").SelectMany(r => r.Targets.Select(t => t.Key.Name.Base)).Order(StringComparer.Ordinal));
@@ -332,7 +332,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     /// and a database scoped credential's secret; the database master key's password; a signature's password; a linked server
     /// login's password; a linked server's provider string (sp_addlinkedserver's @provstr) and an external data source's
     /// CONNECTION_OPTIONS, each an ODBC or OLE DB connection string carrying PWD=. DacFx gives the planted value back from every
-    /// property <see cref="Ssdt.Secrets"/> lists, and Ssdt.Elements carries it in no property.
+    /// property <see cref="Ssdt.Secrets"/> lists, and Ssdt.ReadModel carries it in no property.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -358,7 +358,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
             "EXECUTE sp_addlinkedserver @server = N'LS', @srvproduct = N'', @provider = N'MSOLEDBSQL', @datasrc = N'remote', @provstr = N'UID=u;PWD=" + Planted + "';",
             "EXECUTE sp_addlinkedsrvlogin @rmtsrvname = N'LS', @useself = N'FALSE', @locallogin = NULL, @rmtuser = N'u', @rmtpassword = N'" + Planted + "';");
 
-        var elements = Ok(Ssdt.Elements(model));
+        var elements = Ok(Ssdt.ReadModel(model));
 
         Assert.All(Ssdt.Secrets, secret => Assert.True(Held(model, secret, Planted), Qualified(secret) + " holds no planted value"));
         Assert.Contains(elements, e => e.Key.ToString() == "Login [L]");
@@ -370,7 +370,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     /// Every string-typed property DacFx 170.5.96's model declares, each reviewed on 2026-09-25 as a secret or as none, with the
     /// reason. A property a later DacFx adds is on neither list, and the test names it; it is reviewed and listed before the upgrade
     /// lands. The review covers string-typed properties only: a SqlScriptProperty-typed one (Parameter.DefaultExpression,
-    /// ExtendedProperty.Value, Table.QueryScript and the rest) is schema text, and Ssdt.Elements keeps it as written, as it does a
+    /// ExtendedProperty.Value, Table.QueryScript and the rest) is schema text, and Ssdt.ReadModel keeps it as written, as it does a
     /// module's Definition and a deploy script, until the operator's decision 2.27 on schema text that sets a password.
     /// </summary>
     private static readonly Dictionary<string, string[]> NotSecret = new(StringComparer.Ordinal)
@@ -444,7 +444,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     private static string Qualified(ModelPropertyClass p) => (p.OwningType?.Name ?? p.OwningRelationship?.Name) + "." + p.Name;
 
     /// <summary>
-    /// A security policy composes its predicates, and DacFx also lists each predicate among the top-level objects: Ssdt.Elements
+    /// A security policy composes its predicates, and DacFx also lists each predicate among the top-level objects: Ssdt.ReadModel
     /// reads an object once however many paths reach it, so the model is whole and each key names one object.
     /// </summary>
     [Fact]
@@ -455,7 +455,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
             "CREATE TABLE dbo.T (Id INT NOT NULL PRIMARY KEY, Owner INT NULL);",
             "CREATE FUNCTION dbo.fn(@Owner INT) RETURNS TABLE WITH SCHEMABINDING AS RETURN SELECT 1 AS ok WHERE @Owner = 1;",
             "CREATE SECURITY POLICY dbo.SP ADD FILTER PREDICATE dbo.fn(Owner) ON dbo.T, ADD BLOCK PREDICATE dbo.fn(Owner) ON dbo.T AFTER INSERT;");
-        var elements = Ok(Ssdt.Elements(model));
+        var elements = Ok(Ssdt.ReadModel(model));
         var predicates = elements.Where(e => e.Key.Type == "SecurityPredicate").Select(e => e.Key.ToString()).ToList();
         output.WriteLine(string.Join('\n', predicates));
 
@@ -465,7 +465,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     }
 
     /// <summary>
-    /// DacFx declares no property holding a procedure's, a trigger's or a function's body, so Ssdt.Elements reads each such module's
+    /// DacFx declares no property holding a procedure's, a trigger's or a function's body, so Ssdt.ReadModel reads each such module's
     /// Definition, the script DacFx gives it; a view's body is its SelectStatement property and is read once, there. Each is a
     /// Value.Script, T-SQL text kept as written. An edit to the body alone, read from a package on each side, changes the fingerprint
     /// and is that one property.
@@ -491,7 +491,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
     /// <summary>
     /// Two packages whose procedures differ only in RAISERROR's message, 'The user''s password has expired' against 'was reset':
-    /// Ssdt.Elements reads each module's Definition as DacFx gives it, so the change between them is that one Definition, and each
+    /// Ssdt.ReadModel reads each module's Definition as DacFx gives it, so the change between them is that one Definition, and each
     /// Definition it reads is its procedure's text as written. A reader that rewrote text holding the word password would read both
     /// messages alike and give an empty change.
     /// </summary>
@@ -573,7 +573,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
             SortedArray<Element> package;
             using (var loaded = Ok(Ssdt.Open(dacpac)))
             {
-                package = Ok(Ssdt.Elements(loaded)).Elements;
+                package = Ok(Ssdt.ReadModel(loaded)).Elements;
             }
 
             var database = await PublishedAndRead(new DacDeployOptions(), dacpac);
@@ -609,7 +609,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
             SortedArray<Element> package;
             using (var loaded = Ok(Ssdt.Open(v2)))
             {
-                package = Ok(Ssdt.Elements(loaded)).Elements;
+                package = Ok(Ssdt.ReadModel(loaded)).Elements;
             }
 
             var profile = DacProfile.Load(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml")).DeployOptions;
@@ -701,7 +701,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
             Storage = DacSchemaModelStorageType.Memory, HashObjectNamesInLogs = false,
         });
 
-        var (fromExtract, fromLoad) = (Ok(extracted.Elements).Elements, Ok(Ssdt.Elements(loaded)));
+        var (fromExtract, fromLoad) = (Ok(extracted.Elements).Elements, Ok(Ssdt.ReadModel(loaded)));
 
         var differing = Ok(Change.Between(fromLoad, fromExtract, []));
         Assert.True(differing.IsEmpty, string.Join('\n', Lines(differing)));
@@ -761,7 +761,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         {
             using var model = new TSqlModel(platform, new TSqlModelOptions());
             model.AddObjects("CREATE TABLE dbo.T (Id INT NOT NULL);");
-            return Ok(Ssdt.Elements(model)).Single(e => e.Key.ToString() == "Column [dbo].[T].[Id]");
+            return Ok(Ssdt.ReadModel(model)).Single(e => e.Key.ToString() == "Column [dbo].[T].[Id]");
         }
 
         var (old, current) = (Column(SqlServerVersion.Sql110), Column(SqlServerVersion.Sql160));
@@ -785,7 +785,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         model.AddObjects("CREATE TABLE dbo.T (Id INT NOT NULL);");
         Assert.Throws<DacModelException>(() => model.AddObjects("CREATE TABLE dbo.U (Id INT NOT NULL,,);"));
 
-        var read = Ok(Ssdt.Elements(model, null, null, []));
+        var read = Ok(Ssdt.ReadModel(model, null, null, []));
 
         Assert.Contains(read.Elements, e => e.Key.ToString() == "Table [dbo].[T]");
         var error = Assert.Single(read.Errors);
@@ -871,7 +871,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
         try
         {
             using var package = Ok(Ssdt.Open(dacpac));
-            return Ok(Ssdt.Elements(package));
+            return Ok(Ssdt.ReadModel(package));
         }
         finally
         {
@@ -1024,7 +1024,7 @@ public sealed class GoldenProjectModels : IAsyncLifetime
 
             var dacpac = Ok(Ssdt.Build(Path.Combine(directory, "SampleCatalog.sqlproj"), tool.Folder, Path.Combine(root, "build", head.Key.Replace(' ', '-'))));
             using var package = Ok(Ssdt.Open(dacpac.Path));
-            return (Head: head.Key, Dacpac: dacpac.Path, Model: Ok(Ssdt.Elements(package)));
+            return (Head: head.Key, Dacpac: dacpac.Path, Model: Ok(Ssdt.ReadModel(package)));
         })));
         foreach (var (head, dacpac, model) in built)
         {
@@ -1034,7 +1034,7 @@ public sealed class GoldenProjectModels : IAsyncLifetime
         // The base read into elements once more, alone and warm, for its time.
         using var again = Ok(Ssdt.Open(Dacpacs["base"]));
         var clock = Stopwatch.StartNew();
-        Assert.Equal(Models["base"], Ok(Ssdt.Elements(again)));
+        Assert.Equal(Models["base"], Ok(Ssdt.ReadModel(again)));
         ReadingTime = clock.Elapsed;
     }
 

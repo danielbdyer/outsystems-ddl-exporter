@@ -97,7 +97,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         }
         finally
         {
-            GitTests.Ok(ScratchServer.Drop(copy));
+            GitTests.Ok(LocalServer.Drop(copy));
         }
     }
 
@@ -134,7 +134,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         }
         finally
         {
-            GitTests.Ok(ScratchServer.Drop(copy));
+            GitTests.Ok(LocalServer.Drop(copy));
         }
     }
 
@@ -198,7 +198,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         }
         finally
         {
-            GitTests.Ok(ScratchServer.Drop(copy));
+            GitTests.Ok(LocalServer.Drop(copy));
         }
     }
 
@@ -238,7 +238,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         }
         finally
         {
-            GitTests.Ok(ScratchServer.Drop(copy));
+            GitTests.Ok(LocalServer.Drop(copy));
         }
     }
 
@@ -272,8 +272,8 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             Assert.DoesNotContain("sha256:" + packaged, new[] { (string?)provenance["schema"], (string?)provenance["change"] });
             // The copy ran in the estate-sql container when its server is the one ~/.estate/sql.env names, whether ESTATE_SQL also names it or
             // not; ci/sql.sh up, which the fixture runs, keeps that container on the pinned image, whose digest Docker then reports.
-            var container = File.Exists(ScratchServer.SqlEnv) && ScratchServer.ServerName(null, ScratchServer.SqlEnv, localDb: false) is Result<ServerName>.Ok(var inContainer)
-                && ScratchServer.ServerName(copy.Connection) is Result<ServerName>.Ok(var made) && made == inContainer;
+            var container = File.Exists(LocalServer.SqlEnv) && LocalServer.ServerName(null, LocalServer.SqlEnv, localDb: false) is Result<ServerName>.Ok(var inContainer)
+                && LocalServer.ServerName(copy.Connection) is Result<ServerName>.Ok(var made) && made == inContainer;
             Assert.Equal(("170.5.96", container ? Doctor.ImageDigest : null, "UNPINNED"), ((string?)provenance["dacfx"], (string?)provenance["server"]!["image"], (string?)answer["pin"]));
             Assert.Equal(("copy:" + copy.Name, "[\"existingData\"]", estate.Base), ((string?)provenance["target"], provenance["lacking"]!.ToJsonString(), (string?)answer["check"]!["commit"]));
             Assert.Equal(answer["server"]!.ToJsonString(), provenance["server"]!.ToJsonString());
@@ -283,7 +283,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         }
         finally
         {
-            GitTests.Ok(ScratchServer.Drop(copy));
+            GitTests.Ok(LocalServer.Drop(copy));
         }
     }
 
@@ -311,7 +311,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         }
         finally
         {
-            GitTests.Ok(ScratchServer.Drop(copy));
+            GitTests.Ok(LocalServer.Drop(copy));
         }
     }
 
@@ -512,7 +512,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         return GitTests.Ok(DacFx.Plan(package, extracted, copy.Catalog, profile, []));
     }
 
-    /// <summary>A fresh copy on the run's scratch server, registered under the estate's root, with the golden project published to it under the pipeline's profile.</summary>
+    /// <summary>A fresh copy on the run's local server, registered under the estate's root, with the golden project published to it under the pipeline's profile.</summary>
     private async Task<SqlServer.Copy> Published() => (await Published(null)).Copy;
 
     /// <summary>
@@ -524,7 +524,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     private async Task<(SqlServer.Copy Copy, string Dacpac, PublishProfile.Strict Profile)> Published(string? collation)
     {
         var server = await SqlServerFixture.ServerAsync();
-        var copy = GitTests.Ok(ScratchServer.Create(estate.Root, server));
+        var copy = GitTests.Ok(LocalServer.Create(estate.Root, server));
         string dacpac;
         if (collation is null)
         {

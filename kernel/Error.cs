@@ -76,7 +76,7 @@ public enum ErrorCategory
     Refactorlog,
     Reference,
     Registry,
-    ScratchServer,
+    LocalServer,
     Sdk,
     Server,
     Sqlcmd,
@@ -93,12 +93,12 @@ public static class ErrorCode
     /// <summary>
     /// The form of every code, as a regular expression that .NET and JSON Schema's ECMA-262 dialect read alike: two or more words
     /// joined by dots, each word runs of lowercase ASCII letters and digits joined by single hyphens, such as <c>name.too-long</c>
-    /// or <c>scratch-server.missing</c>. The first word is the code's category. It ends in <c>(?![\s\S])</c>, the end of the text in
+    /// or <c>local-server.missing</c>. The first word is the code's category. It ends in <c>(?![\s\S])</c>, the end of the text in
     /// both dialects, where .NET's <c>$</c> would also admit a final line break.
     /// </summary>
     public const string Pattern = @"^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)+(?![\s\S])";
 
-    /// <summary>A category as a code writes it: lowercase, a hyphen between the words of a two-word category (scratch-server, git-branch).</summary>
+    /// <summary>A category as a code writes it: lowercase, a hyphen between the words of a two-word category (local-server, git-branch).</summary>
     // CS8524 (an enum value no member names) is disabled for this switch alone; CS8509, a named member without an arm, stays an error.
 #pragma warning disable CS8524
     public static string Text(ErrorCategory category) => category switch
@@ -128,7 +128,7 @@ public static class ErrorCode
         ErrorCategory.Refactorlog => "refactorlog",
         ErrorCategory.Reference => "reference",
         ErrorCategory.Registry => "registry",
-        ErrorCategory.ScratchServer => "scratch-server",
+        ErrorCategory.LocalServer => "local-server",
         ErrorCategory.Sdk => "sdk",
         ErrorCategory.Server => "server",
         ErrorCategory.Sqlcmd => "sqlcmd",

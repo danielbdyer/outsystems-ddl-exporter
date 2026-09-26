@@ -21,9 +21,9 @@ namespace Estate.Budgets.Tests.Register;
 /// (<see cref="Case.Plants"/>) and searches what comes back. A driver writes only under the scratch folder it is given, one per
 /// case, and leaves it deletable. The kernel's schema errors, io/Ssdt's and io/Git's quote what they reject, a name, a
 /// version, a path, a ref or a branch, and plant nothing. io/Git's are reached in a repository made under the scratch folder.
-/// io/SqlServer's and io/ScratchServer's reach no server: each is an error before anything connects, and a SQL Server or DacFx error reaches
+/// io/SqlServer's and io/LocalServer's reach no server: each is an error before anything connects, and a SQL Server or DacFx error reaches
 /// its code through Database.ErrorOf, the one method that classifies a failure against a server, which io/DacFx.Failed hands each DacFx
-/// failure to. The scratch server's own choice
+/// failure to. The local server's own choice
 /// and Create on a given server are io's alone, so R15 is reached through copy: and a planted registry row. The cli's reject
 /// arguments, through Contract.Flags and estate check's own answer.
 /// </summary>
@@ -121,14 +121,14 @@ internal static class RefusalPaths
         new("a refactorlog entry naming no object", "refactorlog.name", false, (_, _) =>
         {
             using var model = Model();
-            return Failed(Ssdt.Elements(model, null, null,
+            return Failed(Ssdt.ReadModel(model, null, null,
                 [new Ssdt.RefactorLogOperation("0a1b2c3d-0000-4000-8000-000000000001", "Rename Refactor", null, "[dbo].[Customer", "SqlTable", null, null, "[Client]", null)]));
         }),
         new("a platform DacFx names in other than letters and digits", "model.platform", false, (_, _) => Failed(Platform.Of("Sql 160"))),
         new("two objects of a model keyed alike", "model.duplicate-key", false, (_, _) =>
         {
             using var model = Model("CREATE TABLE dbo.Customer (Id INT NOT NULL);", "CREATE TABLE dbo.Customer (Id INT NOT NULL);");
-            return Failed(Ssdt.Elements(model));
+            return Failed(Ssdt.ReadModel(model));
         }),
 
         new("a file standing where a written file's folder should be", "file.unwritable", false, (scratch, _) =>
@@ -209,8 +209,8 @@ internal static class RefusalPaths
         new("a connection that is no reference", "reference.malformed", true, (scratch, planted) => Posture(scratch, Dev(connection: "env:" + planted))),
         new("a file reference that is a connection string", "reference.malformed", true, (_, planted) =>
             Failed(SecretReference.Of("--connection", "file:Server=db;User ID=sa;Password=" + planted))),
-        new("a scratch server that is neither docker nor localdb", "posture.malformed", true, (scratch, planted) =>
-            Failed(Io.Posture.Environments(Estate(scratch, "{ \"environments\": {}, \"scratchServer\": " + Quoted(planted) + " }")))),
+        new("a local server that is neither docker nor localdb", "posture.malformed", true, (scratch, planted) =>
+            Failed(Io.Posture.Environments(Estate(scratch, "{ \"environments\": {}, \"localServer\": " + Quoted(planted) + " }")))),
         new("a host given with its port", "posture.host", true, (_, planted) => Failed(Host.Of("environments.dev.host in estate/posture.json", planted + ",1433"))),
         new("an environment misnamed", "posture.environment-name", true, (scratch, planted) => Posture(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + "]", name: "DEV"))),
         new("a reader group given twice", "posture.reader-groups", true, (scratch, planted) => Posture(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
@@ -317,9 +317,9 @@ internal static class RefusalPaths
             Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted), host: "localhost")))))))),
         new("a copy beside an environment whose connection SqlClient cannot read", "connection.malformed", true, (scratch, planted) => Failed(SqlServer.Resolve(Target("copy:" + Copied),
             Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Nonsense " + planted + " = 1"))))))))),
-        new("no scratch server anywhere", "scratch-server.missing", false, (scratch, _) => Failed(ScratchServer.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
+        new("no local server anywhere", "local-server.missing", false, (scratch, _) => Failed(LocalServer.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
         new("an ESTATE_SQL SqlClient reads no connection string from", "connection.malformed", true, (scratch, planted) =>
-            Failed(ScratchServer.ServerName("Server=db;Password=" + planted + ";Nonsense " + planted + " = 1", Path.Combine(scratch, "no-sql.env"), localDb: false))),
+            Failed(LocalServer.ServerName("Server=db;Password=" + planted + ";Nonsense " + planted + " = 1", Path.Combine(scratch, "no-sql.env"), localDb: false))),
         new("a named environment's login denied", "server.denied", true, (scratch, planted) => DevDatabase(scratch).ErrorOf(18456, "Login failed for user '" + planted + "'.")),
         new("a named environment that does not answer", "server.unreachable", true, (scratch, planted) =>
             DevDatabase(scratch).ErrorOf(53, "A network-related or instance-specific error occurred while establishing a connection to " + planted + ".")),
@@ -392,7 +392,7 @@ internal static class RefusalPaths
 
     private static Target Target(string text) => Made(SqlServer.Target(text, "--target"));
 
-    /// <summary>The estate's root with .estate/copies.json holding <see cref="Copied"/>, as io/ScratchServer writes a row, so copy: reaches R15 without a server.</summary>
+    /// <summary>The estate's root with .estate/copies.json holding <see cref="Copied"/>, as io/LocalServer writes a row, so copy: reaches R15 without a server.</summary>
     private static string Registered(string root)
     {
         Directory.CreateDirectory(Path.Combine(root, ".estate"));
@@ -654,7 +654,7 @@ internal static class RefusalPaths
         return dacpac;
     }
 
-    /// <summary>A model built in memory, each script added as its own source, as io/Ssdt.Elements reads one.</summary>
+    /// <summary>A model built in memory, each script added as its own source, as io/Ssdt.ReadModel reads one.</summary>
     private static TSqlModel Model(params string[] scripts)
     {
         var model = new TSqlModel(SqlServerVersion.Sql160, new TSqlModelOptions());

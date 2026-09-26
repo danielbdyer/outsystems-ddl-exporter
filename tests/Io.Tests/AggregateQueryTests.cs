@@ -109,7 +109,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
     /// <summary>
     /// The golden project's copy holds the read-only principal's SQL login and a user for it. Read twice as the fixture's admin
     /// identity, who sees the login, and twice as the read-only principal, it fingerprints once per identity: SQL Server never
-    /// returns a login's password, DacFx makes a new one up on each load, and Ssdt.Elements leaves that property out.
+    /// returns a login's password, DacFx makes a new one up on each load, and Ssdt.ReadModel leaves that property out.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]

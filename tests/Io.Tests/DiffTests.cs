@@ -69,7 +69,7 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
     /// registered database holding a SQL login and a user for it, read through estate read --from env:uat --json as the fixture's
     /// admin identity, who sees the login. What the test asserts is that the answer names the login and that no property in it is
     /// named after a member of <see cref="Ssdt.Secrets"/>: DacFx makes up a new Login.Password on each read, since SQL Server keeps
-    /// only a hash of the one the login was made with, and Ssdt.Elements leaves that property out. The answer is also searched for a
+    /// only a hash of the one the login was made with, and Ssdt.ReadModel leaves that property out. The answer is also searched for a
     /// password setting (<see cref="PublishProfilesTests.PasswordSetting"/>): on the container the fixture's identity signs in as sa with a
     /// password, the env:uat connection file holds that connection string with its Password=, and the search fails if estate read
     /// printed it.
@@ -204,7 +204,7 @@ public sealed class DiffTests(ScratchEstate estate) : IClassFixture<ScratchEstat
         ScratchEstate.Valid("estate.read.1.schema.json", fromPackage);
         Assert.Equal((0, 0), (exit, packageExit));
         using var loaded = GitTests.Ok(Ssdt.Open(dacpac));
-        var elements = GitTests.Ok(Ssdt.Elements(loaded)).Elements;
+        var elements = GitTests.Ok(Ssdt.ReadModel(loaded)).Elements;
         Assert.Equal("sha256:" + Fingerprint.Of(elements), (string?)fromRef["read"]!["fingerprint"]);
         Assert.Equal((string?)fromRef["read"]!["fingerprint"], (string?)fromPackage["read"]!["fingerprint"]);
         Assert.Equal((elements.Count, Render.Shown, true), ((int)fromRef["read"]!["count"]!, fromRef["read"]!["elements"]!.AsArray().Count, (bool)fromRef["truncated"]!));

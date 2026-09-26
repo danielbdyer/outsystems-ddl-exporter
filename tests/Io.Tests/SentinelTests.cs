@@ -15,7 +15,7 @@ namespace Estate.Io.Tests;
 /// <summary>
 /// WP 1.5's Done-when on SQL Server, through WP 1.4's Copy.Publish: the pipeline's profile, given a TargetConnectionString that names
 /// sentinel.invalid (a name no resolver answers, RFC 6761, so a publish that looked it up would fail) and a TargetDatabaseName of
-/// another database, publishes the classic-minimal package to a copy io/ScratchServer made, Strict and then Permissive, which only the
+/// another database, publishes the classic-minimal package to a copy io/LocalServer made, Strict and then Permissive, which only the
 /// copy makes; the package reaches the copy and nothing else.
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
@@ -35,7 +35,7 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         var dacpac = Value(Ssdt.Build(ClassicMinimal(), tool.Folder, scratch.Under("build"))).Path;
         Assert.ThrowsAny<SocketException>(() => Dns.GetHostEntry("sentinel.invalid"));
 
-        var copy = Value(ScratchServer.Create(SqlServerFixture.EstateRoot(scratch.Path), await SqlServerFixture.ServerAsync()));
+        var copy = Value(LocalServer.Create(SqlServerFixture.EstateRoot(scratch.Path), await SqlServerFixture.ServerAsync()));
         try
         {
             var permissive = copy.Permissive(strict);
@@ -49,7 +49,7 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         }
         finally
         {
-            Value(ScratchServer.Drop(copy));
+            Value(LocalServer.Drop(copy));
         }
     }
 

@@ -54,13 +54,13 @@ public sealed record Checkout(string Root, string WorkingDirectory, string? Tool
 public sealed record ExitCode(int Code, string Name, string Meaning, string Remedy, bool RemedyRequired);
 
 /// <summary>
-/// How the data blocked (§4 row 15), at exit 3 alone: the data-loss check (BlockOnPossibleDataLoss) stopped the publish because the
+/// How the data blocked (§4 row 15), at exit 3 alone: BlockOnPossibleDataLoss stopped the publish because the
 /// table has rows, or SQL Server refused the change on existing rows (Msg 547, Msg 2628), a constraint violation. Written as
-/// data-loss-check and constraint-violation; no built verb exits 3, and prove (M4) is its first user.
+/// block-on-possible-data-loss and constraint-violation; no built verb exits 3, and prove (M4) is its first user.
 /// </summary>
 public enum BlockedBy
 {
-    DataLossCheck,
+    BlockOnPossibleDataLoss,
     ConstraintViolation,
 }
 
@@ -132,7 +132,7 @@ public static class Contract
 
     public static readonly IReadOnlyList<Verb> Verbs =
     [
-        new("doctor", "Can this machine do the work: the SDK and runtime, the tool and its DacFx against the toolchain ledger, the build route, the scratch server, Git LFS. estate doctor",
+        new("doctor", "Can this machine do the work: the SDK and runtime, the tool and its DacFx against the toolchain ledger, the build route, the local server, Git LFS. estate doctor",
             Cli.Verbs.Doctor, Cli.Verbs.DoctorContent,
             [new("ready", [0], "every prerequisite is present"), new("degraded", [6], "a prerequisite is missing; a finding names each, with its remedy")]),
         new("read", "What a schema is, from a ref, a package or a database, read whole, with its fingerprint. estate read --from <target> [--project <path>]",
@@ -143,7 +143,7 @@ public static class Contract
         new("classify", "Which operation a change is, provisionally, from the committed evidence."),
         new("predict", "Whether a change blocks or applies on each environment the caller can read, and why."),
         new("profile", "What an environment's data looks like, as the evidence the synthetic copy is generated from."),
-        new("synthetic-copy", "A copy on the scratch server, built from the repository at a ref and filled with rows generated from the measured data."),
+        new("synthetic-copy", "A copy on the local server, built from the repository at a ref and filled with rows generated from the measured data."),
         new("prove", "What the engine does with a change on a fresh copy, with a receipt."),
         new("describe", "The pull request description, rendered from the receipts."),
         new("gate", "The pull request's proof, reproduced from the clone."),
@@ -160,8 +160,8 @@ public static class Contract
         new(0, "done", "Done: the verb did its work.", "Take no action.", false),
         new(1, "bad-arguments", "Bad arguments: an unknown verb, flag or value.", "Run estate --help to see the verbs and each one's flags.", false),
         new(2, "unparsed-input", "An input could not be parsed: a schema, a configuration file or a project.", "Correct the file at the line the finding names.", true),
-        new(3, "blocked", "Blocked by the data, a finding and not a failure: blocked by the data-loss check, which stopped the publish because the table has rows; or by a constraint violation, SQL Server refusing the change on existing rows (Msg 547, Msg 2628).", "Change the operation at the site the finding names: its two-release shape, or the rows it counts.", false),
-        new(4, "unreachable", "The target is unreachable: no scratch server, or SQL Server, Docker or LocalDB not answering.", "Run estate doctor, then start the scratch server with ci/sql.sh up (ci/sql.ps1 up on Windows).", true),
+        new(3, "blocked", "Blocked by the data, a finding and not a failure: blocked by BlockOnPossibleDataLoss, which stopped the publish because the table has rows; or by a constraint violation, SQL Server refusing the change on existing rows (Msg 547, Msg 2628).", "Change the operation at the site the finding names: its two-release shape, or the rows it counts.", false),
+        new(4, "unreachable", "The target is unreachable: no local server, or SQL Server, Docker or LocalDB not answering.", "Run estate doctor, then start the local server with ci/sql.sh up (ci/sql.ps1 up on Windows).", true),
         new(5, "differs", "Divergence found: the target differs from the repository; the findings name each differing object.", "Correct the target or the repository at the objects the findings name.", false),
         new(6, "configuration-refused", "The environment or configuration is refused: the .NET SDK missing, an unknown key, a literal credential, an engine outside the pinned window, a verb this build does not have yet, a failure DacFx reports with no SQL Server error inside (dacfx.failed), or a defect in estate itself (internal.unexpected).", "Run estate doctor, or correct the file the finding names.", true),
         new(7, "build-failed", "The build failed; the findings carry the build's errors.", "Fix each error at the file and line the finding names, then build again.", false),
@@ -198,7 +198,7 @@ public static class Contract
         ErrorCategory.Change => 2,
         ErrorCategory.Origin => 4,
         ErrorCategory.Server => 4,
-        ErrorCategory.ScratchServer => 4,
+        ErrorCategory.LocalServer => 4,
         ErrorCategory.Git => 6,
         ErrorCategory.Sdk => 6,
         ErrorCategory.Tool => 6,

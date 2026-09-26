@@ -14,10 +14,10 @@ namespace Estate.Io.Tests;
 
 /// <summary>
 /// §2.1 rule 3, capabilities are types (M1 exit 5, R15; VALUES.md S1, S7, G6): a named environment and a disposable copy are
-/// different types. Publish exists only on a Copy, a Copy has no public constructor and only io/ScratchServer makes one, and the
+/// different types. Publish exists only on a Copy, a Copy has no public constructor and only io/LocalServer makes one, and the
 /// Permissive profile is made only by a Copy, for itself. The compile-fail test plants each forbidden use in a project of its own
 /// that references io, and the build refuses each on its line; the same file without them, publishing to a Copy that
-/// ScratchServer.Create made, builds.
+/// LocalServer.Create made, builds.
 /// </summary>
 public sealed class CapabilityTests
 {
@@ -61,7 +61,7 @@ public sealed class CapabilityTests
 
         plant.File("Planted.cs", string.Join('\n', Planted([]).Lines));
         var (builtExit, built) = Build(plant.Path);
-        Assert.True(builtExit == 0, "publishing to a Copy that ScratchServer.Create made does not build:\n" + built);
+        Assert.True(builtExit == 0, "publishing to a Copy that LocalServer.Create made does not build:\n" + built);
     }
 
     /// <summary>
@@ -90,32 +90,32 @@ public sealed class CapabilityTests
         Assert.True(typeof(SqlServer.EnvironmentDatabase).IsSealed && typeof(SqlServer.Copy).IsSealed && !typeof(SqlServer.Copy).IsAssignableFrom(typeof(SqlServer.EnvironmentDatabase)));
     }
 
-    /// <summary>A Copy is made in io/ScratchServer alone: its constructor is not public, and only ScratchServer's methods, its lambdas included, call it.</summary>
+    /// <summary>A Copy is made in io/LocalServer alone: its constructor is not public, and only LocalServer's methods, its lambdas included, call it.</summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "a named environment cannot be written")]
     [Trait("Value", "S7")]
     [Trait("Exit", "M1.5")]
-    public void Nothing_but_ScratchServer_makes_a_Copy()
+    public void Nothing_but_LocalServer_makes_a_Copy()
     {
         var made = CopyConstructor();
 
         Assert.False(made.IsPublic || made.IsFamily || made.IsFamilyOrAssembly);
         Assert.Empty(typeof(SqlServer.Copy).GetConstructors(BindingFlags.Public | BindingFlags.Instance));
         Assert.NotEmpty(Callers(made));
-        Assert.Empty(Callers(made).Where(caller => !Within(caller.DeclaringType, nameof(ScratchServer))).Select(Named));
+        Assert.Empty(Callers(made).Where(caller => !Within(caller.DeclaringType, nameof(LocalServer))).Select(Named));
     }
 
     private static ConstructorInfo CopyConstructor() => typeof(SqlServer.Copy).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();
 
-    /// <summary>A planted file: a Copy made by ScratchServer.Create and published to, Strict then Permissive, then the uses given, one per line from the first line it returns.</summary>
+    /// <summary>A planted file: a Copy made by LocalServer.Create and published to, Strict then Permissive, then the uses given, one per line from the first line it returns.</summary>
     private static (int First, List<string> Lines) Planted(IEnumerable<string> uses)
     {
         var lines = new List<string>
         {
             "using Estate.Io;", "using Estate.Kernel;", "", "namespace Planted;", "", "public static class Uses", "{",
             "    public static Result<SqlServer.Copy> Made(string root, string dacpac, PublishProfile.Strict strict) =>",
-            "        ScratchServer.Create(root).Bind(copy => copy.Publish(dacpac, strict)).Bind(copy => copy.Publish(dacpac, copy.Permissive(strict)));",
+            "        LocalServer.Create(root).Bind(copy => copy.Publish(dacpac, strict)).Bind(copy => copy.Publish(dacpac, copy.Permissive(strict)));",
             "", "    public static void Refused(SqlServer.EnvironmentDatabase named, string dacpac, PublishProfile.Strict strict)", "    {",
         };
         var first = lines.Count + 1;

@@ -283,7 +283,7 @@ public static class Render
         // The envelope alone admits what a verb adds, which the verb's own schema closes.
         envelope["additionalProperties"] = verb is null;
 
-        // Blocked (§4 row 15) names what blocked it, the data-loss check or a constraint violation, at exit 3 and at no other.
+        // Blocked (§4 row 15) names what blocked it, BlockOnPossibleDataLoss or a constraint violation, at exit 3 and at no other.
         var blocked = If(Where("exit", new JsonObject { ["const"] = Contract.Exits.Single(e => e.Name == "blocked").Code }), Where("blockedBy", BlockedBys()));
         blocked["else"] = Where("blockedBy", new JsonObject { ["type"] = "null" });
         envelope["allOf"] = new JsonArray(
@@ -377,10 +377,10 @@ public static class Render
         Severity.Note => "note",
     };
 
-    /// <summary>What blocked an answer, as the envelope writes it: data-loss-check or constraint-violation.</summary>
+    /// <summary>What blocked an answer, as the envelope writes it: block-on-possible-data-loss or constraint-violation.</summary>
     private static string Word(BlockedBy blockedBy) => blockedBy switch
     {
-        BlockedBy.DataLossCheck => "data-loss-check",
+        BlockedBy.BlockOnPossibleDataLoss => "block-on-possible-data-loss",
         BlockedBy.ConstraintViolation => "constraint-violation",
     };
 #pragma warning restore CS8524

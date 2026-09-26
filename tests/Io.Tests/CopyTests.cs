@@ -14,9 +14,9 @@ using Xunit;
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// A disposable copy (V3_MILESTONES.md WP 1.4, §2.2's rows for io/ScratchServer.cs and io/SqlServer.cs, law 3′): io/ScratchServer makes, registers and drops
+/// A disposable copy (V3_MILESTONES.md WP 1.4, §2.2's rows for io/LocalServer.cs and io/SqlServer.cs, law 3′): io/LocalServer makes, registers and drops
 /// it on the run's SQL Server; Publish writes to it and returns what DacFx deployed; DacFx.Extract reads it back into a package that
-/// Ssdt.Elements reads; and the plan of a package against its own published copy, package to package, is empty. Model fingerprints are
+/// Ssdt.ReadModel reads; and the plan of a package against its own published copy, package to package, is empty. Model fingerprints are
 /// compared only between like sources: a package's keys with its copy's, and one copy's fingerprint with another's.
 /// </summary>
 public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProject>, IDisposable
@@ -29,17 +29,17 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
     [Trait("Category", "fixture")]
     [Trait("Value", "O5")]
     [Trait("Value", "O12")]
-    public async Task ScratchServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row()
+    public async Task LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row()
     {
         var server = await SqlServerFixture.ServerAsync();
-        var copy = Made(ScratchServer.Create(root, server));
+        var copy = Made(LocalServer.Create(root, server));
         try
         {
             Assert.Equal((CopyName.Make(Environment.MachineName, 0, 0).Machine, Environment.ProcessId), (copy.Name.Machine, copy.Name.Pid));
             Assert.True(await SqlServerFixture.ExistsAsync(copy.Name.ToString()), copy.Name + " was not created");
             var row = Assert.Single(Registry())!.AsObject();
             Assert.Equal(["created", "host", "name", "pid", "server"], row.Select(p => p.Key).Order(StringComparer.Ordinal));
-            Assert.Equal((copy.Name.ToString(), Environment.ProcessId, Made(ScratchServer.ServerName(server)).ToString()), ((string)row["name"]!, (int)row["pid"]!, (string)row["server"]!));
+            Assert.Equal((copy.Name.ToString(), Environment.ProcessId, Made(LocalServer.ServerName(server)).ToString()), ((string)row["name"]!, (int)row["pid"]!, (string)row["server"]!));
             var registry = File.ReadAllText(Path.Combine(root, ".estate", "copies.json"));
             Assert.All(new[] { new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(server).Password }.Where(password => password.Length > 0), password => Assert.DoesNotContain(password, registry, StringComparison.Ordinal));
             Assert.Equal(TimeSpan.Zero, DateTimeOffset.Parse((string)row["created"]!, System.Globalization.CultureInfo.InvariantCulture).Offset);
@@ -47,7 +47,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
         }
         finally
         {
-            Made(ScratchServer.Drop(copy));
+            Made(LocalServer.Drop(copy));
         }
 
         Assert.False(await SqlServerFixture.ExistsAsync(copy.Name.ToString()), copy.Name + " outlived Drop");
@@ -68,7 +68,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
     public async Task A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint()
     {
         var strict = Made(PublishProfiles.Load(project.Profile));
-        var (one, two) = (Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync())), Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync())));
+        var (one, two) = (Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync())), Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync())));
         try
         {
             Made(one.Publish(project.Base, strict));
@@ -76,7 +76,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
             var (first, second) = (Extracted(one), Extracted(two));
             using var basePackage = Made(Ssdt.Open(project.Base));
             using var headPackage = Made(Ssdt.Open(project.Mandatory));
-            var (packaged, head) = (Made(Ssdt.Elements(basePackage)), Made(Ssdt.Elements(headPackage)));
+            var (packaged, head) = (Made(Ssdt.ReadModel(basePackage)), Made(Ssdt.ReadModel(headPackage)));
             var schema = SortedArray.Of(packaged.Elements.Where(e => e.Key.Type is not (Element.PreDeploymentScript or Element.PostDeploymentScript or Element.RefactorLogOperation)));
 
             Assert.Equal(schema.Select(e => e.Key), first.Select(e => e.Key));
@@ -86,14 +86,14 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
         }
         finally
         {
-            Made(ScratchServer.Drop(one));
-            Made(ScratchServer.Drop(two));
+            Made(LocalServer.Drop(one));
+            Made(LocalServer.Drop(two));
         }
     }
 
     /// <summary>
     /// §1 fact 4 through io: a copy is in sync with its package when the deploy plan under the pipeline's profile, of the package against the copy
-    /// extracted, is empty; the make-mandatory head's plan against the same copy alters one table, its data-loss check in the script.
+    /// extracted, is empty; the make-mandatory head's plan against the same copy alters one table, its BlockOnPossibleDataLoss check in the script.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
@@ -102,7 +102,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
     public async Task The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not()
     {
         var strict = Made(PublishProfiles.Load(project.Profile));
-        var copy = Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync()));
+        var copy = Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync()));
         try
         {
             Made(copy.Publish(project.Base, strict));
@@ -120,7 +120,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
         }
         finally
         {
-            Made(ScratchServer.Drop(copy));
+            Made(LocalServer.Drop(copy));
         }
     }
 
@@ -134,7 +134,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
     public async Task A_publish_returns_the_report_and_script_DacFx_deployed()
     {
         var strict = Made(PublishProfiles.Load(project.Profile));
-        var copy = Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync()));
+        var copy = Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync()));
         try
         {
             Made(copy.Publish(project.Base, strict));
@@ -147,13 +147,13 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
         }
         finally
         {
-            Made(ScratchServer.Drop(copy));
+            Made(LocalServer.Drop(copy));
         }
     }
 
     /// <summary>
     /// A failed DacServices.Publish through Copy.Publish and io/DacFx.Failed. The copy holds the seed's Customer rows, so the
-    /// make-mandatory head's data-loss check (BlockOnPossibleDataLoss True in the pipeline's profile) raises Msg 50000 and DacFx throws
+    /// make-mandatory head's BlockOnPossibleDataLoss check (the option True in the pipeline's profile) raises Msg 50000 and DacFx throws
     /// DacServicesException with no SqlException inside. Its Message holds DacFx's errors (SQL72014 quoting Msg 50000, SQL72045), and
     /// its Messages adds informational entries of number 0 that Message leaves out: the pre-deployment script's PRINT output and "An
     /// error occurred while the batch was being executed.". The error is routed by the number inside SQL72014, which Message alone
@@ -164,7 +164,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
     public async Task A_publish_the_data_loss_check_stops_is_server_failed_by_Msg_50000_quoting_DacFx_s_errors_and_not_its_informational_messages()
     {
         var strict = Made(PublishProfiles.Load(project.Profile));
-        var copy = Made(ScratchServer.Create(root, await SqlServerFixture.ServerAsync()));
+        var copy = Made(LocalServer.Create(root, await SqlServerFixture.ServerAsync()));
         try
         {
             Made(copy.Publish(project.Base, strict));
@@ -180,7 +180,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
         }
         finally
         {
-            Made(ScratchServer.Drop(copy));
+            Made(LocalServer.Drop(copy));
         }
     }
 

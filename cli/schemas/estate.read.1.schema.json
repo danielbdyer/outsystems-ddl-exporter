@@ -64,7 +64,7 @@
         },
         {
           "enum": [
-            "data-loss-check",
+            "block-on-possible-data-loss",
             "constraint-violation"
           ]
         }
@@ -257,7 +257,7 @@
         "properties": {
           "blockedBy": {
             "enum": [
-              "data-loss-check",
+              "block-on-possible-data-loss",
               "constraint-violation"
             ]
           }

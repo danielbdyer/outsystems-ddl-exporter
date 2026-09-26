@@ -12,7 +12,7 @@ namespace Estate.Tests;
 /// estate/posture.json as a record, field for field in the file's own names, written under an estate's root; a key left null is left
 /// out of the file. A malformed posture, which no record can hold, is written as its text by <see cref="WriteText"/>.
 /// </summary>
-internal sealed record PostureFile(IReadOnlyDictionary<string, PostureFile.Environment> Environments, string? ScratchServer = null)
+internal sealed record PostureFile(IReadOnlyDictionary<string, PostureFile.Environment> Environments, string? LocalServer = null)
 {
     /// <summary>The profile the golden project commits, at the path an estate keeps it.</summary>
     public const string Pipeline = "estate/profiles/pipeline.publish.xml";
@@ -80,9 +80,9 @@ internal sealed record PostureFile(IReadOnlyDictionary<string, PostureFile.Envir
         }
 
         var posture = new JsonObject { ["environments"] = environments };
-        if (ScratchServer is not null)
+        if (LocalServer is not null)
         {
-            posture["scratchServer"] = ScratchServer;
+            posture["localServer"] = LocalServer;
         }
 
         return posture.ToJsonString(Written) + "\n";

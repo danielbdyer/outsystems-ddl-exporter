@@ -16,7 +16,7 @@ namespace Estate.Io;
 /// otherwise reach the enclosing checkout's, so a ref builds with its own MSBuild settings alone. global.json gets no stop file: it chooses
 /// the SDK, which is the machine's toolchain, and a ref that commits its own uses it. <see cref="UserSqlEnv"/> is the one file outside a
 /// checkout, ~/.estate/sql.env, which ci/sql.sh and ci/sql.ps1 write; it is null where the user's profile folder is unknown (HOME unset in a
-/// container or a service), and the scratch server treats it as absent.
+/// container or a service), and the local server treats it as absent.
 /// </summary>
 public sealed record LocalState(string Root)
 {

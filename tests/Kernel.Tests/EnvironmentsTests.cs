@@ -9,7 +9,7 @@ namespace Estate.Kernel.Tests;
 
 /// <summary>
 /// estate/posture.json as data (WP 1.5, §4 row 14): the environments it names, each once and each with the host its server runs on, a
-/// publish profile's path inside the estate, and the scratch server it prefers; a reference is env:NAME or file:path and prints as
+/// publish profile's path inside the estate, and the local server it prefers; a reference is env:NAME or file:path and prints as
 /// itself, and no connection string passes as a path; an environment is real until a named lead's dated confirmation says synthetic;
 /// and a SQLCMD value is a literal or a reference, read through Match, and a name shaped like a credential never holds a literal.
 /// No error quotes the value it rejected.
@@ -203,8 +203,8 @@ public sealed class EnvironmentsTests
     [InlineData("Docker", null)]
     [InlineData("podman", null)]
     [InlineData(null, null)]
-    public void The_scratch_server_the_posture_prefers_is_docker_or_localdb(string? text, string? kind) =>
-        Assert.Equal(kind ?? "posture.malformed", ScratchServerKind.Of("scratchServer in estate/posture.json", text).Match(k => k.ToString(), error => error.Code));
+    public void The_local_server_the_posture_prefers_is_docker_or_localdb(string? text, string? kind) =>
+        Assert.Equal(kind ?? "posture.malformed", LocalServerKind.Of("localServer in estate/posture.json", text).Match(k => k.ToString(), error => error.Code));
 
     [Fact]
     [Trait("Category", "fast")]

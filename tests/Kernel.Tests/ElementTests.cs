@@ -9,7 +9,7 @@ using static Estate.Kernel.Tests.ElementSets;
 namespace Estate.Kernel.Tests;
 
 /// <summary>
-/// An element is one DacFx object as io/Ssdt.Elements reads it, keyed by its type and name path, with its properties and
+/// An element is one DacFx object as io/Ssdt.ReadModel reads it, keyed by its type and name path, with its properties and
 /// relationships in canonical order; a model is a SortedArray of them, and its fingerprint is law 3′'s kernel half: stable
 /// whatever the order of construction, and changed by any edit. Its law tests carry that law as a trait.
 /// </summary>

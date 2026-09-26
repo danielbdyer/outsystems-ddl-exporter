@@ -9,8 +9,8 @@ namespace Estate.Io;
 
 /// <summary>
 /// A SQL Server connection string, read and written here alone and only by SqlClient's own grammar (SqlConnectionStringBuilder): a named
-/// environment's, which its reference resolves to; the scratch server's, from ESTATE_SQL, ~/.estate/sql.env or LocalDB; and a copy's,
-/// the scratch server's with the copy's database. A text SqlClient reads nothing from is connection.malformed, its text withheld,
+/// environment's, which its reference resolves to; the local server's, from ESTATE_SQL, ~/.estate/sql.env or LocalDB; and a copy's,
+/// the local server's with the copy's database. A text SqlClient reads nothing from is connection.malformed, its text withheld,
 /// since it can hold a password. For TLS, estate adds no keyword to a named environment's connection: its reference's own Encrypt,
 /// TrustServerCertificate and HostNameInCertificate reach the server as written, and SqlClient's defaults stand where it names none.
 /// The estate-sql container's connection alone trusts the server's certificate, which SQL Server generated for itself.
@@ -80,7 +80,7 @@ internal static class ConnectionString
         return connection.ConnectionString;
     }
 
-    /// <summary>A copy's connection: the scratch server's, to the copy's database <paramref name="catalog"/>, with estate's defaults.</summary>
+    /// <summary>A copy's connection: the local server's, to the copy's database <paramref name="catalog"/>, with estate's defaults.</summary>
     internal static string OfDatabase(string server, string catalog) => WithDefaults(new SqlConnectionStringBuilder(server) { InitialCatalog = catalog });
 
     /// <summary>

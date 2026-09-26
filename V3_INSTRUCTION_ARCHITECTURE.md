@@ -308,7 +308,7 @@ rest are here.
 
 | # | Value | Requirement | Mechanism | Where | v2 |
 |---|---|---|---|---|---|
-| S1 | The data-loss check is never relaxed | No verb, flag, profile or script in v3 relaxes `BlockOnPossibleDataLoss` against a named environment; the Permissive profile is accepted only for a disposable target. | `io/Publish` refuses a `Target.Environment` under Permissive (exit 9); the only profiles the gate accepts are the two under `ci/profiles/` | `Io.Tests: "permissive never reaches an environment"` | `HANDOFF_SESSION_2026_08_26.md` §2 (the owner's axiom); prose only |
+| S1 | `BlockOnPossibleDataLoss` is never relaxed | No verb, flag, profile or script in v3 relaxes `BlockOnPossibleDataLoss` against a named environment; the Permissive profile is accepted only for a disposable target. | `io/Publish` refuses a `Target.Environment` under Permissive (exit 9); the only profiles the gate accepts are the two under `ci/profiles/` | `Io.Tests: "permissive never reaches an environment"` | `HANDOFF_SESSION_2026_08_26.md` §2 (the owner's axiom); prose only |
 | S2 | No silent downgrade | Where the tool cannot do exactly what was asked it refuses with a code and a remedy; it never approximates, drops, or comments out. | `Error` is the only failure type; a catch-all pattern arm that returns success is an analyzer error; the trigger-body case is a refusal, not a tolerance | `Kernel.Tests: "no arm returns success by default"`; law 3 | `CLAUDE.md` §5 "downgrades never silent"; partly mechanized (`ToleratedDivergence`) |
 | S3 | The explicit negative is a finding | Every section of the pull request description renders; a section with nothing to report says so in one sentence and is never omitted or padded. | `PullRequestDescription.render` refuses an empty section | `Kernel.Tests: "every section renders"` | `pr-template/schema-change.md` ground rule; gate `register` |
 | S4 | A rename keeps its data | A change containing a rename with no refactorlog entry is refused before any publish. | `classify` raises `RenameWithoutRefactorlog` as `Error` | law 6; `Io.Tests` | `_index/identity-and-refactorlog`; prose only |
@@ -362,7 +362,7 @@ rest are here.
 
 | # | Value | Requirement | Mechanism | Where | v2 |
 |---|---|---|---|---|---|
-| O1 | Docker is never a requirement | Every proof that does not need CDC or the scale tier runs on LocalDB; the verb chooses the scratch server and says which it chose. | `io/SyntheticCopy` has one scratch-server abstraction with two artifacts; `prove` refuses CDC proofs on LocalDB with the reason | `Io.Tests` on both scratch servers; `PORTABILITY.md` | `PORTABILITY.md`; partly mechanized (`prove.mjs` config) |
+| O1 | Docker is never a requirement | Every proof that does not need CDC or the scale tier runs on LocalDB; the verb chooses the local server and says which it chose. | `io/SyntheticCopy` has one local-server abstraction with two artifacts; `prove` refuses CDC proofs on LocalDB with the reason | `Io.Tests` on both local servers; `PORTABILITY.md` | `PORTABILITY.md`; partly mechanized (`prove.mjs` config) |
 | O2 | Windows is a first-class host | The fast lane and the LocalDB fixture run on `windows-latest`; paths are joined, never concatenated; object names compare case-insensitively, file names ordinally. | CI matrix; analyzer CA1310/CA1862; `Path.Combine` only (banned: string `+` on paths in `io/`) | CI; `BannedSymbols.txt` | not stated (the team is on Windows; the corpus was proven on Linux); new |
 | O3 | One command per intent | Every step of every workflow is an `estate` verb with `--json`; no document shows a tool invocation that is not an `estate` verb, and every hook is under ten lines over a verb. | the docs lint refuses `sqlpackage `, `sqlcmd `, `docker ` in prose outside `knowledge/handbook/`; the hooks budget | `Budgets.Tests: "no tool invocation outside a verb"`; `Budgets.Tests: hooks ≤ 30 lines` | the review's Layer 1; `prove.mjs`; partly mechanized |
 | O4 | Refuse and route | An unsupported object or operation is refused with who does it and what to check; the tool never guesses. | `Error` codes catalogued in `--help --json`; the "not covered" list in the catalog | `Cli.Tests: "every error code has a remedy"` | `rebuild-index` (refuse-and-route); prose only |
@@ -386,7 +386,7 @@ rest are here.
 | L5 | One vocabulary | A term is defined once, in the glossary; the retired vocabulary (Appendix A) is banned from every surface; an SSDT term is defined at first use in `knowledge/`. | the banned-terms lint; the glossary test (every glossary term appears in the tree, every retired term does not) | `Budgets.Tests: vocabulary` | `THE_RECORD.md` §7 (banned list); mechanized for pull request descriptions |
 | L6 | Laws are tests | A law is listed in `LAWS.md` only from a green test with an English name; there are no skip attributes in the tree. | `LAWS.md` is generated from the test tree; a test asserts zero `Skip =` | `ci/laws.sh`; `Budgets.Tests: "no skips"` | 209 skips; `AXIOMS.md` with 38 stubs; prose |
 | L7 | Dependencies point one way | `kernel` references the BCL only and no public member of a kernel type returns a `Task`, `ValueTask` or `IAsyncEnumerable` (a banned-symbol list matches symbols, not the state machine an `async` method builds); `io` does not reference `cli`; nothing references `knowledge/` or `ci/`. | NetArchTest (the direction and the no-async rule); `BannedSymbols.txt` | law "dependencies point one way" | `hex-*` lints; `NoUnsafeTimeInCoreAnalyzer`; mechanized |
-| L9 | Tests never retry, never skip | A flaky test is quarantined by name with a dated finding and an owner, or deleted; no retry attribute exists in the tree; no test skips itself in a way that reads as a pass. | no retry package in `ci/packages.allow`; the zero-skip test; the per-scratch-server report in the matrix; the TRX logger is the default | CI; `Budgets.Tests: "no skips"` | survival rules 3, 4, 12; 209 skips; prose |
+| L9 | Tests never retry, never skip | A flaky test is quarantined by name with a dated finding and an owner, or deleted; no retry attribute exists in the tree; no test skips itself in a way that reads as a pass. | no retry package in `ci/packages.allow`; the zero-skip test; the per-local-server report in the matrix; the TRX logger is the default | CI; `Budgets.Tests: "no skips"` | survival rules 3, 4, 12; 209 skips; prose |
 | L10 | CI is fast enough to wait for | The fast lane finishes in five minutes; the fixture lane in twenty; the PR gate in ten; the proof lane in sixty; every job declares `timeout-minutes` and prints its elapsed time. | `timeout-minutes` on every job (today three of the six lanes' jobs declare one, and none of the three required checks do) | CI | not stated; new |
 | L11 | Reading time is budgeted | The README reads in five minutes; `knowledge/README.md` in five; an operation in three; the prose a Copilot session must hold to author one change (the router, the one instruction that matched, one operation, one shared file, the description page) fits beside the open file, and the sum is a test. Today that path is 665 lines (router 60 + instruction 23 + the largest operation 131 + `THE_RECORD.md` and its forms page 451); after the trim it is about 320. | the budgets test computes the path sum with a ceiling the pilot sets | `Budgets.Tests: "authoring path"` | the review's §3.6 ("every hop is a failure point"); the companion budgeted a Claude Code session's reading and not a Copilot session's; new |
 | L12 | Written for the team | Every agent-facing and reviewer-facing file is written for a developer who knows SQL and OutSystems and has never used SSDT; a pull request description is approvable with no term the reviewer must look up. | the banned-terms lint catches the negative half; `shared/vocabulary.md` is the one anchored-explanation page; the pilot's four reviewers judge the rest | `Budgets.Tests: vocabulary`; prose plus a pilot, and the row says so | `THE_RECORD.md` §9 states it as its one sentence; prose |
@@ -415,7 +415,7 @@ rest are here.
 | E3 | A vanilla policy changes nothing | With no decisions, emission is the faithful projection of the source. | law 4 | `Kernel.Tests` | skeleton purity; mechanized |
 | E4 | SQL is built, never concatenated | Every emitted statement is a `Statement` value rendered through ScriptDom's generator; in `io/Render` and `io/Emit`, `string.Concat`, `string.Format`, `StringBuilder` and interpolation are banned except in the final writer. | the closed `Statement` hierarchy; `BannedSymbols.txt` scoped to the two modules | `Io.Tests` (the analyzer runs) | pillars 1–3 and eight lint rules with 566 exemptions; mechanized too broadly; scoped down |
 | E5 | An unparseable object is refused, not degraded | A trigger body ScriptDom cannot parse, or any object the reader cannot represent exactly, is a refusal with a code, never a comment marker or a tolerated divergence. | an `Error` code (`read.unparseable`) and one test per object kind | `Io.Tests: "unparseable trigger is refused"` | `ToleratedDivergence.TriggerBodyUnparsedDropped`; prose plus a tolerance; the tolerance goes |
-| E6 | Data-loss steps are named before the publish | Every statement the data-loss check will refuse on a populated table is listed by `diff` before any publish runs. | `Change.dataLoss` | `Kernel.Tests` | the tree's classification step; mechanized in the change |
+| E6 | Data-loss steps are named before the publish | Every statement `BlockOnPossibleDataLoss` will refuse on a populated table is listed by `diff` before any publish runs. | `Change.dataLoss` | `Kernel.Tests` | the tree's classification step; mechanized in the change |
 | E7 | Rollback is computed or admitted | Every pull request description says how to reverse the change or names what is not auto-undone, with the recorded originals a manual restore would use. | law 7; `PullRequestDescription`'s rollback section is required | `Kernel.Tests` | `THE_RECORD_FORMS.md`; prose |
 | E8 | Load order has an explicit cycle policy | A cycle is refused, deferred on a nullable leg, or broken by a named allow-list; never silently ordered. | `Order.CyclePolicy`; a property on `Order` | `Kernel.Tests` | v1's allow-list and v2's per-component order; mechanized |
 | E9 | Windows paths fit | Every path in a bundle is under 260 characters from a plausible root, no two emitted files differ only by case, and file names compare ordinally. | an `Emit` test over the golden schema replicated to 300 tables asserting length and case-insensitive uniqueness; the identifier-budget hashing is the remedy | `Io.Tests: "bundle paths fit Windows"` | nothing checks it; the per-folder layout is exactly the shape that hits 260; new |
@@ -466,7 +466,7 @@ rest are here.
 | Rule | Fate in v3 |
 |---|---|
 | 1 never run the pools together; CDC tests isolated; Docker tests in Integration | a CI matrix and a test category; the isolation fixture is kept (S8, D4) |
-| 2 connection failures mean the container died | `prove`/`synthetic-copy` refuse with `scratch-server down: run estate synthetic-copy up` (O5) |
+| 2 connection failures mean the container died | `prove`/`synthetic-copy` refuse with `local-server down: run estate synthetic-copy up` (O5) |
 | 3 never `pgrep`-guard or `tail` a run | retired with the shell recipes; the lanes run tests directly and every job has a timeout |
 | 4 re-run with the TRX logger; console output interleaves and lies | true of `dotnet test` in any language: the TRX logger is the default (L9) and the sentence is in `tests/README.md` |
 | 5, 6 F# compiler shapes | retired with F# |
@@ -475,7 +475,7 @@ rest are here.
 | 9 `ISNULL(col,col)` strips IDENTITY through `SELECT INTO`; a `CASE` wrapper does not | a proven SQL Server fact: an entry in `knowledge/findings.md` with its receipt, cited by the identity-swap operation |
 | 10 `HANDOFF.md` is prepend-only | no such file |
 | 11, 13 the perf gate's baseline and solo verdicts | no such gate |
-| 12 soft-skipped Docker tests look like passes | still true of xUnit in any language: L6 (no skips) and the matrix's per-scratch-server report, and the sentence stays in `tests/README.md` |
+| 12 soft-skipped Docker tests look like passes | still true of xUnit in any language: L6 (no skips) and the matrix's per-local-server report, and the sentence stays in `tests/README.md` |
 | 14 the content hash and the `''`/`NULL` comparator | two sentences in `description.md`'s guidance on "what proving showed"; the comparator is `RowFidelity`, kept |
 | 15 a stale RID directory shadows a build | still true of the SDK in any language: `dotnet clean` in `ci/build.sh`; one line in `AGENTS.md` |
 | 1 (first half) never run the pools together | weakened, not retired: two test projects and a fifth of the lines make the OOM unlikely, and `Io.Tests` is declared serial, which is the same rule in another form; one line in `tests/README.md` |
@@ -567,7 +567,7 @@ Knowledge total, hand-written: 150 + 150 + 100 + 120 + 45 × 85 + 8 × 110 + 400
 | `AGENTS.md` | generated (the router, for any non-Copilot agent) | vendored | any agent · session start |
 | `knowledge/**` (minus `ledgers/`) | generated copy | vendored | as §5.2 |
 | `estate/ledgers/*.md` | hand, append-only | **estate** | the gate, a session · a release |
-| `estate/posture.json` | hand | **estate** | every verb · always (the publish posture, the writable targets, the scratch server) |
+| `estate/posture.json` | hand | **estate** | every verb · always (the publish posture, the writable targets, the local server) |
 | `estate/evidence.shape.json`, `estate/synthetic-copy.json` | hand (produced by verbs, committed) | **estate** | `synthetic-copy` · the bake lane |
 | `estate/profiles/{strict,permissive}.publish.xml` | hand (mirrored from the pipeline's task) | **estate** | `prove`, the gate |
 | `pipelines/{gate,bake,proof}.yml` | generated (templates) | vendored | Azure DevOps · a PR, a merge, nightly |
@@ -635,7 +635,7 @@ then the README of the package being changed. Nothing else is required before st
 
 ## Before anything
 
-Run `estate doctor`. Its one line names the SDK, the DacFx pin, the scratch server (Docker or
+Run `estate doctor`. Its one line names the SDK, the DacFx pin, the local server (Docker or
 LocalDB) and the synthetic copy's artifact, and every refusal in it carries a remedy. Quote
 that line before claiming a tool, a daemon or a database is missing.
 
@@ -690,7 +690,7 @@ and their replacements are listed in `knowledge/description.md`.
 - A refusal names its code and its remedy. Do the remedy; do not work around the refusal.
 - A red budget test names the ceiling and the file.
 - A red law names the law. The law is right until a decision line says otherwise.
-- A scratch-server failure: `estate synthetic-copy up`, then `estate doctor`.
+- A local-server failure: `estate synthetic-copy up`, then `estate doctor`.
 - A verdict that disagrees with a finding in `knowledge/findings.md`: the verdict is a new
   finding with a receipt; append it, strike the old one, never delete it.
 
@@ -748,7 +748,7 @@ is Copilot, and a Claude-specific file would be noise a Copilot session still re
 
 The deny list is the generated-file rule as a permission: an agent cannot hand-edit what a
 build regenerates. The archive denial is A6. There is no PreToolUse hook: a verb that needs
-the scratch server refuses with the remedy, which is what v2's `docker-probe.sh` used to say.
+the local server refuses with the remedy, which is what v2's `docker-probe.sh` used to say.
 
 ```bash
 #!/usr/bin/env bash
@@ -761,7 +761,7 @@ dotnet estate doctor 2>/dev/null || echo "estate doctor: not built yet — run d
 
 ```bash
 #!/usr/bin/env bash
-# .claude/hooks/session-end.sh — release the scratch server if nothing else holds it.
+# .claude/hooks/session-end.sh — release the local server if nothing else holds it.
 dotnet estate synthetic-copy down --if-idle >/dev/null 2>&1 || true
 ```
 
@@ -1082,7 +1082,7 @@ description: Use when the developer says "make Email required", "tick the Mandat
 # Make mandatory (NULL → NOT NULL)
 
 ## In the developer's words          — the phrasings; what they mean in SSDT (one line)
-## The named trap                     — the data-loss check fires on table-has-rows, not on column-has-blanks (F7)
+## The named trap                     — `BlockOnPossibleDataLoss` fires on table-has-rows, not on column-has-blanks (F7)
 ## How it flips                       — empty table: in place · populated: two releases, even after the blanks are filled
 ## Prove it                           — `estate measure --tables …` · `estate prove …` · on a block, `--permissive`
 ## The verdict, to the developer      — the paragraph, in the description register
@@ -1107,7 +1107,7 @@ constraint-is-a-claim blocks on a violating value; keep them apart).
 ### 7.7 `knowledge/findings.md`
 
 ```markdown
-## F7 · 2026-08-21 · The data-loss check fires on row presence, not on rule violation
+## F7 · 2026-08-21 · `BlockOnPossibleDataLoss` fires on row presence, not on rule violation
 A `NULL → NOT NULL` on a populated table blocks even after every NULL is backfilled.
 Receipt: `mm_ax`, sqlpackage 170.4.83, Strict. Cited by: ops/make-mandatory, shared/tightening-class.
 
@@ -1153,7 +1153,7 @@ the engine vendors them empty once and never overwrites them.
 ### 7.10 `knowledge/handbook/` — the eight chapters the operations cite
 
 State-based versus migrations · pre- and post-deployment scripts · idempotency · referential
-integrity · the refactorlog · deployment safety and the data-loss check · multi-phase changes · Change
+integrity · the refactorlog · deployment safety and `BlockOnPossibleDataLoss` · multi-phase changes · Change
 Data Capture. Lifted from v1's `handbook/` (32 chapters, 8,980 lines) and trimmed to what an
 operation cites; the other twenty-four chapters archive. Chapters are cited by title, never by
 number: v2's skills cite "handbook 16 (= §19)" through a +3 offset in twenty-five places, and
@@ -1181,7 +1181,7 @@ Studio; its rungs are kept because they state what is verified.
 # Database schema changes in this repository
 
 This repository's schema is managed with SSDT. A change is an edit to a table definition,
-built into a dacpac, deployed through Azure DevOps into Octopus with the data-loss check on.
+built into a dacpac, deployed through Azure DevOps into Octopus with `BlockOnPossibleDataLoss` on.
 The check cannot be relaxed for a single deploy.
 
 ## When to use this
@@ -1299,7 +1299,7 @@ adds a surface until the pilot says which rung the team is on.
 
 ### 8.7 What the estate owns, and the engine never writes
 
-`estate/posture.json` (the publish posture; the writable targets; the scratch server), the project
+`estate/posture.json` (the publish posture; the writable targets; the local server), the project
 format row in `ledgers/toolchain.md` (classic today; `emit` never changes a project's format),
 `estate/profiles/*.publish.xml` (mirrored from the pipeline's task by a human), the ledgers,
 `estate/evidence.shape.json` and `estate/synthetic-copy.json` (produced by verbs the team runs, committed
@@ -1325,13 +1325,13 @@ Every verb accepts `--json` and writes one object. The object's shape is the con
   "server":     { "version": "16.0.4135", "compatibilityLevel": 160, "image": "sha256:…" },
   "provenance": { "target": "estate_9f3a1c_41872", "script": "sha256:…", "at": "2026-09-17T14:02:11Z" },
   "verdict":    { "outcome": "blocked", "shape": "two-releases", "message": "Msg 50000 … rows exist …" },
-  "findings":   [ { "code": "data-loss-check.row-presence", "severity": "error",
+  "findings":   [ { "code": "block-on-possible-data-loss.row-presence", "severity": "error",
                     "subject": "dbo.Customer.Email", "message": "…", "remedy": "…" } ], "exit": 3 }
 ```
 
 **Versioned:** `schema` names the verb and a major; within a major, fields are only added; a
 removal or a rename is a new major and a decision line. **Frozen exit codes:** 0 done · 1 bad
-arguments · 2 an input could not be parsed · 3 blocked by the data-loss check · 4 target
+arguments · 2 an input could not be parsed · 3 blocked by `BlockOnPossibleDataLoss` · 4 target
 unreachable · 5 divergence found · 6 configuration refused (an unknown key, an inline
 credential, a toolchain pin mismatch) · 7 build failed · 9 refused by name (companion §8);
 `cli/VERBS.md` lists them and a test asserts the list never shrinks. **Every refusal carries a
@@ -1345,12 +1345,12 @@ same schemas, so the verb reference is generated from the thing the tests check.
 One verb answers "can this machine do the work?" and every entry file says to run it first.
 
 ```
-estate doctor READY | sdk=10.0.4 | dacfx=162.5.57 (pinned) | scratch-server=localdb (2022) |
+estate doctor READY | sdk=10.0.4 | dacfx=162.5.57 (pinned) | local-server=localdb (2022) |
   synthetic-copy=9f3a1c (restored 2026-09-16, current) | estate=../estate (posture ok, 2 open windows)
 ```
 
 `DEGRADED` names what is missing and the remedy (`--install` for the SDK and the local tool;
-`estate synthetic-copy up` for the scratch server; `estate synthetic-copy restore <artifact>`
+`estate synthetic-copy up` for the local server; `estate synthetic-copy restore <artifact>`
 for a stale synthetic copy). `--json` carries the same fields. The SessionStart hook prints
 this line and nothing else; a session quotes it before diagnosing anything (A2). It replaces
 431 lines of hook with a verb a human can run.
@@ -1371,7 +1371,7 @@ names, can host an MCP server against an Azure DevOps checkout. Until then the C
 A maintainer surface only: the team does not use Claude Code, so the hooks belong to the engine
 repository and are no part of the estate's interface. Two, drafted in §6.4, nine lines between
 them. SessionStart installs `dotnet` when it is absent and runs `doctor`. SessionEnd releases
-the scratch server if idle. There is no PreToolUse hook (a verb that needs the scratch server
+the local server if idle. There is no PreToolUse hook (a verb that needs the local server
 refuses with the remedy), no Stop hook (nothing runs after every message), and no hook installs
 a daemon or pulls an image (`estate synthetic-copy up` does, and refuses with a reason when it
 cannot). A hook that grows past ten lines is a verb that has not been written.
@@ -1663,25 +1663,25 @@ FK Check*, *Refactorlog Cleanup*) stay; only *Naked Rename* is retired, for its 
 | `LINT-ALLOW` | nothing; an analyzer suppression carries a justification and is a review comment |
 | the proving ground (in the engine), `tests/Golden/proving-ground/` | the golden project, `tests/Golden/project/` |
 | F# (as v3's language) | C#; the kernel types are written in F# notation as the specification, and the repository is C# |
-| `Ssdt.Walk`, `Walked`, `walk.duplicate-key`, `WalkTests.cs` | `Ssdt.Elements`, `ModelObjects`, `model.duplicate-key` (category `model`, exit 2), `ModelElementsTests.cs` |
+| `Ssdt.Walk`, `Walked`, `walk.duplicate-key`, `WalkTests.cs` | `Ssdt.ReadModel`, `ModelObjects`, `model.duplicate-key` (category `model`, exit 2), `ModelElementsTests.cs` |
 | `Refusal` (the type), `Result<T>.Refused`, `Result.Refuse`, `Pin.Refuses`, `RefusalExits`; a code's area | `Error`, `Result<T>.Failed`, `Result.Fail`, `Pin.Rejects`, `ExitByCategory`; its category. The verb refuse stays for a refusal by policy, and the frozen exit names stay |
 | `Receipt` and its fields `Delta`, `Target`, `DataFacts`, `Engine`, `Profile`, `Where`; `Engine`; `Ssdt.Engine`; the JSON `engine` and the codes `engine.*` | `Provenance` with `Change`, `Schema`, `ExistingData`, `DacFx`, `Server`, `PublishProfile`, `Target`, `At`; `DacFx` (a `DacFxVersion`) and `Server` (product version, compatibility level, image digest); `BuildTargets`; `dacfx`, `server` and `pin`; `server.image-digest`, `toolchain.dacfx-version`, `toolchain.unpinned`. In prose: DacFx, SQL Server, or the tool's name |
 | `Branch`, `BranchSite`, `ClaimSite`, `Transfers` (the M2 types); `branch.malformed`, `branch.taken` | `ExistingData`, `PreconditionState`, `Precondition`, `AppliesTo`; `git-branch.malformed`, `git-branch.exists`; git keeps the word branch (decision 2.8) |
 | `cohorts` | `readerGroups`; the code `posture.reader-groups` |
-| the substrate, `io/Substrate.cs`, the category and doctor item `substrate` | the scratch server, `io/ScratchServer.cs`, `scratch-server` |
+| the substrate, `io/Substrate.cs`, the category and doctor item `substrate` | the local server, `io/LocalServer.cs`, `local-server` |
 | the Twin, the verb and target `twin`, `twin.not-built`, `io/Twin` | the synthetic copy, `SyntheticCopy`, `synthetic-copy`, `synthetic-copy.not-built`, `io/SyntheticCopy` |
 | σ, mint, `Synth`, `Realize.cs` | `SyntheticData.Generate`; a generated set; `GenerateViolatingRow` |
 | `SqlServer.Named`, `Database.Where` | `EnvironmentDatabase`, `Database.Target`; `Copy` stays |
 | `Seq<T>`, `Seq.Of` | `SortedArray<T>`, `SortedArray.Of` |
 | `Delta`, the delta; `Change.Added`, `Removed`, `Changed`; the nested `Altered` | `Change`, the change; `Created`, `Dropped`, `Altered`; `Alteration`; the JSON fields and output lines follow (dropped, as DacFx says) |
-| the envelope's `verdict` object (`outcome`, `message`, `kind`) | `outcome`, `message` and `blockedBy` (`data-loss-check` or `constraint-violation`) on the envelope; verdict stays for `prove`'s result |
+| the envelope's `verdict` object (`outcome`, `message`, `kind`) | `outcome`, `message` and `blockedBy` (`block-on-possible-data-loss` or `constraint-violation`) on the envelope; verdict stays for `prove`'s result |
 | the severities `block`, `warn` | `error`, `warning`; `note` stays |
 | `converged`, the convergence oracle, the law "a published copy converges" | `in-sync`, the empty deploy plan, "a published copy is in sync with its package" |
 | the record (the pull request's body), the verb `record`, `Record`, `knowledge/record.md` | the pull request description, `describe`, `PullRequestDescription`, `knowledge/description.md` |
 | reference stub | reference assemblies (`Microsoft.NETFramework.ReferenceAssemblies`) |
 | `Probe`, the probe executor, `probe.refused`; `Ssdt.Build`'s `probe` parameter | `AggregateQuery`, `SqlServer.Measure`, `aggregate-query.refused`; `run` |
 | the germ, the two instruments, lens, directive, the lens register | the lifecycle invariants (`LIFECYCLE_BACKPORT_PROMPT.md`), prediction and proof, the verb table, the question; `ci/review` says review area |
-| the guard, `Blocked.Guard`, `profile.guard-off`, `GuardSite` | the data-loss check (DacFx's `BlockOnPossibleDataLoss` and the check it writes into the deploy script), `DataLossCheck`, `profile.data-loss-allowed`, `DataLossCheckSite` |
+| the guard, `Blocked.Guard`, `profile.guard-off`, `GuardSite` | `BlockOnPossibleDataLoss` (DacFx's option and the check it writes into the deploy script), `BlockedBy.BlockOnPossibleDataLoss`, `profile.data-loss-allowed`, `BlockOnPossibleDataLossSite` |
 | archetype, `Archetypes.cs` | sample change, `SampleChanges.cs` |
 | `Ssdt.Read`; a read (as a noun) | `ModelElements`; a model |
 | the milestone titles Ground, Twin, Record and gate, Front door; the wing; the front door and the one door (in these documents) | Foundation, Synthetic copy, Describe and gate, Agent instructions; the cutover tools; `knowledge/README.md` and the entry prompt |

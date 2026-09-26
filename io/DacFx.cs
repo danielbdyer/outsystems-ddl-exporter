@@ -53,7 +53,7 @@ public static class DacFx
     /// </summary>
     internal static DacExtractOptions Extraction => new()
     {
-        // A package keeps its GRANT, DENY and REVOKE statements and Ssdt.Elements keys each one; the default, true, drops every permission.
+        // A package keeps its GRANT, DENY and REVOKE statements and Ssdt.ReadModel keys each one; the default, true, drops every permission.
         IgnorePermissions = false,
         // A package keeps its sp_addextendedproperty values (MS_Description); the default, false, keeps them.
         IgnoreExtendedProperties = false,
@@ -67,7 +67,7 @@ public static class DacFx
         ExtractUsageProperties = false,
         // No row of any table is read; the default is false.
         ExtractAllTableData = false,
-        // Verification validates the model as a package build would; Ssdt.Elements reads what the database holds, valid or not. Default false.
+        // Verification validates the model as a package build would; Ssdt.ReadModel reads what the database holds, valid or not. Default false.
         VerifyExtraction = false,
         // The model is held in memory, as a package's is; the default is Memory.
         Storage = DacSchemaModelStorageType.Memory,
@@ -176,7 +176,7 @@ public static class DacFx
 
     /// <summary>
     /// A deploy report's XML, read once into the kernel's DeployReport (§1 fact 4): each Alert's Issue as a PlanAlert, and each Operation's
-    /// Item as a PlanOperation keyed as io/Ssdt.Elements keys the element, against the two element sets the plan compared (a renamed column
+    /// Item as a PlanOperation keyed as io/Ssdt.ReadModel keys the element, against the two element sets the plan compared (a renamed column
     /// is in the source, a dropped table in the target); a serialized type the map does not hold keys as itself, with the note
     /// plan.unlisted-type. XML of another shape than DacFx 170.5.96 writes is plan.report-unread, naming what was not expected.
     /// </summary>
@@ -313,7 +313,7 @@ public static class DacFx
     /// <summary>
     /// A report item's key, found against the two element sets the plan compared: the element of either set with the item's type and name;
     /// failing that, a name of three or more parts whose first two parts are an element's path, keyed under that element with the rest, as
-    /// io/Ssdt.Elements keys a composed object; failing that, the first two parts at the top and each further part a level down.
+    /// io/Ssdt.ReadModel keys a composed object; failing that, the first two parts at the top and each further part a level down.
     /// </summary>
     private sealed class Keys(SortedArray<Element> source, SortedArray<Element> target)
     {

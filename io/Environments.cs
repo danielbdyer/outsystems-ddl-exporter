@@ -39,7 +39,7 @@ public static class Posture
 
     /// <summary>
     /// estate/posture.json under the estate's root, read once for a verb: the environments it names, in name order, each with the host
-    /// its SQL Server runs on, and the scratch server it prefers.
+    /// its SQL Server runs on, and the local server it prefers.
     /// </summary>
     public static Result<Environments> Environments(string estateRoot)
     {
@@ -49,12 +49,12 @@ public static class Posture
             var root = posture.RootElement;
             return Literal(root, "") is { } at ? new Error("posture.literal-connection", Json + " holds a literal connection string at " + at + ".",
                     "Move it into an environment variable or a file outside git, and write env:NAME or file:path at " + at + ".")
-                : (Unknown(root, "", ["environments", "scratchServer"]) ?? Missing(root, "", "environments"))
+                : (Unknown(root, "", ["environments", "localServer"]) ?? Missing(root, "", "environments"))
                     ?? Result.All(root.GetProperty("environments").EnumerateObject().Select((e, i) => EnvironmentAt(e.Name, e.Value, Place("environments", e.Name, i))))
-                        .Bind(environments => (root.TryGetProperty("scratchServer", out var kind)
-                                ? ScratchServerKind.Of(Where("scratchServer"), kind.GetString()).Map(k => (ScratchServerKind?)k)
-                                : Result.Ok<ScratchServerKind?>(null))
-                            .Bind(scratchServer => Kernel.Environments.Of(Json, environments, scratchServer)));
+                        .Bind(environments => (root.TryGetProperty("localServer", out var kind)
+                                ? LocalServerKind.Of(Where("localServer"), kind.GetString()).Map(k => (LocalServerKind?)k)
+                                : Result.Ok<LocalServerKind?>(null))
+                            .Bind(localServer => Kernel.Environments.Of(Json, environments, localServer)));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -92,7 +92,7 @@ public static class Posture
 
     /// <summary>
     /// The host an environment's SQL Server runs on (DECISIONS.md, 2026-09-25): each environment names one, so R15 compares every
-    /// environment with the scratch server, its reference resolving on this machine or not; posture.host when the key is absent.
+    /// environment with the local server, its reference resolving on this machine or not; posture.host when the key is absent.
     /// </summary>
     private static Result<Host> HostOf(JsonElement entry, string at) => entry.TryGetProperty("host", out var host)
         ? Host.Of(Where(at + ".host"), host.GetString())

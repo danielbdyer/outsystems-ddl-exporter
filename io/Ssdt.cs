@@ -88,7 +88,7 @@ public static class Ssdt
             SortedArray<SqlCmdName> declared, Platform platform)
         {
             (Source, Dac, Model, PreDeploy, PostDeploy, PrePlan, Refactors, Declared, Platform) = (source, dac, model, preDeploy, postDeploy, prePlan, refactors, declared, platform);
-            elements = new(() => Ssdt.Elements(this));
+            elements = new(() => Ssdt.ReadModel(this));
         }
 
         /// <summary>Where the package was read from, as a message names it: its path, or the target it was extracted from.</summary>
@@ -581,15 +581,15 @@ public static class Ssdt
     public static Result<Collation> CollationOf(SortedArray<Element> elements) =>
         elements.FirstOrDefault(e => e.Key.Type == "DatabaseOptions")?["Collation"] is Value.Text { Content: var name } ? Collation.Of(name) : Result.Ok(Collation.CaseSensitive);
 
-    /// <summary>The package's model read into elements, with its deploy scripts and its refactorlog's operations, as <see cref="Elements(TSqlModel, string?, string?, IReadOnlyList{RefactorLogOperation})"/> reads them.</summary>
-    public static Result<ModelElements> Elements(Package package) => Elements(package.Model, package.PreDeploy, package.PostDeploy, package.Refactors);
+    /// <summary>The package's model read into elements, with its deploy scripts and its refactorlog's operations, as <see cref="ReadModel(TSqlModel, string?, string?, IReadOnlyList{RefactorLogOperation})"/> reads them.</summary>
+    public static Result<ModelElements> ReadModel(Package package) => ReadModel(package.Model, package.PreDeploy, package.PostDeploy, package.Refactors);
 
     /// <summary>
     /// A model read into elements, one element for each deploy script and each refactorlog operation, and the operations' renames. An
     /// operation's element type, written as DacFx serializes it (SqlSimpleColumn), is read through the one map of DacFx's types (ModelTypes),
     /// so a type the model no longer holds still keys, and the rename to it is a drop and an add.
     /// </summary>
-    internal static Result<ModelElements> Elements(TSqlModel model, string? preDeploy, string? postDeploy, IReadOnlyList<RefactorLogOperation> refactors) => ModelObjects(model).Bind(objects =>
+    internal static Result<ModelElements> ReadModel(TSqlModel model, string? preDeploy, string? postDeploy, IReadOnlyList<RefactorLogOperation> refactors) => ModelObjects(model).Bind(objects =>
     {
         var scripts = new[] { preDeploy is { } pre ? Element.PreDeploy(LineEndings.Lf(pre)) : null, postDeploy is { } post ? Element.PostDeploy(LineEndings.Lf(post)) : null }.OfType<Element>();
         return Result.All(refactors.Select(Entry)).Bind(entries =>
@@ -626,7 +626,7 @@ public static class Ssdt
     /// SQL Server shows a server-scoped login only to a reader with permission on it (sysadmin, VIEW ANY DEFINITION, or its own), and
     /// a db_datareader login holding VIEW DEFINITION read Query Store's database options differently from sa when measured on 2026-09-24.
     /// </summary>
-    public static Result<SortedArray<Element>> Elements(TSqlModel model) => ModelObjects(model).Map(objects => SortedArray.Of(objects.Select(o => o.Element)));
+    public static Result<SortedArray<Element>> ReadModel(TSqlModel model) => ModelObjects(model).Map(objects => SortedArray.Of(objects.Select(o => o.Element)));
 
     /// <summary>
     /// A grant SQL Server makes in every new database, copying it from model: VIEW ANY COLUMN ENCRYPTION KEY DEFINITION and VIEW ANY
@@ -708,7 +708,7 @@ public static class Ssdt
         return Result.All(reached.Select(o => ElementOf(o).Map(e => (Element: e, Name: o.Name.HasName ? ModelTypes.Key(o.ObjectType.Name, [.. o.Name.Parts], null).Match<string?>(k => k.Path, _ => null) : null))))
             .Bind(elements => elements.GroupBy(e => e.Element.Key).FirstOrDefault(g => g.Count() > 1) is not { } alike ? Result.Ok(elements) : new Error("model.duplicate-key",
                 $"{alike.Count()} {alike.Key.Type} objects of the model are keyed alike, as {alike.Key}: {string.Join(", ", alike.Select(e => e.Name ?? "unnamed"))}.",
-                "Report the model's source with this error: a key names one object, so io/Ssdt.Elements keys this type ambiguously, a defect in estate."));
+                "Report the model's source with this error: a key names one object, so io/Ssdt.ReadModel keys this type ambiguously, a defect in estate."));
     }
 
     /// <summary>

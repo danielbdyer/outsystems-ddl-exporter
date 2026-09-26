@@ -277,7 +277,7 @@ facts "override anything the older documents say").
 
 Azure DevOps builds the dacpac; Octopus publishes it. The publish profile has
 `BlockOnPossibleDataLoss` on, and **no single deploy can relax it**. That rule is what the whole
-authoring machine is built around, because DacFx's data-loss check is *data-blind*: it fires on
+authoring machine is built around, because DacFx's `BlockOnPossibleDataLoss` check is *data-blind*: it fires on
 `IF EXISTS (SELECT TOP 1 1 FROM <table>)`, on row presence, whether or not any row violates the
 new constraint. Consequently:
 
@@ -296,7 +296,7 @@ new constraint. Consequently:
   rather than a note in a ledger, which is why the pull-request gate (§10) refuses any release
   that touches a table with an open window.
 
-The data-loss check has a second consequence nobody has met yet. Prod has not been released to,
+`BlockOnPossibleDataLoss` has a second consequence nobody has met yet. Prod has not been released to,
 and its first release is a baseline publish rather than an incremental one. Prod holds rows in
 tables Dev does not, so a change proven clean on Dev can block on Prod for no reason except
 population. Every "will this block?" answer in the corpus is extrapolated from a copy of Dev,
@@ -334,7 +334,7 @@ idempotent redeploy, in-place evolution, eject, drift, canary). After the eject,
    new app code coexist), edit the `CREATE`, prove the change on a real-shaped copy, decide the
    shipping shape, pose the one business question only a human can answer, write the pull
    request description, and, after each environment's deploy, refresh the external entity in
-   Integration Studio, the half of the change no data-loss check can see.
+   Integration Studio, the half of the change no `BlockOnPossibleDataLoss` check can see.
 2. **Review a change.** A lead reads a pull request and approves it without a meeting, because
    the description carries the finding on top and the proof beneath, or reproduces the proof
    when trust is in question.
@@ -546,7 +546,7 @@ scenarios that rewrite and never generate, and a post-generation trust gate. ~5,
 tests. The Twin is the one v2 subsystem whose size matches its job.
 
 **The `ssdt-agent` tree's findings.** F1–F20 in `FINDINGS_AND_CHANGES.md` are DacFx facts
-captured with real output: the data-blind data-loss check; the pre-deploy-plus-model
+captured with real output: the data-blind `BlockOnPossibleDataLoss`; the pre-deploy-plus-model
 half-application; the surviving side effect; the two-release shape; `Msg 515` when a seed still
 writes NULL after the tightening; the phantom rename and delete under
 `DropObjectsNotInSource=false`; the reconcile-then-trust FK shape (which overturned the tree's
@@ -672,7 +672,7 @@ compression and law 2 (§13) covers it.
 | `ReadSide` marks every reconstructed data-bearing table `Static`, so measuring a readback catalog yields an empty evidence cache (`CLAUDE.md` survival rule 8) | open; a known trap on a secondary path | on v3's *primary* path (the live database is one operand of every change): `read --from sql` sets `Seed = None` unless the table is named static in the repository; law 2 covers it |
 | `ForeignKeyRules.isIgnoreRule` is hardcoded `false`, so `DeleteRuleIgnored` is unreachable while the platform's delete-rule vocabulary includes *Ignore* | open (`ForeignKeyRules.fs:216`) | `ReferenceAction` carries `Ignore` from the reader; the decision table has no unreachable arm |
 | a trigger body ScriptDom cannot parse degrades to a comment marker (`ToleratedDivergence.TriggerBodyUnparsedDropped`) and would vanish on redeploy | open, tolerated | `read --from ssdt` refuses an unparsable body (exit 9) rather than tolerating it; law 3 catches any survivor |
-| the warm SQL Server image is a floating `2022-latest` tag under version-stamped data-loss-check evidence (`estate/toolchain.md`) | open, named | `ci/` pins a CU digest; `synthetic-copy bake` records it in the artifact name |
+| the warm SQL Server image is a floating `2022-latest` tag under version-stamped `BlockOnPossibleDataLoss` evidence (`estate/toolchain.md`) | open, named | `ci/` pins a CU digest; `synthetic-copy bake` records it in the artifact name |
 
 ### 4.4 What the audits could not see
 
@@ -720,7 +720,7 @@ findings that are never collapsed: *how it ships* (one release; one release with
 relaxed, which this estate cannot do; two releases with a pre-deploy) and *what the approver
 weighs* (existing data affected; first time on this estate; more than a million rows; a business
 fork only a human can settle). v1 called the first finding "tightening" and computed it from
-measured data. The tree computes it from a Strict publish and reads the data-loss check in the
+measured data. The tree computes it from a Strict publish and reads `BlockOnPossibleDataLoss` in the
 generated script. v3 does both, in that order: measure to *predict*, publish to *prove*, and the
 pull request description says which is which.
 
@@ -831,7 +831,7 @@ parity checks retire them.
     Ssdt.cs                 read an SSDT project or a dacpac → Schema (DacFx TSqlModel); write the bundle
     Render.cs               Statement → text through ScriptDom (from v2's ScriptDomBuild + Render, verbatim)
     Emit.cs                 Schema → bundle: per-table .sql, seeds, refactorlog, Verify/ queries; a .sqlproj only on --init
-    Publish.cs              DacFx publish (Strict | Permissive) → Verdict; read the generated script's data-loss checks
+    Publish.cs              DacFx publish (Strict | Permissive) → Verdict; read the generated script's `BlockOnPossibleDataLoss` checks
     SyntheticCopy.cs        container lifecycle · bake/restore · generation · trust gate (from Twin.Runtime)
     Move.cs                 [cutover tools] transfer: ingest · plan · phase-1 · phase-2 · revert (from TransferRun, reduced)
 
@@ -1428,7 +1428,7 @@ coordinates, the schema norm, the tolerance residual, and the manifest series re
 functions are new and are the reason `Change` is central: `inverse` computes the rollback where
 one exists (a widening is the inverse of a narrowing; a created nullable column's inverse is a
 drop, which is lossless only when the column is still empty), and `dataLoss` names the steps
-the data-loss check will fire on, so the *predictor* can say "this will block on a populated
+`BlockOnPossibleDataLoss` will fire on, so the *predictor* can say "this will block on a populated
 table" before the *prover* confirms it. A rename is matched by `Key` when both sides carry keys
 and by the refactorlog otherwise; `Renames` is the refactorlog's content, derived, never authored.
 
@@ -1456,8 +1456,8 @@ construction: `Cycles` is per component and `Tables` orders everything outside t
 v2's 26-case `Statement` DU (`Targets.SSDT/Statement.fs`) moves into the kernel unchanged, with
 its `ColumnDef`/`PrimaryKeyDef`/`ForeignKeyDef`/`IndexDef`/`CellValue`/`MergeBuildArgs`/
 `UpdateBuildArgs` companions. It is the contract between the kernel and `Render.fs`. One
-addition: `AlterTableAlterColumn` gains a `dataLossCheck: bool` so the emitter can mark a
-statement the data-loss check will refuse on a populated table, which the description cites.
+addition: `AlterTableAlterColumn` gains a `blockOnPossibleDataLoss: bool` so the emitter can mark a
+statement `BlockOnPossibleDataLoss` will refuse on a populated table, which the description cites.
 
 ### 7.9 `SyntheticData.fs` — the generator, kept
 
@@ -1528,7 +1528,7 @@ codes shared across all verbs:
 | 0 | done |
 | 1 | bad arguments |
 | 2 | could not parse an input (schema, config, project) |
-| 3 | **blocked** — the data-loss check refused; a finding rather than a failure (`prove` only) |
+| 3 | **blocked** — `BlockOnPossibleDataLoss` refused; a finding rather than a failure (`prove` only) |
 | 4 | target unreachable (SQL Server, Docker, LocalDB) |
 | 5 | divergence found (`check`, `diff --fail-on-change`) |
 | 6 | configuration refused (unknown key, credential inline, toolchain pin mismatch) |
@@ -1610,7 +1610,7 @@ evidence, name the *provisional* shipping shape and approval weight before anyth
 published. It reads the data-loss steps (`Change.dataLoss`), the row counts of the affected
 tables (populated or empty), whether existing rows violate the new rule (nulls, orphans,
 duplicates, over-length), and the op's flip conditions from `knowledge/ops/<op>.md` when
-`--op` names one, and prints: *provisional: two releases (populated table, data-loss check);
+`--op` names one, and prints: *provisional: two releases (populated table, `BlockOnPossibleDataLoss` check);
 the lead weighs: existing data affected; first time on this estate; prove to confirm.* The
 output is marked provisional in its first word. Only `prove` may drop that word.
 
@@ -1686,8 +1686,8 @@ This is `prove.mjs` as a verb, with the synthetic copy as the default target.
    never publishes to a named environment.
 3. `DacServices.GenerateDeployScript` under the **Strict** profile (`BlockOnPossibleDataLoss=true`,
    `DropObjectsNotInSource=false` as the estate pipeline runs it; the profile is data, in
-   `ci/profiles/`, and the description cites which one). Parse the script for the data-loss
-   checks (`IF EXISTS (SELECT TOP 1 1 FROM …) RAISERROR`) and the data-loss steps.
+   `ci/profiles/`, and the description cites which one). Parse the script for the
+   `BlockOnPossibleDataLoss` checks (`IF EXISTS (SELECT TOP 1 1 FROM …) RAISERROR`) and the data-loss steps.
 4. `DacServices.Deploy` under Strict. Capture the outcome: published, or blocked with the
    verbatim `Msg`, or failed.
 5. If blocked and `--permissive`: publish again under the Permissive profile to observe the
@@ -1701,7 +1701,7 @@ This is `prove.mjs` as a verb, with the synthetic copy as the default target.
 
 ```json
 { "outcome": "blocked", "message": "Msg 50000 … Rows were detected. The schema update is terminating because data loss might occur.",
-  "blockedBy": "data-loss-check", "dataLossChecks": [{ "table": "dbo.Customer", "statement": "ALTER TABLE … ALTER COLUMN Email NVARCHAR(256) NOT NULL" }],
+  "blockedBy": "block-on-possible-data-loss", "blockOnPossibleDataLossSites": [{ "table": "dbo.Customer", "statement": "ALTER TABLE … ALTER COLUMN Email NVARCHAR(256) NOT NULL" }],
   "dataLoss": ["narrow dbo.Customer.Email"], "trust": [{ "fk": "FK_Order_Customer", "trusted": true }],
   "idempotent": true, "dacfx": "162.5.57", "server": { "version": "16.0.4135", "compatibilityLevel": 160, "image": "sha256:…" },
   "pin": "162.5.57", "profile": "Strict", "script": "bin/prove/change.sql", "elapsedMs": 4210 }
@@ -1710,7 +1710,7 @@ This is `prove.mjs` as a verb, with the synthetic copy as the default target.
 Exit 0 published, 3 blocked, 4 unreachable, 6 config, 7 build, 9 indeterminate. A Copilot
 session reads one integer and one JSON object.
 
-What the scratch server cannot prove, the verdict says. LocalDB has no Change Data Capture, no
+What the local server cannot prove, the verdict says. LocalDB has no Change Data Capture, no
 Agent, and a 10 GB ceiling, so a proof over a table named in `ledgers/cdc-tracked.md`, or the
 scale lane above a million rows, needs a full instance (Docker or a developer-edition
 install). On LocalDB those proofs return exit 4 with the reason, never a vacuous 0.
@@ -1753,7 +1753,7 @@ evidence store are gone. A divergence is a row; what to do about it is the descr
 `check outsystems` is new and cheap: after the eject the platform still holds a logical model
 of the external entities, and a developer who refreshes Integration Studio against a table
 whose shape the repository changed should be told before the platform tells them. It is also
-the only check that can see the failure class the data-loss check cannot: an attribute the
+the only check that can see the failure class `BlockOnPossibleDataLoss` cannot: an attribute the
 extension still maps that the repository no longer declares fails at runtime rather than at
 deploy.
 `check outsystems` is the reason the OSSYS reader survives at all (§16); if the reader is
@@ -1767,7 +1767,7 @@ estate describe --intent "make Email required" --change change.json --evidence e
 
 `PullRequestDescription.render` over the inputs: verdict from the change and the verdict
 (`OneRelease` when the change has no data-loss step and the publish was clean; `TwoRelease`
-when it blocked on the data-loss check; `Refused` when no safe shape exists); "the data" from
+when it blocked on `BlockOnPossibleDataLoss`; `Refused` when no safe shape exists); "the data" from
 evidence; "how it ships" with the pre-deploy shape the op skill prescribes; "what proving
 showed" as tried/did/realized with the verbatim `Msg`; "after deploy" from the bundle's
 `Verify/`; rollback from `Change.inverse`; "not checked" from what the run could not see (other
@@ -1822,7 +1822,7 @@ estate doctor [--install] [--json]
 ```
 
 One line: `READY` or `DEGRADED`, then the SDK, the DacFx pin against `ledgers/toolchain.md`,
-the scratch server found (Docker or LocalDB, with the SQL Server version), the synthetic-copy
+the local server found (Docker or LocalDB, with the SQL Server version), the synthetic-copy
 artifact's fingerprint and age, and the estate checkout's posture. Every `DEGRADED` item
 carries its remedy (`--install` for the SDK and the local tool; `synthetic-copy up`;
 `synthetic-copy restore`). It is the SessionStart hook's whole body, the first thing every
@@ -1910,7 +1910,7 @@ the verb it runs:
 One addition the tree does not have: the description's *after deploy* section names the Integration
 Studio refresh, per environment, as the step that completes the change. Nine of the 45 ops mention it
 and `os-vocabulary` files it as "application-side"; no description section, template or decision-tree
-state owns it. A change the application cannot see is unshipped, which the data-loss check cannot see (§2.1).
+state owns it. A change the application cannot see is unshipped, which `BlockOnPossibleDataLoss` cannot see (§2.1).
 
 The reviewer's `reviewing.md` runs `estate prove` on its own copy, `estate diff` for scope,
 the adversarial moves (inject a violating row; play a blocked change forward under
@@ -1979,10 +1979,10 @@ The August review's four layers, as v3 builds them.
   where Docker is available), named by the schema fingerprint and the evidence fingerprint,
   published as a pipeline artifact. A developer's machine runs `estate synthetic-copy restore
   <artifact>` once and holds a current, masked, distribution-faithful copy in minutes. On
-  Windows without Docker, LocalDB is the scratch server; on the hosted build agent, LocalDB; on
+  Windows without Docker, LocalDB is the local server; on the hosted build agent, LocalDB; on
   a Mac or a monorepo agent, Docker. The verb chooses, and the developer need not.
 - **Realism:** the row tiers (`ledgers/row-tiers.md`) drive generation volumes so a table the
-  estate holds at `>1M` rows is generated at a volume where the data-loss check's cost is
+  estate holds at `>1M` rows is generated at a volume where `BlockOnPossibleDataLoss`'s cost is
   visible (the scale lane measured the index build as the first SQL Server cost visible over
   tool overhead at ~1M rows). The `PROVING_PATH_WINDOWS.md` route of restoring a real Dev
   backup is gone; it put real data on laptops, which the generator was built to prevent.
@@ -2089,7 +2089,7 @@ Of the 118,686 lines in `sidecar/projection/src`:
 3. **4,600 lines configuring a run when the unit of work is a change.** `Config` (2,189),
    `ConfigSchema` (203), the `*Binding` family (2,208), a 680-line generated schema drift-tested
    byte-for-byte, and an axiom (A44, "expressible ⇔ reachable") to keep it honest. What is left
-   to configure post-eject is the publish posture and the scratch server: about twenty keys.
+   to configure post-eject is the publish posture and the local server: about twenty keys.
 4. **A 1,600-line subtree with one circular consumer.** Four advisory passes and their tuning
    (~550) feed `ManifestEmitter` (1,080), which reports coverage of an export nobody performs
    after the eject. The two passes that looked advisory and have a consumer (`Centrality`,
@@ -2245,7 +2245,7 @@ ladder, no matrix, no numbering. The v2 identifiers are given here once, as prov
 | 6 | **a rename keeps its key** — `between s (rename s)` reports one `Renamed` and zero `Created`/`Dropped`; the emitted refactorlog carries it; DacFx generates `sp_rename` rather than `DROP`+`ADD`; `classify` refuses a rename whose entry is missing | `Kernel.Tests` + `Io.Tests` (publish and read back) | A1; identity survives rename |
 | 7 | **a change's inverse undoes it** — where `inverse d = Some d'`, `between (apply d s) (apply d' (apply d s))` is empty | `Kernel.Tests` | the rollback section; T12 in spirit |
 | 8 | **an idempotent redeploy is silent** — publishing an unchanged bundle twice generates an empty second script, and on a CDC-enabled copy produces zero capture rows | `Io.Tests` (Docker, CDC-isolated fixture) | CDC-silence; T15 |
-| 9 | **the data-loss check is data-blind** — `prove` of a `NULL → NOT NULL` on a populated table is blocked before and after every NULL is backfilled; on an empty table it is clean | `Io.Tests`, the make-mandatory sample change | F1/F7; the tree's central finding |
+| 9 | **`BlockOnPossibleDataLoss` is data-blind** — `prove` of a `NULL → NOT NULL` on a populated table is blocked before and after every NULL is backfilled; on an empty table it is clean | `Io.Tests`, the make-mandatory sample change | F1/F7; the tree's central finding |
 | 10 | **a foreign key lands trusted** — a clean declarative FK add ends with `is_not_trusted = 0` on the pinned DacFx; the verdict says so, and a different DacFx version is a refusal | `Io.Tests` | F5→F9; the DacFx-version risk |
 | 11 | **a generated set has no orphans and repeats itself** — `SyntheticData.generate` under the same seed yields byte-identical rows; every FK cell references a generated parent; measuring the generated set recovers the shape tier within ε; a schema edit regenerates only touched columns | `Kernel.Tests` + `Io.Tests` (the synthetic copy's `check`) | π∘σ≈id; S-stable; Twin laws 1 and 6 |
 | 12 | **the synthetic copy carries no literal** — the committed shape tier contains no captured value; `synthetic-copy evidence verify` refuses one that does | `Io.Tests` | Twin law 3 |
@@ -2471,7 +2471,7 @@ as the specification (§6.6).
 3. **Does the OSSYS reader survive?** Post-eject there is no upstream to re-derive the schema
    from, except that OutSystems still owns the logical model and Integration Studio refreshes
    *from* the database (§2.1). Reading OSSYS is the only way to see what the platform believes,
-   and so the only way to check the one failure the data-loss check cannot see. *Moves:* ~3,600
+   and so the only way to check the one failure `BlockOnPossibleDataLoss` cannot see. *Moves:* ~3,600
    lines of `io/Ossys`, `estate check outsystems`, the third axis of workflow 5, the fourth
    parity check (§14.1). *Default assumed:* it survives as an explicit optional package with its
    own budget line. If the operator says no: delete the package, rewrite workflow 5 to two
@@ -2502,7 +2502,7 @@ as the specification (§6.6).
    v3's first quarter.
 7. **Prod's first release is a baseline publish.** QA and UAT were set up by their own cutover
    publishes; Prod has never been published to; its row counts are not in the row-tier ledger
-   (which holds four sample tables from the golden project). The data-blind data-loss check
+   (which holds four sample tables from the golden project). The data-blind `BlockOnPossibleDataLoss`
    fires on population, so a change proven clean on a copy of Dev can block on Prod for no
    reason but rows. *Moves:* whether any "will this block?" answer in the corpus applies to
    Prod. *Default assumed:* before any Prod release, `estate measure --target prod --counts`
@@ -2606,20 +2606,20 @@ One vocabulary; where v1 or v2 used a different word for the same thing, the old
 | **policy** (`Policy`) | the tightening knobs and operator overrides; `Vanilla` is the faithful projection | `TighteningOptions` | `Policy.Tightening` + interventions |
 | **decision** | the outcome of one tightening table for one column, reference, or index, with its evidence or reason | `NullabilityDecision` etc. (bools + rationale strings) | `NullabilityOutcome` etc. (DUs) |
 | **change** (`Change`) | a change between two schemas: created, dropped, renamed, altered per channel, with facets and a derived refactorlog | (DMM diff) | `CatalogDiff` / `ChannelDiff`; δ |
-| **data-loss step** | a statement in a change the data-loss check will refuse on a populated table: narrow, drop, `NOT NULL` on populated, lossy retype | — | — (the tree's D0) |
-| **verdict** (`Verdict`) | what DacFx did when a change was published to a disposable copy under a named profile: clean / blocked with the verbatim `Msg` / failed; data-loss checks; trust; idempotence; the DacFx and SQL Server versions. The word names `prove`'s result alone | — | `prove.mjs` output |
+| **data-loss step** | a statement in a change `BlockOnPossibleDataLoss` will refuse on a populated table: narrow, drop, `NOT NULL` on populated, lossy retype | — | — (the tree's D0) |
+| **verdict** (`Verdict`) | what DacFx did when a change was published to a disposable copy under a named profile: clean / blocked with the verbatim `Msg` / failed; `BlockOnPossibleDataLoss` checks; trust; idempotence; the DacFx and SQL Server versions. The word names `prove`'s result alone | — | `prove.mjs` output |
 | **pull request description** (`PullRequestDescription`) | the ten-section pull request body a reviewer approves by reading; `estate describe` renders it | — | the tree's record (`THE_RECORD.md`) |
 | **shipping shape** | one release / one release with the check relaxed (never on this estate) / two releases / refused | — | the tree's S5 terminal |
 | **bundle** | the emitted SSDT project: per-table files, schemas, sequences, seeds, refactorlog, sqlproj, manifest, verify queries | the output root | `SsdtBundle` |
 | **synthetic copy** (`SyntheticCopy`, `estate synthetic-copy`) | the disposable synthetic-data copy every proof runs on, matching the repository at a ref | (a real backup) | the Twin |
-| **scratch server** (`ScratchServer`) | the SQL Server that holds the copies: the Docker container or LocalDB | — | the warm container |
+| **local server** (`LocalServer`) | the SQL Server that holds the copies: the Docker container or LocalDB | — | the warm container |
 | **generated set** (`SyntheticData.generate`) | one deterministic synthetic generation run | — | a mint (σ) |
 | **scenario** | a named overlay on evidence, volumes, corrections, and pins; never a generator | — | scenario |
 | **order** (`Order`) | a load order under an explicit cycle policy: refuse, defer nullable legs, or manual | `EntityDependencySorter` | `TopologicalOrderPass` |
 | **finding** (`Finding`) | something a run noticed and continued past; coded, with evidence; severity `error`, `warning` or `note` | `PipelineInsight`, `Opportunity` | `DiagnosticEntry`, `EstateFinding` |
 | **error** (`Error`) | what a run could not or would not do: a code, a message and a remedy; the code's category chooses the exit (§8). A refusal is an error by policy | `ValidationError` | `ValidationError`, `CapabilityRefusal` |
 | **ledger** | an append-only table in `knowledge/ledgers/`: operations, row tiers, in-flight, refusals, toolchain | — | the estate ledgers; never v2's `Ledger` algebra |
-| **the data-loss check** (`DataLossCheck`) | `BlockOnPossibleDataLoss`: DacFx's data-blind check, which fires on row presence | — | the row-presence guard |
+| **`BlockOnPossibleDataLoss`** (`BlockedBy.BlockOnPossibleDataLoss`) | DacFx's option, and the data-blind check it writes into the deploy script, which fires on row presence | — | the row-presence guard |
 | **the cutover tools** | `io/Move` and `estate move`: the finite transfer machinery, retired after the eject | UAT users; `full-export` | `TransferRun`, the reverse leg |
 
 Words v3 does not use: projection (as a system name), catalog, kind, attribute, espace (except
@@ -2631,18 +2631,18 @@ lanes), verdict (in the estate sense), posture, archetype (a sample change; kept
 `Move` for the two sink classes), rendition, protein, amino acid, canary (the law is "emit then
 read is the identity"; the word survives only as the test's nickname).
 
-Retired by the pre-M2 pass (2026-09-25), each → its replacement: walk → `Ssdt.Elements`, a model
+Retired by the pre-M2 pass (2026-09-25), each → its replacement: walk → `Ssdt.ReadModel`, a model
 read into elements; the type `Refusal` → `Error` (the verb "refuse" stays for a refusal by policy);
 receipt → `Provenance`; engine → `Provenance`'s `DacFx` and `Server` fields, and in prose DacFx, SQL
 Server or `estate`; branch, branch site, claim site, transfers → `ExistingData`, `PreconditionState`,
-`Precondition`, `AppliesTo`; cohorts → readerGroups; substrate → the scratch server; the Twin, twin → the synthetic copy, `synthetic-copy`;
+`Precondition`, `AppliesTo`; cohorts → readerGroups; substrate → the local server; the Twin, twin → the synthetic copy, `synthetic-copy`;
 σ, mint, Synth → `SyntheticData.generate`, a generated set; `SqlServer.Named`, `Database.Where` →
 `EnvironmentDatabase`, `Database.Target`; `Seq<T>` → `SortedArray<T>`; added, removed, changed →
 created, dropped, altered, as DacFx says; the envelope's verdict → `outcome`, `message`, `blockedBy`;
 block, warn → error, warning; converged, the convergence oracle → in-sync, the empty deploy plan;
 record → the pull request description, `describe`; reference stub → reference assemblies; probe →
 aggregate query; the germ, the two instruments, lens, directive → the lifecycle invariants,
-prediction and proof, the verb table, the question; the guard → the data-loss check; archetype (a
+prediction and proof, the verb table, the question; the guard → `BlockOnPossibleDataLoss`; archetype (a
 test case) → sample change, `SampleChanges.cs`; a read (noun) → a model, `ModelElements`; Ground,
 Twin, Record and gate, Front door → Foundation, Synthetic copy, Describe and gate, Agent instructions;
 the wing → the cutover tools; proving ground → the golden project, `tests/Golden/project/`; turn,
@@ -2753,7 +2753,7 @@ guidance and proof rather than in fidelity. Two of the seven deserve ops in v3's
 capture instances (§16) and sequences.
 
 The six shared-reasoning skills the families point to: `tightening-class` (the data-blind
-data-loss check and the two-release shape), `constraint-is-a-claim` (a key or check is a claim about
+`BlockOnPossibleDataLoss` check and the two-release shape), `constraint-is-a-claim` (a key or check is a claim about
 existing data, proven at apply time; reconcile first), `idempotent-seed` (the guarded `MERGE`;
 silence is the proof), `identity-and-refactorlog` (identity is separate from name; the
 refactorlog carries it), `multi-phase` (additive → cutover → subtractive; the conservation
@@ -2957,7 +2957,7 @@ that number decided the disposition: **KEEP** · **KEEP-SIMPLIFIED** · **FOLD-I
 | `DriftRun.fs`; `ProfileCaptureRun.fs` | 34; 53 | permanent workflows | KEEP | `check drift`; `profile` |
 | `CorrectionProposeRun.fs`; `CsvExportRun.fs`; `CsvReferencedPull.fs` | 47; 162; 53 | corrections and CSV | RETIRE-AFTER-EJECT | nothing |
 | `PolicyDiff.fs`; `RegisteredAllTransforms.fs` | 233; 133 | diffing two policies; the totality test | DELETE | nothing |
-| `DockerDaemon.fs`; `DatabaseNameGenerator.fs` | 205; 47 | the scratch server; disposable database names | KEEP | `io/SyntheticCopy`; `io/Publish` |
+| `DockerDaemon.fs`; `DatabaseNameGenerator.fs` | 205; 47 | the local server; disposable database names | KEEP | `io/SyntheticCopy`; `io/Publish` |
 | `NameAlignment.fs`; `RenameProjection.fs`; `Ref.fs`; `SupportingScope.fs`; `SpecialCircumstancesDiagnostics.fs`; `BridgeStagingCache.fs` | 327; 87; 117; 437; 163; 333 | cutover naming and staging | RETIRE-AFTER-EJECT / DELETE | nothing |
 
 ### D.11 `Projection.Cli` (14,097 lines, 38 files)
@@ -3077,7 +3077,7 @@ In order of return on the hour; each carries a finding this document depends on 
    measured 5% reclaim ceiling on Core.
 4. `sidecar/projection/AUDIT_2026_07_17_V1_V2_PARITY.md` (563) — the highest-confidence
    empirical comparison of v1 and v2, with the 246-finding register beside it.
-5. `ssdt-agent/ASSESSMENT_2026_08_24.md` (345) — the data-blind data-loss check explained from
+5. `ssdt-agent/ASSESSMENT_2026_08_24.md` (345) — the data-blind `BlockOnPossibleDataLoss` explained from
    DacFx's side.
 6. `sidecar/projection/THE_TWIN.md` and `THE_SYNTHETIC_DATA_DESIGN.md` (619 together) — the
    synthetic copy's charter and its five laws, the model §13 follows.

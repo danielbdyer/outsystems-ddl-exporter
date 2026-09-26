@@ -54,7 +54,7 @@ public sealed class SpikeTests(GoldenProject project) : IClassFixture<GoldenProj
         var body = string.Join('\n', script.Split('\n').Where(l => !l.TrimStart().StartsWith(':')));
         var parsed = new TSql160Parser(initialQuotedIdentifiers: true).Parse(new StringReader(body), out var errors);
         var checks = new List<QueryExpression>();
-        parsed.Accept(new DataLossChecks(checks));
+        parsed.Accept(new BlockOnPossibleDataLossChecks(checks));
 
         Assert.Empty(errors);
         new Sql160ScriptGenerator().GenerateScript(Assert.Single(checks), out var predicate);
@@ -153,8 +153,8 @@ public sealed class SpikeTests(GoldenProject project) : IClassFixture<GoldenProj
                select (column.Name.ToString(), property.Name, pair.Before, pair.After);
     }
 
-    /// <summary>DacFx's data-loss check, IF EXISTS (…) RAISERROR (…, 16, 127); the script's other IF EXISTS blocks check database options.</summary>
-    private sealed class DataLossChecks(List<QueryExpression> found) : TSqlFragmentVisitor
+    /// <summary>DacFx's BlockOnPossibleDataLoss check, IF EXISTS (…) RAISERROR (…, 16, 127); the script's other IF EXISTS blocks check database options.</summary>
+    private sealed class BlockOnPossibleDataLossChecks(List<QueryExpression> found) : TSqlFragmentVisitor
     {
         public override void ExplicitVisit(IfStatement node)
         {

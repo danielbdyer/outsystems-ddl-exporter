@@ -8,7 +8,7 @@ namespace Estate.Kernel;
 /// instance, and localhost for this machine however a connection spells it. <see cref="ServerName"/> reads the host inside a
 /// connection's data source, keeping any spelling SqlClient accepts; <see cref="Of"/> reads the host estate/posture.json gives an
 /// environment, which is a host name (letters, digits, '-', '_' and '.', a letter or digit first and last), an IP address, or
-/// (localdb). Two hosts are one here when they are spelled alike; io/ScratchServer also asks DNS whether two spellings share an
+/// (localdb). Two hosts are one here when they are spelled alike; io/LocalServer also asks DNS whether two spellings share an
 /// address. default(Host) is not a host.
 /// </summary>
 public readonly record struct Host : IComparable<Host>

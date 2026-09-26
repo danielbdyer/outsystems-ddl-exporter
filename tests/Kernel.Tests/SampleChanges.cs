@@ -6,7 +6,7 @@ using static Estate.Kernel.Tests.ElementSets;
 namespace Estate.Kernel.Tests;
 
 /// <summary>
-/// The sample changes, hand-built as io/Ssdt.Elements reads them: a Customer table with its columns in order, an index
+/// The sample changes, hand-built as io/Ssdt.ReadModel reads them: a Customer table with its columns in order, an index
 /// on Email, a primary key, both deploy scripts, and a refactorlog holding one old rename (Mail to Email) that every
 /// pair carries, so a rename the refactorlog already applied is shown to change nothing. Each sample change is the same
 /// model built again with one edit.

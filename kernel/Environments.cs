@@ -9,26 +9,26 @@ namespace Estate.Kernel;
 
 /// <summary>
 /// estate/posture.json as a value (V3_MILESTONES.md WP 1.5, §4 row 14): the environments it names, each once, in name order, and the
-/// scratch server it prefers, when it names one. io reads the file once for a verb and hands this to what resolves a target, to R15 and
+/// local server it prefers, when it names one. io reads the file once for a verb and hands this to what resolves a target, to R15 and
 /// to the lookup of a copy's profile.
 /// </summary>
 public sealed record Environments
 {
-    private Environments(SortedArray<NamedEnvironment> all, ScratchServerKind? scratchServer) => (All, ScratchServer) = (all, scratchServer);
+    private Environments(SortedArray<NamedEnvironment> all, LocalServerKind? localServer) => (All, LocalServer) = (all, localServer);
 
     /// <summary>Every environment the posture names, by name.</summary>
     public SortedArray<NamedEnvironment> All { get; }
 
-    /// <summary>The scratch server the posture prefers, the key scratchServer; null when it names none.</summary>
-    public ScratchServerKind? ScratchServer { get; }
+    /// <summary>The local server the posture prefers, the key localServer; null when it names none.</summary>
+    public LocalServerKind? LocalServer { get; }
 
     /// <summary>The environments given, or posture.environment-name when two share a name; the error leads with <paramref name="subject"/>.</summary>
-    public static Result<Environments> Of(string subject, IEnumerable<NamedEnvironment> environments, ScratchServerKind? scratchServer)
+    public static Result<Environments> Of(string subject, IEnumerable<NamedEnvironment> environments, LocalServerKind? localServer)
     {
         var all = SortedArray.Of(environments);
         return all.Where((e, i) => i > 0 && all[i - 1].Name == e.Name).FirstOrDefault() is { } repeated
             ? new Error("posture.environment-name", subject + " names " + repeated.Target + " twice.", "Keep one entry for each environment.")
-            : new Environments(all, scratchServer);
+            : new Environments(all, localServer);
     }
 
     /// <summary>The environment the posture names by <paramref name="name"/>, or null.</summary>
@@ -40,16 +40,16 @@ public sealed record Environments
 
 /// <summary>
 /// Which SQL Server the posture prefers to hold copies (VALUES.md O1): Docker, the estate-sql container; or LocalDb, where Docker cannot
-/// run. The key scratchServer, written docker or localdb. The cases are closed.
+/// run. The key localServer, written docker or localdb. The cases are closed.
 /// </summary>
-public abstract record ScratchServerKind
+public abstract record LocalServerKind
 {
-    private ScratchServerKind()
+    private LocalServerKind()
     {
     }
 
     /// <summary>The kind <paramref name="text"/> names, or posture.malformed led by <paramref name="subject"/>.</summary>
-    public static Result<ScratchServerKind> Of(string subject, string? text) => text switch
+    public static Result<LocalServerKind> Of(string subject, string? text) => text switch
     {
         "docker" => new Docker(),
         "localdb" => new LocalDb(),
@@ -66,14 +66,14 @@ public abstract record ScratchServerKind
     /// <summary>As the posture writes it.</summary>
     public sealed override string ToString() => Match(() => "docker", () => "localdb");
 
-    public sealed record Docker : ScratchServerKind;
+    public sealed record Docker : LocalServerKind;
 
-    public sealed record LocalDb : ScratchServerKind;
+    public sealed record LocalDb : LocalServerKind;
 }
 
 /// <summary>
 /// An environment as estate/posture.json names it (V3_MILESTONES.md WP 1.5, §4 row 14): its name; the host its SQL Server runs on, which
-/// R15 compares with the scratch server's whether or not the environment's reference resolves on this machine (DECISIONS.md,
+/// R15 compares with the local server's whether or not the environment's reference resolves on this machine (DECISIONS.md,
 /// 2026-09-25); its classification and reader groups (the groups that may read it); the reference its connection resolves from; its publish
 /// profile's path; its SQLCMD values; and, where the posture names one, the metamodel's reference. Data only (§2.1 rule 3), holding no
 /// value a reference names. Each error leads with the subject its caller gives, where in the posture the value sits, and quotes no value.

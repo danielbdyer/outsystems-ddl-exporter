@@ -20,10 +20,10 @@ Whether each is green is the CI run's to say. A law without a green test is not 
 | 3′ the model is complete | The fingerprint of a model is independent of the order its elements are given in | `Estate.Kernel.Tests.ElementTests.The_fingerprint_of_a_model_is_independent_of_the_order_its_elements_are_given_in` |
 | 3′ the model is complete | Two models fingerprint equally exactly when their elements are equal | `Estate.Kernel.Tests.ElementTests.Two_models_fingerprint_equally_exactly_when_their_elements_are_equal` |
 | a named environment cannot be written | No verb writes to a named environment | `Estate.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |
-| a named environment cannot be written | Nothing but ScratchServer makes a Copy | `Estate.Io.Tests.CapabilityTests.Nothing_but_ScratchServer_makes_a_Copy` |
+| a named environment cannot be written | Nothing but LocalServer makes a Copy | `Estate.Io.Tests.CapabilityTests.Nothing_but_LocalServer_makes_a_Copy` |
 | a named environment cannot be written | Permissive never reaches an environment | `Estate.Io.Tests.CapabilityTests.Permissive_never_reaches_an_environment` |
 | a named environment cannot be written | A copy the registry does not hold is refused | `Estate.Io.Tests.TargetTests.A_copy_the_registry_does_not_hold_is_refused` |
-| a named environment cannot be written | A scratch server on the host an environment names is refused | `Estate.Io.Tests.TargetTests.A_scratch_server_on_the_host_an_environment_names_is_refused` |
+| a named environment cannot be written | A local server on the host an environment names is refused | `Estate.Io.Tests.TargetTests.A_local_server_on_the_host_an_environment_names_is_refused` |
 | dependencies point one way | Io does not depend on the cli and the kernel on neither | `Estate.Budgets.Tests.DependenciesPointOneWay.Io_does_not_depend_on_the_cli_and_the_kernel_on_neither` |
 | dependencies point one way | No project reaches into the knowledge files or ci | `Estate.Budgets.Tests.DependenciesPointOneWay.No_project_reaches_into_the_knowledge_files_or_ci` |
 | dependencies point one way | The cli references no DacFx type | `Estate.Budgets.Tests.DependenciesPointOneWay.The_cli_references_no_DacFx_type` |
@@ -88,12 +88,12 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | O4 | Every error category has an exit of the frozen table and is constructed by some path | `Estate.Budgets.Tests.ContractTests.Every_error_category_has_an_exit_of_the_frozen_table_and_is_constructed_by_some_path` |
 | O4 | An error carries a remedy that is one move in the register | `Estate.Budgets.Tests.Register.Refusals.An_error_carries_a_remedy_that_is_one_move_in_the_register` |
 | O4 | Every error code the kernel io and the cli construct has a driver here | `Estate.Budgets.Tests.Register.Refusals.Every_error_code_the_kernel_io_and_the_cli_construct_has_a_driver_here` |
-| O5 | ScratchServer names a copy for its host and process registers it and Drop removes the database and its row | `Estate.Io.Tests.CopyTests.ScratchServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row` |
+| O5 | LocalServer names a copy for its host and process registers it and Drop removes the database and its row | `Estate.Io.Tests.CopyTests.LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row` |
 | O7 | A signal or a timeout stops a waiting estate with exit 130 and an interrupted answer | `Estate.Io.Tests.InterruptedProcessTests.A_signal_or_a_timeout_stops_a_waiting_estate_with_exit_130_and_an_interrupted_answer` |
 | O7 | A verb waiting on a held lock and given timeout 1 answers interrupted at exit 130 within 3 seconds and changes nothing | `Estate.Io.Tests.InterruptionTests.A_verb_waiting_on_a_held_lock_and_given_timeout_1_answers_interrupted_at_exit_130_within_3_seconds_and_changes_nothing` |
 | O11 | A large change renders short | `Estate.Io.Tests.AnswerSizeTests.A_large_change_renders_short` |
 | O12 | Each banned symbol planted in the kernel is a build error | `Estate.Budgets.Tests.BannedSymbolsTests.Each_banned_symbol_planted_in_the_kernel_is_a_build_error` |
-| O12 | ScratchServer names a copy for its host and process registers it and Drop removes the database and its row | `Estate.Io.Tests.CopyTests.ScratchServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row` |
+| O12 | LocalServer names a copy for its host and process registers it and Drop removes the database and its row | `Estate.Io.Tests.CopyTests.LocalServer_names_a_copy_for_its_host_and_process_registers_it_and_Drop_removes_the_database_and_its_row` |
 | P2 | Every admitted query of the corpus returns integers as the read only principal and queries log holds each statement and its row count | `Estate.Io.Tests.AggregateQueryTests.Every_admitted_query_of_the_corpus_returns_integers_as_the_read_only_principal_and_queries_log_holds_each_statement_and_its_row_count` |
 | P2 | Generated variants are admitted exactly when no forbidden form is planted | `Estate.Io.Tests.AllowlistTests.Generated_variants_are_admitted_exactly_when_no_forbidden_form_is_planted` |
 | P2 | The allowlist admits each allowed form of its corpus and refuses each forbidden one | `Estate.Io.Tests.AllowlistTests.The_allowlist_admits_each_allowed_form_of_its_corpus_and_refuses_each_forbidden_one` |
@@ -123,7 +123,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | S2 | A check drift whose extract is refused answers the refusal and no column lines | `Estate.Io.Tests.DriftTests.A_check_drift_whose_extract_is_refused_answers_the_refusal_and_no_column_lines` |
 | S2 | Check drift names every differing column of every table the plan alters and nothing else | `Estate.Kernel.Tests.PlanTests.Check_drift_names_every_differing_column_of_every_table_the_plan_alters_and_nothing_else` |
 | S7 | No verb writes to a named environment | `Estate.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |
-| S7 | Nothing but ScratchServer makes a Copy | `Estate.Io.Tests.CapabilityTests.Nothing_but_ScratchServer_makes_a_Copy` |
+| S7 | Nothing but LocalServer makes a Copy | `Estate.Io.Tests.CapabilityTests.Nothing_but_LocalServer_makes_a_Copy` |
 | S7 | The read only principal sends no DML no DDL and no EXEC through check drift and read | `Estate.Io.Tests.DriftTests.The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read` |
 | S7 | A copy the registry does not hold is refused | `Estate.Io.Tests.TargetTests.A_copy_the_registry_does_not_hold_is_refused` |
 | X1 | A literal connection string as a target is exit 6 and printed nowhere | `Estate.Io.Tests.DriftTests.A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere` |
@@ -185,14 +185,14 @@ One row per test that runs an exit of `V3_MILESTONES.md`, from its `[Trait("Exit
 | M1.4 | The fingerprint of a model is independent of the order its elements are given in | `Estate.Kernel.Tests.ElementTests.The_fingerprint_of_a_model_is_independent_of_the_order_its_elements_are_given_in` |
 | M1.4 | Two models fingerprint equally exactly when their elements are equal | `Estate.Kernel.Tests.ElementTests.Two_models_fingerprint_equally_exactly_when_their_elements_are_equal` |
 | M1.5 | No verb writes to a named environment | `Estate.Io.Tests.CapabilityTests.No_verb_writes_to_a_named_environment` |
-| M1.5 | Nothing but ScratchServer makes a Copy | `Estate.Io.Tests.CapabilityTests.Nothing_but_ScratchServer_makes_a_Copy` |
+| M1.5 | Nothing but LocalServer makes a Copy | `Estate.Io.Tests.CapabilityTests.Nothing_but_LocalServer_makes_a_Copy` |
 | M1.5 | Permissive never reaches an environment | `Estate.Io.Tests.CapabilityTests.Permissive_never_reaches_an_environment` |
 | M1.5 | A connection file this identity cannot list or read is refused and leaves no environment uncompared | `Estate.Io.Tests.TargetTests.A_connection_file_this_identity_cannot_list_or_read_is_refused_and_leaves_no_environment_uncompared` |
 | M1.5 | A copy named as no copy can be is refused and its name is quoted nowhere | `Estate.Io.Tests.TargetTests.A_copy_named_as_no_copy_can_be_is_refused_and_its_name_is_quoted_nowhere` |
 | M1.5 | A copy resolves only on the server its row records and never on a named host | `Estate.Io.Tests.TargetTests.A_copy_resolves_only_on_the_server_its_row_records_and_never_on_a_named_host` |
 | M1.5 | A copy the registry does not hold is refused | `Estate.Io.Tests.TargetTests.A_copy_the_registry_does_not_hold_is_refused` |
-| M1.5 | A scratch server on an alias of an environment's host is refused | `Estate.Io.Tests.TargetTests.A_scratch_server_on_an_alias_of_an_environment_s_host_is_refused` |
-| M1.5 | A scratch server on the host an environment names is refused | `Estate.Io.Tests.TargetTests.A_scratch_server_on_the_host_an_environment_names_is_refused` |
+| M1.5 | A local server on an alias of an environment's host is refused | `Estate.Io.Tests.TargetTests.A_local_server_on_an_alias_of_an_environment_s_host_is_refused` |
+| M1.5 | A local server on the host an environment names is refused | `Estate.Io.Tests.TargetTests.A_local_server_on_the_host_an_environment_names_is_refused` |
 | M1.6 | The committed DacFx stands inside the ledger's window only at the pin or the release before it | `Estate.Io.Tests.DoctorTests.The_committed_DacFx_stands_inside_the_ledger_s_window_only_at_the_pin_or_the_release_before_it` |
 | M1.6 | A drift's provenance fingerprints the target's schema and the deploy report | `Estate.Io.Tests.DriftTests.A_drift_s_provenance_fingerprints_the_target_s_schema_and_the_deploy_report` |
 | M1.6 | The committed DacFx outside the ledger's window is exit 6 before anything connects | `Estate.Io.Tests.DriftTests.The_committed_DacFx_outside_the_ledger_s_window_is_exit_6_before_anything_connects` |

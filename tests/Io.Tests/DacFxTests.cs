@@ -11,7 +11,7 @@ using Contract = Estate.Cli.Contract;
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// io/DacFx with no SQL Server: the release made once; a deploy report's items keyed as io/Ssdt.Elements keys the elements; a plan of one
+/// io/DacFx with no SQL Server: the release made once; a deploy report's items keyed as io/Ssdt.ReadModel keys the elements; a plan of one
 /// package against another built in memory, which connects to nothing; and DacFx's failures mapped once, its messages quoted and its
 /// informational ones left out.
 /// </summary>

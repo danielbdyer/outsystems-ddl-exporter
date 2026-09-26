@@ -17,14 +17,14 @@ using Microsoft.Data.SqlClient;
 namespace Estate.Io;
 
 /// <summary>
-/// The scratch server, minimal (V3_MILESTONES.md §2.2, WP 1.4; WP 3.4 completes it): the SQL Server a copy is made on, the one
+/// The local server, minimal (V3_MILESTONES.md §2.2, WP 1.4; WP 3.4 completes it): the SQL Server a copy is made on, the one
 /// ESTATE_SQL names, else the estate-sql container through ~/.estate/sql.env, else LocalDB, chosen inside io, so no caller holds its
 /// login or makes a copy anywhere else; Create, which names a copy for this host and process, records it and its server in
 /// .estate/copies.json and makes its database; Drop, which removes both; and the registry, against which alone copy: resolves, on the
-/// server its row records. A scratch server on the host an environment names in estate/posture.json, by spelling or by address, is
+/// server its row records. A local server on the host an environment names in estate/posture.json, by spelling or by address, is
 /// refused before anything connects (R15). Its CREATE and DROP DATABASE go through io/SqlServer.Query, the one statement path.
 /// </summary>
-public static class ScratchServer
+public static class LocalServer
 {
     internal const string Registry = ".estate/copies.json";
 
@@ -56,10 +56,10 @@ public static class ScratchServer
     /// <summary>The estate-sql container's port and SA password, which only ci/sql.sh and ci/sql.ps1 write.</summary>
     public static string SqlEnv { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".estate", "sql.env");
 
-    /// <summary>The scratch server, from the sources given, as the registry records it and R15 compares it (localhost,11433); nothing of its login.</summary>
+    /// <summary>The local server, from the sources given, as the registry records it and R15 compares it (localhost,11433); nothing of its login.</summary>
     public static Result<Kernel.ServerName> ServerName(string? estateSql, string sqlEnv, bool localDb) => Server(estateSql, sqlEnv, localDb).Bind(ServerName);
 
-    /// <summary>A copy on this machine's scratch server, refused on a named environment's host (R15); its CREATE DATABASE goes to the run's log, when given.</summary>
+    /// <summary>A copy on this machine's local server, refused on a named environment's host (R15); its CREATE DATABASE goes to the run's log, when given.</summary>
     public static Result<SqlServer.Copy> Create(string estateRoot, SqlServer.QueryLog? log = null) => Server().Bind(server => Create(estateRoot, server, log));
 
     /// <summary>
@@ -110,7 +110,7 @@ public static class ScratchServer
     private static string? Docker(Runner run, IReadOnlyList<string> arguments) =>
         run(new Command("docker", arguments, Doctor.ProgramTimeout), CancellationToken.None) is Ran.Exited { Code: 0, Output: var output } ? output : null;
 
-    /// <summary>The container ci/sql.sh and ci/sql.ps1 run the scratch server in.</summary>
+    /// <summary>The container ci/sql.sh and ci/sql.ps1 run the local server in.</summary>
     private const string Container = "estate-sql";
 
     /// <summary>The repository of the pinned image (Doctor.SqlServerImage without its tag and digest), whose registry digest is preferred where an image was pulled from several.</summary>
@@ -119,7 +119,7 @@ public static class ScratchServer
     internal static Result<string> Server() =>
         Server(Environment.GetEnvironmentVariable("ESTATE_SQL"), SqlEnv, Doctor.LocalDbInstalled(Command.Run));
 
-    /// <summary>The scratch server, in the fixture's order: ESTATE_SQL; the container, when sql.env gives its port and password; LocalDB, when installed.</summary>
+    /// <summary>The local server, in the fixture's order: ESTATE_SQL; the container, when sql.env gives its port and password; LocalDB, when installed.</summary>
     internal static Result<string> Server(string? estateSql, string sqlEnv, bool localDb)
     {
         var env = File.Exists(sqlEnv)
@@ -129,7 +129,7 @@ public static class ScratchServer
             : env.GetValueOrDefault("MSSQL_SA_PASSWORD") is { Length: > 0 } password && env.GetValueOrDefault("ESTATE_SQL_PORT") is { Length: > 0 } port
                 ? ConnectionString.Container(port, password)
             : localDb ? @"Server=(localdb)\MSSQLLocalDB;Integrated Security=true"
-            : new Error("scratch-server.missing", "No scratch server: ESTATE_SQL is unset, " + sqlEnv + " gives no container's port and password, and LocalDB is not installed.",
+            : new Error("local-server.missing", "No local server: ESTATE_SQL is unset, " + sqlEnv + " gives no container's port and password, and LocalDB is not installed.",
                 "Start Docker and run ci/sql.sh up, or ci/sql.ps1 up on Windows, or set ESTATE_SQL; then run estate doctor.");
     }
 
@@ -161,7 +161,7 @@ public static class ScratchServer
 
     /// <summary>
     /// copy: resolved against .estate/copies.json alone: the row holding the name, on a server R15 clears against the posture as the verb
-    /// read it, which the scratch server this machine names must still be. A name the registry does not hold is refused before the
+    /// read it, which the local server this machine names must still be. A name the registry does not hold is refused before the
     /// posture is consulted.
     /// </summary>
     internal static Result<SqlServer.Copy> Registered(string estateRoot, CopyName name, Result<Environments> posture) => Registered(estateRoot, name, posture, Server, Resolved);
@@ -172,7 +172,7 @@ public static class ScratchServer
                 "Name a copy that " + Registry + " holds on this machine.")
             : posture.Bind(environments => Unnamed(environments, estateRoot, Kernel.ServerName.Of((string)row["server"]!, Environment.MachineName), resolve)).Bind(made => chosen().Bind(server => ServerName(server).Bind(now => now == made
                 ? Result.Ok(new SqlServer.Copy(name, server, estateRoot))
-                : new Error("copy.unregistered", new Target.RegisteredCopy(name) + " was made on another server than the scratch server this machine names now, so " + Registry + " holds no such copy here.",
+                : new Error("copy.unregistered", new Target.RegisteredCopy(name) + " was made on another server than the local server this machine names now, so " + Registry + " holds no such copy here.",
                     "Set ESTATE_SQL back to the server that made the copy, or make a new copy on this one.")))));
 
     /// <summary>
@@ -192,7 +192,7 @@ public static class ScratchServer
         {
             var addresses = new Lazy<HashSet<IPAddress>>(() => Addresses(server.Host, resolve));
             return compared.Where(e => e.Host == server.Host).Concat(compared.Where(e => e.Host != server.Host && Addresses(e.Host, resolve).Overlaps(addresses.Value))).FirstOrDefault() is { } named
-                ? new Error("copy.named-host", "The scratch server is on " + named.Host + ", the host " + named.Target + " runs on, and a copy is made only where no named environment lives.",
+                ? new Error("copy.named-host", "The local server is on " + named.Host + ", the host " + named.Target + " runs on, and a copy is made only where no named environment lives.",
                     "Point ESTATE_SQL at a local SQL Server, or unset it and run ci/sql.sh up (ci/sql.ps1 up on Windows).")
                 : Result.Ok(server);
         });

@@ -14,9 +14,9 @@ From M8, `cli/VERBS.md` is generated from it and never edited by hand.
 
 ## Try it in five minutes
 
-1. `estate doctor` names the .NET SDK, the DacFx pin, the scratch server (Docker or LocalDB) and
+1. `estate doctor` names the .NET SDK, the DacFx pin, the local server (Docker or LocalDB) and
    Git LFS, each with a remedy when it is missing.
-2. `estate synthetic-copy up` builds the repository's schema, publishes it to the scratch server
+2. `estate synthetic-copy up` builds the repository's schema, publishes it to the local server
    (SQL Server in Docker from the pinned image, or LocalDB where Docker is absent), generates rows
    from the committed evidence, and caches the result by fingerprint under `.estate/`. A second run
    starts from that cache.

@@ -16,14 +16,14 @@ namespace Estate.Io.Tests;
 /// The one path for the statements estate sends itself (R5 option A): every one of them, CREATE and DROP DATABASE and the catalog read
 /// for synonyms included, is in the run's queries.log with its site and its row count or failure; a command that runs past its timeout
 /// on an open connection is a timed-out statement, not a server that does not answer; an aggregate query over a synonym is refused;
-/// any failure carrying a SqlException is read by that exception's number; and a copy the server will not make, or a scratch server
+/// any failure carrying a SqlException is read by that exception's number; and a copy the server will not make, or a local server
 /// login the server refuses, leaves no row in the registry.
 /// </summary>
 public sealed class StatementTests : IDisposable
 {
     private readonly ScratchFolder folder = ScratchFolder.UnderRepository("statements-under-test");
 
-    /// <summary>An estate's root whose posture names no environment, so R15 clears the scratch server.</summary>
+    /// <summary>An estate's root whose posture names no environment, so R15 clears the local server.</summary>
     private string Root => SqlServerFixture.EstateRoot(folder.Path);
 
     public void Dispose() => folder.Dispose();
@@ -33,7 +33,7 @@ public sealed class StatementTests : IDisposable
     public async Task Every_statement_estate_sends_to_a_copy_is_in_the_run_s_log_with_its_site_and_row_count()
     {
         var log = SqlServer.QueryLog.Start(Root);
-        var copy = Value(ScratchServer.Create(Root, await SqlServerFixture.ServerAsync(), log));
+        var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync(), log));
         try
         {
             Value(SqlServer.Reach(copy, log));
@@ -41,7 +41,7 @@ public sealed class StatementTests : IDisposable
         }
         finally
         {
-            Value(ScratchServer.Drop(copy, log));
+            Value(LocalServer.Drop(copy, log));
         }
 
         Assert.Equal([("CREATE DATABASE", "0 rows"), ("VIEW DEFINITION", "1 row"), ("Synonyms: sys.objects Rows", "0 rows"), ("sys.objects Rows", "1 row"), ("DROP DATABASE", "0 rows")],
@@ -60,7 +60,7 @@ public sealed class StatementTests : IDisposable
     public async Task An_aggregate_query_past_its_timeout_is_measured_as_timed_out_and_the_server_still_answers()
     {
         var log = SqlServer.QueryLog.Start(Root);
-        var copy = Value(ScratchServer.Create(Root, await SqlServerFixture.ServerAsync()));
+        var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync()));
         try
         {
             var slow = Value(SqlServer.AggregateQuery.Of("SELECT SUM(CASE WHEN a.object_id = b.object_id OR c.object_id = d.object_id THEN 1 ELSE 0 END) "
@@ -74,7 +74,7 @@ public sealed class StatementTests : IDisposable
         }
         finally
         {
-            Value(ScratchServer.Drop(copy));
+            Value(LocalServer.Drop(copy));
         }
     }
 
@@ -88,7 +88,7 @@ public sealed class StatementTests : IDisposable
     public async Task An_aggregate_query_that_reads_a_synonym_is_refused_before_it_runs()
     {
         var log = SqlServer.QueryLog.Start(Root);
-        var copy = Value(ScratchServer.Create(Root, await SqlServerFixture.ServerAsync()));
+        var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync()));
         try
         {
             await SqlServerFixture.ExecuteAsync(copy.Connection, "CREATE TABLE dbo.Person (Id INT NOT NULL PRIMARY KEY); INSERT dbo.Person (Id) VALUES (1), (2); CREATE SYNONYM dbo.People FOR dbo.Person;");
@@ -102,20 +102,20 @@ public sealed class StatementTests : IDisposable
         }
         finally
         {
-            Value(ScratchServer.Drop(copy));
+            Value(LocalServer.Drop(copy));
         }
     }
 
     /// <summary>
     /// Finding R-5: a failure that carries a SqlException inside another exception is read by the SqlException's number, as a failure
-    /// DacFx wraps is; before the one statement path, the scratch server's CREATE and DROP caught a SqlException alone, and anything
+    /// DacFx wraps is; before the one statement path, the local server's CREATE and DROP caught a SqlException alone, and anything
     /// wrapping one escaped unread.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
     public async Task A_SqlException_inside_another_exception_is_read_by_its_number()
     {
-        var copy = Value(ScratchServer.Create(Root, await SqlServerFixture.ServerAsync()));
+        var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync()));
         try
         {
             var divided = await Assert.ThrowsAsync<SqlException>(() => SqlServerFixture.ScalarAsync(copy.Connection, "SELECT 1 / 0;"));
@@ -126,7 +126,7 @@ public sealed class StatementTests : IDisposable
         }
         finally
         {
-            Value(ScratchServer.Drop(copy));
+            Value(LocalServer.Drop(copy));
         }
     }
 
@@ -135,10 +135,10 @@ public sealed class StatementTests : IDisposable
     [Trait("Category", "fixture")]
     public async Task Dropping_a_copy_twice_is_no_error_and_leaves_no_row()
     {
-        var copy = Value(ScratchServer.Create(Root, await SqlServerFixture.ServerAsync()));
+        var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync()));
 
-        Value(ScratchServer.Drop(copy));
-        Value(ScratchServer.Drop(copy));
+        Value(LocalServer.Drop(copy));
+        Value(LocalServer.Drop(copy));
 
         Assert.False(await SqlServerFixture.ExistsAsync(copy.Name.ToString()), copy.Name + " outlived Drop");
         Assert.Empty(Registry());
@@ -155,25 +155,25 @@ public sealed class StatementTests : IDisposable
         await using var database = await SqlServerFixture.RegisterAsync();
         var reader = await ReadOnlyPrincipal.CreateAsync(database);
 
-        var error = Failed(ScratchServer.Create(Root, reader.ConnectionString), "server.denied");
+        var error = Failed(LocalServer.Create(Root, reader.ConnectionString), "server.denied");
 
         Assert.Contains("Msg 262", error.Message, StringComparison.Ordinal);
         Assert.Empty(Registry());
     }
 
     /// <summary>
-    /// The scratch server's own login refused, as after ~/.estate/sql.env names a password the container no longer has: a denial whose
+    /// The local server's own login refused, as after ~/.estate/sql.env names a password the container no longer has: a denial whose
     /// remedy names sql.env rather than a lead, and no row in the registry. On LocalDB, which authenticates Windows identities alone, a
     /// SQL login is refused as untrusted (Msg 18452), a denial too.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task A_scratch_server_login_the_server_refuses_names_sql_env_and_leaves_no_registry_row()
+    public async Task A_local_server_login_the_server_refuses_names_sql_env_and_leaves_no_registry_row()
     {
         var wrong = new PlantedValue("Wr0ng!planted#7f3a");
         var server = new SqlConnectionStringBuilder(await SqlServerFixture.ServerAsync()) { IntegratedSecurity = false, UserID = "estate_nobody", Password = wrong.Text }.ConnectionString;
 
-        var error = Failed(ScratchServer.Create(Root, server), "server.denied");
+        var error = Failed(LocalServer.Create(Root, server), "server.denied");
 
         Assert.Contains("sql.env", error.Remedy, StringComparison.Ordinal);
         wrong.AbsentFrom(error);

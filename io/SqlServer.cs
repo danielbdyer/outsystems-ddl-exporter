@@ -20,7 +20,7 @@ namespace Estate.Io;
 /// <summary>
 /// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4), and the one adapter to SQL Server and SqlClient: an
 /// argument read as a target (kernel/Target.cs); EnvironmentDatabase, the database of an environment estate/posture.json names, and Copy,
-/// a database io/ScratchServer made, which alone publishes (§2.1 rule 3); Query, the one path for the statements estate sends itself;
+/// a database io/LocalServer made, which alone publishes (§2.1 rule 3); Query, the one path for the statements estate sends itself;
 /// Database.ErrorOf, the one boundary every SqlClient or DacFx failure passes through, reading SQL Server's numbers once; Reach, what
 /// this identity may read there, asked before anything builds; and Measure, which runs an aggregate query its closed allowlist admits,
 /// every answer an integer. io/DacFx reads a database and plans against it. A resolved connection is never printed, logged or put in an error, and a named
@@ -107,10 +107,10 @@ public static class SqlServer
                 Category.Denied => new Error("server.denied", Target + " refused this identity (" + msg + ", SQL Server's message withheld)"
                     + (this is EnvironmentDatabase ? "; a lead's prediction will appear on the pull request." : "."), this is EnvironmentDatabase
                     ? "Ask a lead to predict for " + Target + ", or ask its DBA for VIEW DEFINITION and db_datareader there."
-                    : "Check the scratch server's login in ESTATE_SQL or ~/.estate/sql.env, then run estate doctor."),
+                    : "Check the local server's login in ESTATE_SQL or ~/.estate/sql.env, then run estate doctor."),
                 Category.Unreachable => new Error("server.unreachable", Target + " does not answer (" + msg + ", SQL Server's message withheld).", this is EnvironmentDatabase
                     ? "Check the network path to " + Target + "'s server and that it runs, then run estate doctor."
-                    : "Start the scratch server with ci/sql.sh up, or ci/sql.ps1 up on Windows, then run estate doctor."),
+                    : "Start the local server with ci/sql.sh up, or ci/sql.ps1 up on Windows, then run estate doctor."),
                 Category.TimedOut => new Error("server.timed-out", Target + " answered, and the statement ran past its timeout (" + msg + ", SQL Server's message withheld).",
                     "Run the step again when the server is less busy, or ask its DBA what holds the locks the statement waits on."),
                 _ => new Error("server.failed", Target + " failed the statement: " + msg + (Withheld ? "; SQL Server's message is withheld, since it can quote a row." : ": " + message),
@@ -172,8 +172,8 @@ public static class SqlServer
     }
 
     /// <summary>
-    /// A database io/ScratchServer made on the scratch server and recorded in .estate/copies.json (§2.1 rule 3): the one target that
-    /// publishes, and the one a Permissive profile is made for. Its constructor is io's, and only io/ScratchServer calls it.
+    /// A database io/LocalServer made on the local server and recorded in .estate/copies.json (§2.1 rule 3): the one target that
+    /// publishes, and the one a Permissive profile is made for. Its constructor is io's, and only io/LocalServer calls it.
     /// </summary>
     public sealed class Copy : Database
     {
@@ -187,7 +187,7 @@ public static class SqlServer
 
         internal override bool Withheld => false;
 
-        /// <summary>The pipeline's profile with the data-loss check off (§1 fact 10), made for this copy: the one maker of a Permissive profile.</summary>
+        /// <summary>The pipeline's profile with BlockOnPossibleDataLoss off (§1 fact 10), made for this copy: the one maker of a Permissive profile.</summary>
         public PublishProfile.Permissive Permissive(PublishProfile.Strict strict) => PublishProfile.Permissive.Of(strict);
 
         /// <summary>The package at <paramref name="dacpac"/> published to this copy under the profile's options, Strict or this copy's Permissive, through io/DacFx.Publish.</summary>
@@ -206,7 +206,7 @@ public static class SqlServer
     /// <summary>
     /// A target as a database, against estate/posture.json as the verb read it once (<paramref name="posture"/>, whose error counts only
     /// for a target that needs the posture): env: through the environment's connection reference; copy: through .estate/copies.json
-    /// alone, on a server R15 clears against the posture (io/ScratchServer). A git ref and a package are read as packages, and the
+    /// alone, on a server R15 clears against the posture (io/LocalServer). A git ref and a package are read as packages, and the
     /// synthetic copy is not in this build.
     /// </summary>
     public static Result<Database> Resolve(Target target, Result<Environments> posture, string estateRoot) => target.Match<Result<Database>>(
@@ -215,7 +215,7 @@ public static class SqlServer
             : new Error("target.unnamed", environment + " names no environment of " + Posture.Json + ".", environments.All.Count == 0
                 ? "Add the environment to " + Posture.Json + " with its host, connection reference and profile."
                 : "Name one it holds: " + string.Join(", ", environments.All.Select(e => e.Target)) + ".")),
-        copy => ScratchServer.Registered(estateRoot, copy.Name, posture).Map(c => (Database)c),
+        copy => LocalServer.Registered(estateRoot, copy.Name, posture).Map(c => (Database)c),
         () => new Error("synthetic-copy.not-built", "synthetic-copy names the synthetic copy, which is not in this build; this build reads env: and copy: databases.",
             "Name an env: or a copy: target; estate --help lists what this build runs."),
         reference => NotADatabase(reference),
@@ -620,7 +620,7 @@ public static class SqlServer
     /// <summary>
     /// Whether this run has read a connection or other reference of a named environment (VALUES.md X2), whose text an exception's message
     /// can then quote. SqlServer.Read records each read, and every one goes through it: EnvironmentDatabase.Of, which SqlServer.Resolve calls for env:;
-    /// R15's read of each environment's connection in io/ScratchServer, which copy: and a new copy run; and a named environment's SQLCMD values.
+    /// R15's read of each environment's connection in io/LocalServer, which copy: and a new copy run; and a named environment's SQLCMD values.
     /// cli/Program.cs begins a run around each command and withholds an unexpected exception's message when the run holds a read. The
     /// record reaches the threads the run's work starts (it is an AsyncLocal); a read outside any run is recorded nowhere, no catch
     /// reading it.
@@ -677,12 +677,12 @@ public static class SqlServer
     /// <summary>
     /// A copy's SQL Server (R1), which a claim on the copy records: the product version and the copy's compatibility level, read in one
     /// statement through <see cref="Query{T}"/>, and the digest of the image the estate-sql container runs, which Docker reports
-    /// (ScratchServer.Image). A named environment's server is read by S8, and nothing here reads it.
+    /// (LocalServer.Image). A named environment's server is read by S8, and nothing here reads it.
     /// </summary>
     public static Result<Server> ServerOf(Copy copy, QueryLog? log = null) =>
         Query(copy, new Statement("SQL Server", "SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128)), compatibility_level FROM sys.databases WHERE database_id = DB_ID();"), log,
                 rows => rows is [[string version, byte level]] ? (Version: version, Level: (int)level) : (Version: (string?)null, Level: 0))
-            .Bind(read => Server.Of(read.Version, read.Level, ScratchServer.Image(copy)));
+            .Bind(read => Server.Of(read.Version, read.Level, LocalServer.Image(copy)));
 
     /// <summary>
     /// Whether the target answers this identity with what reading it takes, before DacFx's own retries begin: a connection opens, and

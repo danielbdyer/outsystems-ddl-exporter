@@ -23,7 +23,7 @@ Updated 2026-09-25 by #704, during the pre-M2 pass the operator asked for.
   `AggregateQuery.Of` internal with synonyms refused, a server host per environment, check drift
   reusing a built dacpac with one database read, and the Extended Events test extended to a
   drifted check drift and `read --from env:dev`.
-- Spike S2 (the data-loss checks both DacFx releases emit, under `tests/Golden/`) before WP 2.2;
+- Spike S2 (the `BlockOnPossibleDataLoss` checks both DacFx releases emit, under `tests/Golden/`) before WP 2.2;
   spike S4 (a synthetic copy's restore timed in the container and in LocalDB) before WP 3.4.
 - Then M2, from WP 2.1 and WP 2.4, once the operator allows it.
 - Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's page cells, the

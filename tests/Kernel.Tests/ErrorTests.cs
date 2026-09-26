@@ -10,7 +10,7 @@ public sealed class ErrorTests
 {
     private static readonly Gen<ErrorCategory> Member = Gen.OneOfConst(Enum.GetValues<ErrorCategory>());
 
-    /// <summary>A word of the code grammar: runs of lowercase letters and digits joined by single hyphens, as scratch-server and too-long are.</summary>
+    /// <summary>A word of the code grammar: runs of lowercase letters and digits joined by single hyphens, as local-server and too-long are.</summary>
     private static readonly Gen<string> Word = Gen.Char["az09"].Array[1, 3].Select(cs => new string(cs)).Array[1, 3].Select(runs => string.Join('-', runs));
 
     /// <summary>A member's word, then one to three words of detail: every code the grammar admits under a category the set holds.</summary>
@@ -55,11 +55,11 @@ public sealed class ErrorTests
     [InlineData("name.too--long")]
     [InlineData("name.blank\n")]
     [InlineData("\nname.blank")]
-    [InlineData("Scratch-Server.missing")]
+    [InlineData("Local-Server.missing")]
     [InlineData("scratch--server.missing")]
     [InlineData("-scratch.missing")]
-    [InlineData("scratch-server.")]
-    [InlineData("scratch-server")]
+    [InlineData("local-server.")]
+    [InlineData("local-server")]
     public void An_error_code_is_a_category_and_a_detail_in_lowercase_words(string code) =>
         Assert.Throws<ArgumentException>("code", () => new Error(code, "Failed.", "Do the other thing."));
 
@@ -85,6 +85,6 @@ public sealed class ErrorTests
         Assert.All(members, m => Assert.Equal(m, ErrorCode.Parse(ErrorCode.Text(m))));
         Assert.Equal(members.Length, members.Select(ErrorCode.Text).Distinct(StringComparer.Ordinal).Count());
         Assert.All(members, m => Assert.Matches(ErrorCode.Pattern, ErrorCode.Text(m) + ".x"));
-        Assert.Equal(("scratch-server", "dacfx", "git-branch"), (ErrorCode.Text(ErrorCategory.ScratchServer), ErrorCode.Text(ErrorCategory.DacFx), ErrorCode.Text(ErrorCategory.GitBranch)));
+        Assert.Equal(("local-server", "dacfx", "git-branch"), (ErrorCode.Text(ErrorCategory.LocalServer), ErrorCode.Text(ErrorCategory.DacFx), ErrorCode.Text(ErrorCategory.GitBranch)));
     }
 }

@@ -55,7 +55,7 @@ public sealed class PublishProfilesTests : IDisposable
 
         Assert.Equal(["dev", "prod", "qa", "uat"], posture.All.Select(e => e.Name.ToString()));
         Assert.Equal(["dev-sql.corp.example", "prod-sql.corp.example", "qa-sql.corp.example", "uat-sql.corp.example"], posture.All.Select(e => e.Host.ToString()));
-        Assert.Equal(("docker", (string?)"project/profiles/pipeline.publish.xml"), (posture.ScratchServer?.ToString(), posture.SharedProfile?.ToString()));
+        Assert.Equal(("docker", (string?)"project/profiles/pipeline.publish.xml"), (posture.LocalServer?.ToString(), posture.SharedProfile?.ToString()));
         Assert.Equal("env:dev (synthetic, confirmed by the dev lead on 2026-09-20)", dev.ToString());
         Assert.Equal(["env:prod (real)", "env:qa (real)", "env:uat (real)"], posture.All.Where(e => e != dev).Select(e => e.ToString()));
         Assert.Equal(["developers", "leads"], dev.ReaderGroups);
@@ -113,7 +113,7 @@ public sealed class PublishProfilesTests : IDisposable
         Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
     }
 
-    /// <summary>§4 row 14: beside its environments, the posture holds the scratch server preference, docker or localdb and nothing else.</summary>
+    /// <summary>§4 row 14: beside its environments, the posture holds the local server preference, docker or localdb and nothing else.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("\"docker\"", null)]
@@ -121,8 +121,8 @@ public sealed class PublishProfilesTests : IDisposable
     [InlineData("\"Docker\"", "posture.malformed")]
     [InlineData("\"podman\"", "posture.malformed")]
     [InlineData("true", "posture.malformed")]
-    public void The_scratch_server_preference_is_docker_or_localdb(string preference, string? code) =>
-        Assert.Equal(code, Posture.Environments(Estate("{ \"environments\": {}, \"scratchServer\": " + preference + " }", raw: true)).Match<string?>(_ => null, r => r.Code));
+    public void The_local_server_preference_is_docker_or_localdb(string preference, string? code) =>
+        Assert.Equal(code, Posture.Environments(Estate("{ \"environments\": {}, \"localServer\": " + preference + " }", raw: true)).Match<string?>(_ => null, r => r.Code));
 
     [Theory]
     [Trait("Category", "fast")]

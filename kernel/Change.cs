@@ -24,7 +24,7 @@ public sealed record Rename(ElementKey Before, ElementKey After) : IComparable<R
 }
 
 /// <summary>
-/// What changes between two models, for every element type io/Ssdt.Elements reads, the deploy scripts and the refactorlog
+/// What changes between two models, for every element type io/Ssdt.ReadModel reads, the deploy scripts and the refactorlog
 /// entries included: the elements created and dropped, the renames, and each element in both models that is altered,
 /// property by property and relationship by relationship. An element continues under its own key, or under the key a
 /// rename gives it or one of its ancestors; so a renamed table's columns and indexes move with it, a column renamed in

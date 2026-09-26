@@ -97,7 +97,7 @@ public sealed class ContractTests
 
     /// <summary>
     /// Finding X-1: the committed schemas carry the kernel's one code pattern as a finding's code, so an error whose category is
-    /// hyphenated, as scratch-server is, answers with an envelope that validates against the envelope's schema and its verb's; and over
+    /// hyphenated, as local-server is, answers with an envelope that validates against the envelope's schema and its verb's; and over
     /// generated codes and their near misses (a capital, a space, a line break, a doubled or stray dot or hyphen), the kernel's pattern
     /// admits a code exactly when the envelope's schema admits it as a finding's. A code the pattern admits is still refused by the kernel
     /// when its category names no member.
@@ -106,7 +106,7 @@ public sealed class ContractTests
     [Trait("Category", "fast")]
     public void The_schemas_admit_exactly_the_codes_the_kernel_s_pattern_admits_a_hyphenated_category_included()
     {
-        var answer = Render.Json(Contract.Failed(Contract.Verbs.Single(v => v.Name == "read"), new Kernel.Error("scratch-server.missing", "No SQL Server answers for copies.", "Run ci/sql.sh up.")));
+        var answer = Render.Json(Contract.Failed(Contract.Verbs.Single(v => v.Name == "read"), new Kernel.Error("local-server.missing", "No SQL Server answers for copies.", "Run ci/sql.sh up.")));
         AssertValid("estate.read.1.schema.json", answer);
         AssertValid("estate.envelope.1.schema.json", answer);
 
@@ -282,7 +282,7 @@ public sealed class ContractTests
 
     /// <summary>
     /// VALUES.md X2 at the top-level catch, for M2's predict and M6's check environments, which read environments without an env: argument:
-    /// a verb that resolves env:dev (through EnvironmentDatabase.Of) or a copy (through R15's read of dev's connection in io/ScratchServer) and then throws has
+    /// a verb that resolves env:dev (through EnvironmentDatabase.Of) or a copy (through R15's read of dev's connection in io/LocalServer) and then throws has
     /// its exception's message withheld, its type alone printed; one that resolves a git ref reads no environment and keeps the message.
     /// </summary>
     [Theory]
@@ -452,13 +452,13 @@ public sealed class ContractTests
     }
 
     /// <summary>
-    /// §4 row 15, through the contract's own types: an answer at exit 3 names what blocked it, the data-loss check or a constraint
-    /// violation, written as data-loss-check and constraint-violation; one at exit 3 naming nothing, or at another exit naming
+    /// §4 row 15, through the contract's own types: an answer at exit 3 names what blocked it, BlockOnPossibleDataLoss or a constraint
+    /// violation, written as block-on-possible-data-loss and constraint-violation; one at exit 3 naming nothing, or at another exit naming
     /// something, cannot be constructed, and the schema refuses the same answers written by hand.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData(BlockedBy.DataLossCheck, "data-loss-check")]
+    [InlineData(BlockedBy.BlockOnPossibleDataLoss, "block-on-possible-data-loss")]
     [InlineData(BlockedBy.ConstraintViolation, "constraint-violation")]
     public void A_blocking_answer_names_what_blocked_it_exactly_at_exit_3(BlockedBy blockedBy, string written)
     {
@@ -525,13 +525,13 @@ public sealed class ContractTests
         Assert.Contains(" | dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED) | ", line, StringComparison.Ordinal);
         Assert.DoesNotMatch(@"\bM\d\b", line);
         var findings = json["findings"]!.AsArray().Select(f => ((string)f!["code"]!, (string)f["severity"]!, (string?)f["remedy"])).ToList();
-        Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.git", "doctor.scratch-server", "doctor.lfs"], findings.Select(f => f.Item1));
+        Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.git", "doctor.local-server", "doctor.lfs"], findings.Select(f => f.Item1));
         Assert.Equal(checks.Where(c => c.Remedy is not null).Select(c => c.Remedy), findings.Select(f => f.Item3));
         Assert.All(findings, f => Assert.Equal("error", f.Item2));
         Assert.Equal(checks.Select(c => c.Item.Name), json["checks"]!.AsArray().Select(c => (string)c!["item"]!));
     }
 
-    /// <summary>WP 1.7's doctor with every item present: READY and exit 0, naming the SDK and runtime, the tool and its DacFx against the ledger, the build route, the scratch server and LFS.</summary>
+    /// <summary>WP 1.7's doctor with every item present: READY and exit 0, naming the SDK and runtime, the tool and its DacFx against the ledger, the build route, the local server and LFS.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Doctor_with_every_item_present_prints_READY_and_exits_0()
@@ -561,7 +561,7 @@ public sealed class ContractTests
         AssertValid("estate.doctor.1.schema.json", json);
         Assert.Equal((0, "ready"), (answer.Exit, answer.Outcome.Word));
         Assert.Equal("estate doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED) | build=dotnet with the tool folder's targets"
-            + " | git=2.31.1 | scratch-server=estate-sql container (localhost,11433) | image=present | lfs=git-lfs/3.4.0", answer.Message);
+            + " | git=2.31.1 | local-server=estate-sql container (localhost,11433) | image=present | lfs=git-lfs/3.4.0", answer.Message);
         Assert.Empty(answer.Findings);
         Assert.Equal((DacFx.Version.Match(v => v.ToString(), e => e.Message), "UNPINNED", null), ((string?)json["dacfx"], (string?)json["pin"], json["server"]));
     }
@@ -609,13 +609,13 @@ public sealed class ContractTests
             ["outcome ties to its exits: in-sync at 0 alone"] = (WithOutcome("in-sync", 0), WithOutcome("in-sync", 5)),
             ["outcome ties to its exits: ready at 0 and degraded at 6"] = (WithOutcome("degraded", 6), WithOutcome("ready", 6)),
             ["the message is present"] = (a => a["message"] = "estate 3.0.0", a => a["message"] = ""),
-            ["exit 3 names what blocked it"] = (WithBlocked("data-loss-check"), WithBlocked(null)),
-            ["what blocked it is the data-loss check or a constraint violation"] = (WithBlocked("constraint-violation"), WithBlocked("guard")),
-            ["no other exit names what blocked it"] = (_ => { }, a => a["blockedBy"] = "data-loss-check"),
+            ["exit 3 names what blocked it"] = (WithBlocked("block-on-possible-data-loss"), WithBlocked(null)),
+            ["what blocked it is BlockOnPossibleDataLoss or a constraint violation"] = (WithBlocked("constraint-violation"), WithBlocked("guard")),
+            ["no other exit names what blocked it"] = (_ => { }, a => a["blockedBy"] = "block-on-possible-data-loss"),
             ["an answer says what blocked it, as null when the data did not block"] = (_ => { }, a => a.Remove("blockedBy")),
             ["a finding's severity is error, warning or note"] = (Finds(1, "note", remedy: null), Finds(1, "warn", remedy: null)),
             ["a finding of severity error carries a remedy"] = (Finds(1, "warning", remedy: null), Finds(1, "error", remedy: null)),
-            ["a finding's code is in the one code pattern"] = (Finds(1, "note", code: "scratch-server.missing"), Finds(1, "note", code: "Scratch-Server.missing")),
+            ["a finding's code is in the one code pattern"] = (Finds(1, "note", code: "local-server.missing"), Finds(1, "note", code: "Local-Server.missing")),
             ["an answer that names its whole file was cut"] = (WithCut(true, ".estate/runs/20260925T101502Z-4242-0a1b/answer.json"), WithCut(false, ".estate/runs/20260925T101502Z-4242-0a1b/answer.json")),
             ["an answer that was not cut names no file"] = (WithCut(false, null), WithCut(true, ".estate/runs/x/queries.log")),
             ["the whole file is the run's answer.json"] = (WithCut(true, ".estate/runs/20260925T101502Z-4242-0a1b/answer.json"), WithCut(true, "answer.json")),
@@ -696,14 +696,14 @@ public sealed class ContractTests
     };
 
     /// <summary>An answer at <paramref name="exit"/> with one finding of <paramref name="severity"/> and <paramref name="code"/>, or with none when the severity is null; the outcome follows the exit.</summary>
-    private static Action<JsonObject> Finds(int exit, string? severity, string? remedy = null, string code = "data-loss-check.rows-present") => answer =>
+    private static Action<JsonObject> Finds(int exit, string? severity, string? remedy = null, string code = "block-on-possible-data-loss.rows-present") => answer =>
     {
         answer["exit"] = exit;
         answer["outcome"] = exit switch { 0 => "done", 1 => "bad-arguments", 2 => "unparsed-input", 4 => "unreachable", 6 => "configuration-refused", 7 => "build-failed", 9 => "refused-by-name", var other => (string?)answer["outcome"] ?? "done" };
         answer["findings"] = severity is null ? new JsonArray() : new JsonArray(new JsonObject
         {
             ["code"] = code, ["severity"] = severity, ["subject"] = "dbo.Customer.Email",
-            ["message"] = "The data-loss check stopped the publish: the table has rows.", ["remedy"] = remedy,
+            ["message"] = "BlockOnPossibleDataLoss stopped the publish: the table has rows.", ["remedy"] = remedy,
         });
     };
 

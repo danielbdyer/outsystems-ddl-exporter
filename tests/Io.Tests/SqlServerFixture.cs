@@ -13,7 +13,7 @@ namespace Estate.Io.Tests;
 
 /// <summary>
 /// One SQL Server per test run, and a registered database per test, estate_&lt;host&gt;_&lt;pid&gt;_&lt;rand&gt;, dropped after it, so
-/// concurrent runs and agents sharing a server never collide. The server is io/ScratchServer's (WP 1.4): ESTATE_SQL when set; else,
+/// concurrent runs and agents sharing a server never collide. The server is io/LocalServer's (WP 1.4): ESTATE_SQL when set; else,
 /// where docker info answers, the estate-sql container that ci/sql.sh up (ci/sql.ps1 up on Windows) pulls and starts, reached
 /// through ~/.estate/sql.env; else LocalDB's MSSQLLocalDB. With none, every fixture test fails with the remedy; the fixture lane
 /// never skips. Every login made for a database is named after it, &lt;database&gt;_&lt;role&gt;, and is dropped with it.
@@ -40,7 +40,7 @@ public static class SqlServerFixture
 
     private static readonly Lazy<Task<string>> Master = new(ChooseAsync);
 
-    /// <summary>The run's SQL Server, master as its catalog: where io/ScratchServer makes the fixture tests' copies.</summary>
+    /// <summary>The run's SQL Server, master as its catalog: where io/LocalServer makes the fixture tests' copies.</summary>
     public static Task<string> ServerAsync() => Master.Value;
 
     public static async Task<RegisteredDatabase> RegisterAsync()
@@ -51,7 +51,7 @@ public static class SqlServerFixture
         return new RegisteredDatabase(name, new SqlConnectionStringBuilder(master) { InitialCatalog = name, Pooling = false }.ConnectionString, master);
     }
 
-    /// <summary>An estate's root for the copies a test makes: the folder given, its estate/posture.json naming no environment, so R15 reads it and clears the scratch server.</summary>
+    /// <summary>An estate's root for the copies a test makes: the folder given, its estate/posture.json naming no environment, so R15 reads it and clears the local server.</summary>
     public static string EstateRoot(string folder)
     {
         Directory.CreateDirectory(Path.Combine(folder, "estate"));
@@ -76,13 +76,13 @@ public static class SqlServerFixture
         ReadOnlyPrincipal.Forget(name);
     }
 
-    /// <summary>io/ScratchServer's choice, once the fixture has started what it chooses: the container when docker info answers, else LocalDB's instance.</summary>
+    /// <summary>io/LocalServer's choice, once the fixture has started what it chooses: the container when docker info answers, else LocalDB's instance.</summary>
     private static async Task<string> ChooseAsync()
     {
         var given = Environment.GetEnvironmentVariable("ESTATE_SQL");
         var docker = string.IsNullOrEmpty(given) && new Command("docker", ["info"], TimeSpan.FromSeconds(30)).Run() is Ran.Exited { Code: 0 } && Up();
         var localDb = string.IsNullOrEmpty(given) && !docker && new Command("sqllocaldb", ["start", "MSSQLLocalDB"], TimeSpan.FromMinutes(2)).Run() is Ran.Exited { Code: 0 };
-        var chosen = ScratchServer.Server(given, docker ? ScratchServer.SqlEnv : "", localDb).Match(server => server, _ => throw new InvalidOperationException(NoServer));
+        var chosen = LocalServer.Server(given, docker ? LocalServer.SqlEnv : "", localDb).Match(server => server, _ => throw new InvalidOperationException(NoServer));
         var master = new SqlConnectionStringBuilder(chosen) { InitialCatalog = "master", ApplicationName = "estate-tests", TrustServerCertificate = true, ConnectTimeout = 60 }.ConnectionString;
         try
         {
@@ -108,9 +108,9 @@ public static class SqlServerFixture
         }
 
         // Finding NFR-13: the scripts leave the SA password readable by its owner alone, mode 0600; Windows keeps no such mode.
-        if (!OperatingSystem.IsWindows() && File.GetUnixFileMode(ScratchServer.SqlEnv) is var mode && mode != (UnixFileMode.UserRead | UnixFileMode.UserWrite))
+        if (!OperatingSystem.IsWindows() && File.GetUnixFileMode(LocalServer.SqlEnv) is var mode && mode != (UnixFileMode.UserRead | UnixFileMode.UserWrite))
         {
-            throw new InvalidOperationException(ScratchServer.SqlEnv + " is mode " + Convert.ToString((int)mode, 8) + " after ci/sql up, and the SA password it holds is read by its owner alone (0600).");
+            throw new InvalidOperationException(LocalServer.SqlEnv + " is mode " + Convert.ToString((int)mode, 8) + " after ci/sql up, and the SA password it holds is read by its owner alone (0600).");
         }
 
         return true;
@@ -127,8 +127,8 @@ public static class SqlServerFixture
         await using var reader = await list.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            // A registered database is named as io/ScratchServer names a copy (CopyName.Make), so one sweep serves both.
-            if (CopyName.Of("a database on the scratch server", reader.GetString(0)) is Result<CopyName>.Ok(var named) && named.Machine == Machine && !Running(named.Pid))
+            // A registered database is named as io/LocalServer names a copy (CopyName.Make), so one sweep serves both.
+            if (CopyName.Of("a database on the local server", reader.GetString(0)) is Result<CopyName>.Ok(var named) && named.Machine == Machine && !Running(named.Pid))
             {
                 await DropAsync(master, reader.GetString(0));
             }
@@ -152,8 +152,8 @@ public static class SqlServerFixture
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
-        // The fixture creates and drops databases while other test classes do the same; it waits as long as io/ScratchServer does.
-        await using var command = new SqlCommand(sql, connection) { CommandTimeout = ScratchServer.DatabaseStatementSeconds };
+        // The fixture creates and drops databases while other test classes do the same; it waits as long as io/LocalServer does.
+        await using var command = new SqlCommand(sql, connection) { CommandTimeout = LocalServer.DatabaseStatementSeconds };
         foreach (var (parameter, value) in parameters.Concat(name is null ? [] : [("@name", name)]))
         {
             command.Parameters.Add(new SqlParameter(parameter, System.Data.SqlDbType.NVarChar, 128) { Value = value });

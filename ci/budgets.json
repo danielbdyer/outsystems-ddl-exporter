@@ -33,7 +33,7 @@
       ]
     },
     "io": {
-      "about": "code: everything that touches SQL Server, DacFx, git, Docker and files. plannedFiles names files within io/, matched by file name; ScratchServer.cs and Json.cs each appear twice, once per milestone that grows them.",
+      "about": "code: everything that touches SQL Server, DacFx, git, Docker and files. plannedFiles names files within io/, matched by file name; LocalServer.cs and Json.cs each appear twice, once per milestone that grows them.",
       "include": ["io/**/*.cs"],
       "exclude": [],
       "ceiling": 6400,
@@ -42,10 +42,10 @@
         { "files": ["Write.cs", "Json.cs"], "what": "and the telemetry opt-out", "lines": 250, "milestones": ["M0"] },
         { "files": ["Ssdt.cs"], "what": "build, load, read into elements with scripts and refactorlog, refactorlog read", "lines": 400, "milestones": ["M1"] },
         { "files": ["SqlServer.cs"], "what": "targets, the registry-bound Copy, model, plan, Measure, allowlist, withheld messages", "lines": 700, "milestones": ["M1"] },
-        { "files": ["ScratchServer.cs"], "what": "minimal: create, register, drop", "lines": 60, "milestones": ["M1"] },
+        { "files": ["LocalServer.cs"], "what": "minimal: create, register, drop", "lines": 60, "milestones": ["M1"] },
         { "files": ["Profiles.cs", "Git.cs", "Doctor.cs"], "what": "Profiles.cs: options only; SQLCMD sensitivity", "lines": 440, "milestones": ["M1"] },
-        { "files": ["AggregateQueries.cs", "Predict.cs"], "what": "and the data-loss-check reader, the machine block's parser", "lines": 690, "milestones": ["M2"] },
-        { "files": ["ScratchServer.cs", "SyntheticCopy.cs", "Realize.cs", "Profile.cs"], "what": "ScratchServer.cs completed", "lines": 1450, "milestones": ["M3"] },
+        { "files": ["AggregateQueries.cs", "Predict.cs"], "what": "and the BlockOnPossibleDataLoss reader, the machine block's parser", "lines": 690, "milestones": ["M2"] },
+        { "files": ["LocalServer.cs", "SyntheticCopy.cs", "Realize.cs", "Profile.cs"], "what": "LocalServer.cs completed", "lines": 1450, "milestones": ["M3"] },
         { "files": ["Prove.cs", "RefactorLog.cs"], "what": null, "lines": 550, "milestones": ["M4"] },
         { "files": ["Gate.cs", "Vendor.cs", "Json.cs"], "what": "Json.cs additions", "lines": 670, "milestones": ["M5"] },
         { "files": ["Ossys.cs"], "what": "the allowlist; and the page's commit and deployments.md", "lines": 370, "milestones": ["M6"] },
@@ -78,7 +78,7 @@
       "plannedByMilestone": { "M0": 2491, "M1": 5302, "M2": 1984, "M3": 3510, "M4": 2441, "M5": 1831, "M6": 1068, "M7": 1373 }
     },
     "golden": {
-      "about": "the corpus under tests/Golden/: data, every file, held as V3_ARCHITECTURE.md section 6.5 sets it; S2 contributes the extracted data-loss checks, never whole scripts.",
+      "about": "the corpus under tests/Golden/: data, every file, held as V3_ARCHITECTURE.md section 6.5 sets it; S2 contributes the extracted BlockOnPossibleDataLoss checks, never whole scripts.",
       "include": ["tests/Golden/**"],
       "exclude": [],
       "ceiling": 3000,

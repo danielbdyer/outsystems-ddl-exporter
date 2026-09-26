@@ -22,7 +22,7 @@ SELECT MAX(LEN(Email)) FROM dbo.Customer;
 SELECT MIN(DATALENGTH(ContactPhone)) FROM dbo.Customer;
 === admit: MAX over DATALENGTH
 SELECT MAX(DATALENGTH(Email)) FROM dbo.Customer;
-=== admit: CASE WHEN EXISTS, the data-loss check's predicate as DacFx writes it
+=== admit: CASE WHEN EXISTS, BlockOnPossibleDataLoss's predicate as DacFx writes it
 SELECT CASE WHEN EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer]) THEN 1 ELSE 0 END;
 === admit: an integer literal
 SELECT 1;

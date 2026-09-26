@@ -15,7 +15,7 @@ public enum DacFxMessageType
 /// <summary>
 /// One message DacFx writes, in the form it gives each in an exception's text, <c>Error SQL71501: [dbo].[V] has an unresolved reference
 /// to object [dbo].[Missing].</c>: its type, its prefix (SQL) and number, its text, and the element type it concerns where DacFx names one.
-/// A message that quotes a SQL Server error, as SQL72014 quotes the data-loss check's Msg 50000, carries that error's number in
+/// A message that quotes a SQL Server error, as SQL72014 quotes BlockOnPossibleDataLoss's Msg 50000, carries that error's number in
 /// <see cref="SqlServerNumber"/>, read once from the text, so the SQL Server adapter can classify it as it does a SqlException's.
 /// </summary>
 public sealed record DacFxMessage : IComparable<DacFxMessage>

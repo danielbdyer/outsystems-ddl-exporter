@@ -16,7 +16,7 @@ namespace Estate.Io;
 /// <summary>
 /// Can this machine do the work, read-only (V3_ARCHITECTURE.md §8.12): the .NET SDK in the band global.json names and the .NET 10 runtime;
 /// git at 2.24 or later (rev-parse --end-of-options); the committed tool folder and its DacFx against the estate's toolchain ledger; the
-/// build route; the scratch server estate would use, in ScratchServer's order (ESTATE_SQL, the estate-sql container, LocalDB), with the
+/// build route; the local server estate would use, in LocalServer's order (ESTATE_SQL, the estate-sql container, LocalDB), with the
 /// Docker-specific cause when none applies; the pinned SQL Server image and the container's; and Git LFS. Each item missing carries its
 /// remedy. Every program runs through io/Command for at most <see cref="ProgramTimeout"/>, and a program that does not answer in time is
 /// named as such, never as absent. The machine is read once (<see cref="Machine.Here"/>) and given to <see cref="Examine"/>, so a test
@@ -24,7 +24,7 @@ namespace Estate.Io;
 /// </summary>
 public static class Doctor
 {
-    /// <summary>The scratch server's image, pinned by tag and digest (§1 fact 12); ci/sql.sh and ci/sql.ps1 run the same one.</summary>
+    /// <summary>The local server's image, pinned by tag and digest (§1 fact 12); ci/sql.sh and ci/sql.ps1 run the same one.</summary>
     public const string SqlServerImage = "mcr.microsoft.com/mssql/server:2022-latest@sha256:4402d880dd4c34bfa7d8705e56a86cd6c88da80a1f6bbbe741f999e76264a090";
 
     /// <summary>The container ci/sql.sh and ci/sql.ps1 run the pinned image as.</summary>
@@ -59,7 +59,7 @@ public static class Doctor
             new(AppContext.BaseDirectory, toolVariable, workingDirectory, Environment.GetEnvironmentVariable("ESTATE_SQL"), LocalState.UserSqlEnv, Environment.Version);
     }
 
-    /// <summary>An item the doctor examines, one of a closed set, written as the envelope names it (sdk, scratch-server).</summary>
+    /// <summary>An item the doctor examines, one of a closed set, written as the envelope names it (sdk, local-server).</summary>
     public sealed class Item
     {
         public static readonly Item Sdk = new("sdk");
@@ -68,7 +68,7 @@ public static class Doctor
         public static readonly Item DacFx = new("dacfx");
         public static readonly Item Build = new("build");
         public static readonly Item Git = new("git");
-        public static readonly Item ScratchServer = new("scratch-server");
+        public static readonly Item LocalServer = new("local-server");
         public static readonly Item Image = new("image");
         public static readonly Item Lfs = new("lfs");
 
@@ -99,7 +99,7 @@ public static class Doctor
             Committed(Posture.Root(machine.WorkingDirectory), version),
             sdk.Remedy is null && tool.Remedy is null ? new(Item.Build, "dotnet with the tool folder's targets", null) : new(Item.Build, "none", "Install what the sdk and tool items name, then run estate doctor."),
             GitVersion(run, cancel),
-            ScratchServerChoice(machine, docker, run, cancel),
+            LocalServerChoice(machine, docker, run, cancel),
             Image(machine, docker, run, cancel),
             lfs is null ? new(Item.Lfs, "absent", "Install Git LFS and run git lfs install; the estate keeps its tool folder in Git LFS.") : new(Item.Lfs, lfs, null),
         ];
@@ -243,11 +243,11 @@ public static class Doctor
     };
 
     /// <summary>
-    /// The scratch server estate would use, in io/ScratchServer's order: ESTATE_SQL's server; the estate-sql container ~/.estate/sql.env names,
+    /// The local server estate would use, in io/LocalServer's order: ESTATE_SQL's server; the estate-sql container ~/.estate/sql.env names,
     /// which needs Docker answering; LocalDB's default instance. With none, the Docker-specific cause: not installed, its daemon not
     /// answering, docker info past its timeout, or no sql.env because ci/sql.sh up never ran.
     /// </summary>
-    private static Prerequisite ScratchServerChoice(Machine machine, Ran? docker, Runner run, CancellationToken cancel)
+    private static Prerequisite LocalServerChoice(Machine machine, Ran? docker, Runner run, CancellationToken cancel)
     {
         var (dockerAnswers, dockerCause) = docker switch
         {
@@ -257,16 +257,16 @@ public static class Doctor
             Ran.TimedOut => (false, "docker info did not answer in " + Command.Written(ProgramTimeout) + ": restart Docker, then run estate doctor."),
             _ => (false, "Install Docker, or use SQL Server Express LocalDB on Windows, then run estate doctor."),
         };
-        var localDb = machine.EstateSql is { Length: > 0 } || ScratchServer.Server(null, machine.SqlEnv ?? "", localDb: false) is Result<string>.Ok || !LocalDbInstalled(run, cancel) ? false : true;
-        return ScratchServer.Server(machine.EstateSql, machine.SqlEnv ?? "", localDb).Bind(server => ScratchServer.ServerName(server).Map(name => (Server: server, Name: name))).Match(
-            chosen => machine.EstateSql is { Length: > 0 } ? new Prerequisite(Item.ScratchServer, "ESTATE_SQL (" + chosen.Name + ")", null)
-                : localDb ? new Prerequisite(Item.ScratchServer, "LocalDB MSSQLLocalDB, CDC not provable here", null)
-                : new Prerequisite(Item.ScratchServer, Container + " container (" + chosen.Name + ")", dockerAnswers ? null : dockerCause),
-            error => new Prerequisite(Item.ScratchServer, "none: " + (dockerAnswers ? "Docker answers, and " + (machine.SqlEnv ?? "~/.estate/sql.env") + " names no container" : "Docker does not answer") + ", ESTATE_SQL is unset and LocalDB is not installed",
+        var localDb = machine.EstateSql is { Length: > 0 } || LocalServer.Server(null, machine.SqlEnv ?? "", localDb: false) is Result<string>.Ok || !LocalDbInstalled(run, cancel) ? false : true;
+        return LocalServer.Server(machine.EstateSql, machine.SqlEnv ?? "", localDb).Bind(server => LocalServer.ServerName(server).Map(name => (Server: server, Name: name))).Match(
+            chosen => machine.EstateSql is { Length: > 0 } ? new Prerequisite(Item.LocalServer, "ESTATE_SQL (" + chosen.Name + ")", null)
+                : localDb ? new Prerequisite(Item.LocalServer, "LocalDB MSSQLLocalDB, CDC not provable here", null)
+                : new Prerequisite(Item.LocalServer, Container + " container (" + chosen.Name + ")", dockerAnswers ? null : dockerCause),
+            error => new Prerequisite(Item.LocalServer, "none: " + (dockerAnswers ? "Docker answers, and " + (machine.SqlEnv ?? "~/.estate/sql.env") + " names no container" : "Docker does not answer") + ", ESTATE_SQL is unset and LocalDB is not installed",
                 dockerAnswers ? "Run ci/sql.sh up, or ci/sql.ps1 up on Windows, which creates the " + Container + " container, then run estate doctor." : dockerCause ?? error.Remedy));
     }
 
-    /// <summary>The pinned image, when Docker is the scratch server: present or absent; and the estate-sql container, when it exists, made from that image and no other.</summary>
+    /// <summary>The pinned image, when Docker is the local server: present or absent; and the estate-sql container, when it exists, made from that image and no other.</summary>
     private static Prerequisite Image(Machine machine, Ran? docker, Runner run, CancellationToken cancel) =>
         machine.EstateSql is { Length: > 0 } ? new(Item.Image, "not needed: ESTATE_SQL names the server", null)
         : docker is not Ran.Exited { Code: 0 } ? new(Item.Image, "not needed without Docker", null)

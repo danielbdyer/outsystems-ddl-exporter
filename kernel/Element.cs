@@ -7,7 +7,7 @@ using System.Linq;
 namespace Estate.Kernel;
 
 /// <summary>
-/// A property's value as io/Ssdt.Elements reads it from DacFx: a boolean, an integer, a string, an enumeration's member with
+/// A property's value as io/Ssdt.ReadModel reads it from DacFx: a boolean, an integer, a string, an enumeration's member with
 /// its enumeration type, T-SQL text DacFx holds as a script (a module's definition, a default's or a check's expression, a deploy
 /// script), or null. The cases are closed. A script is kept as written, so a change confined to a password literal is a change
 /// (law 3′); the value a password form sets is left out where text leaves the tool, never here (decision 2.27). Equality and order
@@ -150,7 +150,7 @@ public sealed record ElementKey : IComparable<ElementKey>
 }
 
 /// <summary>
-/// One object of a model, as io/Ssdt.Elements reads it from DacFx for every consumer: its key, its properties as
+/// One object of a model, as io/Ssdt.ReadModel reads it from DacFx for every consumer: its key, its properties as
 /// (name, value) and its relationships as (name, the target keys in DacFx's order), each sorted by name, so the order
 /// DacFx gives them in never matters. A relationship with no target is no relationship. The deploy scripts and the
 /// refactorlog entries are elements too, each of its own type. A SortedArray of elements, sorted by key, is a model.

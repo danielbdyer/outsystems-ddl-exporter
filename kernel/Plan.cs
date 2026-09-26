@@ -9,7 +9,7 @@ namespace Estate.Kernel;
 /// <summary>
 /// A deploy report as DacFx writes one for a plan (DacServices.Script's DeploymentReport): the operations the plan holds, each on one
 /// element, and the alerts it raises about the data. A report with no operation is the empty deploy plan: the target matches the package
-/// (N18). io/DacFx.Report reads DacFx's XML into it, keying each item as io/Ssdt.Elements keys the element.
+/// (N18). io/DacFx.Report reads DacFx's XML into it, keying each item as io/Ssdt.ReadModel keys the element.
 /// </summary>
 public sealed record DeployReport(SortedArray<PlanOperation> Operations, SortedArray<PlanAlert> Alerts)
 {

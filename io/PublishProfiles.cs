@@ -83,8 +83,8 @@ public static class PublishProfiles
             .Select(name => Finding.Note("profile.unknown-option", name, subject + " sets " + name + ", which is no option DacFx reads, so DacFx ignores it; an option it may misspell keeps its default."))];
         return DacFx.Guard(() => DacProfile.Load(new MemoryStream(kept.ToArray(), writable: false)).DeployOptions, failure => Unreadable(subject, path, failure))
             .Bind(options => !options.BlockOnPossibleDataLoss
-                ? new Error("profile.data-loss-allowed", subject + " sets BlockOnPossibleDataLoss to False; Strict is the pipeline's profile with the data-loss check on.",
-                    "Set BlockOnPossibleDataLoss to True in " + path + "; only a copy publishes with the data-loss check off, as Permissive.")
+                ? new Error("profile.data-loss-allowed", subject + " sets BlockOnPossibleDataLoss to False; Strict is the pipeline's profile with BlockOnPossibleDataLoss on.",
+                    "Set BlockOnPossibleDataLoss to True in " + path + "; only a copy publishes with BlockOnPossibleDataLoss off, as Permissive.")
                 : Result.All(options.SqlCommandVariableValues.OrderBy(v => v.Key, StringComparer.Ordinal).Select(v => ProfileValue(subject, path, v.Key, v.Value ?? "")))
                     .Map(values => new PublishProfile.Strict(path, kept.ToArray(), SortedArray.Of(values), notes)));
     }
@@ -114,7 +114,7 @@ public static class PublishProfiles
 /// <summary>
 /// A publish profile as a plan and a publish use it (§1 fact 10): DacFx's deploy options and the profile's SQLCMD values, nothing else. It
 /// keeps the profile's XML, its target removed, and reads a fresh copy of the options on each call, so a change a caller makes to one copy
-/// reaches no other. Its two cases are closed: Strict, the pipeline's profile as loaded, and Permissive, the same with the data-loss check off.
+/// reaches no other. Its two cases are closed: Strict, the pipeline's profile as loaded, and Permissive, the same with BlockOnPossibleDataLoss off.
 /// </summary>
 public abstract class PublishProfile
 {
@@ -133,7 +133,7 @@ public abstract class PublishProfile
 
     public override string ToString() => (this is Strict ? "Strict: " : "Permissive: ") + Source;
 
-    /// <summary>A fresh copy of the options, the data-loss check on for Strict and off for Permissive, for io/DacFx's plan and publish.</summary>
+    /// <summary>A fresh copy of the options, BlockOnPossibleDataLoss on for Strict and off for Permissive, for io/DacFx's plan and publish.</summary>
     internal DacDeployOptions Options()
     {
         var options = DacProfile.Load(new MemoryStream(_profile, writable: false)).DeployOptions;
@@ -142,7 +142,7 @@ public abstract class PublishProfile
     }
 
     /// <summary>
-    /// The pipeline's profile as loaded, the data-loss check on: every plan uses it, and every publish unless a copy asks for Permissive. Its
+    /// The pipeline's profile as loaded, BlockOnPossibleDataLoss on: every plan uses it, and every publish unless a copy asks for Permissive. Its
     /// notes name each element of the profile DacFx ignores.
     /// </summary>
     public sealed class Strict : PublishProfile
@@ -156,7 +156,7 @@ public abstract class PublishProfile
 
     /// <summary>
     /// Strict with BlockOnPossibleDataLoss off and nothing else changed (§1 fact 10), for a copy alone (§2.1 rule 3), to see what the
-    /// data-loss check would have stopped. SqlServer.Copy.Permissive is Of's one caller, so a Permissive profile exists only for a copy;
+    /// BlockOnPossibleDataLoss check would have stopped. SqlServer.Copy.Permissive is Of's one caller, so a Permissive profile exists only for a copy;
     /// CapabilityTests' "Permissive never reaches an environment" fails on a call from anywhere else in io.
     /// </summary>
     public sealed class Permissive : PublishProfile

@@ -14,7 +14,7 @@ namespace Estate.Io.Tests;
 
 /// <summary>
 /// io/Doctor (WP 1.7): read-only checks of the SDK and the runtime, git, the tool folder and its DacFx against the toolchain ledger, the build
-/// route, the scratch server estate would use and its image, and Git LFS, with a remedy for each item missing, on a machine the test describes
+/// route, the local server estate would use and its image, and Git LFS, with a remedy for each item missing, on a machine the test describes
 /// and with programs a stand-in runner answers; and R13's window, the committed DacFx against a sample ledger's row.
 /// </summary>
 public sealed class DoctorTests : IDisposable
@@ -43,8 +43,8 @@ public sealed class DoctorTests : IDisposable
     {
         var checks = Doctor.Examine(Bare(), Nothing, Version);   // no global.json, no tool folder, no sql.env, and nothing installed
 
-        Assert.Equal(["sdk", "runtime", "tool", "dacfx", "build", "git", "scratch-server", "image", "lfs"], checks.Select(c => c.Item.Name));
-        Assert.Equal(["sdk", "tool", "build", "git", "scratch-server", "lfs"], checks.Where(c => c.Remedy is not null).Select(c => c.Item.Name));
+        Assert.Equal(["sdk", "runtime", "tool", "dacfx", "build", "git", "local-server", "image", "lfs"], checks.Select(c => c.Item.Name));
+        Assert.Equal(["sdk", "tool", "build", "git", "local-server", "lfs"], checks.Where(c => c.Remedy is not null).Select(c => c.Item.Name));
         Assert.All(checks, c => Assert.False(string.IsNullOrWhiteSpace(c.Found)));
     }
 
@@ -60,7 +60,7 @@ public sealed class DoctorTests : IDisposable
         Assert.All(checks, c => Assert.Null(c.Remedy));
         Assert.Equal(
             ["sdk=10.0.402", "runtime=" + Environment.Version, "tool=published", "dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED)", "build=dotnet with the tool folder's targets", "git=2.31.1",
-                "scratch-server=estate-sql container (localhost,11433)", "image=present", "lfs=git-lfs/3.4.0"],   // the loopback address as SqlServer.Host spells it
+                "local-server=estate-sql container (localhost,11433)", "image=present", "lfs=git-lfs/3.4.0"],   // the loopback address as SqlServer.Host spells it
             checks.Select(c => c.Item + "=" + c.Found));
     }
 
@@ -169,8 +169,8 @@ public sealed class DoctorTests : IDisposable
 
         Assert.Equal("dotnet did not answer in 20 seconds", checks["sdk"].Found);
         Assert.Equal("git did not answer in 20 seconds", checks["git"].Found);
-        Assert.Contains("restart Docker", checks["scratch-server"].Remedy, StringComparison.Ordinal);
-        Assert.DoesNotContain("absent", checks["sdk"].Found + checks["git"].Found + checks["scratch-server"].Found, StringComparison.Ordinal);
+        Assert.Contains("restart Docker", checks["local-server"].Remedy, StringComparison.Ordinal);
+        Assert.DoesNotContain("absent", checks["sdk"].Found + checks["git"].Found + checks["local-server"].Found, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -216,24 +216,24 @@ public sealed class DoctorTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Without_Docker_LocalDB_is_the_scratch_server_and_no_image_is_needed()
+    public void Without_Docker_LocalDB_is_the_local_server_and_no_image_is_needed()
     {
         var checks = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (1, "Cannot connect to the Docker daemon"), ["sqllocaldb info"] = (0, "MSSQLLocalDB\n") }), Version).ToDictionary(c => c.Item.Name);
 
-        Assert.Equal(("LocalDB MSSQLLocalDB, CDC not provable here", null), (checks["scratch-server"].Found, checks["scratch-server"].Remedy));
+        Assert.Equal(("LocalDB MSSQLLocalDB, CDC not provable here", null), (checks["local-server"].Found, checks["local-server"].Remedy));
         Assert.Equal(("not needed without Docker", null), (checks["image"].Found, checks["image"].Remedy));
     }
 
-    /// <summary>ESTATE_SQL names the scratch server first, in io/ScratchServer's order: no docker or sqllocaldb runs, and the image is not needed.</summary>
+    /// <summary>ESTATE_SQL names the local server first, in io/LocalServer's order: no docker or sqllocaldb runs, and the image is not needed.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void The_scratch_server_is_the_one_estate_would_use_ESTATE_SQL_first()
+    public void The_local_server_is_the_one_estate_would_use_ESTATE_SQL_first()
     {
         Ran NeverDocker(Command c, CancellationToken t) => c.Program is "docker" or "sqllocaldb" ? throw new Xunit.Sdk.XunitException(c + " ran while ESTATE_SQL names the server") : Answers(Everything)(c, t);
 
         var checks = Doctor.Examine(Bare(estateSql: "Server=tcp:DB-Host,1433;User ID=sa;Password=" + PlantedValue.Password, sqlEnv: SqlEnv()), NeverDocker, Version).ToDictionary(c => c.Item.Name);
 
-        Assert.Equal(("ESTATE_SQL (db-host,1433)", null), (checks["scratch-server"].Found, checks["scratch-server"].Remedy));
+        Assert.Equal(("ESTATE_SQL (db-host,1433)", null), (checks["local-server"].Found, checks["local-server"].Remedy));
         Assert.Equal(("not needed: ESTATE_SQL names the server", null), (checks["image"].Found, checks["image"].Remedy));
         PlantedValue.Password.AbsentFrom(string.Join(" ", checks.Values.Select(c => c.Found + c.Remedy)));
     }
@@ -242,10 +242,10 @@ public sealed class DoctorTests : IDisposable
     [Trait("Category", "fast")]
     public void Docker_installed_with_its_daemon_stopped_says_to_start_Docker_and_Docker_absent_says_to_install_it()
     {
-        var stopped = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (1, "") }), Version).Single(c => c.Item == Doctor.Item.ScratchServer);
-        var absent = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.ScratchServer);
-        var noContainer = Doctor.Examine(Bare(), Answers(Everything), Version).Single(c => c.Item == Doctor.Item.ScratchServer);
-        var daemonDown = Doctor.Examine(Bare(sqlEnv: SqlEnv()), Answers(new() { ["docker info"] = (1, "") }), Version).Single(c => c.Item == Doctor.Item.ScratchServer);
+        var stopped = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (1, "") }), Version).Single(c => c.Item == Doctor.Item.LocalServer);
+        var absent = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.LocalServer);
+        var noContainer = Doctor.Examine(Bare(), Answers(Everything), Version).Single(c => c.Item == Doctor.Item.LocalServer);
+        var daemonDown = Doctor.Examine(Bare(sqlEnv: SqlEnv()), Answers(new() { ["docker info"] = (1, "") }), Version).Single(c => c.Item == Doctor.Item.LocalServer);
 
         Assert.Contains("start Docker Desktop", stopped.Remedy, StringComparison.Ordinal);
         Assert.DoesNotContain("Install Docker", stopped.Remedy, StringComparison.Ordinal);

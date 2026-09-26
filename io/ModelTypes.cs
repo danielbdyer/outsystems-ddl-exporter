@@ -6,7 +6,7 @@ using Estate.Kernel;
 namespace Estate.Io;
 
 /// <summary>
-/// DacFx's serialized type names read as the types io/Ssdt.Elements keys elements by, and the one keying rule for an object named by its
+/// DacFx's serialized type names read as the types io/Ssdt.ReadModel keys elements by, and the one keying rule for an object named by its
 /// parts: shared by the model's objects, a refactorlog entry's element and a deploy report's item. model.xml, refactor.xml and the deploy
 /// report write an object's type as Sql and its public model type's name (SqlTable for Table), save where one public type has several
 /// serialized forms or another name (measured over 45 object kinds on DacFx 170.5.96): those are the exceptions below, and a name the

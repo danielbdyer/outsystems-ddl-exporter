@@ -27,16 +27,16 @@ public sealed class ImageTests : IDisposable
     [Trait("Category", "fast")]
     public void A_copy_on_the_container_s_port_ran_in_the_image_Docker_reports_by_its_registry_digest()
     {
-        Assert.Equal(Pulled, ScratchServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), Docker(["mcr.microsoft.com/mssql/server@" + Pulled])));
-        Assert.Equal(Pulled, ScratchServer.Image(Copy("Server=tcp:localhost,11433;User ID=sa"), Docker(["mirror.example/mssql/server@" + Pulled])));
-        Assert.NotEqual(Doctor.ImageDigest, ScratchServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), Docker(["mcr.microsoft.com/mssql/server@" + Pulled])));
+        Assert.Equal(Pulled, LocalServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), Docker(["mcr.microsoft.com/mssql/server@" + Pulled])));
+        Assert.Equal(Pulled, LocalServer.Image(Copy("Server=tcp:localhost,11433;User ID=sa"), Docker(["mirror.example/mssql/server@" + Pulled])));
+        Assert.NotEqual(Doctor.ImageDigest, LocalServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), Docker(["mcr.microsoft.com/mssql/server@" + Pulled])));
     }
 
     /// <summary>An image built or loaded on the machine has no registry digest; its image id, the digest of its content, names it instead.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_copy_on_a_container_whose_image_came_from_no_registry_ran_in_the_image_Docker_names_by_its_id() =>
-        Assert.Equal(Built, ScratchServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), Docker([])));
+        Assert.Equal(Built, LocalServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), Docker([])));
 
     [Theory]
     [Trait("Category", "fast")]
@@ -44,15 +44,15 @@ public sealed class ImageTests : IDisposable
     [InlineData("Server=(localdb)\\MSSQLLocalDB;Integrated Security=true")]
     [InlineData("Server=dev-sql,11433;User ID=sa")]
     public void A_copy_on_another_server_than_the_container_names_no_image(string server) =>
-        Assert.Null(ScratchServer.Image(Copy(server), Docker(["mcr.microsoft.com/mssql/server@" + Pulled])));
+        Assert.Null(LocalServer.Image(Copy(server), Docker(["mcr.microsoft.com/mssql/server@" + Pulled])));
 
     [Fact]
     [Trait("Category", "fast")]
     public void Without_docker_or_its_container_no_image_is_named()
     {
-        Assert.Null(ScratchServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), (command, _) => new Ran.NotFound(command.Program, "not on the PATH")));
-        Assert.Null(ScratchServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), (_, _) => new Ran.Exited(1, "", "Error: No such container: estate-sql\n")));
-        Assert.Null(ScratchServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), (command, _) => new Ran.TimedOut(command.Timeout, "", "")));
+        Assert.Null(LocalServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), (command, _) => new Ran.NotFound(command.Program, "not on the PATH")));
+        Assert.Null(LocalServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), (_, _) => new Ran.Exited(1, "", "Error: No such container: estate-sql\n")));
+        Assert.Null(LocalServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), (command, _) => new Ran.TimedOut(command.Timeout, "", "")));
     }
 
     private SqlServer.Copy Copy(string server) => new(CopyName.Make("host", 1, 1), server + ";Initial Catalog=master", root.Path);

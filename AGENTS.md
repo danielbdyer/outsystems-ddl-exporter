@@ -10,7 +10,7 @@ file, then `NEXT.md`, then the README of the package being changed. Nothing else
 
 Run `estate doctor` and quote its line before claiming a tool, a daemon or a database is missing.
 The line reads `READY` or `DEGRADED` and names the .NET SDK and runtime, the tool folder and its
-DacFx against `estate/ledgers/toolchain.md`, the build route, the scratch server (Docker or LocalDB)
+DacFx against `estate/ledgers/toolchain.md`, the build route, the local server (Docker or LocalDB)
 and Git LFS; every missing item carries a remedy.
 Without the session hook, `dotnet run --project cli -- doctor` runs it.
 
@@ -106,7 +106,7 @@ test names, review pages and pull-request bodies.
 - A tool call refused by the permission check: say so, and continue with the rest.
 - A red budget test names the ceiling and the file.
 - A red law names the law. The law is right until a decision line says otherwise.
-- The scratch server not answering (exit 4): `ci/sql.sh up`, or `ci/sql.ps1 up` on Windows, then
+- The local server not answering (exit 4): `ci/sql.sh up`, or `ci/sql.ps1 up` on Windows, then
   `estate doctor`.
 - A proof whose verdict disagrees with a recorded finding: the verdict is a new finding with its
   provenance; append it and strike the old one, which stays.
