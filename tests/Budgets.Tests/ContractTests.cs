@@ -34,10 +34,10 @@ public sealed class ContractTests
         Assert.Equal(0, exit);
         Assert.DoesNotContain('\r', output);
         var help = JsonNode.Parse(output)!;
-        AssertValid("dbchange.help.1.schema.json", help);
+        VerbAnswer.Valid("dbchange.help.1.schema.json", help);
         Assert.Equal(["doctor", "read", "diff", "check", "--version"], help["verbs"]!.AsArray().Where(v => (bool)v!["built"]!).Select(v => (string)v!["name"]!));
         help["exits"]![0]!["code"] = 8;
-        Assert.False(Evaluate("dbchange.help.1.schema.json", help).IsValid, "the schema admits an exit code the table does not have");
+        Assert.False(VerbAnswer.Evaluate("dbchange.help.1.schema.json", help).IsValid, "the schema admits an exit code the table does not have");
     }
 
     [Fact]
@@ -107,14 +107,14 @@ public sealed class ContractTests
     public void The_schemas_admit_exactly_the_codes_the_kernel_s_pattern_admits_a_hyphenated_category_included()
     {
         var answer = Render.Json(Contract.Failed(Contract.Verbs.Single(v => v.Name == "read"), new Kernel.Error("local-server.missing", "No SQL Server answers for copies.", "Run ci/sql.sh up.")));
-        AssertValid("dbchange.read.1.schema.json", answer);
-        AssertValid("dbchange.envelope.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.read.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.envelope.1.schema.json", answer);
 
         var pattern = new Regex(ErrorCode.Pattern, RegexOptions.CultureInvariant);
         var word = Gen.Char["a0z9"].Array[1, 3].Select(cs => new string(cs)).Array[1, 2].Select(pieces => string.Join('-', pieces));
         var code = word.Array[2, 3].Select(words => string.Join('.', words));
         var nearMiss = Gen.Select(code, Gen.Int[0, 12], Gen.Char[".-A \n_"]).Select((text, at, mark) => text.Insert(at % (text.Length + 1), mark.ToString()));
-        Gen.OneOf(code, nearMiss).Sample(text => pattern.IsMatch(text) == Evaluate("dbchange.envelope.1.schema.json", Answer(Finds(0, "note", code: text))).IsValid);
+        Gen.OneOf(code, nearMiss).Sample(text => pattern.IsMatch(text) == VerbAnswer.Evaluate("dbchange.envelope.1.schema.json", Answer(Finds(0, "note", code: text))).IsValid);
         Assert.Throws<ArgumentException>(() => new Kernel.Error("nowhere.failed", "Failed.", "Do the other thing."));
     }
 
@@ -137,7 +137,7 @@ public sealed class ContractTests
         var diffExit = Cli.Program.Run(["diff", "--from", "dacpac:" + bare, "--to", "dacpac:" + dacpac], diff, new Checkout(scratch.Path, scratch.Path, null));
 
         Assert.Equal(0, exit);
-        AssertValid("dbchange.read.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.read.1.schema.json", answer);
         var keys = Elements(answer, scratch.Path).Select(e => (string)e!["key"]!).ToList();
         Assert.Contains("Column [dbo].[Customer].[ ]", keys);
         Assert.Contains("Column [dbo].[Customer].[a\tb]", keys);
@@ -255,7 +255,7 @@ public sealed class ContractTests
         var (exit, answer) = Answered(["read", "--from", "dacpac:none.dacpac", "--json"], new Checkout(Repository.Root, null!, null));
 
         Assert.Equal(6, exit);
-        AssertValid("dbchange.read.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.read.1.schema.json", answer);
         var finding = Assert.Single(answer["findings"]!.AsArray())!;
         Assert.Equal(("internal.unexpected", "error"), ((string)finding["code"]!, (string)finding["severity"]!));
         Assert.Contains("ArgumentNullException: Value cannot be null.", (string)finding["message"]!, StringComparison.Ordinal);
@@ -275,7 +275,7 @@ public sealed class ContractTests
         var (exit, answer) = Answered(["check", "drift", "--target", target, "--at", "main", "--json"], new Checkout(null!, Repository.Root, null));
 
         Assert.Equal(6, exit);
-        AssertValid("dbchange.check.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.check.1.schema.json", answer);
         var message = (string)Assert.Single(answer["findings"]!.AsArray())!["message"]!;
         Assert.Contains("ArgumentNullException: Value cannot be null.", message, StringComparison.Ordinal);
     }
@@ -312,7 +312,7 @@ public sealed class ContractTests
         var answer = JsonNode.Parse(output.ToArray())!;
 
         Assert.Equal(6, exit);
-        AssertValid("dbchange.check.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.check.1.schema.json", answer);
         var message = (string)Assert.Single(answer["findings"]!.AsArray())!["message"]!;
         Assert.Contains("InvalidOperationException", message, StringComparison.Ordinal);
         Assert.Equal(withheld, !answer.ToJsonString().Contains(planted.Text, StringComparison.Ordinal));
@@ -337,7 +337,7 @@ public sealed class ContractTests
         var answer = JsonNode.Parse(output.ToArray())!;
 
         Assert.Equal(6, exit);
-        AssertValid("dbchange.read.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.read.1.schema.json", answer);
         var finding = Assert.Single(answer["findings"]!.AsArray())!;
         Assert.Equal("internal.unexpected", (string)finding["code"]!);
         Assert.Contains("FileNotFoundException: The working directory was removed.", (string)finding["message"]!, StringComparison.Ordinal);
@@ -403,11 +403,11 @@ public sealed class ContractTests
         var (exit, output) = Run(verb, "--json");
 
         var envelope = JsonNode.Parse(output)!;
-        AssertValid("dbchange.envelope.1.schema.json", envelope);
+        VerbAnswer.Valid("dbchange.envelope.1.schema.json", envelope);
         Assert.Equal(exit, (int)envelope["exit"]!);
         if (Contract.Verbs.SingleOrDefault(v => v.Name == verb) is { Content: not null } built)
         {
-            AssertValid(Render.SchemaFile(built.Output), envelope);   // its own schema too, whatever the exit
+            VerbAnswer.Valid(Render.SchemaFile(built.Output), envelope);   // its own schema too, whatever the exit
         }
     }
 
@@ -426,10 +426,10 @@ public sealed class ContractTests
             var exit = Cli.Program.Run([verb.Name, "--no-such-flag", "--json"], output, new Checkout(Repository.Root, Repository.Root, null));
             var answer = JsonNode.Parse(output.ToArray())!;
             Assert.Equal(1, exit);
-            AssertValid(Render.SchemaFile(verb.Output), answer);
+            VerbAnswer.Valid(Render.SchemaFile(verb.Output), answer);
             Assert.All(verb.Content!, added => Assert.Null(answer[added.Key]));
             answer[verb.Content!.First().Key] = new JsonObject();
-            Assert.False(Evaluate(Render.SchemaFile(verb.Output), answer).IsValid, verb.Output + " admits what the verb adds in a shape it never writes");
+            Assert.False(VerbAnswer.Evaluate(Render.SchemaFile(verb.Output), answer).IsValid, verb.Output + " admits what the verb adds in a shape it never writes");
         }
     }
 
@@ -447,8 +447,8 @@ public sealed class ContractTests
     {
         var (admitted, refused) = EnvelopePairs[rule];
 
-        AssertValid("dbchange.envelope.1.schema.json", Answer(admitted));
-        Assert.False(Evaluate("dbchange.envelope.1.schema.json", Answer(refused)).IsValid, "the envelope schema admits an answer that breaks: " + rule);
+        VerbAnswer.Valid("dbchange.envelope.1.schema.json", Answer(admitted));
+        Assert.False(VerbAnswer.Evaluate("dbchange.envelope.1.schema.json", Answer(refused)).IsValid, "the envelope schema admits an answer that breaks: " + rule);
     }
 
     /// <summary>
@@ -468,11 +468,11 @@ public sealed class ContractTests
         var json = Render.Json(answer);
 
         Assert.Equal(written, (string?)json["blockedBy"]);
-        AssertValid("dbchange.envelope.1.schema.json", json);
+        VerbAnswer.Valid("dbchange.envelope.1.schema.json", json);
         Assert.Throws<ArgumentException>("blockedBy", () => new Envelope("dbchange.prove/1", blocked, 3, "Msg 50000: rows were detected.", []));
         Assert.Throws<ArgumentException>("blockedBy", () => new Envelope("dbchange.version/1", new Outcome("done", [0], "done"), 0, "dbchange 3.0.0", [], blockedBy));
         json["blockedBy"] = null;
-        Assert.False(Evaluate("dbchange.envelope.1.schema.json", json).IsValid, "the schema admits exit 3 naming nothing");
+        Assert.False(VerbAnswer.Evaluate("dbchange.envelope.1.schema.json", json).IsValid, "the schema admits exit 3 naming nothing");
     }
 
     /// <summary>An outcome's word and its exit are one decision: check drift's in-sync is exit 0 and differs exit 5, and an answer that pairs them otherwise cannot be constructed.</summary>
@@ -499,7 +499,7 @@ public sealed class ContractTests
         var (exit, answer) = Answered([.. verb.Split(' '), "--json"], new Checkout(Repository.Root, Repository.Root, null));
 
         Assert.Equal(6, exit);
-        AssertValid("dbchange.envelope.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.envelope.1.schema.json", answer);
         var finding = Assert.Single(answer["findings"]!.AsArray())!;
         Assert.Equal(("verb.not-built", "dbchange " + verb), ((string?)finding["code"], (string?)finding["subject"]));
         Assert.Equal("dbchange " + verb + " is not in this build.", (string?)answer["message"]);
@@ -518,7 +518,7 @@ public sealed class ContractTests
 
         var json = Render.Json(Verbs.Doctor(checks, Doctor.Toolchain(bare.Path, Contract.Version)));
 
-        AssertValid("dbchange.doctor.1.schema.json", json);
+        VerbAnswer.Valid("dbchange.doctor.1.schema.json", json);
         Assert.Equal((6, "degraded"), ((int)json["exit"]!, (string?)json["outcome"]));
         var line = (string)json["message"]!;
         Assert.StartsWith("dbchange doctor DEGRADED | sdk=", line, StringComparison.Ordinal);
@@ -558,7 +558,7 @@ public sealed class ContractTests
         var answer = Verbs.Doctor(Doctor.Examine(new Doctor.Machine(machine.Path, null, machine.Path, null, machine.Under("sql.env"), Environment.Version), answers, Contract.Version), Doctor.Toolchain(machine.Path, Contract.Version));
 
         var json = Render.Json(answer);
-        AssertValid("dbchange.doctor.1.schema.json", json);
+        VerbAnswer.Valid("dbchange.doctor.1.schema.json", json);
         Assert.Equal((0, "ready"), (answer.Exit, answer.Outcome.Word));
         Assert.Equal("dbchange doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED) | build=dotnet with the tool folder's targets"
             + " | git=2.31.1 | local-server=dbchange-sql container (localhost,11433) | image=present | lfs=git-lfs/3.4.0", answer.Message);
@@ -580,17 +580,6 @@ public sealed class ContractTests
         Assert.Equal(typeof(Telemetry).GetMethod(nameof(Telemetry.OptOut)), main.Module.ResolveMethod(BinaryPrimitives.ReadInt32LittleEndian(il.AsSpan(first + 1))));
         Assert.Null(typeof(Cli.Program).TypeInitializer);   // no static initializer runs ahead of Main
     }
-
-    private static void AssertValid(string schemaFile, JsonNode instance)
-    {
-        var results = Evaluate(schemaFile, instance);
-        Assert.True(results.IsValid, JsonSerializer.Serialize(results));
-    }
-
-    /// <summary>Formats are asserted, not only annotated, so the receipt's date-time is a rule and not a comment.</summary>
-    private static EvaluationResults Evaluate(string schemaFile, JsonNode instance) =>
-        JsonSchema.FromText(File.ReadAllText(Path.Combine(Repository.Root, "cli", "schemas", schemaFile)))
-            .Evaluate(instance, new EvaluationOptions { OutputFormat = OutputFormat.List, RequireFormatValidation = true });
 
     /// <summary>
     /// The envelope's rules, each named by the sentence it pins, as (admitted, refused). The exit codes, the outcome words and the

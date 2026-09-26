@@ -54,10 +54,8 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
             Directory.CreateDirectory(Path.Combine(root, "dbchange", "ledgers"));
             File.WriteAllText(Path.Combine(root, "dbchange", "ledgers", "toolchain.md"), "| Date | dbchange | Pinned DacFx | Release before |\n|---|---|---|---|\n| 2026-09-25 | 3.0.0 | 170.7.2 | 170.6.10 |\n");
 
-            var (exit, output) = repository.RunAt(root, "check", "drift", "--target", "copy:dbchange_nowhere_1_00000000", "--at", "main", "--json");
+            var (exit, answer) = repository.AnswerAt(root, "check", "drift", "--target", "copy:dbchange_nowhere_1_00000000", "--at", "main");
 
-            var answer = JsonNode.Parse(output)!;
-            ScratchRepository.Valid("dbchange.check.1.schema.json", answer);
             Assert.Equal(6, exit);
             Assert.Equal("toolchain.outside-window", (string?)answer["findings"]![0]!["code"]);
             Assert.Equal(("170.5.96", "170.7.2", null), ((string?)answer["dacfx"], (string?)answer["pin"], answer["server"]));
@@ -112,7 +110,7 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         var (exit, output) = Drift("copy:" + copy.Name, "--json");
 
         var answer = JsonNode.Parse(output)!;
-        ScratchRepository.Valid("dbchange.check.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.check.1.schema.json", answer);
         var findings = answer["findings"]!.AsArray().Select(f => (Code: (string)f!["code"]!, Severity: (string)f["severity"]!, Subject: (string)f["subject"]!, Message: (string)f["message"]!)).ToList();
         Console.WriteLine(string.Join('\n', findings));
         Assert.True(exit == 5, output);
@@ -165,7 +163,7 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
 
         Assert.True(diffExit == 0, diffOutput);
         var answer = JsonNode.Parse(diffOutput)!;
-        ScratchRepository.Valid("dbchange.diff.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.diff.1.schema.json", answer);
         var change = answer["diff"]!["change"]!;
         var (dropped, created) = (change["dropped"]!.AsArray().Select(k => (string?)k).ToList(), change["created"]!.AsArray().Select(k => (string?)k).ToList());
         if (caseInsensitive)
@@ -239,7 +237,7 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         var (schema, packaged) = (Fingerprint.Of(GitTests.Ok(extracted.Elements).Elements), Fingerprint.Of(GitTests.Ok(package.Elements).Elements));
 
         var answer = JsonNode.Parse(output)!;
-        ScratchRepository.Valid("dbchange.check.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.check.1.schema.json", answer);
         Assert.Equal((5, "differs"), (exit, (string?)answer["outcome"]));
         var provenance = answer["provenance"]!;
         Assert.Equal(("sha256:" + schema, "sha256:" + Fingerprint.Of(plan.Report)), ((string?)provenance["schema"], (string?)provenance["change"]));

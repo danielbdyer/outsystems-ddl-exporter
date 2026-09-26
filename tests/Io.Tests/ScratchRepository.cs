@@ -2,12 +2,10 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using DbChange.Budgets.Tests;
 using DbChange.Cli;
 using DbChange.Tests;
-using Json.Schema;
 using Xunit;
 
 namespace DbChange.Io.Tests;
@@ -44,6 +42,12 @@ public sealed class ScratchRepository : IDisposable
     /// <summary>The make-mandatory sample change's commit.</summary>
     public string Head { get; }
 
+    /// <summary>dbchange run at the repository's root with --json: its exit and its answer, valid against its schema.</summary>
+    public (int Exit, JsonNode Answer) Answer(params string[] arguments) => AnswerAt(Root, arguments);
+
+    /// <summary>dbchange run with <paramref name="root"/> as the repository root and --json: its exit and its answer, valid against its schema.</summary>
+    public (int Exit, JsonNode Answer) AnswerAt(string root, params string[] arguments) => VerbAnswer.Of(new Checkout(root, root, Tool.Folder), arguments);
+
     /// <summary>dbchange run at the repository's root.</summary>
     public (int Exit, string Output) Run(params string[] arguments) => RunAt(Root, arguments);
 
@@ -73,14 +77,6 @@ public sealed class ScratchRepository : IDisposable
 
         File.WriteAllText(Path.Combine(root, "dbchange", "environments.json"), new JsonObject { ["environments"] = environmentsFile }.ToJsonString());
         return root;
-    }
-
-    /// <summary>Validates an answer against its verb's schema under cli/schemas/.</summary>
-    public static void Valid(string schema, JsonNode answer)
-    {
-        var results = JsonSchema.FromText(File.ReadAllText(Path.Combine(Repository.Root, "cli", "schemas", schema)))
-            .Evaluate(answer, new EvaluationOptions { OutputFormat = OutputFormat.List, RequireFormatValidation = true });
-        Assert.True(results.IsValid, schema + ": " + JsonSerializer.Serialize(results));
     }
 
     public void Dispose() => scratch.Dispose();

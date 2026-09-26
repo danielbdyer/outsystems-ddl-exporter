@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using DbChange.Budgets.Tests;
 using DbChange.Cli;
 using DbChange.Kernel;
+using DbChange.Tests;
 using Xunit;
 
 namespace DbChange.Io.Tests;
@@ -49,7 +50,7 @@ public sealed class DiffTests(ScratchRepository repository) : IClassFixture<Scra
 
         Assert.True(readExit == 0, read);
         var answer = JsonNode.Parse(read)!;
-        ScratchRepository.Valid("dbchange.read.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.read.1.schema.json", answer);
         Assert.False((bool)Elements(answer).Single(e => (string?)e!["key"] == "Column [dbo].[Customer].[Email]")!["properties"]!["Nullable"]!);
     }
 
@@ -163,10 +164,8 @@ public sealed class DiffTests(ScratchRepository repository) : IClassFixture<Scra
     [Trait("Category", "fast")]
     public void Diff_json_validates_against_dbchange_diff_1_and_carries_the_one_property_both_fingerprints_and_the_DacFx_release_and_claims_nothing()
     {
-        var (exit, output) = repository.Run("diff", "--from", "ref:" + repository.Base, "--to", "ref:" + repository.Head, "--json");
+        var (exit, answer) = repository.Answer("diff", "--from", "ref:" + repository.Base, "--to", "ref:" + repository.Head);
 
-        var answer = JsonNode.Parse(output)!;
-        ScratchRepository.Valid("dbchange.diff.1.schema.json", answer);
         Assert.Equal(0, exit);
         var altered = Assert.Single(answer["diff"]!["change"]!["altered"]!.AsArray())!;
         Assert.Equal("Column [dbo].[Customer].[Email]", (string?)altered["key"]);
@@ -195,13 +194,10 @@ public sealed class DiffTests(ScratchRepository repository) : IClassFixture<Scra
     [Trait("Category", "fast")]
     public void Read_of_a_ref_and_of_the_package_its_build_wrote_fingerprint_alike_and_validate_against_dbchange_read_1()
     {
-        var (exit, output) = repository.Run("read", "--from", "ref:" + repository.Base, "--json");
+        var (exit, fromRef) = repository.Answer("read", "--from", "ref:" + repository.Base);
         var dacpac = Built(repository.Base);
-        var (packageExit, package) = repository.Run("read", "--from", "dacpac:" + dacpac, "--json");
+        var (packageExit, fromPackage) = repository.Answer("read", "--from", "dacpac:" + dacpac);
 
-        var (fromRef, fromPackage) = (JsonNode.Parse(output)!, JsonNode.Parse(package)!);
-        ScratchRepository.Valid("dbchange.read.1.schema.json", fromRef);
-        ScratchRepository.Valid("dbchange.read.1.schema.json", fromPackage);
         Assert.Equal((0, 0), (exit, packageExit));
         using var loaded = GitTests.Ok(Ssdt.Open(dacpac));
         var elements = GitTests.Ok(Ssdt.ReadModel(loaded)).Elements;
@@ -226,7 +222,7 @@ public sealed class DiffTests(ScratchRepository repository) : IClassFixture<Scra
         var (exit, output) = repository.Run([verb, .. arguments, "--json"]);
 
         var answer = JsonNode.Parse(output)!;
-        ScratchRepository.Valid(schema, answer);
+        VerbAnswer.Valid(schema, answer);
         Assert.Equal(1, exit);
         Assert.Null(answer[verb]);
     }

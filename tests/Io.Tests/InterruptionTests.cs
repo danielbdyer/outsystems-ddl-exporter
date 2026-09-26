@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using DbChange.Cli;
 using DbChange.Kernel;
+using DbChange.Tests;
 using Xunit;
 
 namespace DbChange.Io.Tests;
@@ -35,7 +36,7 @@ public sealed class InterruptionTests : IDisposable
         var answer = JsonNode.Parse(output.ToArray())!;
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), "the interrupted verb answered after " + clock.Elapsed);
         Assert.Equal(130, exit);
-        ScratchRepository.Valid("dbchange.read.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.read.1.schema.json", answer);
         Assert.Equal(("interrupted", 130), ((string?)answer["outcome"], (int)answer["exit"]!));
         Assert.Equal("dbchange read stopped after --timeout 1: it ended the programs it had started and released its locks.", (string?)answer["message"]);
         Assert.Empty(answer["findings"]!.AsArray());

@@ -44,17 +44,17 @@ public sealed class AnswerSizeTests : IDisposable
         Assert.Matches("^… 2,950 more; the whole answer is in \\.dbchange/runs/[^/]+/answer\\.json\\.$", lines[^1]);
 
         var answer = JsonNode.Parse(json)!;
-        ScratchRepository.Valid("dbchange.diff.1.schema.json", answer);
+        VerbAnswer.Valid("dbchange.diff.1.schema.json", answer);
         Assert.Equal(Render.Shown, answer["diff"]!["change"]!["altered"]!.AsArray().Count);
         Assert.Equal((Columns, true), ((int)answer["diff"]!["counts"]!["altered"]!, (bool)answer["truncated"]!));
         var full = (string)answer["full"]!;
         Assert.Matches("^\\.dbchange/runs/[^/]+/answer\\.json$", full);
         var whole = JsonNode.Parse(File.ReadAllText(root.Under(full)))!;
-        ScratchRepository.Valid("dbchange.diff.1.schema.json", whole);
+        VerbAnswer.Valid("dbchange.diff.1.schema.json", whole);
         Assert.Equal((Columns, false, (string?)null), (whole["diff"]!["change"]!["altered"]!.AsArray().Count, (bool)whole["truncated"]!, (string?)whole["full"]));
 
         var summarised = JsonNode.Parse(summary)!;
-        ScratchRepository.Valid("dbchange.diff.1.schema.json", summarised);
+        VerbAnswer.Valid("dbchange.diff.1.schema.json", summarised);
         Assert.Empty(summarised["diff"]!["change"]!["altered"]!.AsArray());
         Assert.Equal((Columns, true), ((int)summarised["diff"]!["counts"]!["altered"]!, (bool)summarised["truncated"]!));
     }
