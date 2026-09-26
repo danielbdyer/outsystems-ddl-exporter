@@ -1,0 +1,234 @@
+The aggregate-query allowlist's corpus (V3_MILESTONES.md WP 1.4): each case is a line "=== admit: <what>" or "=== refuse: <what>"
+and the query's text below it, up to the next case. Io.Tests' AllowlistTests read every case; AggregateQueryTests run every admitted
+case against the golden project as the read-only principal, so an admitted case names only the golden project's tables.
+
+=== admit: COUNT of every row
+SELECT COUNT(*) FROM dbo.Customer;
+=== admit: COUNT_BIG of every row
+SELECT COUNT_BIG(*) FROM dbo.Customer;
+=== admit: COUNT of DISTINCT a column
+SELECT COUNT(DISTINCT Region) FROM dbo.Customer;
+=== admit: COUNT_BIG of DISTINCT a column named in two parts, the table aliased
+SELECT COUNT_BIG(DISTINCT c.Region) FROM dbo.Customer AS c;
+=== admit: SUM of CASE counting a column's nulls
+SELECT SUM(CASE WHEN Email IS NULL THEN 1 ELSE 0 END) FROM dbo.Customer;
+=== admit: SUM of CASE bucketing by length between literal boundaries
+SELECT SUM(CASE WHEN LEN(Email) BETWEEN 1 AND 20 THEN 1 ELSE 0 END) AS short_emails FROM dbo.Customer;
+=== admit: MIN over LEN
+SELECT MIN(LEN(Name)) FROM dbo.Customer;
+=== admit: MAX over LEN
+SELECT MAX(LEN(Email)) FROM dbo.Customer;
+=== admit: MIN over DATALENGTH
+SELECT MIN(DATALENGTH(ContactPhone)) FROM dbo.Customer;
+=== admit: MAX over DATALENGTH
+SELECT MAX(DATALENGTH(Email)) FROM dbo.Customer;
+=== admit: CASE WHEN EXISTS, BlockOnPossibleDataLoss's predicate as DacFx writes it
+SELECT CASE WHEN EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer]) THEN 1 ELSE 0 END;
+=== admit: an integer literal
+SELECT 1;
+=== admit: a negative integer literal
+SELECT -1;
+=== admit: several items, each aliased
+SELECT COUNT_BIG(*) AS rows_total, SUM(CASE WHEN Email IS NULL THEN 1 ELSE 0 END) AS nulls, MAX(LEN(Email)) AS longest, 0 AS zero
+FROM dbo.Customer;
+=== admit: an item in parentheses
+SELECT (COUNT_BIG(*)) FROM dbo.Status;
+=== admit: orphans of a reference, counted through NOT EXISTS
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c
+WHERE c.AccountId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Account AS a WHERE a.Id = c.AccountId);
+=== admit: orphans of a reference, counted through a left join
+SELECT SUM(CASE WHEN c.Id IS NULL THEN 1 ELSE 0 END) FROM dbo.[Order] AS o LEFT OUTER JOIN dbo.Customer AS c ON c.Id = o.CustomerId;
+=== admit: an inner join with a literal filter
+SELECT COUNT_BIG(*) FROM dbo.[Order] AS o INNER JOIN dbo.Customer AS c ON c.Id = o.CustomerId WHERE o.Total > 0;
+=== admit: two columns compared with <>, the one inequality of two columns the allowlist holds
+SELECT COUNT_BIG(*) FROM dbo.[Order] AS o INNER JOIN dbo.Customer AS c ON c.Id = o.CustomerId AND c.Id <> o.Id;
+=== admit: values that would not convert, counted with TRY_CONVERT
+SELECT SUM(CASE WHEN Code IS NOT NULL AND TRY_CONVERT(int, Code) IS NULL THEN 1 ELSE 0 END) FROM dbo.Product;
+=== admit: TRY_CAST in a predicate
+SELECT SUM(CASE WHEN TRY_CAST(Code AS nvarchar(10)) IS NULL THEN 1 ELSE 0 END) FROM dbo.Product;
+=== admit: duplicates of a composite key, through a derived table
+SELECT COUNT_BIG(*) FROM (SELECT OrderId, LineNumber FROM dbo.OrderLine GROUP BY OrderId, LineNumber HAVING COUNT_BIG(*) > 1) AS d;
+=== admit: a length histogram, bucketed by length
+SELECT MIN(LEN(Email)), COUNT_BIG(*) FROM dbo.Customer GROUP BY LEN(Email);
+=== admit: untrusted foreign keys, read from the catalog
+SELECT SUM(CASE WHEN is_not_trusted = 1 THEN 1 ELSE 0 END) FROM sys.foreign_keys;
+=== admit: IN over literals and LIKE over a literal pattern
+SELECT SUM(CASE WHEN Region IN (N'West', N'East') OR Email LIKE N'%@%' THEN 1 ELSE 0 END) FROM dbo.Customer;
+=== admit: UPPER, ISNULL, COALESCE and NULLIF in a predicate
+SELECT SUM(CASE WHEN UPPER(ISNULL(Region, N'')) = N'WEST' OR COALESCE(NULLIF(Email, N''), N'none') = N'none' THEN 1 ELSE 0 END) FROM dbo.Customer;
+=== admit: IN over a subquery
+SELECT COUNT_BIG(*) FROM dbo.Product WHERE CategoryId IN (SELECT Id FROM dbo.Category WHERE IsActive = 1);
+=== admit: EXISTS nested in EXISTS, a column in the inner select list
+SELECT CASE WHEN EXISTS (SELECT c.Email FROM dbo.Customer AS c WHERE EXISTS (SELECT 1 FROM dbo.[Order] AS o WHERE o.CustomerId = c.Id)) THEN 1 ELSE 0 END;
+=== admit: a one-part name
+SELECT COUNT(*) FROM Customer;
+=== admit: comments, casing and whitespace around an allowed form
+/* leading */ select
+  count_big( * ) -- trailing
+from   dbo.Customer ;
+=== admit: one statement ended by a batch separator
+SELECT COUNT(*) FROM dbo.Status;
+GO
+=== refuse: MAX over a bare column
+SELECT MAX(Email) FROM dbo.Customer;
+=== refuse: MIN over a bare column
+SELECT MIN(Name) FROM dbo.Customer;
+=== refuse: AVG over a bare column
+SELECT AVG(AccountId) FROM dbo.Customer;
+=== refuse: a bare column in the select list
+SELECT Email FROM dbo.Customer;
+=== refuse: a star in the select list
+SELECT * FROM dbo.Customer;
+=== refuse: STRING_AGG
+SELECT STRING_AGG(Email, N',') FROM dbo.Customer;
+=== refuse: STRING_AGG inside MAX over LEN, a forbidden function inside an allowed one
+SELECT MAX(LEN(STRING_AGG(Email, N','))) FROM dbo.Customer;
+=== refuse: STRING_AGG inside SUM of CASE, a forbidden function inside an allowed one
+SELECT SUM(CASE WHEN LEN(STRING_AGG(Email, N',')) > 0 THEN 1 ELSE 0 END) FROM dbo.Customer;
+=== refuse: COUNT of a column without DISTINCT
+SELECT COUNT(Email) FROM dbo.Customer;
+=== refuse: COUNT of DISTINCT an expression
+SELECT COUNT(DISTINCT LEN(Email)) FROM dbo.Customer;
+=== refuse: SUM over a bare column
+SELECT SUM(AccountId) FROM dbo.Customer;
+=== refuse: SUM of CASE that returns a column
+SELECT SUM(CASE WHEN Email IS NULL THEN AccountId ELSE 0 END) FROM dbo.Customer;
+=== refuse: SUM of CASE with no ELSE 0
+SELECT SUM(CASE WHEN Email IS NULL THEN 1 END) FROM dbo.Customer;
+=== refuse: CASE WHEN EXISTS that returns a column
+SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.Account) THEN Email ELSE 0 END FROM dbo.Customer;
+=== refuse: MAX over LEN of an expression
+SELECT MAX(LEN(Email + Name)) FROM dbo.Customer;
+=== refuse: a string literal
+SELECT N'x';
+=== refuse: a decimal literal
+SELECT 1.5;
+=== refuse: an integer literal SQL Server types as numeric
+SELECT 3000000000;
+=== refuse: LEN of a global variable
+SELECT LEN(@@VERSION);
+=== refuse: a bucket boundary read from the data
+SELECT SUM(CASE WHEN LEN(Email) > (SELECT AVG(LEN(Email)) FROM dbo.Customer) THEN 1 ELSE 0 END) FROM dbo.Customer;
+=== refuse: a comparison with ALL over a subquery
+SELECT SUM(CASE WHEN LEN(Email) > ALL (SELECT LEN(Name) FROM dbo.Account) THEN 1 ELSE 0 END) FROM dbo.Customer;
+=== refuse: a join boundary read from the data, a column against another table's column
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c INNER JOIN dbo.Account AS a ON c.Id <= a.Balance WHERE a.Id = 7;
+=== refuse: a join boundary read from the data through TRY_CONVERT
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c INNER JOIN dbo.Account AS a ON c.Id <= TRY_CONVERT(int, a.Phone) WHERE a.Id = 7;
+=== refuse: a join boundary read from the data through BETWEEN
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c INNER JOIN dbo.Account AS a ON c.Id BETWEEN 1 AND a.Balance WHERE a.Id = 7;
+=== refuse: a cross join boundary read from the data in SUM of CASE
+SELECT SUM(CASE WHEN c.Id <= a.Balance THEN 1 ELSE 0 END) FROM dbo.Customer AS c CROSS JOIN dbo.Account AS a WHERE a.Id = 7;
+=== refuse: a derived table's column as a length's boundary read from the data
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c CROSS JOIN (SELECT MAX(LEN(Email)) AS m FROM dbo.Customer) AS d WHERE LEN(c.Email) > d.m;
+=== refuse: a correlated EXISTS boundary read from the data
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c WHERE EXISTS (SELECT 1 FROM dbo.Account AS a WHERE a.Id = 7 AND c.Id <= a.Balance);
+=== refuse: an inequality of two columns written as an equality of their difference
+SELECT SUM(CASE WHEN ABS(c.Id - a.Balance) + c.Id - a.Balance = 0 THEN 1 ELSE 0 END) FROM dbo.Customer AS c CROSS JOIN dbo.Account AS a WHERE a.Id = 7;
+=== refuse: NULLIF of two columns, a boundary read from the data
+SELECT SUM(CASE WHEN NULLIF(c.Id, a.Balance) IS NULL THEN 1 ELSE 0 END) FROM dbo.Customer AS c CROSS JOIN dbo.Account AS a WHERE a.Id = 7;
+=== refuse: a value computed in a derived table's select list
+SELECT SUM(CASE WHEN d.m <= 0 THEN 1 ELSE 0 END) FROM (SELECT c.Id - a.Balance AS m FROM dbo.Customer AS c CROSS JOIN dbo.Account AS a WHERE a.Id = 7) AS d;
+=== refuse: a value computed in the select list of IN's subquery
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c WHERE 0 IN (SELECT ABS(c.Id - a.Balance) + c.Id - a.Balance FROM dbo.Account AS a WHERE a.Id = 7);
+=== refuse: LIKE with a pattern read from the data
+SELECT COUNT_BIG(*) FROM dbo.Customer AS c INNER JOIN dbo.Account AS a ON c.Email LIKE a.Name + N'%';
+=== refuse: two lengths compared, a length's boundary read from the data
+SELECT SUM(CASE WHEN LEN(c.Email) > LEN(c.Name) THEN 1 ELSE 0 END) FROM dbo.Customer AS c;
+=== refuse: GROUP BY a column, buckets read from the data
+SELECT COUNT_BIG(*) FROM dbo.Customer GROUP BY Region;
+=== refuse: SELECT INTO a temporary table
+SELECT COUNT_BIG(*) AS n INTO #counts FROM dbo.Customer;
+=== refuse: SELECT INTO disguised by comments and line breaks
+SELECT COUNT_BIG(*) AS n /* only a count */ INTO
+  -- a table of its own
+  dbo.Leak FROM dbo.Customer;
+=== refuse: EXEC of a procedure
+EXEC sp_who;
+=== refuse: EXECUTE of a string
+EXECUTE (N'SELECT COUNT(*) FROM dbo.Customer');
+=== refuse: INSERT
+INSERT dbo.Status (Id, Code, IsActive) VALUES (9, N'x', 1);
+=== refuse: UPDATE
+UPDATE dbo.Customer SET Email = NULL;
+=== refuse: DELETE
+DELETE FROM dbo.Customer;
+=== refuse: MERGE
+MERGE dbo.Status AS t USING (VALUES (9, N'x', 1)) AS s (Id, Code, IsActive) ON t.Id = s.Id
+WHEN NOT MATCHED THEN INSERT (Id, Code, IsActive) VALUES (s.Id, s.Code, s.IsActive);
+=== refuse: TRUNCATE TABLE
+TRUNCATE TABLE dbo.Customer;
+=== refuse: CREATE TABLE
+CREATE TABLE dbo.Leak (Id INT NOT NULL);
+=== refuse: ALTER TABLE
+ALTER TABLE dbo.Customer DROP COLUMN Email;
+=== refuse: DROP TABLE
+DROP TABLE dbo.Customer;
+=== refuse: GRANT
+GRANT SELECT ON dbo.Customer TO public;
+=== refuse: two statements in one batch
+SELECT COUNT(*) FROM dbo.Customer; SELECT COUNT(*) FROM dbo.Account;
+=== refuse: a count then a DELETE in one batch
+SELECT COUNT(*) FROM dbo.Customer; DELETE FROM dbo.Customer;
+=== refuse: two batches
+SELECT 1
+GO
+SELECT 2
+=== refuse: a variable declared, then a count
+DECLARE @n INT; SELECT COUNT(*) FROM dbo.Customer;
+=== refuse: SET
+SET NOCOUNT ON;
+=== refuse: WAITFOR
+WAITFOR DELAY '00:00:05';
+=== refuse: OPENROWSET
+SELECT COUNT(*) FROM OPENROWSET('SQLNCLI', 'Server=elsewhere;Trusted_Connection=yes;', 'SELECT 1') AS r;
+=== refuse: OPENQUERY
+SELECT COUNT(*) FROM OPENQUERY(Linked, 'SELECT 1') AS q;
+=== refuse: OPENDATASOURCE
+SELECT COUNT(*) FROM OPENDATASOURCE('SQLNCLI', 'Data Source=elsewhere;Integrated Security=SSPI').Orders.dbo.Customer;
+=== refuse: OPENXML
+SELECT COUNT(*) FROM OPENXML(@doc, N'/root', 1) AS x;
+=== refuse: a three-part table name
+SELECT COUNT(*) FROM Orders.dbo.Customer;
+=== refuse: a four-part table name
+SELECT COUNT(*) FROM Linked.Orders.dbo.Customer;
+=== refuse: a three-part column name
+SELECT SUM(CASE WHEN dbo.Customer.Email IS NULL THEN 1 ELSE 0 END) FROM dbo.Customer;
+=== refuse: MAX over LEN of a three-part column name
+SELECT MAX(LEN(dbo.Customer.Email)) FROM dbo.Customer;
+=== refuse: a variable assigned
+SELECT @n = COUNT(*) FROM dbo.Customer;
+=== refuse: a variable in a predicate
+SELECT SUM(CASE WHEN Id > @x THEN 1 ELSE 0 END) FROM dbo.Customer;
+=== refuse: a table hint
+SELECT COUNT(*) FROM dbo.Customer WITH (NOLOCK);
+=== refuse: a query hint
+SELECT COUNT(*) FROM dbo.Customer OPTION (MAXDOP 1);
+=== refuse: FOR XML
+SELECT COUNT(*) FROM dbo.Customer FOR XML PATH;
+=== refuse: UNION ALL
+SELECT COUNT(*) FROM dbo.Customer UNION ALL SELECT COUNT(*) FROM dbo.Account;
+=== refuse: a common table expression
+WITH c AS (SELECT Email FROM dbo.Customer) SELECT COUNT(*) FROM c;
+=== refuse: a window function
+SELECT COUNT(*) OVER () FROM dbo.Customer;
+=== refuse: CONVERT, which can quote the value it fails on
+SELECT SUM(CASE WHEN CONVERT(int, Code) > 0 THEN 1 ELSE 0 END) FROM dbo.Product;
+=== refuse: a scalar function of the database's own
+SELECT SUM(CASE WHEN dbo.Score(Id) = 1 THEN 1 ELSE 0 END) FROM dbo.Customer;
+=== refuse: a table-valued function
+SELECT COUNT(*) FROM dbo.Things(1) AS t;
+=== refuse: CROSS APPLY
+SELECT COUNT(*) FROM dbo.Customer AS c CROSS APPLY (SELECT TOP 1 Id FROM dbo.Account) AS a;
+=== refuse: TOP in the outermost select
+SELECT TOP 1 COUNT(*) FROM dbo.Customer;
+=== refuse: DISTINCT in the outermost select
+SELECT DISTINCT COUNT(*) FROM dbo.Customer;
+=== refuse: NEXT VALUE FOR, which advances a sequence
+SELECT NEXT VALUE FOR dbo.Ticket;
+=== refuse: TABLESAMPLE
+SELECT COUNT(*) FROM dbo.Customer TABLESAMPLE (10 PERCENT);
+=== refuse: a syntax error
+SELECT COUNT(*) FORM dbo.Customer;
+=== refuse: a comment and nothing else
+-- nothing to run

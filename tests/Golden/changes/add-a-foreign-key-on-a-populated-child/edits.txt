@@ -1,0 +1,4 @@
+=== Modules/Customer.sql
+--- CONSTRAINT PK_Customer_Id PRIMARY KEY CLUSTERED (Id)
++++ CONSTRAINT PK_Customer_Id PRIMARY KEY CLUSTERED (Id),
++++     CONSTRAINT FK_Customer_Account_AccountId FOREIGN KEY (AccountId) REFERENCES dbo.Account (Id)

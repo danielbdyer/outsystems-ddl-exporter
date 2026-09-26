@@ -1,0 +1,1 @@
+Column [dbo].[Customer].[Email]: Nullable true → false

@@ -1,0 +1,10 @@
+# The toolchain
+
+One dated row per dbchange version: the DacFx release the Octopus step runs, pinned, and the
+release immediately before it; or UNPINNED, until release engineering names the pin. dbchange accepts
+its own DacFx release only at the pin or the release before it, and while the row reads UNPINNED
+the provenance of every answer says so. A new row is appended; an old row is never edited.
+
+| Date | dbchange | Pinned DacFx | Release before |
+|---|---|---|---|
+| 2026-09-24 | 3.0.0 | UNPINNED | — |

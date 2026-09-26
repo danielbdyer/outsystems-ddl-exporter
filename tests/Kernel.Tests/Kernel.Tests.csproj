@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>DbChange.Kernel.Tests</AssemblyName>
+    <RootNamespace>DbChange.Kernel.Tests</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Cultures on, in this project only: in invariant mode every culture sorts ordinally, so no test could show the kernel ignores one. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="CsCheck" />
+    <PackageReference Include="NetArchTest.Rules" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../kernel/kernel.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The test primitives every project shares (DECISIONS.md, 2026-09-25): a Result's expected side, a planted value's search, the environments file writer and a scratch folder. -->
+    <Compile Include="../Shared/*.cs" LinkBase="Shared" />
+  </ItemGroup>
+</Project>

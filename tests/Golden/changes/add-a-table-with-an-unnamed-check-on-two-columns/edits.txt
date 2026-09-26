@@ -1,0 +1,3 @@
+=== Modules/OrderStatusText.sql
+--- -- Intentionally no schema object. The column lives in Modules/Order.sql.
++++ CREATE TABLE dbo.AAA (Id INT NOT NULL, Host INT NULL, CHECK (Id > 0 OR Host > 0));

@@ -1,0 +1,163 @@
+# The engine's CI (V3_MILESTONES.md WP 0.7): the fast lane on both CI operating systems; the SQL lane on Ubuntu against
+# the pinned SQL Server container and on Windows against LocalDB; and the SQL lane again on Ubuntu with all outbound
+# traffic denied once the image is present. No secrets: ci/sql.sh generates the SA password inside the job.
+name: dbchange
+
+on:
+  push:
+    branches: [main, claude/v3-build]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  DACFX_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  fast:
+    name: fast (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the clock
+        shell: bash
+        run: echo "DBCHANGE_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore DbChange.sln --locked-mode
+      - run: dotnet build DbChange.sln --no-restore
+      # M0 exit 1: the fast tests, and with them the build tests, which run dotnet build or publish or start dbchange as a process. A test
+      # host that runs one test for eight minutes is stopped and the test named, since the lane takes two and its job stops at fifteen.
+      - run: dotnet test DbChange.sln --no-build --filter "Category=fast|Category=build" --blame-hang-timeout 8m --blame-hang-dump-type none
+      - name: Publish the tool folder
+        if: runner.os == 'Linux'
+        run: bash ci/publish.sh
+      - name: Publish the tool folder
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./ci/publish.ps1
+      - name: Build tests/Golden/classic-minimal against dist/dbchange
+        shell: pwsh
+        run: |
+          $tool = Join-Path $PWD 'dist/dbchange'
+          dotnet build tests/Golden/classic-minimal/ClassicMinimal.sqlproj -c Release -p:DacFxTelemetryEnabled=false `
+            -p:NetCoreBuild=true "-p:NETCoreTargetsPath=$tool" "-p:SQLDBExtensionsRefPath=$tool" "-p:TargetFrameworkRootPath=$tool/refasm"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet dist/dbchange/dbchange.dll --version
+      - name: Elapsed
+        if: always()
+        shell: bash
+        run: echo "elapsed $(( $(date +%s) - DBCHANGE_JOB_START )) s"
+
+  sql-ubuntu:
+    name: sql (ubuntu-latest, SQL Server in Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the clock
+        shell: bash
+        run: echo "DBCHANGE_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore DbChange.sln --locked-mode
+      - run: dotnet build DbChange.sln --no-restore
+      - name: SQL Server from the image pinned by digest
+        run: bash ci/sql.sh up
+      - run: dotnet test DbChange.sln --no-build --filter Category=fixture
+      - if: always()
+        run: bash ci/sql.sh down
+      - name: Elapsed
+        if: always()
+        shell: bash
+        run: echo "elapsed $(( $(date +%s) - DBCHANGE_JOB_START )) s"
+
+  sql-windows:
+    name: sql (windows-latest, LocalDB)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      DBCHANGE_SQL: 'Server=(localdb)\MSSQLLocalDB;Integrated Security=true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the clock
+        shell: bash
+        run: echo "DBCHANGE_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore DbChange.sln --locked-mode
+      - run: dotnet build DbChange.sln --no-restore
+      - name: LocalDB's MSSQLLocalDB
+        shell: pwsh
+        run: |
+          sqllocaldb start MSSQLLocalDB
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          sqllocaldb info MSSQLLocalDB
+      - run: dotnet test DbChange.sln --no-build --filter Category=fixture
+      - name: Elapsed
+        if: always()
+        shell: bash
+        run: echo "elapsed $(( $(date +%s) - DBCHANGE_JOB_START )) s"
+
+  sql-offline:
+    name: sql, outbound denied (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the clock
+        shell: bash
+        run: echo "DBCHANGE_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore DbChange.sln --locked-mode
+      - run: dotnet build DbChange.sln --no-restore
+      - name: SQL Server from the image pinned by digest (the last step allowed the network)
+        run: bash ci/sql.sh up
+      # The deny is scoped to a group the tests run under, because the runner itself must keep reporting to GitHub.
+      # Loopback stays open: it carries the SQL port (127.0.0.1:11433, which Docker's proxy forwards to the container)
+      # and the test runner's own socket to its test host. Where Docker forwards by NAT instead, the packet leaves on
+      # docker0 for the container's port 1433, and that alone is allowed too. The registry resolves nowhere, so a pull,
+      # which the Docker daemon and not the tests would make, fails as well.
+      - name: Deny all outbound traffic to the tests except the SQL port
+        run: |
+          sudo groupadd --system dbchange-offline
+          for table in iptables ip6tables; do
+            sudo "$table" -A OUTPUT -m owner --gid-owner dbchange-offline -o lo -j ACCEPT
+            sudo "$table" -A OUTPUT -m owner --gid-owner dbchange-offline -o docker0 -p tcp --dport 1433 -j ACCEPT
+            sudo "$table" -A OUTPUT -m owner --gid-owner dbchange-offline -j REJECT
+          done
+          echo '0.0.0.0 mcr.microsoft.com' | sudo tee -a /etc/hosts
+          # offline <command>: the command as this user, in the group the deny applies to, still able to reach Docker's socket
+          sudo tee /usr/local/bin/offline > /dev/null <<EOF
+          #!/bin/sh
+          exec sudo setpriv --reuid=$(id -u) --regid=dbchange-offline --groups=$(getent group docker | cut -d: -f3) \
+            env PATH="$PATH" HOME="$HOME" DOTNET_ROOT="${DOTNET_ROOT:-}" DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 "\$@"
+          EOF
+          sudo chmod +x /usr/local/bin/offline
+      - name: The deny holds
+        run: |
+          if offline curl -sS --max-time 10 https://api.nuget.org/v3/index.json > /dev/null; then
+            echo "outbound traffic from the tests' group was not denied" >&2
+            exit 1
+          fi
+      - name: Fixture tests, outbound denied
+        run: offline dotnet test DbChange.sln --no-build --filter Category=fixture
+      - if: always()
+        run: bash ci/sql.sh down
+      - name: Elapsed
+        if: always()
+        shell: bash
+        run: echo "elapsed $(( $(date +%s) - DBCHANGE_JOB_START )) s"

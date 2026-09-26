@@ -1,0 +1,3 @@
+dropped Column [dbo].[Product].[LegacyCode]
+dropped DefaultConstraint [dbo].[DF_Product_LegacyCode]
+Table [dbo].[Product]: Columns

@@ -1,0 +1,307 @@
+{
+  "about": "Every markdown file in the repository outside archive/, plus archive/INDEX.md and every file in ci/, as data: who reads it, when, and its line budget. The Manifest test holds every markdown file outside archive/ to its row and each hand-written file to its budget. A new document adds its row in the same pull request.",
+  "fields": {
+    "path": "the file, relative to the repository root",
+    "kind": "hand, or generated (by the generator named; its first line is the generated banner)",
+    "owner": "tool (this repository writes it), ssdt (the SSDT repository writes it), or vendored (this repository writes it and the SSDT repository receives it)",
+    "reader": "who reads it",
+    "moment": "when they read it",
+    "budget": "the ceiling in physical lines; null for a generated file, for DECISIONS.md, which grows one line per decision under the Decisions test, and for a file in ci/: data the tests parse, or a script the tests and CI run, neither of them prose",
+    "generator": "for a generated file, what generates it; null for a hand-written one",
+    "becomes": "for a hand-written file a later milestone generates: the milestone and the generator; absent otherwise",
+    "ancestor": "the archived documents it succeeds, as provenance"
+  },
+  "documents": [
+    {
+      "path": "README.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a person"],
+      "moment": ["first day"],
+      "budget": 150,
+      "generator": null,
+      "ancestor": ["archive/v1/readme.md", "archive/v2/README.md"]
+    },
+    {
+      "path": "AGENTS.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["any agent", "a maintainer"],
+      "moment": ["session start", "a change"],
+      "budget": 120,
+      "generator": null,
+      "ancestor": ["archive/v1/AGENTS.md", "archive/v2/CLAUDE.md", "archive/v2/KICKOFF.md"]
+    },
+    {
+      "path": "CLAUDE.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["Claude Code"],
+      "moment": ["session start"],
+      "budget": 30,
+      "generator": null,
+      "ancestor": ["archive/v2/CLAUDE.md", "archive/v2/ssdt-agent/CLAUDE.md"]
+    },
+    {
+      "path": "VALUES.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a maintainer", "a review bot"],
+      "moment": ["first day", "a pull request to this repository"],
+      "budget": 300,
+      "generator": null,
+      "ancestor": ["archive/v2/PRODUCT_AXIOMS.md", "archive/v1/architecture-guardrails.md", "archive/v2/CLAUDE.md"]
+    },
+    {
+      "path": "DECISIONS.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["anyone"],
+      "moment": ["a decision"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/DECISIONS.md"]
+    },
+    {
+      "path": "LAWS.md",
+      "kind": "generated",
+      "owner": "tool",
+      "reader": ["a maintainer", "a review bot"],
+      "moment": ["a change", "a pull request to this repository"],
+      "budget": null,
+      "generator": "ci/laws.sh, or ci/laws.ps1 on Windows, from the tests' Law, Value and Exit traits; Budgets.Tests: Laws holds the committed file to its output",
+      "ancestor": ["archive/v2/AXIOMS.md", "archive/v2/PRODUCT_AXIOMS.md"]
+    },
+    {
+      "path": "NEXT.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a session"],
+      "moment": ["session start"],
+      "budget": 40,
+      "generator": null,
+      "ancestor": ["archive/v2/HANDOFF.md", "archive/v1/tasks.md"]
+    },
+    {
+      "path": "V3_ARCHITECTURE.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the build session"],
+      "moment": ["until M8"],
+      "budget": 3095,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "V3_INSTRUCTION_ARCHITECTURE.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the build session"],
+      "moment": ["until M8"],
+      "budget": 1753,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "LIFECYCLE_BACKPORT_PROMPT.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the build session"],
+      "moment": ["until M8"],
+      "budget": 404,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "V3_MILESTONES.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the build session"],
+      "moment": ["until M8"],
+      "budget": 1035,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "V3_BUILD_PROMPT.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the build session"],
+      "moment": ["until M8"],
+      "budget": 547,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": ".github/PULL_REQUEST_TEMPLATE/schema-change.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a developer"],
+      "moment": ["a schema pull request"],
+      "budget": 85,
+      "generator": null,
+      "becomes": "generated at M7 by dbchange knowledge package, from knowledge/description.md",
+      "ancestor": ["archive/v2/ssdt-agent/skills/author-pr/SKILL.md", "archive/v2/ssdt-agent/pr-template/schema-change.md"]
+    },
+    {
+      "path": "ci/docs.manifest.json",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests"],
+      "moment": ["every build"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/publish.sh",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["the fast lane", "a publish of dist/dbchange/"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/publish.ps1",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["the fast lane on Windows", "a publish of dist/dbchange/ on Windows"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/sql.sh",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["the SQL lane", "a session that needs SQL Server"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/scripts/warm-sql.sh"]
+    },
+    {
+      "path": "ci/sql.ps1",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "a maintainer"],
+      "moment": ["the SQL lane on Windows", "a session that needs SQL Server on Windows"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/scripts/warm-sql.sh"]
+    },
+    {
+      "path": "ci/budgets.json",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests"],
+      "moment": ["every build"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/packages.allow",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests"],
+      "moment": ["every build"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/review/build.js",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a session preparing an operator review"],
+      "moment": ["a milestone close", "an alignment review", "an intake with open questions"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/review/mdlite.js",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a session preparing an operator review"],
+      "moment": ["a milestone close", "an alignment review", "an intake with open questions"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/review/app.client.js",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a session preparing an operator review"],
+      "moment": ["a milestone close", "an alignment review", "an intake with open questions"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/review/app.css",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["a session preparing an operator review"],
+      "moment": ["a milestone close", "an alignment review", "an intake with open questions"],
+      "budget": null,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/laws.sh",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "CI", "a maintainer"],
+      "moment": ["every build", "a new law test"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/scripts/matrix-status.sh"]
+    },
+    {
+      "path": "ci/laws.ps1",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests", "a maintainer"],
+      "moment": ["every build on Windows", "a new law test on Windows"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/scripts/matrix-status.sh"]
+    },
+    {
+      "path": "tests/Golden/dbchange/ledgers/toolchain.md",
+      "kind": "hand",
+      "owner": "ssdt",
+      "reader": ["dbchange doctor", "dbchange check drift", "release engineering"],
+      "moment": ["every claim's provenance", "a new dbchange version", "the Octopus step's DacFx changing"],
+      "budget": 15,
+      "generator": null,
+      "ancestor": []
+    },
+    {
+      "path": "ci/register.json",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the tests"],
+      "moment": ["every build"],
+      "budget": null,
+      "generator": null,
+      "ancestor": ["archive/v2/ssdt-agent/THE_RECORD.md", "V3_INSTRUCTION_ARCHITECTURE.md"]
+    },
+    {
+      "path": "archive/INDEX.md",
+      "kind": "generated",
+      "owner": "tool",
+      "reader": ["the owner"],
+      "moment": ["provenance"],
+      "budget": null,
+      "generator": "WP 0.1, once, from git history; not maintained",
+      "ancestor": []
+    }
+  ]
+}

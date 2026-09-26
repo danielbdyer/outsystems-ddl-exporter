@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>DbChange.Io.Tests</AssemblyName>
+    <RootNamespace>DbChange.Io.Tests</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Cultures on: Microsoft.Data.SqlClient refuses globalization-invariant mode, and the SQL Server fixture uses it. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- DbChangeProcess.Main, not the test SDK's empty one: dotnet DbChange.Io.Tests.dll runs as a second dbchange process. -->
+    <GenerateProgramFile>false</GenerateProgramFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="CsCheck" />
+    <PackageReference Include="NetArchTest.Rules" />
+    <!-- Each verb's JSON answer is validated against its schema under cli/schemas/, as ContractTests validates the envelope. -->
+    <PackageReference Include="JsonSchema.Net" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../io/io.csproj" />
+    <!-- The verb tests run dbchange in this process through Cli.Program.Run; an adapter test asserts an error's code, never an exit. -->
+    <ProjectReference Include="../../cli/cli.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The test primitives every project shares (DECISIONS.md, 2026-09-25), and the half of ScratchFolder that knows the repository. -->
+    <Compile Include="../Shared/*.cs" LinkBase="Shared" />
+    <Compile Include="../Shared/Io/*.cs" LinkBase="Shared/Io" />
+    <Compile Include="../Budgets.Tests/Repository.cs" Link="Repository.cs" />
+    <!-- The kernel's hand-built sample changes, which SampleChangeTests holds to the built golden project. -->
+    <Compile Include="../Kernel.Tests/KernelProperties.cs" Link="Kernel/KernelProperties.cs" />
+    <Compile Include="../Kernel.Tests/SampleChanges.cs" Link="Kernel/SampleChanges.cs" />
+    <!-- The tests' program runs through io/Command: a program that does not run, or overruns, fails the test naming it. -->
+    <Compile Include="../Budgets.Tests/Programs.cs" Link="Programs.cs" />
+    <!-- The ways to every error, which Register.Errors reads for the register and "no output contains Password=" plants a password in. -->
+    <Compile Include="../Budgets.Tests/Register/ErrorPaths.cs" Link="ErrorPaths.cs" />
+  </ItemGroup>
+</Project>

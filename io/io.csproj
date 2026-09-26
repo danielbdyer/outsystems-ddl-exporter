@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Every effect: disks, SQL Server, DacFx, git, the clock. Decisions stay in kernel/. -->
+  <PropertyGroup>
+    <AssemblyName>DbChange.Io</AssemblyName>
+    <RootNamespace>DbChange.Io</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <!-- Process, ProcessStartInfo and Console stay out of io except in Command.cs, the one place io starts a program (BannedSymbols.txt). -->
+    <DbChangeBannedSymbols>$(MSBuildThisFileDirectory)BannedSymbols.txt</DbChangeBannedSymbols>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../kernel/kernel.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- A profile's options, Permissive's maker and AggregateQuery.Of stay internal to io; its own tests reach them, and nothing else does.
+         Budgets.Tests' register drives each error, the aggregate-query refusal and a statement's timeout among them. -->
+    <InternalsVisibleTo Include="DbChange.Io.Tests" />
+    <InternalsVisibleTo Include="DbChange.Budgets.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SqlServer.DacFx" />
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Bogus" />
+  </ItemGroup>
+</Project>

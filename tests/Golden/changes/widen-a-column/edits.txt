@@ -1,0 +1,3 @@
+=== Modules/Product.sql
+--- Code    NVARCHAR(50)    NOT NULL,
++++ Code    NVARCHAR(100)   NOT NULL,
