@@ -116,6 +116,7 @@ public static class DacFx
     /// sqlcmd.undeclared. The script is kept without the :setvar line of each value a reference gave. A package whose collation ignores case
     /// against a target whose collation does not is plan.collation, the check DacFx makes of a live plan (<see cref="Verified"/>); a package of
     /// a newer platform than the target's under AllowIncompatiblePlatform False is plan.platform; every other failure is dacfx.failed.
+    /// DacServices.Script over two packages has no overload that takes a token, so a plan runs to its end once begun; it connects to nothing.
     /// </summary>
     internal static Result<Io.Plan> Plan(Ssdt.Package source, Ssdt.Package target, string databaseName, PublishProfile.Strict profile, IReadOnlyList<SqlCmdValue> values)
     {
@@ -161,16 +162,17 @@ public static class DacFx
     /// what DacFx deployed, its report and its script. DacFx's error and warning messages during the call are kept with its failure, and its
     /// informational ones (a deployment script's PRINT output, "Altering Table [dbo].[T]...") are not; a failed publish of a profile with
     /// IncludeTransactionalScripts False says the copy may hold part of the change. Only a Copy is taken, so a named environment is never
-    /// published to.
+    /// published to. The run's interruption and the caller's token cancel it, as they cancel an extract.
     /// </summary>
-    public static Result<Published> Publish(SqlServer.Copy copy, Ssdt.Package package, PublishProfile profile)
+    public static Result<Published> Publish(SqlServer.Copy copy, Ssdt.Package package, PublishProfile profile, CancellationToken cancel = default)
     {
+        using var interrupted = CancellationTokenSource.CreateLinkedTokenSource(cancel, Interruption.RunToken);
         var services = new DacServices(copy.Connection);
         var messages = new List<DacMessage>();
         services.Message += (_, e) => messages.Add(e.Message);
         var options = profile.Options();
-        return Guard(() => services.Publish(package.Dac, copy.Name.ToString(), new PublishOptions { GenerateDeploymentReport = true, GenerateDeploymentScript = true, DeployOptions = options }),
-                failure => Failed(copy, failure with { Messages = SortedArray.Of(failure.Messages.Concat(Kept(messages)).Distinct()) }, options.IncludeTransactionalScripts))
+        return Guard(() => services.Publish(package.Dac, copy.Name.ToString(), new PublishOptions { GenerateDeploymentReport = true, GenerateDeploymentScript = true, DeployOptions = options, CancelToken = interrupted.Token }),
+                failure => Failed(copy, failure with { Messages = SortedArray.Of(failure.Messages.Concat(Kept(messages)).Distinct()) }, options.IncludeTransactionalScripts), interrupted.Token)
             .Bind(published => package.Elements.Bind(elements => Report(published.DeploymentReport, elements.Elements, [])).Map(report => new Published(report.Report, published.DatabaseScript)));
     }
 

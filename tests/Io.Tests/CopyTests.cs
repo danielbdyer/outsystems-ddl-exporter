@@ -56,6 +56,24 @@ public sealed class CopyTests(PublishedGoldenProject project) : IClassFixture<Pu
     }
 
     /// <summary>
+    /// S25 of the pre-M2 review: a publish takes the run's interruption and the caller's token, as an extract does, so one cancelled before it
+    /// begins publishes nothing and throws, for cli to answer as interrupted; the publish once ran to its end whatever the token said.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fixture")]
+    [Trait("Value", "O7")]
+    public async Task A_publish_whose_token_is_cancelled_publishes_nothing_and_throws()
+    {
+        using var copy = DisposableCopy.Create(root, await SqlServerFixture.ServerAsync());
+        using var package = Made(Ssdt.Open(project.Base));
+        using var cancelled = new System.Threading.CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        Assert.ThrowsAny<OperationCanceledException>(() => DacFx.Publish(copy.Copy, package, Made(PublishProfiles.Load(project.Profile)), cancelled.Token));
+        Assert.Equal(0, await SqlServerFixture.ScalarAsync(copy.Copy.Connection, "SELECT COUNT(*) FROM sys.tables;"));
+    }
+
+    /// <summary>
     /// Law 3′ across sources: the golden project published to two copies models to the package's keys, both copies to one
     /// fingerprint, and the change from the package to its copy holds nothing of what make-mandatory changes, which the change from
     /// the package to the make-mandatory head does hold.
