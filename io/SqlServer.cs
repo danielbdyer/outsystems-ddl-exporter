@@ -248,8 +248,8 @@ public static class SqlServer
 
     /// <summary>
     /// What an aggregate query measured, a value: its rows, every value an integer or null, in the order of their values, so two
-    /// measurements of the same rows are equal whatever order SQL Server returned them in; its failure, the number and the site, SQL
-    /// Server's message kept for a copy alone; or its timeout. The cases are closed, and Match reads each.
+    /// measurements of the same rows are equal whatever order SQL Server returned them in; the error SQL Server raised running it, by its
+    /// number, SQL Server's message kept for a copy alone; or its timeout. The cases are closed, and Match reads each.
     /// </summary>
     public abstract record Measurement
     {
@@ -257,20 +257,21 @@ public static class SqlServer
         {
         }
 
-        public T Match<T>(Func<Answered, T> answered, Func<Failed, T> failed, Func<TimedOut, T> timedOut) => this switch
+        public T Match<T>(Func<Answered, T> answered, Func<Raised, T> raised, Func<TimedOut, T> timedOut) => this switch
         {
             Answered a => answered(a),
-            Failed f => failed(f),
+            Raised r => raised(r),
             TimedOut t => timedOut(t),
             _ => throw new System.Diagnostics.UnreachableException(),
         };
 
         public sealed record Answered(string Site, SortedArray<Row> Rows) : Measurement;
 
-        public sealed record Failed(string Site, int Number, string? Message) : Measurement
+        /// <summary>SQL Server raised an error running the query (Msg 245, a conversion that failed): a measurement of its own, which the caller keeps as the site's outcome.</summary>
+        public sealed record Raised(string Site, int Number, string? Message) : Measurement
         {
             public override string ToString() =>
-                Site + ": query failed: Msg " + Number.ToString(CultureInfo.InvariantCulture) + (Message is null ? "; message withheld" : ": " + Message);
+                Site + ": SQL Server raised Msg " + Number.ToString(CultureInfo.InvariantCulture) + (Message is null ? "; message withheld" : ": " + Message);
         }
 
         /// <summary>SQL Server still running the query when its timeout passed, on a connection that stayed open: the server answered, and the measurement is missing, not failed.</summary>
@@ -333,7 +334,7 @@ public static class SqlServer
     internal static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log, TimeSpan timeout) =>
         NoSynonym(target, query, log).Bind(_ => Query(target, new Statement(query.Site, query.Statement) { Timeout = timeout }, log,
             rows => (Measurement)new Measurement.Answered(query.Site, SortedArray.Of(rows.Select(row => Row.Of([.. row.Select(Integer)])))),
-            failed => failed.TimedOut ? new Measurement.TimedOut(query.Site, timeout) : new Measurement.Failed(query.Site, failed.Number, failed.Message)));
+            failed => failed.TimedOut ? new Measurement.TimedOut(query.Site, timeout) : new Measurement.Raised(query.Site, failed.Number, failed.Message)));
 
     /// <summary>
     /// The query, when no table it reads by name is a synonym on the target (DECISIONS.md, 2026-09-25): a synonym can stand for a table

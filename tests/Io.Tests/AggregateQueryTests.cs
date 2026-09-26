@@ -58,10 +58,10 @@ public sealed class AggregateQueryTests(PublishedGoldenProject project) : IClass
         var uat = Resolved("uat", project.Reader.ConnectionString);
         var log = SqlServer.QueryLog.Start(root.Path);
 
-        var failed = Assert.IsType<SqlServer.Measurement.Failed>(Value(SqlServer.Measure(uat, Value(SqlServer.AggregateQuery.Of(Statement, "dbo.Planted.Value Fits")), log)));
+        var failed = Assert.IsType<SqlServer.Measurement.Raised>(Value(SqlServer.Measure(uat, Value(SqlServer.AggregateQuery.Of(Statement, "dbo.Planted.Value Fits")), log)));
 
         Assert.Equal((245, "dbo.Planted.Value Fits", (string?)null), (failed.Number, failed.Site, failed.Message));
-        Assert.Equal("dbo.Planted.Value Fits: query failed: Msg 245; message withheld", failed.ToString());
+        Assert.Equal("dbo.Planted.Value Fits: SQL Server raised Msg 245; message withheld", failed.ToString());
         Assert.Equal("failed, Msg 245", Assert.Single(Entries(File.ReadAllText(log.Path)), e => e.Site == "dbo.Planted.Value Fits").Outcome);
         planted.AbsentFrom(failed + File.ReadAllText(log.Path));
     }

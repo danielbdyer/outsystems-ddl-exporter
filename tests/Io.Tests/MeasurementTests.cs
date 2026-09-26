@@ -33,7 +33,7 @@ public sealed class MeasurementTests
         SqlServer.Measurement[] measured =
         [
             new SqlServer.Measurement.Answered("rows", SortedArray.Of(SqlServer.Row.Of(7))),
-            new SqlServer.Measurement.Failed("conversion", 245, null),
+            new SqlServer.Measurement.Raised("conversion", 245, null),
             new SqlServer.Measurement.TimedOut("scan", TimeSpan.FromSeconds(30)),
         ];
 
