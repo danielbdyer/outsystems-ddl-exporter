@@ -4,7 +4,7 @@ using System.Linq;
 using CsCheck;
 using Xunit;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>A result carries a value or the error in its place, and an error passes through Map and Bind.</summary>
 public sealed class ResultTests

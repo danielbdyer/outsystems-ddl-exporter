@@ -5,15 +5,15 @@ using System.IO.Compression;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Xml.Linq;
-using Estate.Budgets.Tests;
-using Estate.Io;
+using DbChange.Budgets.Tests;
+using DbChange.Io;
 using Microsoft.Data.SqlClient;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// V3_MILESTONES.md Appendix E as tests: section 1's measured facts 1 to 7, 10 and 11, one assertion each, against the
@@ -169,14 +169,14 @@ public sealed class SpikeTests(GoldenProject project) : IClassFixture<GoldenProj
 }
 
 /// <summary>
-/// The golden project (tests/Golden/project/) built the classic way against dist/estate/, with two heads built beside
+/// The golden project (tests/Golden/project/) built the classic way against dist/dbchange/, with two heads built beside
 /// it from edited copies: make-mandatory (Customer.Email NOT NULL) and a clean foreign key (Customer.AccountId to Account).
 /// The base is published to one registered database, the copy, as the fixture's admin identity, and the read-only principal
-/// is created on it. Everything is dropped after the class: the build tree under .estate/golden/, the copy and its principal.
+/// is created on it. Everything is dropped after the class: the build tree under .dbchange/golden/, the copy and its principal.
 /// </summary>
 public sealed class GoldenProject : IAsyncLifetime
 {
-    private readonly string root = Path.Combine(Repository.Root, ".estate", "golden", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);
+    private readonly string root = Path.Combine(Repository.Root, ".dbchange", "golden", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);
     private RegisteredDatabase? copy;
     private ReadOnlyPrincipal? reader;
 
@@ -197,7 +197,7 @@ public sealed class GoldenProject : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        Telemetry.OptOut();   // before DacFx loads, as estate's Main does
+        Telemetry.OptOut();   // before DacFx loads, as dbchange's Main does
         var tool = new PublishedTool();
         var golden = Path.Combine(Repository.Root, "tests", "Golden");
         Directory.CreateDirectory(root);

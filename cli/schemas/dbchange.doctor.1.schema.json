@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "estate.doctor/1",
-  "description": "What estate doctor --json writes: the envelope, and checks.",
-  "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with ESTATE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
+  "title": "dbchange.doctor/1",
+  "description": "What dbchange doctor --json writes: the envelope, and checks.",
+  "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with DBCHANGE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -23,7 +23,7 @@
   ],
   "properties": {
     "schema": {
-      "const": "estate.doctor/1"
+      "const": "dbchange.doctor/1"
     },
     "outcome": {
       "enum": [
@@ -140,7 +140,7 @@
         },
         {
           "type": "string",
-          "pattern": "^\\.estate/runs/[^/]+/answer\\.json$"
+          "pattern": "^\\.dbchange/runs/[^/]+/answer\\.json$"
         }
       ]
     },

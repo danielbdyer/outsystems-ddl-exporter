@@ -11,22 +11,22 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
-using Estate.Kernel;
+using DbChange.Kernel;
 using Microsoft.Data.SqlClient;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
 /// The local server, minimal (V3_MILESTONES.md §2.2, WP 1.4; WP 3.4 completes it): the SQL Server a copy is made on, the one
-/// ESTATE_SQL names, else the estate-sql container through ~/.estate/sql.env, else LocalDB, chosen inside io, so no caller holds its
+/// DBCHANGE_SQL names, else the dbchange-sql container through ~/.dbchange/sql.env, else LocalDB, chosen inside io, so no caller holds its
 /// login or makes a copy anywhere else; Create, which names a copy for this host and process, records it and its server in
-/// .estate/copies.json and makes its database; Drop, which removes both; and the registry, against which alone copy: resolves, on the
-/// server its row records. A local server on the host an environment names in estate/environments.json, by spelling or by address, is
+/// .dbchange/copies.json and makes its database; Drop, which removes both; and the registry, against which alone copy: resolves, on the
+/// server its row records. A local server on the host an environment names in dbchange/environments.json, by spelling or by address, is
 /// refused before anything connects (R15). Its CREATE and DROP DATABASE go through io/SqlServer.Query, the one statement path.
 /// </summary>
 public static class LocalServer
 {
-    internal const string Registry = ".estate/copies.json";
+    internal const string Registry = ".dbchange/copies.json";
 
     private const string Make = "DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql);";
 
@@ -53,14 +53,14 @@ public static class LocalServer
         }
     });
 
-    /// <summary>The estate-sql container's port and SA password, which only ci/sql.sh and ci/sql.ps1 write.</summary>
-    public static string SqlEnv { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".estate", "sql.env");
+    /// <summary>The dbchange-sql container's port and SA password, which only ci/sql.sh and ci/sql.ps1 write.</summary>
+    public static string SqlEnv { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dbchange", "sql.env");
 
     /// <summary>The local server, from the sources given, as the registry records it and R15 compares it (localhost,11433); nothing of its login.</summary>
-    public static Result<Kernel.ServerName> ServerName(string? estateSql, string sqlEnv, bool localDb) => Server(estateSql, sqlEnv, localDb).Bind(ServerName);
+    public static Result<Kernel.ServerName> ServerName(string? dbChangeSql, string sqlEnv, bool localDb) => Server(dbChangeSql, sqlEnv, localDb).Bind(ServerName);
 
     /// <summary>A copy on this machine's local server, refused on a named environment's host (R15); its CREATE DATABASE goes to the run's log, when given.</summary>
-    public static Result<SqlServer.Copy> Create(string estateRoot, SqlServer.QueryLog? log = null) => Server().Bind(server => Create(estateRoot, server, log));
+    public static Result<SqlServer.Copy> Create(string repositoryRoot, SqlServer.QueryLog? log = null) => Server().Bind(server => Create(repositoryRoot, server, log));
 
     /// <summary>
     /// The copy's database dropped, its sessions ended first, then its row; a database already gone is no error. The DROP DATABASE goes
@@ -73,8 +73,8 @@ public static class LocalServer
     }
 
     /// <summary>
-    /// The digest of the SQL Server image a database runs in, as Docker reports it for the running estate-sql container (finding
-    /// ARCH-07), for a copy whose server is the port that container publishes on this machine, however ESTATE_SQL or ~/.estate/sql.env
+    /// The digest of the SQL Server image a database runs in, as Docker reports it for the running dbchange-sql container (finding
+    /// ARCH-07), for a copy whose server is the port that container publishes on this machine, however DBCHANGE_SQL or ~/.dbchange/sql.env
     /// reached it: the registry digest the image was pulled by (docker image inspect's RepoDigests), which Doctor.ImageDigest pins; or,
     /// for an image built or loaded on the machine, which no registry names, its image id. Null for a named environment, a copy on
     /// another server (LocalDB among them), and where Docker or the container does not answer.
@@ -111,69 +111,69 @@ public static class LocalServer
         run(new Command("docker", arguments, Doctor.ProgramTimeout), CancellationToken.None) is Ran.Exited { Code: 0, Output: var output } ? output : null;
 
     /// <summary>The container ci/sql.sh and ci/sql.ps1 run the local server in.</summary>
-    private const string Container = "estate-sql";
+    private const string Container = "dbchange-sql";
 
     /// <summary>The repository of the pinned image (Doctor.SqlServerImage without its tag and digest), whose registry digest is preferred where an image was pulled from several.</summary>
     private static readonly string PinnedRepository = Doctor.SqlServerImage.Split('@')[0] is var reference ? reference[..reference.LastIndexOf(':')] : "";
 
     internal static Result<string> Server() =>
-        Server(Environment.GetEnvironmentVariable("ESTATE_SQL"), SqlEnv, Doctor.LocalDbInstalled(Command.Run));
+        Server(Environment.GetEnvironmentVariable("DBCHANGE_SQL"), SqlEnv, Doctor.LocalDbInstalled(Command.Run));
 
-    /// <summary>The local server, in the fixture's order: ESTATE_SQL; the container, when sql.env gives its port and password; LocalDB, when installed.</summary>
-    internal static Result<string> Server(string? estateSql, string sqlEnv, bool localDb)
+    /// <summary>The local server, in the fixture's order: DBCHANGE_SQL; the container, when sql.env gives its port and password; LocalDB, when installed.</summary>
+    internal static Result<string> Server(string? dbChangeSql, string sqlEnv, bool localDb)
     {
         var env = File.Exists(sqlEnv)
             ? File.ReadAllLines(sqlEnv).Select(line => line.Split('=', 2)).Where(pair => pair.Length == 2).ToDictionary(pair => pair[0], pair => pair[1].Trim(), StringComparer.Ordinal)
             : [];
-        return !string.IsNullOrEmpty(estateSql) ? estateSql
-            : env.GetValueOrDefault("MSSQL_SA_PASSWORD") is { Length: > 0 } password && env.GetValueOrDefault("ESTATE_SQL_PORT") is { Length: > 0 } port
+        return !string.IsNullOrEmpty(dbChangeSql) ? dbChangeSql
+            : env.GetValueOrDefault("MSSQL_SA_PASSWORD") is { Length: > 0 } password && env.GetValueOrDefault("DBCHANGE_SQL_PORT") is { Length: > 0 } port
                 ? ConnectionString.Container(port, password)
             : localDb ? @"Server=(localdb)\MSSQLLocalDB;Integrated Security=true"
-            : new Error("local-server.missing", "No local server: ESTATE_SQL is unset, " + sqlEnv + " gives no container's port and password, and LocalDB is not installed.",
-                "Start Docker and run ci/sql.sh up, or ci/sql.ps1 up on Windows, or set ESTATE_SQL; then run estate doctor.");
+            : new Error("local-server.missing", "No local server: DBCHANGE_SQL is unset, " + sqlEnv + " gives no container's port and password, and LocalDB is not installed.",
+                "Start Docker and run ci/sql.sh up, or ci/sql.ps1 up on Windows, or set DBCHANGE_SQL; then run dbchange doctor.");
     }
 
     /// <summary>
-    /// A server as the registry records it and R15 compares it, read from its connection string on this machine. Only ESTATE_SQL, which
+    /// A server as the registry records it and R15 compares it, read from its connection string on this machine. Only DBCHANGE_SQL, which
     /// the operator writes, can give one SqlClient reads nothing from: connection.malformed, configuration (exit 6) rather than a server
     /// that does not answer.
     /// </summary>
     internal static Result<Kernel.ServerName> ServerName(string server) =>
-        ConnectionString.Parse("ESTATE_SQL", server, "Correct ESTATE_SQL, or unset it; then run estate doctor.").Map(ConnectionString.ServerOf);
+        ConnectionString.Parse("DBCHANGE_SQL", server, "Correct DBCHANGE_SQL, or unset it; then run dbchange doctor.").Map(ConnectionString.ServerOf);
 
     /// <summary>
-    /// A copy on the server given, refused on a named environment's host (R15 against estate/environments.json, read here once); recorded
+    /// A copy on the server given, refused on a named environment's host (R15 against dbchange/environments.json, read here once); recorded
     /// with its server before its database is made, so a crash leaves a row to follow.
     /// </summary>
-    internal static Result<SqlServer.Copy> Create(string estateRoot, string server, SqlServer.QueryLog? log = null, Func<string, IPAddress[]>? resolve = null) =>
-        ServerName(server).Bind(name => EnvironmentsFile.Read(estateRoot).Bind(environments => Unnamed(environments, estateRoot, name, resolve ?? Resolved))).Bind(name =>
+    internal static Result<SqlServer.Copy> Create(string repositoryRoot, string server, SqlServer.QueryLog? log = null, Func<string, IPAddress[]>? resolve = null) =>
+        ServerName(server).Bind(name => EnvironmentsFile.Read(repositoryRoot).Bind(environments => Unnamed(environments, repositoryRoot, name, resolve ?? Resolved))).Bind(name =>
         {
-            var copy = new SqlServer.Copy(CopyName.Make(Environment.MachineName, Environment.ProcessId, BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, estateRoot);
+            var copy = new SqlServer.Copy(CopyName.Make(Environment.MachineName, Environment.ProcessId, BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, repositoryRoot);
             var row = new JsonObject
             {
                 ["name"] = copy.Name.ToString(), ["server"] = name.ToString(), ["host"] = copy.Name.Machine, ["pid"] = Environment.ProcessId,
                 ["created"] = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
             };
-            return Change(estateRoot, rows => [.. rows, row]).Bind(_ => Run(copy, "CREATE DATABASE", Make, log).Match(
+            return Change(repositoryRoot, rows => [.. rows, row]).Bind(_ => Run(copy, "CREATE DATABASE", Make, log).Match(
                 made => Result.Ok(made),
-                error => Change(estateRoot, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())]).Bind(_ => Result.Fail<SqlServer.Copy>(error))));
+                error => Change(repositoryRoot, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())]).Bind(_ => Result.Fail<SqlServer.Copy>(error))));
         });
 
     /// <summary>
-    /// copy: resolved against .estate/copies.json alone: the row holding the name, on a server R15 clears against the environments file as the verb
+    /// copy: resolved against .dbchange/copies.json alone: the row holding the name, on a server R15 clears against the environments file as the verb
     /// read it, which the local server this machine names must still be. A name the registry does not hold is refused before the
-    /// environmentsFile is consulted.
+    /// environments file is consulted.
     /// </summary>
-    internal static Result<SqlServer.Copy> Registered(string estateRoot, CopyName name, Result<Environments> environmentsFile) => Registered(estateRoot, name, environmentsFile, Server, Resolved);
+    internal static Result<SqlServer.Copy> Registered(string repositoryRoot, CopyName name, Result<Environments> environmentsFile) => Registered(repositoryRoot, name, environmentsFile, Server, Resolved);
 
-    internal static Result<SqlServer.Copy> Registered(string estateRoot, CopyName name, Result<Environments> environmentsFile, Func<Result<string>> chosen, Func<string, IPAddress[]> resolve) =>
-        Rows(estateRoot).Bind(rows => rows.FirstOrDefault(r => (string?)r["name"] == name.ToString()) is not { } row
-            ? new Error("copy.unregistered", new Target.RegisteredCopy(name) + " is no copy " + Registry + " holds, and copy: names only a database estate made and recorded there.",
+    internal static Result<SqlServer.Copy> Registered(string repositoryRoot, CopyName name, Result<Environments> environmentsFile, Func<Result<string>> chosen, Func<string, IPAddress[]> resolve) =>
+        Rows(repositoryRoot).Bind(rows => rows.FirstOrDefault(r => (string?)r["name"] == name.ToString()) is not { } row
+            ? new Error("copy.unregistered", new Target.RegisteredCopy(name) + " is no copy " + Registry + " holds, and copy: names only a database dbchange made and recorded there.",
                 "Name a copy that " + Registry + " holds on this machine.")
-            : environmentsFile.Bind(environments => Unnamed(environments, estateRoot, Kernel.ServerName.Of((string)row["server"]!, Environment.MachineName), resolve)).Bind(made => chosen().Bind(server => ServerName(server).Bind(now => now == made
-                ? Result.Ok(new SqlServer.Copy(name, server, estateRoot))
+            : environmentsFile.Bind(environments => Unnamed(environments, repositoryRoot, Kernel.ServerName.Of((string)row["server"]!, Environment.MachineName), resolve)).Bind(made => chosen().Bind(server => ServerName(server).Bind(now => now == made
+                ? Result.Ok(new SqlServer.Copy(name, server, repositoryRoot))
                 : new Error("copy.unregistered", new Target.RegisteredCopy(name) + " was made on another server than the local server this machine names now, so " + Registry + " holds no such copy here.",
-                    "Set ESTATE_SQL back to the server that made the copy, or make a new copy on this one.")))));
+                    "Set DBCHANGE_SQL back to the server that made the copy, or make a new copy on this one.")))));
 
     /// <summary>
     /// R15: the server's host is none an environment of the environments file names as its host (DECISIONS.md, 2026-09-25), compared by spelling,
@@ -182,10 +182,10 @@ public static class LocalServer
     /// compares that host (environments.host); a reference SqlClient reads no connection string from, or whose file cannot be examined, is an
     /// error, R15 failing closed.
     /// </summary>
-    internal static Result<Kernel.ServerName> Unnamed(Environments environments, string estateRoot, Kernel.ServerName server, Func<string, IPAddress[]> resolve) =>
-        Result.All(environments.All.Select(environment => SqlServer.DataSource(environment, estateRoot).Bind(source => source is { } read && read.Host != environment.Host
+    internal static Result<Kernel.ServerName> Unnamed(Environments environments, string repositoryRoot, Kernel.ServerName server, Func<string, IPAddress[]> resolve) =>
+        Result.All(environments.All.Select(environment => SqlServer.DataSource(environment, repositoryRoot).Bind(source => source is { } read && read.Host != environment.Host
             ? new Error("environments.host", SqlServer.EnvironmentDatabase.Subject(environment) + " names a server on another host than " + environment.Host + ", the host "
-                + EnvironmentsFile.Json + " gives " + environment.Target + ", and estate makes no copy on the host the environments file gives.",
+                + EnvironmentsFile.Json + " gives " + environment.Target + ", and dbchange makes no copy on the host the environments file gives.",
                 "Write " + environment.Target + "'s host in " + EnvironmentsFile.Json + " as its connection string spells the server, or correct the connection string.")
             : Result.Ok(environment))))
         .Bind(compared =>
@@ -193,7 +193,7 @@ public static class LocalServer
             var addresses = new Lazy<HashSet<IPAddress>>(() => Addresses(server.Host, resolve));
             return compared.Where(e => e.Host == server.Host).Concat(compared.Where(e => e.Host != server.Host && Addresses(e.Host, resolve).Overlaps(addresses.Value))).FirstOrDefault() is { } named
                 ? new Error("copy.named-host", "The local server is on " + named.Host + ", the host " + named.Target + " runs on, and a copy is made only where no named environment lives.",
-                    "Point ESTATE_SQL at a local SQL Server, or unset it and run ci/sql.sh up (ci/sql.ps1 up on Windows).")
+                    "Point DBCHANGE_SQL at a local SQL Server, or unset it and run ci/sql.sh up (ci/sql.ps1 up on Windows).")
                 : Result.Ok(server);
         });
 
@@ -232,9 +232,9 @@ public static class LocalServer
         }, log, _ => copy);
 
     /// <summary>The registry's rows, none when it is absent, each naming its copy and the server it was made on. A write replaces the file whole, so a reader sees the rows before a change or after it.</summary>
-    private static Result<List<JsonObject>> Rows(string estateRoot)
+    private static Result<List<JsonObject>> Rows(string repositoryRoot)
     {
-        var path = Path.Combine(estateRoot, Registry);
+        var path = Path.Combine(repositoryRoot, Registry);
         try
         {
             return !File.Exists(path) ? new List<JsonObject>()
@@ -245,21 +245,21 @@ public static class LocalServer
         }
         catch (Exception e) when (e is JsonException or InvalidOperationException or IOException or UnauthorizedAccessException)
         {
-            return new Error("registry.unreadable", Registry + " under " + estateRoot + " is not the registry estate writes; its text is withheld.",
+            return new Error("registry.unreadable", Registry + " under " + repositoryRoot + " is not the registry dbchange writes; its text is withheld.",
                 "Drop the copies it lists with DROP DATABASE, then delete " + Registry + ".");
         }
     }
 
     /// <summary>The registry changed under a lock this process alone holds while it reads, changes and writes the file back through io/Write.</summary>
-    private static Result<List<JsonObject>> Change(string estateRoot, Func<List<JsonObject>, List<JsonObject>> change) => Held(new LocalState(estateRoot).CopiesLock).Bind(held =>
+    private static Result<List<JsonObject>> Change(string repositoryRoot, Func<List<JsonObject>, List<JsonObject>> change) => Held(new LocalState(repositoryRoot).CopiesLock).Bind(held =>
     {
         using (held)
         {
-            return Rows(estateRoot).Map(change).Bind(rows => Write.Text(Path.Combine(estateRoot, Registry), Json.Text(new JsonObject { ["copies"] = new JsonArray([.. rows]) })).Map(_ => rows));
+            return Rows(repositoryRoot).Map(change).Bind(rows => Write.Text(Path.Combine(repositoryRoot, Registry), Json.Text(new JsonObject { ["copies"] = new JsonArray([.. rows]) })).Map(_ => rows));
         }
     });
 
-    /// <summary>How long a registry change waits for another estate process's: a change takes milliseconds.</summary>
+    /// <summary>How long a registry change waits for another dbchange process's: a change takes milliseconds.</summary>
     private static readonly TimeSpan RegistryTimeout = TimeSpan.FromMinutes(1);
 
     /// <summary>The registry's lock file, taken for this process alone through io/FileLock; another holder is waited out for <see cref="RegistryTimeout"/>.</summary>

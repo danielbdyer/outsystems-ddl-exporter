@@ -4,11 +4,11 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Estate.Tests;
+using DbChange.Tests;
 using Xunit;
-using static Estate.Tests.Expect;
+using static DbChange.Tests.Expect;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/Write: UTF-8 without a BOM, the kernel's line ending (CRLF and a lone CR to LF) unless the file on disk declares CRLF, read through

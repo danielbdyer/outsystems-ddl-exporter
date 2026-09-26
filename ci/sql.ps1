@@ -1,17 +1,17 @@
 #Requires -Version 7.0
-# The machine's shared SQL Server for tests and sessions (V3_MILESTONES.md WP 0.7, section 1 fact 12): one container, estate-sql,
+# The machine's shared SQL Server for tests and sessions (V3_MILESTONES.md WP 0.7, section 1 fact 12): one container, dbchange-sql,
 # from the image pinned by tag and digest, SQL Server Agent on (CDC needs it), published on 127.0.0.1 only. Its SA password
-# is generated once per machine and kept only in ~/.estate/sql.env; nothing here prints it. ci/sql.sh is the same elsewhere.
+# is generated once per machine and kept only in ~/.dbchange/sql.env; nothing here prints it. ci/sql.sh is the same elsewhere.
 #   ci/sql.ps1 up     pull the image when absent, make the container again when it runs another image, create or start it,
 #                     wait until SQL Server answers
 #   ci/sql.ps1 down   remove the container; the password stays for the next up
-#   ci/sql.ps1 conn   set ESTATE_SQL for this PowerShell session (run it as ./ci/sql.ps1 conn); nothing is printed
+#   ci/sql.ps1 conn   set DBCHANGE_SQL for this PowerShell session (run it as ./ci/sql.ps1 conn); nothing is printed
 param([Parameter(Mandatory)][ValidateSet('up', 'down', 'conn')][string]$Verb)
 $ErrorActionPreference = 'Stop'
 
 $image = 'mcr.microsoft.com/mssql/server:2022-latest@sha256:4402d880dd4c34bfa7d8705e56a86cd6c88da80a1f6bbbe741f999e76264a090'
-$name = 'estate-sql'
-$dir = Join-Path $HOME '.estate'
+$name = 'dbchange-sql'
+$dir = Join-Path $HOME '.dbchange'
 $envFile = Join-Path $dir 'sql.env'
 $lock = Join-Path $dir 'sql.lock'
 $script:held = $false
@@ -45,7 +45,7 @@ function Lock {
 
 function Up {
     docker info *> $null
-    if ($LASTEXITCODE -ne 0) { Fail 'Docker does not answer (docker info): start Docker, or set ESTATE_SQL to another SQL Server' 4 }
+    if ($LASTEXITCODE -ne 0) { Fail 'Docker does not answer (docker info): start Docker, or set DBCHANGE_SQL to another SQL Server' 4 }
     Lock
     docker image inspect $image *> $null
     if ($LASTEXITCODE -ne 0) {
@@ -61,15 +61,15 @@ function Up {
     if (-not (State)) {
         $password = Value 'MSSQL_SA_PASSWORD'
         if (-not $password) { $password = 'Est!' + [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(16)).ToLowerInvariant() }
-        $port = if ($env:ESTATE_SQL_PORT) { $env:ESTATE_SQL_PORT } else { '11433' }
-        [IO.File]::WriteAllText($envFile, "MSSQL_SA_PASSWORD=$password`nESTATE_SQL_PORT=$port`n")
+        $port = if ($env:DBCHANGE_SQL_PORT) { $env:DBCHANGE_SQL_PORT } else { '11433' }
+        [IO.File]::WriteAllText($envFile, "MSSQL_SA_PASSWORD=$password`nDBCHANGE_SQL_PORT=$port`n")
         # Its owner alone reads the password, as ci/sql.sh's umask and chmod make it; Windows keeps no such mode, and the file inherits
         # the private ACL of the user's profile folder there.
         if (-not $IsWindows) { [IO.File]::SetUnixFileMode($envFile, [IO.UnixFileMode]'UserRead, UserWrite') }
         docker run -d --name $name --env-file $envFile -e ACCEPT_EULA=Y -e MSSQL_AGENT_ENABLED=true -p "127.0.0.1:${port}:1433" $image | Out-Null
         if ($LASTEXITCODE -ne 0) {
             docker rm -f $name *> $null
-            Fail "$name did not start on 127.0.0.1:${port}; if the port is taken: `$env:ESTATE_SQL_PORT = <a free port>; ./ci/sql.ps1 up"
+            Fail "$name did not start on 127.0.0.1:${port}; if the port is taken: `$env:DBCHANGE_SQL_PORT = <a free port>; ./ci/sql.ps1 up"
         }
     }
     elseif (-not (Value 'MSSQL_SA_PASSWORD')) { Fail "$name exists but $envFile holds no password for it: ./ci/sql.ps1 down, then ./ci/sql.ps1 up" 6 }
@@ -81,7 +81,7 @@ function Up {
         docker exec $name /bin/sh -c '/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P $MSSQL_SA_PASSWORD -b -Q ''SELECT 1'' >/dev/null 2>&1'
         if ($LASTEXITCODE -eq 0) {
             Remove-Item -Force $lock
-            "${name}: SQL Server on 127.0.0.1,$(Value 'ESTATE_SQL_PORT'); the SA password is in $envFile"
+            "${name}: SQL Server on 127.0.0.1,$(Value 'DBCHANGE_SQL_PORT'); the SA password is in $envFile"
             return
         }
         Start-Sleep -Seconds 2
@@ -99,6 +99,6 @@ switch ($Verb) {
     }
     'conn' {
         if (-not (Value 'MSSQL_SA_PASSWORD')) { Fail "$envFile holds no password: ./ci/sql.ps1 up first" }
-        $env:ESTATE_SQL = "Server=127.0.0.1,$(Value 'ESTATE_SQL_PORT');User ID=sa;Password=$(Value 'MSSQL_SA_PASSWORD');TrustServerCertificate=True"
+        $env:DBCHANGE_SQL = "Server=127.0.0.1,$(Value 'DBCHANGE_SQL_PORT');User ID=sa;Password=$(Value 'MSSQL_SA_PASSWORD');TrustServerCertificate=True"
     }
 }

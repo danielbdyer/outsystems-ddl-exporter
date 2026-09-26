@@ -3,15 +3,15 @@ using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
-using Estate.Budgets.Tests;
-using Estate.Cli;
-using Estate.Kernel;
+using DbChange.Budgets.Tests;
+using DbChange.Cli;
+using DbChange.Kernel;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
-using Contract = Estate.Cli.Contract;
+using Contract = DbChange.Cli.Contract;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// A disposable copy (V3_MILESTONES.md WP 1.4, §2.2's rows for io/LocalServer.cs and io/SqlServer.cs, law 3′): io/LocalServer makes, registers and drops
@@ -21,7 +21,7 @@ namespace Estate.Io.Tests;
 /// </summary>
 public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProject>, IDisposable
 {
-    private readonly string root = SqlServerFixture.EstateRoot(Path.Combine(Repository.Root, ".estate", "copies-under-test", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]));
+    private readonly string root = SqlServerFixture.RepositoryRoot(Path.Combine(Repository.Root, ".dbchange", "copies-under-test", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]));
 
     public void Dispose() => Directory.Delete(root, recursive: true);
 
@@ -40,7 +40,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
             var row = Assert.Single(Registry())!.AsObject();
             Assert.Equal(["created", "host", "name", "pid", "server"], row.Select(p => p.Key).Order(StringComparer.Ordinal));
             Assert.Equal((copy.Name.ToString(), Environment.ProcessId, Made(LocalServer.ServerName(server)).ToString()), ((string)row["name"]!, (int)row["pid"]!, (string)row["server"]!));
-            var registry = File.ReadAllText(Path.Combine(root, ".estate", "copies.json"));
+            var registry = File.ReadAllText(Path.Combine(root, ".dbchange", "copies.json"));
             Assert.All(new[] { new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(server).Password }.Where(password => password.Length > 0), password => Assert.DoesNotContain(password, registry, StringComparison.Ordinal));
             Assert.Equal(TimeSpan.Zero, DateTimeOffset.Parse((string)row["created"]!, System.Globalization.CultureInfo.InvariantCulture).Offset);
             Assert.Equal(copy.Name, Assert.IsType<SqlServer.Copy>(Made(SqlServer.Resolve(Made(SqlServer.Target("copy:" + copy.Name, "--target")), root))).Name);
@@ -201,8 +201,8 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
             File.SetUnixFileMode(Path.Combine(root, "dev.connection"), UnixFileMode.UserRead | UnixFileMode.UserWrite);   // io/SqlServer refuses a connection file others can read
         }
 
-        File.WriteAllText(Path.Combine(root, "estate", "environments.json"),
-            "{ \"environments\": { \"dev\": { \"host\": \"localhost\", \"connection\": \"file:dev.connection\", \"profile\": \"estate/profiles/pipeline.publish.xml\" } } }");
+        File.WriteAllText(Path.Combine(root, "dbchange", "environments.json"),
+            "{ \"environments\": { \"dev\": { \"host\": \"localhost\", \"connection\": \"file:dev.connection\", \"profile\": \"dbchange/profiles/pipeline.publish.xml\" } } }");
         var dacpac = Path.Combine(root, "vnext.dacpac");
         using (var model = new TSqlModel(SqlServerVersion.Sql180, new TSqlModelOptions()))
         {
@@ -231,8 +231,8 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
     private static bool MakesMandatory(Change.Alteration altered) =>
         altered.Key.ToString() == "Column [dbo].[Customer].[Email]" && altered.Properties.Any(p => p.Name == "Nullable");
 
-    private JsonArray Registry() => File.Exists(Path.Combine(root, ".estate", "copies.json"))
-        ? JsonNode.Parse(File.ReadAllText(Path.Combine(root, ".estate", "copies.json")))!["copies"]!.AsArray()
+    private JsonArray Registry() => File.Exists(Path.Combine(root, ".dbchange", "copies.json"))
+        ? JsonNode.Parse(File.ReadAllText(Path.Combine(root, ".dbchange", "copies.json")))!["copies"]!.AsArray()
         : [];
 
     private static T Made<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));

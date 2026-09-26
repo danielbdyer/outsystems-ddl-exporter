@@ -5,12 +5,12 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
-using Estate.Budgets.Tests;
-using Estate.Kernel;
-using Estate.Tests;
+using DbChange.Budgets.Tests;
+using DbChange.Kernel;
+using DbChange.Tests;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// §2.1 rule 3, capabilities are types (M1 exit 5, R15; VALUES.md S1, S7, G6): a named environment and a disposable copy are
@@ -77,7 +77,7 @@ public sealed class CapabilityTests
     {
         var of = typeof(PublishProfile.Permissive).GetMethod("Of", BindingFlags.NonPublic | BindingFlags.Static)!;
 
-        Assert.Equal(["Estate.Io.SqlServer+Copy.Permissive"], Callers(of).Select(Named));
+        Assert.Equal(["DbChange.Io.SqlServer+Copy.Permissive"], Callers(of).Select(Named));
         Assert.Equal(typeof(PublishProfile.Strict), typeof(DacFx).GetMethod(nameof(DacFx.Plan), BindingFlags.NonPublic | BindingFlags.Static)!.GetParameters().Single(p => typeof(PublishProfile).IsAssignableFrom(p.ParameterType)).ParameterType);
         foreach (var type in (Type[])[typeof(SqlServer.EnvironmentDatabase), typeof(SqlServer.Database)])
         {
@@ -113,7 +113,7 @@ public sealed class CapabilityTests
     {
         var lines = new List<string>
         {
-            "using Estate.Io;", "using Estate.Kernel;", "", "namespace Planted;", "", "public static class Uses", "{",
+            "using DbChange.Io;", "using DbChange.Kernel;", "", "namespace Planted;", "", "public static class Uses", "{",
             "    public static Result<SqlServer.Copy> Made(string root, string dacpac, PublishProfile.Strict strict) =>",
             "        LocalServer.Create(root).Bind(copy => copy.Publish(dacpac, strict)).Bind(copy => copy.Publish(dacpac, copy.Permissive(strict)));",
             "", "    public static void Refused(SqlServer.EnvironmentDatabase named, string dacpac, PublishProfile.Strict strict)", "    {",
@@ -133,8 +133,8 @@ public sealed class CapabilityTests
         "    <RestoreLockedMode>false</RestoreLockedMode>",
         "  </PropertyGroup>",
         "  <ItemGroup>",
-        "    <Reference Include=\"Estate.Io\" HintPath=\"" + Path.Combine(AppContext.BaseDirectory, "Estate.Io.dll") + "\" />",
-        "    <Reference Include=\"Estate.Kernel\" HintPath=\"" + Path.Combine(AppContext.BaseDirectory, "Estate.Kernel.dll") + "\" />",
+        "    <Reference Include=\"DbChange.Io\" HintPath=\"" + Path.Combine(AppContext.BaseDirectory, "DbChange.Io.dll") + "\" />",
+        "    <Reference Include=\"DbChange.Kernel\" HintPath=\"" + Path.Combine(AppContext.BaseDirectory, "DbChange.Kernel.dll") + "\" />",
         "  </ItemGroup>",
         "</Project>",
         "");

@@ -1,6 +1,6 @@
 using System;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
 /// The kernel's one line-ending rule, XML 1.0's end-of-line handling (section 2.11): CRLF and a lone CR become LF. DacFx applies

@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Estate.Kernel;
+using DbChange.Kernel;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// What an aggregate query measured is a value (finding ARCH-16): two measurements of equal rows are equal whatever order SQL Server

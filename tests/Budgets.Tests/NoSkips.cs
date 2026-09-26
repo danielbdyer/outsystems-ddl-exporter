@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using Xunit;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// No test skips itself: under tests/ there is no skip argument on a fact or a theory, no skip-if or skip-unless call,

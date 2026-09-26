@@ -37,7 +37,7 @@
     get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage refused: the filter just isn't remembered */ } },
   };
-  const FKEY = "estate-review." + (DATA.id || "review") + ".filters";
+  const FKEY = "dbchange-review." + (DATA.id || "review") + ".filters";
   const filters = Object.assign({ sev: ["blocker", "major", "minor", "note"], area: "all", status: "all", q: "" }, ls.get(FKEY, {}));
 
   const readOnly = () => document.body.classList.add("read-only");

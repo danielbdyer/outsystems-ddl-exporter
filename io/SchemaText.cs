@@ -4,10 +4,10 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using Estate.Kernel;
+using DbChange.Kernel;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
 /// Schema text as it leaves the tool (decision 2.27, VALUES.md X2): the text with each value a known <see cref="PasswordForm"/>

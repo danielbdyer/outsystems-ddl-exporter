@@ -19,7 +19,7 @@ drifting into the 119,384 lines v2 wrote about itself.
 
 **Contents.** §0 the summary · §1 who reads what, when · §2 what v2 taught · §3 principles ·
 §4 the values register · §5 the inventory · §6 the engine repository · §7 the knowledge layer
-· §8 the estate repository · §9 the agentic interface · §10 how it stays true · §11 migration
+· §8 the SSDT repository · §9 the agentic interface · §10 how it stays true · §11 migration
 · §12 risks · A retired vocabulary · B reading paths · C numbers.
 
 **The design.** A document is a product with a named reader and a named moment, and it is
@@ -36,7 +36,7 @@ ledgers. Everything an agent
 needs at runtime (the laws, the verb reference, the config reference, the skill index, the
 Copilot bundle, the `.claude/` pointers, the document inventory) is generated from tests,
 from `--help`, and from the tree, and is never edited by hand. Two hooks replace four; both
-are wrappers over a verb. The engine and the estate are two repositories, the companion's
+are wrappers over a verb. The engine and the SSDT repository are two repositories, the companion's
 default and its ninth operator decision, still open; §8 says what changes if they merge. The
 values the codebase upholds are written once, each with the
 mechanism that upholds it and the name of the test, and the register that lists them is the
@@ -82,13 +82,13 @@ that moment or to point, in one hop, to what is.
 
 | Reader | First day | Starting a session | Making a change | Reviewing a change | A failure | A release | A decision |
 |---|---|---|---|---|---|---|---|
-| **A developer** (OutSystems-native, Copilot in Visual Studio, the estate repository) | the entry prompt (`#prompt:schema-change`) | the router (`copilot-instructions.md`, attaches itself) | `knowledge/authoring.md` → one `ops/<op>.md` → the shared skill it names | — | the verdict's `remedy` line; `ops/<op>.md` "the named trap" | the pull request description they wrote | the one business question, asked by the tool |
+| **A developer** (OutSystems-native, Copilot in Visual Studio, the SSDT repository) | the entry prompt (`#prompt:schema-change`) | the router (`copilot-instructions.md`, attaches itself) | `knowledge/authoring.md` → one `ops/<op>.md` → the shared skill it names | — | the verdict's `remedy` line; `ops/<op>.md` "the named trap" | the pull request description they wrote | the one business question, asked by the tool |
 | **A reviewer / dev lead** | `knowledge/description.md` (one page) | — | — | the pull request body; `knowledge/reviewing.md` if reproducing | the gate's `gate.json` | the ledgers (`operations.md`, `in-flight.md`) | `refusals.md` (escalations land here) |
-| **An engine maintainer** (the team's C# developer, this repository) | `README.md` → `VALUES.md` → `kernel/README.md` | `NEXT.md` | the package README of the area; `LAWS.md` | the pull request; the engine template's sections | `estate doctor`; the test name in the failure | `DECISIONS.md` (append a line) | `DECISIONS.md`, `ARCHITECTURE.md` (the paragraph that became false) |
+| **An engine maintainer** (the team's C# developer, this repository) | `README.md` → `VALUES.md` → `kernel/README.md` | `NEXT.md` | the package README of the area; `LAWS.md` | the pull request; the engine template's sections | `dbchange doctor`; the test name in the failure | `DECISIONS.md` (append a line) | `DECISIONS.md`, `ARCHITECTURE.md` (the paragraph that became false) |
 | **The owner / architect** | this document and its companion | `NEXT.md` | `ARCHITECTURE.md` | — | `VALUES.md` (which value the failure violated) | `DECISIONS.md` | `V3_ARCHITECTURE.md` §16 (the list of decisions only the operator can make) |
-| **A Claude Code session** (engineering, this repository) | `AGENTS.md` (via `CLAUDE.md`) | the SessionStart hook's status line (`estate doctor`) | `AGENTS.md` §"how to change things"; the package README | the engine PR template | the verb's refusal (exit code + remedy); `AGENTS.md` §"when a tool is missing" | `NEXT.md` (rewrite) | `DECISIONS.md` (one line) |
-| **A Copilot session** (authoring, the estate repository) | the router | the path-scoped instruction that attached | `authoring.md` phases S0–S8 with their verbs | `reviewing.md` | the verdict JSON | the pull request description | the fork form (`ask-the-developer`, folded into `authoring.md`) |
-| **A CI lane** (proof, bake, gate) | `ci/README.md` | — | — | `estate gate` | the lane's own log; `gate.json` | `changelog.json` | — |
+| **A Claude Code session** (engineering, this repository) | `AGENTS.md` (via `CLAUDE.md`) | the SessionStart hook's status line (`dbchange doctor`) | `AGENTS.md` §"how to change things"; the package README | the engine PR template | the verb's refusal (exit code + remedy); `AGENTS.md` §"when a tool is missing" | `NEXT.md` (rewrite) | `DECISIONS.md` (one line) |
+| **A Copilot session** (authoring, the SSDT repository) | the router | the path-scoped instruction that attached | `authoring.md` phases S0–S8 with their verbs | `reviewing.md` | the verdict JSON | the pull request description | the fork form (`ask-the-developer`, folded into `authoring.md`) |
+| **A CI lane** (proof, bake, gate) | `ci/README.md` | — | — | `dbchange gate` | the lane's own log; `gate.json` | `changelog.json` | — |
 | **A review bot** (Claude Code Review, Copilot review, on either repository) | the PR template (its sections are the bot's checklist) | — | — | `knowledge/description.md` for a schema PR; `VALUES.md` for an engine PR | — | — | — |
 | **A new joiner, either repository** | `README.md` (150 lines, five minutes) | — | — | — | — | — | — |
 | **A developer on the bottom rung** (agent mode off; the router and the instructions are all that attach) | the router, read by hand | the router | `knowledge/INDEX.md` → the operation → `authoring.md`, read as documents; the verbs typed by hand | — | the verdict | the pull request description | — |
@@ -96,7 +96,7 @@ that moment or to point, in one hop, to what is.
 | **The SSIS team** (maps a legacy database against the schema each sprint) | — | — | — | — | — | `changelog.json` from the gate, with renames by refactorlog key and both shapes during a two-release window | — |
 
 - **The developer never reads the engine repository.** Everything a Copilot session needs is
-  vendored into the estate repository as `knowledge/` and the bundle (§8). The engine
+  vendored into the SSDT repository as `knowledge/` and the bundle (§8). The engine
   repository's instruction set (§6) is for maintainers and for engineering sessions.
 - **Nobody reads the archive.** `archive/` has no cell. It is provenance: reachable on
   purpose (§9.6 says how), invisible by default.
@@ -123,8 +123,8 @@ The reading paths for the four most common first days are written out in Appendi
 | `.claude/` | 72 files · 4 hooks (814 lines of bash) · 65 skill pointers + 3 agent pointers (8 lines each, generated) · `settings.json` (47 lines) | Claude Code sessions in the monorepo |
 | the four hooks | `session-start.sh` 431 · `docker-probe.sh` 171 (PreToolUse, every Bash call) · `session-end.sh` 118 · `perf-gate-stop.sh` 94 (Stop, after every message) | the harness |
 | the `ssdt-agent` tree's entry surfaces | `README.md` 162 · `CLAUDE.md` 24 (a routing stub) · `THE_RECORD.md` 308 + `THE_RECORD_FORMS.md` 143 · `THE_DECISION_TREE.md` 215 · 3 agents 743 · `skills/INDEX.md` (generated) | Claude Code and Copilot sessions |
-| the Copilot bundle | 80 files · router 60 lines · 4 path-scoped instructions (9–23 lines) · 3 agents · 4 prompts · 65 pointers · PR template ×2 · `ADOPTION.md` 173 · fingerprint `047e6c5dbd9c` | the estate repository (vendored) |
-| the gates | `ssdt-agent-gates.mjs` 370 (citations · register · mirror · packaging · estate) + `ssdt-agent-package.mjs` 682 | CI on the tree; the estate pipeline (`copilot-check`) |
+| the Copilot bundle | 80 files · router 60 lines · 4 path-scoped instructions (9–23 lines) · 3 agents · 4 prompts · 65 pointers · PR template ×2 · `ADOPTION.md` 173 · fingerprint `047e6c5dbd9c` | the SSDT repository (vendored) |
+| the gates | `ssdt-agent-gates.mjs` 370 (citations · register · mirror · packaging · estate, a v2 gate) + `ssdt-agent-package.mjs` 682 | CI on the tree; the SSDT repository's pipeline (`copilot-check`) |
 | the self-test | 9 files · 2,493 lines · a 1,046-line prompt matrix · two rubrics (six criteria; nine dimensions) | a hand-scored certification nobody has run since the proof lane landed |
 | `.github/workflows` | 6 lanes · 440 lines | CI |
 | v1's documents | `readme.md` 1,162 and six root files (5,405) · `docs/` 33 files, 23,945 · `handbook/` 32 chapters, 8,980 · `ssdt-playbook/` 61 files, 8,265 · `notes/` 34 files, 31,364; 77,959 in all | twenty skills cite the handbook (through a +3 numbering offset); one cites one playbook page; `AGENTS.md` sends every session to `notes/run-checklist.md` and `tasks.md`; the rest has no reader |
@@ -151,7 +151,7 @@ Worked means a consumer used it and the evidence is in the tree.
   `agents/`, then `skills/`, then `proving-ground/`. Four lines. Every entry file in v3 ends
   the same way.
 - **"Verify before you diagnose."** The root `AGENTS.md` rule that an agent runs the Docker
-  check before claiming a tool is missing. In v3 that check is a verb (`estate doctor`), and
+  check before claiming a tool is missing. In v3 that check is a verb (`dbchange doctor`), and
   the rule is one line pointing at it.
 
 ### 2.2a Built and not yet exercised, and kept on that understanding
@@ -166,12 +166,12 @@ the pilot (companion §16, item 2) is where they are first exercised.
 - **The entry prompt.** `#prompt:ssdt-schema-change` runs intake and authoring in one
   conversation. Personas were already collapsing into phases; v3 finishes it; whether the prompt
   attaches is the pilot's first check.
-- **The ledgers.** Eight append-only tables of 272 lines designed to carry the estate's actual
+- **The ledgers.** Eight append-only tables of 272 lines designed to carry the SSDT repository's actual
   state (which operations have shipped, which tables hold how many rows, which windows are
   open). `operations.md` and `in-flight.md` have no rows, by design, until the first change
   ships through the pipeline. A ledger with no rows is a format; a session that remembers a
   fact instead of looking it up is guessing.
-- **The estate pipeline.** `ssdt-agent-check.yml` exists and must be registered by a person in
+- **The SSDT repository's pipeline.** `ssdt-agent-check.yml` exists and must be registered by a person in
   Azure DevOps; nothing says that it has been.
 
 ### 2.3 What did not work, and why
@@ -249,7 +249,7 @@ beyond what the code document asserts.
    counter-example: `AGENTS.md` → `KICKOFF.md` → `CLAUDE.md` → the reading order → `DECISIONS.md`
    § "supreme discipline" before a session could start.
 4. **Knowledge, not doctrine.** [§5.5: knowledge is kept] The knowledge tree carries what is true of SQL Server, DacFx,
-   the estate and the platform, with receipts. No file carries the project's opinion of itself,
+   the environments and the platform, with receipts. No file carries the project's opinion of itself,
    its vision, its principles, or its progress. v2's counter-example: fourteen vision documents,
    12,869 lines.
 5. **Generated surfaces are never hand-edited; hand-written surfaces never restate them.** [§5.5: docs generated or short]
@@ -313,7 +313,7 @@ rest are here.
 | S3 | The explicit negative is a finding | Every section of the pull request description renders; a section with nothing to report says so in one sentence and is never omitted or padded. | `PullRequestDescription.render` refuses an empty section | `Kernel.Tests: "every section renders"` | `pr-template/schema-change.md` ground rule; gate `register` |
 | S4 | A rename keeps its data | A change containing a rename with no refactorlog entry is refused before any publish. | `classify` raises `RenameWithoutRefactorlog` as `Error` | law 6; `Io.Tests` | `_index/identity-and-refactorlog`; prose only |
 | S5 | Data corrections leave a receipt | Any pre-deploy script that modifies rows is recorded with rows-before, rows-after and the approving human in the pull request description's data section. | `PullRequestDescription.TheData` carries the three fields; the gate refuses a data-modifying pre-deploy whose description lacks them | `Io.Tests: "reconcile without receipt is refused"` | `ApprovedDataCorrections` (1,669 lines, cutover-era); the receipt survives, the workflow does not |
-| S6 | The lag window is a lock | A release that touches a table with an open multi-phase window is refused at the gate. | `estate check inflight` (exit 9) | `Io.Tests`; the PR gate | `inflight-check.mjs`; mechanized 2026-08-28 |
+| S6 | The lag window is a lock | A release that touches a table with an open multi-phase window is refused at the gate. | `dbchange check inflight` (exit 9) | `Io.Tests`; the PR gate | `inflight-check.mjs`; mechanized 2026-08-28 |
 | S7 | Least privilege by type | Only `move` can write to a named environment, only to one listed as writable in `environments.json`, and never to Prod. | `Target = Disposable | Environment of name`; `Publish` accepts `Disposable` only; `move` checks the environments file list | `Io.Tests: "no verb writes to Prod"` | `WriteSignoff`/`ActConsent` (cutover-era consent); replaced by the type |
 | S8 | CDC-tracked tables are known | A column-list change on a CDC-tracked table is an `Error` finding until the pre-deploy names the capture-instance step. | `classify` reads `ledgers/cdc-tracked.md`; `check cdc` fills it from `sys.tables.is_tracked_by_cdc` | `Io.Tests` | the tree removed CDC 2026-08-21; new |
 
@@ -322,7 +322,7 @@ rest are here.
 | # | Value | Requirement | Mechanism | Where | v2 |
 |---|---|---|---|---|---|
 | D1 | Same inputs, same bytes | `emit` over the same schema and decisions yields a byte-identical bundle on any machine, any OS, any input ordering. | `SortedArray<T>` sorted at construction with ordinal comparers; no `Dictionary` iteration in `Emit`; `Random` and the clock banned from the kernel | law 1; `BannedSymbols.txt` | T1; `NoUnsafeTimeInCoreAnalyzer`; mechanized |
-| D2 | Culture never reaches output | Every number, date and string comparison in emission, JSON, logs and pull request descriptions uses the invariant culture; `$"{d}"` on a German or Turkish laptop must produce the same bytes as on the build agent. | analyzer rules CA1304, CA1305, CA1307, CA1309 as errors in `kernel/` and `io/`; `CultureInfo.CurrentCulture` in `BannedSymbols.txt`; law 1 gets a second leg that runs the golden emit under `tr-TR` and `de-DE` and asserts byte identity | `.editorconfig` severity; `Kernel.Tests: "law 1 under tr-TR"` | `lint-discipline.sh` rule 18d (interpolated strings) named exactly this and is retired with the lint; the estate's laptops are the machines it was protecting |
+| D2 | Culture never reaches output | Every number, date and string comparison in emission, JSON, logs and pull request descriptions uses the invariant culture; `$"{d}"` on a German or Turkish laptop must produce the same bytes as on the build agent. | analyzer rules CA1304, CA1305, CA1307, CA1309 as errors in `kernel/` and `io/`; `CultureInfo.CurrentCulture` in `BannedSymbols.txt`; law 1 gets a second leg that runs the golden emit under `tr-TR` and `de-DE` and asserts byte identity | `.editorconfig` severity; `Kernel.Tests: "law 1 under tr-TR"` | `lint-discipline.sh` rule 18d (interpolated strings) named exactly this and is retired with the lint; the developers' laptops are the machines it was protecting |
 | D3 | Bytes are pinned, and written by one writer | Every file `emit` creates is UTF-8 without a byte-order mark with `\n` line endings on every platform; a file it overwrites keeps the encoding and line ending it already had; the repository declares the same in `.gitattributes` so a Windows checkout does not rewrite them; and a failed emit leaves the repository byte-identical to before. | one `io/Write.cs` (about forty lines: the pin, preserve-on-overwrite, atomic replace via a staging directory); `File.WriteAllText` and `TextWriter.WriteLine` banned outside it; `.gitattributes` with `* text=auto eol=lf` and `*.sql text eol=lf` (there is none in either generation today); law 1 and law 3 each get a `windows-latest` leg | `Io.Tests: "law 3 on Windows"`; `Io.Tests: "a failed emit leaves no trace"`; `BannedSymbols.txt` | v2 pinned it in `PinnedWriting.fs` and restated it in four emitter comments; atomic emission was `Compose.write` with seven tests; both are in the companion's delete column, and this row is where their value survives |
 | D4 | Redeploy is silent | Publishing an unchanged bundle twice generates an empty second script and zero CDC capture rows. | law 8 | `Io.Tests` (CDC-isolated fixture) | CDC-silence (`V2_DRIVER.md:68`); mechanized (T15) |
 | D5 | Seeds are idempotent | A guarded `MERGE` over unchanged rows touches zero rows; the content hash is unchanged. | law 11's seed half; `Emit` writes only guarded `MERGE` | `Io.Tests` | F12 (`pg_seed`); `_index/idempotent-seed`; mechanized in the proof lane |
@@ -345,18 +345,18 @@ rest are here.
 | X2 | No secret in output | No verdict, log line, `gate.json`, or exception message carries a connection string, a password, or a row value. Where SQL Server's own message carries an offending value (`Msg 2627`, `Msg 547` name the duplicate or the orphan), the message is kept, the value is masked, and "Not checked" says the full text is in the run log. | a `ConnRef` type whose `ToString()` returns the reference (`env:OSM_DEV`), never the resolved string; a `Msg` scrubber for the value fragment; a test drives every refusal path with a password-bearing connection and greps the whole output | `Io.Tests: "no output contains Password="`; `Kernel.Tests: "Msg values are masked"` | D9 governs config only; nothing governs output today; new. This row and P1 are in tension (the pull request description must carry the verbatim message; the synthetic copy must carry no literal), and the masking rule is how the tension resolves |
 | X3 | Supply chain is pinned | Every package version is pinned centrally, restored in locked mode, audited, and listed in an allowlist with its licence; a new package is a decision line. | `Directory.Packages.props`; `packages.lock.json` with `RestoreLockedMode` in CI; `NuGetAudit` on; `ci/packages.allow` checked by a test | `Budgets.Tests: "packages equal the allowlist"` | not stated (v2 pinned in `.fsproj`, no lock, no allowlist); new |
 | X4 | Builds are deterministic | The same commit produces the same binaries; CI builds with `ContinuousIntegrationBuild` and `Deterministic`. | project properties; a CI step compares two builds' hashes | CI | not stated; new |
-| X5 | No telemetry, no phone-home | `estate` opens no network connection except to the SQL Server it was given and, for `synthetic-copy restore`, the artifact path it was given; the build sends nothing either. | `HttpClient` and `System.Net` banned in `kernel/` and `cli/`; `io/` allows only `Microsoft.Data.SqlClient` and Docker's local socket; `DOTNET_CLI_TELEMETRY_OPTOUT=1` in `Directory.Build.props` and every lane; one sentence in the README | `BannedSymbols.txt`; `Io.Tests`; CI | not stated; the opt-out variable appears nowhere in either generation; new |
+| X5 | No telemetry, no phone-home | `dbchange` opens no network connection except to the SQL Server it was given and, for `synthetic-copy restore`, the artifact path it was given; the build sends nothing either. | `HttpClient` and `System.Net` banned in `kernel/` and `cli/`; `io/` allows only `Microsoft.Data.SqlClient` and Docker's local socket; `DOTNET_CLI_TELEMETRY_OPTOUT=1` in `Directory.Build.props` and every lane; one sentence in the README | `BannedSymbols.txt`; `Io.Tests`; CI | not stated; the opt-out variable appears nowhere in either generation; new |
 | X6 | Agents cannot reach the archive by accident | `archive/` is denied to agent file reads and hidden from search tools by default. | `.claude/settings.json` `permissions.deny: Read(./archive/**)`; root `.ignore` lists `archive/` (ripgrep honours it) | `.claude/settings.json`; `.ignore` | not stated; new |
 
 ### 4.5 Reproducibility and provenance
 
 | # | Value | Requirement | Mechanism | Where | v2 |
 |---|---|---|---|---|---|
-| R1 | DacFx and SQL Server are pinned and stamped | Every verdict names the DacFx version, the SQL Server image digest, and the tool version it ran on; a version that differs from the pin is a refusal. | law 10; the `Provenance` fields `DacFx` and `Server`; `ledgers/toolchain.md` read by `prove` | `Io.Tests` | `estate/toolchain.md`; the pin is UNPINNED today; partly mechanized (the hook stamps `-unpinned`) |
+| R1 | DacFx and SQL Server are pinned and stamped | Every verdict names the DacFx version, the SQL Server image digest, and the tool version it ran on; a version that differs from the pin is a refusal. | law 10; the `Provenance` fields `DacFx` and `Server`; `ledgers/toolchain.md` read by `prove` | `Io.Tests` | `dbchange/toolchain.md`; the pin is UNPINNED today; partly mechanized (the hook stamps `-unpinned`) |
 | R2 | Every claim has a receipt | A verdict carries the disposable database's name, the generated script's hash, and the timestamp; a pull request description cites them; a finding in `findings.md` names its database. | `Verdict` fields are required; the register lint refuses a "what proving showed" section with no receipt | `Kernel.Tests`; `Budgets.Tests: register` | `FINDINGS_AND_CHANGES.md` (database names as receipts); prose only |
 | R3 | Git is the timeline | There is no run store, no episode store, no lifecycle file; artifacts are named by fingerprint; the pull request is the account of a change. | absence (nothing to mechanize); the manifest has no such file | — | `Episode`/`Lifecycle`/`RunLedger` (deleted) |
 | R4 | Findings are refuted in the open | A finding is overturned only by a dated entry that names the receipt that overturns it; the old entry is struck through, never deleted. | `findings.md` format; a test that no `F<n>` identifier disappears between commits | `Budgets.Tests: "findings are append-only"` | F5 → F9; prose only |
-| R5 | The supported window is stated | .NET: the current LTS only (10 today; 9 is a standard-term release and leaves support in November 2026). SQL Server: 2019 and 2022, and LocalDB of the same versions, with the image pinned by digest, never `latest`. DacFx: the pinned version and the one before it. Visual Studio: the rung the pilot lands on. | `global.json` pins the LTS feature band with `rollForward: latestPatch` (v1 and v2 pin `9.0.314` with roll-forward disabled; the loosening is a decision line); `synthetic-copy up` and `prove` read `@@VERSION` and refuse a SQL Server or a DacFx outside the window by name; `Io.Tests` runs on both SQL versions | CI matrix; `ledgers/toolchain.md` | `estate/toolchain.md` names the floating `2022-latest` tag as a risk; the rest is new |
+| R5 | The supported window is stated | .NET: the current LTS only (10 today; 9 is a standard-term release and leaves support in November 2026). SQL Server: 2019 and 2022, and LocalDB of the same versions, with the image pinned by digest, never `latest`. DacFx: the pinned version and the one before it. Visual Studio: the rung the pilot lands on. | `global.json` pins the LTS feature band with `rollForward: latestPatch` (v1 and v2 pin `9.0.314` with roll-forward disabled; the loosening is a decision line); `synthetic-copy up` and `prove` read `@@VERSION` and refuse a SQL Server or a DacFx outside the window by name; `Io.Tests` runs on both SQL versions | CI matrix; `ledgers/toolchain.md` | `dbchange/toolchain.md` names the floating `2022-latest` tag as a risk; the rest is new |
 
 ### 4.6 Portability and operability
 
@@ -364,12 +364,12 @@ rest are here.
 |---|---|---|---|---|---|
 | O1 | Docker is never a requirement | Every proof that does not need CDC or the scale tier runs on LocalDB; the verb chooses the local server and says which it chose. | `io/SyntheticCopy` has one local-server abstraction with two artifacts; `prove` refuses CDC proofs on LocalDB with the reason | `Io.Tests` on both local servers; `PORTABILITY.md` | `PORTABILITY.md`; partly mechanized (`prove.mjs` config) |
 | O2 | Windows is a first-class host | The fast lane and the LocalDB fixture run on `windows-latest`; paths are joined, never concatenated; object names compare case-insensitively, file names ordinally. | CI matrix; analyzer CA1310/CA1862; `Path.Combine` only (banned: string `+` on paths in `io/`) | CI; `BannedSymbols.txt` | not stated (the team is on Windows; the corpus was proven on Linux); new |
-| O3 | One command per intent | Every step of every workflow is an `estate` verb with `--json`; no document shows a tool invocation that is not an `estate` verb, and every hook is under ten lines over a verb. | the docs lint refuses `sqlpackage `, `sqlcmd `, `docker ` in prose outside `knowledge/handbook/`; the hooks budget | `Budgets.Tests: "no tool invocation outside a verb"`; `Budgets.Tests: hooks ≤ 30 lines` | the review's Layer 1; `prove.mjs`; partly mechanized |
+| O3 | One command per intent | Every step of every workflow is an `dbchange` verb with `--json`; no document shows a tool invocation that is not an `dbchange` verb, and every hook is under ten lines over a verb. | the docs lint refuses `sqlpackage `, `sqlcmd `, `docker ` in prose outside `knowledge/handbook/`; the hooks budget | `Budgets.Tests: "no tool invocation outside a verb"`; `Budgets.Tests: hooks ≤ 30 lines` | the review's Layer 1; `prove.mjs`; partly mechanized |
 | O4 | Refuse and route | An unsupported object or operation is refused with who does it and what to check; the tool never guesses. | `Error` codes catalogued in `--help --json`; the "not covered" list in the catalog | `Cli.Tests: "every error code has a remedy"` | `rebuild-index` (refuse-and-route); prose only |
-| O5 | Cleanup is guaranteed | A disposable database or container is named `estate_<fingerprint>_<pid>`, dropped on exit or cancellation, and swept by `estate synthetic-copy gc` on the next start if a crash left it. | `try/finally` around every `Disposable`; the sweep on `doctor`; cancellation tokens through `io/` | `Io.Tests: "kill mid-prove, next run sweeps"` | v2 leaked 209 databases on one warm container (rule 2); partly mechanized later |
-| O6 | Two sessions do not collide | Two `estate` processes on one machine never share a database name, a scratch directory, a bundle output or the synthetic copy's state. | one prefix per session (`estate_<host>_<pid>_<rand>`); `synthetic-copy up` takes an advisory lock on `[synthetic_copy].[__state]`; `emit --out` refuses a non-empty directory it did not create; the invariant is restated in `tests/README.md` because the only written statement of it today is the self-test protocol, which is deleted | `Io.Tests` (two concurrent proves) | `self-test/PROTOCOL.md` (`PG_<id>_<rand>`); prose only |
+| O5 | Cleanup is guaranteed | A disposable database or container is named `dbchange_<fingerprint>_<pid>`, dropped on exit or cancellation, and swept by `dbchange synthetic-copy gc` on the next start if a crash left it. | `try/finally` around every `Disposable`; the sweep on `doctor`; cancellation tokens through `io/` | `Io.Tests: "kill mid-prove, next run sweeps"` | v2 leaked 209 databases on one warm container (rule 2); partly mechanized later |
+| O6 | Two sessions do not collide | Two `dbchange` processes on one machine never share a database name, a scratch directory, a bundle output or the synthetic copy's state. | one prefix per session (`dbchange_<host>_<pid>_<rand>`); `synthetic-copy up` takes an advisory lock on `[synthetic_copy].[__state]`; `emit --out` refuses a non-empty directory it did not create; the invariant is restated in `tests/README.md` because the only written statement of it today is the self-test protocol, which is deleted | `Io.Tests` (two concurrent proves) | `self-test/PROTOCOL.md` (`PG_<id>_<rand>`); prose only |
 | O7 | Long operations can be cancelled | Every verb honours Ctrl-C and `--timeout` within a second, leaves the state a normal exit leaves, and exits 130. | one `CancellationToken` threaded from `cli/` through `io/`; `Console.CancelKeyPress` → cooperative cancel → the cleanup path of O5 | `Io.Tests: "cancel mid-prove"` | eight occurrences of `CancellationToken` in 118,686 lines; a generated set of 1.18 million rows that cannot be interrupted is the concrete failure; new |
-| O8 | Time is budgeted | On a 300-table estate: `classify`, `diff`, `decide` under ten seconds; `read` and `emit` under sixty; `prove` bounded by DacFx, not by the tool, and under five minutes at the ≤1M tier; `synthetic-copy restore` under five minutes; an aggregate query capped by the sampling policy and a 300-second timeout. The numbers accrete from real proofs (`prove` records its wall-clock and tier) rather than from a synthetic bench. | the scale lane measures and records in `ledgers/scale-datapoints.md`; one scale test in `Io.Tests` over the golden schema replicated to 300 tables; never a Stop hook | `Scale.Tests` | `Bench` + the perf gate (deleted: void under load, self-feeding); the 62-line datapoints ledger is the part that had value |
+| O8 | Time is budgeted | On a 300-table database: `classify`, `diff`, `decide` under ten seconds; `read` and `emit` under sixty; `prove` bounded by DacFx, not by the tool, and under five minutes at the ≤1M tier; `synthetic-copy restore` under five minutes; an aggregate query capped by the sampling policy and a 300-second timeout. The numbers accrete from real proofs (`prove` records its wall-clock and tier) rather than from a synthetic bench. | the scale lane measures and records in `ledgers/scale-datapoints.md`; one scale test in `Io.Tests` over the golden schema replicated to 300 tables; never a Stop hook | `Scale.Tests` | `Bench` + the perf gate (deleted: void under load, self-feeding); the 62-line datapoints ledger is the part that had value |
 | O9 | Memory is bounded | `read` and `emit` stay under 1 GB peak on 300 tables; `profile` streams and never materialises a table; the fast test lane runs under 2 GB. | `readRows` is an `IAsyncEnumerable`; the same scale test asserts peak working set; CI runs the fast lane in a 2 GB container | `Io.Tests`; CI | survival rule 1 (the pools OOM-killed the host); mechanized by the CI matrix |
 | O11 | Large output is truncated, never dumped | A verdict's verbatim message and a change over 300 tables do not overflow an agent's context; a payload that can be large carries `"truncated": true, "full": "<path>"` and a `--summary` form, and a 300-table change's default rendering is under a stated line count. | the truncation fields in the JSON contract; a test over the golden schema replicated to 300 tables | `Cli.Tests: "large change renders short"` | not stated; the consumer is a modest-context session; new |
 | O12 | Time is UTC, stamped at the boundary | Every date a pull request description, a ledger row or a fingerprint carries is UTC (`yyyy-MM-dd`, or the round-trip format), produced by one clock in `io/`, never in the kernel; the in-flight window comparison uses the same clock. | `DateTime.Now` banned everywhere; `UtcNow` only behind one `IClock` in `io/`; a format lint on ledger dates | `BannedSymbols.txt`; `Budgets.Tests: ledgers` | nothing stated the zone; the window gate compared against "today" on whatever machine ran it; new |
@@ -396,14 +396,14 @@ rest are here.
 | # | Value | Requirement | Mechanism | Where | v2 |
 |---|---|---|---|---|---|
 | A1 | Prove before you claim | An agent never states how a change ships without a verdict; a pre-proof classification is marked provisional in its first word. | `classify` prints `provisional:`; the gate regenerates the pull request description from the verdict and diffs it | `Cli.Tests`; the PR gate | the tree's thesis; the rubric; prose |
-| A2 | Verify before you diagnose | Before claiming a tool, a daemon or a database is missing, an agent runs `estate doctor` and quotes its line. | the verb; the SessionStart hook prints it | `AGENTS.md` (one line) | root `AGENTS.md` "verify-before-diagnose"; the `docker-probe.sh` hook |
+| A2 | Verify before you diagnose | Before claiming a tool, a daemon or a database is missing, an agent runs `dbchange doctor` and quotes its line. | the verb; the SessionStart hook prints it | `AGENTS.md` (one line) | root `AGENTS.md` "verify-before-diagnose"; the `docker-probe.sh` hook |
 | A3 | Ask one question | Authoring poses exactly one business question a human must answer, in the developer's words, and never answers it by reading data. | `authoring.md` S0's exit condition; the pull request description's `Not checked` names the open question | `Budgets.Tests: register` (a pull request description with two open questions fails) | `intake` rules; prose |
 | A4 | The handoff is the pull request | A session ends with code, tests, a PR body in the register, at most one decision line, and a rewritten `NEXT.md`; it writes no letter, chapter, or status section. | the manifest (no such files can exist); `NEXT.md`'s budget | `Budgets.Tests: manifest` | the write budget (§15); prose |
-| A5 | No self-approval, no machine approval | The gate reports; it never approves. A change's author never approves it, at any seniority. | the lanes hold no approval token; branch policy requires a dev lead | ADO branch policy; `ci/README.md` | `estate/reviewers.md`; prose |
+| A5 | No self-approval, no machine approval | The gate reports; it never approves. A change's author never approves it, at any seniority. | the lanes hold no approval token; branch policy requires a dev lead | ADO branch policy; `ci/README.md` | `dbchange/reviewers.md`; prose |
 | A6 | One hop, and never the archive | An agent reads the entry file for its role and, from it, one hop into `knowledge/`; it does not read `archive/` unless the task names it. | X6's permission and `.ignore`; `AGENTS.md` read order | `.claude/settings.json` | `CLAUDE.md` §2 reading order; prose |
 | A7 | Refuted findings stay visible | An agent that overturns a finding writes the new entry with its receipt and strikes the old; it never edits history. | R4 | `Budgets.Tests: "findings are append-only"` | F5 → F9; prose |
 | A8 | A decision is one line | `2026-09-17 · <the decision in one sentence> · #<PR>`; the reasoning is in the pull request. | `DECISIONS.md`'s format test (every line matches) | `Budgets.Tests: decisions` | 480 four-field entries; prose |
-| A9 | The pull request description is what the gate reads | The PR body's "how it ships" and "what proving showed" sections match the regenerated description or the gate says where they differ. | `estate gate --pr-body` | the PR gate | `author-pr`'s hard rules; prose |
+| A9 | The pull request description is what the gate reads | The PR body's "how it ships" and "what proving showed" sections match the regenerated description or the gate says where they differ. | `dbchange gate --pr-body` | the PR gate | `author-pr`'s hard rules; prose |
 | A10 | A new document is a review, not a habit | Adding a markdown file requires adding its manifest row (reader, moment, budget, owner) in the same pull request. | L4 | `Budgets.Tests: manifest` | the write budget; prose |
 
 ### 4.9 Emission fidelity
@@ -411,7 +411,7 @@ rest are here.
 | # | Value | Requirement | Mechanism | Where | v2 |
 |---|---|---|---|---|---|
 | E1 | Emit then read is the identity | Reading back what was emitted reproduces it after `SqlType.coarsen`, modulo a named list that starts empty. | law 2 | `Io.Tests` | the canary; mechanized |
-| E2 | Emit over the estate is a no-op | `estate emit` against the repository's own state produces byte-identical files, on every merge. | law 3 and the process law that runs it in CI | `Io.Tests`; the merge lane | the idempotent redeploy; mechanized |
+| E2 | Emit over the SSDT repository is a no-op | `dbchange emit` against the repository's own state produces byte-identical files, on every merge. | law 3 and the process law that runs it in CI | `Io.Tests`; the merge lane | the idempotent redeploy; mechanized |
 | E3 | A vanilla policy changes nothing | With no decisions, emission is the faithful projection of the source. | law 4 | `Kernel.Tests` | skeleton purity; mechanized |
 | E4 | SQL is built, never concatenated | Every emitted statement is a `Statement` value rendered through ScriptDom's generator; in `io/Render` and `io/Emit`, `string.Concat`, `string.Format`, `StringBuilder` and interpolation are banned except in the final writer. | the closed `Statement` hierarchy; `BannedSymbols.txt` scoped to the two modules | `Io.Tests` (the analyzer runs) | pillars 1–3 and eight lint rules with 566 exemptions; mechanized too broadly; scoped down |
 | E5 | An unparseable object is refused, not degraded | A trigger body ScriptDom cannot parse, or any object the reader cannot represent exactly, is a refusal with a code, never a comment marker or a tolerated divergence. | an `Error` code (`read.unparseable`) and one test per object kind | `Io.Tests: "unparseable trigger is refused"` | `ToleratedDivergence.TriggerBodyUnparsedDropped`; prose plus a tolerance; the tolerance goes |
@@ -424,15 +424,15 @@ rest are here.
 
 | # | Value | Requirement | Mechanism | Where | v2 |
 |---|---|---|---|---|---|
-| G1 | The pipeline reproduces the proof | The gate rebuilds the dacpac, restores the synthetic copy, publishes the pull request's combined change under the pipeline's publish profile, and posts the verdict and the description diff. | `estate gate`; the PR lane | `ci/` | the review's Layer 3; half-shipped (`inflight-check.mjs`, the ADO template) |
+| G1 | The pipeline reproduces the proof | The gate rebuilds the dacpac, restores the synthetic copy, publishes the pull request's combined change under the pipeline's publish profile, and posts the verdict and the description diff. | `dbchange gate`; the PR lane | `ci/` | the review's Layer 3; half-shipped (`inflight-check.mjs`, the ADO template) |
 | G2 | The human makes the business call | The one question only a human can answer is posed, recorded with its owner, and never answered by reading data. | `authoring.md` S0 and S6; the pull request description's `Not checked` names it if open | `Budgets.Tests: register` | `THE_DECISION_TREE.md` S6; prose |
-| G3 | One approver class, no self-approval, no machine approval | A dev lead approves every schema change and never their own; the gate reports and never approves; a lead's own change needs the other lead. | Azure DevOps branch policy; the lanes hold no approval token; `ledgers/reviewers.md` | `ci/README.md`; prose for the policy | `estate/reviewers.md` (two rows unfilled); prose |
-| G4 | First time on this estate is a lookup | The added-scrutiny line comes from `ledgers/operations.md`, appended at the production apply, never from memory; a shipped change with no row is a gate finding. | `classify` reads the ledger; the gate refuses to close a release whose operation has no row | `Io.Tests` | `estate/README.md`; the ledger has no rows; prose |
-| G5 | Prod is not Dev | Before any Prod release, Prod's row counts land in `row-tiers.md` with their date, and the gate reads the tier for the target environment. | `estate measure --target prod --counts`; the gate's ledger read is per environment | `Io.Tests` | the tier ledger holds four sample tables; new |
+| G3 | One approver class, no self-approval, no machine approval | A dev lead approves every schema change and never their own; the gate reports and never approves; a lead's own change needs the other lead. | Azure DevOps branch policy; the lanes hold no approval token; `ledgers/reviewers.md` | `ci/README.md`; prose for the policy | `dbchange/reviewers.md` (two rows unfilled); prose |
+| G4 | First time on these environments is a lookup | The added-scrutiny line comes from `ledgers/operations.md`, appended at the production apply, never from memory; a shipped change with no row is a gate finding. | `classify` reads the ledger; the gate refuses to close a release whose operation has no row | `Io.Tests` | `dbchange/README.md`; the ledger has no rows; prose |
+| G5 | Prod is not Dev | Before any Prod release, Prod's row counts land in `row-tiers.md` with their date, and the gate reads the tier for the target environment. | `dbchange measure --target prod --counts`; the gate's ledger read is per environment | `Io.Tests` | the tier ledger holds four sample tables; new |
 | G6 | Nothing is proven on a shared database | Every proof runs against a disposable copy the session created and owns. | `Target.Disposable` is the only target `Publish` accepts under Permissive or Strict for `prove`; the publish-profile instruction file | `Io.Tests` | the self-test protocol; the profile instruction; mechanized in the bundle only |
 | G7 | The invisible half has an owner | A change is complete when the external entity is refreshed in Integration Studio in every environment, and the pull request description's after-deploy section says so per environment. | `PullRequestDescription.AfterDeploy` carries the refresh line; `check outsystems` sees a missing one | `Kernel.Tests`; `Io.Tests` | nine operations mention it; nothing owned it; new |
 | G8 | A green deploy can still destroy data, and the design says so | A second publish of a landed contract-phase release can re-create a column, backfill it, and report success; the lag window is a lock and the data section carries receipts because of it. | S5, S6, law 9 | `Io.Tests`; the gate | F3, F17; mechanized 2026-08-28 (`inflight-check.mjs`) |
-| G9 | The bundle is fresh, visibly | A developer can see in one glance whether the bundle in their repository is current, and the estate's pipeline refuses a hand-edited copy. | the fingerprint in the router's first line and in `estate --version`; the estate pipeline's `--check` and citation resolution | `Budgets.Tests: PackagerCheck`; the estate pipeline | the fingerprint (`047e6c5dbd9c`) exists; nothing shows it to the developer; new |
+| G9 | The bundle is fresh, visibly | A developer can see in one glance whether the bundle in their repository is current, and the SSDT repository's pipeline refuses a hand-edited copy. | the fingerprint in the router's first line and in `dbchange --version`; the SSDT repository's pipeline's `--check` and citation resolution | `Budgets.Tests: PackagerCheck`; the SSDT repository's pipeline | the fingerprint (`047e6c5dbd9c`) exists; nothing shows it to the developer; new |
 
 ### 4.11 What v2 mechanized that v3 does not carry
 
@@ -466,7 +466,7 @@ rest are here.
 | Rule | Fate in v3 |
 |---|---|
 | 1 never run the pools together; CDC tests isolated; Docker tests in Integration | a CI matrix and a test category; the isolation fixture is kept (S8, D4) |
-| 2 connection failures mean the container died | `prove`/`synthetic-copy` refuse with `local-server down: run estate synthetic-copy up` (O5) |
+| 2 connection failures mean the container died | `prove`/`synthetic-copy` refuse with `local-server down: run dbchange synthetic-copy up` (O5) |
 | 3 never `pgrep`-guard or `tail` a run | retired with the shell recipes; the lanes run tests directly and every job has a timeout |
 | 4 re-run with the TRX logger; console output interleaves and lies | true of `dotnet test` in any language: the TRX logger is the default (L9) and the sentence is in `tests/README.md` |
 | 5, 6 F# compiler shapes | retired with F# |
@@ -495,7 +495,7 @@ tree equals it. The columns are the manifest's fields.
 ```json
 { "path": "AGENTS.md",
   "kind": "hand",                          // hand | generated
-  "owner": "engine",                       // engine | estate | vendored (engine writes, estate receives)
+  "owner": "tool",                         // tool | ssdt | vendored (this repository writes, the SSDT repository receives)
   "reader": ["agent", "maintainer"],
   "moment": ["session-start", "change"],
   "budget": 120,                           // lines; generated files carry null
@@ -518,12 +518,12 @@ tree equals it. The columns are the manifest's fields.
 | `DOCS.md` | generated (from the manifest) | anyone · first day | — | new |
 | `kernel/README.md`, `io/README.md`, `cli/README.md`, `tests/README.md`, `ci/README.md` | hand | a maintainer · a change in that package | 80 each | per-project READMEs; `tests/README.md` |
 | `io/SyntheticCopy/README.md` | hand | a maintainer · a change to the synthetic copy | 620 (kept as-is) | `THE_TWIN.md` + `THE_SYNTHETIC_DATA_DESIGN.md` |
-| `cli/VERBS.md` | generated (`estate --help --json`) | an agent · a change; the bundle | — | `usageLines` in `Program.fs` |
+| `cli/VERBS.md` | generated (`dbchange --help --json`) | an agent · a change; the bundle | — | `usageLines` in `Program.fs` |
 | `cli/CONFIG.md` | generated (from `environments.json`'s schema) | a maintainer · configuring | — | `CONFIG_REFERENCE.md` + `projection.schema.json` |
 | `.github/PULL_REQUEST_TEMPLATE/engine-change.md` | hand | a session, a review bot · an engine PR | 40 | new |
 | `.github/PULL_REQUEST_TEMPLATE/schema-change.md` | generated (from `knowledge/description.md`) | a developer · a schema PR (this repository's own golden project) | — | `pr-template/schema-change.md` |
 | `.claude/settings.json`, `.claude/hooks/session-start.sh`, `.claude/hooks/session-end.sh` | hand | the harness | 40 · 10 · 10 | `settings.json` (47), four hooks (814) |
-| `.claude/skills/*/SKILL.md`, `.claude/agents/*.md` | generated (`estate knowledge package`) | Claude Code · dispatch | — | the same, generated by `ssdt-agent-package.mjs` |
+| `.claude/skills/*/SKILL.md`, `.claude/agents/*.md` | generated (`dbchange knowledge package`) | Claude Code · dispatch | — | the same, generated by `ssdt-agent-package.mjs` |
 | `.ignore` | hand | search tools | 5 | new |
 | v1's agent-facing files: `notes/run-checklist.md`, `notes/meta/{directory-map,rg-signposts,toggle-surface,test-matrix}.md`, `tasks.md`, `architecture-guardrails.md` | archived with v1 | none after step 0 | — | successors: `tests/README.md` (the checklist and the test matrix), `cli/CONFIG.md` (the toggle surface), `VALUES.md` (the guardrails), `NEXT.md` (`tasks.md`); none for the directory map or the signposts |
 | `archive/INDEX.md` | generated once (step 0) | the owner · provenance | — | new |
@@ -533,7 +533,7 @@ Hand-written prose outside `knowledge/`: 150 + 120 + 20 + 3,000 + 300 + 40 + 5 �
 40 = **4,690 lines** plus `DECISIONS.md`, which grows one line per decision. The budget in the
 companion's §6.5 is 7,000. The slack is deliberate and is not a target.
 
-### 5.2 The knowledge tree (engine-owned, vendored to the estate)
+### 5.2 The knowledge tree (this repository writes it, vendored to the SSDT repository)
 
 | Path | Kind | Reader · moment | Budget | Ancestor |
 |---|---|---|---:|---|
@@ -546,15 +546,15 @@ companion's §6.5 is 7,000. The slack is deliberate and is not a target.
 | `knowledge/findings.md` | hand, append-only | everyone · when a claim needs its receipt | grows; format-tested | `FINDINGS_AND_CHANGES.md` (502) |
 | `knowledge/samples/<shape>.md` × 12 | hand | an authoring session · when the template needs an example | 90 each | `sample-prs/` (50 files, 3,755 lines) |
 | `knowledge/handbook/<n>.md` × 8 | hand | an authoring session · when an op cites it | 2,500 total | `handbook/` (32 chapters, 8,980 lines): the eight the ops cite |
-| `knowledge/ledgers/*.md` × 8 | hand: the formats and the empty tables only; **owner: estate, seeded once**; excluded from the bundle's fingerprint | the gate, a session · a release | format-tested | `estate/*.md` (272) + `cdc-tracked.md` (new) |
+| `knowledge/ledgers/*.md` × 8 | hand: the formats and the empty tables only; **owner: ssdt, seeded once**; excluded from the bundle's fingerprint | the gate, a session · a release | format-tested | `dbchange/*.md` (272) + `cdc-tracked.md` (new) |
 | `knowledge/PORTABILITY.md` | hand | a developer without Docker · first day | 94 | `PORTABILITY.md` (94) |
 | `knowledge/INDEX.md` | generated | an agent without skill discovery · dispatch | — | `skills/INDEX.md` |
-| `knowledge/copilot/**` | generated | the estate repository · every merge | — | `copilot-package/` (80 files) |
+| `knowledge/copilot/**` | generated | the SSDT repository · every merge | — | `copilot-package/` (80 files) |
 
 Knowledge total, hand-written: 150 + 150 + 100 + 120 + 45 × 85 + 8 × 110 + 400 + 12 × 80 +
 2,500 + 94 + ~300 ≈ **9,500 lines** against the companion's 11,000.
 
-### 5.3 The estate repository
+### 5.3 The SSDT repository
 
 | Path | Kind | Owner | Reader · moment |
 |---|---|---|---|
@@ -566,17 +566,17 @@ Knowledge total, hand-written: 150 + 150 + 100 + 120 + 45 × 85 + 8 × 110 + 400
 | `.github/PULL_REQUEST_TEMPLATE/schema-change.md`, `.azuredevops/pull_request_template/schema-change.md` | generated | vendored | a developer · a schema PR |
 | `AGENTS.md` | generated (the router, for any non-Copilot agent) | vendored | any agent · session start |
 | `knowledge/**` (minus `ledgers/`) | generated copy | vendored | as §5.2 |
-| `estate/ledgers/*.md` | hand, append-only | **estate** | the gate, a session · a release |
-| `estate/environments.json` | hand | **estate** | every verb · always (the environments, the writable targets, the local server) |
-| `estate/evidence.shape.json`, `estate/synthetic-copy.json` | hand (produced by verbs, committed) | **estate** | `synthetic-copy` · the bake lane |
-| `estate/profiles/{strict,permissive}.publish.xml` | hand (mirrored from the pipeline's task) | **estate** | `prove`, the gate |
+| `dbchange/ledgers/*.md` | hand, append-only | **ssdt** | the gate, a session · a release |
+| `dbchange/environments.json` | hand | **ssdt** | every verb · always (the environments, the writable targets, the local server) |
+| `dbchange/evidence.shape.json`, `dbchange/synthetic-copy.json` | hand (produced by verbs, committed) | **ssdt** | `synthetic-copy` · the bake lane |
+| `dbchange/profiles/{strict,permissive}.publish.xml` | hand (mirrored from the pipeline's task) | **ssdt** | `prove`, the gate |
 | `pipelines/{gate,bake,proof}.yml` | generated (templates) | vendored | Azure DevOps · a PR, a merge, nightly |
-| `.editorconfig`, `.gitattributes` | hand | **estate** | D3 |
-| the SSDT project, its refactorlog, its scripts | hand | **estate** | the product |
+| `.editorconfig`, `.gitattributes` | hand | **ssdt** | D3 |
+| the SSDT project, its refactorlog, its scripts | hand | **ssdt** | the product |
 
-The ownership rule in one sentence: the engine writes what is true of SQL Server and DacFx;
-the estate writes what is true of the estate. A vendored file is regenerated by the bake lane
-and arrives by pull request (§8.5); an estate-owned file is never touched by the engine except
+The ownership rule in one sentence: dbchange writes what is true of SQL Server and DacFx;
+the SSDT repository writes what is true of the environments. A vendored file is regenerated by the bake lane
+and arrives by pull request (§8.5); a file the SSDT repository owns is never touched by dbchange except
 through a verb that appends a row (`check cdc`, `measure --counts`).
 
 ---
@@ -590,18 +590,18 @@ skeleton is the contract and the budget is the ceiling.
 ### 6.1 `README.md` (150 lines, five minutes)
 
 ```
-# estate — the change engine for an OutSystems estate on SSDT
+# dbchange — predict and prove schema changes to an OutSystems system in SSDT
 
 One paragraph: what the tool does (reads a schema from anywhere, measures the data beneath it,
 computes the change between two states, proves the change against a real-shaped disposable
 copy by letting DacFx publish it, writes the pull request description a reviewer approves by reading).
 
 ## The verbs                       — one line each, pointing to cli/VERBS.md; no count in prose
-## Try it in five minutes          — estate doctor · estate synthetic-copy restore <artifact> ·
-                                     estate prove --project tests/Golden/Golden.sqlproj · read the verdict
+## Try it in five minutes          — dbchange doctor · dbchange synthetic-copy restore <artifact> ·
+                                     dbchange prove --project tests/Golden/Golden.sqlproj · read the verdict
 ## Where things are                — kernel/ io/ cli/ knowledge/ ci/ tests/ archive/, one line each
 ## What it upholds                 — a pointer to VALUES.md and LAWS.md; no restatement
-## For developers on the estate    — you do not need this repository; the bundle in your own
+## For developers working in the SSDT repository    — you do not need this repository; the bundle in your own
                                      repository is the product; start at knowledge/README.md there
 ## For maintainers                 — read AGENTS.md; then NEXT.md; then the package README
 ## Provenance                      — v1 and v2 are in archive/, indexed; DECISIONS.md is the log
@@ -619,23 +619,23 @@ The draft, in full:
 ```markdown
 # AGENTS.md — working in this repository
 
-This repository is the engine behind schema changes on an OutSystems estate that moved to
-SSDT. The product is `estate`, one CLI (its verbs are in `cli/VERBS.md`), and `knowledge/`,
-the files a developer's Copilot session reads in the estate repository. Read this file, then `NEXT.md`,
+This repository builds the tool behind schema changes on an OutSystems system that moved to
+SSDT. The product is `dbchange`, one CLI (its verbs are in `cli/VERBS.md`), and `knowledge/`,
+the files a developer's Copilot session reads in the SSDT repository. Read this file, then `NEXT.md`,
 then the README of the package being changed. Nothing else is required before starting.
 
 ## Where truth lives
 
 - What the code is: `ARCHITECTURE.md`. What it upholds: `VALUES.md`. What is proven:
   `LAWS.md` (generated). What was decided: `DECISIONS.md`. What is next: `NEXT.md`.
-- The domain (SQL Server, DacFx, the estate, the platform): `knowledge/`, starting at
+- The domain (SQL Server, DacFx, the environments, the platform): `knowledge/`, starting at
   `knowledge/README.md`.
 - The past: `archive/` holds v1 and v2. It is denied to file reads and hidden from search
   by default. Read it only when the task names it; `archive/INDEX.md` says what is where.
 
 ## Before anything
 
-Run `estate doctor`. Its one line names the SDK, the DacFx pin, the local server (Docker or
+Run `dbchange doctor`. Its one line names the SDK, the DacFx pin, the local server (Docker or
 LocalDB) and the synthetic copy's artifact, and every refusal in it carries a remedy. Quote
 that line before claiming a tool, a daemon or a database is missing.
 
@@ -644,7 +644,7 @@ that line before claiming a tool, a daemon or a database is missing.
 - `dotnet build` — warnings are errors; the banned-API list is enforced in `kernel/` and `io/`.
 - `dotnet test --filter Category=fast` before every push: under five minutes, no SQL Server.
 - `dotnet test --filter Category=fixture` when `io/` changed: needs a SQL Server;
-  `estate synthetic-copy up` provides one.
+  `dbchange synthetic-copy up` provides one.
 - The proof lane and the scale lane run in CI. Run them locally only when the task is about
   them, and never both in one `dotnet test`.
 - A stale build after switching branches: `dotnet clean`; an old RID-specific output
@@ -657,7 +657,7 @@ that line before claiming a tool, a daemon or a database is missing.
 - A verb change updates its `--help` text in the same commit; `cli/VERBS.md` and the bundle
   are generated from it.
 - A knowledge change edits the canonical file under `knowledge/`; the pointers, the index and
-  the bundle are regenerated by `estate knowledge package`. A generated file is never edited.
+  the bundle are regenerated by `dbchange knowledge package`. A generated file is never edited.
 - A red budget or manifest test is a design question. Shrink the thing, or raise the ceiling
   with a decision line in the same pull request.
 - A new package is a decision line and an entry in `ci/packages.allow` in the same pull request.
@@ -690,7 +690,7 @@ and their replacements are listed in `knowledge/description.md`.
 - A refusal names its code and its remedy. Do the remedy; do not work around the refusal.
 - A red budget test names the ceiling and the file.
 - A red law names the law. The law is right until a decision line says otherwise.
-- A local-server failure: `estate synthetic-copy up`, then `estate doctor`.
+- A local-server failure: `dbchange synthetic-copy up`, then `dbchange doctor`.
 - A verdict that disagrees with a finding in `knowledge/findings.md`: the verdict is a new
   finding with a receipt; append it, strike the old one, never delete it.
 
@@ -707,18 +707,18 @@ comment; the author says what moved and why. A human approves; no lane ever does
 
 # Claude Code in this repository
 
-- The SessionStart hook installs `dotnet` when it is absent and runs `estate doctor`; the SessionEnd hook
-  runs `estate synthetic-copy down --if-idle`. Both are under ten lines, in `.claude/hooks/`.
+- The SessionStart hook installs `dotnet` when it is absent and runs `dbchange doctor`; the SessionEnd hook
+  runs `dbchange synthetic-copy down --if-idle`. Both are under ten lines, in `.claude/hooks/`.
 - `.claude/skills/` and `.claude/agents/` are generated pointers into `knowledge/`.
-  Regenerate with `estate knowledge package`; never edit them.
+  Regenerate with `dbchange knowledge package`; never edit them.
 - `archive/` is denied to file reads and hidden from search (`.ignore`). If the task needs
   provenance, say so and ask before reading it.
-- Pre-approved: the read-only verbs (`estate read|diff|classify|decide|check|doctor`),
-  `dotnet build`, `dotnet test`. Always asked: `estate move`, anything naming an environment.
+- Pre-approved: the read-only verbs (`dbchange read|diff|classify|decide|check|doctor`),
+  `dotnet build`, `dotnet test`. Always asked: `dbchange move`, anything naming an environment.
 ```
 
 The `@AGENTS.md` line is Claude Code's import syntax; the two files cannot disagree because
-one contains the other. `CLAUDE.md` is not vendored to the estate repository: the agent there
+one contains the other. `CLAUDE.md` is not vendored to the SSDT repository: the agent there
 is Copilot, and a Claude-specific file would be noise a Copilot session still reads.
 
 ### 6.4 `.claude/settings.json` and the two hooks
@@ -727,12 +727,12 @@ is Copilot, and a Claude-specific file would be noise a Copilot session still re
 {
   "permissions": {
     "allow": [
-      "Bash(estate doctor*)", "Bash(estate read*)", "Bash(estate diff*)",
-      "Bash(estate classify*)", "Bash(estate decide*)", "Bash(estate check*)",
-      "Bash(estate synthetic-copy up*)", "Bash(estate synthetic-copy down*)",
+      "Bash(dbchange doctor*)", "Bash(dbchange read*)", "Bash(dbchange diff*)",
+      "Bash(dbchange classify*)", "Bash(dbchange decide*)", "Bash(dbchange check*)",
+      "Bash(dbchange synthetic-copy up*)", "Bash(dbchange synthetic-copy down*)",
       "Bash(dotnet build*)", "Bash(dotnet test*)", "Bash(dotnet clean*)"
     ],
-    "ask": [ "Bash(estate move*)", "Bash(estate prove*--target sql:*)" ],
+    "ask": [ "Bash(dbchange move*)", "Bash(dbchange prove*--target sql:*)" ],
     "deny": [ "Read(./archive/**)", "Edit(./archive/**)",
               "Edit(./LAWS.md)", "Edit(./DOCS.md)", "Edit(./cli/VERBS.md)",
               "Edit(./.claude/skills/**)", "Edit(./.claude/agents/**)", "Edit(./knowledge/copilot/**)" ]
@@ -752,22 +752,22 @@ the local server refuses with the remedy, which is what v2's `docker-probe.sh` u
 
 ```bash
 #!/usr/bin/env bash
-# .claude/hooks/session-start.sh — install dotnet when it is absent, then run estate doctor.
+# .claude/hooks/session-start.sh — install dotnet when it is absent, then run dbchange doctor.
 set -u
 [ -n "${CLAUDE_CODE_REMOTE:-}" ] && ! command -v dotnet >/dev/null && { curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --jsonfile global.json --install-dir "$HOME/.dotnet" >/dev/null && export PATH="$HOME/.dotnet:$PATH"; }   # remote sessions only; a laptop is never touched
 dotnet tool restore >/dev/null 2>&1 || true
-dotnet estate doctor 2>/dev/null || echo "estate doctor: not built yet — run dotnet build"
+dotnet dbchange doctor 2>/dev/null || echo "dbchange doctor: not built yet — run dotnet build"
 ```
 
 ```bash
 #!/usr/bin/env bash
 # .claude/hooks/session-end.sh — release the local server if nothing else holds it.
-dotnet estate synthetic-copy down --if-idle >/dev/null 2>&1 || true
+dotnet dbchange synthetic-copy down --if-idle >/dev/null 2>&1 || true
 ```
 
 Nine lines between them. v2's four hooks were 814. The installation work the old SessionStart
-did (a SDK, a tool, a daemon, an image, a container) is now `estate doctor --install` for the
-first four and `estate synthetic-copy up` for the fifth, both verbs a human can run from a terminal and
+did (a SDK, a tool, a daemon, an image, a container) is now `dbchange doctor --install` for the
+first four and `dbchange synthetic-copy up` for the fifth, both verbs a human can run from a terminal and
 both refusing with a reason when they cannot.
 
 ### 6.5 `ARCHITECTURE.md`
@@ -775,7 +775,7 @@ both refusing with a reason when they cannot.
 The successor of `V3_ARCHITECTURE.md` §5–§10 and §13, at most 3,000 lines, kept true by one
 rule and two tests. The rule (§15 of the companion): edited only to make it true again when
 code changed what it says, and only the paragraph that became false. The tests: every verb
-named in the file exists in `estate --help --json` and every verb in `--help` is named in the
+named in the file exists in `dbchange --help --json` and every verb in `--help` is named in the
 file; every law named in the file is a row in `LAWS.md`. The file carries no counts and no
 line numbers; those are in `DOCS.md` and `LAWS.md`.
 
@@ -785,7 +785,7 @@ line numbers; those are in `DOCS.md` and `LAWS.md`.
 # Decisions — one line each; the reasoning is in the pull request
 2026-09-17 · v3 is C#; v2's F# is the specification it is ported from · #703
 2026-09-17 · the OSSYS reader survives as an optional package, budgeted separately · #703
-2026-09-17 · `estate doctor` is the thirteenth verb; every entry file runs it first · #703
+2026-09-17 · `dbchange doctor` is the thirteenth verb; every entry file runs it first · #703
 2026-09-17 · `global.json` rolls forward to the latest patch (v1 and v2 disabled roll-forward) · #703
 ```
 
@@ -859,7 +859,7 @@ the explicit negative is the section a reviewer relies on.
 - **`LAWS.md`** — from the test tree by `ci/laws.sh` on every build: one row per test in the
   `Laws` categories, with the English name, the test's full name, and the last green run.
   A skipped test is not a row; a test named as a law that is red fails the build.
-- **`cli/VERBS.md`** — from `estate --help --json`: every verb, its flags, its JSON output
+- **`cli/VERBS.md`** — from `dbchange --help --json`: every verb, its flags, its JSON output
   schema, its exit codes and error codes with remedies. The bundle's router and
   `authoring.md` cite verbs by name and a test checks that every cited verb exists.
 - **`cli/CONFIG.md`** — from `environments.json`'s schema: every key, its type, its default, its
@@ -869,7 +869,7 @@ the explicit negative is the section a reviewer relies on.
 - **`knowledge/INDEX.md`** — from the tree: one row per operation and shared skill with its
   trigger phrases and its path, the one-hop route for an agent without skill discovery.
 - **`.claude/skills/*`, `.claude/agents/*`, `knowledge/copilot/**`** — by
-  `estate knowledge package`, fingerprinted; §8 has their shapes.
+  `dbchange knowledge package`, fingerprinted; §8 has their shapes.
 - **`archive/INDEX.md`** — once, at step 0 of the migration: one line per archived document,
   its date, its size, and its disposition (provenance / superseded by <v3 file> / knowledge
   moved to <path>).
@@ -882,32 +882,32 @@ manifest test refuses a generated file without it and a hand-written file with i
 ## 7. The knowledge layer's files
 
 `knowledge/` is the only prose a developer's session reads. It carries what is true of SQL
-Server, DacFx, the estate and the platform, with receipts, in the register. It carries nothing
+Server, DacFx, the environments and the platform, with receipts, in the register. It carries nothing
 about the engine's construction and nothing about itself. The companion's §9 decided its
 shape; this section drafts its files.
 
 ### 7.1 `knowledge/README.md` — the first file a developer reads (150 lines)
 
 ```markdown
-# Changing the data model on this estate
+# Changing the data model of these environments
 
 The same edit ships differently depending on the data. "Make this attribute mandatory" is a
 one-line NOT NULL change; whether it applies in place or is blocked and has to ship as two
 releases depends on whether the table holds rows right now, not on whether the column has
 blanks. You cannot tell from the SQL. You publish the change to a disposable copy of the
 database, populated with real-shaped data, and read what DacFx does. What it does is the
-classification. `estate prove` does this in one command.
+classification. `dbchange prove` does this in one command.
 
 ## Two findings, always both
 How it ships (in place · one release with a post-deploy · one release with a pre-deploy ·
 a scripted change · across N releases) and what the approving dev lead weighs (additive ·
 the application must change · existing data is modified or a relationship added · data is
 removed irreversibly), with two lines that add scrutiny when they hold (production row
-counts; first time on this estate). Never one label.
+counts; first time on these environments). Never one label.
 
 ## Three facts the data settles
 Is the table populated. Does existing data violate the new rule. Must old and new
-application code coexist. `estate classify` predicts from the first two; `estate prove`
+application code coexist. `dbchange classify` predicts from the first two; `dbchange prove`
 settles them.
 
 ## The map
@@ -919,7 +919,7 @@ shared/ — the reasoning several operations share (tightening; a constraint is 
           identity and the refactorlog; multi-phase; when to index; vocabulary; scripts)
 findings.md — what has been proven on a live SQL Server, with the database that proves it
 samples/ — a dozen pull request descriptions, one per shape
-ledgers/ — the estate's own state: what has shipped, row tiers, open windows, refusals,
+ledgers/ — the SSDT repository's own state: what has shipped, row tiers, open windows, refusals,
            reviewers, toolchain pins, CDC-tracked tables, scale datapoints
 handbook/ — the eight chapters the operations cite
 
@@ -927,7 +927,7 @@ handbook/ — the eight chapters the operations cite
 description.md · authoring.md · the operation that matches · the shared file it points to. That is
 the whole path, and a test keeps it short enough to hold beside the open file.
 
-## If `estate` is not on this machine
+## If `dbchange` is not on this machine
 Until proving runs, stop and say so, rather than guess from the SQL text. The change can still
 be authored and opened as a pull request marked provisional; the gate proves it and posts the
 pull request description.
@@ -970,15 +970,15 @@ posed.
 Edit the `CREATE`; never write an `ALTER`. The desired state is the only thing in the model.
 Exit: the desired-state `.sql` exists and builds.
 
-## S2 · Measure          `estate measure --tables <t> --target synthetic-copy`
+## S2 · Measure          `dbchange measure --tables <t> --target synthetic-copy`
 Counts and violating rows: populated or empty; nulls, orphans, duplicates, over-length.
 Exit: the counts are in hand.
 
-## S3 · Classify         `estate classify --from <base> --to HEAD --evidence …`
+## S3 · Classify         `dbchange classify --from <base> --to HEAD --evidence …`
 The provisional shape and weight, marked provisional in the first word. Exit: a provisional
 pair of findings.
 
-## S4 · Prove            `estate prove --project … --target synthetic-copy` (Strict; then `--permissive` on a block)
+## S4 · Prove            `dbchange prove --project … --target synthetic-copy` (Strict; then `--permissive` on a block)
 The verdict: applied, or blocked with the message verbatim. On a block, the permissive pass
 shows what would have happened. Exit: a real verdict from this branch.
 
@@ -993,7 +993,7 @@ If proving surfaced a decision only a human can make, pose it in the fork form (
 fact; each option with its consequence; one question) and write down the answer with its owner.
 Exit: posed and recorded, or answered.
 
-## S7 · Describe         `estate describe …`
+## S7 · Describe         `dbchange describe …`
 The ten sections. A section with nothing to report says so in a sentence. Exit: all ten
 present; the verdict and the shipping shape agree.
 
@@ -1009,7 +1009,7 @@ say so, name who does it, name what to check. Never guess.
 
 ### 7.3 `knowledge/reviewing.md` (100 lines)
 
-Reproduce (`estate prove` on the reviewer's own copy), scope (`estate diff --only` and the
+Reproduce (`dbchange prove` on the reviewer's own copy), scope (`dbchange diff --only` and the
 dependency closure: foreign keys in and out, procedures, indexes, external consumers, with
 row counts), challenge (inject a violating row; play a blocked change forward under
 `--permissive`; the seven challenges by operation class), dispose (Approved · Approved with a
@@ -1058,7 +1058,7 @@ document's source). A description that uses a retired word fails the register te
 ```
 
 The pull-request templates for GitHub and Azure DevOps are generated from the block between
-the `template` markers, so the three cannot disagree. `estate describe` renders seven of the ten
+the `template` markers, so the three cannot disagree. `dbchange describe` renders seven of the ten
 sections from the change, the evidence and the verdict, and writes an explicit placeholder into
 the three only a person can fill (the intent in the developer's words, the fork's answer with
 its owner, and what was not checked beyond what the run could see); the gate refuses a body that
@@ -1084,7 +1084,7 @@ description: Use when the developer says "make Email required", "tick the Mandat
 ## In the developer's words          — the phrasings; what they mean in SSDT (one line)
 ## The named trap                     — `BlockOnPossibleDataLoss` fires on table-has-rows, not on column-has-blanks (F7)
 ## How it flips                       — empty table: in place · populated: two releases, even after the blanks are filled
-## Prove it                           — `estate measure --tables …` · `estate prove …` · on a block, `--permissive`
+## Prove it                           — `dbchange measure --tables …` · `dbchange prove …` · on a block, `--permissive`
 ## The verdict, to the developer      — the paragraph, in the description register
 ## In the description                 — which sections this op fills specially; the sample: samples/make-mandatory.md
 ## Shared reasoning                   — shared/tightening-class.md
@@ -1141,13 +1141,13 @@ next action · window closes · PR; the gate reads `tables` and `window closes`)
 recorded · notes). One is new:
 
 ```markdown
-# CDC-tracked tables — filled by `estate check cdc --target <env>`, per environment
+# CDC-tracked tables — filled by `dbchange check cdc --target <env>`, per environment
 | environment | table | capture instance | columns captured | measured |
 |---|---|---|---|---|
 ```
 
 `classify` reads it; a table listed here turns a column-list change into an `Error` finding
-with the capture-instance step named. The ledgers are owned by the estate repository (§5.3):
+with the capture-instance step named. The ledgers are owned by the SSDT repository (§5.3):
 the engine vendors them empty once and never overwrites them.
 
 ### 7.10 `knowledge/handbook/` — the eight chapters the operations cite
@@ -1157,14 +1157,14 @@ integrity · the refactorlog · deployment safety and `BlockOnPossibleDataLoss` 
 Data Capture. Lifted from v1's `handbook/` (32 chapters, 8,980 lines) and trimmed to what an
 operation cites; the other twenty-four chapters archive. Chapters are cited by title, never by
 number: v2's skills cite "handbook 16 (= §19)" through a +3 offset in twenty-five places, and
-the playbook they also cite is not vendored, so today a Copilot session in the estate cannot
+the playbook they also cite is not vendored, so today a Copilot session in the SSDT repository cannot
 resolve a single handbook citation. The eight chapters are vendored with the tree (§8) and
 the citation test (§10) resolves them there. `PORTABILITY.md` (94 lines) moves
 here unchanged. `INDEX.md` is generated.
 
 ---
 
-## 8. The estate repository's instruction set
+## 8. The SSDT repository's instruction set
 
 Under the two-repository default (the companion's §16, item 9): the team's Azure DevOps
 repository holds the SSDT project and receives a generated bundle. If the operator chooses one
@@ -1177,7 +1177,7 @@ Studio; its rungs are kept because they state what is verified.
 ### 8.1 The router — `.github/copilot-instructions.md` (60 lines, generated)
 
 ```markdown
-<!-- generated by `estate knowledge package` · fingerprint <12 hex> · do not edit -->
+<!-- generated by `dbchange knowledge package` · fingerprint <12 hex> · do not edit -->
 # Database schema changes in this repository
 
 This repository's schema is managed with SSDT. A change is an edit to a table definition,
@@ -1192,7 +1192,7 @@ If this editor offers custom agents, `authoring` is that file; on Visual Studio 
 task: `knowledge/reviewing.md`, or the `reviewing` agent.
 
 ## The one rule
-You cannot tell how a schema change behaves by reading its SQL. Run `estate prove` against
+You cannot tell how a schema change behaves by reading its SQL. Run `dbchange prove` against
 the disposable copy and read the verdict; the verdict is the classification. If proving
 cannot run, stop and say so. A guess from the text is the failure this workflow exists to
 prevent.
@@ -1214,10 +1214,10 @@ Environments are Dev, QA, UAT and Prod. There is no environment called Test.
 
 | File | `applyTo` | The never-rules it carries |
 |---|---|---|
-| `schema.instructions.md` | `Modules/**/*.sql` (the bundle's own layout; v2's `**/*.sql` fired on every SQL file in the repository, including v1's rowset script, and attached two files at once to a post-deploy script because the script globs were subsets of it) | edit the CREATE, never write an ALTER; a NOT NULL on a populated table blocks even when the blanks are filled (`shared/tightening-class.md`); a rename by typing loses the column's data: use the refactoring, or run `estate emit --refactorlog` |
+| `schema.instructions.md` | `Modules/**/*.sql` (the bundle's own layout; v2's `**/*.sql` fired on every SQL file in the repository, including v1's rowset script, and attached two files at once to a post-deploy script because the script globs were subsets of it) | edit the CREATE, never write an ALTER; a NOT NULL on a populated table blocks even when the blanks are filled (`shared/tightening-class.md`); a rename by typing loses the column's data: use the refactoring, or run `dbchange emit --refactorlog` |
 | `pre-deploy.instructions.md` | `Script.PreDeployment.sql` and `Scripts/PreDeploy/**/*.sql` | a pre-deploy prepares data for a change the model does not yet declare; never put the model change and the pre-deploy ALTER in one release; a data-modifying pre-deploy carries its receipt in the pull request description |
 | `post-deploy.instructions.md` | `Script.PostDeployment.sql` and `Data/Seeds/**/*.sql` | seeds are guarded MERGEs with explicit ids; deactivate, never delete; silence on redeploy is the proof |
-| `publish-profile.instructions.md` | `**/*.publish.xml` | a profile points only at a disposable copy; `BlockOnPossibleDataLoss` stays on; the two profiles under `estate/profiles/` are the only ones the gate accepts |
+| `publish-profile.instructions.md` | `**/*.publish.xml` | a profile points only at a disposable copy; `BlockOnPossibleDataLoss` stays on; the two profiles under `dbchange/profiles/` are the only ones the gate accepts |
 | `refactorlog.instructions.md` | `**/*.refactorlog` | new: never remove an entry before every environment has deployed past it; a removed entry re-introduces the drop-and-add |
 
 The fifth file exists because the refactorlog is the highest-leverage artifact after the
@@ -1228,9 +1228,9 @@ eject and had no instruction attached to it.
 ```markdown
 ---
 name: authoring
-description: Author a schema change on this estate. Use for any request to change the data
+description: Author a schema change in the SSDT repository. Use for any request to change the data
   model in the developer's words. Follows knowledge/authoring.md: intake, edit, profile,
-  classify, prove, ship, fork, describe, verify, with `estate` verbs.
+  classify, prove, ship, fork, describe, verify, with `dbchange` verbs.
 ---
 Read `knowledge/authoring.md` now and follow it. The operation files are under `knowledge/ops/`;
 the description register is `knowledge/description.md`.
@@ -1255,28 +1255,28 @@ per-role prompts v2 shipped are gone with the personas.
 `.github/skills/<op>/SKILL.md` are the eight-line pointers v2 generates today, over
 `knowledge/ops/<op>.md` and `knowledge/shared/<name>.md`. `knowledge/INDEX.md` is the one-hop
 table for editors without discovery. The two pull-request templates (GitHub and Azure DevOps)
-are generated from `description.md`'s template block. `AGENTS.md` at the estate root is the router's
+are generated from `description.md`'s template block. `AGENTS.md` at the repository root is the router's
 text under the tool-agnostic name, for any agent that is not Copilot (a Claude Code session
-opened on the estate repository reads it and finds the same one rule and the same entry point).
+opened on the SSDT repository reads it and finds the same one rule and the same entry point).
 
 ### 8.5 The packager contract
 
-`estate knowledge package` has three modes. `--check` verifies that every generated file in
+`dbchange knowledge package` has three modes. `--check` verifies that every generated file in
 the current tree equals what the generator would write (the fingerprint over the generator
 and its sources is the version). `--apply` regenerates in place (this repository's `.claude/`
 and `knowledge/copilot/`). `--vendor <path>` writes the bundle and the vendored `knowledge/`
-into an estate checkout, seeding `estate/ledgers/` only if absent and never touching an
-estate-owned file (§5.3); the ledgers are excluded from the fingerprint, so an appended row is
-never a drift failure. `estate --version` prints the fingerprint, and the router's first line
+into a checkout of the SSDT repository, seeding `dbchange/ledgers/` only if absent and never touching a
+file the SSDT repository owns (§5.3); the ledgers are excluded from the fingerprint, so an appended row is
+never a drift failure. `dbchange --version` prints the fingerprint, and the router's first line
 carries it, so a developer can see in one glance whether the bundle is current.
 
 The lane: on every merge to `main` here, the bake lane runs `--vendor` into a clone of the
-estate repository and opens a pull request there when the fingerprint moved, titled with the
-fingerprint and listing the changed files. Today's vendor step copies `estate/` unconditionally,
+SSDT repository and opens a pull request there when the fingerprint moved, titled with the
+fingerprint and listing the changed files. Today's vendor step copies `dbchange/` unconditionally,
 which is harmless only because the ledgers have no rows; the first appended row would be erased
-by the next vendoring, so the seed-once rule is a bug fix. The estate's own pipeline runs `--check` on every
+by the next vendoring, so the seed-once rule is a bug fix. The SSDT repository's own pipeline runs `--check` on every
 pull request and fails with "regenerate" if a generated file was edited by hand, and it
-resolves every citation in the vendored tree against the estate checkout, which nothing does
+resolves every citation in the vendored tree against the SSDT repository checkout, which nothing does
 today (the engine's citation gate deliberately skips the bundle because its paths only resolve
 after vendoring). Nobody
 hand-edits a vendored file; a drifted copy is a failed check. Two Azure DevOps
@@ -1297,12 +1297,12 @@ attaches on 2022, whether agent mode reads vendored files when the solution is n
 is unchanged and is the pilot's checklist (companion §16, item 2). Nothing in this section
 adds a surface until the pilot says which rung the team is on.
 
-### 8.7 What the estate owns, and the engine never writes
+### 8.7 What the SSDT repository owns, and dbchange never writes
 
-`estate/environments.json` (the environments; the writable targets; the local server), the project
+`dbchange/environments.json` (the environments; the writable targets; the local server), the project
 format row in `ledgers/toolchain.md` (classic today; `emit` never changes a project's format),
-`estate/profiles/*.publish.xml` (mirrored from the pipeline's task by a human), the ledgers,
-`estate/evidence.shape.json` and `estate/synthetic-copy.json` (produced by verbs the team runs, committed
+`dbchange/profiles/*.publish.xml` (mirrored from the pipeline's task by a human), the ledgers,
+`dbchange/evidence.shape.json` and `dbchange/synthetic-copy.json` (produced by verbs the team runs, committed
 by the team), `.editorconfig` and `.gitattributes` (D3), and the SSDT project itself. The
 engine reads them; only a verb that appends a row (`check cdc`, `measure --counts`) writes to
 them, and it says so in its output.
@@ -1313,17 +1313,17 @@ them, and it says so in its output.
 
 The tool an agent calls is the product, and the product is the CLI. Everything in this section
 is a consequence of that: the JSON contract, the status line, the optional MCP server, the two
-hooks, the permissions, and the session protocols are all views of `estate`.
+hooks, the permissions, and the session protocols are all views of `dbchange`.
 
 ### 9.1 The CLI is the API
 
 Every verb accepts `--json` and writes one object. The object's shape is the contract:
 
 ```json
-{ "schema":     "estate.prove/1",
-  "estate":     "3.0.12", "dacfx": "162.5.57", "pin": "162.5.57",
+{ "schema":     "dbchange.prove/1",
+  "version":    "3.0.12", "dacfx": "162.5.57", "pin": "162.5.57",
   "server":     { "version": "16.0.4135", "compatibilityLevel": 160, "image": "sha256:…" },
-  "provenance": { "target": "estate_9f3a1c_41872", "script": "sha256:…", "at": "2026-09-17T14:02:11Z" },
+  "provenance": { "target": "dbchange_9f3a1c_41872", "script": "sha256:…", "at": "2026-09-17T14:02:11Z" },
   "verdict":    { "outcome": "blocked", "shape": "two-releases", "message": "Msg 50000 … rows exist …" },
   "findings":   [ { "code": "block-on-possible-data-loss.row-presence", "severity": "error",
                     "subject": "dbo.Customer.Email", "message": "…", "remedy": "…" } ], "exit": 3 }
@@ -1340,24 +1340,24 @@ remedy:** the `findings[].remedy` field is required for `severity: error` and fo
 per verb under `cli/schemas/` is what the test checks against, and `--help --json` emits the
 same schemas, so the verb reference is generated from the thing the tests check.
 
-### 9.2 `estate doctor` — the status line
+### 9.2 `dbchange doctor` — the status line
 
 One verb answers "can this machine do the work?" and every entry file says to run it first.
 
 ```
-estate doctor READY | sdk=10.0.4 | dacfx=162.5.57 (pinned) | local-server=localdb (2022) |
-  synthetic-copy=9f3a1c (restored 2026-09-16, current) | estate=../estate (environments ok, 2 open windows)
+dbchange doctor READY | sdk=10.0.4 | dacfx=162.5.57 (pinned) | local-server=localdb (2022) |
+  synthetic-copy=9f3a1c (restored 2026-09-16, current) | repository=../ssdt (environments ok, 2 open windows)
 ```
 
 `DEGRADED` names what is missing and the remedy (`--install` for the SDK and the local tool;
-`estate synthetic-copy up` for the local server; `estate synthetic-copy restore <artifact>`
+`dbchange synthetic-copy up` for the local server; `dbchange synthetic-copy restore <artifact>`
 for a stale synthetic copy). `--json` carries the same fields. The SessionStart hook prints
 this line and nothing else; a session quotes it before diagnosing anything (A2). It replaces
 431 lines of hook with a verb a human can run.
 
 ### 9.3 An MCP server, as an open question
 
-`estate serve --mcp` would expose the verbs as tools over stdio, generated from the same verb
+`dbchange serve --mcp` would expose the verbs as tools over stdio, generated from the same verb
 table that produces `--help --json` (one tool per verb, `move` excluded), so that the verdict
 becomes a tool call rather than a terminal command. It is about two hundred lines and adds no
 surface to `knowledge/`. It is not in the design until the pilot answers one question: whether
@@ -1369,11 +1369,11 @@ names, can host an MCP server against an Azure DevOps checkout. Until then the C
 ### 9.4 The hooks
 
 A maintainer surface only: the team does not use Claude Code, so the hooks belong to the engine
-repository and are no part of the estate's interface. Two, drafted in §6.4, nine lines between
+repository and are no part of the SSDT repository's interface. Two, drafted in §6.4, nine lines between
 them. SessionStart installs `dotnet` when it is absent and runs `doctor`. SessionEnd releases
 the local server if idle. There is no PreToolUse hook (a verb that needs the local server
 refuses with the remedy), no Stop hook (nothing runs after every message), and no hook installs
-a daemon or pulls an image (`estate synthetic-copy up` does, and refuses with a reason when it
+a daemon or pulls an image (`dbchange synthetic-copy up` does, and refuses with a reason when it
 cannot). A hook that grows past ten lines is a verb that has not been written.
 
 ### 9.5 Permissions
@@ -1390,14 +1390,14 @@ a session that needs the archive says so and is granted it for that task.
 **(a) An engineering session in this repository** (Claude Code, a cloud session, a Copilot
 session in agent mode). The hook prints the doctor line. Read `AGENTS.md`, `NEXT.md`, and the
 README of the package being changed. Work under the laws and the budgets. Before pushing:
-`dotnet test --filter Category=fast`; `estate knowledge package --check` if `knowledge/`
+`dotnet test --filter Category=fast`; `dbchange knowledge package --check` if `knowledge/`
 changed. Open a pull request with the engine template; CI posts the budget and law numbers.
 Rewrite `NEXT.md`. Add at most one line to `DECISIONS.md`. If the work needs a decision only
 the operator can make, write it under "Waiting on a person" in `NEXT.md` and stop; do not guess.
 
-**(b) An authoring session in the estate repository** (Copilot in Visual Studio, or any
+**(b) An authoring session in the SSDT repository** (Copilot in Visual Studio, or any
 agent reading `AGENTS.md` there). The router attaches. `authoring.md` S0–S8, each step its
-verb. The pull request description is `estate describe`'s output; the agent supplies the
+verb. The pull request description is `dbchange describe`'s output; the agent supplies the
 intent, the fork answer and nothing else in its own words. The pull request uses the schema
 template. The gate reproduces the proof and diffs the description; the developer refreshes
 Integration Studio per environment after each deploy, and the description's after-deploy
@@ -1411,12 +1411,12 @@ goes to the author; an escalated one carries one question and the dependency sco
 **(d) A CI lane.** Three verbs at most. Proof (nightly): `synthetic-copy restore` → `prove` over the
 proven changes → publish the results `LAWS.md` reads. Bake (merge to `main`): `profile` (when
 the source is real Dev, owner-side) → `synthetic-copy bake` → `knowledge package --vendor` → a pull
-request to the estate. Gate (a pull request on the estate): `gate` → post `gate.json` and
+request to the SSDT repository. Gate (a pull request on the SSDT repository): `gate` → post `gate.json` and
 `changelog.json`. A lane never approves.
 
-**(e) An authoring session with no `estate` binary.** The estate's laptops are corporate
+**(e) An authoring session with no `dbchange` binary.** The developers' laptops are corporate
 Windows machines that may lack Docker and will lack the tool until it is installed. The
-distribution is a pinned .NET tool (`dotnet tool install --global Estate.Cli --version <pinned>`
+distribution is a pinned .NET tool (`dotnet tool install --global DbChange.Cli --version <pinned>`
 from the feed named in `ledgers/toolchain.md`), and the router says what to do without it, in
 the bundle's own words: stop and say so, rather than guess from the SQL text. The degraded path
 says what it could not do: the session edits the CREATE, writes the intent, and opens the pull
@@ -1430,20 +1430,20 @@ files asks for the denial to be lifted for that task and says why in the pull re
 ### 9.7 One register, two agents
 
 A Claude Code session and a Copilot session produce the same pull request description because
-neither writes it: `estate describe` renders it from the verdict, the change and the evidence,
+neither writes it: `dbchange describe` renders it from the verdict, the change and the evidence,
 and the agent fills two fields (the intent in the developer's words; the fork answer with its
 owner). The register is therefore the verb's property, tested once, and the agents' styles
 cannot leak into the artifact a lead approves. The descriptions that ship are written in the
-estate repository and would otherwise never meet the lint, so the gate runs the register lint
+SSDT repository and would otherwise never meet the lint, so the gate runs the register lint
 over the pull request body there, and refuses a body that still carries a placeholder from
-`estate describe`. In conversation, the agent is allowed the second person and warmth (v2's
+`dbchange describe`. In conversation, the agent is allowed the second person and warmth (v2's
 conversation register, kept as one paragraph in `description.md`); the description is not.
 
 ---
 
 ## 10. How it stays true
 
-Eighteen tests, sixteen in one fast project here and two in the estate's pipeline, `tests/Budgets.Tests`, run on every pull request with no
+Eighteen tests, sixteen in one fast project here and two in the SSDT repository's pipeline, `tests/Budgets.Tests`, run on every pull request with no
 SQL Server, plus three lanes. Each is named so a red build names the rule.
 
 | # | Test | What it asserts | Values it upholds |
@@ -1455,16 +1455,16 @@ SQL Server, plus three lanes. Each is named so a red build names the rule.
 | 5 | `Register.Prose` | every hand-written file in the manifest is free of the retired vocabulary, the antithesis tic and numbered axes; `VALUES.md` first, because a register of one-sentence values is the document most likely to fail the register's own rules | L1, L5 |
 | 6 | `Vocabulary` | every term in the glossary appears somewhere in the tree; every retired term (Appendix A) appears nowhere outside `archive/` and Appendix A itself | L5 |
 | 7 | `NoRestatedCounts` | no hand-written file states the number of verbs, laws, operations, samples, packages, hooks or files in the tree, or a line count of a tree file (dated historical measurements are allowed) | L2 |
-| 8 | `Citations` | every relative link and every `knowledge/…` path in any markdown resolves; every `estate <verb>` cited in `knowledge/` or `ARCHITECTURE.md` exists in `--help --json`; every `F<n>` cited exists in `findings.md` | L2, R2 |
+| 8 | `Citations` | every relative link and every `knowledge/…` path in any markdown resolves; every `dbchange <verb>` cited in `knowledge/` or `ARCHITECTURE.md` exists in `--help --json`; every `F<n>` cited exists in `findings.md` | L2, R2 |
 | 9 | `VerbsMatchArchitecture` | the verbs in `ARCHITECTURE.md` and in `--help --json` are the same set, and the generated reference's row count equals the number of verb handlers, so no prose carries a stale count | L2 |
 | 10 | `LawsMatchArchitecture` | every law named in `ARCHITECTURE.md` and `VALUES.md` is a row in `LAWS.md`; `LAWS.md` is byte-equal to `ci/laws.sh`'s output | L6 |
-| 11 | `PackagerCheck` | `estate knowledge package --check` is clean: pointers, index, bundle and the two schema templates equal the generator's output | principle 5 |
+| 11 | `PackagerCheck` | `dbchange knowledge package --check` is clean: pointers, index, bundle and the two schema templates equal the generator's output | principle 5 |
 | 12 | `NoSkips` | zero `Skip =` attributes and zero `[Fact(Skip` in `tests/` | L6 |
 | 13 | `PackagesAllowlist` | every `PackageReference` across the solution is in `ci/packages.allow` with a licence; `packages.lock.json` is present and CI restores in locked mode | X3 |
 | 14 | `Decisions` | every non-header line of `DECISIONS.md` matches the one-line format; no line present on `main` is absent on the branch | A8 |
 | 15 | `FindingsAppendOnly` | no `F<n>` heading present on `main` is absent on the branch; every finding names its DacFx version and its receipt | R4, A7 |
-| 18 | `DescriptionInPullRequest` (runs in the estate's pipeline, in the gate) | the pull request body passes the register lint and contains no placeholder `estate describe` wrote for a human section | L1, S3, A9 |
-| 17 | `VendoredCitations` (runs in the estate's pipeline, not here) | every relative link and bare `.md` name in the vendored `knowledge/` and the bundle resolves against the estate checkout; the engine's citation test cannot see this because the bundle's paths only resolve after vendoring | L2, principle 3 |
+| 18 | `DescriptionInPullRequest` (runs in the SSDT repository's pipeline, in the gate) | the pull request body passes the register lint and contains no placeholder `dbchange describe` wrote for a human section | L1, S3, A9 |
+| 17 | `VendoredCitations` (runs in the SSDT repository's pipeline, not here) | every relative link and bare `.md` name in the vendored `knowledge/` and the bundle resolves against the SSDT repository checkout; the engine's citation test cannot see this because the bundle's paths only resolve after vendoring | L2, principle 3 |
 | 16 | `ValuesResolve` | every row of `VALUES.md` has a `Where` that names an existing test, verb, analyzer rule, hook or generated file, or the literal "prose only"; the count of "prose only" rows is printed and may not rise without a decision line | principle 8 |
 
 One exclusion is itself tested: `archive/**` is excluded from every count, every lint and the
@@ -1475,11 +1475,11 @@ The six lanes that exist today map onto three: the three required checks with no
 (analyzers, lint, verifiability) and the tree's gates become the fast lane (`Budgets.Tests` and
 the analyzers, five minutes, every pull request); the proof lane stays the proof lane (nightly);
 the bake lane stays the bake lane (every merge) and gains the vendoring pull request. The PR gate
-is new and runs in the estate's pipeline as a branch policy.
+is new and runs in the SSDT repository's pipeline as a branch policy.
 
 Three lanes carry what a fast test cannot: the proof lane re-proves the samples nightly on the
 pinned DacFx (a sample whose verdict changed is a red lane); the bake lane regenerates the
-bundle and opens the estate pull request; the gate reproduces a schema change's proof and diffs
+bundle and opens the SSDT repository pull request; the gate reproduces a schema change's proof and diffs
 its pull request description. And one rule with no test, stated as such: `ARCHITECTURE.md` is
 edited only to make it true again, one paragraph at a time. Tests 9 and 10 catch the two ways
 it most often went false in v2 (a verb list and a law list); the rest is review.
@@ -1501,7 +1501,7 @@ Aligned to the companion's nine steps (§14.2). Documents move at three of them.
 | 0 | `README.md`, `AGENTS.md`, `CLAUDE.md`, `VALUES.md`, `DECISIONS.md` (opened with the lines in §6.6), `NEXT.md`, `.claude/settings.json` and the two hooks, `.ignore`, `ci/docs.manifest.json`, `ci/budgets.json`, `ci/packages.allow`, `tests/Budgets.Tests`; `archive/INDEX.md` generated once over v1's and v2's documents, and v2's 179 documents archived as one compressed bundle beside it so that search tools stop finding a specification v3 replaced while the code stays buildable in the tree; `V3_ARCHITECTURE.md` and this document stay at the root until `ARCHITECTURE.md` supersedes them at step 9 | root `AGENTS.md` and `architecture-guardrails.md`; `sidecar/projection/CLAUDE.md` §4–§5 and §8; `KICKOFF.md`'s read order; `settings.json` and the four hooks |
 | 1 | `LAWS.md` generation with the first kernel laws; `kernel/README.md` | `AXIOMS.md`'s English names; `scripts/matrix-status.sh`'s shape |
 | 2–5 | a package README as each package lands; `cli/VERBS.md` and `cli/CONFIG.md` generation when the CLI has verbs; `io/SyntheticCopy/README.md` moved unchanged | `THE_TWIN.md`, `THE_SYNTHETIC_DATA_DESIGN.md`, `CONFIG_REFERENCE.md` |
-| 6 | `knowledge/`: `README.md`, `authoring.md`, `reviewing.md`, `description.md`, the 45 operations trimmed, the eight shared files, `findings.md`, twelve samples, the ledgers (with `cdc-tracked.md`), the eight handbook chapters, `PORTABILITY.md`; `INDEX.md` and the pointers generated; the bundle regenerated with two agents, one prompt and five instructions; the first vendoring pull request to the estate | the `ssdt-agent` tree; v1's `handbook/` |
+| 6 | `knowledge/`: `README.md`, `authoring.md`, `reviewing.md`, `description.md`, the 45 operations trimmed, the eight shared files, `findings.md`, twelve samples, the ledgers (with `cdc-tracked.md`), the eight handbook chapters, `PORTABILITY.md`; `INDEX.md` and the pointers generated; the bundle regenerated with two agents, one prompt and five instructions; the first vendoring pull request to the SSDT repository | the `ssdt-agent` tree; v1's `handbook/` |
 | 7 | the two schema pull-request templates generated from `description.md`; the engine template; the gate's `gate.json` and `changelog.json` posted on pull requests | `pr-template/`, `author-pr` |
 | 9 | `ARCHITECTURE.md` written from the companion's §5–§10 and §13; `DOCS.md` generated; `archive/` leaves `main` for the `archive` branch and the `v2-final` tag once its CI is retired; the two design documents move to `archive/design/` | `V3_ARCHITECTURE.md`, this document |
 
@@ -1516,7 +1516,7 @@ from leaking back.
 
 **Citations gate the migration.** The tree's skills and agents cite what step 6 deletes or
 renames, in this many files of the sixty-eight: `sample-prs/` 53, `FINDINGS_AND_CHANGES.md` 21,
-`handbook` 20 (25 occurrences, through the +3 offset), `estate/` 11, `CONNECTORS.md` 10,
+`handbook` 20 (25 occurrences, through the +3 offset), `dbchange/` 11, `CONNECTORS.md` 10,
 `proving-ground/` 9, `self-test/` 8, `PROVING_PATH_WINDOWS.md` 2. The bundle's install notes say
 to keep all ten targets because the skills cite them; five are deleted here. So the order inside
 step 6 is fixed: rewrite the citations first (findings by identifier, samples by shape, handbook
@@ -1524,7 +1524,7 @@ by title, ledgers by their new path), with the citation test green at every comm
 the targets last.
 
 `KICKOFF.md`'s first-read role goes to `AGENTS.md`; `GETTING_STARTED.md`'s stand-up role goes
-to `tests/README.md` and `estate doctor --install`; `PROVING_PATH_WINDOWS.md`'s Windows runbook
+to `tests/README.md` and `dbchange doctor --install`; `PROVING_PATH_WINDOWS.md`'s Windows runbook
 goes to `knowledge/PORTABILITY.md` and the same verb, with the `.bak` route it described gone
 (it put real data on laptops).
 
@@ -1537,8 +1537,8 @@ anything earlier.
 
 ## 12. Risks and open questions for this layer
 
-- **The tool has to reach the laptop.** Everything in `authoring.md` assumes `estate` is on
-  the developer's PATH, and the estate's laptops are corporate Windows machines that may lack
+- **The tool has to reach the laptop.** Everything in `authoring.md` assumes `dbchange` is on
+  the developer's PATH, and the developers' laptops are corporate Windows machines that may lack
   Docker and will lack the tool until someone installs it. §9.6(e) gives the distribution (a
   pinned .NET tool from a named feed) and the degraded path (author, mark provisional, let the
   gate prove). The risk is the feed: a corporate machine that cannot reach nuget.org needs an
@@ -1554,14 +1554,14 @@ anything earlier.
   agent mode, policy-gated on Copilot Business, can host an MCP server against an Azure DevOps
   checkout. If not, the verbs are the same verbs on the terminal and the loss is convenience,
   not capability. Cost if yes: about two hundred lines generated from the verb table.
-- **Two repositories drift.** A vendored file edited by hand in the estate repository is
-  caught only if the estate's pipeline runs `--check`, and registering that pipeline is a human
+- **Two repositories drift.** A vendored file edited by hand in the SSDT repository is
+  caught only if the SSDT repository's pipeline runs `--check`, and registering that pipeline is a human
   act in Azure DevOps. Until it is registered, the bake lane's pull request is the only
   reconciliation, and a hand edit survives until the next one. The mitigation is stated in
   `knowledge/README.md`'s first vendored line ("generated; edit in the engine repository") and
   in the pipeline template's README.
-- **The ledgers are owned by the estate and seeded by the engine.** A `--vendor` that
-  overwrote a ledger would erase the estate's history. The packager never writes an existing
+- **The ledgers are owned by the SSDT repository and seeded by dbchange.** A `--vendor` that
+  overwrote a ledger would erase the SSDT repository's history. The packager never writes an existing
   ledger, and a test proves it against a checkout with populated ledgers.
 - **The manifest test as friction.** A session that wants to write prose will find it cannot
   add a file without a manifest row. That is the point, and the exceptions are the
@@ -1608,8 +1608,8 @@ anything earlier.
   discovers `.github/skills/` (the pilot). Whether Azure DevOps' Copilot surface reads
   `AGENTS.md` (it is generated regardless; it costs nothing). Whether the developers will
   accept the one business question being asked by a tool rather than a person (the pilot's
-  conversation cases, judged by the four reviewers). Whether the engine repository and the
-  estate repository should merge (companion §16, item 9; this document assumes two).
+  conversation cases, judged by the four reviewers). Whether this repository and the
+  SSDT repository should merge (companion §16, item 9; this document assumes two).
 
 ---
 
@@ -1693,19 +1693,19 @@ FK Check*, *Refactorlog Cleanup*) stay; only *Naked Rename* is retired, for its 
 
 **A new maintainer, day one (about forty minutes to a green build).** `README.md` (five
 minutes). `VALUES.md` (ten). `kernel/README.md` (three). `LAWS.md` (two: the names, not the
-tests). `estate doctor`, then `dotnet test --filter Category=fast` (fifteen). `NEXT.md` (two).
+tests). `dbchange doctor`, then `dotnet test --filter Category=fast` (fifteen). `NEXT.md` (two).
 Then the package README of whatever `NEXT.md` names.
 
 **A developer's first change (one session).** The entry prompt opens `authoring.md`. S0 names
 the operation and asks the one question. S1 edits the CREATE. S2–S4 are three verbs. S5 picks
-the shape from the verdict. S6 if proving forked. S7 is `estate describe`. S8 reads it against
+the shape from the verdict. S6 if proving forked. S7 is `dbchange describe`. S8 reads it against
 `description.md`. The pull request carries the description; the gate reproduces it. Total prose
 on the path: the router (60) + `authoring.md` (150) + one operation (≤ 90) + one shared file
 (≤ 120) + `description.md` (120) = under 600 lines, and test 2 keeps it there.
 
 **A reviewer's first review (fifteen minutes).** `description.md` (five). The pull request body,
 findings first. `gate.json` (the reproduced verdict; the description diff). If trust is in question,
-`reviewing.md` and one `estate prove` on the reviewer's own copy. One of four dispositions, in
+`reviewing.md` and one `dbchange prove` on the reviewer's own copy. One of four dispositions, in
 the register.
 
 **The owner's session.** `NEXT.md` ("Waiting on a person" first). The tail of `DECISIONS.md`.
@@ -1731,7 +1731,7 @@ quantities §2.1's table carries are not repeated here.
 | skills | 45 operations (64–131 lines, median 93.5, 4,961 total) · 6 shared (750) · 4 review (495) · 10 top-level (68–576; `prove-on-dacpac` 576, `talk-to-local-sql` 406) |
 | samples | 50 files · 3,755 lines (46 top-level, 4 compound) |
 | ledgers | 8 files · 272 lines; `reviewers.md` has two unfilled rows; `operations.md` and `in-flight.md` have no rows |
-| skills and agents citing what step 6 removes or renames (of 68 files) | `sample-prs` 53 · `FINDINGS_AND_CHANGES.md` 21 · `handbook` 20 · `estate/` 11 · `CONNECTORS.md` 10 · `proving-ground` 9 · `self-test` 8 · `PROVING_PATH_WINDOWS.md` 2 |
+| skills and agents citing what step 6 removes or renames (of 68 files) | `sample-prs` 53 · `FINDINGS_AND_CHANGES.md` 21 · `handbook` 20 · `dbchange/` 11 · `CONNECTORS.md` 10 · `proving-ground` 9 · `self-test` 8 · `PROVING_PATH_WINDOWS.md` 2 |
 | the Copilot authoring path today | router 60 + largest instruction 23 + largest operation 131 + `THE_RECORD.md` 308 + `THE_RECORD_FORMS.md` 143 = 665 lines; after the trim about 320 |
 | ceremony in v2's `src/` (occurrences = lines) | `LINT-ALLOW` 566 in 219 files · `Bench.scope` 279 in 86 · `RequireQualifiedAccess` 619 in 291 · `ValidationError.create` 338 in 88 (`grep -rao … --include=*.fs src \| wc -l`) |
 | files with a generated banner | `NORTH_STAR.matrix.generated.md` · `skills/INDEX.md` · the router · 4 instructions · 4 prompts · the PR template · `projection.schema.json` |

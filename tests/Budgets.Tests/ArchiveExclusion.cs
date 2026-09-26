@@ -3,7 +3,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using Xunit;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// archive/ is outside v3: its own Directory.Build.props, Directory.Packages.props (central versions off) and
@@ -30,7 +30,7 @@ public sealed class ArchiveExclusion
     public void No_v3_project_reaches_into_the_archive()
     {
         var reaching = Repository.MsBuildFiles.SelectMany(f => Repository.PathsNamedBy(f).Where(p => p.StartsWith("archive/", StringComparison.Ordinal)).Select(p => f + " names " + p));
-        var inSolution = Repository.Lines("Estate.sln").Where(l => l.StartsWith("Project(", StringComparison.Ordinal) && l.Contains("archive", StringComparison.OrdinalIgnoreCase));
+        var inSolution = Repository.Lines("DbChange.sln").Where(l => l.StartsWith("Project(", StringComparison.Ordinal) && l.Contains("archive", StringComparison.OrdinalIgnoreCase));
 
         Assert.Empty(reaching);
         Assert.Empty(inSolution);

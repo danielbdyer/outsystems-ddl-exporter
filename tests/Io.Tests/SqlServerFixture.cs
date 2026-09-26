@@ -5,23 +5,23 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
-using Estate.Budgets.Tests;
-using Estate.Kernel;
+using DbChange.Budgets.Tests;
+using DbChange.Kernel;
 using Microsoft.Data.SqlClient;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
-/// One SQL Server per test run, and a registered database per test, estate_&lt;host&gt;_&lt;pid&gt;_&lt;rand&gt;, dropped after it, so
-/// concurrent runs and agents sharing a server never collide. The server is io/LocalServer's (WP 1.4): ESTATE_SQL when set; else,
-/// where docker info answers, the estate-sql container that ci/sql.sh up (ci/sql.ps1 up on Windows) pulls and starts, reached
-/// through ~/.estate/sql.env; else LocalDB's MSSQLLocalDB. With none, every fixture test fails with the remedy; the fixture lane
+/// One SQL Server per test run, and a registered database per test, dbchange_&lt;host&gt;_&lt;pid&gt;_&lt;rand&gt;, dropped after it, so
+/// concurrent runs and agents sharing a server never collide. The server is io/LocalServer's (WP 1.4): DBCHANGE_SQL when set; else,
+/// where docker info answers, the dbchange-sql container that ci/sql.sh up (ci/sql.ps1 up on Windows) pulls and starts, reached
+/// through ~/.dbchange/sql.env; else LocalDB's MSSQLLocalDB. With none, every fixture test fails with the remedy; the fixture lane
 /// never skips. Every login made for a database is named after it, &lt;database&gt;_&lt;role&gt;, and is dropped with it.
 /// </summary>
 public static class SqlServerFixture
 {
-    private const string NoServer = "No SQL Server for the fixture tests: ESTATE_SQL is unset, docker info does not answer, and sqllocaldb is absent. "
-        + "Remedy: start Docker (the fixture then runs ci/sql.sh up, or ci/sql.ps1 up on Windows); or set ESTATE_SQL to a connection string; or install SQL Server Express LocalDB.";
+    private const string NoServer = "No SQL Server for the fixture tests: DBCHANGE_SQL is unset, docker info does not answer, and sqllocaldb is absent. "
+        + "Remedy: start Docker (the fixture then runs ci/sql.sh up, or ci/sql.ps1 up on Windows); or set DBCHANGE_SQL to a connection string; or install SQL Server Express LocalDB.";
 
     private const string Create = "DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql);";
 
@@ -51,11 +51,11 @@ public static class SqlServerFixture
         return new RegisteredDatabase(name, new SqlConnectionStringBuilder(master) { InitialCatalog = name, Pooling = false }.ConnectionString, master);
     }
 
-    /// <summary>An estate's root for the copies a test makes: the folder given, its estate/environments.json naming no environment, so R15 reads it and clears the local server.</summary>
-    public static string EstateRoot(string folder)
+    /// <summary>A repository root for the copies a test makes: the folder given, its dbchange/environments.json naming no environment, so R15 reads it and clears the local server.</summary>
+    public static string RepositoryRoot(string folder)
     {
-        Directory.CreateDirectory(Path.Combine(folder, "estate"));
-        File.WriteAllText(Path.Combine(folder, "estate", "environments.json"), "{ \"environments\": {} }");
+        Directory.CreateDirectory(Path.Combine(folder, "dbchange"));
+        File.WriteAllText(Path.Combine(folder, "dbchange", "environments.json"), "{ \"environments\": {} }");
         return Path.GetFullPath(folder);
     }
 
@@ -79,11 +79,11 @@ public static class SqlServerFixture
     /// <summary>io/LocalServer's choice, once the fixture has started what it chooses: the container when docker info answers, else LocalDB's instance.</summary>
     private static async Task<string> ChooseAsync()
     {
-        var given = Environment.GetEnvironmentVariable("ESTATE_SQL");
+        var given = Environment.GetEnvironmentVariable("DBCHANGE_SQL");
         var docker = string.IsNullOrEmpty(given) && new Command("docker", ["info"], TimeSpan.FromSeconds(30)).Run() is Ran.Exited { Code: 0 } && Up();
         var localDb = string.IsNullOrEmpty(given) && !docker && new Command("sqllocaldb", ["start", "MSSQLLocalDB"], TimeSpan.FromMinutes(2)).Run() is Ran.Exited { Code: 0 };
         var chosen = LocalServer.Server(given, docker ? LocalServer.SqlEnv : "", localDb).Match(server => server, _ => throw new InvalidOperationException(NoServer));
-        var master = new SqlConnectionStringBuilder(chosen) { InitialCatalog = "master", ApplicationName = "estate-tests", TrustServerCertificate = true, ConnectTimeout = 60 }.ConnectionString;
+        var master = new SqlConnectionStringBuilder(chosen) { InitialCatalog = "master", ApplicationName = "dbchange-tests", TrustServerCertificate = true, ConnectTimeout = 60 }.ConnectionString;
         try
         {
             await SweepAsync(master);
@@ -96,7 +96,7 @@ public static class SqlServerFixture
         return master;
     }
 
-    /// <summary>The estate-sql container, up: its port and SA password go into ~/.estate/sql.env, which only the scripts write.</summary>
+    /// <summary>The dbchange-sql container, up: its port and SA password go into ~/.dbchange/sql.env, which only the scripts write.</summary>
     private static bool Up()
     {
         var (exit, output) = (OperatingSystem.IsWindows()
@@ -122,8 +122,8 @@ public static class SqlServerFixture
         await using var connection = new SqlConnection(master);
         await connection.OpenAsync();
         // A login named after a database is <database>_<role>, so the database's name is the login's up to its last underscore.
-        await using var list = new SqlCommand("SELECT name FROM sys.databases WHERE name LIKE N'estate[_]%' UNION SELECT LEFT(name, LEN(name) - CHARINDEX(N'_', REVERSE(name))) "
-            + "FROM sys.server_principals WHERE name LIKE N'estate[_]%';", connection);
+        await using var list = new SqlCommand("SELECT name FROM sys.databases WHERE name LIKE N'dbchange[_]%' UNION SELECT LEFT(name, LEN(name) - CHARINDEX(N'_', REVERSE(name))) "
+            + "FROM sys.server_principals WHERE name LIKE N'dbchange[_]%';", connection);
         await using var reader = await list.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {

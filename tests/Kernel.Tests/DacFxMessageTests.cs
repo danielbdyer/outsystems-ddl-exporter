@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>DacFx's messages as it writes them into an exception's text, and the SQL Server error a message quotes.</summary>
 public sealed class DacFxMessageTests

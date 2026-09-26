@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
 /// A property's value as io/Ssdt.ReadModel reads it from DacFx: a boolean, an integer, a string, an enumeration's member with

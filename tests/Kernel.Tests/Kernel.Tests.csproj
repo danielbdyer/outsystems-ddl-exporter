@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <AssemblyName>Estate.Kernel.Tests</AssemblyName>
-    <RootNamespace>Estate.Kernel.Tests</RootNamespace>
+    <AssemblyName>DbChange.Kernel.Tests</AssemblyName>
+    <RootNamespace>DbChange.Kernel.Tests</RootNamespace>
     <ImplicitUsings>disable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>

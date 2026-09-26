@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>How DacFx rates a message it writes, as its DacMessageType does: an error, a warning, or a message (a status line, or a deployment script's PRINT output).</summary>
 public enum DacFxMessageType

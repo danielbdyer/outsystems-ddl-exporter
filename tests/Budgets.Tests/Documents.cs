@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>The documents as ci/docs.manifest.json lists them, the sets each document law reads, the rows of VALUES.md, and each milestone's exits and whether it is complete.</summary>
 internal static class Documents
@@ -39,9 +39,9 @@ internal static class Documents
     private static readonly Regex MilestoneHeading = new(@"^## \d+\. M(\d)\b", RegexOptions.CultureInvariant);
     private static readonly Regex NumberedExit = new(@"^(\d+)\.\s", RegexOptions.CultureInvariant);
 
-    /// <summary>A NEXT.md line naming an exit a person runs: M&lt;n&gt; exit &lt;k&gt; beside a backticked command starting estate.</summary>
+    /// <summary>A NEXT.md line naming an exit a person runs: M&lt;n&gt; exit &lt;k&gt; beside a backticked command starting dbchange.</summary>
     private static readonly Regex RunByAPerson = new(@"\bM(\d) exit (\d+)\b", RegexOptions.CultureInvariant);
-    private static readonly Regex EstateCommand = new(@"`estate [^`]*`", RegexOptions.CultureInvariant);
+    private static readonly Regex DbChangeCommand = new(@"`dbchange [^`]*`", RegexOptions.CultureInvariant);
 
     /// <summary>The rows of VALUES.md, S1 to G9, in the file's order.</summary>
     public static IReadOnlyList<string> Values { get; } = Repository.Lines("VALUES.md").Select(l => ValueRow.Match(l)).Where(m => m.Success).Select(m => m.Groups[1].Value).ToList();
@@ -105,12 +105,12 @@ internal static class Documents
 
     /// <summary>
     /// Whether M&lt;n&gt; is complete (DECISIONS.md, 2026-09-25): its section lists exits, and each has a test declaring
-    /// [Trait("Exit", "M&lt;n&gt;.&lt;k&gt;")], or a line of NEXT.md names it as M&lt;n&gt; exit &lt;k&gt; beside the backticked estate command a person runs.
+    /// [Trait("Exit", "M&lt;n&gt;.&lt;k&gt;")], or a line of NEXT.md names it as M&lt;n&gt; exit &lt;k&gt; beside the backticked dbchange command a person runs.
     /// </summary>
     public static bool Complete(int n) => Complete(n, Exits, DeclaredExits, Repository.Lines("NEXT.md"));
 
     internal static bool Complete(int n, IReadOnlyDictionary<int, IReadOnlyList<int>> exits, IReadOnlySet<string> declared, IEnumerable<string> next) =>
-        exits.TryGetValue(n, out var list) && list.All(k => declared.Contains(Exit(n, k)) || next.Any(line => EstateCommand.IsMatch(line)
+        exits.TryGetValue(n, out var list) && list.All(k => declared.Contains(Exit(n, k)) || next.Any(line => DbChangeCommand.IsMatch(line)
             && RunByAPerson.Matches(line).Any(m => m.Groups[1].Value == n.ToString(CultureInfo.InvariantCulture) && m.Groups[2].Value == k.ToString(CultureInfo.InvariantCulture))));
 
     /// <summary>Whether M&lt;n&gt; has started: every milestone before it is complete.</summary>

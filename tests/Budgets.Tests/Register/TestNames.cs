@@ -1,7 +1,7 @@
 using System.Linq;
 using Xunit;
 
-namespace Estate.Budgets.Tests.Register;
+namespace DbChange.Budgets.Tests.Register;
 
 /// <summary>
 /// Every test's name, read as words, is in the register: no retired word and no banned form, as Prose holds the documents to, since

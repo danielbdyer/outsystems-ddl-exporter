@@ -11,13 +11,13 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Xml;
 using System.Xml.Linq;
-using Estate.Kernel;
+using DbChange.Kernel;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Permission = Microsoft.SqlServer.Dac.Model.Permission;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
 /// The SSDT project and its package, read whole (V3_MILESTONES.md §2.2): Build runs the project's own build against the
@@ -28,7 +28,7 @@ namespace Estate.Io;
 /// <remarks>
 /// No Visual Studio fallback: S1's windows-latest half answered that the committed route builds a classic project there.
 /// Visual Studio's MSBuild with its own SSDT targets, found through vswhere and stamped with that build's DacFx release, lands only if S1's
-/// laptop half finds the estate's project cannot build this way (WP 1.1).
+/// laptop half finds the SSDT repository's project cannot build this way (WP 1.1).
 /// </remarks>
 public static class Ssdt
 {
@@ -40,7 +40,7 @@ public static class Ssdt
 
     /// <summary>
     /// The tool folder's build files a package depends on besides the project (§1 fact 1): the fingerprint of the SqlTasks targets and of the
-    /// build task's assembly, and the DacFx release that task is. A package built by another release's task is not the one estate reads with
+    /// build task's assembly, and the DacFx release that task is. A package built by another release's task is not the one dbchange reads with
     /// its own DacFx, so <see cref="Of(string)"/> refuses a folder whose task is not the running release.
     /// </summary>
     public sealed record BuildTargets(Fingerprint Fingerprint, DacFxVersion TaskVersion)
@@ -51,23 +51,23 @@ public static class Ssdt
         /// <summary>The targets a classic project imports from the tool folder.</summary>
         public const string Targets = "Microsoft.Data.Tools.Schema.SqlTasks.targets";
 
-        /// <summary>The tool folder's build files, checked against the DacFx estate runs.</summary>
+        /// <summary>The tool folder's build files, checked against the DacFx dbchange runs.</summary>
         public static Result<BuildTargets> Of(string toolFolder) => Of(toolFolder, DacFx.Version);
 
         /// <summary>
         /// The tool folder's build files against <paramref name="running"/>: toolchain.targets-mismatch when the folder holds no build task,
         /// when the task's assembly carries no file version, or when its release differs from the running one.
         /// </summary>
-        internal static Result<BuildTargets> Of(string toolFolder, Result<DacFxVersion> running) => running.Bind(estate =>
+        internal static Result<BuildTargets> Of(string toolFolder, Result<DacFxVersion> running) => running.Bind(ours =>
         {
             var task = System.IO.Path.Combine(toolFolder, Task);
             var released = File.Exists(task) ? DacFx.ReleaseOf(task) : null;
-            var mismatch = !File.Exists(task) ? toolFolder + " holds no build task, " + Task + ", and estate runs DacFx " + estate + "."
-                : released is null ? "The tool folder's build task, " + task + ", carries no file version, so the DacFx release that builds a package is unknown; estate runs DacFx " + estate + "."
-                : released is Result<DacFxVersion>.Ok { Value: var built } && built.CompareTo(estate) != 0 ? "The tool folder's build task is DacFx " + built + " and estate runs DacFx " + estate + "."
+            var mismatch = !File.Exists(task) ? toolFolder + " holds no build task, " + Task + ", and dbchange runs DacFx " + ours + "."
+                : released is null ? "The tool folder's build task, " + task + ", carries no file version, so the DacFx release that builds a package is unknown; dbchange runs DacFx " + ours + "."
+                : released is Result<DacFxVersion>.Ok { Value: var built } && built.CompareTo(ours) != 0 ? "The tool folder's build task is DacFx " + built + " and dbchange runs DacFx " + ours + "."
                 : null;
             return mismatch is not null
-                ? new Error("toolchain.targets-mismatch", mismatch, "Run ci/publish.sh, or ci/publish.ps1 on Windows, so the tool folder and estate carry one DacFx.")
+                ? new Error("toolchain.targets-mismatch", mismatch, "Run ci/publish.sh, or ci/publish.ps1 on Windows, so the tool folder and dbchange carry one DacFx.")
                 : released!.Map(version => new BuildTargets(Fingerprint.Of(string.Join('\n', ((string[])[Targets, Task]).Where(file => File.Exists(System.IO.Path.Combine(toolFolder, file)))
                     .Select(file => file + " " + Fingerprint.Of(File.ReadAllBytes(System.IO.Path.Combine(toolFolder, file)))))), version));
         });
@@ -124,7 +124,7 @@ public static class Ssdt
 
     /// <summary>
     /// One refactorlog operation as SSDT writes it (an Operation element): its key; its name as written (Rename Refactor, Move Schema) and
-    /// what estate reads it as; its ChangeDateTime as written; the element it acts on and that element's serialized type; the parent and
+    /// what dbchange reads it as; its ChangeDateTime as written; the element it acts on and that element's serialized type; the parent and
     /// its type, where the element has one; and the new name of a rename or the new schema of a move.
     /// </summary>
     public sealed record RefactorLogOperation(
@@ -163,27 +163,27 @@ public static class Ssdt
     /// <summary>The marker a build writes beside its package, last: the commit, the inputs, the targets, the package's file and its fingerprint.</summary>
     private const string Marker = "built.json";
 
-    public static Result<string> Tool() => Tool(AppContext.BaseDirectory, Environment.GetEnvironmentVariable("ESTATE_TOOL"), Directory.GetCurrentDirectory());
+    public static Result<string> Tool() => Tool(AppContext.BaseDirectory, Environment.GetEnvironmentVariable("DBCHANGE_TOOL"), Directory.GetCurrentDirectory());
 
     /// <summary>
-    /// The tool folder: the one estate runs from, when it carries the targets; else the one ESTATE_TOOL names; else dist/estate/
-    /// in the nearest directory at or above the working directory, as in the estate tool's repository once ci/publish has run in it.
+    /// The tool folder: the one dbchange runs from, when it carries the targets; else the one DBCHANGE_TOOL names; else dist/dbchange/
+    /// in the nearest directory at or above the working directory, as in dbchange's own repository once ci/publish has run in it.
     /// </summary>
     public static Result<string> Tool(string running, string? variable, string workingDirectory) =>
         Doctor.Tool(running).Remedy is null ? running
         : !string.IsNullOrEmpty(variable) && Doctor.Tool(variable) is { Remedy: not null } named
-            ? new Error("tool.missing", "ESTATE_TOOL names " + variable + ", which is " + named.Found + ".",
-                "Run ci/publish.sh, or ci/publish.ps1 on Windows, in the estate tool's repository and set ESTATE_TOOL to the dist/estate/ it writes, or unset ESTATE_TOOL; then run estate doctor.")
+            ? new Error("tool.missing", "DBCHANGE_TOOL names " + variable + ", which is " + named.Found + ".",
+                "Run ci/publish.sh, or ci/publish.ps1 on Windows, in dbchange's own repository and set DBCHANGE_TOOL to the dist/dbchange/ it writes, or unset DBCHANGE_TOOL; then run dbchange doctor.")
         : !string.IsNullOrEmpty(variable) ? variable
         : Nearest(new DirectoryInfo(workingDirectory)) is { } nearest ? nearest
         : new Error(
             "tool.missing",
-            "estate does not run from a published tool folder, ESTATE_TOOL is unset, and no dist/estate/ lies at or above " + workingDirectory + ".",
-            "Run ci/publish.sh, or ci/publish.ps1 on Windows, in the estate tool's repository, or set ESTATE_TOOL to a published tool folder; then run estate doctor.");
+            "dbchange does not run from a published tool folder, DBCHANGE_TOOL is unset, and no dist/dbchange/ lies at or above " + workingDirectory + ".",
+            "Run ci/publish.sh, or ci/publish.ps1 on Windows, in dbchange's own repository, or set DBCHANGE_TOOL to a published tool folder; then run dbchange doctor.");
 
-    /// <summary>dist/estate/ in the nearest directory at or above <paramref name="directory"/> where that is a published tool folder, else null.</summary>
+    /// <summary>dist/dbchange/ in the nearest directory at or above <paramref name="directory"/> where that is a published tool folder, else null.</summary>
     private static string? Nearest(DirectoryInfo? directory) => directory is null ? null
-        : Path.Combine(directory.FullName, "dist", "estate") is var tool && Doctor.Tool(tool).Remedy is null ? tool : Nearest(directory.Parent);
+        : Path.Combine(directory.FullName, "dist", "dbchange") is var tool && Doctor.Tool(tool).Remedy is null ? tool : Nearest(directory.Parent);
 
     /// <summary>The project a ref's worktree holds, as a path from its root: the one named, else its one .sqlproj outside hidden folders, bin/ and obj/.</summary>
     public static Result<string> Project(string worktree, string? named)
@@ -200,23 +200,23 @@ public static class Ssdt
     public static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(10);
 
     /// <summary>
-    /// The build's environment over estate's own: telemetry off; none of the SDK's first-run actions (no banner, no ASP.NET Core development
-    /// certificate, no PATH change); English messages; UTF-8 output; no MSBuild server, as -nodeReuse:false keeps no node; and ESTATE_SQL
+    /// The build's environment over dbchange's own: telemetry off; none of the SDK's first-run actions (no banner, no ASP.NET Core development
+    /// certificate, no PATH change); English messages; UTF-8 output; no MSBuild server, as -nodeReuse:false keeps no node; and DBCHANGE_SQL
     /// withheld, since a project's own targets can read any variable as a property.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string?> BuildEnvironment = new Dictionary<string, string?>(StringComparer.Ordinal)
     {
         ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1", ["DACFX_TELEMETRY_OPTOUT"] = "1", ["DOTNET_NOLOGO"] = "1", ["DOTNET_CLI_UI_LANGUAGE"] = "en-US", ["DOTNET_CLI_FORCE_UTF8_ENCODING"] = "1",
-        ["DOTNET_GENERATE_ASPNET_CERTIFICATE"] = "false", ["DOTNET_ADD_GLOBAL_TOOLS_TO_PATH"] = "false", ["DOTNET_CLI_USE_MSBUILD_SERVER"] = "0", ["ESTATE_SQL"] = null,
+        ["DOTNET_GENERATE_ASPNET_CERTIFICATE"] = "false", ["DOTNET_ADD_GLOBAL_TOOLS_TO_PATH"] = "false", ["DOTNET_CLI_USE_MSBUILD_SERVER"] = "0", ["DBCHANGE_SQL"] = null,
     };
 
     /// <summary>
-    /// The project a ref holds, built at the ref's commit (io/Git.At, then Build) under the estate's .estate/build/, with the tool folder
-    /// estate runs from or the one <paramref name="toolVariable"/> (ESTATE_TOOL) names: the package the build wrote, and the commit.
+    /// The project a ref holds, built at the ref's commit (io/Git.At, then Build) under the repository's .dbchange/build/, with the tool folder
+    /// dbchange runs from or the one <paramref name="toolVariable"/> (DBCHANGE_TOOL) names: the package the build wrote, and the commit.
     /// </summary>
-    public static Result<(Built Built, string Commit)> Build(string estateRoot, string reference, string? project, string? toolVariable, string workingDirectory, TimeSpan? bound = null) =>
-        Git.At(estateRoot, reference).Bind(at => Project(at.Path, project).Bind(file => Tool(AppContext.BaseDirectory, toolVariable, workingDirectory)
-            .Bind(tool => Build(at, file, tool, new LocalState(estateRoot).Builds, bound: bound))).Map(built => (built, at.Commit)));
+    public static Result<(Built Built, string Commit)> Build(string repositoryRoot, string reference, string? project, string? toolVariable, string workingDirectory, TimeSpan? bound = null) =>
+        Git.At(repositoryRoot, reference).Bind(at => Project(at.Path, project).Bind(file => Tool(AppContext.BaseDirectory, toolVariable, workingDirectory)
+            .Bind(tool => Build(at, file, tool, new LocalState(repositoryRoot).Builds, bound: bound))).Map(built => (built, at.Commit)));
 
     /// <summary>
     /// A project at a path, built under outputRoot/&lt;the first 16 digits of its inputs' fingerprint&gt;/. The inputs are the files under the
@@ -237,7 +237,7 @@ public static class Ssdt
     /// folder's targets and reference assemblies, telemetry off, its output and intermediate files in a folder of their own, so nothing is
     /// written beside the project and two refs never share a folder. A folder whose marker names the same commit, inputs and targets, and
     /// whose package's bytes fingerprint as the marker says, is returned without running anything. Otherwise the build takes the folder's
-    /// build.lock (io/FileLock), waiting for another estate process's build of it up to <paramref name="bound"/>, looks at the marker again,
+    /// build.lock (io/FileLock), waiting for another dbchange process's build of it up to <paramref name="bound"/>, looks at the marker again,
     /// and builds into the folder emptied of all but the lock; the marker is written last, so a build cut off leaves none. A missing project,
     /// SDK band or tool folder, and a tool folder whose build task is another DacFx release, are each an error before anything builds.
     /// </summary>
@@ -259,13 +259,13 @@ public static class Ssdt
 
         if (Doctor.Sdk(directory, run, cancel) is { Remedy: { } install } sdk)
         {
-            return new Error("sdk.missing", "dotnet build loads DacFx's net10.0 build task, and this machine has " + sdk.Found + ".", install.TrimEnd('.') + ", then run estate doctor.");
+            return new Error("sdk.missing", "dotnet build loads DacFx's net10.0 build task, and this machine has " + sdk.Found + ".", install.TrimEnd('.') + ", then run dbchange doctor.");
         }
 
         if (Doctor.Tool(tool) is { Remedy: not null } found)
         {
             return new Error("tool.missing", tool + " is " + found.Found + ".",
-                "Run ci/publish.sh, or ci/publish.ps1 on Windows, in the estate tool's repository and build with the dist/estate/ it writes, then run estate doctor.");
+                "Run ci/publish.sh, or ci/publish.ps1 on Windows, in dbchange's own repository and build with the dist/dbchange/ it writes, then run dbchange doctor.");
         }
 
         if (targets is Result<BuildTargets>.Failed { Error: var mismatch })
@@ -333,7 +333,7 @@ public static class Ssdt
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or FormatException)
         {
-            return null;   // no marker, or one estate did not write: the folder is built again
+            return null;   // no marker, or one dbchange did not write: the folder is built again
         }
     }
 
@@ -373,9 +373,9 @@ public static class Ssdt
         return run(build, cancel) switch
         {
             Ran.NotFound notFound => new Error("sdk.missing", "dotnet build loads DacFx's net10.0 build task, and dotnet does not run here: " + notFound.Why,
-                "Install the .NET SDK global.json names and put dotnet on the PATH, then run estate doctor."),
+                "Install the .NET SDK global.json names and put dotnet on the PATH, then run dbchange doctor."),
             Ran.TimedOut timedOut => new Error("build.timed-out",
-                "dotnet build of " + name + " ran for " + Command.Written(bound) + " without finishing, and estate stopped it; its last lines:\n" + string.Join('\n', Last(timedOut.Output + timedOut.Errors)),
+                "dotnet build of " + name + " ran for " + Command.Written(bound) + " without finishing, and dbchange stopped it; its last lines:\n" + string.Join('\n', Last(timedOut.Output + timedOut.Errors)),
                 "Run dotnet build " + name + " -v:n in " + directory + " to see where it stops."),
             Ran.Exited exited => Wrote(exited.Code, exited.Output + exited.Errors, name, directory),
             _ => throw new UnreachableException(),
@@ -415,7 +415,7 @@ public static class Ssdt
 
     /// <summary>
     /// The fingerprint of what a build reads: each file under the project's folder by its relative path and its bytes, except
-    /// under bin/, obj/ and hidden folders such as .git/ and .estate/; then the tool folder's build files, so a build against
+    /// under bin/, obj/ and hidden folders such as .git/ and .dbchange/; then the tool folder's build files, so a build against
     /// another release's targets never reuses a package built against these.
     /// </summary>
     private static Fingerprint Inputs(string directory, BuildTargets targets) => Fingerprint.Of(string.Join('\n',
@@ -708,7 +708,7 @@ public static class Ssdt
         return Result.All(reached.Select(o => ElementOf(o).Map(e => (Element: e, Name: o.Name.HasName ? ModelTypes.Key(o.ObjectType.Name, [.. o.Name.Parts], null).Match<string?>(k => k.Path, _ => null) : null))))
             .Bind(elements => elements.GroupBy(e => e.Element.Key).FirstOrDefault(g => g.Count() > 1) is not { } alike ? Result.Ok(elements) : new Error("model.duplicate-key",
                 $"{alike.Count()} {alike.Key.Type} objects of the model are keyed alike, as {alike.Key}: {string.Join(", ", alike.Select(e => e.Name ?? "unnamed"))}.",
-                "Report the model's source with this error: a key names one object, so io/Ssdt.ReadModel keys this type ambiguously, a defect in estate."));
+                "Report the model's source with this error: a key names one object, so io/Ssdt.ReadModel keys this type ambiguously, a defect in dbchange."));
     }
 
     /// <summary>

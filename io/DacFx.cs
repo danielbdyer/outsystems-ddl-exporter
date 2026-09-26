@@ -9,18 +9,18 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Xml;
 using System.Xml.Linq;
-using Estate.Kernel;
+using DbChange.Kernel;
 using Microsoft.Data.SqlClient;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
-/// The one adapter to DacFx's runtime surface (DacServices and DacProfile's options): the release estate runs, made once; a database
+/// The one adapter to DacFx's runtime surface (DacServices and DacProfile's options): the release dbchange runs, made once; a database
 /// extracted into a package, in one read; the plan of one package against another, which connects to nothing; a publish to a copy; the
 /// deploy report read into the kernel's DeployReport; and every DacFx failure mapped once, a SqlException or a quoted SQL Server number
-/// handed to the SQL Server adapter's classification and the rest named here. DacFx's own connections and statements are DacFx's: estate
+/// handed to the SQL Server adapter's classification and the rest named here. DacFx's own connections and statements are DacFx's: dbchange
 /// logs its own (io/SqlServer's query log), and the Extended Events test watches DacFx's.
 /// </summary>
 public static class DacFx
@@ -40,7 +40,7 @@ public static class DacFx
     private static readonly XNamespace Dac = "http://schemas.microsoft.com/sqlserver/dac/DeployReport/2012/02";
 
     /// <summary>
-    /// The DacFx release estate runs, made once from Microsoft.SqlServer.Dac.dll: its file version as major.minor.build (170.5.96), or, where
+    /// The DacFx release dbchange runs, made once from Microsoft.SqlServer.Dac.dll: its file version as major.minor.build (170.5.96), or, where
     /// the assembly has no file on disk (a single-file or bundled host), its informational version before the '+'; toolchain.dacfx-version
     /// when it carries neither. doctor reports that error as an item, and every other verb answers it before any work.
     /// </summary>
@@ -82,8 +82,8 @@ public static class DacFx
     internal static Result<DacFxVersion> VersionOf(string location, string? informational) =>
         location.Length > 0 && File.Exists(location) && ReleaseOf(location) is { } release ? release
         : informational?.Split('+')[0] is { Length: > 0 } text ? DacFxVersion.Of(text)
-        : new Error("toolchain.dacfx-version", "Microsoft.SqlServer.Dac.dll carries no file version and no informational version, so estate cannot name the DacFx release it runs.",
-            "Run estate from a tool folder ci/publish wrote, whose DacFx assemblies carry their versions.");
+        : new Error("toolchain.dacfx-version", "Microsoft.SqlServer.Dac.dll carries no file version and no informational version, so dbchange cannot name the DacFx release it runs.",
+            "Run dbchange from a tool folder ci/publish wrote, whose DacFx assemblies carry their versions.");
 
     /// <summary>The DacFx release an assembly on disk is, from its file version as major.minor.build; null when the file carries no file version.</summary>
     internal static Result<DacFxVersion>? ReleaseOf(string path) => FileVersionInfo.GetVersionInfo(path) is { FileVersion: not null } file
@@ -101,7 +101,7 @@ public static class DacFx
         using var package = new MemoryStream();
         return Guard(() =>
             {
-                new DacServices(target.Connection).Extract(package, target.Catalog, "estate", typeof(DacFx).Assembly.GetName().Version ?? new Version(1, 0), "", null, Extraction,
+                new DacServices(target.Connection).Extract(package, target.Catalog, "dbchange", typeof(DacFx).Assembly.GetName().Version ?? new Version(1, 0), "", null, Extraction,
                     interrupted.Token);
                 return package.ToArray();
             }, failure => Failed(target, failure), interrupted.Token)
@@ -211,10 +211,10 @@ public static class DacFx
         return Result.All(items.Select(i => keys.Of(i.Type, i.Name).Map(key => new PlanOperation(i.Kind, key, i.Issues))))
             .Map(operations => (new DeployReport(SortedArray.Of(operations), SortedArray.Of(alerts)), (IReadOnlyList<Finding>)[.. items.Select(i => i.Type).Distinct()
                 .Where(type => ModelTypes.Element(type) is null).Order(StringComparer.Ordinal)
-                .Select(type => Finding.Note("plan.unlisted-type", type, "The deploy report names the type " + type + ", which estate's map of DacFx's types does not hold; its items are keyed by that name."))]));
+                .Select(type => Finding.Note("plan.unlisted-type", type, "The deploy report names the type " + type + ", which dbchange's map of DacFx's types does not hold; its items are keyed by that name."))]));
 
-        static Error Unread(string why) => new Error("plan.report-unread", "DacFx's deploy report is not one estate reads: " + why + ".",
-            "Report this error with the DacFx release estate runs; the report's shape is DacFx's.");
+        static Error Unread(string why) => new Error("plan.report-unread", "DacFx's deploy report is not one dbchange reads: " + why + ".",
+            "Report this error with the DacFx release dbchange runs; the report's shape is DacFx's.");
     }
 
     /// <summary>A DacFx failure: the error and warning messages it carries, the SqlException inside it, if any, and the chain's text on one line, each exception's once.</summary>

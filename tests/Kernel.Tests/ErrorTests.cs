@@ -3,7 +3,7 @@ using System.Linq;
 using CsCheck;
 using Xunit;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>An error is a code of a closed category, a message and a remedy; one without a remedy, or of a category the set lacks, cannot be constructed.</summary>
 public sealed class ErrorTests

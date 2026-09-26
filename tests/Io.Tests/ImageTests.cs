@@ -1,16 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Estate.Kernel;
-using Estate.Tests;
+using DbChange.Kernel;
+using DbChange.Tests;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
-/// Finding ARCH-07: the SQL Server image a copy ran in is what Docker reports for the estate-sql container, read when the copy's
-/// server is the port the container publishes, however the copy was reached (ESTATE_SQL or ~/.estate/sql.env); it was the pinned
-/// digest compiled into estate, stamped whatever the container ran, and nothing at all whenever ESTATE_SQL was set. A stand-in for
+/// Finding ARCH-07: the SQL Server image a copy ran in is what Docker reports for the dbchange-sql container, read when the copy's
+/// server is the port the container publishes, however the copy was reached (DBCHANGE_SQL or ~/.dbchange/sql.env); it was the pinned
+/// digest compiled into dbchange, stamped whatever the container ran, and nothing at all whenever DBCHANGE_SQL was set. A stand-in for
 /// docker answers here, so no container is needed.
 /// </summary>
 public sealed class ImageTests : IDisposable
@@ -51,13 +51,13 @@ public sealed class ImageTests : IDisposable
     public void Without_docker_or_its_container_no_image_is_named()
     {
         Assert.Null(LocalServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), (command, _) => new Ran.NotFound(command.Program, "not on the PATH")));
-        Assert.Null(LocalServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), (_, _) => new Ran.Exited(1, "", "Error: No such container: estate-sql\n")));
+        Assert.Null(LocalServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), (_, _) => new Ran.Exited(1, "", "Error: No such container: dbchange-sql\n")));
         Assert.Null(LocalServer.Image(Copy("Server=127.0.0.1,11433;User ID=sa"), (command, _) => new Ran.TimedOut(command.Timeout, "", "")));
     }
 
     private SqlServer.Copy Copy(string server) => new(CopyName.Make("host", 1, 1), server + ";Initial Catalog=master", root.Path);
 
-    /// <summary>docker as it answers for a running estate-sql container publishing 1433 on 127.0.0.1:11433, from an image of id <see cref="Built"/> pulled by the registry digests given.</summary>
+    /// <summary>docker as it answers for a running dbchange-sql container publishing 1433 on 127.0.0.1:11433, from an image of id <see cref="Built"/> pulled by the registry digests given.</summary>
     private static Runner Docker(IReadOnlyList<string> repoDigests) => (command, _) => (command.Program, command.Arguments) switch
     {
         ("docker", ["container", "inspect", ..]) => new Ran.Exited(0, Built + " {\"1433/tcp\":[{\"HostIp\":\"127.0.0.1\",\"HostPort\":\"11433\"}]}\n", ""),

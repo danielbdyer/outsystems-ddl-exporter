@@ -2,13 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json.Nodes;
-using Estate.Tests;
+using DbChange.Tests;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
-/// Fact 2 of the specification, end to end: the published estate, run in a folder that is no repository and holds a planted git, with
+/// Fact 2 of the specification, end to end: the published dbchange, run in a folder that is no repository and holds a planted git, with
 /// NoDefaultCurrentDirectoryInExePath removed from its environment as a default Windows session has it, answers git.not-a-repository
 /// quoting git's own "not a git repository". Before io/Git ran git through io/Command, on Windows, the planted program answered for git:
 /// the same code, with an empty quotation.
@@ -22,11 +22,11 @@ public sealed class PlantedProgramTests(PublishedTool tool) : IDisposable
 
     [Fact]
     [Trait("Category", "build")]
-    public void The_published_estate_runs_the_PATH_s_git_and_never_a_git_planted_in_its_working_directory()
+    public void The_published_dbchange_runs_the_PATH_s_git_and_never_a_git_planted_in_its_working_directory()
     {
         CommandTests.Plant(scratch.Path, "git");
 
-        var ran = new Command("dotnet", [Path.Combine(tool.Folder, "estate.dll"), "read", "--from", "ref:HEAD", "--json"], TimeSpan.FromMinutes(2))
+        var ran = new Command("dotnet", [Path.Combine(tool.Folder, "dbchange.dll"), "read", "--from", "ref:HEAD", "--json"], TimeSpan.FromMinutes(2))
         {
             Directory = scratch.Path, Environment = new Dictionary<string, string?>(StringComparer.Ordinal) { ["NoDefaultCurrentDirectoryInExePath"] = null },
         }.Run();

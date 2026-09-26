@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "estate.diff/1",
-  "description": "What estate diff --json writes: the envelope, and diff.",
-  "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with ESTATE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
+  "title": "dbchange.check/1",
+  "description": "What dbchange check --json writes: the envelope, and check.",
+  "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with DBCHANGE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -19,11 +19,11 @@
     "provenance",
     "truncated",
     "full",
-    "diff"
+    "check"
   ],
   "properties": {
     "schema": {
-      "const": "estate.diff/1"
+      "const": "dbchange.check/1"
     },
     "outcome": {
       "enum": [
@@ -139,11 +139,11 @@
         },
         {
           "type": "string",
-          "pattern": "^\\.estate/runs/[^/]+/answer\\.json$"
+          "pattern": "^\\.dbchange/runs/[^/]+/answer\\.json$"
         }
       ]
     },
-    "diff": {
+    "check": {
       "anyOf": [
         {
           "type": "null"
@@ -152,82 +152,92 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "from",
-            "to",
+            "kind",
+            "target",
+            "at",
+            "commit",
             "counts",
-            "change"
+            "operations",
+            "columns"
           ],
           "properties": {
-            "from": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "from",
-                "fingerprint"
-              ],
-              "properties": {
-                "from": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "fingerprint": {
-                  "type": "string",
-                  "pattern": "^sha256:[0-9a-f]{64}$"
-                }
-              }
+            "kind": {
+              "enum": [
+                "drift"
+              ]
             },
-            "to": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "from",
-                "fingerprint"
-              ],
-              "properties": {
-                "from": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "fingerprint": {
-                  "type": "string",
-                  "pattern": "^sha256:[0-9a-f]{64}$"
-                }
-              }
+            "target": {
+              "type": "string",
+              "minLength": 1
+            },
+            "at": {
+              "type": "string",
+              "minLength": 1
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40,64}$"
             },
             "counts": {
               "type": "object",
               "additionalProperties": false,
               "required": [
-                "created",
-                "dropped",
-                "renamed",
-                "altered",
-                "caseOnlyRenamed"
+                "operations",
+                "columns"
               ],
               "properties": {
-                "created": {
+                "operations": {
                   "type": "integer",
                   "minimum": 0
                 },
-                "dropped": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "renamed": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "altered": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "caseOnlyRenamed": {
+                "columns": {
                   "type": "integer",
                   "minimum": 0
                 }
               }
             },
-            "change": {
+            "operations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operation",
+                  "name",
+                  "key",
+                  "issues"
+                ],
+                "properties": {
+                  "operation": {
+                    "type": "string",
+                    "pattern": "^[a-z]+(-[a-z]+)*$"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    ]
+                  },
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "issues": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              },
+              "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+            },
+            "columns": {
               "type": "object",
               "additionalProperties": false,
               "required": [
@@ -530,7 +540,6 @@
         "properties": {
           "exit": {
             "enum": [
-              0,
               5
             ]
           }

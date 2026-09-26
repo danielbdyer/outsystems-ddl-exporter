@@ -3,7 +3,7 @@ using System.IO;
 using System.Linq;
 using Xunit;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// The supply chain is pinned: every PackageVersion in Directory.Packages.props, and every PackageReference or

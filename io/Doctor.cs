@@ -8,15 +8,15 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading;
-using Estate.Kernel;
+using DbChange.Kernel;
 using Microsoft.SqlServer.Dac;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
 /// Can this machine do the work, read-only (V3_ARCHITECTURE.md §8.12): the .NET SDK in the band global.json names and the .NET 10 runtime;
-/// git at 2.24 or later (rev-parse --end-of-options); the committed tool folder and its DacFx against the estate's toolchain ledger; the
-/// build route; the local server estate would use, in LocalServer's order (ESTATE_SQL, the estate-sql container, LocalDB), with the
+/// git at 2.24 or later (rev-parse --end-of-options); the committed tool folder and its DacFx against the SSDT repository's toolchain ledger; the
+/// build route; the local server dbchange would use, in LocalServer's order (DBCHANGE_SQL, the dbchange-sql container, LocalDB), with the
 /// Docker-specific cause when none applies; the pinned SQL Server image and the container's; and Git LFS. Each item missing carries its
 /// remedy. Every program runs through io/Command for at most <see cref="ProgramTimeout"/>, and a program that does not answer in time is
 /// named as such, never as absent. The machine is read once (<see cref="Machine.Here"/>) and given to <see cref="Examine"/>, so a test
@@ -28,35 +28,35 @@ public static class Doctor
     public const string SqlServerImage = "mcr.microsoft.com/mssql/server:2022-latest@sha256:4402d880dd4c34bfa7d8705e56a86cd6c88da80a1f6bbbe741f999e76264a090";
 
     /// <summary>The container ci/sql.sh and ci/sql.ps1 run the pinned image as.</summary>
-    public const string Container = "estate-sql";
+    public const string Container = "dbchange-sql";
 
-    /// <summary>The toolchain ledger, from the estate's root: one dated row per estate version, with the pinned DacFx or UNPINNED.</summary>
-    public const string Ledger = "estate/ledgers/toolchain.md";
+    /// <summary>The toolchain ledger, from the repository root: one dated row per dbchange version, with the pinned DacFx or UNPINNED.</summary>
+    public const string Ledger = "dbchange/ledgers/toolchain.md";
 
     /// <summary>How long each program the doctor runs may take: docker info waits while Docker Desktop starts, and dotnet --list-sdks answers in a second.</summary>
     public static readonly TimeSpan ProgramTimeout = TimeSpan.FromSeconds(20);
 
-    /// <summary>The runtime estate runs on alone (VALUES.md R5).</summary>
+    /// <summary>The runtime dbchange runs on alone (VALUES.md R5).</summary>
     private const int RuntimeMajor = 10;
 
     /// <summary>The git release that first takes rev-parse --end-of-options, which io/Git passes so a ref is never read as an option.</summary>
     private static readonly Version GitLeast = new(2, 24);
 
-    /// <summary>The files a published tool folder holds beside estate: DacFx's SqlTasks targets and the reference assemblies (mscorlib.dll and FrameworkList.xml).</summary>
+    /// <summary>The files a published tool folder holds beside dbchange: DacFx's SqlTasks targets and the reference assemblies (mscorlib.dll and FrameworkList.xml).</summary>
     private static readonly string[] Published = ["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"];
 
     /// <summary>The DacFx build task a published tool folder carries, whose file version names the DacFx release the folder's targets run.</summary>
     private const string BuildTask = "Microsoft.Data.Tools.Schema.Tasks.Sql.dll";
 
-    /// <summary>A ledger row: | date | estate version | pinned DacFx or UNPINNED | the release before the pin, or — |.</summary>
+    /// <summary>A ledger row: | date | dbchange version | pinned DacFx or UNPINNED | the release before the pin, or — |.</summary>
     private static readonly Regex Row = new(@"^\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|\s*$", RegexOptions.CultureInvariant);
 
-    /// <summary>What this machine holds, read once: the folder estate runs from, ESTATE_TOOL, the working directory, ESTATE_SQL, the path of ~/.estate/sql.env (null where the user's profile folder is unknown), and the runtime.</summary>
-    public sealed record Machine(string ToolFolder, string? ToolVariable, string WorkingDirectory, string? EstateSql, string? SqlEnv, Version Runtime)
+    /// <summary>What this machine holds, read once: the folder dbchange runs from, DBCHANGE_TOOL, the working directory, DBCHANGE_SQL, the path of ~/.dbchange/sql.env (null where the user's profile folder is unknown), and the runtime.</summary>
+    public sealed record Machine(string ToolFolder, string? ToolVariable, string WorkingDirectory, string? DbChangeSql, string? SqlEnv, Version Runtime)
     {
-        /// <summary>The machine estate runs on, with the tool variable and the working directory the checkout already read.</summary>
+        /// <summary>The machine dbchange runs on, with the tool variable and the working directory the checkout already read.</summary>
         public static Machine Here(string? toolVariable, string workingDirectory) =>
-            new(AppContext.BaseDirectory, toolVariable, workingDirectory, Environment.GetEnvironmentVariable("ESTATE_SQL"), LocalState.UserSqlEnv, Environment.Version);
+            new(AppContext.BaseDirectory, toolVariable, workingDirectory, Environment.GetEnvironmentVariable("DBCHANGE_SQL"), LocalState.UserSqlEnv, Environment.Version);
     }
 
     /// <summary>An item the doctor examines, one of a closed set, written as the envelope names it (sdk, local-server).</summary>
@@ -82,37 +82,37 @@ public static class Doctor
     /// <summary>What the examination of one item found, and its remedy when the item is missing.</summary>
     public sealed record Prerequisite(Item Item, string Found, string? Remedy);
 
-    /// <summary>The pinned image's digest, which the image item compares the estate-sql container's image with.</summary>
+    /// <summary>The pinned image's digest, which the image item compares the dbchange-sql container's image with.</summary>
     public static string ImageDigest => SqlServerImage[(SqlServerImage.IndexOf('@', StringComparison.Ordinal) + 1)..];
 
     public static IReadOnlyList<Prerequisite> Examine(Machine machine, Runner run, string version, CancellationToken cancel = default)
     {
-        var docker = machine.EstateSql is { Length: > 0 } ? null : run(Program("docker", "info", "--format", "{{.ServerVersion}}"), cancel);
+        var docker = machine.DbChangeSql is { Length: > 0 } ? null : run(Program("docker", "info", "--format", "{{.ServerVersion}}"), cancel);
         var (sdk, tool) = (Sdk(machine.WorkingDirectory, run, cancel), Tool(machine));
         var lfs = run(Program("git", "lfs", "version"), cancel) is Ran.Exited { Code: 0 } said ? said.Output.Trim().Split(' ')[0] : null;
         return
         [
             sdk,
             machine.Runtime.Major == RuntimeMajor ? new(Item.Runtime, machine.Runtime.ToString(), null)
-                : new(Item.Runtime, machine.Runtime.ToString(), "Install the .NET " + RuntimeMajor.ToString(CultureInfo.InvariantCulture) + " runtime; estate runs on .NET " + RuntimeMajor.ToString(CultureInfo.InvariantCulture) + " alone."),
+                : new(Item.Runtime, machine.Runtime.ToString(), "Install the .NET " + RuntimeMajor.ToString(CultureInfo.InvariantCulture) + " runtime; dbchange runs on .NET " + RuntimeMajor.ToString(CultureInfo.InvariantCulture) + " alone."),
             tool,
             Committed(EnvironmentsFile.Root(machine.WorkingDirectory), version),
-            sdk.Remedy is null && tool.Remedy is null ? new(Item.Build, "dotnet with the tool folder's targets", null) : new(Item.Build, "none", "Install what the sdk and tool items name, then run estate doctor."),
+            sdk.Remedy is null && tool.Remedy is null ? new(Item.Build, "dotnet with the tool folder's targets", null) : new(Item.Build, "none", "Install what the sdk and tool items name, then run dbchange doctor."),
             GitVersion(run, cancel),
             LocalServerChoice(machine, docker, run, cancel),
             Image(machine, docker, run, cancel),
-            lfs is null ? new(Item.Lfs, "absent", "Install Git LFS and run git lfs install; the estate keeps its tool folder in Git LFS.") : new(Item.Lfs, lfs, null),
+            lfs is null ? new(Item.Lfs, "absent", "Install Git LFS and run git lfs install; the SSDT repository keeps its tool folder in Git LFS.") : new(Item.Lfs, lfs, null),
         ];
     }
 
     /// <summary>
-    /// The pin estate/ledgers/toolchain.md records for this estate version: its latest dated row naming the version. An estate that
+    /// The pin dbchange/ledgers/toolchain.md records for this dbchange version: its latest dated row naming the version. An SSDT repository that
     /// commits no ledger is unpinned, as §17 item 1 assumes; a ledger without a row for this version, with a malformed one, or that
     /// cannot be read is an error.
     /// </summary>
-    public static Result<Pin> Toolchain(string estateRoot, string version)
+    public static Result<Pin> Toolchain(string repositoryRoot, string version)
     {
-        var path = Path.Combine(estateRoot, Ledger);
+        var path = Path.Combine(repositoryRoot, Ledger);
         if (!File.Exists(path))
         {
             return new Pin.Unpinned();
@@ -132,11 +132,11 @@ public static class Doctor
         var row = lines.Select(line => Row.Match(line)).Where(m => m.Success && m.Groups[2].Value == ours)
             .OrderBy(m => m.Groups[1].Value, StringComparer.Ordinal).LastOrDefault();
         return row is null
-            ? new Error("toolchain.unrecorded", Ledger + " has no dated row for estate " + ours + ".",
-                "Add a row for estate " + ours + " to " + Ledger + ", with the Octopus step's DacFx release or UNPINNED.")
+            ? new Error("toolchain.unrecorded", Ledger + " has no dated row for dbchange " + ours + ".",
+                "Add a row for dbchange " + ours + " to " + Ledger + ", with the Octopus step's DacFx release or UNPINNED.")
             : row.Groups[3].Value == "UNPINNED" ? new Pin.Unpinned()
             : Pin.Of(row.Groups[3].Value, row.Groups[4].Value is "" or "—" or "-" ? null : row.Groups[4].Value).Match<Result<Pin>>(pin => pin, error => error.Code == "toolchain.window-order" ? error :
-                new Error("toolchain.malformed", Ledger + "'s row for estate " + ours + " names a pin or a release before it that is no DacFx release.",
+                new Error("toolchain.malformed", Ledger + "'s row for dbchange " + ours + " names a pin or a release before it that is no DacFx release.",
                     "Write the row's pin and the release before it as DacFx versions, such as 170.5.96, or the pin as UNPINNED."));
     }
 
@@ -192,9 +192,9 @@ public static class Doctor
             case Ran.NotFound:
                 return new(Item.Sdk, "dotnet is not on the PATH", install);
             case Ran.TimedOut:
-                return new(Item.Sdk, "dotnet did not answer in " + Command.Written(ProgramTimeout), "Run dotnet --list-sdks by hand to see what it waits for, then run estate doctor.");
+                return new(Item.Sdk, "dotnet did not answer in " + Command.Written(ProgramTimeout), "Run dotnet --list-sdks by hand to see what it waits for, then run dbchange doctor.");
             case Ran.Exited { Code: not 0 } failed:
-                return new(Item.Sdk, "dotnet --list-sdks failed: " + (failed.Errors + failed.Output).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault(""), "Repair or reinstall the .NET SDK, then run estate doctor.");
+                return new(Item.Sdk, "dotnet --list-sdks failed: " + (failed.Errors + failed.Output).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault(""), "Repair or reinstall the .NET SDK, then run dbchange doctor.");
             case Ran.Exited listed:
                 var fit = listed.Output
                     .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -213,20 +213,20 @@ public static class Doctor
         var absent = Published.Where(file => !File.Exists(Path.Combine(toolFolder, file))).ToList();
         return absent.Count == 0
             ? new(Item.Tool, "published", null)
-            : new(Item.Tool, "not a published tool folder (" + string.Join(", ", absent.Select(Path.GetFileName)) + " absent)", "ci/publish.sh, or ci/publish.ps1 on Windows, publishes dist/estate/; run estate from there");
+            : new(Item.Tool, "not a published tool folder (" + string.Join(", ", absent.Select(Path.GetFileName)) + " absent)", "ci/publish.sh, or ci/publish.ps1 on Windows, publishes dist/dbchange/; run dbchange from there");
     }
 
-    /// <summary>The tool folder estate would build with (Ssdt.Tool), and whether its DacFx build task is the committed DacFx: a stale publish under another DacFx is named.</summary>
+    /// <summary>The tool folder dbchange would build with (Ssdt.Tool), and whether its DacFx build task is the committed DacFx: a stale publish under another DacFx is named.</summary>
     private static Prerequisite Tool(Machine machine) => Ssdt.Tool(machine.ToolFolder, machine.ToolVariable, machine.WorkingDirectory).Match(
         folder => FileVersion(Path.Combine(folder, BuildTask)) is { } task && DacFx.Version is Result<DacFxVersion>.Ok(var running) && task != running.ToString()
-            ? new Prerequisite(Item.Tool, (folder == machine.ToolFolder ? "published" : folder) + ", whose DacFx build task is " + task + " while estate runs DacFx " + running,
-                "Run ci/publish.sh, or ci/publish.ps1 on Windows, again so the tool folder carries DacFx " + running + ", then run estate doctor.")
+            ? new Prerequisite(Item.Tool, (folder == machine.ToolFolder ? "published" : folder) + ", whose DacFx build task is " + task + " while dbchange runs DacFx " + running,
+                "Run ci/publish.sh, or ci/publish.ps1 on Windows, again so the tool folder carries DacFx " + running + ", then run dbchange doctor.")
             : new Prerequisite(Item.Tool, folder == machine.ToolFolder ? "published" : folder, null),
         error => new Prerequisite(Item.Tool, "missing", error.Remedy));
 
-    /// <summary>The committed DacFx against the ledger's row: its pin, the error in the row, or the rejection of a DacFx outside the window; or why estate cannot name the release it runs.</summary>
-    private static Prerequisite Committed(string estateRoot, string version) => DacFx.Version.Match(
-        dacfx => Toolchain(estateRoot, version).Map(pin => (Pin: pin, Rejection: pin.Rejects(dacfx))).Match(
+    /// <summary>The committed DacFx against the ledger's row: its pin, the error in the row, or the rejection of a DacFx outside the window; or why dbchange cannot name the release it runs.</summary>
+    private static Prerequisite Committed(string repositoryRoot, string version) => DacFx.Version.Match(
+        dacfx => Toolchain(repositoryRoot, version).Map(pin => (Pin: pin, Rejection: pin.Rejects(dacfx))).Match(
             found => new Prerequisite(Item.DacFx, dacfx + " (" + (found.Rejection is null ? found.Pin.Match(_ => "UNPINNED", pinned => "pinned " + pinned) : "outside the pin " + found.Pin) + ")", found.Rejection?.Remedy),
             error => new Prerequisite(Item.DacFx, dacfx + " (" + error.Message.TrimEnd('.') + ")", error.Remedy)),
         error => new Prerequisite(Item.DacFx, "unknown (" + error.Message.TrimEnd('.') + ")", error.Remedy));
@@ -234,16 +234,16 @@ public static class Doctor
     /// <summary>git --version: absent, not answering, or older than 2.24, which lacks the --end-of-options io/Git passes to rev-parse.</summary>
     private static Prerequisite GitVersion(Runner run, CancellationToken cancel) => run(Program("git", "--version"), cancel) switch
     {
-        Ran.NotFound => new(Item.Git, "absent", "Install git and put it on the PATH, then run estate doctor."),
-        Ran.TimedOut => new(Item.Git, "git did not answer in " + Command.Written(ProgramTimeout), "Run git --version by hand to see what it waits for, then run estate doctor."),
+        Ran.NotFound => new(Item.Git, "absent", "Install git and put it on the PATH, then run dbchange doctor."),
+        Ran.TimedOut => new(Item.Git, "git did not answer in " + Command.Written(ProgramTimeout), "Run git --version by hand to see what it waits for, then run dbchange doctor."),
         Ran.Exited { Code: 0 } said when Version.TryParse(string.Concat((said.Output.Trim().Split(' ').ElementAtOrDefault(2) ?? "").TakeWhile(c => char.IsAsciiDigit(c) || c == '.')).TrimEnd('.'), out var version) =>
             version >= GitLeast ? new(Item.Git, version.ToString(), null)
-            : new(Item.Git, "git " + version + " is older than " + GitLeast + ", which estate needs for rev-parse --end-of-options", "Install git " + GitLeast + " or later, then run estate doctor."),
-        var other => new(Item.Git, "git --version did not answer as git does: " + other, "Repair or reinstall git, then run estate doctor."),
+            : new(Item.Git, "git " + version + " is older than " + GitLeast + ", which dbchange needs for rev-parse --end-of-options", "Install git " + GitLeast + " or later, then run dbchange doctor."),
+        var other => new(Item.Git, "git --version did not answer as git does: " + other, "Repair or reinstall git, then run dbchange doctor."),
     };
 
     /// <summary>
-    /// The local server estate would use, in io/LocalServer's order: ESTATE_SQL's server; the estate-sql container ~/.estate/sql.env names,
+    /// The local server dbchange would use, in io/LocalServer's order: DBCHANGE_SQL's server; the dbchange-sql container ~/.dbchange/sql.env names,
     /// which needs Docker answering; LocalDB's default instance. With none, the Docker-specific cause: not installed, its daemon not
     /// answering, docker info past its timeout, or no sql.env because ci/sql.sh up never ran.
     /// </summary>
@@ -253,26 +253,26 @@ public static class Doctor
         {
             null => (false, null),
             Ran.Exited { Code: 0 } => (true, null),
-            Ran.Exited => (false, "Docker does not answer (docker info): start Docker Desktop, or the docker service, then run estate doctor."),
-            Ran.TimedOut => (false, "docker info did not answer in " + Command.Written(ProgramTimeout) + ": restart Docker, then run estate doctor."),
-            _ => (false, "Install Docker, or use SQL Server Express LocalDB on Windows, then run estate doctor."),
+            Ran.Exited => (false, "Docker does not answer (docker info): start Docker Desktop, or the docker service, then run dbchange doctor."),
+            Ran.TimedOut => (false, "docker info did not answer in " + Command.Written(ProgramTimeout) + ": restart Docker, then run dbchange doctor."),
+            _ => (false, "Install Docker, or use SQL Server Express LocalDB on Windows, then run dbchange doctor."),
         };
-        var localDb = machine.EstateSql is { Length: > 0 } || LocalServer.Server(null, machine.SqlEnv ?? "", localDb: false) is Result<string>.Ok || !LocalDbInstalled(run, cancel) ? false : true;
-        return LocalServer.Server(machine.EstateSql, machine.SqlEnv ?? "", localDb).Bind(server => LocalServer.ServerName(server).Map(name => (Server: server, Name: name))).Match(
-            chosen => machine.EstateSql is { Length: > 0 } ? new Prerequisite(Item.LocalServer, "ESTATE_SQL (" + chosen.Name + ")", null)
+        var localDb = machine.DbChangeSql is { Length: > 0 } || LocalServer.Server(null, machine.SqlEnv ?? "", localDb: false) is Result<string>.Ok || !LocalDbInstalled(run, cancel) ? false : true;
+        return LocalServer.Server(machine.DbChangeSql, machine.SqlEnv ?? "", localDb).Bind(server => LocalServer.ServerName(server).Map(name => (Server: server, Name: name))).Match(
+            chosen => machine.DbChangeSql is { Length: > 0 } ? new Prerequisite(Item.LocalServer, "DBCHANGE_SQL (" + chosen.Name + ")", null)
                 : localDb ? new Prerequisite(Item.LocalServer, "LocalDB MSSQLLocalDB, CDC not provable here", null)
                 : new Prerequisite(Item.LocalServer, Container + " container (" + chosen.Name + ")", dockerAnswers ? null : dockerCause),
-            error => new Prerequisite(Item.LocalServer, "none: " + (dockerAnswers ? "Docker answers, and " + (machine.SqlEnv ?? "~/.estate/sql.env") + " names no container" : "Docker does not answer") + ", ESTATE_SQL is unset and LocalDB is not installed",
-                dockerAnswers ? "Run ci/sql.sh up, or ci/sql.ps1 up on Windows, which creates the " + Container + " container, then run estate doctor." : dockerCause ?? error.Remedy));
+            error => new Prerequisite(Item.LocalServer, "none: " + (dockerAnswers ? "Docker answers, and " + (machine.SqlEnv ?? "~/.dbchange/sql.env") + " names no container" : "Docker does not answer") + ", DBCHANGE_SQL is unset and LocalDB is not installed",
+                dockerAnswers ? "Run ci/sql.sh up, or ci/sql.ps1 up on Windows, which creates the " + Container + " container, then run dbchange doctor." : dockerCause ?? error.Remedy));
     }
 
-    /// <summary>The pinned image, when Docker is the local server: present or absent; and the estate-sql container, when it exists, made from that image and no other.</summary>
+    /// <summary>The pinned image, when Docker is the local server: present or absent; and the dbchange-sql container, when it exists, made from that image and no other.</summary>
     private static Prerequisite Image(Machine machine, Ran? docker, Runner run, CancellationToken cancel) =>
-        machine.EstateSql is { Length: > 0 } ? new(Item.Image, "not needed: ESTATE_SQL names the server", null)
+        machine.DbChangeSql is { Length: > 0 } ? new(Item.Image, "not needed: DBCHANGE_SQL names the server", null)
         : docker is not Ran.Exited { Code: 0 } ? new(Item.Image, "not needed without Docker", null)
-        : run(Program("docker", "image", "inspect", "--format", "{{.Id}}", SqlServerImage), cancel) is not Ran.Exited { Code: 0 } ? new(Item.Image, "absent", "Run ci/sql.sh up, which pulls it (docker pull " + SqlServerImage + "), then run estate doctor.")
+        : run(Program("docker", "image", "inspect", "--format", "{{.Id}}", SqlServerImage), cancel) is not Ran.Exited { Code: 0 } ? new(Item.Image, "absent", "Run ci/sql.sh up, which pulls it (docker pull " + SqlServerImage + "), then run dbchange doctor.")
         : run(Program("docker", "container", "inspect", Container, "--format", "{{.Config.Image}}"), cancel) is Ran.Exited { Code: 0 } container && container.Output.Trim() is var made && made != SqlServerImage
-            ? new(Item.Image, "present, and " + Container + " runs " + made, "Run ci/sql.sh down, then ci/sql.sh up (ci/sql.ps1 on Windows), so " + Container + " runs the pinned image, then run estate doctor.")
+            ? new(Item.Image, "present, and " + Container + " runs " + made, "Run ci/sql.sh down, then ci/sql.sh up (ci/sql.ps1 on Windows), so " + Container + " runs the pinned image, then run dbchange doctor.")
         : new(Item.Image, "present", null);
 
     private static Command Program(string program, params string[] arguments) => new(program, arguments, ProgramTimeout);

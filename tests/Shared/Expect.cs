@@ -1,7 +1,7 @@
-using Estate.Kernel;
+using DbChange.Kernel;
 using Xunit.Sdk;
 
-namespace Estate.Tests;
+namespace DbChange.Tests;
 
 /// <summary>
 /// A Result's value or its error, as a test states which it expects; the failure message names the other, so a test reads the

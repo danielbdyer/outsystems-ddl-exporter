@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
-using Estate.Io;
+using DbChange.Io;
 using Xunit.Sdk;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
-/// The tests' own program runs, through io/Command as estate's are (R6): a program that does not run or that overruns fails
+/// The tests' own program runs, through io/Command as dbchange's are (R6): a program that does not run or that overruns fails
 /// the test naming the command, both streams are read as UTF-8, and dotnet's telemetry is off for every program started here.
 /// </summary>
 internal static class Programs
@@ -46,7 +46,7 @@ internal static class Programs
         }
 
         environment["GIT_CEILING_DIRECTORIES"] = ceiling;
-        var ran = new Command("git", ["-c", "user.name=Estate Test", "-c", "user.email=estate-test@example.invalid", "-c", "commit.gpgsign=false", .. arguments], Default)
+        var ran = new Command("git", ["-c", "user.name=DbChange Test", "-c", "user.email=estate-test@example.invalid", "-c", "commit.gpgsign=false", .. arguments], Default)
         {
             Directory = directory, Environment = environment,
         }.Finish();

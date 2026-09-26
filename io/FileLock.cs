@@ -2,9 +2,9 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
-using Estate.Kernel;
+using DbChange.Kernel;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
 /// The one way io takes a lock file (R6): the file opened for this process alone (<see cref="Take"/>), or for readers only
@@ -66,8 +66,8 @@ public sealed class FileLock : IDisposable
             {
                 if (waiting.Elapsed >= timeout)
                 {
-                    return new Error("lock.timed-out", full + " is held by another estate process, and this one waited " + Command.Written(timeout) + " for it.",
-                        "Wait for the other estate process to finish, or end it; its lock is released when it ends.");
+                    return new Error("lock.timed-out", full + " is held by another dbchange process, and this one waited " + Command.Written(timeout) + " for it.",
+                        "Wait for the other dbchange process to finish, or end it; its lock is released when it ends.");
                 }
 
                 if (interrupted.Token.WaitHandle.WaitOne(Poll))
@@ -84,8 +84,8 @@ public sealed class FileLock : IDisposable
 
     /// <summary>The refusal of a lock on Linux and macOS while the runtime's file locking is off; Windows never gives it, so the register's driver takes it from here.</summary>
     public static Error Unsupported => new Error("lock.unsupported",
-        "File locking is turned off in this process (DOTNET_SYSTEM_IO_DISABLEFILELOCKING), so two estate processes could change " + LocalState.Name + "/ at once.",
-        "Unset DOTNET_SYSTEM_IO_DISABLEFILELOCKING for estate, then run it again.");
+        "File locking is turned off in this process (DOTNET_SYSTEM_IO_DISABLEFILELOCKING), so two dbchange processes could change " + LocalState.Name + "/ at once.",
+        "Unset DOTNET_SYSTEM_IO_DISABLEFILELOCKING for dbchange, then run it again.");
 
     private static bool LockingOff() =>
         (AppContext.TryGetSwitch("System.IO.DisableFileLocking", out var off) && off)

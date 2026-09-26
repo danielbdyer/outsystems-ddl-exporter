@@ -1,12 +1,12 @@
 using System;
 using System.Linq;
 using System.Reflection;
-using Estate.Cli;
-using Estate.Io;
-using Estate.Kernel;
+using DbChange.Cli;
+using DbChange.Io;
+using DbChange.Kernel;
 using Xunit;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// A kernel closed hierarchy stays closed: every abstract kernel class (Result&lt;T&gt; today, Statement later) has

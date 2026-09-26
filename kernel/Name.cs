@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
 /// The name of a SQL Server object as the engine reads it: one part (a schema, a column, an index) or two (a
@@ -68,7 +68,7 @@ public readonly record struct Name : IComparable<Name>
 /// DacFx compares object names under the model's collation, so <c>[dbo].[Customer]</c> and <c>[dbo].[customer]</c> are one table
 /// under <c>SQL_Latin1_General_CP1_CI_AS</c> (measured: a case-only rename of a table on such a database plans nothing) and two under
 /// <c>Latin1_General_CS_AS</c> or a binary collation. Accent, kana and width sensitivity are read and not applied: a pair differing in
-/// accents alone still reads as two names, until an estate with such a collation is known (S8). <see cref="CaseSensitive"/> is the
+/// accents alone still reads as two names, until an environment with such a collation is known (S8). <see cref="CaseSensitive"/> is the
 /// comparison that follows no database: ordinal, as the kernel's own. default(Collation) is not a collation.
 /// </summary>
 public readonly record struct Collation : IComparable<Collation>

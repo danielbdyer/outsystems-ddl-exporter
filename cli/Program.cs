@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using Estate.Io;
-using Estate.Kernel;
+using DbChange.Io;
+using DbChange.Kernel;
 
-namespace Estate.Cli;
+namespace DbChange.Cli;
 
 /// <summary>The one executable: parse the arguments, answer from the verb table, render.</summary>
 public static class Program
@@ -25,7 +25,7 @@ public static class Program
     /// <summary>Answers <paramref name="args"/> on <paramref name="output"/>, as Markdown or, with --json, as one JSON object, for the checkout of the working directory; returns the exit code.</summary>
     public static int Run(IReadOnlyList<string> args, Stream output) => Run(args, output, Checkout.Here, Contract.Verbs);
 
-    /// <summary>Answers <paramref name="args"/> on <paramref name="output"/> for the estate checkout <paramref name="here"/>; returns the exit code.</summary>
+    /// <summary>Answers <paramref name="args"/> on <paramref name="output"/> for the SSDT repository checkout <paramref name="here"/>; returns the exit code.</summary>
     public static int Run(IReadOnlyList<string> args, Stream output, Checkout here) => Run(args, output, () => here, Contract.Verbs);
 
     /// <summary>A run inside another process (a test's): no signal reaches it, and --timeout alone interrupts it.</summary>
@@ -81,8 +81,8 @@ public static class Program
         catch (OperationCanceledException) when (interruption.Token.IsCancellationRequested)
         {
             var stopped = Contract.Exits.Single(e => e.Name == "interrupted");
-            var command = word.Length == 0 ? "estate" : "estate " + word;
-            var answer = Contract.Answer(verb?.Output ?? "estate.envelope/1", Outcome.Of(stopped), stopped.Code,
+            var command = word.Length == 0 ? "dbchange" : "dbchange " + word;
+            var answer = Contract.Answer(verb?.Output ?? "dbchange.envelope/1", Outcome.Of(stopped), stopped.Code,
                 command + " stopped after " + (interruption.Cause ?? "an interruption") + ": it ended the programs it had started and released its locks.", []);
             try
             {

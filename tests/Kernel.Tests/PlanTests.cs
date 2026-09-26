@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using CsCheck;
 using Xunit;
-using static Estate.Kernel.Tests.ElementSets;
+using static DbChange.Kernel.Tests.ElementSets;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>
 /// A deploy report as the kernel holds it, and the drift decision over it: a report is identified by its operations, their keys and issues,
@@ -49,7 +49,7 @@ public sealed class PlanTests
         });
     }
 
-    /// <summary>DacFx's deploy report is not documented as closed: a name outside the measured list is kept as written, estate writes it unlisted, and nothing refuses it.</summary>
+    /// <summary>DacFx's deploy report is not documented as closed: a name outside the measured list is kept as written, dbchange writes it unlisted, and nothing refuses it.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void An_operation_name_DacFx_adds_later_is_kept_verbatim_and_refuses_nothing()

@@ -4,11 +4,11 @@ using System.IO;
 using System.Linq;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
 /// T-SQL as ScriptDom reads and writes it for io: SQL Server 2022's grammar with quoted identifiers on (TSql160Parser), and
-/// Sql160ScriptGenerator's default formatting with LF line ends and no surrounding white space, the one form in which estate runs and
+/// Sql160ScriptGenerator's default formatting with LF line ends and no surrounding white space, the one form in which dbchange runs and
 /// logs a statement it built or checked. Each call makes its own parser and generator, since ScriptDom does not document either as
 /// safe to share between threads.
 /// </summary>
@@ -17,7 +17,7 @@ internal static class TSql
     /// <summary>The tree ScriptDom reads from <paramref name="text"/>, and the errors it found, each with its line and column.</summary>
     internal static TSqlFragment Parse(string text, out IList<ParseError> errors) => Parser().Parse(new StringReader(text), out errors);
 
-    /// <summary>A tree written back as T-SQL: the text estate sends and its query log holds, byte for byte on every operating system.</summary>
+    /// <summary>A tree written back as T-SQL: the text dbchange sends and its query log holds, byte for byte on every operating system.</summary>
     internal static string Text(TSqlFragment fragment)
     {
         new Sql160ScriptGenerator().GenerateScript(fragment, out var script);

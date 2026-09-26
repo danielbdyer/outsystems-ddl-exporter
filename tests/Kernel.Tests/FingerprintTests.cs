@@ -4,7 +4,7 @@ using System.Text;
 using CsCheck;
 using Xunit;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>A fingerprint is SHA-256 over canonical bytes: equal inputs give equal fingerprints in any process.</summary>
 public sealed class FingerprintTests

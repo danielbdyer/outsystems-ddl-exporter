@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Estate.Kernel;
+using DbChange.Kernel;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
 /// DacFx's serialized type names read as the types io/Ssdt.ReadModel keys elements by, and the one keying rule for an object named by its

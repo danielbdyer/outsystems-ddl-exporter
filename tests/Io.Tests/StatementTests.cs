@@ -4,16 +4,16 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using Estate.Kernel;
-using Estate.Tests;
+using DbChange.Kernel;
+using DbChange.Tests;
 using Microsoft.Data.SqlClient;
 using Xunit;
-using static Estate.Tests.Expect;
+using static DbChange.Tests.Expect;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
-/// The one path for the statements estate sends itself (R5 option A): every one of them, CREATE and DROP DATABASE and the catalog read
+/// The one path for the statements dbchange sends itself (R5 option A): every one of them, CREATE and DROP DATABASE and the catalog read
 /// for synonyms included, is in the run's queries.log with its site and its row count or failure; a command that runs past its timeout
 /// on an open connection is a timed-out statement, not a server that does not answer; an aggregate query over a synonym is refused;
 /// any failure carrying a SqlException is read by that exception's number; and a copy the server will not make, or a local server
@@ -23,14 +23,14 @@ public sealed class StatementTests : IDisposable
 {
     private readonly ScratchFolder folder = ScratchFolder.UnderRepository("statements-under-test");
 
-    /// <summary>An estate's root whose environmentsFile names no environment, so R15 clears the local server.</summary>
-    private string Root => SqlServerFixture.EstateRoot(folder.Path);
+    /// <summary>A repository root whose environments file names no environment, so R15 clears the local server.</summary>
+    private string Root => SqlServerFixture.RepositoryRoot(folder.Path);
 
     public void Dispose() => folder.Dispose();
 
     [Fact]
     [Trait("Category", "fixture")]
-    public async Task Every_statement_estate_sends_to_a_copy_is_in_the_run_s_log_with_its_site_and_row_count()
+    public async Task Every_statement_dbchange_sends_to_a_copy_is_in_the_run_s_log_with_its_site_and_row_count()
     {
         var log = SqlServer.QueryLog.Start(Root);
         var copy = Value(LocalServer.Create(Root, await SqlServerFixture.ServerAsync(), log));
@@ -162,7 +162,7 @@ public sealed class StatementTests : IDisposable
     }
 
     /// <summary>
-    /// The local server's own login refused, as after ~/.estate/sql.env names a password the container no longer has: a denial whose
+    /// The local server's own login refused, as after ~/.dbchange/sql.env names a password the container no longer has: a denial whose
     /// remedy names sql.env rather than a lead, and no row in the registry. On LocalDB, which authenticates Windows identities alone, a
     /// SQL login is refused as untrusted (Msg 18452), a denial too.
     /// </summary>
@@ -171,7 +171,7 @@ public sealed class StatementTests : IDisposable
     public async Task A_local_server_login_the_server_refuses_names_sql_env_and_leaves_no_registry_row()
     {
         var wrong = new PlantedValue("Wr0ng!planted#7f3a");
-        var server = new SqlConnectionStringBuilder(await SqlServerFixture.ServerAsync()) { IntegratedSecurity = false, UserID = "estate_nobody", Password = wrong.Text }.ConnectionString;
+        var server = new SqlConnectionStringBuilder(await SqlServerFixture.ServerAsync()) { IntegratedSecurity = false, UserID = "dbchange_nobody", Password = wrong.Text }.ConnectionString;
 
         var error = Failed(LocalServer.Create(Root, server), "server.denied");
 
@@ -205,8 +205,8 @@ public sealed class StatementTests : IDisposable
     }
 
     /// <summary>The registry's rows, none when the file is absent.</summary>
-    private JsonArray Registry() => File.Exists(Path.Combine(Root, ".estate", "copies.json"))
-        ? JsonNode.Parse(File.ReadAllText(Path.Combine(Root, ".estate", "copies.json")))!["copies"]!.AsArray()
+    private JsonArray Registry() => File.Exists(Path.Combine(Root, ".dbchange", "copies.json"))
+        ? JsonNode.Parse(File.ReadAllText(Path.Combine(Root, ".dbchange", "copies.json")))!["copies"]!.AsArray()
         : [];
 
     /// <summary>queries.log as entries: a header line naming the target, the site and the outcome, the statement, then GO.</summary>

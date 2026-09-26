@@ -3,25 +3,25 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Estate.Budgets.Tests;
-using Estate.Cli;
+using DbChange.Budgets.Tests;
+using DbChange.Cli;
 using Json.Schema;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
-/// An estate repository for the verbs (WP 1.7), in a git repository of its own: the golden project with its stop files, an estate/environmentsFile
+/// An SSDT repository for the verbs (WP 1.7), in a git repository of its own: the golden project with its stop files, a dbchange/environments.json
 /// naming no environment and the sample toolchain ledger, committed as Base; then Customer.Email made mandatory, committed as Head, the
-/// make-mandatory sample change. estate runs in this process against it, its tool folder dist/estate/ (PublishedTool).
+/// make-mandatory sample change. dbchange runs in this process against it, its tool folder dist/dbchange/ (PublishedTool).
 /// </summary>
-public sealed class ScratchEstate : IDisposable
+public sealed class ScratchRepository : IDisposable
 {
     public const string Profile = "project/profiles/pipeline.publish.xml";
 
     private readonly Scratch scratch = new();
 
-    public ScratchEstate()
+    public ScratchRepository()
     {
         Tool = new PublishedTool();
         var golden = Path.Combine(Repository.Root, "tests", "Golden");
@@ -32,7 +32,7 @@ public sealed class ScratchEstate : IDisposable
 
         ToolFolderTests.Copy(Path.Combine(golden, "project"), Path.Combine(Root, "project"));
         Ledger(Root);
-        Base = scratch.Commit("the golden project", (".gitignore", ".estate/\n"), ("estate/environments.json", "{ \"environments\": {} }\n"));
+        Base = scratch.Commit("the golden project", (".gitignore", ".dbchange/\n"), ("dbchange/environments.json", "{ \"environments\": {} }\n"));
         var customer = Path.Combine(Root, "project", "Modules", "Customer.sql");
         var text = File.ReadAllText(customer);
         Assert.True(text.Split("Email           NVARCHAR(256)   NULL,").Length == 2, customer + " does not hold Email's declaration once");
@@ -49,11 +49,11 @@ public sealed class ScratchEstate : IDisposable
     /// <summary>The make-mandatory sample change's commit.</summary>
     public string Head { get; }
 
-    /// <summary>estate run at the repository's root.</summary>
-    public (int Exit, string Output) Estate(params string[] arguments) => EstateAt(Root, arguments);
+    /// <summary>dbchange run at the repository's root.</summary>
+    public (int Exit, string Output) Run(params string[] arguments) => RunAt(Root, arguments);
 
-    /// <summary>estate run in this process with <paramref name="root"/> as the estate's root and dist/estate/ as its tool folder: its exit and its output.</summary>
-    public (int Exit, string Output) EstateAt(string root, params string[] arguments)
+    /// <summary>dbchange run in this process with <paramref name="root"/> as the repository root and dist/dbchange/ as its tool folder: its exit and its output.</summary>
+    public (int Exit, string Output) RunAt(string root, params string[] arguments)
     {
         using var output = new MemoryStream();
         var exit = Cli.Program.Run(arguments, output, new Checkout(root, root, Tool.Folder));
@@ -61,7 +61,7 @@ public sealed class ScratchEstate : IDisposable
     }
 
     /// <summary>
-    /// An estate root beside the repository's own, under it, whose environmentsFile names environments: each a reference to a connection file,
+    /// A repository root beside this repository's own, under it, whose environments file names environments: each a reference to a connection file,
     /// under the golden profile; its registry, its runs and its builds are its own.
     /// </summary>
     public string Named(params (string Name, string Connection)[] environments)
@@ -76,7 +76,7 @@ public sealed class ScratchEstate : IDisposable
             environmentsFile[name] = new JsonObject { ["host"] = "localhost", ["connection"] = "file:" + connection.Replace('\\', '/'), ["profile"] = "profiles/pipeline.publish.xml" };
         }
 
-        File.WriteAllText(Path.Combine(root, "estate", "environments.json"), new JsonObject { ["environments"] = environmentsFile }.ToJsonString());
+        File.WriteAllText(Path.Combine(root, "dbchange", "environments.json"), new JsonObject { ["environments"] = environmentsFile }.ToJsonString());
         return root;
     }
 
@@ -90,10 +90,10 @@ public sealed class ScratchEstate : IDisposable
 
     public void Dispose() => scratch.Dispose();
 
-    /// <summary>The sample toolchain ledger, UNPINNED for this estate version, under an estate's root.</summary>
+    /// <summary>The sample toolchain ledger, UNPINNED for this dbchange version, under a repository root.</summary>
     private static void Ledger(string root)
     {
-        Directory.CreateDirectory(Path.Combine(root, "estate", "ledgers"));
-        File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "estate", "ledgers", "toolchain.md"), Path.Combine(root, "estate", "ledgers", "toolchain.md"));
+        Directory.CreateDirectory(Path.Combine(root, "dbchange", "ledgers"));
+        File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "dbchange", "ledgers", "toolchain.md"), Path.Combine(root, "dbchange", "ledgers", "toolchain.md"));
     }
 }

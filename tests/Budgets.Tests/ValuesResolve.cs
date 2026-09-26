@@ -3,16 +3,16 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
-using Estate.Cli;
+using DbChange.Cli;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// Every row of VALUES.md names where it is held (DECISIONS.md, 2026-09-25). Each clause of a Where (clauses split at ';' outside
 /// backticks) names a test that declares the row with [Trait("Value", "&lt;row&gt;")] (a class, or <c>Kernel.Tests: "its English name"</c>),
-/// a file or directory, a verb this build has (<c>estate doctor</c>) or a job of .github/workflows/estate.yml; or says
+/// a file or directory, a verb this build has (<c>dbchange doctor</c>) or a job of .github/workflows/dbchange.yml; or says
 /// <c>not held yet: WP &lt;n&gt;.&lt;m&gt;</c>, accepted while M&lt;n&gt; is not complete (<see cref="Documents.Complete(int)"/>), or
 /// <c>not held yet: the cutover tools</c>, accepted until M8 starts; or says <c>prose only</c>, which is printed and capped. A test the
 /// clause names that exists drops its <c>not held yet</c>. <c>pending M&lt;n&gt;</c> and <c>pending W</c> are retired phrases and fail.
@@ -32,7 +32,7 @@ public sealed class ValuesResolve(ITestOutputHelper output)
     private static readonly Regex JobId = new(@"^  ([a-z][\w-]*):$", RegexOptions.CultureInvariant);
 
     /// <summary>The jobs of the workflow, by id: fast, sql-ubuntu, sql-windows, sql-offline.</summary>
-    private static readonly Lazy<HashSet<string>> Jobs = new(() => Repository.Lines(".github/workflows/estate.yml")
+    private static readonly Lazy<HashSet<string>> Jobs = new(() => Repository.Lines(".github/workflows/dbchange.yml")
         .Select(l => JobId.Match(l)).Where(m => m.Success).Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal));
 
     [Fact]
@@ -68,11 +68,11 @@ public sealed class ValuesResolve(ITestOutputHelper output)
     [InlineData("L2", "`Budgets.Tests: \"every markdown file outside the archive and every ci file is a row\"`", false)]
     [InlineData("L7", "`BannedSymbolsTests`; `Directory.Build.props`", true)]
     [InlineData("L4", "the dependency laws in `Budgets.Tests`", false)]
-    [InlineData("L4", "`estate doctor`", true)]
-    [InlineData("L4", "`estate predict`", false)]
+    [InlineData("L4", "`dbchange doctor`", true)]
+    [InlineData("L4", "`dbchange predict`", false)]
     [InlineData("A6", "`AGENTS.md`", true)]
-    [InlineData("O10", "the sql-offline job of `.github/workflows/estate.yml`", true)]
-    [InlineData("O10", "the sql-elsewhere job of `.github/workflows/estate.yml`", false)]
+    [InlineData("O10", "the sql-offline job of `.github/workflows/dbchange.yml`", true)]
+    [InlineData("O10", "the sql-elsewhere job of `.github/workflows/dbchange.yml`", false)]
     [InlineData("A5", "the author rule, prose only", true)]
     [InlineData("L4", "`Budgets.Tests: Manifest` — pending M1", false)]
     [InlineData("D1", "law 1, its emit form — pending W", false)]
@@ -129,7 +129,7 @@ public sealed class ValuesResolve(ITestOutputHelper output)
 
             foreach (var job in Job.Matches(clause).Select(m => m.Groups[1].Value).Where(j => !Jobs.Value.Contains(j)))
             {
-                yield return "the " + job + " job is no job of .github/workflows/estate.yml";
+                yield return "the " + job + " job is no job of .github/workflows/dbchange.yml";
             }
         }
     }
@@ -149,9 +149,9 @@ public sealed class ValuesResolve(ITestOutputHelper output)
                 yield return "`" + name + "` declares no [Trait(\"Value\", \"" + row + "\")]";
             }
         }
-        else if (name.StartsWith("estate ", StringComparison.Ordinal))
+        else if (name.StartsWith("dbchange ", StringComparison.Ordinal))
         {
-            if (!Contract.Verbs.Any(v => v.Name == name[7..].Split(' ')[0] && v.Built))
+            if (!Contract.Verbs.Any(v => v.Name == name["dbchange ".Length..].Split(' ')[0] && v.Built))
             {
                 yield return "`" + name + "` is no verb this build has";
             }

@@ -1,15 +1,15 @@
 using System;
 using System.Linq;
 using CsCheck;
-using Estate.Tests;
+using DbChange.Tests;
 using Xunit;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>
-/// A server as .estate/copies.json records it and R15 compares it (V3_MILESTONES.md §4 row 16): the data source's host, then its port or
+/// A server as .dbchange/copies.json records it and R15 compares it (V3_MILESTONES.md §4 row 16): the data source's host, then its port or
 /// instance, in lower case; this machine, however a connection spells it, is localhost. The spelling is the one the registry's rows
-/// already carry, so a row written before ServerName existed still resolves; and a host as estate/environments.json names one.
+/// already carry, so a row written before ServerName existed still resolves; and a host as dbchange/environments.json names one.
 /// </summary>
 public sealed class ServerNameTests
 {
@@ -35,7 +35,7 @@ public sealed class ServerNameTests
         Assert.Equal(ServerName.Of("dev-sql\\pipe\\sql\\query", Machine), ServerName.Of(ServerName.Of("np:\\\\DEV-SQL\\pipe\\sql\\query", Machine).ToString(), Machine));
     }
 
-    /// <summary>The spellings .estate/copies.json rows and R15 used before the kernel held the type (io/Substrate.cs and io/SqlServer.cs at ffaf717c), each pinned.</summary>
+    /// <summary>The spellings .dbchange/copies.json rows and R15 used before the kernel held the type (io/Substrate.cs and io/SqlServer.cs at ffaf717c), each pinned.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("127.0.0.1,11433", "localhost,11433", "localhost")]
@@ -69,7 +69,7 @@ public sealed class ServerNameTests
         Assert.Equal(Host.LocalDb, ServerName.Of("(localdb)\\v11.0", Machine).Host);
     }
 
-    /// <summary>A host as estate/environments.json names an environment's: the host alone, since a port, an instance, a protocol or white space belongs to a connection's data source.</summary>
+    /// <summary>A host as dbchange/environments.json names an environment's: the host alone, since a port, an instance, a protocol or white space belongs to a connection's data source.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("DEV-SQL.corp.example", "dev-sql.corp.example")]
@@ -83,7 +83,7 @@ public sealed class ServerNameTests
     [InlineData("(LocalDB)", "(localdb)")]
     [InlineData("SQL_PROD01", "sql_prod01")]
     public void An_environment_s_host_is_read_in_lower_case_and_this_machine_as_localhost(string text, string host) =>
-        Assert.Equal(host, Expect.Value(Host.Of("environments.dev.host in estate/environments.json", text)).ToString());
+        Assert.Equal(host, Expect.Value(Host.Of("environments.dev.host in dbchange/environments.json", text)).ToString());
 
     [Theory]
     [Trait("Category", "fast")]
@@ -99,9 +99,9 @@ public sealed class ServerNameTests
     [InlineData(null)]
     public void An_environment_s_host_with_a_port_an_instance_a_protocol_or_white_space_is_refused(string? text)
     {
-        var error = Expect.Failed(Host.Of("environments.dev.host in estate/environments.json", text), "environments.host");
+        var error = Expect.Failed(Host.Of("environments.dev.host in dbchange/environments.json", text), "environments.host");
 
-        Assert.StartsWith("environments.dev.host in estate/environments.json", error.Message, StringComparison.Ordinal);
+        Assert.StartsWith("environments.dev.host in dbchange/environments.json", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

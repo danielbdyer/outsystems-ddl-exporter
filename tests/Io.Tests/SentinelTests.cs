@@ -5,12 +5,12 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using System.Xml.Linq;
-using Estate.Budgets.Tests;
-using Estate.Tests;
+using DbChange.Budgets.Tests;
+using DbChange.Tests;
 using Xunit;
-using static Estate.Tests.Expect;
+using static DbChange.Tests.Expect;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// WP 1.5's Done-when on SQL Server, through WP 1.4's Copy.Publish: the pipeline's profile, given a TargetConnectionString that names
@@ -30,12 +30,12 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
     [Trait("Value", "S1")]
     public async Task A_Permissive_publish_under_a_profile_naming_a_sentinel_server_reaches_the_copy_and_never_the_sentinel()
     {
-        var elsewhere = "estate_sentinel_" + Guid.NewGuid().ToString("N")[..8];
+        var elsewhere = "dbchange_sentinel_" + Guid.NewGuid().ToString("N")[..8];
         var strict = Value(PublishProfiles.Load(Sentinel(elsewhere)));
         var dacpac = Value(Ssdt.Build(ClassicMinimal(), tool.Folder, scratch.Under("build"))).Path;
         Assert.ThrowsAny<SocketException>(() => Dns.GetHostEntry("sentinel.invalid"));
 
-        var copy = Value(LocalServer.Create(SqlServerFixture.EstateRoot(scratch.Path), await SqlServerFixture.ServerAsync()));
+        var copy = Value(LocalServer.Create(SqlServerFixture.RepositoryRoot(scratch.Path), await SqlServerFixture.ServerAsync()));
         try
         {
             var permissive = copy.Permissive(strict);

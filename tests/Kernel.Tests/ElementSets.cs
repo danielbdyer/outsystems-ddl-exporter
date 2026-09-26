@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CsCheck;
-using Estate.Tests;
+using DbChange.Tests;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>
 /// Builders and generators for the kernel's view of a model: element sets with tables, their columns and indexes,

@@ -4,7 +4,7 @@ using System.Linq;
 using CsCheck;
 using Xunit;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>A SortedArray is sorted when it is built and compared element by element, whatever the order or the culture.</summary>
 public sealed class SortedArrayTests

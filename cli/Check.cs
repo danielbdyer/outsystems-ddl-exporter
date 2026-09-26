@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
-using Estate.Io;
-using Estate.Kernel;
+using DbChange.Io;
+using DbChange.Kernel;
 
-namespace Estate.Cli;
+namespace DbChange.Cli;
 
 public static partial class Verbs
 {
@@ -15,7 +15,7 @@ public static partial class Verbs
 
     /// <summary>
     /// What check adds to the envelope: the kind of check, the target, the ref and its commit, the counts, each operation of the deploy plan
-    /// (its word, DacFx's name where estate's list lacks it, the element and the data issues it raises), and the columns that differ, as diff
+    /// (its word, DacFx's name where dbchange's list lacks it, the element and the data issues it raises), and the columns that differ, as diff
     /// writes a change; the two lists can be long.
     /// </summary>
     public static JsonObject CheckContent => new()
@@ -33,12 +33,12 @@ public static partial class Verbs
         }),
     };
 
-    /// <summary>estate check drift --target &lt;target&gt; --at &lt;ref&gt; [--profile &lt;path&gt;] [--project &lt;path&gt;]; the other checks arrive later.</summary>
+    /// <summary>dbchange check drift --target &lt;target&gt; --at &lt;ref&gt; [--profile &lt;path&gt;] [--project &lt;path&gt;]; the other checks arrive later.</summary>
     public static Envelope Check(Checkout here, IReadOnlyList<string> words) => words switch
     {
         ["drift", ..] => Drift(here, [.. words.Skip(1)]),
         [var kind, ..] when Later.Contains(kind) => Contract.NotBuilt(Of("check") with { Name = "check " + kind }) with { Schema = Of("check").Output },
-        _ => Contract.Failed(Of("check"), new Error("arguments.unknown-check", "estate check needs the check to run; this build runs check drift.", "Run estate check drift --target <target> --at <ref>.")),
+        _ => Contract.Failed(Of("check"), new Error("arguments.unknown-check", "dbchange check needs the check to run; this build runs check drift.", "Run dbchange check drift --target <target> --at <ref>.")),
     };
 
     /// <summary>check drift's arguments read, io/DriftCheck run, and its answer rendered; --at takes ref:&lt;ref&gt;, or a ref alone, since git forbids ':' in a ref's name.</summary>
@@ -53,7 +53,7 @@ public static partial class Verbs
             return Contract.Failed(verb, error, DacFx.Version.Match<Stamp?>(dacfx => new Stamp(dacfx), _ => null));
         }
 
-        var drift = DriftCheck.Run(new DriftCheck.Estate(here.Root, here.WorkingDirectory, here.Tool, Contract.Version), request, here.Run);
+        var drift = DriftCheck.Run(new DriftCheck.Checkout(here.Root, here.WorkingDirectory, here.Tool, Contract.Version), request, here.Run);
         return drift.Result.Failed(out var answer, out error) ? Contract.Failed(verb, error, drift.Stamp) : Drifted(here, answer, drift.Stamp!);
     }
 
@@ -71,8 +71,8 @@ public static partial class Verbs
         [
             .. answer.Notes,
             .. stamp.Pin is Pin.Unpinned ? new[] { Finding.Note("toolchain.unpinned", Io.Doctor.Ledger, "This answer stands on DacFx " + stamp.DacFx + ", UNPINNED: " + Io.Doctor.Ledger
-                + " pins no DacFx release for estate " + Contract.Version.Split('+')[0] + ".") } : [],
-            Finding.Note("profile.unverified", profile, "The estate commits no copy of the publish profile the Octopus step applies, so " + profile + " is not verified against it."),
+                + " pins no DacFx release for dbchange " + Contract.Version.Split('+')[0] + ".") } : [],
+            Finding.Note("profile.unverified", profile, "The SSDT repository commits no copy of the publish profile the Octopus step applies, so " + profile + " is not verified against it."),
         ];
         var (operations, columns) = answer.Drift.Match(_ => (default(SortedArray<PlanOperation>), new Change([], [], [], [])), differs => (differs.Plan.Operations, differs.Columns));
         var content = new JsonObject
@@ -105,7 +105,7 @@ public static partial class Verbs
     /// </summary>
     private static IEnumerable<Finding> Differences(DriftCheck.Answer answer, Drift.Differs differs, string at)
     {
-        var remedy = "Run estate diff --from " + answer.Target + " --to " + at + " to see each property that differs.";
+        var remedy = "Run dbchange diff --from " + answer.Target + " --to " + at + " to see each property that differs.";
         var consequences = differs.Plan.Operations.Where(o => o.Kind.IsConsequence).ToList();
         return differs.Plan.Operations.Where(o => !o.Kind.IsConsequence)
             .Select(o => Finding.Warning("drift." + o.Kind.Word, o.Key.ToString(), "The deploy plan against " + answer.Target + " would " + Verb(o.Kind) + " " + o.Key + ".", remedy))
@@ -122,7 +122,7 @@ public static partial class Verbs
                 ? Finding.Warning("drift.column", key, change + ", from the target to the repository.") : Finding.Warning("drift.column", line, line + ".")));
     }
 
-    /// <summary>What an operation does, as the message's verb: create, alter, drop, rebuild, rename; for a name estate's list lacks, DacFx's operation by its name.</summary>
+    /// <summary>What an operation does, as the message's verb: create, alter, drop, rebuild, rename; for a name dbchange's list lacks, DacFx's operation by its name.</summary>
     private static string Verb(PlanOperationKind kind) => kind switch
     {
         PlanOperationKind.TableRebuild => "rebuild",

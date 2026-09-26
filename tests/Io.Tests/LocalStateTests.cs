@@ -1,14 +1,14 @@
 using System;
 using System.IO;
 using System.Linq;
-using Estate.Kernel;
+using DbChange.Kernel;
 using Xunit;
-using static Estate.Tests.Expect;
+using static DbChange.Tests.Expect;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
-/// io/LocalState (R7): the .estate/ folder ignores itself in a repository whose .gitignore does not name it, the worktrees' folder
+/// io/LocalState (R7): the .dbchange/ folder ignores itself in a repository whose .gitignore does not name it, the worktrees' folder
 /// carries the stop files a ref's build needs and nothing else does, a file that exists is never written over, and a folder that
 /// cannot be made is file.unwritable.
 /// </summary>
@@ -23,7 +23,7 @@ public sealed class LocalStateTests : IDisposable
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Value", "R3")]
-    public void Git_lists_nothing_estate_keeps_in_a_repository_whose_gitignore_does_not_name_dot_estate()
+    public void Git_lists_nothing_dbchange_keeps_in_a_repository_whose_gitignore_does_not_name_dot_dbchange()
     {
         var commit = scratch.Commit("first", ("a.sql", "SELECT 1;\n"));   // no .gitignore
         var state = new LocalState(scratch.Root);
@@ -33,7 +33,7 @@ public sealed class LocalStateTests : IDisposable
         Value(Write.Append(Path.Combine(state.Runs, "20260925T000000Z-1-ab", "queries.log"), "-- one\nSELECT 1;\nGO\n"));
 
         Assert.Equal("", scratch.Git("status", "--porcelain", "--ignored=no", "--untracked-files=all"));
-        Assert.Equal(".estate/.gitignore:1:*\t.estate/copies.json", scratch.Git("check-ignore", "-v", ".estate/copies.json"));
+        Assert.Equal(".dbchange/.gitignore:1:*\t.dbchange/copies.json", scratch.Git("check-ignore", "-v", ".dbchange/copies.json"));
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class LocalStateTests : IDisposable
     [Trait("Category", "fast")]
     public void Made_where_a_file_stands_in_the_folder_s_way_is_file_unwritable_naming_the_folder()
     {
-        File.WriteAllText(Path.Combine(scratch.Root, ".estate"), "");
+        File.WriteAllText(Path.Combine(scratch.Root, ".dbchange"), "");
         var state = new LocalState(scratch.Root);
 
         var error = Failed(state.Made(state.Worktrees), "file.unwritable");

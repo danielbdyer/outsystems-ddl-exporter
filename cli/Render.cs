@@ -3,29 +3,29 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
-using Estate.Kernel;
+using DbChange.Kernel;
 
-namespace Estate.Cli;
+namespace DbChange.Cli;
 
 /// <summary>The renderers: the help and every answer, as Markdown or as JSON, and the JSON schemas generated from the contract.</summary>
 public static class Render
 {
-    public const string Usage = "estate <verb> [arguments] [--json] [--summary] | estate --help [--json] | estate --version";
+    public const string Usage = "dbchange <verb> [arguments] [--json] [--summary] | dbchange --help [--json] | dbchange --version";
 
     /// <summary>How many entries of each long list, lines and warnings the default answer holds (VALUES.md O11); the whole answer is in the run's answer.json.</summary>
     public const int Shown = 50;
 
-    private const string SchemaId = "^estate\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$";
+    private const string SchemaId = "^dbchange\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$";
 
     /// <summary>The whole answer's file, under the run's folder: what full names when an answer was cut.</summary>
-    private const string FullPattern = "^\\.estate/runs/[^/]+/answer\\.json$";
+    private const string FullPattern = "^\\.dbchange/runs/[^/]+/answer\\.json$";
 
     /// <summary>How a content schema marks a list that can be long, so Cut finds it: the default answer holds its first entries.</summary>
     private const string LongList = "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list";
 
     public static JsonObject Help() => new()
     {
-        ["schema"] = "estate.help/1",
+        ["schema"] = "dbchange.help/1",
         ["version"] = Contract.Version,
         ["usage"] = Usage,
         ["verbs"] = Array(Contract.Verbs.Select(v => new JsonObject
@@ -39,7 +39,7 @@ public static class Render
 
     public static string HelpMarkdown() => string.Join('\n', (string[])
     [
-        "# estate " + Contract.Version, "", "Usage: `" + Usage + "`", "", "| Verb | Answers | Outcomes | Built |", "|---|---|---|---|",
+        "# dbchange " + Contract.Version, "", "Usage: `" + Usage + "`", "", "| Verb | Answers | Outcomes | Built |", "|---|---|---|---|",
         .. Contract.Verbs.Select(v => "| `" + v.Name + "` | " + v.Summary + " | " + string.Join(", ", v.Answers.Select(o => o.Word + " (exit " + string.Join(" or ", o.Exits.Select(e => e.ToString(CultureInfo.InvariantCulture))) + ")"))
             + " | " + (v.Built ? "yes" : "no") + " |"),
         "", "| Exit | Name | Meaning | Remedy |", "|---:|---|---|---|",
@@ -216,16 +216,16 @@ public static class Render
     /// <summary>The schemas the contract generates, by id: the envelope, the help and each verb's; each is committed under cli/schemas/ as <see cref="SchemaFile"/> names it.</summary>
     public static IReadOnlyList<(string Id, JsonObject Schema)> Schemas() =>
     [
-        ("estate.envelope/1", EnvelopeSchema("estate.envelope/1", "What every verb writes with --json: schema, outcome, exit, message, blockedBy, findings, version, dacfx, pin, server, provenance, truncated, full.", null)),
-        ("estate.help/1", HelpSchema()),
-        .. Contract.Verbs.Where(v => v.Content is not null).Select(v => (v.Output, EnvelopeSchema(v.Output, "What estate " + v.Name + " --json writes: the envelope, and " + string.Join(" and ", v.Content!.Select(p => p.Key)) + ".", v))),
+        ("dbchange.envelope/1", EnvelopeSchema("dbchange.envelope/1", "What every verb writes with --json: schema, outcome, exit, message, blockedBy, findings, version, dacfx, pin, server, provenance, truncated, full.", null)),
+        ("dbchange.help/1", HelpSchema()),
+        .. Contract.Verbs.Where(v => v.Content is not null).Select(v => (v.Output, EnvelopeSchema(v.Output, "What dbchange " + v.Name + " --json writes: the envelope, and " + string.Join(" and ", v.Content!.Select(p => p.Key)) + ".", v))),
     ];
 
     public static string SchemaFile(string id) => id.Replace('/', '.') + ".schema.json";
 
-    private static JsonObject HelpSchema() => Document("estate.help/1", "What estate --help --json writes: the verb table, the exit table and the schemas.", new()
+    private static JsonObject HelpSchema() => Document("dbchange.help/1", "What dbchange --help --json writes: the verb table, the exit table and the schemas.", new()
     {
-        ["schema"] = new JsonObject { ["const"] = "estate.help/1" },
+        ["schema"] = new JsonObject { ["const"] = "dbchange.help/1" },
         ["version"] = Text(),
         ["usage"] = Text(),
         ["verbs"] = List(Record(new()
@@ -319,7 +319,7 @@ public static class Render
         provenance["allOf"] = new JsonArray([.. ((Provenance.Input[])[Provenance.Input.ExistingData, Provenance.Input.Server]).Select(Lacks)]);
         envelope["$defs"] = new JsonObject
         {
-            // The kernel's Server: the product version SQL Server reports, the database's compatibility level, and the image's digest for a copy on the estate-sql container.
+            // The kernel's Server: the product version SQL Server reports, the database's compatibility level, and the image's digest for a copy on the dbchange-sql container.
             ["server"] = Record(new()
             {
                 ["version"] = Pattern("^[0-9]{1,5}(\\.[0-9]{1,5}){3}$"), ["compatibilityLevel"] = new JsonObject { ["type"] = "integer" }, ["image"] = Nullable(Fingerprint()),
@@ -350,7 +350,7 @@ public static class Render
     private static JsonObject Document(string id, string description, JsonObject properties) => new(
     [
         new("$schema", "https://json-schema.org/draft/2020-12/schema"), new("title", id), new("description", description),
-        new("$comment", "Generated from cli/Contract.cs by Render.Schemas: regenerate with ESTATE_BLESS=1 dotnet test --filter Category=fast; never edit by hand."),
+        new("$comment", "Generated from cli/Contract.cs by Render.Schemas: regenerate with DBCHANGE_BLESS=1 dotnet test --filter Category=fast; never edit by hand."),
         .. Record(properties).Select(p => KeyValuePair.Create(p.Key, p.Value?.DeepClone())),
     ]);
 

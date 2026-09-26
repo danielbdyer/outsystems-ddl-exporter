@@ -1,7 +1,7 @@
 using System;
 using System.Text.RegularExpressions;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
 /// How much a finding matters, closed: an error stops the verb and carries a remedy; a warning names something a person should

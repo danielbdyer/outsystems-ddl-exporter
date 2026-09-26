@@ -35,5 +35,5 @@ archive/v2/bench/*
 !archive/v2/bench/stryker-config.json
 
 # v3: the tool's local state (copies registry, runs, worktrees, the built tool) and the published folder.
-.estate/
+.dbchange/
 dist/

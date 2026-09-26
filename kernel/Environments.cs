@@ -5,10 +5,10 @@ using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
-/// estate/environments.json as a value (V3_MILESTONES.md WP 1.5, §4 row 14): the environments it names, each once, in name order, and the
+/// dbchange/environments.json as a value (V3_MILESTONES.md WP 1.5, §4 row 14): the environments it names, each once, in name order, and the
 /// local server it prefers, when it names one. io reads the file once for a verb and hands this to what resolves a target, to R15 and
 /// to the lookup of a copy's profile.
 /// </summary>
@@ -39,7 +39,7 @@ public sealed record Environments
 }
 
 /// <summary>
-/// Which SQL Server the environments file prefers to hold copies (VALUES.md O1): Docker, the estate-sql container; or LocalDb, where Docker cannot
+/// Which SQL Server the environments file prefers to hold copies (VALUES.md O1): Docker, the dbchange-sql container; or LocalDb, where Docker cannot
 /// run. The key localServer, written docker or localdb. The cases are closed.
 /// </summary>
 public abstract record LocalServerKind
@@ -72,7 +72,7 @@ public abstract record LocalServerKind
 }
 
 /// <summary>
-/// An environment as estate/environments.json names it (V3_MILESTONES.md WP 1.5, §4 row 14): its name; the host its SQL Server runs on, which
+/// An environment as dbchange/environments.json names it (V3_MILESTONES.md WP 1.5, §4 row 14): its name; the host its SQL Server runs on, which
 /// R15 compares with the local server's whether or not the environment's reference resolves on this machine (DECISIONS.md,
 /// 2026-09-25); its classification and reader groups (the groups that may read it); the reference its connection resolves from; its publish
 /// profile's path; its SQLCMD values; and, where the environments file names one, the metamodel's reference. Data only (§2.1 rule 3), holding no
@@ -84,7 +84,7 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
         PublishProfilePath profile, SortedArray<SqlCmdVariable> sqlCmd, SecretReference? metamodel) =>
         (Name, Host, Classification, ReaderGroups, Connection, Profile, SqlCmd, Metamodel) = (name, host, classification, readerGroups, connection, profile, sqlCmd, metamodel);
 
-    /// <summary>The key estate/environments.json gives it: dev, qa, uat.</summary>
+    /// <summary>The key dbchange/environments.json gives it: dev, qa, uat.</summary>
     public EnvironmentName Name { get; }
 
     /// <summary>The host its SQL Server runs on, as the environments file names it.</summary>
@@ -100,7 +100,7 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 
     public SecretReference Connection { get; }
 
-    /// <summary>The pipeline's publish profile for the environment, from the estate's root.</summary>
+    /// <summary>The pipeline's publish profile for the environment, from the repository root.</summary>
     public PublishProfilePath Profile { get; }
 
     public SortedArray<SqlCmdVariable> SqlCmd { get; }
@@ -127,8 +127,8 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 }
 
 /// <summary>
-/// A publish profile's path as the environments file gives it, from the estate's root: '/' between parts, none empty, '.' or '..', no ':', '\' or
-/// control character, not led by '/', ending in .publish.xml; so it names a file inside the estate on every operating system.
+/// A publish profile's path as the environments file gives it, from the repository root: '/' between parts, none empty, '.' or '..', no ':', '\' or
+/// control character, not led by '/', ending in .publish.xml; so it names a file inside the repository on every operating system.
 /// default(PublishProfilePath) is not a path.
 /// </summary>
 public readonly record struct PublishProfilePath : IComparable<PublishProfilePath>
@@ -139,8 +139,8 @@ public readonly record struct PublishProfilePath : IComparable<PublishProfilePat
 
     /// <summary>The path <paramref name="text"/> gives, or environments.profile-path led by <paramref name="subject"/>.</summary>
     public static Result<PublishProfilePath> Of(string subject, string? text) => InsideTheEstate(text) ? new PublishProfilePath(text!)
-        : new Error("environments.profile-path", subject + " gives its profile a path that leaves the estate or names no .publish.xml.",
-            "Write the profile's path from the estate's root with '/' between its parts, such as estate/profiles/pipeline.publish.xml.");
+        : new Error("environments.profile-path", subject + " gives its profile a path that leaves the repository or names no .publish.xml.",
+            "Write the profile's path from the repository root with '/' between its parts, such as dbchange/profiles/pipeline.publish.xml.");
 
     /// <summary>Ordinally.</summary>
     public int CompareTo(PublishProfilePath other) => string.CompareOrdinal(_text, other._text);

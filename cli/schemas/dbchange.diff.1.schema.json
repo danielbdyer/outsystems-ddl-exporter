@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "estate.read/1",
-  "description": "What estate read --json writes: the envelope, and read.",
-  "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with ESTATE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
+  "title": "dbchange.diff/1",
+  "description": "What dbchange diff --json writes: the envelope, and diff.",
+  "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with DBCHANGE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -19,11 +19,11 @@
     "provenance",
     "truncated",
     "full",
-    "read"
+    "diff"
   ],
   "properties": {
     "schema": {
-      "const": "estate.read/1"
+      "const": "dbchange.diff/1"
     },
     "outcome": {
       "enum": [
@@ -32,7 +32,7 @@
         "build-failed",
         "configuration-refused",
         "differs",
-        "done",
+        "in-sync",
         "interrupted",
         "refused-by-name",
         "unparsed-input",
@@ -139,11 +139,11 @@
         },
         {
           "type": "string",
-          "pattern": "^\\.estate/runs/[^/]+/answer\\.json$"
+          "pattern": "^\\.dbchange/runs/[^/]+/answer\\.json$"
         }
       ]
     },
-    "read": {
+    "diff": {
       "anyOf": [
         {
           "type": "null"
@@ -153,62 +153,237 @@
           "additionalProperties": false,
           "required": [
             "from",
-            "fingerprint",
-            "count",
-            "elements"
+            "to",
+            "counts",
+            "change"
           ],
           "properties": {
             "from": {
-              "type": "string",
-              "minLength": 1
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "from",
+                "fingerprint"
+              ],
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              }
             },
-            "fingerprint": {
-              "type": "string",
-              "pattern": "^sha256:[0-9a-f]{64}$"
+            "to": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "from",
+                "fingerprint"
+              ],
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                }
+              }
             },
-            "count": {
-              "type": "integer",
-              "minimum": 0
+            "counts": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "created",
+                "dropped",
+                "renamed",
+                "altered",
+                "caseOnlyRenamed"
+              ],
+              "properties": {
+                "created": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "dropped": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "renamed": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "altered": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "caseOnlyRenamed": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
             },
-            "elements": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "key",
-                  "properties",
-                  "relationships"
-                ],
-                "properties": {
-                  "key": {
+            "change": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "created",
+                "dropped",
+                "renamed",
+                "caseOnlyRenamed",
+                "altered"
+              ],
+              "properties": {
+                "created": {
+                  "type": "array",
+                  "items": {
                     "type": "string",
                     "minLength": 1
                   },
-                  "properties": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "type": [
-                        "boolean",
-                        "integer",
-                        "string",
-                        "null"
-                      ]
-                    }
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+                },
+                "dropped": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
                   },
-                  "relationships": {
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+                },
+                "renamed": {
+                  "type": "array",
+                  "items": {
                     "type": "object",
-                    "additionalProperties": {
-                      "type": "array",
-                      "items": {
+                    "additionalProperties": false,
+                    "required": [
+                      "before",
+                      "after"
+                    ],
+                    "properties": {
+                      "before": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "after": {
                         "type": "string",
                         "minLength": 1
                       }
                     }
-                  }
+                  },
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+                },
+                "caseOnlyRenamed": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "before",
+                      "after"
+                    ],
+                    "properties": {
+                      "before": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "after": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+                },
+                "altered": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "key",
+                      "properties",
+                      "relationships"
+                    ],
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "properties": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "name",
+                            "before",
+                            "after"
+                          ],
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "before": {
+                              "type": [
+                                "boolean",
+                                "integer",
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "after": {
+                              "type": [
+                                "boolean",
+                                "integer",
+                                "string",
+                                "null"
+                              ]
+                            }
+                          }
+                        }
+                      },
+                      "relationships": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "name",
+                            "before",
+                            "after"
+                          ],
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "before": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "after": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
                 }
-              },
-              "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
+              }
             }
           }
         }
@@ -355,6 +530,7 @@
         "properties": {
           "exit": {
             "enum": [
+              0,
               5
             ]
           }
@@ -365,7 +541,7 @@
       "if": {
         "properties": {
           "outcome": {
-            "const": "done"
+            "const": "in-sync"
           }
         }
       },

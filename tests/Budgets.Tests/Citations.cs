@@ -6,14 +6,14 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using Xunit;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// Every path an engine document cites resolves. The rule, as small as it can be and still honest:
 /// <list type="bullet">
 /// <item>A citation is a relative markdown link, or a backticked span of one word of path characters that holds a '/'
 /// or ends in an extension this repository's files carry. Only the spans named in <see cref="Elsewhere"/> are skipped:
-/// another repository's paths (the estate's pipeline checks its own), a branch, and a C# construct. So a misspelt root file
+/// another repository's paths (the SSDT repository's pipeline checks its own), a branch, and a C# construct. So a misspelt root file
 /// or directory (<c>DECISION.md</c>, <c>kernal/</c>) is a citation, and it fails.</item>
 /// <item>It resolves when the file or directory exists, a bare file name when some file outside archive/ carries that
 /// name; when it lies under a run-time root or is a file a verb writes at run time, which git never holds; when its
@@ -32,14 +32,14 @@ public sealed class Citations
     private static readonly string[] Extensions = [".md", ".json", ".cs", ".csproj", ".props", ".sh", ".txt", ".sln", ".allow"];
 
     /// <summary>
-    /// Path-shaped spans that are not this repository's: the estate repository's files (<c>estate/…</c> and
-    /// <c>tools/estate/</c>), the corporate agent's <c>STATE.md</c>, a branch (<c>claude/…</c>, <c>wp/…</c>), and
+    /// Path-shaped spans that are not this repository's: the SSDT repository's files (<c>dbchange/…</c> and
+    /// <c>tools/dbchange/</c>), the corporate agent's <c>STATE.md</c>, a branch (<c>claude/…</c>, <c>wp/…</c>), and
     /// <c>try/finally</c>, which is C#. Each is a prefix; nothing else is skipped.
     /// </summary>
-    private static readonly string[] Elsewhere = ["estate/", "tools/estate/", "STATE.md", "claude/", "wp/", "try/finally"];
+    private static readonly string[] Elsewhere = ["dbchange/", "tools/dbchange/", "STATE.md", "claude/", "wp/", "try/finally"];
 
     /// <summary>Where the tool writes at run time: git ignores the roots, and a verb writes the files wherever --out says.</summary>
-    private static readonly string[] RunTime = [".estate/", "dist/", "gate.json", "changelog.json"];
+    private static readonly string[] RunTime = [".dbchange/", "dist/", "gate.json", "changelog.json"];
 
     private static readonly (string Path, int Milestone)[] PlannedDirectories = [("knowledge/", 7), ("tests/Golden/", 0)];
 
@@ -77,10 +77,10 @@ public sealed class Citations
     [InlineData("DECISION.md", true)]
     [InlineData("LAWS.md", true)]
     [InlineData("packages.lock.json", true)]
-    [InlineData(".estate/copies.json", true)]
+    [InlineData(".dbchange/copies.json", true)]
     [InlineData("knowledge/description.md", true)]
-    [InlineData("estate/ledgers/in-flight.md", false)]
-    [InlineData("tools/estate/", false)]
+    [InlineData("dbchange/ledgers/in-flight.md", false)]
+    [InlineData("tools/dbchange/", false)]
     [InlineData("STATE.md", false)]
     [InlineData("claude/v3-build", false)]
     [InlineData("wp/0.6", false)]
@@ -124,7 +124,7 @@ public sealed class Citations
     [InlineData("| E4 | … | `io/Emit.cs`, not held yet: the cutover tools | … |", 8, "io/Emit.cs")]
     [InlineData("extract the BlockOnPossibleDataLoss checks into `tests/Golden/data-loss-checks/`", 0, "")]
     [InlineData("extract the BlockOnPossibleDataLoss checks into `tests/Golden/data-loss-checks/`", 1, "tests/Golden/data-loss-checks/")]
-    [InlineData("builds `cli` into `.estate/bin/` when stale; no `gate.json` carries a password", 0, "")]
+    [InlineData("builds `cli` into `.dbchange/bin/` when stale; no `gate.json` carries a password", 0, "")]
     [InlineData("`packages.lock.json` in every project", 0, "")]
     public void A_missing_path_resolves_only_through_a_milestone_its_own_clause_names(string line, int milestone, string unresolved) =>
         Assert.Equal(unresolved, string.Join(", ", Unresolved(line, "", n => n < milestone)));

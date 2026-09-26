@@ -1,10 +1,10 @@
 using System;
 using System.Linq;
 using CsCheck;
-using Estate.Tests;
+using DbChange.Tests;
 using Xunit;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>
 /// A Name is one or two parts, each 1 to 128 UTF-16 code units, whatever the units are: SQL Server admits white space and control

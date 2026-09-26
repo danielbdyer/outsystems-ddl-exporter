@@ -107,7 +107,7 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
-      "Estate.Kernel": {
+      "DbChange.Kernel": {
         "type": "Project"
       }
     }

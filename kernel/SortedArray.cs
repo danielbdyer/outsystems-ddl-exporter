@@ -6,7 +6,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
 /// The kernel's one collection: immutable, sorted when it is built, and equal to another SortedArray exactly when their

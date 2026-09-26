@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Estate.Kernel;
+using DbChange.Kernel;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
 /// check drift as a use case (contract C7, R3): whether a database has drifted from the repository at a ref (§1 fact 4, law 2′). Its steps,
@@ -25,14 +25,14 @@ public static class DriftCheck
     /// </summary>
     public sealed record Answer(Target Target, GitRef At, string Commit, Drift Drift, Collation Collation, Provenance Provenance, string Profile, IReadOnlyList<Finding> Notes);
 
-    /// <summary>Where check drift runs: the estate's root, the working directory, the tool folder ESTATE_TOOL names, if any, and estate's own version, which the toolchain ledger's rows name.</summary>
-    public sealed record Estate(string Root, string WorkingDirectory, string? Tool, string Version);
+    /// <summary>Where check drift runs: the repository root, the working directory, the tool folder DBCHANGE_TOOL names, if any, and dbchange's own version, which the toolchain ledger's rows name.</summary>
+    public sealed record Checkout(string Root, string WorkingDirectory, string? Tool, string Version);
 
     /// <summary>check drift, the database read by io/DacFx.Extract.</summary>
-    public static Stamped<Answer> Run(Estate estate, Request request, SqlServer.QueryLog log) => Run(estate, request, log, database => DacFx.Extract(database));
+    public static Stamped<Answer> Run(Checkout checkout, Request request, SqlServer.QueryLog log) => Run(checkout, request, log, database => DacFx.Extract(database));
 
     /// <summary>check drift, the database read by <paramref name="extract"/>, as a test gives it.</summary>
-    internal static Stamped<Answer> Run(Estate estate, Request request, SqlServer.QueryLog log, Func<SqlServer.Database, Result<Ssdt.Package>> extract)
+    internal static Stamped<Answer> Run(Checkout checkout, Request request, SqlServer.QueryLog log, Func<SqlServer.Database, Result<Ssdt.Package>> extract)
     {
         if (DacFx.Version is not Result<DacFxVersion>.Ok { Value: var dacfx })
         {
@@ -40,7 +40,7 @@ public static class DriftCheck
         }
 
         var stamp = new Stamp(dacfx);
-        var pinned = Doctor.Toolchain(estate.Root, estate.Version);
+        var pinned = Doctor.Toolchain(checkout.Root, checkout.Version);
         if (pinned is not Result<Pin>.Ok { Value: var pin })
         {
             return new(stamp, ((Result<Pin>.Failed)pinned).Error);
@@ -52,9 +52,9 @@ public static class DriftCheck
             return new(stamp, outside);
         }
 
-        var environmentsFile = EnvironmentsFile.Read(estate.Root);
-        var reached = SqlServer.Resolve(request.Target, environmentsFile, estate.Root)
-            .Bind(database => Profile(estate.Root, database, environmentsFile, request.Profile).Map(profile => (Database: database, Profile: profile)))
+        var environmentsFile = EnvironmentsFile.Read(checkout.Root);
+        var reached = SqlServer.Resolve(request.Target, environmentsFile, checkout.Root)
+            .Bind(database => Profile(checkout.Root, database, environmentsFile, request.Profile).Map(profile => (Database: database, Profile: profile)))
             .Bind(chosen => SqlServer.Reach(chosen.Database, log).Map(readable => (chosen.Database, chosen.Profile, Readable: readable)))
             .Bind(chosen => (chosen.Database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, log).Map(server => (Server?)server) : Result.Ok<Server?>(null))
                 .Map(server => (chosen.Database, chosen.Profile, chosen.Readable, Server: server)));
@@ -65,7 +65,7 @@ public static class DriftCheck
 
         stamp = stamp with { Server = target.Server };
         var decided = stamp;
-        return new(stamp, Ssdt.Build(estate.Root, request.At.ToString(), request.Project, estate.Tool, estate.WorkingDirectory)
+        return new(stamp, Ssdt.Build(checkout.Root, request.At.ToString(), request.Project, checkout.Tool, checkout.WorkingDirectory)
             .Bind(built => Ssdt.Open(built.Built.Path).Bind(package =>
             {
                 using (package)
@@ -93,10 +93,10 @@ public static class DriftCheck
 
     /// <summary>What the ref's package says that a plan package to package leaves out: a pre-plan script, which a live deploy runs and this plan does not.</summary>
     private static IEnumerable<Finding> Notes(Ssdt.Package package) => package.PrePlan is null ? [] : [Finding.Note("package.pre-plan-script", package.Source,
-        "The package carries a pre-plan script; DacFx runs it against a live target before planning, and estate plans package to package, so it does not run here.")];
+        "The package carries a pre-plan script; DacFx runs it against a live target before planning, and dbchange plans package to package, so it does not run here.")];
 
     /// <summary>
-    /// The pipeline's profile for the database: a named environment's own; for a copy, the one the caller names, from the estate's root, else
+    /// The pipeline's profile for the database: a named environment's own; for a copy, the one the caller names, from the repository root, else
     /// the one profile every environment of the environments file names.
     /// </summary>
     private static Result<PublishProfile.Strict> Profile(string root, SqlServer.Database database, Result<Environments> environmentsFile, string? named) =>
@@ -105,5 +105,5 @@ public static class DriftCheck
         : environmentsFile.Bind(environments => environments.SharedProfile is { } shared
             ? PublishProfiles.Load(Path.GetFullPath(Path.Combine(root, shared.ToString())))
             : new Error("arguments.missing-flag", database + " is a copy, and " + EnvironmentsFile.Json + " names no one profile its environments share.",
-                "Name the profile to plan under with estate check drift --profile <the pipeline's .publish.xml>."));
+                "Name the profile to plan under with dbchange check drift --profile <the pipeline's .publish.xml>."));
 }

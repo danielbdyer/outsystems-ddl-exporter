@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using CsCheck;
-using Estate.Budgets.Tests;
-using Estate.Kernel;
-using Estate.Tests;
+using DbChange.Budgets.Tests;
+using DbChange.Kernel;
+using DbChange.Tests;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// The aggregate-query allowlist (V3_MILESTONES.md WP 1.4, VALUES.md P2): a query is admitted only when it is one SELECT whose

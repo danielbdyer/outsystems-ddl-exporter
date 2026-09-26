@@ -2,7 +2,7 @@ using System;
 using CsCheck;
 using Xunit;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>A finding is a code, a severity, a subject and a message; one of severity error carries a remedy, which its factory cannot be given blank.</summary>
 public sealed class FindingTests
@@ -34,11 +34,11 @@ public sealed class FindingTests
     [Trait("Category", "fast")]
     public void A_warning_may_carry_a_remedy_or_none_and_a_note_carries_none()
     {
-        var warned = Finding.Warning("drift.alter", "Table [dbo].[Customer]", "The deploy plan would alter it.", "Run estate diff to see each property.");
+        var warned = Finding.Warning("drift.alter", "Table [dbo].[Customer]", "The deploy plan would alter it.", "Run dbchange diff to see each property.");
         var bare = Finding.Warning("drift.column", "Column [dbo].[Customer].[Email]", "Length 300 → 256.");
-        var noted = Finding.Note("toolchain.unpinned", "estate/ledgers/toolchain.md", "The ledger pins no DacFx release.");
+        var noted = Finding.Note("toolchain.unpinned", "dbchange/ledgers/toolchain.md", "The ledger pins no DacFx release.");
 
-        Assert.Equal((Severity.Warning, "Run estate diff to see each property."), (warned.Severity, warned.Remedy));
+        Assert.Equal((Severity.Warning, "Run dbchange diff to see each property."), (warned.Severity, warned.Remedy));
         Assert.Equal((Severity.Warning, null), (bare.Severity, bare.Remedy));
         Assert.Equal((Severity.Note, null), (noted.Severity, noted.Remedy));
     }
@@ -54,7 +54,7 @@ public sealed class FindingTests
     {
         Assert.Throws<ArgumentException>("code", () => Finding.Warning(code, "Table [dbo].[Customer]", "The deploy plan would alter it."));
         Assert.Throws<ArgumentException>("code", () => Finding.Note(code, "Table [dbo].[Customer]", "The deploy plan would alter it."));
-        Assert.Throws<ArgumentException>("code", () => Finding.Error(code, "Table [dbo].[Customer]", "The deploy plan would alter it.", "Run estate diff."));
+        Assert.Throws<ArgumentException>("code", () => Finding.Error(code, "Table [dbo].[Customer]", "The deploy plan would alter it.", "Run dbchange diff."));
     }
 
     [Fact]
@@ -63,6 +63,6 @@ public sealed class FindingTests
         Blank.Sample(blank =>
         {
             Assert.Throws<ArgumentException>("subject", () => Finding.Note("diff.unlike-sources", blank!, "One side is a database."));
-            Assert.Throws<ArgumentException>("message", () => Finding.Note("diff.unlike-sources", "estate diff", blank!));
+            Assert.Throws<ArgumentException>("message", () => Finding.Note("diff.unlike-sources", "dbchange diff", blank!));
         });
 }

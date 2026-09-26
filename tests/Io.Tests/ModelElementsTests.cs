@@ -6,18 +6,18 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
-using Estate.Budgets.Tests;
-using Estate.Kernel;
+using DbChange.Budgets.Tests;
+using DbChange.Kernel;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/Ssdt.ReadModel (WP 1.2) against real builds: law 3′'s io half (M1 exit 4) and WP 1.3's sample-change properties, each
-/// sample change an edited copy of the golden project built against dist/estate/ and read into elements. A package's model is compared
+/// sample change an edited copy of the golden project built against dist/dbchange/ and read into elements. A package's model is compared
 /// with a package's only. Make-mandatory edits Customer.Email, the golden project's own populated nullable column (the seed
 /// plants rows with and without an Email).
 /// </summary>
@@ -683,7 +683,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
     /// <summary>
     /// The read did not change what it reads: the golden project published to a registered database, its elements as DacFx.Extract's package
-    /// gives them equal its elements as TSqlModel.LoadFromDatabase gave them under the options estate read a database with until
+    /// gives them equal its elements as TSqlModel.LoadFromDatabase gave them under the options dbchange read a database with until
     /// 2026-09-25, kept here alone.
     /// </summary>
     [Fact]
@@ -882,7 +882,7 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
     /// <summary>The scripts packaged by DacFx under the temp folder, with the refactorlog's text as the package's refactor.xml where one is given; the caller deletes it with <see cref="Delete"/>.</summary>
     private static string Built(string? refactorlog, params string[] scripts)
     {
-        var path = Path.Combine(Path.GetTempPath(), "estate-model-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(Path.GetTempPath(), "dbchange-model-" + Guid.NewGuid().ToString("N"));
         if (refactorlog is not null)
         {
             File.WriteAllText(path + ".refactorlog", refactorlog);
@@ -935,8 +935,8 @@ public sealed class ModelElementsTests(GoldenProjectModels heads, ITestOutputHel
 
 /// <summary>
 /// The golden project built twice from two copies, and once per head from a copy with the head's edits, all against
-/// dist/estate/ and in parallel, each loaded and read into elements; then the base read again, alone, for the reading's time. The tree
-/// under .estate/models/ is dropped after.
+/// dist/dbchange/ and in parallel, each loaded and read into elements; then the base read again, alone, for the reading's time. The tree
+/// under .dbchange/models/ is dropped after.
 /// </summary>
 public sealed class GoldenProjectModels : IAsyncLifetime
 {
@@ -992,7 +992,7 @@ public sealed class GoldenProjectModels : IAsyncLifetime
             "CREATE PROCEDURE dbo.WithParameter @Id INT AS SELECT @Id AS Id;", "CREATE ROLE MeasuredReader;", "GRANT SELECT ON dbo.Measured TO MeasuredReader;"))],
     };
 
-    private readonly string root = Path.Combine(Repository.Root, ".estate", "models", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);
+    private readonly string root = Path.Combine(Repository.Root, ".dbchange", "models", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);
 
     public Dictionary<string, Ssdt.ModelElements> Models { get; } = [];
 

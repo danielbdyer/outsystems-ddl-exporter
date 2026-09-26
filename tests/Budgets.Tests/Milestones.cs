@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Xunit;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// The milestones' exits (DECISIONS.md, 2026-09-25): a test that runs one declares [Trait("Exit", "M&lt;n&gt;.&lt;k&gt;")], and each such trait
@@ -47,10 +47,10 @@ public sealed class Milestones
     [Trait("Category", "fast")]
     [InlineData("M1.1;M1.2", "", true)]
     [InlineData("M1.1", "", false)]
-    [InlineData("M1.1", "- Run the laptop check against Dev (M1 exit 2, spikes S1 and S3) with `estate check drift --target env:dev --at v1`.", true)]
+    [InlineData("M1.1", "- Run the laptop check against Dev (M1 exit 2, spikes S1 and S3) with `dbchange check drift --target env:dev --at v1`.", true)]
     [InlineData("M1.1", "- Run the laptop check against Dev (M1 exit 2, spikes S1 and S3) with the tool folder built at `e0a4db94`.", false)]
-    [InlineData("M1.1", "- Run `estate check drift --target env:dev --at v1` for M2 exit 2.", false)]
-    public void A_milestone_is_complete_when_each_exit_has_a_test_or_a_NEXT_md_line_naming_it_beside_the_estate_command_a_person_runs(string declared, string next, bool complete)
+    [InlineData("M1.1", "- Run `dbchange check drift --target env:dev --at v1` for M2 exit 2.", false)]
+    public void A_milestone_is_complete_when_each_exit_has_a_test_or_a_NEXT_md_line_naming_it_beside_the_dbchange_command_a_person_runs(string declared, string next, bool complete)
     {
         var exits = new Dictionary<int, IReadOnlyList<int>> { [1] = [1, 2] };
 

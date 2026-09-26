@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
 /// A SQLCMD variable's value, in one of two closed cases Match alone reads: a literal, committed only where marked non-sensitive, or a
@@ -29,7 +29,7 @@ public abstract record SqlCmdVariable : IComparable<SqlCmdVariable>
     public static Result<SqlCmdVariable> Of(string subject, string name, string literal) => SqlCmdName.Of(subject, name).Bind(named =>
         Credential.Any(word => name.Contains(word, StringComparison.OrdinalIgnoreCase))
             ? new Error("sqlcmd.literal-credential", subject + " gives " + Placeholder(name) + " a literal, and a name shaped like a credential takes a reference.",
-                "Give " + Placeholder(name) + " as env:NAME or file:path in the environment's sqlcmd in estate/environments.json, and delete the literal.")
+                "Give " + Placeholder(name) + " as env:NAME or file:path in the environment's sqlcmd in dbchange/environments.json, and delete the literal.")
             : Result.Ok<SqlCmdVariable>(new Literal(named, literal)));
 
     public static Result<SqlCmdVariable> Of(string subject, string name, SecretReference reference) =>
@@ -49,7 +49,7 @@ public abstract record SqlCmdVariable : IComparable<SqlCmdVariable>
             .ToDictionary(StringComparer.OrdinalIgnoreCase);
         return Used.Matches(script).Select(m => m.Groups["name"].Value).FirstOrDefault(name => !byName.ContainsKey(name)) is { } missing
             ? new Error("sqlcmd.undefined", "The script uses " + Placeholder(missing) + ", and no SQLCMD value is given for it.",
-                "Give " + missing + " a value in the environment's sqlcmd in estate/environments.json, or in the pipeline's profile.")
+                "Give " + missing + " a value in the environment's sqlcmd in dbchange/environments.json, or in the pipeline's profile.")
             : Used.Replace(script, m => byName[m.Groups["name"].Value]);
     }
 
@@ -98,7 +98,7 @@ public abstract record SqlCmdVariable : IComparable<SqlCmdVariable>
 }
 
 /// <summary>
-/// A SQLCMD variable's name, as a project's SqlCmdVariable, a publish profile, estate/environments.json and a package's declarations
+/// A SQLCMD variable's name, as a project's SqlCmdVariable, a publish profile, dbchange/environments.json and a package's declarations
 /// (DacPackage.SqlCmdVariables) name one, on the one name pattern. sqlcmd matches names in any case, so two names differing only in
 /// case are one name: equal, ordered as one, and hashed alike. It prints as it was written. default(SqlCmdName) is not a name.
 /// </summary>

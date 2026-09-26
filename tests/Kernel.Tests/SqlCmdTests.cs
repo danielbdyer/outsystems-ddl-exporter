@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using CsCheck;
-using Estate.Tests;
+using DbChange.Tests;
 using Xunit;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>
 /// The SQLCMD grammar a deploy script is written in, held once: a variable's name, its placeholder $(name), sqlcmd's substitution of it,

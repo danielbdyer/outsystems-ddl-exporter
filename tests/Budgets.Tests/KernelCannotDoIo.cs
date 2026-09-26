@@ -4,14 +4,14 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
-using Estate.Cli;
-using Estate.Kernel;
+using DbChange.Cli;
+using DbChange.Kernel;
 using Xunit;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
-/// The kernel cannot do I/O: the Estate.Kernel assembly references the BCL (the shared framework, which carries
+/// The kernel cannot do I/O: the DbChange.Kernel assembly references the BCL (the shared framework, which carries
 /// System.Collections.Immutable) and nothing else, and no public kernel member returns a Task, a ValueTask or an
 /// IAsyncEnumerable. kernel/BannedSymbols.txt holds the rest (BannedSymbolsTests).
 /// </summary>
@@ -27,7 +27,7 @@ public sealed class KernelCannotDoIo
     {
         Assert.Empty(OutsideTheBcl(Kernel));
         Assert.Contains(Kernel.GetReferencedAssemblies(), a => a.Name == "System.Collections.Immutable");
-        Assert.Contains("Estate.Io", OutsideTheBcl(typeof(Contract).Assembly));   // the rule goes red on an assembly that does I/O
+        Assert.Contains("DbChange.Io", OutsideTheBcl(typeof(Contract).Assembly));   // the rule goes red on an assembly that does I/O
     }
 
     [Fact]

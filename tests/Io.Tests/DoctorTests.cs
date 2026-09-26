@@ -4,17 +4,17 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using Estate.Budgets.Tests;
-using Estate.Budgets.Tests.Register;
-using Estate.Tests;
+using DbChange.Budgets.Tests;
+using DbChange.Budgets.Tests.Register;
+using DbChange.Tests;
 using Xunit;
-using static Estate.Tests.Expect;
+using static DbChange.Tests.Expect;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/Doctor (WP 1.7): read-only checks of the SDK and the runtime, git, the tool folder and its DacFx against the toolchain ledger, the build
-/// route, the local server estate would use and its image, and Git LFS, with a remedy for each item missing, on a machine the test describes
+/// route, the local server dbchange would use and its image, and Git LFS, with a remedy for each item missing, on a machine the test describes
 /// and with programs a stand-in runner answers; and R13's window, the committed DacFx against a sample ledger's row.
 /// </summary>
 public sealed class DoctorTests : IDisposable
@@ -55,12 +55,12 @@ public sealed class DoctorTests : IDisposable
         Publish();
         machine.File("global.json", """{ "sdk": { "version": "10.0.401", "rollForward": "latestPatch" } }""");
 
-        var checks = Doctor.Examine(Bare(sqlEnv: SqlEnv()) with { WorkingDirectory = machine.Folder(Path.Combine("estate", "src")) }, Answers(Everything), Version);
+        var checks = Doctor.Examine(Bare(sqlEnv: SqlEnv()) with { WorkingDirectory = machine.Folder(Path.Combine("dbchange", "src")) }, Answers(Everything), Version);
 
         Assert.All(checks, c => Assert.Null(c.Remedy));
         Assert.Equal(
             ["sdk=10.0.402", "runtime=" + Environment.Version, "tool=published", "dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED)", "build=dotnet with the tool folder's targets", "git=2.31.1",
-                "local-server=estate-sql container (localhost,11433)", "image=present", "lfs=git-lfs/3.4.0"],   // the loopback address as SqlServer.Host spells it
+                "local-server=dbchange-sql container (localhost,11433)", "image=present", "lfs=git-lfs/3.4.0"],   // the loopback address as SqlServer.Host spells it
             checks.Select(c => c.Item + "=" + c.Found));
     }
 
@@ -79,8 +79,8 @@ public sealed class DoctorTests : IDisposable
     /// <summary>
     /// R13's window over the sample ledger's row, each row written relative to the committed DacFx (<see cref="Near"/>): the committed
     /// DacFx is accepted at the pin and at the release immediately before it, and anything else, newer or older, is rejected, as is a
-    /// ledger with no row for this estate or a malformed one; while the row reads UNPINNED every DacFx is accepted and the doctor says
-    /// UNPINNED; an estate committing no ledger is unpinned.
+    /// ledger with no row for this dbchange version or a malformed one; while the row reads UNPINNED every DacFx is accepted and the doctor says
+    /// UNPINNED; an SSDT repository committing no ledger is unpinned.
     /// </summary>
     public static TheoryData<string, string?, string?, string> Windows => new()
     {
@@ -89,8 +89,8 @@ public sealed class DoctorTests : IDisposable
         { "a pin older than the DacFx", "| 2026-09-25 | 3.0.0 | " + Near(-1) + " | " + Near(-2) + " |", "toolchain.outside-window", "outside the pin " + Near(-1) },
         { "a pin two releases newer", "| 2026-09-25 | 3.0.0 | " + Near(2) + " | " + Near(1) + " |", "toolchain.outside-window", "outside the pin " + Near(2) },
         { "UNPINNED", "| 2026-09-25 | 3.0.0 | UNPINNED | — |", null, "UNPINNED" },
-        { "the latest row of this estate's", "| 2026-09-26 | 3.0.0 | " + Near(-1) + " | " + Near(-2) + " |\n| 2026-09-25 | 3.0.0 | " + Committed + " | — |", "toolchain.outside-window", "outside the pin " + Near(-1) },
-        { "no row for this estate", "| 2026-09-25 | 3.1.0 | " + Committed + " | — |", "toolchain.unrecorded", "has no dated row for estate 3.0.0" },
+        { "the latest row of this dbchange version's", "| 2026-09-26 | 3.0.0 | " + Near(-1) + " | " + Near(-2) + " |\n| 2026-09-25 | 3.0.0 | " + Committed + " | — |", "toolchain.outside-window", "outside the pin " + Near(-1) },
+        { "no row for this dbchange version", "| 2026-09-25 | 3.1.0 | " + Committed + " | — |", "toolchain.unrecorded", "has no dated row for dbchange 3.0.0" },
         { "a malformed pin", "| 2026-09-25 | 3.0.0 | the latest | — |", "toolchain.malformed", "no DacFx release" },
         { "no ledger", null, null, "UNPINNED" },
     };
@@ -181,7 +181,7 @@ public sealed class DoctorTests : IDisposable
         var eleven = Doctor.Examine(Bare(runtime: new Version(11, 0, 0)), Nothing, Version).Single(c => c.Item == Doctor.Item.Runtime);
         var ten = Doctor.Examine(Bare(runtime: new Version(10, 0, 5)), Nothing, Version).Single(c => c.Item == Doctor.Item.Runtime);
 
-        Assert.Equal(("11.0.0", "Install the .NET 10 runtime; estate runs on .NET 10 alone."), (eleven.Found, eleven.Remedy));
+        Assert.Equal(("11.0.0", "Install the .NET 10 runtime; dbchange runs on .NET 10 alone."), (eleven.Found, eleven.Remedy));
         Assert.Equal(("10.0.5", null), (ten.Found, ten.Remedy));
     }
 
@@ -196,7 +196,7 @@ public sealed class DoctorTests : IDisposable
         Assert.Contains("older than 2.24", old.Found, StringComparison.Ordinal);
         Assert.Contains("rev-parse --end-of-options", old.Found, StringComparison.Ordinal);
         Assert.NotNull(old.Remedy);
-        Assert.Equal(("absent", "Install git and put it on the PATH, then run estate doctor."), (absent.Found, absent.Remedy));
+        Assert.Equal(("absent", "Install git and put it on the PATH, then run dbchange doctor."), (absent.Found, absent.Remedy));
         Assert.Equal(("2.43.0", null), (linux.Found, linux.Remedy));
     }
 
@@ -206,11 +206,11 @@ public sealed class DoctorTests : IDisposable
     public void A_tool_folder_whose_DacFx_build_task_is_another_release_is_named_as_a_stale_publish()
     {
         Publish();
-        File.Copy(Path.Combine(AppContext.BaseDirectory, "Estate.Kernel.dll"), machine.Under("Microsoft.Data.Tools.Schema.Tasks.Sql.dll"));   // a file with another version
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "DbChange.Kernel.dll"), machine.Under("Microsoft.Data.Tools.Schema.Tasks.Sql.dll"));   // a file with another version
 
         var tool = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.Tool);
 
-        Assert.Contains("while estate runs DacFx " + DacFx.Version.Match(v => v.ToString(), e => e.Message), tool.Found, StringComparison.Ordinal);
+        Assert.Contains("while dbchange runs DacFx " + DacFx.Version.Match(v => v.ToString(), e => e.Message), tool.Found, StringComparison.Ordinal);
         Assert.Contains("ci/publish.sh", tool.Remedy, StringComparison.Ordinal);
     }
 
@@ -224,17 +224,17 @@ public sealed class DoctorTests : IDisposable
         Assert.Equal(("not needed without Docker", null), (checks["image"].Found, checks["image"].Remedy));
     }
 
-    /// <summary>ESTATE_SQL names the local server first, in io/LocalServer's order: no docker or sqllocaldb runs, and the image is not needed.</summary>
+    /// <summary>DBCHANGE_SQL names the local server first, in io/LocalServer's order: no docker or sqllocaldb runs, and the image is not needed.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void The_local_server_is_the_one_estate_would_use_ESTATE_SQL_first()
+    public void The_local_server_is_the_one_dbchange_would_use_DBCHANGE_SQL_first()
     {
-        Ran NeverDocker(Command c, CancellationToken t) => c.Program is "docker" or "sqllocaldb" ? throw new Xunit.Sdk.XunitException(c + " ran while ESTATE_SQL names the server") : Answers(Everything)(c, t);
+        Ran NeverDocker(Command c, CancellationToken t) => c.Program is "docker" or "sqllocaldb" ? throw new Xunit.Sdk.XunitException(c + " ran while DBCHANGE_SQL names the server") : Answers(Everything)(c, t);
 
-        var checks = Doctor.Examine(Bare(estateSql: "Server=tcp:DB-Host,1433;User ID=sa;Password=" + PlantedValue.Password, sqlEnv: SqlEnv()), NeverDocker, Version).ToDictionary(c => c.Item.Name);
+        var checks = Doctor.Examine(Bare(dbChangeSql: "Server=tcp:DB-Host,1433;User ID=sa;Password=" + PlantedValue.Password, sqlEnv: SqlEnv()), NeverDocker, Version).ToDictionary(c => c.Item.Name);
 
-        Assert.Equal(("ESTATE_SQL (db-host,1433)", null), (checks["local-server"].Found, checks["local-server"].Remedy));
-        Assert.Equal(("not needed: ESTATE_SQL names the server", null), (checks["image"].Found, checks["image"].Remedy));
+        Assert.Equal(("DBCHANGE_SQL (db-host,1433)", null), (checks["local-server"].Found, checks["local-server"].Remedy));
+        Assert.Equal(("not needed: DBCHANGE_SQL names the server", null), (checks["image"].Found, checks["image"].Remedy));
         PlantedValue.Password.AbsentFrom(string.Join(" ", checks.Values.Select(c => c.Found + c.Remedy)));
     }
 
@@ -251,7 +251,7 @@ public sealed class DoctorTests : IDisposable
         Assert.DoesNotContain("Install Docker", stopped.Remedy, StringComparison.Ordinal);
         Assert.Contains("Install Docker", absent.Remedy, StringComparison.Ordinal);
         Assert.Contains("ci/sql.sh up", noContainer.Remedy, StringComparison.Ordinal);
-        Assert.Equal("estate-sql container (localhost,11433)", daemonDown.Found);
+        Assert.Equal("dbchange-sql container (localhost,11433)", daemonDown.Found);
         Assert.Contains("start Docker Desktop", daemonDown.Remedy, StringComparison.Ordinal);
     }
 
@@ -265,7 +265,7 @@ public sealed class DoctorTests : IDisposable
         Assert.Equal("absent", absent.Found);
         Assert.Contains("ci/sql.sh up", absent.Remedy, StringComparison.Ordinal);
         Assert.Contains(Doctor.SqlServerImage, absent.Remedy, StringComparison.Ordinal);
-        Assert.Equal("present, and estate-sql runs mcr.microsoft.com/mssql/server:2019-latest", other.Found);
+        Assert.Equal("present, and dbchange-sql runs mcr.microsoft.com/mssql/server:2019-latest", other.Found);
         Assert.Contains("ci/sql.sh down", other.Remedy, StringComparison.Ordinal);
     }
 
@@ -284,21 +284,21 @@ public sealed class DoctorTests : IDisposable
         return string.Create(CultureInfo.InvariantCulture, $"{release.Major}.{release.Minor + minors}.{release.Build}");
     }
 
-    /// <summary>A machine holding nothing but the test folder: no ESTATE_SQL, no sql.env unless given, this process's runtime unless given.</summary>
-    private Doctor.Machine Bare(string? estateSql = null, string? sqlEnv = null, Version? runtime = null) =>
-        new(machine.Path, null, machine.Path, estateSql, sqlEnv ?? machine.Under("no-sql.env"), runtime ?? Environment.Version);
+    /// <summary>A machine holding nothing but the test folder: no DBCHANGE_SQL, no sql.env unless given, this process's runtime unless given.</summary>
+    private Doctor.Machine Bare(string? dbChangeSql = null, string? sqlEnv = null, Version? runtime = null) =>
+        new(machine.Path, null, machine.Path, dbChangeSql, sqlEnv ?? machine.Under("no-sql.env"), runtime ?? Environment.Version);
 
     /// <summary>A sql.env as ci/sql.sh writes it, naming the container's port and password.</summary>
-    private string SqlEnv() => machine.File("sql.env", "MSSQL_SA_PASSWORD=" + PlantedValue.Password + "\nESTATE_SQL_PORT=11433\n");
+    private string SqlEnv() => machine.File("sql.env", "MSSQL_SA_PASSWORD=" + PlantedValue.Password + "\nDBCHANGE_SQL_PORT=11433\n");
 
-    /// <summary>The sample toolchain ledger under the machine's estate root, its one row replaced; the file's path.</summary>
+    /// <summary>The sample toolchain ledger under the machine's repository root, its one row replaced; the file's path.</summary>
     private string Ledger(string rows)
     {
-        var sample = File.ReadAllText(Path.Combine(Repository.Root, "tests", "Golden", "estate", "ledgers", "toolchain.md"));
-        return machine.File(Path.Combine("estate", "ledgers", "toolchain.md"), sample.Replace("| 2026-09-24 | 3.0.0 | UNPINNED | — |", rows, StringComparison.Ordinal));
+        var sample = File.ReadAllText(Path.Combine(Repository.Root, "tests", "Golden", "dbchange", "ledgers", "toolchain.md"));
+        return machine.File(Path.Combine("dbchange", "ledgers", "toolchain.md"), sample.Replace("| 2026-09-24 | 3.0.0 | UNPINNED | — |", rows, StringComparison.Ordinal));
     }
 
-    /// <summary>The files a published tool folder holds beside estate: the SqlTasks targets and the reference assemblies.</summary>
+    /// <summary>The files a published tool folder holds beside dbchange: the SqlTasks targets and the reference assemblies.</summary>
     private void Publish()
     {
         foreach (var file in (string[])["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"])

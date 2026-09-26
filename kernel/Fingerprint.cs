@@ -6,7 +6,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
 /// SHA-256 over canonical bytes, rendered as 64 lowercase hex digits: the identity of an input (a delta, a target,
@@ -117,7 +117,7 @@ public readonly record struct Fingerprint
             : new Error(
                 "fingerprint.malformed",
                 $"'{hex}' is not a fingerprint.",
-                "Give the fingerprint as estate prints it: 64 lowercase hex digits.");
+                "Give the fingerprint as dbchange prints it: 64 lowercase hex digits.");
 
     public override string ToString() =>
         string.Create(CultureInfo.InvariantCulture, $"{_w0:x16}{_w1:x16}{_w2:x16}{_w3:x16}");

@@ -3,14 +3,14 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text.Json.Nodes;
-using Estate.Budgets.Tests;
+using DbChange.Budgets.Tests;
 using Xunit;
-using Contract = Estate.Cli.Contract;
+using Contract = DbChange.Cli.Contract;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
-/// dist/estate/, published once per run by ci/publish.ps1 on Windows and ci/publish.sh elsewhere, and shared by every class
+/// dist/dbchange/, published once per run by ci/publish.ps1 on Windows and ci/publish.sh elsewhere, and shared by every class
 /// that builds against it, so no class's publish deletes the folder under another's build.
 /// </summary>
 public sealed class PublishedTool
@@ -26,20 +26,20 @@ public sealed class PublishedTool
         Output = published.Output;
     }
 
-    public string Folder { get; } = Path.Combine(Repository.Root, "dist", "estate");
+    public string Folder { get; } = Path.Combine(Repository.Root, "dist", "dbchange");
 
     public string Output { get; }
 
     /// <summary>
-    /// estate from the folder as any shell with dotnet runs it: <c>dotnet dist/estate/estate.dll</c>. The launcher beside it
+    /// dbchange from the folder as any shell with dotnet runs it: <c>dotnet dist/dbchange/dbchange.dll</c>. The launcher beside it
     /// finds .NET only where it is installed machine-wide or DOTNET_ROOT names it, and the test host sets DOTNET_ROOT for
     /// its children, so a test of the launcher would pass on a machine whose own shell cannot run it.
     /// </summary>
-    public (int Exit, string Output) Run(params string[] arguments) => Programs.InRepository("dotnet", [Path.Combine(Folder, "estate.dll"), .. arguments]).Finish().Joined();
+    public (int Exit, string Output) Run(params string[] arguments) => Programs.InRepository("dotnet", [Path.Combine(Folder, "dbchange.dll"), .. arguments]).Finish().Joined();
 
-    /// <summary>estate from the folder as its own process, run in <paramref name="estateRoot"/>, so the executable's own runtime settings load the model.</summary>
-    public (int Exit, string Output) RunAt(string estateRoot, params string[] arguments) =>
-        (Programs.InRepository("dotnet", [Path.Combine(Folder, "estate.dll"), .. arguments]) with { Directory = estateRoot }).Finish().Joined();
+    /// <summary>dbchange from the folder as its own process, run in <paramref name="repositoryRoot"/>, so the executable's own runtime settings load the model.</summary>
+    public (int Exit, string Output) RunAt(string repositoryRoot, params string[] arguments) =>
+        (Programs.InRepository("dotnet", [Path.Combine(Folder, "dbchange.dll"), .. arguments]) with { Directory = repositoryRoot }).Finish().Joined();
 
     /// <summary>A classic .sqlproj built against the folder (section 1 fact 1): the committed DacFx's targets, no Visual Studio, no node left holding the folder.</summary>
     public (int Exit, string Output) Build(string project) => Programs.InRepository("dotnet",
@@ -48,7 +48,7 @@ public sealed class PublishedTool
 }
 
 /// <summary>
-/// The classes that use dist/estate/ share one publish and run one after another: a second publish would delete the folder
+/// The classes that use dist/dbchange/ share one publish and run one after another: a second publish would delete the folder
 /// under a build that is loading DacFx from it.
 /// </summary>
 [CollectionDefinition(Name)]
@@ -61,17 +61,17 @@ public sealed class PublishedToolCollection : ICollectionFixture<PublishedTool>
 [Collection(PublishedToolCollection.Name)]
 public sealed class ToolFolderTests(PublishedTool tool)
 {
-    /// <summary>The published estate is this commit's: its version is the one the test's own build carries, so a stale dist/estate/ from another commit fails here.</summary>
+    /// <summary>The published dbchange is this commit's: its version is the one the test's own build carries, so a stale dist/dbchange/ from another commit fails here.</summary>
     [Fact]
     [Trait("Category", "build")]
-    public void The_published_estate_answers_its_version_and_the_publish_prints_the_folder_size_and_how_to_run_it()
+    public void The_published_dbchange_answers_its_version_and_the_publish_prints_the_folder_size_and_how_to_run_it()
     {
         var (exit, output) = tool.Run("--version");
 
         Assert.True(exit == 0, output);
-        Assert.StartsWith("estate " + Contract.Version + "\n", output, StringComparison.Ordinal);
-        Assert.Matches(@"dist/estate: \d+ files, \d+ MB", tool.Output);
-        Assert.Contains("dotnet dist/estate/estate.dll", tool.Output, StringComparison.Ordinal);
+        Assert.StartsWith("dbchange " + Contract.Version + "\n", output, StringComparison.Ordinal);
+        Assert.Matches(@"dist/dbchange: \d+ files, \d+ MB", tool.Output);
+        Assert.Contains("dotnet dist/dbchange/dbchange.dll", tool.Output, StringComparison.Ordinal);
         Assert.Contains("DOTNET_ROOT", tool.Output, StringComparison.Ordinal);
     }
 
@@ -87,7 +87,7 @@ public sealed class ToolFolderTests(PublishedTool tool)
         var answer = JsonNode.Parse(output)!;
         var line = (string)answer["message"]!;
         var findings = answer["findings"]!.AsArray().Select(f => f!).ToList();
-        Assert.Equal(findings.Count == 0 ? (0, "estate doctor READY | ") : (6, "estate doctor DEGRADED | "), (exit, line[..(line.IndexOf('|', StringComparison.Ordinal) + 2)]));
+        Assert.Equal(findings.Count == 0 ? (0, "dbchange doctor READY | ") : (6, "dbchange doctor DEGRADED | "), (exit, line[..(line.IndexOf('|', StringComparison.Ordinal) + 2)]));
         Assert.Contains(" | tool=published | dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (", line, StringComparison.Ordinal);
         Assert.DoesNotContain("M1", line, StringComparison.Ordinal);
         Assert.DoesNotContain(findings, f => (string)f["code"]! == "doctor.tool");
@@ -95,7 +95,7 @@ public sealed class ToolFolderTests(PublishedTool tool)
         Assert.Equal(DacFx.Version.Match(v => v.ToString(), e => e.Message), (string?)answer["dacfx"]);
     }
 
-    /// <summary>A tree copied without its bin/ and obj/, so each build under .estate/ starts fresh.</summary>
+    /// <summary>A tree copied without its bin/ and obj/, so each build under .dbchange/ starts fresh.</summary>
     internal static void Copy(string from, string to)
     {
         foreach (var file in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories))

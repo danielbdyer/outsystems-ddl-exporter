@@ -8,10 +8,10 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
-using Estate.Kernel;
+using DbChange.Kernel;
 using Microsoft.SqlServer.Dac;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
 /// The pipeline's publish profile, read as data (V3_MILESTONES.md WP 1.5, §1 fact 10): a .publish.xml, through DacFx's own DacProfile, into
@@ -65,7 +65,7 @@ public static class PublishProfiles
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or XmlException)
         {
             return e is FileNotFoundException or DirectoryNotFoundException ? new Error("profile.missing", "No publish profile at " + path + ".",
-                    "Name the pipeline's .publish.xml by its path from the estate's root, as the profile of " + EnvironmentsFile.Json + " does.")
+                    "Name the pipeline's .publish.xml by its path from the repository root, as the profile of " + EnvironmentsFile.Json + " does.")
                 : new Error("profile.unreadable", subject + (e is XmlException x
                     ? string.Create(CultureInfo.InvariantCulture, $" is not XML at line {x.LineNumber}, position {x.LinePosition}.") : " cannot be opened."),
                     "Correct the file at the place this names, or save the profile again from Visual Studio.");
@@ -90,8 +90,8 @@ public static class PublishProfiles
     }
 
     /// <summary>A named environment's profile, its errors led by the environment; io/SqlServer.SqlCmdValues sets the environment's own SQLCMD values over the profile's.</summary>
-    public static Result<PublishProfile.Strict> Of(NamedEnvironment environment, string estateRoot) =>
-        Load(Path.GetFullPath(Path.Combine(estateRoot, environment.Profile.ToString())), environment.Target + "'s profile " + environment.Profile);
+    public static Result<PublishProfile.Strict> Of(NamedEnvironment environment, string repositoryRoot) =>
+        Load(Path.GetFullPath(Path.Combine(repositoryRoot, environment.Profile.ToString())), environment.Target + "'s profile " + environment.Profile);
 
     /// <summary>
     /// A profile DacFx does not read: profile.unreadable naming the property whose value DacFx refused, the value withheld, since DacFx's

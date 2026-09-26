@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Xunit;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>A SQLCMD variable's name as sqlcmd matches it: in any case, so a package's declaration and a profile's value meet whatever their case.</summary>
 public sealed class SqlCmdNameTests

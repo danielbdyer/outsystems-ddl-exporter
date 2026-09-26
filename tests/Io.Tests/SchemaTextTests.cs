@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Estate.Kernel;
-using Estate.Tests;
+using DbChange.Kernel;
+using DbChange.Tests;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/SchemaText, the printer schema text passes through before it leaves the tool (decision 2.27, VALUES.md X2): each value a known
@@ -141,7 +141,7 @@ public sealed class SchemaTextTests
     }
 
     /// <summary>
-    /// VALUES.md X2 through estate diff: two packages whose procedures differ only in the literal of CREATE LOGIN … WITH PASSWORD
+    /// VALUES.md X2 through dbchange diff: two packages whose procedures differ only in the literal of CREATE LOGIN … WITH PASSWORD
     /// diff as the procedure's Definition altered (law 3′: the model keeps the text as written), and diff --json prints both values
     /// with the literal left out, holds neither password, and warns once per side that the procedure sets a password with a literal.
     /// </summary>

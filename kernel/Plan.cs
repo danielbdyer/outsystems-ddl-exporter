@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
 /// A deploy report as DacFx writes one for a plan (DacServices.Script's DeploymentReport): the operations the plan holds, each on one
@@ -41,7 +41,7 @@ public abstract record PlanOperationKind : IComparable<PlanOperationKind>
     /// <summary>DacFx's name for the operation, as the deploy report writes it.</summary>
     public string Name { get; }
 
-    /// <summary>The name as estate writes it in a finding's code and in JSON: create, alter, table-rebuild, unbind-schemabinding; unlisted for a name outside the list.</summary>
+    /// <summary>The name as dbchange writes it in a finding's code and in JSON: create, alter, table-rebuild, unbind-schemabinding; unlisted for a name outside the list.</summary>
     public string Word => this is Unlisted ? "unlisted" : Words.Hyphenated(Name);
 
     /// <summary>Whether DacFx adds the operation for an object that depends on one the plan changes (a refresh, an unbind or a rebind), which is no difference of its own.</summary>
@@ -110,7 +110,7 @@ public abstract record PlanAlertKind : IComparable<PlanAlertKind>
     /// <summary>DacFx's name for the alert, as the deploy report writes it.</summary>
     public string Name { get; }
 
-    /// <summary>The name as estate writes it in a finding's code: data-issue, data-motion, drop-clustered-index; unlisted for a name outside the list.</summary>
+    /// <summary>The name as dbchange writes it in a finding's code: data-issue, data-motion, drop-clustered-index; unlisted for a name outside the list.</summary>
     public string Word => this is Unlisted ? "unlisted" : Words.Hyphenated(Name);
 
     public static PlanAlertKind Of(string name) => name switch
@@ -215,7 +215,7 @@ public readonly record struct Platform
     public override string ToString() => _name ?? throw new InvalidOperationException("default(Platform) is not a platform; make one with Platform.Of.");
 }
 
-/// <summary>How estate writes one of DacFx's names in a code or in JSON.</summary>
+/// <summary>How dbchange writes one of DacFx's names in a code or in JSON.</summary>
 internal static class Words
 {
     /// <summary>A name written in capitalised words as lowercase words joined by hyphens: TableRebuild as table-rebuild.</summary>

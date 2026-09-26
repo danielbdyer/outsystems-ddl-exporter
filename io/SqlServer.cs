@@ -8,24 +8,24 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Xml.Linq;
-using Estate.Kernel;
+using DbChange.Kernel;
 using Microsoft.Data.SqlClient;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using ColumnType = Microsoft.SqlServer.TransactSql.ScriptDom.ColumnType;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
 /// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4), and the one adapter to SQL Server and SqlClient: an
-/// argument read as a target (kernel/Target.cs); EnvironmentDatabase, the database of an environment estate/environments.json names, and Copy,
-/// a database io/LocalServer made, which alone publishes (§2.1 rule 3); Query, the one path for the statements estate sends itself;
+/// argument read as a target (kernel/Target.cs); EnvironmentDatabase, the database of an environment dbchange/environments.json names, and Copy,
+/// a database io/LocalServer made, which alone publishes (§2.1 rule 3); Query, the one path for the statements dbchange sends itself;
 /// Database.ErrorOf, the one boundary every SqlClient or DacFx failure passes through, reading SQL Server's numbers once; Reach, what
 /// this identity may read there, asked before anything builds; and Measure, which runs an aggregate query its closed allowlist admits,
 /// every answer an integer. io/DacFx reads a database and plans against it. A resolved connection is never printed, logged or put in an error, and a named
 /// environment's SQL Server messages are withheld, since they can quote a row (§18). Objects are keyed by kernel/Name, compared ordinally
-/// with case, so two databases whose collations fold case differently read the same schema alike; estate sets no collation and no SET
+/// with case, so two databases whose collations fold case differently read the same schema alike; dbchange sets no collation and no SET
 /// option of its own, and DacFx reads each database's own. An error's code names what went wrong; cli/Contract.cs maps its category to
 /// the exit.
 /// </summary>
@@ -58,7 +58,7 @@ public static class SqlServer
     /// </summary>
     public static Result<Target> Target(string text, string subject) =>
         ConnectionString.IsConnection(text) ? new Error("connection.literal", subject + " is a literal connection string, which no argument carries.",
-            "Name the target as env:NAME, an environment whose connection estate/environments.json gives as env:VARIABLE or file:path.")
+            "Name the target as env:NAME, an environment whose connection dbchange/environments.json gives as env:VARIABLE or file:path.")
         : Kernel.Target.Parse(text, subject);
 
     /// <summary>A live database the tool reads: a named environment's or a copy's. Its resolved connection stays inside io, and it prints as its target.</summary>
@@ -66,7 +66,7 @@ public static class SqlServer
     {
         private protected Database(Target target, string connection) => (Target, Connection) = (target, connection);
 
-        /// <summary>The target that names it: env:dev, copy:estate_host_4242_0a1b2c3d.</summary>
+        /// <summary>The target that names it: env:dev, copy:dbchange_host_4242_0a1b2c3d.</summary>
         public Target Target { get; }
 
         internal string Connection { get; }
@@ -85,7 +85,7 @@ public static class SqlServer
         public Error ErrorOf(int number, string message) => ErrorOf(number, message, fatal: false);
 
         /// <summary>
-        /// The error a SqlClient failure against a target becomes, the one boundary every failure of a statement estate sends passes
+        /// The error a SqlClient failure against a target becomes, the one boundary every failure of a statement dbchange sends passes
         /// through: with a SqlException anywhere in the chain, by its number, a severity of 20 or more being a connection lost, and
         /// <paramref name="opened"/> saying the connection had opened; any other failure is server.failed with no number. A DacFx failure
         /// passes through io/DacFx.Failed, which hands this adapter the SqlException or the SQL Server number it finds.
@@ -107,10 +107,10 @@ public static class SqlServer
                 Category.Denied => new Error("server.denied", Target + " refused this identity (" + msg + ", SQL Server's message withheld)"
                     + (this is EnvironmentDatabase ? "; a lead's prediction will appear on the pull request." : "."), this is EnvironmentDatabase
                     ? "Ask a lead to predict for " + Target + ", or ask its DBA for VIEW DEFINITION and db_datareader there."
-                    : "Check the local server's login in ESTATE_SQL or ~/.estate/sql.env, then run estate doctor."),
+                    : "Check the local server's login in DBCHANGE_SQL or ~/.dbchange/sql.env, then run dbchange doctor."),
                 Category.Unreachable => new Error("server.unreachable", Target + " does not answer (" + msg + ", SQL Server's message withheld).", this is EnvironmentDatabase
-                    ? "Check the network path to " + Target + "'s server and that it runs, then run estate doctor."
-                    : "Start the local server with ci/sql.sh up, or ci/sql.ps1 up on Windows, then run estate doctor."),
+                    ? "Check the network path to " + Target + "'s server and that it runs, then run dbchange doctor."
+                    : "Start the local server with ci/sql.sh up, or ci/sql.ps1 up on Windows, then run dbchange doctor."),
                 Category.TimedOut => new Error("server.timed-out", Target + " answered, and the statement ran past its timeout (" + msg + ", SQL Server's message withheld).",
                     "Run the step again when the server is less busy, or ask its DBA what holds the locks the statement waits on."),
                 _ => new Error("server.failed", Target + " failed the statement: " + msg + (Withheld ? "; SQL Server's message is withheld, since it can quote a row." : ": " + message),
@@ -129,7 +129,7 @@ public static class SqlServer
                 : null;
 
         /// <summary>
-        /// What SQL Server's error number means for a statement estate sent, the one reading of SQL Server's numbers (R4 lifts it into the
+        /// What SQL Server's error number means for a statement dbchange sent, the one reading of SQL Server's numbers (R4 lifts it into the
         /// kernel's SqlServerError at M2): a login, a database or a permission refused (<see cref="Denials"/>) is Denied; no answer, a
         /// login timeout among them, or a severity of 20 or more, which closes the connection (<see cref="Silences"/>), is Unreachable; a
         /// command timeout (-2) on a connection that had opened is TimedOut, since the server answered; anything else is the statement's
@@ -152,11 +152,11 @@ public static class SqlServer
         public sealed override string ToString() => Target.ToString();
     }
 
-    /// <summary>The database of an environment estate/environments.json names: read only, and never published to (VALUES.md S7).</summary>
+    /// <summary>The database of an environment dbchange/environments.json names: read only, and never published to (VALUES.md S7).</summary>
     public sealed class EnvironmentDatabase : Database
     {
-        private EnvironmentDatabase(NamedEnvironment environment, string connection, string estateRoot)
-            : base(environment.Target, connection) => (Environment, Root) = (environment, estateRoot);
+        private EnvironmentDatabase(NamedEnvironment environment, string connection, string repositoryRoot)
+            : base(environment.Target, connection) => (Environment, Root) = (environment, repositoryRoot);
 
         public NamedEnvironment Environment { get; }
 
@@ -164,25 +164,25 @@ public static class SqlServer
 
         internal override bool Withheld => true;
 
-        internal static Result<EnvironmentDatabase> Of(NamedEnvironment environment, string estateRoot) =>
-            Connect(Subject(environment), environment.Connection, estateRoot).Map(c => new EnvironmentDatabase(environment, c, estateRoot));
+        internal static Result<EnvironmentDatabase> Of(NamedEnvironment environment, string repositoryRoot) =>
+            Connect(Subject(environment), environment.Connection, repositoryRoot).Map(c => new EnvironmentDatabase(environment, c, repositoryRoot));
 
         /// <summary>How an error about an environment's connection names it: its environment and its reference, never what the reference resolves to.</summary>
         internal static string Subject(NamedEnvironment environment) => environment.Target + "'s connection, " + environment.Connection + ",";
     }
 
     /// <summary>
-    /// A database io/LocalServer made on the local server and recorded in .estate/copies.json (§2.1 rule 3): the one target that
+    /// A database io/LocalServer made on the local server and recorded in .dbchange/copies.json (§2.1 rule 3): the one target that
     /// publishes, and the one a Permissive profile is made for. Its constructor is io's, and only io/LocalServer calls it.
     /// </summary>
     public sealed class Copy : Database
     {
-        internal Copy(CopyName name, string server, string estateRoot)
-            : base(new Target.RegisteredCopy(name), ConnectionString.OfDatabase(server, name.ToString())) => (Name, Root) = (name, estateRoot);
+        internal Copy(CopyName name, string server, string repositoryRoot)
+            : base(new Target.RegisteredCopy(name), ConnectionString.OfDatabase(server, name.ToString())) => (Name, Root) = (name, repositoryRoot);
 
         public CopyName Name { get; }
 
-        /// <summary>The estate whose registry holds this copy.</summary>
+        /// <summary>The repository whose registry holds this copy.</summary>
         internal string Root { get; }
 
         internal override bool Withheld => false;
@@ -200,24 +200,24 @@ public static class SqlServer
         }));
     }
 
-    /// <summary>A target as a database, estate/environments.json read under the estate's root for it.</summary>
-    public static Result<Database> Resolve(Target target, string estateRoot) => Resolve(target, EnvironmentsFile.Read(estateRoot), estateRoot);
+    /// <summary>A target as a database, dbchange/environments.json read under the repository root for it.</summary>
+    public static Result<Database> Resolve(Target target, string repositoryRoot) => Resolve(target, EnvironmentsFile.Read(repositoryRoot), repositoryRoot);
 
     /// <summary>
-    /// A target as a database, against estate/environments.json as the verb read it once (<paramref name="environmentsFile"/>, whose error counts only
-    /// for a target that needs the environments file): env: through the environment's connection reference; copy: through .estate/copies.json
+    /// A target as a database, against dbchange/environments.json as the verb read it once (<paramref name="environmentsFile"/>, whose error counts only
+    /// for a target that needs the environments file): env: through the environment's connection reference; copy: through .dbchange/copies.json
     /// alone, on a server R15 clears against the environments file (io/LocalServer). A git ref and a package are read as packages, and the
     /// synthetic copy is not in this build.
     /// </summary>
-    public static Result<Database> Resolve(Target target, Result<Environments> environmentsFile, string estateRoot) => target.Match<Result<Database>>(
+    public static Result<Database> Resolve(Target target, Result<Environments> environmentsFile, string repositoryRoot) => target.Match<Result<Database>>(
         environment => environmentsFile.Bind(environments => environments.Named(environment.Name) is { } named
-            ? EnvironmentDatabase.Of(named, estateRoot).Map(n => (Database)n)
+            ? EnvironmentDatabase.Of(named, repositoryRoot).Map(n => (Database)n)
             : new Error("target.unnamed", environment + " names no environment of " + EnvironmentsFile.Json + ".", environments.All.Count == 0
                 ? "Add the environment to " + EnvironmentsFile.Json + " with its host, connection reference and profile."
                 : "Name one it holds: " + string.Join(", ", environments.All.Select(e => e.Target)) + ".")),
-        copy => LocalServer.Registered(estateRoot, copy.Name, environmentsFile).Map(c => (Database)c),
+        copy => LocalServer.Registered(repositoryRoot, copy.Name, environmentsFile).Map(c => (Database)c),
         () => new Error("synthetic-copy.not-built", "synthetic-copy names the synthetic copy, which is not in this build; this build reads env: and copy: databases.",
-            "Name an env: or a copy: target; estate --help lists what this build runs."),
+            "Name an env: or a copy: target; dbchange --help lists what this build runs."),
         reference => NotADatabase(reference),
         dacpac => NotADatabase(dacpac));
 
@@ -317,9 +317,9 @@ public static class SqlServer
 
     /// <summary>
     /// How long SQL Server may run an aggregate query before SqlClient cancels it: SqlClient's own default for a command, named here.
-    /// An aggregate query reads each row of a table once, and thirty seconds covers a scan of the estate's largest tables that S3 and S8
+    /// An aggregate query reads each row of a table once, and thirty seconds covers a scan of the environments' largest tables that S3 and S8
     /// have not yet measured; a query past it is measured as timed out, not as a server that does not answer (finding ARCH-13). The
-    /// profile verb of M3 revisits the figure with the row counts S8 reports; no environmentsFile key or flag sets it before then.
+    /// profile verb of M3 revisits the figure with the row counts S8 reports; no key of the environments file and no flag sets it before then.
     /// </summary>
     internal static readonly TimeSpan AggregateQueryTimeout = TimeSpan.FromSeconds(30);
 
@@ -350,7 +350,7 @@ public static class SqlServer
             : Result.Ok(query));
 
     /// <summary>
-    /// A statement estate sends itself (R5): its site, which names it in the run's log; its text; how long SQL Server may take over it
+    /// A statement dbchange sends itself (R5): its site, which names it in the run's log; its text; how long SQL Server may take over it
     /// before SqlClient cancels it; the database it runs in, the target's own unless another is named; whether its connection may come
     /// from SqlClient's pool; and its parameters, each nvarchar(4000), which holds a quoted two-part name.
     /// </summary>
@@ -367,7 +367,7 @@ public static class SqlServer
     }
 
     /// <summary>
-    /// The one path for a statement estate sends itself (R5): a SqlConnection of its own opened (io/ConnectionString.cs), the statement
+    /// The one path for a statement dbchange sends itself (R5): a SqlConnection of its own opened (io/ConnectionString.cs), the statement
     /// run under its timeout, every row of its first result read into the answer, its remaining results read so every error the batch
     /// raises surfaces, its site and row count or failure written to the run's log, and every failure mapped through Database.ErrorOf,
     /// the one boundary. A caller that records a statement's own failure as its outcome (Measure) passes <paramref name="failed"/>,
@@ -430,7 +430,7 @@ public static class SqlServer
     }
 
     /// <summary>
-    /// A run's log of every statement estate sends through <see cref="Query{T}"/>, .estate/runs/&lt;id&gt;/queries.log: each aggregate query; the
+    /// A run's log of every statement dbchange sends through <see cref="Query{T}"/>, .dbchange/runs/&lt;id&gt;/queries.log: each aggregate query; the
     /// VIEW DEFINITION check Reach sends ahead of an extract, whose catalog queries are DacFx's to answer for; and a copy's CREATE
     /// and DROP DATABASE. Per statement: the time, the target, the site and the row count, the failure's number or code, or the timeout,
     /// then the statement and GO, so the log runs as a script. It holds no value a statement read. Each entry is appended and flushed to
@@ -445,8 +445,8 @@ public static class SqlServer
 
         public string Path { get; }
 
-        /// <summary>A new run's log under the estate's root, named for the time, the process and a random suffix, so two runs never share one.</summary>
-        public static QueryLog Start(string estateRoot) => new(System.IO.Path.Combine(new LocalState(estateRoot).Runs,
+        /// <summary>A new run's log under the repository root, named for the time, the process and a random suffix, so two runs never share one.</summary>
+        public static QueryLog Start(string repositoryRoot) => new(System.IO.Path.Combine(new LocalState(repositoryRoot).Runs,
             DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture) + "-" + System.Environment.ProcessId.ToString(CultureInfo.InvariantCulture)
             + "-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(2)).ToLowerInvariant(), "queries.log"));
 
@@ -463,11 +463,11 @@ public static class SqlServer
     }
 
     /// <summary>
-    /// A reference's connection (§4 row 14, VALUES.md X1): env:NAME's variable or file:path's text, a relative path read from the estate's
-    /// root, parsed by SqlClient's own grammar (io/ConnectionString.cs); the caller's integrated identity when it names no other; estate
+    /// A reference's connection (§4 row 14, VALUES.md X1): env:NAME's variable or file:path's text, a relative path read from the repository
+    /// root, parsed by SqlClient's own grammar (io/ConnectionString.cs); the caller's integrated identity when it names no other; dbchange
     /// as the application unless it names one. An error names the reference and quotes nothing it read.
     /// </summary>
-    internal static Result<string> Connect(string subject, SecretReference reference, string estateRoot) => Read(subject, reference, estateRoot).Bind(read => read is not { } text
+    internal static Result<string> Connect(string subject, SecretReference reference, string repositoryRoot) => Read(subject, reference, repositoryRoot).Bind(read => read is not { } text
         ? new Error("connection.unresolved", subject + " resolves to nothing here.", "Set the variable, or write the file outside git, that " + reference + " names.")
         : Parsed(subject, reference, text).Bind(connection => connection.InitialCatalog.Length == 0
             ? new Error("connection.malformed", subject + " names no database; every read reads the database the connection names.",
@@ -475,7 +475,7 @@ public static class SqlServer
             : Result.Ok(ConnectionString.WithDefaults(connection))));
 
     /// <summary>An environment's server as R15 reads it, a database named or not: null when its reference resolves to nothing here; an error when SqlClient reads nothing from it.</summary>
-    internal static Result<ServerName?> DataSource(NamedEnvironment environment, string estateRoot) => Read(EnvironmentDatabase.Subject(environment), environment.Connection, estateRoot).Bind(read => read is not { } text
+    internal static Result<ServerName?> DataSource(NamedEnvironment environment, string repositoryRoot) => Read(EnvironmentDatabase.Subject(environment), environment.Connection, repositoryRoot).Bind(read => read is not { } text
         ? Result.Ok<ServerName?>(null)
         : Parsed(EnvironmentDatabase.Subject(environment), environment.Connection, text).Map(connection => (ServerName?)ConnectionString.ServerOf(connection)));
 
@@ -487,25 +487,25 @@ public static class SqlServer
     /// What a reference names: the variable's value, or the file's text trimmed; null when the variable is unset or empty, when the
     /// file system reports that no file or folder is at the path, that a folder is, or that no file can have the path's name
     /// (<see cref="Absent"/>), or when the file holds only white space. A file,
-    /// a relative path read from the estate's root, is read only when git keeps it out of every commit, ignored or in no repository
-    /// while the estate's root is in one, and, where files carry a Unix mode, when its owner alone can read it; an error leads with
+    /// a relative path read from the repository root, is read only when git keeps it out of every commit, ignored or in no repository
+    /// while the repository root is in one, and, where files carry a Unix mode, when its owner alone can read it; an error leads with
     /// <paramref name="subject"/>. git is asked about the file by the name its folder lists (<see cref="Listed"/>), and that name is the
     /// one read. Whatever the file system withholds is an error, never null, since the host of a file that may be there is unknown
     /// here and R15 must not leave the environment uncompared as it does one that resolves to nothing: a path whose attributes this
     /// identity cannot read, where File.Exists answers false as it does where no file is, is reference.inaccessible; a file whose
     /// folder it cannot list is reference.unlistable; and one it cannot read is reference.unreadable. The check covers the path the
     /// reference names, since git tracks paths: a hard link to a committed file, or a plain copy of one, under a folder .gitignore
-    /// lists such as .estate/ is read, though the commit holds what it holds. The attempt, a refused one too, is recorded in the run's
+    /// lists such as .dbchange/ is read, though the commit holds what it holds. The attempt, a refused one too, is recorded in the run's
     /// Reads.
     /// </summary>
-    internal static Result<string?> Read(string subject, SecretReference reference, string estateRoot)
+    internal static Result<string?> Read(string subject, SecretReference reference, string repositoryRoot)
     {
         Reads.Record();
         return reference.Match(
             variable => Result.Ok(System.Environment.GetEnvironmentVariable(variable) is { Length: > 0 } value ? value : null),
-            file => System.IO.Path.Combine(estateRoot, file) is var path && File.Exists(path)
+            file => System.IO.Path.Combine(repositoryRoot, file) is var path && File.Exists(path)
                 ? Opened(() => Listed(subject, path), () => Unlistable(subject))
-                    .Bind(listed => Opened(() => Kept(subject, estateRoot, listed).Map(kept => File.ReadAllText(kept).Trim() is { Length: > 0 } text ? text : null), () => Unreadable(subject)))
+                    .Bind(listed => Opened(() => Kept(subject, repositoryRoot, listed).Map(kept => File.ReadAllText(kept).Trim() is { Length: > 0 } text ? text : null), () => Unreadable(subject)))
                 : Absent(subject, path));
     }
 
@@ -532,7 +532,7 @@ public static class SqlServer
         {
             return new Error("reference.inaccessible", subject + " names a path whose attributes this identity cannot read, or that it cannot reach,"
                 + " so whether a file is there, and what it holds, is unknown here; it is not read.",
-                "Grant this identity the right to list the file's folder and read the file's attributes (on Linux and macOS, search permission on every folder of the path), or move the file under a folder it can list, such as .estate/.");
+                "Grant this identity the right to list the file's folder and read the file's attributes (on Linux and macOS, search permission on every folder of the path), or move the file under a folder it can list, such as .dbchange/.");
         }
     }
 
@@ -554,7 +554,7 @@ public static class SqlServer
 
     private static Error Unlistable(string subject) => new Error("reference.unlistable", subject + " is a file whose folder this identity cannot list,"
         + " so git cannot be asked about the file by the name the folder lists, and the file is not read.",
-        "Grant this identity the right to list the file's folder, or move the file under a folder it can list, such as .estate/.");
+        "Grant this identity the right to list the file's folder, or move the file under a folder it can list, such as .dbchange/.");
 
     private static Error Unreadable(string subject) => new Error("reference.unreadable", subject + " is a file this identity cannot open for reading,"
         + " for want of the right to read it or while another program holds it open, so what it holds is unknown here.",
@@ -593,21 +593,21 @@ public static class SqlServer
 
     private static Error Unlisted(string subject) => new Error("reference.unlisted", subject + " opens a file by a name its folder does not list, such as name::$DATA, a data stream;"
         + " git matches .gitignore and its index against the name the folder lists, so it cannot say whether a commit holds the file, and the file is not read.",
-        "Write the path as dir or ls lists the file, in estate/environments.json.");
+        "Write the path as dir or ls lists the file, in dbchange/environments.json.");
 
     /// <summary>
     /// The path of a file a file: reference names, when git keeps it out of every commit and no other user can read it; else the
     /// error, the file unread. git.failed and git.missing lead with <paramref name="subject"/>, then quote io/Git's own message.
     /// </summary>
-    private static Result<string> Kept(string subject, string estateRoot, string path) => Git.HoldingOf(estateRoot, path).Match<Result<string>>(holding => holding switch
+    private static Result<string> Kept(string subject, string repositoryRoot, string path) => Git.HoldingOf(repositoryRoot, path).Match<Result<string>>(holding => holding switch
     {
         Git.Holding.Tracked => new Error("reference.tracked", subject + " is a file git tracks, so every clone of the repository holds what it holds; a file: reference names a file git keeps out of every commit.",
             "Run git rm --cached on the file, list it in .gitignore, and change the password it held, since the history keeps the commit."),
         Git.Holding.NotIgnored => new Error("reference.not-ignored", subject + " is a file git does not ignore, so the next git add commits it; a file: reference names a file git keeps out of every commit.",
-            "List the file in .gitignore, or move it under a folder .gitignore lists, such as .estate/."),
-        Git.Holding.EstateInNoRepository => new Error("reference.no-repository", subject + " names a file, and the estate's root " + estateRoot
+            "List the file in .gitignore, or move it under a folder .gitignore lists, such as .dbchange/."),
+        Git.Holding.RootInNoRepository => new Error("reference.no-repository", subject + " names a file, and the repository root " + repositoryRoot
             + " is in no git repository, so git cannot say whether a clone would commit the file; it is not read.",
-            "Run estate in a clone of the estate's repository, or give the reference as env:NAME."),
+            "Run dbchange in a clone of the SSDT repository, or give the reference as env:NAME."),
         Git.Holding.Ignored => OwnerOnly(subject, path),
         Git.Holding.InNoRepository => OwnerOnly(subject, path),
         _ => throw new System.Diagnostics.UnreachableException(),
@@ -676,7 +676,7 @@ public static class SqlServer
 
     /// <summary>
     /// A copy's SQL Server (R1), which a claim on the copy records: the product version and the copy's compatibility level, read in one
-    /// statement through <see cref="Query{T}"/>, and the digest of the image the estate-sql container runs, which Docker reports
+    /// statement through <see cref="Query{T}"/>, and the digest of the image the dbchange-sql container runs, which Docker reports
     /// (LocalServer.Image). A named environment's server is read by S8, and nothing here reads it.
     /// </summary>
     public static Result<Server> ServerOf(Copy copy, QueryLog? log = null) =>
@@ -753,7 +753,7 @@ public static class SqlServer
 
             var statements = ((TSqlScript)parsed).Batches.SelectMany(b => b.Statements).ToList();
             return statements.Count != 1
-                ? new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query holds {statements.Count} statements; estate runs one statement at a time."),
+                ? new Error("aggregate-query.refused", string.Create(CultureInfo.InvariantCulture, $"The query holds {statements.Count} statements; dbchange runs one statement at a time."),
                     "Split it into queries of one SELECT each.")
                 : Admitted(statements[0], site: null);
         }

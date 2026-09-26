@@ -3,13 +3,13 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using Estate.Kernel;
-using Estate.Tests;
+using DbChange.Kernel;
+using DbChange.Tests;
 using Microsoft.Data.SqlClient;
 using Xunit;
-using static Estate.Tests.Expect;
+using static DbChange.Tests.Expect;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/SqlServer against a named environment (V3_MILESTONES.md WP 1.4, §18; VALUES.md P2, X2): the golden project's registered
@@ -37,7 +37,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
 
         Assert.All(measured, m => Assert.NotEmpty(m.Rows));
         Assert.Contains(measured, m => m.Rows.Any(row => row.Values.Any(value => value > 0)));
-        Assert.StartsWith(Path.Combine(root.Path, ".estate", "runs"), log.Path, StringComparison.Ordinal);
+        Assert.StartsWith(Path.Combine(root.Path, ".dbchange", "runs"), log.Path, StringComparison.Ordinal);
         var entries = Entries(File.ReadAllText(log.Path));
         var (checks, queries) = (entries.Where(e => e.Site.StartsWith("Synonyms: ", StringComparison.Ordinal)).ToList(), entries.Where(e => !e.Site.StartsWith("Synonyms: ", StringComparison.Ordinal)).ToList());
         Assert.Equal(admitted.Select(p => (p.Site, p.Statement)), queries.Select(e => (e.Site, e.Statement)));
@@ -69,7 +69,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
     /// <summary>
     /// §1 facts 2, 4 and 5 through io, as the read-only principal: the environment is extracted whole, and the plan of the package it was
     /// published from against it, package to package, is empty. The environment's SQLCMD values reach the plan; the kept script holds the
-    /// literal and never the value a reference resolved to, and the run's log holds the one statement estate sent, since the plan connects
+    /// literal and never the value a reference resolved to, and the run's log holds the one statement dbchange sent, since the plan connects
     /// to nothing.
     /// </summary>
     [Fact]
@@ -77,7 +77,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
     [Trait("Value", "X2")]
     public void The_model_and_the_plan_of_a_named_environment_read_as_the_read_only_principal()
     {
-        var (variable, token) = ("ESTATE_TEST_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(), PlantedValue.Unique());
+        var (variable, token) = ("DBCHANGE_TEST_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(), PlantedValue.Unique());
         System.Environment.SetEnvironmentVariable(variable, token.Text);
         try
         {
@@ -149,7 +149,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
     }
 
     /// <summary>
-    /// A login that signs in and lacks VIEW DEFINITION on the database, as a group with CONNECT alone has: the check estate sends before
+    /// A login that signs in and lacks VIEW DEFINITION on the database, as a group with CONNECT alone has: the check dbchange sends before
     /// DacFx runs (HAS_PERMS_BY_NAME) answers 0, and the environment is denied as SQL Server would deny it (Msg 300), before any read.
     /// </summary>
     [Fact]
@@ -180,14 +180,14 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
     [Trait("Category", "fixture")]
     public void A_database_the_login_cannot_open_is_denied_by_its_number()
     {
-        var dev = Resolved("dev", new SqlConnectionStringBuilder(project.Reader.ConnectionString) { InitialCatalog = "estate_no_such_database_" + Guid.NewGuid().ToString("N")[..8] }.ConnectionString);
+        var dev = Resolved("dev", new SqlConnectionStringBuilder(project.Reader.ConnectionString) { InitialCatalog = "dbchange_no_such_database_" + Guid.NewGuid().ToString("N")[..8] }.ConnectionString);
 
         var error = Failed(SqlServer.Reach(dev), "server.denied");
 
         Assert.StartsWith("env:dev refused this identity (Msg 4060", error.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>A named environment classified real, its connection the given string in a file outside git, resolved through estate/environments.json under the test's root.</summary>
+    /// <summary>A named environment classified real, its connection the given string in a file outside git, resolved through dbchange/environments.json under the test's root.</summary>
     private SqlServer.Database Resolved(string name, string connection, System.Collections.Generic.Dictionary<string, EnvironmentsJson.SqlCmd>? sqlcmd = null)
     {
         var file = root.File(name + ".connection", connection);
@@ -197,7 +197,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
         }
 
         EnvironmentsJson.Of(name, new("file:" + file.Replace('\\', '/'), "localhost", Classification: "real", Sqlcmd: sqlcmd)).WriteTo(root.Path);
-        File.Copy(project.Profile, Path.Combine(root.Path, "estate", "profiles", "pipeline.publish.xml"), overwrite: true);
+        File.Copy(project.Profile, Path.Combine(root.Path, "dbchange", "profiles", "pipeline.publish.xml"), overwrite: true);
         return Value(SqlServer.Resolve(Value(SqlServer.Target("env:" + name, "--target")), root.Path));
     }
 

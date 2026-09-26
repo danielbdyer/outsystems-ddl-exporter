@@ -19,9 +19,9 @@
     <WarningsAsErrors>$(WarningsAsErrors);CA1304;CA1305;CA1307;CA1309</WarningsAsErrors>
   </PropertyGroup>
 
-  <!-- A project that sets EstateBannedSymbols carries the banned-API analyzer; kernel/ does, and bans I/O, the clock, randomness and Task. -->
-  <ItemGroup Condition="'$(EstateBannedSymbols)' != ''">
+  <!-- A project that sets DbChangeBannedSymbols carries the banned-API analyzer; kernel/ does, and bans I/O, the clock, randomness and Task. -->
+  <ItemGroup Condition="'$(DbChangeBannedSymbols)' != ''">
     <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
-    <AdditionalFiles Include="$(EstateBannedSymbols)" />
+    <AdditionalFiles Include="$(DbChangeBannedSymbols)" />
   </ItemGroup>
 </Project>

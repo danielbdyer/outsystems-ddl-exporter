@@ -1,13 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <AssemblyName>Estate.Io.Tests</AssemblyName>
-    <RootNamespace>Estate.Io.Tests</RootNamespace>
+    <AssemblyName>DbChange.Io.Tests</AssemblyName>
+    <RootNamespace>DbChange.Io.Tests</RootNamespace>
     <ImplicitUsings>disable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <!-- Cultures on: Microsoft.Data.SqlClient refuses globalization-invariant mode, and the SQL Server fixture uses it. -->
     <InvariantGlobalization>false</InvariantGlobalization>
-    <!-- EstateProcess.Main, not the test SDK's empty one: dotnet Estate.Io.Tests.dll runs as a second estate process. -->
+    <!-- DbChangeProcess.Main, not the test SDK's empty one: dotnet DbChange.Io.Tests.dll runs as a second dbchange process. -->
     <GenerateProgramFile>false</GenerateProgramFile>
   </PropertyGroup>
   <ItemGroup>
@@ -21,7 +21,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../io/io.csproj" />
-    <!-- The verb tests run estate in this process through Cli.Program.Run; an adapter test asserts an error's code, never an exit. -->
+    <!-- The verb tests run dbchange in this process through Cli.Program.Run; an adapter test asserts an error's code, never an exit. -->
     <ProjectReference Include="../../cli/cli.csproj" />
   </ItemGroup>
   <ItemGroup>

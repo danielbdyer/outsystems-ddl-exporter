@@ -3,12 +3,12 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Estate.Kernel;
-using Estate.Tests;
+using DbChange.Kernel;
+using DbChange.Tests;
 using Xunit;
-using static Estate.Tests.Expect;
+using static DbChange.Tests.Expect;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/FileLock, the one way io takes a lock file (R6): another process's hold is waited out and released when that process ends,
@@ -27,7 +27,7 @@ public sealed class FileLockTests : IDisposable
     [Trait("Category", "fast")]
     public async Task A_lock_another_process_holds_is_taken_once_that_process_is_killed()
     {
-        using var holder = EstateProcess.Start("lock", Lock);
+        using var holder = DbChangeProcess.Start("lock", Lock);
         Assert.Equal("held", holder.StandardOutput.ReadLine());
 
         var taking = Task.Run(() => FileLock.Take(Lock, TimeSpan.FromSeconds(30)));
@@ -118,7 +118,7 @@ public sealed class FileLockTests : IDisposable
     [Trait("Category", "fast")]
     public void With_file_locking_turned_off_FileLock_refuses_on_Linux_and_macOS_and_still_excludes_on_Windows()
     {
-        var start = new ProcessStartInfo("dotnet", [typeof(EstateProcess).Assembly.Location, "lock", Lock]) { RedirectStandardInput = true, RedirectStandardOutput = true };
+        var start = new ProcessStartInfo("dotnet", [typeof(DbChangeProcess).Assembly.Location, "lock", Lock]) { RedirectStandardInput = true, RedirectStandardOutput = true };
         start.Environment["DOTNET_SYSTEM_IO_DISABLEFILELOCKING"] = "1";
         using var holder = Process.Start(start)!;
         try

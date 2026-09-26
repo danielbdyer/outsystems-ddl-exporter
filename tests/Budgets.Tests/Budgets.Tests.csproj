@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- The repository's own laws: budgets, manifest, dependency direction, banned symbols. -->
   <PropertyGroup>
-    <AssemblyName>Estate.Budgets.Tests</AssemblyName>
-    <RootNamespace>Estate.Budgets.Tests</RootNamespace>
+    <AssemblyName>DbChange.Budgets.Tests</AssemblyName>
+    <RootNamespace>DbChange.Budgets.Tests</RootNamespace>
     <ImplicitUsings>disable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>

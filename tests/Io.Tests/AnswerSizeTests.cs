@@ -4,12 +4,12 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json.Nodes;
-using Estate.Cli;
-using Estate.Kernel;
-using Estate.Tests;
+using DbChange.Cli;
+using DbChange.Kernel;
+using DbChange.Tests;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// VALUES.md O11 (decision 2.23): a payload that can be large is cut to its first entries by default, carries truncated and full,
@@ -41,25 +41,25 @@ public sealed class AnswerSizeTests : IDisposable
         var lines = markdown.TrimEnd('\n').Split('\n');
         Assert.True(lines.Length <= Render.Shown + 10, "the Markdown has " + lines.Length + " lines");
         Assert.StartsWith("Column [dbo].[T0000].[C]: Length 300 → 256", lines[0], StringComparison.Ordinal);
-        Assert.Matches("^… 2,950 more; the whole answer is in \\.estate/runs/[^/]+/answer\\.json\\.$", lines[^1]);
+        Assert.Matches("^… 2,950 more; the whole answer is in \\.dbchange/runs/[^/]+/answer\\.json\\.$", lines[^1]);
 
         var answer = JsonNode.Parse(json)!;
-        ScratchEstate.Valid("estate.diff.1.schema.json", answer);
+        ScratchRepository.Valid("dbchange.diff.1.schema.json", answer);
         Assert.Equal(Render.Shown, answer["diff"]!["change"]!["altered"]!.AsArray().Count);
         Assert.Equal((Columns, true), ((int)answer["diff"]!["counts"]!["altered"]!, (bool)answer["truncated"]!));
         var full = (string)answer["full"]!;
-        Assert.Matches("^\\.estate/runs/[^/]+/answer\\.json$", full);
+        Assert.Matches("^\\.dbchange/runs/[^/]+/answer\\.json$", full);
         var whole = JsonNode.Parse(File.ReadAllText(root.Under(full)))!;
-        ScratchEstate.Valid("estate.diff.1.schema.json", whole);
+        ScratchRepository.Valid("dbchange.diff.1.schema.json", whole);
         Assert.Equal((Columns, false, (string?)null), (whole["diff"]!["change"]!["altered"]!.AsArray().Count, (bool)whole["truncated"]!, (string?)whole["full"]));
 
         var summarised = JsonNode.Parse(summary)!;
-        ScratchEstate.Valid("estate.diff.1.schema.json", summarised);
+        ScratchRepository.Valid("dbchange.diff.1.schema.json", summarised);
         Assert.Empty(summarised["diff"]!["change"]!["altered"]!.AsArray());
         Assert.Equal((Columns, true), ((int)summarised["diff"]!["counts"]!["altered"]!, (bool)summarised["truncated"]!));
     }
 
-    /// <summary>estate diff run in this process with a body that answers the large change, from a checkout under the scratch folder.</summary>
+    /// <summary>dbchange diff run in this process with a body that answers the large change, from a checkout under the scratch folder.</summary>
     private (int Exit, string Output) Run(string[] arguments)
     {
         var diff = Contract.Verbs.Single(v => v.Name == "diff") with { Body = (_, _) => Verbs.Diff(Side("dacpac:before.dacpac"), Side("dacpac:after.dacpac"), Large(), Collation.CaseSensitive, false, new Stamp(Ok(DacFx.Version))) };

@@ -3,15 +3,15 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json.Nodes;
 using System.Threading;
-using Estate.Cli;
-using Estate.Kernel;
+using DbChange.Cli;
+using DbChange.Kernel;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// Ctrl-C, SIGTERM and --timeout stop a verb with an interrupted answer at exit 130 (VALUES.md O7; cli/exits.frozen): a verb waiting on a
-/// lock another estate holds stops at that wait, leaves the lock to its holder and makes nothing.
+/// lock another dbchange process holds stops at that wait, leaves the lock to its holder and makes nothing.
 /// </summary>
 public sealed class InterruptionTests : IDisposable
 {
@@ -35,9 +35,9 @@ public sealed class InterruptionTests : IDisposable
         var answer = JsonNode.Parse(output.ToArray())!;
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), "the interrupted verb answered after " + clock.Elapsed);
         Assert.Equal(130, exit);
-        ScratchEstate.Valid("estate.read.1.schema.json", answer);
+        ScratchRepository.Valid("dbchange.read.1.schema.json", answer);
         Assert.Equal(("interrupted", 130), ((string?)answer["outcome"], (int)answer["exit"]!));
-        Assert.Equal("estate read stopped after --timeout 1: it ended the programs it had started and released its locks.", (string?)answer["message"]);
+        Assert.Equal("dbchange read stopped after --timeout 1: it ended the programs it had started and released its locks.", (string?)answer["message"]);
         Assert.Empty(answer["findings"]!.AsArray());
         Assert.False(Directory.Exists(state.Worktree(commit)), "the interrupted verb made the worktree");
         GitTests.Failed(FileLock.Take(state.WorktreesLock, TimeSpan.Zero), "lock.timed-out");   // still this test's
@@ -63,7 +63,7 @@ public sealed class InterruptionTests : IDisposable
 }
 
 /// <summary>
-/// The published estate stopped from outside while it waits on a held lock: on Windows by --timeout 2, the process-level answer this
+/// The published dbchange stopped from outside while it waits on a held lock: on Windows by --timeout 2, the process-level answer this
 /// operating system's test asserts, since no test sends the Ctrl-C key; on Linux and macOS by SIGINT and then, in a second run, SIGTERM.
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
@@ -76,7 +76,7 @@ public sealed class InterruptedProcessTests(PublishedTool tool) : IDisposable
     [Fact]
     [Trait("Category", "build")]
     [Trait("Value", "O7")]
-    public void A_signal_or_a_timeout_stops_a_waiting_estate_with_exit_130_and_an_interrupted_answer()
+    public void A_signal_or_a_timeout_stops_a_waiting_dbchange_with_exit_130_and_an_interrupted_answer()
     {
         scratch.Commit("first", ("a.sql", "SELECT 1;\n"));
         using var held = GitTests.Ok(FileLock.Take(new LocalState(scratch.Root).WorktreesLock, TimeSpan.Zero));
@@ -93,21 +93,21 @@ public sealed class InterruptedProcessTests(PublishedTool tool) : IDisposable
         }
     }
 
-    /// <summary>estate read at the repository, given --timeout 2, through io/Command.</summary>
+    /// <summary>dbchange read at the repository, given --timeout 2, through io/Command.</summary>
     private (int Exit, string Output) Timed()
     {
-        var ran = Assert.IsType<Ran.Exited>(new Command("dotnet", [Path.Combine(tool.Folder, "estate.dll"), "read", "--from", "ref:HEAD", "--timeout", "2", "--json"], TimeSpan.FromMinutes(1)) { Directory = scratch.Root }.Run());
+        var ran = Assert.IsType<Ran.Exited>(new Command("dotnet", [Path.Combine(tool.Folder, "dbchange.dll"), "read", "--from", "ref:HEAD", "--timeout", "2", "--json"], TimeSpan.FromMinutes(1)) { Directory = scratch.Root }.Run());
         return (ran.Code, ran.Output);
     }
 
-    /// <summary>estate read at the repository, sent the signal by kill once it has had three seconds to reach its lock wait; a raw process, since the test needs its id while it runs.</summary>
+    /// <summary>dbchange read at the repository, sent the signal by kill once it has had three seconds to reach its lock wait; a raw process, since the test needs its id while it runs.</summary>
     private (int Exit, string Output) Signalled(string signal)
     {
-        using var estate = Process.Start(new ProcessStartInfo("dotnet", [Path.Combine(tool.Folder, "estate.dll"), "read", "--from", "ref:HEAD", "--json"]) { WorkingDirectory = scratch.Root, RedirectStandardOutput = true })!;
+        using var process = Process.Start(new ProcessStartInfo("dotnet", [Path.Combine(tool.Folder, "dbchange.dll"), "read", "--from", "ref:HEAD", "--json"]) { WorkingDirectory = scratch.Root, RedirectStandardOutput = true })!;
         Thread.Sleep(TimeSpan.FromSeconds(3));
-        Assert.IsType<Ran.Exited>(new Command("kill", ["-" + signal, estate.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)], TimeSpan.FromSeconds(10)).Run());
-        var output = estate.StandardOutput.ReadToEnd();
-        Assert.True(estate.WaitForExit(TimeSpan.FromSeconds(20)), "estate did not stop within twenty seconds of SIG" + signal);
-        return (estate.ExitCode, output);
+        Assert.IsType<Ran.Exited>(new Command("kill", ["-" + signal, process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)], TimeSpan.FromSeconds(10)).Run());
+        var output = process.StandardOutput.ReadToEnd();
+        Assert.True(process.WaitForExit(TimeSpan.FromSeconds(20)), "dbchange did not stop within twenty seconds of SIG" + signal);
+        return (process.ExitCode, output);
     }
 }

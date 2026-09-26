@@ -6,7 +6,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Xunit;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// Code, tests and the corpus stay under the ceilings in ci/budgets.json, counted in physical lines over each budget's
@@ -49,7 +49,7 @@ public sealed class Budgets
     [InlineData("kernel/SyntheticData/Generate.cs", "kernel/**/*.cs", true)]
     [InlineData("kernel/SortedArray.csx", "kernel/**/*.cs", false)]
     [InlineData("kernelx/SortedArray.cs", "kernel/**/*.cs", false)]
-    [InlineData("kernel/obj/Debug/net10.0/Estate.Kernel.AssemblyInfo.cs", "**/obj/**", true)]
+    [InlineData("kernel/obj/Debug/net10.0/DbChange.Kernel.AssemblyInfo.cs", "**/obj/**", true)]
     [InlineData("tests/Golden/classic-minimal/Estate.sqlproj", "tests/Golden/**", true)]
     [InlineData("tests/Kernel.Tests/SortedArrayTests.cs", "tests/Golden/**", false)]
     public void A_glob_matches_the_paths_it_names(string path, string glob, bool matches) =>

@@ -2,8 +2,8 @@
   <!-- The one executable: parse the arguments, call io/, render. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <AssemblyName>estate</AssemblyName>
-    <RootNamespace>Estate.Cli</RootNamespace>
+    <AssemblyName>dbchange</AssemblyName>
+    <RootNamespace>DbChange.Cli</RootNamespace>
     <ImplicitUsings>disable</ImplicitUsings>
     <RollForward>Major</RollForward>
     <!-- Cultures on: DacFx builds no model in globalization-invariant mode (its collation map needs LCIDs such as 3076), and Microsoft.Data.SqlClient refuses it. -->
@@ -15,12 +15,12 @@
   <ItemGroup>
     <ProjectReference Include="../io/io.csproj" />
     <!-- The contract's tests render answers in memory; Io.Tests renders a large change as diff's answer to hold VALUES.md O11. -->
-    <InternalsVisibleTo Include="Estate.Budgets.Tests" />
-    <InternalsVisibleTo Include="Estate.Io.Tests" />
+    <InternalsVisibleTo Include="DbChange.Budgets.Tests" />
+    <InternalsVisibleTo Include="DbChange.Io.Tests" />
   </ItemGroup>
   <!--
     The reference assemblies a classic .sqlproj build needs (mscorlib.dll and FrameworkList.xml), downloaded by restore and never
-    referenced; ci/publish copies them into dist/estate/refasm/. Central package management cannot pin a PackageDownload,
+    referenced; ci/publish copies them into dist/dbchange/refasm/. Central package management cannot pin a PackageDownload,
     so its exact version is here, and ci/publish reads it from this line.
   -->
   <ItemGroup>

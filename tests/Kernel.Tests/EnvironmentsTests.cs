@@ -2,23 +2,23 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CsCheck;
-using Estate.Tests;
+using DbChange.Tests;
 using Xunit;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>
-/// estate/environments.json as data (WP 1.5, §4 row 14): the environments it names, each once and each with the host its server runs on, a
-/// publish profile's path inside the estate, and the local server it prefers; a reference is env:NAME or file:path and prints as
+/// dbchange/environments.json as data (WP 1.5, §4 row 14): the environments it names, each once and each with the host its server runs on, a
+/// publish profile's path inside the repository, and the local server it prefers; a reference is env:NAME or file:path and prints as
 /// itself, and no connection string passes as a path; an environment is real until a named lead's dated confirmation says synthetic;
 /// and a SQLCMD value is a literal or a reference, read through Match, and a name shaped like a credential never holds a literal.
 /// No error quotes the value it rejected.
 /// </summary>
 public sealed class EnvironmentsTests
 {
-    private const string Where = "environments.dev in estate/environments.json";
+    private const string Where = "environments.dev in dbchange/environments.json";
 
-    private const string Pipeline = "estate/profiles/pipeline.publish.xml";
+    private const string Pipeline = "dbchange/profiles/pipeline.publish.xml";
 
     private static readonly PlantedValue Planted = PlantedValue.Password;
 
@@ -29,13 +29,13 @@ public sealed class EnvironmentsTests
     [Trait("Category", "fast")]
     public void A_reference_is_env_and_a_variable_or_file_and_a_path_and_prints_as_itself()
     {
-        var variable = Expect.Value(SecretReference.Of(Where, "env:ESTATE_DEV"));
-        var file = Expect.Value(SecretReference.Of(Where, "file:.estate/principals/dev.connection"));
+        var variable = Expect.Value(SecretReference.Of(Where, "env:DBCHANGE_DEV"));
+        var file = Expect.Value(SecretReference.Of(Where, "file:.dbchange/principals/dev.connection"));
 
-        Assert.Equal(("env:ESTATE_DEV", "file:.estate/principals/dev.connection"), (variable.ToString(), file.ToString()));
-        Assert.Equal("variable ESTATE_DEV", variable.Match(name => "variable " + name, path => "file " + path));
-        Assert.Equal("file .estate/principals/dev.connection", file.Match(name => "variable " + name, path => "file " + path));
-        Assert.Equal(variable, Expect.Value(SecretReference.Of("elsewhere", "env:ESTATE_DEV")));
+        Assert.Equal(("env:DBCHANGE_DEV", "file:.dbchange/principals/dev.connection"), (variable.ToString(), file.ToString()));
+        Assert.Equal("variable DBCHANGE_DEV", variable.Match(name => "variable " + name, path => "file " + path));
+        Assert.Equal("file .dbchange/principals/dev.connection", file.Match(name => "variable " + name, path => "file " + path));
+        Assert.Equal(variable, Expect.Value(SecretReference.Of("elsewhere", "env:DBCHANGE_DEV")));
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public sealed class EnvironmentsTests
         Secret.Sample(secret =>
         {
             foreach (var text in (string[])[secret, "Server=db;User ID=sa;Password=" + secret, "file:Server=db;User ID=sa;Password=" + secret, "file:Password=" + secret,
-                "file:" + secret + ";x", "env:" + secret, "ENV:ESTATE_DEV", "env:1" + secret, "file: " + secret, "file:"])
+                "file:" + secret + ";x", "env:" + secret, "ENV:DBCHANGE_DEV", "env:1" + secret, "file: " + secret, "file:"])
             {
                 var error = Expect.Failed(SecretReference.Of(Where, text), "reference.malformed");
                 new PlantedValue(secret).AbsentFrom(error);
@@ -106,10 +106,10 @@ public sealed class EnvironmentsTests
     public void A_SQLCMD_name_shaped_like_a_credential_never_holds_a_literal_and_takes_a_reference(string name)
     {
         var error = Expect.Failed(SqlCmdVariable.Of(Where, name, Planted.Text), "sqlcmd.literal-credential");
-        var referenced = Expect.Value(SqlCmdVariable.Of(Where, name, Expect.Value(SecretReference.Of(Where, "env:ESTATE_SECRET"))));
+        var referenced = Expect.Value(SqlCmdVariable.Of(Where, name, Expect.Value(SecretReference.Of(Where, "env:DBCHANGE_SECRET"))));
 
         Planted.AbsentFrom(error);
-        Assert.Equal((name, "from env:ESTATE_SECRET"), (referenced.Name.ToString(), Held(referenced)));
+        Assert.Equal((name, "from env:DBCHANGE_SECRET"), (referenced.Name.ToString(), Held(referenced)));
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class EnvironmentsTests
     [Trait("Category", "fast")]
     public void A_named_environment_sorts_its_reader_groups_and_its_SQLCMD_variables()
     {
-        var environment = Expect.Value(Environment("dev", readerGroups: ["leads", "developers"], sqlCmd: [Literal("Tag", "dev"), Referenced("ServicePassword", "env:ESTATE_PW")]));
+        var environment = Expect.Value(Environment("dev", readerGroups: ["leads", "developers"], sqlCmd: [Literal("Tag", "dev"), Referenced("ServicePassword", "env:DBCHANGE_PW")]));
 
         Assert.Equal(["developers", "leads"], environment.ReaderGroups);
         Assert.Equal(["ServicePassword", "Tag"], environment.SqlCmd.Select(v => v.Name.ToString()));
@@ -147,15 +147,15 @@ public sealed class EnvironmentsTests
 
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("/estate/profiles/pipeline.publish.xml")]
-    [InlineData("C:/estate/pipeline.publish.xml")]
-    [InlineData("estate\\profiles\\pipeline.publish.xml")]
+    [InlineData("/dbchange/profiles/pipeline.publish.xml")]
+    [InlineData("C:/dbchange/pipeline.publish.xml")]
+    [InlineData("dbchange\\profiles\\pipeline.publish.xml")]
     [InlineData("../elsewhere/pipeline.publish.xml")]
-    [InlineData("estate//pipeline.publish.xml")]
-    [InlineData("estate/profiles/pipeline.xml")]
+    [InlineData("dbchange//pipeline.publish.xml")]
+    [InlineData("dbchange/profiles/pipeline.xml")]
     [InlineData("")]
     [InlineData(null)]
-    public void A_profile_path_outside_the_estate_or_naming_no_publish_profile_is_refused(string? path) => Expect.Failed(PublishProfilePath.Of(Where, path), "environments.profile-path");
+    public void A_profile_path_outside_the_repository_or_naming_no_publish_profile_is_refused(string? path) => Expect.Failed(PublishProfilePath.Of(Where, path), "environments.profile-path");
 
     /// <summary>
     /// The duplicate check compares neighbours in the sorted variables, so it relies on the order putting two spellings of one name side by
@@ -176,12 +176,12 @@ public sealed class EnvironmentsTests
     public void The_environments_file_names_each_environment_once_and_finds_one_by_its_name()
     {
         var (dev, qa) = (Expect.Value(Environment("dev")), Expect.Value(Environment("qa")));
-        var environments = Expect.Value(Environments.Of("estate/environments.json", [qa, dev], null));
+        var environments = Expect.Value(Environments.Of("dbchange/environments.json", [qa, dev], null));
 
         Assert.Equal([dev, qa], environments.All);
         Assert.Same(qa, environments.Named(Expect.Value(EnvironmentName.Of(Where, "qa"))));
         Assert.Null(environments.Named(Expect.Value(EnvironmentName.Of(Where, "uat"))));
-        Expect.Failed(Environments.Of("estate/environments.json", [dev, qa, Expect.Value(Environment("dev", profile: "estate/other.publish.xml"))], null), "environments.environment-name");
+        Expect.Failed(Environments.Of("dbchange/environments.json", [dev, qa, Expect.Value(Environment("dev", profile: "dbchange/other.publish.xml"))], null), "environments.environment-name");
     }
 
     /// <summary>The profile a copy is planned under when no --profile names one: the one every environment names, else none (cli/Check.cs).</summary>
@@ -189,9 +189,9 @@ public sealed class EnvironmentsTests
     [Trait("Category", "fast")]
     public void The_shared_profile_is_the_one_path_every_environment_names_and_else_none()
     {
-        var shared = Expect.Value(Environments.Of("estate/environments.json", [Expect.Value(Environment("dev")), Expect.Value(Environment("qa"))], null)).SharedProfile;
-        var differing = Expect.Value(Environments.Of("estate/environments.json", [Expect.Value(Environment("dev")), Expect.Value(Environment("qa", profile: "estate/qa.publish.xml"))], null)).SharedProfile;
-        var none = Expect.Value(Environments.Of("estate/environments.json", [], null)).SharedProfile;
+        var shared = Expect.Value(Environments.Of("dbchange/environments.json", [Expect.Value(Environment("dev")), Expect.Value(Environment("qa"))], null)).SharedProfile;
+        var differing = Expect.Value(Environments.Of("dbchange/environments.json", [Expect.Value(Environment("dev")), Expect.Value(Environment("qa", profile: "dbchange/qa.publish.xml"))], null)).SharedProfile;
+        var none = Expect.Value(Environments.Of("dbchange/environments.json", [], null)).SharedProfile;
 
         Assert.Equal((Pipeline, null, null), (shared?.ToString(), differing?.ToString(), none?.ToString()));
     }
@@ -204,7 +204,7 @@ public sealed class EnvironmentsTests
     [InlineData("podman", null)]
     [InlineData(null, null)]
     public void The_local_server_the_environments_file_prefers_is_docker_or_localdb(string? text, string? kind) =>
-        Assert.Equal(kind ?? "environments.malformed", LocalServerKind.Of("localServer in estate/environments.json", text).Match(k => k.ToString(), error => error.Code));
+        Assert.Equal(kind ?? "environments.malformed", LocalServerKind.Of("localServer in dbchange/environments.json", text).Match(k => k.ToString(), error => error.Code));
 
     [Fact]
     [Trait("Category", "fast")]
@@ -213,18 +213,18 @@ public sealed class EnvironmentsTests
     {
         var confirmed = Expect.Value(Confirmation.Of(Where, "the dev lead", "2026-09-20"));
         var environment = Expect.Value(NamedEnvironment.Of(Where, Expect.Value(EnvironmentName.Of(Where, "dev")), Expect.Value(Host.Of(Where, "dev-sql")), new Classification.Synthetic(confirmed), ["leads"],
-            Reference("env:ESTATE_DEV"), Expect.Value(PublishProfilePath.Of(Where, Pipeline)), [Literal("Tag", Planted.Text), Referenced("ServicePassword", "file:.estate/dev.password")], null));
+            Reference("env:DBCHANGE_DEV"), Expect.Value(PublishProfilePath.Of(Where, Pipeline)), [Literal("Tag", Planted.Text), Referenced("ServicePassword", "file:.dbchange/dev.password")], null));
 
         var printed = string.Join("\n", environment.ToString(), string.Join(" ", environment.SqlCmd), environment.Classification, environment.Connection);
 
         Assert.Equal("env:dev (synthetic, confirmed by the dev lead on 2026-09-20)", environment.ToString());
-        Assert.Equal("$(ServicePassword) from file:.estate/dev.password $(Tag), a literal", string.Join(" ", environment.SqlCmd));
+        Assert.Equal("$(ServicePassword) from file:.dbchange/dev.password $(Tag), a literal", string.Join(" ", environment.SqlCmd));
         Planted.AbsentFrom(printed);
     }
 
     private static Result<NamedEnvironment> Environment(string name, string profile = Pipeline, IEnumerable<string>? readerGroups = null, IEnumerable<SqlCmdVariable>? sqlCmd = null) =>
         NamedEnvironment.Of(Where, Expect.Value(EnvironmentName.Of(Where, name)), Expect.Value(Host.Of(Where, "dev-sql.corp.example")), new Classification.Real(null), readerGroups ?? [],
-            Reference("env:ESTATE_DEV"), Expect.Value(PublishProfilePath.Of(Where, profile)), sqlCmd ?? [], Reference("file:.estate/dev-ossys.connection"));
+            Reference("env:DBCHANGE_DEV"), Expect.Value(PublishProfilePath.Of(Where, profile)), sqlCmd ?? [], Reference("file:.dbchange/dev-ossys.connection"));
 
     private static SecretReference Reference(string text) => Expect.Value(SecretReference.Of(Where, text));
 

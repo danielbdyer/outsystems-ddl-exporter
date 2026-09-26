@@ -5,15 +5,15 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json.Nodes;
-using Estate.Cli;
-using Estate.Io;
-using Estate.Kernel;
-using Estate.Tests;
+using DbChange.Cli;
+using DbChange.Io;
+using DbChange.Kernel;
+using DbChange.Tests;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
-using Contract = Estate.Cli.Contract;
+using Contract = DbChange.Cli.Contract;
 
-namespace Estate.Budgets.Tests.Register;
+namespace DbChange.Budgets.Tests.Register;
 
 /// <summary>
 /// Every way to an error the kernel, io and the cli construct, each with an input that takes it there. Register.Refusals reads each
@@ -25,19 +25,19 @@ namespace Estate.Budgets.Tests.Register;
 /// its code through Database.ErrorOf, the one method that classifies a failure against a server, which io/DacFx.Failed hands each DacFx
 /// failure to. The local server's own choice
 /// and Create on a given server are io's alone, so R15 is reached through copy: and a planted registry row. The cli's reject
-/// arguments, through Contract.Flags and estate check's own answer.
+/// arguments, through Contract.Flags and dbchange check's own answer.
 /// </summary>
 internal static class RefusalPaths
 {
     /// <summary>One way to an error: what it is, the code it must take, whether its input carries the planted value, and its driver (scratch, planted).</summary>
     public sealed record Case(string Label, string Code, bool Plants, Func<string, string, Error> Drive);
 
-    private const string Pipeline = "estate/profiles/pipeline.publish.xml";
+    private const string Pipeline = "dbchange/profiles/pipeline.publish.xml";
 
     private static readonly ElementKey Table = Made(ElementKey.Of("Table", Made(Name.Of("dbo", "Customer"))));
 
     /// <summary>The paths a CommitAndPush of the evidence names, none of which the scratch repository's one empty commit holds.</summary>
-    private static readonly string[] Evidence = ["estate/evidence.shape.json"];
+    private static readonly string[] Evidence = ["dbchange/evidence.shape.json"];
 
     public static IReadOnlyList<Case> All { get; } =
     [
@@ -51,7 +51,7 @@ internal static class RefusalPaths
         new("a fingerprint that is none", "fingerprint.malformed", false, (_, _) => Failed(Fingerprint.Parse("0"))),
         new("a DacFx release outside the pin's window", "toolchain.outside-window", false, (_, _) =>
             Made(Pin.Of("170.6.10", "170.5.96")).Rejects(Made(DacFxVersion.Of("170.7.2"))) ?? throw new InvalidOperationException("the window admitted a newer release")),
-        new("a toolchain ledger with no row for this estate", "toolchain.unrecorded", false, (scratch, _) =>
+        new("a toolchain ledger with no row for this dbchange version", "toolchain.unrecorded", false, (scratch, _) =>
             Failed(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 2.9.0 | UNPINNED | — |"), "3.0.0+0123abcd"))),
         new("a toolchain ledger whose pin is no release", "toolchain.malformed", false, (scratch, _) =>
             Failed(Doctor.Toolchain(Ledger(scratch, "| 2026-09-24 | 3.0.0 | latest | — |"), "3.0.0"))),
@@ -68,7 +68,7 @@ internal static class RefusalPaths
             Failed(Change.Between(SortedArray.Of(Made(Element.Of(Table, [], [])), Made(Element.Of(Table, [new("Nullable", new Value.Null())], []))), [], []))),
         new("a collation name with no case rule", "model.collation", false, (_, _) => Failed(Collation.Of("Latin1_General"))),
 
-        new("ESTATE_TOOL naming no tool folder", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), Bare(scratch), scratch))),
+        new("DBCHANGE_TOOL naming no tool folder", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), Bare(scratch), scratch))),
         new("no tool folder anywhere", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), null, scratch))),
         new("a build against no tool folder", "tool.missing", false, (scratch, _) => Failed(Ssdt.Build(Project(scratch), Bare(scratch), Output(scratch), Sdk))),
         new("a build of no project", "build.no-project", false, (scratch, _) => Failed(Ssdt.Build(Path.Combine(scratch, "none.sqlproj"), Bare(scratch), Output(scratch), Sdk))),
@@ -133,7 +133,7 @@ internal static class RefusalPaths
 
         new("a file standing where a written file's folder should be", "file.unwritable", false, (scratch, _) =>
             Failed(Write.Text(Path.Combine(Written(scratch, "file", ""), "under.txt"), "x\n"))),
-        new("a lock file another estate process holds past the wait", "lock.timed-out", false, (scratch, _) =>
+        new("a lock file another dbchange process holds past the wait", "lock.timed-out", false, (scratch, _) =>
         {
             using var held = Made(FileLock.Take(Path.Combine(scratch, "state.lock"), TimeSpan.Zero));
             return Failed(FileLock.Take(Path.Combine(scratch, "state.lock"), TimeSpan.Zero));
@@ -158,43 +158,43 @@ internal static class RefusalPaths
             Arrange(root, "commit", "-q", "--allow-empty", "-m", "unrelated");
             return Git.MergeBase(root, "main", "unrelated", (c, t) => c.Arguments.Contains("--is-shallow-repository") ? new Ran.Exited(0, "true\n", "") : Command.Run(c, t));
         })),
-        new("a branch name git does not take", "git-branch.malformed", false, (scratch, _) => InRepository(scratch, root => Git.CommitAndPush(root, Evidence, "evidence", "estate/..evidence"))),
+        new("a branch name git does not take", "git-branch.malformed", false, (scratch, _) => InRepository(scratch, root => Git.CommitAndPush(root, Evidence, "evidence", "dbchange/..evidence"))),
         new("a branch that exists here", "git-branch.exists", false, (scratch, _) => InRepository(scratch, root =>
         {
-            Arrange(root, "branch", "estate/evidence");
-            return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence");
+            Arrange(root, "branch", "dbchange/evidence");
+            return Git.CommitAndPush(root, Evidence, "evidence", "dbchange/evidence");
         })),
-        new("a repository with no origin", "git.no-origin", false, (scratch, _) => InRepository(scratch, root => Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence"))),
+        new("a repository with no origin", "git.no-origin", false, (scratch, _) => InRepository(scratch, root => Git.CommitAndPush(root, Evidence, "evidence", "dbchange/evidence"))),
         new("an origin that does not answer", "origin.unreachable", false, (scratch, _) => InRepository(scratch, root =>
         {
             Arrange(root, "remote", "add", "origin", Path.Combine(scratch, "no-origin.git"));
-            return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence");
+            return Git.CommitAndPush(root, Evidence, "evidence", "dbchange/evidence");
         })),
         new("an origin that refuses the credential", "origin.denied", false, (scratch, _) => InRepository(scratch, root =>
         {
             Arrange(root, "init", "-q", "--bare", Path.Combine(scratch, "origin.git"));
             Arrange(root, "remote", "add", "origin", Path.Combine(scratch, "origin.git"));
-            Written(root, "estate/evidence.shape.json", "{}\n");
-            return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence",
-                (c, t) => c.Arguments.Contains("push") ? new Ran.Exited(128, "", "fatal: Authentication failed for 'https://dev.azure.com/estate/_git/estate/'\n") : Command.Run(c, t));
+            Written(root, "dbchange/evidence.shape.json", "{}\n");
+            return Git.CommitAndPush(root, Evidence, "evidence", "dbchange/evidence",
+                (c, t) => c.Arguments.Contains("push") ? new Ran.Exited(128, "", "fatal: Authentication failed for 'https://dev.azure.com/org/_git/ssdt/'\n") : Command.Run(c, t));
         })),
         new("an origin whose hook refuses the branch", "origin.rejected", false, (scratch, _) => InRepository(scratch, root =>
         {
             Arrange(root, "init", "-q", "--bare", Path.Combine(scratch, "origin.git"));
             Arrange(root, "remote", "add", "origin", Path.Combine(scratch, "origin.git"));
-            Written(root, "estate/evidence.shape.json", "{}\n");
-            return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence",
-                (c, t) => c.Arguments.Contains("push") ? new Ran.Exited(1, "To origin\n!\tHEAD:refs/heads/estate/evidence\t[remote rejected] (pre-receive hook declined)\nDone\n", "") : Command.Run(c, t));
+            Written(root, "dbchange/evidence.shape.json", "{}\n");
+            return Git.CommitAndPush(root, Evidence, "evidence", "dbchange/evidence",
+                (c, t) => c.Arguments.Contains("push") ? new Ran.Exited(1, "To origin\n!\tHEAD:refs/heads/dbchange/evidence\t[remote rejected] (pre-receive hook declined)\nDone\n", "") : Command.Run(c, t));
         })),
         new("a commit of a path the working tree lacks", "git.failed", false, (scratch, _) => InRepository(scratch, root =>
         {
             Arrange(root, "init", "-q", "--bare", Path.Combine(scratch, "origin.git"));
             Arrange(root, "remote", "add", "origin", Path.Combine(scratch, "origin.git"));
-            return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence");
+            return Git.CommitAndPush(root, Evidence, "evidence", "dbchange/evidence");
         })),
 
-        new("no environmentsFile", "environments.missing", false, (scratch, _) => Failed(Io.EnvironmentsFile.Read(scratch))),
-        new("an environments file that is not JSON", "environments.unreadable", true, (scratch, planted) => Failed(Io.EnvironmentsFile.Read(Estate(scratch, "{ \"environments\": { \"dev\": " + planted + " } }")))),
+        new("no environments file", "environments.missing", false, (scratch, _) => Failed(Io.EnvironmentsFile.Read(scratch))),
+        new("an environments file that is not JSON", "environments.unreadable", true, (scratch, planted) => Failed(Io.EnvironmentsFile.Read(RepositoryAt(scratch, "{ \"environments\": { \"dev\": " + planted + " } }")))),
         new("an environments file giving a key twice", "environments.unreadable", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + "], \"readerGroups\": []"))),
         new("a literal connection string", "environments.literal-connection", true, (scratch, planted) => ReadEnvironments(scratch, Dev(connection: "Server=db;User ID=estate;Password=" + planted))),
         new("a literal connection string as a key", "environments.literal-connection", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"sqlcmd\": { \"Data Source=db;Password=" + planted + "\": \"env:A\" }"))),
@@ -210,11 +210,11 @@ internal static class RefusalPaths
         new("a file reference that is a connection string", "reference.malformed", true, (_, planted) =>
             Failed(SecretReference.Of("--connection", "file:Server=db;User ID=sa;Password=" + planted))),
         new("a local server that is neither docker nor localdb", "environments.malformed", true, (scratch, planted) =>
-            Failed(Io.EnvironmentsFile.Read(Estate(scratch, "{ \"environments\": {}, \"localServer\": " + Quoted(planted) + " }")))),
-        new("a host given with its port", "environments.host", true, (_, planted) => Failed(Host.Of("environments.dev.host in estate/environments.json", planted + ",1433"))),
+            Failed(Io.EnvironmentsFile.Read(RepositoryAt(scratch, "{ \"environments\": {}, \"localServer\": " + Quoted(planted) + " }")))),
+        new("a host given with its port", "environments.host", true, (_, planted) => Failed(Host.Of("environments.dev.host in dbchange/environments.json", planted + ",1433"))),
         new("an environment misnamed", "environments.environment-name", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + "]", name: "DEV"))),
         new("a reader group given twice", "environments.reader-groups", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
-        new("a profile path outside the estate", "environments.profile-path", true, (scratch, planted) => ReadEnvironments(scratch, Dev(profile: "../" + planted + ".publish.xml"))),
+        new("a profile path outside the repository", "environments.profile-path", true, (scratch, planted) => ReadEnvironments(scratch, Dev(profile: "../" + planted + ".publish.xml"))),
         new("a SQLCMD variable given twice in two cases", "environments.sqlcmd-repeated", true, (scratch, planted) =>
             ReadEnvironments(scratch, Dev("\"sqlcmd\": { \"Tag\": \"env:A\", \"Version\": \"env:C\", \"tag\": \"env:B\" }, \"readerGroups\": [" + Quoted(planted) + "]"))),
         new("a classification that is none", "environments.classification", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"classification\": " + Quoted(planted)))),
@@ -243,8 +243,8 @@ internal static class RefusalPaths
             Failed(PublishProfiles.Load(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted))))),
         new("a named environment whose profile allows data loss", "profile.data-loss-allowed", true, (scratch, planted) =>
         {
-            var root = Estate(scratch, Environments(Dev(profile: "estate/profiles/relaxed.publish.xml")));
-            File.Move(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted)), Path.Combine(root, "estate", "profiles", "relaxed.publish.xml"));
+            var root = RepositoryAt(scratch, Environments(Dev(profile: "dbchange/profiles/relaxed.publish.xml")));
+            File.Move(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted)), Path.Combine(root, "dbchange", "profiles", "relaxed.publish.xml"));
             return Failed(PublishProfiles.Of(Made(Io.EnvironmentsFile.Read(root)).All.Single(), root));
         }),
         new("a SQLCMD literal under a credential's name in a profile", "sqlcmd.literal-credential", true, (scratch, planted) =>
@@ -256,69 +256,69 @@ internal static class RefusalPaths
         new("a literal connection string where a target goes", "connection.literal", true, (_, planted) =>
             Failed(SqlServer.Target("Server=db;User ID=sa;Password=" + planted, "--target"))),
         new("a git ref where a database is asked for", "target.not-a-database", false, (scratch, _) => Failed(SqlServer.Resolve(Target("ref:main"), scratch))),
-        new("an environment the environments file does not name", "target.unnamed", false, (scratch, _) => Failed(SqlServer.Resolve(Target("env:qa"), Estate(scratch, Environments(Dev()))))),
+        new("an environment the environments file does not name", "target.unnamed", false, (scratch, _) => Failed(SqlServer.Resolve(Target("env:qa"), RepositoryAt(scratch, Environments(Dev()))))),
         new("the synthetic copy before its milestone", "synthetic-copy.not-built", false, (scratch, _) => Failed(SqlServer.Resolve(Target("synthetic-copy"), scratch))),
         new("a connection whose variable is unset", "connection.unresolved", false, (scratch, _) =>
-            Failed(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: "env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant())))))),
+            Failed(SqlServer.Resolve(Target("env:dev"), RepositoryAt(scratch, Environments(Dev(connection: "env:DBCHANGE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant())))))),
         new("a connection file holding no connection string", "connection.malformed", true, (scratch, planted) =>
-            Failed(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "garbled " + planted)))))))),
+            Failed(SqlServer.Resolve(Target("env:dev"), Initialized(RepositoryAt(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "garbled " + planted)))))))),
         new("a connection file git tracks", "reference.tracked", true, (scratch, planted) => InRepository(scratch, root =>
         {
-            Written(root, "estate/environments.json", Environments(Dev(connection: "file:estate/dev.connection")));
-            OwnerOnly(Written(root, "estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
-            Arrange(root, "add", "--", "estate/dev.connection");
+            Written(root, "dbchange/environments.json", Environments(Dev(connection: "file:dbchange/dev.connection")));
+            OwnerOnly(Written(root, "dbchange/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
+            Arrange(root, "add", "--", "dbchange/dev.connection");
             Arrange(root, "commit", "-q", "-m", "the connection file");
             return SqlServer.Resolve(Target("env:dev"), root);
         })),
         new("a connection file git does not ignore", "reference.not-ignored", true, (scratch, planted) => InRepository(scratch, root =>
         {
-            Written(root, "estate/environments.json", Environments(Dev(connection: "file:estate/dev.connection")));
-            OwnerOnly(Written(root, "estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
+            Written(root, "dbchange/environments.json", Environments(Dev(connection: "file:dbchange/dev.connection")));
+            OwnerOnly(Written(root, "dbchange/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
             return SqlServer.Resolve(Target("env:dev"), root);
         })),
         new("a connection file named by a spelling its folder does not list", "reference.unlisted", OperatingSystem.IsWindows(), (scratch, planted) => InRepository(scratch, root =>
         {
-            Written(root, ".gitignore", ".estate/\n");
-            Written(root, "estate/environments.json", Environments(Dev(connection: "file:.estate/dev.connection::$DATA")));
-            var file = OwnerOnly(Written(root, ".estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
+            Written(root, ".gitignore", ".dbchange/\n");
+            Written(root, "dbchange/environments.json", Environments(Dev(connection: "file:.dbchange/dev.connection::$DATA")));
+            var file = OwnerOnly(Written(root, ".dbchange/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
             return OperatingSystem.IsWindows()   // Windows opens the default data stream as name::$DATA; elsewhere that name opens no file, and the driver asks io/SqlServer of it directly
                 ? SqlServer.Resolve(Target("env:dev"), root).Map(database => database.Target.ToString())
-                : SqlServer.Listed("env:dev's connection, file:.estate/dev.connection::$DATA,", file + "::$DATA");
+                : SqlServer.Listed("env:dev's connection, file:.dbchange/dev.connection::$DATA,", file + "::$DATA");
         })),
         new("a connection file in a folder this identity cannot list", "reference.unlistable", true, (scratch, planted) =>
         {
-            var root = Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "locked/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
+            var root = Initialized(RepositoryAt(scratch, Environments(Dev(connection: Reference(scratch, "locked/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
             return Denied(Path.Combine(scratch, "locked"), () => Failed(SqlServer.Resolve(Target("env:dev"), root)));
         }),
         new("a connection file this identity cannot read", "reference.unreadable", true, (scratch, planted) =>
         {
-            var root = Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
+            var root = Initialized(RepositoryAt(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
             return Denied(Path.Combine(scratch, "dev.connection"), () => Failed(SqlServer.Resolve(Target("env:dev"), root)));
         }),
         new("a connection file whose attributes this identity cannot read", "reference.inaccessible", true, (scratch, planted) =>
         {
-            var root = Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "locked/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
+            var root = Initialized(RepositoryAt(scratch, Environments(Dev(connection: Reference(scratch, "locked/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted)))));
             return Unexaminable(Path.Combine(scratch, "locked", "dev.connection"), () => Failed(SqlServer.Resolve(Target("env:dev"), root)));
         }),
-        new("a connection file of an estate in no git repository", "reference.no-repository", true, (scratch, planted) =>
-            Failed(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Password=" + planted))))))),
+        new("a connection file of a repository root in no git repository", "reference.no-repository", true, (scratch, planted) =>
+            Failed(SqlServer.Resolve(Target("env:dev"), RepositoryAt(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Password=" + planted))))))),
         new("a connection file its group can read, where files carry a Unix mode", "reference.readable-by-others", !OperatingSystem.IsWindows(), (scratch, planted) => OperatingSystem.IsWindows()
-            ? SqlServer.ReadableByOthers("env:dev's connection, file:.estate/dev.connection,", (UnixFileMode)0b110_100_000) ?? throw new InvalidOperationException("mode 0640 was not refused")
-            : Failed(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection:
+            ? SqlServer.ReadableByOthers("env:dev's connection, file:.dbchange/dev.connection,", (UnixFileMode)0b110_100_000) ?? throw new InvalidOperationException("mode 0640 was not refused")
+            : Failed(SqlServer.Resolve(Target("env:dev"), Initialized(RepositoryAt(scratch, Environments(Dev(connection:
                 GroupReadable(Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted))))))))),
-        new("a copy the registry does not hold", "copy.unregistered", false, (scratch, _) => Failed(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch))),
+        new("a copy the registry does not hold", "copy.unregistered", false, (scratch, _) => Failed(SqlServer.Resolve(Target("copy:dbchange_nowhere_1_00000000"), scratch))),
         new("a copy registry that is not JSON", "registry.unreadable", true, (scratch, planted) =>
         {
-            Directory.CreateDirectory(Path.Combine(scratch, ".estate"));
-            File.WriteAllText(Path.Combine(scratch, ".estate", "copies.json"), "{ \"copies\": [ " + planted);
-            return Failed(SqlServer.Resolve(Target("copy:estate_nowhere_1_00000000"), scratch));
+            Directory.CreateDirectory(Path.Combine(scratch, ".dbchange"));
+            File.WriteAllText(Path.Combine(scratch, ".dbchange", "copies.json"), "{ \"copies\": [ " + planted);
+            return Failed(SqlServer.Resolve(Target("copy:dbchange_nowhere_1_00000000"), scratch));
         }),
         new("a copy made on the host an environment's reference names", "copy.named-host", true, (scratch, planted) => Failed(SqlServer.Resolve(Target("copy:" + Copied),
-            Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted), host: "localhost")))))))),
+            Registered(Initialized(RepositoryAt(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=127.0.0.1,1433;User ID=reader;Password=" + planted), host: "localhost")))))))),
         new("a copy beside an environment whose connection SqlClient cannot read", "connection.malformed", true, (scratch, planted) => Failed(SqlServer.Resolve(Target("copy:" + Copied),
-            Registered(Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Nonsense " + planted + " = 1"))))))))),
+            Registered(Initialized(RepositoryAt(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Nonsense " + planted + " = 1"))))))))),
         new("no local server anywhere", "local-server.missing", false, (scratch, _) => Failed(LocalServer.ServerName(null, Path.Combine(scratch, "no-sql.env"), localDb: false))),
-        new("an ESTATE_SQL SqlClient reads no connection string from", "connection.malformed", true, (scratch, planted) =>
+        new("an DBCHANGE_SQL SqlClient reads no connection string from", "connection.malformed", true, (scratch, planted) =>
             Failed(LocalServer.ServerName("Server=db;Password=" + planted + ";Nonsense " + planted + " = 1", Path.Combine(scratch, "no-sql.env"), localDb: false))),
         new("a named environment's login denied", "server.denied", true, (scratch, planted) => DevDatabase(scratch).ErrorOf(18456, "Login failed for user '" + planted + "'.")),
         new("a named environment that does not answer", "server.unreachable", true, (scratch, planted) =>
@@ -350,33 +350,33 @@ internal static class RefusalPaths
             Failed(SqlServer.AggregateQuery.Of("SELECT MAX(Email) FROM dbo.Customer WHERE Name = N'" + planted + "';", "dbo.Customer.Email Fits"))),
         new("a SQLCMD reference that does not resolve", "sqlcmd.unresolved", false, (scratch, _) =>
         {
-            var root = Initialized(Estate(scratch, Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\" }",
+            var root = Initialized(RepositoryAt(scratch, Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"env:DBCHANGE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant() + "\" }",
                 connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev")))));
-            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
+            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "dbchange", "profiles", "pipeline.publish.xml"));
             return Failed(SqlServer.SqlCmdValues(Made(SqlServer.Resolve(Target("env:dev"), root))));
         }),
         new("a SQLCMD reference to a file git tracks", "reference.tracked", true, (scratch, planted) => InRepository(scratch, root =>
         {
-            Written(root, "estate/environments.json", Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"file:estate/token.txt\" }",
+            Written(root, "dbchange/environments.json", Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"file:dbchange/token.txt\" }",
                 connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev"))));
-            OwnerOnly(Written(root, "estate/token.txt", planted));
-            Arrange(root, "add", "--", "estate/token.txt");
+            OwnerOnly(Written(root, "dbchange/token.txt", planted));
+            Arrange(root, "add", "--", "dbchange/token.txt");
             Arrange(root, "commit", "-q", "-m", "the token");
-            Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
-            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "estate", "profiles", "pipeline.publish.xml"));
+            Directory.CreateDirectory(Path.Combine(root, "dbchange", "profiles"));
+            File.Copy(Path.Combine(Repository.Root, "tests", "Golden", "project", "profiles", "pipeline.publish.xml"), Path.Combine(root, "dbchange", "profiles", "pipeline.publish.xml"));
             return SqlServer.SqlCmdValues(Made(SqlServer.Resolve(Target("env:dev"), root)));
         })),
 
         new("a timeout that is no whole number of seconds", "arguments.timeout", false, (_, _) => Failed(Cli.Program.Timeout(["read", "--timeout", "soon"]))),
         new("a flag the verb does not take", "arguments.unknown-flag", false, (_, _) => Failed(Contract.Flags(["--no-such-flag"], [], [], []))),
         new("a required flag absent", "arguments.missing-flag", false, (_, _) => Failed(Contract.Flags([], ["--from"], [], []))),
-        new("estate check with no check named", "arguments.unknown-check", false, (scratch, _) => Carried(Verbs.Check(new Checkout(scratch, scratch, null), []))),
+        new("dbchange check with no check named", "arguments.unknown-check", false, (scratch, _) => Carried(Verbs.Check(new Checkout(scratch, scratch, null), []))),
         new("a word that names no verb", "arguments.unknown-verb", false, (scratch, _) => Answered(["frobnicate"], new Checkout(scratch, scratch, null))),
         new("a verb this build has no body for", "verb.not-built", false, (scratch, _) => Answered(["predict"], new Checkout(scratch, scratch, null))),
         new("an exception no verb expected", "internal.unexpected", false, (scratch, _) => Answered(["read", "--from", "dacpac:none.dacpac"], new Checkout(scratch, null!, null))),
     ];
 
-    /// <summary>The error estate answers a command with, run in this process against <paramref name="here"/>: the one finding of severity error its --json answer carries.</summary>
+    /// <summary>The error dbchange answers a command with, run in this process against <paramref name="here"/>: the one finding of severity error its --json answer carries.</summary>
     private static Error Answered(string[] arguments, Checkout here)
     {
         using var output = new MemoryStream();
@@ -388,25 +388,25 @@ internal static class RefusalPaths
     }
 
     /// <summary>The copy a planted registry holds, made on localhost,11433.</summary>
-    private const string Copied = "estate_host_1_0a1b2c3d";
+    private const string Copied = "dbchange_host_1_0a1b2c3d";
 
     private static Target Target(string text) => Made(SqlServer.Target(text, "--target"));
 
-    /// <summary>The estate's root with .estate/copies.json holding <see cref="Copied"/>, as io/LocalServer writes a row, so copy: reaches R15 without a server.</summary>
+    /// <summary>The repository root with .dbchange/copies.json holding <see cref="Copied"/>, as io/LocalServer writes a row, so copy: reaches R15 without a server.</summary>
     private static string Registered(string root)
     {
-        Directory.CreateDirectory(Path.Combine(root, ".estate"));
-        File.WriteAllText(Path.Combine(root, ".estate", "copies.json"),
+        Directory.CreateDirectory(Path.Combine(root, ".dbchange"));
+        File.WriteAllText(Path.Combine(root, ".dbchange", "copies.json"),
             "{ \"copies\": [ { \"name\": \"" + Copied + "\", \"server\": \"localhost,11433\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-24T00:00:00Z\" } ] }");
         return root;
     }
 
     /// <summary>The named environment dev, its connection a file under the scratch folder naming a server that is never reached.</summary>
     private static SqlServer.Database DevDatabase(string scratch) =>
-        Made(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev")))))));
+        Made(SqlServer.Resolve(Target("env:dev"), Initialized(RepositoryAt(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev")))))));
 
     /// <summary>
-    /// A file: reference to a file written under the scratch folder, outside the estate's root and in no git repository, and read by its
+    /// A file: reference to a file written under the scratch folder, outside the repository root and in no git repository, and read by its
     /// owner alone; its path with '/' so the environments file's JSON carries it as it is.
     /// </summary>
     private static string Reference(string scratch, string file, string text) => "file:" + OwnerOnly(Written(scratch, file, text)).Replace('\\', '/');
@@ -517,7 +517,7 @@ internal static class RefusalPaths
         return reference;
     }
 
-    /// <summary>The estate's root made a git repository, as a clone is, so io/SqlServer can ask git whether it would commit a file: reference's file.</summary>
+    /// <summary>The repository root made a git repository, as a clone is, so io/SqlServer can ask git whether it would commit a file: reference's file.</summary>
     private static string Initialized(string root)
     {
         Arrange(root, "init", "-q");
@@ -551,20 +551,20 @@ internal static class RefusalPaths
         ? new Ran.Exited(0, (string)JsonNode.Parse(File.ReadAllText(Path.Combine(Repository.Root, "global.json")))!["sdk"]!["version"]! + " [sdk]\n", "")
         : Command.Run(command, cancel);
 
-    /// <summary>A dev environment in environmentsFile JSON: its host, its connection, its profile and whatever else is given.</summary>
-    private static string Dev(string extra = "", string connection = "env:ESTATE_DEV", string profile = Pipeline, string name = "dev", string host = "dev-sql") =>
+    /// <summary>A dev environment in the environments file's JSON: its host, its connection, its profile and whatever else is given.</summary>
+    private static string Dev(string extra = "", string connection = "env:DBCHANGE_DEV", string profile = Pipeline, string name = "dev", string host = "dev-sql") =>
         Quoted(name) + ": { \"host\": " + Quoted(host) + ", \"connection\": " + Quoted(connection) + ", \"profile\": " + Quoted(profile) + (extra.Length > 0 ? ", " + extra : "") + " }";
 
     private static string Environments(string environments) => "{ \"environments\": { " + environments + " } }";
 
-    private static Error ReadEnvironments(string scratch, string environments) => Failed(Io.EnvironmentsFile.Read(Estate(scratch, Environments(environments))));
+    private static Error ReadEnvironments(string scratch, string environments) => Failed(Io.EnvironmentsFile.Read(RepositoryAt(scratch, Environments(environments))));
 
-    /// <summary>An estate's root under the scratch folder, holding estate/environments.json with the text given.</summary>
-    private static string Estate(string scratch, string environmentsFile)
+    /// <summary>A repository root under the scratch folder, holding dbchange/environments.json with the text given.</summary>
+    private static string RepositoryAt(string scratch, string environmentsFile)
     {
-        var root = Path.Combine(scratch, "estate-root");
-        Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
-        File.WriteAllText(Path.Combine(root, "estate", "environments.json"), environmentsFile);
+        var root = Path.Combine(scratch, "dbchange-root");
+        Directory.CreateDirectory(Path.Combine(root, "dbchange", "profiles"));
+        File.WriteAllText(Path.Combine(root, "dbchange", "environments.json"), environmentsFile);
         return root;
     }
 
@@ -620,10 +620,10 @@ internal static class RefusalPaths
         return Path.Combine(scratch, file);
     }
 
-    /// <summary>An estate's root whose toolchain ledger is the sample's, its one row replaced.</summary>
+    /// <summary>A repository root whose toolchain ledger is the sample's, its one row replaced.</summary>
     private static string Ledger(string scratch, string row)
     {
-        var sample = File.ReadAllText(Path.Combine(Repository.Root, "tests", "Golden", "estate", "ledgers", "toolchain.md"));
+        var sample = File.ReadAllText(Path.Combine(Repository.Root, "tests", "Golden", "dbchange", "ledgers", "toolchain.md"));
         Written(scratch, Doctor.Ledger, sample.Replace("| 2026-09-24 | 3.0.0 | UNPINNED | — |", row, StringComparison.Ordinal));
         return scratch;
     }
@@ -676,10 +676,10 @@ internal static class RefusalPaths
         try
         {
             Arrange(root, "init", "-q", "--initial-branch=main");
-            // estate's own commit (the push drivers) reads the repository's configuration alone, and a CI runner has no global identity.
-            Arrange(root, "config", "user.name", "Estate Test");
-            Arrange(root, "config", "user.email", "estate-test@example.invalid");
-            Arrange(root, "commit", "-q", "--allow-empty", "-m", "estate");
+            // dbchange's own commit (the push drivers) reads the repository's configuration alone, and a CI runner has no global identity.
+            Arrange(root, "config", "user.name", "DbChange Test");
+            Arrange(root, "config", "user.email", "dbchange-test@example.invalid");
+            Arrange(root, "commit", "-q", "--allow-empty", "-m", "dbchange");
             return Failed(drive(root));
         }
         finally
@@ -701,7 +701,7 @@ internal static class RefusalPaths
 
     /// <summary>
     /// A folder holding, empty, the files a published tool folder carries, and DacFx's own assembly in the build task's place, whose file
-    /// version is the release estate runs, so the build starts and its targets fail to load.
+    /// version is the release dbchange runs, so the build starts and its targets fail to load.
     /// </summary>
     private static string Hollow(string scratch)
     {

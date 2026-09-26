@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// Every test method under tests/ with the traits above it, read from the sources as ci/laws.sh and ci/laws.ps1 read them (comment

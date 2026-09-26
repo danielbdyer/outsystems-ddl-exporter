@@ -1,9 +1,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using Xunit;
-using static Estate.Kernel.Tests.ElementSets;
+using static DbChange.Kernel.Tests.ElementSets;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>
 /// The sample changes, hand-built as io/Ssdt.ReadModel reads them: a Customer table with its columns in order, an index

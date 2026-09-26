@@ -1,12 +1,12 @@
 using System;
 using System.Text.RegularExpressions;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
 /// The machine a SQL Server runs on, as R15 compares machines (V3_MILESTONES.md §4 row 16): lower case, with no protocol, port or
 /// instance, and localhost for this machine however a connection spells it. <see cref="ServerName"/> reads the host inside a
-/// connection's data source, keeping any spelling SqlClient accepts; <see cref="Of"/> reads the host estate/environments.json gives an
+/// connection's data source, keeping any spelling SqlClient accepts; <see cref="Of"/> reads the host dbchange/environments.json gives an
 /// environment, which is a host name (letters, digits, '-', '_' and '.', a letter or digit first and last), an IP address, or
 /// (localdb). Two hosts are one here when they are spelled alike; io/LocalServer also asks DNS whether two spellings share an
 /// address. default(Host) is not a host.
@@ -27,7 +27,7 @@ public readonly record struct Host : IComparable<Host>
     public static Host LocalDb { get; } = new("(localdb)");
 
     /// <summary>
-    /// The host estate/environments.json gives an environment: trimmed and in lower case, an IPv6 address without its brackets, and
+    /// The host dbchange/environments.json gives an environment: trimmed and in lower case, an IPv6 address without its brackets, and
     /// localhost for 127.0.0.1 and ::1. A port, an instance, a protocol or white space is environments.host, since they belong to the
     /// connection string; the error leads with <paramref name="subject"/> and quotes nothing.
     /// </summary>
@@ -47,7 +47,7 @@ public readonly record struct Host : IComparable<Host>
 }
 
 /// <summary>
-/// A server as a connection's data source names it, in the one spelling .estate/copies.json records and R15 compares: its
+/// A server as a connection's data source names it, in the one spelling .dbchange/copies.json records and R15 compares: its
 /// <see cref="Host"/>, then its port or instance as the data source gives it, in lower case and without white space, such as
 /// localhost,11433, dev-sql\sql2022 or (localdb)\mssqllocaldb. The protocol (tcp:, np:, lpc:, admin:) is dropped and a named pipe
 /// \\host\pipe\… is read for its host. The spelling is the one the registry's rows carried before this type, so they still resolve,

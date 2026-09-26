@@ -3,19 +3,19 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
-using Estate.Budgets.Tests;
-using Estate.Budgets.Tests.Register;
-using Estate.Kernel;
-using Estate.Tests;
+using DbChange.Budgets.Tests;
+using DbChange.Budgets.Tests.Register;
+using DbChange.Kernel;
+using DbChange.Tests;
 using Microsoft.Data.SqlClient;
 using Xunit;
-using static Estate.Tests.Expect;
+using static DbChange.Tests.Expect;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/SqlServer's targets and connections (V3_MILESTONES.md WP 1.4; VALUES.md X1, X2): the target grammar as a closed type; env:
-/// resolved against estate/environments.json and copy: against .estate/copies.json alone, on the server its row records; R15 by spelling
+/// resolved against dbchange/environments.json and copy: against .dbchange/copies.json alone, on the server its row records; R15 by spelling
 /// and by address, failing closed on what it cannot read; a connection reference resolved to the caller's integrated identity unless it
 /// names another; and no error or printed value carrying what a reference resolves to.
 /// </summary>
@@ -51,7 +51,7 @@ public sealed class TargetTests : IDisposable
         Planted.AbsentFrom(error);
     }
 
-    /// <summary>copy: resolves against .estate/copies.json alone, and a name it does not hold is refused.</summary>
+    /// <summary>copy: resolves against .dbchange/copies.json alone, and a name it does not hold is refused.</summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "a named environment cannot be written")]
@@ -59,32 +59,32 @@ public sealed class TargetTests : IDisposable
     [Trait("Exit", "M1.5")]
     public void A_copy_the_registry_does_not_hold_is_refused()
     {
-        var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("copy:estate_nowhere_1_00000000", "--target")), scratch.Path), "copy.unregistered");
+        var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("copy:dbchange_nowhere_1_00000000", "--target")), scratch.Path), "copy.unregistered");
 
-        Assert.Contains("copy:estate_nowhere_1_00000000", error.Message, StringComparison.Ordinal);
+        Assert.Contains("copy:dbchange_nowhere_1_00000000", error.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>copy: before a name no copy estate makes can carry names a copy the registry does not hold, so it is refused as one, and the name is quoted nowhere.</summary>
+    /// <summary>copy: before a name no copy dbchange makes can carry names a copy the registry does not hold, so it is refused as one, and the name is quoted nowhere.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [Trait("Exit", "M1.5")]
     [InlineData("copy:")]
-    [InlineData("copy:Estate-Copy")]
-    [InlineData("copy:Estate_host_1_0a1b2c3d")]
-    [InlineData("copy:estate-host")]
-    [InlineData("copy:estate host")]
-    [InlineData("copy:estate_host_1_0a1b2c3d\n")]
+    [InlineData("copy:Dbchange-Copy")]
+    [InlineData("copy:Dbchange_host_1_0a1b2c3d")]
+    [InlineData("copy:dbchange-host")]
+    [InlineData("copy:dbchange host")]
+    [InlineData("copy:dbchange_host_1_0a1b2c3d\n")]
     public void A_copy_named_as_no_copy_can_be_is_refused_and_its_name_is_quoted_nowhere(string text)
     {
         var error = Failed(SqlServer.Target(text, "--target"), "copy.unregistered");
 
         Assert.Contains("--target", error.Message, StringComparison.Ordinal);
-        Assert.Contains(".estate/copies.json", error.Message, StringComparison.Ordinal);
+        Assert.Contains(".dbchange/copies.json", error.Message, StringComparison.Ordinal);
         Assert.All(new[] { text["copy:".Length..].Trim() }.Where(name => name.Length > 0), name => Assert.DoesNotContain(name, error.Message + error.Remedy, StringComparison.Ordinal));
     }
 
     /// <summary>
-    /// R15: a local server on the host an environment names in estate/environments.json is refused, before anything connects, the environment's
+    /// R15: a local server on the host an environment names in dbchange/environments.json is refused, before anything connects, the environment's
     /// reference agreeing with that host, whether or not it names a database; a reference that names no server names SqlClient's local
     /// default instance. The refusal names the environment and quotes neither connection.
     /// </summary>
@@ -101,13 +101,13 @@ public sealed class TargetTests : IDisposable
     [InlineData("Initial Catalog=Dev;Integrated Security=true", "localhost", "localhost,1")]
     public void A_local_server_on_the_host_an_environment_names_is_refused(string reference, string host, string server)
     {
-        var root = Estate(EnvironmentsJson.Dev("file:" + Written("dev.connection", reference + ";User ID=reader;Password=" + Planted), host));
+        var root = RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", reference + ";User ID=reader;Password=" + Planted), host));
 
         var error = Failed(LocalServer.Create(root, "Server=" + server + ";Initial Catalog=master;User ID=sa;Password=" + Planted + ";TrustServerCertificate=True;Connect Timeout=2"), "copy.named-host");
 
         Assert.Contains("env:dev", error.Message, StringComparison.Ordinal);
         Planted.AbsentFrom(error);
-        Assert.False(File.Exists(Path.Combine(root, ".estate", "copies.json")), "a refused local server registered a copy");
+        Assert.False(File.Exists(Path.Combine(root, ".dbchange", "copies.json")), "a refused local server registered a copy");
     }
 
     /// <summary>
@@ -118,7 +118,7 @@ public sealed class TargetTests : IDisposable
     [Trait("Category", "fast")]
     public void A_local_server_on_the_host_of_an_environment_whose_reference_resolves_to_nothing_here_is_refused()
     {
-        var root = Estate(new EnvironmentsJson(new Dictionary<string, EnvironmentsJson.Environment> { ["dev"] = Unresolved("localhost"), ["uat"] = Unresolved("dev-sql") }));
+        var root = RepositoryAt(new EnvironmentsJson(new Dictionary<string, EnvironmentsJson.Environment> { ["dev"] = Unresolved("localhost"), ["uat"] = Unresolved("dev-sql") }));
 
         var local = Failed(LocalServer.Unnamed(EnvironmentsAt(root), root, Server("localhost,11433"), Resolver), "copy.named-host");
         var aliased = Failed(LocalServer.Unnamed(EnvironmentsAt(root), root, Server("192.0.2.10,1433"), Resolver), "copy.named-host");
@@ -129,22 +129,22 @@ public sealed class TargetTests : IDisposable
 
     /// <summary>
     /// R15 fails closed: an environment whose reference resolves here to text SqlClient reads no connection string from has a server no
-    /// check can place, so the local server is refused by that reference; and without estate/environments.json no environment's host
+    /// check can place, so the local server is refused by that reference; and without dbchange/environments.json no environment's host
     /// can be read, so no copy is made. Neither refusal quotes a connection, and neither registers a copy.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("an unreadable reference", "connection.malformed")]
-    [InlineData("no environmentsFile", "environments.missing")]
+    [InlineData("no environments file", "environments.missing")]
     public void A_local_server_whose_environments_cannot_be_read_is_refused_before_anything_connects(string how, string code)
     {
-        var root = how == "no environmentsFile" ? scratch.Folder("no-environmentsFile") : Estate(EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=dev-sql;Nonsense " + Planted + " = 1")));
+        var root = how == "no environments file" ? scratch.Folder("no-environments-file") : RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=dev-sql;Nonsense " + Planted + " = 1")));
 
         var error = Failed(LocalServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2"), code);
 
-        Assert.Equal(how != "no environmentsFile", error.Message.StartsWith("env:dev's connection", StringComparison.Ordinal));
+        Assert.Equal(how != "no environments file", error.Message.StartsWith("env:dev's connection", StringComparison.Ordinal));
         Planted.AbsentFrom(error);
-        Assert.False(File.Exists(Path.Combine(root, ".estate", "copies.json")), "a refused local server registered a copy");
+        Assert.False(File.Exists(Path.Combine(root, ".dbchange", "copies.json")), "a refused local server registered a copy");
     }
 
     /// <summary>
@@ -156,7 +156,7 @@ public sealed class TargetTests : IDisposable
     [Trait("Category", "fast")]
     public void A_reference_to_a_server_on_another_host_than_the_environments_file_names_is_refused_by_the_environment()
     {
-        var root = Estate(EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=prod-sql.corp.example,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted), "dev-sql"));
+        var root = RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=prod-sql.corp.example,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted), "dev-sql"));
 
         var error = Failed(LocalServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2"), "environments.host");
 
@@ -164,7 +164,7 @@ public sealed class TargetTests : IDisposable
         Assert.Contains("dev-sql", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("prod-sql", error.Message + error.Remedy, StringComparison.Ordinal);
         Planted.AbsentFrom(error);
-        Assert.False(File.Exists(Path.Combine(root, ".estate", "copies.json")), "a refused local server registered a copy");
+        Assert.False(File.Exists(Path.Combine(root, ".dbchange", "copies.json")), "a refused local server registered a copy");
     }
 
     /// <summary>
@@ -186,7 +186,7 @@ public sealed class TargetTests : IDisposable
     [InlineData("sql.this-machine.example", "localhost,11433")]
     public void A_local_server_on_an_alias_of_an_environment_s_host_is_refused(string host, string server)
     {
-        var root = Estate(EnvironmentsJson.Of("dev", Unresolved(host)));
+        var root = RepositoryAt(EnvironmentsJson.Of("dev", Unresolved(host)));
 
         var error = Failed(LocalServer.Unnamed(EnvironmentsAt(root), root, Server(server), Resolver), "copy.named-host");
 
@@ -202,13 +202,13 @@ public sealed class TargetTests : IDisposable
     [InlineData("", "prod-sql.corp.example", "localhost,11433")]
     public void A_local_server_on_a_host_no_environment_names_is_cleared(string reference, string host, string server)
     {
-        var root = Estate(reference.Length == 0 ? EnvironmentsJson.Of("dev", Unresolved(host)) : EnvironmentsJson.Dev("file:" + Written("dev.connection", reference), host));
+        var root = RepositoryAt(reference.Length == 0 ? EnvironmentsJson.Of("dev", Unresolved(host)) : EnvironmentsJson.Dev("file:" + Written("dev.connection", reference), host));
 
         Assert.Equal(Server(server), Value(LocalServer.Unnamed(EnvironmentsAt(root), root, Server(server), Resolver)));
     }
 
     /// <summary>
-    /// The registry bound to its server: a copy's row records the server it was made on, and copy: resolves it only while the scratch
+    /// The registry bound to its server: a copy's row records the server it was made on, and copy: resolves it only while the local
     /// server is that server; on another it is a copy the registry does not hold there. A row whose server is on the host an
     /// environment names is refused before the local server is chosen.
     /// </summary>
@@ -218,14 +218,14 @@ public sealed class TargetTests : IDisposable
     public void A_copy_resolves_only_on_the_server_its_row_records_and_never_on_a_named_host()
     {
         var name = CopyName.Make("host", 1, 0x0a1b2c3d);
-        var clear = Registry(Estate(new EnvironmentsJson(new Dictionary<string, EnvironmentsJson.Environment>())), name, "localhost,11433");
-        var named = Registry(Estate(EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=127.0.0.1,1433;Initial Catalog=Dev"), "localhost")), name, "localhost,11433");
+        var clear = Registry(RepositoryAt(new EnvironmentsJson(new Dictionary<string, EnvironmentsJson.Environment>())), name, "localhost,11433");
+        var named = Registry(RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=127.0.0.1,1433;Initial Catalog=Dev"), "localhost")), name, "localhost,11433");
 
         var there = Value(LocalServer.Registered(clear, name, Io.EnvironmentsFile.Read(clear), () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
         var elsewhere = Failed(LocalServer.Registered(clear, name, Io.EnvironmentsFile.Read(clear), () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver), "copy.unregistered");
         var onNamedHost = Failed(LocalServer.Registered(named, name, Io.EnvironmentsFile.Read(named), () => throw new Xunit.Sdk.XunitException("the local server was chosen before R15 read the row's server"), Resolver), "copy.named-host");
 
-        Assert.Equal(("copy:" + name, "localhost,11433"), (there.Target.ToString(), LocalServer.ServerName(null, Written("sql.env", "ESTATE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n.ToString(), r => r.Code)));
+        Assert.Equal(("copy:" + name, "localhost,11433"), (there.Target.ToString(), LocalServer.ServerName(null, Written("sql.env", "DBCHANGE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n.ToString(), r => r.Code)));
         Assert.Contains("copy:" + name, elsewhere.Message, StringComparison.Ordinal);
         Planted.AbsentFrom(elsewhere);
         Planted.AbsentFrom(onNamedHost);
@@ -238,11 +238,11 @@ public sealed class TargetTests : IDisposable
     [InlineData("Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + PlantedValue.PasswordText, false)]
     public void A_reference_resolves_to_the_caller_s_integrated_identity_unless_it_names_another(string connection, bool integrated)
     {
-        var variable = "ESTATE_TEST_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
+        var variable = "DBCHANGE_TEST_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
         Environment.SetEnvironmentVariable(variable, connection);
         try
         {
-            var root = Estate(EnvironmentsJson.Of("qa", new("env:" + variable)));
+            var root = RepositoryAt(EnvironmentsJson.Of("qa", new("env:" + variable)));
 
             var named = Assert.IsType<SqlServer.EnvironmentDatabase>(Value(SqlServer.Resolve(Value(SqlServer.Target("env:qa", "--target")), root)));
 
@@ -259,7 +259,7 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// estate adds no TLS keyword to a named environment's connection: the reference's own Encrypt and HostNameInCertificate reach the
+    /// dbchange adds no TLS keyword to a named environment's connection: the reference's own Encrypt and HostNameInCertificate reach the
     /// server as written, so a corporate certificate check holds, and a reference that names none gets none, so SqlClient's default,
     /// a certificate the machine trusts, applies. Only the local local server's connection trusts its self-signed certificate.
     /// </summary>
@@ -269,30 +269,30 @@ public sealed class TargetTests : IDisposable
     [InlineData("Server=dev-sql;Initial Catalog=Dev", null, null)]
     public void A_reference_reaches_the_server_with_its_own_TLS_keywords_and_no_other(string connection, string? encrypt, string? hostNameInCertificate)
     {
-        var root = Estate(EnvironmentsJson.Of("qa", new("file:" + Written("qa.connection", connection))));
+        var root = RepositoryAt(EnvironmentsJson.Of("qa", new("file:" + Written("qa.connection", connection))));
 
         var resolved = new SqlConnectionStringBuilder(Value(SqlServer.Resolve(Value(SqlServer.Target("env:qa", "--target")), root)).Connection);
 
         Assert.Equal((encrypt, hostNameInCertificate), (resolved.ShouldSerialize("Encrypt") ? resolved.Encrypt.ToString() : null, resolved.ShouldSerialize("Host Name In Certificate") ? resolved.HostNameInCertificate : null));
-        Assert.False(resolved.ShouldSerialize("Trust Server Certificate"), "estate set TrustServerCertificate on a named environment's connection");
+        Assert.False(resolved.ShouldSerialize("Trust Server Certificate"), "dbchange set TrustServerCertificate on a named environment's connection");
     }
 
     /// <summary>
-    /// Finding R-7: ESTATE_SQL, the local server the operator names, is configuration, so a value SqlClient reads no connection string
+    /// Finding R-7: DBCHANGE_SQL, the local server the operator names, is configuration, so a value SqlClient reads no connection string
     /// from is connection.malformed, not a server that does not answer; and the same text given as a named environment's reference is
     /// refused by the one parse, alike, its text withheld from both, since it can hold a password.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void A_malformed_ESTATE_SQL_is_connection_malformed_as_the_same_text_is_as_a_reference_its_text_withheld()
+    public void A_malformed_DBCHANGE_SQL_is_connection_malformed_as_the_same_text_is_as_a_reference_its_text_withheld()
     {
         var malformed = "Server=db;User ID=sa;Password=" + Planted + ";Nonsense " + Planted + " = 1";
-        var root = Estate(EnvironmentsJson.Dev("file:" + Written("dev.connection", malformed)));
+        var root = RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", malformed)));
 
         var localServer = Failed(LocalServer.ServerName(malformed, scratch.Under("no-sql.env"), localDb: false), "connection.malformed");
         var reference = Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), root), "connection.malformed");
 
-        Assert.StartsWith("ESTATE_SQL", localServer.Message, StringComparison.Ordinal);
+        Assert.StartsWith("DBCHANGE_SQL", localServer.Message, StringComparison.Ordinal);
         Assert.StartsWith("env:dev's connection", reference.Message, StringComparison.Ordinal);
         Assert.All(new[] { localServer, reference }, error =>
         {
@@ -312,12 +312,12 @@ public sealed class TargetTests : IDisposable
     {
         var reference = how switch
         {
-            "env" => "env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(),
+            "env" => "env:DBCHANGE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(),
             "missing file" => "file:" + scratch.Under("absent.connection"),
             "not a connection string" => "file:" + Written("garbled.connection", "Nonsense " + Planted + " = 1"),
             _ => "file:" + Written("bare.connection", "Server=dev-sql;User ID=reader;Password=" + Planted),
         };
-        var root = Estate(EnvironmentsJson.Of("qa", new(reference)));
+        var root = RepositoryAt(EnvironmentsJson.Of("qa", new(reference)));
 
         var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("env:qa", "--target")), root), code);
 
@@ -341,31 +341,31 @@ public sealed class TargetTests : IDisposable
     [InlineData("dev|.connection")]
     public void A_connection_file_whose_name_Windows_forbids_resolves_to_nothing_on_every_operating_system(string name)
     {
-        var root = Estate(EnvironmentsJson.Dev("file:" + scratch.Path.Replace('\\', '/') + "/" + name));
+        var root = RepositoryAt(EnvironmentsJson.Dev("file:" + scratch.Path.Replace('\\', '/') + "/" + name));
 
         Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), root), "connection.unresolved");
         Assert.Equal(Server("localhost,11433"), Value(LocalServer.Unnamed(EnvironmentsAt(root), root, Server("localhost,11433"), Resolver)));
     }
 
     /// <summary>
-    /// kernel/Environments.cs documents a file: reference as naming a file outside git, and the estate's own principal files sit under
-    /// .estate/, which .gitignore lists. A connection file git tracks, or one git does not ignore, which the next git add would commit,
+    /// kernel/Environments.cs documents a file: reference as naming a file outside git, and dbchange's own files, those of its principals among them, sit under
+    /// .dbchange/, which .gitignore lists. A connection file git tracks, or one git does not ignore, which the next git add would commit,
     /// is refused by the environment and the reference, before the file is read, and quotes nothing it holds; one git ignores, or one in
-    /// no git repository while the estate's root is in one, resolves.
+    /// no git repository while the repository root is in one, resolves.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
     [Trait("Value", "X1")]
-    [InlineData("estate/dev.connection", "committed", "reference.tracked")]
-    [InlineData("estate/dev.connection", "written", "reference.not-ignored")]
-    [InlineData(".estate/dev.connection", "written", null)]
+    [InlineData("dbchange/dev.connection", "committed", "reference.tracked")]
+    [InlineData("dbchange/dev.connection", "written", "reference.not-ignored")]
+    [InlineData(".dbchange/dev.connection", "written", null)]
     [InlineData("outside every repository", "written", null)]
     public void A_connection_file_git_tracks_or_does_not_ignore_is_refused_and_one_git_ignores_resolves(string file, string how, string? code)
     {
         using var repository = new Scratch();
         var connection = "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted;
         var reference = file == "outside every repository" ? Written("dev.connection", connection) : file;
-        repository.Commit("the estate", (".gitignore", ".estate/\n"), ("estate/environments.json", EnvironmentsJson.Dev("file:" + reference).Json()));
+        repository.Commit("the estate", (".gitignore", ".dbchange/\n"), ("dbchange/environments.json", EnvironmentsJson.Dev("file:" + reference).Json()));
         if (file != "outside every repository")
         {
             repository.Write((file, connection));
@@ -389,11 +389,11 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// estate/secrets/dev.connection, added with --force and committed though .gitignore lists estate/secrets/ and *.connection, is
+    /// dbchange/secrets/dev.connection, added with --force and committed though .gitignore lists dbchange/secrets/ and *.connection, is
     /// refused as tracked under each spelling that opens it: its own name; the name in another case on Windows and macOS; on Windows
     /// the name with trailing dots and spaces, which Windows drops, and its 8.3 short name where the volume makes one; and a link
-    /// under .estate/, which .gitignore also lists: on Windows .estate/link, a directory junction to estate/secrets/, which Windows
-    /// makes without the symbolic-link privilege, and on Linux and macOS .estate/link/dev.connection, a symbolic link to the file.
+    /// under .dbchange/, which .gitignore also lists: on Windows .dbchange/link, a directory junction to dbchange/secrets/, which Windows
+    /// makes without the symbolic-link privilege, and on Linux and macOS .dbchange/link/dev.connection, a symbolic link to the file.
     /// git is asked about the name the folder lists, so .gitignore's patterns never match the spelling instead. Windows opens the
     /// file's default data stream as dev.connection::$DATA, a name no folder lists: reference.unlisted. A spelling that opens no file
     /// (on Linux, every spelling but the file's own name and the link) resolves to nothing. The file's text reaches no connection.
@@ -403,22 +403,22 @@ public sealed class TargetTests : IDisposable
     [Trait("Category", "fast")]
     [Trait("Value", "X1")]
     [Trait("Value", "O2")]
-    [InlineData("estate/secrets/dev.connection", "reference.tracked")]
-    [InlineData("estate/secrets/Dev.connection", "reference.tracked")]
-    [InlineData("estate/secrets/dev.connection.", "reference.tracked")]
-    [InlineData("estate/secrets/dev.connection . .", "reference.tracked")]
-    [InlineData("estate/secrets/DEV~1.CON", "reference.tracked")]
-    [InlineData(".estate/link/dev.connection", "reference.tracked")]
-    [InlineData("estate/secrets/dev.connection::$DATA", "reference.unlisted")]
+    [InlineData("dbchange/secrets/dev.connection", "reference.tracked")]
+    [InlineData("dbchange/secrets/Dev.connection", "reference.tracked")]
+    [InlineData("dbchange/secrets/dev.connection.", "reference.tracked")]
+    [InlineData("dbchange/secrets/dev.connection . .", "reference.tracked")]
+    [InlineData("dbchange/secrets/DEV~1.CON", "reference.tracked")]
+    [InlineData(".dbchange/link/dev.connection", "reference.tracked")]
+    [InlineData("dbchange/secrets/dev.connection::$DATA", "reference.unlisted")]
     public void A_connection_file_git_tracks_is_refused_under_each_spelling_that_opens_it_though_gitignore_lists_it(string reference, string code)
     {
         using var repository = new Scratch();
-        repository.Commit("the estate", (".gitignore", ".estate/\nestate/secrets/\n*.connection\n"), ("estate/environments.json", EnvironmentsJson.Dev("file:" + reference).Json()));
-        repository.Write(("estate/secrets/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
-        OwnerOnly(Path.Combine(repository.Root, "estate", "secrets", "dev.connection"));
-        repository.Git("add", "--force", "--", "estate/secrets/dev.connection");
+        repository.Commit("the estate", (".gitignore", ".dbchange/\nestate/secrets/\n*.connection\n"), ("dbchange/environments.json", EnvironmentsJson.Dev("file:" + reference).Json()));
+        repository.Write(("dbchange/secrets/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
+        OwnerOnly(Path.Combine(repository.Root, "dbchange", "secrets", "dev.connection"));
+        repository.Git("add", "--force", "--", "dbchange/secrets/dev.connection");
         repository.Git("commit", "-q", "-m", "the connection file");
-        using var link = reference == ".estate/link/dev.connection" ? Linked(repository.Root) : null;
+        using var link = reference == ".dbchange/link/dev.connection" ? Linked(repository.Root) : null;
 
         var opens = File.Exists(Path.Combine(repository.Root, reference));
         var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), repository.Root), opens ? code : "connection.unresolved");
@@ -428,8 +428,8 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// GIT_CEILING_DIRECTORIES set to the repository's root stops git's search for a repository in estate/secrets/, though
-    /// git status at the root lists estate/secrets/uat.txt as untracked. io/Git clears the variable, so the file is still refused
+    /// GIT_CEILING_DIRECTORIES set to the repository's root stops git's search for a repository in dbchange/secrets/, though
+    /// git status at the root lists dbchange/secrets/uat.txt as untracked. io/Git clears the variable, so the file is still refused
     /// as one the next git add commits.
     /// </summary>
     [Fact]
@@ -437,9 +437,9 @@ public sealed class TargetTests : IDisposable
     public void A_connection_file_git_does_not_ignore_is_refused_when_GIT_CEILING_DIRECTORIES_stops_the_search_below_its_repository()
     {
         using var repository = new Scratch();
-        repository.Commit("the estate", (".gitignore", ".estate/\n"), ("estate/environments.json", EnvironmentsJson.Dev("file:estate/secrets/uat.txt").Json()));
-        repository.Write(("estate/secrets/uat.txt", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
-        OwnerOnly(Path.Combine(repository.Root, "estate", "secrets", "uat.txt"));
+        repository.Commit("the estate", (".gitignore", ".dbchange/\n"), ("dbchange/environments.json", EnvironmentsJson.Dev("file:dbchange/secrets/uat.txt").Json()));
+        repository.Write(("dbchange/secrets/uat.txt", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
+        OwnerOnly(Path.Combine(repository.Root, "dbchange", "secrets", "uat.txt"));
         var ceiling = Environment.GetEnvironmentVariable("GIT_CEILING_DIRECTORIES");
         Environment.SetEnvironmentVariable("GIT_CEILING_DIRECTORIES", repository.Root);
         Result<SqlServer.Database> resolved;
@@ -465,19 +465,19 @@ public sealed class TargetTests : IDisposable
     public void A_connection_file_in_a_folder_git_cannot_search_is_refused_as_git_failed()
     {
         using var repository = new Scratch();
-        repository.Commit("the estate", (".gitignore", ".estate/\n"), ("estate/environments.json", EnvironmentsJson.Dev("file:estate/broken/dev.connection").Json()));
-        repository.Write(("estate/broken/.git", "gitdir: nowhere\n"), ("estate/broken/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
-        OwnerOnly(Path.Combine(repository.Root, "estate", "broken", "dev.connection"));
+        repository.Commit("the estate", (".gitignore", ".dbchange/\n"), ("dbchange/environments.json", EnvironmentsJson.Dev("file:dbchange/broken/dev.connection").Json()));
+        repository.Write(("dbchange/broken/.git", "gitdir: nowhere\n"), ("dbchange/broken/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
+        OwnerOnly(Path.Combine(repository.Root, "dbchange", "broken", "dev.connection"));
 
         var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), repository.Root), "git.failed");
 
-        Assert.StartsWith("env:dev's connection, file:estate/broken/dev.connection, cannot be checked against git: git rev-parse failed: ", error.Message, StringComparison.Ordinal);
+        Assert.StartsWith("env:dev's connection, file:dbchange/broken/dev.connection, cannot be checked against git: git rev-parse failed: ", error.Message, StringComparison.Ordinal);
         Planted.AbsentFrom(error);
     }
 
     /// <summary>
     /// R15: a connection file that exists, in a folder this identity cannot list, that this identity cannot read, or whose
-    /// attributes this identity cannot read, holds a host estate cannot learn. Before this was a refusal it resolved to nothing, so
+    /// attributes this identity cannot read, holds a host dbchange cannot learn. Before this was a refusal it resolved to nothing, so
     /// env:dev went uncompared and a local server on dev's host was made. Now Resolve refuses it as reference.unlistable,
     /// reference.unreadable or reference.inaccessible, by the environment and the reference, and LocalServer.Unnamed returns that
     /// refusal instead of the server. The denial is a deny entry for RD (list the folder, read the file) on Windows, or mode 0300 or
@@ -495,7 +495,7 @@ public sealed class TargetTests : IDisposable
     {
         scratch.Folder("locked");
         var file = Written(Path.Combine("locked", "dev.connection"), "Server=127.0.0.1,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted);
-        var root = Estate(EnvironmentsJson.Dev("file:" + file));
+        var root = RepositoryAt(EnvironmentsJson.Dev("file:" + file));
 
         var use = () => (SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), root), LocalServer.Unnamed(EnvironmentsAt(root), root, Server("localhost,11433"), Resolver));
         var (resolved, unnamed) = denied switch
@@ -511,10 +511,10 @@ public sealed class TargetTests : IDisposable
         Assert.Equal(error, Failed(unnamed));
     }
 
-    /// <summary>An estate's root in no git repository leaves git unable to say whether it would commit a connection file, so the reference is refused, saying so, and the file is not read.</summary>
+    /// <summary>A repository root in no git repository leaves git unable to say whether it would commit a connection file, so the reference is refused, saying so, and the file is not read.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void A_connection_file_of_an_estate_root_in_no_git_repository_is_refused_saying_git_cannot_check_it()
+    public void A_connection_file_of_a_repository_root_in_no_git_repository_is_refused_saying_git_cannot_check_it()
     {
         var root = EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=dev-sql;Initial Catalog=Dev;Password=" + Planted)).WriteTo(scratch.Folder("no-repository"));
 
@@ -540,7 +540,7 @@ public sealed class TargetTests : IDisposable
             File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
         }
 
-        var resolved = SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), Estate(EnvironmentsJson.Dev("file:" + file)));
+        var resolved = SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), RepositoryAt(EnvironmentsJson.Dev("file:" + file)));
 
         Assert.Equal(OperatingSystem.IsWindows() ? null : "reference.readable-by-others", resolved.Match<string?>(_ => null, error => error.Code));
         resolved.Match(_ => 0, error =>
@@ -587,7 +587,7 @@ public sealed class TargetTests : IDisposable
     [InlineData(2628, false, "server.failed")]
     public void A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept(int number, bool opened, string code)
     {
-        var root = Estate(EnvironmentsJson.Of("qa", new("file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa"), "qa-sql")));
+        var root = RepositoryAt(EnvironmentsJson.Of("qa", new("file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa"), "qa-sql")));
         var named = Value(SqlServer.Resolve(Value(SqlServer.Target("env:qa", "--target")), root));
         var copy = new SqlServer.Copy(CopyName.Make("host", 1, 0x0a1b2c3d), "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
         var message = "Conversion failed when converting the nvarchar value '" + Planted + "' to data type int.";
@@ -611,10 +611,10 @@ public sealed class TargetTests : IDisposable
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("env:qa")]
-    [InlineData("copy:estate_host_1_0a1b2c3d")]
+    [InlineData("copy:dbchange_host_1_0a1b2c3d")]
     public void A_DacFx_failure_with_no_SQL_Server_error_inside_is_dacfx_failed_quoting_its_SQL7_codes(string target)
     {
-        var root = Estate(EnvironmentsJson.Of("qa", new("file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa"), "qa-sql")));
+        var root = RepositoryAt(EnvironmentsJson.Of("qa", new("file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa"), "qa-sql")));
         SqlServer.Database database = target == "env:qa"
             ? Value(SqlServer.Resolve(Value(SqlServer.Target(target, "--target")), root))
             : new SqlServer.Copy(CopyName.Make("host", 1, 0x0a1b2c3d), "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
@@ -636,7 +636,7 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// The local server named by a ~/.estate/sql.env whose port nothing listens on, as after the container stopped: creating a copy
+    /// The local server named by a ~/.dbchange/sql.env whose port nothing listens on, as after the container stopped: creating a copy
     /// is refused as a server that does not answer, with the remedy that starts the container, and the row written before the CREATE
     /// DATABASE is taken out of the registry again. A closed port answers at once, so no server is needed.
     /// </summary>
@@ -644,15 +644,15 @@ public sealed class TargetTests : IDisposable
     [Trait("Category", "fast")]
     public void A_local_server_that_does_not_answer_names_ci_sql_up_and_leaves_no_registry_row()
     {
-        var root = Estate(new EnvironmentsJson(new Dictionary<string, EnvironmentsJson.Environment>()));
+        var root = RepositoryAt(new EnvironmentsJson(new Dictionary<string, EnvironmentsJson.Environment>()));
         var port = ClosedPort();
-        var server = Value(LocalServer.Server(null, Written("sql.env", "MSSQL_SA_PASSWORD=" + Planted + "\nESTATE_SQL_PORT=" + port + "\n"), localDb: false));
+        var server = Value(LocalServer.Server(null, Written("sql.env", "MSSQL_SA_PASSWORD=" + Planted + "\nDBCHANGE_SQL_PORT=" + port + "\n"), localDb: false));
 
         var error = Failed(LocalServer.Create(root, server), "server.unreachable");
 
         Assert.Contains("ci/sql.sh up", error.Remedy, StringComparison.Ordinal);
         Planted.AbsentFrom(error);
-        Assert.Empty(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(root, ".estate", "copies.json")))!["copies"]!.AsArray());
+        Assert.Empty(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(root, ".dbchange", "copies.json")))!["copies"]!.AsArray());
     }
 
     /// <summary>A loopback port nothing listens on: bound and released, so a connection to it is refused at once.</summary>
@@ -678,16 +678,16 @@ public sealed class TargetTests : IDisposable
     };
 
     /// <summary>An environment on the host given whose connection is a variable no process sets, so it resolves to nothing here.</summary>
-    private static EnvironmentsJson.Environment Unresolved(string host) => new("env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(), host);
+    private static EnvironmentsJson.Environment Unresolved(string host) => new("env:DBCHANGE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(), host);
 
-    /// <summary>The estate's environmentsFile, read.</summary>
+    /// <summary>The environments file, read.</summary>
     private static Environments EnvironmentsAt(string root) => Value(Io.EnvironmentsFile.Read(root));
 
-    /// <summary>The estate's root with .estate/copies.json holding one copy, made on the server given.</summary>
+    /// <summary>The repository root with .dbchange/copies.json holding one copy, made on the server given.</summary>
     private static string Registry(string root, CopyName name, string server)
     {
-        Directory.CreateDirectory(Path.Combine(root, ".estate"));
-        File.WriteAllText(Path.Combine(root, ".estate", "copies.json"),
+        Directory.CreateDirectory(Path.Combine(root, ".dbchange"));
+        File.WriteAllText(Path.Combine(root, ".dbchange", "copies.json"),
             "{ \"copies\": [ { \"name\": \"" + name + "\", \"server\": \"" + server + "\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-24T00:00:00Z\" } ] }");
         return root;
     }
@@ -702,14 +702,14 @@ public sealed class TargetTests : IDisposable
     }
 
     /// <summary>
-    /// .estate/link/dev.connection in the repository, opening estate/secrets/dev.connection. On Windows .estate/link is a directory
-    /// junction to estate/secrets/, made by cmd's mklink /J, since File.CreateSymbolicLink needs Developer Mode or an administrator's
+    /// .dbchange/link/dev.connection in the repository, opening dbchange/secrets/dev.connection. On Windows .dbchange/link is a directory
+    /// junction to dbchange/secrets/, made by cmd's mklink /J, since File.CreateSymbolicLink needs Developer Mode or an administrator's
     /// rights there; what is returned removes the junction alone, since Directory.Delete's recursive delete cannot remove a junction
-    /// without those rights either. On Linux and macOS .estate/link/dev.connection is a symbolic link to the file, and nothing is returned.
+    /// without those rights either. On Linux and macOS .dbchange/link/dev.connection is a symbolic link to the file, and nothing is returned.
     /// </summary>
     private static IDisposable? Linked(string root)
     {
-        var (link, secrets) = (Path.Combine(root, ".estate", "link"), Path.Combine(root, "estate", "secrets"));
+        var (link, secrets) = (Path.Combine(root, ".dbchange", "link"), Path.Combine(root, "dbchange", "secrets"));
         if (!OperatingSystem.IsWindows())
         {
             Directory.CreateDirectory(link);
@@ -717,7 +717,7 @@ public sealed class TargetTests : IDisposable
             return null;
         }
 
-        Directory.CreateDirectory(Path.Combine(root, ".estate"));
+        Directory.CreateDirectory(Path.Combine(root, ".dbchange"));
         var mklink = new Command("cmd.exe", ["/c", "mklink", "/J", link, secrets], TimeSpan.FromMinutes(1)).Finish();
         Assert.True(mklink.Code == 0, "mklink /J exited " + mklink.Code + ": " + mklink.Errors);
         return new Removal(() => Directory.Delete(link));
@@ -735,6 +735,6 @@ public sealed class TargetTests : IDisposable
         return scratch.Under(file).Replace('\\', '/');
     }
 
-    /// <summary>An estate's root in a git repository of its own, holding the environments file given; the connection files stay outside it.</summary>
-    private string Estate(EnvironmentsJson environmentsFile) => environmentsFile.WriteTo(Directory.CreateDirectory(Path.Combine(repository.Value.Root, "estate-" + Guid.NewGuid().ToString("N")[..8])).FullName);
+    /// <summary>A repository root in a git repository of its own, holding the environments file given; the connection files stay outside it.</summary>
+    private string RepositoryAt(EnvironmentsJson environmentsFile) => environmentsFile.WriteTo(Directory.CreateDirectory(Path.Combine(repository.Value.Root, "repository-" + Guid.NewGuid().ToString("N")[..8])).FullName);
 }

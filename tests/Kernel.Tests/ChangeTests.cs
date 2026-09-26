@@ -2,11 +2,11 @@ using System;
 using System.Linq;
 using System.Text.Json;
 using CsCheck;
-using Estate.Tests;
+using DbChange.Tests;
 using Xunit;
-using static Estate.Kernel.Tests.ElementSets;
+using static DbChange.Kernel.Tests.ElementSets;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>
 /// The change between two models names what was created, dropped, renamed (a pair the refactorlog records, whose

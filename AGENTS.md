@@ -1,16 +1,16 @@
 # AGENTS.md — working in this repository
 
-This repository builds `estate`, which tells a developer whether a schema change to an OutSystems
-estate on SSDT blocks or applies on each environment before Octopus deploys it: one CLI (its verbs
-listed by `estate --help --json`, and from M8 in `cli/VERBS.md`, generated from it) and, from M7,
-`knowledge/`, the files a developer's Copilot session reads in the estate repository. Read this
+This repository builds `dbchange`, which tells a developer whether a schema change in the SSDT
+repository of an OutSystems system blocks or applies on each environment before Octopus deploys it: one CLI (its verbs
+listed by `dbchange --help --json`, and from M8 in `cli/VERBS.md`, generated from it) and, from M7,
+`knowledge/`, the files a developer's Copilot session reads in the SSDT repository. Read this
 file, then `NEXT.md`, then the README of the package being changed. Nothing else is required.
 
 ## Before anything
 
-Run `estate doctor` and quote its line before claiming a tool, a daemon or a database is missing.
+Run `dbchange doctor` and quote its line before claiming a tool, a daemon or a database is missing.
 The line reads `READY` or `DEGRADED` and names the .NET SDK and runtime, the tool folder and its
-DacFx against `estate/ledgers/toolchain.md`, the build route, the local server (Docker or LocalDB)
+DacFx against `dbchange/ledgers/toolchain.md`, the build route, the local server (Docker or LocalDB)
 and Git LFS; every missing item carries a remedy.
 Without the session hook, `dotnet run --project cli -- doctor` runs it.
 
@@ -22,7 +22,7 @@ Without the session hook, `dotnet run --project cli -- doctor` runs it.
 - What it upholds: `VALUES.md`. The laws, each with the test that states it: `LAWS.md`, generated
   from the tests from M1; the CI run says which are green. What was decided: `DECISIONS.md`. What is
   next: `NEXT.md`.
-- The domain (SQL Server, DacFx, the estate, the platform): `knowledge/` from M7; until then, the
+- The domain (SQL Server, DacFx, the environments, the platform): `knowledge/` from M7; until then, the
   design documents.
 - The past: `archive/` holds v1 and v2, indexed in `archive/INDEX.md`. It is provenance: cite it as
   archive, and re-verify against the current files before relying on it. It stays readable until
@@ -33,14 +33,14 @@ Without the session hook, `dotnet run --project cli -- doctor` runs it.
 
 ## Building and testing
 
-- `dotnet build Estate.sln` — warnings are errors; `kernel/BannedSymbols.txt` keeps I/O, the
+- `dotnet build DbChange.sln` — warnings are errors; `kernel/BannedSymbols.txt` keeps I/O, the
   clock, randomness and `Task` out of the kernel.
-- `dotnet test Estate.sln --filter "Category=fast|Category=build"` before every push: no SQL
+- `dotnet test DbChange.sln --filter "Category=fast|Category=build"` before every push: no SQL
   Server; the `fast` tests alone run under five minutes.
-- `dotnet test Estate.sln --filter Category=fixture` when `io/` changed: needs a SQL Server, the
+- `dotnet test DbChange.sln --filter Category=fixture` when `io/` changed: needs a SQL Server, the
   container from the pinned image where Docker runs, LocalDB where it does not.
 - Every test carries one category: `fixture` when it needs SQL Server, `build` when it runs
-  `dotnet build` or `dotnet publish` or starts estate as a process, `fast` otherwise. No test
+  `dotnet build` or `dotnet publish` or starts dbchange as a process, `fast` otherwise. No test
   skips itself, and none retries.
 - The scale lane (from M3) and the proof lane (from M4) run in CI. Run them locally only when the
   task is about them, and never both in one `dotnet test`.
@@ -55,7 +55,7 @@ Without the session hook, `dotnet run --project cli -- doctor` runs it.
 - A verb change updates its `--help` text in the same commit; the bundle (from M7) and
   `cli/VERBS.md` (from M8) are generated from it.
 - From M7, a knowledge change edits the canonical file under `knowledge/`, and
-  `estate knowledge package` regenerates the pointers, the index and the bundle. A generated file
+  `dbchange knowledge package` regenerates the pointers, the index and the bundle. A generated file
   is never edited.
 - A red budget or manifest test is a design question: shrink the thing, or raise its ceiling in
   `ci/budgets.json` with a decision line in the same pull request.
@@ -107,7 +107,7 @@ test names, review pages and pull-request bodies.
 - A red budget test names the ceiling and the file.
 - A red law names the law. The law is right until a decision line says otherwise.
 - The local server not answering (exit 4): `ci/sql.sh up`, or `ci/sql.ps1 up` on Windows, then
-  `estate doctor`.
+  `dbchange doctor`.
 - A proof whose verdict disagrees with a recorded finding: the verdict is a new finding with its
   provenance; append it and strike the old one, which stays.
 - A question only the operator can answer: one line in `NEXT.md` naming the question and who

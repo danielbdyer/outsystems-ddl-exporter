@@ -6,7 +6,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Xunit;
 
-namespace Estate.Budgets.Tests.Register;
+namespace DbChange.Budgets.Tests.Register;
 
 /// <summary>
 /// The engine's documents are in the register: no retired word, no numbered axis, no antithesis tic, as
@@ -39,7 +39,7 @@ public sealed class Prose
     [InlineData("It is a table, not a view.", "the antithesis tic")]
     [InlineData("the perf\ngate ran", "perf gate")]
     [InlineData("The `Profile` type", "`Profile`")]
-    [InlineData("estate profile writes the evidence; normal; the Utf8JsonWriter; a review", null)]
+    [InlineData("dbchange profile writes the evidence; normal; the Utf8JsonWriter; a review", null)]
     public void The_register_finds_a_retired_word_or_a_banned_form(string text, string? found) =>
         Assert.Equal(found, Findings(text).Select(f => f.Split('\'')[1]).FirstOrDefault());
 

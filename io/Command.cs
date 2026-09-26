@@ -8,7 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 #pragma warning disable RS0030 // Process and ProcessStartInfo are banned in io (io/BannedSymbols.txt): this file is the one place that starts a program.
 
@@ -16,15 +16,15 @@ namespace Estate.Io;
 public delegate Ran Runner(Command command, CancellationToken cancel);
 
 /// <summary>
-/// The one way io runs a program (R6): <see cref="Program"/> with <see cref="Arguments"/>, from <see cref="Directory"/> (estate's own
-/// working directory when null), with <see cref="Environment"/> applied to estate's environment (a null value removes the variable),
+/// The one way io runs a program (R6): <see cref="Program"/> with <see cref="Arguments"/>, from <see cref="Directory"/> (dbchange's own
+/// working directory when null), with <see cref="Environment"/> applied to dbchange's environment (a null value removes the variable),
 /// for at most <see cref="Timeout"/>. A rooted program runs as given, and a name holding a directory separator is taken from
-/// <see cref="Directory"/>; a bare name is looked for in the folder of the program running estate (the dotnet root under dotnet
-/// estate.dll, the tool folder under the apphost), then in each absolute PATH entry in order, and never in the working directory,
+/// <see cref="Directory"/>; a bare name is looked for in the folder of the program running dbchange (the dotnet root under dotnet
+/// dbchange.dll, the tool folder under the apphost), then in each absolute PATH entry in order, and never in the working directory,
 /// where a checkout could plant one. On Windows a bare name without an extension gains .exe, and a bare .cmd or .bat name is not run,
 /// since cmd.exe re-parses their arguments; on Linux and macOS a file needs an execute bit, as execvp requires. Standard input is closed
 /// at once, so a program that reads it gets end of file; output and errors are read apart, concurrently and as UTF-8, which git, dotnet,
-/// docker and git-lfs write to a pipe whatever the console's code page; the program shares estate's console, so a Ctrl-C reaches it too.
+/// docker and git-lfs write to a pipe whatever the console's code page; the program shares dbchange's console, so a Ctrl-C reaches it too.
 /// Past Timeout the whole process tree is killed and <see cref="Ran.TimedOut"/> carries what was read. When the caller's token or the
 /// run's (<see cref="Interruption"/>) is cancelled, the tree is killed and OperationCanceledException is thrown, also when the program
 /// ended on the same signal; a cleanup command that must run after an interruption sets <see cref="Interruptible"/> false and is bounded
@@ -153,7 +153,7 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
         var extension = Path.GetExtension(program);
         if (windows && (extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase) || extension.Equals(".bat", StringComparison.OrdinalIgnoreCase)))
         {
-            return (null, "'" + program + "' is a .cmd or .bat program, which estate never runs by name, since cmd.exe re-parses its arguments.");
+            return (null, "'" + program + "' is a .cmd or .bat program, which dbchange never runs by name, since cmd.exe re-parses its arguments.");
         }
 
         var name = windows && extension.Length == 0 ? program + ".exe" : program;
@@ -213,7 +213,7 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
 
         public Captured(Stream stream)
         {
-            reading = new Thread(() => Read(stream)) { IsBackground = true, Name = "estate pipe reader" };
+            reading = new Thread(() => Read(stream)) { IsBackground = true, Name = "dbchange pipe reader" };
             reading.Start();
         }
 

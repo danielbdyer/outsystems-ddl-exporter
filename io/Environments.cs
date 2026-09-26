@@ -4,26 +4,26 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Estate.Kernel;
+using DbChange.Kernel;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
-/// The estate's environmentsFile, read as data (V3_MILESTONES.md WP 1.5, §4 row 14): estate/environments.json into named environments, refusing a
+/// The environments file, read as data (V3_MILESTONES.md WP 1.5, §4 row 14): dbchange/environments.json into named environments, refusing a
 /// literal connection string anywhere in it and a key it does not know. An error names the key and quotes no value. A publish profile is
 /// io/PublishProfiles' to read.
 /// </summary>
 public static class EnvironmentsFile
 {
-    /// <summary>The environments file's path from the estate's root, as messages name it.</summary>
-    public const string Json = "estate/environments.json";
+    /// <summary>The environments file's path from the repository root, as messages name it.</summary>
+    public const string Json = "dbchange/environments.json";
 
     private static readonly string[] Keys = ["host", "classification", "confirmedBy", "confirmedOn", "readerGroups", "connection", "profile", "sqlcmd", "metamodel"];
 
     /// <summary>A key a message may name as it stands; any other is named by its place among its siblings.</summary>
     private static readonly Regex Nameable = new(@"\A[A-Za-z0-9_-]{1,64}\z", RegexOptions.CultureInvariant);
 
-    /// <summary>The estate's root: the nearest directory at or above <paramref name="workingDirectory"/> holding estate/environments.json, else the working directory.</summary>
+    /// <summary>The repository root: the nearest directory at or above <paramref name="workingDirectory"/> holding dbchange/environments.json, else the working directory.</summary>
     public static string Root(string workingDirectory)
     {
         for (var directory = new DirectoryInfo(workingDirectory); directory is not null; directory = directory.Parent)
@@ -38,14 +38,14 @@ public static class EnvironmentsFile
     }
 
     /// <summary>
-    /// estate/environments.json under the estate's root, read once for a verb: the environments it names, in name order, each with the host
+    /// dbchange/environments.json under the repository root, read once for a verb: the environments it names, in name order, each with the host
     /// its SQL Server runs on, and the local server it prefers.
     /// </summary>
-    public static Result<Environments> Read(string estateRoot)
+    public static Result<Environments> Read(string repositoryRoot)
     {
         try
         {
-            using var environmentsFile = JsonDocument.Parse(File.ReadAllText(Path.Combine(estateRoot, Json)), new JsonDocumentOptions { AllowDuplicateProperties = false });
+            using var environmentsFile = JsonDocument.Parse(File.ReadAllText(Path.Combine(repositoryRoot, Json)), new JsonDocumentOptions { AllowDuplicateProperties = false });
             var root = environmentsFile.RootElement;
             return Literal(root, "") is { } at ? new Error("environments.literal-connection", Json + " holds a literal connection string at " + at + ".",
                     "Move it into an environment variable or a file outside git, and write env:NAME or file:path at " + at + ".")
@@ -61,7 +61,7 @@ public static class EnvironmentsFile
             var why = e is JsonException { LineNumber: { } line, BytePositionInLine: { } at }
                 ? string.Create(CultureInfo.InvariantCulture, $"is not JSON at line {line + 1}, byte {at + 1}")
                 : e is JsonException ? "gives one key twice in an object" : "cannot be opened";
-            return e is FileNotFoundException or DirectoryNotFoundException ? new Error("environments.missing", "No " + Json + " under " + estateRoot + ".",
+            return e is FileNotFoundException or DirectoryNotFoundException ? new Error("environments.missing", "No " + Json + " under " + repositoryRoot + ".",
                     "Commit " + Json + " naming each environment's connection reference and publish profile.")
                 : new Error("environments.unreadable", Json + " " + why + ".", "Correct " + Json + " at the place this names; an object gives each key once.");
         }
@@ -96,7 +96,7 @@ public static class EnvironmentsFile
     /// </summary>
     private static Result<Host> HostOf(JsonElement entry, string at) => entry.TryGetProperty("host", out var host)
         ? Host.Of(Where(at + ".host"), host.GetString())
-        : new Error("environments.host", Where(at) + " names no host; each environment names the host its SQL Server runs on, so estate makes no copy on it.",
+        : new Error("environments.host", Where(at) + " names no host; each environment names the host its SQL Server runs on, so dbchange makes no copy on it.",
             "Give " + Where(at) + " its host, the server's name as its connection string spells it, such as dev-sql.corp.example.");
 
     /// <summary>A SQLCMD value in the environments file: a string is a reference, and an object a literal, taken only when marked "sensitive": false.</summary>

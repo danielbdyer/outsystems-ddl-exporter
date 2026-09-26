@@ -2,12 +2,12 @@ using System;
 using System.IO;
 using System.Text;
 using System.Threading;
-using Estate.Kernel;
+using DbChange.Kernel;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
-/// Every byte estate writes to a file (VALUES.md D3): UTF-8 without a byte-order mark; the kernel's line ending (LineEndings.Lf:
+/// Every byte dbchange writes to a file (VALUES.md D3): UTF-8 without a byte-order mark; the kernel's line ending (LineEndings.Lf:
 /// CRLF and a lone CR to LF), unless the file already on disk declares CRLF by its first line, read through a UTF-8 or UTF-16
 /// byte-order mark, in which case CRLF is kept and the file is still rewritten as UTF-8; and a file replaced atomically, through a
 /// temporary file beside it, so a reader sees the old content or the new and never a part. A failure the file system reports is
@@ -107,11 +107,11 @@ public static class Write
     {
         var (what, remedy) = cause switch
         {
-            IOException io when DiskFull(io) => ("the disk is full", "Free space on the disk that holds " + path + ", then run estate again."),
-            IOException io when SharingViolation(io) => ("another program holds it open", "Close the program that holds " + path + " open, then run estate again."),
-            IOException io when FileInTheWay(io) => ("a file stands where a folder should be", "Move the file that stands where the folder of " + path + " should be, then run estate again."),
-            UnauthorizedAccessException => ("this identity may not write it, or it is read-only", "Grant this identity write access to " + path + ", or clear its read-only attribute, then run estate again."),
-            _ => (cause.Message.TrimEnd('.'), "Fix what the operating system reports for " + path + ", then run estate again."),
+            IOException io when DiskFull(io) => ("the disk is full", "Free space on the disk that holds " + path + ", then run dbchange again."),
+            IOException io when SharingViolation(io) => ("another program holds it open", "Close the program that holds " + path + " open, then run dbchange again."),
+            IOException io when FileInTheWay(io) => ("a file stands where a folder should be", "Move the file that stands where the folder of " + path + " should be, then run dbchange again."),
+            UnauthorizedAccessException => ("this identity may not write it, or it is read-only", "Grant this identity write access to " + path + ", or clear its read-only attribute, then run dbchange again."),
+            _ => (cause.Message.TrimEnd('.'), "Fix what the operating system reports for " + path + ", then run dbchange again."),
         };
         return new Error("file.unwritable", path + " cannot be written: " + what + ".", remedy);
     }

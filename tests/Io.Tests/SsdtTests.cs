@@ -6,24 +6,24 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using System.Xml.Linq;
-using Estate.Budgets.Tests;
-using Estate.Kernel;
+using DbChange.Budgets.Tests;
+using DbChange.Kernel;
 using Microsoft.SqlServer.Dac.Model;
 using Xunit;
-using Contract = Estate.Cli.Contract;
+using Contract = DbChange.Cli.Contract;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/Ssdt's build and load (WP 1.1): a classic project builds against the published tool folder with no Visual Studio,
-/// into a folder under .estate/build/ that its inputs' fingerprint names; its package carries the refactorlog and both
+/// into a folder under .dbchange/build/ that its inputs' fingerprint names; its package carries the refactorlog and both
 /// deploy scripts, and Open reads them back. A broken .sql is exit 7 naming its file and line; a machine without the SDK
-/// band global.json names is exit 6 with the remedy. Each test builds its own copy of tests/Golden/ under .estate/.
+/// band global.json names is exit 6 with the remedy. Each test builds its own copy of tests/Golden/ under .dbchange/.
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
 public sealed class SsdtTests(PublishedTool tool) : IDisposable
 {
-    private readonly string scratch = Path.Combine(Repository.Root, ".estate", "ssdt", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);
+    private readonly string scratch = Path.Combine(Repository.Root, ".dbchange", "ssdt", Environment.ProcessId + "-" + Guid.NewGuid().ToString("N")[..8]);
 
     /// <summary>The classic-minimal project's path from the root of <see cref="Golden"/>'s copy.</summary>
     private const string Minimal = "classic-minimal/ClassicMinimal.sqlproj";
@@ -152,7 +152,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
     /// <summary>
     /// The measurement DF-9's refusal waited on: a project whose SqlCmdVariable has a DefaultValue, planned by DacServices.Script with no
     /// value given, gets an empty value in its script (measured on DacFx 170.5.96): DacFx does not apply the project's default, so a declared
-    /// variable no profile or environmentsFile gives is refused whether or not the project defaults it.
+    /// variable no profile or environments file gives is refused whether or not the project defaults it.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -195,7 +195,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         Assert.Equal(("sdk.missing", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains(pin[..^2] + "xx", error.Message, StringComparison.Ordinal);
         Assert.Contains("Install the .NET SDK " + pin, error.Remedy, StringComparison.Ordinal);
-        Assert.Contains("estate doctor", error.Remedy, StringComparison.Ordinal);
+        Assert.Contains("dbchange doctor", error.Remedy, StringComparison.Ordinal);
         Assert.False(Directory.Exists(Output));
     }
 
@@ -234,7 +234,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
     }
 
     /// <summary>
-    /// The variables an enclosing MSBuild sets (MSBuildSDKsPath, MSBuildExtensionsPath, MSBUILD_EXE_PATH, as when estate runs inside dotnet test
+    /// The variables an enclosing MSBuild sets (MSBuildSDKsPath, MSBuildExtensionsPath, MSBUILD_EXE_PATH, as when dbchange runs inside dotnet test
     /// or an Exec task) reach the build's environment beneath the build's own settings, and a classic project still builds under bogus values.
     /// </summary>
     [Fact]
@@ -368,7 +368,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
     }
 
     /// <summary>
-    /// §1.1: a tool folder whose build task is not the DacFx estate runs is refused before the build, as toolchain.targets-mismatch at exit 6:
+    /// §1.1: a tool folder whose build task is not the DacFx dbchange runs is refused before the build, as toolchain.targets-mismatch at exit 6:
     /// an empty file in the task's place carries no file version, and a task of another release names both releases.
     /// </summary>
     [Fact]
@@ -394,14 +394,14 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
 
         Assert.Equal(("toolchain.targets-mismatch", 6, 0), (empty.Code, Contract.Exit(empty), builds));
         Assert.Contains("no file version", empty.Message, StringComparison.Ordinal);
-        Assert.Equal("The tool folder's build task is DacFx 170.5.96 and estate runs DacFx 170.4.71.", older.Message);
+        Assert.Equal("The tool folder's build task is DacFx 170.5.96 and dbchange runs DacFx 170.4.71.", older.Message);
         Assert.Contains("ci/publish.sh", older.Remedy, StringComparison.Ordinal);
     }
 
-    /// <summary>The command the build runs: dotnet build from the project's folder, for ten minutes, telemetry and the SDK's first-run actions off, English, UTF-8, no MSBuild server, ESTATE_SQL withheld.</summary>
+    /// <summary>The command the build runs: dotnet build from the project's folder, for ten minutes, telemetry and the SDK's first-run actions off, English, UTF-8, no MSBuild server, DBCHANGE_SQL withheld.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void The_build_runs_dotnet_from_the_project_s_folder_with_telemetry_and_first_run_actions_off_and_ESTATE_SQL_withheld()
+    public void The_build_runs_dotnet_from_the_project_s_folder_with_telemetry_and_first_run_actions_off_and_DBCHANGE_SQL_withheld()
     {
         Command? built = null;
         Ran Records(Command c, System.Threading.CancellationToken t)
@@ -415,8 +415,8 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
 
         Assert.NotNull(built);
         Assert.Equal(("dotnet", Path.GetDirectoryName(project), Ssdt.BuildTimeout), (built.Program, built.Directory, built.Timeout));
-        Assert.Equal(["DACFX_TELEMETRY_OPTOUT=1", "DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false", "DOTNET_CLI_FORCE_UTF8_ENCODING=1", "DOTNET_CLI_TELEMETRY_OPTOUT=1", "DOTNET_CLI_UI_LANGUAGE=en-US",
-            "DOTNET_CLI_USE_MSBUILD_SERVER=0", "DOTNET_GENERATE_ASPNET_CERTIFICATE=false", "DOTNET_NOLOGO=1", "ESTATE_SQL="], built.Environment.Select(v => v.Key + "=" + v.Value).Order(StringComparer.Ordinal));
+        Assert.Equal(["DACFX_TELEMETRY_OPTOUT=1", "DBCHANGE_SQL=", "DOTNET_ADD_GLOBAL_TOOLS_TO_PATH=false", "DOTNET_CLI_FORCE_UTF8_ENCODING=1", "DOTNET_CLI_TELEMETRY_OPTOUT=1", "DOTNET_CLI_UI_LANGUAGE=en-US",
+            "DOTNET_CLI_USE_MSBUILD_SERVER=0", "DOTNET_GENERATE_ASPNET_CERTIFICATE=false", "DOTNET_NOLOGO=1"], built.Environment.Select(v => v.Key + "=" + v.Value).Order(StringComparer.Ordinal));
         Assert.Contains("-nodeReuse:false", built.Arguments);
     }
 
@@ -432,13 +432,13 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void The_tool_folder_is_the_running_estates_then_ESTATE_TOOLs_then_the_repositorys_dist_estate_and_otherwise_exit_6()
+    public void The_tool_folder_is_the_running_dbchange_s_then_DBCHANGE_TOOL_s_then_the_repository_s_dist_dbchange_and_otherwise_exit_6()
     {
-        var machine = Directory.CreateTempSubdirectory("estate-tool-").FullName;   // outside the repository, so no dist/estate above it
+        var machine = Directory.CreateTempSubdirectory("dbchange-tool-").FullName;   // outside the repository, so no dist/dbchange above it
         try
         {
             var (running, named, bare) = (Published(machine, "running"), Published(machine, "named"), Directory.CreateDirectory(Path.Combine(machine, "bare")).FullName);
-            var dist = Published(machine, Path.Combine("repository", "dist", "estate"));
+            var dist = Published(machine, Path.Combine("repository", "dist", "dbchange"));
             var inside = Directory.CreateDirectory(Path.Combine(machine, "repository", "src", "db")).FullName;
 
             Assert.Equal(running, Ok(Ssdt.Tool(running, named, inside)));
@@ -468,7 +468,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         return Path.Combine(scratch, under, "classic-minimal", "ClassicMinimal.sqlproj");
     }
 
-    /// <summary>A folder holding, empty, the files a published tool folder carries beside estate.</summary>
+    /// <summary>A folder holding, empty, the files a published tool folder carries beside dbchange.</summary>
     private static string Published(string root, string name)
     {
         foreach (var file in (string[])["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"])

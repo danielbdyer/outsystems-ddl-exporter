@@ -4,10 +4,10 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using Estate.Io;
+using DbChange.Io;
 using Xunit;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// LAWS.md is generated (V3_INSTRUCTION_ARCHITECTURE.md §6.10, VALUES.md L6; DECISIONS.md, 2026-09-25): ci/laws.sh, and ci/laws.ps1 where
@@ -82,7 +82,7 @@ public sealed class Laws
     /// <summary>The generator run with an output file of its own; the bytes it wrote.</summary>
     private static byte[] Written(string file, params string[] arguments)
     {
-        var output = Path.Combine(Path.GetTempPath(), "estate-laws-" + Guid.NewGuid().ToString("N") + ".md");
+        var output = Path.Combine(Path.GetTempPath(), "dbchange-laws-" + Guid.NewGuid().ToString("N") + ".md");
         try
         {
             var (exit, log) = Programs.InRepository(file, [.. arguments, output.Replace('\\', '/')]).Finish().Joined();

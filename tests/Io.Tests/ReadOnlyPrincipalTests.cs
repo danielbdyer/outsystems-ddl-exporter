@@ -1,15 +1,15 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using Estate.Budgets.Tests;
+using DbChange.Budgets.Tests;
 using Microsoft.Data.SqlClient;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// WP 1.8's read-only principal: VIEW DEFINITION at the database's scope and db_datareader, nothing server-wide beyond
-/// CONNECT SQL, reached only through a file: reference under .estate/, and dropped with its database.
+/// CONNECT SQL, reached only through a file: reference under .dbchange/, and dropped with its database.
 /// </summary>
 public sealed class ReadOnlyPrincipalTests
 {
@@ -21,7 +21,7 @@ public sealed class ReadOnlyPrincipalTests
         await SqlServerFixture.ExecuteAsync(database.ConnectionString, "CREATE TABLE dbo.Proof (Id INT NOT NULL PRIMARY KEY); INSERT dbo.Proof (Id) VALUES (1);");
         var reader = await ReadOnlyPrincipal.CreateAsync(database);
 
-        Assert.StartsWith("file:.estate/", reader.Reference, StringComparison.Ordinal);
+        Assert.StartsWith("file:.dbchange/", reader.Reference, StringComparison.Ordinal);
         Assert.Equal(1, await Held(database, reader, "SELECT COUNT(*) FROM sys.server_permissions WHERE grantee_principal_id = SUSER_ID(@name) AND permission_name = N'CONNECT SQL' AND state = 'G';"));
         Assert.Equal(0, await Held(database, reader, "SELECT COUNT(*) FROM sys.server_permissions WHERE grantee_principal_id = SUSER_ID(@name) AND NOT (permission_name = N'CONNECT SQL' AND state = 'G');"));
         Assert.Equal(0, await Held(database, reader, "SELECT COUNT(*) FROM sys.server_role_members WHERE member_principal_id = SUSER_ID(@name);"));

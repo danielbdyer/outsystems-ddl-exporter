@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
 /// What a claim stands on (V3_MILESTONES.md §3, law 5′): the change claimed, the target's schema and its existing data, each by its
@@ -64,7 +64,7 @@ public sealed record Provenance
 
 /// <summary>
 /// A SQL Server as a claim records it: its product version as SERVERPROPERTY('ProductVersion') gives it, four dot-separated numbers such
-/// as 16.0.4295.3; the database's compatibility level; and, for a copy on the estate-sql container, the digest of the image it runs. A
+/// as 16.0.4295.3; the database's compatibility level; and, for a copy on the dbchange-sql container, the digest of the image it runs. A
 /// claim transfers from one SQL Server to another of an equal <see cref="Level"/>: the build and the image are not compared (R1).
 /// </summary>
 public sealed record Server
@@ -83,7 +83,7 @@ public sealed record Server
 
     public int CompatibilityLevel { get; }
 
-    /// <summary>The digest of the image the server runs in, for a copy on the estate-sql container; null anywhere else.</summary>
+    /// <summary>The digest of the image the server runs in, for a copy on the dbchange-sql container; null anywhere else.</summary>
     public Fingerprint? Image { get; }
 
     /// <summary>The product version's first number: 16 for SQL Server 2022.</summary>
@@ -99,7 +99,7 @@ public sealed record Server
     public static Result<Server> Of(string? productVersion, int compatibilityLevel, string? imageDigest) =>
         productVersion is null || !ProductVersion.IsMatch(productVersion)
             ? new Error("server.product-version", "'" + productVersion + "' is not a SQL Server product version of four numbers, such as 16.0.4295.3.",
-                "Report the server's SERVERPROPERTY('ProductVersion') with this error; estate reads it as SQL Server gives it.")
+                "Report the server's SERVERPROPERTY('ProductVersion') with this error; dbchange reads it as SQL Server gives it.")
         : !Levels.Contains(compatibilityLevel)
             ? new Error("server.compatibility-level", string.Create(CultureInfo.InvariantCulture, $"{compatibilityLevel} is no compatibility level SQL Server has had."),
                 "Report the database's compatibility_level in sys.databases with this error.")
@@ -116,7 +116,7 @@ public sealed record Server
 public readonly record struct ServerLevel(int Major, int CompatibilityLevel);
 
 /// <summary>
-/// What an answer stands on beside the tool's own version: the DacFx release estate runs, made once at start; the toolchain ledger's pin,
+/// What an answer stands on beside the tool's own version: the DacFx release dbchange runs, made once at start; the toolchain ledger's pin,
 /// once the ledger was read; and the SQL Server, once a copy was reached. A verb carries it as far as its work got, failed or not.
 /// </summary>
 public sealed record Stamp(DacFxVersion DacFx, Pin? Pin = null, Server? Server = null);

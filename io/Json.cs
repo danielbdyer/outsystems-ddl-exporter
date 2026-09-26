@@ -2,7 +2,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
 /// JSON as the engine writes it on every operating system: two-space indent, LF, a final newline, and

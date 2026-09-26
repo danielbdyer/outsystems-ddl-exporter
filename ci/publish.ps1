@@ -1,12 +1,12 @@
 #Requires -Version 7.0
-# The published tool folder, dist/estate/ (V3_MILESTONES.md WP 0.7, section 1 fact 1): estate published framework-dependent
+# The published tool folder, dist/dbchange/ (V3_MILESTONES.md WP 0.7, section 1 fact 1): dbchange published framework-dependent
 # on net10.0 with DacFx and every dependency beside it, DacFx's net10.0 SqlTasks targets, and the reference assemblies a classic
 # .sqlproj build needs. Both pins are read where they are declared, never restated. ci/publish.sh takes the same steps.
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 
 $root = Split-Path -Parent $PSScriptRoot
-$out = Join-Path $root 'dist/estate'
+$out = Join-Path $root 'dist/dbchange'
 $dacfx = (Select-Xml -Path (Join-Path $root 'Directory.Packages.props') -XPath "//PackageVersion[@Include='Microsoft.SqlServer.DacFx']").Node.Version
 $referenceAssemblies = (Select-Xml -Path (Join-Path $root 'cli/cli.csproj') -XPath "//PackageDownload[@Include='Microsoft.NETFramework.ReferenceAssemblies.net472']").Node.Version.Trim('[', ']')
 if (-not $dacfx -or -not $referenceAssemblies) {
@@ -26,6 +26,6 @@ Copy-Item (Join-Path $from 'RedistList/FrameworkList.xml') $refasm.FullName
 
 $files = Get-ChildItem -Recurse -File $out
 $megabytes = [int][Math]::Round(($files | Measure-Object Length -Sum).Sum / 1MB)
-"dist/estate: $($files.Count) files, $megabytes MB (DacFx $dacfx, reference assemblies $referenceAssemblies)"
-# The launcher (dist/estate/estate.exe) finds .NET only machine-wide or through DOTNET_ROOT; dotnet itself runs the dll anywhere.
-'run it as dotnet dist/estate/estate.dll <verb>; dist/estate/estate.exe needs .NET installed machine-wide, or DOTNET_ROOT naming a per-user install'
+"dist/dbchange: $($files.Count) files, $megabytes MB (DacFx $dacfx, reference assemblies $referenceAssemblies)"
+# The launcher (dist/dbchange/dbchange.exe) finds .NET only machine-wide or through DOTNET_ROOT; dotnet itself runs the dll anywhere.
+'run it as dotnet dist/dbchange/dbchange.dll <verb>; dist/dbchange/dbchange.exe needs .NET installed machine-wide, or DOTNET_ROOT naming a per-user install'

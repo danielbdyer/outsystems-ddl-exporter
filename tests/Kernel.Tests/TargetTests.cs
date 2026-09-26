@@ -1,15 +1,15 @@
 using System;
 using System.Linq;
 using CsCheck;
-using Estate.Tests;
+using DbChange.Tests;
 using Xunit;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>
 /// The target grammar (V3_MILESTONES.md WP 1.4): env:, copy:, synthetic-copy, ref: and dacpac:, each read into its case of a closed
 /// type and written back as it was read. An environment's name and a copy's name each have one grammar, the copy's the ruled
-/// estate_&lt;host&gt;_&lt;pid&gt;_&lt;hex&gt; (DECISIONS.md, 2026-09-25), and a text either grammar refuses is refused without being quoted.
+/// dbchange_&lt;host&gt;_&lt;pid&gt;_&lt;hex&gt; (DECISIONS.md, 2026-09-25), and a text either grammar refuses is refused without being quoted.
 /// </summary>
 public sealed class TargetTests
 {
@@ -22,11 +22,11 @@ public sealed class TargetTests
     [Trait("Category", "fast")]
     [InlineData("env:dev", "environment", "dev")]
     [InlineData("env:uat-2", "environment", "uat-2")]
-    [InlineData("copy:estate_danny_pc_4242_0a1b2c3d", "registered copy", "estate_danny_pc_4242_0a1b2c3d")]
+    [InlineData("copy:dbchange_danny_pc_4242_0a1b2c3d", "registered copy", "dbchange_danny_pc_4242_0a1b2c3d")]
     [InlineData("synthetic-copy", "synthetic copy", "")]
     [InlineData("ref:main", "git ref", "main")]
     [InlineData("ref:origin/release/2026.09", "git ref", "origin/release/2026.09")]
-    [InlineData("dacpac:.estate/build/0a1b/SampleCatalog.dacpac", "package", ".estate/build/0a1b/SampleCatalog.dacpac")]
+    [InlineData("dacpac:.dbchange/build/0a1b/SampleCatalog.dacpac", "package", ".dbchange/build/0a1b/SampleCatalog.dacpac")]
     public void The_target_grammar_reads_each_form_into_its_case_and_writes_it_back(string text, string form, string named)
     {
         var target = Expect.Value(Target.Parse(text, Subject));
@@ -51,7 +51,7 @@ public sealed class TargetTests
     [InlineData("dev")]
     [InlineData("env:")]
     [InlineData("env:DEV")]
-    [InlineData("env:ESTATE_DEV")]
+    [InlineData("env:DBCHANGE_DEV")]
     [InlineData("env:a-name-longer-than-thirty-two-chars")]
     [InlineData("synthetic-copy:dev")]
     [InlineData("ref:")]
@@ -70,7 +70,7 @@ public sealed class TargetTests
     [InlineData("env:")]
     [InlineData("env:-")]
     [InlineData("copy:")]
-    [InlineData("copy:estate_")]
+    [InlineData("copy:dbchange_")]
     [InlineData("ref:-")]
     [InlineData("dacpac:\n")]
     public void No_refusal_of_the_grammar_quotes_the_argument(string form)
@@ -80,43 +80,43 @@ public sealed class TargetTests
         planted.AbsentFrom(Expect.Failed(Target.Parse(form + planted, Subject)));
     }
 
-    /// <summary>The names estate gives copies read back as themselves, whatever the machine is called, the process's id and the eight hexadecimal digits.</summary>
+    /// <summary>The names dbchange gives copies read back as themselves, whatever the machine is called, the process's id and the eight hexadecimal digits.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void A_copy_name_estate_makes_reads_back_as_itself() =>
+    public void A_copy_name_dbchange_makes_reads_back_as_itself() =>
         Gen.Select(Gen.String, Gen.Int[0, int.MaxValue], Gen.UInt).Sample((machine, pid, suffix) =>
             CopyName.Make(machine, pid, suffix) is var made && CopyName.Of(Subject, made.ToString()) is Result<CopyName>.Ok(var read)
             && read == made && read.Pid == pid && read.Machine == CopyName.Make(machine, 0, 0).Machine);
 
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("DANNY-PC", 4242, 0x0a1b2c3du, "estate_danny_pc_4242_0a1b2c3d")]
-    [InlineData("runner.corp.example", 7, 0xffffffffu, "estate_runner_corp_example_7_ffffffff")]
-    [InlineData("ÉTÉ", 1, 0u, "estate__t__1_00000000")]
-    [InlineData("", 0, 1u, "estate___0_00000001")]
-    [InlineData("a-machine-name-longer-than-forty-characters-in-all", 2, 2u, "estate_a_machine_name_longer_than_forty_charact_2_00000002")]
+    [InlineData("DANNY-PC", 4242, 0x0a1b2c3du, "dbchange_danny_pc_4242_0a1b2c3d")]
+    [InlineData("runner.corp.example", 7, 0xffffffffu, "dbchange_runner_corp_example_7_ffffffff")]
+    [InlineData("ÉTÉ", 1, 0u, "dbchange__t__1_00000000")]
+    [InlineData("", 0, 1u, "dbchange___0_00000001")]
+    [InlineData("a-machine-name-longer-than-forty-characters-in-all", 2, 2u, "dbchange_a_machine_name_longer_than_forty_charact_2_00000002")]
     public void A_copy_is_named_for_its_machine_in_lower_case_and_its_process(string machine, int pid, uint suffix, string name) =>
         Assert.Equal(name, CopyName.Make(machine, pid, suffix).ToString());
 
-    /// <summary>A name the loose grammar [a-z0-9_]{1,128} of io/SqlServer.cs accepted before the ruling of 2026-09-25, which estate never gives a copy.</summary>
+    /// <summary>A name the loose grammar [a-z0-9_]{1,128} of io/SqlServer.cs accepted before the ruling of 2026-09-25, which dbchange never gives a copy.</summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("estate_host")]
-    [InlineData("estatehost_1_0a1b2c3d")]
-    [InlineData("Estate_host_1_0a1b2c3d")]
-    [InlineData("estate_host_1_0a1b2c3")]
-    [InlineData("estate-host_1_0a1b2c3d")]
-    [InlineData("estate_host_01_0a1b2c3d")]
-    [InlineData("estate_host_2147483648_0a1b2c3d")]
-    [InlineData("estate_host_1_0A1B2C3D")]
+    [InlineData("dbchange_host")]
+    [InlineData("dbchangehost_1_0a1b2c3d")]
+    [InlineData("Dbchange_host_1_0a1b2c3d")]
+    [InlineData("dbchange_host_1_0a1b2c3")]
+    [InlineData("dbchange-host_1_0a1b2c3d")]
+    [InlineData("dbchange_host_01_0a1b2c3d")]
+    [InlineData("dbchange_host_2147483648_0a1b2c3d")]
+    [InlineData("dbchange_host_1_0A1B2C3D")]
     [InlineData("orders")]
     [InlineData("")]
-    public void A_name_estate_never_gives_a_copy_is_copy_unregistered_and_is_not_quoted(string text)
+    public void A_name_dbchange_never_gives_a_copy_is_copy_unregistered_and_is_not_quoted(string text)
     {
         var error = Expect.Failed(CopyName.Of(Subject, text), "copy.unregistered");
 
         Assert.StartsWith(Subject + " names a copy", error.Message, StringComparison.Ordinal);
-        Assert.Contains(".estate/copies.json", error.Message, StringComparison.Ordinal);
+        Assert.Contains(".dbchange/copies.json", error.Message, StringComparison.Ordinal);
         Assert.All(new[] { text }.Where(t => t.Length > 0), t => Assert.DoesNotContain(t, error.Message + error.Remedy, StringComparison.Ordinal));
     }
 

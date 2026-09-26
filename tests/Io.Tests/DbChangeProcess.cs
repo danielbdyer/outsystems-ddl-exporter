@@ -7,13 +7,13 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
-using Estate.Kernel;
+using DbChange.Kernel;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
-/// This test assembly run as a program (dotnet Estate.Io.Tests.dll): one estate process on a clone, as a second estate
+/// This test assembly run as a program (dotnet DbChange.Io.Tests.dll): one dbchange process on a clone, as a second dbchange process
 /// invocation, another agent in the same clone or the gate proving another branch is. Each step waits for a line on its
 /// standard input: it prints ready; takes the ref's worktree (Git.At) and prints it with the milliseconds At took; then,
 /// when a project is named, builds it there and prints the package. An error is printed as its code and message, exit 1.
@@ -21,7 +21,7 @@ namespace Estate.Io.Tests;
 /// that fills both pipes), sleep and spawn (a program that outlives its timeout, and one that starts a child first),
 /// utf8 (UTF-8 on both streams), env and environment (what a child inherits), and telemetry (the opt-out before DacFx loads).
 /// </summary>
-internal static class EstateProcess
+internal static class DbChangeProcess
 {
     /// <summary>Arguments: a mode and its argument; or the repository and the ref, then, to build, the project from the repository's root, the tool folder and the build root.</summary>
     public static int Main(string[] arguments)
@@ -48,7 +48,7 @@ internal static class EstateProcess
                 Thread.Sleep(TimeSpan.FromSeconds(int.Parse(seconds, CultureInfo.InvariantCulture)));
                 return 0;
             case ["spawn"]:
-                using (var child = Process.Start(new ProcessStartInfo("dotnet", [typeof(EstateProcess).Assembly.Location, "sleep", "60"]))!)
+                using (var child = Process.Start(new ProcessStartInfo("dotnet", [typeof(DbChangeProcess).Assembly.Location, "sleep", "60"]))!)
                 {
                     Console.WriteLine(child.Id.ToString(CultureInfo.InvariantCulture));
                     Console.Out.Flush();
@@ -76,12 +76,12 @@ internal static class EstateProcess
                     + (AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name!.StartsWith("Microsoft.SqlServer.Dac", StringComparison.Ordinal)) ? "dacfx-loaded" : "dacfx-not-loaded"));
                 return 0;
             default:
-                return Estate(arguments);
+                return Run(arguments);
         }
     }
 
     /// <summary>
-    /// One estate process per ref, started together and, once all are ready, released in the refs' order a gap of
+    /// One dbchange process per ref, started together and, once all are ready, released in the refs' order a gap of
     /// milliseconds apart. Only when every one has taken its worktree, so every sweep of the round is over and every holder
     /// still runs, are they let on to build. For each ref: its worktree, the milliseconds At took, its package or "".
     /// </summary>
@@ -94,7 +94,7 @@ internal static class EstateProcess
             {
                 if (process.StandardOutput.ReadLine() != "ready")
                 {
-                    Assert.Fail("an estate process did not start: " + errors.Result);
+                    Assert.Fail("a dbchange process did not start: " + errors.Result);
                 }
             }
 
@@ -115,8 +115,8 @@ internal static class EstateProcess
             {
                 var (p, reference, (path, took)) = run;
                 var built = p.Process.StandardOutput.ReadToEnd().Trim();
-                Assert.True(p.Process.WaitForExit(TimeSpan.FromMinutes(3)), "the estate process at " + reference + " overran three minutes");
-                Assert.True(p.Process.ExitCode == 0, "the estate process at " + reference + ", released " + gap + " ms after the one before, exited " + p.Process.ExitCode + ":\n" + path + "\n" + built + "\n" + p.Errors.Result);
+                Assert.True(p.Process.WaitForExit(TimeSpan.FromMinutes(3)), "the dbchange process at " + reference + " overran three minutes");
+                Assert.True(p.Process.ExitCode == 0, "the dbchange process at " + reference + ", released " + gap + " ms after the one before, exited " + p.Process.ExitCode + ":\n" + path + "\n" + built + "\n" + p.Errors.Result);
                 return (new Git.Worktree(path!, reference), long.Parse(took!, CultureInfo.InvariantCulture), built);
             }).ToList();
         }
@@ -135,12 +135,12 @@ internal static class EstateProcess
     /// This assembly started as a program with its input, output and errors redirected and its input kept open, for a test that
     /// drives it line by line or holds it until it kills it; io's Command closes a program's input by design, so this stays a raw Process.
     /// </summary>
-    public static Process Start(params string[] arguments) => Process.Start(new ProcessStartInfo("dotnet", [typeof(EstateProcess).Assembly.Location, .. arguments])
+    public static Process Start(params string[] arguments) => Process.Start(new ProcessStartInfo("dotnet", [typeof(DbChangeProcess).Assembly.Location, .. arguments])
     {
         RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8,
     })!;
 
-    private static int Estate(string[] arguments)
+    private static int Run(string[] arguments)
     {
         Console.WriteLine("ready");
         Console.ReadLine();

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "estate.help/1",
-  "description": "What estate --help --json writes: the verb table, the exit table and the schemas.",
-  "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with ESTATE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
+  "title": "dbchange.help/1",
+  "description": "What dbchange --help --json writes: the verb table, the exit table and the schemas.",
+  "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with DBCHANGE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -15,7 +15,7 @@
   ],
   "properties": {
     "schema": {
-      "const": "estate.help/1"
+      "const": "dbchange.help/1"
     },
     "version": {
       "type": "string",
@@ -64,7 +64,7 @@
           },
           "output": {
             "type": "string",
-            "pattern": "^estate\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$"
+            "pattern": "^dbchange\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$"
           },
           "outcomes": {
             "type": "array",

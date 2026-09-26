@@ -5,20 +5,20 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using Estate.Budgets.Tests;
-using Estate.Tests;
+using DbChange.Budgets.Tests;
+using DbChange.Tests;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/Command, the one way io runs a program (R6): a bare name is found on the PATH and never in the working directory, where a
 /// checkout could plant one; both streams arrive whole, apart and as UTF-8; a program past its timeout, or a run interrupted, ends
-/// with every process it started. The programs run are this assembly's own modes (EstateProcess), so no test depends on a shell.
+/// with every process it started. The programs run are this assembly's own modes (DbChangeProcess), so no test depends on a shell.
 /// </summary>
 public sealed class CommandTests : IDisposable
 {
-    private static readonly string Assembly = typeof(EstateProcess).Assembly.Location;
+    private static readonly string Assembly = typeof(DbChangeProcess).Assembly.Location;
 
     private readonly ScratchFolder scratch = ScratchFolder.Temporary("command");
 
@@ -28,7 +28,7 @@ public sealed class CommandTests : IDisposable
     [Trait("Category", "fast")]
     public void A_program_on_no_folder_of_the_PATH_is_NotFound_and_its_reason_names_the_folders_searched_and_never_the_working_directory()
     {
-        var name = "estate-no-such-program-" + Guid.NewGuid().ToString("N")[..8];
+        var name = "dbchange-no-such-program-" + Guid.NewGuid().ToString("N")[..8];
         scratch.File(name + (OperatingSystem.IsWindows() ? ".exe" : ""), "");
         var first = Environment.GetEnvironmentVariable("PATH")!.Split(Path.PathSeparator).First(Path.IsPathFullyQualified);
 
@@ -65,7 +65,7 @@ public sealed class CommandTests : IDisposable
     public void A_rooted_program_that_does_not_exist_and_a_cmd_or_bat_named_bare_are_NotFound_with_the_reason()
     {
         var missing = Assert.IsType<Ran.NotFound>(new Command(scratch.Under("none" + (OperatingSystem.IsWindows() ? ".exe" : "")), [], TimeSpan.FromSeconds(10)).Run());
-        var batch = Assert.IsType<Ran.NotFound>(new Command("estate-stand-in.cmd", [], TimeSpan.FromSeconds(10)).Run());
+        var batch = Assert.IsType<Ran.NotFound>(new Command("dbchange-stand-in.cmd", [], TimeSpan.FromSeconds(10)).Run());
 
         Assert.Contains("cannot be started", missing.Why, StringComparison.Ordinal);
         Assert.Equal(OperatingSystem.IsWindows(), batch.Why.Contains("cmd.exe", StringComparison.Ordinal));
@@ -130,9 +130,9 @@ public sealed class CommandTests : IDisposable
 
     [Fact]
     [Trait("Category", "build")]
-    public void The_environment_given_is_applied_over_estate_s_own_and_a_null_value_removes_the_variable()
+    public void The_environment_given_is_applied_over_dbchange_s_own_and_a_null_value_removes_the_variable()
     {
-        var (set, removed) = ("ESTATE_TEST_SET_" + Guid.NewGuid().ToString("N")[..8], "ESTATE_TEST_REMOVED_" + Guid.NewGuid().ToString("N")[..8]);
+        var (set, removed) = ("DBCHANGE_TEST_SET_" + Guid.NewGuid().ToString("N")[..8], "DBCHANGE_TEST_REMOVED_" + Guid.NewGuid().ToString("N")[..8]);
         Environment.SetEnvironmentVariable(removed, "present");
         var environment = new Dictionary<string, string?>(StringComparer.Ordinal) { [set] = "given", [removed] = null };
         try

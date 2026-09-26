@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace Estate.Io;
+namespace DbChange.Io;
 
 /// <summary>
 /// One run's interruption (VALUES.md O7; cli/Contract.cs exit 130): Ctrl-C (SIGINT), Ctrl-Break (SIGQUIT), SIGTERM and SIGHUP (on
@@ -12,7 +12,7 @@ namespace Estate.Io;
 /// every program io starts (Command) and every lock it waits for (FileLock) watches <see cref="RunToken"/> beside the token its caller
 /// passes, so a verb stops at its next program or lock wait and cli answers interrupted at exit 130. The first signal is taken
 /// (Cancel = true); a second is left to the runtime's default handling, which ends the process at once, so a person can always stop
-/// estate. Listen registers the signals; Quiet registers none, for tests and for a run inside another process.
+/// dbchange. Listen registers the signals; Quiet registers none, for tests and for a run inside another process.
 /// </summary>
 public sealed class Interruption : IDisposable
 {
@@ -41,7 +41,7 @@ public sealed class Interruption : IDisposable
     /// <summary>What interrupted the run ("Ctrl-C", "SIGTERM", "--timeout 600"), or null while nothing has.</summary>
     public string? Cause => cause;
 
-    /// <summary>The run of estate's own process: the signals registered, the first one taken.</summary>
+    /// <summary>The run of dbchange's own process: the signals registered, the first one taken.</summary>
     public static Interruption Listen() => new(listening: true);
 
     /// <summary>A run that no signal reaches, stopped only by After: a test's, or one inside another process.</summary>

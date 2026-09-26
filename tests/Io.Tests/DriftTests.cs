@@ -6,22 +6,22 @@ using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using System.Xml.Linq;
-using Estate.Budgets.Tests;
-using Estate.Kernel;
+using DbChange.Budgets.Tests;
+using DbChange.Kernel;
 using Microsoft.Data.SqlClient;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
-/// estate check drift (WP 1.7, V3_ARCHITECTURE.md §8.8, contract C7): the ref built, the target extracted once, the ref's package planned
+/// dbchange check drift (WP 1.7, V3_ARCHITECTURE.md §8.8, contract C7): the ref built, the target extracted once, the ref's package planned
 /// against it package to package under the pipeline's profile; exit 0 when the deploy plan is empty and 5 naming each object when it is
 /// not; law 2′ (M1 exit 3), R13's stamp and window (exit 6), R16's refusals (exit 7), and R14's watch on the read-only principal (exit 8).
 /// </summary>
 [Collection(PublishedToolCollection.Name)]
-public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEstate>
+public sealed class DriftTests(ScratchRepository repository) : IClassFixture<ScratchRepository>
 {
     /// <summary>M1 exit 7's first half: a literal connection string where a target goes is exit 6, and no part of it is printed.</summary>
     [Theory]
@@ -34,7 +34,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     public void A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere(string verb)
     {
         var asked = verb.Split(' ');
-        var (exit, output) = estate.Estate([.. asked, "Server=db;User ID=sa;Password=planted-7f3a", .. asked[0] == "check" ? ["--at", estate.Base] : Array.Empty<string>(), "--json"]);
+        var (exit, output) = repository.Run([.. asked, "Server=db;User ID=sa;Password=planted-7f3a", .. asked[0] == "check" ? ["--at", repository.Base] : Array.Empty<string>(), "--json"]);
 
         Assert.Equal(6, exit);
         Assert.Equal("connection.literal", (string?)JsonNode.Parse(output)!["findings"]![0]!["code"]);
@@ -49,16 +49,16 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     [Trait("Exit", "M1.6")]
     public void The_committed_DacFx_outside_the_ledger_s_window_is_exit_6_before_anything_connects()
     {
-        var root = Directory.CreateTempSubdirectory("estate-window-").FullName;
+        var root = Directory.CreateTempSubdirectory("dbchange-window-").FullName;
         try
         {
-            Directory.CreateDirectory(Path.Combine(root, "estate", "ledgers"));
-            File.WriteAllText(Path.Combine(root, "estate", "ledgers", "toolchain.md"), "| Date | estate | Pinned DacFx | Release before |\n|---|---|---|---|\n| 2026-09-25 | 3.0.0 | 170.7.2 | 170.6.10 |\n");
+            Directory.CreateDirectory(Path.Combine(root, "dbchange", "ledgers"));
+            File.WriteAllText(Path.Combine(root, "dbchange", "ledgers", "toolchain.md"), "| Date | dbchange | Pinned DacFx | Release before |\n|---|---|---|---|\n| 2026-09-25 | 3.0.0 | 170.7.2 | 170.6.10 |\n");
 
-            var (exit, output) = estate.EstateAt(root, "check", "drift", "--target", "copy:estate_nowhere_1_00000000", "--at", "main", "--json");
+            var (exit, output) = repository.RunAt(root, "check", "drift", "--target", "copy:dbchange_nowhere_1_00000000", "--at", "main", "--json");
 
             var answer = JsonNode.Parse(output)!;
-            ScratchEstate.Valid("estate.check.1.schema.json", answer);
+            ScratchRepository.Valid("dbchange.check.1.schema.json", answer);
             Assert.Equal(6, exit);
             Assert.Equal("toolchain.outside-window", (string?)answer["findings"]![0]!["code"]);
             Assert.Equal(("170.5.96", "170.7.2", null), ((string?)answer["dacfx"], (string?)answer["pin"], answer["server"]));
@@ -84,13 +84,13 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         {
             var (exit, output) = Drift("copy:" + copy.Name);
             Assert.True(exit == 0, output);
-            Assert.StartsWith("copy:" + copy.Name + " is in sync with ref:" + estate.Base + " (commit " + estate.Base[..8] + ").\n", output, StringComparison.Ordinal);
+            Assert.StartsWith("copy:" + copy.Name + " is in sync with ref:" + repository.Base + " (commit " + repository.Base[..8] + ").\n", output, StringComparison.Ordinal);
 
             await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(300) NULL;");
             (exit, output) = Drift("copy:" + copy.Name);
 
             Assert.True(exit == 5, output);
-            Assert.StartsWith("copy:" + copy.Name + " differs from ref:" + estate.Base + " (commit " + estate.Base[..8] + "): the deploy plan holds 1 operation.", output, StringComparison.Ordinal);
+            Assert.StartsWith("copy:" + copy.Name + " differs from ref:" + repository.Base + " (commit " + repository.Base[..8] + "): the deploy plan holds 1 operation.", output, StringComparison.Ordinal);
             Assert.Contains("- warning `drift.alter` Table [dbo].[Customer]: The deploy plan against copy:" + copy.Name + " would alter Table [dbo].[Customer].", output, StringComparison.Ordinal);
             Assert.Equal(["- warning `drift.column` Column [dbo].[Customer].[Email]: Length 300 → 256, from the target to the repository."],
                 output.Split('\n').Where(l => l.Contains("`drift.column`", StringComparison.Ordinal)));
@@ -120,7 +120,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             var (exit, output) = Drift("copy:" + copy.Name, "--json");
 
             var answer = JsonNode.Parse(output)!;
-            ScratchEstate.Valid("estate.check.1.schema.json", answer);
+            ScratchRepository.Valid("dbchange.check.1.schema.json", answer);
             var findings = answer["findings"]!.AsArray().Select(f => (Code: (string)f!["code"]!, Severity: (string)f["severity"]!, Subject: (string)f["subject"]!, Message: (string)f["message"]!)).ToList();
             Console.WriteLine(string.Join('\n', findings));
             Assert.True(exit == 5, output);
@@ -143,7 +143,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     /// published to a copy created under that collation, then dbo.Customer renamed CUSTOMER on each with sp_rename, which sys.tables
     /// confirms in a binary comparison. The plan of the package against its copy plans nothing under either collation: DacFx matches object
     /// names ignoring case even where the database reads [dbo].[Customer] and [dbo].[CUSTOMER] as two names, so a case-only rename on a
-    /// case-sensitive database is a difference no deploy plan will reconcile. estate diff from the copy to the package reads names under the
+    /// case-sensitive database is a difference no deploy plan will reconcile. dbchange diff from the copy to the package reads names under the
     /// copy's collation: one case-only pair with its note under the case-insensitive collation, and the table dropped and created under the
     /// case-sensitive one. check drift builds the golden ref, a case-insensitive package: against the case-insensitive copy it exits 0, and
     /// against the case-sensitive copy it is refused as DacFx refuses a live plan of a case-insensitive model against a case-sensitive
@@ -167,7 +167,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
 
             var plan = Planned(dacpac, copy, profile);
             var (exit, output) = Drift("copy:" + copy.Name);
-            var (diffExit, diffOutput) = estate.Estate("diff", "--from", "copy:" + copy.Name, "--to", "dacpac:" + dacpac, "--json");
+            var (diffExit, diffOutput) = repository.Run("diff", "--from", "copy:" + copy.Name, "--to", "dacpac:" + dacpac, "--json");
 
             Assert.True(plan.Report.IsEmpty, collation + " planned:\n" + string.Join('\n', plan.Report.Operations));
             Assert.True(exit == driftExit, output);
@@ -179,7 +179,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
 
             Assert.True(diffExit == 0, diffOutput);
             var answer = JsonNode.Parse(diffOutput)!;
-            ScratchEstate.Valid("estate.diff.1.schema.json", answer);
+            ScratchRepository.Valid("dbchange.diff.1.schema.json", answer);
             var change = answer["diff"]!["change"]!;
             var (dropped, created) = (change["dropped"]!.AsArray().Select(k => (string?)k).ToList(), change["created"]!.AsArray().Select(k => (string?)k).ToList());
             if (caseInsensitive)
@@ -217,13 +217,13 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         {
             await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ADD [ ] INT NULL, [a\tb] INT NULL;");
 
-            var (readExit, read) = estate.Estate("read", "--from", "copy:" + copy.Name, "--json");
-            var (diffExit, diff) = estate.Estate("diff", "--from", "copy:" + copy.Name, "--to", "dacpac:" + dacpac, "--fail-on-change");
+            var (readExit, read) = repository.Run("read", "--from", "copy:" + copy.Name, "--json");
+            var (diffExit, diff) = repository.Run("diff", "--from", "copy:" + copy.Name, "--to", "dacpac:" + dacpac, "--fail-on-change");
             var (driftExit, drift) = Drift("copy:" + copy.Name);
 
             Assert.True(readExit == 0, read);
             var answer = JsonNode.Parse(read)!;
-            var whole = (string?)answer["full"] is { } full ? JsonNode.Parse(File.ReadAllText(Path.Combine(estate.Root, full)))! : answer;
+            var whole = (string?)answer["full"] is { } full ? JsonNode.Parse(File.ReadAllText(Path.Combine(repository.Root, full)))! : answer;
             var keys = whole["read"]!["elements"]!.AsArray().Select(e => (string?)e!["key"]).ToList();
             Assert.Contains("Column [dbo].[Customer].[ ]", keys);
             Assert.Contains("Column [dbo].[Customer].[a\tb]", keys);
@@ -265,21 +265,21 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             var (schema, packaged) = (Fingerprint.Of(GitTests.Ok(extracted.Elements).Elements), Fingerprint.Of(GitTests.Ok(package.Elements).Elements));
 
             var answer = JsonNode.Parse(output)!;
-            ScratchEstate.Valid("estate.check.1.schema.json", answer);
+            ScratchRepository.Valid("dbchange.check.1.schema.json", answer);
             Assert.Equal((5, "differs"), (exit, (string?)answer["outcome"]));
             var provenance = answer["provenance"]!;
             Assert.Equal(("sha256:" + schema, "sha256:" + Fingerprint.Of(plan.Report)), ((string?)provenance["schema"], (string?)provenance["change"]));
             Assert.DoesNotContain("sha256:" + packaged, new[] { (string?)provenance["schema"], (string?)provenance["change"] });
-            // The copy ran in the estate-sql container when its server is the one ~/.estate/sql.env names, whether ESTATE_SQL also names it or
+            // The copy ran in the dbchange-sql container when its server is the one ~/.dbchange/sql.env names, whether DBCHANGE_SQL also names it or
             // not; ci/sql.sh up, which the fixture runs, keeps that container on the pinned image, whose digest Docker then reports.
             var container = File.Exists(LocalServer.SqlEnv) && LocalServer.ServerName(null, LocalServer.SqlEnv, localDb: false) is Result<ServerName>.Ok(var inContainer)
                 && LocalServer.ServerName(copy.Connection) is Result<ServerName>.Ok(var made) && made == inContainer;
             Assert.Equal(("170.5.96", container ? Doctor.ImageDigest : null, "UNPINNED"), ((string?)provenance["dacfx"], (string?)provenance["server"]!["image"], (string?)answer["pin"]));
-            Assert.Equal(("copy:" + copy.Name, "[\"existingData\"]", estate.Base), ((string?)provenance["target"], provenance["lacking"]!.ToJsonString(), (string?)answer["check"]!["commit"]));
+            Assert.Equal(("copy:" + copy.Name, "[\"existingData\"]", repository.Base), ((string?)provenance["target"], provenance["lacking"]!.ToJsonString(), (string?)answer["check"]!["commit"]));
             Assert.Equal(answer["server"]!.ToJsonString(), provenance["server"]!.ToJsonString());
             Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "toolchain.unpinned" && ((string?)f["message"])!.Contains("UNPINNED", StringComparison.Ordinal));
             Assert.Contains(answer["findings"]!.AsArray(), f => (string?)f!["code"] == "profile.unverified" && (string?)f["severity"] == "note"
-                && (string?)f["message"] == "The estate commits no copy of the publish profile the Octopus step applies, so " + ScratchEstate.Profile + " is not verified against it.");
+                && (string?)f["message"] == "The SSDT repository commits no copy of the publish profile the Octopus step applies, so " + ScratchRepository.Profile + " is not verified against it.");
         }
         finally
         {
@@ -300,9 +300,9 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         try
         {
             var refusal = new Error("server.failed", "copy:" + copy.Name + " failed the statement: Msg 245.", "Look the number up in SQL Server's error list.");
-            var request = new DriftCheck.Request(new Target.RegisteredCopy(copy.Name), GitTests.Ok(GitRef.Of("--at", estate.Base)), ScratchEstate.Profile, null);
+            var request = new DriftCheck.Request(new Target.RegisteredCopy(copy.Name), GitTests.Ok(GitRef.Of("--at", repository.Base)), ScratchRepository.Profile, null);
 
-            var drift = DriftCheck.Run(new DriftCheck.Estate(estate.Root, estate.Root, estate.Tool.Folder, Cli.Contract.Version), request, SqlServer.QueryLog.Start(estate.Root), _ => refusal);
+            var drift = DriftCheck.Run(new DriftCheck.Checkout(repository.Root, repository.Root, repository.Tool.Folder, Cli.Contract.Version), request, SqlServer.QueryLog.Start(repository.Root), _ => refusal);
 
             Assert.Equal(refusal, Assert.IsType<Result<DriftCheck.Answer>.Failed>(drift.Result).Error);
             Assert.Equal(4, Cli.Contract.Exit(refusal));
@@ -323,10 +323,10 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     public async Task A_denied_login_prints_one_sentence_naming_the_environment_and_a_lead_s_prediction()
     {
         var server = new SqlConnectionStringBuilder(await SqlServerFixture.ServerAsync());
-        var connection = Path.Combine(Path.GetDirectoryName(estate.Root)!, "denied.connection");
+        var connection = Path.Combine(Path.GetDirectoryName(repository.Root)!, "denied.connection");
         File.WriteAllText(connection, new SqlConnectionStringBuilder
         {
-            DataSource = server.DataSource, InitialCatalog = "master", UserID = "estate_nobody_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(4)), Password = "Denied1!planted",
+            DataSource = server.DataSource, InitialCatalog = "master", UserID = "dbchange_nobody_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(4)), Password = "Denied1!planted",
             TrustServerCertificate = true, Pooling = false,
         }.ConnectionString);
         if (!OperatingSystem.IsWindows())
@@ -334,7 +334,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             File.SetUnixFileMode(connection, UnixFileMode.UserRead | UnixFileMode.UserWrite);   // io/SqlServer refuses a connection file others can read
         }
 
-        var (exit, output) = estate.EstateAt(estate.Named(("uat", connection)), "check", "drift", "--target", "env:uat", "--at", estate.Base);
+        var (exit, output) = repository.RunAt(repository.Named(("uat", connection)), "check", "drift", "--target", "env:uat", "--at", repository.Base);
 
         Assert.Equal(4, exit);
         var sentence = output.Split('\n')[0];
@@ -358,11 +358,11 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     public async Task The_read_only_principal_sends_no_DML_no_DDL_and_no_EXEC_through_check_drift_and_read()
     {
         await using var database = await SqlServerFixture.RegisterAsync();
-        var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "project/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
-        GoldenProject.Publish(dacpac, database, DacProfile.Load(Path.Combine(estate.Root, ScratchEstate.Profile)).DeployOptions);
+        var dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(repository.Root, repository.Base)), "project/SampleCatalog.sqlproj", repository.Tool.Folder, Path.Combine(repository.Root, ".dbchange", "build"))).Path;
+        GoldenProject.Publish(dacpac, database, DacProfile.Load(Path.Combine(repository.Root, ScratchRepository.Profile)).DeployOptions);
         var reader = await ReadOnlyPrincipal.CreateAsync(database);
         var master = await SqlServerFixture.ServerAsync();
-        var session = "estate_xe_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
+        var session = "dbchange_xe_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
         var only = "WHERE ([sqlserver].[server_principal_name] = N'" + reader.Login + "')";
         await SqlServerFixture.ExecuteAsync(master, "CREATE EVENT SESSION [" + session + "] ON SERVER ADD EVENT sqlserver.sql_batch_completed(" + only + "), "
             + "ADD EVENT sqlserver.rpc_completed(" + only + ") ADD TARGET package0.event_file(SET filename = N'" + session + ".xel') "
@@ -371,21 +371,21 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         {
             var file = await Scalar(master, "SELECT CAST(t.target_data AS xml).value('(EventFileTarget/File/@name)[1]', 'nvarchar(400)') FROM sys.dm_xe_session_targets t "
                 + "JOIN sys.dm_xe_sessions s ON s.address = t.event_session_address WHERE s.name = @name AND t.target_name = N'event_file';", session);
-            var root = estate.Named(("dev", Path.Combine(Repository.Root, reader.Reference["file:".Length..])));
+            var root = repository.Named(("dev", Path.Combine(Repository.Root, reader.Reference["file:".Length..])));
 
-            var (matchExit, matching) = estate.EstateAt(root, "check", "drift", "--target", "env:dev", "--at", estate.Base);
+            var (matchExit, matching) = repository.RunAt(root, "check", "drift", "--target", "env:dev", "--at", repository.Base);
             await SqlServerFixture.ExecuteAsync(database.ConnectionString, "ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(300) NULL;");
-            var (driftExit, drifted) = estate.EstateAt(root, "check", "drift", "--target", "env:dev", "--at", estate.Base);
-            var (readExit, read) = estate.EstateAt(root, "read", "--from", "env:dev");
+            var (driftExit, drifted) = repository.RunAt(root, "check", "drift", "--target", "env:dev", "--at", repository.Base);
+            var (readExit, read) = repository.RunAt(root, "read", "--from", "env:dev");
             await SqlServerFixture.ExecuteAsync(master, "ALTER EVENT SESSION [" + session + "] ON SERVER STATE = STOP;");
 
             Assert.True(matchExit == 0, matching);
-            Assert.StartsWith("env:dev is in sync with ref:" + estate.Base, matching, StringComparison.Ordinal);
+            Assert.StartsWith("env:dev is in sync with ref:" + repository.Base, matching, StringComparison.Ordinal);
             Assert.True(driftExit == 5, drifted);
             Assert.Contains("`drift.column` Column [dbo].[Customer].[Email]: Length 300 → 256", drifted, StringComparison.Ordinal);
             Assert.True(readExit == 0, read);
             var sent = await Events(master, file[..file.LastIndexOf('_')] + "*.xel");
-            Assert.Contains(sent, s => s.Text.Contains("HAS_PERMS_BY_NAME", StringComparison.Ordinal));   // the session saw the run: estate's own first statement
+            Assert.Contains(sent, s => s.Text.Contains("HAS_PERMS_BY_NAME", StringComparison.Ordinal));   // the session saw the run: dbchange's own first statement
             // The container's SQL Server shows DacFx's catalog batch masked (*encrypt---); the Windows runner's LocalDB shows it as written
             // but cut off, and Writes reads it token by token. A masked text is admitted only as DacFx's sp_executesql, one per read at most:
             // the two checks and the read.
@@ -512,7 +512,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
         return GitTests.Ok(DacFx.Plan(package, extracted, copy.Catalog, profile, []));
     }
 
-    /// <summary>A fresh copy on the run's local server, registered under the estate's root, with the golden project published to it under the pipeline's profile.</summary>
+    /// <summary>A fresh copy on the run's local server, registered under the repository root, with the golden project published to it under the pipeline's profile.</summary>
     private async Task<SqlServer.Copy> Published() => (await Published(null)).Copy;
 
     /// <summary>
@@ -524,19 +524,19 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     private async Task<(SqlServer.Copy Copy, string Dacpac, PublishProfile.Strict Profile)> Published(string? collation)
     {
         var server = await SqlServerFixture.ServerAsync();
-        var copy = GitTests.Ok(LocalServer.Create(estate.Root, server));
+        var copy = GitTests.Ok(LocalServer.Create(repository.Root, server));
         string dacpac;
         if (collation is null)
         {
-            dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(estate.Root, estate.Base)), "project/SampleCatalog.sqlproj", estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
+            dacpac = GitTests.Ok(Ssdt.Build(GitTests.Ok(Git.At(repository.Root, repository.Base)), "project/SampleCatalog.sqlproj", repository.Tool.Folder, Path.Combine(repository.Root, ".dbchange", "build"))).Path;
         }
         else
         {
             await SqlServerFixture.ExecuteAsync(server, "DECLARE @sql nvarchar(max) = N'ALTER DATABASE ' + QUOTENAME(@name) + N' COLLATE " + collation + ";'; EXEC (@sql);", copy.Name.ToString());
-            var project = Path.Combine(estate.Root, ".estate", "collation", collation);
+            var project = Path.Combine(repository.Root, ".dbchange", "collation", collation);
             if (!Directory.Exists(project))
             {
-                ToolFolderTests.Copy(Path.Combine(GitTests.Ok(Git.At(estate.Root, estate.Base)).Path, "project"), project);   // the golden project as committed, not the head's edit
+                ToolFolderTests.Copy(Path.Combine(GitTests.Ok(Git.At(repository.Root, repository.Base)).Path, "project"), project);   // the golden project as committed, not the head's edit
                 var file = Path.Combine(project, "SampleCatalog.sqlproj");
                 var text = File.ReadAllText(file);
                 File.WriteAllText(file, text.Contains("<DefaultCollation>", StringComparison.Ordinal)
@@ -544,14 +544,14 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
                     : text.Replace("<PropertyGroup>", "<PropertyGroup>\n    <DefaultCollation>" + collation + "</DefaultCollation>", StringComparison.Ordinal));
             }
 
-            dacpac = GitTests.Ok(Ssdt.Build(Path.Combine(project, "SampleCatalog.sqlproj"), estate.Tool.Folder, Path.Combine(estate.Root, ".estate", "build"))).Path;
+            dacpac = GitTests.Ok(Ssdt.Build(Path.Combine(project, "SampleCatalog.sqlproj"), repository.Tool.Folder, Path.Combine(repository.Root, ".dbchange", "build"))).Path;
         }
 
-        var profile = GitTests.Ok(PublishProfiles.Load(Path.Combine(estate.Root, ScratchEstate.Profile)));
+        var profile = GitTests.Ok(PublishProfiles.Load(Path.Combine(repository.Root, ScratchRepository.Profile)));
         GitTests.Ok(copy.Publish(dacpac, profile));
         return (copy, dacpac, profile);
     }
 
     private (int Exit, string Output) Drift(string target, params string[] more) =>
-        estate.Estate(["check", "drift", "--target", target, "--at", estate.Base, "--profile", ScratchEstate.Profile, .. more]);
+        repository.Run(["check", "drift", "--target", target, "--at", repository.Base, "--profile", ScratchRepository.Profile, .. more]);
 }

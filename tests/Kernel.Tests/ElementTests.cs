@@ -2,11 +2,11 @@ using System;
 using System.Globalization;
 using System.Linq;
 using CsCheck;
-using Estate.Tests;
+using DbChange.Tests;
 using Xunit;
-using static Estate.Kernel.Tests.ElementSets;
+using static DbChange.Kernel.Tests.ElementSets;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>
 /// An element is one DacFx object as io/Ssdt.ReadModel reads it, keyed by its type and name path, with its properties and

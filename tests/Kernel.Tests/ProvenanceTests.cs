@@ -1,7 +1,7 @@
 using System;
 using Xunit;
 
-namespace Estate.Kernel.Tests;
+namespace DbChange.Kernel.Tests;
 
 /// <summary>
 /// A claim's provenance names the inputs it stands on and those it lacks; a SQL Server is what SQL Server reports of itself, compared

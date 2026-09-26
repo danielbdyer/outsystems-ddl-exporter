@@ -53,7 +53,7 @@
       ]
     },
     "cli": {
-      "about": "code: the estate executable. The dispatcher, the verb table and the renderers first, then one file per verb at about a hundred lines, so plannedFiles carries no file names.",
+      "about": "code: the dbchange executable. The dispatcher, the verb table and the renderers first, then one file per verb at about a hundred lines, so plannedFiles carries no file names.",
       "include": ["cli/**/*.cs"],
       "exclude": [],
       "ceiling": 1700,

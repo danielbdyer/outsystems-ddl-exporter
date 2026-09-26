@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
 /// A form of T-SQL that sets a password, a key or a secret with a literal, as the T-SQL reference writes it: what the printer

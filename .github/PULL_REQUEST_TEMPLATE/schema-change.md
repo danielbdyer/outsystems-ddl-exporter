@@ -34,7 +34,7 @@
      "Ships across N releases so the running application keeps working while the change is in flight." -->
 - <!-- Added scrutiny, if any — one line each, or "None.":
      CDC-tracked table (capture instance frozen to current columns) · production row counts may block
-     writes or run long (schedule a window) · first time this operation runs on this estate. -->
+     writes or run long (schedule a window) · first time this operation runs on these environments. -->
 
 ## Changes
 

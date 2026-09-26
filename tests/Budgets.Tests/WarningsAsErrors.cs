@@ -1,7 +1,7 @@
 using System.Linq;
 using Xunit;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// M0 exit 1's setting: every v3 project builds with warnings as errors and the culture and ordinal rules (CA1304, CA1305, CA1307,

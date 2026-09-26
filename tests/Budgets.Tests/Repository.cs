@@ -4,13 +4,13 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
-using Estate.Io;
+using DbChange.Io;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
-/// The repository: its root (the nearest directory above the test assembly holding Estate.sln), and its files as git
-/// sees them, tracked or untracked but not ignored, so bin/, obj/, .estate/ and the agents' worktrees never count.
+/// The repository: its root (the nearest directory above the test assembly holding DbChange.sln), and its files as git
+/// sees them, tracked or untracked but not ignored, so bin/, obj/, .dbchange/ and the agents' worktrees never count.
 /// </summary>
 internal static class Repository
 {
@@ -89,12 +89,12 @@ internal static class Repository
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {
-            if (File.Exists(Path.Combine(dir.FullName, "Estate.sln")))
+            if (File.Exists(Path.Combine(dir.FullName, "DbChange.sln")))
             {
                 return dir.FullName;
             }
         }
 
-        throw new InvalidOperationException("Estate.sln not found above " + AppContext.BaseDirectory);
+        throw new InvalidOperationException("DbChange.sln not found above " + AppContext.BaseDirectory);
     }
 }

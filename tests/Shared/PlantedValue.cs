@@ -1,9 +1,9 @@
 using System;
 using System.Text.RegularExpressions;
-using Estate.Kernel;
+using DbChange.Kernel;
 using Xunit;
 
-namespace Estate.Tests;
+namespace DbChange.Tests;
 
 /// <summary>
 /// A value planted in an input that no output may carry (VALUES.md X2, and the planted-value scans of M2 exit 4, M3 exit 4, M5 exit 6

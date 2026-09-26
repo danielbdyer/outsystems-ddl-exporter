@@ -6,10 +6,10 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json.Nodes;
-using Estate.Io;
-using Estate.Kernel;
+using DbChange.Io;
+using DbChange.Kernel;
 
-namespace Estate.Cli;
+namespace DbChange.Cli;
 
 public static partial class Verbs
 {
@@ -27,7 +27,7 @@ public static partial class Verbs
     /// <summary>A count of what the whole answer holds, which stands whether or not the list was cut.</summary>
     internal static JsonObject Count() => new() { ["type"] = "integer", ["minimum"] = 0 };
 
-    /// <summary>estate read --from &lt;target&gt; [--project &lt;path&gt;]: a ref built at its commit, a package or a database, read whole (V3_ARCHITECTURE.md §8.1).</summary>
+    /// <summary>dbchange read --from &lt;target&gt; [--project &lt;path&gt;]: a ref built at its commit, a package or a database, read whole (V3_ARCHITECTURE.md §8.1).</summary>
     public static Envelope Read(Checkout here, IReadOnlyList<string> words)
     {
         if (DacFx.Version.Failed(out var dacfx, out var error))

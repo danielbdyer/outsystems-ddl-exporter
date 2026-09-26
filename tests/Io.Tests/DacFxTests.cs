@@ -1,14 +1,14 @@
 using System;
 using System.IO;
 using System.Linq;
-using Estate.Budgets.Tests;
-using Estate.Kernel;
+using DbChange.Budgets.Tests;
+using DbChange.Kernel;
 using Microsoft.SqlServer.Dac;
 using Microsoft.SqlServer.Dac.Model;
 using Xunit;
-using Contract = Estate.Cli.Contract;
+using Contract = DbChange.Cli.Contract;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/DacFx with no SQL Server: the release made once; a deploy report's items keyed as io/Ssdt.ReadModel keys the elements; a plan of one
@@ -19,9 +19,9 @@ public sealed class DacFxTests : IDisposable
 {
     private const string Pipeline = "tests/Golden/project/profiles/pipeline.publish.xml";
 
-    private readonly string scratch = Directory.CreateTempSubdirectory("estate-dacfx-").FullName;
+    private readonly string scratch = Directory.CreateTempSubdirectory("dbchange-dacfx-").FullName;
 
-    public DacFxTests() => Telemetry.OptOut();   // before DacFx loads, as estate's Main does
+    public DacFxTests() => Telemetry.OptOut();   // before DacFx loads, as dbchange's Main does
 
     public void Dispose() => Directory.Delete(scratch, recursive: true);
 

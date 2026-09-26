@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using Xunit;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// The inventory is data: every markdown file outside archive/, and every file in ci/, is a row of
@@ -40,7 +40,7 @@ public sealed class Manifest
     {
         var wrong = Documents.Rows.Where(r => !Repository.Files.Contains(r.Path)
                 || r.Kind is not ("hand" or "generated")
-                || r.Owner is not ("tool" or "estate" or "vendored")
+                || r.Owner is not ("tool" or "ssdt" or "vendored")
                 || r.Reader.Length == 0
                 || r.Moment.Length == 0
                 || (r.Kind == "generated") != (r.Generator is not null)

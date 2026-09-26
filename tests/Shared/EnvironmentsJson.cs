@@ -6,16 +6,16 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace Estate.Tests;
+namespace DbChange.Tests;
 
 /// <summary>
-/// estate/environments.json as a record, field for field in the file's own names, written under an estate's root; a key left null is left
-/// out of the file. A malformed environmentsFile, which no record can hold, is written as its text by <see cref="WriteText"/>.
+/// dbchange/environments.json as a record, field for field in the file's own names, written under a repository root; a key left null is left
+/// out of the file. A malformed environments file, which no record can hold, is written as its text by <see cref="WriteText"/>.
 /// </summary>
 internal sealed record EnvironmentsJson(IReadOnlyDictionary<string, EnvironmentsJson.Environment> Environments, string? LocalServer = null)
 {
-    /// <summary>The profile the golden project commits, at the path an estate keeps it.</summary>
-    public const string Pipeline = "estate/profiles/pipeline.publish.xml";
+    /// <summary>The profile the golden project commits, at the path the SSDT repository keeps it.</summary>
+    public const string Pipeline = "dbchange/profiles/pipeline.publish.xml";
 
     private static readonly JsonSerializerOptions Written = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
@@ -41,15 +41,15 @@ internal sealed record EnvironmentsJson(IReadOnlyDictionary<string, Environments
     /// <summary>The environment dev, its connection the reference given, on the host given.</summary>
     public static EnvironmentsJson Dev(string connection, string host = "dev-sql") => Of("dev", new Environment(connection, host));
 
-    /// <summary>The environments file written as estate/environments.json under <paramref name="estateRoot"/>, whose estate/profiles/ folder is made; the root.</summary>
-    public string WriteTo(string estateRoot) => WriteText(estateRoot, Json());
+    /// <summary>The environments file written as dbchange/environments.json under <paramref name="repositoryRoot"/>, whose dbchange/profiles/ folder is made; the root.</summary>
+    public string WriteTo(string repositoryRoot) => WriteText(repositoryRoot, Json());
 
-    /// <summary>The text written as estate/environments.json under <paramref name="estateRoot"/>, as given, UTF-8 without a byte-order mark; the root.</summary>
-    public static string WriteText(string estateRoot, string json)
+    /// <summary>The text written as dbchange/environments.json under <paramref name="repositoryRoot"/>, as given, UTF-8 without a byte-order mark; the root.</summary>
+    public static string WriteText(string repositoryRoot, string json)
     {
-        Directory.CreateDirectory(Path.Combine(estateRoot, "estate", "profiles"));
-        File.WriteAllText(Path.Combine(estateRoot, "estate", "environments.json"), json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        return estateRoot;
+        Directory.CreateDirectory(Path.Combine(repositoryRoot, "dbchange", "profiles"));
+        File.WriteAllText(Path.Combine(repositoryRoot, "dbchange", "environments.json"), json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        return repositoryRoot;
     }
 
     /// <summary>The environments file as JSON, each key in the file's own name and a null one left out.</summary>

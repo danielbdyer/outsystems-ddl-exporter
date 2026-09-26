@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# The published tool folder, dist/estate/ (V3_MILESTONES.md WP 0.7, section 1 fact 1): estate published framework-dependent
+# The published tool folder, dist/dbchange/ (V3_MILESTONES.md WP 0.7, section 1 fact 1): dbchange published framework-dependent
 # on net10.0 with DacFx and every dependency beside it, DacFx's net10.0 SqlTasks targets, and the reference assemblies a classic
 # .sqlproj build needs. Both pins are read where they are declared, never restated. ci/publish.ps1 takes the same steps.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-out="$root/dist/estate"
+out="$root/dist/dbchange"
 dacfx="$(sed -n 's/.*<PackageVersion Include="Microsoft.SqlServer.DacFx" Version="\([^"]*\)".*/\1/p' "$root/Directory.Packages.props")"
 reference_assemblies="$(sed -n 's/.*<PackageDownload Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="\[\([^]]*\)\]".*/\1/p' "$root/cli/cli.csproj")"
 if [ -z "$dacfx" ] || [ -z "$reference_assemblies" ]; then
@@ -27,6 +27,6 @@ cp "$from/RedistList/FrameworkList.xml" "$out/refasm/.NETFramework/v4.7.2/Redist
 
 files="$(find "$out" -type f | wc -l | tr -d ' ')"
 megabytes="$(du -sm "$out" | cut -f1)"
-echo "dist/estate: $files files, $megabytes MB (DacFx $dacfx, reference assemblies $reference_assemblies)"
-# The launcher (dist/estate/estate) finds .NET only machine-wide or through DOTNET_ROOT; dotnet itself runs the dll anywhere.
-echo "run it as dotnet dist/estate/estate.dll <verb>; dist/estate/estate needs .NET installed machine-wide, or DOTNET_ROOT naming a per-user install"
+echo "dist/dbchange: $files files, $megabytes MB (DacFx $dacfx, reference assemblies $reference_assemblies)"
+# The launcher (dist/dbchange/dbchange) finds .NET only machine-wide or through DOTNET_ROOT; dotnet itself runs the dll anywhere.
+echo "run it as dotnet dist/dbchange/dbchange.dll <verb>; dist/dbchange/dbchange needs .NET installed machine-wide, or DOTNET_ROOT naming a per-user install"

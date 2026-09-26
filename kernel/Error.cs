@@ -1,7 +1,7 @@
 using System;
 using System.Text.RegularExpressions;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
 /// What the engine could not do or will not do, said so that a person can act on it: a <see cref="Code"/> that records cite

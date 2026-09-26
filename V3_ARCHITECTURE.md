@@ -1,4 +1,4 @@
-# V3 — `estate`
+# V3 — `dbchange`
 
 *What the third generation of this repository looks like, and why. Written 2026-09-17 on
 `claude/v3-architecture-design-sl95mx`, after a full read of both prior generations: the C# trunk
@@ -19,7 +19,7 @@ is cut from v2 and what is carried from v1. §13–§16 are the laws, the migrat
 rules for agent sessions, and the operator's decisions. The appendices hold the glossary, the
 numbers, the operation catalog, the two item-by-item ledgers, and a reading list.
 
-**The answer.** v3 is `estate`, one tool that proves a change. The unit of work is a change to be
+**The answer.** v3 is `dbchange`, one tool that proves a change. The unit of work is a change to be
 proven rather than a model to be projected. A small C# kernel reads a schema from wherever it
 lives (an OutSystems metamodel, a live SQL Server, an SSDT project or dacpac), measures the data
 beneath it, computes the change between two states, proves that change against a real-shaped
@@ -174,7 +174,7 @@ been released to; and Dev's trunk, the last to switch, was scheduled for the wee
 does not claim it happened; it claims the condition it creates has already arrived in
 substance for two of four environments. (v2's `seal`/eject *operation*, which freezes the
 episode timeline, is a different thing from this business event, and there is no evidence it
-was ever run against the real estate.) After the switch there is no upstream to re-derive
+was ever run against the real environments.) After the switch there is no upstream to re-derive
 from. The SSDT repository *is* the schema. Every future change is a hand edit to a
 `CREATE TABLE`, made by a mixed-experience OutSystems team, in GitHub Copilot inside Visual
 Studio on Windows, promoted through Azure DevOps into Octopus with `BlockOnPossibleDataLoss`
@@ -240,7 +240,7 @@ The work, assembled from `KICKOFF.md`, `V2_PRODUCTION_CUTOVER.md`, `THE_USE_CASE
 the `ssdt-agent` estate ledgers, and the 2026-08-26 session hand-over (which states that its
 facts "override anything the older documents say").
 
-### 2.1 The estate
+### 2.1 The OutSystems system
 
 - **One OutSystems 11 application** of roughly 300 tables (the recurring figure in v2's
   fixtures and handoffs is "300-table" and "~310 tables"), undergoing an *External Entities*
@@ -300,12 +300,12 @@ new constraint. Consequently:
 and its first release is a baseline publish rather than an incremental one. Prod holds rows in
 tables Dev does not, so a change proven clean on Dev can block on Prod for no reason except
 population. Every "will this block?" answer in the corpus is extrapolated from a copy of Dev,
-and `estate/row-tiers.md` is thirty lines.
+and `dbchange/row-tiers.md` is thirty lines.
 
 Toolchain facts also decide outcomes. Constraint-trust behaviour differs across DacFx versions:
 a declarative FK add read *untrusted* on 162.5.57, the DacFx the Twin corpus runs in-process,
-and lands *trusted* on sqlpackage 170.x, the DacFx the hand proofs ran. The estate pipeline's
-own DacFx version and the sqlpackage row are both `UNPINNED` in `estate/toolchain.md`, so every
+and lands *trusted* on sqlpackage 170.x, the DacFx the hand proofs ran. The SSDT repository's pipeline's
+own DacFx version and the sqlpackage row are both `UNPINNED` in `dbchange/toolchain.md`, so every
 trust-state finding in the catalog is asserted on a DacFx version the pipeline may not use. The
 warm SQL Server image is a floating `2022-latest` tag, which the same file calls a named risk.
 Pinning takes an afternoon and has been open for three weeks.
@@ -344,10 +344,10 @@ idempotent redeploy, in-place evolution, eject, drift, canary). After the eject,
 4. **Keep the synthetic copy current.** A developer's local database is in sync with the repository and
    holds masked, distribution-faithful data. Measure Dev once; commit the literal-free shape
    tier; generate anywhere. No real data on laptops.
-5. **Watch the estate.** Detect drift between environments and the repository; between the
+5. **Watch the environments.** Detect drift between environments and the repository; between the
    repository and what OutSystems believes the external entities look like; between what was
    promised (a two-release change) and what landed.
-6. **Remember.** Which operations have shipped on this estate (the first time an op ships gets
+6. **Remember.** Which operations have shipped on these environments (the first time an op ships gets
    added scrutiny); which tables hold how many rows; which multi-phase changes are in flight and
    when their windows close; which toolchain versions the proofs were taken on.
 
@@ -385,7 +385,7 @@ phases, reconciles what the platform *intends* with what the database *has*, and
 rowsets. Its comments carry real domain knowledge: default-collation suppression ("restating it
 couples emitted DDL to the source instance"), tolerance for estates whose `ossys_Entity_Attr`
 lacks `Order_Num`, and authored column order (`Order_Num` ascending, never PK-first). This
-knowledge exists only because someone read a real estate closely. v3 keeps it.
+knowledge exists only because someone read real environments closely. v3 keeps it.
 
 **The tightening algebra.** Six named signals (`S1_PK`, `S2_DB_NOT_NULL`, `S3_FK_SUPPORT`,
 `S4_UNIQUE_CLEAN`, `S5_LOGICAL_MANDATORY`, `S7_DEFAULT_PRESENT`) plus one evidence gate
@@ -406,7 +406,7 @@ end. The idea was v1's.
 **The output layout.** `Modules/<Module>/<Schema>.<Table>.sql`, seeds as idempotent `MERGE`
 blocks, a `.sqlproj`, a manifest with coverage counts, a post-deployment bootstrap with
 existence checks. v2 mirrored the layout for parity; the `ssdt-agent` tree's `proving-ground/`
-project uses the same shape. This is now the estate's repository layout. It stays.
+project uses the same shape. This is now the SSDT repository layout. It stays.
 
 **Fixture-first testing and a page of guardrails.** `tests/Fixtures/emission/{edge-case,
 edge-case-rename, edge-case-untrusted}` pin emitted trees against golden output; the tightening
@@ -667,12 +667,12 @@ compression and law 2 (§13) covers it.
 | `SchemaComplexityPass` may compute over an empty topology (`CRYSTALLINE_FORM.md` §3.4) | the current chain wiring appears to lift it with the computed topology; unconfirmed | moot: the pass is deleted |
 | `SelectionPolicy.filterCatalog` marked "DORMANT, unregistered, no pipeline wiring" in its own comment | open | moot: selection is `read --modules`/`--tables` rather than a policy axis |
 | 38 of 123 axiom witnesses are skip-stubs with triggers | open by design | moot: twelve laws, no stubs; a law without a green test is not listed |
-| the two proof corpora run on different DacFx versions; the pipeline's version is unpinned (`estate/toolchain.md`) | open, owner-side | `prove` refuses when the pinned version and the project's package disagree (§10.2); the pin is an operator decision (§16) |
-| the two-release lag window is a ledger without a lock (F17) | mechanism added 2026-08-28 (`inflight-check.mjs`) | `estate gate` refuses the collision (§8.10) |
+| the two proof corpora run on different DacFx versions; the pipeline's version is unpinned (`dbchange/toolchain.md`) | open, owner-side | `prove` refuses when the pinned version and the project's package disagree (§10.2); the pin is an operator decision (§16) |
+| the two-release lag window is a ledger without a lock (F17) | mechanism added 2026-08-28 (`inflight-check.mjs`) | `dbchange gate` refuses the collision (§8.10) |
 | `ReadSide` marks every reconstructed data-bearing table `Static`, so measuring a readback catalog yields an empty evidence cache (`CLAUDE.md` survival rule 8) | open; a known trap on a secondary path | on v3's *primary* path (the live database is one operand of every change): `read --from sql` sets `Seed = None` unless the table is named static in the repository; law 2 covers it |
 | `ForeignKeyRules.isIgnoreRule` is hardcoded `false`, so `DeleteRuleIgnored` is unreachable while the platform's delete-rule vocabulary includes *Ignore* | open (`ForeignKeyRules.fs:216`) | `ReferenceAction` carries `Ignore` from the reader; the decision table has no unreachable arm |
 | a trigger body ScriptDom cannot parse degrades to a comment marker (`ToleratedDivergence.TriggerBodyUnparsedDropped`) and would vanish on redeploy | open, tolerated | `read --from ssdt` refuses an unparsable body (exit 9) rather than tolerating it; law 3 catches any survivor |
-| the warm SQL Server image is a floating `2022-latest` tag under version-stamped `BlockOnPossibleDataLoss` evidence (`estate/toolchain.md`) | open, named | `ci/` pins a CU digest; `synthetic-copy bake` records it in the artifact name |
+| the warm SQL Server image is a floating `2022-latest` tag under version-stamped `BlockOnPossibleDataLoss` evidence (`dbchange/toolchain.md`) | open, named | `ci/` pins a CU digest; `synthetic-copy bake` records it in the artifact name |
 
 ### 4.4 What the audits could not see
 
@@ -692,7 +692,7 @@ crystalline". §11 answers module by module.
 Keep the statement stream, the canary and its quotient, the identity key, the decision tables,
 the pure core, the evidence cache, the generator and the synthetic copy, the op skills and
 their findings, the culture of refutation. Leave the algebra as vocabulary, the
-estate/episode/ledger generality, the ceremony-to-logic ratio, the documentation ritual, and
+dbchange/episode/ledger generality, the ceremony-to-logic ratio, the documentation ritual, and
 the unfinished sweeps. Wire v2's F# to the tool that will be used, or admit it is a library and
 size it as one.
 
@@ -717,8 +717,8 @@ against data). Everything else serves those three.
 
 A change is classified by publishing it rather than by reading it. The classification has two
 findings that are never collapsed: *how it ships* (one release; one release with the check
-relaxed, which this estate cannot do; two releases with a pre-deploy) and *what the approver
-weighs* (existing data affected; first time on this estate; more than a million rows; a business
+relaxed, which these environments cannot do; two releases with a pre-deploy) and *what the approver
+weighs* (existing data affected; first time on these environments; more than a million rows; a business
 fork only a human can settle). v1 called the first finding "tightening" and computed it from
 measured data. The tree computes it from a Strict publish and reads `BlockOnPossibleDataLoss` in the
 generated script. v3 does both, in that order: measure to *predict*, publish to *prove*, and the
@@ -763,7 +763,7 @@ gone or folded.
 
 Two kinds of prose exist. *Knowledge* is what only a human or a real DacFx run can discover: the
 op skills, the six shared-reasoning skills, the findings ledger, the description forms, the handbook
-chapters the skills cite, the estate ledgers. That is kept and curated. *Restatement* is what the
+chapters the skills cite, the SSDT repository's ledgers. That is kept and curated. *Restatement* is what the
 code, the tests, the config schema, or git already know: status, counts, verb tables, the pass
 chain, the axiom matrix, chapter histories, hand-over letters. That is generated where it can be
 (CLI help, config schema, a status page from tests), and where it cannot be generated it is short:
@@ -811,7 +811,7 @@ parity checks retire them.
   DECISIONS.md              one line per decision: date · decision · link to PR; no prose
   LAWS.md                   GENERATED from tests: the law list with each test's name and status
   global.json               .NET SDK pin: the current LTS feature band (rollForward: latestPatch rather than disable)
-  Estate.sln
+  DbChange.sln
 
   kernel/                   C# library. Pure. No I/O, no clock, no Task. ≤ 11,000 lines (§6.6).
     Schema.cs               the state: Schema · Table · Column · Reference · Index · Check · Trigger · Sequence
@@ -835,7 +835,7 @@ parity checks retire them.
     SyntheticCopy.cs        container lifecycle · bake/restore · generation · trust gate (from Twin.Runtime)
     Move.cs                 [cutover tools] transfer: ingest · plan · phase-1 · phase-2 · revert (from TransferRun, reduced)
 
-  cli/                      one executable: `estate`. ≤ 2,000 lines. Verbs in §8.
+  cli/                      one executable: `dbchange`. ≤ 2,000 lines. Verbs in §8.
   knowledge/                the ssdt-agent tree, trimmed: authoring.md · reviewing.md · description.md · ops/ · shared/ · findings.md · samples/ · ledgers/ · handbook/ · copilot/ (§9)
   ci/                       proof lane · bake lane · PR gate (GitHub Actions + Azure DevOps templates)
   tests/
@@ -867,7 +867,7 @@ reading files. Both tests live beside the twelve laws (§13).
         knowledge/ (skills cite verbs)          ci/ (lanes call verbs)
                      \                              /
                       v                            v
-                            cli/  (estate)
+                            cli/  (dbchange)
                                |
                                v
                              io/   Ossys · SqlServer · Ssdt · Render · Emit · Publish · SyntheticCopy · [Move]
@@ -1519,7 +1519,7 @@ the true verb, numbers as numbers.
 
 ## 8. The verbs, end to end
 
-One executable, `estate`. Thirteen verbs. Every verb is a use case that returns a typed result,
+One executable, `dbchange`. Thirteen verbs. Every verb is a use case that returns a typed result,
 which `cli/` renders as Markdown by default and as JSON with `--json`, and exits with one of ten
 codes shared across all verbs:
 
@@ -1540,13 +1540,13 @@ These are the `ssdt-agent` tree's `prove.mjs` codes and the Twin's codes, merged
 `projection` CLI used a different nine and its `--json` had a `View` AST. There is one table
 now.
 
-### 8.1 `estate read` — a state from anywhere
+### 8.1 `dbchange read` — a state from anywhere
 
 ```
-estate read --from ossys:<conn-ref> [--modules A,B] [--include-system] --out schema.json
-estate read --from sql:<conn-ref>   [--schemas dbo]                        --out schema.json
-estate read --from ssdt:<dir-or-sqlproj>                                   --out schema.json
-estate read --from dacpac:<file>                                           --out schema.json
+dbchange read --from ossys:<conn-ref> [--modules A,B] [--include-system] --out schema.json
+dbchange read --from sql:<conn-ref>   [--schemas dbo]                        --out schema.json
+dbchange read --from ssdt:<dir-or-sqlproj>                                   --out schema.json
+dbchange read --from dacpac:<file>                                           --out schema.json
 ```
 
 1. Resolve the connection reference (`env:VAR`, `file:path`; never a literal in config; v2's
@@ -1569,10 +1569,10 @@ v2 had `Adapters.Osm` (JSON and rowset paths), `Adapters.OssysSql`, `Adapters.Sq
 and the Twin's `EstateModel` (DacFx). Four readers, three of which produced `Catalog` through
 different lifts. v3 has one `Schema` and four sources behind one verb.
 
-### 8.2 `estate profile` — what the data says
+### 8.2 `dbchange profile` — what the data says
 
 ```
-estate measure --from sql:<conn-ref> --schema schema.json [--sample 100000] [--tables dbo.Customer,...] --out evidence.json
+dbchange measure --from sql:<conn-ref> --schema schema.json [--sample 100000] [--tables dbo.Customer,...] --out evidence.json
 ```
 
 1. For every table in the schema, one batched aggregate query: `COUNT_BIG(*)`, per-column
@@ -1590,11 +1590,11 @@ estate measure --from sql:<conn-ref> --schema schema.json [--sample 100000] [--t
    is what may be committed; the rich tier stays out of the repository (the synthetic copy's
    law 3, kept).
 
-### 8.3 `estate decide` and `estate classify` — the predictor
+### 8.3 `dbchange decide` and `dbchange classify` — the predictor
 
 ```
-estate decide   --schema schema.json --evidence evidence.json [--policy policy.json] --out decisions.json
-estate classify --from <schema A> --to <schema B> --evidence evidence.json [--op make-mandatory]
+dbchange decide   --schema schema.json --evidence evidence.json [--policy policy.json] --out decisions.json
+dbchange classify --from <schema A> --to <schema B> --evidence evidence.json [--op make-mandatory]
 ```
 
 Both pure; both run in milliseconds; neither touches a database.
@@ -1611,7 +1611,7 @@ published. It reads the data-loss steps (`Change.dataLoss`), the row counts of t
 tables (populated or empty), whether existing rows violate the new rule (nulls, orphans,
 duplicates, over-length), and the op's flip conditions from `knowledge/ops/<op>.md` when
 `--op` names one, and prints: *provisional: two releases (populated table, `BlockOnPossibleDataLoss` check);
-the lead weighs: existing data affected; first time on this estate; prove to confirm.* The
+the lead weighs: existing data affected; first time on these environments; prove to confirm.* The
 output is marked provisional in its first word. Only `prove` may drop that word.
 
 Two findings `classify` raises that no publish can: **a rename without its refactorlog entry**
@@ -1621,13 +1621,13 @@ re-adds the column, every value is lost, and the publish is green), and **a colu
 on a CDC-tracked table** (`knowledge/ledgers/cdc-tracked.md` names the tables; a capture
 instance is bound to the column list it was enabled with, so an added column is not captured
 and a rebuild leaves the instance pointing at the old object). Both are findings of severity
-`Error`, each with its remedy: write the entry (`estate emit --refactorlog` derives it from the
+`Error`, each with its remedy: write the entry (`dbchange emit --refactorlog` derives it from the
 change); add the capture-instance step to the pre-deploy script.
 
-### 8.4 `estate emit` — the bundle
+### 8.4 `dbchange emit` — the bundle
 
 ```
-estate emit --schema schema.json [--decisions decisions.json] [--renames refactor.json] --out <dir>
+dbchange emit --schema schema.json [--decisions decisions.json] [--renames refactor.json] --out <dir>
 ```
 
 1. `Decide.apply` if decisions are given (a vanilla emit is the faithful projection; tested).
@@ -1649,14 +1649,14 @@ estate emit --schema schema.json [--decisions decisions.json] [--renames refacto
    `ledgers/toolchain.md` beside the DacFx pin. There is no manifest and no runbook; the
    description's sections carry what those files did.
 
-The bundle *is* the estate repository's layout. `estate emit` against the current
+The bundle *is* the SSDT repository's layout. `dbchange emit` against the current
 repository's own `read --from ssdt` must be a no-op (byte-identical), which is the law
 "emit ∘ read = id" in §13.
 
-### 8.5 `estate diff` — the change
+### 8.5 `dbchange diff` — the change
 
 ```
-estate diff --from <schema.json | ssdt:… | sql:…> --to <…> [--renames refactor.json] [--fail-on-change]
+dbchange diff --from <schema.json | ssdt:… | sql:…> --to <…> [--renames refactor.json] [--fail-on-change]
 ```
 
 `Change.between`, rendered as Markdown: created, dropped, renamed, altered per channel, with
@@ -1668,10 +1668,10 @@ facets named; `dataLoss` steps listed under a heading the description reuses ver
 `DmmComparisonFeatures` (14 lines) carried over: a drift report that can ignore extended
 properties is the difference between a board people read and one they mute.
 
-### 8.6 `estate prove` — the verdict
+### 8.6 `dbchange prove` — the verdict
 
 ```
-estate prove --project <sqlproj> | --bundle <dir>
+dbchange prove --project <sqlproj> | --bundle <dir>
              --target sql:<conn-ref> | synthetic-copy
              [--permissive] [--script-only] [--baseline <dacpac>] --out verdict.json
 ```
@@ -1685,7 +1685,7 @@ This is `prove.mjs` as a verb, with the synthetic copy as the default target.
    first); a `sql:` target is used as given. A disposable copy is always a *copy*: `prove`
    never publishes to a named environment.
 3. `DacServices.GenerateDeployScript` under the **Strict** profile (`BlockOnPossibleDataLoss=true`,
-   `DropObjectsNotInSource=false` as the estate pipeline runs it; the profile is data, in
+   `DropObjectsNotInSource=false` as the SSDT repository's pipeline runs it; the profile is data, in
    `ci/profiles/`, and the description cites which one). Parse the script for the
    `BlockOnPossibleDataLoss` checks (`IF EXISTS (SELECT TOP 1 1 FROM …) RAISERROR`) and the data-loss steps.
 4. `DacServices.Deploy` under Strict. Capture the outcome: published, or blocked with the
@@ -1715,15 +1715,15 @@ Agent, and a 10 GB ceiling, so a proof over a table named in `ledgers/cdc-tracke
 scale lane above a million rows, needs a full instance (Docker or a developer-edition
 install). On LocalDB those proofs return exit 4 with the reason, never a vacuous 0.
 
-### 8.7 `estate synthetic-copy` — the synthetic copy
+### 8.7 `dbchange synthetic-copy` — the synthetic copy
 
 ```
-estate synthetic-copy up [--scenario s]   estate synthetic-copy seed   estate synthetic-copy status   estate synthetic-copy check
-estate synthetic-copy bake --out <artifact>   estate synthetic-copy restore <artifact>
-estate synthetic-copy evidence import --from sql:<conn> --out evidence.rich.json
-estate synthetic-copy evidence derive --rich evidence.rich.json --out evidence.shape.json
-estate synthetic-copy evidence verify --schema schema.json --evidence evidence.shape.json
-estate synthetic-copy down | reset
+dbchange synthetic-copy up [--scenario s]   dbchange synthetic-copy seed   dbchange synthetic-copy status   dbchange synthetic-copy check
+dbchange synthetic-copy bake --out <artifact>   dbchange synthetic-copy restore <artifact>
+dbchange synthetic-copy evidence import --from sql:<conn> --out evidence.rich.json
+dbchange synthetic-copy evidence derive --rich evidence.rich.json --out evidence.shape.json
+dbchange synthetic-copy evidence verify --schema schema.json --evidence evidence.shape.json
+dbchange synthetic-copy down | reset
 ```
 
 The Twin's verbs (`THE_TWIN.md` §7), unchanged in behaviour, reading the same `schema.json`
@@ -1736,13 +1736,13 @@ CHECK CHECK`; refuse by constraint name on violation), write fingerprints to
 fingerprint-versioned `.bacpac` (and a container image where Docker exists); `restore`
 downloads it. Five laws, five tests (§13).
 
-### 8.8 `estate check` — watching
+### 8.8 `dbchange check` — watching
 
 ```
-estate check drift        --schema schema.json --target sql:<conn>          # emitted vs deployed
-estate check environments --schema schema.json --targets dev,qa,uat          # N deployed vs the model
-estate check outsystems   --schema schema.json --from ossys:<conn>           # what the platform believes
-estate check evidence     --schema schema.json --evidence evidence.json --target sql:<conn>   # stale?
+dbchange check drift        --schema schema.json --target sql:<conn>          # emitted vs deployed
+dbchange check environments --schema schema.json --targets dev,qa,uat          # N deployed vs the model
+dbchange check outsystems   --schema schema.json --from ossys:<conn>           # what the platform believes
+dbchange check evidence     --schema schema.json --evidence evidence.json --target sql:<conn>   # stale?
 ```
 
 Each is `read` both sides, `Change.between`, findings; exit 5 on divergence. `environments`
@@ -1759,10 +1759,10 @@ deploy.
 `check outsystems` is the reason the OSSYS reader survives at all (§16); if the reader is
 dropped, this verb goes with it and workflow 5 (§2.4) loses its third axis.
 
-### 8.9 `estate describe` — the pull request body
+### 8.9 `dbchange describe` — the pull request body
 
 ```
-estate describe --intent "make Email required" --change change.json --evidence evidence.json --verdict verdict.json [--verdict-permissive …] --out PR.md
+dbchange describe --intent "make Email required" --change change.json --evidence evidence.json --verdict verdict.json [--verdict-permissive …] --out PR.md
 ```
 
 `PullRequestDescription.render` over the inputs: verdict from the change and the verdict
@@ -1774,10 +1774,10 @@ showed" as tried/did/realized with the verbatim `Msg`; "after deploy" from the b
 environments, application code, production scale). The description is what the agent pastes
 into the pull request and what the PR gate regenerates and compares.
 
-### 8.10 `estate gate` — the release-grain check
+### 8.10 `dbchange gate` — the release-grain check
 
 ```
-estate gate --project <sqlproj> --base <git-ref> [--synthetic-copy <artifact>] [--pr-body PR.md] --out gate.json
+dbchange gate --project <sqlproj> --base <git-ref> [--synthetic-copy <artifact>] [--pr-body PR.md] --out gate.json
 ```
 
 The pull-request gate as one verb, so the CI lane is four lines and a developer can run the
@@ -1798,10 +1798,10 @@ same check locally before pushing. In order:
 6. `gate.json` with the verdict, the collision check, and the description diff; exit 0 clean,
    3 blocked (the pull request must carry its two-release shape), 9 collision, else tooling.
 
-### 8.11 `estate move` — the cutover tools
+### 8.11 `dbchange move` — the cutover tools
 
 ```
-estate move --from sql:<conn> --to sql:<conn> --schema schema.json [--rekey users.csv] [--tables …] [--resume] [--revert] [--go]
+dbchange move --from sql:<conn> --to sql:<conn> --schema schema.json [--rekey users.csv] [--tables …] [--resume] [--revert] [--go]
 ```
 
 Kept while the cutover and its reverse leg exist, then retired. Ingest, plan (surrogate
@@ -1815,15 +1815,15 @@ journals as a second resume mechanism, slices, and the go board. If the reverse 
 million rows needs the streaming realization, that decision is §16's, made with numbers from a
 real run rather than inherited.
 
-### 8.12 `estate doctor` — can this machine do the work?
+### 8.12 `dbchange doctor` — can this machine do the work?
 
 ```
-estate doctor [--install] [--json]
+dbchange doctor [--install] [--json]
 ```
 
 One line: `READY` or `DEGRADED`, then the SDK, the DacFx pin against `ledgers/toolchain.md`,
 the local server found (Docker or LocalDB, with the SQL Server version), the synthetic-copy
-artifact's fingerprint and age, and the estate checkout's environments file. Every `DEGRADED` item
+artifact's fingerprint and age, and the SSDT repository checkout's environments file. Every `DEGRADED` item
 carries its remedy (`--install` for the SDK and the local tool; `synthetic-copy up`;
 `synthetic-copy restore`). It is the SessionStart hook's whole body, the first thing every
 entry file says to run, and the thing a session quotes before claiming a tool is missing. It
@@ -1880,14 +1880,14 @@ recommended).
 | `ENABLEMENT_PROGRAM.md`, `ASSESSMENT_2026_08_24.md`, `ARCHITECTURE_REVIEW_2026_08_28.md`, `PHASE_2_CURRICULUM.md`, `HANDOFF_SESSION_2026_08_26.md`, `ACCELERANT_PLAN.md`, `CONNECTORS.md`, `PROVING_PATH_WINDOWS.md` (`PORTABILITY.md` is kept and moves to `knowledge/`) | ~2,400 | program history; archived with v2; the review itself said this literature "no schema-change session will ever read" |
 | `self-test/` (protocol, 983-line prompt matrix, rubrics, golden runs) | ~2,400 | the nightly proof lane over the sample descriptions discharges the regression duty; conversation quality is judged in the pilot rather than by a rubric an agent can game from adjacent files |
 | 38 of the 50 `sample-prs/` (46 top-level, four compound) | ~2,800 | a gallery where a dozen teach the same shapes; the 45 remain as *data* for the proof lane (§10) rather than as prose |
-| `scripts/*.mjs` | 1,875 | `prove.mjs` → `estate prove`; `bake.mjs` → `estate synthetic-copy bake/restore`; `inflight-check.mjs` → `estate check inflight` (~80 lines: it takes the touched tables from the change rather than from regexing the SQL, and normalises schema, brackets and case against `ledgers/in-flight.md`); `ssdt-agent-gates.mjs` → three tests in `Io.Tests` (citations resolve; op count = sample-description count = proof-lane facts; register rules hold on `samples/`); `ssdt-agent-package.mjs` → `estate knowledge package` (generate the Copilot bundle and `.claude/` pointers) |
-| `proving-ground/` as a hand-authored SSDT project | ~1,300 | the golden schema in `tests/Golden/` is the golden project; `estate emit` produces the project; the synthetic copy fills it |
+| `scripts/*.mjs` | 1,875 | `prove.mjs` → `dbchange prove`; `bake.mjs` → `dbchange synthetic-copy bake/restore`; `inflight-check.mjs` → `dbchange check inflight` (~80 lines: it takes the touched tables from the change rather than from regexing the SQL, and normalises schema, brackets and case against `ledgers/in-flight.md`); `ssdt-agent-gates.mjs` → three tests in `Io.Tests` (citations resolve; op count = sample-description count = proof-lane facts; register rules hold on `samples/`); `ssdt-agent-package.mjs` → `dbchange knowledge package` (generate the Copilot bundle and `.claude/` pointers) |
+| `proving-ground/` as a hand-authored SSDT project | ~1,300 | the golden schema in `tests/Golden/` is the golden project; `dbchange emit` produces the project; the synthetic copy fills it |
 | `THE_DECISION_TREE.md` as a separate document | 215 | it *is* `authoring.md`'s core; the state machine and its exit guards move there verbatim |
 
 The op skills keep their trigger phrases (they are what Copilot's skill discovery matches),
 their flip conditions (empty/populated, clean/violating, coexistence), their named trap, their
 "prove it" steps, and their verdict paragraph. They lose: the restated proving-loop mechanics
-(now "run `estate prove`"), the restated register rules, the per-op review-and-release
+(now "run `dbchange prove`"), the restated register rules, the per-op review-and-release
 boilerplate, and the long relative-path citations. From ~111 lines average to ~75.
 
 ### 9.3 Personas become phases
@@ -1899,12 +1899,12 @@ the verb it runs:
 |---|---|---|
 | S0 intake | (conversation; `ops/` dispatch) | object + operation + intent captured; the one business question asked |
 | S1 edit | (edit the `CREATE`; never write `ALTER`) | the desired-state `.sql` exists |
-| S2 profile | `estate profile --tables …` | counts and violating rows captured |
-| S3 prove | `estate prove --target synthetic-copy [--permissive]` | a real verdict from this branch |
-| S4 classify | `estate diff` (data-loss steps) + the verdict | shipping shape and approval weight set |
+| S2 profile | `dbchange profile --tables …` | counts and violating rows captured |
+| S3 prove | `dbchange prove --target synthetic-copy [--permissive]` | a real verdict from this branch |
+| S4 classify | `dbchange diff` (data-loss steps) + the verdict | shipping shape and approval weight set |
 | S5 ship | (the sub-machine: one release / two releases; F2 edge forbidden) | terminal reached |
 | S6 fork | (`ask-the-developer` form) | posed and recorded; emit-and-flag |
-| S7 emit | `estate describe` | ten sections present |
+| S7 emit | `dbchange describe` | ten sections present |
 | S8 verify | (self-check against `description.md`) | every sentence denotes; shape matches proof |
 
 One addition the tree does not have: the description's *after deploy* section names the Integration
@@ -1912,7 +1912,7 @@ Studio refresh, per environment, as the step that completes the change. Nine of 
 and `os-vocabulary` files it as "application-side"; no description section, template or decision-tree
 state owns it. A change the application cannot see is unshipped, which `BlockOnPossibleDataLoss` cannot see (§2.1).
 
-The reviewer's `reviewing.md` runs `estate prove` on its own copy, `estate diff` for scope,
+The reviewer's `reviewing.md` runs `dbchange prove` on its own copy, `dbchange diff` for scope,
 the adversarial moves (inject a violating row; play a blocked change forward under
 `--permissive`), and renders one of four dispositions. The reviewer stays a separate skill
 because the reviewer is a separate person; but the reviewer's *mechanism* is the PR gate
@@ -1920,7 +1920,7 @@ because the reviewer is a separate person; but the reviewer's *mechanism* is the
 
 ### 9.4 The Copilot bundle
 
-Generated by `estate knowledge package`, unchanged in structure from v2's `copilot-package/`:
+Generated by `dbchange knowledge package`, unchanged in structure from v2's `copilot-package/`:
 `.github/copilot-instructions.md` (the router), `.github/instructions/*.instructions.md`
 (path-scoped guardrails that attach when a `.sql`, a deployment script, or a publish profile is
 open: the never-rules), `.github/agents/*.agent.md` (authoring, reviewing), `.github/skills/`
@@ -1930,8 +1930,8 @@ discovered skills; 18.4 with agents plus the index; 2022 with prompt files; ask-
 because they match what ships.
 
 The bundle is generated into a *different* repository (the team's Azure DevOps project), so the
-contract is stated: the bake lane runs `estate knowledge package` on every merge to `main`,
-publishes the bundle as a fingerprinted artifact, and opens a pull request against the estate
+contract is stated: the bake lane runs `dbchange knowledge package` on every merge to `main`,
+publishes the bundle as a fingerprinted artifact, and opens a pull request against the SSDT repository
 repository when the fingerprint moved. Nobody hand-edits the copy; a drifted copy is a failed
 check.
 
@@ -1954,7 +1954,7 @@ not.
 
 The tree proves one operation at a time and ships several per release (the review's first
 finding), and its addendum added a compound corpus. v3 makes the release the unit of proof by
-construction: `estate prove` takes a project rather than an operation, so a pull request that
+construction: `dbchange prove` takes a project rather than an operation, so a pull request that
 adds an entity, a seed, two foreign keys, and a defaulted `NOT NULL` column is proven as one
 change. `decompose` (planning a compound request into ordered pull requests) stays in
 `authoring.md` as S0's second question, and the in-flight ledger holds the multi-phase programs
@@ -1968,21 +1968,21 @@ The August review's four layers, as v3 builds them.
 
 ### 10.1 Layer 0 — the synthetic copy is downloaded rather than built
 
-- **Source of truth for shape:** the estate repository's own `.sql` files, read by `estate read
+- **Source of truth for shape:** the SSDT repository's own `.sql` files, read by `dbchange read
   --from ssdt`.
 - **Source of truth for data shape:** `evidence.shape.json`, committed to the repository,
   literal-free (counts, null rates, distinct counts, lengths, fan-out; no values). Produced once
-  from real Dev by `estate measure --distributions` followed by `estate synthetic-copy evidence
+  from real Dev by `dbchange measure --distributions` followed by `dbchange synthetic-copy evidence
   derive`, and refreshed by the bake lane when the schema fingerprint moves. The rich tier,
   with values, never enters the repository; it lives where the bake lane runs.
-- **The artifact:** `estate synthetic-copy bake` produces a `.bacpac` (and a container image
+- **The artifact:** `dbchange synthetic-copy bake` produces a `.bacpac` (and a container image
   where Docker is available), named by the schema fingerprint and the evidence fingerprint,
-  published as a pipeline artifact. A developer's machine runs `estate synthetic-copy restore
+  published as a pipeline artifact. A developer's machine runs `dbchange synthetic-copy restore
   <artifact>` once and holds a current, masked, distribution-faithful copy in minutes. On
   Windows without Docker, LocalDB is the local server; on the hosted build agent, LocalDB; on
   a Mac or a monorepo agent, Docker. The verb chooses, and the developer need not.
 - **Realism:** the row tiers (`ledgers/row-tiers.md`) drive generation volumes so a table the
-  estate holds at `>1M` rows is generated at a volume where `BlockOnPossibleDataLoss`'s cost is
+  dbchange holds at `>1M` rows is generated at a volume where `BlockOnPossibleDataLoss`'s cost is
   visible (the scale lane measured the index build as the first SQL Server cost visible over
   tool overhead at ~1M rows). The `PROVING_PATH_WINDOWS.md` route of restoring a real Dev
   backup is gone; it put real data on laptops, which the generator was built to prevent.
@@ -1995,8 +1995,8 @@ The August review's four layers, as v3 builds them.
 
 ### 10.2 Layer 1 — the verdict is a tool call
 
-`estate prove` (§8.6). One process, one JSON object, one integer. The Strict and Permissive
-profiles are files under `ci/profiles/`, mirrored from the estate pipeline's publish task, and
+`dbchange prove` (§8.6). One process, one JSON object, one integer. The Strict and Permissive
+profiles are files under `ci/profiles/`, mirrored from the SSDT repository's pipeline's publish task, and
 the verdict names the profile and the DacFx version it ran. The DacFx version is pinned in
 `ledgers/toolchain.md` *and* in the project file, and `prove` refuses with exit 6 if they
 disagree. That closes the "two corpora on divergent DacFx versions" risk the review named as
@@ -2016,22 +2016,22 @@ Three lanes, as templates for GitHub Actions and Azure DevOps, in `ci/`:
 
 **The proof lane** (nightly, and on any change to `ops/`, `samples/`, `tests/Golden/`, or the
 kernel). For each sample description in `samples/` and each of the 45 sample changes in
-`tests/Golden/changes/`: apply the change to the golden schema, `estate prove --target <fresh>`,
+`tests/Golden/changes/`: apply the change to the golden schema, `dbchange prove --target <fresh>`,
 assert the verdict matches the recorded one (blocked/clean, what blocked it, trust state,
 idempotent). This is the tree's 41 `SamplePr*` facts, as data driven through the verb rather
 than as 13 F# test classes that only compile in Debug. A finding that changes (a DacFx update
 that makes an FK land untrusted) fails the lane by name.
 
-**The bake lane** (on schema change to the estate repository's main branch, and weekly). `estate
-read --from ssdt` → fingerprint → if moved: `estate synthetic-copy up` on the agent, `estate
+**The bake lane** (on schema change to the SSDT repository's main branch, and weekly). `dbchange
+read --from ssdt` → fingerprint → if moved: `dbchange synthetic-copy up` on the agent, `dbchange
 synthetic-copy bake`, publish the artifact, update `ledgers/row-tiers.md` from the evidence.
 Never touches real data unless the rich tier is present on the agent, in which case it measures
 Dev again and re-derives the shape tier, and the shape tier's diff is a reviewable commit.
 
-**The PR gate** (build validation on the estate repository). `estate check inflight` (refuse a
-pull request that touches a table held by an open lag window), `estate synthetic-copy restore`
-(the current artifact), `estate prove --project … --target synthetic-copy` on the pull
-request's *combined* change, `estate describe` regenerated from the verdict and diffed against
+**The PR gate** (build validation on the SSDT repository). `dbchange check inflight` (refuse a
+pull request that touches a table held by an open lag window), `dbchange synthetic-copy restore`
+(the current artifact), `dbchange prove --project … --target synthetic-copy` on the pull
+request's *combined* change, `dbchange describe` regenerated from the verdict and diffed against
 the PR body's sections (the machine checks that "how it ships" matches the proof; the human
 reads the rest), the verdict published as a build artifact. Exit 3 fails the check *with the
 verdict attached*, so a blocked change must carry its two-release shape. Exit 0 passes.
@@ -2178,7 +2178,7 @@ operand, is the thing v3 is built around.** Appendix E is the ledger; this is it
    with no partial-state context. Every `Error` in v3 carries `Where` (§7), and the OSSYS and
    SQL readers fill it.
 5. **Scoped comparison.** `DmmComparisonFeatures.cs` is 14 lines (columns, primary keys,
-   indexes, foreign keys, extended properties). `estate diff --only …` (§8.5) is the same
+   indexes, foreign keys, extended properties). `dbchange diff --only …` (§8.5) is the same
    fourteen lines; a drift report that can ignore extended properties is one people keep
    reading.
 
@@ -2209,7 +2209,7 @@ operand, is the thing v3 is built around.** Appendix E is the ledger; this is it
   new name. Kept.
 - **Multi-environment consensus is a finding rather than a mode.** v1 measured several
   environments and voted (`MultiEnvironmentConstraintConsensus.cs`, 540 lines, and its report,
-  645). v3 measures per environment (`estate check evidence --targets dev,qa,uat`) and lets the
+  645). v3 measures per environment (`dbchange check evidence --targets dev,qa,uat`) and lets the
   description show where they disagree; a vote hides the environment that would block.
 
 ### 12.4 What stays in v1's archive
@@ -2239,7 +2239,7 @@ ladder, no matrix, no numbering. The v2 identifiers are given here once, as prov
 |---|---|---|---|
 | 1 | **the same inputs emit the same bytes** — `emit` over the same `Schema`+`Decisions` yields a byte-identical bundle across runs, machines, and orderings of the input lists | `Kernel.Tests`, property over generated schemas | T1 |
 | 2 | **emit then read is the identity, in the quotient** — `read --from ssdt (emit s)` equals `s` after `SqlType.coarsen` on both sides and modulo the named divergences list | `Io.Tests`, golden + property | the canary; `Ingest ∘ Project = id`; A18/T16 |
-| 3 | **emit is faithful to the repository** — `emit (read --from ssdt <estate repo>)` is byte-identical to the repository | `Io.Tests`, on the golden and on the estate | the idempotent redeploy; L3-S1 |
+| 3 | **emit is faithful to the repository** — `emit (read --from ssdt <SSDT repository>)` is byte-identical to the repository | `Io.Tests`, on the golden and on the SSDT repository | the idempotent redeploy; L3-S1 |
 | 4 | **a vanilla policy changes nothing** — `decide Policy.Vanilla` yields no decisions and `apply` is the identity | `Kernel.Tests` | skeleton purity; pillar 9 |
 | 5 | **every decision names its evidence** — for every column/reference/index, `decide` returns exactly one outcome, and the outcome's evidence or reason is consistent with the inputs (a property over generated evidence) | `Kernel.Tests` | total decisions, named skips |
 | 6 | **a rename keeps its key** — `between s (rename s)` reports one `Renamed` and zero `Created`/`Dropped`; the emitted refactorlog carries it; DacFx generates `sp_rename` rather than `DROP`+`ADD`; `classify` refuses a rename whose entry is missing | `Kernel.Tests` + `Io.Tests` (publish and read back) | A1; identity survives rename |
@@ -2259,7 +2259,7 @@ These are v2's pure-core analyzer and the Twin's kernel manifest, kept as tests.
 
 Three more are process laws, tested by the lanes rather than by xUnit: the proof lane
 re-proves every sample description nightly; the PR gate refuses a release into an open lag
-window; `estate emit` in CI over the estate is a no-op (law 3, run on every merge).
+window; `dbchange emit` in CI over the SSDT repository is a no-op (law 3, run on every merge).
 
 Everything else in `AXIOMS.md` is either a consequence of these (sibling emitters agree on the
 keyset because there is one emitter; `registered ⇔ executed` because the chain is the code;
@@ -2281,14 +2281,14 @@ fixed before any code moves.
 
 Three things must be true of every step, and they are checked by machine before it merges:
 
-1. **v3's `emit` over the golden schema and over the estate repository is byte-identical to v2's
+1. **v3's `emit` over the golden schema and over the SSDT repository is byte-identical to v2's
    `SsdtDdlEmitter` output** for every artifact both produce, modulo a named list of intended
    differences that starts empty. The golden corpus (`GoldenCatalog.fs` and its emitted bundle)
    is the fixture; `tests/Golden/` in v3 is its port.
 2. **v3's `prove` reproduces the 45 recorded verdicts** (the proof lane, §10.3) on the pinned
    DacFx.
 3. **v3's `read --from sql` of a database v2 deployed equals v2's `ReadSide` catalog** in the
-   quotient, for the golden and for an estate the synthetic copy generated.
+   quotient, for the golden and for a database the synthetic copy generated.
 
 v1's fixtures (`tests/Fixtures/emission/{edge-case, edge-case-rename, edge-case-untrusted}`)
 are a fourth check for the OSSYS reader: `read --from ossys` over the fixture manifest must
@@ -2300,13 +2300,13 @@ produce the schema v1's `model.edge-case.json` describes.
 |---|---|---|---|
 | 0 | Freeze. Tag `4e844fc` as `v2-final`. Move `sidecar/projection` to `archive/v2/` and the C# trunk to `archive/v1/`, both still building under their own solutions. Write `archive/INDEX.md`: one line per v2 document, its date, its status (provenance / superseded / knowledge moved to `knowledge/`), and archive the 179 documents as one compressed bundle beside the index so that search tools find the index rather than a specification v3 replaced; the code stays buildable. | both archived solutions build; CI keeps running v2's proof lane against the archive until step 6 | nothing changes for them yet |
 | 1 | `kernel/`: `Identity`, `SqlType`, `Schema`, `Statement` (verbatim), `Change`, `Order`, `Decide`, `Evidence`, `SyntheticData`, `PullRequestDescription`. Port v2's kernel tests to C# first (they are the specification; `CatalogDiffTests` alone is 54 facts), then the types, then the functions. Port the decision tables and the generator with their property tests, and add the generator's golden fixture (v2's generated rows at one seed) so a drifting port fails law 11 on day one; write the twelve laws' kernel halves. | laws 1, 4, 5, 6, 7, 11 (kernel halves); the tightening matrix test from v1 as a table | — |
-| 2 | `io/Render` (verbatim from `ScriptDomBuild`+`Render`) and `io/Emit`; `estate emit`; `estate diff`. | parity check 1 (byte-identity against v2's emitter on the golden); law 3 on the estate | a bundle they can diff against their repository |
-| 3 | `io/Ssdt` (DacFx `TSqlModel` read), `io/SqlServer` (read-side + measurement), `io/Ossys` (if it survives §16's first decision); `estate read`, `estate profile`, `estate decide`. | parity checks 3 and 4; law 2 | `check drift` becomes possible |
-| 4 | `io/Publish`; `estate prove`. Retire `prove.mjs`. | parity check 2 (the 45 verdicts); laws 8, 9, 10 | **the verdict as a verb** — the pilot can run |
-| 5 | `io/SyntheticCopy` (from `Twin.Runtime`); `estate synthetic-copy *`. Retire `bake.mjs`, `Twin.Cli`, `proving-ground/`. | laws 11, 12; the Twin's five laws as `Io.Tests` | **the downloaded synthetic copy**; the bake lane |
-| 6 | `knowledge/`: fold agents into `authoring.md`/`reviewing.md`; trim ops; `description.md`; `samples/` to a dozen; `estate knowledge package`. Retire the gates/packager scripts; three tests replace the gates. The proof lane moves to v3. The bake lane starts publishing the Copilot bundle to the estate repository by pull request (§9.4). | the proof lane green on v3; the Copilot bundle regenerated byte-identically to the last v2 bundle except for verb names | the Copilot bundle |
-| 7 | `estate check` (drift, environments, outsystems, evidence, inflight); `estate describe`; the PR gate template. Retire `inflight-check.mjs`. | the PR gate runs on a real pull request against the estate | **the gate** |
-| 8 | `io/Move` (the cutover tools), reduced from `TransferRun`; `estate move`. Only if the reverse leg is going to run (§16); otherwise the transfer code stays frozen in `archive/v2`, buildable, until the leg is cancelled, and is then deleted. | a copy-to-copy transfer with re-key and revert; the reverse-leg canary from v2's integration pool, ported | the reverse leg, if still needed (§16) |
+| 2 | `io/Render` (verbatim from `ScriptDomBuild`+`Render`) and `io/Emit`; `dbchange emit`; `dbchange diff`. | parity check 1 (byte-identity against v2's emitter on the golden); law 3 on the SSDT repository | a bundle they can diff against their repository |
+| 3 | `io/Ssdt` (DacFx `TSqlModel` read), `io/SqlServer` (read-side + measurement), `io/Ossys` (if it survives §16's first decision); `dbchange read`, `dbchange profile`, `dbchange decide`. | parity checks 3 and 4; law 2 | `check drift` becomes possible |
+| 4 | `io/Publish`; `dbchange prove`. Retire `prove.mjs`. | parity check 2 (the 45 verdicts); laws 8, 9, 10 | **the verdict as a verb** — the pilot can run |
+| 5 | `io/SyntheticCopy` (from `Twin.Runtime`); `dbchange synthetic-copy *`. Retire `bake.mjs`, `Twin.Cli`, `proving-ground/`. | laws 11, 12; the Twin's five laws as `Io.Tests` | **the downloaded synthetic copy**; the bake lane |
+| 6 | `knowledge/`: fold agents into `authoring.md`/`reviewing.md`; trim ops; `description.md`; `samples/` to a dozen; `dbchange knowledge package`. Retire the gates/packager scripts; three tests replace the gates. The proof lane moves to v3. The bake lane starts publishing the Copilot bundle to the SSDT repository by pull request (§9.4). | the proof lane green on v3; the Copilot bundle regenerated byte-identically to the last v2 bundle except for verb names | the Copilot bundle |
+| 7 | `dbchange check` (drift, environments, outsystems, evidence, inflight); `dbchange describe`; the PR gate template. Retire `inflight-check.mjs`. | the PR gate runs on a real pull request against the SSDT repository | **the gate** |
+| 8 | `io/Move` (the cutover tools), reduced from `TransferRun`; `dbchange move`. Only if the reverse leg is going to run (§16); otherwise the transfer code stays frozen in `archive/v2`, buildable, until the leg is cancelled, and is then deleted. | a copy-to-copy transfer with re-key and revert; the reverse-leg canary from v2's integration pool, ported | the reverse leg, if still needed (§16) |
 | 9 | Delete `archive/v2`'s CI. Keep the archive. Regenerate `LAWS.md`, the verb reference, and the config reference. Cut a release. | everything above, green, on one solution | one tool |
 
 Steps 1–2 can proceed in parallel with 3; step 4 needs 2 and 3; steps 5–7 can proceed in
@@ -2372,7 +2372,7 @@ sized against. A session (human or agent) working on v3 may write:
   the paragraph that became false;
 - **the ledgers** (`operations.md`, `row-tiers.md`, `in-flight.md`, `refusals.md`,
   `toolchain.md`, `reviewers.md`, `cdc-tracked.md`), which are append-only tables with a fixed
-  shape and live in the estate repository; `estate` holds only their formats and seeds them
+  shape and live in the SSDT repository; `dbchange` holds only their formats and seeds them
   empty once.
 
 A session may not write: a new top-level document; a chapter open or close; a hand-over letter;
@@ -2404,10 +2404,10 @@ sample-change count = sample-description count; register rules hold) run on ever
 
 - `LAWS.md` — from the test tree, by a 40-line script, on every CI run; the twelve laws with
   their test names and last green run.
-- The verb reference — from `estate --help --json`.
+- The verb reference — from `dbchange --help --json`.
 - The config reference — from the config schema the CLI validates against.
 - The archive index — written once at step 0 and never touched.
-- The Copilot bundle and the `.claude/` pointers — from `knowledge/` by `estate knowledge
+- The Copilot bundle and the `.claude/` pointers — from `knowledge/` by `dbchange knowledge
   package`; checked in, fingerprinted, never hand-edited, and excluded from every line count.
 - The document inventory (`DOCS.md`) — from `ci/docs.manifest.json`, the file that lists every
   document with its reader, its moment and its budget; the test that the tree equals the
@@ -2420,7 +2420,7 @@ budget is 150 lines.
 ### 15.5 What an agent session reads first
 
 `AGENTS.md` (120 lines, imported by `CLAUDE.md`), `NEXT.md` (40), the README of the package
-being changed (80), and the one line `estate doctor` prints. Under 300 lines before code.
+being changed (80), and the one line `dbchange doctor` prints. Under 300 lines before code.
 `ARCHITECTURE.md` and `VALUES.md` are read when the change is architectural rather than at
 every session; `knowledge/README.md` when the change is to the domain. The companion document's
 §9 gives the session protocols in full.
@@ -2453,7 +2453,7 @@ as the specification (§6.6).
 
 1. **Pin the pipeline's DacFx and run the one `is_not_trusted` check.** A declarative foreign-key
    add read *untrusted* on DacFx 162.5.57 (the DacFx the Twin corpus runs in-process) and lands
-   *trusted* on sqlpackage 170.x (the DacFx the hand proofs ran). `estate/toolchain.md` lists
+   *trusted* on sqlpackage 170.x (the DacFx the hand proofs ran). `dbchange/toolchain.md` lists
    both the sqlpackage row and the pipeline's DacFx row as `UNPINNED`. Every trust-state finding
    in the catalog (F5 → F9, F10, F19) is therefore asserted on a DacFx version the pipeline may
    not run. *Moves:* the constraint half of the op catalog; which DacFx version `io/Publish`
@@ -2472,7 +2472,7 @@ as the specification (§6.6).
    from, except that OutSystems still owns the logical model and Integration Studio refreshes
    *from* the database (§2.1). Reading OSSYS is the only way to see what the platform believes,
    and so the only way to check the one failure `BlockOnPossibleDataLoss` cannot see. *Moves:* ~3,600
-   lines of `io/Ossys`, `estate check outsystems`, the third axis of workflow 5, the fourth
+   lines of `io/Ossys`, `dbchange check outsystems`, the third axis of workflow 5, the fourth
    parity check (§14.1). *Default assumed:* it survives as an explicit optional package with its
    own budget line. If the operator says no: delete the package, rewrite workflow 5 to two
    axes, and keep the rowset SQL in the archive where years of metamodel knowledge stay
@@ -2484,8 +2484,8 @@ as the specification (§6.6).
    with its integration tests running; no port. The day it is cancelled, roughly a thousand
    lines of surrogate-remap and keymap-spill machinery whose only consumer it was become
    deletable the same day.
-5. **Who are the dev leads?** `estate/reviewers.md` has two rows that read "fill in at the Dev
-   cutover"; its own rule is that at least one available row must exist for the estate to ship;
+5. **Who are the dev leads?** `dbchange/reviewers.md` has two rows that read "fill in at the Dev
+   cutover"; its own rule is that at least one available row must exist for a change to ship;
    no self-approval at any seniority with a pool of four means a lead's own change needs the
    other lead; and the one SSDT-fluent person was out during the cutover window. *Moves:*
    whether the PR gate (§10.3) is a convenience or the substitute for reviewer expertise. It is
@@ -2497,7 +2497,7 @@ as the specification (§6.6).
    until the instance is recreated, and a rebuild (`identity-swap`) leaves the instance on the
    old object. *Moves:* `ledgers/cdc-tracked.md`, the `classify` finding (§8.3), which proofs
    need a full instance rather than LocalDB (§10.1), and whether `recreate-capture-instance`
-   returns as an op. *Default assumed:* the ledger is filled by `estate check cdc` reading
+   returns as an op. *Default assumed:* the ledger is filled by `dbchange check cdc` reading
    `sys.tables.is_tracked_by_cdc` from each environment once, committed, and the op returns in
    v3's first quarter.
 7. **Prod's first release is a baseline publish.** QA and UAT were set up by their own cutover
@@ -2505,7 +2505,7 @@ as the specification (§6.6).
    (which holds four sample tables from the golden project). The data-blind `BlockOnPossibleDataLoss`
    fires on population, so a change proven clean on a copy of Dev can block on Prod for no
    reason but rows. *Moves:* whether any "will this block?" answer in the corpus applies to
-   Prod. *Default assumed:* before any Prod release, `estate measure --target prod --counts`
+   Prod. *Default assumed:* before any Prod release, `dbchange measure --target prod --counts`
    runs once and the counts land in `row-tiers.md` with their date; the gate reads the ledger
    for the target environment rather than for Dev.
 8. **Run the synthetic copy's evidence import against real Dev.** `synthetic-copy evidence
@@ -2568,10 +2568,10 @@ as the specification (§6.6).
   data-bearing table `Static`, so measuring a readback catalog yields an empty evidence cache
   (survival rule 8). Post-eject the live database is one operand of every change. Fixed by
   construction in `read --from sql` (§4.3), and covered by law 2, which would otherwise fail on
-  the first real estate.
+  the first real environment.
 - **Cross-module references.** v2's read side carried an assumption that a reference's target
   lives in the same module. v3's `Reference.Target` is a `Key`, and modules are not part of the
-  join, so a 300-table estate with foreign keys across espaces reads whole; the golden schema
+  join, so a 300-table database with foreign keys across espaces reads whole; the golden schema
   gets one such reference so the assumption cannot return unnoticed.
 
 ### 16.3 Open questions this document could not settle from the tree
@@ -2579,7 +2579,7 @@ as the specification (§6.6).
 - Did the Dev trunk switch on the weekend after 2026-08-26? The newest document says "next weekend"
   in the future tense and nothing later records it. Every "post-eject" sentence above assumes it did.
 - Which DacFx does the Octopus publish step run? (Item 1.)
-- Has any change shipped through the pipeline yet? `estate/operations.md` opens empty by
+- Has any change shipped through the pipeline yet? `dbchange/operations.md` opens empty by
   design and has no rows; `in-flight.md` has none.
 - Were the 41 nightly facts ever run against a synthetic copy generated from real Dev evidence
   rather than the golden project's seed? (Item 8.)
@@ -2601,26 +2601,26 @@ One vocabulary; where v1 or v2 used a different word for the same thing, the old
 | **key** (`Key`) | the stable identity of an object across renames; a GUID carried as the `Estate.Key` extended property, or derived from the qualified name | `EntitySsKey` (optional) | `SsKey` (four variants) |
 | **folder** (`Table.Folder`) | where a table's file goes in the bundle; an espace name by default | module | `Module` |
 | **evidence** (`Evidence`) | what the data says: row counts, nulls, orphans, duplicates, lengths, distributions, with a measurement status per fact (observed, sampled, timed out, skipped) | `ProfileSnapshot` | `Profile` |
-| **aggregate query** (`AggregateQuery`) | one `SELECT` of integer answers (counts, `SUM(CASE …)`, `MAX(LEN …)`) that the allowlist admits and `SqlServer.Measure` runs; `estate profile` is built from them | a profiling query | a probe |
+| **aggregate query** (`AggregateQuery`) | one `SELECT` of integer answers (counts, `SUM(CASE …)`, `MAX(LEN …)`) that the allowlist admits and `SqlServer.Measure` runs; `dbchange profile` is built from them | a profiling query | a probe |
 | **shape tier / rich tier** | evidence without values (committable) / with values (never committed) | — | Twin `ShapeTier`/`RichTier` |
 | **policy** (`Policy`) | the tightening knobs and operator overrides; `Vanilla` is the faithful projection | `TighteningOptions` | `Policy.Tightening` + interventions |
 | **decision** | the outcome of one tightening table for one column, reference, or index, with its evidence or reason | `NullabilityDecision` etc. (bools + rationale strings) | `NullabilityOutcome` etc. (DUs) |
 | **change** (`Change`) | a change between two schemas: created, dropped, renamed, altered per channel, with facets and a derived refactorlog | (DMM diff) | `CatalogDiff` / `ChannelDiff`; δ |
 | **data-loss step** | a statement in a change `BlockOnPossibleDataLoss` will refuse on a populated table: narrow, drop, `NOT NULL` on populated, lossy retype | — | — (the tree's D0) |
 | **verdict** (`Verdict`) | what DacFx did when a change was published to a disposable copy under a named profile: clean / blocked with the verbatim `Msg` / failed; `BlockOnPossibleDataLoss` checks; trust; idempotence; the DacFx and SQL Server versions. The word names `prove`'s result alone | — | `prove.mjs` output |
-| **pull request description** (`PullRequestDescription`) | the ten-section pull request body a reviewer approves by reading; `estate describe` renders it | — | the tree's record (`THE_RECORD.md`) |
-| **shipping shape** | one release / one release with the check relaxed (never on this estate) / two releases / refused | — | the tree's S5 terminal |
+| **pull request description** (`PullRequestDescription`) | the ten-section pull request body a reviewer approves by reading; `dbchange describe` renders it | — | the tree's record (`THE_RECORD.md`) |
+| **shipping shape** | one release / one release with the check relaxed (never on these environments) / two releases / refused | — | the tree's S5 terminal |
 | **bundle** | the emitted SSDT project: per-table files, schemas, sequences, seeds, refactorlog, sqlproj, manifest, verify queries | the output root | `SsdtBundle` |
-| **synthetic copy** (`SyntheticCopy`, `estate synthetic-copy`) | the disposable synthetic-data copy every proof runs on, matching the repository at a ref | (a real backup) | the Twin |
+| **synthetic copy** (`SyntheticCopy`, `dbchange synthetic-copy`) | the disposable synthetic-data copy every proof runs on, matching the repository at a ref | (a real backup) | the Twin |
 | **local server** (`LocalServer`) | the SQL Server that holds the copies: the Docker container or LocalDB | — | the warm container |
 | **generated set** (`SyntheticData.generate`) | one deterministic synthetic generation run | — | a mint (σ) |
 | **scenario** | a named overlay on evidence, volumes, corrections, and pins; never a generator | — | scenario |
 | **order** (`Order`) | a load order under an explicit cycle policy: refuse, defer nullable legs, or manual | `EntityDependencySorter` | `TopologicalOrderPass` |
 | **finding** (`Finding`) | something a run noticed and continued past; coded, with evidence; severity `error`, `warning` or `note` | `PipelineInsight`, `Opportunity` | `DiagnosticEntry`, `EstateFinding` |
 | **error** (`Error`) | what a run could not or would not do: a code, a message and a remedy; the code's category chooses the exit (§8). A refusal is an error by policy | `ValidationError` | `ValidationError`, `CapabilityRefusal` |
-| **ledger** | an append-only table in `knowledge/ledgers/`: operations, row tiers, in-flight, refusals, toolchain | — | the estate ledgers; never v2's `Ledger` algebra |
+| **ledger** | an append-only table in `knowledge/ledgers/`: operations, row tiers, in-flight, refusals, toolchain | — | the SSDT repository's ledgers; never v2's `Ledger` algebra |
 | **`BlockOnPossibleDataLoss`** (`BlockedBy.BlockOnPossibleDataLoss`) | DacFx's option, and the data-blind check it writes into the deploy script, which fires on row presence | — | the row-presence guard |
-| **the cutover tools** | `io/Move` and `estate move`: the finite transfer machinery, retired after the eject | UAT users; `full-export` | `TransferRun`, the reverse leg |
+| **the cutover tools** | `io/Move` and `dbchange move`: the finite transfer machinery, retired after the eject | UAT users; `full-export` | `TransferRun`, the reverse leg |
 
 Words v3 does not use: projection (as a system name), catalog, kind, attribute, espace (except
 in `Ossys.fs`), SsKey, lineage, diagnostics (as a type), episode, lifecycle, manifest (as a
@@ -2634,7 +2634,7 @@ read is the identity"; the word survives only as the test's nickname).
 Retired by the pre-M2 pass (2026-09-25), each → its replacement: walk → `Ssdt.ReadModel`, a model
 read into elements; the type `Refusal` → `Error` (the verb "refuse" stays for a refusal by policy);
 receipt → `Provenance`; engine → `Provenance`'s `DacFx` and `Server` fields, and in prose DacFx, SQL
-Server or `estate`; branch, branch site, claim site, transfers → `ExistingData`, `PreconditionState`,
+Server or `dbchange`; branch, branch site, claim site, transfers → `ExistingData`, `PreconditionState`,
 `Precondition`, `AppliesTo`; cohorts → readerGroups; substrate → the local server; the Twin, twin → the synthetic copy, `synthetic-copy`;
 σ, mint, Synth → `SyntheticData.generate`, a generated set; `SqlServer.Named`, `Database.Where` →
 `EnvironmentDatabase`, `Database.Target`; `Seq<T>` → `SortedArray<T>`; added, removed, changed →
@@ -2829,7 +2829,7 @@ that number decided the disposition: **KEEP** · **KEEP-SIMPLIFIED** · **FOLD-I
 | `Strategies/CategoricalUniquenessRules.fs` + pass | 261 + 133 | the only distribution-aware tightening; post-eject a developer states uniqueness and the publish proves it | DELETE | `add-unique` + `Msg 1505` |
 | `Strategies/Composition.fs` (`fanOut`); `StrategyRegistrations.fs` | 179; 119 | registry plumbing | DELETE | four direct calls |
 | the four tightening passes | ~1,045 | registry lift plus writer plumbing around the tables | FOLD-INTO | `Decide.decide` |
-| `Strategies/CycleResolution.fs` (v7 exact per-SCC break) | 534 | FK cycles are real in this estate; the ≤2¹² subset solver is more than 300 tables need | KEEP-SIMPLIFIED | `Order.CyclePolicy` (§7.7) |
+| `Strategies/CycleResolution.fs` (v7 exact per-SCC break) | 534 | FK cycles are real in these environments; the ≤2¹² subset solver is more than 300 tables need | KEEP-SIMPLIFIED | `Order.CyclePolicy` (§7.7) |
 | `Passes/TopologicalOrderPass.fs`; `TopologicalOrder.fs` | 977; 742 | deploy order, seeds, the apply runbook | KEEP-SIMPLIFIED | `Order`, ~700 |
 | `Classification.fs` (pillar 9 overlay axes) | 184 | proves a *projection* is reachable without operator intent; v3 has no skeleton projection | DELETE | nothing |
 | `DecisionOverlay.fs`; `ConflictDetector.fs` | 139; 120 | the applied-decision carrier | FOLD-INTO | `Decision list`; `AskOperator of Conflict` |
@@ -2865,8 +2865,8 @@ that number decided the disposition: **KEEP** · **KEEP-SIMPLIFIED** · **FOLD-I
 |---|---:|---|---|---|
 | `CatalogDiff.fs` (`ChannelDiff<'change>`, nine `AttributeFacet`s, `norm`) | 1,096 | `diff`, `compare`, rename detection, refactorlog, estate, `ChangeManifest`; the only typed change representation in either generation | KEEP-SIMPLIFIED | `Change` (§7.6), v3's centre; the facet list re-checked for `Description` and `Order`, which a roll-up suspected undiffed |
 | `Episode.fs`; `Lifecycle.fs`; `Ledger.fs` | 279; 193; 124 | the pre-eject provenance timeline | RETIRE-AFTER-EJECT | git is the timeline |
-| `DataObservation` (CDC capture count) | in `Episode.fs` | CDC-silence is the estate's highest-stakes guarantee | KEEP-SIMPLIFIED | law 8's check in the lanes |
-| `ChangeManifest.fs` | 99 | the SSIS team's per-sprint changelog | KEEP-SIMPLIFIED | `changelog.json` from `estate gate` (§8.10) |
+| `DataObservation` (CDC capture count) | in `Episode.fs` | CDC-silence is these environments' highest-stakes guarantee | KEEP-SIMPLIFIED | law 8's check in the lanes |
+| `ChangeManifest.fs` | 99 | the SSIS team's per-sprint changelog | KEEP-SIMPLIFIED | `changelog.json` from `dbchange gate` (§8.10) |
 | `Migration.fs` | 249 | the inexpressible-`ALTER` refusal (exit 9) is real; DacFx ships the ALTER | KEEP-SIMPLIFIED | a predicate on `Change` |
 | `Tolerance.fs` (`ToleratedDivergence`, `@ladder` tags) | 458 | "retiring a variant deletes its tag, so the generator auto-flips the axis" is the honesty mechanism §15.4 copies | KEEP-SIMPLIFIED | a named-divergence list in law 2's test; the tag idea in `LAWS.md`'s generator |
 | `CanaryResidual.fs` | 79 | the canary's diff-after-quotient | KEEP | law 2 |
@@ -2917,7 +2917,7 @@ that number decided the disposition: **KEEP** · **KEEP-SIMPLIFIED** · **FOLD-I
 
 | Module | Lines | Consumers / evidence | Disposition | v3 |
 |---|---:|---|---|---|
-| `OssysRowsetReader.fs`; `OssysTranslation.fs`; `OssysRowsetTypes.fs`; `MetadataSnapshotRunner.fs`; `MetadataExtractionError.fs`; `MetadataContractOverrides.fs` | 1,040; 555; 479; 1,722; 164; 305 | the live OSSYS path; ~1,400 of the runner is 22 hand-written row handlers; `MetadataContractOverrides` handles real estate differences (NM-72) | KEEP-SIMPLIFIED, **optional** (§16 item 3) | `io/Ossys` |
+| `OssysRowsetReader.fs`; `OssysTranslation.fs`; `OssysRowsetTypes.fs`; `MetadataSnapshotRunner.fs`; `MetadataExtractionError.fs`; `MetadataContractOverrides.fs` | 1,040; 555; 479; 1,722; 164; 305 | the live OSSYS path; ~1,400 of the runner is 22 hand-written row handlers; `MetadataContractOverrides` handles real environment differences (NM-72) | KEEP-SIMPLIFIED, **optional** (§16 item 3) | `io/Ossys` |
 | `outsystems_metadata_rowsets.sql` | 1,253 (SQL) | byte-identical to v1's; years of metamodel knowledge | KEEP | verbatim, as a resource |
 | `OssysJsonReader.fs` | 801 | reads v1's `osm_model.json`; dies with v1 | RETIRE-AFTER-EJECT | nothing |
 | `CatalogReader.fs` | 168 | reader dispatch | FOLD-INTO | the `Reader` DU (§8.1) |
@@ -2948,7 +2948,7 @@ that number decided the disposition: **KEEP** · **KEEP-SIMPLIFIED** · **FOLD-I
 | `RunSpine.fs`; `Run.fs`; `RunLedger.fs`; `RunHistory.fs`; `RunEnvelope.fs` | 470; 357; 134; 47; 101 | a compiler-checked stage arc for 46 run kinds; v3 has thirteen verbs | DELETE | the pull request is the description |
 | `LifecycleStore.fs`; `EjectRun.fs`; `ApprovalStore.fs`; `ReportRun.fs` | 611; 60; 153; 200 | `seal`, `seal approve`, `report` | RETIRE-AFTER-EJECT | git tags and the changelog |
 | `EventProjection.fs`; `LogSink.fs`; `NoticeSink.fs`; `BenchSink.fs` | 284; 1,104; 73; 75 | NDJSON events for a board; `LogSink.fs` is the ninth-largest file in the repository | DELETE | a progress line |
-| `Hydration.fs`; `Source.fs`; `LiveModelRead.fs`; `ModelResolution.fs`; `CatalogResolution.fs`; `ScopedRead.fs`; `CatalogRendition.fs` | 1,205 | model acquisition | KEEP-SIMPLIFIED | `estate read` |
+| `Hydration.fs`; `Source.fs`; `LiveModelRead.fs`; `ModelResolution.fs`; `CatalogResolution.fs`; `ScopedRead.fs`; `CatalogRendition.fs` | 1,205 | model acquisition | KEEP-SIMPLIFIED | `dbchange read` |
 | the twelve `*Binding.fs` + `Binding.fs` | 2,208 | once-bound operator intent for the config | DELETE | nothing |
 | the four `*Seam.fs` | 871 | skeleton/overlay separation (pillar 9) | DELETE | nothing |
 | `WriteSignoff.fs`; `ActEvidence.fs` | 216; 248 | destructive emission gates | RETIRE-AFTER-EJECT | `BlockOnPossibleDataLoss` and the reviewer |
@@ -2985,7 +2985,7 @@ that number decided the disposition: **KEEP** · **KEEP-SIMPLIFIED** · **FOLD-I
 | `Twin.Core/Coordinate.fs`; `TwinIdentity.fs` | 135; 107 | post-eject identity; the name→key binder | KEEP | `Identity` |
 | `Twin.Core/Fingerprint.fs`; `EstateDefinition.fs`; `ScenarioCompiler.fs` | 68; 88; 477 | the no-op gate and the artifact version; scenarios rewrite evidence and never generate | KEEP / KEEP-SIMPLIFIED | `io/SyntheticCopy` |
 | `Twin.Runtime/Runs`, `TwinDatabase` (the post-generation `WITH CHECK CHECK` trust gate), `TwinContainer`, `Mint`, `Check` (M5), `EvidenceImport`, `EstateModel`, `EstateFiles`, `Readback` | 2,130 | `synthetic-copy up`'s law, a published copy matches its package; the model for §13 | KEEP | `io/SyntheticCopy`; the evidence import wired into the bake lane |
-| `Twin.Cli/Program.fs`; `Render.fs` | 427 | fourteen verbs in 225 lines | KEEP-SIMPLIFIED | `estate synthetic-copy` |
+| `Twin.Cli/Program.fs`; `Render.fs` | 427 | fourteen verbs in 225 lines | KEEP-SIMPLIFIED | `dbchange synthetic-copy` |
 
 ### D.13 Tests, scripts, and the formal apparatus
 
@@ -3016,7 +3016,7 @@ that number decided the disposition: **KEEP** · **KEEP-SIMPLIFIED** · **FOLD-I
 | agents (`intake`, `change-author`, `reviewer`) | 3 / 743 | KEEP-SIMPLIFIED | two skills; personas are phases |
 | `sample-prs/` | 50 / 3,755 | KEEP-SIMPLIFIED | a dozen shapes |
 | `self-test/` | 9 / 2,493 | DELETE | a handful of conversation cases |
-| `estate/` ledgers | 8 / 272 | KEEP | `knowledge/ledgers/`, plus `cdc-tracked.md` |
+| `dbchange/` ledgers | 8 / 272 | KEEP | `knowledge/ledgers/`, plus `cdc-tracked.md` |
 | `FINDINGS_AND_CHANGES.md`; `THE_DECISION_TREE.md`; `THE_RECORD*.md`; `PORTABILITY.md`; `PROVING_PATH_WINDOWS.md` | 502; 215; 451; 94; 231 | KEEP; KEEP; KEEP-SIMPLIFIED; KEEP; DELETE | `findings.md`; `authoring.md`; `description.md`; `knowledge/`; nothing (the `.bak` route put real data on laptops) |
 | the program documents (§9.2) | 9 / ~2,500 | DELETE (archive) | nothing |
 | `ARCHITECTURE_REVIEW_2026_08_28.md` | 1 / 357 | KEEP until v3 lands, then archive | Appendix F |
@@ -3034,13 +3034,13 @@ one question: does a post-eject workflow (§2.4) need it? Sizes are `wc -l` on `
 
 | v1 capability | v1 location · lines | What v2 did | Disposition | v3 |
 |---|---|---|---|---|
-| DMM comparator with three readers (`IDmmLens<T>`, `DmmComparator`; SMO / ScriptDom / SSDT-project) | `Osm.Dmm/` · 8 files · 2,201 | NOT-MAPPED; the canary covers the deployed↔emitted pair; `compare` covers `LiveEnv`/`StoredRun`/`ModelFile` | **LEAVE, carry the two missing operands** | `estate diff` over any two of the four readers; `io/Ssdt` reads a project and a dacpac through `TSqlModel` |
-| compare-feature flags (`DmmComparisonFeatures`) | `Osm.Dmm/` · 14 | not carried | **CARRY** | `estate diff --only columns,keys,indexes,references,checks,properties` |
+| DMM comparator with three readers (`IDmmLens<T>`, `DmmComparator`; SMO / ScriptDom / SSDT-project) | `Osm.Dmm/` · 8 files · 2,201 | NOT-MAPPED; the canary covers the deployed↔emitted pair; `compare` covers `LiveEnv`/`StoredRun`/`ModelFile` | **LEAVE, carry the two missing operands** | `dbchange diff` over any two of the four readers; `io/Ssdt` reads a project and a dacpac through `TSqlModel` |
+| compare-feature flags (`DmmComparisonFeatures`) | `Osm.Dmm/` · 14 | not carried | **CARRY** | `dbchange diff --only columns,keys,indexes,references,checks,properties` |
 | transient retry | not in v1 (matrix row 34: "implicit delegation to caller"); no Polly reference in `src/` | v2 built `Retry.fs` (113, Polly 8.5.0), wired at `MetadataSnapshotRunner.fs:837` | **corrected: v2's, keep v2's** | `io/SqlServer`; mid-stream transients after the reader is open are not retried, and the gap is named |
 | tunable command timeout (`OSM_CLI_SQL_COMMAND_TIMEOUT`) | `Osm.Pipeline/Configuration/CliConfigurationService.cs` | carried: `CommandTimeoutPolicy`, 300 s default, `PROJECTION_COMMAND_TIMEOUT_SEC` | **already carried** | `io/SqlServer` |
 | load-harness DMV queries (`dm_os_wait_stats` filtered to LCK/PAGEIOLATCH/WRITELOG/CXPACKET, `dm_tran_locks`, top-20 fragmentation) | `Osm.LoadHarness/` · 6 files · 572 | NOT-MAPPED; v2 has no DMV query | **LEAVE** | the scale lane measures wall-clock on the synthetic copy; wait statistics return only if a scale finding needs them |
 | UAT-users remap (8-step pipeline; `UatUsersVerifier`, `FkCatalogCompletenessVerifier`, `TransformationMapVerifier`, `SqlSafetyAnalyzer`) | `Osm.Pipeline/UatUsers/` · 42 files · ~5,050 | carried as `UserFkReflowPass` + `UserRemap` + `UserIdentity` (795), a smaller shape | **LEAVE (cutover)** | `Move`, if the cutover tools are ported; otherwise `archive/v1` and `archive/v2` |
-| multi-environment consensus measurement (vote across dev/uat/prod) | `MultiEnvironmentConstraintConsensus.cs` 540 + `MultiEnvironmentProfileReport.cs` 645 + the multi-target measurement | carried per environment; the vote was not | **LEAVE, as a finding** | `estate check evidence --targets …` reports per-environment violations; the description shows the disagreement; no vote |
+| multi-environment consensus measurement (vote across dev/uat/prod) | `MultiEnvironmentConstraintConsensus.cs` 540 + `MultiEnvironmentProfileReport.cs` 645 + the multi-target measurement | carried per environment; the vote was not | **LEAVE, as a finding** | `dbchange check evidence --targets …` reports per-environment violations; the description shows the disagreement; no vote |
 | evidence cache manifest with ten invalidation reasons | `Osm.Pipeline/Evidence/` · 1,499 | carried as `EvidenceCache.fs` (366) + `EvidenceFingerprint.fs` (128) | **LEAVE** | the fingerprint's one round-trip answers staleness; `Evidence.Fingerprint` (§7.4) |
 | supplemental Users model | `config/supplemental/ossys-user.json` 341 + `OutSystemsInternalModel.cs` 285 | not carried | **CARRY** | a resource of `io/Ossys`; a table in `tests/Golden/` |
 | circular-dependency allowlist + `EntityDependencySorter` (Kahn + SCC + auto-resolution + manual map + alphabetical fallback) | `Osm.Emission/Seeds/EntityDependencySorter.cs` · 2,188 | carried and superseded: `TopologicalOrderPass` v7 (977) + `CycleResolution` (534) | **LEAVE** | `Order` with `CyclePolicy.Manual of order` as the allowlist |

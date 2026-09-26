@@ -2,10 +2,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
-using Estate.Io;
-using Estate.Kernel;
+using DbChange.Io;
+using DbChange.Kernel;
 
-namespace Estate.Cli;
+namespace DbChange.Cli;
 
 public static partial class Verbs
 {
@@ -35,7 +35,7 @@ public static partial class Verbs
     });
 
     /// <summary>
-    /// estate diff --from &lt;target&gt; --to &lt;target&gt; [--project &lt;path&gt;] [--fail-on-change]: Change.Between the two models with the renames
+    /// dbchange diff --from &lt;target&gt; --to &lt;target&gt; [--project &lt;path&gt;] [--fail-on-change]: Change.Between the two models with the renames
     /// their refactorlogs record (V3_ARCHITECTURE.md §8.5), names compared under the from side's collation, the target a deploy of the to
     /// side would plan against; matches at exit 0, or differs with one line per change, at exit 5 with --fail-on-change.
     /// </summary>
@@ -84,7 +84,7 @@ public static partial class Verbs
         var content = new JsonObject { ["diff"] = new JsonObject { ["from"] = Side(before), ["to"] = Side(after), ["counts"] = counts, ["change"] = Json(change, printer) } };
         return Contract.Answer(Of("diff").Output, Of("diff").Outcome(change.IsEmpty ? "in-sync" : "differs"), failOnChange && !change.IsEmpty ? 5 : 0, message,
             [
-                .. before.IsDatabase == after.IsDatabase ? [] : new[] { Finding.Note("diff.unlike-sources", "estate diff", before.Target + " and " + after.Target
+                .. before.IsDatabase == after.IsDatabase ? [] : new[] { Finding.Note("diff.unlike-sources", "dbchange diff", before.Target + " and " + after.Target
                     + " are read one from a package and one from a database: SQL Server keeps a check's, a default's and a computed column's Expression as it normalized the text,"
                     + " and an index's DataCompressionOption reads otherwise from each, so those four properties can differ where the schemas agree.") },
                 .. before.Notes,

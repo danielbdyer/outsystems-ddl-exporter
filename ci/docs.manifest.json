@@ -3,7 +3,7 @@
   "fields": {
     "path": "the file, relative to the repository root",
     "kind": "hand, or generated (by the generator named; its first line is the generated banner)",
-    "owner": "tool (this repository writes it), estate (the estate's repository writes it), or vendored (this repository writes it and the estate's repository receives it)",
+    "owner": "tool (this repository writes it), ssdt (the SSDT repository writes it), or vendored (this repository writes it and the SSDT repository receives it)",
     "reader": "who reads it",
     "moment": "when they read it",
     "budget": "the ceiling in physical lines; null for a generated file, for DECISIONS.md, which grows one line per decision under the Decisions test, and for a file in ci/: data the tests parse, or a script the tests and CI run, neither of them prose",
@@ -140,7 +140,7 @@
       "moment": ["a schema pull request"],
       "budget": 85,
       "generator": null,
-      "becomes": "generated at M7 by estate knowledge package, from knowledge/description.md",
+      "becomes": "generated at M7 by dbchange knowledge package, from knowledge/description.md",
       "ancestor": ["archive/v2/ssdt-agent/skills/author-pr/SKILL.md", "archive/v2/ssdt-agent/pr-template/schema-change.md"]
     },
     {
@@ -158,7 +158,7 @@
       "kind": "hand",
       "owner": "tool",
       "reader": ["the tests", "CI", "a maintainer"],
-      "moment": ["the fast lane", "a publish of dist/estate/"],
+      "moment": ["the fast lane", "a publish of dist/dbchange/"],
       "budget": null,
       "generator": null,
       "ancestor": []
@@ -168,7 +168,7 @@
       "kind": "hand",
       "owner": "tool",
       "reader": ["the tests", "CI", "a maintainer"],
-      "moment": ["the fast lane on Windows", "a publish of dist/estate/ on Windows"],
+      "moment": ["the fast lane on Windows", "a publish of dist/dbchange/ on Windows"],
       "budget": null,
       "generator": null,
       "ancestor": []
@@ -274,11 +274,11 @@
       "ancestor": ["archive/v2/scripts/matrix-status.sh"]
     },
     {
-      "path": "tests/Golden/estate/ledgers/toolchain.md",
+      "path": "tests/Golden/dbchange/ledgers/toolchain.md",
       "kind": "hand",
-      "owner": "estate",
-      "reader": ["estate doctor", "estate check drift", "release engineering"],
-      "moment": ["every claim's provenance", "a new estate version", "the Octopus step's DacFx changing"],
+      "owner": "ssdt",
+      "reader": ["dbchange doctor", "dbchange check drift", "release engineering"],
+      "moment": ["every claim's provenance", "a new dbchange version", "the Octopus step's DacFx changing"],
       "budget": 15,
       "generator": null,
       "ancestor": []

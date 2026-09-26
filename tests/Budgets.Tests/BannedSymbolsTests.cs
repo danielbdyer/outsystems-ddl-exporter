@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
-using Estate.Tests;
+using DbChange.Tests;
 using Xunit;
 
-namespace Estate.Budgets.Tests;
+namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// The kernel is pure by the absence of a capability: every symbol in kernel/BannedSymbols.txt,
@@ -91,7 +91,7 @@ public sealed class BannedSymbolsTests
         var suppressing = Repository.Files.Where(f => f.StartsWith("io/", StringComparison.Ordinal) && f.EndsWith(".cs", StringComparison.Ordinal) && Repository.Read(f).Contains("RS0030", StringComparison.Ordinal));
 
         Assert.Equal(["T:System.Console", "T:System.Diagnostics.Process", "T:System.Diagnostics.ProcessStartInfo"], banned);
-        Assert.Contains("BannedSymbols.txt", Repository.Xml("io/io.csproj").Descendants().Single(e => e.Name.LocalName == "EstateBannedSymbols").Value, StringComparison.Ordinal);
+        Assert.Contains("BannedSymbols.txt", Repository.Xml("io/io.csproj").Descendants().Single(e => e.Name.LocalName == "DbChangeBannedSymbols").Value, StringComparison.Ordinal);
         Assert.Equal(["io/Command.cs"], suppressing);
     }
 

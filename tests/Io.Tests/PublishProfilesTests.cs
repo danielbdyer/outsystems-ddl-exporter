@@ -9,18 +9,18 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
-using Estate.Budgets.Tests;
-using Estate.Budgets.Tests.Register;
-using Estate.Cli;
-using Estate.Kernel;
+using DbChange.Budgets.Tests;
+using DbChange.Budgets.Tests.Register;
+using DbChange.Cli;
+using DbChange.Kernel;
 using Microsoft.SqlServer.Dac;
 using Xunit;
 
-namespace Estate.Io.Tests;
+namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/PublishProfiles and the environments file reader in io/Environments (WP 1.5): the pipeline's publish profile read into its deploy options and
-/// SQLCMD values alone, with a note for each element DacFx ignores, and estate/environments.json read into named environments. An error in
+/// SQLCMD values alone, with a note for each element DacFx ignores, and dbchange/environments.json read into named environments. An error in
 /// either exits 6 through the CLI's category table, names the key, the file or the property, and never quotes the value; Strict is the
 /// profile as loaded, Permissive differs from it in BlockOnPossibleDataLoss alone and nothing in io but a Copy makes one, and nothing
 /// either prints carries a value a reference names or a literal holds.
@@ -38,9 +38,9 @@ public sealed class PublishProfilesTests : IDisposable
     /// <summary>A password set in any connection string, however spelled or spaced: what no output may carry.</summary>
     internal static readonly Regex PasswordSetting = new(@"(?:password|pwd)\s*=", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
-    private readonly string scratch = Directory.CreateTempSubdirectory("estate-profiles-").FullName;
+    private readonly string scratch = Directory.CreateTempSubdirectory("dbchange-profiles-").FullName;
 
-    public PublishProfilesTests() => Telemetry.OptOut();   // before DacFx loads, as estate's Main does
+    public PublishProfilesTests() => Telemetry.OptOut();   // before DacFx loads, as dbchange's Main does
 
     public static TheoryData<string> Ways => new(RefusalPaths.All.Select(c => c.Label));
 
@@ -59,8 +59,8 @@ public sealed class PublishProfilesTests : IDisposable
         Assert.Equal("env:dev (synthetic, confirmed by the dev lead on 2026-09-20)", dev.ToString());
         Assert.Equal(["env:prod (real)", "env:qa (real)", "env:uat (real)"], environmentsFile.All.Where(e => e != dev).Select(e => e.ToString()));
         Assert.Equal(["developers", "leads"], dev.ReaderGroups);
-        Assert.Equal(("env:ESTATE_DEV", (string?)"file:.estate/principals/dev-ossys.connection"), (dev.Connection.ToString(), dev.Metamodel?.ToString()));
-        Assert.Equal("$(EnvironmentTag), a literal | $(ServiceAccountPassword) from env:ESTATE_DEV_SERVICE_PASSWORD", string.Join(" | ", dev.SqlCmd));
+        Assert.Equal(("env:DBCHANGE_DEV", (string?)"file:.dbchange/principals/dev-ossys.connection"), (dev.Connection.ToString(), dev.Metamodel?.ToString()));
+        Assert.Equal("$(EnvironmentTag), a literal | $(ServiceAccountPassword) from env:DBCHANGE_DEV_SERVICE_PASSWORD", string.Join(" | ", dev.SqlCmd));
         Assert.Equal("dev", dev.SqlCmd[0].Match(text => text, reference => "from " + reference));
         Assert.All(environmentsFile.All, e => Assert.True(Made(PublishProfiles.Of(e, Golden)).Options().BlockOnPossibleDataLoss));
     }
@@ -92,11 +92,11 @@ public sealed class PublishProfilesTests : IDisposable
         const string credential = "Server=db;User ID=estate;Password=" + Planted;
         var error = where switch
         {
-            "connection" => Failed(EnvironmentsFile.Read(Estate(Dev(connection: credential)))),
-            "metamodel" => Failed(EnvironmentsFile.Read(Estate(Dev("\"metamodel\": \"" + credential + "\"")))),
-            "sqlcmd" => Failed(EnvironmentsFile.Read(Estate(Dev("\"sqlcmd\": { \"LinkedServer\": { \"literal\": \"" + credential + "\", \"sensitive\": false } }")))),
-            "reader" => Failed(EnvironmentsFile.Read(Estate(Dev("\"readerGroups\": [\"" + credential + "\"]")))),
-            "key" => Failed(EnvironmentsFile.Read(Estate(Dev("\"sqlcmd\": { \"" + credential + "\": \"env:ESTATE_LINK\" }")))),
+            "connection" => Failed(EnvironmentsFile.Read(RepositoryAt(Dev(connection: credential)))),
+            "metamodel" => Failed(EnvironmentsFile.Read(RepositoryAt(Dev("\"metamodel\": \"" + credential + "\"")))),
+            "sqlcmd" => Failed(EnvironmentsFile.Read(RepositoryAt(Dev("\"sqlcmd\": { \"LinkedServer\": { \"literal\": \"" + credential + "\", \"sensitive\": false } }")))),
+            "reader" => Failed(EnvironmentsFile.Read(RepositoryAt(Dev("\"readerGroups\": [\"" + credential + "\"]")))),
+            "key" => Failed(EnvironmentsFile.Read(RepositoryAt(Dev("\"sqlcmd\": { \"" + credential + "\": \"env:DBCHANGE_LINK\" }")))),
             "profile" => Failed(PublishProfiles.Load(Profile("inline", "<TargetConnectionString>" + credential + "</TargetConnectionString>"))),
             "profile, a comment splitting the password" =>
                 Failed(PublishProfiles.Load(Profile("inline", "<TargetConnectionString>Server=db;User ID=sa;Pass<!-- -->word=" + Planted + "</TargetConnectionString>"))),
@@ -122,16 +122,16 @@ public sealed class PublishProfilesTests : IDisposable
     [InlineData("\"podman\"", "environments.malformed")]
     [InlineData("true", "environments.malformed")]
     public void The_local_server_preference_is_docker_or_localdb(string preference, string? code) =>
-        Assert.Equal(code, EnvironmentsFile.Read(Estate("{ \"environments\": {}, \"localServer\": " + preference + " }", raw: true)).Match<string?>(_ => null, r => r.Code));
+        Assert.Equal(code, EnvironmentsFile.Read(RepositoryAt("{ \"environments\": {}, \"localServer\": " + preference + " }", raw: true)).Match<string?>(_ => null, r => r.Code));
 
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("{ \"environments\": {}, \"targets\": [\"qa\"] }", "targets")]
-    [InlineData("{ \"environments\": { \"dev\": { \"host\": \"dev-sql\", \"connection\": \"env:A\", \"profile\": \"estate/p.publish.xml\", \"Profile\": \"x\" } } }", "environments.dev.Profile")]
-    [InlineData("{ \"environments\": { \"dev\": { \"host\": \"dev-sql\", \"connection\": \"env:A\", \"profile\": \"estate/p.publish.xml\", \"sqlcmd\": { \"Tag\": { \"literal\": \"dev\", \"sensitive\": false, \"value\": \"x\" } } } } }", "environments.dev.sqlcmd.Tag.value")]
+    [InlineData("{ \"environments\": { \"dev\": { \"host\": \"dev-sql\", \"connection\": \"env:A\", \"profile\": \"dbchange/p.publish.xml\", \"Profile\": \"x\" } } }", "environments.dev.Profile")]
+    [InlineData("{ \"environments\": { \"dev\": { \"host\": \"dev-sql\", \"connection\": \"env:A\", \"profile\": \"dbchange/p.publish.xml\", \"sqlcmd\": { \"Tag\": { \"literal\": \"dev\", \"sensitive\": false, \"value\": \"x\" } } } } }", "environments.dev.sqlcmd.Tag.value")]
     public void An_unknown_key_is_refused_by_its_place_in_the_environments_file(string environmentsFile, string at)
     {
-        var error = Failed(EnvironmentsFile.Read(Estate(environmentsFile, raw: true)));
+        var error = Failed(EnvironmentsFile.Read(RepositoryAt(environmentsFile, raw: true)));
 
         Assert.Equal(("environments.unknown-key", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains(at, error.Message, StringComparison.Ordinal);
@@ -141,7 +141,7 @@ public sealed class PublishProfilesTests : IDisposable
     [Trait("Category", "fast")]
     public void Every_error_of_the_environments_file_and_the_profile_is_exit_6()
     {
-        foreach (var way in RefusalPaths.All.Where(c => c.Code.Split('.')[0] is "environmentsFile" or "profile" or "reference" or "sqlcmd"))
+        foreach (var way in RefusalPaths.All.Where(c => c.Code.Split('.')[0] is "environments" or "profile" or "reference" or "sqlcmd"))
         {
             var error = way.Drive(Directory.CreateDirectory(Path.Combine(scratch, way.Label)).FullName, Planted);
             Assert.True(Contract.Exit(error) == 6, way.Label + " takes exit " + Contract.Exit(error));
@@ -239,15 +239,15 @@ public sealed class PublishProfilesTests : IDisposable
     public void A_profile_that_allows_data_loss_is_refused_and_a_named_environment_using_it_is_refused_by_its_name()
     {
         var relaxed = Profile("relaxed", "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>");
-        var root = Estate(Dev(profile: "estate/profiles/relaxed.publish.xml"));
-        File.Copy(relaxed, Path.Combine(root, "estate", "profiles", "relaxed.publish.xml"));
+        var root = RepositoryAt(Dev(profile: "dbchange/profiles/relaxed.publish.xml"));
+        File.Copy(relaxed, Path.Combine(root, "dbchange", "profiles", "relaxed.publish.xml"));
 
         var bare = Failed(PublishProfiles.Load(relaxed));
         var named = Failed(PublishProfiles.Of(Made(EnvironmentsFile.Read(root)).All.Single(), root));
 
         Assert.Equal(("profile.data-loss-allowed", 6), (bare.Code, Contract.Exit(bare)));
         Assert.Equal(("profile.data-loss-allowed", 6), (named.Code, Contract.Exit(named)));
-        Assert.StartsWith("env:dev's profile estate/profiles/relaxed.publish.xml", named.Message, StringComparison.Ordinal);
+        Assert.StartsWith("env:dev's profile dbchange/profiles/relaxed.publish.xml", named.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -280,8 +280,8 @@ public sealed class PublishProfilesTests : IDisposable
         var made = typeof(PublishProfile.Permissive).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();
 
         Assert.True(made.IsPrivate && of.IsAssembly);
-        Assert.Equal(["Estate.Budgets.Tests", "Estate.Io.Tests"], typeof(PublishProfile).Assembly.GetCustomAttributes<InternalsVisibleToAttribute>().Select(a => a.AssemblyName).Order(StringComparer.Ordinal));
-        Assert.Equal(["Estate.Io.PublishProfile+Permissive.Of"], Callers(made).Select(Named));
+        Assert.Equal(["DbChange.Budgets.Tests", "DbChange.Io.Tests"], typeof(PublishProfile).Assembly.GetCustomAttributes<InternalsVisibleToAttribute>().Select(a => a.AssemblyName).Order(StringComparer.Ordinal));
+        Assert.Equal(["DbChange.Io.PublishProfile+Permissive.Of"], Callers(made).Select(Named));
         Assert.NotEmpty(Callers(of));
         Assert.Empty(Callers(of).Where(caller => !InCopy(caller.DeclaringType)).Select(Named));
     }
@@ -289,7 +289,7 @@ public sealed class PublishProfilesTests : IDisposable
     /// <summary>
     /// VALUES.md X2: every error, driven with a password planted in its input wherever the input can carry one, returns neither the
     /// password nor a password setting in its code, its message or its remedy, and throws nothing. The other half of the search is
-    /// <see cref="DiffTests.Estate_read_of_a_database_holding_a_SQL_login_prints_no_password"/>, which searches estate read's answer
+    /// <see cref="DiffTests.DbChange_read_of_a_database_holding_a_SQL_login_prints_no_password"/>, which searches dbchange read's answer
     /// for a database holding a SQL login.
     /// </summary>
     [Theory]
@@ -313,7 +313,7 @@ public sealed class PublishProfilesTests : IDisposable
     [Trait("Value", "X2")]
     public void Nothing_read_from_the_environments_file_or_a_profile_prints_a_literal_or_what_a_reference_names()
     {
-        var root = Estate(Dev("\"sqlcmd\": { \"EnvironmentTag\": { \"literal\": \"" + Planted + "\", \"sensitive\": false }, \"ServicePassword\": \"env:ESTATE_PW\" }"));
+        var root = RepositoryAt(Dev("\"sqlcmd\": { \"EnvironmentTag\": { \"literal\": \"" + Planted + "\", \"sensitive\": false }, \"ServicePassword\": \"env:DBCHANGE_PW\" }"));
         var environment = Made(EnvironmentsFile.Read(root)).All.Single();
         var strict = Made(PublishProfiles.Load(Profile("printed", "", ("EnvironmentTag", Planted))));
 
@@ -370,16 +370,16 @@ public sealed class PublishProfilesTests : IDisposable
         }
     }
 
-    /// <summary>A dev environment in environmentsFile JSON: its host, its connection, its profile and whatever else is given.</summary>
-    private static string Dev(string extra = "", string connection = "env:ESTATE_DEV", string profile = "estate/profiles/pipeline.publish.xml") =>
+    /// <summary>A dev environment in the environments file's JSON: its host, its connection, its profile and whatever else is given.</summary>
+    private static string Dev(string extra = "", string connection = "env:DBCHANGE_DEV", string profile = "dbchange/profiles/pipeline.publish.xml") =>
         "\"dev\": { \"host\": \"dev-sql\", \"connection\": \"" + connection + "\", \"profile\": \"" + profile + "\"" + (extra.Length > 0 ? ", " + extra : "") + " }";
 
-    /// <summary>An estate's root under the scratch folder, holding estate/environments.json: the environments given, or the text given whole.</summary>
-    private string Estate(string environments, bool raw = false)
+    /// <summary>A repository root under the scratch folder, holding dbchange/environments.json: the environments given, or the text given whole.</summary>
+    private string RepositoryAt(string environments, bool raw = false)
     {
-        var root = Directory.CreateDirectory(Path.Combine(scratch, "estate-" + Guid.NewGuid().ToString("N")[..8])).FullName;
-        Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
-        File.WriteAllText(Path.Combine(root, "estate", "environments.json"), raw ? environments : "{ \"environments\": { " + environments + " } }");
+        var root = Directory.CreateDirectory(Path.Combine(scratch, "repository-" + Guid.NewGuid().ToString("N")[..8])).FullName;
+        Directory.CreateDirectory(Path.Combine(root, "dbchange", "profiles"));
+        File.WriteAllText(Path.Combine(root, "dbchange", "environments.json"), raw ? environments : "{ \"environments\": { " + environments + " } }");
         return root;
     }
 

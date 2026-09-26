@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "estate.check/1",
-  "description": "What estate check --json writes: the envelope, and check.",
-  "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with ESTATE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
+  "title": "dbchange.envelope/1",
+  "description": "What every verb writes with --json: schema, outcome, exit, message, blockedBy, findings, version, dacfx, pin, server, provenance, truncated, full.",
+  "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with DBCHANGE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": [
     "schema",
     "outcome",
@@ -18,12 +18,12 @@
     "server",
     "provenance",
     "truncated",
-    "full",
-    "check"
+    "full"
   ],
   "properties": {
     "schema": {
-      "const": "estate.check/1"
+      "type": "string",
+      "pattern": "^dbchange\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$"
     },
     "outcome": {
       "enum": [
@@ -31,9 +31,12 @@
         "blocked",
         "build-failed",
         "configuration-refused",
+        "degraded",
         "differs",
+        "done",
         "in-sync",
         "interrupted",
+        "ready",
         "refused-by-name",
         "unparsed-input",
         "unreachable"
@@ -139,263 +142,7 @@
         },
         {
           "type": "string",
-          "pattern": "^\\.estate/runs/[^/]+/answer\\.json$"
-        }
-      ]
-    },
-    "check": {
-      "anyOf": [
-        {
-          "type": "null"
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "target",
-            "at",
-            "commit",
-            "counts",
-            "operations",
-            "columns"
-          ],
-          "properties": {
-            "kind": {
-              "enum": [
-                "drift"
-              ]
-            },
-            "target": {
-              "type": "string",
-              "minLength": 1
-            },
-            "at": {
-              "type": "string",
-              "minLength": 1
-            },
-            "commit": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{40,64}$"
-            },
-            "counts": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "operations",
-                "columns"
-              ],
-              "properties": {
-                "operations": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "columns": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              }
-            },
-            "operations": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "operation",
-                  "name",
-                  "key",
-                  "issues"
-                ],
-                "properties": {
-                  "operation": {
-                    "type": "string",
-                    "pattern": "^[a-z]+(-[a-z]+)*$"
-                  },
-                  "name": {
-                    "anyOf": [
-                      {
-                        "type": "null"
-                      },
-                      {
-                        "type": "string",
-                        "minLength": 1
-                      }
-                    ]
-                  },
-                  "key": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "issues": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer"
-                    }
-                  }
-                }
-              },
-              "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
-            },
-            "columns": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "created",
-                "dropped",
-                "renamed",
-                "caseOnlyRenamed",
-                "altered"
-              ],
-              "properties": {
-                "created": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
-                },
-                "dropped": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
-                },
-                "renamed": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "before",
-                      "after"
-                    ],
-                    "properties": {
-                      "before": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "after": {
-                        "type": "string",
-                        "minLength": 1
-                      }
-                    }
-                  },
-                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
-                },
-                "caseOnlyRenamed": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "before",
-                      "after"
-                    ],
-                    "properties": {
-                      "before": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "after": {
-                        "type": "string",
-                        "minLength": 1
-                      }
-                    }
-                  },
-                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
-                },
-                "altered": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "key",
-                      "properties",
-                      "relationships"
-                    ],
-                    "properties": {
-                      "key": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "properties": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "name",
-                            "before",
-                            "after"
-                          ],
-                          "properties": {
-                            "name": {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "before": {
-                              "type": [
-                                "boolean",
-                                "integer",
-                                "string",
-                                "null"
-                              ]
-                            },
-                            "after": {
-                              "type": [
-                                "boolean",
-                                "integer",
-                                "string",
-                                "null"
-                              ]
-                            }
-                          }
-                        }
-                      },
-                      "relationships": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "required": [
-                            "name",
-                            "before",
-                            "after"
-                          ],
-                          "properties": {
-                            "name": {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "before": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "minLength": 1
-                              }
-                            },
-                            "after": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "minLength": 1
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  },
-                  "$comment": "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list"
-                }
-              }
-            }
-          }
+          "pattern": "^\\.dbchange/runs/[^/]+/answer\\.json$"
         }
       ]
     }
@@ -532,6 +279,24 @@
       "if": {
         "properties": {
           "outcome": {
+            "const": "degraded"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              6
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
             "const": "differs"
           }
         }
@@ -540,7 +305,26 @@
         "properties": {
           "exit": {
             "enum": [
+              0,
               5
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "done"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
             ]
           }
         }
@@ -577,6 +361,24 @@
           "exit": {
             "enum": [
               130
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit": {
+            "enum": [
+              0
             ]
           }
         }

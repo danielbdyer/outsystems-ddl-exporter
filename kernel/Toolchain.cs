@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Linq;
 
-namespace Estate.Kernel;
+namespace DbChange.Kernel;
 
 /// <summary>
 /// A DacFx release version, as its package names it (<c>170.5.96</c>): two to four dot-separated groups of digits, kept as
@@ -77,9 +77,9 @@ public abstract record Pin
         pin => committed == pin.Release || committed == pin.Before ? null : new Error(
             "toolchain.outside-window",
             $"The committed DacFx, {committed}, is neither the pinned release {pin.Release} nor the release before it{(pin.Before is { } b ? ", " + b : "")}.",
-            $"Rebuild estate with ci/publish against DacFx {pin.Release}, or record the Octopus step's new DacFx release in estate/ledgers/toolchain.md."));
+            $"Rebuild dbchange with ci/publish against DacFx {pin.Release}, or record the Octopus step's new DacFx release in dbchange/ledgers/toolchain.md."));
 
-    /// <summary>No DacFx release pinned: the ledger's row reads UNPINNED, or the estate commits no ledger.</summary>
+    /// <summary>No DacFx release pinned: the ledger's row reads UNPINNED, or the SSDT repository commits no ledger.</summary>
     public sealed record Unpinned : Pin
     {
         public override string ToString() => "UNPINNED";
