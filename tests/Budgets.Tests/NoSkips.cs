@@ -32,6 +32,33 @@ public sealed class NoSkips
         Assert.Empty(skips);
     }
 
+    /// <summary>
+    /// The scan that reads each test's category finds a method whatever its return type is written as: a method returning
+    /// System.Threading.Tasks.Task spelled out keeps its own category, and the test after it keeps its own.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void The_trait_scan_reads_a_test_whose_return_type_is_written_with_dots()
+    {
+        string[] planted =
+        [
+            "namespace Planted;",
+            "public sealed class Tests",
+            "{",
+            "    [Fact]",
+            "    [Trait(\"Category\", \"fixture\")]",
+            "    public async System.Threading.Tasks.Task Spelled_out() => await System.Threading.Tasks.Task.Yield();",
+            "",
+            "    [Fact]",
+            "    [Trait(\"Category\", \"fast\")]",
+            "    public void Next() { }",
+            "}",
+        ];
+
+        Assert.Equal([("Planted.Tests.Spelled_out", "fixture"), ("Planted.Tests.Next", "fast")],
+            TestTraits.In("Planted", planted).Select(t => (t.FullName, t.Traits.Single(x => x.Name == "Category").Value)));
+    }
+
     /// <summary>A test with no category runs in no lane, a skip that reads as a pass; one with two runs twice.</summary>
     [Fact]
     [Trait("Category", "fast")]

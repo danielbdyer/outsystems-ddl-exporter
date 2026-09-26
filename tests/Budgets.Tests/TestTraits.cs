@@ -32,7 +32,7 @@ internal static class TestTraits
     private static readonly Regex Class = new(@"^(?:(?:public|internal|private|sealed|static|abstract|partial|file)[ \t]+)*class[ \t]+(\w+)", RegexOptions.CultureInvariant);
     private static readonly Regex Trait = new(@"\[Trait\(""(\w+)"", ""([^""]+)""\)\]", RegexOptions.CultureInvariant);
     private static readonly Regex Marked = new(@"^\s*\[(?:Fact|Theory)\b", RegexOptions.CultureInvariant);
-    private static readonly Regex Method = new(@"^[ \t]*public (?:async )?[\w<>]+ (\w+)\(", RegexOptions.CultureInvariant);
+    private static readonly Regex Method = new(@"^[ \t]*public (?:async )?[\w<>.]+ (\w+)\(", RegexOptions.CultureInvariant);
 
     /// <summary>Every test method: a public method under tests/ with a [Fact] or [Theory] above it.</summary>
     public static IReadOnlyList<Test> All { get; } = Read();
@@ -40,39 +40,38 @@ internal static class TestTraits
     /// <summary>A name as its words: lower case, letters and digits only, one space between.</summary>
     public static string Words(string name) => string.Join(' ', Regex.Split(name.ToLowerInvariant(), @"[^\p{Ll}\p{Nd}]+", RegexOptions.CultureInvariant).Where(w => w.Length > 0));
 
-    private static List<Test> Read()
+    private static List<Test> Read() => [.. Repository.Files
+        .Where(f => f.StartsWith("tests/", StringComparison.Ordinal) && !f.StartsWith("tests/Golden/", StringComparison.Ordinal) && f.EndsWith(".cs", StringComparison.Ordinal))
+        .SelectMany(file => In(file.Split('/')[1], Repository.Lines(file)))];
+
+    /// <summary>The test methods a source file's lines declare, each with the traits above it, whatever the method's return type is written as.</summary>
+    public static IEnumerable<Test> In(string project, IEnumerable<string> lines)
     {
-        var tests = new List<Test>();
-        foreach (var file in Repository.Files.Where(f => f.StartsWith("tests/", StringComparison.Ordinal) && !f.StartsWith("tests/Golden/", StringComparison.Ordinal) && f.EndsWith(".cs", StringComparison.Ordinal)))
+        var (space, type, marked) = ("", "", false);
+        var traits = new List<(string, string)>();
+        foreach (var line in lines.Where(l => !Comment.IsMatch(l)))
         {
-            var (project, space, type, marked) = (file.Split('/')[1], "", "", false);
-            var traits = new List<(string, string)>();
-            foreach (var line in Repository.Lines(file).Where(l => !Comment.IsMatch(l)))
+            if (Namespace.Match(line) is { Success: true } ns)
             {
-                if (Namespace.Match(line) is { Success: true } ns)
+                space = ns.Groups[1].Value;
+            }
+
+            if (Class.Match(line) is { Success: true } declared)
+            {
+                type = declared.Groups[1].Value;
+            }
+
+            marked |= Marked.IsMatch(line);
+            traits.AddRange(Trait.Matches(line).Select(m => (m.Groups[1].Value, m.Groups[2].Value)));
+            if (Method.Match(line) is { Success: true } method)
+            {
+                if (marked)
                 {
-                    space = ns.Groups[1].Value;
+                    yield return new Test(project, space + "." + type, method.Groups[1].Value, [.. traits]);
                 }
 
-                if (Class.Match(line) is { Success: true } declared)
-                {
-                    type = declared.Groups[1].Value;
-                }
-
-                marked |= Marked.IsMatch(line);
-                traits.AddRange(Trait.Matches(line).Select(m => (m.Groups[1].Value, m.Groups[2].Value)));
-                if (Method.Match(line) is { Success: true } method)
-                {
-                    if (marked)
-                    {
-                        tests.Add(new Test(project, space + "." + type, method.Groups[1].Value, [.. traits]));
-                    }
-
-                    (marked, traits) = (false, []);
-                }
+                (marked, traits) = (false, []);
             }
         }
-
-        return tests;
     }
 }

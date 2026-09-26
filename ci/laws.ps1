@@ -36,7 +36,7 @@ foreach ($file in $files) {
       }
       $pending.Add(@($kind, $key, $value))
     }
-    if ($pending.Count -gt 0 -and $line -cmatch '^[ \t]*public (async )?[A-Za-z0-9_<>]+ ([A-Za-z0-9_]+)\(') {
+    if ($pending.Count -gt 0 -and $line -cmatch '^[ \t]*public (async )?[A-Za-z0-9_<>.]+ ([A-Za-z0-9_]+)\(') {
       $method = $Matches[2]
       $english = ($method -creplace '_s_', "'s_") -creplace '_', ' '
       foreach ($trait in $pending) { $rows.Add("$($trait[0])`t$($trait[1])`t$($trait[2])`t$space.$type.$method`t$english") }

@@ -30,7 +30,7 @@ rows="$(find tests -name '*.cs' -not -path 'tests/Golden/*' -not -path '*/bin/*'
       else { key = value }
       kinds[++pending] = kind; keys[pending] = key; values[pending] = value
     }
-    pending > 0 && match($0, /^[ \t]*public (async )?[A-Za-z0-9_<>]+ [A-Za-z0-9_]+\(/) {
+    pending > 0 && match($0, /^[ \t]*public (async )?[A-Za-z0-9_<>.]+ [A-Za-z0-9_]+\(/) {
       method = substr($0, RSTART, RLENGTH - 1); sub(/.* /, "", method)
       english = method; gsub(/_s_/, "'\''s_", english); gsub(/_/, " ", english)
       for (i = 1; i <= pending; i++) printf "%s\t%s\t%s\t%s.%s.%s\t%s\n", kinds[i], keys[i], values[i], space, type, method, english
