@@ -25,9 +25,6 @@ public static class DriftCheck
     /// </summary>
     public sealed record Answer(Target Target, GitRef At, string Commit, Drift Drift, Collation Collation, Provenance Provenance, string Profile, IReadOnlyList<Finding> Notes);
 
-    /// <summary>Where check drift runs: the repository root, the working directory, the tool folder DBCHANGE_TOOL names, if any, and dbchange's own version, which the toolchain ledger's rows name.</summary>
-    public sealed record Checkout(string Root, string WorkingDirectory, string? Tool, string Version);
-
     /// <summary>check drift, the database read by io/DacFx.Extract.</summary>
     public static Stamped<Answer> Run(Checkout checkout, Request request, SqlServer.QueryLog log) => Run(checkout, request, log, database => DacFx.Extract(database));
 

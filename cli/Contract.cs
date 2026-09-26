@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json.Nodes;
@@ -14,7 +13,7 @@ namespace DbChange.Cli;
 /// outcomes its answers take. A verb is built when it has a body, and the help says so and nothing of when the rest arrive (DECISIONS.md,
 /// 2026-09-25). A failure's outcome is its exit's name and is not listed here.
 /// </summary>
-public sealed record Verb(string Name, string Summary, Func<Checkout, IReadOnlyList<string>, Envelope>? Body = null, JsonObject? Content = null, IReadOnlyList<Outcome>? Outcomes = null)
+public sealed record Verb(string Name, string Summary, Func<Io.Checkout, Io.SqlServer.QueryLog, IReadOnlyList<string>, Envelope>? Body = null, JsonObject? Content = null, IReadOnlyList<Outcome>? Outcomes = null)
 {
     /// <summary>The schema its --json answer names, such as dbchange.doctor/1.</summary>
     public string Output => "dbchange." + Name.TrimStart('-') + "/1";
@@ -35,19 +34,6 @@ public sealed record Outcome(string Word, IReadOnlyList<int> Exits, string Meani
 {
     /// <summary>A failure's outcome: its exit's name, at that exit alone.</summary>
     public static Outcome Of(ExitCode exit) => new(exit.Name, [exit.Code], exit.Meaning);
-}
-
-/// <summary>
-/// Where dbchange runs: the repository root (EnvironmentsFile.Root of the working directory), the working directory, the tool folder DBCHANGE_TOOL
-/// names, if any, and the run's query log, which names the run's folder under .dbchange/runs/ and which Program.Run begins once per
-/// command, so a verb's statements and the whole answer it was cut from sit in one folder.
-/// </summary>
-public sealed record Checkout(string Root, string WorkingDirectory, string? Tool, Io.SqlServer.QueryLog? Log = null)
-{
-    public static Checkout Here() => new(Io.EnvironmentsFile.Root(Directory.GetCurrentDirectory()), Directory.GetCurrentDirectory(), Environment.GetEnvironmentVariable("DBCHANGE_TOOL"));
-
-    /// <summary>The run's query log: the one begun for the command, or a new one when this checkout was made outside Program.Run.</summary>
-    public Io.SqlServer.QueryLog Run => Log ?? Io.SqlServer.QueryLog.Start(Root);
 }
 
 /// <summary>A row of the frozen exit table: codes are added, never removed or renumbered (cli/exits.frozen).</summary>
@@ -151,7 +137,7 @@ public static class Contract
             + "[--profile <path>] [--project <path>]", Cli.Verbs.Check, Cli.Verbs.CheckContent,
             [new("in-sync", [0], "the deploy plan against the target is empty"), new("differs", [5], "the deploy plan holds operations; a finding names each object")]),
         new("knowledge", "The knowledge tree, packaged for each agent and vendored to the SSDT repository."),
-        new("--version", "The tool's version.", (_, _) => Answer("dbchange.version/1", new Outcome("done", [0], "the message is the tool's version"), 0, "dbchange " + Version, []),
+        new("--version", "The tool's version.", (_, _, _) => Answer("dbchange.version/1", new Outcome("done", [0], "the message is the tool's version"), 0, "dbchange " + Version, []),
             Outcomes: [new("done", [0], "the message is the tool's version")]),
     ];
 

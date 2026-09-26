@@ -39,7 +39,7 @@ public static partial class Verbs
     /// their refactorlogs record (V3_ARCHITECTURE.md §8.5), names compared under the from side's collation, the target a deploy of the to
     /// side would plan against; matches at exit 0, or differs with one line per change, at exit 5 with --fail-on-change.
     /// </summary>
-    public static Envelope Diff(Checkout here, IReadOnlyList<string> words)
+    public static Envelope Diff(Checkout here, SqlServer.QueryLog log, IReadOnlyList<string> words)
     {
         if (DacFx.Version.Failed(out var dacfx, out var error))
         {
@@ -48,15 +48,15 @@ public static partial class Verbs
 
         var stamp = new Stamp(dacfx);
         if (Contract.Flags(words, ["--from", "--to"], ["--project"], ["--fail-on-change"]).Bind(flags => SqlServer.Target(flags["--from"], "--from")
-            .Bind(from => SqlServer.Target(flags["--to"], "--to").Bind(to => Io.Doctor.Toolchain(here.Root, Contract.Version).Map(pin => (Flags: flags, From: from, To: to, Pin: pin)))))
+            .Bind(from => SqlServer.Target(flags["--to"], "--to").Bind(to => Io.Doctor.Toolchain(here.Root, here.Version).Map(pin => (Flags: flags, From: from, To: to, Pin: pin)))))
             .Failed(out var asked, out error))
         {
             return Contract.Failed(Of("diff"), error, stamp);
         }
 
         stamp = stamp with { Pin = asked.Pin };
-        if ((asked.Pin.Rejects(dacfx) is { } outside ? Result.Fail<Source>(outside) : Reading(here, asked.From, asked.Flags.GetValueOrDefault("--project")))
-                .Bind(before => Reading(here, asked.To, asked.Flags.GetValueOrDefault("--project"))
+        if ((asked.Pin.Rejects(dacfx) is { } outside ? Result.Fail<Source>(outside) : Reading(here, log, asked.From, asked.Flags.GetValueOrDefault("--project")))
+                .Bind(before => Reading(here, log, asked.To, asked.Flags.GetValueOrDefault("--project"))
                 .Bind(after => Ssdt.CollationOf(before.Model.Elements).Bind(collation =>
                     Change.Between(before.Model.Elements, after.Model.Elements, SortedArray.Of(before.Model.Renames.Concat(after.Model.Renames).Distinct()), collation)
                         .Map(change => (Before: before, After: after, Change: change, Collation: collation)))))

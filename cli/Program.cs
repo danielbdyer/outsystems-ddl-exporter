@@ -19,11 +19,11 @@ public static class Program
     {
         Telemetry.OptOut();
         using var interruption = Interruption.Listen();
-        return Run(args, Console.OpenStandardOutput(), Checkout.Here, Contract.Verbs, interruption);
+        return Run(args, Console.OpenStandardOutput(), () => Checkout.Here(Contract.Version), Contract.Verbs, interruption);
     }
 
     /// <summary>Answers <paramref name="args"/> on <paramref name="output"/>, as Markdown or, with --json, as one JSON object, for the checkout of the working directory; returns the exit code.</summary>
-    public static int Run(IReadOnlyList<string> args, Stream output) => Run(args, output, Checkout.Here, Contract.Verbs);
+    public static int Run(IReadOnlyList<string> args, Stream output) => Run(args, output, () => Checkout.Here(Contract.Version), Contract.Verbs);
 
     /// <summary>Answers <paramref name="args"/> on <paramref name="output"/> for the SSDT repository checkout <paramref name="here"/>; returns the exit code.</summary>
     public static int Run(IReadOnlyList<string> args, Stream output, Checkout here) => Run(args, output, () => here, Contract.Verbs);
@@ -129,8 +129,8 @@ public static class Program
         }
 
         var checkout = here();
-        var run = checkout.Run;
-        var answer = verb.Body(checkout with { Log = run }, words);
+        var run = SqlServer.QueryLog.Start(checkout.Root);
+        var answer = verb.Body(checkout, run, words);
         var shown = Render.Cut(answer, summary);
         if (!shown.Truncated)
         {

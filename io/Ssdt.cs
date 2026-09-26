@@ -163,8 +163,6 @@ public static class Ssdt
     /// <summary>The marker a build writes beside its package, last: the commit, the inputs, the targets, the package's file and its fingerprint.</summary>
     private const string Marker = "built.json";
 
-    public static Result<string> Tool() => Tool(AppContext.BaseDirectory, Environment.GetEnvironmentVariable("DBCHANGE_TOOL"), Directory.GetCurrentDirectory());
-
     /// <summary>
     /// The tool folder: the one dbchange runs from, when it carries the targets; else the one DBCHANGE_TOOL names; else dist/dbchange/
     /// in the nearest directory at or above the working directory, as in dbchange's own repository once ci/publish has run in it.

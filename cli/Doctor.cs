@@ -16,9 +16,9 @@ public static partial class Verbs
     };
 
     /// <summary>dbchange doctor: can this machine do the work (V3_ARCHITECTURE.md §8.12), read-only.</summary>
-    public static Envelope Doctor(Checkout here, IReadOnlyList<string> words) => words.Count > 0
+    public static Envelope Doctor(Checkout here, SqlServer.QueryLog log, IReadOnlyList<string> words) => words.Count > 0
         ? Contract.Failed(Of("doctor"), new Error("arguments.unknown-flag", "dbchange doctor takes no arguments.", "Run dbchange doctor with no arguments."))
-        : Doctor(Io.Doctor.Examine(Io.Doctor.Machine.Here(here.Tool, here.WorkingDirectory), Command.Run, Contract.Version), Io.Doctor.Toolchain(here.Root, Contract.Version));
+        : Doctor(Io.Doctor.Examine(Io.Doctor.Machine.Here(here), Command.Run), Io.Doctor.Toolchain(here.Root, here.Version));
 
     /// <summary>
     /// One line, READY when nothing is missing and exit 0, else DEGRADED and exit 6 with a finding of severity error and its remedy per item

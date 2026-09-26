@@ -16,7 +16,7 @@ public sealed class VerbExitTests : IDisposable
 
     public void Dispose() => root.Dispose();
 
-    private Checkout Here => new(root.Path, root.Path, null);
+    private Checkout Here => new(root.Path, root.Path, null, Contract.Version);
 
     /// <summary>M1 exit 7's first half: a literal connection string where a target goes is exit 6, and no part of it is printed.</summary>
     [Theory]

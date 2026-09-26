@@ -41,7 +41,7 @@ public sealed class DoctorTests : IDisposable
     [Trait("Exit", "M0.3")]
     public void A_bare_machine_gets_a_remedy_for_each_item_missing()
     {
-        var checks = Doctor.Examine(Bare(), Nothing, Version);   // no global.json, no tool folder, no sql.env, and nothing installed
+        var checks = Doctor.Examine(Bare(), Nothing);   // no global.json, no tool folder, no sql.env, and nothing installed
 
         Assert.Equal(["sdk", "runtime", "tool", "dacfx", "build", "git", "local-server", "image", "lfs"], checks.Select(c => c.Item.Name));
         Assert.Equal(["sdk", "tool", "build", "git", "local-server", "lfs"], checks.Where(c => c.Remedy is not null).Select(c => c.Item.Name));
@@ -55,7 +55,7 @@ public sealed class DoctorTests : IDisposable
         Publish();
         machine.File("global.json", """{ "sdk": { "version": "10.0.401", "rollForward": "latestPatch" } }""");
 
-        var checks = Doctor.Examine(Bare(sqlEnv: SqlEnv()) with { WorkingDirectory = machine.Folder(Path.Combine("dbchange", "src")) }, Answers(Everything), Version);
+        var checks = Doctor.Examine(Bare(sqlEnv: SqlEnv(), workingDirectory: machine.Folder(Path.Combine("dbchange", "src"))), Answers(Everything));
 
         Assert.All(checks, c => Assert.Null(c.Remedy));
         Assert.Equal(
@@ -108,7 +108,7 @@ public sealed class DoctorTests : IDisposable
         }
 
         var error = Doctor.Toolchain(machine.Path, Version).Match(pin => pin.Rejects(Value(DacFx.Version)), r => r);
-        var dacfx = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.DacFx);
+        var dacfx = Doctor.Examine(Bare(), Nothing).Single(c => c.Item == Doctor.Item.DacFx);
 
         Assert.True(code == error?.Code, what + ": " + error?.Code);
         Assert.Equal(code is null, dacfx.Remedy is null);
@@ -121,7 +121,7 @@ public sealed class DoctorTests : IDisposable
     {
         var ledger = Ledger("| 2026-09-25 | 3.0.0 | UNPINNED | — |");
 
-        var (error, dacfx) = ErrorPaths.Denied(ledger, () => (Failed(Doctor.Toolchain(machine.Path, Version), "toolchain.unreadable"), Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.DacFx)));
+        var (error, dacfx) = ErrorPaths.Denied(ledger, () => (Failed(Doctor.Toolchain(machine.Path, Version), "toolchain.unreadable"), Doctor.Examine(Bare(), Nothing).Single(c => c.Item == Doctor.Item.DacFx)));
 
         Assert.Contains("cannot be read", error.Message, StringComparison.Ordinal);
         Assert.Contains("cannot be read", dacfx.Found, StringComparison.Ordinal);
@@ -140,7 +140,7 @@ public sealed class DoctorTests : IDisposable
     {
         machine.File("global.json", """{ "sdk": { "version": "10.0.401" } }""");
 
-        var sdk = Doctor.Examine(Bare(), Answers(new() { ["dotnet --list-sdks"] = (0, installed + " [x]\n") }), Version)[0];
+        var sdk = Doctor.Examine(Bare(), Answers(new() { ["dotnet --list-sdks"] = (0, installed + " [x]\n") }))[0];
 
         Assert.Equal(found, sdk.Remedy is null);
         Assert.Contains(found ? installed : "10.0.4xx", sdk.Found, StringComparison.Ordinal);
@@ -153,7 +153,7 @@ public sealed class DoctorTests : IDisposable
         machine.File("global.json", "{\n  \"sdk\": { \"version\": 10.0.401 }\n}\n");
 
         var error = Failed(Doctor.Pinned(machine.Path), "sdk.global-json");
-        var sdk = Doctor.Examine(Bare(), Answers(Everything), Version)[0];
+        var sdk = Doctor.Examine(Bare(), Answers(Everything))[0];
 
         Assert.Contains("is not JSON at line 2", error.Message, StringComparison.Ordinal);
         Assert.Equal((error.Message, error.Remedy), (sdk.Found, sdk.Remedy));
@@ -164,7 +164,7 @@ public sealed class DoctorTests : IDisposable
     [Trait("Category", "fast")]
     public void A_program_the_doctor_runs_that_does_not_answer_in_time_is_named_as_such_and_not_as_absent()
     {
-        var checks = Doctor.Examine(Bare(), (c, _) => new Ran.TimedOut(c.Timeout, "", ""), Version).ToDictionary(c => c.Item.Name);
+        var checks = Doctor.Examine(Bare(), (c, _) => new Ran.TimedOut(c.Timeout, "", "")).ToDictionary(c => c.Item.Name);
 
         Assert.Equal("dotnet did not answer in 20 seconds", checks["sdk"].Found);
         Assert.Equal("git did not answer in 20 seconds", checks["git"].Found);
@@ -177,8 +177,8 @@ public sealed class DoctorTests : IDisposable
     [Trait("Value", "R5")]
     public void A_runtime_other_than_NET_10_is_refused_with_its_remedy()
     {
-        var eleven = Doctor.Examine(Bare(runtime: new Version(11, 0, 0)), Nothing, Version).Single(c => c.Item == Doctor.Item.Runtime);
-        var ten = Doctor.Examine(Bare(runtime: new Version(10, 0, 5)), Nothing, Version).Single(c => c.Item == Doctor.Item.Runtime);
+        var eleven = Doctor.Examine(Bare(runtime: new Version(11, 0, 0)), Nothing).Single(c => c.Item == Doctor.Item.Runtime);
+        var ten = Doctor.Examine(Bare(runtime: new Version(10, 0, 5)), Nothing).Single(c => c.Item == Doctor.Item.Runtime);
 
         Assert.Equal(("11.0.0", "Install the .NET 10 runtime; dbchange runs on .NET 10 alone."), (eleven.Found, eleven.Remedy));
         Assert.Equal(("10.0.5", null), (ten.Found, ten.Remedy));
@@ -188,9 +188,9 @@ public sealed class DoctorTests : IDisposable
     [Trait("Category", "fast")]
     public void Git_older_than_2_24_is_refused_and_git_absent_is_named()
     {
-        var old = Doctor.Examine(Bare(), Answers(new() { ["git --version"] = (0, "git version 2.20.1\n") }), Version).Single(c => c.Item == Doctor.Item.Git);
-        var absent = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.Git);
-        var linux = Doctor.Examine(Bare(), Answers(new() { ["git --version"] = (0, "git version 2.43.0\n") }), Version).Single(c => c.Item == Doctor.Item.Git);
+        var old = Doctor.Examine(Bare(), Answers(new() { ["git --version"] = (0, "git version 2.20.1\n") })).Single(c => c.Item == Doctor.Item.Git);
+        var absent = Doctor.Examine(Bare(), Nothing).Single(c => c.Item == Doctor.Item.Git);
+        var linux = Doctor.Examine(Bare(), Answers(new() { ["git --version"] = (0, "git version 2.43.0\n") })).Single(c => c.Item == Doctor.Item.Git);
 
         Assert.Contains("older than 2.24", old.Found, StringComparison.Ordinal);
         Assert.Contains("rev-parse --end-of-options", old.Found, StringComparison.Ordinal);
@@ -207,7 +207,7 @@ public sealed class DoctorTests : IDisposable
         Publish();
         File.Copy(Path.Combine(AppContext.BaseDirectory, "DbChange.Kernel.dll"), machine.Under("Microsoft.Data.Tools.Schema.Tasks.Sql.dll"));   // a file with another version
 
-        var tool = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.Tool);
+        var tool = Doctor.Examine(Bare(), Nothing).Single(c => c.Item == Doctor.Item.Tool);
 
         Assert.Contains("while dbchange runs DacFx " + DacFx.Version.Match(v => v.ToString(), e => e.Message), tool.Found, StringComparison.Ordinal);
         Assert.Contains("ci/publish.sh", tool.Remedy, StringComparison.Ordinal);
@@ -217,7 +217,7 @@ public sealed class DoctorTests : IDisposable
     [Trait("Category", "fast")]
     public void Without_Docker_LocalDB_is_the_local_server_and_no_image_is_needed()
     {
-        var checks = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (1, "Cannot connect to the Docker daemon"), ["sqllocaldb info"] = (0, "MSSQLLocalDB\n") }), Version).ToDictionary(c => c.Item.Name);
+        var checks = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (1, "Cannot connect to the Docker daemon"), ["sqllocaldb info"] = (0, "MSSQLLocalDB\n") })).ToDictionary(c => c.Item.Name);
 
         Assert.Equal(("LocalDB MSSQLLocalDB, CDC not provable here", null), (checks["local-server"].Found, checks["local-server"].Remedy));
         Assert.Equal(("not needed without Docker", null), (checks["image"].Found, checks["image"].Remedy));
@@ -230,7 +230,7 @@ public sealed class DoctorTests : IDisposable
     {
         Ran NeverDocker(Command c, CancellationToken t) => c.Program is "docker" or "sqllocaldb" ? throw new Xunit.Sdk.XunitException(c + " ran while DBCHANGE_SQL names the server") : Answers(Everything)(c, t);
 
-        var checks = Doctor.Examine(Bare(dbChangeSql: "Server=tcp:DB-Host,1433;User ID=sa;Password=" + PlantedValue.Password, sqlEnv: SqlEnv()), NeverDocker, Version).ToDictionary(c => c.Item.Name);
+        var checks = Doctor.Examine(Bare(dbChangeSql: "Server=tcp:DB-Host,1433;User ID=sa;Password=" + PlantedValue.Password, sqlEnv: SqlEnv()), NeverDocker).ToDictionary(c => c.Item.Name);
 
         Assert.Equal(("DBCHANGE_SQL (db-host,1433)", null), (checks["local-server"].Found, checks["local-server"].Remedy));
         Assert.Equal(("not needed: DBCHANGE_SQL names the server", null), (checks["image"].Found, checks["image"].Remedy));
@@ -241,10 +241,10 @@ public sealed class DoctorTests : IDisposable
     [Trait("Category", "fast")]
     public void Docker_installed_with_its_daemon_stopped_says_to_start_Docker_and_Docker_absent_says_to_install_it()
     {
-        var stopped = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (1, "") }), Version).Single(c => c.Item == Doctor.Item.LocalServer);
-        var absent = Doctor.Examine(Bare(), Nothing, Version).Single(c => c.Item == Doctor.Item.LocalServer);
-        var noContainer = Doctor.Examine(Bare(), Answers(Everything), Version).Single(c => c.Item == Doctor.Item.LocalServer);
-        var daemonDown = Doctor.Examine(Bare(sqlEnv: SqlEnv()), Answers(new() { ["docker info"] = (1, "") }), Version).Single(c => c.Item == Doctor.Item.LocalServer);
+        var stopped = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (1, "") })).Single(c => c.Item == Doctor.Item.LocalServer);
+        var absent = Doctor.Examine(Bare(), Nothing).Single(c => c.Item == Doctor.Item.LocalServer);
+        var noContainer = Doctor.Examine(Bare(), Answers(Everything)).Single(c => c.Item == Doctor.Item.LocalServer);
+        var daemonDown = Doctor.Examine(Bare(sqlEnv: SqlEnv()), Answers(new() { ["docker info"] = (1, "") })).Single(c => c.Item == Doctor.Item.LocalServer);
 
         Assert.Contains("start Docker Desktop", stopped.Remedy, StringComparison.Ordinal);
         Assert.DoesNotContain("Install Docker", stopped.Remedy, StringComparison.Ordinal);
@@ -258,8 +258,8 @@ public sealed class DoctorTests : IDisposable
     [Trait("Category", "fast")]
     public void Docker_without_the_pinned_image_names_its_pull_and_a_container_running_another_image_says_to_recreate_it()
     {
-        var absent = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (0, "29.5.3\n"), ["docker image"] = (1, "No such image") }), Version).Single(c => c.Item == Doctor.Item.Image);
-        var other = Doctor.Examine(Bare(), Answers(new(Everything) { ["docker container"] = (0, "mcr.microsoft.com/mssql/server:2019-latest\n") }), Version).Single(c => c.Item == Doctor.Item.Image);
+        var absent = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (0, "29.5.3\n"), ["docker image"] = (1, "No such image") })).Single(c => c.Item == Doctor.Item.Image);
+        var other = Doctor.Examine(Bare(), Answers(new(Everything) { ["docker container"] = (0, "mcr.microsoft.com/mssql/server:2019-latest\n") })).Single(c => c.Item == Doctor.Item.Image);
 
         Assert.Equal("absent", absent.Found);
         Assert.Contains("ci/sql.sh up", absent.Remedy, StringComparison.Ordinal);
@@ -283,9 +283,9 @@ public sealed class DoctorTests : IDisposable
         return string.Create(CultureInfo.InvariantCulture, $"{release.Major}.{release.Minor + minors}.{release.Build}");
     }
 
-    /// <summary>A machine holding nothing but the test folder: no DBCHANGE_SQL, no sql.env unless given, this process's runtime unless given.</summary>
-    private Doctor.Machine Bare(string? dbChangeSql = null, string? sqlEnv = null, Version? runtime = null) =>
-        new(machine.Path, null, machine.Path, dbChangeSql, sqlEnv ?? machine.Under("no-sql.env"), runtime ?? Environment.Version);
+    /// <summary>A machine holding nothing but the test folder, the repository root: no DBCHANGE_SQL, no sql.env unless given, this process's runtime unless given.</summary>
+    private Doctor.Machine Bare(string? dbChangeSql = null, string? sqlEnv = null, Version? runtime = null, string? workingDirectory = null) =>
+        new(new Checkout(machine.Path, workingDirectory ?? machine.Path, null, Version), machine.Path, dbChangeSql, sqlEnv ?? machine.Under("no-sql.env"), runtime ?? Environment.Version);
 
     /// <summary>A sql.env as ci/sql.sh writes it, naming the container's port and password.</summary>
     private string SqlEnv() => machine.File("sql.env", "MSSQL_SA_PASSWORD=" + PlantedValue.Password + "\nDBCHANGE_SQL_PORT=11433\n");

@@ -157,7 +157,7 @@ public sealed class SchemaTextTests
         Package(after, "CREATE PROCEDURE dbo.Rotate AS CREATE LOGIN [svc] WITH PASSWORD = '" + Planted + "2';");
 
         using var output = new System.IO.MemoryStream();
-        var exit = Cli.Program.Run(["diff", "--from", "dacpac:" + before, "--to", "dacpac:" + after, "--json"], output, new Cli.Checkout(scratch.Path, scratch.Path, null));
+        var exit = Cli.Program.Run(["diff", "--from", "dacpac:" + before, "--to", "dacpac:" + after, "--json"], output, new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version));
         var text = System.Text.Encoding.UTF8.GetString(output.ToArray());
         var answer = System.Text.Json.Nodes.JsonNode.Parse(text)!;
 

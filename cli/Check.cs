@@ -34,15 +34,15 @@ public static partial class Verbs
     };
 
     /// <summary>dbchange check drift --target &lt;target&gt; --at &lt;ref&gt; [--profile &lt;path&gt;] [--project &lt;path&gt;]; the other checks arrive later.</summary>
-    public static Envelope Check(Checkout here, IReadOnlyList<string> words) => words switch
+    public static Envelope Check(Checkout here, SqlServer.QueryLog log, IReadOnlyList<string> words) => words switch
     {
-        ["drift", ..] => Drift(here, [.. words.Skip(1)]),
+        ["drift", ..] => Drift(here, log, [.. words.Skip(1)]),
         [var kind, ..] when Later.Contains(kind) => Contract.NotBuilt(Of("check") with { Name = "check " + kind }) with { Schema = Of("check").Output },
         _ => Contract.Failed(Of("check"), new Error("arguments.unknown-check", "dbchange check needs the check to run; this build runs check drift.", "Run dbchange check drift --target <target> --at <ref>.")),
     };
 
     /// <summary>check drift's arguments read, io/DriftCheck run, and its answer rendered; --at takes ref:&lt;ref&gt;, or a ref alone, since git forbids ':' in a ref's name.</summary>
-    private static Envelope Drift(Checkout here, IReadOnlyList<string> words)
+    private static Envelope Drift(Checkout here, SqlServer.QueryLog log, IReadOnlyList<string> words)
     {
         var verb = Of("check");
         if (Contract.Flags(words, ["--target", "--at"], ["--profile", "--project"], []).Bind(flags => SqlServer.Target(flags["--target"], "--target")
@@ -53,7 +53,7 @@ public static partial class Verbs
             return Contract.Failed(verb, error, DacFx.Version.Match<Stamp?>(dacfx => new Stamp(dacfx), _ => null));
         }
 
-        var drift = DriftCheck.Run(new DriftCheck.Checkout(here.Root, here.WorkingDirectory, here.Tool, Contract.Version), request, here.Run);
+        var drift = DriftCheck.Run(here, request, log);
         return drift.Result.Failed(out var answer, out error) ? Contract.Failed(verb, error, drift.Stamp) : Drifted(here, answer, drift.Stamp!);
     }
 

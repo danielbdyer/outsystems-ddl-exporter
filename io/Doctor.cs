@@ -51,12 +51,12 @@ public static class Doctor
     /// <summary>A ledger row: | date | dbchange version | pinned DacFx or UNPINNED | the release before the pin, or — |.</summary>
     private static readonly Regex Row = new(@"^\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|\s*$", RegexOptions.CultureInvariant);
 
-    /// <summary>What this machine holds, read once: the folder dbchange runs from, DBCHANGE_TOOL, the working directory, DBCHANGE_SQL, the path of ~/.dbchange/sql.env (null where the user's profile folder is unknown), and the runtime.</summary>
-    public sealed record Machine(string ToolFolder, string? ToolVariable, string WorkingDirectory, string? DbChangeSql, string? SqlEnv, Version Runtime)
+    /// <summary>What this machine holds, read once: where dbchange runs (the checkout), the folder dbchange runs from, DBCHANGE_SQL, the path of ~/.dbchange/sql.env (null where the user's profile folder is unknown), and the runtime.</summary>
+    public sealed record Machine(Checkout Checkout, string Running, string? DbChangeSql, string? SqlEnv, Version Runtime)
     {
-        /// <summary>The machine dbchange runs on, with the tool variable and the working directory the checkout already read.</summary>
-        public static Machine Here(string? toolVariable, string workingDirectory) =>
-            new(AppContext.BaseDirectory, toolVariable, workingDirectory, Environment.GetEnvironmentVariable("DBCHANGE_SQL"), LocalState.UserSqlEnv, Environment.Version);
+        /// <summary>The machine dbchange runs on, around the checkout cli already read.</summary>
+        public static Machine Here(Checkout checkout) =>
+            new(checkout, AppContext.BaseDirectory, Environment.GetEnvironmentVariable("DBCHANGE_SQL"), LocalState.UserSqlEnv, Environment.Version);
     }
 
     /// <summary>An item the doctor examines, one of a closed set, written as the envelope names it (sdk, local-server).</summary>
@@ -85,10 +85,10 @@ public static class Doctor
     /// <summary>The pinned image's digest, which the image item compares the dbchange-sql container's image with.</summary>
     public static string ImageDigest => SqlServerImage[(SqlServerImage.IndexOf('@', StringComparison.Ordinal) + 1)..];
 
-    public static IReadOnlyList<Prerequisite> Examine(Machine machine, Runner run, string version, CancellationToken cancel = default)
+    public static IReadOnlyList<Prerequisite> Examine(Machine machine, Runner run, CancellationToken cancel = default)
     {
         var docker = machine.DbChangeSql is { Length: > 0 } ? null : run(Program("docker", "info", "--format", "{{.ServerVersion}}"), cancel);
-        var (sdk, tool) = (Sdk(machine.WorkingDirectory, run, cancel), Tool(machine));
+        var (sdk, tool) = (Sdk(machine.Checkout.WorkingDirectory, run, cancel), Tool(machine));
         var lfs = run(Program("git", "lfs", "version"), cancel) is Ran.Exited { Code: 0 } said ? said.Output.Trim().Split(' ')[0] : null;
         return
         [
@@ -96,7 +96,7 @@ public static class Doctor
             machine.Runtime.Major == RuntimeMajor ? new(Item.Runtime, machine.Runtime.ToString(), null)
                 : new(Item.Runtime, machine.Runtime.ToString(), "Install the .NET " + RuntimeMajor.ToString(CultureInfo.InvariantCulture) + " runtime; dbchange runs on .NET " + RuntimeMajor.ToString(CultureInfo.InvariantCulture) + " alone."),
             tool,
-            Committed(EnvironmentsFile.Root(machine.WorkingDirectory), version),
+            Committed(machine.Checkout.Root, machine.Checkout.Version),
             sdk.Remedy is null && tool.Remedy is null ? new(Item.Build, "dotnet with the tool folder's targets", null) : new(Item.Build, "none", "Install what the sdk and tool items name, then run dbchange doctor."),
             GitVersion(run, cancel),
             LocalServerChoice(machine, docker, run, cancel),
@@ -217,11 +217,11 @@ public static class Doctor
     }
 
     /// <summary>The tool folder dbchange would build with (Ssdt.Tool), and whether its DacFx build task is the committed DacFx: a stale publish under another DacFx is named.</summary>
-    private static Prerequisite Tool(Machine machine) => Ssdt.Tool(machine.ToolFolder, machine.ToolVariable, machine.WorkingDirectory).Match(
+    private static Prerequisite Tool(Machine machine) => Ssdt.Tool(machine.Running, machine.Checkout.Tool, machine.Checkout.WorkingDirectory).Match(
         folder => FileVersion(Path.Combine(folder, BuildTask)) is { } task && DacFx.Version is Result<DacFxVersion>.Ok(var running) && task != running.ToString()
-            ? new Prerequisite(Item.Tool, (folder == machine.ToolFolder ? "published" : folder) + ", whose DacFx build task is " + task + " while dbchange runs DacFx " + running,
+            ? new Prerequisite(Item.Tool, (folder == machine.Running ? "published" : folder) + ", whose DacFx build task is " + task + " while dbchange runs DacFx " + running,
                 "Run ci/publish.sh, or ci/publish.ps1 on Windows, again so the tool folder carries DacFx " + running + ", then run dbchange doctor.")
-            : new Prerequisite(Item.Tool, folder == machine.ToolFolder ? "published" : folder, null),
+            : new Prerequisite(Item.Tool, folder == machine.Running ? "published" : folder, null),
         error => new Prerequisite(Item.Tool, "missing", error.Remedy));
 
     /// <summary>The committed DacFx against the ledger's row: its pin, the error in the row, or the rejection of a DacFx outside the window; or why dbchange cannot name the release it runs.</summary>

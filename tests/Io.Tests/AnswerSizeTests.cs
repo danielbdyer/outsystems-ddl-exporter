@@ -62,9 +62,9 @@ public sealed class AnswerSizeTests : IDisposable
     /// <summary>dbchange diff run in this process with a body that answers the large change, from a checkout under the scratch folder.</summary>
     private (int Exit, string Output) Run(string[] arguments)
     {
-        var diff = Contract.Verbs.Single(v => v.Name == "diff") with { Body = (_, _) => Verbs.Diff(Side("dacpac:before.dacpac"), Side("dacpac:after.dacpac"), Large(), Collation.CaseSensitive, false, new Stamp(Ok(DacFx.Version))) };
+        var diff = Contract.Verbs.Single(v => v.Name == "diff") with { Body = (_, _, _) => Verbs.Diff(Side("dacpac:before.dacpac"), Side("dacpac:after.dacpac"), Large(), Collation.CaseSensitive, false, new Stamp(Ok(DacFx.Version))) };
         using var output = new MemoryStream();
-        var exit = Cli.Program.Run(arguments, output, () => new Checkout(root.Path, root.Path, null), [diff]);
+        var exit = Cli.Program.Run(arguments, output, () => new Checkout(root.Path, root.Path, null, Cli.Contract.Version), [diff]);
         return (exit, Encoding.UTF8.GetString(output.ToArray()));
     }
 

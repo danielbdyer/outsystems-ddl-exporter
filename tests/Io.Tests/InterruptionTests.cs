@@ -31,7 +31,7 @@ public sealed class InterruptionTests : IDisposable
         using var output = new MemoryStream();
         var clock = Stopwatch.StartNew();
 
-        var exit = Cli.Program.Run(["read", "--from", "ref:HEAD", "--timeout", "1", "--json"], output, new Checkout(scratch.Root, scratch.Root, null));
+        var exit = Cli.Program.Run(["read", "--from", "ref:HEAD", "--timeout", "1", "--json"], output, new Checkout(scratch.Root, scratch.Root, null, Cli.Contract.Version));
 
         var answer = JsonNode.Parse(output.ToArray())!;
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), "the interrupted verb answered after " + clock.Elapsed);
@@ -79,7 +79,7 @@ public sealed class InterruptionTests : IDisposable
     {
         using var output = new MemoryStream();
 
-        var exit = Cli.Program.Run(["diff", flag, value, "--json"], output, new Checkout(scratch.Root, scratch.Root, null));
+        var exit = Cli.Program.Run(["diff", flag, value, "--json"], output, new Checkout(scratch.Root, scratch.Root, null, Cli.Contract.Version));
 
         var answer = JsonNode.Parse(output.ToArray())!;
         Assert.Equal((1, code), (exit, (string?)answer["findings"]![0]!["code"]));

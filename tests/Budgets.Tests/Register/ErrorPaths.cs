@@ -370,10 +370,10 @@ internal static class ErrorPaths
         new("a timeout that is no whole number of seconds", "arguments.timeout", false, (_, _) => Failed(Cli.Program.Timeout(["read", "--timeout", "soon"]))),
         new("a flag the verb does not take", "arguments.unknown-flag", false, (_, _) => Failed(Contract.Flags(["--no-such-flag"], [], [], []))),
         new("a required flag absent", "arguments.missing-flag", false, (_, _) => Failed(Contract.Flags([], ["--from"], [], []))),
-        new("dbchange check with no check named", "arguments.unknown-check", false, (scratch, _) => Carried(Verbs.Check(new Checkout(scratch, scratch, null), []))),
-        new("a word that names no verb", "arguments.unknown-verb", false, (scratch, _) => Answered(["frobnicate"], new Checkout(scratch, scratch, null))),
-        new("a verb this build has no body for", "verb.not-built", false, (scratch, _) => Answered(["predict"], new Checkout(scratch, scratch, null))),
-        new("an exception no verb expected", "internal.unexpected", false, (scratch, _) => Answered(["read", "--from", "dacpac:none.dacpac"], new Checkout(scratch, null!, null))),
+        new("dbchange check with no check named", "arguments.unknown-check", false, (scratch, _) => Carried(Verbs.Check(new Checkout(scratch, scratch, null, Cli.Contract.Version), SqlServer.QueryLog.Start(scratch), []))),
+        new("a word that names no verb", "arguments.unknown-verb", false, (scratch, _) => Answered(["frobnicate"], new Checkout(scratch, scratch, null, Cli.Contract.Version))),
+        new("a verb this build has no body for", "verb.not-built", false, (scratch, _) => Answered(["predict"], new Checkout(scratch, scratch, null, Cli.Contract.Version))),
+        new("an exception no verb expected", "internal.unexpected", false, (scratch, _) => Answered(["read", "--from", "dacpac:none.dacpac"], new Checkout(scratch, null!, null, Cli.Contract.Version))),
     ];
 
     /// <summary>The error dbchange answers a command with, run in this process against <paramref name="here"/>: the one finding of severity error its --json answer carries.</summary>

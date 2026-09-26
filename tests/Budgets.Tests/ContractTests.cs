@@ -132,9 +132,9 @@ public sealed class ContractTests
         Package(dacpac, "CREATE TABLE dbo.Customer (Id INT NOT NULL, [ ] INT NULL, [a\tb] INT NULL);");
         Package(bare, "CREATE TABLE dbo.Customer (Id INT NOT NULL);");
 
-        var (exit, answer) = Answered(["read", "--from", "dacpac:" + dacpac, "--json"], new Checkout(scratch.Path, scratch.Path, null));
+        var (exit, answer) = Answered(["read", "--from", "dacpac:" + dacpac, "--json"], new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version));
         using var diff = new MemoryStream();
-        var diffExit = Cli.Program.Run(["diff", "--from", "dacpac:" + bare, "--to", "dacpac:" + dacpac], diff, new Checkout(scratch.Path, scratch.Path, null));
+        var diffExit = Cli.Program.Run(["diff", "--from", "dacpac:" + bare, "--to", "dacpac:" + dacpac], diff, new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version));
 
         Assert.Equal(0, exit);
         VerbAnswer.Valid("dbchange.read.1.schema.json", answer);
@@ -170,8 +170,8 @@ public sealed class ContractTests
             {
                 using var read = new MemoryStream();
                 using var diff = new MemoryStream();
-                Assert.Equal(0, Cli.Program.Run(["read", "--from", "dacpac:" + before, "--json"], read, new Checkout(scratch.Path, scratch.Path, null)));
-                Assert.Equal(0, Cli.Program.Run(["diff", "--from", "dacpac:" + before, "--to", "dacpac:" + after, "--json"], diff, new Checkout(scratch.Path, scratch.Path, null)));
+                Assert.Equal(0, Cli.Program.Run(["read", "--from", "dacpac:" + before, "--json"], read, new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version)));
+                Assert.Equal(0, Cli.Program.Run(["diff", "--from", "dacpac:" + before, "--to", "dacpac:" + after, "--json"], diff, new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version)));
                 answers.Add((culture.Name, read.ToArray(), diff.ToArray()));
             }
             finally
@@ -252,7 +252,7 @@ public sealed class ContractTests
     [Trait("Value", "S2")]
     public void An_unexpected_exception_answers_exit_6_with_a_finding_naming_its_type_and_its_message()
     {
-        var (exit, answer) = Answered(["read", "--from", "dacpac:none.dacpac", "--json"], new Checkout(Repository.Root, null!, null));
+        var (exit, answer) = Answered(["read", "--from", "dacpac:none.dacpac", "--json"], new Checkout(Repository.Root, null!, null, Cli.Contract.Version));
 
         Assert.Equal(6, exit);
         VerbAnswer.Valid("dbchange.read.1.schema.json", answer);
@@ -272,7 +272,7 @@ public sealed class ContractTests
     [InlineData("copy:dbchange_host_1_0a1b2c3d")]
     public void An_unexpected_exception_keeps_its_message_when_the_command_names_a_database_but_read_no_environment(string target)
     {
-        var (exit, answer) = Answered(["check", "drift", "--target", target, "--at", "main", "--json"], new Checkout(null!, Repository.Root, null));
+        var (exit, answer) = Answered(["check", "drift", "--target", target, "--at", "main", "--json"], new Checkout(null!, Repository.Root, null, Cli.Contract.Version));
 
         Assert.Equal(6, exit);
         VerbAnswer.Valid("dbchange.check.1.schema.json", answer);
@@ -300,7 +300,7 @@ public sealed class ContractTests
         root.File(".dbchange/copies.json", "{ \"copies\": [ { \"name\": \"dbchange_host_1_0a1b2c3d\", \"server\": \"localhost,11433\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-25T00:00:00Z\" } ] }");
         var check = Contract.Verbs.Single(v => v.Name == "check") with
         {
-            Body = (here, _) =>
+            Body = (here, _, _) =>
             {
                 SqlServer.Target(target, "--target").Bind(parsed => SqlServer.Resolve(parsed, here.Root));
                 throw new InvalidOperationException("Server=tcp:192.0.2.10,1433;Password=" + planted);
@@ -308,7 +308,7 @@ public sealed class ContractTests
         };
 
         using var output = new MemoryStream();
-        var exit = Cli.Program.Run(["check", "environments", "--json"], output, () => new Checkout(root.Path, root.Path, null), [check]);
+        var exit = Cli.Program.Run(["check", "environments", "--json"], output, () => new Checkout(root.Path, root.Path, null, Cli.Contract.Version), [check]);
         var answer = JsonNode.Parse(output.ToArray())!;
 
         Assert.Equal(6, exit);
@@ -354,7 +354,7 @@ public sealed class ContractTests
     public void Standard_output_refusing_the_answer_exits_6(int refusedWrites)
     {
         using var output = new RefusingStream(refusedWrites);
-        var exit = Cli.Program.Run(["no-such-verb", "--json"], output, () => new Checkout(Repository.Root, Repository.Root, null), Contract.Verbs);
+        var exit = Cli.Program.Run(["no-such-verb", "--json"], output, () => new Checkout(Repository.Root, Repository.Root, null, Cli.Contract.Version), Contract.Verbs);
 
         Assert.Equal(6, exit);
         if (refusedWrites == 1)
@@ -423,7 +423,7 @@ public sealed class ContractTests
         {
             Assert.True(File.Exists(Path.Combine(Repository.Root, "cli", "schemas", Render.SchemaFile(verb.Output))), verb.Output + " has no schema under cli/schemas/");
             using var output = new MemoryStream();
-            var exit = Cli.Program.Run([verb.Name, "--no-such-flag", "--json"], output, new Checkout(Repository.Root, Repository.Root, null));
+            var exit = Cli.Program.Run([verb.Name, "--no-such-flag", "--json"], output, new Checkout(Repository.Root, Repository.Root, null, Cli.Contract.Version));
             var answer = JsonNode.Parse(output.ToArray())!;
             Assert.Equal(1, exit);
             VerbAnswer.Valid(Render.SchemaFile(verb.Output), answer);
@@ -496,7 +496,7 @@ public sealed class ContractTests
     [InlineData("check outsystems")]
     public void A_verb_this_build_does_not_have_answers_exit_6_with_verb_not_built_naming_the_verb(string verb)
     {
-        var (exit, answer) = Answered([.. verb.Split(' '), "--json"], new Checkout(Repository.Root, Repository.Root, null));
+        var (exit, answer) = Answered([.. verb.Split(' '), "--json"], new Checkout(Repository.Root, Repository.Root, null, Cli.Contract.Version));
 
         Assert.Equal(6, exit);
         VerbAnswer.Valid("dbchange.envelope.1.schema.json", answer);
@@ -514,7 +514,7 @@ public sealed class ContractTests
     public void Doctor_on_a_bare_machine_prints_DEGRADED_with_a_remedy_per_missing_item()
     {
         using var bare = ScratchFolder.Temporary("bare");
-        var checks = Doctor.Examine(new Doctor.Machine(bare.Path, null, bare.Path, null, bare.Under("no-sql.env"), Environment.Version), (c, _) => new Ran.NotFound(c.Program, "not installed"), Contract.Version);
+        var checks = Doctor.Examine(new Doctor.Machine(new Checkout(bare.Path, bare.Path, null, Contract.Version), bare.Path, null, bare.Under("no-sql.env"), Environment.Version), (c, _) => new Ran.NotFound(c.Program, "not installed"));
 
         var json = Render.Json(Verbs.Doctor(checks, Doctor.Toolchain(bare.Path, Contract.Version)));
 
@@ -555,7 +555,7 @@ public sealed class ContractTests
             _ => new Ran.NotFound(command.Program, "not installed"),
         };
 
-        var answer = Verbs.Doctor(Doctor.Examine(new Doctor.Machine(machine.Path, null, machine.Path, null, machine.Under("sql.env"), Environment.Version), answers, Contract.Version), Doctor.Toolchain(machine.Path, Contract.Version));
+        var answer = Verbs.Doctor(Doctor.Examine(new Doctor.Machine(new Checkout(machine.Path, machine.Path, null, Contract.Version), machine.Path, null, machine.Under("sql.env"), Environment.Version), answers), Doctor.Toolchain(machine.Path, Contract.Version));
 
         var json = Render.Json(answer);
         VerbAnswer.Valid("dbchange.doctor.1.schema.json", json);

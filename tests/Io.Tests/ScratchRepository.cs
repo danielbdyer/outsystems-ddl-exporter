@@ -46,7 +46,7 @@ public sealed class ScratchRepository : IDisposable
     public (int Exit, JsonNode Answer) Answer(params string[] arguments) => AnswerAt(Root, arguments);
 
     /// <summary>dbchange run with <paramref name="root"/> as the repository root and --json: its exit and its answer, valid against its schema.</summary>
-    public (int Exit, JsonNode Answer) AnswerAt(string root, params string[] arguments) => VerbAnswer.Of(new Checkout(root, root, Tool.Folder), arguments);
+    public (int Exit, JsonNode Answer) AnswerAt(string root, params string[] arguments) => VerbAnswer.Of(new Checkout(root, root, Tool.Folder, Cli.Contract.Version), arguments);
 
     /// <summary>dbchange run at the repository's root.</summary>
     public (int Exit, string Output) Run(params string[] arguments) => RunAt(Root, arguments);
@@ -55,7 +55,7 @@ public sealed class ScratchRepository : IDisposable
     public (int Exit, string Output) RunAt(string root, params string[] arguments)
     {
         using var output = new MemoryStream();
-        var exit = Cli.Program.Run(arguments, output, new Checkout(root, root, Tool.Folder));
+        var exit = Cli.Program.Run(arguments, output, new Checkout(root, root, Tool.Folder, Cli.Contract.Version));
         return (exit, Encoding.UTF8.GetString(output.ToArray()));
     }
 

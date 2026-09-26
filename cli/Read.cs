@@ -28,7 +28,7 @@ public static partial class Verbs
     internal static JsonObject Count() => new() { ["type"] = "integer", ["minimum"] = 0 };
 
     /// <summary>dbchange read --from &lt;target&gt; [--project &lt;path&gt;]: a ref built at its commit, a package or a database, read whole (V3_ARCHITECTURE.md §8.1).</summary>
-    public static Envelope Read(Checkout here, IReadOnlyList<string> words)
+    public static Envelope Read(Checkout here, SqlServer.QueryLog log, IReadOnlyList<string> words)
     {
         if (DacFx.Version.Failed(out var dacfx, out var error))
         {
@@ -37,13 +37,13 @@ public static partial class Verbs
 
         var stamp = new Stamp(dacfx);
         if (Contract.Flags(words, ["--from"], ["--project"], []).Bind(flags => SqlServer.Target(flags["--from"], "--from").Map(from => (Flags: flags, From: from)))
-            .Bind(asked => Io.Doctor.Toolchain(here.Root, Contract.Version).Map(pin => (asked.Flags, asked.From, Pin: pin))).Failed(out var asked, out error))
+            .Bind(asked => Io.Doctor.Toolchain(here.Root, here.Version).Map(pin => (asked.Flags, asked.From, Pin: pin))).Failed(out var asked, out error))
         {
             return Contract.Failed(Of("read"), error, stamp);
         }
 
         stamp = stamp with { Pin = asked.Pin };
-        if ((asked.Pin.Rejects(dacfx) is { } outside ? Result.Fail<Source>(outside) : Reading(here, asked.From, asked.Flags.GetValueOrDefault("--project"))).Failed(out var source, out error))
+        if ((asked.Pin.Rejects(dacfx) is { } outside ? Result.Fail<Source>(outside) : Reading(here, log, asked.From, asked.Flags.GetValueOrDefault("--project"))).Failed(out var source, out error))
         {
             return Contract.Failed(Of("read"), error, stamp);
         }
@@ -71,8 +71,8 @@ public static partial class Verbs
         public IEnumerable<Finding> Notes => [.. Model.Notes(Target.ToString()), .. Readable?.Notes ?? []];
     }
 
-    internal static Result<Source> Reading(Checkout here, Target target, string? project) => target.Match(
-        _ => Modelled(here, target), _ => Modelled(here, target), () => Modelled(here, target),
+    internal static Result<Source> Reading(Checkout here, SqlServer.QueryLog log, Target target, string? project) => target.Match(
+        _ => Modelled(here, log, target), _ => Modelled(here, log, target), () => Modelled(here, log, target),
         reference => Ssdt.Build(here.Root, reference.Ref.ToString(), project, here.Tool, here.WorkingDirectory).Bind(built => Packaged(built.Built.Path))
             .Map(model => new Source(target, model, null, false)),
         dacpac => Packaged(Path.GetFullPath(Path.Combine(here.WorkingDirectory, dacpac.Path))).Map(model => new Source(target, model, null, false)));
@@ -87,7 +87,7 @@ public static partial class Verbs
     });
 
     /// <summary>A database read once (io/DacFx.Extract), after this identity is found to hold VIEW DEFINITION there, with a copy's SQL Server and what the identity could read.</summary>
-    private static Result<Source> Modelled(Checkout here, Target target) => SqlServer.Resolve(target, here.Root).Bind(database => SqlServer.Reach(database, here.Run)
+    private static Result<Source> Modelled(Checkout here, SqlServer.QueryLog log, Target target) => SqlServer.Resolve(target, here.Root).Bind(database => SqlServer.Reach(database, log)
         .Bind(readable => DacFx.Extract(database).Bind(package =>
         {
             using (package)
@@ -95,7 +95,7 @@ public static partial class Verbs
                 return package.Elements;
             }
         })
-        .Bind(model => (database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, here.Run).Map(server => (Server?)server) : Result.Ok<Server?>(null))
+        .Bind(model => (database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, log).Map(server => (Server?)server) : Result.Ok<Server?>(null))
             .Map(server => new Source(target, model, server, true, readable)))));
 
     /// <summary>

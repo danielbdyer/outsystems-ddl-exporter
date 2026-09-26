@@ -228,7 +228,7 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         var refusal = new Error("server.failed", "copy:" + copy.Name + " failed the statement: Msg 245.", "Look the number up in SQL Server's error list.");
         var request = new DriftCheck.Request(new Target.RegisteredCopy(copy.Name), GitTests.Ok(GitRef.Of("--at", repository.Base)), ScratchRepository.Profile, null);
 
-        var drift = DriftCheck.Run(new DriftCheck.Checkout(repository.Root, repository.Root, repository.Tool.Folder, Cli.Contract.Version), request, SqlServer.QueryLog.Start(repository.Root), _ => refusal);
+        var drift = DriftCheck.Run(new Checkout(repository.Root, repository.Root, repository.Tool.Folder, Cli.Contract.Version), request, SqlServer.QueryLog.Start(repository.Root), _ => refusal);
 
         Assert.Equal(refusal, Assert.IsType<Result<DriftCheck.Answer>.Failed>(drift.Result).Error);
         Assert.Equal("UNPINNED", drift.Stamp?.Pin?.ToString());

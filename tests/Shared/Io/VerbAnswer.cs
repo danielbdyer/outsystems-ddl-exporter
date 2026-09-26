@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using DbChange.Budgets.Tests;
 using DbChange.Cli;
+using DbChange.Io;
 using Json.Schema;
 using Xunit;
 
