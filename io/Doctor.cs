@@ -269,8 +269,8 @@ public static class Doctor
             Ran.TimedOut => (false, "docker info did not answer in " + Command.Written(Command.ProbeTimeout) + ": restart Docker, then run dbchange doctor."),
             _ => (false, "Install Docker, or use SQL Server Express LocalDB on Windows, then run dbchange doctor."),
         };
-        var localDb = machine.DbChangeSql is { Length: > 0 } || LocalServer.Server(null, machine.SqlEnv ?? "", localDb: false) is Result<string>.Ok || !LocalDbInstalled(run, cancel) ? false : true;
-        return LocalServer.Server(machine.DbChangeSql, machine.SqlEnv ?? "", localDb).Bind(server => LocalServer.ServerName(server).Map(name => (Server: server, Name: name))).Match(
+        var localDb = machine.DbChangeSql is { Length: > 0 } || LocalServer.Server(null, machine.SqlEnv, localDb: false) is Result<string>.Ok || !LocalDbInstalled(run, cancel) ? false : true;
+        return LocalServer.Server(machine.DbChangeSql, machine.SqlEnv, localDb).Bind(server => LocalServer.ServerName(server).Map(name => (Server: server, Name: name))).Match(
             chosen => machine.DbChangeSql is { Length: > 0 } ? new Prerequisite(Item.LocalServer, "DBCHANGE_SQL (" + chosen.Name + ")", null)
                 : localDb ? new Prerequisite(Item.LocalServer, "LocalDB MSSQLLocalDB, CDC not provable here", null)
                 : new Prerequisite(Item.LocalServer, LocalServer.Container + " container (" + chosen.Name + ")", dockerAnswers ? null : dockerCause),

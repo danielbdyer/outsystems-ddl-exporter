@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using DbChange.Kernel;
 
 namespace DbChange.Cli;
@@ -18,7 +19,7 @@ public static class Render
     private const string SchemaId = "^dbchange\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$";
 
     /// <summary>The whole answer's file, under the run's folder: what full names when an answer was cut.</summary>
-    private const string FullPattern = "^\\.dbchange/runs/[^/]+/answer\\.json$";
+    private static readonly string FullPattern = "^" + Regex.Escape(Io.LocalState.Name) + "/runs/[^/]+/answer\\.json$";
 
     /// <summary>How a content schema marks a list that can be long, so Cut finds it: the default answer holds its first entries.</summary>
     private const string LongList = "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list";

@@ -26,7 +26,6 @@ namespace DbChange.Io;
 /// </summary>
 public static class LocalServer
 {
-    internal const string Registry = ".dbchange/copies.json";
 
     private const string Make = "DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@name) + N';'; EXEC (@sql);";
 
@@ -59,11 +58,8 @@ public static class LocalServer
         }
     });
 
-    /// <summary>The dbchange-sql container's port and SA password, which only ci/sql.sh and ci/sql.ps1 write.</summary>
-    public static string SqlEnv { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dbchange", "sql.env");
-
     /// <summary>The local server, from the sources given, as the registry records it and R15 compares it (localhost,11433); nothing of its login.</summary>
-    public static Result<Kernel.ServerName> ServerName(string? dbChangeSql, string sqlEnv, bool localDb) => Server(dbChangeSql, sqlEnv, localDb).Bind(ServerName);
+    public static Result<Kernel.ServerName> ServerName(string? dbChangeSql, string? sqlEnv, bool localDb) => Server(dbChangeSql, sqlEnv, localDb).Bind(ServerName);
 
     /// <summary>A copy on this machine's local server, refused on a named environment's host (R15); its CREATE DATABASE goes to the run's log, when given.</summary>
     public static Result<SqlServer.Copy> Create(string repositoryRoot, SqlServer.QueryLog? log = null) => Server().Bind(server => Create(repositoryRoot, server, log));
@@ -123,28 +119,28 @@ public static class LocalServer
     private static readonly string PinnedRepository = Doctor.SqlServerImage.Split('@')[0] is var reference ? reference[..reference.LastIndexOf(':')] : "";
 
     internal static Result<string> Server() =>
-        Server(Environment.GetEnvironmentVariable("DBCHANGE_SQL"), SqlEnv, Doctor.LocalDbInstalled(Command.Run));
+        Server(Environment.GetEnvironmentVariable("DBCHANGE_SQL"), LocalState.UserSqlEnv, Doctor.LocalDbInstalled(Command.Run));
 
     /// <summary>
     /// The local server, in the fixture's order: DBCHANGE_SQL, with sql.env not read; the container, when sql.env gives its port and
     /// password; LocalDB, when installed. A sql.env that cannot be read, or that gives a key twice, is local-server.missing naming the file.
     /// </summary>
-    internal static Result<string> Server(string? dbChangeSql, string sqlEnv, bool localDb) =>
+    internal static Result<string> Server(string? dbChangeSql, string? sqlEnv, bool localDb) =>
         !string.IsNullOrEmpty(dbChangeSql) ? dbChangeSql
         : Settings(sqlEnv).Bind(env => env.GetValueOrDefault("MSSQL_SA_PASSWORD") is { Length: > 0 } password && env.GetValueOrDefault("DBCHANGE_SQL_PORT") is { Length: > 0 } port
                 ? ConnectionString.Container(port, password)
             : localDb ? @"Server=(localdb)\MSSQLLocalDB;Integrated Security=true"
-            : Result.Fail<string>(new Error("local-server.missing", "No local server: DBCHANGE_SQL is unset, " + sqlEnv + " gives no container's port and password, and LocalDB is not installed.",
+            : Result.Fail<string>(new Error("local-server.missing", "No local server: DBCHANGE_SQL is unset, " + (sqlEnv ?? "~/" + LocalState.Name + "/sql.env") + " gives no container's port and password, and LocalDB is not installed.",
                 "Start Docker and run ci/sql.sh up, or ci/sql.ps1 up on Windows, or set DBCHANGE_SQL; then run dbchange doctor.")));
 
-    /// <summary>sql.env's settings, one KEY=value per line as ci/sql.sh writes them; none where the file is absent.</summary>
-    private static Result<Dictionary<string, string>> Settings(string sqlEnv)
+    /// <summary>sql.env's settings, one KEY=value per line as ci/sql.sh writes them; none where the file is absent, or where the user's profile folder is unknown (LocalState.UserSqlEnv null).</summary>
+    private static Result<Dictionary<string, string>> Settings(string? sqlEnv)
     {
         const string rewrite = "Run ci/sql.sh down, then ci/sql.sh up (ci/sql.ps1 on Windows), which writes the file again; then run dbchange doctor.";
         string[] lines;
         try
         {
-            lines = File.Exists(sqlEnv) ? File.ReadAllLines(sqlEnv) : [];
+            lines = sqlEnv is not null && File.Exists(sqlEnv) ? File.ReadAllLines(sqlEnv) : [];
         }
         catch (Exception e) when (Write.FileSystemFailure(e))
         {
@@ -192,11 +188,11 @@ public static class LocalServer
 
     internal static Result<SqlServer.Copy> Registered(string repositoryRoot, CopyName name, Result<Environments> environmentsFile, Func<Result<string>> chosen, Func<string, IPAddress[]> resolve) =>
         Rows(repositoryRoot).Bind(rows => rows.FirstOrDefault(r => (string?)r["name"] == name.ToString()) is not { } row
-            ? new Error("copy.unregistered", new Target.RegisteredCopy(name) + " is no copy " + Registry + " holds, and copy: names only a database dbchange made and recorded there.",
-                "Name a copy that " + Registry + " holds on this machine.")
+            ? new Error("copy.unregistered", new Target.RegisteredCopy(name) + " is no copy " + LocalState.CopiesName + " holds, and copy: names only a database dbchange made and recorded there.",
+                "Name a copy that " + LocalState.CopiesName + " holds on this machine.")
             : environmentsFile.Bind(environments => Unnamed(environments, repositoryRoot, Kernel.ServerName.Of((string)row["server"]!, Environment.MachineName), resolve)).Bind(made => chosen().Bind(server => ServerName(server).Bind(now => now == made
                 ? Result.Ok(new SqlServer.Copy(name, server, repositoryRoot))
-                : new Error("copy.unregistered", new Target.RegisteredCopy(name) + " was made on another server than the local server this machine names now, so " + Registry + " holds no such copy here.",
+                : new Error("copy.unregistered", new Target.RegisteredCopy(name) + " was made on another server than the local server this machine names now, so " + LocalState.CopiesName + " holds no such copy here.",
                     "Set DBCHANGE_SQL back to the server that made the copy, or make a new copy on this one.")))));
 
     /// <summary>
@@ -258,7 +254,7 @@ public static class LocalServer
     /// <summary>The registry's rows, none when it is absent, each naming its copy and the server it was made on. A write replaces the file whole, so a reader sees the rows before a change or after it.</summary>
     private static Result<List<JsonObject>> Rows(string repositoryRoot)
     {
-        var path = Path.Combine(repositoryRoot, Registry);
+        var path = new LocalState(repositoryRoot).Copies;
         try
         {
             return !File.Exists(path) ? new List<JsonObject>()
@@ -269,8 +265,8 @@ public static class LocalServer
         }
         catch (Exception e) when (e is JsonException or InvalidOperationException or IOException or UnauthorizedAccessException)
         {
-            return new Error("registry.unreadable", Registry + " under " + repositoryRoot + " is not the registry dbchange writes; its text is withheld.",
-                "Drop the copies it lists with DROP DATABASE, then delete " + Registry + ".");
+            return new Error("registry.unreadable", LocalState.CopiesName + " under " + repositoryRoot + " is not the registry dbchange writes; its text is withheld.",
+                "Drop the copies it lists with DROP DATABASE, then delete " + LocalState.CopiesName + ".");
         }
     }
 

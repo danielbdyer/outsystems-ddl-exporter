@@ -82,7 +82,7 @@ public static class SqlServerFixture
         var given = Environment.GetEnvironmentVariable("DBCHANGE_SQL");
         var docker = string.IsNullOrEmpty(given) && new Command("docker", ["info"], TimeSpan.FromSeconds(30)).Run() is Ran.Exited { Code: 0 } && Up();
         var localDb = string.IsNullOrEmpty(given) && !docker && new Command("sqllocaldb", ["start", "MSSQLLocalDB"], TimeSpan.FromMinutes(2)).Run() is Ran.Exited { Code: 0 };
-        var chosen = LocalServer.Server(given, docker ? LocalServer.SqlEnv : "", localDb).Match(server => server, _ => throw new InvalidOperationException(NoServer));
+        var chosen = LocalServer.Server(given, docker ? LocalState.UserSqlEnv : null, localDb).Match(server => server, _ => throw new InvalidOperationException(NoServer));
         var master = new SqlConnectionStringBuilder(chosen) { InitialCatalog = "master", ApplicationName = "dbchange-tests", TrustServerCertificate = true, ConnectTimeout = 60 }.ConnectionString;
         try
         {
@@ -108,9 +108,9 @@ public static class SqlServerFixture
         }
 
         // Finding NFR-13: the scripts leave the SA password readable by its owner alone, mode 0600; Windows keeps no such mode.
-        if (!OperatingSystem.IsWindows() && File.GetUnixFileMode(LocalServer.SqlEnv) is var mode && mode != (UnixFileMode.UserRead | UnixFileMode.UserWrite))
+        if (!OperatingSystem.IsWindows() && File.GetUnixFileMode(LocalState.UserSqlEnv!) is var mode && mode != (UnixFileMode.UserRead | UnixFileMode.UserWrite))
         {
-            throw new InvalidOperationException(LocalServer.SqlEnv + " is mode " + Convert.ToString((int)mode, 8) + " after ci/sql up, and the SA password it holds is read by its owner alone (0600).");
+            throw new InvalidOperationException(LocalState.UserSqlEnv + " is mode " + Convert.ToString((int)mode, 8) + " after ci/sql up, and the SA password it holds is read by its owner alone (0600).");
         }
 
         return true;

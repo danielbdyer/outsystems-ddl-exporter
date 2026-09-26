@@ -201,7 +201,7 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         Assert.DoesNotContain("sha256:" + packaged, new[] { (string?)provenance["schema"], (string?)provenance["change"] });
         // The copy ran in the dbchange-sql container when its server is the one ~/.dbchange/sql.env names, whether DBCHANGE_SQL also names it or
         // not; its image is then one of the names Docker gives the image that container runs (ImageTests holds which), and otherwise none.
-        var container = File.Exists(LocalServer.SqlEnv) && LocalServer.ServerName(null, LocalServer.SqlEnv, localDb: false) is Result<ServerName>.Ok(var inContainer)
+        var container = File.Exists(LocalState.UserSqlEnv) && LocalServer.ServerName(null, LocalState.UserSqlEnv, localDb: false) is Result<ServerName>.Ok(var inContainer)
             && LocalServer.ServerName(copy.Connection) is Result<ServerName>.Ok(var made) && made == inContainer;
         var (version, level) = await Reported(copy.Connection);
         Assert.Equal((DoctorTests.PinnedDacFx, "UNPINNED"), ((string?)provenance["dacfx"], (string?)answer["pin"]));
