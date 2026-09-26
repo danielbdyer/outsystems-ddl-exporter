@@ -64,7 +64,7 @@ internal static class ErrorPaths
             Failed(Element.Of(Table, [new("Nullable", new Value.Boolean(true)), new("Nullable", new Value.Boolean(false))], []))),
         new("an element with a relationship given twice", "element.relationship-name", false, (_, _) =>
             Failed(Element.Of(Table, [], [Element.Relationship.Of("Columns", [Table]), Element.Relationship.Of("Columns", [Table])]))),
-        new("a model with two elements on one key", "change.duplicate-key", false, (_, _) =>
+        new("a model with two elements on one key", "model.duplicate-key", false, (_, _) =>
             Failed(Change.Between(SortedArray.Of(Made(Element.Of(Table, [], [])), Made(Element.Of(Table, [new("Nullable", new Value.Null())], []))), [], []))),
         new("a collation name with no case rule", "model.collation", false, (_, _) => Failed(Collation.Of("Latin1_General"))),
 

@@ -158,9 +158,9 @@ public static class Contract
     /// <summary>
     /// The exit an error takes, by its category, the word before the first dot of its code. The kernel, io and the cli name what went
     /// wrong (name.blank, sdk.missing, build.failed), and this switch alone says how dbchange exits for it: one arm per member of the
-    /// kernel's closed ErrorCategory and no discard arm, so a member added there without an arm here fails the build. A name, an element,
-    /// a fingerprint or a change the kernel rejects while reading a package or a database is input that could not be parsed (exit 2), as
-    /// is a package, a refactorlog, a model two of whose objects share a key, or the copy registry. The environments file, a profile, a reference,
+    /// kernel's closed ErrorCategory and no discard arm, so a member added there without an arm here fails the build. A name, an element
+    /// or a fingerprint the kernel rejects while reading a package or a database is input that could not be parsed (exit 2), as is a
+    /// package, a refactorlog, a model two of whose elements share a key, whether io finds it or the kernel, or the copy registry. The environments file, a profile, a reference,
     /// a connection, a SQLCMD value and the toolchain ledger are configuration (exit 6), whether io or the kernel finds the error, and
     /// so are a failure DacFx reports with no SQL Server error inside it, such as a package whose target platform the server is not, a
     /// verb this build lacks, and a defect in dbchange itself. A target of no known form is a bad argument, as is a flag or a verb dbchange
@@ -181,7 +181,6 @@ public static class Contract
         ErrorCategory.Refactorlog => 2,
         ErrorCategory.Model => 2,
         ErrorCategory.Registry => 2,
-        ErrorCategory.Change => 2,
         ErrorCategory.Origin => 4,
         ErrorCategory.Server => 4,
         ErrorCategory.LocalServer => 4,

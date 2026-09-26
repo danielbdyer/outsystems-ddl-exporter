@@ -51,7 +51,7 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
     /// key keeps the element already at it under the collation with no rename, else the first claimant in before's order, and the rest
     /// continue nowhere, since a rename into a key a live element holds is a drop and a create. Partition: what is created, dropped,
     /// renamed, altered, and matched in letter case alone. A model in which two elements share a key under the collation is the error
-    /// change.duplicate-key.
+    /// model.duplicate-key.
     /// </summary>
     public static Result<Change> Between(SortedArray<Element> before, SortedArray<Element> after, SortedArray<Rename> renames, Collation collation)
     {
@@ -201,7 +201,7 @@ public sealed record Change(SortedArray<Element> Created, SortedArray<Element> D
     {
         var seen = new HashSet<ElementKey>(comparer);
         return model.Where(e => !seen.Add(e.Key)).Select(e => new Error(
-            "change.duplicate-key",
+            "model.duplicate-key",
             "Two elements of one model have the key " + e.Key + (collation.IsCaseSensitive ? "." : " under " + collation.Name + ", which reads letter case as one name."),
             "Report the model's source: a key names one element, so what read this model into elements has a defect.")).FirstOrDefault();
     }

@@ -101,7 +101,7 @@ public sealed class ChangeTests
     {
         var twice = SortedArray.Of(New(Key("Table", "dbo", "Customer"), []), New(Key("Table", "dbo", "CUSTOMER"), []));
 
-        Expect.Failed(Change.Between(twice, [], [], CaseInsensitive), "change.duplicate-key");
+        Expect.Failed(Change.Between(twice, [], [], CaseInsensitive), "model.duplicate-key");
         Assert.True(Ok(Change.Between(twice, twice, [], Collation.CaseSensitive)).IsEmpty);
     }
 
@@ -239,8 +239,8 @@ public sealed class ChangeTests
     {
         var twice = SortedArray.Of(New(SampleChanges.Customer, [("IsMemoryOptimized", Bool(false))]), New(SampleChanges.Customer, []));
 
-        Expect.Failed(Change.Between(twice, [], []), "change.duplicate-key");
-        Expect.Failed(Change.Between([], twice, []), "change.duplicate-key");
+        Expect.Failed(Change.Between(twice, [], []), "model.duplicate-key");
+        Expect.Failed(Change.Between([], twice, []), "model.duplicate-key");
     }
 
     private static SortedArray<Rename> Inverted(SortedArray<Rename> renames) => SortedArray.Of(renames.Select(r => r.Inverted()));

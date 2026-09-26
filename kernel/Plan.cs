@@ -164,7 +164,7 @@ public abstract record Drift
     /// The drift a plan shows: an empty plan is in sync; else the columns under each table an Alter or a TableRebuild names, from
     /// <see cref="Change.Between"/> the target's elements and the package's under the target's collation, each alteration without its
     /// Expression. A created or dropped table's operation says the whole, so its columns are not listed. A model two of whose elements
-    /// share a key is the error change.duplicate-key.
+    /// share a key is the error model.duplicate-key.
     /// </summary>
     public static Result<Drift> Of(DeployReport plan, SortedArray<Element> target, SortedArray<Element> package, Collation collation)
     {
