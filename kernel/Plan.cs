@@ -15,6 +15,9 @@ public sealed record DeployReport(SortedArray<PlanOperation> Operations, SortedA
 {
     /// <summary>Whether the plan holds no operation.</summary>
     public bool IsEmpty => Operations.Count == 0;
+
+    /// <summary>The operation whose item cites <paramref name="alert"/> as one of its data issues; null for an alert none cites, and for one with no id (a DataMotion).</summary>
+    public PlanOperation? Operation(PlanAlert alert) => alert.Id is { } id ? Operations.FirstOrDefault(o => o.Issues.Contains(id)) : null;
 }
 
 /// <summary>One operation of a deploy plan: what DacFx does, to which element, and the ids of the report's data issues the operation raises.</summary>
@@ -194,8 +197,8 @@ public abstract record Drift
     /// <summary>The deploy plan against the target is empty.</summary>
     public sealed record InSync : Drift;
 
-    /// <summary>The deploy plan holds operations; the columns that differ under each table it alters or rebuilds, from the target to the package.</summary>
-    public sealed record Differs(DeployReport Plan, Change Columns) : Drift;
+    /// <summary>The deploy plan holds operations: its deploy report, and the columns that differ under each table it alters or rebuilds, from the target to the package.</summary>
+    public sealed record Differs(DeployReport Report, Change Columns) : Drift;
 }
 
 /// <summary>

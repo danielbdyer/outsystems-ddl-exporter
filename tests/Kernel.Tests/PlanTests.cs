@@ -28,6 +28,17 @@ public sealed class PlanTests
     private static readonly Gen<DeployReport> Reports = Gen.Select(Operations.Array[0, 3], Alerts.Array[0, 2])
         .Select((operations, alerts) => new DeployReport(SortedArray.Of(operations), SortedArray.Of(alerts)));
 
+    /// <summary>
+    /// S21 of the pre-M2 review: the operation an alert concerns is one whose item cites the alert's id, and there is one exactly when an
+    /// operation cites it; an alert with no id, a DataMotion's, concerns none. check drift names a data issue's finding by it.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void An_alert_concerns_an_operation_that_cites_its_id_and_none_when_no_operation_does() =>
+        Reports.Sample(report => report.Alerts.All(alert => report.Operation(alert) is { } cited
+            ? alert.Id is { } id && cited.Issues.Contains(id) && report.Operations.Contains(cited)
+            : alert.Id is not { } none || report.Operations.All(o => !o.Issues.Contains(none))));
+
     [Fact]
     [Trait("Category", "fast")]
     public void A_report_fingerprints_alike_only_when_its_operations_keys_and_alerts_are_equal()

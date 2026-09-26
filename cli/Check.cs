@@ -74,7 +74,7 @@ public static partial class Verbs
                 + " pins no DacFx release for dbchange " + Contract.Version.Split('+')[0] + ".") } : [],
             Finding.Note("profile.unverified", profile, "The SSDT repository commits no copy of the publish profile the Octopus step applies, so " + profile + " is not verified against it."),
         ];
-        var (operations, columns) = answer.Drift.Match(_ => (default(SortedArray<PlanOperation>), new Change([], [], [], [])), differs => (differs.Plan.Operations, differs.Columns));
+        var (operations, columns) = answer.Drift.Match(_ => (default(SortedArray<PlanOperation>), new Change([], [], [], [])), differs => (differs.Report.Operations, differs.Columns));
         var content = new JsonObject
         {
             ["check"] = new JsonObject
@@ -93,7 +93,7 @@ public static partial class Verbs
         return answer.Drift.Match(
             _ => Contract.Answer(verb.Output, verb.Outcome("in-sync"), 0, answer.Target + " is in sync with " + at + commit + ".", standing, stamp, answer.Provenance, content),
             differs => Contract.Answer(verb.Output, verb.Outcome("differs"), 5,
-                answer.Target + " differs from " + at + commit + ": the deploy plan holds " + Counted(differs.Plan.Operations.Count, "operation") + ".",
+                answer.Target + " differs from " + at + commit + ": the deploy plan holds " + Counted(differs.Report.Operations.Count, "operation") + ".",
                 [.. Differences(answer, differs, at), .. columns.CaseOnlyRenamed.Select(pair => CaseOnly("drift.case-only-rename", pair, answer.Collation)), .. printer.Findings, .. standing],
                 stamp, answer.Provenance, content));
     }
@@ -106,21 +106,32 @@ public static partial class Verbs
     private static IEnumerable<Finding> Differences(DriftCheck.Answer answer, Drift.Differs differs, string at)
     {
         var remedy = "Run dbchange diff --from " + answer.Target + " --to " + at + " to see each property that differs.";
-        var consequences = differs.Plan.Operations.Where(o => o.Kind.IsConsequence).ToList();
-        return differs.Plan.Operations.Where(o => !o.Kind.IsConsequence)
+        var consequences = differs.Report.Operations.Where(o => o.Kind.IsConsequence).ToList();
+        return differs.Report.Operations.Where(o => !o.Kind.IsConsequence)
             .Select(o => Finding.Warning("drift." + o.Kind.Word, o.Key.ToString(), "The deploy plan against " + answer.Target + " would " + Verb(o.Kind) + " " + o.Key + ".", remedy))
             .Concat(consequences.Count == 0 ? [] : [Finding.Note("drift.consequence", "the deploy plan", "DacFx also plans, for the objects that depend on those it changes: "
                 + string.Join(", ", consequences.Select(o => o.Kind.Name + " " + o.Key)) + "; none is a difference of its own.")])
-            .Concat(differs.Plan.Alerts.Select(alert => alert.Kind switch
+            .Concat(differs.Report.Alerts.Select(alert => alert.Kind switch
             {
-                PlanAlertKind.DataIssue => Finding.Warning("drift.data-issue", differs.Plan.Operations.FirstOrDefault(o => alert.Id is { } id && o.Issues.Contains(id))?.Key.ToString() ?? "the deploy plan",
+                PlanAlertKind.DataIssue => Finding.Warning("drift.data-issue", differs.Report.Operation(alert)?.Key.ToString() ?? "the deploy plan",
                     alert.Text, remedy),
                 PlanAlertKind.DataMotion => Finding.Warning("drift.data-motion", alert.Text, "The deploy plan against " + answer.Target + " would copy the rows of " + alert.Text + " into a rebuilt table.", remedy),
                 _ => Finding.Warning("drift." + alert.Kind.Word, "the deploy plan", "DacFx's " + alert.Kind.Name + " alert: " + alert.Text, remedy),
             }))
-            .Concat(Lines(differs.Columns).Select(line => line.Split(": ", 2) is [var key, var change]
-                ? Finding.Warning("drift.column", key, change + ", from the target to the repository.") : Finding.Warning("drift.column", line, line + ".")));
+            .Concat(Columns(differs.Columns));
     }
+
+    /// <summary>
+    /// A warning per column that differs, read from the change's values, its key the subject: one the repository holds and the target does
+    /// not, one the target holds and the repository does not, one renamed, and each property (its values, a text's or a script's left out)
+    /// and relationship of one altered, from the target to the repository.
+    /// </summary>
+    private static IEnumerable<Finding> Columns(Change columns) =>
+        columns.Created.Select(e => Finding.Warning("drift.column", e.Key.ToString(), "in the repository, not on the target."))
+            .Concat(columns.Dropped.Select(e => Finding.Warning("drift.column", e.Key.ToString(), "on the target, not in the repository.")))
+            .Concat(columns.Renamed.Select(r => Finding.Warning("drift.column", r.Before.ToString(), "renamed to " + r.After + " in the repository.")))
+            .Concat(columns.Altered.SelectMany(a => a.Properties.Select(p => Finding.Warning("drift.column", a.Key.ToString(), Changed(p) + ", from the target to the repository."))
+                .Concat(a.Relationships.Select(r => Finding.Warning("drift.column", a.Key.ToString(), r.Name + ", from the target to the repository.")))));
 
     /// <summary>What an operation does, as the message's verb: create, alter, drop, rebuild, rename; for a name dbchange's list lacks, DacFx's operation by its name.</summary>
     private static string Verb(PlanOperationKind kind) => kind switch

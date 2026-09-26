@@ -77,7 +77,7 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
             && f.Message == "The column [dbo].[Product].[LegacyNote] is being dropped, data loss could occur.");
         Assert.DoesNotContain(findings, f => f.Code == "drift.refresh");
         Assert.All(findings.Where(f => f.Code == "drift.consequence"), f => Assert.Equal("note", f.Severity));
-        Assert.Contains("`drift.column` dropped Column [dbo].[Product].[LegacyNote]", Drift("copy:" + copy.Name).Output, StringComparison.Ordinal);
+        Assert.Contains("`drift.column` Column [dbo].[Product].[LegacyNote]: on the target, not in the repository.", Drift("copy:" + copy.Name).Output, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -142,7 +142,8 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
     /// Decision 2.25 on a database: a copy of the golden project given a column named by one space and one whose name holds a tab, which
     /// SQL Server admits inside brackets, reads whole at exit 0 naming both; diff from the copy to the package, which lacks them, exits 5
     /// with --fail-on-change and prints each as dropped, the tab escaped as \u0009; and check drift against the golden ref exits 5 naming
-    /// both columns under the altered table, escaped the same way. No raw tab reaches either Markdown output.
+    /// both columns under the altered table, escaped the same way. No raw tab reaches either Markdown output. A third column, named "a: b",
+    /// is its finding's subject whole (S21): check drift once split its rendered line at the first ": ".
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
@@ -150,7 +151,7 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
     {
         var (copy, dacpac, _) = await Published(null);
         using var disposable = DisposableCopy.Of(copy);
-        await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ADD [ ] INT NULL, [a\tb] INT NULL;");
+        await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ADD [ ] INT NULL, [a\tb] INT NULL, [a: b] INT NULL;");
 
         var (readExit, read) = repository.Run("read", "--from", "copy:" + copy.Name, "--json");
         var (diffExit, diff) = repository.Run("diff", "--from", "copy:" + copy.Name, "--to", "dacpac:" + dacpac, "--fail-on-change");
@@ -167,8 +168,9 @@ public sealed class DriftTests(ScratchRepository repository) : IClassFixture<Scr
         Assert.Contains("dropped Column [dbo].[Customer].[a\\u0009b]", diff.Split('\n'));
         Assert.True(driftExit == 5, drift);
         Assert.Contains("- warning `drift.alter` Table [dbo].[Customer]: ", drift, StringComparison.Ordinal);
-        Assert.Contains("`drift.column` dropped Column [dbo].[Customer].[ ]", drift, StringComparison.Ordinal);
-        Assert.Contains("`drift.column` dropped Column [dbo].[Customer].[a\\u0009b]", drift, StringComparison.Ordinal);
+        Assert.Contains("`drift.column` Column [dbo].[Customer].[ ]: on the target, not in the repository.", drift, StringComparison.Ordinal);
+        Assert.Contains("`drift.column` Column [dbo].[Customer].[a\\u0009b]: on the target, not in the repository.", drift, StringComparison.Ordinal);
+        Assert.Contains("`drift.column` Column [dbo].[Customer].[a: b]: on the target, not in the repository.", drift, StringComparison.Ordinal);
         Assert.DoesNotContain('\t', diff + drift);
     }
 

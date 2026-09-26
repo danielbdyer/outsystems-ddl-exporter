@@ -85,9 +85,11 @@ public static partial class Verbs
         change.Created.Select(e => "created " + e.Key)
             .Concat(change.Dropped.Select(e => "dropped " + e.Key))
             .Concat(change.Renamed.Select(r => "renamed " + r.Before + " to " + r.After))
-            .Concat(change.Altered.SelectMany(a => a.Properties
-                .Select(p => a.Key + ": " + p.Name + (p.Before is Value.Text or Value.Script || p.After is Value.Text or Value.Script ? "" : " " + (p.Before?.ToString() ?? "none") + " → " + (p.After?.ToString() ?? "none")))
-                .Concat(a.Relationships.Select(r => a.Key + ": " + r.Name))));
+            .Concat(change.Altered.SelectMany(a => a.Properties.Select(p => a.Key + ": " + Changed(p)).Concat(a.Relationships.Select(r => a.Key + ": " + r.Name))));
+
+    /// <summary>A property that changed: its name and its values before and after, none for an absent one; a text's or a script's values left out.</summary>
+    internal static string Changed(Change.Property property) => property.Name
+        + (property.Before is Value.Text or Value.Script || property.After is Value.Text or Value.Script ? "" : " " + (property.Before?.ToString() ?? "none") + " → " + (property.After?.ToString() ?? "none"));
 
     /// <summary>A change as JSON: the keys created, dropped and renamed, and each alteration with its values before and after, a script's through the printer.</summary>
     internal static JsonObject Json(Change change, Printer printer) => new()
