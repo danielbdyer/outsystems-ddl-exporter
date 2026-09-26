@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "dbchange.doctor/1",
-  "description": "What dbchange doctor --json writes: the envelope, and checks.",
+  "description": "What dbchange doctor --json writes: the envelope, and prerequisites.",
   "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with DBCHANGE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
   "type": "object",
   "additionalProperties": false,
@@ -19,7 +19,7 @@
     "provenance",
     "truncated",
     "full",
-    "checks"
+    "prerequisites"
   ],
   "properties": {
     "schema": {
@@ -144,7 +144,7 @@
         }
       ]
     },
-    "checks": {
+    "prerequisites": {
       "anyOf": [
         {
           "type": "null"
@@ -161,8 +161,17 @@
             ],
             "properties": {
               "item": {
-                "type": "string",
-                "minLength": 1
+                "enum": [
+                  "sdk",
+                  "runtime",
+                  "tool",
+                  "dacfx",
+                  "build",
+                  "git",
+                  "local-server",
+                  "image",
+                  "lfs"
+                ]
               },
               "found": {
                 "type": "string",

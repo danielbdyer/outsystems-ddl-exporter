@@ -9,10 +9,13 @@ namespace DbChange.Cli;
 /// <summary>The verbs' bodies, one file per verb.</summary>
 public static partial class Verbs
 {
-    /// <summary>What doctor adds to the envelope: each check, what it found, and its remedy when the item is missing.</summary>
+    /// <summary>What doctor adds to the envelope: each prerequisite, the item of the closed set it examines, what it found, and its remedy when the item is missing.</summary>
     public static JsonObject DoctorContent => new()
     {
-        ["checks"] = Render.List(Render.Record(new() { ["item"] = Render.Text(), ["found"] = Render.Text(), ["remedy"] = Render.Nullable(Render.Text()) })),
+        ["prerequisites"] = Render.List(Render.Record(new()
+        {
+            ["item"] = Render.Enum(Io.Doctor.Item.All.Select(item => (JsonNode?)item.Name)), ["found"] = Render.Text(), ["remedy"] = Render.Nullable(Render.Text()),
+        })),
     };
 
     /// <summary>dbchange doctor: can this machine do the work (V3_ARCHITECTURE.md §8.12), read-only.</summary>
@@ -28,13 +31,13 @@ public static partial class Verbs
 
     private static Envelope Doctor(Io.Doctor.Readiness readiness, Stamp? stamp)
     {
-        var (ready, checks) = (readiness.Ready, readiness.Prerequisites);
+        var (ready, prerequisites) = (readiness.Ready, readiness.Prerequisites);
         return Contract.Answer(Of("doctor").Output, Of("doctor").Outcome(ready ? "ready" : "degraded"), ready ? 0 : 6,
-            string.Join(" | ", (string[])["dbchange doctor " + (ready ? "READY" : "DEGRADED"), .. checks.Select(c => c.Item + "=" + c.Found)]),
-            [.. checks.Where(c => c.Remedy is not null).Select(c => Finding.Error("doctor." + c.Item, "dbchange doctor", c.Item + ": " + c.Found + ".", c.Remedy!))],
+            string.Join(" | ", (string[])["dbchange doctor " + (ready ? "READY" : "DEGRADED"), .. prerequisites.Select(p => p.Item + "=" + p.Found)]),
+            [.. prerequisites.Where(p => p.Remedy is not null).Select(p => Finding.Error("doctor." + p.Item, "dbchange doctor", p.Item + ": " + p.Found + ".", p.Remedy!))],
             stamp, content: new JsonObject
             {
-                ["checks"] = Render.Array(checks.Select(c => new JsonObject { ["item"] = c.Item.Name, ["found"] = c.Found, ["remedy"] = c.Remedy })),
+                ["prerequisites"] = Render.Array(prerequisites.Select(p => new JsonObject { ["item"] = p.Item.Name, ["found"] = p.Found, ["remedy"] = p.Remedy })),
             });
     }
 

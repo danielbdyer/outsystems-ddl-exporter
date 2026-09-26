@@ -63,6 +63,9 @@ public static class Doctor
         public static readonly Item Image = new("image");
         public static readonly Item Lfs = new("lfs");
 
+        /// <summary>Every item, in the order the doctor examines them.</summary>
+        public static IReadOnlyList<Item> All { get; } = [Sdk, Runtime, Tool, DacFx, Build, Git, LocalServer, Image, Lfs];
+
         private Item(string name) => Name = name;
 
         public string Name { get; }

@@ -529,7 +529,7 @@ public sealed class ContractTests
         Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.git", "doctor.local-server", "doctor.lfs"], findings.Select(f => f.Item1));
         Assert.Equal(checks.Where(c => c.Remedy is not null).Select(c => c.Remedy), findings.Select(f => f.Item3));
         Assert.All(findings, f => Assert.Equal("error", f.Item2));
-        Assert.Equal(checks.Select(c => c.Item.Name), json["checks"]!.AsArray().Select(c => (string)c!["item"]!));
+        Assert.Equal(checks.Select(c => c.Item.Name), json["prerequisites"]!.AsArray().Select(c => (string)c!["item"]!));
     }
 
     /// <summary>WP 1.7's doctor with every item present: READY and exit 0, naming the SDK and runtime, the tool and its DacFx against the ledger, the build route, the local server and LFS.</summary>
