@@ -83,7 +83,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
         {
             var uat = Assert.IsType<SqlServer.EnvironmentDatabase>(Resolved("uat", project.Reader.ConnectionString, new()
             {
-                ["EnvironmentTag"] = new PostureFile.SqlCmd.Literal("uat"), ["ServiceToken"] = new PostureFile.SqlCmd.Reference("env:" + variable),
+                ["EnvironmentTag"] = new EnvironmentsJson.SqlCmd.Literal("uat"), ["ServiceToken"] = new EnvironmentsJson.SqlCmd.Reference("env:" + variable),
             }));
             var log = SqlServer.QueryLog.Start(root.Path);
 
@@ -187,8 +187,8 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
         Assert.StartsWith("env:dev refused this identity (Msg 4060", error.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>A named environment classified real, its connection the given string in a file outside git, resolved through estate/posture.json under the test's root.</summary>
-    private SqlServer.Database Resolved(string name, string connection, System.Collections.Generic.Dictionary<string, PostureFile.SqlCmd>? sqlcmd = null)
+    /// <summary>A named environment classified real, its connection the given string in a file outside git, resolved through estate/environments.json under the test's root.</summary>
+    private SqlServer.Database Resolved(string name, string connection, System.Collections.Generic.Dictionary<string, EnvironmentsJson.SqlCmd>? sqlcmd = null)
     {
         var file = root.File(name + ".connection", connection);
         if (!OperatingSystem.IsWindows())
@@ -196,7 +196,7 @@ public sealed class AggregateQueryTests(GoldenProject project) : IClassFixture<G
             File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);   // io/SqlServer refuses a connection file others can read
         }
 
-        PostureFile.Of(name, new("file:" + file.Replace('\\', '/'), "localhost", Classification: "real", Sqlcmd: sqlcmd)).WriteTo(root.Path);
+        EnvironmentsJson.Of(name, new("file:" + file.Replace('\\', '/'), "localhost", Classification: "real", Sqlcmd: sqlcmd)).WriteTo(root.Path);
         File.Copy(project.Profile, Path.Combine(root.Path, "estate", "profiles", "pipeline.publish.xml"), overwrite: true);
         return Value(SqlServer.Resolve(Value(SqlServer.Target("env:" + name, "--target")), root.Path));
     }

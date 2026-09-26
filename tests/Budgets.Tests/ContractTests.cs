@@ -296,7 +296,7 @@ public sealed class ContractTests
         var planted = PlantedValue.Unique();
         using var root = ScratchFolder.Temporary("withheld");
         root.File("dev.connection", "Server=tcp:192.0.2.10,1433;Initial Catalog=Estate;User ID=estate;Password=" + PlantedValue.PasswordText);
-        PostureFile.Dev("file:dev.connection", "192.0.2.10").WriteTo(root.Path);
+        EnvironmentsJson.Dev("file:dev.connection", "192.0.2.10").WriteTo(root.Path);
         root.File(".estate/copies.json", "{ \"copies\": [ { \"name\": \"estate_host_1_0a1b2c3d\", \"server\": \"localhost,11433\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-25T00:00:00Z\" } ] }");
         var check = Contract.Verbs.Single(v => v.Name == "check") with
         {

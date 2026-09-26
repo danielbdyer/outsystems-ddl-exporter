@@ -51,11 +51,11 @@ public static class SqlServerFixture
         return new RegisteredDatabase(name, new SqlConnectionStringBuilder(master) { InitialCatalog = name, Pooling = false }.ConnectionString, master);
     }
 
-    /// <summary>An estate's root for the copies a test makes: the folder given, its estate/posture.json naming no environment, so R15 reads it and clears the local server.</summary>
+    /// <summary>An estate's root for the copies a test makes: the folder given, its estate/environments.json naming no environment, so R15 reads it and clears the local server.</summary>
     public static string EstateRoot(string folder)
     {
         Directory.CreateDirectory(Path.Combine(folder, "estate"));
-        File.WriteAllText(Path.Combine(folder, "estate", "posture.json"), "{ \"environments\": {} }");
+        File.WriteAllText(Path.Combine(folder, "estate", "environments.json"), "{ \"environments\": {} }");
         return Path.GetFullPath(folder);
     }
 

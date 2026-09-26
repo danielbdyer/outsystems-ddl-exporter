@@ -11,7 +11,7 @@ using Xunit;
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// An estate repository for the verbs (WP 1.7), in a git repository of its own: the golden project with its stop files, an estate/posture
+/// An estate repository for the verbs (WP 1.7), in a git repository of its own: the golden project with its stop files, an estate/environmentsFile
 /// naming no environment and the sample toolchain ledger, committed as Base; then Customer.Email made mandatory, committed as Head, the
 /// make-mandatory sample change. estate runs in this process against it, its tool folder dist/estate/ (PublishedTool).
 /// </summary>
@@ -32,7 +32,7 @@ public sealed class ScratchEstate : IDisposable
 
         ToolFolderTests.Copy(Path.Combine(golden, "project"), Path.Combine(Root, "project"));
         Ledger(Root);
-        Base = scratch.Commit("the golden project", (".gitignore", ".estate/\n"), ("estate/posture.json", "{ \"environments\": {} }\n"));
+        Base = scratch.Commit("the golden project", (".gitignore", ".estate/\n"), ("estate/environments.json", "{ \"environments\": {} }\n"));
         var customer = Path.Combine(Root, "project", "Modules", "Customer.sql");
         var text = File.ReadAllText(customer);
         Assert.True(text.Split("Email           NVARCHAR(256)   NULL,").Length == 2, customer + " does not hold Email's declaration once");
@@ -61,7 +61,7 @@ public sealed class ScratchEstate : IDisposable
     }
 
     /// <summary>
-    /// An estate root beside the repository's own, under it, whose posture names environments: each a reference to a connection file,
+    /// An estate root beside the repository's own, under it, whose environmentsFile names environments: each a reference to a connection file,
     /// under the golden profile; its registry, its runs and its builds are its own.
     /// </summary>
     public string Named(params (string Name, string Connection)[] environments)
@@ -70,13 +70,13 @@ public sealed class ScratchEstate : IDisposable
         Directory.CreateDirectory(Path.Combine(root, "profiles"));
         File.Copy(Path.Combine(Root, Profile), Path.Combine(root, "profiles", "pipeline.publish.xml"));
         Ledger(root);
-        var posture = new JsonObject();
+        var environmentsFile = new JsonObject();
         foreach (var (name, connection) in environments)
         {
-            posture[name] = new JsonObject { ["host"] = "localhost", ["connection"] = "file:" + connection.Replace('\\', '/'), ["profile"] = "profiles/pipeline.publish.xml" };
+            environmentsFile[name] = new JsonObject { ["host"] = "localhost", ["connection"] = "file:" + connection.Replace('\\', '/'), ["profile"] = "profiles/pipeline.publish.xml" };
         }
 
-        File.WriteAllText(Path.Combine(root, "estate", "posture.json"), new JsonObject { ["environments"] = posture }.ToJsonString());
+        File.WriteAllText(Path.Combine(root, "estate", "environments.json"), new JsonObject { ["environments"] = environmentsFile }.ToJsonString());
         return root;
     }
 

@@ -19,8 +19,8 @@ using Xunit;
 namespace Estate.Io.Tests;
 
 /// <summary>
-/// io/PublishProfiles and the posture reader in io/Environments (WP 1.5): the pipeline's publish profile read into its deploy options and
-/// SQLCMD values alone, with a note for each element DacFx ignores, and estate/posture.json read into named environments. An error in
+/// io/PublishProfiles and the environments file reader in io/Environments (WP 1.5): the pipeline's publish profile read into its deploy options and
+/// SQLCMD values alone, with a note for each element DacFx ignores, and estate/environments.json read into named environments. An error in
 /// either exits 6 through the CLI's category table, names the key, the file or the property, and never quotes the value; Strict is the
 /// profile as loaded, Permissive differs from it in BlockOnPossibleDataLoss alone and nothing in io but a Copy makes one, and nothing
 /// either prints carries a value a reference names or a literal holds.
@@ -48,36 +48,36 @@ public sealed class PublishProfilesTests : IDisposable
 
     [Fact]
     [Trait("Category", "fast")]
-    public void The_sample_posture_reads_into_its_named_environments_each_with_the_pipelines_profile()
+    public void The_sample_environments_file_reads_into_its_named_environments_each_with_the_pipelines_profile()
     {
-        var posture = Made(Posture.Environments(Golden));
-        var dev = posture.All.Single(e => e.Name.ToString() == "dev");
+        var environmentsFile = Made(EnvironmentsFile.Read(Golden));
+        var dev = environmentsFile.All.Single(e => e.Name.ToString() == "dev");
 
-        Assert.Equal(["dev", "prod", "qa", "uat"], posture.All.Select(e => e.Name.ToString()));
-        Assert.Equal(["dev-sql.corp.example", "prod-sql.corp.example", "qa-sql.corp.example", "uat-sql.corp.example"], posture.All.Select(e => e.Host.ToString()));
-        Assert.Equal(("docker", (string?)"project/profiles/pipeline.publish.xml"), (posture.LocalServer?.ToString(), posture.SharedProfile?.ToString()));
+        Assert.Equal(["dev", "prod", "qa", "uat"], environmentsFile.All.Select(e => e.Name.ToString()));
+        Assert.Equal(["dev-sql.corp.example", "prod-sql.corp.example", "qa-sql.corp.example", "uat-sql.corp.example"], environmentsFile.All.Select(e => e.Host.ToString()));
+        Assert.Equal(("docker", (string?)"project/profiles/pipeline.publish.xml"), (environmentsFile.LocalServer?.ToString(), environmentsFile.SharedProfile?.ToString()));
         Assert.Equal("env:dev (synthetic, confirmed by the dev lead on 2026-09-20)", dev.ToString());
-        Assert.Equal(["env:prod (real)", "env:qa (real)", "env:uat (real)"], posture.All.Where(e => e != dev).Select(e => e.ToString()));
+        Assert.Equal(["env:prod (real)", "env:qa (real)", "env:uat (real)"], environmentsFile.All.Where(e => e != dev).Select(e => e.ToString()));
         Assert.Equal(["developers", "leads"], dev.ReaderGroups);
         Assert.Equal(("env:ESTATE_DEV", (string?)"file:.estate/principals/dev-ossys.connection"), (dev.Connection.ToString(), dev.Metamodel?.ToString()));
         Assert.Equal("$(EnvironmentTag), a literal | $(ServiceAccountPassword) from env:ESTATE_DEV_SERVICE_PASSWORD", string.Join(" | ", dev.SqlCmd));
         Assert.Equal("dev", dev.SqlCmd[0].Match(text => text, reference => "from " + reference));
-        Assert.All(posture.All, e => Assert.True(Made(PublishProfiles.Of(e, Golden)).Options().BlockOnPossibleDataLoss));
+        Assert.All(environmentsFile.All, e => Assert.True(Made(PublishProfiles.Of(e, Golden)).Options().BlockOnPossibleDataLoss));
     }
 
     /// <summary>
-    /// VALUES.md X1: a literal connection string in the posture, a SQLCMD value a profile gives, or an argument where a reference goes,
+    /// VALUES.md X1: a literal connection string in the environments file, a SQLCMD value a profile gives, or an argument where a reference goes,
     /// file: before it or not, is exit 6, and so is a password anywhere in a profile, a comment splitting it or not; the refusal names its
     /// place and quotes nothing. A profile's password-free target is removed at load instead, as WP 1.5 has it and DECISIONS.md reads X1:
     /// "a profile naming a target keeps its SQLCMD values and nothing of the target".
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("connection", "posture.literal-connection", "environments.dev.connection")]
-    [InlineData("metamodel", "posture.literal-connection", "environments.dev.metamodel")]
-    [InlineData("sqlcmd", "posture.literal-connection", "environments.dev.sqlcmd.LinkedServer.literal")]
-    [InlineData("reader", "posture.literal-connection", "environments.dev.readerGroups[0]")]
-    [InlineData("key", "posture.literal-connection", "environments.dev.sqlcmd.#1")]
+    [InlineData("connection", "environments.literal-connection", "environments.dev.connection")]
+    [InlineData("metamodel", "environments.literal-connection", "environments.dev.metamodel")]
+    [InlineData("sqlcmd", "environments.literal-connection", "environments.dev.sqlcmd.LinkedServer.literal")]
+    [InlineData("reader", "environments.literal-connection", "environments.dev.readerGroups[0]")]
+    [InlineData("key", "environments.literal-connection", "environments.dev.sqlcmd.#1")]
     [InlineData("profile", "profile.password", "inline.publish.xml")]
     [InlineData("profile, a comment splitting the password", "profile.password", "inline.publish.xml")]
     [InlineData("profile's SQLCMD value", "profile.password", "inline.publish.xml")]
@@ -92,11 +92,11 @@ public sealed class PublishProfilesTests : IDisposable
         const string credential = "Server=db;User ID=estate;Password=" + Planted;
         var error = where switch
         {
-            "connection" => Failed(Posture.Environments(Estate(Dev(connection: credential)))),
-            "metamodel" => Failed(Posture.Environments(Estate(Dev("\"metamodel\": \"" + credential + "\"")))),
-            "sqlcmd" => Failed(Posture.Environments(Estate(Dev("\"sqlcmd\": { \"LinkedServer\": { \"literal\": \"" + credential + "\", \"sensitive\": false } }")))),
-            "reader" => Failed(Posture.Environments(Estate(Dev("\"readerGroups\": [\"" + credential + "\"]")))),
-            "key" => Failed(Posture.Environments(Estate(Dev("\"sqlcmd\": { \"" + credential + "\": \"env:ESTATE_LINK\" }")))),
+            "connection" => Failed(EnvironmentsFile.Read(Estate(Dev(connection: credential)))),
+            "metamodel" => Failed(EnvironmentsFile.Read(Estate(Dev("\"metamodel\": \"" + credential + "\"")))),
+            "sqlcmd" => Failed(EnvironmentsFile.Read(Estate(Dev("\"sqlcmd\": { \"LinkedServer\": { \"literal\": \"" + credential + "\", \"sensitive\": false } }")))),
+            "reader" => Failed(EnvironmentsFile.Read(Estate(Dev("\"readerGroups\": [\"" + credential + "\"]")))),
+            "key" => Failed(EnvironmentsFile.Read(Estate(Dev("\"sqlcmd\": { \"" + credential + "\": \"env:ESTATE_LINK\" }")))),
             "profile" => Failed(PublishProfiles.Load(Profile("inline", "<TargetConnectionString>" + credential + "</TargetConnectionString>"))),
             "profile, a comment splitting the password" =>
                 Failed(PublishProfiles.Load(Profile("inline", "<TargetConnectionString>Server=db;User ID=sa;Pass<!-- -->word=" + Planted + "</TargetConnectionString>"))),
@@ -113,35 +113,35 @@ public sealed class PublishProfilesTests : IDisposable
         Assert.DoesNotContain(Planted, error.Message + error.Remedy, StringComparison.Ordinal);
     }
 
-    /// <summary>§4 row 14: beside its environments, the posture holds the local server preference, docker or localdb and nothing else.</summary>
+    /// <summary>§4 row 14: beside its environments, the environments file holds the local server preference, docker or localdb and nothing else.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("\"docker\"", null)]
     [InlineData("\"localdb\"", null)]
-    [InlineData("\"Docker\"", "posture.malformed")]
-    [InlineData("\"podman\"", "posture.malformed")]
-    [InlineData("true", "posture.malformed")]
+    [InlineData("\"Docker\"", "environments.malformed")]
+    [InlineData("\"podman\"", "environments.malformed")]
+    [InlineData("true", "environments.malformed")]
     public void The_local_server_preference_is_docker_or_localdb(string preference, string? code) =>
-        Assert.Equal(code, Posture.Environments(Estate("{ \"environments\": {}, \"localServer\": " + preference + " }", raw: true)).Match<string?>(_ => null, r => r.Code));
+        Assert.Equal(code, EnvironmentsFile.Read(Estate("{ \"environments\": {}, \"localServer\": " + preference + " }", raw: true)).Match<string?>(_ => null, r => r.Code));
 
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("{ \"environments\": {}, \"targets\": [\"qa\"] }", "targets")]
     [InlineData("{ \"environments\": { \"dev\": { \"host\": \"dev-sql\", \"connection\": \"env:A\", \"profile\": \"estate/p.publish.xml\", \"Profile\": \"x\" } } }", "environments.dev.Profile")]
     [InlineData("{ \"environments\": { \"dev\": { \"host\": \"dev-sql\", \"connection\": \"env:A\", \"profile\": \"estate/p.publish.xml\", \"sqlcmd\": { \"Tag\": { \"literal\": \"dev\", \"sensitive\": false, \"value\": \"x\" } } } } }", "environments.dev.sqlcmd.Tag.value")]
-    public void An_unknown_key_is_refused_by_its_place_in_the_posture(string posture, string at)
+    public void An_unknown_key_is_refused_by_its_place_in_the_environments_file(string environmentsFile, string at)
     {
-        var error = Failed(Posture.Environments(Estate(posture, raw: true)));
+        var error = Failed(EnvironmentsFile.Read(Estate(environmentsFile, raw: true)));
 
-        Assert.Equal(("posture.unknown-key", 6), (error.Code, Contract.Exit(error)));
+        Assert.Equal(("environments.unknown-key", 6), (error.Code, Contract.Exit(error)));
         Assert.Contains(at, error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     [Trait("Category", "fast")]
-    public void Every_error_of_the_posture_and_the_profile_is_exit_6()
+    public void Every_error_of_the_environments_file_and_the_profile_is_exit_6()
     {
-        foreach (var way in RefusalPaths.All.Where(c => c.Code.Split('.')[0] is "posture" or "profile" or "reference" or "sqlcmd"))
+        foreach (var way in RefusalPaths.All.Where(c => c.Code.Split('.')[0] is "environmentsFile" or "profile" or "reference" or "sqlcmd"))
         {
             var error = way.Drive(Directory.CreateDirectory(Path.Combine(scratch, way.Label)).FullName, Planted);
             Assert.True(Contract.Exit(error) == 6, way.Label + " takes exit " + Contract.Exit(error));
@@ -243,7 +243,7 @@ public sealed class PublishProfilesTests : IDisposable
         File.Copy(relaxed, Path.Combine(root, "estate", "profiles", "relaxed.publish.xml"));
 
         var bare = Failed(PublishProfiles.Load(relaxed));
-        var named = Failed(PublishProfiles.Of(Made(Posture.Environments(root)).All.Single(), root));
+        var named = Failed(PublishProfiles.Of(Made(EnvironmentsFile.Read(root)).All.Single(), root));
 
         Assert.Equal(("profile.data-loss-allowed", 6), (bare.Code, Contract.Exit(bare)));
         Assert.Equal(("profile.data-loss-allowed", 6), (named.Code, Contract.Exit(named)));
@@ -311,10 +311,10 @@ public sealed class PublishProfilesTests : IDisposable
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Value", "X2")]
-    public void Nothing_read_from_the_posture_or_a_profile_prints_a_literal_or_what_a_reference_names()
+    public void Nothing_read_from_the_environments_file_or_a_profile_prints_a_literal_or_what_a_reference_names()
     {
         var root = Estate(Dev("\"sqlcmd\": { \"EnvironmentTag\": { \"literal\": \"" + Planted + "\", \"sensitive\": false }, \"ServicePassword\": \"env:ESTATE_PW\" }"));
-        var environment = Made(Posture.Environments(root)).All.Single();
+        var environment = Made(EnvironmentsFile.Read(root)).All.Single();
         var strict = Made(PublishProfiles.Load(Profile("printed", "", ("EnvironmentTag", Planted))));
 
         var printed = string.Join('\n', (object[])[environment, .. environment.SqlCmd, strict, .. strict.SqlCmd, PublishProfile.Permissive.Of(strict)]);
@@ -370,16 +370,16 @@ public sealed class PublishProfilesTests : IDisposable
         }
     }
 
-    /// <summary>A dev environment in posture JSON: its host, its connection, its profile and whatever else is given.</summary>
+    /// <summary>A dev environment in environmentsFile JSON: its host, its connection, its profile and whatever else is given.</summary>
     private static string Dev(string extra = "", string connection = "env:ESTATE_DEV", string profile = "estate/profiles/pipeline.publish.xml") =>
         "\"dev\": { \"host\": \"dev-sql\", \"connection\": \"" + connection + "\", \"profile\": \"" + profile + "\"" + (extra.Length > 0 ? ", " + extra : "") + " }";
 
-    /// <summary>An estate's root under the scratch folder, holding estate/posture.json: the environments given, or the text given whole.</summary>
+    /// <summary>An estate's root under the scratch folder, holding estate/environments.json: the environments given, or the text given whole.</summary>
     private string Estate(string environments, bool raw = false)
     {
         var root = Directory.CreateDirectory(Path.Combine(scratch, "estate-" + Guid.NewGuid().ToString("N")[..8])).FullName;
         Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
-        File.WriteAllText(Path.Combine(root, "estate", "posture.json"), raw ? environments : "{ \"environments\": { " + environments + " } }");
+        File.WriteAllText(Path.Combine(root, "estate", "environments.json"), raw ? environments : "{ \"environments\": { " + environments + " } }");
         return root;
     }
 

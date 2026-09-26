@@ -38,7 +38,7 @@ public sealed class TargetTests
         Assert.Equal(target, Expect.Value(Target.Parse(target.ToString(), Subject)));
     }
 
-    /// <summary>An env: target is read exactly when its name is an environment's name, the one grammar the posture's keys also answer to.</summary>
+    /// <summary>An env: target is read exactly when its name is an environment's name, the one grammar the environments file's keys also answer to.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void An_env_target_is_read_exactly_when_its_name_is_an_environment_s_name() =>

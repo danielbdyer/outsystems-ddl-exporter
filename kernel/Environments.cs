@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 namespace Estate.Kernel;
 
 /// <summary>
-/// estate/posture.json as a value (V3_MILESTONES.md WP 1.5, §4 row 14): the environments it names, each once, in name order, and the
+/// estate/environments.json as a value (V3_MILESTONES.md WP 1.5, §4 row 14): the environments it names, each once, in name order, and the
 /// local server it prefers, when it names one. io reads the file once for a verb and hands this to what resolves a target, to R15 and
 /// to the lookup of a copy's profile.
 /// </summary>
@@ -16,22 +16,22 @@ public sealed record Environments
 {
     private Environments(SortedArray<NamedEnvironment> all, LocalServerKind? localServer) => (All, LocalServer) = (all, localServer);
 
-    /// <summary>Every environment the posture names, by name.</summary>
+    /// <summary>Every environment the environments file names, by name.</summary>
     public SortedArray<NamedEnvironment> All { get; }
 
-    /// <summary>The local server the posture prefers, the key localServer; null when it names none.</summary>
+    /// <summary>The local server the environments file prefers, the key localServer; null when it names none.</summary>
     public LocalServerKind? LocalServer { get; }
 
-    /// <summary>The environments given, or posture.environment-name when two share a name; the error leads with <paramref name="subject"/>.</summary>
+    /// <summary>The environments given, or environments.environment-name when two share a name; the error leads with <paramref name="subject"/>.</summary>
     public static Result<Environments> Of(string subject, IEnumerable<NamedEnvironment> environments, LocalServerKind? localServer)
     {
         var all = SortedArray.Of(environments);
         return all.Where((e, i) => i > 0 && all[i - 1].Name == e.Name).FirstOrDefault() is { } repeated
-            ? new Error("posture.environment-name", subject + " names " + repeated.Target + " twice.", "Keep one entry for each environment.")
+            ? new Error("environments.environment-name", subject + " names " + repeated.Target + " twice.", "Keep one entry for each environment.")
             : new Environments(all, localServer);
     }
 
-    /// <summary>The environment the posture names by <paramref name="name"/>, or null.</summary>
+    /// <summary>The environment the environments file names by <paramref name="name"/>, or null.</summary>
     public NamedEnvironment? Named(EnvironmentName name) => All.FirstOrDefault(e => e.Name == name);
 
     /// <summary>The publish profile every environment names, which a copy is planned under when no profile is named for it; null when two differ or none is named.</summary>
@@ -39,7 +39,7 @@ public sealed record Environments
 }
 
 /// <summary>
-/// Which SQL Server the posture prefers to hold copies (VALUES.md O1): Docker, the estate-sql container; or LocalDb, where Docker cannot
+/// Which SQL Server the environments file prefers to hold copies (VALUES.md O1): Docker, the estate-sql container; or LocalDb, where Docker cannot
 /// run. The key localServer, written docker or localdb. The cases are closed.
 /// </summary>
 public abstract record LocalServerKind
@@ -48,12 +48,12 @@ public abstract record LocalServerKind
     {
     }
 
-    /// <summary>The kind <paramref name="text"/> names, or posture.malformed led by <paramref name="subject"/>.</summary>
+    /// <summary>The kind <paramref name="text"/> names, or environments.malformed led by <paramref name="subject"/>.</summary>
     public static Result<LocalServerKind> Of(string subject, string? text) => text switch
     {
         "docker" => new Docker(),
         "localdb" => new LocalDb(),
-        _ => new Error("posture.malformed", subject + " is not docker or localdb.", "Write " + subject + " as docker or localdb."),
+        _ => new Error("environments.malformed", subject + " is not docker or localdb.", "Write " + subject + " as docker or localdb."),
     };
 
     public T Match<T>(Func<T> docker, Func<T> localDb) => this switch
@@ -63,7 +63,7 @@ public abstract record LocalServerKind
         _ => throw new UnreachableException(),
     };
 
-    /// <summary>As the posture writes it.</summary>
+    /// <summary>As the environments file writes it.</summary>
     public sealed override string ToString() => Match(() => "docker", () => "localdb");
 
     public sealed record Docker : LocalServerKind;
@@ -72,11 +72,11 @@ public abstract record LocalServerKind
 }
 
 /// <summary>
-/// An environment as estate/posture.json names it (V3_MILESTONES.md WP 1.5, §4 row 14): its name; the host its SQL Server runs on, which
+/// An environment as estate/environments.json names it (V3_MILESTONES.md WP 1.5, §4 row 14): its name; the host its SQL Server runs on, which
 /// R15 compares with the local server's whether or not the environment's reference resolves on this machine (DECISIONS.md,
 /// 2026-09-25); its classification and reader groups (the groups that may read it); the reference its connection resolves from; its publish
-/// profile's path; its SQLCMD values; and, where the posture names one, the metamodel's reference. Data only (§2.1 rule 3), holding no
-/// value a reference names. Each error leads with the subject its caller gives, where in the posture the value sits, and quotes no value.
+/// profile's path; its SQLCMD values; and, where the environments file names one, the metamodel's reference. Data only (§2.1 rule 3), holding no
+/// value a reference names. Each error leads with the subject its caller gives, where in the environments file the value sits, and quotes no value.
 /// </summary>
 public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 {
@@ -84,10 +84,10 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
         PublishProfilePath profile, SortedArray<SqlCmdVariable> sqlCmd, SecretReference? metamodel) =>
         (Name, Host, Classification, ReaderGroups, Connection, Profile, SqlCmd, Metamodel) = (name, host, classification, readerGroups, connection, profile, sqlCmd, metamodel);
 
-    /// <summary>The key estate/posture.json gives it: dev, qa, uat.</summary>
+    /// <summary>The key estate/environments.json gives it: dev, qa, uat.</summary>
     public EnvironmentName Name { get; }
 
-    /// <summary>The host its SQL Server runs on, as the posture names it.</summary>
+    /// <summary>The host its SQL Server runs on, as the environments file names it.</summary>
     public Host Host { get; }
 
     /// <summary>The target that names it, env:&lt;name&gt;.</summary>
@@ -113,21 +113,21 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
     {
         var (groups, values) = (SortedArray.Of(readerGroups), SortedArray.Of(sqlCmd));
         return groups.Where((g, i) => string.IsNullOrWhiteSpace(g) || g.Any(char.IsControl) || (i > 0 && groups[i - 1] == g)).Any()
-                ? new Error("posture.reader-groups", subject + " names a reader group that is blank or given twice.", "Name each group that reads the environment once.")
+                ? new Error("environments.reader-groups", subject + " names a reader group that is blank or given twice.", "Name each group that reads the environment once.")
             : values.Where((v, i) => i > 0 && values[i - 1].Name == v.Name).Any()
-                ? new Error("posture.sqlcmd-repeated", subject + " gives one SQLCMD variable twice; sqlcmd reads names in any case as one.",
+                ? new Error("environments.sqlcmd-repeated", subject + " gives one SQLCMD variable twice; sqlcmd reads names in any case as one.",
                     "Keep one value for each SQLCMD variable.")
             : new NamedEnvironment(name, host, classification, groups, connection, profile, values, metamodel);
     }
 
-    /// <summary>By name, which the posture gives each environment once.</summary>
+    /// <summary>By name, which the environments file gives each environment once.</summary>
     public int CompareTo(NamedEnvironment? other) => other is null ? 1 : Name.CompareTo(other.Name);
 
     public override string ToString() => Target + " (" + Classification + ")";
 }
 
 /// <summary>
-/// A publish profile's path as the posture gives it, from the estate's root: '/' between parts, none empty, '.' or '..', no ':', '\' or
+/// A publish profile's path as the environments file gives it, from the estate's root: '/' between parts, none empty, '.' or '..', no ':', '\' or
 /// control character, not led by '/', ending in .publish.xml; so it names a file inside the estate on every operating system.
 /// default(PublishProfilePath) is not a path.
 /// </summary>
@@ -137,9 +137,9 @@ public readonly record struct PublishProfilePath : IComparable<PublishProfilePat
 
     private PublishProfilePath(string text) => _text = text;
 
-    /// <summary>The path <paramref name="text"/> gives, or posture.profile-path led by <paramref name="subject"/>.</summary>
+    /// <summary>The path <paramref name="text"/> gives, or environments.profile-path led by <paramref name="subject"/>.</summary>
     public static Result<PublishProfilePath> Of(string subject, string? text) => InsideTheEstate(text) ? new PublishProfilePath(text!)
-        : new Error("posture.profile-path", subject + " gives its profile a path that leaves the estate or names no .publish.xml.",
+        : new Error("environments.profile-path", subject + " gives its profile a path that leaves the estate or names no .publish.xml.",
             "Write the profile's path from the estate's root with '/' between its parts, such as estate/profiles/pipeline.publish.xml.");
 
     /// <summary>Ordinally.</summary>
@@ -185,7 +185,7 @@ public sealed record SecretReference : IComparable<SecretReference>
     public override string ToString() => Text;
 }
 
-/// <summary>A named lead's dated confirmation of an environment's classification: data the posture commits, never a clock read.</summary>
+/// <summary>A named lead's dated confirmation of an environment's classification: data the environments file commits, never a clock read.</summary>
 public sealed record Confirmation
 {
     private Confirmation(string lead, DateOnly on) => (Lead, On) = (lead, on);
@@ -195,9 +195,9 @@ public sealed record Confirmation
     public DateOnly On { get; }
 
     public static Result<Confirmation> Of(string subject, string? lead, string? on) =>
-        string.IsNullOrWhiteSpace(lead) || lead.Length > 128 || lead.Any(char.IsControl) ? new Error("posture.confirmation",
+        string.IsNullOrWhiteSpace(lead) || lead.Length > 128 || lead.Any(char.IsControl) ? new Error("environments.confirmation",
             subject + " carries a confirmation with no lead's name on one line.", "Write confirmedBy as the name of the lead who confirmed the classification.")
-        : !DateOnly.TryParseExact(on, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ? new Error("posture.confirmation",
+        : !DateOnly.TryParseExact(on, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ? new Error("environments.confirmation",
             subject + " carries a confirmation with no date written as yyyy-MM-dd.", "Write confirmedOn as the date the lead confirmed it, such as 2026-09-20.")
         : new Confirmation(lead.Trim(), date);
 
@@ -218,9 +218,9 @@ public abstract record Classification
     {
         null or "real" => new Real(confirmation),
         "synthetic" when confirmation is not null => new Synthetic(confirmation),
-        "synthetic" => new Error("posture.unconfirmed", subject + " is marked synthetic with no lead's dated confirmation.",
+        "synthetic" => new Error("environments.unconfirmed", subject + " is marked synthetic with no lead's dated confirmation.",
             "Commit confirmedBy and confirmedOn beside it, the lead's name and the date, or mark it real."),
-        _ => new Error("posture.classification", subject + " is classified as neither real nor synthetic.", "Write its classification as real or synthetic."),
+        _ => new Error("environments.classification", subject + " is classified as neither real nor synthetic.", "Write its classification as real or synthetic."),
     };
 
     public T Match<T>(Func<Real, T> real, Func<Synthetic, T> synthetic) =>

@@ -339,7 +339,7 @@ idempotent redeploy, in-place evolution, eject, drift, canary). After the eject,
    the description carries the finding on top and the proof beneath, or reproduces the proof
    when trust is in question.
 3. **Gate a change.** A build-validation pipeline rebuilds the dacpac, restores a versioned
-   synthetic copy, publishes the pull request's *combined* change under the production posture,
+   synthetic copy, publishes the pull request's *combined* change under the pipeline's publish profile,
    and posts the verdict. A release that collides with an open multi-phase lag window is refused.
 4. **Keep the synthetic copy current.** A developer's local database is in sync with the repository and
    holds masked, distribution-faithful data. Measure Dev once; commit the literal-free shape
@@ -1823,7 +1823,7 @@ estate doctor [--install] [--json]
 
 One line: `READY` or `DEGRADED`, then the SDK, the DacFx pin against `ledgers/toolchain.md`,
 the local server found (Docker or LocalDB, with the SQL Server version), the synthetic-copy
-artifact's fingerprint and age, and the estate checkout's posture. Every `DEGRADED` item
+artifact's fingerprint and age, and the estate checkout's environments file. Every `DEGRADED` item
 carries its remedy (`--install` for the SDK and the local tool; `synthetic-copy up`;
 `synthetic-copy restore`). It is the SessionStart hook's whole body, the first thing every
 entry file says to run, and the thing a session quotes before claiming a tool is missing. It
@@ -2089,7 +2089,7 @@ Of the 118,686 lines in `sidecar/projection/src`:
 3. **4,600 lines configuring a run when the unit of work is a change.** `Config` (2,189),
    `ConfigSchema` (203), the `*Binding` family (2,208), a 680-line generated schema drift-tested
    byte-for-byte, and an axiom (A44, "expressible ⇔ reachable") to keep it honest. What is left
-   to configure post-eject is the publish posture and the local server: about twenty keys.
+   to configure post-eject is the environments file and the local server: about twenty keys.
 4. **A 1,600-line subtree with one circular consumer.** Four advisory passes and their tuning
    (~550) feed `ManifestEmitter` (1,080), which reports coverage of an export nobody performs
    after the eject. The two passes that looked advisory and have a consumer (`Centrality`,
@@ -2932,7 +2932,7 @@ that number decided the disposition: **KEEP** · **KEEP-SIMPLIFIED** · **FOLD-I
 | Module | Lines | Consumers / evidence | Disposition | v3 |
 |---|---:|---|---|---|
 | `Pipeline.fs` (`Compose.run*`, read, bind, seams, emit) | 3,414 | every run face; five concerns in one file | KEEP-SIMPLIFIED | ~600 lines across four verbs |
-| `Config.fs`; `ConfigSchema.fs` (+ the generated 680-line schema) | 2,189; 203 | 60+ keys; A44 | DELETE | `posture.json`, ~20 keys |
+| `Config.fs`; `ConfigSchema.fs` (+ the generated 680-line schema) | 2,189; 203 | 60+ keys; A44 | DELETE | `environments.json`, ~20 keys |
 | `MovementSurface.fs`; `MovementSpec.fs` | 2,825; 979 | the transfer subsystem's vocabulary | RETIRE-AFTER-EJECT (frozen) | nothing |
 | `TransferRun.fs`; the nine `Transfer*.fs`; `PeerTransfer.fs`; `SurrogateCapture`/`PackedSurrogateRemap`/`KeymapSpill`/`CaptureJournal` | 3,402; 1,822; 546; 993 | the reverse leg's realization; the Twin calls `Transfer.runSynthetic` | RETIRE-AFTER-EJECT (frozen), one carve-out | the generated-set loader's ~300 lines move to `io/SyntheticCopy` |
 | `Bulk.fs`; `FakerRealization.fs` | 232; 295 | generation needs a bulk loader; masked values at the boundary | KEEP | `io/SyntheticCopy` |

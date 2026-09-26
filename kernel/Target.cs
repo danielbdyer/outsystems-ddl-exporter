@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 namespace Estate.Kernel;
 
 /// <summary>
-/// Where a verb reads or writes, as an argument names it (V3_MILESTONES.md WP 1.4): env:&lt;name&gt;, an environment estate/posture.json
+/// Where a verb reads or writes, as an argument names it (V3_MILESTONES.md WP 1.4): env:&lt;name&gt;, an environment estate/environments.json
 /// names; copy:&lt;name&gt;, a copy .estate/copies.json holds; synthetic-copy, the synthetic copy; ref:&lt;git ref&gt;, the project at a ref;
 /// and dacpac:&lt;path&gt;, a package. The first three are databases and the last two are packages. The cases are closed, and each
 /// prints as the argument that names it. A literal connection string where a target goes is refused in io, which reads SqlClient's
@@ -50,7 +50,7 @@ public abstract record Target : IComparable<Target>
 
     private static string? After(string text, string prefix) => text.StartsWith(prefix, StringComparison.Ordinal) ? text[prefix.Length..] : null;
 
-    /// <summary>An environment estate/posture.json names, read only.</summary>
+    /// <summary>An environment estate/environments.json names, read only.</summary>
     public sealed record Environment(EnvironmentName Name) : Target;
 
     /// <summary>A copy estate made and .estate/copies.json records; the database it names is io/SqlServer's Copy.</summary>
@@ -67,7 +67,7 @@ public abstract record Target : IComparable<Target>
 }
 
 /// <summary>
-/// An environment's name, as estate/posture.json keys it and env: names it: 1 to 32 lowercase letters, digits and hyphens, from a
+/// An environment's name, as estate/environments.json keys it and env: names it: 1 to 32 lowercase letters, digits and hyphens, from a
 /// letter, such as dev, qa or uat-2. The one grammar of the name. default(EnvironmentName) is not a name.
 /// </summary>
 public readonly record struct EnvironmentName : IComparable<EnvironmentName>
@@ -78,9 +78,9 @@ public readonly record struct EnvironmentName : IComparable<EnvironmentName>
 
     private EnvironmentName(string text) => _text = text;
 
-    /// <summary>The name <paramref name="text"/> gives, or posture.environment-name led by <paramref name="subject"/>, the text unquoted.</summary>
+    /// <summary>The name <paramref name="text"/> gives, or environments.environment-name led by <paramref name="subject"/>, the text unquoted.</summary>
     public static Result<EnvironmentName> Of(string subject, string? text) => text is not null && Grammar.IsMatch(text) ? new EnvironmentName(text)
-        : new Error("posture.environment-name", subject + " names an environment in other than 1 to 32 lowercase letters, digits and hyphens.",
+        : new Error("environments.environment-name", subject + " names an environment in other than 1 to 32 lowercase letters, digits and hyphens.",
             "Rename it with lowercase letters, digits and hyphens from a letter, such as dev or uat.");
 
     /// <summary>Ordinally.</summary>

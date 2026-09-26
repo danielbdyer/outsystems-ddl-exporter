@@ -193,37 +193,37 @@ internal static class RefusalPaths
             return Git.CommitAndPush(root, Evidence, "evidence", "estate/evidence");
         })),
 
-        new("no posture", "posture.missing", false, (scratch, _) => Failed(Io.Posture.Environments(scratch))),
-        new("a posture that is not JSON", "posture.unreadable", true, (scratch, planted) => Failed(Io.Posture.Environments(Estate(scratch, "{ \"environments\": { \"dev\": " + planted + " } }")))),
-        new("a posture giving a key twice", "posture.unreadable", true, (scratch, planted) => Posture(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + "], \"readerGroups\": []"))),
-        new("a literal connection string", "posture.literal-connection", true, (scratch, planted) => Posture(scratch, Dev(connection: "Server=db;User ID=estate;Password=" + planted))),
-        new("a literal connection string as a key", "posture.literal-connection", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Data Source=db;Password=" + planted + "\": \"env:A\" }"))),
-        new("an unknown key", "posture.unknown-key", true, (scratch, planted) => Posture(scratch, Dev("\"password\": " + Quoted(planted)))),
-        new("an unknown key beside a SQLCMD literal", "posture.unknown-key", true, (scratch, planted) =>
-            Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": { \"literal\": \"dev\", \"sensitive\": false, \"secret\": " + Quoted(planted) + " } }"))),
-        new("a value of the wrong JSON kind", "posture.malformed", true, (scratch, planted) => Posture(scratch, Dev("\"readerGroups\": " + Quoted(planted)))),
-        new("an environment with no connection", "posture.malformed", true, (scratch, planted) =>
-            Posture(scratch, "\"dev\": { \"profile\": \"" + Pipeline + "\", \"readerGroups\": [" + Quoted(planted) + "] }")),
-        new("a SQLCMD literal not marked non-sensitive", "posture.unmarked-literal", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": { \"literal\": " + Quoted(planted) + " } }"))),
-        new("a SQLCMD value that is a bare literal", "posture.unmarked-literal", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": " + Quoted(planted) + " }"))),
-        new("a connection that is no reference", "reference.malformed", true, (scratch, planted) => Posture(scratch, Dev(connection: "env:" + planted))),
+        new("no environmentsFile", "environments.missing", false, (scratch, _) => Failed(Io.EnvironmentsFile.Read(scratch))),
+        new("an environments file that is not JSON", "environments.unreadable", true, (scratch, planted) => Failed(Io.EnvironmentsFile.Read(Estate(scratch, "{ \"environments\": { \"dev\": " + planted + " } }")))),
+        new("an environments file giving a key twice", "environments.unreadable", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + "], \"readerGroups\": []"))),
+        new("a literal connection string", "environments.literal-connection", true, (scratch, planted) => ReadEnvironments(scratch, Dev(connection: "Server=db;User ID=estate;Password=" + planted))),
+        new("a literal connection string as a key", "environments.literal-connection", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"sqlcmd\": { \"Data Source=db;Password=" + planted + "\": \"env:A\" }"))),
+        new("an unknown key", "environments.unknown-key", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"password\": " + Quoted(planted)))),
+        new("an unknown key beside a SQLCMD literal", "environments.unknown-key", true, (scratch, planted) =>
+            ReadEnvironments(scratch, Dev("\"sqlcmd\": { \"Tag\": { \"literal\": \"dev\", \"sensitive\": false, \"secret\": " + Quoted(planted) + " } }"))),
+        new("a value of the wrong JSON kind", "environments.malformed", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"readerGroups\": " + Quoted(planted)))),
+        new("an environment with no connection", "environments.malformed", true, (scratch, planted) =>
+            ReadEnvironments(scratch, "\"dev\": { \"profile\": \"" + Pipeline + "\", \"readerGroups\": [" + Quoted(planted) + "] }")),
+        new("a SQLCMD literal not marked non-sensitive", "environments.unmarked-literal", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"sqlcmd\": { \"Tag\": { \"literal\": " + Quoted(planted) + " } }"))),
+        new("a SQLCMD value that is a bare literal", "environments.unmarked-literal", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"sqlcmd\": { \"Tag\": " + Quoted(planted) + " }"))),
+        new("a connection that is no reference", "reference.malformed", true, (scratch, planted) => ReadEnvironments(scratch, Dev(connection: "env:" + planted))),
         new("a file reference that is a connection string", "reference.malformed", true, (_, planted) =>
             Failed(SecretReference.Of("--connection", "file:Server=db;User ID=sa;Password=" + planted))),
-        new("a local server that is neither docker nor localdb", "posture.malformed", true, (scratch, planted) =>
-            Failed(Io.Posture.Environments(Estate(scratch, "{ \"environments\": {}, \"localServer\": " + Quoted(planted) + " }")))),
-        new("a host given with its port", "posture.host", true, (_, planted) => Failed(Host.Of("environments.dev.host in estate/posture.json", planted + ",1433"))),
-        new("an environment misnamed", "posture.environment-name", true, (scratch, planted) => Posture(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + "]", name: "DEV"))),
-        new("a reader group given twice", "posture.reader-groups", true, (scratch, planted) => Posture(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
-        new("a profile path outside the estate", "posture.profile-path", true, (scratch, planted) => Posture(scratch, Dev(profile: "../" + planted + ".publish.xml"))),
-        new("a SQLCMD variable given twice in two cases", "posture.sqlcmd-repeated", true, (scratch, planted) =>
-            Posture(scratch, Dev("\"sqlcmd\": { \"Tag\": \"env:A\", \"Version\": \"env:C\", \"tag\": \"env:B\" }, \"readerGroups\": [" + Quoted(planted) + "]"))),
-        new("a classification that is none", "posture.classification", true, (scratch, planted) => Posture(scratch, Dev("\"classification\": " + Quoted(planted)))),
-        new("a synthetic environment unconfirmed", "posture.unconfirmed", true, (scratch, planted) =>
-            Posture(scratch, Dev("\"classification\": \"synthetic\", \"readerGroups\": [" + Quoted(planted) + "]"))),
-        new("a confirmation with no date", "posture.confirmation", true, (scratch, planted) => Posture(scratch, Dev("\"classification\": \"synthetic\", \"confirmedBy\": " + Quoted(planted)))),
-        new("a SQLCMD variable misnamed", "sqlcmd.name", true, (scratch, planted) => Posture(scratch, Dev("\"sqlcmd\": { \"Tag Name\": \"env:A\" }, \"readerGroups\": [" + Quoted(planted) + "]"))),
-        new("a SQLCMD literal under a credential's name in the posture", "sqlcmd.literal-credential", true, (scratch, planted) =>
-            Posture(scratch, Dev("\"sqlcmd\": { \"ServicePassword\": { \"literal\": " + Quoted(planted) + ", \"sensitive\": false } }"))),
+        new("a local server that is neither docker nor localdb", "environments.malformed", true, (scratch, planted) =>
+            Failed(Io.EnvironmentsFile.Read(Estate(scratch, "{ \"environments\": {}, \"localServer\": " + Quoted(planted) + " }")))),
+        new("a host given with its port", "environments.host", true, (_, planted) => Failed(Host.Of("environments.dev.host in estate/environments.json", planted + ",1433"))),
+        new("an environment misnamed", "environments.environment-name", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + "]", name: "DEV"))),
+        new("a reader group given twice", "environments.reader-groups", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"readerGroups\": [" + Quoted(planted) + ", " + Quoted(planted) + "]"))),
+        new("a profile path outside the estate", "environments.profile-path", true, (scratch, planted) => ReadEnvironments(scratch, Dev(profile: "../" + planted + ".publish.xml"))),
+        new("a SQLCMD variable given twice in two cases", "environments.sqlcmd-repeated", true, (scratch, planted) =>
+            ReadEnvironments(scratch, Dev("\"sqlcmd\": { \"Tag\": \"env:A\", \"Version\": \"env:C\", \"tag\": \"env:B\" }, \"readerGroups\": [" + Quoted(planted) + "]"))),
+        new("a classification that is none", "environments.classification", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"classification\": " + Quoted(planted)))),
+        new("a synthetic environment unconfirmed", "environments.unconfirmed", true, (scratch, planted) =>
+            ReadEnvironments(scratch, Dev("\"classification\": \"synthetic\", \"readerGroups\": [" + Quoted(planted) + "]"))),
+        new("a confirmation with no date", "environments.confirmation", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"classification\": \"synthetic\", \"confirmedBy\": " + Quoted(planted)))),
+        new("a SQLCMD variable misnamed", "sqlcmd.name", true, (scratch, planted) => ReadEnvironments(scratch, Dev("\"sqlcmd\": { \"Tag Name\": \"env:A\" }, \"readerGroups\": [" + Quoted(planted) + "]"))),
+        new("a SQLCMD literal under a credential's name in the environments file", "sqlcmd.literal-credential", true, (scratch, planted) =>
+            ReadEnvironments(scratch, Dev("\"sqlcmd\": { \"ServicePassword\": { \"literal\": " + Quoted(planted) + ", \"sensitive\": false } }"))),
         new("a script using a variable with no value", "sqlcmd.undefined", true, (_, planted) =>
             Failed(SqlCmdVariable.Substitute("PRINT '$(Missing)';", new Dictionary<string, string>(StringComparer.Ordinal) { ["Tag"] = planted }))),
 
@@ -245,7 +245,7 @@ internal static class RefusalPaths
         {
             var root = Estate(scratch, Environments(Dev(profile: "estate/profiles/relaxed.publish.xml")));
             File.Move(Profile(scratch, "<BlockOnPossibleDataLoss>False</BlockOnPossibleDataLoss>", ("Tag", planted)), Path.Combine(root, "estate", "profiles", "relaxed.publish.xml"));
-            return Failed(PublishProfiles.Of(Made(Io.Posture.Environments(root)).All.Single(), root));
+            return Failed(PublishProfiles.Of(Made(Io.EnvironmentsFile.Read(root)).All.Single(), root));
         }),
         new("a SQLCMD literal under a credential's name in a profile", "sqlcmd.literal-credential", true, (scratch, planted) =>
             Failed(PublishProfiles.Load(Profile(scratch, "", ("ApiToken", planted))))),
@@ -256,7 +256,7 @@ internal static class RefusalPaths
         new("a literal connection string where a target goes", "connection.literal", true, (_, planted) =>
             Failed(SqlServer.Target("Server=db;User ID=sa;Password=" + planted, "--target"))),
         new("a git ref where a database is asked for", "target.not-a-database", false, (scratch, _) => Failed(SqlServer.Resolve(Target("ref:main"), scratch))),
-        new("an environment the posture does not name", "target.unnamed", false, (scratch, _) => Failed(SqlServer.Resolve(Target("env:qa"), Estate(scratch, Environments(Dev()))))),
+        new("an environment the environments file does not name", "target.unnamed", false, (scratch, _) => Failed(SqlServer.Resolve(Target("env:qa"), Estate(scratch, Environments(Dev()))))),
         new("the synthetic copy before its milestone", "synthetic-copy.not-built", false, (scratch, _) => Failed(SqlServer.Resolve(Target("synthetic-copy"), scratch))),
         new("a connection whose variable is unset", "connection.unresolved", false, (scratch, _) =>
             Failed(SqlServer.Resolve(Target("env:dev"), Estate(scratch, Environments(Dev(connection: "env:ESTATE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant())))))),
@@ -264,7 +264,7 @@ internal static class RefusalPaths
             Failed(SqlServer.Resolve(Target("env:dev"), Initialized(Estate(scratch, Environments(Dev(connection: Reference(scratch, "dev.connection", "garbled " + planted)))))))),
         new("a connection file git tracks", "reference.tracked", true, (scratch, planted) => InRepository(scratch, root =>
         {
-            Written(root, "estate/posture.json", Environments(Dev(connection: "file:estate/dev.connection")));
+            Written(root, "estate/environments.json", Environments(Dev(connection: "file:estate/dev.connection")));
             OwnerOnly(Written(root, "estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
             Arrange(root, "add", "--", "estate/dev.connection");
             Arrange(root, "commit", "-q", "-m", "the connection file");
@@ -272,14 +272,14 @@ internal static class RefusalPaths
         })),
         new("a connection file git does not ignore", "reference.not-ignored", true, (scratch, planted) => InRepository(scratch, root =>
         {
-            Written(root, "estate/posture.json", Environments(Dev(connection: "file:estate/dev.connection")));
+            Written(root, "estate/environments.json", Environments(Dev(connection: "file:estate/dev.connection")));
             OwnerOnly(Written(root, "estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
             return SqlServer.Resolve(Target("env:dev"), root);
         })),
         new("a connection file named by a spelling its folder does not list", "reference.unlisted", OperatingSystem.IsWindows(), (scratch, planted) => InRepository(scratch, root =>
         {
             Written(root, ".gitignore", ".estate/\n");
-            Written(root, "estate/posture.json", Environments(Dev(connection: "file:.estate/dev.connection::$DATA")));
+            Written(root, "estate/environments.json", Environments(Dev(connection: "file:.estate/dev.connection::$DATA")));
             var file = OwnerOnly(Written(root, ".estate/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + planted));
             return OperatingSystem.IsWindows()   // Windows opens the default data stream as name::$DATA; elsewhere that name opens no file, and the driver asks io/SqlServer of it directly
                 ? SqlServer.Resolve(Target("env:dev"), root).Map(database => database.Target.ToString())
@@ -357,7 +357,7 @@ internal static class RefusalPaths
         }),
         new("a SQLCMD reference to a file git tracks", "reference.tracked", true, (scratch, planted) => InRepository(scratch, root =>
         {
-            Written(root, "estate/posture.json", Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"file:estate/token.txt\" }",
+            Written(root, "estate/environments.json", Environments(Dev("\"sqlcmd\": { \"ServiceToken\": \"file:estate/token.txt\" }",
                 connection: Reference(scratch, "dev.connection", "Server=dev-sql;Initial Catalog=Dev"))));
             OwnerOnly(Written(root, "estate/token.txt", planted));
             Arrange(root, "add", "--", "estate/token.txt");
@@ -407,7 +407,7 @@ internal static class RefusalPaths
 
     /// <summary>
     /// A file: reference to a file written under the scratch folder, outside the estate's root and in no git repository, and read by its
-    /// owner alone; its path with '/' so the posture's JSON carries it as it is.
+    /// owner alone; its path with '/' so the environments file's JSON carries it as it is.
     /// </summary>
     private static string Reference(string scratch, string file, string text) => "file:" + OwnerOnly(Written(scratch, file, text)).Replace('\\', '/');
 
@@ -551,20 +551,20 @@ internal static class RefusalPaths
         ? new Ran.Exited(0, (string)JsonNode.Parse(File.ReadAllText(Path.Combine(Repository.Root, "global.json")))!["sdk"]!["version"]! + " [sdk]\n", "")
         : Command.Run(command, cancel);
 
-    /// <summary>A dev environment in posture JSON: its host, its connection, its profile and whatever else is given.</summary>
+    /// <summary>A dev environment in environmentsFile JSON: its host, its connection, its profile and whatever else is given.</summary>
     private static string Dev(string extra = "", string connection = "env:ESTATE_DEV", string profile = Pipeline, string name = "dev", string host = "dev-sql") =>
         Quoted(name) + ": { \"host\": " + Quoted(host) + ", \"connection\": " + Quoted(connection) + ", \"profile\": " + Quoted(profile) + (extra.Length > 0 ? ", " + extra : "") + " }";
 
     private static string Environments(string environments) => "{ \"environments\": { " + environments + " } }";
 
-    private static Error Posture(string scratch, string environments) => Failed(Io.Posture.Environments(Estate(scratch, Environments(environments))));
+    private static Error ReadEnvironments(string scratch, string environments) => Failed(Io.EnvironmentsFile.Read(Estate(scratch, Environments(environments))));
 
-    /// <summary>An estate's root under the scratch folder, holding estate/posture.json with the text given.</summary>
-    private static string Estate(string scratch, string posture)
+    /// <summary>An estate's root under the scratch folder, holding estate/environments.json with the text given.</summary>
+    private static string Estate(string scratch, string environmentsFile)
     {
         var root = Path.Combine(scratch, "estate-root");
         Directory.CreateDirectory(Path.Combine(root, "estate", "profiles"));
-        File.WriteAllText(Path.Combine(root, "estate", "posture.json"), posture);
+        File.WriteAllText(Path.Combine(root, "estate", "environments.json"), environmentsFile);
         return root;
     }
 

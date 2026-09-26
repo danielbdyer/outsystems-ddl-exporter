@@ -7,7 +7,7 @@ namespace Estate.Budgets.Tests;
 /// <summary>
 /// Each grammar estate reads a name by is written in one file of the kernel, io and the cli (DECISIONS.md, 2026-09-25; findings R-7 and
 /// ARCH-11): an environment's name and a copy's name in kernel/Target.cs, a server's protocol prefix in kernel/ServerName.cs, a SQLCMD
-/// variable's name in kernel/SqlCmd.cs. A second copy of one lets the target grammar and estate/posture.json, the registry and R15, or
+/// variable's name in kernel/SqlCmd.cs. A second copy of one lets the target grammar and estate/environments.json, the registry and R15, or
 /// a plan and a parse of its script read one name two ways.
 /// </summary>
 public sealed class OneGrammar

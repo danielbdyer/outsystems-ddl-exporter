@@ -52,9 +52,9 @@ public static class DriftCheck
             return new(stamp, outside);
         }
 
-        var posture = Posture.Environments(estate.Root);
-        var reached = SqlServer.Resolve(request.Target, posture, estate.Root)
-            .Bind(database => Profile(estate.Root, database, posture, request.Profile).Map(profile => (Database: database, Profile: profile)))
+        var environmentsFile = EnvironmentsFile.Read(estate.Root);
+        var reached = SqlServer.Resolve(request.Target, environmentsFile, estate.Root)
+            .Bind(database => Profile(estate.Root, database, environmentsFile, request.Profile).Map(profile => (Database: database, Profile: profile)))
             .Bind(chosen => SqlServer.Reach(chosen.Database, log).Map(readable => (chosen.Database, chosen.Profile, Readable: readable)))
             .Bind(chosen => (chosen.Database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, log).Map(server => (Server?)server) : Result.Ok<Server?>(null))
                 .Map(server => (chosen.Database, chosen.Profile, chosen.Readable, Server: server)));
@@ -97,13 +97,13 @@ public static class DriftCheck
 
     /// <summary>
     /// The pipeline's profile for the database: a named environment's own; for a copy, the one the caller names, from the estate's root, else
-    /// the one profile every environment of the posture names.
+    /// the one profile every environment of the environments file names.
     /// </summary>
-    private static Result<PublishProfile.Strict> Profile(string root, SqlServer.Database database, Result<Environments> posture, string? named) =>
+    private static Result<PublishProfile.Strict> Profile(string root, SqlServer.Database database, Result<Environments> environmentsFile, string? named) =>
         database is SqlServer.EnvironmentDatabase environment ? PublishProfiles.Of(environment.Environment, root)
         : named is not null ? PublishProfiles.Load(Path.GetFullPath(Path.Combine(root, named)))
-        : posture.Bind(environments => environments.SharedProfile is { } shared
+        : environmentsFile.Bind(environments => environments.SharedProfile is { } shared
             ? PublishProfiles.Load(Path.GetFullPath(Path.Combine(root, shared.ToString())))
-            : new Error("arguments.missing-flag", database + " is a copy, and " + Posture.Json + " names no one profile its environments share.",
+            : new Error("arguments.missing-flag", database + " is a copy, and " + EnvironmentsFile.Json + " names no one profile its environments share.",
                 "Name the profile to plan under with estate check drift --profile <the pipeline's .publish.xml>."));
 }

@@ -96,7 +96,7 @@ public static class Doctor
             machine.Runtime.Major == RuntimeMajor ? new(Item.Runtime, machine.Runtime.ToString(), null)
                 : new(Item.Runtime, machine.Runtime.ToString(), "Install the .NET " + RuntimeMajor.ToString(CultureInfo.InvariantCulture) + " runtime; estate runs on .NET " + RuntimeMajor.ToString(CultureInfo.InvariantCulture) + " alone."),
             tool,
-            Committed(Posture.Root(machine.WorkingDirectory), version),
+            Committed(EnvironmentsFile.Root(machine.WorkingDirectory), version),
             sdk.Remedy is null && tool.Remedy is null ? new(Item.Build, "dotnet with the tool folder's targets", null) : new(Item.Build, "none", "Install what the sdk and tool items name, then run estate doctor."),
             GitVersion(run, cancel),
             LocalServerChoice(machine, docker, run, cancel),

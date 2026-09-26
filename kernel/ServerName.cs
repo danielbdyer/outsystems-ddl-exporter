@@ -6,14 +6,14 @@ namespace Estate.Kernel;
 /// <summary>
 /// The machine a SQL Server runs on, as R15 compares machines (V3_MILESTONES.md §4 row 16): lower case, with no protocol, port or
 /// instance, and localhost for this machine however a connection spells it. <see cref="ServerName"/> reads the host inside a
-/// connection's data source, keeping any spelling SqlClient accepts; <see cref="Of"/> reads the host estate/posture.json gives an
+/// connection's data source, keeping any spelling SqlClient accepts; <see cref="Of"/> reads the host estate/environments.json gives an
 /// environment, which is a host name (letters, digits, '-', '_' and '.', a letter or digit first and last), an IP address, or
 /// (localdb). Two hosts are one here when they are spelled alike; io/LocalServer also asks DNS whether two spellings share an
 /// address. default(Host) is not a host.
 /// </summary>
 public readonly record struct Host : IComparable<Host>
 {
-    private static readonly Regex Posture = new(
+    private static readonly Regex Written = new(
         @"\A(?:[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?|\(localdb\)|[0-9a-f]*:[0-9a-f.]*:[0-9a-f:.]*)\z", RegexOptions.CultureInvariant);
 
     private readonly string? _text;
@@ -27,14 +27,14 @@ public readonly record struct Host : IComparable<Host>
     public static Host LocalDb { get; } = new("(localdb)");
 
     /// <summary>
-    /// The host estate/posture.json gives an environment: trimmed and in lower case, an IPv6 address without its brackets, and
-    /// localhost for 127.0.0.1 and ::1. A port, an instance, a protocol or white space is posture.host, since they belong to the
+    /// The host estate/environments.json gives an environment: trimmed and in lower case, an IPv6 address without its brackets, and
+    /// localhost for 127.0.0.1 and ::1. A port, an instance, a protocol or white space is environments.host, since they belong to the
     /// connection string; the error leads with <paramref name="subject"/> and quotes nothing.
     /// </summary>
     public static Result<Host> Of(string subject, string? text) =>
-        text?.Trim().Trim('[', ']').ToLowerInvariant() is { } host && Posture.IsMatch(host)
+        text?.Trim().Trim('[', ']').ToLowerInvariant() is { } host && Written.IsMatch(host)
             ? Local(host) ? Localhost : new Host(host)
-            : new Error("posture.host", subject + " is no host name, IP address or (localdb); a port, an instance, a protocol and white space belong to the environment's connection string.",
+            : new Error("environments.host", subject + " is no host name, IP address or (localdb); a port, an instance, a protocol and white space belong to the environment's connection string.",
                 "Write the host alone, such as dev-sql.corp.example, and keep the port or the instance in the connection string.");
 
     /// <summary>Ordinally, by spelling.</summary>

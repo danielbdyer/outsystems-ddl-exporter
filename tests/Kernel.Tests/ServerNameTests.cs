@@ -9,7 +9,7 @@ namespace Estate.Kernel.Tests;
 /// <summary>
 /// A server as .estate/copies.json records it and R15 compares it (V3_MILESTONES.md §4 row 16): the data source's host, then its port or
 /// instance, in lower case; this machine, however a connection spells it, is localhost. The spelling is the one the registry's rows
-/// already carry, so a row written before ServerName existed still resolves; and a host as estate/posture.json names one.
+/// already carry, so a row written before ServerName existed still resolves; and a host as estate/environments.json names one.
 /// </summary>
 public sealed class ServerNameTests
 {
@@ -69,7 +69,7 @@ public sealed class ServerNameTests
         Assert.Equal(Host.LocalDb, ServerName.Of("(localdb)\\v11.0", Machine).Host);
     }
 
-    /// <summary>A host as estate/posture.json names an environment's: the host alone, since a port, an instance, a protocol or white space belongs to a connection's data source.</summary>
+    /// <summary>A host as estate/environments.json names an environment's: the host alone, since a port, an instance, a protocol or white space belongs to a connection's data source.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("DEV-SQL.corp.example", "dev-sql.corp.example")]
@@ -82,8 +82,8 @@ public sealed class ServerNameTests
     [InlineData("(localdb)", "(localdb)")]
     [InlineData("(LocalDB)", "(localdb)")]
     [InlineData("SQL_PROD01", "sql_prod01")]
-    public void A_posture_host_is_read_in_lower_case_and_this_machine_as_localhost(string text, string host) =>
-        Assert.Equal(host, Expect.Value(Host.Of("environments.dev.host in estate/posture.json", text)).ToString());
+    public void An_environment_s_host_is_read_in_lower_case_and_this_machine_as_localhost(string text, string host) =>
+        Assert.Equal(host, Expect.Value(Host.Of("environments.dev.host in estate/environments.json", text)).ToString());
 
     [Theory]
     [Trait("Category", "fast")]
@@ -97,11 +97,11 @@ public sealed class ServerNameTests
     [InlineData("(local)")]
     [InlineData("dev\u0001sql")]
     [InlineData(null)]
-    public void A_posture_host_with_a_port_an_instance_a_protocol_or_white_space_is_refused(string? text)
+    public void An_environment_s_host_with_a_port_an_instance_a_protocol_or_white_space_is_refused(string? text)
     {
-        var error = Expect.Failed(Host.Of("environments.dev.host in estate/posture.json", text), "posture.host");
+        var error = Expect.Failed(Host.Of("environments.dev.host in estate/environments.json", text), "environments.host");
 
-        Assert.StartsWith("environments.dev.host in estate/posture.json", error.Message, StringComparison.Ordinal);
+        Assert.StartsWith("environments.dev.host in estate/environments.json", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

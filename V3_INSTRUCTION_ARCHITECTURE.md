@@ -314,7 +314,7 @@ rest are here.
 | S4 | A rename keeps its data | A change containing a rename with no refactorlog entry is refused before any publish. | `classify` raises `RenameWithoutRefactorlog` as `Error` | law 6; `Io.Tests` | `_index/identity-and-refactorlog`; prose only |
 | S5 | Data corrections leave a receipt | Any pre-deploy script that modifies rows is recorded with rows-before, rows-after and the approving human in the pull request description's data section. | `PullRequestDescription.TheData` carries the three fields; the gate refuses a data-modifying pre-deploy whose description lacks them | `Io.Tests: "reconcile without receipt is refused"` | `ApprovedDataCorrections` (1,669 lines, cutover-era); the receipt survives, the workflow does not |
 | S6 | The lag window is a lock | A release that touches a table with an open multi-phase window is refused at the gate. | `estate check inflight` (exit 9) | `Io.Tests`; the PR gate | `inflight-check.mjs`; mechanized 2026-08-28 |
-| S7 | Least privilege by type | Only `move` can write to a named environment, only to one listed as writable in `posture.json`, and never to Prod. | `Target = Disposable | Environment of name`; `Publish` accepts `Disposable` only; `move` checks the posture list | `Io.Tests: "no verb writes to Prod"` | `WriteSignoff`/`ActConsent` (cutover-era consent); replaced by the type |
+| S7 | Least privilege by type | Only `move` can write to a named environment, only to one listed as writable in `environments.json`, and never to Prod. | `Target = Disposable | Environment of name`; `Publish` accepts `Disposable` only; `move` checks the environments file list | `Io.Tests: "no verb writes to Prod"` | `WriteSignoff`/`ActConsent` (cutover-era consent); replaced by the type |
 | S8 | CDC-tracked tables are known | A column-list change on a CDC-tracked table is an `Error` finding until the pre-deploy names the capture-instance step. | `classify` reads `ledgers/cdc-tracked.md`; `check cdc` fills it from `sys.tables.is_tracked_by_cdc` | `Io.Tests` | the tree removed CDC 2026-08-21; new |
 
 ### 4.2 Determinism and idempotence
@@ -341,7 +341,7 @@ rest are here.
 
 | # | Value | Requirement | Mechanism | Where | v2 |
 |---|---|---|---|---|---|
-| X1 | No secret in a file | A connection is always a reference (`env:NAME` or `file:path`), never an inline string; a config with a credential-shaped key is refused. | `ConnectionResolver` accepts references only; `posture.json`'s schema has no credential key | `Io.Tests: "inline credential refused"`; CI secret scan | D9; mechanized (`Config.parse`) |
+| X1 | No secret in a file | A connection is always a reference (`env:NAME` or `file:path`), never an inline string; a config with a credential-shaped key is refused. | `ConnectionResolver` accepts references only; `environments.json`'s schema has no credential key | `Io.Tests: "inline credential refused"`; CI secret scan | D9; mechanized (`Config.parse`) |
 | X2 | No secret in output | No verdict, log line, `gate.json`, or exception message carries a connection string, a password, or a row value. Where SQL Server's own message carries an offending value (`Msg 2627`, `Msg 547` name the duplicate or the orphan), the message is kept, the value is masked, and "Not checked" says the full text is in the run log. | a `ConnRef` type whose `ToString()` returns the reference (`env:OSM_DEV`), never the resolved string; a `Msg` scrubber for the value fragment; a test drives every refusal path with a password-bearing connection and greps the whole output | `Io.Tests: "no output contains Password="`; `Kernel.Tests: "Msg values are masked"` | D9 governs config only; nothing governs output today; new. This row and P1 are in tension (the pull request description must carry the verbatim message; the synthetic copy must carry no literal), and the masking rule is how the tension resolves |
 | X3 | Supply chain is pinned | Every package version is pinned centrally, restored in locked mode, audited, and listed in an allowlist with its licence; a new package is a decision line. | `Directory.Packages.props`; `packages.lock.json` with `RestoreLockedMode` in CI; `NuGetAudit` on; `ci/packages.allow` checked by a test | `Budgets.Tests: "packages equal the allowlist"` | not stated (v2 pinned in `.fsproj`, no lock, no allowlist); new |
 | X4 | Builds are deterministic | The same commit produces the same binaries; CI builds with `ContinuousIntegrationBuild` and `Deterministic`. | project properties; a CI step compares two builds' hashes | CI | not stated; new |
@@ -424,7 +424,7 @@ rest are here.
 
 | # | Value | Requirement | Mechanism | Where | v2 |
 |---|---|---|---|---|---|
-| G1 | The pipeline reproduces the proof | The gate rebuilds the dacpac, restores the synthetic copy, publishes the pull request's combined change under the production posture, and posts the verdict and the description diff. | `estate gate`; the PR lane | `ci/` | the review's Layer 3; half-shipped (`inflight-check.mjs`, the ADO template) |
+| G1 | The pipeline reproduces the proof | The gate rebuilds the dacpac, restores the synthetic copy, publishes the pull request's combined change under the pipeline's publish profile, and posts the verdict and the description diff. | `estate gate`; the PR lane | `ci/` | the review's Layer 3; half-shipped (`inflight-check.mjs`, the ADO template) |
 | G2 | The human makes the business call | The one question only a human can answer is posed, recorded with its owner, and never answered by reading data. | `authoring.md` S0 and S6; the pull request description's `Not checked` names it if open | `Budgets.Tests: register` | `THE_DECISION_TREE.md` S6; prose |
 | G3 | One approver class, no self-approval, no machine approval | A dev lead approves every schema change and never their own; the gate reports and never approves; a lead's own change needs the other lead. | Azure DevOps branch policy; the lanes hold no approval token; `ledgers/reviewers.md` | `ci/README.md`; prose for the policy | `estate/reviewers.md` (two rows unfilled); prose |
 | G4 | First time on this estate is a lookup | The added-scrutiny line comes from `ledgers/operations.md`, appended at the production apply, never from memory; a shipped change with no row is a gate finding. | `classify` reads the ledger; the gate refuses to close a release whose operation has no row | `Io.Tests` | `estate/README.md`; the ledger has no rows; prose |
@@ -519,7 +519,7 @@ tree equals it. The columns are the manifest's fields.
 | `kernel/README.md`, `io/README.md`, `cli/README.md`, `tests/README.md`, `ci/README.md` | hand | a maintainer · a change in that package | 80 each | per-project READMEs; `tests/README.md` |
 | `io/SyntheticCopy/README.md` | hand | a maintainer · a change to the synthetic copy | 620 (kept as-is) | `THE_TWIN.md` + `THE_SYNTHETIC_DATA_DESIGN.md` |
 | `cli/VERBS.md` | generated (`estate --help --json`) | an agent · a change; the bundle | — | `usageLines` in `Program.fs` |
-| `cli/CONFIG.md` | generated (from `posture.json`'s schema) | a maintainer · configuring | — | `CONFIG_REFERENCE.md` + `projection.schema.json` |
+| `cli/CONFIG.md` | generated (from `environments.json`'s schema) | a maintainer · configuring | — | `CONFIG_REFERENCE.md` + `projection.schema.json` |
 | `.github/PULL_REQUEST_TEMPLATE/engine-change.md` | hand | a session, a review bot · an engine PR | 40 | new |
 | `.github/PULL_REQUEST_TEMPLATE/schema-change.md` | generated (from `knowledge/description.md`) | a developer · a schema PR (this repository's own golden project) | — | `pr-template/schema-change.md` |
 | `.claude/settings.json`, `.claude/hooks/session-start.sh`, `.claude/hooks/session-end.sh` | hand | the harness | 40 · 10 · 10 | `settings.json` (47), four hooks (814) |
@@ -567,7 +567,7 @@ Knowledge total, hand-written: 150 + 150 + 100 + 120 + 45 × 85 + 8 × 110 + 400
 | `AGENTS.md` | generated (the router, for any non-Copilot agent) | vendored | any agent · session start |
 | `knowledge/**` (minus `ledgers/`) | generated copy | vendored | as §5.2 |
 | `estate/ledgers/*.md` | hand, append-only | **estate** | the gate, a session · a release |
-| `estate/posture.json` | hand | **estate** | every verb · always (the publish posture, the writable targets, the local server) |
+| `estate/environments.json` | hand | **estate** | every verb · always (the environments, the writable targets, the local server) |
 | `estate/evidence.shape.json`, `estate/synthetic-copy.json` | hand (produced by verbs, committed) | **estate** | `synthetic-copy` · the bake lane |
 | `estate/profiles/{strict,permissive}.publish.xml` | hand (mirrored from the pipeline's task) | **estate** | `prove`, the gate |
 | `pipelines/{gate,bake,proof}.yml` | generated (templates) | vendored | Azure DevOps · a PR, a merge, nightly |
@@ -862,7 +862,7 @@ the explicit negative is the section a reviewer relies on.
 - **`cli/VERBS.md`** — from `estate --help --json`: every verb, its flags, its JSON output
   schema, its exit codes and error codes with remedies. The bundle's router and
   `authoring.md` cite verbs by name and a test checks that every cited verb exists.
-- **`cli/CONFIG.md`** — from `posture.json`'s schema: every key, its type, its default, its
+- **`cli/CONFIG.md`** — from `environments.json`'s schema: every key, its type, its default, its
   meaning; the schema is the one the CLI validates against.
 - **`DOCS.md`** — from the manifest: §1's table and §5's tables, regenerated so that the
   document about the documents cannot drift from the documents.
@@ -1299,7 +1299,7 @@ adds a surface until the pilot says which rung the team is on.
 
 ### 8.7 What the estate owns, and the engine never writes
 
-`estate/posture.json` (the publish posture; the writable targets; the local server), the project
+`estate/environments.json` (the environments; the writable targets; the local server), the project
 format row in `ledgers/toolchain.md` (classic today; `emit` never changes a project's format),
 `estate/profiles/*.publish.xml` (mirrored from the pipeline's task by a human), the ledgers,
 `estate/evidence.shape.json` and `estate/synthetic-copy.json` (produced by verbs the team runs, committed
@@ -1346,7 +1346,7 @@ One verb answers "can this machine do the work?" and every entry file says to ru
 
 ```
 estate doctor READY | sdk=10.0.4 | dacfx=162.5.57 (pinned) | local-server=localdb (2022) |
-  synthetic-copy=9f3a1c (restored 2026-09-16, current) | estate=../estate (posture ok, 2 open windows)
+  synthetic-copy=9f3a1c (restored 2026-09-16, current) | estate=../estate (environments ok, 2 open windows)
 ```
 
 `DEGRADED` names what is missing and the remedy (`--install` for the SDK and the local tool;
@@ -1667,7 +1667,7 @@ FK Check*, *Refactorlog Cleanup*) stay; only *Naked Rename* is retired, for its 
 | `Refusal` (the type), `Result<T>.Refused`, `Result.Refuse`, `Pin.Refuses`, `RefusalExits`; a code's area | `Error`, `Result<T>.Failed`, `Result.Fail`, `Pin.Rejects`, `ExitByCategory`; its category. The verb refuse stays for a refusal by policy, and the frozen exit names stay |
 | `Receipt` and its fields `Delta`, `Target`, `DataFacts`, `Engine`, `Profile`, `Where`; `Engine`; `Ssdt.Engine`; the JSON `engine` and the codes `engine.*` | `Provenance` with `Change`, `Schema`, `ExistingData`, `DacFx`, `Server`, `PublishProfile`, `Target`, `At`; `DacFx` (a `DacFxVersion`) and `Server` (product version, compatibility level, image digest); `BuildTargets`; `dacfx`, `server` and `pin`; `server.image-digest`, `toolchain.dacfx-version`, `toolchain.unpinned`. In prose: DacFx, SQL Server, or the tool's name |
 | `Branch`, `BranchSite`, `ClaimSite`, `Transfers` (the M2 types); `branch.malformed`, `branch.taken` | `ExistingData`, `PreconditionState`, `Precondition`, `AppliesTo`; `git-branch.malformed`, `git-branch.exists`; git keeps the word branch (decision 2.8) |
-| `cohorts` | `readerGroups`; the code `posture.reader-groups` |
+| `cohorts` | `readerGroups`; the code `environments.reader-groups` |
 | the substrate, `io/Substrate.cs`, the category and doctor item `substrate` | the local server, `io/LocalServer.cs`, `local-server` |
 | the Twin, the verb and target `twin`, `twin.not-built`, `io/Twin` | the synthetic copy, `SyntheticCopy`, `synthetic-copy`, `synthetic-copy.not-built`, `io/SyntheticCopy` |
 | σ, mint, `Synth`, `Realize.cs` | `SyntheticData.Generate`; a generated set; `GenerateViolatingRow` |

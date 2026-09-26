@@ -23,7 +23,7 @@ public sealed class StatementTests : IDisposable
 {
     private readonly ScratchFolder folder = ScratchFolder.UnderRepository("statements-under-test");
 
-    /// <summary>An estate's root whose posture names no environment, so R15 clears the local server.</summary>
+    /// <summary>An estate's root whose environmentsFile names no environment, so R15 clears the local server.</summary>
     private string Root => SqlServerFixture.EstateRoot(folder.Path);
 
     public void Dispose() => folder.Dispose();

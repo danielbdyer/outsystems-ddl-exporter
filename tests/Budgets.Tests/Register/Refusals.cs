@@ -62,7 +62,7 @@ public sealed class Refusals
         var driven = RefusalPaths.All.Select(c => c.Code).ToHashSet(StringComparer.Ordinal);
         var written = RefusalPaths.InTheSources().ToList();
 
-        Assert.Contains("posture.literal-connection", written);
+        Assert.Contains("environments.literal-connection", written);
         Assert.Contains("arguments.unknown-check", written);   // the cli's own, in cli/Check.cs
         Assert.Contains("element.", written);   // the start of a composed code: element.property-name, element.relationship-name
         Assert.DoesNotContain(written, code => code.EndsWith('.') ? !driven.Any(d => d.StartsWith(code, StringComparison.Ordinal)) : !driven.Contains(code));
@@ -73,8 +73,8 @@ public sealed class Refusals
     /// <summary>The scan reads a code from a construction that names the type and from a target-typed one (finding D6), and reads no code from a string that is none.</summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("return new Error(\"posture.missing\", \"No posture.\", \"Commit it.\");", "posture.missing")]
-    [InlineData("private static Error Malformed(string at) => new(\"posture.malformed\", at, \"Write it.\");", "posture.malformed")]
+    [InlineData("return new Error(\"environments.missing\", \"No environments file.\", \"Commit it.\");", "environments.missing")]
+    [InlineData("private static Error Malformed(string at) => new(\"environments.malformed\", at, \"Write it.\");", "environments.malformed")]
     [InlineData("new Error(ErrorCode.Text(category) + \".\", m, r)", null)]
     [InlineData("new(\"estate.doctor/1\", outcome, 0, message, [])", null)]
     [InlineData("new(\"done\", [0], \"the message is the tool's version\")", null)]

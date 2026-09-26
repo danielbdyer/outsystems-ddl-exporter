@@ -19,7 +19,7 @@ namespace Estate.Io;
 
 /// <summary>
 /// A live database, read whole and read only (V3_MILESTONES.md §2.2, WP 1.4), and the one adapter to SQL Server and SqlClient: an
-/// argument read as a target (kernel/Target.cs); EnvironmentDatabase, the database of an environment estate/posture.json names, and Copy,
+/// argument read as a target (kernel/Target.cs); EnvironmentDatabase, the database of an environment estate/environments.json names, and Copy,
 /// a database io/LocalServer made, which alone publishes (§2.1 rule 3); Query, the one path for the statements estate sends itself;
 /// Database.ErrorOf, the one boundary every SqlClient or DacFx failure passes through, reading SQL Server's numbers once; Reach, what
 /// this identity may read there, asked before anything builds; and Measure, which runs an aggregate query its closed allowlist admits,
@@ -58,7 +58,7 @@ public static class SqlServer
     /// </summary>
     public static Result<Target> Target(string text, string subject) =>
         ConnectionString.IsConnection(text) ? new Error("connection.literal", subject + " is a literal connection string, which no argument carries.",
-            "Name the target as env:NAME, an environment whose connection estate/posture.json gives as env:VARIABLE or file:path.")
+            "Name the target as env:NAME, an environment whose connection estate/environments.json gives as env:VARIABLE or file:path.")
         : Kernel.Target.Parse(text, subject);
 
     /// <summary>A live database the tool reads: a named environment's or a copy's. Its resolved connection stays inside io, and it prints as its target.</summary>
@@ -152,7 +152,7 @@ public static class SqlServer
         public sealed override string ToString() => Target.ToString();
     }
 
-    /// <summary>The database of an environment estate/posture.json names: read only, and never published to (VALUES.md S7).</summary>
+    /// <summary>The database of an environment estate/environments.json names: read only, and never published to (VALUES.md S7).</summary>
     public sealed class EnvironmentDatabase : Database
     {
         private EnvironmentDatabase(NamedEnvironment environment, string connection, string estateRoot)
@@ -200,22 +200,22 @@ public static class SqlServer
         }));
     }
 
-    /// <summary>A target as a database, estate/posture.json read under the estate's root for it.</summary>
-    public static Result<Database> Resolve(Target target, string estateRoot) => Resolve(target, Posture.Environments(estateRoot), estateRoot);
+    /// <summary>A target as a database, estate/environments.json read under the estate's root for it.</summary>
+    public static Result<Database> Resolve(Target target, string estateRoot) => Resolve(target, EnvironmentsFile.Read(estateRoot), estateRoot);
 
     /// <summary>
-    /// A target as a database, against estate/posture.json as the verb read it once (<paramref name="posture"/>, whose error counts only
-    /// for a target that needs the posture): env: through the environment's connection reference; copy: through .estate/copies.json
-    /// alone, on a server R15 clears against the posture (io/LocalServer). A git ref and a package are read as packages, and the
+    /// A target as a database, against estate/environments.json as the verb read it once (<paramref name="environmentsFile"/>, whose error counts only
+    /// for a target that needs the environments file): env: through the environment's connection reference; copy: through .estate/copies.json
+    /// alone, on a server R15 clears against the environments file (io/LocalServer). A git ref and a package are read as packages, and the
     /// synthetic copy is not in this build.
     /// </summary>
-    public static Result<Database> Resolve(Target target, Result<Environments> posture, string estateRoot) => target.Match<Result<Database>>(
-        environment => posture.Bind(environments => environments.Named(environment.Name) is { } named
+    public static Result<Database> Resolve(Target target, Result<Environments> environmentsFile, string estateRoot) => target.Match<Result<Database>>(
+        environment => environmentsFile.Bind(environments => environments.Named(environment.Name) is { } named
             ? EnvironmentDatabase.Of(named, estateRoot).Map(n => (Database)n)
-            : new Error("target.unnamed", environment + " names no environment of " + Posture.Json + ".", environments.All.Count == 0
-                ? "Add the environment to " + Posture.Json + " with its host, connection reference and profile."
+            : new Error("target.unnamed", environment + " names no environment of " + EnvironmentsFile.Json + ".", environments.All.Count == 0
+                ? "Add the environment to " + EnvironmentsFile.Json + " with its host, connection reference and profile."
                 : "Name one it holds: " + string.Join(", ", environments.All.Select(e => e.Target)) + ".")),
-        copy => LocalServer.Registered(estateRoot, copy.Name, posture).Map(c => (Database)c),
+        copy => LocalServer.Registered(estateRoot, copy.Name, environmentsFile).Map(c => (Database)c),
         () => new Error("synthetic-copy.not-built", "synthetic-copy names the synthetic copy, which is not in this build; this build reads env: and copy: databases.",
             "Name an env: or a copy: target; estate --help lists what this build runs."),
         reference => NotADatabase(reference),
@@ -319,7 +319,7 @@ public static class SqlServer
     /// How long SQL Server may run an aggregate query before SqlClient cancels it: SqlClient's own default for a command, named here.
     /// An aggregate query reads each row of a table once, and thirty seconds covers a scan of the estate's largest tables that S3 and S8
     /// have not yet measured; a query past it is measured as timed out, not as a server that does not answer (finding ARCH-13). The
-    /// profile verb of M3 revisits the figure with the row counts S8 reports; no posture key or flag sets it before then.
+    /// profile verb of M3 revisits the figure with the row counts S8 reports; no environmentsFile key or flag sets it before then.
     /// </summary>
     internal static readonly TimeSpan AggregateQueryTimeout = TimeSpan.FromSeconds(30);
 
@@ -593,7 +593,7 @@ public static class SqlServer
 
     private static Error Unlisted(string subject) => new Error("reference.unlisted", subject + " opens a file by a name its folder does not list, such as name::$DATA, a data stream;"
         + " git matches .gitignore and its index against the name the folder lists, so it cannot say whether a commit holds the file, and the file is not read.",
-        "Write the path as dir or ls lists the file, in estate/posture.json.");
+        "Write the path as dir or ls lists the file, in estate/environments.json.");
 
     /// <summary>
     /// The path of a file a file: reference names, when git keeps it out of every commit and no other user can read it; else the
@@ -697,7 +697,7 @@ public static class SqlServer
             .Bind(held => held.Database ? Result.Ok(new Readable(target, held.Server)) : target.ErrorOf(300, ""));
 
     /// <summary>
-    /// A named environment's own SQLCMD values, which a plan against it sets over the profile's: each literal as the posture gives it and
+    /// A named environment's own SQLCMD values, which a plan against it sets over the profile's: each literal as the environments file gives it and
     /// each reference resolved in memory, recorded as a read of the environment's; a copy has none.
     /// </summary>
     internal static Result<IReadOnlyList<SqlCmdValue>> SqlCmdValues(Database target) => target is not EnvironmentDatabase named ? Result.Ok<IReadOnlyList<SqlCmdValue>>([])

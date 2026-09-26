@@ -19,7 +19,7 @@
     <ProjectReference Include="../../kernel/kernel.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- The test primitives every project shares (DECISIONS.md, 2026-09-25): a Result's expected side, a planted value's search, the posture writer and a scratch folder. -->
+    <!-- The test primitives every project shares (DECISIONS.md, 2026-09-25): a Result's expected side, a planted value's search, the environments file writer and a scratch folder. -->
     <Compile Include="../Shared/*.cs" LinkBase="Shared" />
   </ItemGroup>
 </Project>

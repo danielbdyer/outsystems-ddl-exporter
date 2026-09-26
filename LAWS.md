@@ -146,7 +146,7 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | X2 | A secret planted in every property that holds one reaches no element property | `Estate.Io.Tests.ModelElementsTests.A_secret_planted_in_every_property_that_holds_one_reaches_no_element_property` |
 | X2 | Every text property DacFx declares is a listed secret or reviewed as not a secret | `Estate.Io.Tests.ModelElementsTests.Every_text_property_DacFx_declares_is_a_listed_secret_or_reviewed_as_not_a_secret` |
 | X2 | No output contains Password | `Estate.Io.Tests.PublishProfilesTests.No_output_contains_Password` |
-| X2 | Nothing read from the posture or a profile prints a literal or what a reference names | `Estate.Io.Tests.PublishProfilesTests.Nothing_read_from_the_posture_or_a_profile_prints_a_literal_or_what_a_reference_names` |
+| X2 | Nothing read from the environments file or a profile prints a literal or what a reference names | `Estate.Io.Tests.PublishProfilesTests.Nothing_read_from_the_environments_file_or_a_profile_prints_a_literal_or_what_a_reference_names` |
 | X2 | A diff of two procedures differing in a password literal alone alters the Definition and prints both values left out | `Estate.Io.Tests.SchemaTextTests.A_diff_of_two_procedures_differing_in_a_password_literal_alone_alters_the_Definition_and_prints_both_values_left_out` |
 | X2 | Each password form planted in a script is printed as left out and named | `Estate.Io.Tests.SchemaTextTests.Each_password_form_planted_in_a_script_is_printed_as_left_out_and_named` |
 | X2 | A named environment's error is withheld and a copy's is kept | `Estate.Io.Tests.TargetTests.A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept` |

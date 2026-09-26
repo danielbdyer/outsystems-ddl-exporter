@@ -147,7 +147,7 @@ public sealed class DacFxTests : IDisposable
     public void A_value_for_a_variable_the_package_does_not_declare_is_a_note()
     {
         using var package = Ok(Ssdt.Open(Packaged("undeclared", SqlServerVersion.Sql160, "CREATE TABLE dbo.T (Id INT NOT NULL);")));
-        var extra = new SqlCmdValue(Ok(SqlCmdName.Of("the posture", "Extra")), "dev", Referenced: false);
+        var extra = new SqlCmdValue(Ok(SqlCmdName.Of("the environments file", "Extra")), "dev", Referenced: false);
 
         var plan = Ok(DacFx.Plan(package, package, "Target", Strict(), [extra]));
 

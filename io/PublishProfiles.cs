@@ -59,13 +59,13 @@ public static class PublishProfiles
             if (read.Prepend(Encoding.UTF8.GetString(bytes)).Any(ConnectionString.Password.IsMatch))
             {
                 return new Error("profile.password", subject + " holds a password in a connection string; a profile gives deploy options and SQLCMD values alone.",
-                    "Delete the connection string from " + path + ", and name the connection in " + Posture.Json + " as env:NAME or file:path.");
+                    "Delete the connection string from " + path + ", and name the connection in " + EnvironmentsFile.Json + " as env:NAME or file:path.");
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or XmlException)
         {
             return e is FileNotFoundException or DirectoryNotFoundException ? new Error("profile.missing", "No publish profile at " + path + ".",
-                    "Name the pipeline's .publish.xml by its path from the estate's root, as the profile of " + Posture.Json + " does.")
+                    "Name the pipeline's .publish.xml by its path from the estate's root, as the profile of " + EnvironmentsFile.Json + " does.")
                 : new Error("profile.unreadable", subject + (e is XmlException x
                     ? string.Create(CultureInfo.InvariantCulture, $" is not XML at line {x.LineNumber}, position {x.LinePosition}.") : " cannot be opened."),
                     "Correct the file at the place this names, or save the profile again from Visual Studio.");
@@ -108,7 +108,7 @@ public static class PublishProfiles
     private static Result<SqlCmdVariable> ProfileValue(string subject, string path, string name, string value) =>
         SqlCmdVariable.Of(subject, name, value).Bind(literal => ConnectionString.IsConnection(value) ? new Error("profile.literal-connection",
             subject + " gives $(" + name + ") a literal connection string.",
-            "Give $(" + name + ") as env:NAME or file:path in the environment's sqlcmd in " + Posture.Json + ", and delete its value from " + path + ".") : Result.Ok(literal));
+            "Give $(" + name + ") as env:NAME or file:path in the environment's sqlcmd in " + EnvironmentsFile.Json + ", and delete its value from " + path + ".") : Result.Ok(literal));
 }
 
 /// <summary>

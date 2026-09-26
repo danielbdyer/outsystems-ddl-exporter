@@ -38,13 +38,13 @@ public sealed record Outcome(string Word, IReadOnlyList<int> Exits, string Meani
 }
 
 /// <summary>
-/// Where estate runs: the estate's root (Posture.Root of the working directory), the working directory, the tool folder ESTATE_TOOL
+/// Where estate runs: the estate's root (EnvironmentsFile.Root of the working directory), the working directory, the tool folder ESTATE_TOOL
 /// names, if any, and the run's query log, which names the run's folder under .estate/runs/ and which Program.Run begins once per
 /// command, so a verb's statements and the whole answer it was cut from sit in one folder.
 /// </summary>
 public sealed record Checkout(string Root, string WorkingDirectory, string? Tool, Io.SqlServer.QueryLog? Log = null)
 {
-    public static Checkout Here() => new(Io.Posture.Root(Directory.GetCurrentDirectory()), Directory.GetCurrentDirectory(), Environment.GetEnvironmentVariable("ESTATE_TOOL"));
+    public static Checkout Here() => new(Io.EnvironmentsFile.Root(Directory.GetCurrentDirectory()), Directory.GetCurrentDirectory(), Environment.GetEnvironmentVariable("ESTATE_TOOL"));
 
     /// <summary>The run's query log: the one begun for the command, or a new one when this checkout was made outside Program.Run.</summary>
     public Io.SqlServer.QueryLog Run => Log ?? Io.SqlServer.QueryLog.Start(Root);
@@ -174,7 +174,7 @@ public static class Contract
     /// wrong (name.blank, sdk.missing, build.failed), and this switch alone says how estate exits for it: one arm per member of the
     /// kernel's closed ErrorCategory and no discard arm, so a member added there without an arm here fails the build. A name, an element,
     /// a fingerprint or a change the kernel rejects while reading a package or a database is input that could not be parsed (exit 2), as
-    /// is a package, a refactorlog, a model two of whose objects share a key, or the copy registry. The posture, a profile, a reference,
+    /// is a package, a refactorlog, a model two of whose objects share a key, or the copy registry. The environments file, a profile, a reference,
     /// a connection, a SQLCMD value and the toolchain ledger are configuration (exit 6), whether io or the kernel finds the error, and
     /// so are a failure DacFx reports with no SQL Server error inside it, such as a package whose target platform the server is not, a
     /// verb this build lacks, and a defect in estate itself. A target of no known form is a bad argument, as is a flag or a verb estate
@@ -202,7 +202,7 @@ public static class Contract
         ErrorCategory.Git => 6,
         ErrorCategory.Sdk => 6,
         ErrorCategory.Tool => 6,
-        ErrorCategory.Posture => 6,
+        ErrorCategory.Environments => 6,
         ErrorCategory.Profile => 6,
         ErrorCategory.Reference => 6,
         ErrorCategory.Connection => 6,

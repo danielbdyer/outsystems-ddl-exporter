@@ -152,7 +152,7 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
     /// <summary>
     /// The measurement DF-9's refusal waited on: a project whose SqlCmdVariable has a DefaultValue, planned by DacServices.Script with no
     /// value given, gets an empty value in its script (measured on DacFx 170.5.96): DacFx does not apply the project's default, so a declared
-    /// variable no profile or posture gives is refused whether or not the project defaults it.
+    /// variable no profile or environmentsFile gives is refused whether or not the project defaults it.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]

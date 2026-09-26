@@ -107,6 +107,7 @@
     { "term": "substrate", "instead": "the local server (io/LocalServer.cs): the SQL Server that holds copies" },
     { "term": "scratch server", "instead": "the local server (io/LocalServer.cs): the SQL Server that holds copies" },
     { "term": "ScratchServer", "exact": true, "instead": "LocalServer" },
+    { "term": "posture", "instead": "the environments file, estate/environments.json, which lists each environment" },
     { "term": "twin", "instead": "the synthetic copy; the verb and target synthetic-copy" },
     { "term": "mint", "instead": "generate; a generated set (`SyntheticData.Generate`)" },
     { "term": "minted", "instead": "generated" },

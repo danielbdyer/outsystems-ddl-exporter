@@ -8,7 +8,7 @@ using Xunit;
 namespace Estate.Kernel.Tests;
 
 /// <summary>
-/// estate/posture.json as data (WP 1.5, §4 row 14): the environments it names, each once and each with the host its server runs on, a
+/// estate/environments.json as data (WP 1.5, §4 row 14): the environments it names, each once and each with the host its server runs on, a
 /// publish profile's path inside the estate, and the local server it prefers; a reference is env:NAME or file:path and prints as
 /// itself, and no connection string passes as a path; an environment is real until a named lead's dated confirmation says synthetic;
 /// and a SQLCMD value is a literal or a reference, read through Match, and a name shaped like a credential never holds a literal.
@@ -16,7 +16,7 @@ namespace Estate.Kernel.Tests;
 /// </summary>
 public sealed class EnvironmentsTests
 {
-    private const string Where = "environments.dev in estate/posture.json";
+    private const string Where = "environments.dev in estate/environments.json";
 
     private const string Pipeline = "estate/profiles/pipeline.publish.xml";
 
@@ -69,9 +69,9 @@ public sealed class EnvironmentsTests
         Assert.Equal(new Classification.Synthetic(confirmed), Expect.Value(Classification.Of(Where, "synthetic", confirmed)));
         Assert.Equal(("real", "real by the dev lead", "synthetic by the dev lead"), (Classified(Classification.Of(Where, null, null)),
             Classified(Classification.Of(Where, "real", confirmed)), Classified(Classification.Of(Where, "synthetic", confirmed))));
-        Expect.Failed(Classification.Of(Where, "synthetic", null), "posture.unconfirmed");
-        Expect.Failed(Classification.Of(Where, "Synthetic", confirmed), "posture.classification");
-        Planted.AbsentFrom(Expect.Failed(Classification.Of(Where, Planted.Text, confirmed), "posture.classification"));
+        Expect.Failed(Classification.Of(Where, "synthetic", null), "environments.unconfirmed");
+        Expect.Failed(Classification.Of(Where, "Synthetic", confirmed), "environments.classification");
+        Planted.AbsentFrom(Expect.Failed(Classification.Of(Where, Planted.Text, confirmed), "environments.classification"));
     }
 
     [Theory]
@@ -85,7 +85,7 @@ public sealed class EnvironmentsTests
     [InlineData(null, "2026-09-20")]
     [InlineData("the dev\nlead", "2026-09-20")]
     public void A_confirmation_is_a_named_lead_and_a_calendar_date_as_written(string? lead, string? on) =>
-        Expect.Failed(Confirmation.Of(Where, lead, on), "posture.confirmation");
+        Expect.Failed(Confirmation.Of(Where, lead, on), "environments.confirmation");
 
     /// <summary>The date is data, as the lead committed it: a date after today is taken as written, since nothing here reads a clock.</summary>
     [Fact]
@@ -143,7 +143,7 @@ public sealed class EnvironmentsTests
     [InlineData("dev\n")]
     [InlineData("a-name-longer-than-thirty-two-chars")]
     [InlineData("")]
-    public void An_environment_s_name_env_cannot_carry_is_refused(string name) => Expect.Failed(EnvironmentName.Of(Where, name), "posture.environment-name");
+    public void An_environment_s_name_env_cannot_carry_is_refused(string name) => Expect.Failed(EnvironmentName.Of(Where, name), "environments.environment-name");
 
     [Theory]
     [Trait("Category", "fast")]
@@ -155,7 +155,7 @@ public sealed class EnvironmentsTests
     [InlineData("estate/profiles/pipeline.xml")]
     [InlineData("")]
     [InlineData(null)]
-    public void A_profile_path_outside_the_estate_or_naming_no_publish_profile_is_refused(string? path) => Expect.Failed(PublishProfilePath.Of(Where, path), "posture.profile-path");
+    public void A_profile_path_outside_the_estate_or_naming_no_publish_profile_is_refused(string? path) => Expect.Failed(PublishProfilePath.Of(Where, path), "environments.profile-path");
 
     /// <summary>
     /// The duplicate check compares neighbours in the sorted variables, so it relies on the order putting two spellings of one name side by
@@ -165,23 +165,23 @@ public sealed class EnvironmentsTests
     [Trait("Category", "fast")]
     public void A_named_environment_rejects_a_blank_or_repeated_reader_group_and_a_SQLCMD_variable_given_twice_in_any_case()
     {
-        Expect.Failed(Environment("dev", readerGroups: ["leads", "leads"]), "posture.reader-groups");
-        Expect.Failed(Environment("dev", readerGroups: ["leads", " "]), "posture.reader-groups");
-        Expect.Failed(Environment("dev", sqlCmd: [Literal("Tag", "a"), Literal("Version", "b"), Literal("tag", "c")]), "posture.sqlcmd-repeated");
+        Expect.Failed(Environment("dev", readerGroups: ["leads", "leads"]), "environments.reader-groups");
+        Expect.Failed(Environment("dev", readerGroups: ["leads", " "]), "environments.reader-groups");
+        Expect.Failed(Environment("dev", sqlCmd: [Literal("Tag", "a"), Literal("Version", "b"), Literal("tag", "c")]), "environments.sqlcmd-repeated");
     }
 
-    /// <summary>The posture names each environment once; one environment is found by its name, and another name finds none.</summary>
+    /// <summary>The environments file names each environment once; one environment is found by its name, and another name finds none.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void The_posture_names_each_environment_once_and_finds_one_by_its_name()
+    public void The_environments_file_names_each_environment_once_and_finds_one_by_its_name()
     {
         var (dev, qa) = (Expect.Value(Environment("dev")), Expect.Value(Environment("qa")));
-        var environments = Expect.Value(Environments.Of("estate/posture.json", [qa, dev], null));
+        var environments = Expect.Value(Environments.Of("estate/environments.json", [qa, dev], null));
 
         Assert.Equal([dev, qa], environments.All);
         Assert.Same(qa, environments.Named(Expect.Value(EnvironmentName.Of(Where, "qa"))));
         Assert.Null(environments.Named(Expect.Value(EnvironmentName.Of(Where, "uat"))));
-        Expect.Failed(Environments.Of("estate/posture.json", [dev, qa, Expect.Value(Environment("dev", profile: "estate/other.publish.xml"))], null), "posture.environment-name");
+        Expect.Failed(Environments.Of("estate/environments.json", [dev, qa, Expect.Value(Environment("dev", profile: "estate/other.publish.xml"))], null), "environments.environment-name");
     }
 
     /// <summary>The profile a copy is planned under when no --profile names one: the one every environment names, else none (cli/Check.cs).</summary>
@@ -189,9 +189,9 @@ public sealed class EnvironmentsTests
     [Trait("Category", "fast")]
     public void The_shared_profile_is_the_one_path_every_environment_names_and_else_none()
     {
-        var shared = Expect.Value(Environments.Of("estate/posture.json", [Expect.Value(Environment("dev")), Expect.Value(Environment("qa"))], null)).SharedProfile;
-        var differing = Expect.Value(Environments.Of("estate/posture.json", [Expect.Value(Environment("dev")), Expect.Value(Environment("qa", profile: "estate/qa.publish.xml"))], null)).SharedProfile;
-        var none = Expect.Value(Environments.Of("estate/posture.json", [], null)).SharedProfile;
+        var shared = Expect.Value(Environments.Of("estate/environments.json", [Expect.Value(Environment("dev")), Expect.Value(Environment("qa"))], null)).SharedProfile;
+        var differing = Expect.Value(Environments.Of("estate/environments.json", [Expect.Value(Environment("dev")), Expect.Value(Environment("qa", profile: "estate/qa.publish.xml"))], null)).SharedProfile;
+        var none = Expect.Value(Environments.Of("estate/environments.json", [], null)).SharedProfile;
 
         Assert.Equal((Pipeline, null, null), (shared?.ToString(), differing?.ToString(), none?.ToString()));
     }
@@ -203,8 +203,8 @@ public sealed class EnvironmentsTests
     [InlineData("Docker", null)]
     [InlineData("podman", null)]
     [InlineData(null, null)]
-    public void The_local_server_the_posture_prefers_is_docker_or_localdb(string? text, string? kind) =>
-        Assert.Equal(kind ?? "posture.malformed", LocalServerKind.Of("localServer in estate/posture.json", text).Match(k => k.ToString(), error => error.Code));
+    public void The_local_server_the_environments_file_prefers_is_docker_or_localdb(string? text, string? kind) =>
+        Assert.Equal(kind ?? "environments.malformed", LocalServerKind.Of("localServer in estate/environments.json", text).Match(k => k.ToString(), error => error.Code));
 
     [Fact]
     [Trait("Category", "fast")]

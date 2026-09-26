@@ -21,7 +21,7 @@ namespace Estate.Io;
 /// ESTATE_SQL names, else the estate-sql container through ~/.estate/sql.env, else LocalDB, chosen inside io, so no caller holds its
 /// login or makes a copy anywhere else; Create, which names a copy for this host and process, records it and its server in
 /// .estate/copies.json and makes its database; Drop, which removes both; and the registry, against which alone copy: resolves, on the
-/// server its row records. A local server on the host an environment names in estate/posture.json, by spelling or by address, is
+/// server its row records. A local server on the host an environment names in estate/environments.json, by spelling or by address, is
 /// refused before anything connects (R15). Its CREATE and DROP DATABASE go through io/SqlServer.Query, the one statement path.
 /// </summary>
 public static class LocalServer
@@ -142,11 +142,11 @@ public static class LocalServer
         ConnectionString.Parse("ESTATE_SQL", server, "Correct ESTATE_SQL, or unset it; then run estate doctor.").Map(ConnectionString.ServerOf);
 
     /// <summary>
-    /// A copy on the server given, refused on a named environment's host (R15 against estate/posture.json, read here once); recorded
+    /// A copy on the server given, refused on a named environment's host (R15 against estate/environments.json, read here once); recorded
     /// with its server before its database is made, so a crash leaves a row to follow.
     /// </summary>
     internal static Result<SqlServer.Copy> Create(string estateRoot, string server, SqlServer.QueryLog? log = null, Func<string, IPAddress[]>? resolve = null) =>
-        ServerName(server).Bind(name => Posture.Environments(estateRoot).Bind(environments => Unnamed(environments, estateRoot, name, resolve ?? Resolved))).Bind(name =>
+        ServerName(server).Bind(name => EnvironmentsFile.Read(estateRoot).Bind(environments => Unnamed(environments, estateRoot, name, resolve ?? Resolved))).Bind(name =>
         {
             var copy = new SqlServer.Copy(CopyName.Make(Environment.MachineName, Environment.ProcessId, BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, estateRoot);
             var row = new JsonObject
@@ -160,33 +160,33 @@ public static class LocalServer
         });
 
     /// <summary>
-    /// copy: resolved against .estate/copies.json alone: the row holding the name, on a server R15 clears against the posture as the verb
+    /// copy: resolved against .estate/copies.json alone: the row holding the name, on a server R15 clears against the environments file as the verb
     /// read it, which the local server this machine names must still be. A name the registry does not hold is refused before the
-    /// posture is consulted.
+    /// environmentsFile is consulted.
     /// </summary>
-    internal static Result<SqlServer.Copy> Registered(string estateRoot, CopyName name, Result<Environments> posture) => Registered(estateRoot, name, posture, Server, Resolved);
+    internal static Result<SqlServer.Copy> Registered(string estateRoot, CopyName name, Result<Environments> environmentsFile) => Registered(estateRoot, name, environmentsFile, Server, Resolved);
 
-    internal static Result<SqlServer.Copy> Registered(string estateRoot, CopyName name, Result<Environments> posture, Func<Result<string>> chosen, Func<string, IPAddress[]> resolve) =>
+    internal static Result<SqlServer.Copy> Registered(string estateRoot, CopyName name, Result<Environments> environmentsFile, Func<Result<string>> chosen, Func<string, IPAddress[]> resolve) =>
         Rows(estateRoot).Bind(rows => rows.FirstOrDefault(r => (string?)r["name"] == name.ToString()) is not { } row
             ? new Error("copy.unregistered", new Target.RegisteredCopy(name) + " is no copy " + Registry + " holds, and copy: names only a database estate made and recorded there.",
                 "Name a copy that " + Registry + " holds on this machine.")
-            : posture.Bind(environments => Unnamed(environments, estateRoot, Kernel.ServerName.Of((string)row["server"]!, Environment.MachineName), resolve)).Bind(made => chosen().Bind(server => ServerName(server).Bind(now => now == made
+            : environmentsFile.Bind(environments => Unnamed(environments, estateRoot, Kernel.ServerName.Of((string)row["server"]!, Environment.MachineName), resolve)).Bind(made => chosen().Bind(server => ServerName(server).Bind(now => now == made
                 ? Result.Ok(new SqlServer.Copy(name, server, estateRoot))
                 : new Error("copy.unregistered", new Target.RegisteredCopy(name) + " was made on another server than the local server this machine names now, so " + Registry + " holds no such copy here.",
                     "Set ESTATE_SQL back to the server that made the copy, or make a new copy on this one.")))));
 
     /// <summary>
-    /// R15: the server's host is none an environment of the posture names as its host (DECISIONS.md, 2026-09-25), compared by spelling,
+    /// R15: the server's host is none an environment of the environments file names as its host (DECISIONS.md, 2026-09-25), compared by spelling,
     /// then by address; this machine is every loopback address and each of its own. Every environment is compared, its reference
-    /// resolving on this machine or not. Where a reference does resolve, its server must be on the host the posture names, since R15
-    /// compares that host (posture.host); a reference SqlClient reads no connection string from, or whose file cannot be examined, is an
+    /// resolving on this machine or not. Where a reference does resolve, its server must be on the host the environments file names, since R15
+    /// compares that host (environments.host); a reference SqlClient reads no connection string from, or whose file cannot be examined, is an
     /// error, R15 failing closed.
     /// </summary>
     internal static Result<Kernel.ServerName> Unnamed(Environments environments, string estateRoot, Kernel.ServerName server, Func<string, IPAddress[]> resolve) =>
         Result.All(environments.All.Select(environment => SqlServer.DataSource(environment, estateRoot).Bind(source => source is { } read && read.Host != environment.Host
-            ? new Error("posture.host", SqlServer.EnvironmentDatabase.Subject(environment) + " names a server on another host than " + environment.Host + ", the host "
-                + Posture.Json + " gives " + environment.Target + ", and estate makes no copy on the host the posture gives.",
-                "Write " + environment.Target + "'s host in " + Posture.Json + " as its connection string spells the server, or correct the connection string.")
+            ? new Error("environments.host", SqlServer.EnvironmentDatabase.Subject(environment) + " names a server on another host than " + environment.Host + ", the host "
+                + EnvironmentsFile.Json + " gives " + environment.Target + ", and estate makes no copy on the host the environments file gives.",
+                "Write " + environment.Target + "'s host in " + EnvironmentsFile.Json + " as its connection string spells the server, or correct the connection string.")
             : Result.Ok(environment))))
         .Bind(compared =>
         {
