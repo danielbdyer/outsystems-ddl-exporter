@@ -173,15 +173,11 @@ public static class Ssdt
             ? new Error("tool.missing", "DBCHANGE_TOOL names " + variable + ", which is " + named.Found + ".",
                 "Run ci/publish.sh, or ci/publish.ps1 on Windows, in dbchange's own repository and set DBCHANGE_TOOL to the dist/dbchange/ it writes, or unset DBCHANGE_TOOL; then run dbchange doctor.")
         : !string.IsNullOrEmpty(variable) ? variable
-        : Nearest(new DirectoryInfo(workingDirectory)) is { } nearest ? nearest
+        : Io.Folder.Nearest(workingDirectory, folder => Doctor.Tool(Path.Combine(folder, "dist", "dbchange")).Remedy is null) is { } nearest ? Path.Combine(nearest, "dist", "dbchange")
         : new Error(
             "tool.missing",
             "dbchange does not run from a published tool folder, DBCHANGE_TOOL is unset, and no dist/dbchange/ lies at or above " + workingDirectory + ".",
             "Run ci/publish.sh, or ci/publish.ps1 on Windows, in dbchange's own repository, or set DBCHANGE_TOOL to a published tool folder; then run dbchange doctor.");
-
-    /// <summary>dist/dbchange/ in the nearest directory at or above <paramref name="directory"/> where that is a published tool folder, else null.</summary>
-    private static string? Nearest(DirectoryInfo? directory) => directory is null ? null
-        : Path.Combine(directory.FullName, "dist", "dbchange") is var tool && Doctor.Tool(tool).Remedy is null ? tool : Nearest(directory.Parent);
 
     /// <summary>The project a ref's worktree holds, as a path from its root: the one named, else its one .sqlproj outside hidden folders, bin/ and obj/.</summary>
     public static Result<string> Project(string worktree, string? named)

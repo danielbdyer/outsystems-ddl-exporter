@@ -24,18 +24,7 @@ public static class EnvironmentsFile
     private static readonly Regex Nameable = new(@"\A[A-Za-z0-9_-]{1,64}\z", RegexOptions.CultureInvariant);
 
     /// <summary>The repository root: the nearest directory at or above <paramref name="workingDirectory"/> holding dbchange/environments.json, else the working directory.</summary>
-    public static string Root(string workingDirectory)
-    {
-        for (var directory = new DirectoryInfo(workingDirectory); directory is not null; directory = directory.Parent)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, Json)))
-            {
-                return directory.FullName;
-            }
-        }
-
-        return Path.GetFullPath(workingDirectory);
-    }
+    public static string Root(string workingDirectory) => Folder.Nearest(workingDirectory, folder => File.Exists(Path.Combine(folder, Json))) ?? Path.GetFullPath(workingDirectory);
 
     /// <summary>
     /// dbchange/environments.json under the repository root, read once for a verb: the environments it names, in name order, each with the host
