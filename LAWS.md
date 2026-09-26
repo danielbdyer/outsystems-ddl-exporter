@@ -6,7 +6,7 @@ Whether each is green is the CI run's to say. A law without a green test is not 
 
 | Law | The test, in English | The test |
 |---|---|---|
-| 2′ a published copy matches its package | A published copy matches its package and one column altered on it is exit 5 naming it | `Estate.Io.Tests.DriftTests.A_published_copy_matches_its_package_and_one_column_altered_on_it_is_exit_5_naming_it` |
+| 2′ a published copy is in sync with its package | A published copy is in sync with its package and one column altered on it is exit 5 naming it | `Estate.Io.Tests.DriftTests.A_published_copy_is_in_sync_with_its_package_and_one_column_altered_on_it_is_exit_5_naming_it` |
 | 3′ the model is complete | One database read twice by one identity fingerprints equally | `Estate.Io.Tests.AggregateQueryTests.One_database_read_twice_by_one_identity_fingerprints_equally` |
 | 3′ the model is complete | A copy published from a package models to the package's keys and two copies of it to one fingerprint | `Estate.Io.Tests.CopyTests.A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint` |
 | 3′ the model is complete | The plan of a package against its own published copy is empty and of the make mandatory head is not | `Estate.Io.Tests.CopyTests.The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not` |
@@ -173,7 +173,7 @@ One row per test that runs an exit of `V3_MILESTONES.md`, from its `[Trait("Exit
 | M0.4 | The classic minimal project builds into the folder its inputs name with its refactorlog and post deploy script | `Estate.Io.Tests.SsdtTests.The_classic_minimal_project_builds_into_the_folder_its_inputs_name_with_its_refactorlog_and_post_deploy_script` |
 | M1.2 | Diff from the base ref to the make mandatory head prints Customer Email's Nullable true to false and nothing else | `Estate.Io.Tests.DiffTests.Diff_from_the_base_ref_to_the_make_mandatory_head_prints_Customer_Email_s_Nullable_true_to_false_and_nothing_else` |
 | M1.2 | The published estate as its own process prints the make mandatory diff and reads the package | `Estate.Io.Tests.DiffTests.The_published_estate_as_its_own_process_prints_the_make_mandatory_diff_and_reads_the_package` |
-| M1.3 | A published copy matches its package and one column altered on it is exit 5 naming it | `Estate.Io.Tests.DriftTests.A_published_copy_matches_its_package_and_one_column_altered_on_it_is_exit_5_naming_it` |
+| M1.3 | A published copy is in sync with its package and one column altered on it is exit 5 naming it | `Estate.Io.Tests.DriftTests.A_published_copy_is_in_sync_with_its_package_and_one_column_altered_on_it_is_exit_5_naming_it` |
 | M1.4 | One database read twice by one identity fingerprints equally | `Estate.Io.Tests.AggregateQueryTests.One_database_read_twice_by_one_identity_fingerprints_equally` |
 | M1.4 | A copy published from a package models to the package's keys and two copies of it to one fingerprint | `Estate.Io.Tests.CopyTests.A_copy_published_from_a_package_models_to_the_package_s_keys_and_two_copies_of_it_to_one_fingerprint` |
 | M1.4 | The plan of a package against its own published copy is empty and of the make mandatory head is not | `Estate.Io.Tests.CopyTests.The_plan_of_a_package_against_its_own_published_copy_is_empty_and_of_the_make_mandatory_head_is_not` |

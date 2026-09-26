@@ -92,7 +92,7 @@ public sealed class CopyTests(GoldenProject project) : IClassFixture<GoldenProje
     }
 
     /// <summary>
-    /// §1 fact 4 through io: a copy matches its package when the deploy plan under the pipeline's profile, of the package against the copy
+    /// §1 fact 4 through io: a copy is in sync with its package when the deploy plan under the pipeline's profile, of the package against the copy
     /// extracted, is empty; the make-mandatory head's plan against the same copy alters one table, its data-loss check in the script.
     /// </summary>
     [Fact]

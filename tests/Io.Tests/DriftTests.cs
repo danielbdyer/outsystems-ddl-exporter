@@ -70,21 +70,21 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
     }
 
     /// <summary>
-    /// Law 2′ (M1 exit 3): the golden project published to a fresh copy matches it, check drift exit 0 and the deploy plan empty; one column
+    /// Law 2′ (M1 exit 3): the golden project published to a fresh copy is in sync with it, check drift exit 0 and the deploy plan empty; one column
     /// altered on the copy is exit 5 naming its table and that column, the column's Length from the target to the repository.
     /// </summary>
     [Fact]
     [Trait("Category", "fixture")]
-    [Trait("Law", "2′ a published copy matches its package")]
+    [Trait("Law", "2′ a published copy is in sync with its package")]
     [Trait("Exit", "M1.3")]
-    public async Task A_published_copy_matches_its_package_and_one_column_altered_on_it_is_exit_5_naming_it()
+    public async Task A_published_copy_is_in_sync_with_its_package_and_one_column_altered_on_it_is_exit_5_naming_it()
     {
         var copy = await Published();
         try
         {
             var (exit, output) = Drift("copy:" + copy.Name);
             Assert.True(exit == 0, output);
-            Assert.StartsWith("copy:" + copy.Name + " matches ref:" + estate.Base + " (commit " + estate.Base[..8] + ").\n", output, StringComparison.Ordinal);
+            Assert.StartsWith("copy:" + copy.Name + " is in sync with ref:" + estate.Base + " (commit " + estate.Base[..8] + ").\n", output, StringComparison.Ordinal);
 
             await SqlServerFixture.ExecuteAsync(copy.Connection, "ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(300) NULL;");
             (exit, output) = Drift("copy:" + copy.Name);
@@ -380,7 +380,7 @@ public sealed class DriftTests(ScratchEstate estate) : IClassFixture<ScratchEsta
             await SqlServerFixture.ExecuteAsync(master, "ALTER EVENT SESSION [" + session + "] ON SERVER STATE = STOP;");
 
             Assert.True(matchExit == 0, matching);
-            Assert.StartsWith("env:dev matches ref:" + estate.Base, matching, StringComparison.Ordinal);
+            Assert.StartsWith("env:dev is in sync with ref:" + estate.Base, matching, StringComparison.Ordinal);
             Assert.True(driftExit == 5, drifted);
             Assert.Contains("`drift.column` Column [dbo].[Customer].[Email]: Length 300 → 256", drifted, StringComparison.Ordinal);
             Assert.True(readExit == 0, read);

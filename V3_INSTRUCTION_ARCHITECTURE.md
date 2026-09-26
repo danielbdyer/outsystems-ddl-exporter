@@ -1677,7 +1677,7 @@ FK Check*, *Refactorlog Cleanup*) stay; only *Naked Rename* is retired, for its 
 | `Delta`, the delta; `Change.Added`, `Removed`, `Changed`; the nested `Altered` | `Change`, the change; `Created`, `Dropped`, `Altered`; `Alteration`; the JSON fields and output lines follow (dropped, as DacFx says) |
 | the envelope's `verdict` object (`outcome`, `message`, `kind`) | `outcome`, `message` and `blockedBy` (`data-loss-check` or `constraint-violation`) on the envelope; verdict stays for `prove`'s result |
 | the severities `block`, `warn` | `error`, `warning`; `note` stays |
-| `converged`, the convergence oracle, the law "a published copy converges" | `matches`, the empty deploy plan, "a published copy matches its package" |
+| `converged`, the convergence oracle, the law "a published copy converges" | `in-sync`, the empty deploy plan, "a published copy is in sync with its package" |
 | the record (the pull request's body), the verb `record`, `Record`, `knowledge/record.md` | the pull request description, `describe`, `PullRequestDescription`, `knowledge/description.md` |
 | reference stub | reference assemblies (`Microsoft.NETFramework.ReferenceAssemblies`) |
 | `Probe`, the probe executor, `probe.refused`; `Ssdt.Build`'s `probe` parameter | `AggregateQuery`, `SqlServer.Measure`, `aggregate-query.refused`; `run` |

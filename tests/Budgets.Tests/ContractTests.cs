@@ -475,14 +475,14 @@ public sealed class ContractTests
         Assert.False(Evaluate("estate.envelope.1.schema.json", json).IsValid, "the schema admits exit 3 naming nothing");
     }
 
-    /// <summary>An outcome's word and its exit are one decision: check drift's matches is exit 0 and differs exit 5, and an answer that pairs them otherwise cannot be constructed.</summary>
+    /// <summary>An outcome's word and its exit are one decision: check drift's in-sync is exit 0 and differs exit 5, and an answer that pairs them otherwise cannot be constructed.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void An_answer_whose_exit_its_outcome_does_not_list_cannot_be_constructed()
     {
         var check = Contract.Verbs.Single(v => v.Name == "check");
 
-        Assert.Throws<ArgumentException>("exit", () => new Envelope(check.Output, check.Outcome("matches"), 5, "env:dev matches ref:main.", []));
+        Assert.Throws<ArgumentException>("exit", () => new Envelope(check.Output, check.Outcome("in-sync"), 5, "env:dev is in sync with ref:main.", []));
         Assert.Equal(5, new Envelope(check.Output, check.Outcome("differs"), 5, "env:dev differs from ref:main.", []).Exit);
         Assert.Equal([0, 5], Contract.Verbs.Single(v => v.Name == "diff").Outcome("differs").Exits);
         Assert.Throws<InvalidOperationException>(() => check.Outcome("done"));
@@ -603,10 +603,10 @@ public sealed class ContractTests
         var pairs = new Dictionary<string, (Action<JsonObject> Admitted, Action<JsonObject> Failed)>(StringComparer.Ordinal)
         {
             ["exit is a code of the frozen table"] = (WithOutcome("build-failed", 7), a => a["exit"] = 8),
-            ["outcome is a word of a verb's set or a failure exit's name"] = (WithOutcome("matches", 0), WithOutcome("converged", 0)),
+            ["outcome is a word of a verb's set or a failure exit's name"] = (WithOutcome("in-sync", 0), WithOutcome("converged", 0)),
             ["outcome ties to its exits: a failure's name at its exit alone"] = (WithOutcome("unreachable", 4), WithOutcome("unreachable", 6)),
             ["outcome ties to its exits: differs at 0 or 5 and at no other"] = (WithOutcome("differs", 5), WithOutcome("differs", 6)),
-            ["outcome ties to its exits: matches at 0 alone"] = (WithOutcome("matches", 0), WithOutcome("matches", 5)),
+            ["outcome ties to its exits: in-sync at 0 alone"] = (WithOutcome("in-sync", 0), WithOutcome("in-sync", 5)),
             ["outcome ties to its exits: ready at 0 and degraded at 6"] = (WithOutcome("degraded", 6), WithOutcome("ready", 6)),
             ["the message is present"] = (a => a["message"] = "estate 3.0.0", a => a["message"] = ""),
             ["exit 3 names what blocked it"] = (WithBlocked("data-loss-check"), WithBlocked(null)),

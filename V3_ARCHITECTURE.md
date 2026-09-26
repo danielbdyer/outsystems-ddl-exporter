@@ -341,7 +341,7 @@ idempotent redeploy, in-place evolution, eject, drift, canary). After the eject,
 3. **Gate a change.** A build-validation pipeline rebuilds the dacpac, restores a versioned
    synthetic copy, publishes the pull request's *combined* change under the production posture,
    and posts the verdict. A release that collides with an open multi-phase lag window is refused.
-4. **Keep the synthetic copy current.** A developer's local database matches the repository and
+4. **Keep the synthetic copy current.** A developer's local database is in sync with the repository and
    holds masked, distribution-faithful data. Measure Dev once; commit the literal-free shape
    tier; generate anywhere. No real data on laptops.
 5. **Watch the estate.** Detect drift between environments and the repository; between the
@@ -1680,7 +1680,7 @@ This is `prove.mjs` as a verb, with the synthetic copy as the default target.
 
 1. Build the project to a dacpac (`dotnet build` for SDK-style; MSBuild for classic when
    available; exit 7 with the build log otherwise).
-2. Ensure the target: `synthetic-copy` means "the synthetic copy is up and matches the
+2. Ensure the target: `synthetic-copy` means "the synthetic copy is up and in sync with the
    repository" (`SyntheticCopy.up` is called; a stale or absent copy is brought up to date
    first); a `sql:` target is used as given. A disposable copy is always a *copy*: `prove`
    never publishes to a named environment.
@@ -1732,7 +1732,7 @@ fingerprints match → nothing to do; else ensure the container (Docker) or Loca
 (Windows), build the model, publish with drop-not-in-source, clean slate, apply seeds, read
 back, generate (`SyntheticData.generate`), load, revalidate every check and foreign key (`WITH
 CHECK CHECK`; refuse by constraint name on violation), write fingerprints to
-`[synthetic_copy].[__state]`. `bake` exports the database, once it matches the repository, as a
+`[synthetic_copy].[__state]`. `bake` exports the database, once it is in sync with the repository, as a
 fingerprint-versioned `.bacpac` (and a container image where Docker exists); `restore`
 downloads it. Five laws, five tests (§13).
 
@@ -2640,7 +2640,7 @@ cohorts → readerGroups; substrate → the scratch server; the Twin, twin → t
 σ, mint, Synth → `SyntheticData.generate`, a generated set; `SqlServer.Named`, `Database.Where` →
 `EnvironmentDatabase`, `Database.Target`; `Seq<T>` → `SortedArray<T>`; added, removed, changed →
 created, dropped, altered, as DacFx says; the envelope's verdict → `outcome`, `message`, `blockedBy`;
-block, warn → error, warning; converged, the convergence oracle → matches, the empty deploy plan;
+block, warn → error, warning; converged, the convergence oracle → in-sync, the empty deploy plan;
 record → the pull request description, `describe`; reference stub → reference assemblies; probe →
 aggregate query; the germ, the two instruments, lens, directive → the lifecycle invariants,
 prediction and proof, the verb table, the question; the guard → the data-loss check; archetype (a

@@ -32,8 +32,8 @@
         "build-failed",
         "configuration-refused",
         "differs",
+        "in-sync",
         "interrupted",
-        "matches",
         "refused-by-name",
         "unparsed-input",
         "unreachable"
@@ -550,7 +550,7 @@
       "if": {
         "properties": {
           "outcome": {
-            "const": "interrupted"
+            "const": "in-sync"
           }
         }
       },
@@ -558,7 +558,7 @@
         "properties": {
           "exit": {
             "enum": [
-              130
+              0
             ]
           }
         }
@@ -568,7 +568,7 @@
       "if": {
         "properties": {
           "outcome": {
-            "const": "matches"
+            "const": "interrupted"
           }
         }
       },
@@ -576,7 +576,7 @@
         "properties": {
           "exit": {
             "enum": [
-              0
+              130
             ]
           }
         }

@@ -91,7 +91,7 @@ public static partial class Verbs
         };
         var commit = " (commit " + answer.Commit[..8] + ")";
         return answer.Drift.Match(
-            _ => Contract.Answer(verb.Output, verb.Outcome("matches"), 0, answer.Target + " matches " + at + commit + ".", standing, stamp, answer.Provenance, content),
+            _ => Contract.Answer(verb.Output, verb.Outcome("in-sync"), 0, answer.Target + " is in sync with " + at + commit + ".", standing, stamp, answer.Provenance, content),
             differs => Contract.Answer(verb.Output, verb.Outcome("differs"), 5,
                 answer.Target + " differs from " + at + commit + ": the deploy plan holds " + Counted(differs.Plan.Operations.Count, "operation") + ".",
                 [.. Differences(answer, differs, at), .. columns.CaseOnlyRenamed.Select(pair => CaseOnly("drift.case-only-rename", pair, answer.Collation)), .. printer.Findings, .. standing],

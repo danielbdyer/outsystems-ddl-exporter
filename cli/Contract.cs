@@ -139,7 +139,7 @@ public static class Contract
             Cli.Verbs.Read, Cli.Verbs.ReadContent, [new("done", [0], "the target was read whole; read holds its elements and fingerprint")]),
         new("diff", "What changes between two schemas, property by property, deploy scripts and refactorlog included. estate diff --from <target> --to <target> [--project <path>] [--fail-on-change]",
             Cli.Verbs.Diff, Cli.Verbs.DiffContent,
-            [new("matches", [0], "the two schemas hold the same elements"), new("differs", [0, 5], "the two schemas differ; exit 5 only with --fail-on-change")]),
+            [new("in-sync", [0], "the two schemas hold the same elements"), new("differs", [0, 5], "the two schemas differ; exit 5 only with --fail-on-change")]),
         new("classify", "Which operation a change is, provisionally, from the committed evidence."),
         new("predict", "Whether a change blocks or applies on each environment the caller can read, and why."),
         new("measure", "What an environment's data looks like, as the evidence the synthetic copy is generated from."),
@@ -149,7 +149,7 @@ public static class Contract
         new("gate", "The pull request's proof, reproduced from the clone."),
         new("check", "Whether a database has drifted from the repository at a ref; the platform, the evidence and the locks arrive later. estate check drift --target <target> --at <ref> "
             + "[--profile <path>] [--project <path>]", Cli.Verbs.Check, Cli.Verbs.CheckContent,
-            [new("matches", [0], "the deploy plan against the target is empty"), new("differs", [5], "the deploy plan holds operations; a finding names each object")]),
+            [new("in-sync", [0], "the deploy plan against the target is empty"), new("differs", [5], "the deploy plan holds operations; a finding names each object")]),
         new("knowledge", "The knowledge tree, packaged for each agent and vendored to the estate."),
         new("--version", "The tool's version.", (_, _) => Answer("estate.version/1", new Outcome("done", [0], "the message is the tool's version"), 0, "estate " + Version, []),
             Outcomes: [new("done", [0], "the message is the tool's version")]),

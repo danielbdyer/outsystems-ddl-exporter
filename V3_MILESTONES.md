@@ -72,7 +72,7 @@ first tests.
 | 1 | A classic (Visual Studio format) `.sqlproj` builds with no Visual Studio and no download | a minimal classic project; `dotnet build -p:NetCoreBuild=true -p:NETCoreTargetsPath=<tool> -p:SQLDBExtensionsRefPath=<tool> -p:TargetFrameworkRootPath=<refasm>`, where `<tool>` is a published console app referencing DacFx plus the package's `Microsoft.Data.Tools.Schema.SqlTasks.targets`, and `<refasm>` holds one reference assembly (`mscorlib.dll`, 2.7 MB) with its `FrameworkList.xml` | builds on Linux with either DacFx release's targets; the dacpac carries `refactor.xml` and `postdeploy.sql`. The package's `lib` folder alone fails (`SqlBuildTask` needs DacFx's dependencies beside it); a published tool folder has them (framework-dependent: 60 files and 91 MB on 162.5.57; 65 files and 107 MB on 170.5.96; 67 files and 107 MB for `net10.0` on 170.5.96, built with the .NET 10 SDK) |
 | 2 | `Script` and `DeployReport` need nothing beyond read | a login holding only `VIEW DEFINITION` and `db_datareader` on one database; `DacServices.Script(package, db, PublishOptions { GenerateDeploymentScript, GenerateDeploymentReport })` | succeeds |
 | 3 | The data-loss check can be read from the script and run read-only | ScriptDom `TSql160Parser` over the script with SQLCMD lines removed (0 parse errors); the check is `IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer]) RAISERROR (…, 16, 127)`; its predicate run verbatim as the read-only login | returns 1 on a populated table. The script holds other `IF EXISTS` blocks (database-option checks against `master.dbo.sysdatabases`), so the reader matches the `RAISERROR` at state 127 and never the `IF` alone |
-| 4 | Whether a database matches its package is decided by an empty deploy plan; a default schema comparison decides wrongly | the base package against the database it was just published to, as the read-only login | the deploy report has no `<Operations>` element. `SchemaComparison` with default options reports two differences: the reader's own user and the role membership granted to it. The test is the empty plan under the pipeline's profile; a comparison is used only to name objects, and only with the profile's options |
+| 4 | Whether a database is in sync with its package is decided by an empty deploy plan; a default schema comparison decides wrongly | the base package against the database it was just published to, as the read-only login | the deploy report has no `<Operations>` element. `SchemaComparison` with default options reports two differences: the reader's own user and the role membership granted to it. The test is the empty plan under the pipeline's profile; a comparison is used only to name objects, and only with the profile's options |
 | 5 | A live database reads into the same model a build produces | `TSqlModel.LoadFromDatabase` as the read-only login | succeeds |
 | 6 | Property changes are found generically | a read of every `ModelTypeClass.Properties` entry on the base and head `Column` objects (reached through `Table.Columns`; a column is not a top-level type) | one change, `Column.Nullable: True → False`. DacFx knows 29 properties and 4 relationships on a column; one generic read covers them all, and every other type the same way |
 | 7 | The deploy report is too coarse to classify from | the same head package | one operation, `Alter [dbo].[Customer] (SqlTable)`, and no alert. The precondition comes from the property read; the data-loss check comes from the script |
@@ -149,7 +149,7 @@ the SQL Server version the environments run, which the pinned image must match.
 | What does DacFx do? | `prove` | a fresh copy per set of data conditions, restored from the synthetic copy | the pipeline's profile (Strict and Permissive differ in `BlockOnPossibleDataLoss` alone) | `Outcome.Prove`, `AppliesTo` | `estate.prove/1` |
 | The pull request description | `describe` | the provenance records | `knowledge/description.md` | `PullRequestDescription.Of` | the description |
 | Reproduce it | `gate` | git, the PR body, the ledgers | `estate/ledgers/in-flight.md` | the functions above | `estate.gate/1`, `changelog.json` |
-| Deployed means the environment matches the tag | `check drift` | the package at a tag; the environment's plan | the pipeline's profile | `Outcome.Matches` | `estate.check/1` |
+| Deployed means the environment matches the tag | `check drift` | the package at a tag; the environment's plan | the pipeline's profile | `in-sync` | `estate.check/1` |
 | Did the platform follow? | `check outsystems` | the metamodel; the package at a tag | the metamodel allowlist | `Platform.Compare` | `estate.check/1` |
 | One page | `check environments --page` | the checks above; `deployments.md` beside the page | `estate/posture.json` | `Page.Of` | a wiki page |
 | Is the evidence still true? | `check evidence` | the committed evidence; the live data conditions over its standing sites | — | `DataConditions` equality | `estate.check/1` |
@@ -327,7 +327,7 @@ the calendar to about twenty working days.
 | Review | read the evidence table; `estate gate` to reproduce | M5 |
 | Before the deploy | `estate check drift --at <the tag deployed now>` stops a release into a drifted environment | M6 |
 | Promote | Octopus, unchanged | — |
-| Matches the tag | `estate check drift` as the post-deploy step, or a lead's command | M6 (the verb at M1) |
+| In sync with the tag | `estate check drift` as the post-deploy step, or a lead's command | M6 (the verb at M1) |
 | Refreshed; consumers republished | `estate check outsystems` | M6 |
 | In sync, on one page | the wiki page from `estate check environments --page` | M6 |
 
@@ -407,11 +407,11 @@ LocalDB in CI), 7 (with `RefusalPaths` and the denied-login test) and 8 (on a ma
 only); `ModelElementsTests`, `CopyTests` and `ElementTests` show 4; `CapabilityTests` and `TargetTests`
 show 5; `DoctorTests` and `DriftTests` show 6, where `read` and `diff` carry the DacFx version alone.
 1. On a team laptop, as the developer's identity, `estate check drift --target env:dev --at <Dev's
-   deployed tag>` exits 0 with "Dev matches <tag>", or 5 naming each differing object, within a
+   deployed tag>` exits 0 with "Dev is in sync with <tag>", or 5 naming each differing object, within a
    minute (R12, Dev's half). In CI every named-environment call runs as the read-only principal (R14).
 2. `estate diff --from ref:main --to ref:HEAD` on the make-mandatory sample change prints
    `Column [dbo].[Customer].[Email]: Nullable true → false` and nothing else.
-3. Law 2′, *a published copy matches its package*: publish the golden project to a fresh copy and
+3. Law 2′, *a published copy is in sync with its package*: publish the golden project to a fresh copy and
    `check drift` exits 0; alter one column on the copy and it exits 5 naming it.
 4. Law 3′, *the model is complete*: two builds of one project fingerprint equally; every sample
    change, seed and pre-deploy edits included, changes the fingerprint; `DacServices.Script` from a
@@ -818,7 +818,7 @@ Open one pull request on WP 0.2's solution: `tests/Io.Tests/SpikeTests.cs`, Appe
 assertions, one per measured fact, run against the committed DacFx. The classic build carries the
 refactorlog and the post-deploy script. `Script` runs as the read-only login. The data-loss check
 is found at state 127 and its predicate returns 1 on a populated table. The deploy report of a copy
-that matches its package has no operations. `LoadFromDatabase` runs as that login. The property
+that is in sync with its package has no operations. `LoadFromDatabase` runs as that login. The property
 read finds `Nullable` and nothing else. The report stays coarse. The profile loads as options. A
 clean foreign key lands trusted, and lands untrusted with validation off. When it is green on both
 CI operating systems, M0 has begun, and every measured fact in §1 is a test instead of a sentence.
@@ -887,7 +887,7 @@ the prompt's own check, so the mapping holds for the backport and for v3 alike (
 | # | `V3_ARCHITECTURE.md` §13 | Its form in the lifecycle | Lands in | Its form in the cutover tools |
 |---|---|---|---|---|
 | 1 | the same inputs emit the same bytes | **1′** every generated artifact (a generated set, a description, the page, the bundle, `changelog.json`) is byte-identical from the same fingerprinted inputs | M3, M5, M6, M7 | `emit` byte-identical (oracle 1) |
-| 2 | emit then read is the identity | **2′** a published copy matches its package: the plan against it is empty | M1 | as stated |
+| 2 | emit then read is the identity | **2′** a published copy is in sync with its package: the plan against it is empty | M1 | as stated |
 | 3 | emit is faithful to the repository | **3′** the model is complete: stable across builds, sensitive to every sample change (scripts included), and a package's plan against its own published copy empty | M1 | as stated |
 | 4 | a vanilla policy changes nothing | none; the lifecycle has no policy | — | as stated |
 | 5 | every decision names its evidence | **5′** every claim carries its provenance, with all five inputs or the one it lacks | M5 (WP 5.1) | as stated |

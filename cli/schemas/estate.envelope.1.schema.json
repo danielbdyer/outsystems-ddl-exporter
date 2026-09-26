@@ -34,8 +34,8 @@
         "degraded",
         "differs",
         "done",
+        "in-sync",
         "interrupted",
-        "matches",
         "ready",
         "refused-by-name",
         "unparsed-input",
@@ -334,7 +334,7 @@
       "if": {
         "properties": {
           "outcome": {
-            "const": "interrupted"
+            "const": "in-sync"
           }
         }
       },
@@ -342,7 +342,7 @@
         "properties": {
           "exit": {
             "enum": [
-              130
+              0
             ]
           }
         }
@@ -352,7 +352,7 @@
       "if": {
         "properties": {
           "outcome": {
-            "const": "matches"
+            "const": "interrupted"
           }
         }
       },
@@ -360,7 +360,7 @@
         "properties": {
           "exit": {
             "enum": [
-              0
+              130
             ]
           }
         }

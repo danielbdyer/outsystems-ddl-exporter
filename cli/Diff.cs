@@ -82,7 +82,7 @@ public static partial class Verbs
             ["created"] = change.Created.Count, ["dropped"] = change.Dropped.Count, ["renamed"] = change.Renamed.Count, ["altered"] = change.Altered.Count, ["caseOnlyRenamed"] = change.CaseOnlyRenamed.Count,
         };
         var content = new JsonObject { ["diff"] = new JsonObject { ["from"] = Side(before), ["to"] = Side(after), ["counts"] = counts, ["change"] = Json(change, printer) } };
-        return Contract.Answer(Of("diff").Output, Of("diff").Outcome(change.IsEmpty ? "matches" : "differs"), failOnChange && !change.IsEmpty ? 5 : 0, message,
+        return Contract.Answer(Of("diff").Output, Of("diff").Outcome(change.IsEmpty ? "in-sync" : "differs"), failOnChange && !change.IsEmpty ? 5 : 0, message,
             [
                 .. before.IsDatabase == after.IsDatabase ? [] : new[] { Finding.Note("diff.unlike-sources", "estate diff", before.Target + " and " + after.Target
                     + " are read one from a package and one from a database: SQL Server keeps a check's, a default's and a computed column's Expression as it normalized the text,"

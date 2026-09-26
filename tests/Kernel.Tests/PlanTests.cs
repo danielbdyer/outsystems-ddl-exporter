@@ -75,7 +75,7 @@ public sealed class PlanTests
     [Trait("Value", "S2")]
     public void Check_drift_names_every_differing_column_of_every_table_the_plan_alters_and_nothing_else()
     {
-        Gen.Select(Sets, Sets).Sample((target, package) => Ok(Drift.Of(new DeployReport([], []), target, package, Collation.CaseSensitive)) is Drift.Matches);
+        Gen.Select(Sets, Sets).Sample((target, package) => Ok(Drift.Of(new DeployReport([], []), target, package, Collation.CaseSensitive)) is Drift.InSync);
         Gen.Select(Sets, Sets, Gen.Int[0, 1000], Gen.Bool).Where((target, package, _, _) => Tables(target, package).Count > 0).Sample((target, package, pick, rebuilt) =>
         {
             var tables = Tables(target, package);

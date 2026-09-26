@@ -141,7 +141,7 @@ public abstract record PlanAlertKind : IComparable<PlanAlertKind>
 
 /// <summary>
 /// Whether a database has drifted from the repository at a ref (§1 fact 4, law 2′), decided from the deploy plan of the ref's package
-/// against the target: <see cref="Matches"/> when the plan is empty; else <see cref="Differs"/>, with the plan and the columns that differ
+/// against the target: <see cref="InSync"/> when the plan is empty; else <see cref="Differs"/>, with the plan and the columns that differ
 /// under each table the plan alters or rebuilds, which DacFx's report names as the table alone. The cases are closed.
 /// </summary>
 public abstract record Drift
@@ -153,15 +153,15 @@ public abstract record Drift
     {
     }
 
-    public T Match<T>(Func<Matches, T> matches, Func<Differs, T> differs) => this switch
+    public T Match<T>(Func<InSync, T> inSync, Func<Differs, T> differs) => this switch
     {
-        Matches m => matches(m),
+        InSync m => inSync(m),
         Differs d => differs(d),
         _ => throw new UnreachableException(),
     };
 
     /// <summary>
-    /// The drift a plan shows: an empty plan matches; else the columns under each table an Alter or a TableRebuild names, from
+    /// The drift a plan shows: an empty plan is in sync; else the columns under each table an Alter or a TableRebuild names, from
     /// <see cref="Change.Between"/> the target's elements and the package's under the target's collation, each alteration without its
     /// Expression. A created or dropped table's operation says the whole, so its columns are not listed. A model two of whose elements
     /// share a key is the error change.duplicate-key.
@@ -170,7 +170,7 @@ public abstract record Drift
     {
         if (plan.IsEmpty)
         {
-            return new Matches();
+            return new InSync();
         }
 
         var tables = plan.Operations.Where(o => o.Kind is PlanOperationKind.Alter or PlanOperationKind.TableRebuild && o.Key.Type == "Table").Select(o => o.Key)
@@ -192,7 +192,7 @@ public abstract record Drift
     }
 
     /// <summary>The deploy plan against the target is empty.</summary>
-    public sealed record Matches : Drift;
+    public sealed record InSync : Drift;
 
     /// <summary>The deploy plan holds operations; the columns that differ under each table it alters or rebuilds, from the target to the package.</summary>
     public sealed record Differs(DeployReport Plan, Change Columns) : Drift;
