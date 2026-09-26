@@ -728,6 +728,28 @@ public sealed class TargetTests : IDisposable
         public void Dispose() => remove();
     }
 
+    /// <summary>
+    /// S2 of the pre-M2 review: a sql.env that gives a key twice, or that this identity cannot read, is local-server.missing naming the
+    /// file and why, and quotes no value; both were exceptions the verb answered as internal.unexpected. DBCHANGE_SQL, when set, is taken
+    /// without reading the file.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_sql_env_giving_a_key_twice_or_that_cannot_be_read_is_local_server_missing_naming_the_file()
+    {
+        var twice = Written("sql.env", "DBCHANGE_SQL_PORT=11433\nDBCHANGE_SQL_PORT=11434\nMSSQL_SA_PASSWORD=" + Planted + "\n");
+        var readable = Written("readable.sql.env", "DBCHANGE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted + "\n");
+
+        var given = Failed(LocalServer.Server(null, twice, localDb: false), "local-server.missing");
+        var denied = ErrorPaths.Denied(readable, () => Failed(LocalServer.Server(null, readable, localDb: false), "local-server.missing"));
+
+        Assert.Equal(twice + " gives DBCHANGE_SQL_PORT twice.", given.Message);
+        Assert.StartsWith(readable + " cannot be read: ", denied.Message, StringComparison.Ordinal);
+        Planted.AbsentFrom(given);
+        Planted.AbsentFrom(denied);
+        Assert.Equal("Server=db", Value(LocalServer.Server("Server=db", twice, localDb: false)));
+    }
+
     /// <summary>A connection file under the scratch folder, in no git repository and read by its owner alone; its path with '/'.</summary>
     private string Written(string file, string text)
     {

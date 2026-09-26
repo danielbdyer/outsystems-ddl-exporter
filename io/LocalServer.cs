@@ -119,18 +119,36 @@ public static class LocalServer
     internal static Result<string> Server() =>
         Server(Environment.GetEnvironmentVariable("DBCHANGE_SQL"), SqlEnv, Doctor.LocalDbInstalled(Command.Run));
 
-    /// <summary>The local server, in the fixture's order: DBCHANGE_SQL; the container, when sql.env gives its port and password; LocalDB, when installed.</summary>
-    internal static Result<string> Server(string? dbChangeSql, string sqlEnv, bool localDb)
-    {
-        var env = File.Exists(sqlEnv)
-            ? File.ReadAllLines(sqlEnv).Select(line => line.Split('=', 2)).Where(pair => pair.Length == 2).ToDictionary(pair => pair[0], pair => pair[1].Trim(), StringComparer.Ordinal)
-            : [];
-        return !string.IsNullOrEmpty(dbChangeSql) ? dbChangeSql
-            : env.GetValueOrDefault("MSSQL_SA_PASSWORD") is { Length: > 0 } password && env.GetValueOrDefault("DBCHANGE_SQL_PORT") is { Length: > 0 } port
+    /// <summary>
+    /// The local server, in the fixture's order: DBCHANGE_SQL, with sql.env not read; the container, when sql.env gives its port and
+    /// password; LocalDB, when installed. A sql.env that cannot be read, or that gives a key twice, is local-server.missing naming the file.
+    /// </summary>
+    internal static Result<string> Server(string? dbChangeSql, string sqlEnv, bool localDb) =>
+        !string.IsNullOrEmpty(dbChangeSql) ? dbChangeSql
+        : Settings(sqlEnv).Bind(env => env.GetValueOrDefault("MSSQL_SA_PASSWORD") is { Length: > 0 } password && env.GetValueOrDefault("DBCHANGE_SQL_PORT") is { Length: > 0 } port
                 ? ConnectionString.Container(port, password)
             : localDb ? @"Server=(localdb)\MSSQLLocalDB;Integrated Security=true"
-            : new Error("local-server.missing", "No local server: DBCHANGE_SQL is unset, " + sqlEnv + " gives no container's port and password, and LocalDB is not installed.",
-                "Start Docker and run ci/sql.sh up, or ci/sql.ps1 up on Windows, or set DBCHANGE_SQL; then run dbchange doctor.");
+            : Result.Fail<string>(new Error("local-server.missing", "No local server: DBCHANGE_SQL is unset, " + sqlEnv + " gives no container's port and password, and LocalDB is not installed.",
+                "Start Docker and run ci/sql.sh up, or ci/sql.ps1 up on Windows, or set DBCHANGE_SQL; then run dbchange doctor.")));
+
+    /// <summary>sql.env's settings, one KEY=value per line as ci/sql.sh writes them; none where the file is absent.</summary>
+    private static Result<Dictionary<string, string>> Settings(string sqlEnv)
+    {
+        const string rewrite = "Run ci/sql.sh down, then ci/sql.sh up (ci/sql.ps1 on Windows), which writes the file again; then run dbchange doctor.";
+        string[] lines;
+        try
+        {
+            lines = File.Exists(sqlEnv) ? File.ReadAllLines(sqlEnv) : [];
+        }
+        catch (Exception e) when (Write.FileSystemFailure(e))
+        {
+            return new Error("local-server.missing", sqlEnv + " cannot be read: " + e.Message.TrimEnd('.') + ".", rewrite);
+        }
+
+        var pairs = lines.Select(line => line.Split('=', 2)).Where(pair => pair.Length == 2).ToList();
+        return pairs.GroupBy(pair => pair[0], StringComparer.Ordinal).FirstOrDefault(key => key.Count() > 1) is { } twice
+            ? new Error("local-server.missing", sqlEnv + " gives " + twice.Key + " twice.", rewrite)
+            : pairs.ToDictionary(pair => pair[0], pair => pair[1].Trim(), StringComparer.Ordinal);
     }
 
     /// <summary>
