@@ -7,12 +7,12 @@ using DbChange.Tests;
 namespace DbChange.Kernel.Tests;
 
 /// <summary>
-/// Builders and generators for the kernel's view of a model: element sets with tables, their columns and indexes,
-/// properties of every value case, relationships whose targets are the set's own keys or strangers, and both deploy
-/// scripts. Names come from a four-letter alphabet so sets share keys often; an edit writes "~", which no generated
-/// name holds, so an edited key or value is always new.
+/// Builders and generators for the kernel's properties: element sets with tables, their columns and indexes, properties of every value
+/// case, relationships whose targets are the set's own keys or strangers, and both deploy scripts; edits, renamings, and the changes
+/// between two sets. Names come from a four-letter alphabet so sets share keys often; an edit writes "~", which no generated name holds,
+/// so an edited key or value is always new.
 /// </summary>
-internal static class ElementSets
+internal static class KernelProperties
 {
     private static readonly Gen<string> Word = Gen.Char["abAB"].Array[1, 3].Select(cs => new string(cs));
 
@@ -79,6 +79,10 @@ internal static class ElementSets
         }));
 
     /// <summary>A generated renaming: both models, the entries in the order they were made, what was dropped and what was kept.</summary>
+    /// <summary>Two models and the change between them under the renamings' refactorlog, as M2's claims will draw them.</summary>
+    public static readonly Gen<(SortedArray<Element> Before, SortedArray<Element> After, Change Change)> Changes =
+        Renamings.Select(r => (r.Before, r.After, Ok(Change.Between(r.Before, r.After, SortedArray.Of(r.Entries)))));
+
     public sealed record Renaming(SortedArray<Element> Before, SortedArray<Element> After, IReadOnlyList<Rename> Entries, Element[] Dropped, ElementKey[] Kept)
     {
         public SortedArray<Rename> Renames => SortedArray.Of(Entries);

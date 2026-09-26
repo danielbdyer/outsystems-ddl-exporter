@@ -4,7 +4,7 @@ using System.Text.Json;
 using CsCheck;
 using DbChange.Tests;
 using Xunit;
-using static DbChange.Kernel.Tests.ElementSets;
+using static DbChange.Kernel.Tests.KernelProperties;
 
 namespace DbChange.Kernel.Tests;
 
@@ -15,6 +15,16 @@ namespace DbChange.Kernel.Tests;
 /// </summary>
 public sealed class ChangeTests
 {
+    /// <summary>
+    /// A change names only what its two models hold: each element it creates is one of the second model's, each it drops one of the
+    /// first's, and each element it alters is keyed as one of either.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_change_names_only_elements_its_two_models_hold() =>
+        Changes.Sample(c => c.Change.Created.All(c.After.Contains) && c.Change.Dropped.All(c.Before.Contains)
+            && c.Change.Altered.All(a => c.Before.Concat(c.After).Any(e => e.Key == a.Key)));
+
     [Fact]
     [Trait("Category", "fast")]
     public void The_change_between_equal_models_is_empty_whatever_the_refactorlog_holds() =>

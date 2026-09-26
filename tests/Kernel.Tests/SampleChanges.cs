@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Xunit;
-using static DbChange.Kernel.Tests.ElementSets;
+using static DbChange.Kernel.Tests.KernelProperties;
 
 namespace DbChange.Kernel.Tests;
 

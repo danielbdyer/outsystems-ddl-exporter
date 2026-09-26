@@ -4,7 +4,7 @@ using System.Linq;
 using CsCheck;
 using DbChange.Tests;
 using Xunit;
-using static DbChange.Kernel.Tests.ElementSets;
+using static DbChange.Kernel.Tests.KernelProperties;
 
 namespace DbChange.Kernel.Tests;
 
