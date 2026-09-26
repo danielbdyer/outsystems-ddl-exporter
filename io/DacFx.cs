@@ -218,7 +218,11 @@ public static class DacFx
     }
 
     /// <summary>A DacFx failure: the error and warning messages it carries, the SqlException inside it, if any, and the chain's text on one line, each exception's once.</summary>
-    internal sealed record DacFxFailure(SortedArray<DacFxMessage> Messages, SqlException? Sql, string Text);
+    internal sealed record DacFxFailure(SortedArray<DacFxMessage> Messages, SqlException? Sql, string Text)
+    {
+        /// <summary>The failure as a message quotes it: its messages, or the chain's text where it carries none.</summary>
+        public string Quoted => Messages.Count > 0 ? string.Join(' ', Messages.Select(m => m.ToString())) : Text;
+    }
 
     /// <summary>A failure's messages, as DacServicesException and DacModelException carry them, else parsed from the text of each exception of the chain.</summary>
     internal static DacFxFailure Failure(Exception failure) =>
@@ -244,8 +248,8 @@ public static class DacFx
     /// </summary>
     internal static Error Failed(SqlServer.Database target, DacFxFailure failure, bool transactional = true) =>
         failure.Sql is { } sql ? target.ErrorOf(sql.Number, sql.Message, fatal: sql.Class >= 20)
-        : failure.Messages.FirstOrDefault(m => m.SqlServerNumber is not null) is { SqlServerNumber: { } number } ? target.ErrorOf(number, Quoted(failure) + (transactional ? "" : Partial), fatal: false)
-        : new Error("dacfx.failed", "DacFx failed against " + target.Target + " with no SQL Server error inside: " + Quoted(failure) + (transactional ? "" : Partial),
+        : failure.Messages.FirstOrDefault(m => m.SqlServerNumber is not null) is { SqlServerNumber: { } number } ? target.ErrorOf(number, failure.Quoted + (transactional ? "" : Partial), fatal: false)
+        : new Error("dacfx.failed", "DacFx failed against " + target.Target + " with no SQL Server error inside: " + failure.Quoted + (transactional ? "" : Partial),
             "Correct what DacFx names in the project or the publish profile, then run the step again.");
 
     /// <summary>The error of a DacFx failure against a database, for the exception DacFx threw.</summary>
@@ -282,11 +286,10 @@ public static class DacFx
     private const string Partial = " The copy may hold part of the change, since the profile sets IncludeTransactionalScripts False.";
 
     /// <summary>DacFx's failure against what no database names: dacfx.failed, quoting its messages.</summary>
-    private static Error Unsourced(string target, DacFxFailure failure) => new Error("dacfx.failed", "DacFx failed against " + target + " with no SQL Server error inside: " + Quoted(failure),
+    private static Error Unsourced(string target, DacFxFailure failure) => new Error("dacfx.failed", "DacFx failed against " + target + " with no SQL Server error inside: " + failure.Quoted,
         "Correct what DacFx names in the project or the publish profile, then run the step again.");
 
     /// <summary>A failure as its error quotes it: each message once, on one line; the chain's text where it has none.</summary>
-    private static string Quoted(DacFxFailure failure) => failure.Messages.Count > 0 ? string.Join(' ', failure.Messages.Select(m => m.ToString())) : failure.Text;
 
     /// <summary>DacFx's error and warning messages, as the kernel's.</summary>
     private static IEnumerable<DacFxMessage> Kept(IEnumerable<DacMessage> messages) => messages.Where(m => m.MessageType != DacMessageType.Message)

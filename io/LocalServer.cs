@@ -117,7 +117,7 @@ public static class LocalServer
         run(new Command("docker", arguments, Command.ProbeTimeout), CancellationToken.None) is Ran.Exited { Code: 0, Output: var output } ? output : null;
 
     /// <summary>The container ci/sql.sh and ci/sql.ps1 run the local server in.</summary>
-    private const string Container = "dbchange-sql";
+    public const string Container = "dbchange-sql";
 
     /// <summary>The repository of the pinned image (Doctor.SqlServerImage without its tag and digest), whose registry digest is preferred where an image was pulled from several.</summary>
     private static readonly string PinnedRepository = Doctor.SqlServerImage.Split('@')[0] is var reference ? reference[..reference.LastIndexOf(':')] : "";

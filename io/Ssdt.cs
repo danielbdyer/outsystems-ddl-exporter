@@ -468,14 +468,14 @@ public static class Ssdt
                 "Restore the project's refactorlog from git, then build the package again.");
         }
 
-        var loaded = DacFx.Guard(() => DacPackage.Load(new MemoryStream(bytes, writable: false), DacSchemaModelStorageType.Memory, FileAccess.Read), failure => Unreadable(source, Quoted(failure)));
+        var loaded = DacFx.Guard(() => DacPackage.Load(new MemoryStream(bytes, writable: false), DacSchemaModelStorageType.Memory, FileAccess.Read), failure => Unreadable(source, failure.Quoted));
         if (loaded.Failed(out var dac, out var unloaded))
         {
             return unloaded;
         }
 
         var modelled = DacFx.Guard(() => TSqlModel.LoadFromDacpac(new MemoryStream(bytes, writable: false),
-            new ModelLoadOptions(DacSchemaModelStorageType.Memory, loadAsScriptBackedModel: false) { ThrowOnModelErrors = false }), failure => Unreadable(source, Quoted(failure)));
+            new ModelLoadOptions(DacSchemaModelStorageType.Memory, loadAsScriptBackedModel: false) { ThrowOnModelErrors = false }), failure => Unreadable(source, failure.Quoted));
         var made = modelled.Bind(model => Result.All(dac.SqlCmdVariables.Select(name => SqlCmdName.Of(source + " declares a SQLCMD variable that", name))).Bind(declared =>
             Platform.Of(dac.TargetPlatform.ToString()).Map(platform =>
                 new Package(source, dac, model, Text(dac.PreDeploymentScript), Text(dac.PostDeploymentScript), Text(dac.PrePlanScript), refactors, SortedArray.Of(declared), platform))));
@@ -523,7 +523,6 @@ public static class Ssdt
         "Name a .dacpac a build wrote, or build its project again.");
 
     /// <summary>A DacFx failure as a message quotes it: its messages, or the chain's text where it has none.</summary>
-    private static string Quoted(DacFx.DacFxFailure failure) => failure.Messages.Count > 0 ? string.Join(' ', failure.Messages.Select(m => m.ToString())) : failure.Text;
 
     private static string? Text(Stream? script)
     {

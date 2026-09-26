@@ -13,11 +13,9 @@ namespace DbChange.Kernel;
 /// </summary>
 public sealed record Error
 {
-    private static readonly Regex CodeForm = new(ErrorCode.Pattern, RegexOptions.CultureInvariant);
-
     public Error(string code, string message, string remedy)
     {
-        Code = code is not null && CodeForm.IsMatch(code)
+        Code = ErrorCode.IsCode(code)
             ? code
             : throw new ArgumentException(
                 $"'{code}' is not an error code: a category and a detail in lowercase words, such as name.too-long.",
@@ -96,6 +94,11 @@ public static class ErrorCode
     /// both dialects, where .NET's <c>$</c> would also admit a final line break.
     /// </summary>
     public const string Pattern = @"^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)+(?![\s\S])";
+
+    private static readonly Regex Form = new(Pattern, RegexOptions.CultureInvariant);
+
+    /// <summary>Whether a text is a code of the one form: what Error and Finding take as a code.</summary>
+    public static bool IsCode(string? text) => text is not null && Form.IsMatch(text);
 
     /// <summary>A category as a code writes it: lowercase, a hyphen between the words of a two-word category (local-server, git-branch).</summary>
     // CS8524 (an enum value no member names) is disabled for this switch alone; CS8509, a named member without an arm, stays an error.

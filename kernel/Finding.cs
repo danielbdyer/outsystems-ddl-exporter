@@ -1,5 +1,4 @@
 using System;
-using System.Text.RegularExpressions;
 
 namespace DbChange.Kernel;
 
@@ -24,11 +23,9 @@ public enum Severity
 /// </summary>
 public sealed record Finding
 {
-    private static readonly Regex CodeForm = new(ErrorCode.Pattern, RegexOptions.CultureInvariant);
-
     private Finding(string code, Severity severity, string subject, string message, string? remedy)
     {
-        Code = code is not null && CodeForm.IsMatch(code) ? code
+        Code = ErrorCode.IsCode(code) ? code
             : throw new ArgumentException($"'{code}' is not a finding code: a category and a detail in lowercase words, such as drift.alter.", nameof(code));
         Severity = severity;
         Subject = Present(subject, nameof(subject));
