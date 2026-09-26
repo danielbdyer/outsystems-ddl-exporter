@@ -259,7 +259,7 @@ public static class Git
         }
         finally
         {
-            File.Delete(index);
+            Write.Discard(index);
         }
     });
 
@@ -297,7 +297,7 @@ public static class Git
 
             if (gone)
             {
-                File.Delete(state.WorktreeHolders(commit));
+                Write.Discard(state.WorktreeHolders(commit));   // a lock file the file system will not release stays for the next sweep
             }
         }
 

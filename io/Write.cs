@@ -55,12 +55,12 @@ public static class Write
         }
         catch (Exception e) when (FileSystemFailure(e))
         {
-            Discarded(temporary);
+            Discard(temporary);
             return Unwritable(target, e);
         }
         catch
         {
-            Discarded(temporary);
+            Discard(temporary);
             throw;
         }
     }
@@ -197,21 +197,24 @@ public static class Write
         {
             if (File.GetLastWriteTimeUtc(left) < DateTime.UtcNow.AddHours(-1))
             {
-                Discarded(left);
+                Discard(left);
             }
         }
     }
 
-    /// <summary>The temporary file deleted after a failed write; one the file system will not release is left, named beside the target.</summary>
-    private static void Discarded(string temporary)
+    /// <summary>
+    /// A file dbchange made for itself deleted: a failed write's temporary file, a commit's temporary index, a gone worktree's holders' lock.
+    /// One the file system will not release (a scanner holds it) is left, and the result being reported stays the one reported.
+    /// </summary>
+    internal static void Discard(string path)
     {
         try
         {
-            File.Delete(temporary);
+            File.Delete(path);
         }
         catch (Exception e) when (FileSystemFailure(e))
         {
-            // a scanner holds it; the failure being reported is the write's
+            // a scanner holds it; the next run's write, commit or sweep meets it again
         }
     }
 }
