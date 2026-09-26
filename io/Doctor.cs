@@ -272,11 +272,14 @@ public static class Doctor
             Ran.TimedOut => (false, "Restart Docker, which did not answer docker info in " + Command.Written(Command.ProbeTimeout) + ", then run dbchange doctor."),
             _ => (false, "Install Docker, or use SQL Server Express LocalDB on Windows, then run dbchange doctor."),
         };
-        var localDb = machine.DbChangeSql is { Length: > 0 } || LocalServer.Server(null, machine.SqlEnv, localDb: false) is Result<string>.Ok || !LocalDbInstalled(run, cancel) ? false : true;
-        return LocalServer.Server(machine.DbChangeSql, machine.SqlEnv, localDb).Bind(server => LocalServer.ServerName(server).Map(name => (Server: server, Name: name))).Match(
-            chosen => machine.DbChangeSql is { Length: > 0 } ? new Prerequisite(Item.LocalServer, "DBCHANGE_SQL (" + chosen.Name + ")", null)
-                : localDb ? new Prerequisite(Item.LocalServer, "LocalDB MSSQLLocalDB, CDC not provable here", null)
-                : new Prerequisite(Item.LocalServer, LocalServer.Container + " container (" + chosen.Name + ")", dockerAnswers ? null : dockerCause),
+        return LocalServer.Choice(machine.DbChangeSql, machine.SqlEnv, () => LocalDbInstalled(run, cancel))
+            .Bind(chosen => LocalServer.ServerName(chosen.Connection).Map(name => (Chosen: chosen, Name: name))).Match(
+            found => found.Chosen switch
+            {
+                LocalServer.Chosen.LocalDb => new Prerequisite(Item.LocalServer, found.Chosen + ", CDC not provable here", null),
+                LocalServer.Chosen.Container => new Prerequisite(Item.LocalServer, found.Chosen + " (" + found.Name + ")", dockerAnswers ? null : dockerCause),
+                _ => new Prerequisite(Item.LocalServer, found.Chosen + " (" + found.Name + ")", null),
+            },
             error => new Prerequisite(Item.LocalServer, "none: " + (dockerAnswers ? "Docker answers, and " + (machine.SqlEnv ?? "~/.dbchange/sql.env") + " names no container" : "Docker does not answer") + ", DBCHANGE_SQL is unset and LocalDB is not installed",
                 dockerAnswers ? "Run ci/sql.sh up, or ci/sql.ps1 up on Windows, which creates the " + LocalServer.Container + " container, then run dbchange doctor." : dockerCause ?? error.Remedy));
     }
@@ -286,8 +289,8 @@ public static class Doctor
         machine.DbChangeSql is { Length: > 0 } ? new(Item.Image, "not needed: DBCHANGE_SQL names the server", null)
         : docker is not Ran.Exited { Code: 0 } ? new(Item.Image, "not needed without Docker", null)
         : run(Program("docker", "image", "inspect", "--format", "{{.Id}}", SqlServerImage), cancel) is not Ran.Exited { Code: 0 } ? new(Item.Image, "absent", "Run ci/sql.sh up, which pulls it (docker pull " + SqlServerImage + "), then run dbchange doctor.")
-        : run(Program("docker", "container", "inspect", LocalServer.Container, "--format", "{{.Config.Image}}"), cancel) is Ran.Exited { Code: 0 } container && container.Output.Trim() is var made && made != SqlServerImage
-            ? new(Item.Image, "present, and " + LocalServer.Container + " runs " + made, "Run ci/sql.sh down, then ci/sql.sh up (ci/sql.ps1 on Windows), so " + LocalServer.Container + " runs the pinned image, then run dbchange doctor.")
+        : LocalServer.Running(run) is { } running && running.Digest != ImageDigest
+            ? new(Item.Image, "present, and " + LocalServer.Container + " runs " + running.Digest, "Run ci/sql.sh down, then ci/sql.sh up (ci/sql.ps1 on Windows), so " + LocalServer.Container + " runs the pinned image, then run dbchange doctor.")
         : new(Item.Image, "present", null);
 
     private static Command Program(string program, params string[] arguments) => new(program, arguments, Command.ProbeTimeout);

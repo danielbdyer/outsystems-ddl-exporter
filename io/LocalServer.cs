@@ -83,10 +83,20 @@ public static class LocalServer
     /// </summary>
     public static string? Image(SqlServer.Database target) => Image(target, Command.Run);
 
-    internal static string? Image(SqlServer.Database target, Runner run)
+    internal static string? Image(SqlServer.Database target, Runner run) =>
+        target is SqlServer.Copy copy && ServerName(copy.Connection) is Result<Kernel.ServerName>.Ok { Value: { Host: var host } server } && host == Host.Localhost
+            && Running(run) is { } running && running.Ports.Any(port => Kernel.ServerName.Of("127.0.0.1," + port, Environment.MachineName) == server)
+            ? running.Digest : null;
+
+    /// <summary>
+    /// The image the dbchange-sql container runs, by its digest, and the host ports it publishes 1433 on: the registry digest the image
+    /// was pulled by, the pinned repository's first where it was pulled from several, or, for an image built or loaded on the machine,
+    /// which no registry names, its image id. Null where Docker or the container does not answer. A copy's stamp and the doctor's image
+    /// item both read it.
+    /// </summary>
+    internal static (string Digest, IReadOnlyList<string> Ports)? Running(Runner run)
     {
-        if (target is not SqlServer.Copy copy || ServerName(copy.Connection) is not Result<Kernel.ServerName>.Ok { Value: { Host: var host } server } || host != Host.Localhost
-            || Docker(run, ["container", "inspect", "--format", "{{.Image}} {{json .NetworkSettings.Ports}}", Container]) is not { } inspected
+        if (Docker(run, ["container", "inspect", "--format", "{{.Image}} {{json .NetworkSettings.Ports}}", Container]) is not { } inspected
             || inspected.Trim().Split(' ', 2) is not [var id, var ports])
         {
             return null;
@@ -94,12 +104,11 @@ public static class LocalServer
 
         try
         {
-            var published = JsonNode.Parse(ports)?["1433/tcp"]?.AsArray().Select(binding => (string?)binding?["HostPort"]).OfType<string>() ?? [];
-            return !published.Any(port => Kernel.ServerName.Of("127.0.0.1," + port, Environment.MachineName) == server) ? null
-                : Docker(run, ["image", "inspect", "--format", "{{json .RepoDigests}}", id]) is { } digests
-                    && JsonNode.Parse(digests)?.AsArray().Select(d => ((string?)d)?.Split('@', 2)).OfType<string[]>()
-                        .Where(d => d.Length == 2 && d[1].StartsWith("sha256:", StringComparison.Ordinal)).ToList() is { } pulled
-                    ? (pulled.FirstOrDefault(d => d[0] == PinnedRepository) ?? pulled.FirstOrDefault())?[1] ?? id
+            IReadOnlyList<string> published = [.. JsonNode.Parse(ports)?["1433/tcp"]?.AsArray().Select(binding => (string?)binding?["HostPort"]).OfType<string>() ?? []];
+            return Docker(run, ["image", "inspect", "--format", "{{json .RepoDigests}}", id]) is { } digests
+                && JsonNode.Parse(digests)?.AsArray().Select(d => ((string?)d)?.Split('@', 2)).OfType<string[]>()
+                    .Where(d => d.Length == 2 && d[1].StartsWith("sha256:", StringComparison.Ordinal)).ToList() is { } pulled
+                ? ((pulled.FirstOrDefault(d => d[0] == PinnedRepository) ?? pulled.FirstOrDefault())?[1] ?? id, published)
                 : null;
         }
         catch (Exception e) when (e is JsonException or InvalidOperationException)
@@ -118,19 +127,65 @@ public static class LocalServer
     /// <summary>The repository of the pinned image (Doctor.SqlServerImage without its tag and digest), whose registry digest is preferred where an image was pulled from several.</summary>
     private static readonly string PinnedRepository = Doctor.SqlServerImage.Split('@')[0] is var reference ? reference[..reference.LastIndexOf(':')] : "";
 
+    /// <summary>
+    /// The local server this machine would use, as it was chosen: the one DBCHANGE_SQL names; the dbchange-sql container, whose port and
+    /// password sql.env gives; or LocalDB's default instance. Each case prints its kind alone, never its connection, which can hold a
+    /// password; the doctor reports the one copies use, since both ask <see cref="Choice"/>.
+    /// </summary>
+    public abstract record Chosen
+    {
+        private Chosen(string connection) => Connection = connection;
+
+        internal string Connection { get; }
+
+        public sealed record Variable : Chosen
+        {
+            internal Variable(string connection)
+                : base(connection)
+            {
+            }
+
+            public override string ToString() => "DBCHANGE_SQL";
+        }
+
+        public sealed record Container : Chosen
+        {
+            internal Container(string connection)
+                : base(connection)
+            {
+            }
+
+            public override string ToString() => LocalServer.Container + " container";
+        }
+
+        public sealed record LocalDb : Chosen
+        {
+            internal LocalDb()
+                : base(@"Server=(localdb)\MSSQLLocalDB;Integrated Security=true")
+            {
+            }
+
+            public override string ToString() => "LocalDB MSSQLLocalDB";
+        }
+    }
+
     internal static Result<string> Server() =>
-        Server(Environment.GetEnvironmentVariable("DBCHANGE_SQL"), LocalState.UserSqlEnv, Doctor.LocalDbInstalled(Command.Run));
+        Choice(Environment.GetEnvironmentVariable("DBCHANGE_SQL"), LocalState.UserSqlEnv, () => Doctor.LocalDbInstalled(Command.Run)).Map(chosen => chosen.Connection);
+
+    /// <summary>The local server's connection, as <see cref="Choice"/> chooses it, LocalDB's install given.</summary>
+    internal static Result<string> Server(string? dbChangeSql, string? sqlEnv, bool localDb) => Choice(dbChangeSql, sqlEnv, () => localDb).Map(chosen => chosen.Connection);
 
     /// <summary>
     /// The local server, in the fixture's order: DBCHANGE_SQL, with sql.env not read; the container, when sql.env gives its port and
-    /// password; LocalDB, when installed. A sql.env that cannot be read, or that gives a key twice, is local-server.missing naming the file.
+    /// password; LocalDB, when installed, which <paramref name="localDbInstalled"/> is asked only when neither gives one, since asking runs
+    /// sqllocaldb. A sql.env that cannot be read, or that gives a key twice, is local-server.missing naming the file.
     /// </summary>
-    internal static Result<string> Server(string? dbChangeSql, string? sqlEnv, bool localDb) =>
-        !string.IsNullOrEmpty(dbChangeSql) ? dbChangeSql
+    internal static Result<Chosen> Choice(string? dbChangeSql, string? sqlEnv, Func<bool> localDbInstalled) =>
+        !string.IsNullOrEmpty(dbChangeSql) ? new Chosen.Variable(dbChangeSql)
         : Settings(sqlEnv).Bind(env => env.GetValueOrDefault("MSSQL_SA_PASSWORD") is { Length: > 0 } password && env.GetValueOrDefault("DBCHANGE_SQL_PORT") is { Length: > 0 } port
-                ? ConnectionString.Container(port, password)
-            : localDb ? @"Server=(localdb)\MSSQLLocalDB;Integrated Security=true"
-            : Result.Fail<string>(new Error("local-server.missing", "No local server: DBCHANGE_SQL is unset, " + (sqlEnv ?? "~/" + LocalState.Name + "/sql.env") + " gives no container's port and password, and LocalDB is not installed.",
+                ? new Chosen.Container(ConnectionString.Container(port, password))
+            : localDbInstalled() ? new Chosen.LocalDb()
+            : Result.Fail<Chosen>(new Error("local-server.missing", "No local server: DBCHANGE_SQL is unset, " + (sqlEnv ?? "~/" + LocalState.Name + "/sql.env") + " gives no container's port and password, and LocalDB is not installed.",
                 "Start Docker and run ci/sql.sh up, or ci/sql.ps1 up on Windows, or set DBCHANGE_SQL; then run dbchange doctor.")));
 
     /// <summary>sql.env's settings, one KEY=value per line as ci/sql.sh writes them; none where the file is absent, or where the user's profile folder is unknown (LocalState.UserSqlEnv null).</summary>

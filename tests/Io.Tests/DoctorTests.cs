@@ -254,17 +254,49 @@ public sealed class DoctorTests : IDisposable
         Assert.Contains("start Docker Desktop", daemonDown.Remedy, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// S15 of the pre-M2 review: the local server is chosen once, by LocalServer.Choice, which the doctor and a copy's resolution both ask, and
+    /// LocalDB is asked about (sqllocaldb) only when neither DBCHANGE_SQL nor sql.env gives a server; every copy's resolution once ran
+    /// sqllocaldb info first, bounded at twenty seconds.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void LocalDB_is_asked_about_only_when_neither_DBCHANGE_SQL_nor_sql_env_gives_a_server()
+    {
+        var asked = 0;
+        bool Installed()
+        {
+            asked++;
+            return true;
+        }
+
+        var container = Value(LocalServer.Choice(null, SqlEnv(), Installed));
+        var variable = Value(LocalServer.Choice("Server=db", null, Installed));
+        var beforeLocalDb = asked;
+        var localDb = Value(LocalServer.Choice(null, machine.Under("no-sql.env"), Installed));
+
+        Assert.Equal(("dbchange-sql container", "DBCHANGE_SQL", "LocalDB MSSQLLocalDB"), (container.ToString(), variable.ToString(), localDb.ToString()));
+        Assert.Equal((0, 1), (beforeLocalDb, asked));
+    }
+
     [Fact]
     [Trait("Category", "fast")]
     public void Docker_without_the_pinned_image_names_its_pull_and_a_container_running_another_image_says_to_recreate_it()
     {
         var absent = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (0, "29.5.3\n"), ["docker image"] = (1, "No such image") })).Single(c => c.Item == Doctor.Item.Image);
-        var other = Doctor.Examine(Bare(), Answers(new(Everything) { ["docker container"] = (0, "mcr.microsoft.com/mssql/server:2019-latest\n") })).Single(c => c.Item == Doctor.Item.Image);
+        var older = "sha256:" + new string('b', 64);
+        Ran Older(Command c, CancellationToken t) => (c.Program, c.Arguments) switch
+        {
+            ("docker", ["container", "inspect", ..]) => new Ran.Exited(0, "sha256:" + new string('c', 64) + " {\"1433/tcp\":[{\"HostIp\":\"127.0.0.1\",\"HostPort\":\"11433\"}]}\n", ""),
+            ("docker", ["image", "inspect", _, "{{json .RepoDigests}}", ..]) => new Ran.Exited(0, "[\"mcr.microsoft.com/mssql/server@" + older + "\"]\n", ""),
+            _ => Answers(Everything)(c, t),
+        };
+        var other = Doctor.Examine(Bare(), Older).Single(c => c.Item == Doctor.Item.Image);
 
         Assert.Equal("absent", absent.Found);
         Assert.Contains("ci/sql.sh up", absent.Remedy, StringComparison.Ordinal);
         Assert.Contains(Doctor.SqlServerImage, absent.Remedy, StringComparison.Ordinal);
-        Assert.Equal("present, and dbchange-sql runs mcr.microsoft.com/mssql/server:2019-latest", other.Found);
+        Assert.Equal("present, and dbchange-sql runs " + older, other.Found);
         Assert.Contains("ci/sql.sh down", other.Remedy, StringComparison.Ordinal);
     }
 
