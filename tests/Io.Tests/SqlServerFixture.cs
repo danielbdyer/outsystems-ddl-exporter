@@ -153,7 +153,7 @@ public static class SqlServerFixture
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
         // The fixture creates and drops databases while other test classes do the same; it waits as long as io/LocalServer does.
-        await using var command = new SqlCommand(sql, connection) { CommandTimeout = LocalServer.DatabaseStatementSeconds };
+        await using var command = new SqlCommand(sql, connection) { CommandTimeout = (int)LocalServer.DatabaseStatementTimeout.TotalSeconds };
         foreach (var (parameter, value) in parameters.Concat(name is null ? [] : [("@name", name)]))
         {
             command.Parameters.Add(new SqlParameter(parameter, System.Data.SqlDbType.NVarChar, 128) { Value = value });

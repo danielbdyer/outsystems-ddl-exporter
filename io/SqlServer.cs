@@ -316,13 +316,16 @@ public static class SqlServer
         public override string ToString() => string.Join(", ", values.Select(v => v?.ToString(CultureInfo.InvariantCulture) ?? "NULL"));
     }
 
+    /// <summary>How long SQL Server may run a statement dbchange sends before SqlClient cancels it: SqlClient's own default for a command, named.</summary>
+    internal static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(30);
+
     /// <summary>
-    /// How long SQL Server may run an aggregate query before SqlClient cancels it: SqlClient's own default for a command, named here.
+    /// How long SQL Server may run an aggregate query before SqlClient cancels it: the command timeout.
     /// An aggregate query reads each row of a table once, and thirty seconds covers a scan of the environments' largest tables that S3 and S8
     /// have not yet measured; a query past it is measured as timed out, not as a server that does not answer (finding ARCH-13). The
     /// profile verb of M3 revisits the figure with the row counts S8 reports; no key of the environments file and no flag sets it before then.
     /// </summary>
-    internal static readonly TimeSpan AggregateQueryTimeout = TimeSpan.FromSeconds(30);
+    internal static readonly TimeSpan AggregateQueryTimeout = CommandTimeout;
 
     /// <summary>
     /// One admitted aggregate query against the target (WP 1.4), through the one statement path, read back as integers and logged
@@ -357,8 +360,7 @@ public static class SqlServer
     /// </summary>
     internal sealed record Statement(string Site, string Text)
     {
-        /// <summary>SqlClient's own default for a command, named.</summary>
-        public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(30);
+        public TimeSpan Timeout { get; init; } = CommandTimeout;
 
         public string? Catalog { get; init; }
 

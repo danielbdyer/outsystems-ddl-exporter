@@ -38,7 +38,13 @@ public static class LocalServer
     /// dropped on the same server hold, and LocalDB on the four-core Windows CI runner has taken longer than SqlClient's default of
     /// 30 seconds for a DROP while parallel test classes made and dropped their own databases.
     /// </summary>
-    internal const int DatabaseStatementSeconds = 180;
+    internal static readonly TimeSpan DatabaseStatementTimeout = TimeSpan.FromSeconds(180);
+
+    /// <summary>
+    /// How long the one outbound lookup dbchange makes may take (VALUES.md X5): DNS for a named environment's host, which R15 compares with
+    /// the local server's; a lookup that does not answer in time reads as an address it does not have.
+    /// </summary>
+    private static readonly TimeSpan DnsTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>This machine's addresses as R15 reads them: loopback, and each its network interfaces hold.</summary>
     private static readonly Lazy<HashSet<IPAddress>> Local = new(() =>
@@ -108,7 +114,7 @@ public static class LocalServer
 
     /// <summary>What docker writes when it exits 0 within the doctor's program timeout; null when it is absent, does not answer or fails.</summary>
     private static string? Docker(Runner run, IReadOnlyList<string> arguments) =>
-        run(new Command("docker", arguments, Doctor.ProgramTimeout), CancellationToken.None) is Ran.Exited { Code: 0, Output: var output } ? output : null;
+        run(new Command("docker", arguments, Command.ProbeTimeout), CancellationToken.None) is Ran.Exited { Code: 0, Output: var output } ? output : null;
 
     /// <summary>The container ci/sql.sh and ci/sql.ps1 run the local server in.</summary>
     private const string Container = "dbchange-sql";
@@ -225,13 +231,13 @@ public static class LocalServer
     /// <summary>An IPv4 address mapped into IPv6, as the IPv4 address it is.</summary>
     private static IPAddress Plain(IPAddress address) => address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
 
-    /// <summary>What DNS resolves a host name to, waited on for five seconds; none when it does not answer.</summary>
+    /// <summary>What DNS resolves a host name to, waited on for <see cref="DnsTimeout"/>; none when it does not answer.</summary>
     private static IPAddress[] Resolved(string host)
     {
         try
         {
             var lookup = Dns.GetHostAddressesAsync(host);
-            return lookup.Wait(TimeSpan.FromSeconds(5)) ? lookup.Result : [];
+            return lookup.Wait(DnsTimeout) ? lookup.Result : [];
         }
         catch (Exception e) when (e is AggregateException or SocketException or ArgumentException)
         {
@@ -241,12 +247,12 @@ public static class LocalServer
 
     /// <summary>
     /// A statement about the copy's database, through the one statement path (io/SqlServer.Query): run against master on its server, on
-    /// a connection of its own outside SqlClient's pool, with the copy's name as @name, waiting up to <see cref="DatabaseStatementSeconds"/>.
+    /// a connection of its own outside SqlClient's pool, with the copy's name as @name, waiting up to <see cref="DatabaseStatementTimeout"/>.
     /// </summary>
     private static Result<SqlServer.Copy> Run(SqlServer.Copy copy, string site, string statement, SqlServer.QueryLog? log) =>
         SqlServer.Query(copy, new SqlServer.Statement(site, statement)
         {
-            Timeout = TimeSpan.FromSeconds(DatabaseStatementSeconds), Catalog = "master", Pooled = false, Parameters = [("@name", copy.Name.ToString())],
+            Timeout = DatabaseStatementTimeout, Catalog = "master", Pooled = false, Parameters = [("@name", copy.Name.ToString())],
         }, log, _ => copy);
 
     /// <summary>The registry's rows, none when it is absent, each naming its copy and the server it was made on. A write replaces the file whole, so a reader sees the rows before a change or after it.</summary>

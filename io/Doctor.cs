@@ -18,7 +18,7 @@ namespace DbChange.Io;
 /// git at 2.24 or later (rev-parse --end-of-options); the committed tool folder and its DacFx against the SSDT repository's toolchain ledger; the
 /// build route; the local server dbchange would use, in LocalServer's order (DBCHANGE_SQL, the dbchange-sql container, LocalDB), with the
 /// Docker-specific cause when none applies; the pinned SQL Server image and the container's; and Git LFS. Each item missing carries its
-/// remedy. Every program runs through io/Command for at most <see cref="ProgramTimeout"/>, and a program that does not answer in time is
+/// remedy. Every program runs through io/Command for at most <see cref="Command.ProbeTimeout"/>, and a program that does not answer in time is
 /// named as such, never as absent. The machine is read once (<see cref="Machine.Here"/>) and given to <see cref="Examine"/>, so a test
 /// describes a machine instead of setting variables.
 /// </summary>
@@ -32,9 +32,6 @@ public static class Doctor
 
     /// <summary>The toolchain ledger, from the repository root: one dated row per dbchange version, with the pinned DacFx or UNPINNED.</summary>
     public const string Ledger = "dbchange/ledgers/toolchain.md";
-
-    /// <summary>How long each program the doctor runs may take: docker info waits while Docker Desktop starts, and dotnet --list-sdks answers in a second.</summary>
-    public static readonly TimeSpan ProgramTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>The runtime dbchange runs on alone (VALUES.md R5).</summary>
     private const int RuntimeMajor = 10;
@@ -210,7 +207,7 @@ public static class Doctor
             case Ran.NotFound:
                 return new(Item.Sdk, "dotnet is not on the PATH", install);
             case Ran.TimedOut:
-                return new(Item.Sdk, "dotnet did not answer in " + Command.Written(ProgramTimeout), "Run dotnet --list-sdks by hand to see what it waits for, then run dbchange doctor.");
+                return new(Item.Sdk, "dotnet did not answer in " + Command.Written(Command.ProbeTimeout), "Run dotnet --list-sdks by hand to see what it waits for, then run dbchange doctor.");
             case Ran.Exited { Code: not 0 } failed:
                 return new(Item.Sdk, "dotnet --list-sdks failed: " + (failed.Errors + failed.Output).Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault(""), "Repair or reinstall the .NET SDK, then run dbchange doctor.");
             case Ran.Exited listed:
@@ -253,7 +250,7 @@ public static class Doctor
     private static Prerequisite GitVersion(Runner run, CancellationToken cancel) => run(Program("git", "--version"), cancel) switch
     {
         Ran.NotFound => new(Item.Git, "absent", "Install git and put it on the PATH, then run dbchange doctor."),
-        Ran.TimedOut => new(Item.Git, "git did not answer in " + Command.Written(ProgramTimeout), "Run git --version by hand to see what it waits for, then run dbchange doctor."),
+        Ran.TimedOut => new(Item.Git, "git did not answer in " + Command.Written(Command.ProbeTimeout), "Run git --version by hand to see what it waits for, then run dbchange doctor."),
         Ran.Exited { Code: 0 } said when Version.TryParse(string.Concat((said.Output.Trim().Split(' ').ElementAtOrDefault(2) ?? "").TakeWhile(c => char.IsAsciiDigit(c) || c == '.')).TrimEnd('.'), out var version) =>
             version >= GitLeast ? new(Item.Git, version.ToString(), null)
             : new(Item.Git, "git " + version + " is older than " + GitLeast + ", which dbchange needs for rev-parse --end-of-options", "Install git " + GitLeast + " or later, then run dbchange doctor."),
@@ -272,7 +269,7 @@ public static class Doctor
             null => (false, null),
             Ran.Exited { Code: 0 } => (true, null),
             Ran.Exited => (false, "Docker does not answer (docker info): start Docker Desktop, or the docker service, then run dbchange doctor."),
-            Ran.TimedOut => (false, "docker info did not answer in " + Command.Written(ProgramTimeout) + ": restart Docker, then run dbchange doctor."),
+            Ran.TimedOut => (false, "docker info did not answer in " + Command.Written(Command.ProbeTimeout) + ": restart Docker, then run dbchange doctor."),
             _ => (false, "Install Docker, or use SQL Server Express LocalDB on Windows, then run dbchange doctor."),
         };
         var localDb = machine.DbChangeSql is { Length: > 0 } || LocalServer.Server(null, machine.SqlEnv ?? "", localDb: false) is Result<string>.Ok || !LocalDbInstalled(run, cancel) ? false : true;
@@ -293,7 +290,7 @@ public static class Doctor
             ? new(Item.Image, "present, and " + Container + " runs " + made, "Run ci/sql.sh down, then ci/sql.sh up (ci/sql.ps1 on Windows), so " + Container + " runs the pinned image, then run dbchange doctor.")
         : new(Item.Image, "present", null);
 
-    private static Command Program(string program, params string[] arguments) => new(program, arguments, ProgramTimeout);
+    private static Command Program(string program, params string[] arguments) => new(program, arguments, Command.ProbeTimeout);
 
     /// <summary>A file's version as major.minor.build, or null for a file that is absent or carries none.</summary>
     private static string? FileVersion(string path)

@@ -39,6 +39,12 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
 
     private static readonly TimeSpan Drain = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// How long a program asked about the machine may take (dotnet --list-sdks, docker info, sqllocaldb info): docker info waits while
+    /// Docker Desktop starts, and dotnet answers in a second. A program that does not answer in time is named as such, never as absent.
+    /// </summary>
+    public static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(20);
+
     public string? Directory { get; init; }
 
     public IReadOnlyDictionary<string, string?> Environment { get; init; } = Unchanged;
