@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 
 namespace DbChange.Kernel;
 
@@ -44,6 +45,20 @@ public static class Result
     public static Result<T> Ok<T>(T value) => new Result<T>.Ok(value);
 
     public static Result<T> Fail<T>(Error error) => new Result<T>.Failed(error);
+
+    /// <summary>Whether a result failed: its value in <paramref name="value"/> when it did not, its error in <paramref name="error"/> when it did.</summary>
+    public static bool Failed<T>(this Result<T> result, [MaybeNullWhen(true)] out T value, [MaybeNullWhen(false)] out Error error)
+    {
+        (value, error) = (default, null);
+        if (result is Result<T>.Ok ok)
+        {
+            value = ok.Value;
+            return false;
+        }
+
+        error = ((Result<T>.Failed)result).Error;
+        return true;
+    }
 
     /// <summary>
     /// Every value of <paramref name="results"/>, in their order, when each holds one; else the first error in that order. The results

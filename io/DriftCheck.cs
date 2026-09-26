@@ -44,9 +44,9 @@ public static class DriftCheck
             .Bind(chosen => SqlServer.Reach(chosen.Database, log).Map(readable => (chosen.Database, chosen.Profile, Readable: readable)))
             .Bind(chosen => (chosen.Database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, log).Map(server => (Server?)server) : Result.Ok<Server?>(null))
                 .Map(server => (chosen.Database, chosen.Profile, chosen.Readable, Server: server)));
-        if (reached is not Result<(SqlServer.Database Database, PublishProfile.Strict Profile, SqlServer.Readable Readable, Server? Server)>.Ok { Value: var target })
+        if (reached.Failed(out var target, out var unreached))
         {
-            return new(stamp, ((Result<(SqlServer.Database, PublishProfile.Strict, SqlServer.Readable, Server?)>.Failed)reached).Error);
+            return new(stamp, unreached);
         }
 
         stamp = stamp with { Server = target.Server };

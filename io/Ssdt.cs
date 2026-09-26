@@ -473,9 +473,9 @@ public static class Ssdt
         }
 
         var loaded = DacFx.Guard(() => DacPackage.Load(new MemoryStream(bytes, writable: false), DacSchemaModelStorageType.Memory, FileAccess.Read), failure => Unreadable(source, Quoted(failure)));
-        if (loaded is not Result<DacPackage>.Ok { Value: var dac })
+        if (loaded.Failed(out var dac, out var unloaded))
         {
-            return ((Result<DacPackage>.Failed)loaded).Error;
+            return unloaded;
         }
 
         var modelled = DacFx.Guard(() => TSqlModel.LoadFromDacpac(new MemoryStream(bytes, writable: false),

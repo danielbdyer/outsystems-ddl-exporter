@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -102,18 +101,4 @@ public static partial class Verbs
     }
 
     internal static JsonObject Values() => new() { ["type"] = new JsonArray("boolean", "integer", "string", "null") };
-
-    /// <summary>Whether a result failed: its value when it did not, its error when it did.</summary>
-    internal static bool Failed<T>(this Result<T> result, [MaybeNullWhen(true)] out T value, [MaybeNullWhen(false)] out Error error)
-    {
-        (value, error) = (default, null);
-        if (result is Result<T>.Ok ok)
-        {
-            value = ok.Value;
-            return false;
-        }
-
-        error = ((Result<T>.Failed)result).Error;
-        return true;
-    }
 }

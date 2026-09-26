@@ -25,6 +25,19 @@ public sealed class ResultTests
         Assert.Equal("internal.failed", failed.Match(_ => "", e => e.Code));
     }
 
+    /// <summary>Failed is false with the value for a result that holds one, and true with the error for one that does not.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void Failed_gives_a_result_s_value_or_its_error()
+    {
+        Result<int> ok = 2, failed = Why;
+
+        Assert.False(ok.Failed(out var value, out var none));
+        Assert.True(failed.Failed(out _, out var error));
+        Assert.Equal((2, null), (value, none));
+        Assert.Same(Why, error);
+    }
+
     /// <summary>
     /// Result.All over results built from values and the place of the first error, if any: every value, in the order given, when each
     /// result holds one; else the first error in that order, whatever errors follow it, with no result after it read. io relies on the

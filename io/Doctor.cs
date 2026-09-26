@@ -196,12 +196,12 @@ public static class Doctor
     /// </summary>
     internal static Prerequisite Sdk(string workingDirectory, Runner run, CancellationToken cancel = default)
     {
-        if (Pinned(workingDirectory) is Result<Version?>.Failed { Error: var malformed })
+        if (Pinned(workingDirectory).Failed(out var pin, out var malformed))
         {
             return new(Item.Sdk, malformed.Message, malformed.Remedy);
         }
 
-        var (pin, major) = (((Result<Version?>.Ok)Pinned(workingDirectory)).Value, Environment.Version.Major);
+        var major = Environment.Version.Major;
         var band = pin is null ? string.Create(CultureInfo.InvariantCulture, $"{major}.x") : string.Create(CultureInfo.InvariantCulture, $"{pin.Major}.{pin.Minor}.{pin.Build / 100}xx");
         var (wanted, sh, ps) = pin is null ? (string.Create(CultureInfo.InvariantCulture, $"{major}.0"), "--channel", "-Channel") : (pin.ToString(), "--version", "-Version");
         var install = "Install the .NET SDK " + wanted + ": dotnet-install.sh " + sh + " " + wanted + ", or dotnet-install.ps1 " + ps + " " + wanted + " on Windows.";
