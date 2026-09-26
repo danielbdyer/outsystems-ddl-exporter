@@ -239,7 +239,7 @@ public sealed class GitTests : IDisposable
         Assert.Equal("estate/evidence-dev", pushed.Branch);
         Assert.Equal(["refs/heads/estate/evidence-dev " + pushed.Commit, "refs/heads/main " + head], scratch.GitAt(origin, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads").Split('\n'));
         Assert.Equal(["estate/evidence.shape.json", "estate/ledgers/row-tiers.md"], scratch.GitAt(origin, "diff-tree", "-r", "--name-only", "--no-commit-id", head, pushed.Commit).Split('\n'));
-        Assert.Equal(head + "\nEstate Test\nmeasure: dev's evidence", scratch.GitAt(origin, "log", "-1", "--format=%P%n%an%n%B", pushed.Commit));
+        Assert.Equal(head + "\nEstate Test\nprofile: dev's evidence", scratch.GitAt(origin, "log", "-1", "--format=%P%n%an%n%B", pushed.Commit));
         Assert.Equal("{ \"sites\": [] }", scratch.GitAt(origin, "show", pushed.Commit + ":estate/evidence.shape.json"));
         Assert.Equal(("refs/heads/main", head), (scratch.Git("symbolic-ref", "HEAD"), scratch.Git("rev-parse", "HEAD")));
         Assert.Equal(["M  README.md", " M estate/evidence.shape.json", "?? estate/ledgers/"], scratch.Git("status", "--porcelain").Split('\n'));
