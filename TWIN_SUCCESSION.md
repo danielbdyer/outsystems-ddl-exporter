@@ -92,8 +92,11 @@ effective Octopus options are the first thing to capture (§10).
 
 ## 3. The loop
 
-Run per environment the developer can read: Dev (after its cutover), QA, UAT. Prod has no reader yet
-(see "Prod" below).
+Who can read which environment decides who runs the loop:
+
+- **Developers can read Dev.** The author runs the loop against Dev.
+- **Dev leads can read QA and UAT.** The lead re-runs steps 2–6 against QA and UAT during review (§8).
+- **Nobody can read Prod yet.** Prod gets the both-worlds treatment in step 7.
 
 1. **Build head.** Use MSBuild via vswhere for the classic `.sqlproj`. VS 2026 supports only the
    classic format. For a two-release program, also build the **final target (R2)**: R1's model diff
@@ -298,6 +301,13 @@ into branch policy.
 
 ## 8. Gates
 
+- **The lead's review extends the proof.** Only leads can read QA and UAT, so reproducing a proof
+  means extending it to the environments the author cannot see:
+  - run `prove.ps1` against QA and UAT;
+  - if their delta or facts differ from Dev's, re-prove there;
+  - the record gains those environments' lines.
+
+  This gives the review substance beyond reading.
 - **PR pipeline** (pinned hosted Windows image, LocalDB present):
   1. Re-derive the preconditions from head against the merge-base.
   2. Refuse if the committed facts don't cover them, or if they are stale.
@@ -369,15 +379,45 @@ into branch policy.
 **If there is only one week:** do Day 1 and Week 1, and cut everything else. The make-mandatory
 recording on the real estate is the one act that cannot happen after Danny leaves.
 
+**The actual window (decided 2026-10-15): about one week, with the F# turnover on day 1.**
+
+1. **Before the turnover:**
+   - run the laptop check (Appendix C) on one senior's laptop, once in Visual Studio's Terminal
+     window;
+   - read the Octopus step's effective options and DacFx version.
+2. **Turnover day:**
+   - Present the F# sidecar and the Twin as **archived reference, not a handoff**. Nobody inherits
+     them.
+   - Present this document as the successor path.
+   - Confirm that the two principals own `prove.ps1`, the pins and the in-flight ledger: the on-team
+     primary, with the supporting-team backup.
+   - File the tickets the laptop check calls for.
+3. **Days 2–4:**
+   - Write `prove.ps1`, `plant.sql` and the probes, and run them on the real estate against Dev.
+   - Strip the Twin, Docker, F# and Node paths from the vendored tree.
+   - Write Proof plans for five ops: make-mandatory, narrow, create-fk, add-unique, delete-attribute.
+     Everything else routes to `LONG_TAIL.md`.
+4. **Day 5:** a senior drives make-mandatory end to end while Danny stays silent, and it is
+   recorded. A lead extends it to QA and UAT.
+5. **Deferred to the principals, in writing:**
+   - **The PR pipeline gate.** Don't leave a half-built gate with no owner: a red gate nobody can fix
+     gets switched off.
+   - The Octopus pre-flight.
+   - The remaining Proof plans.
+
 ## 11. Decisions only the operator can make
 
-1. **Script or compiled tool.** §4 recommends the script; the spike decides.
-2. **How long until the handoff.** This sets which plan in §10 applies.
-3. **Whether laptops may reach QA and UAT read-only.** If not, every proof falls back to the
-   merge-base, and the Octopus pre-flight moves from phase 2 to essential.
-4. **Prod policy.** Prove both worlds (recommended), assume the worst, or wait for a reader.
-5. **Who the principal is**, and whether they accept ownership of `prove.ps1`, the pins and the
-   pipeline.
+1. **Script or compiled tool. Decided:** PowerShell. The laptop check (Appendix C) confirms the
+   language mode.
+2. **How long until the handoff. Decided:** about one week, with the F# turnover on day 1 (§10).
+3. **Who can reach what. Decided:** developers read Dev; dev leads read QA and UAT. The lead's review
+   extends the proof (§8).
+4. **Prod policy. Open:** prove both worlds (recommended), assume the worst, or wait for a reader.
+5. **Ownership. Decided:** two principals, a primary on the team and a backup on the supporting team.
+   They need not be named here. What matters:
+   - each has said yes to owning `prove.ps1`, the pins and the in-flight ledger;
+   - break-glass approval sits with the on-team primary and a dev lead, not with the cross-team
+     backup.
 
 ---
 
@@ -424,3 +464,67 @@ Lessons any implementation keeps:
 - Load dacpacs from a stream.
 - Never keep a hand-written Strict profile.
 - The post-deploy MERGE can itself throw and mask the result.
+
+## Appendix C — The laptop check
+
+Paste this into a PowerShell window opened in the SSDT repository folder; do not save it as a file
+first. Execution policy does not apply to pasted commands, so the check can report on a laptop where
+script files are blocked. Run it once more in Visual Studio's Terminal window, where Copilot's
+commands run.
+
+It is read-only: it writes one temporary file in the current folder, runs it, and deletes it. It uses
+only cmdlets and property reads, so it works under ConstrainedLanguage mode.
+
+```powershell
+"--- PowerShell"
+"Version:              $($PSVersionTable.PSVersion)"
+"Language (console):   $($ExecutionContext.SessionState.LanguageMode)"
+Get-ExecutionPolicy -List | Format-Table -AutoSize | Out-String
+
+# The test that matters: a script FILE in the repository folder, where prove.ps1 will live.
+$probe = Join-Path (Get-Location) 'lm-probe.ps1'
+Set-Content -Path $probe -Value '"Language (script):    $($ExecutionContext.SessionState.LanguageMode)"'
+try   { & $probe }
+catch { "Script file blocked:  $($_.Exception.Message)" }
+Remove-Item $probe -ErrorAction SilentlyContinue
+
+"--- Application control"
+try {
+    $dg = Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard -ErrorAction Stop
+    "WDAC user mode:       $($dg.UsermodeCodeIntegrityPolicyEnforcementStatus)  (0 off, 1 audit, 2 enforced)"
+} catch { "WDAC user mode:       not readable" }
+try {
+    $al = Get-AppLockerPolicy -Effective -Xml -ErrorAction Stop
+    "AppLocker scripts:    $($al -match 'Type="Script"[^>]*EnforcementMode="Enabled"')"
+    "AppLocker exes:       $($al -match 'Type="Exe"[^>]*EnforcementMode="Enabled"')"
+} catch { "AppLocker:            not readable" }
+
+"--- Tools"
+if (Get-Command sqllocaldb -ErrorAction SilentlyContinue) { "LocalDB versions:"; & sqllocaldb versions }
+else { "LocalDB:              not installed" }
+foreach ($tool in 'sqlpackage', 'sqlcmd', 'msbuild') {
+    $found = Get-Command $tool -ErrorAction SilentlyContinue
+    if ($found) { "${tool}: $($found.Source)" } else { "${tool}: not on PATH" }
+}
+$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+if (Test-Path $vswhere) {
+    foreach ($vs in (& $vswhere -all -property installationPath)) {
+        "Visual Studio:        $vs"
+        $dac = Join-Path $vs 'Common7\IDE\Extensions\Microsoft\SQLDB\DAC'
+        Get-ChildItem -Path $dac -Recurse -Filter SqlPackage.exe -ErrorAction SilentlyContinue |
+            ForEach-Object { "  bundled sqlpackage: $($_.FullName)" }
+    }
+}
+```
+
+How to read the output:
+
+| You see | It means | What `prove.ps1` does about it |
+|---|---|---|
+| `Language (script): FullLanguage` | No application control on scripts in this folder | Nothing to design around; it may load the ScriptDom DLL that ships beside sqlpackage |
+| `Language (script): ConstrainedLanguage` | AppLocker or WDAC script rules apply | Fine: it is written ConstrainedLanguage-safe |
+| `Script file blocked: …running scripts is disabled…`, with `MachinePolicy` and `UserPolicy` both `Undefined` | The execution policy is only a local default | Run it as `powershell -ExecutionPolicy Bypass -File prove.ps1`, or set `CurrentUser` to `RemoteSigned` |
+| `Script file blocked`, with `MachinePolicy` or `UserPolicy` set | Group Policy pins the execution policy | The script must be signed with the org certificate (a ticket) |
+| No LocalDB version at 16.x or above (2019 is 15.x; 2022 is 16.x; 2025 is 17.x) | It cannot host a Sql160 project under the pipeline profile | Request the SqlLocalDB 2022 MSI (needs admin), or use `AllowIncompatiblePlatform=True` on local copies only, stamped in every record |
+| No `sqlpackage` on PATH and no bundled copy | — | Request the pinned sqlpackage zip through an Azure DevOps Artifacts feed |
+| `AppLocker exes: True` | An unsigned exe in the repository folder would be blocked | Confirms the decision not to ship an exe |
