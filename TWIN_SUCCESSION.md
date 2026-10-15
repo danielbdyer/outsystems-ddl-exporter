@@ -42,6 +42,67 @@ The minimum proof surface is therefore:
 There is no Twin, no F#, no Docker, no Node, no bacpac and no MCP. Section 4 explains why the
 mechanism is a script and not a compiled tool.
 
+### 0.1 The facsimile, in one page
+
+**The line.** A facsimile can reproduce what the database will *do*. Nothing can reproduce what the
+data *means* without looking at it, and the Twin could not either: its mint smooths placeholders and
+mixed date conventions away. That gives one rule, which a tool can apply mechanically:
+
+- **Statements DacFx generates are answered by the facsimile.** They ask closed questions about
+  existence.
+- **Statements a person authored** (pre- and post-deploy scripts, seeds, the R1 of a two-release
+  change) **require looking** in the real environment, with the shape profile in Appendix D. What you
+  see is written back as witnesses, and the script checks itself before writing anything (§6b).
+
+**Two reads, four local steps** (the delta step verified 2026-10-15):
+
+| Step | Where it runs | What it does | Needs |
+|---|---|---|---|
+| 1. Read | the environment | Extract its schema (a few KB, no data) | VIEW DEFINITION |
+| 2. Local | the laptop | generate the delta: head vs that schema. The offline delta, guard included, is **identical** to the one generated live | nothing |
+| 3. Local | the laptop | find the questions: every generated statement that reads rows, matched against the vocabulary below | nothing |
+| 4. Read | the environment | answer them: one COUNT per question. "Has rows?" comes from `sys.partitions` | SELECT (VIEW DEFINITION alone for "has rows") |
+| 5. Local | LocalDB | build the facsimile: publish the copied-down schema, then plant one witness row per "yes" | nothing |
+| 6. Local | LocalDB | the verdict: publish head with the effective Octopus options, and read the Msg | nothing |
+
+All that ever leaves the environment is `schema.dacpac` and `answers.json`: structure and counts, no
+values.
+
+**The vocabulary.** The line lives in a file, not in anyone's judgment:
+
+| Statement DacFx writes | Question it asks the data | Count in the environment | Witness on the copy |
+|---|---|---|---|
+| `IF EXISTS (select top 1 1 from T) RAISERROR(…,16,127)` | does T hold a row? | `sys.partitions` rows | one valid row in T, plus its FK parents |
+| `ALTER COLUMN c … NOT NULL` | any NULL in c? | `WHERE c IS NULL` | that row with c = NULL |
+| `ALTER COLUMN c <narrower or other type>` | anything in c that won't fit? | over-length by LEN; TRY_CONVERT fails; round-trip differs | that row with the misfit value |
+| `CREATE UNIQUE … INDEX … ON T(cols)` / `UNIQUE` / `PRIMARY KEY` | any duplicate, under T's collation, within the filter? | duplicate-group count | a second row equal on cols |
+| `WITH CHECK CHECK CONSTRAINT [FK…]` | any child without a parent? | orphan count | a child pointing at a missing parent |
+| `WITH CHECK CHECK CONSTRAINT [CK…]` | any row where the rule is false? | `WHERE NOT(predicate)` | **stop:** the agent writes the row, because predicates are free-form |
+| `CREATE TABLE [tmp_ms_xx_T]` … `INSERT … SELECT` | rows in T; does every moved column fit? | as rows 1 and 3 | as rows 1 and 3 |
+| a pre- or post-deploy script that changed since base | what shapes does this script handle? | **stop:** look (shape profile) | the witnesses the developer declares |
+| any other statement that reads rows | — | — | **stop:** "unrecognized statement at line N" |
+
+**What "never fails" can honestly mean.** Every run has exactly two outcomes:
+
+- **a verdict;** or
+- **a stop that names the next step,** written as an instruction to the agent. For example: "Write
+  one INSERT into witness.sql that violates CK_Amount, then re-run."
+
+There is no third outcome. Something unknown is a stop, never a "clean".
+
+**What "evolves without oversight" can honestly mean.**
+
+- **Nothing is stored, so nothing goes stale.** Every run is re-derived from the repository and the
+  environment, so new tables, renames and drift need no upkeep.
+- **The tool changes in exactly two places, both rare and both visible:**
+  - a vocabulary row, when a DacFx bump or a new op emits a statement the table doesn't know;
+  - a type mapping in the witness generator, when a new data type appears.
+
+  Each arrives as a stop and is fixed as one reviewed line in a PR.
+- **The repository is the memory.** Each PR commits its `answers.json` and `witness.sql`, so
+  `proofs/` becomes the estate's record of what the data looked like when each change was made. Its
+  only oversight is the PR review that already happens.
+
 ---
 
 ## 1. Why the Twin can go: the evidence
