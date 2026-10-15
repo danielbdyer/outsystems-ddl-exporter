@@ -254,6 +254,61 @@ Full table: the panel's witness report. **E/P** means the table is empty / holds
 - **Outside the database:** the Integration Studio refresh (the second half of every change), and
   external consumers such as SSIS.
 
+## 6b. The boundary: when witnesses suffice, and when you must look at the real data
+
+**The engine's questions are a closed list; a remedy script's questions are not.**
+
+- **The engine asks two kinds of question:** "does this table hold a row?" and "does any row break
+  this constraint?". You can read every one of them off the delta, counts answer them, and witnesses
+  reproduce them faithfully on LocalDB.
+- **A script that changes data asks an open question:** what shapes does this data really have that
+  I must handle? Examples are a backfill, a de-dupe, a reconcile, a conversion, or a mapping. You
+  cannot list those shapes in advance; you have to *discover* them. Only then can you plant them.
+
+So profiling the real environment is needed narrowly. It covers the columns a remedy reads, at
+authoring time. It is never a whole-estate profile, and nothing here needs the Twin's distribution
+pipeline.
+
+| Zone | The question | What answers it | Access | Does the LocalDB copy reproduce it? |
+|---|---|---|---|---|
+| 1. Will it publish? | guards, constraint validation, the delta's shape, single vs two releases | the delta (Script) plus counts, then witnesses | VIEW DEFINITION for the delta and populated-or-not; SELECT for violation counts | Yes, faithfully |
+| 2. What must the remedy handle? | the value shapes a script branches on | a shape profile (discovery), then confirmation counts, then value-class witnesses | SELECT | Only after discovery |
+| 3. How heavy is it? | time, locks, log growth, timeouts | row counts and sizes give an estimate; real measurement needs a full-size non-prod instance | VIEW DEFINITION | No |
+| 4. Who else depends on it? | index usage, plans, CDC, SSIS, Integration Studio | DMVs or Query Store, and people | VIEW SERVER/DATABASE STATE; humans | No |
+
+**Which ops cross into zone 2:**
+
+| When | Ops |
+|---|---|
+| Never | add-optional, make-optional, widen, create-entity, the default ops, the drop-constraint ops, rename and move-schema (the refactorlog decides), delete-entity, clean FK/unique/check adds |
+| When they carry a remedy | make-mandatory: what blanks become, plus `''` and placeholders that pass NOT NULL. narrow: what gets cut; trailing spaces are trimmed silently. add-unique and define-pk: which duplicate wins, plus case and trailing-space twins. create-fk: delete or reassign orphans |
+| Always | retype-explicit (formats and conventions); extract-to-lookup (the vocabulary *is* the deliverable); merge, split and move-attribute (cardinality, and conflicts between duplicated columns); seed ops (Id/Code per environment; static rows are model data and safe to read whole) |
+
+**Verified 2026-10-15** (SQL Server 2022, sqlpackage 170.5.96, throwaway database, three logins):
+
+- **VIEW DEFINITION with no data access** extracts the full schema and generates the real delta: the
+  data-loss guard, both `ALTER COLUMN`s, the unique-index build and the FK's `WITH CHECK CHECK`. It
+  also reads each table's row count from `sys.partitions` (documented as approximate; enough for
+  empty-or-not).
+
+  Implication: **a VIEW DEFINITION-only login on Prod would predict every presence-based guard
+  without granting anyone the right to read Prod data.** That is a far easier ask than read access.
+- **Data-reader without VIEW DEFINITION:** sqlpackage refuses loudly ("you do not have View
+  Definition permission"). Check what the developers' Dev login actually holds.
+- **The shape profile** (Appendix D, run as data-reader) found, without printing a single value:
+  - **Email:** one NULL, one `''` and one `A/A` (an "N/A" placeholder). The last two pass NOT NULL
+    while still meaning blank. A case twin also showed (4 distinct as collated vs 5 binary), which
+    would block a unique index with Msg 1505.
+  - **A text birth-date column:** two formats (`99/99/9999` and `9999-99-99`) plus a word. A
+    confirmation count then showed that one slash date must be day-first, while the other converts
+    "successfully" as month-first. That is a silent wrong date that no failure count reports.
+  - **Code:** a trailing-space twin and a case twin.
+
+**Where nobody can look (Prod), the remedy checks itself.** The pre-deploy script begins with its
+confirmation probe and THROWs if it finds a shape it does not handle. It does this *before any
+write*, because a pre-deploy's work is not rolled back (F6). The real environment then profiles
+itself at deploy time, and a surprise becomes a clean refusal instead of silent damage.
+
 ## 7. The knowledge layer
 
 **What the team will read for one change:**
@@ -528,3 +583,55 @@ How to read the output:
 | No LocalDB version at 16.x or above (2019 is 15.x; 2022 is 16.x; 2025 is 17.x) | It cannot host a Sql160 project under the pipeline profile | Request the SqlLocalDB 2022 MSI (needs admin), or use `AllowIncompatiblePlatform=True` on local copies only, stamped in every record |
 | No `sqlpackage` on PATH and no bundled copy | — | Request the pinned sqlpackage zip through an Azure DevOps Artifacts feed |
 | `AppLocker exes: True` | An unsigned exe in the repository folder would be blocked | Confirms the decision not to ship an exe |
+
+## Appendix D — The shape profile (discovery for one column)
+
+Run it as a read-only login against the environment you can read. Replace `<column>` and `<table>`,
+and paste only the output (counts and shapes) into the PR.
+
+- **Letters** collapse to `a`/`A`, and runs of them collapse too.
+- **Digits** stay one `9` each, so date and number formats stay legible.
+- **Spaces** show as `_`.
+- **Punctuation** stays as itself.
+- **Signatures** seen fewer than `@k` times are suppressed.
+- **Accented letters** pass through as themselves. They are characters, not values.
+- **Literal values** are shown only for low-cardinality vocabularies (50 distinct values or fewer, the
+  Twin's own masking pivot), and only when a change needs the vocabulary itself, as in
+  extract-to-lookup.
+
+```sql
+SET NOCOUNT ON;
+DECLARE @k INT = 5;
+WITH src AS (SELECT c = <column> FROM <table>),
+sig AS (
+  SELECT c,
+    s = REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+          TRANSLATE(c COLLATE Latin1_General_BIN2,
+            N'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ',
+            N'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAA9999999999_'),
+          N'aa',N'a'),N'aa',N'a'),N'aa',N'a'),N'aa',N'a'),N'aa',N'a'),N'aa',N'a'),
+          N'AA',N'A'),N'AA',N'A'),N'AA',N'A'),N'AA',N'A'),N'AA',N'A'),N'AA',N'A')
+  FROM src)
+SELECT 'summary' AS part,
+  rows_total = COUNT_BIG(*), nulls = SUM(CASE WHEN c IS NULL THEN 1 ELSE 0 END),
+  empty = SUM(CASE WHEN c = N'' AND DATALENGTH(c) = 0 THEN 1 ELSE 0 END),
+  whitespace_only = SUM(CASE WHEN DATALENGTH(c) > 0 AND LTRIM(RTRIM(c)) = N'' THEN 1 ELSE 0 END),
+  edge_spaces = SUM(CASE WHEN DATALENGTH(c) <> DATALENGTH(LTRIM(RTRIM(c))) THEN 1 ELSE 0 END),
+  max_len = MAX(LEN(c)), max_bytes = MAX(DATALENGTH(c)),
+  distinct_as_collated = COUNT(DISTINCT c), distinct_binary = COUNT(DISTINCT c COLLATE Latin1_General_BIN2)
+FROM sig;
+WITH src AS (SELECT c = <column> FROM <table>),
+sig AS (SELECT s = REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+          TRANSLATE(c COLLATE Latin1_General_BIN2,
+            N'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ',
+            N'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAA9999999999_'),
+          N'aa',N'a'),N'aa',N'a'),N'aa',N'a'),N'aa',N'a'),N'aa',N'a'),N'aa',N'a'),
+          N'AA',N'A'),N'AA',N'A'),N'AA',N'A'),N'AA',N'A'),N'AA',N'A'),N'AA',N'A') FROM src WHERE c IS NOT NULL)
+SELECT 'shape' AS part, signature = CASE WHEN s = N'' THEN N'(empty)' ELSE s END, n = COUNT_BIG(*)
+FROM sig GROUP BY s HAVING COUNT_BIG(*) >= @k ORDER BY n DESC;
+```
+
+**Discovery then confirmation.** A shape tells you which question to ask next; a count answers it.
+For example, if `99/99/9999` appears, ask how many rows have a first part over 12 (they must be
+day-first) and how many convert under style 101 (month-first). Any row in both columns means the
+column mixes conventions, and a plain retype would silently corrupt it.
