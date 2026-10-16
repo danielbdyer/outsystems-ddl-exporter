@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Osm.Domain.Abstractions;
 using Osm.Pipeline.Application;
 using Osm.Pipeline.Configuration;
+using Osm.Pipeline.UatUsers;
 
 namespace Osm.Pipeline.Runtime.Verbs;
 
@@ -184,7 +185,7 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
 
         if (application.UatUsers.Executed && application.UatUsers.Context is { } uatContext)
         {
-            var uatRoot = Path.Combine(uatContext.Artifacts.Root, "uat-users");
+            var uatRoot = Path.Combine(uatContext.Artifacts.Root, UatUsersArtifactNames.Directory);
             artifacts.Add(new PipelineArtifact("uat-users-root", uatRoot));
             if (!string.IsNullOrWhiteSpace(uatContext.UserMapPath))
             {
@@ -197,16 +198,16 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
                 artifacts.Add(new PipelineArtifact("uat-users-map-default", defaultMapPath, "text/csv"));
             }
 
-            var templatePath = Path.Combine(uatRoot, "00_user_map.template.csv");
+            var templatePath = Path.Combine(uatRoot, UatUsersArtifactNames.UserMapTemplate);
             artifacts.Add(new PipelineArtifact("uat-users-map-template", templatePath, "text/csv"));
 
-            var previewPath = Path.Combine(uatRoot, "01_preview.csv");
+            var previewPath = Path.Combine(uatRoot, UatUsersArtifactNames.Preview);
             artifacts.Add(new PipelineArtifact("uat-users-preview", previewPath, "text/csv"));
 
-            var scriptPath = Path.Combine(uatRoot, "02_apply_user_remap.sql");
+            var scriptPath = Path.Combine(uatRoot, UatUsersArtifactNames.ApplyScript);
             artifacts.Add(new PipelineArtifact("uat-users-script", scriptPath, "application/sql"));
 
-            var catalogPath = Path.Combine(uatRoot, "03_catalog.txt");
+            var catalogPath = Path.Combine(uatRoot, UatUsersArtifactNames.Catalog);
             artifacts.Add(new PipelineArtifact("uat-users-catalog", catalogPath, "text/plain"));
         }
 
@@ -258,15 +259,15 @@ public sealed class FullExportVerb : PipelineVerb<FullExportVerbOptions, FullExp
             builder["uatUsers.enabled"] = application.UatUsers.Executed ? "true" : "false";
             if (application.UatUsers.Executed && application.UatUsers.Context is { } uatContext)
             {
-                var uatRoot = Path.Combine(uatContext.Artifacts.Root, "uat-users");
+                var uatRoot = Path.Combine(uatContext.Artifacts.Root, UatUsersArtifactNames.Directory);
                 builder["uatUsers.allowedCount"] = uatContext.AllowedUserIds.Count.ToString(CultureInfo.InvariantCulture);
                 builder["uatUsers.orphanCount"] = uatContext.OrphanUserIds.Count.ToString(CultureInfo.InvariantCulture);
                 builder["uatUsers.userMapPath"] = uatContext.UserMapPath;
                 builder["uatUsers.artifactRoot"] = uatRoot;
-                builder["uatUsers.userMapTemplatePath"] = Path.Combine(uatRoot, "00_user_map.template.csv");
-                builder["uatUsers.previewPath"] = Path.Combine(uatRoot, "01_preview.csv");
-                builder["uatUsers.applyScriptPath"] = Path.Combine(uatRoot, "02_apply_user_remap.sql");
-                builder["uatUsers.catalogPath"] = Path.Combine(uatRoot, "03_catalog.txt");
+                builder["uatUsers.userMapTemplatePath"] = Path.Combine(uatRoot, UatUsersArtifactNames.UserMapTemplate);
+                builder["uatUsers.previewPath"] = Path.Combine(uatRoot, UatUsersArtifactNames.Preview);
+                builder["uatUsers.applyScriptPath"] = Path.Combine(uatRoot, UatUsersArtifactNames.ApplyScript);
+                builder["uatUsers.catalogPath"] = Path.Combine(uatRoot, UatUsersArtifactNames.Catalog);
                 builder["uatUsers.idempotentEmission"] = uatContext.IdempotentEmission ? "true" : "false";
                 var defaultMapPath = uatContext.Artifacts.GetDefaultUserMapPath();
                 if (!string.IsNullOrWhiteSpace(defaultMapPath))

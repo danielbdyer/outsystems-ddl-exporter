@@ -445,7 +445,7 @@ public static class EmissionCoverageCalculator
         }
     }
 
-    private sealed record DomainEntitySnapshot(EntityEmissionSnapshot Snapshot)
+    private sealed record DomainEntitySnapshot(EmittableEntityProjection Snapshot)
     {
         public string ModuleName => Snapshot.ModuleName;
 
@@ -458,7 +458,7 @@ public static class EmissionCoverageCalculator
         public IReadOnlyDictionary<string, AttributeModel> AttributeLookup => Snapshot.AttributeLookup;
 
         public static DomainEntitySnapshot Create(string moduleName, EntityModel entity)
-            => new(EntityEmissionSnapshot.Create(moduleName, entity));
+            => new(EmittableEntityProjection.Create(moduleName, entity));
     }
 
     private sealed record IndexAnalysisResult(bool Succeeded, ImmutableArray<AttributeModel> ReferencedAttributes, string Reason)

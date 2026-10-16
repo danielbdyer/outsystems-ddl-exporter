@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -6,6 +7,52 @@ namespace Osm.Domain.Abstractions;
 
 public static class ResultTaskExtensions
 {
+    public static async Task<Result<TIn>> EnsureAsync<TIn>(
+        this Task<Result<TIn>> task,
+        Func<TIn, bool> predicate,
+        ValidationError error)
+    {
+        if (task is null)
+        {
+            throw new ArgumentNullException(nameof(task));
+        }
+
+        if (predicate is null)
+        {
+            throw new ArgumentNullException(nameof(predicate));
+        }
+
+        var result = await task.ConfigureAwait(false);
+        return result.Ensure(predicate, error);
+    }
+
+    public static async Task<TOut> MatchAsync<TIn, TOut>(
+        this Task<Result<TIn>> task,
+        Func<TIn, TOut> onSuccess,
+        Func<ImmutableArray<ValidationError>, TOut> onFailure)
+    {
+        if (task is null)
+        {
+            throw new ArgumentNullException(nameof(task));
+        }
+
+        var result = await task.ConfigureAwait(false);
+        return result.Match(onSuccess, onFailure);
+    }
+
+    public static async Task<Result<TIn>> TapAsync<TIn>(
+        this Task<Result<TIn>> task,
+        Action<TIn> action)
+    {
+        if (task is null)
+        {
+            throw new ArgumentNullException(nameof(task));
+        }
+
+        var result = await task.ConfigureAwait(false);
+        return result.Tap(action);
+    }
+
     public static Task<Result<TOut>> BindAsync<TIn, TOut>(
         this Task<Result<TIn>> task,
         Func<TIn, Result<TOut>> next)

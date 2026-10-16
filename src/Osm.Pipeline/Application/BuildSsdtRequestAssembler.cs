@@ -67,7 +67,7 @@ public sealed class BuildSsdtRequestAssembler
 
         var profilePath = profilePathResult.Value;
         var pathCanonicalizer = new ForwardSlashPathCanonicalizer();
-        var metadataBuilder = new CacheMetadataBuilder(pathCanonicalizer);
+        var metadataBuilder = new CacheKeyMetadataBuilder(pathCanonicalizer);
         var optionsFactory = new EvidenceCacheOptionsFactory(metadataBuilder, pathCanonicalizer);
         var cacheOptions = optionsFactory.Create(
             "build-ssdt",

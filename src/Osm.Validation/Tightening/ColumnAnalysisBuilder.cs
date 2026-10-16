@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Osm.Validation.Tightening.Opportunities;
 
 namespace Osm.Validation.Tightening;
 
@@ -10,7 +9,6 @@ internal sealed class ColumnAnalysisBuilder
     private NullabilityDecision? _nullability;
     private ForeignKeyDecision? _foreignKey;
     private readonly List<UniqueIndexDecision> _uniqueIndexes = new();
-    private readonly List<Opportunity> _opportunities = new();
 
     public ColumnAnalysisBuilder(ColumnIdentity identity)
     {
@@ -40,31 +38,9 @@ internal sealed class ColumnAnalysisBuilder
         }
     }
 
-    public void AddOpportunity(Opportunity opportunity)
-    {
-        if (opportunity is null)
-        {
-            throw new ArgumentNullException(nameof(opportunity));
-        }
-
-        _opportunities.Add(opportunity);
-    }
-
     public NullabilityDecision Nullability => _nullability ?? throw new InvalidOperationException("Nullability decision has not been computed.");
 
     public ForeignKeyDecision? ForeignKey => _foreignKey;
 
     public IReadOnlyList<UniqueIndexDecision> UniqueIndexes => _uniqueIndexes;
-
-    public IReadOnlyList<Opportunity> Opportunities => _opportunities;
-
-    public ColumnAnalysis Build()
-    {
-        if (_nullability is null)
-        {
-            throw new InvalidOperationException("Nullability decision must be populated before building analysis.");
-        }
-
-        return ColumnAnalysis.Create(_identity, _nullability, _foreignKey, _uniqueIndexes, _opportunities);
-    }
 }

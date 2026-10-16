@@ -1,18 +1,11 @@
 using System;
+using Osm.Domain.Sql;
 
 namespace Osm.Emission.Formatting;
 
 public static class SqlIdentifierFormatter
 {
-    public static string Quote(string identifier)
-    {
-        if (string.IsNullOrEmpty(identifier))
-        {
-            return "[]";
-        }
-
-        return "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]";
-    }
+    public static string Quote(string identifier) => SqlIdentifier.Quote(identifier);
 
     public static string Qualify(string schema, string table)
     {
@@ -26,6 +19,6 @@ public static class SqlIdentifierFormatter
             throw new ArgumentNullException(nameof(table));
         }
 
-        return Quote(schema) + "." + Quote(table);
+        return SqlIdentifier.Qualify(schema, table);
     }
 }

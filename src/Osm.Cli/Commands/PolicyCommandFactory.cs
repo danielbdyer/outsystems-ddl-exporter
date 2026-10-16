@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.ValueObjects;
 using Osm.Validation.Tightening;
@@ -105,9 +106,9 @@ internal sealed class PolicyCommandFactory : ICommandFactory
         var schemaFilter = BuildFilterSet(parseResult.GetValueForOption(_schemaOption));
         var rationaleFilter = BuildFilterSet(parseResult.GetValueForOption(_rationaleOption));
         var severityFilterResult = BuildSeverityFilter(parseResult.GetValueForOption(_severityOption));
-        if (!severityFilterResult.IsSuccess)
+        if (severityFilterResult.IsFailure)
         {
-            CommandConsole.WriteErrorLine(console, severityFilterResult.Error!);
+            CommandConsole.WriteErrorLine(console, severityFilterResult.Errors[0].Message);
             context.ExitCode = 1;
             return;
         }
@@ -538,7 +539,8 @@ internal sealed class PolicyCommandFactory : ICommandFactory
 
             if (!Enum.TryParse(value, ignoreCase: true, out TighteningDiagnosticSeverity severity))
             {
-                return Result<HashSet<TighteningDiagnosticSeverity>>.Failure($"[error] Unknown severity '{value}'.");
+                return Result<HashSet<TighteningDiagnosticSeverity>>.Failure(
+                    "policy.severity.unknown", $"[error] Unknown severity '{value}'.");
             }
 
             set.Add(severity);
@@ -1041,13 +1043,6 @@ internal sealed class PolicyCommandFactory : ICommandFactory
 
         var candidate = Path.Combine(directory, "report.html");
         return File.Exists(candidate) ? Path.GetFullPath(candidate) : null;
-    }
-
-    private sealed record Result<T>(bool IsSuccess, T Value, string? Error)
-    {
-        public static Result<T> Success(T value) => new(true, value, null);
-
-        public static Result<T> Failure(string error) => new(false, default!, error);
     }
 
     private sealed class ModuleAggregate

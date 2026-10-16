@@ -78,7 +78,7 @@ public sealed class BuildSsdtPipeline : ICommandHandler<BuildSsdtPipelineRequest
         }
 
         var log = new PipelineExecutionLogBuilder(_timeProvider);
-        var initialized = new PipelineInitialized(request, log);
+        var initialized = new BuildSsdtState { Request = request, Log = log };
 
         var finalStateResult = await _bootstrapStep
             .ExecuteAsync(initialized, cancellationToken)

@@ -20,33 +20,19 @@ internal sealed class SequenceDocumentMapper
     }
 
     public Result<ImmutableArray<SequenceModel>> Map(SequenceDocument[]? docs, DocumentPathContext path)
-    {
-        if (docs is null || docs.Length == 0)
+        => _context.MapArray<SequenceDocument, SequenceModel>(docs, path, (doc, sequencePath) =>
         {
-            return Result<ImmutableArray<SequenceModel>>.Success(ImmutableArray<SequenceModel>.Empty);
-        }
-
-        var builder = ImmutableArray.CreateBuilder<SequenceModel>(docs.Length);
-        for (var i = 0; i < docs.Length; i++)
-        {
-            var doc = docs[i];
-            if (doc is null)
-            {
-                continue;
-            }
-
-            var sequencePath = path.Index(i);
             var schemaResult = SchemaName.Create(doc.Schema);
             if (schemaResult.IsFailure)
             {
-                return Result<ImmutableArray<SequenceModel>>.Failure(
+                return Result<SequenceModel>.Failure(
                     _context.WithPath(sequencePath.Property("schema"), schemaResult.Errors));
             }
 
             var nameResult = SequenceName.Create(doc.Name);
             if (nameResult.IsFailure)
             {
-                return Result<ImmutableArray<SequenceModel>>.Failure(
+                return Result<SequenceModel>.Failure(
                     _context.WithPath(sequencePath.Property("name"), nameResult.Errors));
             }
 
@@ -55,7 +41,7 @@ internal sealed class SequenceDocumentMapper
                 sequencePath.Property("extendedProperties"));
             if (propertiesResult.IsFailure)
             {
-                return Result<ImmutableArray<SequenceModel>>.Failure(propertiesResult.Errors);
+                return Result<SequenceModel>.Failure(propertiesResult.Errors);
             }
 
             var modelResult = SequenceModel.Create(
@@ -71,17 +57,10 @@ internal sealed class SequenceDocumentMapper
                 doc.CacheSize,
                 propertiesResult.Value);
 
-            if (modelResult.IsFailure)
-            {
-                return Result<ImmutableArray<SequenceModel>>.Failure(
-                    _context.WithPath(sequencePath, modelResult.Errors));
-            }
-
-            builder.Add(modelResult.Value);
-        }
-
-        return Result<ImmutableArray<SequenceModel>>.Success(builder.ToImmutable());
-    }
+            return modelResult.IsFailure
+                ? Result<SequenceModel>.Failure(_context.WithPath(sequencePath, modelResult.Errors))
+                : modelResult;
+        });
 
     private static SequenceCacheMode ParseSequenceCacheMode(string? value)
     {

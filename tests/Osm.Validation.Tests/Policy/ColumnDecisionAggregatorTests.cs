@@ -92,7 +92,7 @@ public sealed class ColumnDecisionAggregatorTests
             options.Uniqueness.EnforceMultiColumnUnique);
 
         var invocationCounter = new CountingAnalyzer();
-        var analyzers = new ITighteningAnalyzer[]
+        var analyzers = new IColumnDecisionAnalyzer[]
         {
             invocationCounter,
             new NullabilityEvaluator(
@@ -125,14 +125,14 @@ public sealed class ColumnDecisionAggregatorTests
         Assert.Equal(expected, invocationCounter.Invocations.Count);
     }
 
-    private static ITighteningAnalyzer[] BuildAnalyzers(
+    private static IColumnDecisionAnalyzer[] BuildAnalyzers(
         TighteningOptions options,
         IReadOnlyDictionary<ColumnCoordinate, ColumnProfile> columnProfiles,
         IReadOnlyDictionary<ColumnCoordinate, UniqueCandidateProfile> uniqueProfiles,
         IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> foreignKeyReality,
         ForeignKeyTargetIndex foreignKeyTargets,
         UniqueIndexEvidenceAggregator uniqueEvidence)
-        => new ITighteningAnalyzer[]
+        => new IColumnDecisionAnalyzer[]
         {
             new NullabilityEvaluator(
                 options,
@@ -156,7 +156,7 @@ public sealed class ColumnDecisionAggregatorTests
         return new ColumnCoordinate(entity.Schema, entity.PhysicalName, attribute.ColumnName);
     }
 
-    private sealed class CountingAnalyzer : ITighteningAnalyzer
+    private sealed class CountingAnalyzer : IColumnDecisionAnalyzer
     {
         public List<ColumnCoordinate> Invocations { get; } = new();
 

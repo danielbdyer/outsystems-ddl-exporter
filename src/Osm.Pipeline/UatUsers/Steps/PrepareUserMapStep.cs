@@ -33,10 +33,10 @@ public sealed class PrepareUserMapStep : IPipelineStep<UatUsersContext>
             context.OrphanUserIds.Count);
 
         var templateRows = BuildTemplateRows(context.OrphanUserIds);
-        context.Artifacts.WriteCsv("00_user_map.template.csv", templateRows);
+        context.Artifacts.WriteCsv(UatUsersArtifactNames.UserMapTemplate, templateRows);
         _logger.LogInformation(
             "User map template written to {Path}.",
-            Path.Combine(context.Artifacts.Root, "uat-users", "00_user_map.template.csv"));
+            Path.Combine(context.Artifacts.Root, UatUsersArtifactNames.Directory, UatUsersArtifactNames.UserMapTemplate));
 
         var mapPath = context.UserMapPath;
         var existing = File.Exists(mapPath) ? UserMapLoader.Load(mapPath) : Array.Empty<UserMappingEntry>();

@@ -10,7 +10,7 @@ using Osm.Pipeline.DynamicData;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGenerated, DynamicInsertsGenerated>
+public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<BuildSsdtState, BuildSsdtState>
 {
     public BuildSsdtDynamicInsertStep(
         DynamicEntityInsertGenerator generator,
@@ -20,8 +20,8 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
         _ = phasedGenerator ?? throw new ArgumentNullException(nameof(phasedGenerator));
     }
 
-    public Task<Result<DynamicInsertsGenerated>> ExecuteAsync(
-        StaticSeedsGenerated state,
+    public Task<Result<BuildSsdtState>> ExecuteAsync(
+        BuildSsdtState state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -39,28 +39,12 @@ public sealed class BuildSsdtDynamicInsertStep : IBuildSsdtStep<StaticSeedsGener
                 .WithValue("ordering.mode", EntityDependencyOrderingMode.Alphabetical.ToMetadataValue())
                 .Build());
 
-        return Task.FromResult(Result<DynamicInsertsGenerated>.Success(new DynamicInsertsGenerated(
-            state.Request,
-            state.Log,
-            state.Bootstrap,
-            state.EvidenceCache,
-            state.Decisions,
-            state.Report,
-            state.Opportunities,
-            state.Validations,
-            state.Insights,
-            state.Manifest,
-            state.DecisionLogPath,
-            state.OpportunityArtifacts,
-            state.SqlProjectPath,
-            state.SqlValidation,
-            state.StaticSeedScriptPaths,
-            state.StaticSeedData,
-            ImmutableArray<string>.Empty,
-            state.Request.DynamicInsertOutputMode,
-            state.StaticSeedTopologicalOrderApplied,
-            state.StaticSeedOrderingMode,
-            DynamicInsertTopologicalOrderApplied: false,
-            DynamicInsertOrderingMode: EntityDependencyOrderingMode.Alphabetical)));
+        return Task.FromResult(Result<BuildSsdtState>.Success(state with
+        {
+            DynamicInsertScriptPaths = ImmutableArray<string>.Empty,
+            DynamicInsertOutputMode = state.Request.DynamicInsertOutputMode,
+            DynamicInsertTopologicalOrderApplied = false,
+            DynamicInsertOrderingMode = EntityDependencyOrderingMode.Alphabetical,
+        }));
     }
 }

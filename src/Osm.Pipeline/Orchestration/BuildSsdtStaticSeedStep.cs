@@ -12,7 +12,7 @@ using Osm.Validation.Tightening;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, StaticSeedsGenerated>
+public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<BuildSsdtState, BuildSsdtState>
 {
     private readonly StaticEntitySeedScriptGenerator _seedGenerator;
 
@@ -22,8 +22,8 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
         _seedGenerator = seedGenerator ?? throw new ArgumentNullException(nameof(seedGenerator));
     }
 
-    public async Task<Result<StaticSeedsGenerated>> ExecuteAsync(
-        SqlValidated state,
+    public async Task<Result<BuildSsdtState>> ExecuteAsync(
+        BuildSsdtState state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -39,30 +39,18 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
             state.Log.Record(
                 "staticData.seed.skipped",
                 "No static entity seeds required for request.");
-            return Result<StaticSeedsGenerated>.Success(new StaticSeedsGenerated(
-                state.Request,
-                state.Log,
-                state.Bootstrap,
-                state.EvidenceCache,
-                state.Decisions,
-                state.Report,
-                state.Opportunities,
-                state.Validations,
-                state.Insights,
-                state.Manifest,
-                state.DecisionLogPath,
-                state.OpportunityArtifacts,
-                state.SqlProjectPath,
-                state.SqlValidation,
-                ImmutableArray<string>.Empty,
-                ImmutableArray<StaticEntityTableData>.Empty,
-                StaticSeedTopologicalOrderApplied: false,
-                StaticSeedOrderingMode: EntityDependencyOrderingMode.Alphabetical));
+            return Result<BuildSsdtState>.Success(state with
+            {
+                StaticSeedScriptPaths = ImmutableArray<string>.Empty,
+                StaticSeedData = ImmutableArray<StaticEntityTableData>.Empty,
+                StaticSeedTopologicalOrderApplied = false,
+                StaticSeedOrderingMode = EntityDependencyOrderingMode.Alphabetical,
+            });
         }
 
         if (state.Request.StaticDataProvider is null)
         {
-            return Result<StaticSeedsGenerated>.Failure(ValidationError.Create(
+            return Result<BuildSsdtState>.Failure(ValidationError.Create(
                 "pipeline.buildSsdt.staticData.missingProvider",
                 "Static entity data provider is required when the model includes static entities."));
         }
@@ -72,7 +60,7 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
             .ConfigureAwait(false);
         if (staticDataResult.IsFailure)
         {
-            return Result<StaticSeedsGenerated>.Failure(staticDataResult.Errors);
+            return Result<BuildSsdtState>.Failure(staticDataResult.Errors);
         }
 
         var deterministicData = EntitySeedDeterminizer.Normalize(staticDataResult.Value);
@@ -172,25 +160,13 @@ public sealed class BuildSsdtStaticSeedStep : IBuildSsdtStep<SqlValidated, Stati
                 .WithValue("ordering.mode", ordering.Mode.ToMetadataValue())
                 .Build());
 
-        return Result<StaticSeedsGenerated>.Success(new StaticSeedsGenerated(
-            state.Request,
-            state.Log,
-            state.Bootstrap,
-            state.EvidenceCache,
-            state.Decisions,
-            state.Report,
-            state.Opportunities,
-            state.Validations,
-            state.Insights,
-            state.Manifest,
-            state.DecisionLogPath,
-            state.OpportunityArtifacts,
-            state.SqlProjectPath,
-            state.SqlValidation,
-            seedPaths,
-            orderedData,
-            topologicalOrderingApplied,
-            staticOrderingMode));
+        return Result<BuildSsdtState>.Success(state with
+        {
+            StaticSeedScriptPaths = seedPaths,
+            StaticSeedData = orderedData,
+            StaticSeedTopologicalOrderApplied = topologicalOrderingApplied,
+            StaticSeedOrderingMode = staticOrderingMode,
+        });
     }
 
     private static string ResolveModuleDirectoryName(

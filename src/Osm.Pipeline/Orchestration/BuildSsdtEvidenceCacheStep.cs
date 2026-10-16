@@ -6,7 +6,7 @@ using Osm.Pipeline.Evidence;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtEvidenceCacheStep : IBuildSsdtStep<BootstrapCompleted, EvidencePrepared>
+public sealed class BuildSsdtEvidenceCacheStep : IBuildSsdtStep<BuildSsdtState, BuildSsdtState>
 {
     private readonly EvidenceCacheCoordinator _cacheCoordinator;
 
@@ -15,8 +15,8 @@ public sealed class BuildSsdtEvidenceCacheStep : IBuildSsdtStep<BootstrapComplet
         _cacheCoordinator = cacheCoordinator ?? throw new ArgumentNullException(nameof(cacheCoordinator));
     }
 
-    public async Task<Result<EvidencePrepared>> ExecuteAsync(
-        BootstrapCompleted state,
+    public async Task<Result<BuildSsdtState>> ExecuteAsync(
+        BuildSsdtState state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -29,13 +29,12 @@ public sealed class BuildSsdtEvidenceCacheStep : IBuildSsdtStep<BootstrapComplet
             .ConfigureAwait(false);
         if (cacheResult.IsFailure)
         {
-            return Result<EvidencePrepared>.Failure(cacheResult.Errors);
+            return Result<BuildSsdtState>.Failure(cacheResult.Errors);
         }
 
-        return Result<EvidencePrepared>.Success(new EvidencePrepared(
-            state.Request,
-            state.Log,
-            state.Bootstrap,
-            cacheResult.Value));
+        return Result<BuildSsdtState>.Success(state with
+        {
+            EvidenceCache = cacheResult.Value,
+        });
     }
 }

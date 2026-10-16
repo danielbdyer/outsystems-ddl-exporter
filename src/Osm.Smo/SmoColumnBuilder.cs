@@ -166,27 +166,12 @@ internal static class SmoColumnBuilder
         return false;
     }
 
-    private sealed class SmoCheckConstraintComparer : IComparer<SmoCheckConstraintDefinition>
+    private sealed class SmoCheckConstraintComparer : NullSafeComparer<SmoCheckConstraintDefinition>
     {
         public static readonly SmoCheckConstraintComparer Instance = new();
 
-        public int Compare(SmoCheckConstraintDefinition? x, SmoCheckConstraintDefinition? y)
+        protected override int CompareNonNull(SmoCheckConstraintDefinition x, SmoCheckConstraintDefinition y)
         {
-            if (ReferenceEquals(x, y))
-            {
-                return 0;
-            }
-
-            if (x is null)
-            {
-                return -1;
-            }
-
-            if (y is null)
-            {
-                return 1;
-            }
-
             var leftName = x.Name ?? string.Empty;
             var rightName = y.Name ?? string.Empty;
             var comparison = StringComparer.OrdinalIgnoreCase.Compare(leftName, rightName);

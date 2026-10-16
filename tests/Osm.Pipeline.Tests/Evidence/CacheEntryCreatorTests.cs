@@ -22,7 +22,7 @@ public sealed class CacheEntryCreatorTests
         fileSystem.AddFile(modelPath, new MockFileData(modelContent));
 
         var canonicalizer = new ForwardSlashPathCanonicalizer();
-        var metadataBuilder = new CacheMetadataBuilder(canonicalizer);
+        var metadataBuilder = new CacheOutcomeMetadataBuilder(canonicalizer);
         var descriptor = CreateDescriptor(
             EvidenceArtifactType.Model,
             canonicalizer.Canonicalize(modelPath),

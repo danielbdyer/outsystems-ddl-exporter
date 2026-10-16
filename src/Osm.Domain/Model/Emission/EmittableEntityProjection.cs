@@ -5,7 +5,7 @@ using Osm.Domain.Model;
 
 namespace Osm.Domain.Model.Emission;
 
-public sealed record EntityEmissionSnapshot(
+public sealed record EmittableEntityProjection(
     string ModuleName,
     EntityModel Entity,
     ImmutableArray<AttributeModel> EmittableAttributes,
@@ -14,7 +14,7 @@ public sealed record EntityEmissionSnapshot(
     AttributeModel? ActiveIdentifier,
     AttributeModel? FallbackIdentifier)
 {
-    public static EntityEmissionSnapshot Create(string moduleName, EntityModel entity)
+    public static EmittableEntityProjection Create(string moduleName, EntityModel entity)
     {
         if (entity is null)
         {
@@ -58,7 +58,7 @@ public sealed record EntityEmissionSnapshot(
             }
         }
 
-        return new EntityEmissionSnapshot(
+        return new EmittableEntityProjection(
             moduleName,
             entity,
             emittableBuilder.ToImmutable(),

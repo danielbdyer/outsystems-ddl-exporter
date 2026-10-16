@@ -113,10 +113,10 @@ public sealed class DiscoverUserFkCatalogStep : IPipelineStep<UatUsersContext>
                 column.ColumnName,
                 column.ForeignKeyName));
 
-        ctx.Artifacts.WriteLines("03_catalog.txt", artifactLines);
+        ctx.Artifacts.WriteLines(UatUsersArtifactNames.Catalog, artifactLines);
         _logger.LogInformation(
             "Catalog artifact written to {Path}.",
-            Path.Combine(ctx.Artifacts.Root, "uat-users", "03_catalog.txt"));
+            Path.Combine(ctx.Artifacts.Root, UatUsersArtifactNames.Directory, UatUsersArtifactNames.Catalog));
     }
 
     private sealed class StringTupleComparer : IEqualityComparer<(string Schema, string Table, string Column)>

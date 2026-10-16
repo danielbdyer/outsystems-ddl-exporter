@@ -107,7 +107,7 @@ internal static class PipelineRequestContextBuilder
         var cacheOverrides = request.CacheOptionsOverrides ?? new CacheOptionsOverrides(null, null);
 
         var pathCanonicalizer = new ForwardSlashPathCanonicalizer();
-        var cacheMetadataBuilder = new CacheMetadataBuilder(pathCanonicalizer);
+        var cacheMetadataBuilder = new CacheKeyMetadataBuilder(pathCanonicalizer);
         var cacheOptionsFactory = new EvidenceCacheOptionsFactory(cacheMetadataBuilder, pathCanonicalizer);
 
         var context = new PipelineRequestContext(
@@ -238,7 +238,7 @@ internal sealed record PipelineRequestContext(
     string? SqlMetadataOutputPath,
     SqlMetadataLog? SqlMetadataLog,
     Func<CancellationToken, Task> FlushMetadataAsync,
-    CacheMetadataBuilder MetadataBuilder,
+    CacheKeyMetadataBuilder MetadataBuilder,
     EvidenceCacheOptionsFactory CacheOptionsFactory)
 {
     public EvidenceCachePipelineOptions? CreateCacheOptions(

@@ -17,7 +17,7 @@ internal sealed class ColumnDecisionAggregator
         IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> foreignKeyReality,
         ForeignKeyTargetIndex foreignKeyTargets,
         UniqueIndexEvidenceAggregator uniqueEvidence,
-        IReadOnlyList<ITighteningAnalyzer> analyzers)
+        IReadOnlyList<IColumnDecisionAnalyzer> analyzers)
     {
         if (model is null)
         {

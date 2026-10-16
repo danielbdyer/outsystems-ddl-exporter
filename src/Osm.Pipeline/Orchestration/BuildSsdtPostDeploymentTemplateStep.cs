@@ -12,12 +12,12 @@ namespace Osm.Pipeline.Orchestration;
 /// Generates PostDeployment-Bootstrap.sql template for SSDT projects.
 /// This template includes guard logic to conditionally apply bootstrap snapshot on first deployment.
 /// </summary>
-public sealed class BuildSsdtPostDeploymentTemplateStep : IBuildSsdtStep<BootstrapSnapshotGenerated, PostDeploymentTemplateGenerated>
+public sealed class BuildSsdtPostDeploymentTemplateStep : IBuildSsdtStep<BuildSsdtState, BuildSsdtState>
 {
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
 
-    public async Task<Result<PostDeploymentTemplateGenerated>> ExecuteAsync(
-        BootstrapSnapshotGenerated state,
+    public async Task<Result<BuildSsdtState>> ExecuteAsync(
+        BuildSsdtState state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -45,37 +45,13 @@ public sealed class BuildSsdtPostDeploymentTemplateStep : IBuildSsdtStep<Bootstr
                 .WithValue("hasBootstrapSnapshot", state.BootstrapSnapshotPath != null ? "true" : "false")
                 .Build());
 
-        return Result<PostDeploymentTemplateGenerated>.Success(new PostDeploymentTemplateGenerated(
-            state.Request,
-            state.Log,
-            state.Bootstrap,
-            state.EvidenceCache,
-            state.Decisions,
-            state.Report,
-            state.Opportunities,
-            state.Validations,
-            state.Insights,
-            state.Manifest,
-            state.DecisionLogPath,
-            state.OpportunityArtifacts,
-            state.SqlProjectPath,
-            state.SqlValidation,
-            state.StaticSeedScriptPaths,
-            state.StaticSeedData,
-            state.DynamicInsertScriptPaths,
-            state.DynamicInsertOutputMode,
-            state.StaticSeedTopologicalOrderApplied,
-            state.StaticSeedOrderingMode,
-            state.DynamicInsertTopologicalOrderApplied,
-            state.DynamicInsertOrderingMode,
-            state.BootstrapSnapshotPath,
-            state.BootstrapTopologicalOrderApplied,
-            state.BootstrapOrderingMode,
-            state.BootstrapEntityCount,
-            PostDeploymentTemplatePath: templatePath));
+        return Result<BuildSsdtState>.Success(state with
+        {
+            PostDeploymentTemplatePath = templatePath,
+        });
     }
 
-    private string GeneratePostDeploymentTemplate(BootstrapSnapshotGenerated state)
+    private string GeneratePostDeploymentTemplate(BuildSsdtState state)
     {
         var builder = new StringBuilder();
 

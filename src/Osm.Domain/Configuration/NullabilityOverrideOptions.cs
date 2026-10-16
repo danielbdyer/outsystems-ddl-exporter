@@ -10,34 +10,11 @@ namespace Osm.Domain.Configuration;
 public sealed record NullabilityOverrideRule(ModuleName Module, EntityName Entity, AttributeName Attribute)
 {
     public static Result<NullabilityOverrideRule> Create(string? module, string? entity, string? attribute)
-    {
-        var errors = ImmutableArray.CreateBuilder<ValidationError>();
-
-        var moduleResult = ModuleName.Create(module);
-        if (moduleResult.IsFailure)
-        {
-            errors.AddRange(moduleResult.Errors);
-        }
-
-        var entityResult = EntityName.Create(entity);
-        if (entityResult.IsFailure)
-        {
-            errors.AddRange(entityResult.Errors);
-        }
-
-        var attributeResult = AttributeName.Create(attribute);
-        if (attributeResult.IsFailure)
-        {
-            errors.AddRange(attributeResult.Errors);
-        }
-
-        if (errors.Count > 0)
-        {
-            return Result<NullabilityOverrideRule>.Failure(errors.ToImmutable());
-        }
-
-        return new NullabilityOverrideRule(moduleResult.Value, entityResult.Value, attributeResult.Value);
-    }
+        => Result.Combine(
+                ModuleName.Create(module),
+                EntityName.Create(entity),
+                AttributeName.Create(attribute))
+            .Map(parts => new NullabilityOverrideRule(parts.Item1, parts.Item2, parts.Item3));
 }
 
 public sealed class NullabilityOverrideOptions

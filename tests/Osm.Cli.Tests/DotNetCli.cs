@@ -290,7 +290,7 @@ internal static class DotNetCli
 
     private static async Task<int> InvokeEntryPointAsync(IReadOnlyList<string> cliArguments)
     {
-        var assembly = typeof(Osm.Cli.ProfileSnapshotDebugFormatter).Assembly;
+        var assembly = typeof(Osm.Cli.SpectreProgressRunner).Assembly;
         var entryPoint = assembly.EntryPoint
             ?? throw new InvalidOperationException("CLI assembly does not define an entry point.");
 

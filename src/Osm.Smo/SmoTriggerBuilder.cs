@@ -49,28 +49,11 @@ internal static class SmoTriggerBuilder
         return triggers;
     }
 
-    private sealed class SmoTriggerDefinitionComparer : IComparer<SmoTriggerDefinition>
+    private sealed class SmoTriggerDefinitionComparer : NullSafeComparer<SmoTriggerDefinition>
     {
         public static readonly SmoTriggerDefinitionComparer Instance = new();
 
-        public int Compare(SmoTriggerDefinition? x, SmoTriggerDefinition? y)
-        {
-            if (ReferenceEquals(x, y))
-            {
-                return 0;
-            }
-
-            if (x is null)
-            {
-                return -1;
-            }
-
-            if (y is null)
-            {
-                return 1;
-            }
-
-            return StringComparer.OrdinalIgnoreCase.Compare(x.Name, y.Name);
-        }
+        protected override int CompareNonNull(SmoTriggerDefinition x, SmoTriggerDefinition y)
+            => StringComparer.OrdinalIgnoreCase.Compare(x.Name, y.Name);
     }
 }

@@ -45,6 +45,49 @@ internal sealed class DocumentMapperContext
     public string SerializeEntityDocument(ModelJsonDeserializer.EntityDocument doc)
         => JsonSerializer.Serialize(doc, PayloadSerializerOptions);
 
+    /// <summary>
+    /// Maps an optional document array into an immutable model array, applying the
+    /// shared lenient skeleton: a null/empty source yields an empty array, null
+    /// elements are skipped, each surviving element is mapped with its indexed
+    /// path, and the first element failure short-circuits the whole array.
+    /// </summary>
+    public Result<ImmutableArray<TModel>> MapArray<TDoc, TModel>(
+        TDoc[]? docs,
+        DocumentPathContext path,
+        Func<TDoc, DocumentPathContext, Result<TModel>> mapElement)
+        where TDoc : class
+    {
+        if (mapElement is null)
+        {
+            throw new ArgumentNullException(nameof(mapElement));
+        }
+
+        if (docs is null || docs.Length == 0)
+        {
+            return Result<ImmutableArray<TModel>>.Success(ImmutableArray<TModel>.Empty);
+        }
+
+        var builder = ImmutableArray.CreateBuilder<TModel>(docs.Length);
+        for (var i = 0; i < docs.Length; i++)
+        {
+            var doc = docs[i];
+            if (doc is null)
+            {
+                continue;
+            }
+
+            var result = mapElement(doc, path.Index(i));
+            if (result.IsFailure)
+            {
+                return Result<ImmutableArray<TModel>>.Failure(result.Errors);
+            }
+
+            builder.Add(result.Value);
+        }
+
+        return Result<ImmutableArray<TModel>>.Success(builder.ToImmutable());
+    }
+
     public ImmutableArray<ValidationError> WithPath(DocumentPathContext path, ImmutableArray<ValidationError> errors)
     {
         if (errors.IsDefaultOrEmpty)

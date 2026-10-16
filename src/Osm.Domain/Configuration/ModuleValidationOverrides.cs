@@ -140,30 +140,14 @@ public sealed record ModuleValidationOverrideDefinition(
     {
         configuration ??= ModuleValidationOverrideConfiguration.Empty;
 
-        var pkResult = EntityOverrideDefinition.Create(
-            configuration.AllowMissingPrimaryKey,
-            configuration.AllowMissingPrimaryKeyForAll);
-        var schemaResult = EntityOverrideDefinition.Create(
-            configuration.AllowMissingSchema,
-            configuration.AllowMissingSchemaForAll);
-
-        var errors = ImmutableArray.CreateBuilder<ValidationError>();
-        if (pkResult.IsFailure)
-        {
-            errors.AddRange(pkResult.Errors);
-        }
-
-        if (schemaResult.IsFailure)
-        {
-            errors.AddRange(schemaResult.Errors);
-        }
-
-        if (errors.Count > 0)
-        {
-            return Result<ModuleValidationOverrideDefinition>.Failure(errors.ToImmutable());
-        }
-
-        return new ModuleValidationOverrideDefinition(pkResult.Value, schemaResult.Value);
+        return Result.Combine(
+                EntityOverrideDefinition.Create(
+                    configuration.AllowMissingPrimaryKey,
+                    configuration.AllowMissingPrimaryKeyForAll),
+                EntityOverrideDefinition.Create(
+                    configuration.AllowMissingSchema,
+                    configuration.AllowMissingSchemaForAll))
+            .Map(parts => new ModuleValidationOverrideDefinition(parts.Item1, parts.Item2));
     }
 
     public ModuleValidationOverrideDefinition Merge(ModuleValidationOverrideDefinition other)

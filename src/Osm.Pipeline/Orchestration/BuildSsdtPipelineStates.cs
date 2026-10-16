@@ -9,215 +9,42 @@ using ValidationReport = Osm.Validation.Tightening.Validations.ValidationReport;
 
 namespace Osm.Pipeline.Orchestration;
 
-public record PipelineInitialized(
-    BuildSsdtPipelineRequest Request,
-    PipelineExecutionLogBuilder Log);
-
-public record BootstrapCompleted(
-    BuildSsdtPipelineRequest Request,
-    PipelineExecutionLogBuilder Log,
-    PipelineBootstrapContext Bootstrap)
-    : PipelineInitialized(Request, Log);
-
-public record EvidencePrepared(
-    BuildSsdtPipelineRequest Request,
-    PipelineExecutionLogBuilder Log,
-    PipelineBootstrapContext Bootstrap,
-    EvidenceCacheResult? EvidenceCache)
-    : BootstrapCompleted(Request, Log, Bootstrap);
-
-public record DecisionsSynthesized(
-    BuildSsdtPipelineRequest Request,
-    PipelineExecutionLogBuilder Log,
-    PipelineBootstrapContext Bootstrap,
-    EvidenceCacheResult? EvidenceCache,
-    PolicyDecisionSet Decisions,
-    PolicyDecisionReport Report,
-    OpportunitiesReport Opportunities,
-    ValidationReport Validations,
-    ImmutableArray<PipelineInsight> Insights)
-    : EvidencePrepared(Request, Log, Bootstrap, EvidenceCache);
-
-public record EmissionReady(
-    BuildSsdtPipelineRequest Request,
-    PipelineExecutionLogBuilder Log,
-    PipelineBootstrapContext Bootstrap,
-    EvidenceCacheResult? EvidenceCache,
-    PolicyDecisionSet Decisions,
-    PolicyDecisionReport Report,
-    OpportunitiesReport Opportunities,
-    ValidationReport Validations,
-    ImmutableArray<PipelineInsight> Insights,
-    SsdtManifest Manifest,
-    string DecisionLogPath,
-    OpportunityArtifacts OpportunityArtifacts)
-    : DecisionsSynthesized(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights);
-
-public record SqlProjectSynthesized(
-    BuildSsdtPipelineRequest Request,
-    PipelineExecutionLogBuilder Log,
-    PipelineBootstrapContext Bootstrap,
-    EvidenceCacheResult? EvidenceCache,
-    PolicyDecisionSet Decisions,
-    PolicyDecisionReport Report,
-    OpportunitiesReport Opportunities,
-    ValidationReport Validations,
-    ImmutableArray<PipelineInsight> Insights,
-    SsdtManifest Manifest,
-    string DecisionLogPath,
-    OpportunityArtifacts OpportunityArtifacts,
-    string SqlProjectPath)
-    : EmissionReady(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts);
-
-public record SqlValidated(
-    BuildSsdtPipelineRequest Request,
-    PipelineExecutionLogBuilder Log,
-    PipelineBootstrapContext Bootstrap,
-    EvidenceCacheResult? EvidenceCache,
-    PolicyDecisionSet Decisions,
-    PolicyDecisionReport Report,
-    OpportunitiesReport Opportunities,
-    ValidationReport Validations,
-    ImmutableArray<PipelineInsight> Insights,
-    SsdtManifest Manifest,
-    string DecisionLogPath,
-    OpportunityArtifacts OpportunityArtifacts,
-    string SqlProjectPath,
-    SsdtSqlValidationSummary SqlValidation)
-    : SqlProjectSynthesized(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath);
-
-public record StaticSeedsGenerated(
-    BuildSsdtPipelineRequest Request,
-    PipelineExecutionLogBuilder Log,
-    PipelineBootstrapContext Bootstrap,
-    EvidenceCacheResult? EvidenceCache,
-    PolicyDecisionSet Decisions,
-    PolicyDecisionReport Report,
-    OpportunitiesReport Opportunities,
-    ValidationReport Validations,
-    ImmutableArray<PipelineInsight> Insights,
-    SsdtManifest Manifest,
-    string DecisionLogPath,
-    OpportunityArtifacts OpportunityArtifacts,
-    string SqlProjectPath,
-    SsdtSqlValidationSummary SqlValidation,
-    ImmutableArray<string> StaticSeedScriptPaths,
-    ImmutableArray<StaticEntityTableData> StaticSeedData,
-    bool StaticSeedTopologicalOrderApplied,
-    EntityDependencyOrderingMode StaticSeedOrderingMode)
-    : SqlValidated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation);
-
-public record DynamicInsertsGenerated(
-    BuildSsdtPipelineRequest Request,
-    PipelineExecutionLogBuilder Log,
-    PipelineBootstrapContext Bootstrap,
-    EvidenceCacheResult? EvidenceCache,
-    PolicyDecisionSet Decisions,
-    PolicyDecisionReport Report,
-    OpportunitiesReport Opportunities,
-    ValidationReport Validations,
-    ImmutableArray<PipelineInsight> Insights,
-    SsdtManifest Manifest,
-    string DecisionLogPath,
-    OpportunityArtifacts OpportunityArtifacts,
-    string SqlProjectPath,
-    SsdtSqlValidationSummary SqlValidation,
-    ImmutableArray<string> StaticSeedScriptPaths,
-    ImmutableArray<StaticEntityTableData> StaticSeedData,
-    ImmutableArray<string> DynamicInsertScriptPaths,
-    DynamicInsertOutputMode DynamicInsertOutputMode,
-    bool StaticSeedTopologicalOrderApplied,
-    EntityDependencyOrderingMode StaticSeedOrderingMode,
-    bool DynamicInsertTopologicalOrderApplied,
-    EntityDependencyOrderingMode DynamicInsertOrderingMode)
-    : StaticSeedsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, StaticSeedTopologicalOrderApplied, StaticSeedOrderingMode);
-
-public record BootstrapSnapshotGenerated(
-    BuildSsdtPipelineRequest Request,
-    PipelineExecutionLogBuilder Log,
-    PipelineBootstrapContext Bootstrap,
-    EvidenceCacheResult? EvidenceCache,
-    PolicyDecisionSet Decisions,
-    PolicyDecisionReport Report,
-    OpportunitiesReport Opportunities,
-    ValidationReport Validations,
-    ImmutableArray<PipelineInsight> Insights,
-    SsdtManifest Manifest,
-    string DecisionLogPath,
-    OpportunityArtifacts OpportunityArtifacts,
-    string SqlProjectPath,
-    SsdtSqlValidationSummary SqlValidation,
-    ImmutableArray<string> StaticSeedScriptPaths,
-    ImmutableArray<StaticEntityTableData> StaticSeedData,
-    ImmutableArray<string> DynamicInsertScriptPaths,
-    DynamicInsertOutputMode DynamicInsertOutputMode,
-    bool StaticSeedTopologicalOrderApplied,
-    EntityDependencyOrderingMode StaticSeedOrderingMode,
-    bool DynamicInsertTopologicalOrderApplied,
-    EntityDependencyOrderingMode DynamicInsertOrderingMode,
-    string? BootstrapSnapshotPath,
-    bool BootstrapTopologicalOrderApplied,
-    EntityDependencyOrderingMode BootstrapOrderingMode,
-    int BootstrapEntityCount)
-    : DynamicInsertsGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths, DynamicInsertOutputMode, StaticSeedTopologicalOrderApplied, StaticSeedOrderingMode, DynamicInsertTopologicalOrderApplied, DynamicInsertOrderingMode);
-
-public record PostDeploymentTemplateGenerated(
-    BuildSsdtPipelineRequest Request,
-    PipelineExecutionLogBuilder Log,
-    PipelineBootstrapContext Bootstrap,
-    EvidenceCacheResult? EvidenceCache,
-    PolicyDecisionSet Decisions,
-    PolicyDecisionReport Report,
-    OpportunitiesReport Opportunities,
-    ValidationReport Validations,
-    ImmutableArray<PipelineInsight> Insights,
-    SsdtManifest Manifest,
-    string DecisionLogPath,
-    OpportunityArtifacts OpportunityArtifacts,
-    string SqlProjectPath,
-    SsdtSqlValidationSummary SqlValidation,
-    ImmutableArray<string> StaticSeedScriptPaths,
-    ImmutableArray<StaticEntityTableData> StaticSeedData,
-    ImmutableArray<string> DynamicInsertScriptPaths,
-    DynamicInsertOutputMode DynamicInsertOutputMode,
-    bool StaticSeedTopologicalOrderApplied,
-    EntityDependencyOrderingMode StaticSeedOrderingMode,
-    bool DynamicInsertTopologicalOrderApplied,
-    EntityDependencyOrderingMode DynamicInsertOrderingMode,
-    string? BootstrapSnapshotPath,
-    bool BootstrapTopologicalOrderApplied,
-    EntityDependencyOrderingMode BootstrapOrderingMode,
-    int BootstrapEntityCount,
-    string? PostDeploymentTemplatePath)
-    : BootstrapSnapshotGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths, DynamicInsertOutputMode, StaticSeedTopologicalOrderApplied, StaticSeedOrderingMode, DynamicInsertTopologicalOrderApplied, DynamicInsertOrderingMode, BootstrapSnapshotPath, BootstrapTopologicalOrderApplied, BootstrapOrderingMode, BootstrapEntityCount);
-
-public record TelemetryPackaged(
-    BuildSsdtPipelineRequest Request,
-    PipelineExecutionLogBuilder Log,
-    PipelineBootstrapContext Bootstrap,
-    EvidenceCacheResult? EvidenceCache,
-    PolicyDecisionSet Decisions,
-    PolicyDecisionReport Report,
-    OpportunitiesReport Opportunities,
-    ValidationReport Validations,
-    ImmutableArray<PipelineInsight> Insights,
-    SsdtManifest Manifest,
-    string DecisionLogPath,
-    OpportunityArtifacts OpportunityArtifacts,
-    string SqlProjectPath,
-    SsdtSqlValidationSummary SqlValidation,
-    ImmutableArray<string> StaticSeedScriptPaths,
-    ImmutableArray<StaticEntityTableData> StaticSeedData,
-    ImmutableArray<string> DynamicInsertScriptPaths,
-    DynamicInsertOutputMode DynamicInsertOutputMode,
-    bool StaticSeedTopologicalOrderApplied,
-    EntityDependencyOrderingMode StaticSeedOrderingMode,
-    bool DynamicInsertTopologicalOrderApplied,
-    EntityDependencyOrderingMode DynamicInsertOrderingMode,
-    string? BootstrapSnapshotPath,
-    bool BootstrapTopologicalOrderApplied,
-    EntityDependencyOrderingMode BootstrapOrderingMode,
-    int BootstrapEntityCount,
-    string? PostDeploymentTemplatePath,
-    ImmutableArray<string> TelemetryPackagePaths)
-    : PostDeploymentTemplateGenerated(Request, Log, Bootstrap, EvidenceCache, Decisions, Report, Opportunities, Validations, Insights, Manifest, DecisionLogPath, OpportunityArtifacts, SqlProjectPath, SqlValidation, StaticSeedScriptPaths, StaticSeedData, DynamicInsertScriptPaths, DynamicInsertOutputMode, StaticSeedTopologicalOrderApplied, StaticSeedOrderingMode, DynamicInsertTopologicalOrderApplied, DynamicInsertOrderingMode, BootstrapSnapshotPath, BootstrapTopologicalOrderApplied, BootstrapOrderingMode, BootstrapEntityCount, PostDeploymentTemplatePath);
+/// <summary>
+/// Accumulating state threaded through the build-SSDT pipeline steps. Replaces the
+/// former 13-record inheritance chain; each step returns `state with { ... }` setting
+/// only the fields it produces. Fields populated by later steps default to null!/empty
+/// and are guaranteed set by the time a downstream step or the final result reads them
+/// (the step order in BuildSsdtPipeline enforces this at runtime, as the old chain did
+/// at compile time).
+/// </summary>
+public sealed record BuildSsdtState
+{
+    public required BuildSsdtPipelineRequest Request { get; init; }
+    public required PipelineExecutionLogBuilder Log { get; init; }
+    public PipelineBootstrapContext Bootstrap { get; init; } = null!;
+    public EvidenceCacheResult? EvidenceCache { get; init; }
+    public PolicyDecisionSet Decisions { get; init; } = null!;
+    public PolicyDecisionReport Report { get; init; } = null!;
+    public OpportunitiesReport Opportunities { get; init; } = null!;
+    public ValidationReport Validations { get; init; } = null!;
+    public ImmutableArray<PipelineInsight> Insights { get; init; } = ImmutableArray<PipelineInsight>.Empty;
+    public SsdtManifest Manifest { get; init; } = null!;
+    public string DecisionLogPath { get; init; } = string.Empty;
+    public OpportunityArtifacts OpportunityArtifacts { get; init; } = null!;
+    public string SqlProjectPath { get; init; } = string.Empty;
+    public SsdtSqlValidationSummary SqlValidation { get; init; } = null!;
+    public ImmutableArray<string> StaticSeedScriptPaths { get; init; } = ImmutableArray<string>.Empty;
+    public ImmutableArray<StaticEntityTableData> StaticSeedData { get; init; } = ImmutableArray<StaticEntityTableData>.Empty;
+    public bool StaticSeedTopologicalOrderApplied { get; init; }
+    public EntityDependencyOrderingMode StaticSeedOrderingMode { get; init; }
+    public ImmutableArray<string> DynamicInsertScriptPaths { get; init; } = ImmutableArray<string>.Empty;
+    public DynamicInsertOutputMode DynamicInsertOutputMode { get; init; }
+    public bool DynamicInsertTopologicalOrderApplied { get; init; }
+    public EntityDependencyOrderingMode DynamicInsertOrderingMode { get; init; }
+    public string? BootstrapSnapshotPath { get; init; }
+    public bool BootstrapTopologicalOrderApplied { get; init; }
+    public EntityDependencyOrderingMode BootstrapOrderingMode { get; init; }
+    public int BootstrapEntityCount { get; init; }
+    public string? PostDeploymentTemplatePath { get; init; }
+    public ImmutableArray<string> TelemetryPackagePaths { get; init; } = ImmutableArray<string>.Empty;
+}

@@ -110,7 +110,10 @@ public sealed class PerTableWriter
         if (!deferredNoCheckForeignKeys.IsDefaultOrEmpty)
         {
             var noCheckStatements = _createTableStatementBuilder.BuildNoCheckForeignKeyStatements(table, effectiveTableName, deferredNoCheckForeignKeys, options);
-            statements.AddRange(noCheckStatements);
+            foreach (var noCheckStatement in noCheckStatements)
+            {
+                statements.Add(Script(noCheckStatement, format: options.Format));
+            }
         }
 
         var indexNames = ImmutableArray.CreateBuilder<string>();

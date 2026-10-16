@@ -600,6 +600,58 @@ public class SmoModelFactoryTests
     private static string BuildKey(string schema, string table, string name)
         => $"{schema.ToUpperInvariant()}|{table.ToUpperInvariant()}|{name.ToUpperInvariant()}";
 
+    [Fact]
+    public void Create_matches_edge_case_untrusted_fixture_scripts()
+    {
+        var (model, decisions, snapshot) = SmoTestHelper.LoadEdgeCaseArtifacts();
+        var options = SmoBuildOptions.FromEmission(TighteningOptions.Default.Emission);
+        var factory = new SmoModelFactory();
+
+        var triggeredCoordinate = new ColumnCoordinate(
+            new SchemaName("dbo"),
+            new TableName("OSUSR_XYZ_JOBRUN"),
+            new ColumnName("TRIGGEREDBYUSERID"));
+        Assert.True(decisions.ForeignKeys.TryGetValue(triggeredCoordinate, out var triggeredDecision));
+        var updatedForeignKeys = decisions.ForeignKeys.SetItem(
+            triggeredCoordinate,
+            triggeredDecision with { CreateConstraint = true });
+        var updatedDecisions = decisions with { ForeignKeys = updatedForeignKeys };
+
+        var supplementalEntities = LoadSupplementalUserEntities();
+        var smoModel = factory.Create(
+            model,
+            updatedDecisions,
+            profile: snapshot,
+            options: options,
+            supplementalEntities: supplementalEntities);
+
+        var writer = new PerTableWriter();
+        var jobRunTable = smoModel.Tables.Single(
+            table => table.Name.Equals("OSUSR_XYZ_JOBRUN", StringComparison.OrdinalIgnoreCase));
+        var script = writer.Generate(jobRunTable, options).Script;
+
+        var goldenPath = Path.Combine(
+            FixtureFile.RepositoryRoot,
+            "tests",
+            "Fixtures",
+            "emission",
+            "edge-case-untrusted",
+            "Modules",
+            "Ops",
+            "dbo.JobRun.sql");
+
+        if (string.Equals(
+                Environment.GetEnvironmentVariable("OSM_UPDATE_UNTRUSTED_FIXTURE"),
+                "1",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            File.WriteAllText(goldenPath, script);
+        }
+
+        var expected = File.ReadAllText(goldenPath);
+        Assert.Equal(Normalize(expected), Normalize(script));
+    }
+
     private static string Normalize(string value)
         => value.Replace("\r\n", "\n").Trim();
 

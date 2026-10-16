@@ -63,27 +63,12 @@ public sealed class SmoRenameLens
         return builder.ToImmutable().Sort(RenameMappingComparer.Instance);
     }
 
-    private sealed class RenameMappingComparer : IComparer<SmoRenameMapping>
+    private sealed class RenameMappingComparer : NullSafeComparer<SmoRenameMapping>
     {
         public static readonly RenameMappingComparer Instance = new();
 
-        public int Compare(SmoRenameMapping? x, SmoRenameMapping? y)
+        protected override int CompareNonNull(SmoRenameMapping x, SmoRenameMapping y)
         {
-            if (ReferenceEquals(x, y))
-            {
-                return 0;
-            }
-
-            if (x is null)
-            {
-                return -1;
-            }
-
-            if (y is null)
-            {
-                return 1;
-            }
-
             var comparison = StringComparer.Ordinal.Compare(x.Module, y.Module);
             if (comparison != 0)
             {

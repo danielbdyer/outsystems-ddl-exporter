@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text;
 using Osm.Smo;
 
 namespace Osm.Smo.PerTableEmission;
@@ -47,7 +48,7 @@ internal sealed class ExtendedPropertyScriptBuilder
 
         if (hasTableDescription)
         {
-            scripts.Add(BuildTableExtendedPropertyScript(table.Schema, effectiveTableName, table.Description!));
+            scripts.Add(BuildExtendedPropertyScript(table.Schema, effectiveTableName, table.Description!, level2: null));
         }
 
         foreach (var column in table.Columns)
@@ -57,7 +58,11 @@ internal sealed class ExtendedPropertyScriptBuilder
                 continue;
             }
 
-            scripts.Add(BuildColumnExtendedPropertyScript(table.Schema, effectiveTableName, column.Name, column.Description!));
+            scripts.Add(BuildExtendedPropertyScript(
+                table.Schema,
+                effectiveTableName,
+                column.Description!,
+                level2: ("COLUMN", column.Name)));
         }
 
         foreach (var index in table.Indexes)
@@ -68,71 +73,45 @@ internal sealed class ExtendedPropertyScriptBuilder
             }
 
             var resolvedName = _identifierFormatter.ResolveConstraintName(index.Name, table.Name, table.LogicalName, effectiveTableName);
-            scripts.Add(BuildIndexExtendedPropertyScript(
+            scripts.Add(BuildExtendedPropertyScript(
                 table.Schema,
                 effectiveTableName,
-                resolvedName,
                 index.Description!,
-                index.IsPrimaryKey));
+                level2: (index.IsPrimaryKey ? "CONSTRAINT" : "INDEX", resolvedName)));
         }
 
         return scripts.ToImmutable();
     }
 
-    private string BuildTableExtendedPropertyScript(
+    // Single template for the table / column / index variants of
+    // sp_addextendedproperty. The variants differ only by the optional level-2
+    // object line (column or index/constraint); table-level descriptions omit it.
+    private static string BuildExtendedPropertyScript(
         string schema,
         string table,
-        string description)
-    {
-        var descriptionLiteral = EscapeSqlLiteral(description);
-        var schemaLiteral = EscapeSqlLiteral(schema);
-        var tableLiteral = EscapeSqlLiteral(table);
-
-        return $"""
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'{descriptionLiteral}',
-    @level0type=N'SCHEMA',@level0name=N'{schemaLiteral}',
-    @level1type=N'TABLE',@level1name=N'{tableLiteral}';
-""".Trim();
-    }
-
-    private string BuildColumnExtendedPropertyScript(
-        string schema,
-        string table,
-        string column,
-        string description)
-    {
-        var columnLiteral = EscapeSqlLiteral(column);
-        var descriptionLiteral = EscapeSqlLiteral(description);
-        var schemaLiteral = EscapeSqlLiteral(schema);
-        var tableLiteral = EscapeSqlLiteral(table);
-
-        return $"""
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'{descriptionLiteral}',
-    @level0type=N'SCHEMA',@level0name=N'{schemaLiteral}',
-    @level1type=N'TABLE',@level1name=N'{tableLiteral}',
-    @level2type=N'COLUMN',@level2name=N'{columnLiteral}';
-""".Trim();
-    }
-
-    private string BuildIndexExtendedPropertyScript(
-        string schema,
-        string table,
-        string index,
         string description,
-        bool isPrimaryKey)
+        (string Type, string Name)? level2)
     {
-        var descriptionLiteral = EscapeSqlLiteral(description);
-        var indexLiteral = EscapeSqlLiteral(index);
-        var schemaLiteral = EscapeSqlLiteral(schema);
-        var tableLiteral = EscapeSqlLiteral(table);
-        var level2Type = isPrimaryKey ? "CONSTRAINT" : "INDEX";
+        var builder = new StringBuilder();
+        builder.Append("EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'");
+        builder.Append(EscapeSqlLiteral(description));
+        builder.Append("',\n    @level0type=N'SCHEMA',@level0name=N'");
+        builder.Append(EscapeSqlLiteral(schema));
+        builder.Append("',\n    @level1type=N'TABLE',@level1name=N'");
+        builder.Append(EscapeSqlLiteral(table));
+        builder.Append('\'');
 
-        return $"""
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'{descriptionLiteral}',
-    @level0type=N'SCHEMA',@level0name=N'{schemaLiteral}',
-    @level1type=N'TABLE',@level1name=N'{tableLiteral}',
-    @level2type=N'{level2Type}',@level2name=N'{indexLiteral}';
-""".Trim();
+        if (level2 is { } level)
+        {
+            builder.Append(",\n    @level2type=N'");
+            builder.Append(level.Type);
+            builder.Append("',@level2name=N'");
+            builder.Append(EscapeSqlLiteral(level.Name));
+            builder.Append('\'');
+        }
+
+        builder.Append(';');
+        return builder.ToString();
     }
 
     private static string EscapeSqlLiteral(string value)

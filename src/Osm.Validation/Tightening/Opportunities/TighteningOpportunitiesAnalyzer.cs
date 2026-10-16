@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using Osm.Domain.Model;
 using Osm.Domain.Profiling;
+using Osm.Domain.Sql;
 using Osm.Validation.Tightening.Signals;
 using Osm.Validation.Tightening.Validations;
 using Osm.Domain.ValueObjects;
@@ -717,10 +718,10 @@ public sealed class TighteningOpportunitiesAnalyzer : ITighteningAnalyzer
     }
 
     private static string Qualify(string schema, string name)
-        => $"{Quote(schema)}.{Quote(name)}";
+        => SqlIdentifier.Qualify(schema, name);
 
     private static string Quote(string identifier)
-        => $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]";
+        => SqlIdentifier.Quote(identifier);
 
     private sealed class OpportunityAccumulator
     {

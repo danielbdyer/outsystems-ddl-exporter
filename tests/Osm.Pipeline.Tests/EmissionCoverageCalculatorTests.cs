@@ -89,7 +89,7 @@ public class EmissionCoverageCalculatorTests
 
         var module = CreateModule("Sales", entity);
         var model = CreateModel(module);
-        var snapshot = EntityEmissionSnapshot.Create("Sales", entity);
+        var snapshot = EmittableEntityProjection.Create("Sales", entity);
 
         var decisions = PolicyDecisionSet.Create(
             ImmutableDictionary<ColumnCoordinate, NullabilityDecision>.Empty,

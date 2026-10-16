@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
+using Osm.Domain.Sql;
 
 namespace Osm.Validation.Tightening;
 
@@ -54,20 +55,8 @@ internal static class RemediationQueryBuilder
         return builder.ToString();
     }
 
-    private static string QuoteIdentifier(string identifier)
-    {
-        if (string.IsNullOrEmpty(identifier))
-        {
-            return "[]";
-        }
-
-        // Escape any existing brackets and wrap in brackets
-        var escaped = identifier.Replace("]", "]]");
-        return $"[{escaped}]";
-    }
+    private static string QuoteIdentifier(string identifier) => SqlIdentifier.Quote(identifier);
 
     private static string QualifyIdentifier(string schema, string objectName)
-    {
-        return $"{QuoteIdentifier(schema)}.{QuoteIdentifier(objectName)}";
-    }
+        => SqlIdentifier.Qualify(schema, objectName);
 }
