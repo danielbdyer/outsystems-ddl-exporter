@@ -1,5 +1,10 @@
 # Twin succession: witness, not twin
 
+> **2026-10-18: the successor is now specified.** The design here became the Facsimile. Its
+> architecture, its 51 invariants and a case catalog of about 1,000 cases, written test-first, live
+> in `sidecar/projection/ssdt-agent/facsimile/` (start at its `README.md`). Where the two documents
+> differ, the facsimile spec is newer and wins. This record keeps the reasoning and the evidence.
+
 *A design decision record, written 2026-10-15, for handing the SSDT proving workflow to a team that keeps
 skill files but not an F# codebase. It is the result of a nine-agent panel: four researchers (the
 skill tree's Twin dependencies, the per-operation data requirements, the `v3-build` branch, and the
@@ -691,6 +696,13 @@ sig AS (SELECT s = REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLA
 SELECT 'shape' AS part, signature = CASE WHEN s = N'' THEN N'(empty)' ELSE s END, n = COUNT_BIG(*)
 FROM sig GROUP BY s HAVING COUNT_BIG(*) >= @k ORDER BY n DESC;
 ```
+
+**A known limit of this version, fixed in the facsimile's `shape.sql` (P6).** `TRANSLATE` maps only
+ASCII letters, so non-Latin characters would pass through into a signature verbatim. The facsimile's
+version maps every non-ASCII character to `x`. It also folds signatures seen fewer than k times into
+"other: n rows in m signatures", and returns literal values only for 50 or fewer distinct values,
+each seen at least k times. The demonstration in §6b used k = 1 on a six-row table, which is fine
+for a demonstration but not for real data.
 
 **Discovery then confirmation.** A shape tells you which question to ask next; a count answers it.
 For example, if `99/99/9999` appears, ask how many rows have a first part over 12 (they must be
