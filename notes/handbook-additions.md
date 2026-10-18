@@ -760,7 +760,7 @@ Progression isn't about doing higher-tier work faster. It's about developing jud
 
 **Final tier:** Tier 3
 
-**Why:** Must coordinate with ETL team. Need backward compatibility approach or synchronized deployment.
+**Why:** Must coordinate with the ETL maintainers. Need backward compatibility approach or synchronized deployment.
 
 ---
 

@@ -180,7 +180,7 @@ Questions:
 
 **Step 2: Talk to the other developer**
 ```
-Slack them:
+Message them:
 "Hey, we both added PhoneNumber column with different definitions.
 I did VARCHAR(20) NULL, you did NVARCHAR(50) NOT NULL.
 Can we sync on which is correct? I think VARCHAR(20) is enough
@@ -460,7 +460,7 @@ git rebase --abort
 
 ```
 Before big changes:
-1. Post in #database-dev: "About to refactor Customers table"
+1. Post in the team's chat channel: "About to refactor Customers table"
 2. Check if anyone else working on it
 3. Coordinate merge timing
 ```
@@ -491,7 +491,7 @@ Do:
 ```
 Team practice:
 "I'm working on Customers.sql today, avoid if possible"
-Post in Slack before starting
+Post in the team's chat channel before starting
 
 Or use GitHub issue assignments
 ```
@@ -1027,8 +1027,8 @@ Data: Any data loss?
 
 **If Production**:
 ```
-1. Post in #database-emergency immediately
-2. Page @db-on-call
+1. Post in the team's chat channel immediately
+2. Page the on-call contact
 3. Call on-call phone number
 4. Don't wait - call AND message
 
@@ -1043,7 +1043,7 @@ Need: [Help needed]"
 
 **If Test/Dev**:
 ```
-Post in #database-help:
+Post in the team's chat channel:
 "Deployment failed to [ENV]
 Deploying: [What]
 Error: [Summary]
@@ -1455,18 +1455,18 @@ UPDATE Customers SET PhoneNumber = ... -- from backup
 
 **🔴 P1 - Production down**:
 - Call on-call phone immediately
-- Post in #database-emergency
-- Page @db-on-call
+- Post in the team's chat channel
+- Page the on-call contact
 - Loop in VP Engineering
 
 **🟡 P2 - Production degraded**:
-- Post in #database-emergency
-- Tag @db-on-call
+- Post in the team's chat channel
+- Tag the on-call contact
 - Dev lead coordinates
 
 **🟢 P3 - Test/Dev issue**:
-- Post in #database-help
-- Tag @dev-leads
+- Post in the team's chat channel
+- Tag the dev leads
 - Work during business hours
 
 ---

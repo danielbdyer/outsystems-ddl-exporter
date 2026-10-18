@@ -55,7 +55,7 @@ Build failed in Visual Studio?
 │     └─ Use Refactor → Rename, don't edit manually
 │
 └─ Other syntax error
-   └─ Copy error to #database-help with screenshot
+   └─ Copy error to the team's chat channel with screenshot
 ```
 
 ### Common Build Errors & Fixes
@@ -189,7 +189,7 @@ If build fails:
 4. ☐ Check for missing commas
 5. ☐ Check for missing GO separators
 6. ☐ Try Clean Solution → Rebuild
-7. ☐ Still stuck after 15 min? → #database-help with error screenshot
+7. ☐ Still stuck after 15 min? → the team's chat channel with error screenshot
 
 ---
 
@@ -717,8 +717,8 @@ Git/merge conflict?
 
 **Who to contact**:
 - Dev Lead: Your assigned lead (PR reviews, questions)
-- DB Team: #database-help (technical issues)
-- On-Call: @db-on-call (production emergencies)
+- the DBAs: the team's chat channel (technical issues)
+- On-Call: the on-call contact (production emergencies)
 
 ---
 
@@ -731,7 +731,7 @@ Git/merge conflict?
 3. ☐ Check this troubleshooting guide
 4. ☐ Try obvious fix (typo? missing comma?)
 5. ☐ Review your recent changes (what did you change?)
-6. ☐ Check if someone else had same issue (search #database-help history)
+6. ☐ Check if someone else had same issue (search the team's chat channel history)
 7. ☐ Tried for 15+ minutes? → NOW ask for help
 
 **When asking for help, include**:
@@ -1195,7 +1195,7 @@ BLOCKING Comment:
 Please:
 - Remove sensitive data
 - Use SQLCMD variables for config
-- Consult security team if unsure
+- Ask whoever reviews security if unsure
 
 Cannot merge until resolved."
 ```

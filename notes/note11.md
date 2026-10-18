@@ -26,7 +26,7 @@ Below is the “playbook of playbooks.” Each section has: what/why, step-by-st
   * *SQL Database Projects* (project editing/build)
   * *Schema Compare* (visual diffs; can apply changes to project)
 * **SqlPackage** CLI — build/diff/script/publish in CI/CD.
-* **Azure DevOps Pipelines** (or GitHub Actions) — to build, generate `Diff.sql`/`DeployReport.xml`, and publish to Dev.
+* **CI pipeline** (or GitHub Actions) — to build, generate `Diff.sql`/`DeployReport.xml`, and publish to Dev.
 * **Integration Studio** (OutSystems) — manual *Refresh Entity / Import* + *Publish*.
 * **Service Studio** (OutSystems) — *Refresh Dependencies* + republish consumer modules.
 
@@ -61,7 +61,7 @@ Below is the “playbook of playbooks.” Each section has: what/why, step-by-st
      UAT.publish.xml
      Prod.publish.xml
 /.pipelines/azure-pipelines-db.yml
-/.github/pull_request_template.md (or DevOps equivalent)
+/.github/pull_request_template.md (or the git host's equivalent)
 CODEOWNERS
 ```
 
@@ -517,7 +517,7 @@ Entities changed:
 
 Action for consumers:
 - Refresh Dependencies (External.Customer)
-- Expect zero compile changes; DM #db-stewards if anything breaks
+- Expect zero compile changes; post in the team's chat channel if anything breaks
 ```
 
 ---
@@ -548,7 +548,7 @@ A: Start **domain-level** (fewer extensions). Only split when a domain’s chang
 * Consumers refresh dependencies and republish.
 * Breaking work (renames/drops/constraints) is **lead-only** with **RefactorLog** and scheduled windows.
 
-If you want, I can package this into a **ready-to-share Markdown/Confluence doc** with all templates filled in and a small “starter” repo skeleton so you can run a dry-run merge train with the team.
+If you want, I can package this into a **ready-to-share Markdown/wiki doc** with all templates filled in and a small “starter” repo skeleton so you can run a dry-run merge train with the team.
 
 
 Awesome — picking up right where we left off and **expanding each section into an actionable, “hand-to-team” playbook**. I’ll keep everything grounded in what we *know* works (no localhost dependency, one shared Dev DB, manual IS refresh by leads, devs limited to safe changes). Where there are options, I’ll call them out and give a default.
@@ -736,14 +736,14 @@ Awesome — picking up right where we left off and **expanding each section into
 * **T+15:** Announce “entities touched” and consumer list.
 * **T+30:** Spot-check for consumer compile errors; nudge owners.
 
-## 4.2 Communication template (Slack/Teams)
+## 4.2 Communication template (team chat)
 
 > **DB Train @13:00** — Published to Dev
 > **Extension:** `Ext_Customer`
 > **Entities:** `Customer` (Comment 300→500), `CustomerNote` (+ IsPinned nullable)
 > **Action:** Refresh Dependencies & republish modules: `CS.CustomerPortal`, `CS.CustomerAdmin`
 > **Breaking?** No (additive)
-> **Lead on-call:** @danny (IS refresh done)
+> **Lead on-call:** the dev lead (IS refresh done)
 
 ## 4.3 Should we split adapters (extensions)?
 
@@ -834,7 +834,7 @@ Awesome — picking up right where we left off and **expanding each section into
     UAT.publish.xml
     Prod.publish.xml
 /pipelines/azure-pipelines-db.yml
-/.github/PULL_REQUEST_TEMPLATE.md (or DevOps PR template)
+/.github/PULL_REQUEST_TEMPLATE.md (or the git host's PR template)
 /CODEOWNERS
 ```
 
@@ -1021,7 +1021,7 @@ Increase Customer.Comment length 300→500 to accommodate partner feedback.
 1. Open **Integration Studio** → extension → right-click **Entities → Refresh** (or **Import**).
 2. Review diffs (ensure renames are mapped if relevant).
 3. Click **1-Click Publish**; confirm success.
-4. Post “entities touched” to #dev-announcements with consumer owners.
+4. Post “entities touched” to the team's chat channel with consumer owners.
 
 ---
 
@@ -1108,7 +1108,7 @@ Increase Customer.Comment length 300→500 to accommodate partner feedback.
 * **Day 5**
 
   * Review metrics (latency, compile breaks).
-  * Tune train times; confirm steward rotation.
+  * Tune train times; confirm reviewer rotation.
   * Decide whether to keep “optional pre-PR Schema Compare” in VS Code or skip.
 
 ---
@@ -1149,7 +1149,7 @@ sqlpackage /Action:DriftReport `
 ## 14.3 Consumer owner map (CSV → PR bot)
 
 ```
-Extension,Entity,ConsumerModule,OwnerSlack
+Extension,Entity,ConsumerModule,OwnerHandle
 Ext_Customer,Customer,CS.CustomerPortal,@alice
 Ext_Customer,Customer,CS.CustomerAdmin,@bob
 ```
@@ -1167,4 +1167,4 @@ Ext_Customer,Customer,CS.CustomerAdmin,@bob
 
 ## Final note
 
-This gives you a **complete, governed, and teachable DX** without local SQL or per-dev instances, keeps **leads in control**, and lets **developers contribute safely** with point-and-click where it matters (ADS designer + VS Code Schema Compare). If you want, I can package this as a *ready-to-paste* Markdown/Confluence doc set with the code snippets and templates separated into copyable blocks.
+This gives you a **complete, governed, and teachable DX** without local SQL or per-dev instances, keeps **leads in control**, and lets **developers contribute safely** with point-and-click where it matters (ADS designer + VS Code Schema Compare). If you want, I can package this as a *ready-to-paste* Markdown/wiki doc set with the code snippets and templates separated into copyable blocks.

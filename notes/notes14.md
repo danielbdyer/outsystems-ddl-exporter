@@ -101,7 +101,7 @@
 
 * **TRN.FND.1001 Foundations (Weeks 1–2).** Install toolchain; import schema; build/publish; basic vocabulary (DDL, normalization, transactions); guided labs. [S:6][S:8]
 * **TRN.INT.1002 Intermediate (Month 1).** Multi‑table design; FKs + indexes; pre/post patterns; merge conflict resolution; code review rituals. [S:4][S:6][S:8]
-* **TRN.ADV.1003 Advanced (Ongoing).** Large refactors; zero‑downtime patterns; performance engineering; automated reports; enterprise coordination. [S:4][S:8]
+* **TRN.ADV.1003 Advanced (Ongoing).** Large refactors; zero‑downtime patterns; performance engineering; automated reports; cross-team coordination. [S:4][S:8]
 * **TRN.MAT.1004 Curated Materials.** Essentials‑first, behavior‑oriented resources (SSDT projects, publish profiles, schema compare, pre/post, data‑motion). [S:6][S:8]
 
 ---
@@ -217,7 +217,7 @@ Awesome—here’s a **significantly expanded** (≈2–4×) rewrite of the open
 
 * We’re mid-development converting ~100+ **OutSystems internal entities** (plus many **static entities**) into **External Entities** backed by **on-prem SQL Server**.
 * In parallel, we’re moving from ad-hoc DB edits to **SSDT (SQL Server Data Tools)** with **state-based deployments** (DACPAC).
-* CI/CD is anchored in **Azure DevOps** with **publish profiles** enforcing **no data-lossing operations** in Prod by default.
+* CI/CD is anchored in the CI pipeline with **publish profiles** enforcing **no data-lossing operations** in Prod by default.
 * The environment flow is **Dev → Test/UAT → Prod**, with **tight weekend and daily windows** for DB publishes and **Integration Studio** refreshes.
 
 **What this *means* for you:**
@@ -577,7 +577,7 @@ Perfect—continuing **inline** with the same developer-facing density. Here are
 
 **Baseline (Dev/Test/UAT trains)**
 
-* **13:30** “last call” bot ping in #dev-db-train (auto pin “what’s landing” dashboard).
+* **13:30** “last call” bot ping in the team's chat channel (auto pin “what’s landing” dashboard).
 * **14:00** PR cutoff. Train captain (Lead/Staff) assembles the manifest: PRs, target envs, publish profiles.
 * **14:10–14:40** Pre-flight review (captain + on-duty DBA): forbidden-drop scanner, diff reports, PostDeploy scan for non-idempotency, grants present.
 * **15:00** Publish (DACPAC via profile). Capture artifacts (script, diff, logs) → attach to the release record.
@@ -680,9 +680,9 @@ Perfect—continuing **inline** with the same developer-facing density. Here are
 
 **Proactive comms**
 
-* Change calendar entries for Prod trains; Slack reminders at 13:30 & 15:25.
+* Change calendar entries for Prod trains; chat reminders at 13:30 & 15:25.
 * “What lands today” bot enumerates domains + risk class.
-* Consumers subscribe to domain tags (#domain-customer, #domain-orders).
+* Consumers subscribe to domain tags (one chat channel per domain).
 
 **Incident protocol**
 
@@ -1111,7 +1111,7 @@ Absolutely—here’s a **20–30× expansion** on **Swim Lanes** that turns the
 * **IC-M** = Individual Contributor, **Mid**
 * **IC-S** = Individual Contributor, **Senior**
 * **LEAD/STAFF** = Tech Lead or Staff Engineer
-* **DBA/OPS** = Database Administrator / Release Engineer
+* **DBA/OPS** = Database Administrator / the deployment owner
 * **OS-DEV** = OutSystems Developer (Integration/Service Studio)
 * **QA** = Quality Analyst / SDET
 * **PM** = Product/Project Manager
@@ -1132,7 +1132,7 @@ Absolutely—here’s a **20–30× expansion** on **Swim Lanes** that turns the
 | **PostDeploy data motion**           | IC-M/IC-S      | LEAD/STAFF            | DBA/OPS           | Idempotent + transaction + rowcount logs.           |
 | **Security/Grants**                  | IC-M/IC-S      | LEAD/STAFF            | DBA/OPS           | In PostDeploy, idempotent `GRANT`.                  |
 | **Cross-DB synonyms**                | IC-S           | LEAD/STAFF            | DBA/OPS           | sqlcmd-gated; PreDeploy guard for target DB.        |
-| **Drop or data-lossing op (Prod)**   | LEAD/STAFF     | Director/Change Board | DBA/OPS           | Break-glass; rollback rehearsed.                    |
+| **Drop or data-lossing op (Prod)**   | LEAD/STAFF     | Director/change-approval gate | DBA/OPS           | Break-glass; rollback rehearsed.                    |
 
 > **Rule of thumb:** **IC-J** does additive & seeds under review; **IC-M** adds constraints with defaults/backfill; **IC-S** performs complex refactors; **LEAD/STAFF** arbitrates decisions & owns trains; **DBA/OPS** is the only executor of publishes.
 
@@ -1603,7 +1603,7 @@ Awesome—continuing **inline** with the same developer-facing density. Here are
 **Dependency refresh**
 
 * After every IS publish, **all consuming modules** must run **Dependencies → Refresh**.
-* Establish a “**dependency refresh roster**”: which modules depend on which extensions. Automate a Slack ping (bot) listing modules to refresh after the train.
+* Establish a “**dependency refresh roster**”: which modules depend on which extensions. Automate a chat ping (bot) listing modules to refresh after the train.
 
 **Wiring practices**
 
@@ -2030,7 +2030,7 @@ Locked on the outline you provided. Here are **Sections 7, 8, and 9** inline—*
 
 **Ownership**
 
-* Each extension has: **Owner (IC-S or OS-DEV)**, **Backup**, and a Slack **channel tag** (`#domain-customer`).
+* Each extension has: **Owner (IC-S or OS-DEV)**, **Backup**, and a chat **channel tag** (one per domain).
 * A simple **owner map** lives in `/docs/owners.md` with escalation contacts.
 
 **Hygiene practices**
@@ -2139,7 +2139,7 @@ Locked on the outline you provided. Here are **Sections 7, 8, and 9** inline—*
 * [ ] **Manifest frozen**: PRs, target DB(s), profile(s) listed.
 * [ ] **Backups/snapshots**: restore point or PITR capability ready (Prod).
 * [ ] **Artifacts staged**: DACPAC, `publish.sql`, `profile.used.json`, scanner PASS.
-* [ ] **Comms**: Slack pre-announce with impacted domains & expected duration.
+* [ ] **Comms**: chat pre-announce with impacted domains & expected duration.
 
 **Publish (T-0)**
 
@@ -2608,7 +2608,7 @@ Rubrics weight: **Technical (40%)**, **Safety (30%)**, **Ops discipline (20%)**,
 ## 13) Cohort Automation
 
 * Survey export → `/training/90-assessments/cohort_assign.json`
-* Script assigns lab IDs, pushes calendar invites, and posts Slack welcome DM with links to the exact materials.
+* Script assigns lab IDs, pushes calendar invites, and posts a chat welcome DM with links to the exact materials.
 
 ---
 
@@ -2624,7 +2624,7 @@ Rubrics weight: **Technical (40%)**, **Safety (30%)**, **Ops discipline (20%)**,
 
 * One-page **Orientation** + **Toolchain install guide** + **Hello SSDT** lab.
 * Direct links: PR template, publish profiles, type mapping canon, snippet library.
-* Slack channels to join; who to ping for IS refresh.
+* chat channels to join; who to ping for IS refresh.
 
 ---
 
@@ -2658,7 +2658,7 @@ Rubrics weight: **Technical (40%)**, **Safety (30%)**, **Ops discipline (20%)**,
 
 * SemVer the library (`vX.Y`).
 * `CHANGELOG.md` records: added labs, updated profiles, new decisions.
-* Breaking changes flagged and broadcast in #engineering.
+* Breaking changes flagged and broadcast in the team's chat channel.
 
 ---
 
@@ -2886,7 +2886,7 @@ Plan (revert, disable constraint, restore point)
 ## 4) Integration Studio Refresh (Extensions)
 
 **Extension granularity**: **one per domain** (e.g., `CustomerDB`, `SalesDB`), not a monolith.
-**Ownership**: each extension has **Owner** + **Backup** + channel tag (e.g., `#domain-customer`).
+**Ownership**: each extension has **Owner** + **Backup** + chat channel tag (one per domain).
 
 **Refresh steps (per extension)**
 

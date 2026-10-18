@@ -82,7 +82,7 @@ Predictable schedule:
 
 #### PR Templates
 
-**Location**: Create `.github/pull_request_template.md` or Azure DevOps equivalent
+**Location**: Create `.github/pull_request_template.md` or the git host's equivalent
 
 **Template content**:
 
@@ -104,7 +104,7 @@ Predictable schedule:
 **Why?**
 [Business requirement, feature ticket, bug fix]
 
-**Feature ticket**: [PROJ-123](link)
+**Feature ticket**: [work item 123](link)
 
 ### Breaking Changes
 - [ ] No breaking changes (safe to deploy)
@@ -163,7 +163,7 @@ Exception: Emergency fixes with dev lead approval
 
 **What counts as "submitted"?**:
 ```
-✅ PR created in GitHub/Azure DevOps
+✅ PR created in the git host
 ✅ Template fully filled out
 ✅ Build passing (green checkmark)
 ✅ Reviewer assigned
@@ -242,7 +242,7 @@ If you're unsure → Ask dev lead for classification
 
 **Process**:
 
-**3:30 PM: Dev Lead announces in #database-dev**:
+**3:30 PM: Dev Lead announces in the team's chat channel**:
 ```
 🔔 Integration Studio Refresh Time
 
@@ -289,7 +289,7 @@ Each developer:
 ```
 If you missed the window:
 1. Refresh your extension
-2. Post in #database-dev: "Refreshed [Extension] at 4:15 PM"
+2. Post in the team's chat channel: "Refreshed [Extension] at 4:15 PM"
 3. Test your app
 
 Important: Don't assume everyone else refreshed when you did
@@ -306,7 +306,7 @@ Important: Don't assume everyone else refreshed when you did
 
 **Protocol**:
 ```
-1. Post in #database-dev BEFORE refreshing:
+1. Post in the team's chat channel BEFORE refreshing:
    "Planning to refresh [Extension] at [Time] for [Reason]"
    
 2. Wait 5 minutes for objections
@@ -327,7 +327,7 @@ Production issue requiring immediate fix:
 - Skip protocol
 - Refresh as needed
 - Communicate after the fact
-- Document in #database-emergency
+- Document in the team's chat channel
 ```
 
 ---
@@ -368,7 +368,7 @@ Result: List of 5-8 changes typically
 
 **Step 2: Pre-deployment communication** (2 min)
 ```
-Post in #database-dev:
+Post in the team's chat channel:
 "🚀 Starting daily deployment - 3:00 PM
 
 Deploying:
@@ -441,7 +441,7 @@ Verify:
 
 **Step 9: Confirm** (1 min)
 ```
-Post in #database-dev:
+Post in the team's chat channel:
 "✅ Deployment complete - 3:12 PM
 
 Changes applied:
@@ -469,7 +469,7 @@ Screenshot error
 
 **Step 2: Communicate** (1 min)
 ```
-Post in #database-dev:
+Post in the team's chat channel:
 "⚠️ Deployment failed - 3:08 PM
 
 Error: [paste error]
@@ -575,9 +575,9 @@ Review might need investigation: 30-60 minutes
 
 ### Communication Channels
 
-#### Slack Channels (Recommended Setup)
+#### Chat Channels (Recommended Setup)
 
-**#database-dev** (primary channel)
+**the team's chat channel** (primary channel)
 ```
 Purpose: Daily operations, deployments, coordination
 Who: All developers working with database
@@ -588,10 +588,10 @@ Posts:
 - "I'm working on table X" heads-up
 
 Keep: Focused on operations
-Avoid: Long technical debates (take to DM or #database-help)
+Avoid: Long technical debates (take to DM or the team's chat channel)
 ```
 
-**#database-help** (support channel)
+**the team's chat channel** (support channel)
 ```
 Purpose: Questions, troubleshooting, learning
 Who: All developers, dev leads, DB experts
@@ -602,10 +602,10 @@ Posts:
 - "Is this the right approach?"
 
 Keep: Supportive, educational
-Tag: @dev-leads for visibility
+Tag: the dev leads for visibility
 ```
 
-**#database-emergency** (incidents only)
+**the team's chat channel** (incidents only)
 ```
 Purpose: Production issues, critical bugs, outages
 Who: On-call, dev leads, management
@@ -678,7 +678,7 @@ so I have time for thorough review."
 3. Create PR with "EMERGENCY:" prefix
 4. Quick review (15 min max)
 5. Deploy
-6. Document in #database-emergency
+6. Document in the team's chat channel
 7. Full post-mortem next day
 ```
 
@@ -762,13 +762,13 @@ Examples of adjustments:
 - Walk through PR template
 
 All day: Expect many questions
-- Monitor #database-help closely
+- Monitor the team's chat channel closely
 - Respond within 30 min (not 2 hours)
 - Be patient, everyone learning
 
 3:00 PM: First batch deployment
 - Dev lead does this personally
-- Narrate steps in Slack
+- Narrate steps in chat
 - Screenshot each step
 - Over-communicate
 
@@ -791,7 +791,7 @@ All day: Still high support mode
 - Document FAQs
 
 Deployment: Dev lead or senior dev
-- Still narrate in Slack
+- Still narrate in chat
 - Invite junior devs to observe
 ```
 
@@ -826,7 +826,7 @@ Pre-Deployment:
 ☐ Build succeeded  
 ☐ All PRs have green builds
 ☐ No unexpected merge conflicts
-☐ Announcement posted in #database-dev
+☐ Announcement posted in the team's chat channel
 
 During Deployment:
 ☐ Script generated and reviewed
@@ -908,7 +908,7 @@ Example tasks:
 **Knowledge Building**:
 ```
 ✅ Read playbooks independently
-✅ Ask questions in #database-help
+✅ Ask questions in the team's chat channel
 ✅ Watch senior devs during complex tasks
 ✅ Attend office hours
 ✅ Practice on sample database
@@ -938,7 +938,7 @@ Time: 15-30 min pairing
 🟡 Troubleshoot Integration Studio connection issue
 
 Guidance from: Senior dev or dev lead
-Method: Pairing, screen share, or detailed Slack thread
+Method: Pairing, screen share, or detailed chat thread
 ```
 
 ---
@@ -1135,11 +1135,11 @@ Why: Impact beyond single feature
 
 #### Needs Consultation 🟡
 
-**Enterprise Impact**:
+**Wider Impact**:
 ```
 🟡 Team-wide standard changes
 🟡 Major architecture decisions
-🟡 Cross-team coordination (affects multiple squads)
+🟡 Cross-team coordination (affects multiple teams)
 🟡 Vendor/external system integration schemas
 
 Consult with: Staff/lead + stakeholders
@@ -2175,4 +2175,4 @@ Decision tree:
 ---
 
 **Last Updated**: [This Weekend]  
-**Maintained By**: Database Platform Team & Dev Leads
+**Maintained By**: the database maintainers & Dev Leads
