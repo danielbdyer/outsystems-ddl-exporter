@@ -15,16 +15,16 @@
 
 | Resource | Location | Notes |
 |----------|----------|-------|
-| SSDT Repository | [Azure DevOps link] | Source of truth for schema |
-| Pipeline Dashboard | [Azure DevOps link] | Deployment status |
-| #ssdt-questions | Slack | Questions and help |
-| #ssdt-playbook | Slack | Playbook feedback |
+| SSDT Repository | [git host link] | Source of truth for schema |
+| Pipeline Dashboard | [CI pipeline link] | Deployment status |
+| the team's chat channel | chat tool | Questions and help |
+| the team's feedback channel | chat tool | Playbook feedback |
 
 ## Team Contacts
 
 | Role | Name | Contact |
 |------|------|---------|
-| Playbook Owner | Danny | @danny |
+| Playbook Owner | [Name] | @playbook-owner |
 | Dev Leads | [Names] | @team-leads |
 | Principals | [Names] | @principals |
 

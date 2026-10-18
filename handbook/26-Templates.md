@@ -9,7 +9,7 @@
 Table: dbo.YourTableName
 Description: Brief description of what this table stores
 Created: YYYY-MM-DD
-Ticket: JIRA-XXXX
+Ticket: work item XXXX
 */
 CREATE TABLE [dbo].[YourTableName]
 (
@@ -51,7 +51,7 @@ GO
 ```sql
 /*
 Migration: Brief description
-Ticket: JIRA-XXXX
+Ticket: work item XXXX
 Author: Your Name
 Date: YYYY-MM-DD
 
@@ -158,7 +158,7 @@ GO
 ```sql
 /*
 Pre-Deployment Validation: Describe what you're validating
-Ticket: JIRA-XXXX
+Ticket: work item XXXX
 */
 
 PRINT 'Pre-deployment validation...'
@@ -263,7 +263,7 @@ Use after any incident for blameless post-mortem:
 - **Duration:** X hours/minutes
 - **Severity:** Critical / High / Medium / Low
 - **Environment:** Dev / Test / UAT / Prod
-- **Ticket:** JIRA-XXXX
+- **Ticket:** work item XXXX
 
 ## What Happened
 [One paragraph description of what occurred]

@@ -3,7 +3,7 @@
 ```sql
 /*
 Migration: Brief description
-Work item: AB#XXXX
+Work item: XXXX
 Author: Your Name
 Date: YYYY-MM-DD
 

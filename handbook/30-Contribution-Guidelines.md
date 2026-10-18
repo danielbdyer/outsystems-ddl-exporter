@@ -22,14 +22,14 @@ The playbook evolves. When you encounter something undocumented, something wrong
 
 1. Create a branch in the wiki repository (if git-backed) or draft in a doc
 2. Write the content following the style guide below
-3. Request review from a dev lead or Danny
+3. Request review from a dev lead or the playbook owner
 4. Merge/publish after approval
 
 ### Proposing Structural Changes
 
 For changes to the playbook's organization:
 
-1. Open a discussion in #ssdt-playbook
+1. Open a discussion in the team's feedback channel
 2. Propose the change with rationale
 3. Gather feedback
 4. Implement if consensus reached
@@ -90,7 +90,7 @@ Complex topics should layer:
 1. Note your change in the Changelog (Section 33)
 2. If you added a term, add it to the Glossary
 3. If you added a pattern, cross-reference it from Operation Reference
-4. Announce significant additions in #ssdt-playbook
+4. Announce significant additions in the team's feedback channel
 
 ---
 

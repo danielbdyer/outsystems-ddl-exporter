@@ -153,8 +153,8 @@ This playbook exists to minimize the cost and maximize the benefit.
 - Deployments are predictable and recoverable
 - Schema matches source control — no drift
 
-**For Danny:**
-- The team owns this process; Danny is not a bottleneck
+**For the playbook owner:**
+- The team owns this process; the playbook owner is not a bottleneck
 - Onboarding new team members is structured, not ad-hoc
 - Incidents are rare, and when they happen, they become playbook improvements
 - The team's SSDT capability is growing over time
@@ -165,7 +165,7 @@ This playbook exists to minimize the cost and maximize the benefit.
 
 - **OutSystems development** — Service Studio, application logic, etc.
 - **General SQL Server administration** — backups, security, performance tuning (beyond indexes)
-- **Pipeline/DevOps configuration** — Azure DevOps setup, deployment agents
+- **Pipeline/DevOps configuration** — CI pipeline setup, deployment agents
 - **Application-level data access** — ORMs, query patterns in application code
 
 Those are important, but they're not this playbook's scope.

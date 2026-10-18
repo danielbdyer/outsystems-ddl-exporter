@@ -126,7 +126,7 @@ If your change requires data work:
 
 /*
 Migration: Add MiddleName column to Customer
-Work item: AB#1234
+Work item: 1234
 Author: Your Name
 Date: 2025-01-15
 */
@@ -208,7 +208,7 @@ AB#1234"
 git push -u origin feature/add-customer-middlename
 ```
 
-Open a PR in Azure DevOps (or your git platform).
+Open a PR in the git host (or your git platform).
 
 ### 4.3 Fill Out PR Template
 
@@ -308,7 +308,7 @@ Merge to main
 ### 6.3 Post-Deployment Verification
 
 After pipeline completes:
-1. Verify pipeline succeeded (check Azure DevOps)
+1. Verify pipeline succeeded (check the CI pipeline)
 2. Spot-check the database (query to confirm change applied)
 3. If OutSystems-impacting: proceed with Integration Studio refresh
 

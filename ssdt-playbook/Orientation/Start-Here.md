@@ -123,11 +123,11 @@ If you're new, here's what to do:
 
 | Need | Where to go |
 |------|-------------|
-| Quick question | the ssdt-questions channel in Teams |
+| Quick question | the team's chat channel |
 | PR review | Tag in PR per tier guidance |
 | Escalation | See [23. Escalation Paths](#) |
 | Something's broken | [22. Troubleshooting Playbook](#), then escalate |
-| Playbook feedback | the ssdt-playbook channel in Teams or direct to Danny |
+| Playbook feedback | the team's feedback channel or direct to the playbook owner |
 
 ---
 

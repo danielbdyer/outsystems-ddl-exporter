@@ -3,7 +3,7 @@
 ```sql
 /*
 Pre-Deployment Validation: Describe what you're validating
-Work item: AB#XXXX
+Work item: XXXX
 */
 
 PRINT 'Pre-deployment validation...'

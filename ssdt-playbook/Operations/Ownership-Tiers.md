@@ -162,14 +162,15 @@ Even if dimensions suggest a lower tier, these factors push you up:
 | First time doing this operation type | +1 tier or explicit pairing |
 | Novel/unprecedented pattern | Tier 4 regardless |
 
-> **Cutover-window note (temporary, until the principal returns).** On this estate, four named
-> people review changes: three senior developers and one principal engineer. During the first
-> cutover window the principal is away. While they are away:
+> **Cutover-window note (when the principal is unavailable).** On this estate, four named
+> people review changes: three senior developers and one principal engineer. When the principal
+> is unavailable during a cutover window:
 >
-> - A change that would normally need the principal, and that can wait, waits for their return.
+> - A change that would normally need the principal, and that can wait, waits until the
+>   principal can review it.
 > - A change that cannot wait is reviewed by two of the senior developers together. Before it
 >   ships, take a backup that could restore the data and prove the restore works, and write the
->   risk down for the principal to confirm on return.
+>   risk down for the principal to confirm afterwards.
 > - Every operation is new to this estate during the cutover, so the "first time doing this
 >   operation" trigger does not push the tier up on its own. Instead it raises the bar on
 >   evidence: the change is proven on a disposable copy and reproduced by the reviewer. That
@@ -314,7 +315,7 @@ Progression isn't about doing higher-tier work faster. It's about developing jud
 
 **Final tier:** Tier 3
 
-**Why:** Must coordinate with ETL team. Need backward compatibility approach or synchronized deployment.
+**Why:** Must coordinate with the ETL maintainers. Need backward compatibility approach or synchronized deployment.
 
 ---
 

@@ -40,7 +40,7 @@ Track significant changes to the playbook so team members know what's new and ma
 **Why:**
 Team migrating to SSDT-managed External Entities needs comprehensive guidance.
 
-**Author:** Danny
+**Author:** the playbook owner
 
 ---
 

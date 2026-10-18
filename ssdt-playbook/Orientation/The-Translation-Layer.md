@@ -286,7 +286,7 @@ If Integration Studio shows changes you didn't expect, pause and investigate:
 
 1. **Verify the right environment:** Are you connected to the database you think you are?
 
-2. **Check SSDT deployment status:** Did the pipeline succeed? Check Azure DevOps (or your CI/CD tool).
+2. **Check SSDT deployment status:** Did the pipeline succeed? Check the CI pipeline (or your CI/CD tool).
 
 3. **Check the database directly:** Open SSMS, connect to the database, verify the table structure.
 
@@ -376,7 +376,7 @@ Now that you have the translation layer:
 - **For conceptual foundation:** Read [4. State-Based Modeling vs. Imperative Migrations](#)
 - **For your first change:** Read [22. The Change/Release Process](#) and use the [Before-You-Start Checklist](#)
 - **For specific operations:** Find your operation in [16. Operation Reference](#)
-- **If you're stuck:** Check [24. Troubleshooting Playbook](#) or ask in the ssdt-questions channel in Teams
+- **If you're stuck:** Check [24. Troubleshooting Playbook](#) or ask in the team's chat channel
 
 ---
 

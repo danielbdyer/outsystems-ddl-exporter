@@ -118,11 +118,11 @@ Standards, templates, and resources.
 
 | Need | Where to go |
 |------|-------------|
-| Quick question | ssdt-questions channel in Teams |
+| Quick question | the team's chat channel |
 | PR review | Tag reviewer per tier guidance |
 | Escalation | See [Escalation Paths](Process/Escalation-Paths.md) |
 | Something's broken | [Troubleshooting](Process/Troubleshooting-Playbook.md), then escalate |
-| Playbook feedback | ssdt-playbook channel in Teams or direct to Danny |
+| Playbook feedback | the team's feedback channel or direct to the playbook owner |
 
 ---
 

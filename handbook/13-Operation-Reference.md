@@ -192,7 +192,7 @@ DROP TABLE [dbo].[TableName]
 - [ ] Query confirms zero rows or data has been archived
 - [ ] `sys.dm_sql_referencing_entities` returns empty
 - [ ] Text search across codebase for table name
-- [ ] ETL/reporting team confirms no dependencies
+- [ ] ETL/reporting owners confirm no dependencies
 - [ ] Backup verified and restoration tested
 - [ ] CDC disabled on table (if enabled)
 

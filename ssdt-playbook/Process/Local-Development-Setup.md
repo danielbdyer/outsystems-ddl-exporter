@@ -12,7 +12,7 @@ Before you can work with the SSDT project, you need:
 | Visual Studio | IDE for editing SSDT projects | Visual Studio 2019/2022 |
 | SSDT workload | SQL Server tooling for Visual Studio | Visual Studio Installer → Data storage and processing |
 | Git | Version control | git-scm.com |
-| Repository access | Clone the SSDT project | Azure DevOps (request access if needed) |
+| Repository access | Clone the SSDT project | the git host (request access if needed) |
 
 ---
 

@@ -59,9 +59,9 @@ EXEC sp_executesql @sql
 
 ## UAT Strategy: Communicate Gaps
 
-In UAT, clients will see the Change History feature. Set expectations.
+In UAT, end users will see the Change History feature. Set expectations.
 
-**Client messaging template:**
+**End-user messaging template:**
 
 > "The Change History feature tracks all modifications to records. During this testing phase:
 > 
