@@ -528,3 +528,14 @@ case is updated with the receipt.
 7. Do the planter's literals satisfy the estate's real CHECK constraints often enough, or is
    `planter-needs-row` frequent?
 8. Does every probe and the planter run under ConstrainedLanguage mode as written?
+9. Does constraint validation (`WITH CHECK CHECK`) run after the post-deploy script on DacFx 162.x,
+   as observed on 170.5.96? It decides whether a post-deploy-seeded lookup satisfies a new FK.
+10. Do system-named defaults (`DF__…`) and other system-named constraints keep their names through
+    Extract → publish to the copy? If not, does the head delta against the copy differ from the
+    delta against the environment (F5)?
+11. Does Extract, as distinct from Script, send `xp_instance_regread` under a hardened read-only
+    login?
+12. Which language and date format does the Octopus deployment login run under? It decides
+    whether `platform:dateformat` stays a residual.
+13. Does `SET SYSTEM_VERSIONING = ON` run its consistency check on LocalDB as on SQL Server 2022,
+    and which message does a failed check raise?
