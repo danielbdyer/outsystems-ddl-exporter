@@ -27701,7 +27701,7 @@ constructable and reaches emission.
 **Witness.** `DeployableReferenceTests` (pure, 3 new cases): two distinct kinds at `(dbo, Customer)`
 in different modules → 2 `Error`s (`emit.ssdt.table.nameCollision`, schema=dbo, table=Customer); a
 same-module duplicate → 2 `Error`s (the silent-last-wins case is now named); a distinct-table
-catalog (`corporateShape`) → empty. The emitter / golden pure suites (`SsdtDdlEmitterTests`,
+catalog (`auditReferenceShape`) → empty. The emitter / golden pure suites (`SsdtDdlEmitterTests`,
 `GoldenEmissionTests`, 98 cases) stay green.
 
 **Golden note.** No golden re-record: the golden corpus has no table-name collision, so the new pass
@@ -27967,8 +27967,8 @@ four LOGICAL-ONLY FKs withheld — `FK_Engagement_Customer_CustomerId`,
 — each dropped from BOTH its per-table file and `stream.sql` (bundle/stream now consistent), with the
 adjacent column/DEFAULT comma reflow; every SOURCE-BACKED FK (Engagement.CreatedBy/UpdatedBy/Parent,
 Ledger.Manager, ChangeLog.User) is unchanged. `DeployableReferenceTests` gains two emission-level
-witnesses: a logical-only corporate shape under the gated intervention + no profile emits ZERO FKs;
-a source-backed corporate shape emits both (the carve-out). 176 pure cases green across
+witnesses: a logical-only audit-reference shape under the gated intervention + no profile emits ZERO FKs;
+a source-backed audit-reference shape emits both (the carve-out). 176 pure cases green across
 `GoldenEmission` / `DeployableReference` / `ForeignKey*` / `DecisionOverlay` / `DecisionEmission` /
 `Composition` / `TighteningBinding`.
 

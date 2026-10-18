@@ -200,7 +200,7 @@ let private userKindKey = kkey "User"
 let private customerKindKey = kkey "Customer"
 let private engagementKey = kkey "Engagement"
 
-/// Pure FK target — the corporate User shape. The inverse-exclusion
+/// Pure FK target — the platform User shape. The inverse-exclusion
 /// contract is visible here: NO golden file may carry an FK owned by
 /// this kind (negative invariant 3).
 let private user : Kind =

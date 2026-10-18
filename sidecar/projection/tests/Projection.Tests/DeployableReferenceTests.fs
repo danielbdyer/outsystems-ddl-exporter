@@ -11,10 +11,10 @@ open Projection.Tests.Fixtures
 // inverse references are logical-only edges. They stay in the catalog
 // for navigation/ordering, but they never reach a constraint-modeling
 // surface: not the FK tightening pass, not `createTableStatement`'s FK
-// list, not `untrustedFkAlters`, not the drop diagnostics. The corporate
-// shape that exposed the defect — two forward references to the same
-// target (CreatedBy/UpdatedBy → User) — would otherwise script two
-// identically-named FKs ON THE TARGET'S PK COLUMN.
+// list, not `untrustedFkAlters`, not the drop diagnostics. The
+// audit-reference shape that exposed the defect — two forward references
+// to the same target (CreatedBy/UpdatedBy → User) — would otherwise
+// script two identically-named FKs ON THE TARGET'S PK COLUMN.
 //
 // These are post-CHAIN witnesses (the prior canaries emitted from
 // hand-built pre-chain catalogs, so the pass/emitter interaction was
@@ -42,13 +42,13 @@ let private mkAttr (k: SsKey) (col: string) (isPk: bool) : Attribute =
 let private userKey = kkey "User"
 let private taskKey = kkey "Task"
 
-/// The corporate shape: Task carries CreatedBy + UpdatedBy, both
+/// The audit-reference shape: Task carries CreatedBy + UpdatedBy, both
 /// referencing User. `constraintState` sets the forward references'
 /// `(HasDbConstraint, IsConstraintTrusted)` pair — inverses inherit it,
 /// which is exactly the hazard (an inverse indistinguishable from a
 /// storage-backed edge by flags alone; the derivation class is the
 /// discriminator).
-let private corporateShape (hasDb: bool) (trusted: bool) : Catalog =
+let private auditReferenceShape (hasDb: bool) (trusted: bool) : Catalog =
     let user =
         Kind.create userKey (nm "User") (mkTableId "dbo" "OSUSR_DR_USER")
             [ mkAttr (akey "User.Id") "Id" true ]
@@ -104,7 +104,7 @@ let private fkPolicy (enableCreation: bool) : Policy =
 
 [<Fact>]
 let ``fixture guard: closure mints two inverses on User, inheriting HasDbConstraint`` () =
-    let catalog = closed (corporateShape true true)
+    let catalog = closed (auditReferenceShape true true)
     let user =
         Catalog.allKinds catalog
         |> List.find (fun k -> k.SsKey = userKey)
@@ -119,7 +119,7 @@ let ``fixture guard: closure mints two inverses on User, inheriting HasDbConstra
 
 [<Fact>]
 let ``post-closure emission carries exactly the forward FKs — no FK on the target's PK, no duplicate names`` () =
-    let catalog = closed (corporateShape true true)
+    let catalog = closed (auditReferenceShape true true)
     let fks = emittedFks catalog
     // Exactly the two forward references, both owned by Task.
     Assert.Equal(2, List.length fks)
@@ -136,9 +136,9 @@ let ``post-closure emission carries exactly the forward FKs — no FK on the tar
 
 [<Fact>]
 let ``full canonical chain preserves the contract: post-chain emission carries no inverse-sourced FKs`` () =
-    // The corporate default (no FK intervention registered) — the exact
+    // The default policy (no FK intervention registered) — the exact
     // configuration that emitted inverse FKs before slice 1.
-    let catalog = fullChain Policy.empty Profile.empty (corporateShape true true)
+    let catalog = fullChain Policy.empty Profile.empty (auditReferenceShape true true)
     let fks = emittedFks catalog
     Assert.Equal(2, List.length fks)
     let names = fks |> List.map (fun (_, fk) -> fk.Name)
@@ -156,7 +156,7 @@ let ``untrusted forward FKs emit one ALTER pair each; inherited-untrusted invers
     // Both forward refs source-backed + untrusted; inverses inherit the
     // pair. Pre-fix: four phantom ALTERs against never-created inverse
     // constraint names.
-    let catalog = closed (corporateShape true false)
+    let catalog = closed (auditReferenceShape true false)
     let alters =
         SsdtDdlEmitter.statements catalog
         |> Seq.choose (function
@@ -187,7 +187,7 @@ let ``untrusted forward FKs emit one ALTER pair each; inherited-untrusted invers
 let ``F8 conservation: emitted constraints number exactly the deployable references; no ALTER names a never-created constraint`` () =
     // Untrusted forward refs so the stream carries BOTH the CreateTable FK
     // list AND the disable/no-check ALTER pair — two of the five sites at once.
-    let catalog = closed (corporateShape true false)
+    let catalog = closed (auditReferenceShape true false)
     let stmts = SsdtDdlEmitter.statements catalog |> List.ofSeq
     // Constraints CREATED (the CreateTable inline FK list).
     let createdFkNames =
@@ -222,7 +222,7 @@ let ``F8 conservation: emitted constraints number exactly the deployable referen
 
 [<Fact>]
 let ``FK pass v3 mints decisions only for deployable references — no decision, no diagnostic keyed by an inverse`` () =
-    let catalog = closed (corporateShape false true)
+    let catalog = closed (auditReferenceShape false true)
     let result = (ForeignKeyPass.registered (fkPolicy true) Profile.empty).Run catalog
     let decisions = (ForeignKeyPass.decisionsOf result).Decisions
     // Two forward references; two decisions; zero derived keys.
@@ -243,7 +243,7 @@ let ``FK pass v3 mints decisions only for deployable references — no decision,
 
 [<Fact>]
 let ``source-backed references decide EnforceConstraint(DatabaseConstraintPresent) even under EnableCreation=false`` () =
-    let catalog = corporateShape true true
+    let catalog = auditReferenceShape true true
     let result = (ForeignKeyPass.registered (fkPolicy false) Profile.empty).Run catalog
     let decisions = (ForeignKeyPass.decisionsOf result).Decisions
     Assert.Equal(2, List.length decisions)
@@ -283,15 +283,15 @@ let private ejectFkPolicy : Policy =
 
 [<Fact>]
 let ``WP-1c(ii): logical-only references are WITHHELD under the gated intervention with no profile evidence`` () =
-    // corporateShape false _ ⇒ HasDbConstraint=false (logical-only). No profile ⇒
+    // auditReferenceShape false _ ⇒ HasDbConstraint=false (logical-only). No profile ⇒
     // EvidenceMissing ⇒ withheld. No FK reaches the emitted DDL.
-    Assert.Empty (gatedFks ejectFkPolicy Profile.empty (corporateShape false true))
+    Assert.Empty (gatedFks ejectFkPolicy Profile.empty (auditReferenceShape false true))
 
 [<Fact>]
 let ``WP-1c(ii): source-backed references re-emit under the gated intervention (DatabaseConstraintPresent carve-out)`` () =
-    // corporateShape true _ ⇒ HasDbConstraint=true (source-backed). The carve-out
+    // auditReferenceShape true _ ⇒ HasDbConstraint=true (source-backed). The carve-out
     // enforces BEFORE and REGARDLESS of the evidence gate: both forward FKs emit.
-    let fks = gatedFks ejectFkPolicy Profile.empty (corporateShape true true)
+    let fks = gatedFks ejectFkPolicy Profile.empty (auditReferenceShape true true)
     Assert.Equal(2, List.length fks)
 
 // WP1 — the FK-name collision tripwire (named, never a silent dedupe).
@@ -330,8 +330,8 @@ let ``FK-name collision tripwire: schema-scoped name overlap surfaces one Error 
         Assert.Equal(Some "FK_B_A_C_X", Map.tryFind "constraintName" d.Metadata))
 
 [<Fact>]
-let ``FK-name collision tripwire is silent on the post-closure corporate shape (the invariant the exclusion restores)`` () =
-    let catalog = closed (corporateShape true true)
+let ``FK-name collision tripwire is silent on the post-closure audit-reference shape (the invariant the exclusion restores)`` () =
+    let catalog = closed (auditReferenceShape true true)
     Assert.Empty (SsdtDdlEmitter.foreignKeyNameCollisionDiagnostics DecisionOverlay.empty catalog)
 
 // ---------------------------------------------------------------------
@@ -383,7 +383,7 @@ let ``Table-name collision tripwire: a same-module duplicate (silent last-wins t
 
 [<Fact>]
 let ``Table-name collision tripwire is silent when every kind has a distinct (schema, table)`` () =
-    Assert.Empty (SsdtDdlEmitter.tableNameCollisionDiagnostics (corporateShape true true))
+    Assert.Empty (SsdtDdlEmitter.tableNameCollisionDiagnostics (auditReferenceShape true true))
 
 // ---------------------------------------------------------------------
 // Slice 3b (DECISIONS 2026-06-13) — the identifier-length budget for
