@@ -222,8 +222,9 @@ the repository. No environment value ever reaches the copy.
   the type, the width and the class allow it.
 - **Where the marker cannot fit,** the value comes from the planter's fixed, documented per-class
   table: an empty string, a day-first date such as `13/04/2001`, a numeric overflow, a `char(1)`.
-- **Repository-defined values** are used where a question requires equality with one: a seed's
-  code, a default, a key from reference data.
+- **Repository-defined values** are any literal the repository's model defines: a seed's code, a
+  default, a key from reference data, a literal inside a CHECK predicate. They are used where a
+  question requires equality with one, or where a constraint forces one.
 *Property:* a canary value present in the stand-in environment is absent from the copy.
 
 **P6 · Bounded discovery.** The `shape` verb returns structure only: signatures, lengths, counts,
@@ -390,8 +391,8 @@ commit, or which name a server other than the configured environment's.
 edit fails as stale.
 
 **E4 · Closed config.** `facsimile.json` refuses an unknown key by its JSON path, and accepts a
-secret only as an `env:` reference. All problems are reported in one pass. (Twin laws D9 and the
-closed schema, kept.)
+secret only as an `env:` or `file:` reference. All problems are reported in one pass. (Twin laws D9
+and the closed schema, kept, with both of the Twin's reference forms.)
 *Property:* unknown keys at every nesting level, inline secrets, and multiple simultaneous errors
 are each refused, all named.
 

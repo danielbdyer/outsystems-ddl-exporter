@@ -317,7 +317,8 @@ writes its JSON:
 | `blocked overflow` | 8115, 220, 248 | 3 |
 | `blocked conversion` | 245, 241, 8114, 8169 | 3 |
 | `blocked keylength` | 1946 | 3 |
-| `blocked cdc` | 4928, 4711 (only on a server that has CDC) | 3 |
+| `blocked cdc` | 4928 raised by a generated (main-phase) statement, only on a server that has CDC. A 4711 from a TRUNCATE in an authored script is `blocked authored`, with the `cdc` flag | 3 |
+| `blocked temporal` | 13575, or the system-versioning consistency check's failure (its number is ARCH §11 question 13), raised by a generated `Temporal` statement | 3 |
 | `blocked collation` | 468, when the copy's server collation equals the environment's (otherwise `stop platform`) | 3 |
 | `blocked authored` | **any** error raised inside a pre- or post-deploy batch: the seed's 207, 544, 8672, 2627; a remedy's own `RAISERROR`/`THROW`; a script's 208, 2714, 3726, 13575 | 3 |
 | `refused-at-build` | SQL71516 (a referenced key dropped) | 3 |
@@ -342,7 +343,7 @@ acts):
 | `computed-witness` | 5 | the agent | "Write one row into witness.sql whose <column> expression fails, then re-run." |
 | `planter-needs-row` | 5 | the agent | "Cannot make a valid row for <T> (<reason>). Write one valid INSERT for <T> into witness.sql (or up.sql) under `-- plants: <T>`." |
 | `witness-failed` | 5 | the agent | "witness.sql line <n> failed with Msg <m>. Fix that row." |
-| `witness-not-synthetic` | 5 | the agent | "witness.sql line <n> carries a literal not marked synthetic. Use a `w`-prefixed value or a repository-defined value." |
+| `witness-not-synthetic` | 5 | the agent | "witness.sql line <n> carries a literal that is neither marked synthetic nor defined in the repository's model (a seed value, a default, a CHECK predicate's literal). Use a `w`-prefixed value or a repository-defined one." |
 | `acceptance` | 5 | the agent | "The copy answers <question> <yes\|no>, but <env> answered <no\|yes>. Fix witness.sql." |
 | `identity` | 5 | the agent | "witness.sql changed the schema (<object>). Witness files are DML only." |
 | `in-flight` | 5 | the developer | "<T> is in an open two-release window (<in-flight ledger>). Hold this change, or make it the window's next release." |

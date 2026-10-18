@@ -1,7 +1,7 @@
 # 10 · Questions — `Get-FxQuestions`
 
-*Delta text in, questions out (ARCH §3–§4): every vocabulary row, every DacFx statement shape seen in a real delta, the closed-world stop (F4) and the authored detection. Input sub-fields: `delta` (literal DacFx text, blank lines dropped), `base` (column facts the delta cannot carry, read offline from schema.<env>.dacpac), `scripts` (an authored file at head and at the base commit).*
-*Questions are in canonical order (§4 row order, then coordinate; `dbo.` dropped); `classes`, `measures Rows(T)` (counts for the scale flag) and `discharged` are asserted only where a case states them. "Scratch run" = a shape seen once on 2026-10-18 (sqlpackage 170.5.96, SQL Server 2022, the proving ground): not a receipt.*
+*Delta text in, questions out (ARCH §3–§4): every vocabulary row, every DacFx statement shape seen in a real delta, the three statement classes and the closed-world stop (F4), the coordinate rules (S3) and the authored detection. Input sub-fields: `delta` (literal DacFx text, blank lines dropped), `base` (the environment's column catalog, which ARCH §3 hands Get-FxQuestions: parsed offline from schema.<env>.dacpac's model.xml), `scripts` (an authored file at head and at the merge-base).*
+*Questions are in canonical order (§4 row order, then coordinate; `dbo.` dropped); `classes`, `measures Rows(T)` (counts for the scale flag; `for Scan(T)` marks a data-insensitive statement, which asks nothing) and `discharged` (answered from the delta, ARCH §4 Coordinates rule 1) are asserted only where a case states them. "Scratch run" = a shape seen once on 2026-10-18 (sqlpackage 170.5.96, SQL Server 2022, the proving ground): not a receipt.*
 
 ---
 
@@ -322,8 +322,8 @@ input:    delta      IF EXISTS (select top 1 1 from [dbo].[Customer])
 expect:   questions  HasRows(Customer) · NotNull(Customer.Email) · measures Rows(Customer)
 laws:     F4 M1
 source:   receipt · F7 · SamplePr "make OrderLine.Note mandatory: production publish blocks a populated table, applies when empty"
-note:     DacFx restates the whole column, so whether nullability or type changed is read from `base` (the extracted
-          schema, offline). ARCH §3 gives Get-FxQuestions only the delta (reported).
+note:     DacFx restates the whole column, so whether nullability or type changed is read from `base`, the environment's
+          column catalog that ARCH §3 hands Get-FxQuestions (parsed offline from schema.<env>.dacpac's model.xml).
 ```
 
 ### QST-17 · NOT NULL restated on a column already NOT NULL asks no NotNull; a narrowing asks Fits
@@ -408,7 +408,7 @@ input:    delta      IF EXISTS (select top 1 1 from [dbo].[Order])
           base       Order.Total decimal(18,2) NOT NULL
 expect:   questions  HasRows(Order) · Fits(Order.Total→int) classes {roundtrip, overflow}
 laws:     F4 M1
-source:   receipt · F12 retype-explicit (refused with SQL72015 + Msg 50000; 2 of 4 rows lose their cents)
+source:   receipt · F12 retype-explicit (refused with SQL72015 + Msg 50000; every value converts, 2 rows lose their cents)
 ```
 
 ### QST-23 · a string → int: nonconvertible and empty
@@ -726,8 +726,8 @@ input:    delta      ALTER TABLE [dbo].[OrderLine]
 expect:   questions  Unique(OrderLine,(OrderId,LineNumber)) classes {exact} · measures Rows(OrderLine)
 laws:     F4
 source:   expected · skills/op/define-pk; SamplePr "define-pk: adding a primary key over unique non-NULL keys builds the clustered index clean" (clean leg)
-note:     A key column that is nullable in base is a NotNull question too (Msg 8111, CLS-40); whether DacFx writes an
-          ALTER COLUMN … NOT NULL first is open.
+note:     A key column that is nullable in base fails Msg 8111 whatever the data (a data-independent `blocked null`,
+          CLS-40), so it asks nothing more; whether DacFx writes an ALTER COLUMN … NOT NULL first is open.
 ```
 
 ### QST-43 · INCLUDE columns and sort direction are not part of the key
@@ -744,7 +744,7 @@ laws:     F4 D1
 source:   expected · ARCH §4
 ```
 
-### QST-44 · a non-unique index asks nothing, and is measured
+### QST-44 · a non-unique index asks nothing, and is measured as a Scan
 ```case
 kind:     pure
 action:   Get-FxQuestions
@@ -754,14 +754,14 @@ input:    delta      PRINT N'Creating Index [dbo].[Order].[IX_Order_StatusId]...
                          ON [dbo].[Order]([StatusId] ASC);
                      GO
           base       Order.StatusId int NOT NULL
-expect:   questions  none · measures Rows(Order)
+expect:   questions  none · measures Rows(Order) for Scan(Order)
 laws:     F4
 source:   receipt · SamplePr "add-index: a non-unique index builds clean over a populated table"
-note:     The build reads every row but no value under the key limit can refuse it, so it is a recognized no-question
-          shape, not an unknown. ARCH §7's T0 ("no row-reading statements") does not fit it (reported).
+note:     The build reads every row, but no value under the key limit can refuse it: ARCH §4's `Scan` row, a
+          data-insensitive statement. It asks no question and keeps the tier at T0; its Rows feed the scale flag.
 ```
 
-### QST-45 · a unique index on a table created in this delta is discharged
+### QST-45 · a unique index on a table created in this delta is answered from the delta
 ```case
 kind:     pure
 action:   Get-FxQuestions
@@ -777,10 +777,10 @@ input:    delta      CREATE TABLE [dbo].[CustomerPreference] (
                      GO
 expect:   questions  none · discharged {Unique(CustomerPreference,(CustomerId,PrefKey)): table created in this delta}
 laws:     F4 S3
-source:   expected · a new table holds no row in any environment, and asking would name an object the environment lacks (S3)
+source:   expected · ARCH §4 Coordinates rule 1 (a new table is empty); asking would name an object the environment lacks (S3)
 ```
 
-### QST-46 · a unique index over a column added in this delta becomes a row-count question
+### QST-46 · a unique index over a column added in this delta is answered from the delta
 ```case
 kind:     pure
 action:   Get-FxQuestions
@@ -790,11 +790,12 @@ input:    delta      ALTER TABLE [dbo].[Customer]
                      CREATE UNIQUE NONCLUSTERED INDEX [UX_Customer_ExternalRef]
                          ON [dbo].[Customer]([ExternalRef] ASC);
                      GO
-expect:   questions  Unique(Customer,(ExternalRef)) classes {nulls}, answered by Rows(Customer) ≥ 2
+expect:   questions  Unique(Customer,(ExternalRef)) classes {nulls}, answered from the delta by Rows(Customer) ≥ 2
+                     · measures Rows(Customer)
 laws:     F4 S3
-source:   verify · this rewrite is the catalog's proposal: ARCH §4 has no row for it (reported)
+source:   expected · ARCH §4 Coordinates rule 1 (a new column holds its default, or NULL, in every existing row)
 note:     Every existing row holds NULL in the new column, so two rows are two NULLs and the build fails Msg 1505. The
-          environment has no ExternalRef to probe (S3), so the count is Rows(T), an answer form the grammar already has.
+          environment has no ExternalRef to probe (S3), so the answer is Rows(T), a count the grammar already has.
 ```
 
 ## KeyLength
@@ -1001,10 +1002,11 @@ input:    delta      PRINT N'Creating Table [dbo].[CustomerPreference]...';
 expect:   questions  none · discharged {Orphan(CustomerPreference.(CustomerId)→Customer): table created in this delta}
 laws:     F4 S3
 source:   expected · SamplePr "create-entity: a new table with an identity PK and an FK to Customer applies clean"; the NOCHECK + CHECK CHECK on the new table is quoted in sample-prs/create-entity.md
-note:     A changed post-deploy seed that fills the new table is asked as Authored (QST-80), not here.
+note:     A changed post-deploy seed that fills the new table is asked as SeedDrift or Authored (QST-80, QST-59), not
+          here.
 ```
 
-### QST-59 · an FK to a parent created in this delta and filled by the post-deploy seed
+### QST-59 · an FK to a parent created in this delta and filled by the post-deploy seed becomes Authored
 ```case
 kind:     pure
 action:   Get-FxQuestions
@@ -1025,13 +1027,14 @@ input:    delta      CREATE TABLE [dbo].[OrderType] (
                      ALTER TABLE [dbo].[Order] WITH CHECK CHECK CONSTRAINT [FK_Order_OrderType];
                      GO
           base       Order.OrderTypeId int NULL
-          scripts    Data/Seed.sql at head holds the MERGE above; at base it does not
-expect:   questions  Orphan(Order.(OrderTypeId)→OrderType) needs a declared witness (the parent's rows come from the seed)
-                     · Authored(post:Data/Seed.sql:1, {OrderType.Id, OrderType.Code})
+          scripts    Data/Seed.sql at head holds the MERGE above; at the merge-base it does not
+expect:   questions  Authored(post:Data/Seed.sql:1, {Order.OrderTypeId, OrderType.Id, OrderType.Code}), standing for
+                     Orphan(Order.(OrderTypeId)→OrderType) · measures Rows(Order)
 laws:     F4 S3
-source:   verify · the order: in a 170.5.96 Script the post-deploy text precedes the "Checking existing data" section (scratch run), so the seed fills the parent before validation reads the child
-note:     The environment has no OrderType to probe (S3), and which child values pass depends on authored rows: the
-          question cannot be answered by a count. ARCH §4 has no row for it (reported).
+source:   verify · ARCH §4 Coordinates rule 1 rests on the order observed 2026-10-18 on sqlpackage 170.5.96 (the
+          post-deploy text precedes "Checking existing data", so a seeded lookup counts); INV-H6-01 pins it per version
+note:     The environment has no OrderType to probe (S3), and which child values pass depends on authored rows, so the
+          Orphan question becomes Authored: the agent declares which OrderTypeId shapes the seed covers.
 ```
 
 ### QST-60 · a CHECK added WITH NOCHECK and validated asks CheckFalse with its predicate
@@ -1089,11 +1092,12 @@ input:    delta      ALTER TABLE [dbo].[Product]
                      ALTER TABLE [dbo].[Product] WITH CHECK CHECK CONSTRAINT [CK_Product_Qty];
                      ALTER TABLE [dbo].[Product] WITH CHECK CHECK CONSTRAINT [CK_Product_Rank];
                      GO
-expect:   questions  HasRows(Product) · discharged {CheckFalse(Product,CK_Product_Qty): every existing Qty is NULL, the predicate is UNKNOWN and passes}
+expect:   questions  HasRows(Product) · discharged {CheckFalse(Product,CK_Product_Qty): every existing Qty is NULL, the
+                     predicate is UNKNOWN and passes} · measures Rows(Product)
 laws:     F4 S3
-source:   verify · this rewrite is the catalog's proposal: ARCH §4 has no row for it (reported)
-note:     Every existing row receives Rank = 0 and 0 > 0 is FALSE, so CK_Product_Rank fails exactly when Product holds a
-          row. The environment has no Rank column to probe (S3).
+source:   expected · ARCH §4 Coordinates rule 1 (a new column holds its default, or NULL, in every existing row)
+note:     Every existing row receives Rank = 0, so CK_Product_Rank is decided by the default alone: a presence row on the
+          copy meets it exactly as every environment row would. The environment has no Rank column to probe (S3).
 ```
 
 ## Rebuild and Computed
@@ -1233,7 +1237,7 @@ laws:     F4
 source:   verify · whether DacFx rebuilds (rather than ALTERs) a column narrowed together with a reorder, whether it CASTs in the SELECT, and whether a guard then precedes it
 ```
 
-### QST-66 · ADD … AS (…) PERSISTED on an existing table asks Computed
+### QST-66 · ADD … AS (…) PERSISTED on an existing table asks Computed, unmeasured
 ```case
 kind:     pure
 action:   Get-FxQuestions
@@ -1243,11 +1247,12 @@ input:    delta      PRINT N'Altering Table [dbo].[T]...';
                          ADD [RefNum] AS (CONVERT (INT, [Ref])) PERSISTED;
                      GO
           base       T.Ref varchar(20) NULL
-expect:   questions  Computed(T.RefNum) expression (CONVERT (INT, [Ref])) · measures Rows(T)
+expect:   questions  Computed(T.RefNum) expression (CONVERT (INT, [Ref])) unmeasured · measures Rows(T)
 laws:     F4 M1
 source:   receipt · red-team #3 (PERSISTED computed column ✓: data-reading DDL with no guard; the generated delta)
 note:     No guard precedes it: computing over every existing row is the read. A non-numeric Ref fails it, and `''`
-          computes to 0 silently (red-team t4/t5), so a presence witness of `''` would hide the failure (PLT cases).
+          computes to 0 silently (red-team t4/t5). The environment is never asked: the witness is agent-declared, and
+          the record carries declared-not-measured (ARCH §4).
 ```
 
 ### QST-67 · a non-persisted computed column asks nothing
@@ -1308,21 +1313,22 @@ input:    delta      CREATE SCHEMA [archive]
                      GO
 expect:   questions  none
 laws:     F4
-source:   expected · SamplePr "add-optional: a new nullable column applies clean on a populated table" and SamplePr "create-entity: …applies clean" back two of these shapes; the rest are recognized no-question shapes
+source:   expected · SamplePr "add-optional: a new nullable column applies clean on a populated table" and SamplePr "create-entity: a new table with an identity PK and an FK to Customer applies clean" back two of these shapes; the rest are recognized non-reading shapes
 note:     A view or procedure body is never executed at deploy, so its SELECT reads nothing.
 ```
 
-### QST-70 · ADD … NOT NULL with a DEFAULT asks nothing: it backfills, it does not validate
+### QST-70 · ADD … NOT NULL with a DEFAULT asks nothing: a Scan that backfills
 ```case
 kind:     pure
 action:   Get-FxQuestions
 input:    delta      ALTER TABLE [dbo].[Customer] ADD [Segment] NVARCHAR (20) CONSTRAINT [DF_Customer_Segment] DEFAULT (N'Standard') NOT NULL;
                      GO
-expect:   questions  none
+expect:   questions  none · measures Rows(Customer) for Scan(Customer)
 laws:     F4
 source:   receipt · F14 (a defaulted NOT NULL column on a populated table published clean; the default stamped every existing row) · SamplePr "add-default: a NOT NULL column with a default applies clean and backfills existing rows"
-note:     Decided: every existing row receives the constant and no existing value is read or can refuse it. The write is a
-          volume cost, not a data question (TIER-22). A CHECK on the new column is QST-62.
+note:     Every existing row receives the constant and no existing value is read or can refuse it: ARCH §4's `Scan` row
+          (the backfill). The write is a volume cost, so Rows(Customer) feeds the scale flag (TIER-22). A CHECK on the
+          new column is QST-62.
 ```
 
 ### QST-71 · a refactorlog rename and its __RefactorLog bookkeeping ask nothing
@@ -1472,11 +1478,11 @@ input:    delta      PRINT N'GO';
                      GO
                      ALTER TABLE [dbo].[Customer]
                          ADD [GoLiveDate] DATE NULL;
-                     go  
+                     go
                      CREATE NONCLUSTERED INDEX [IX_Customer_GoLiveDate]
                          ON [dbo].[Customer]([GoLiveDate] ASC);
                      GO
-expect:   questions  none · measures Rows(Customer)
+expect:   questions  none · measures Rows(Customer) for Scan(Customer)
 laws:     F4 D1
 source:   expected · sqlcmd's separator rule (GO alone on a line, any case, trailing spaces allowed); GO inside a string or an identifier separates nothing
 ```
@@ -1502,13 +1508,13 @@ input:    delta      GO
                      ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (256) NOT NULL;
                      GO
           scripts    Script.PreDeployment.sql at head: lines 1–3 the comment, line 4 the UPDATE, then GO and the PRINT;
-                     at base: the comment, GO and the PRINT
+                     at the merge-base: the comment, GO and the PRINT
           base       Customer.Email nvarchar(256) NULL
 expect:   questions  HasRows(Customer) · NotNull(Customer.Email) · Authored(pre:Script.PreDeployment.sql:4, {Customer.Email})
 laws:     F4 H5
-source:   verify · sqlpackage embeds the pre-deploy text verbatim after USE [$(DatabaseName)], with no marker (scratch run), so the region is found by matching the head file's text; "changed against the base" is read as against the base commit's file (ARCH §4 leaves it open; reported)
+source:   verify · sqlpackage embeds the pre-deploy text verbatim after USE [$(DatabaseName)], with no marker (scratch run), so the region is found by matching the head file's text; "changed" is against the merge-base's file (ARCH §4 Authored row)
 note:     The columns are the identifiers in the statement that resolve against the head schema (CLM-safe matching,
-          ARCH §11.8). Only the statement that differs from the base file asks.
+          ARCH §11.8). Only the statement absent from the merge-base file asks.
 ```
 
 ### QST-79 · an unchanged post-deploy seed asks nothing, though its MERGE reads the table
@@ -1532,15 +1538,15 @@ input:    delta      SET NOCOUNT ON;
                      WHEN NOT MATCHED BY TARGET THEN
                          INSERT (Id, Code, IsActive) VALUES (source.Id, source.Code, source.IsActive);
                      GO
-          scripts    Data/Seed.sql identical at head and at base (included by Script.PostDeployment.sql's `:r .\Data\Seed.sql`)
+          scripts    Data/Seed.sql identical at head and at the merge-base (included by Script.PostDeployment.sql's `:r .\Data\Seed.sql`)
 expect:   questions  none
 laws:     F4 H2
-source:   expected · ARCH §4 (Authored only when changed against the base); the MERGE text is the proving ground's seed as the Script embeds it (scratch run)
+source:   expected · ARCH §4 (Authored and SeedDrift only for a statement not in the merge-base); the MERGE text is the proving ground's seed as the Script embeds it (scratch run)
 note:     An unchanged statement has already run in every environment. The copy still runs it in the publish, so a
-          failure it meets after a schema change is observed (Msg 544, CLS-27).
+          failure it meets after a schema change is observed (Msg 544: blocked authored, CLS-27).
 ```
 
-### QST-80 · a changed seed asks Authored
+### QST-80 · a changed MERGE seed asks SeedDrift
 ```case
 kind:     pure
 action:   Get-FxQuestions
@@ -1555,10 +1561,12 @@ input:    delta      MERGE dbo.Status AS target
                      WHEN NOT MATCHED BY TARGET THEN
                          INSERT (Id, Code, IsActive) VALUES (source.Id, source.Code, source.IsActive);
                      GO
-          scripts    Data/Seed.sql at head holds the (4, N'Refunded', 1) row; at base it does not
-expect:   questions  Authored(post:Data/Seed.sql:1, {Status.Id, Status.Code, Status.IsActive})
+          scripts    Data/Seed.sql at head holds the (4, N'Refunded', 1) row; at the merge-base it does not
+expect:   questions  SeedDrift(Status) key Id, code Code, from post:Data/Seed.sql:1 · measures Rows(Status)
 laws:     F4
-source:   verify · a `:r` include is expanded in the Script (scratch run), so the changed file is the included one; seed ops always look (TWIN_SUCCESSION §6b: Id/Code per environment, red-team #15)
+source:   verify · a `:r` include is expanded in the Script (scratch run), so the changed file is the included one; the kind is ARCH §4's SeedDrift row (an Authored subset); seed ops always look (TWIN_SUCCESSION §6b: Id/Code per environment, red-team #15)
+note:     The count sent to the environment carries the seed's own VALUES (repository values) and returns one integer:
+          the rows whose (Id, Code) pair disagrees with them. The tier is T3 (TIER-04).
 ```
 
 ### QST-81 · a counterfeit guard in a changed pre-deploy is Authored, never HasRows
@@ -1690,16 +1698,20 @@ laws:     F4
 source:   verify · whether DacFx writes this shape for an index option change; if it does, it enters as a no-question row with its case (E1)
 ```
 
-### QST-89 · turning on SYSTEM_VERSIONING over a populated table stops
+### QST-89 · turning SYSTEM_VERSIONING on over a history table that holds rows asks Temporal
 ```case
 kind:     pure
 action:   Get-FxQuestions
 input:    delta      ALTER TABLE [dbo].[Customer]
                          SET (SYSTEM_VERSIONING = ON (HISTORY_TABLE=[dbo].[CustomerHistory], DATA_CONSISTENCY_CHECK=ON));
                      GO
-expect:   outcome    stop unknown-statement · "Delta line 1 reads rows, but no vocabulary row matches it" · exit 9
+          base       Customer PERIOD FOR SYSTEM_TIME (ValidFrom, ValidTo), versioning off · CustomerHistory a table in
+                     the catalog
+expect:   questions  Temporal(Customer) history CustomerHistory · measures Rows(Customer), Rows(CustomerHistory)
 laws:     F4
-source:   verify · the exact spelling DacFx writes. SamplePr "temporal-convert: …existing rows preserved" passed on the Twin, so temporal-convert needs its own row before the facsimile can prove it (reported)
+source:   verify · the exact spelling DacFx writes; the kind is ARCH §4's Temporal row. The engine side passed on the Twin: SamplePr "temporal-convert: turning the existing populated Customer system-versioned — the true outcome under the production gate, existing rows preserved"
+note:     The count is the history rows whose period end is not after its start, or that overlap. A history table this
+          delta creates is empty (coordinate rule 1), and the question is then discharged.
 ```
 
 ### QST-90 · a smart-default backfill (GenerateSmartDefaults in the effective options) stops
@@ -1752,8 +1764,8 @@ source:   expected · sp_refreshsqlmodule is a receipt shape (QST-02); a procedu
 ```case
 kind:     pure
 action:   Get-FxQuestions over every cases/fixtures/*/delta.*.sql the corpus run wrote, and over the red-team deltas (delta1, delta3, delta_narrow, delta_ico_False, delta_ico_True)
-expect:   questions  every batch is classified as exactly one of: a vocabulary row, a recognized no-question shape, an
-                     authored region, or the unknown stop with its line; no batch is unclassified
+expect:   questions  every batch is classified as exactly one of: data-sensitive (one vocabulary row), data-insensitive
+                     (Scan), non-reading, an authored region, or the unknown stop with its line; no batch is unclassified
 laws:     F4 E1
 source:   expected · INVARIANTS F4 property
 ```
@@ -1774,8 +1786,8 @@ source:   expected · INVARIANTS F4 ("a synthetic unknown shape always stops")
 kind:     pure
 action:   the mutation pass (ARCH §9.4) over vocabulary.psd1, one row removed at a time
 expect:   questions  removing HasRows fails QST-01; NotNull fails QST-16; Fits QST-17; Unique QST-35; Orphan QST-50;
-                     CheckFalse QST-60; KeyLength QST-47; Rebuild QST-63; Computed QST-66; Authored QST-78 — each now
-                     stops unknown-statement or loses its question
+                     CheckFalse QST-60; KeyLength QST-47; Rebuild QST-63; Computed QST-66; Temporal QST-89; Scan QST-44;
+                     Authored QST-78; SeedDrift QST-80 — each now stops unknown-statement or loses its question
 laws:     M1 E1
 source:   expected · INVARIANTS M1
 ```
@@ -1810,4 +1822,265 @@ input:    delta      IF EXISTS (select top 1 1 from [dbo].[Order]]Line])
 expect:   questions  HasRows([Order]]Line]) · HasRows([sales.eu].Customer)
 laws:     D1 P2
 source:   expected · coordinate parts are kept separately and rendered bracket-quoted only when a part holds `.`, `[`, `]` or whitespace; P2 re-validates each part with OBJECT_ID before any probe
+```
+
+### QST-99 · F4: one delta, the three statement classes, each batch in exactly one
+```case
+kind:     pure
+action:   Get-FxQuestions
+input:    delta      IF EXISTS (select top 1 1 from [dbo].[Customer])
+                         RAISERROR (N'Rows were detected. The schema update is terminating because data loss might occur.', 16, 127) WITH NOWAIT
+                     GO
+                     ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (256) NOT NULL;
+                     GO
+                     CREATE NONCLUSTERED INDEX [IX_Order_StatusId]
+                         ON [dbo].[Order]([StatusId] ASC);
+                     GO
+                     ALTER TABLE [dbo].[Product]
+                         ADD [Note] NVARCHAR (50) NULL;
+                     GO
+                     EXECUTE sp_refreshsqlmodule N'[dbo].[vCustomer]';
+                     GO
+          base       Customer.Email nvarchar(256) NULL · Order.StatusId int NOT NULL
+expect:   questions  HasRows(Customer) · NotNull(Customer.Email) · measures Rows(Customer), Rows(Order) for Scan(Order)
+                     · per batch: 1 data-sensitive (HasRows) · 2 data-sensitive (NotNull) · 3 data-insensitive (Scan)
+                     · 4 non-reading · 5 non-reading
+laws:     F4 D1
+source:   expected · ARCH §4 (the three classes); INVARIANTS F4
+note:     Product, touched only by a non-reading statement, is not measured. A batch counted in two classes, or in
+          none, fails the case.
+```
+
+### QST-100 · coordinate rule 1: a unique index on a new defaulted column is an exact duplicate from two rows
+```case
+kind:     pure
+action:   Get-FxQuestions
+input:    delta      ALTER TABLE [dbo].[Product]
+                         ADD [Sku] NVARCHAR (20) CONSTRAINT [DF_Product_Sku] DEFAULT (N'NONE') NOT NULL;
+                     GO
+                     CREATE UNIQUE NONCLUSTERED INDEX [UX_Product_Sku]
+                         ON [dbo].[Product]([Sku] ASC);
+                     GO
+          base       Product has no Sku
+expect:   questions  Unique(Product,(Sku)) classes {exact}, answered from the delta by Rows(Product) ≥ 2 · measures
+                     Rows(Product) for Scan(Product)
+laws:     F4 S3
+source:   expected · ARCH §4 Coordinates rule 1 ("a unique index on a new defaulted column of a table with two or more
+          rows is an exact duplicate")
+note:     Nothing is probed under Sku, which the environment lacks (S3); the copy's two presence rows both receive
+          N'NONE' from the ADD, so the publish meets the same duplicate the environment would.
+```
+
+### QST-101 · coordinate rule 1: an FK from an existing column to a new table, with no script filling it
+```case
+kind:     pure
+action:   Get-FxQuestions
+input:    delta      CREATE TABLE [dbo].[OrderType] (
+                         [Id]   INT           NOT NULL,
+                         [Code] NVARCHAR (20) NOT NULL,
+                         CONSTRAINT [PK_OrderType_Id] PRIMARY KEY CLUSTERED ([Id] ASC)
+                     );
+                     GO
+                     ALTER TABLE [dbo].[Order] WITH NOCHECK
+                         ADD CONSTRAINT [FK_Order_OrderType] FOREIGN KEY ([OrderTypeId]) REFERENCES [dbo].[OrderType] ([Id]);
+                     GO
+                     ALTER TABLE [dbo].[Order] WITH CHECK CHECK CONSTRAINT [FK_Order_OrderType];
+                     GO
+          base       Order.OrderTypeId int NULL
+          scripts    no pre- or post-deploy statement differs from the merge-base
+expect:   questions  Orphan(Order.(OrderTypeId)→OrderType), answered from the delta: violating exactly when an
+                     existing OrderTypeId is non-NULL (the probe counts Order.OrderTypeId IS NOT NULL) · measures
+                     Rows(Order)
+laws:     F4 S3
+source:   expected · ARCH §4 Coordinates rule 1 ("an orphan for every non-NULL child value, unless a pre- or
+          post-deploy script fills the parent")
+note:     The parent is never probed (S3); only the existing child column is. With a seed that fills OrderType the same
+          question becomes Authored (QST-59).
+```
+
+### QST-102 · coordinate rule 2: a column renamed earlier in the delta is probed under its old name
+```case
+kind:     pure
+action:   Get-FxQuestions
+input:    delta      EXECUTE sp_rename @objname = N'[dbo].[Customer].[ContactPhone]', @newname = N'MobileNumber', @objtype = N'COLUMN';
+                     GO
+                     IF EXISTS (select top 1 1 from [dbo].[Customer])
+                         RAISERROR (N'Rows were detected. The schema update is terminating because data loss might occur.', 16, 127) WITH NOWAIT
+                     GO
+                     ALTER TABLE [dbo].[Customer] ALTER COLUMN [MobileNumber] NVARCHAR (40) NOT NULL;
+                     GO
+          base       Customer.ContactPhone nvarchar(40) NULL · no MobileNumber
+expect:   questions  HasRows(Customer) · NotNull(Customer.MobileNumber) probed as Customer.ContactPhone · measures
+                     Rows(Customer)
+laws:     F4 S3
+source:   expected · ARCH §4 Coordinates rule 2; INVARIANTS S3 ("a constraint on a column renamed earlier in the delta
+          is probed under the old name")
+note:     The probe text names [ContactPhone], which exists in the environment; probing MobileNumber would stop
+          missing-object, and reading it as empty would hide every NULL.
+```
+
+### QST-103 · coordinate rule 2: a table moved by ALTER SCHEMA … TRANSFER is probed in its old schema
+```case
+kind:     pure
+action:   Get-FxQuestions
+input:    delta      ALTER SCHEMA [archive] TRANSFER [dbo].[Category];
+                     GO
+                     ALTER TABLE [archive].[Category] WITH NOCHECK
+                         ADD CONSTRAINT [CK_Category_Code] CHECK (LEN([Code])>(0));
+                     GO
+                     ALTER TABLE [archive].[Category] WITH CHECK CHECK CONSTRAINT [CK_Category_Code];
+                     GO
+          base       dbo.Category (Code nvarchar(30) NOT NULL) · no archive.Category
+expect:   questions  CheckFalse(archive.Category,CK_Category_Code) predicate (LEN([Code])>(0)) probed as dbo.Category
+                     · measures Rows(archive.Category) as Rows(dbo.Category)
+laws:     F4 S3
+source:   expected · ARCH §4 Coordinates rule 2 ("sp_rename and ALTER SCHEMA … TRANSFER in the same delta map the
+          coordinate to its old name")
+```
+
+### QST-104 · coordinate rule 4: a coordinate the delta neither creates nor renames, absent from the catalog, stops
+```case
+kind:     pure
+action:   Get-FxQuestions
+input:    delta      IF EXISTS (select top 1 1 from [dbo].[Customer])
+                         RAISERROR (N'Rows were detected. The schema update is terminating because data loss might occur.', 16, 127) WITH NOWAIT
+                     GO
+                     ALTER TABLE [dbo].[Customer] ALTER COLUMN [Nickname] NVARCHAR (40) NOT NULL;
+                     GO
+          base       Customer has no Nickname (the catalog read for Dev)
+expect:   outcome    stop missing-object · "Dev has no dbo.Customer.Nickname, and this delta does not create it. Prove
+                     against what Dev has, or record Dev as Not checked." · exit 5
+laws:     S3 F4 H3
+source:   expected · ARCH §4 Coordinates rule 4; INVARIANTS S3 ("never read as empty")
+note:     This arises when a delta is paired with another environment's catalog, or the schema moved between read's two
+          touches; Rows or a NULL count of zero would be a silent clean.
+```
+
+### QST-105 · ADD PERIOD FOR SYSTEM_TIME over existing columns asks Temporal; over new columns it is answered from the delta
+```case
+kind:     pure
+action:   Get-FxQuestions, once per base
+input:    delta      ALTER TABLE [dbo].[Account]
+                         ADD PERIOD FOR SYSTEM_TIME ([ValidFrom], [ValidTo]);
+                     GO
+          base       (a) Account.ValidFrom datetime2(7) NOT NULL · Account.ValidTo datetime2(7) NOT NULL, both existing
+                     (b) neither column exists; the same delta adds them earlier with defaults SYSUTCDATETIME() and
+                     '9999-12-31 23:59:59.9999999'
+expect:   questions  (a) Temporal(Account) period (ValidFrom, ValidTo) · measures Rows(Account)
+                     (b) none · discharged {Temporal(Account): the new period columns hold their defaults, start before
+                     end, in every existing row}
+laws:     F4 S3
+source:   verify · whether DacFx adds a period over existing columns with this statement or rebuilds the table (QST-63's
+          shape); the question is ARCH §4's Temporal row
+```
+
+### QST-106 · a CHECK whose predicate holds CONVERT is asked, but unmeasured
+```case
+kind:     pure
+action:   Get-FxQuestions
+input:    delta      ALTER TABLE [dbo].[T] WITH NOCHECK
+                         ADD CONSTRAINT [CK_T_RefNum] CHECK (CONVERT([int],[Ref])>(0));
+                     GO
+                     ALTER TABLE [dbo].[T] WITH CHECK CHECK CONSTRAINT [CK_T_RefNum];
+                     GO
+          base       T.Ref varchar(20) NULL
+expect:   questions  CheckFalse(T,CK_T_RefNum) predicate (CONVERT([int],[Ref])>(0)) unmeasured · measures Rows(T)
+laws:     F4 P2 P3
+source:   expected · ARCH §4 (the predicate exception refuses CONVERT, CAST and PARSE, P3); INVARIANTS P2
+note:     The predicate would quote an unconvertible value in its error, so it is never sent; the witness is
+          agent-declared and the record carries declared-not-measured.
+```
+
+### QST-107 · a clustered PK drop and an index DROP + CREATE are Scans
+```case
+kind:     pure
+action:   Get-FxQuestions
+input:    delta      ALTER TABLE [dbo].[Product] DROP CONSTRAINT [PK_Product_Id];
+                     GO
+                     DROP INDEX [IX_Order_StatusId]
+                         ON [dbo].[Order];
+                     GO
+                     CREATE NONCLUSTERED INDEX [IX_Order_StatusId]
+                         ON [dbo].[Order]([StatusId] ASC, [CustomerId] ASC);
+                     GO
+          base       Product PK_Product_Id CLUSTERED (Id) · Order.StatusId int NOT NULL · Order.CustomerId int NOT NULL
+expect:   questions  none · measures Rows(Product) for Scan(Product), Rows(Order) for Scan(Order)
+laws:     F4
+source:   expected · ARCH §4 Scan row (an index DROP+CREATE; a clustered PK drop or create)
+note:     A PK create still asks Unique (QST-42), a data-sensitive question that is measured all the same.
+```
+
+### QST-108 · Scan, end to end: a non-unique index on a populated table publishes clean at T0
+```case
+kind:     corpus
+env:      pg · Order 4 rows · Customer 2 rows · Status 3 rows (the lane)
+change:   head adds IX_Order_StatusId (non-unique, on Order.StatusId) · scripts unchanged
+expect:   questions  none · measures Rows(Order) for Scan(Order)
+          answers    Rows(Order)=4
+          witnesses  presence(Order)
+          outcome    verdict clean · exit 0
+          record     tier T0 · flags {} · silence ok
+laws:     F4 F3 D6
+source:   expected · ARCH §4 Scan row, §7; the engine outcome is SamplePr "add-index: a non-unique index builds clean over a populated table"
+note:     The presence row makes the copy's build run over a row, as Dev's does.
+```
+
+### QST-109 · Computed, end to end: unmeasured, then declared, then the conversion block
+```case
+kind:     corpus
+env:      pg · Product 3 rows, Code 'P-100', '200', '300'
+change:   head adds Product.CodeNum AS (CONVERT (INT, [Code])) PERSISTED · leg2 adds to witness.sql, under `-- witness:
+          Computed(Product.CodeNum)`, one Product row with Code N'wABC'
+expect:   leg1:      questions  Computed(Product.CodeNum) expression (CONVERT (INT, [Code])) unmeasured · measures
+                                Rows(Product)
+                     outcome    stop computed-witness · "Write one row into witness.sql whose dbo.Product.CodeNum
+                                expression fails, then re-run." · exit 5
+          leg2:      witnesses  presence(Product) · declared(Product row, Code N'wABC')
+                     outcome    verdict blocked conversion · Msg 245 · dbo.Product.CodeNum · exit 3
+                     record     tier T2 · notChecked includes declared-not-measured
+laws:     F4 F3 H2 A5
+source:   expected · ARCH §4 Computed row; red-team #3 (a PERSISTED computed column reads every row with no guard ✓)
+note:     leg1 is a designed stop (F3 scope). In leg2 the oracle publishes onto a copy of env, where 'P-100' fails the
+          same way, so both arms block Msg 245.
+```
+
+### QST-110 · Temporal, end to end: versioning turned back on over a history table that holds rows
+```case
+kind:     corpus
+env:      pg + Customer system-versioned and then set SYSTEM_VERSIONING = OFF (its PERIOD FOR SYSTEM_TIME (ValidFrom,
+          ValidTo) kept; CustomerHistory a plain table) · Customer 3 rows · CustomerHistory 2 rows, each period valid,
+          none overlapping
+change:   head declares Customer WITH (SYSTEM_VERSIONING = ON (HISTORY_TABLE = dbo.CustomerHistory)) · scripts
+          unchanged
+expect:   questions  Temporal(Customer) history CustomerHistory · measures Rows(Customer), Rows(CustomerHistory)
+          answers    Temporal(Customer)=clean
+          witnesses  presence(Customer) · presence(CustomerHistory)
+          outcome    verdict clean · exit 0
+          record     tier T2
+laws:     F4 F3 F9
+source:   verify · whether Extract keeps a period whose versioning is off (F9), and the SET (SYSTEM_VERSIONING = ON …)
+          DacFx writes (QST-89); the engine fact that converting a populated Customer preserves its rows is SamplePr
+          "temporal-convert: turning the existing populated Customer system-versioned — the true outcome under the production gate, existing rows preserved"
+note:     The violating leg (an overlapping history row) fails the SET … ON in the main phase with an engine number
+          ARCH §6 lists only under `blocked authored`; until a main-phase rule classifies it, H5 makes it stop
+          unclassified (reported).
+```
+
+### QST-111 · SeedDrift, end to end: QA holds the new seed code under another key
+```case
+kind:     corpus
+env:      Dev = pg · Status 3 rows, the seed's own · QA = pg · Status 4 rows: the seed's 3 plus (5, 'Refunded')
+change:   the post-deploy Status MERGE gains (4, N'Refunded', 1) · witness.sql for QA declares, under `-- witness:
+          SeedDrift(Status)`, one Status row (5, N'Refunded', 1)
+expect:   questions  SeedDrift(Status) key Id, code Code, from post:Data/Seed.sql · measures Rows(Status)
+          answers    Dev: SeedDrift(Status)=clean · QA: SeedDrift(Status)=violating
+          witnesses  Dev: none (the merge-base lane holds Status's rows) · QA: declared(Status (5, N'Refunded', 1))
+          outcome    Dev: verdict clean · exit 0
+                     QA: verdict blocked authored · Msg 2601 · post-deploy · exit 3
+          record     tier T3 · QA residue {pre-deploy: none · main: none · post-deploy: failed at the seed}
+laws:     F4 F3 F7 H5
+source:   expected · ARCH §4 SeedDrift row; red-team #15 (seed Ids differ per environment); 'Refunded' is the seed's own
+          code, a repository-defined value (P5)
+note:     UIX_Status_Code makes the MERGE's INSERT of (4, 'Refunded') a duplicate on QA. The witness carries the
+          seed's code under a key the seed does not use, so no QA value reaches the copy.
 ```

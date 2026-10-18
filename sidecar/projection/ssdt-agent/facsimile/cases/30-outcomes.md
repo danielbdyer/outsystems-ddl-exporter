@@ -1,7 +1,7 @@
 # 30 · Outcomes, tier and record — `Get-FxOutcome`, `Get-FxTier`, `Get-FxRecord`
 
 *Three pure functions (ARCH §3, §6, §7; skills/author-pr, THE_RECORD_FORMS.md). Input sub-fields: `output` / `build` (sqlpackage or build text), `delta` (the batch map Get-FxQuestions made: guard batches, regions), `questions`, `answers`, `config`, `inflight`, `platform`, `verdict`, `replan` (head scripted against the copy after a block), `stamps`. A `record` line asserts only the items it states.*
-*"Scratch run" = an output layout seen once on 2026-10-18 (sqlpackage 170.5.96, SQL Server 2022, the proving ground): `verify` until the first implementation run records it. Msg numbers carry their own receipts. `blocked authored` is a reason ARCH §6 does not list yet (reported); H5 requires it.*
+*"Scratch run" = an output layout seen once on 2026-10-18 (sqlpackage 170.5.96, SQL Server 2022, the proving ground): `verify` until the first implementation run records it. Msg numbers carry their own receipts. Phases are named as H6 names them (pre-deploy, main, post-deploy, validation); any error inside a pre- or post-deploy batch is `blocked authored · Msg <n> · <pre-deploy|post-deploy>` (H5). A permissive leg's output is classified like any other and recorded beside the Strict verdict (CLS-55).*
 
 ---
 
@@ -128,13 +128,13 @@ input:    output     Updating database (Start)
                      PRINT 'Pre-deploy: no backfill active. Uncomment a worked example when proving a change.';
           delta      no guard batches (the change adds FK_Order_Customer)
                      · region pre Script.PreDeployment.sql (its first batch: an 89-line comment, then the IF; RAISERROR on line 92)
-expect:   outcome    verdict blocked authored · Msg 50000/127 · Script.PreDeployment.sql · exit 3
-          record     phase pre
+expect:   outcome    verdict blocked authored · Msg 50000/127 · pre-deploy · exit 3
+          record     phase pre-deploy
 laws:     H5 H1
 source:   verify · red-team #12 (the counterfeit; not ✓); this output was seen in a scratch run
 note:     SQL72045 quotes a pre- or post-deploy failure as the whole authored script from its first statement,
           re-formatted, so the quote runs on past the RAISERROR. No pre-deploy PRINT precedes the error. Nothing here
-          matches a guard batch of this delta.
+          matches a guard batch of this delta, and any error inside an authored batch is `blocked authored` (H5).
 ```
 
 ### CLS-07 · in a batch holding several guards, SQL72014's line picks the table
@@ -171,8 +171,8 @@ input:    output     *** Could not deploy package.
                              WITH NOWAIT;
           delta      guard batch dbo.Customer (RAISERROR on its line 6)
                      · region pre Script.PreDeployment.sql, whose only statement is the same guard text (RAISERROR on its line 2)
-expect:   outcome    verdict blocked authored · Msg 50000/127 · Script.PreDeployment.sql · exit 3
-          record     phase pre
+expect:   outcome    verdict blocked authored · Msg 50000/127 · pre-deploy · exit 3
+          record     phase pre-deploy
 laws:     H5
 source:   expected · red-team #12; the line rule is the one CLS-04 states
 ```
@@ -233,8 +233,8 @@ input:    output     Updating database (Start)
                                 WHERE  Email = N'N/A')
                          THROW 50001, N'Pre-deploy: an Email shape this script does not handle is present; nothing was written.', 1;
           delta      region pre Script.PreDeployment.sql (its first statement is that IF EXISTS … THROW)
-expect:   outcome    verdict blocked authored · Msg 50001 · Script.PreDeployment.sql · exit 3
-          record     phase pre
+expect:   outcome    verdict blocked authored · Msg 50001 · pre-deploy · exit 3
+          record     phase pre-deploy
 laws:     H5 A3
 source:   expected · TWIN_SUCCESSION §6b ("the pre-deploy script begins with its confirmation probe and THROWs if it finds a shape it does not handle")
 note:     This is the self-check doing its job; the record states the refusal, and nothing was written (F6 still applies to
@@ -254,10 +254,10 @@ input:    output     Updating database (Start)
                      Error SQL72045: Script execution error.  The executed script:
                      SET NOCOUNT ON;
           delta      region post Script.PostDeployment.sql (its first statement is SET NOCOUNT ON;)
-expect:   outcome    verdict blocked authored · Msg 50000 · Script.PostDeployment.sql · exit 3
-          record     phase post
+expect:   outcome    verdict blocked authored · Msg 50000 · post-deploy · exit 3
+          record     phase post-deploy
 laws:     H5
-source:   expected · H5 ("any other Msg 50000 is reported as the authored script that raised it")
+source:   expected · H5 ("any error raised inside a pre- or post-deploy batch, whatever its number, is blocked authored")
 ```
 
 ### CLS-14 · Msg 547 on a foreign key at validation, after the post-deploy
@@ -280,10 +280,9 @@ input:    output     Updating database (Start)
 expect:   outcome    verdict blocked constraint · Msg 547 · FK_Order_Customer · exit 3
           record     phase validation
 laws:     H5 H6 A3
-source:   receipt · F9 create-fk-orphan (Msg 547 at the WITH CHECK CHECK; the key left present but untrusted)
-note:     The layout was seen in a scratch run: validation runs after the post-deploy and outside the transacted
-          portion, so main and post-deploy work stay applied (REC-19). INVARIANTS H6 lists the phases in another
-          order (reported).
+source:   verify · the phase order (validation after the post-deploy, outside the transacted portion) was observed 2026-10-18 on sqlpackage 170.5.96 and is pinned per version by INV-H6-01; the 547 itself is receipt F9 create-fk-orphan (the key left present but untrusted)
+note:     Validation runs after the post-deploy, so main and post-deploy work stay applied (REC-19), in the order H6
+          lists: pre-deploy, main, post-deploy, validation.
 ```
 
 ### CLS-15 · Msg 547 on a CHECK names the check
@@ -302,7 +301,7 @@ laws:     H5
 source:   receipt · F10 add-check (BLOCK Msg 547, "the ALTER TABLE statement conflicted with the CHECK constraint … column 'Total'")
 ```
 
-### CLS-16 · Msg 547 from a post-deploy insert names the key and the phase
+### CLS-16 · Msg 547 from a post-deploy insert is the authored script's block
 ```case
 kind:     pure
 action:   Get-FxOutcome
@@ -313,13 +312,14 @@ input:    output     The transacted portion of the database update succeeded.
                      Error SQL72045: Script execution error.  The executed script:
                      SET NOCOUNT ON;
           delta      region post Script.PostDeployment.sql (first statement SET NOCOUNT ON;)
-expect:   outcome    verdict blocked constraint · Msg 547 · FK_Product_Category · exit 3
-          record     phase post
+expect:   outcome    verdict blocked authored · Msg 547 · post-deploy · exit 3
+          record     phase post-deploy · messages {547: FK_Product_Category}
 laws:     H5
-source:   expected · the 547 wording for an INSERT; the quote shape is CLS-28's
+source:   expected · H5 (any number inside an authored batch); the 547 wording for an INSERT; the quote shape is CLS-28's
+note:     The same number in the validation phase is `blocked constraint` (CLS-14): the phase, not the number, decides.
 ```
 
-### CLS-17 · Msg 515 from the post-deploy seed after a tightening
+### CLS-17 · Msg 515 from the post-deploy seed after a tightening is the authored script's block
 ```case
 kind:     pure
 action:   Get-FxOutcome
@@ -330,10 +330,10 @@ input:    output     The transacted portion of the database update succeeded.
                      Error SQL72045: Script execution error.  The executed script:
                      SET NOCOUNT ON;
           delta      region post Script.PostDeployment.sql (first statement SET NOCOUNT ON;)
-expect:   outcome    verdict blocked null · Msg 515 · dbo.Customer.Email · exit 3
-          record     phase post
+expect:   outcome    verdict blocked authored · Msg 515 · post-deploy · exit 3
+          record     phase post-deploy · messages {515: dbo.Customer.Email}
 laws:     H5
-source:   expected · sample-prs/make-mandatory.md quotes this Msg 515 from a live run (not a listed receipt)
+source:   expected · H5; sample-prs/make-mandatory.md quotes this Msg 515 from a live run (not a listed receipt)
 ```
 
 ### CLS-18 · Msg 1505 on CREATE UNIQUE INDEX: one message, no 1750
@@ -374,7 +374,7 @@ laws:     H5
 source:   verify · whether sqlpackage prints 1750 as its own SQL72014 line (sample-prs/define-pk.md saw 1505 then 1750 from hand-run T-SQL)
 ```
 
-### CLS-20 · Msg 2601 on a post-deploy insert
+### CLS-20 · Msg 2601 on a post-deploy insert is the authored script's block
 ```case
 kind:     pure
 action:   Get-FxOutcome
@@ -383,10 +383,10 @@ input:    output     *** Could not deploy package.
                      Error SQL72045: Script execution error.  The executed script:
                      SET NOCOUNT ON;
           delta      region post Script.PostDeployment.sql (first statement SET NOCOUNT ON;)
-expect:   outcome    verdict blocked unique · Msg 2601 · UX_Category_Code · exit 3
-          record     phase post
+expect:   outcome    verdict blocked authored · Msg 2601 · post-deploy · exit 3
+          record     phase post-deploy · messages {2601: UX_Category_Code}
 laws:     H5
-source:   expected · ARCH §6 (2601 on insert)
+source:   expected · H5; ARCH §6 keeps 2601 and 2627 as `blocked unique` only outside an authored batch (CLS-64)
 ```
 
 ### CLS-21 · Msg 2627 from a seed whose Id the environment holds under another Code
@@ -398,13 +398,13 @@ input:    output     *** Could not deploy package.
                      Error SQL72045: Script execution error.  The executed script:
                      SET NOCOUNT ON;
           delta      region post Script.PostDeployment.sql (first statement SET NOCOUNT ON;)
-expect:   outcome    verdict blocked unique · Msg 2627 · PK_Category_Id · exit 3
-          record     phase post
+expect:   outcome    verdict blocked authored · Msg 2627 · post-deploy · exit 3
+          record     phase post-deploy · messages {2627: PK_Category_Id}
 laws:     H5
-source:   expected · red-team #15 (seed Ids differ per environment, causing 2627; not ✓)
+source:   expected · ARCH §6 (the seed's 2627 is listed under blocked authored); red-team #15 (seed Ids differ per environment, causing 2627; not ✓)
 ```
 
-### CLS-22 · Msg 2628 names the table and column
+### CLS-22 · Msg 2628 in the post-deploy is the authored script's block, naming the table and column
 ```case
 kind:     pure
 action:   Get-FxOutcome
@@ -413,10 +413,12 @@ input:    output     *** Could not deploy package.
                      Error SQL72045: Script execution error.  The executed script:
                      SET NOCOUNT ON;
           delta      region post Script.PostDeployment.sql (first statement SET NOCOUNT ON;)
-expect:   outcome    verdict blocked truncation · Msg 2628 · dbo.Product.Code · exit 3
-          record     phase post
+expect:   outcome    verdict blocked authored · Msg 2628 · post-deploy · exit 3
+          record     phase post-deploy · messages {2628: dbo.Product.Code}
 laws:     H5
-source:   expected · sample-prs/narrow.md quotes Msg 2628 from a live run (the seed still writing the long value)
+source:   expected · H5; sample-prs/narrow.md quotes Msg 2628 from a live run (the seed still writing the long value)
+note:     The truncated value in the text is the copy's witness (P5); the record keeps the number and the coordinate,
+          never the value.
 ```
 
 ### CLS-23 · Msg 8152 (no column named) takes the object from the quoted batch
@@ -427,9 +429,11 @@ input:    output     *** Could not deploy package.
                      Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 8152, Level 16, State 30, Line 1 String or binary data would be truncated.
                      Error SQL72045: Script execution error.  The executed script:
                      ALTER TABLE [dbo].[Product] ALTER COLUMN [Code] NVARCHAR (10) NOT NULL;
-expect:   outcome    permissive leg: blocked truncation · Msg 8152 · dbo.Product.Code · recorded as the consequence beside the Strict verdict
+expect:   outcome    verdict blocked truncation · Msg 8152 · dbo.Product.Code · exit 3
 laws:     H5 F6
 source:   expected · 8152 is the pre-2019 / compatibility-level wording of 2628; the permissive leg differs from Strict only in BlockOnPossibleDataLoss (F6)
+note:     Get-FxOutcome classifies a permissive leg's output like any other; the shell records the result as the
+          consequence beside the Strict verdict, never in its place (CLS-55).
 ```
 
 ### CLS-24 · Msg 8115 is overflow
@@ -440,9 +444,10 @@ input:    output     *** Could not deploy package.
                      Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 8115, Level 16, State 8, Line 1 Arithmetic overflow error converting numeric to data type numeric.
                      Error SQL72045: Script execution error.  The executed script:
                      ALTER TABLE [dbo].[OrderLine] ALTER COLUMN [Amount] DECIMAL (9, 2) NOT NULL;
-expect:   outcome    permissive leg: blocked overflow · Msg 8115 · dbo.OrderLine.Amount
+expect:   outcome    verdict blocked overflow · Msg 8115 · dbo.OrderLine.Amount · exit 3
 laws:     H5
 source:   expected · ARCH §6
+note:     A permissive leg's classification, recorded beside the Strict verdict (CLS-55).
 ```
 
 ### CLS-25 · Msg 245 from a PERSISTED computed column, on the Strict leg (no guard)
@@ -472,13 +477,14 @@ input:    output     (a) Error SQL72014: Core Microsoft SqlClient Data Provider:
                      (b) Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 8114, Level 16, State 5, Line 1 Error converting data type nvarchar to numeric.
                          Error SQL72045: Script execution error.  The executed script:
                          ALTER TABLE [dbo].[T] ALTER COLUMN [Ref] DECIMAL (9, 2) NULL;
-expect:   outcome    (a) permissive leg: blocked conversion · Msg 241 · dbo.Customer.BirthText
-                     (b) permissive leg: blocked conversion · Msg 8114 · dbo.T.Ref
+expect:   outcome    (a) verdict blocked conversion · Msg 241 · dbo.Customer.BirthText · exit 3
+                     (b) verdict blocked conversion · Msg 8114 · dbo.T.Ref · exit 3
 laws:     H5
 source:   expected · ARCH §6
+note:     Permissive legs' classifications, recorded beside the Strict verdict (CLS-55).
 ```
 
-### CLS-27 · Msg 544 in the post-deploy after an identity change is a seed block
+### CLS-27 · Msg 544 in the post-deploy after an identity change is the authored script's block
 ```case
 kind:     pure
 action:   Get-FxOutcome
@@ -490,8 +496,8 @@ input:    output     Starting rebuilding table [dbo].[Category]...
                      Error SQL72045: Script execution error.  The executed script:
                      SET NOCOUNT ON;
           delta      region post Script.PostDeployment.sql (first statement SET NOCOUNT ON;)
-expect:   outcome    verdict blocked seed · Msg 544 · Script.PostDeployment.sql · exit 3
-          record     phase post
+expect:   outcome    verdict blocked authored · Msg 544 · post-deploy · exit 3
+          record     phase post-deploy
 laws:     H5 A3
 source:   receipt · F12 identity-swap (the post-deploy seed's explicit-id insert fails Msg 544 until bracketed with SET IDENTITY_INSERT)
 ```
@@ -514,13 +520,13 @@ input:    output     Updating database (Start)
                       AS target
                      USING (VALUES (1, N'Pending', 1), (2, N'Shipped', 1), (3, N'Cancelled', 1)) AS source(Id, Code, IsActive) ON target.Id = source.Id
                      WHEN MATCHED AND (target.Code <> source.Code
-                                       OR target.IsActive <> source.IsActive) THEN UPDATE 
+                                       OR target.IsActive <> source.IsActive) THEN UPDATE
                      SET target.Code     = source.Code,
                          target.IsActive = source.IsActive
                      WHEN NOT MATCHED BY TARGET THEN INSERT (Id, Code, IsActive) VALUES (source.Id, sou
           delta      region post Script.PostDeployment.sql (with `:r .\Data\Seed.sql`; first statement SET NOCOUNT ON;)
-expect:   outcome    verdict blocked seed · Msg 207 · Script.PostDeployment.sql · exit 3
-          record     phase post
+expect:   outcome    verdict blocked authored · Msg 207 · post-deploy · exit 3
+          record     phase post-deploy
 laws:     H5
 source:   receipt · F15 (b) (a seed still naming a dropped column failed the publish with Msg 207); the layout was seen in a scratch run
 note:     SQL72045 quotes the whole post-deploy from its first statement, re-formatted and cut at about 1 KB, so the
@@ -539,14 +545,13 @@ input:    output     Updating database (Start)
                      UPDATE o
                      SET    StatusId = s.Id
           delta      region pre Script.PreDeployment.sql (first statement UPDATE o …)
-expect:   outcome    verdict blocked authored · Msg 207 · Script.PreDeployment.sql · exit 3
-          record     phase pre
+expect:   outcome    verdict blocked authored · Msg 207 · pre-deploy · exit 3
+          record     phase pre-deploy
 laws:     H5
 source:   receipt · F16 (the phase-bound reconcile block read the column the contract release drops: Msg 207 before anything else ran)
-note:     ARCH §6 lists 207 under seed "in the post-deploy phase" only; a pre-deploy 207 has no reason there (reported).
 ```
 
-### CLS-30 · Msg 8672 is a seed block
+### CLS-30 · Msg 8672 in a seed MERGE is the authored script's block
 ```case
 kind:     pure
 action:   Get-FxOutcome
@@ -555,10 +560,10 @@ input:    output     *** Could not deploy package.
                      Error SQL72045: Script execution error.  The executed script:
                      SET NOCOUNT ON;
           delta      region post Script.PostDeployment.sql (first statement SET NOCOUNT ON;)
-expect:   outcome    verdict blocked seed · Msg 8672 · Script.PostDeployment.sql · exit 3
-          record     phase post
+expect:   outcome    verdict blocked authored · Msg 8672 · post-deploy · exit 3
+          record     phase post-deploy
 laws:     H5
-source:   expected · ARCH §6
+source:   expected · ARCH §6 (the seed's 8672 is listed under blocked authored)
 ```
 
 ### CLS-31 · Msg 1946 is a key-length block
@@ -611,7 +616,7 @@ note:     Only on a server with CDC (a configured CI server, or the oracle arm).
           before any publish (TIER-17).
 ```
 
-### CLS-34 · Msg 4711 on TRUNCATE in an authored script
+### CLS-34 · Msg 4711 on TRUNCATE in an authored script is the authored script's block
 ```case
 kind:     pure
 action:   Get-FxOutcome
@@ -620,26 +625,36 @@ input:    output     *** Could not deploy package.
                      Error SQL72045: Script execution error.  The executed script:
                      TRUNCATE TABLE dbo.C;
           delta      region pre Script.PreDeployment.sql (first statement TRUNCATE TABLE dbo.C;)
-expect:   outcome    verdict blocked cdc · Msg 4711 · dbo.C · exit 3
-          record     phase pre
+expect:   outcome    verdict blocked authored · Msg 4711 · pre-deploy · exit 3
+          record     phase pre-deploy · flags {cdc}
 laws:     H5
-source:   receipt · red-team #6 (4711 on TRUNCATE ✓)
+source:   expected · H5 ("whatever its number"); the engine message is red-team #6 (4711 on TRUNCATE ✓)
+note:     Only on a server with CDC (a CI server or the oracle arm); on LocalDB the tracked table stops `cdc` before any
+          publish. ARCH §6 also lists 4711 under `blocked cdc`, which H5 leaves to a generated statement (reported).
 ```
 
-### CLS-35 · Msg 468 from a #temp join in a pre-deploy
+### CLS-35 · Msg 468 from a #temp join in a pre-deploy: authored when the collations match, platform when they do not
 ```case
 kind:     pure
-action:   Get-FxOutcome
+action:   Get-FxOutcome, once per platform
 input:    output     *** Could not deploy package.
                      Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 468, Level 16, State 9, Line 3 Cannot resolve the collation conflict between "Latin1_General_CS_AS" and "SQL_Latin1_General_CP1_CI_AS" in the equal to operation.
                      Error SQL72045: Script execution error.  The executed script:
                      CREATE TABLE #map (
                          Code NVARCHAR (50));
           delta      region pre Script.PreDeployment.sql (first statement CREATE TABLE #map …)
-expect:   outcome    verdict blocked collation · Msg 468 · Script.PreDeployment.sql · exit 3
-          record     phase pre
-laws:     H5
-source:   receipt · red-team #13 (#temp joins hit Msg 468 against the server collation ✓)
+          platform   (a) the copy's server collation SQL_Latin1_General_CP1_CI_AS equals UAT's
+                     (b) the copy's SQL_Latin1_General_CP1_CI_AS against UAT's Latin1_General_CI_AS
+expect:   outcome    (a) verdict blocked authored · Msg 468 · pre-deploy · exit 3
+                     (b) stop platform · "tempdb collation SQL_Latin1_General_CP1_CI_AS differs from UAT's
+                     Latin1_General_CI_AS and the script compares #temp columns. <remedy>." · exit 6
+          record     (a) phase pre-deploy
+laws:     H5 S4 H3
+source:   expected · ARCH §6 (468 is a finding only when the copy's server collation equals the environment's; any
+          error inside an authored batch is blocked authored); the engine message is red-team #13 (#temp joins hit Msg
+          468 against the server collation ✓)
+note:     In (b) the copy's tempdb is not UAT's, so the 468 says nothing about UAT. A main-phase 468 is
+          `blocked collation` (CLS-61).
 ```
 
 ### CLS-36 · SQL71516 at build is refused-at-build
@@ -674,10 +689,11 @@ input:    build      C:\estate\Modules\vReport.sql(5,10,5,10): Build warning SQL
                      Build succeeded.
                          1 Warning(s)
                          0 Error(s)
-expect:   outcome    none: the run continues to the publish
-          record     warnings {SQL71502}
+expect:   record     warnings {SQL71502}
 laws:     H1
 source:   expected · H1 (no warning-only exit)
+note:     Get-FxOutcome returns no outcome for a successful build; the run continues to the publish and the warning
+          rides to the record.
 ```
 
 ### CLS-39 · the first engine error decides; every one is recorded
@@ -689,14 +705,15 @@ input:    output     *** Could not deploy package.
                      Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 3621, Level 0, State 0, Line 1 The statement has been terminated.
                      Error SQL72045: Script execution error.  The executed script:
                      ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (256) NOT NULL;
-expect:   outcome    permissive leg: blocked null · Msg 515 · dbo.Customer.Email
+expect:   outcome    verdict blocked null · Msg 515 · dbo.Customer.Email · exit 3
           record     messages {515, 3621}
 laws:     H5
 source:   verify · whether sqlpackage prints 3621 as a second SQL72014 line (the scratch run's 1505 printed one line only)
-note:     3621 is not in ARCH §6 and decides nothing: only the first engine error is classified.
+note:     3621 is not in ARCH §6 and decides nothing: only the first engine error is classified. A permissive leg's
+          classification, recorded beside the Strict verdict (CLS-55).
 ```
 
-### CLS-40 · an unknown deciding number stops: Msg 8111
+### CLS-40 · Msg 8111 (a PRIMARY KEY on a nullable column) is null, whatever the data
 ```case
 kind:     pure
 action:   Get-FxOutcome
@@ -706,12 +723,14 @@ input:    output     *** Could not deploy package.
                      Error SQL72045: Script execution error.  The executed script:
                      ALTER TABLE [dbo].[OrderLine]
                          ADD CONSTRAINT [PK_OrderLine] PRIMARY KEY CLUSTERED ([OrderId] ASC, [LineNumber] ASC);
-expect:   outcome    stop unclassified · "The publish ended with Msg 8111 that no rule classifies. Add a rule with its case." · exit 9
-laws:     H5 H2 E1
-source:   expected · sample-prs/define-pk.md saw 8111 then 1750 live; ARCH §6 has no rule for it (reported)
+expect:   outcome    verdict blocked null · Msg 8111 · PK_OrderLine · exit 3
+          record     phase main · messages {8111, 1750}
+laws:     H5 E1
+source:   expected · ARCH §6 (8111: a PRIMARY KEY on a nullable column, data-independent); sample-prs/define-pk.md saw 8111 then 1750 from hand-run T-SQL
+note:     The block holds on an empty table too, so no question or witness bears on it (QST-42).
 ```
 
-### CLS-41 · Msg 4901 on the permissive leg of a new NOT NULL column stops
+### CLS-41 · Msg 4901 on the permissive leg of a new NOT NULL column is null
 ```case
 kind:     pure
 action:   Get-FxOutcome (permissive leg)
@@ -720,12 +739,13 @@ input:    output     *** Could not deploy package.
                      Error SQL72045: Script execution error.  The executed script:
                      ALTER TABLE [dbo].[Customer]
                          ADD [Segment] NVARCHAR (20) NOT NULL;
-expect:   outcome    stop unclassified · "The publish ended with Msg 4901 that no rule classifies…" · exit 9
+expect:   outcome    verdict blocked null · Msg 4901 · dbo.Customer.Segment · exit 3
 laws:     H5 E1
-source:   expected · the Strict leg is the guard (QST-10); the consequence the permissive leg exists to show has no rule in ARCH §6 (reported)
+source:   expected · ARCH §6 (4901: a NOT NULL column added without a default to a table with rows); the Strict leg is the guard (QST-10)
+note:     A permissive leg's classification, recorded beside the Strict verdict (CLS-55).
 ```
 
-### CLS-42 · Msg 248 (a digit string too large for int) stops
+### CLS-42 · Msg 248 (a digit string too large for int) is overflow
 ```case
 kind:     pure
 action:   Get-FxOutcome (permissive leg)
@@ -733,9 +753,10 @@ input:    output     *** Could not deploy package.
                      Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 248, Level 16, State 1, Line 1 The conversion of the nvarchar value 'w99999999999' overflowed an int column.
                      Error SQL72045: Script execution error.  The executed script:
                      ALTER TABLE [dbo].[Product] ALTER COLUMN [Code] INT NOT NULL;
-expect:   outcome    stop unclassified · "The publish ended with Msg 248 that no rule classifies…" · exit 9
+expect:   outcome    verdict blocked overflow · Msg 248 · dbo.Product.Code · exit 3
 laws:     H5 E1
-source:   verify · that ALTER COLUMN raises 248 for this class; ARCH §6 lists 245, 241, 8114 for conversion only (reported)
+source:   verify · that ALTER COLUMN raises 248 for this class; the mapping is ARCH §6 (220, 248 → overflow)
+note:     A permissive leg's classification, recorded beside the Strict verdict (CLS-55).
 ```
 
 ### CLS-43 · SQL72015 on a blocked publish is attached; the engine error decides
@@ -754,7 +775,7 @@ input:    output     *** Could not deploy package.
 expect:   outcome    verdict blocked guard · Msg 50000/127 · dbo.Product · exit 3
           record     warnings {SQL72015}
 laws:     H5
-source:   receipt · SamplePr "delete-attribute: removing a populated column is BLOCKED by the data-loss guard; the scripted DROP COLUMN is the irreversible step"
+source:   receipt · SamplePr "add-mandatory: a new NOT NULL column with no default blocks a populated table, applies when empty" (its Strict refusal carries SQL72015 beside Msg 50000 "Rows were detected")
 ```
 
 ### CLS-44 · a command timeout on the LocalDB copy
@@ -763,11 +784,10 @@ kind:     pure
 action:   Get-FxOutcome
 input:    output     *** Could not deploy package.
                      Error SQL72014: Core Microsoft SqlClient Data Provider: Msg -2, Level 11, State 0, Line 0 Execution Timeout Expired.  The timeout period elapsed prior to completion of the operation or the server is not responding.
-expect:   outcome    stop toolchain · "LocalDB (MSSQLLocalDB) did not answer within the command timeout. Restart it (SqlLocalDB stop/start) and re-run." · exit 6
+expect:   outcome    stop toolchain · "LocalDB not responding (LocalDB gave no answer in 180 s after one retry). Restart
+                     it (SqlLocalDB stop, then start) and re-run." · exit 6
 laws:     H3 A3
-source:   verify · the text of the timeout line; a witness-scale copy never needs 60 s, so the machine is at fault, not the change
-note:     ARCH §6 has no stop for an unresponsive local engine; toolchain (exit 6, the developer) is the nearest, and its
-          template is for a missing tool (reported).
+source:   verify · the text of the timeout line; ARCH §6's toolchain stop covers a LocalDB that does not respond; a witness-scale copy never needs that long, so the machine is at fault, not the change
 ```
 
 ### CLS-45 · a connection failure to the copy is the machine, not the environment
@@ -777,7 +797,8 @@ action:   Get-FxOutcome
 input:    output     *** Could not deploy package.
                      Unable to connect to target server '(localdb)\MSSQLLocalDB'. Please verify the connection information such as the server name, login credentials, and firewall rules for the target server.
                      A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible.
-expect:   outcome    stop toolchain · "Cannot reach (localdb)\MSSQLLocalDB. Run `facsimile doctor`." · exit 6
+expect:   outcome    stop toolchain · "LocalDB not responding ((localdb)\MSSQLLocalDB gave no answer after one retry).
+                     Run `facsimile doctor`." · exit 6
 laws:     H3 A3
 source:   verify · the wording (scripts/prove.mjs matches "Unable to connect"); `unreachable` (exit 4) is reserved for environments
 ```
@@ -789,7 +810,8 @@ action:   Get-FxOutcome (read leg: Extract)
 input:    output     Connecting to database 'Estate' on server 'qa-sql'.
                      *** Error extracting database:Could not connect to database server.
                      A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible.
-expect:   outcome    stop unreachable · "Cannot reach qa-sql. Check the network, or ask someone with access to run `facsimile read QA`." · exit 4
+expect:   outcome    stop unreachable · "Cannot reach qa-sql (network). Check the network, or ask someone with access to
+                     run `facsimile read QA`." · exit 4
 laws:     H3 A3
 source:   verify · the Extract wording for a refused connection
 ```
@@ -909,10 +931,209 @@ input:    output     Updating database (Start)
                      Updating database (Complete)
                      Successfully published database.
           verdict    Strict: blocked guard · Msg 50000/127 · dbo.Customer
-expect:   outcome    the run's verdict stays blocked guard · Msg 50000/127 · dbo.Customer · exit 3
+expect:   outcome    verdict blocked guard · Msg 50000/127 · dbo.Customer · exit 3
           record     permissive {published; the content-hash diff names the rows it changed}
 laws:     H1 F6
-source:   expected · ARCH §5 step 8; skills/prove-on-dacpac ("Strict proves the refusal; Permissive, only after, shows the consequence")
+source:   expected · ARCH §5 step 10; skills/prove-on-dacpac ("Strict proves the refusal; Permissive, only after, shows the consequence")
+```
+
+### CLS-56 · Msg 220 is overflow
+```case
+kind:     pure
+action:   Get-FxOutcome (permissive leg)
+input:    output     *** Could not deploy package.
+                     Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 220, Level 16, State 2, Line 1 Arithmetic overflow error for data type tinyint, value = 300.
+                     Error SQL72045: Script execution error.  The executed script:
+                     ALTER TABLE [dbo].[OrderLine] ALTER COLUMN [Quantity] TINYINT NOT NULL;
+expect:   outcome    verdict blocked overflow · Msg 220 · dbo.OrderLine.Quantity · exit 3
+laws:     H5 E1
+source:   receipt · SamplePr "retype-explicit: a lossy narrowing type change blocks a populated column, a widening retype applies" (its relaxed INT→TINYINT publish asserts "Msg 220" and "Arithmetic overflow error for data type tinyint")
+note:     A permissive leg's classification, recorded beside the Strict verdict (CLS-55); the layout of the SQL72014 line
+          is CLS-04's.
+```
+
+### CLS-57 · Msg 8169 is conversion
+```case
+kind:     pure
+action:   Get-FxOutcome (permissive leg)
+input:    output     *** Could not deploy package.
+                     Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 8169, Level 16, State 2, Line 1 Conversion failed when converting from a character string to uniqueidentifier.
+                     Error SQL72045: Script execution error.  The executed script:
+                     ALTER TABLE [dbo].[Account] ALTER COLUMN [ExternalKey] UNIQUEIDENTIFIER NULL;
+expect:   outcome    verdict blocked conversion · Msg 8169 · dbo.Account.ExternalKey · exit 3
+laws:     H5 E1
+source:   expected · ARCH §6 (8169 → conversion); the Fits classes of QST-26
+```
+
+### CLS-58 · any number inside an authored batch is blocked authored, the counterfeit 16,127 included
+```case
+kind:     pure
+action:   Get-FxOutcome, once per (number, region)
+input:    output     generator: for each n in {50000 state 127 (a counterfeit guard), 50000 state 1, 50001 (THROW), 207, 208,
+                     515, 544, 547, 2601, 2627, 2628, 2714, 3726, 4711, 8152, 8672, 13575, 245, 468 (collations equal)}:
+                     `Error SQL72014: … Msg n …` then `Error SQL72045: … The executed script:` quoting the region's first
+                     statement
+          delta      region pre Script.PreDeployment.sql · region post Script.PostDeployment.sql
+expect:   outcome    every pair: verdict blocked authored · Msg n · <pre-deploy|post-deploy> · exit 3; never guard, unique,
+                     null, constraint, cdc or collation, and never stop unclassified
+laws:     H5 M1
+source:   expected · INVARIANTS H5 ("any error raised inside a pre- or post-deploy batch, whatever its number"); ARCH §6
+note:     Removing the authored rule must fail this case for every number at once (M1). The quote's first statement is
+          what places the error in a region (CLS-28).
+```
+
+### CLS-59 · Msg 208 in a pre-deploy is authored
+```case
+kind:     pure
+action:   Get-FxOutcome
+input:    output     Updating database (Start)
+                     An error occurred while the batch was being executed.
+                     *** Could not deploy package.
+                     Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 208, Level 16, State 1, Line 4 Invalid object name 'dbo.CustomerArchive'.
+                     Error SQL72045: Script execution error.  The executed script:
+                     INSERT INTO dbo.CustomerArchive (Id, Name)
+                     SELECT Id, Name FROM dbo.Customer WHERE Region IS NULL;
+          delta      region pre Script.PreDeployment.sql (first statement INSERT INTO dbo.CustomerArchive …)
+expect:   outcome    verdict blocked authored · Msg 208 · pre-deploy · exit 3
+          record     phase pre-deploy
+laws:     H5
+source:   expected · ARCH §6 (a script's 208); the pre-deploy runs before the main creates the table it names
+```
+
+### CLS-60 · Msg 2714 in a post-deploy is authored
+```case
+kind:     pure
+action:   Get-FxOutcome
+input:    output     The transacted portion of the database update succeeded.
+                     An error occurred while the batch was being executed.
+                     *** Could not deploy package.
+                     Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 2714, Level 16, State 6, Line 1 There is already an object named '#seed' in the database.
+                     Error SQL72045: Script execution error.  The executed script:
+                     SET NOCOUNT ON;
+          delta      region post Script.PostDeployment.sql (first statement SET NOCOUNT ON;)
+expect:   outcome    verdict blocked authored · Msg 2714 · post-deploy · exit 3
+          record     phase post-deploy
+laws:     H5
+source:   expected · ARCH §6 (a script's 2714)
+```
+
+### CLS-61 · Msg 468 in the main phase: collation when the collations match, platform when they do not
+```case
+kind:     pure
+action:   Get-FxOutcome, once per platform
+input:    output     Refreshing View [dbo].[vCustomerCode]...
+                     *** Could not deploy package.
+                     Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 468, Level 16, State 9, Procedure vCustomerCode, Line 4 Cannot resolve the collation conflict between "Latin1_General_CS_AS" and "Latin1_General_CI_AS" in the equal to operation.
+                     Error SQL72045: Script execution error.  The executed script:
+                     EXECUTE sp_refreshsqlmodule N'[dbo].[vCustomerCode]';
+          delta      main: a collation change on Customer.Code, then the view refresh
+          platform   (a) the copy's server collation equals QA's · (b) it differs from QA's
+expect:   outcome    (a) verdict blocked collation · Msg 468 · dbo.vCustomerCode · exit 3
+                     (b) stop platform · "tempdb collation SQL_Latin1_General_CP1_CI_AS differs from QA's
+                     Latin1_General_CI_AS …. <remedy>." · exit 6
+          record     (a) phase main
+laws:     H5 S4 F9
+source:   expected · ARCH §6 (`blocked collation`: 468 when the copy's server collation equals the environment's,
+          otherwise `stop platform`)
+note:     Get-FxOutcome needs the two server collations beside the output, which ARCH §3's signature (the output and the
+          delta) leaves implicit.
+```
+
+### CLS-62 · SQL72045's quote matches a guard batch token by token, and only then
+```case
+kind:     pure
+action:   Get-FxOutcome, once per quote
+input:    output     Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 50000, Level 16, State 127, Line 6 Rows were detected. The schema update is terminating because data loss might occur.
+                     Error SQL72045: Script execution error.  The executed script:
+                     (a) if exists (SELECT top 1 1 FROM dbo.Customer) RAISERROR (N'Rows were detected. The schema update is terminating because data loss might occur.',16,127) WITH NOWAIT;
+                     (b) IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customer]) RAISERROR (N'Rows were detected. The schema update is terminating because data loss might occur.', 16, 1) WITH NOWAIT;
+                     (c) IF EXISTS (SELECT TOP 1 1 FROM [dbo].[Customers]) RAISERROR (N'Rows were detected. The schema update is terminating because data loss might occur.', 16, 127) WITH NOWAIT;
+          delta      guard batch dbo.Customer (CLS-04's: brackets, line breaks, lower-case `select top 1 1`, RAISERROR on
+                     its line 6)
+expect:   outcome    (a) verdict blocked guard · Msg 50000/127 · dbo.Customer · exit 3
+                     (b) stop unclassified · "The publish ended with Msg 50000/127 that no rule classifies. Add a rule
+                     with its case." · exit 9
+                     (c) stop unclassified · "The publish ended with Msg 50000/127 that no rule classifies…" · exit 9
+laws:     H5
+source:   expected · INVARIANTS H5, ARCH §6 (batches compared token by token, whitespace- and bracket-insensitive);
+          the reformatting itself is CLS-04's scratch run
+note:     Case, whitespace, line breaks and brackets never decide; a token that differs (a state, a table name) always
+          does, so (b) and (c) match no guard batch of this delta.
+```
+
+### CLS-63 · the phase is read in DacFx's order: pre-deploy, main, post-deploy, then validation
+```case
+kind:     pure
+action:   Get-FxOutcome, once per output
+input:    output     (a) "Pre-deploy complete." · "Altering Table [dbo].[Order]..." · then Msg 547 quoting `ALTER TABLE
+                     [dbo].[Order] WITH CHECK CHECK CONSTRAINT [FK_Order_Customer];` with no post-deploy PRINT yet
+                     (b) "Pre-deploy complete." · "The transacted portion of the database update succeeded." · the
+                     post-deploy's PRINT · "Checking existing data against newly created constraints" · then the same 547
+                     (c) "Pre-deploy complete." · "The transacted portion of the database update succeeded." · then Msg 547
+                     quoting the post-deploy's first statement
+          delta      pre Script.PreDeployment.sql · main: WITH NOCHECK ADD FK_Order_Customer · post
+                     Script.PostDeployment.sql · validation: WITH CHECK CHECK FK_Order_Customer
+expect:   outcome    (a) verdict blocked constraint · Msg 547 · FK_Order_Customer · exit 3
+                     (b) verdict blocked constraint · Msg 547 · FK_Order_Customer · exit 3
+                     (c) verdict blocked authored · Msg 547 · post-deploy · exit 3
+          record     (a) phase validation · residue lists post-deploy as not run · (b) phase validation · residue lists
+                     pre-deploy, main and post-deploy as applied · (c) phase post-deploy
+laws:     H6 H5
+source:   expected · INVARIANTS H6 (pre-deploy → main → post-deploy → validation); the order is pinned per engine
+          version by INV-H6-01
+note:     The quoted batch places the failure; the PRINT markers place what ran before it. (a) is the order H6 rules out
+          on 170.5.96; were an engine to produce it, the residue would say so rather than assume.
+```
+
+### CLS-64 · Msg 2627 inside a generated rebuild is unique, not authored
+```case
+kind:     pure
+action:   Get-FxOutcome
+input:    output     Starting rebuilding table [dbo].[T]...
+                     *** Could not deploy package.
+                     Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 2627, Level 14, State 1, Line 12 Violation of PRIMARY KEY constraint 'tmp_ms_xx_constraint_PK_T1'. Cannot insert duplicate key in object 'dbo.tmp_ms_xx_T'. The duplicate key value is (1, 1).
+                     Error SQL72045: Script execution error.  The executed script:
+                     BEGIN TRANSACTION;
+                     SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+          delta      main: QST-63's rebuild batch, its PK now on (Id, Line)
+expect:   outcome    verdict blocked unique · Msg 2627 · PK_T · exit 3
+          record     phase main
+laws:     H5
+source:   expected · ARCH §6 (`blocked unique`: on insert, 2601 or 2627); the rebuild shape is red-team #3's
+note:     The object is the constraint's name after the rebuild's sp_rename (tmp_ms_xx_constraint_PK_T1 → PK_T). The same
+          number in a seed is authored (CLS-21).
+```
+
+### CLS-65 · an unknown number in the main phase stops
+```case
+kind:     pure
+action:   Get-FxOutcome
+input:    output     *** Could not deploy package.
+                     Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 5074, Level 16, State 1, Line 1 The object 'DF_Customer_Region' is dependent on column 'Region'.
+                     Error SQL72045: Script execution error.  The executed script:
+                     ALTER TABLE [dbo].[Customer] ALTER COLUMN [Region] NVARCHAR (30) NULL;
+          delta      main: that ALTER COLUMN
+expect:   outcome    stop unclassified · "The publish ended with Msg 5074 that no rule classifies. Add a rule with its
+                     case." · exit 9
+laws:     H5 H2 E1
+source:   expected · INVARIANTS H5 ("an unknown message number … in the generated main phase is stop unclassified,
+          never clean")
+note:     8111, which this case's predecessor used, now has its rule (CLS-40).
+```
+
+### CLS-66 · Extract that cannot log in is no-access
+```case
+kind:     pure
+action:   Get-FxOutcome (read leg: Extract)
+input:    output     Connecting to database 'Estate' on server 'dev-sql'.
+                     *** Error extracting database:Could not connect to database server.
+                     Login failed for user 'CORP\dev1'.
+          config     the login is CORP\dev1
+expect:   outcome    stop no-access · "CORP\dev1 cannot log in to Estate. Ask a lead to run `facsimile read Dev`, or
+                     request the grant." · exit 4
+laws:     H3 A3
+source:   verify · the Extract wording for a refused login; the template is ARCH §6's no-access ("cannot log in to")
+note:     A server that answers but refuses the login is no-access; one that does not answer is unreachable (CLS-46).
 ```
 
 ## TIER · Get-FxTier: tier and flags
@@ -945,21 +1166,22 @@ kind:     pure
 action:   Get-FxTier, once per question set
 input:    questions  each alone, then each with HasRows(T): NotNull(Customer.Email) · Fits(Product.Code→nvarchar(10)) ·
                      Unique(Product,(Code)) · Orphan(Order.(CustomerId)→Customer) · CheckFalse(Order,CK_Order_Total) ·
-                     KeyLength(N,IX_N_Big) · Rebuild(T) · Computed(T.RefNum)
-expect:   record     tier T2 in all sixteen runs
+                     KeyLength(N,IX_N_Big) · Rebuild(T) · Computed(T.RefNum) · Temporal(Customer)
+expect:   record     tier T2 in all eighteen runs
 laws:     D1 M1
 source:   expected · ARCH §7 (removing any one rule fails this case: M1)
 ```
 
-### TIER-04 · any Authored question is T3, whatever else is asked
+### TIER-04 · any Authored or SeedDrift question is T3, whatever else is asked
 ```case
 kind:     pure
 action:   Get-FxTier, once per question set
 input:    questions  (a) Authored(post:Data/Seed.sql:1, {Status.Code})
                      (b) HasRows(Customer) · NotNull(Customer.Email) · Authored(pre:Script.PreDeployment.sql:4, {Customer.Email})
-expect:   record     (a) tier T3 · (b) tier T3
+                     (c) SeedDrift(Status) key Id, code Code, from post:Data/Seed.sql:1
+expect:   record     (a) tier T3 · (b) tier T3 · (c) tier T3
 laws:     D1 M1
-source:   expected · ARCH §7 (the tier is the highest that holds)
+source:   expected · ARCH §7 (the tier is the highest that holds; T3 is any Authored or SeedDrift)
 ```
 
 ### TIER-05 · the tier ignores the answers
@@ -981,18 +1203,18 @@ input:    questions  (a) "rename ContactPhone to MobileNumber" without a refacto
                      (b) the same rename with its refactorlog entry: none (QST-71)
 expect:   record     (a) tier T1 · (b) tier T0
 laws:     D1
-source:   receipt · SamplePr "rename-attribute: a bare column rename (no refactorlog) is a DROP+ADD blocked by the data-loss guard; EXEC sp_rename preserves every value" (the two deltas)
+source:   expected · (a) SamplePr "rename-attribute: a bare column rename (no refactorlog) is a DROP+ADD blocked by the data-loss guard; EXEC sp_rename preserves every value" (the DROP+ADD leg); (b) rests on QST-71's refactorlog delta, which is verify (the test runs sp_rename by hand, not from a refactorlog)
 ```
 
-### TIER-07 · measurements alone never raise the tier
+### TIER-07 · a Scan alone never raises the tier
 ```case
 kind:     pure
 action:   Get-FxTier
-input:    questions  none · measures Rows(Order)
+input:    questions  none · measures Rows(Order) for Scan(Order)
           answers    Dev Rows(Order)=4
 expect:   record     tier T0
 laws:     D1
-source:   expected · the non-unique index of QST-44; ARCH §7 says "no row-reading statements", which an index build is not (reported)
+source:   expected · ARCH §7 (T0: no data-sensitive statements); a Scan is data-insensitive (ARCH §4, QST-44)
 ```
 
 ### TIER-08 · discharged questions never raise the tier
@@ -1031,13 +1253,12 @@ source:   expected · ARCH §7
 ```case
 kind:     pure
 action:   Get-FxTier
-input:    questions  none · measures Rows(Order) (CREATE NONCLUSTERED INDEX)
+input:    questions  none · measures Rows(Order) for Scan(Order) (CREATE NONCLUSTERED INDEX)
           answers    QA Rows(Order)=1200000
 expect:   record     tier T0 · flags {scale}
 laws:     H4
 source:   receipt · F20 (the nonclustered index build is the first operation whose engine cost surfaces, about 11 s over floor at 1.05M rows)
-note:     Without `measures`, `read` would count nothing for a T0 delta and the flag could not be set. ARCH §3 / §7 do not
-          name this output of Get-FxQuestions (reported).
+note:     The Scan's `measures` are what let `read` count rows for a T0 delta (ARCH §3: Get-FxQuestions returns them).
 ```
 
 ### TIER-12 · a table rebuild at 1M rows sets scale
@@ -1073,27 +1294,30 @@ laws:     H4 D1
 source:   expected · ARCH §7 ("a touched table … on it"): the constraint is on Shipment
 ```
 
-### TIER-15 · a guard-only drop or a nullable add on a large table is not scale
+### TIER-15 · a guard-only drop on a large table is scale; a nullable add is not
 ```case
 kind:     pure
 action:   Get-FxTier, once per question set
-input:    questions  (a) HasRows(Product) (a DROP COLUMN, QST-73) · (b) none (an ADD … NULL)
+input:    questions  (a) HasRows(Product) · measures Rows(Product) (a DROP COLUMN, QST-73) · (b) none (an ADD … NULL)
           answers    UAT Rows(Product)=5000000
-expect:   record     (a) tier T1 · flags {} · (b) tier T0 · flags {}
+expect:   record     (a) tier T1 · flags {scale} · (b) tier T0 · flags {}
 laws:     H4
-source:   expected · ARCH §7's list (index, rebuild, alter column, validation) names neither statement
+source:   expected · ARCH §7 (scale: a touched table at 1,000,000 rows or more whose statement is data-sensitive, Scan,
+          Rebuild or authored DML; HasRows is data-sensitive); an ADD … NULL is non-reading
+note:     The guard reads one row, but the drop it guards is scrutinized at volume all the same; whether a guard alone
+          should set scale is a spine question this case pins to the spine's present text.
 ```
 
-### TIER-16 · an environment with no count gets no scale flag, and is flagged unread
+### TIER-16 · an environment with no count gets no scale flag, and is flagged unread and assumed
 ```case
 kind:     pure
 action:   Get-FxTier, for the Prod record under --assume Prod=worst
 input:    questions  HasRows(Customer) · NotNull(Customer.Email) · measures Rows(Customer)
           answers    Prod none
           config     Prod read none
-expect:   record     tier T2 · flags {unread:Prod}
+expect:   record     tier T2 · flags {unread:Prod, assumed:Prod}
 laws:     H4 F7
-source:   expected · ARCH §7; the volume residual carries the unknown size (REC-05)
+source:   expected · ARCH §7 (unread:<env>, assumed:<env>); the volume residual carries the unknown size (REC-05)
 ```
 
 ### TIER-17 · cdc from a touched table's answer
@@ -1128,9 +1352,7 @@ input:    questions  HasRows(Customer)
           config     Dev, QA, UAT read · Prod read none
 expect:   record     flags {unread:UAT, unread:Prod}
 laws:     H4 F7
-source:   expected · ARCH §7 ("environments with no answers, such as Prod")
-note:     Get-FxTier needs the configured environments, which ARCH §3's signature (questions, answers) does not give it
-          (reported).
+source:   expected · ARCH §7 ("an environment has no answers (such as Prod)"); ARCH §3 hands Get-FxTier the config
 ```
 
 ### TIER-20 · in-flight when a touched table is in an open window
@@ -1156,29 +1378,32 @@ laws:     S4
 source:   expected · INVARIANTS S4
 ```
 
-### TIER-22 · a defaulted NOT NULL column on a large table is T0 and not scale
+### TIER-22 · a defaulted NOT NULL column on a large table is T0 and scale
 ```case
 kind:     pure
 action:   Get-FxTier
-input:    questions  none (QST-70)
+input:    questions  none · measures Rows(Customer) for Scan(Customer) (QST-70)
           answers    QA Rows(Customer)=3000000
-expect:   record     tier T0 · flags {}
+expect:   record     tier T0 · flags {scale}
 laws:     H4
-source:   verify · whether the size-of-data write of ADD … DEFAULT … NOT NULL belongs in §7's scale list (it rewrites every row on editions without the metadata-only path); the volume residual names it meanwhile (reported)
+source:   expected · ARCH §4 (an ADD … NOT NULL DEFAULT backfill is a Scan), §7 (scale counts a Scan)
+note:     The backfill rewrites every row on editions without the metadata-only path; the flag is scrutiny, not a
+          prediction.
 ```
 
 ### TIER-23 · every flag at once, in canonical order
 ```case
 kind:     pure
-action:   Get-FxTier
+action:   Get-FxTier, for the Prod record under --assume Prod=worst
 input:    questions  HasRows(Customer) · NotNull(Customer.Email) · measures Rows(Customer)
           answers    QA Rows(Customer)=2000000 · Cdc(Customer)=yes
           config     Prod read none
           inflight   dbo.Customer listed
           platform   allowOlderLocalDb true, LocalDB 15.0, DSP Sql160
-expect:   record     tier T2 · flags {scale, cdc, unread:Prod, in-flight, older-localdb}
+          lag        QA receives one operation beyond this PR · QA's deploy would drop dbo.QaOnly
+expect:   record     tier T2 · flags {scale, cdc, unread:Prod, assumed:Prod, lag:QA, drift:QA, in-flight, older-localdb}
 laws:     D1 H4
-source:   expected · README §2's flag order
+source:   expected · ARCH §7's flag table order
 ```
 
 ### TIER-24 · the order of the questions never changes the result
@@ -1188,6 +1413,59 @@ action:   Get-FxTier on TIER-23's input with its questions shuffled, ten times
 expect:   record     byte-identical tier and flags each time
 laws:     D1
 source:   expected · INVARIANTS D1
+```
+
+### TIER-25 · lag: the environment receives operations beyond this PR
+```case
+kind:     pure
+action:   Get-FxTier
+input:    questions  HasRows(Customer)
+          lag        Compare-FxDeltas: delta.QA.sql holds `ALTER TABLE [dbo].[Product] ADD [Sku] NVARCHAR (20) NULL;`, which
+                     delta.pr.sql lacks (QA is a release behind the merge-base) · Dev's delta adds nothing beyond the PR
+expect:   record     flags {lag:QA} · lag:QA {adds Product.Sku}
+laws:     H4 F7
+source:   expected · ARCH §3 (Compare-FxDeltas), §7 (lag:<env>)
+note:     Dev carries no lag flag; the flag is per environment, from that environment's own delta (F7).
+```
+
+### TIER-26 · drift: the deploy would drop environment-only objects
+```case
+kind:     pure
+action:   Get-FxTier
+input:    questions  none
+          lag        Compare-FxDeltas: delta.UAT.sql drops dbo.IX_Customer_Hotfix and dbo.vUatReport, objects only UAT
+                     holds; delta.pr.sql drops neither
+expect:   record     tier T0 · flags {drift:UAT} · drift:UAT {removes IX_Customer_Hotfix, vUatReport}
+laws:     H4 F7
+source:   expected · ARCH §3 (Compare-FxDeltas: "the environment-only objects the deploy drops"), §7 (drift:<env>)
+```
+
+### TIER-27 · in-flight is keyed on each environment's delta tables, and a PR that edits the ledger warns
+```case
+kind:     pure
+action:   Get-FxTier, once per row
+input:    questions  Dev: HasRows(Customer) · QA: HasRows(Customer) · Fits(Product.Code→nvarchar(10))
+          inflight   | CHG-0412 | narrow Product.Code | dbo.Product | 1 | 2 | ship R2 | 2026-11-02 | #812 |
+                     rows: (a) the PR's changed files never mention Product · (b) as (a), and the PR also edits the
+                     ledger
+expect:   record     (a) Dev flags {} · QA flags {in-flight} · (b) QA flags {in-flight} · warnings {the PR edits the
+                     in-flight ledger}
+laws:     H4 F7
+source:   expected · ARCH §2 row 27 (keyed on the tables of each environment's delta, not on changed files; a PR that
+          also edits the ledger warns rather than stops), §7
+note:     In (a) the shell then stops in-flight for QA alone; in (b) the warning replaces that stop. An unreadable ledger
+          is stop config (CLI-16).
+```
+
+### TIER-28 · scale from authored DML on a large table
+```case
+kind:     pure
+action:   Get-FxTier
+input:    questions  Authored(pre:Script.PreDeployment.sql:4, {Customer.Email}) · measures Rows(Customer)
+          answers    QA Rows(Customer)=1500000
+expect:   record     tier T3 · flags {scale}
+laws:     H4
+source:   expected · ARCH §7 (scale counts authored DML on the touched table)
 ```
 
 ## REC · Get-FxRecord: the ten sections
@@ -1207,10 +1485,12 @@ expect:   record     Verdict: blocked guard on dbo.Customer · tier T2 · ask "C
                      Before promoting: QA, UAT, Prod: run the NotNull probe, expect 0 rows
                      The data: Dev: Customer holds 6 rows; Email is NULL in 2
                      How it ships: ships two releases (F4, F7)
-                     What proving showed: tried: Msg 50000/127 on dbo.Customer (phase main) · residue {none}
+                     What proving showed: tried: Msg 50000/127 on dbo.Customer (phase main) · residue {pre-deploy: none ·
+                     main: none}
                      After deploy — check: SELECT COUNT(*) FROM dbo.Customer WHERE Email IS NULL; expect 0
                      How to roll this back: ALTER COLUMN Email back to NULL loses nothing · backing out was not exercised
-                     Not checked: notChecked {QA, UAT, Prod, volume, cdc, change-over-time, engine-version, integration-studio}
+                     Not checked: notChecked {unread:QA, unread:UAT, unread:Prod, volume, cdc, drift-since-measure,
+                     engine-version, integration-studio}
 laws:     H4 H6 H1
 source:   receipt · F7 (populated NULL → NOT NULL blocks and ships as two releases) · README §1's example record
 note:     Intent is the developer's; the tool leaves it empty rather than inventing it. Counts are integers (P1).
@@ -1224,7 +1504,8 @@ input:    verdict    clean
           questions  none
           answers    Dev, QA, UAT, Prod read; Cdc(Customer)=no everywhere
           delta      ALTER TABLE [dbo].[Customer] ADD [MiddleName] NVARCHAR (100) NULL;
-expect:   record     ships in place, no data read or written · notChecked {volume, change-over-time, engine-version, integration-studio}
+expect:   record     ships in place, no data read or written · notChecked {volume, drift-since-measure, engine-version,
+                     integration-studio}
 laws:     H4
 source:   receipt · SamplePr "add-optional: a new nullable column applies clean on a populated table" (the clean leg); the residual rule is H4
 ```
@@ -1234,22 +1515,23 @@ source:   receipt · SamplePr "add-optional: a new nullable column applies clean
 kind:     pure
 action:   Get-FxRecord
 input:    verdict    clean
-          questions  none · measures Rows(Order)
+          questions  none · measures Rows(Order) for Scan(Order)
           answers    every environment read; Rows(Order) < 1000000 everywhere; Cdc(Order)=no everywhere
           delta      CREATE NONCLUSTERED INDEX [IX_Order_StatusId] ON [dbo].[Order]([StatusId] ASC);
-expect:   record     notChecked {volume, change-over-time, engine-version}
+expect:   record     notChecked {volume, drift-since-measure, engine-version}
 laws:     H4
-source:   expected · H4 (volume and change over time always apply; engine-version until the Octopus DacFx pin equals the stamp, estate/toolchain.md; an index changes no entity, so no Integration Studio refresh)
+source:   expected · H4 (volume and drift-since-measure always apply; engine-version until the Octopus DacFx pin equals the stamp, estate/toolchain.md; an index changes no entity, so no Integration Studio refresh)
 ```
 
 ### REC-04 · notChecked is drawn only from the closed set
 ```case
 kind:     pure
 action:   Get-FxRecord over every REC case's input
-expect:   record     every notChecked is non-empty and ⊆ {<unread environment>, volume, cdc, workload, platform,
-                     change-over-time, engine-version, integration-studio}, in that order
+expect:   record     every notChecked is non-empty and ⊆ {unread:<env>, assumed:<env>, volume, cdc, workload,
+                     platform:<what>, drift-since-measure, engine-version, integration-studio, external-consumers,
+                     app-behaviour, declared-not-measured, tooling}, in that order
 laws:     H4 D1
-source:   expected · INVARIANTS H4
+source:   expected · INVARIANTS H4 (the closed token set)
 ```
 
 ### REC-05 · unread environments are named in configuration order
@@ -1259,7 +1541,8 @@ action:   Get-FxRecord
 input:    verdict    blocked guard · Msg 50000/127 · dbo.Customer (Dev)
           answers    Dev present · QA present · UAT absent
           config     Dev, QA, UAT read · Prod read none
-expect:   record     notChecked {UAT, Prod, volume, cdc, change-over-time, engine-version, integration-studio}
+expect:   record     notChecked {unread:UAT, unread:Prod, volume, cdc, drift-since-measure, engine-version,
+                     integration-studio}
 laws:     H4 F7
 source:   expected · H4; QA's own verdict covers QA (F7), so it is not a residual of this one
 ```
@@ -1283,7 +1566,7 @@ action:   Get-FxRecord, once per input
 input:    verdict    clean
           platform   (a) older-localdb flag set
           delta      (b) a changed pre-deploy creating #map (Code NVARCHAR(50)) with no COLLATE DATABASE_DEFAULT
-expect:   record     (a) platform in notChecked · (b) platform in notChecked
+expect:   record     (a) notChecked includes platform:older-localdb · (b) notChecked includes platform:tempdb-collation
 laws:     H4 S4
 source:   receipt · red-team #13 (#temp joins hit Msg 468 against the server collation ✓) · S4
 ```
@@ -1423,11 +1706,11 @@ action:   Get-FxRecord
 input:    verdict    blocked constraint · Msg 547 · FK_Order_Customer (phase validation)
           delta      pre-deploy (one no-op UPDATE) · main: WITH NOCHECK ADD FK_Order_Customer · post-deploy: the seed · validation: WITH CHECK CHECK
           replan     ALTER TABLE [dbo].[Order] WITH CHECK CHECK CONSTRAINT [FK_Order_Customer];
-expect:   record     residue {pre: applied · main: FK_Order_Customer added WITH NOCHECK · post: applied · validation: FK_Order_Customer untrusted (is_not_trusted = 1)}
+expect:   record     residue {pre-deploy: applied · main: FK_Order_Customer added WITH NOCHECK · post-deploy: applied ·
+                     validation: FK_Order_Customer untrusted (is_not_trusted = 1)}, in that order
 laws:     H6
-source:   receipt · F9 (the failed publish leaves the key present but untrusted) · INVARIANTS H6 property
-note:     The ordering (post-deploy before validation, outside the transacted portion) and is_not_trusted = 1 were also
-          seen in a scratch run. What the replan shows for an untrusted key is verify.
+source:   verify · the order (post-deploy before validation, outside the transacted portion) was observed 2026-10-18 on sqlpackage 170.5.96 and is pinned by INV-H6-01; the untrusted key is receipt F9 (the failed publish leaves the key present but untrusted)
+note:     What the replan shows for an untrusted key is part of the same open question.
 ```
 
 ### REC-20 · residue after Msg 1505 when the scripts are not transactional
@@ -1453,7 +1736,7 @@ input:    verdict    blocked guard · Msg 50000/127 · dbo.Product
           options    IncludeTransactionalScripts=True
           delta      pre-deploy: UPDATE … LEFT(Code, 10) and ALTER TABLE dbo.Product ALTER COLUMN Code NVARCHAR(10) NOT NULL · main: the guard, then the model's ALTER
           replan     empty for Product.Code
-expect:   record     residue {pre: Product.Code shortened and narrowed to nvarchar(10) · main: none}
+expect:   record     residue {pre-deploy: Product.Code shortened and narrowed to nvarchar(10) · main: none}
 laws:     H6
 source:   receipt · F2 (refused, yet the column was already 10 afterward) · F6 (a pre-deploy side effect is not rolled back)
 ```
@@ -1475,10 +1758,10 @@ source:   receipt · F13 (one publish with a rename and a populated tightening �
 ```case
 kind:     pure
 action:   Get-FxRecord
-input:    verdict    blocked seed · Msg 544 · Script.PostDeployment.sql (phase post)
+input:    verdict    blocked authored · Msg 544 · post-deploy (phase post-deploy)
           delta      QST-64's rebuild · post-deploy: the Category MERGE with explicit ids
           replan     empty
-expect:   record     residue {main: Category rebuilt with IDENTITY · post: failed at the seed}
+expect:   record     residue {pre-deploy: none · main: Category rebuilt with IDENTITY · post-deploy: failed at the seed}
 laws:     H6
 source:   expected · F12 (the first attempt failed in the post-deploy seed); F15 (b) (a half-applied release after a post-deploy failure)
 ```
@@ -1499,23 +1782,27 @@ source:   expected · INVARIANTS H6 ("after any block")
 kind:     pure
 action:   Get-FxRecord
 input:    verdict    clean
-          stamps     tool 1.0.0 · sqlpackage 170.5.96 · LocalDB 16.0.4135 Express · hashes of options, schema.Dev.dacpac,
-                     answers.Dev.json, witness.sql, delta.Dev.sql · answers measured by CORP\dev1 at 2026-10-18T09:12:00Z
-expect:   record     stamps {tool, sqlpackage, server, options#, schema#, answers#, witness#, delta#, measuredBy, measuredAt}, all present
+          stamps     tool 1.0.0 · sqlpackage 170.5.96 · LocalDB 16.0.4135 Express · head 3f9c2e1 · merge-base 8a01d77 ·
+                     answers read from dev-sql/Estate · hashes of options, schema.Dev.dacpac, answers.Dev.json's content,
+                     witness.sql, delta.Dev.sql and delta.pr.sql · answers measured by CORP\dev1 at 2026-10-18T09:12:00Z
+expect:   record     stamps {tool, sqlpackage, server version and edition, head, mergeBase, answersServer,
+                     answersDatabase, options#, schema#, answers#, witness#, delta#, deltaPr#, measuredBy, measuredAt},
+                     all present
 laws:     H7 E2
 source:   expected · INVARIANTS H7
 ```
 
-### REC-26 · each stamped input changes the identity hash; the verdict's own time does not
+### REC-26 · each stamped input changes the identity hash; the verdict's time and the answers' login and time do not
 ```case
 kind:     pure
 action:   Get-FxRecord on REC-25's input, changing one input at a time
-input:    stamps     change (1) the options hash (2) the schema hash (3) the answers hash (4) the witness hash (5) the delta
-                     hash (6) the sqlpackage version (7) the LocalDB version (8) the tool version; then (9) only the verdict's
-                     own timestamp
-expect:   record     identity hash differs from REC-25's in (1)–(8); is equal in (9)
-laws:     H7 D1
-source:   expected · INVARIANTS H7, D1
+input:    stamps     change (1) the options hash (2) the schema hash (3) the answers' content hash (4) the witness hash
+                     (5) the delta hash (6) the delta.pr hash (7) the head commit (8) the merge-base commit (9) the
+                     sqlpackage version (10) the LocalDB version (11) the tool version; then, one at a time, (12) only the
+                     verdict's own timestamp (13) only the answers' measuredAt (14) only the answers' login
+expect:   record     identity hash differs from REC-25's in (1)–(11); is equal in (12)–(14)
+laws:     H7 D1 F7
+source:   expected · INVARIANTS H7 ("the login and the time are stamps but not inputs"), D1
 ```
 
 ### REC-27 · a verdict without the sqlpackage version is never emitted
@@ -1524,7 +1811,8 @@ kind:     pure
 action:   Get-FxRecord
 input:    verdict    clean
           stamps     as REC-25 but sqlpackage absent
-expect:   outcome    stop toolchain · "sqlpackage did not report its version. Reinstall it, then re-run." · exit 6
+expect:   outcome    stop toolchain · "sqlpackage not responding (it reported no version). Reinstall it at the pin, then
+                     re-run." · exit 6
 laws:     E2 H7 H1
 source:   expected · E2 ("a verdict without a version stamp is invalid")
 ```
@@ -1537,11 +1825,11 @@ input:    verdict    populated-and-clean world: blocked guard · Msg 50000/127 �
                      populated-and-violating world: blocked guard · Msg 50000/127 · dbo.Customer
           questions  HasRows(Customer) · NotNull(Customer.Email)
           config     Prod read none · UAT read (nearest)
-expect:   record     stamps {assumed, schema from UAT} · flags {unread:Prod}
+expect:   record     stamps {assumed, schema from UAT} · flags {unread:Prod, assumed:Prod}
                      What proving showed: both worlds blocked by the guard, Msg 50000/127
                      Before promoting: Prod: run the row-count probe; if Prod holds rows, this ships as two releases · run the
                      NotNull probe for the backfill, expect the count the release-one script handles
-                     notChecked includes Prod
+                     notChecked includes assumed:Prod
 laws:     H4 F7
 source:   expected · ARCH §8 (--assume <env>=worst) · TWIN_SUCCESSION §6 ("record the both-worlds result and the probe to run before promoting")
 ```
@@ -1554,9 +1842,10 @@ input:    verdict    populated-and-clean world: clean
                      populated-and-violating world: blocked constraint · Msg 547 · FK_Order_Customer
           questions  Orphan(Order.(CustomerId)→Customer)
           config     Prod read none · UAT read
-expect:   record     stamps {assumed, schema from UAT}
+expect:   record     stamps {assumed, schema from UAT} · flags {unread:Prod, assumed:Prod}
                      What proving showed: clean when every order has a customer; Msg 547 on FK_Order_Customer when one does not
                      Before promoting: Prod: run the orphan probe, expect 0 rows
+                     notChecked includes assumed:Prod
 laws:     H4
 source:   expected · ARCH §8; F9 (the violating world's message)
 ```
@@ -1568,8 +1857,9 @@ action:   Get-FxRecord (--assume Prod=worst)
 input:    verdict    violating worlds: exact, case, trailing, nulls → each blocked unique · Msg 1505 · UX_Customer_Email
           questions  Unique(Customer,(Email)) classes {exact, case, trailing, nulls}
           config     Prod read none
-expect:   record     Before promoting: Prod: run the duplicate-group probe under Prod's column collation for each class, expect 0
-                     · notChecked includes Prod and platform (Prod's collation was not read)
+expect:   record     Before promoting: Prod: run the duplicate-group probe under the collation the index will be built
+                     with, for each class, expect 0 · notChecked includes assumed:Prod and platform:collation (Prod's
+                     collation was not read; the schema is the nearest read environment's)
 laws:     H4 F9
 source:   expected · F10 (1505 for a duplicate and for a second NULL); red-team #13 (the copy takes the dacpac's collation)
 ```
@@ -1603,7 +1893,7 @@ source:   receipt · SamplePr "delete-attribute: removing a populated column is 
 kind:     pure
 action:   Get-FxRecord
 input:    verdict    clean
-          questions  none · measures Rows(Order)
+          questions  none · measures Rows(Order) for Scan(Order)
           answers    QA Rows(Order)=1200000
           delta      CREATE NONCLUSTERED INDEX [IX_Order_StatusId] ON [dbo].[Order]([StatusId] ASC);
 expect:   record     tier T0 · flags {scale} · ships in place · weighs additive · scrutiny "at production row counts this
@@ -1617,7 +1907,7 @@ source:   receipt · F20 (index builds surface above 1M rows) · THE_RECORD §5 
 kind:     pure
 action:   Get-FxRecord
 input:    verdict    clean
-          questions  none
+          questions  none · measures Rows(Customer) for Scan(Customer)
           delta      ALTER TABLE [dbo].[Customer] ADD [Segment] NVARCHAR (20) CONSTRAINT [DF_Customer_Segment] DEFAULT (N'Standard') NOT NULL;
 expect:   record     tier T0 · effects {adds Customer.Segment} · ships in place · weighs existing data is modified (every row receives 'Standard')
 laws:     H1
@@ -1630,8 +1920,8 @@ kind:     pure
 action:   Get-FxRecord
 input:    verdict    clean · warnings {1945: IX_N_Big maximum key 2000 bytes}
           delta      CREATE NONCLUSTERED INDEX [IX_N_Big] ON [dbo].[N]([Big] ASC);
-expect:   record     What proving showed: Msg 1945 on IX_N_Big (maximum key 2000 bytes)
-                     · notChecked includes change-over-time ("a later row with a key over 1700 bytes fails Msg 1946")
+expect:   record     What proving showed: Msg 1945 on IX_N_Big (maximum key 2000 bytes) · warnings {1945}
+                     · notChecked includes app-behaviour ("a later row with a key over 1700 bytes fails Msg 1946")
 laws:     H4
 source:   receipt · red-team #16 (1945 warns now, 1946 fails later ✓)
 ```
@@ -1680,10 +1970,93 @@ source:   expected · skills/prove-on-dacpac ("the disposable copy proves the FO
 ```case
 kind:     pure
 action:   Get-FxRecord
-input:    verdict    blocked authored · Msg 50000/127 · Script.PreDeployment.sql (phase pre)
+input:    verdict    blocked authored · Msg 50000/127 · pre-deploy (phase pre-deploy)
           questions  Orphan(Order.(CustomerId)→Customer) · Authored(pre:Script.PreDeployment.sql:1, {Customer})
 expect:   record     tier T3 · What proving showed: tried: Script.PreDeployment.sql raised Msg 50000/127 before the change ran
                      · How it ships: none decided (the authored script refused)
 laws:     H5 H1
 source:   expected · red-team #12; CLS-06
+```
+
+### REC-40 · a clean publish that replays silent records silence ok
+```case
+kind:     pure
+action:   Get-FxRecord
+input:    verdict    clean
+          delta      ALTER TABLE [dbo].[Customer] ADD [MiddleName] NVARCHAR (100) NULL;
+          replay     plan empty · rows affected 0 · hashes of Customer and every reference table equal before and after
+expect:   record     silence ok
+laws:     D6
+source:   expected · INVARIANTS D6; ARCH §5 step 11
+```
+
+### REC-41 · not-silent carries its evidence, signal by signal
+```case
+kind:     pure
+action:   Get-FxRecord, once per replay
+input:    verdict    clean
+          replay     (a) plan empty · rows affected 3 (the Status MERGE) · hashes equal
+                     (b) plan re-creates Product.LegacyCode · rows affected 5 · Product's hash differs
+expect:   record     (a) silence not-silent(rows affected 3: post-deploy Status MERGE; hashes unchanged)
+                     (b) silence not-silent(plan: adds Product.LegacyCode; rows affected 5; hash changed: Product) · the
+                     verdict stays clean
+laws:     D6 H1
+source:   expected · INVARIANTS D6 ("otherwise the record carries not-silent with the evidence"); F12 (the unguarded MERGE
+          touches 3 rows); F17 (the replay re-creates a dropped column)
+```
+
+### REC-42 · lag and drift reach the record as their own lines
+```case
+kind:     pure
+action:   Get-FxRecord
+input:    verdict    clean (QA)
+          lag        lag:QA {adds Product.Sku} · drift:QA {removes vQaReport}
+expect:   record     flags {lag:QA, drift:QA} · lag:QA {adds Product.Sku} · drift:QA {removes vQaReport} · What proving
+                     showed names both, apart from this PR's own effects
+laws:     H4 F7
+source:   expected · ARCH §3 (Compare-FxDeltas), §7; cases/README §2 (the record's lag and drift lines)
+note:     The PR's effects come from delta.pr.sql; what QA receives beyond them is QA's own, and the reviewer must see it
+          separately.
+```
+
+### REC-43 · a question answered only by a declared witness is declared-not-measured
+```case
+kind:     pure
+action:   Get-FxRecord, once per question
+input:    verdict    blocked conversion · Msg 245 · dbo.Product.CodeNum (a) · clean (b)
+          questions  (a) Computed(Product.CodeNum) unmeasured, discharged by witness.sql line 3
+                     (b) CheckFalse(T,CK_T_RefNum) unmeasured (its predicate holds CONVERT), discharged by witness.sql line 2
+expect:   record     (a), (b) notChecked includes declared-not-measured · the declared rows listed by line, apart from the
+                     generated plan
+laws:     H4 H2 M2
+source:   expected · INVARIANTS H2 ("unmeasured questions count as answered only when a declared witness covers them"),
+          H4, M2
+```
+
+### REC-44 · residue names the four phases in DacFx's order
+```case
+kind:     pure
+action:   Get-FxRecord
+input:    verdict    blocked unique · Msg 1505 · UX_Product_Code (phase main)
+          options    IncludeTransactionalScripts=False
+          delta      pre-deploy: one backfill UPDATE · main: ALTER COLUMN Product.Code, then CREATE UNIQUE INDEX
+                     UX_Product_Code · post-deploy: the seed · validation: none
+          replan     CREATE UNIQUE NONCLUSTERED INDEX [UX_Product_Code] ON [dbo].[Product]([Code] ASC); plus the
+                     post-deploy
+expect:   record     residue {pre-deploy: applied · main: Product.Code altered, UX_Product_Code not built · post-deploy:
+                     not run · validation: not run}, in that order
+laws:     H6
+source:   expected · INVARIANTS H6 (pre-deploy, main, post-deploy, validation); red-team #4 (failed deploys are not atomic ✓)
+```
+
+### REC-45 · engine warnings are recorded and never decide
+```case
+kind:     pure
+action:   Get-FxRecord, once per verdict
+input:    verdict    (a) clean with warnings {1945: IX_N_Big} · (b) blocked guard · Msg 50000/127 · dbo.Product with
+                     warnings {SQL72015, SQL72016}
+expect:   record     (a) verdict clean · warnings {1945} · (b) verdict blocked guard · warnings {SQL72015, SQL72016}
+laws:     H5 H1
+source:   expected · ARCH §6 ("engine warnings (Msg 1945; SQL72015, SQL72016) never decide a verdict; they are recorded
+          under warnings")
 ```

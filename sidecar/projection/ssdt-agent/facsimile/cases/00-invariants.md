@@ -1,6 +1,6 @@
 # 00 · Invariants (`INV-<law>-nn`)
 
-*Property cases for the laws that other families touch only in passing: D1–D5, M1–M4, S1, S2, S5, S6, H1, H7, E1–E4, A1–A5, T3, T4, F5, F6 and F8.
+*Property cases for the laws that other families touch only in passing: D1–D6, M1–M4, S1, S2, S5, S6, H1, H6, H7, E1–E4, A1–A5, T3, T4, F5, F6 and F8.
 Each case states a property over a generated input set: `setup`, `input` or `env` names the generator, and `action` begins "for all".
 Each `note` names the counter-example the property must catch, so that a vacuous mechanism, or a vacuous test of it, fails.*
 
@@ -12,8 +12,8 @@ kind:     process
 setup:    generator: every `corpus` fixture × each environment it defines, with its answers and witness.sql
           committed; .facsimile/ emptied before each run
 action:   for all fixtures X: facsimile prove in a fresh process, twice; compare every artifact
-expect:   files      the witness plan, the planted rows (sql/hash.sql per table), delta.<env>.sql and verdict.<env>.json
-                     byte-identical across the two runs, apart from timestamp fields
+expect:   files      the witness plan, the planted rows (sql/hash.sql per table), delta.<env>.sql, delta.pr.sql,
+                     verdict.<env>.json and verdicts.json byte-identical across the two runs, apart from timestamp fields
 laws:     D1
 source:   expected · INVARIANTS D1
 note:     counter-example: plan items held in a `@{}` keyed by table name; PowerShell 7 seeds string hashing per
@@ -31,7 +31,7 @@ expect:   plan       byte-identical across the variants of one input
           record     byte-identical across the variants of one input
 laws:     D1
 source:   expected · INVARIANTS D1
-note:     counter-example: notChecked assembled in answers-file order (`{QA, Prod}` against `{Prod, QA}`), or a pattern
+note:     counter-example: notChecked assembled in answers-file order (`{unread:QA, unread:Prod}` against `{unread:Prod, unread:QA}`), or a pattern
           ending in `\n` that misses every CRLF line of a Windows checkout.
 ```
 
@@ -65,8 +65,8 @@ note:     counter-example: a `.facsimile/known-questions.json` left by an earlie
 ### INV-D2-02 · no state object in any database the tool creates
 ```case
 kind:     sql
-env:      generator: every database a full corpus run creates (each fx_<hash12>_base, each proof copy), and fx_local
-          after `up`
+env:      generator: every database a full corpus run creates (each fx_base_<hash12>_<rand4>, each proof copy), and
+          fx_local after `up`
 action:   for all databases D: list D's objects and database-level extended properties absent from
           schema.<env>.dacpac (from head's model, for fx_local)
 expect:   copy       none · `up`'s fingerprint lives only under .facsimile/
@@ -76,19 +76,23 @@ note:     counter-example: the Twin's `[twin].[__state]` carried into fx_local, 
           the database (an F2 identity difference as well).
 ```
 
-### INV-D2-03 · the extracted schema is the one cache prove cannot rebuild
+### INV-D2-03 · the committed schema is the one input prove cannot rebuild
 ```case
 kind:     process
-setup:    generator: every corpus fixture after `read`, then .facsimile/schema.<env>.dacpac deleted, with every
-          environment server stopped
-action:   for all fixtures: facsimile prove <env>
-expect:   outcome    a stop whose next step is `facsimile read <env>` (the stale-answers template) · exit 5 · never a
+setup:    generator: every corpus fixture after `read`, with every environment server stopped, then one of:
+          proofs/<slug>/schema.<env>.dacpac deleted · every .facsimile/ cache deleted
+action:   for all fixtures and both deletions: facsimile prove <env>
+expect:   outcome    schema deleted: stop answers-invalid · "answers.<env>.json does not validate
+                     (proofs/<slug>/schema.<env>.dacpac: missing) … Re-run `facsimile read <env>`." · exit 5 · never a
                      verdict
+                     caches deleted: the verdict of a warm run, the base rebuilt from the committed schema
           files      zero environment sessions
 laws:     D2 M3 H2
-source:   expected · INVARIANTS D2, M3
+source:   expected · INVARIANTS D2, M3; ARCH §8 (schema.<env>.dacpac is committed so CI reproduces the proof without
+          access to the environment)
 note:     counter-example: prove re-extracting quietly (breaks M3), or proving against the merge-base build instead (a
-          schema the environment does not have; breaks F7).
+          schema the environment does not have; breaks F7). ARCH §6 has no template that names a missing schema;
+          answers-invalid, whose next step is the right one, is the nearest.
 ```
 
 ### INV-D3-01 · one column changed, every other column's planted values unchanged
@@ -121,15 +125,15 @@ note:     counter-example: one counter shared across tables (`w0001`, `w0002`, �
 ### INV-D4-01 · after convergence nothing to apply; after any input change, re-convergence
 ```case
 kind:     process
-setup:    generator: edit sequences of length ≤ 4 over {none, add a nullable column, edit a referenceData row,
-          up.rowsPerTable 3→5, one option value, the referenceData glob list}
+setup:    generator: edit sequences of length ≤ 4 over {none, add a nullable column, edit a referenceData row, an
+          up.sql row, up.rowsPerTable 3→5, one option value, the referenceData glob list}
 action:   for all sequences: after each edit, run `facsimile up` twice
-expect:   stdout     the first up after a real edit: ok converged · .facsimile/out/up.json · exit 0
-                     every second up: ok Nothing to apply · .facsimile/out/up.json · exit 0
+expect:   stdout     the first up after a real edit: DONE up · converged · .facsimile/out/up.json · exit 0
+                     every second up: DONE up · Nothing to apply · .facsimile/out/up.json · exit 0
 laws:     D4 T3
 source:   expected · INVARIANTS D4
-note:     counter-example: a fingerprint over the project's table files only, so a Status row edit reports "Nothing to
-          apply" over stale reference data.
+note:     counter-example: a fingerprint over the project's table files only, so a Status row edit (or an up.sql pin)
+          reports "Nothing to apply" over stale data.
 ```
 
 ### INV-D4-02 · the converged state does not depend on the path taken
@@ -150,12 +154,14 @@ note:     counter-example: an in-place re-convergence that leaves a removed colu
 ```case
 kind:     process
 setup:    generator: from a warm base for fixture X, exactly one change of: an index name in schema.<env>.dacpac ·
-          one referenceData file's content (same path) · the order of the referenceData globs · one value in
-          options.publish.xml · one `sqlcmd` value
+          one merge-base referenceData file's content (same path) · the order of the referenceData globs · one value
+          in options.publish.xml · one `sqlcmd` value · the tool version · the sqlpackage version · the LocalDB version
 action:   for all changes: prove
-expect:   copy       a new fx_<hash12>_base, with a new hash12, built for every change; the old backup untouched
+expect:   copy       a new base backup under a new hash12, built through a fresh fx_base_<hash12>_<rand4>, for every
+                     change; the old backup untouched
 laws:     D5
-source:   expected · INVARIANTS D5; ARCH §5 step 1 (key = schema, referenceData, effective options)
+source:   expected · INVARIANTS D5; ARCH §5 step 1 (key = schema, merge-base referenceData, effective options, tool,
+          DacFx and LocalDB versions)
 note:     counter-example: a key over the options file's path rather than its content, so an option edit restores the
           old base.
 ```
@@ -185,8 +191,57 @@ expect:   copy       the base rebuilt under the new engine
 laws:     D5 E2 H7
 source:   expected · INVARIANTS D5, E2; FINDINGS_AND_CHANGES Part 5 and F19 (trust state differs between 162.x and
           170.x)
-note:     ARCH §5's key (schema, referenceData, options) omits the DacFx and LocalDB versions; counter-example: a
-          162-built base restored after the bump.
+note:     counter-example: a 162-built base restored after the bump, its trust states carried into a 170.x proof.
+```
+
+### INV-D6-01 · every clean corpus case, published again, is silent
+```case
+kind:     corpus
+env:      generator: every corpus fixture whose facsimile outcome is verdict clean
+change:   the fixture's own change, published a second time onto the same copy (ARCH §5 step 11)
+expect:   outcome    verdict clean · exit 0
+          record     silence ok: the second plan empty, rows affected 0, the hash of every touched and reference table
+                     unchanged
+laws:     D6 D1
+source:   expected · INVARIANTS D6; FINDINGS F12 (a guarded seed MERGE over unchanged rows touches 0 rows and keeps
+          its content hash)
+note:     counter-example: a silence check that compares only the plan, so a post-deploy MERGE that rewrites every
+          row on each publish passes.
+```
+
+### INV-D6-02 · an unguarded MERGE, an R1 replay and a same-value rewrite are each not-silent
+```case
+kind:     corpus
+env:      pg · Status 3 rows (the lane) · Customer 4 rows · Product 3 rows
+change:   one per row: (a) the post-deploy Status MERGE written without its `AND (target.Code <> source.Code …)` guard ·
+          (b) a two-release R1 (its pre-deploy drops Product.LegacyCode while the model lags), proved with
+          `--program R1 R2`, so R1 is replayed · (c) a post-deploy `UPDATE dbo.Customer SET Name = Name`
+expect:   outcome    verdict clean · exit 0 in every row
+          record     (a) silence not-silent(rows affected 3 on the replay; hashes unchanged)
+                     (b) silence not-silent(the R1 replay's plan re-creates Product.LegacyCode from its default): the F17
+                     hazard
+                     (c) silence not-silent(rows affected 4 on the replay; hashes unchanged)
+laws:     D6 F8 H2
+source:   expected · INVARIANTS D6 property; F12 (written unguarded, the seed MERGE touches 3 rows: the churn
+          anti-pattern); F17 (a replay of contract-R1 published "successfully" and re-created the column from its
+          default)
+note:     (a) and (c) change no value, so the hash alone cannot see them; rows affected does. Silence never changes
+          the verdict; it is a record field.
+```
+
+### INV-D6-03 · silence is judged only after a clean publish, from all three signals
+```case
+kind:     pure
+input:    generator: every verdict class and every stop × silence evidence {replay plan empty or not, rows affected 0
+          or n, every touched and reference hash equal or one differing}
+action:   for all pairs: Get-FxRecord
+expect:   record     clean: silence ok exactly when all three signals hold, otherwise silence not-silent(<each signal that
+                     failed, with its evidence>) · any block or stop: no silence field
+          outcome    the verdict or stop given, unchanged by the silence evidence
+laws:     D6 H1
+source:   expected · INVARIANTS D6; ARCH §5 step 11 ("after a clean publish: check silence")
+note:     counter-example: not-silent raised as a stop, which would refuse the R1 of every two-release program; or a
+          record that names only the first failed signal.
 ```
 
 ## M · Minimality
@@ -195,8 +250,8 @@ note:     ARCH §5's key (schema, referenceData, options) omits the DacFx and Lo
 ```case
 kind:     process
 setup:    generator: the mutants = each vocabulary row · each witness kind in sql/plant.sql · each stop kind · each
-          classifier rule in Get-FxOutcome · each §5 step (restore, presence, violations, witness.sql, accept,
-          identity, publish, residue, permissive, silence, program)
+          classifier rule in Get-FxOutcome · each §5 step (restore, presence, violations, trust state, witness.sql,
+          hash, accept, identity, publish, residue, permissive, silence, program)
 action:   for all mutants: delete the item, run the suite, restore the item
 expect:   outcome    every mutant fails at least one case; the report names the killing cases per mutant
 laws:     M1 E1
@@ -218,28 +273,33 @@ note:     counter-example: a pass that counts "the suite ran" rather than "a cas
           only `pure` cases, so a dead planter procedure survives.
 ```
 
-### INV-M2-01 · planted rows equal the predicted count, cell by cell
+### INV-M2-01 · planted rows equal the resolved plan, the maximum of each table's needs
 ```case
 kind:     sql
 env:      generator: every (kind × class × populated) cell of ARCH §9.3 over `pg` plus FK_Order_Customer (NOT NULL)
-          and FK_Customer_Account (nullable), one environment per cell holding exactly that answer
-action:   for all cells: Get-FxWitnessPlan, then plant; count rows per table in the copy
-expect:   copy       rows = one presence row per populated touched table + its NOT NULL FK ancestors (reusing
-                     reference rows) + one row per (violating question × class); none in an untouched table
+          and FK_Customer_Account (nullable), one environment per cell holding exactly that answer, plus pairs of
+          cells on one table (two violating columns; a violation beside a dups class)
+action:   for all cells: Get-FxWitnessPlan, then plant; count generated rows per table in the copy
+expect:   copy       generated rows per table = the count plant.sql's resolved plan reports · for each populated touched
+                     table, the maximum of its needs, not their sum: 1 row for presence alone, or for presence with
+                     violations one row can carry; 2 for a dups or nulls class or a gapped identity · plus NOT NULL FK
+                     ancestors (reusing reference rows) and, for every Orphan question, the linked parent · none in an
+                     untouched table
 laws:     M2
 source:   expected · INVARIANTS M2; ARCH §5 steps 2–3
-note:     counter-example: presence planted in every populated table of the environment, touched or not; or a new
-          Status ancestor planted though the lane already holds Status rows.
+note:     counter-example: a presence row planted beside the violation row (the sum), so a Customer with one NULL Email
+          gets two rows; or a new Status ancestor planted though the merge-base lane already holds Status rows.
 ```
 
-### INV-M2-02 · every planted row is load-bearing
+### INV-M2-02 · every generated row is load-bearing
 ```case
 kind:     sql
-env:      generator: every INV-M2-01 cell with at least two planted rows
-action:   for all planted rows r: delete r from the copy, then re-run Test-FxAcceptance
-expect:   outcome    every deletion gives stop acceptance, or is refused by a foreign key; no row can go with F1 intact
+env:      generator: every INV-M2-01 cell with at least two generated rows
+action:   for all generated rows r: delete r from the copy, then re-run Test-FxAcceptance
+expect:   outcome    every deletion gives stop acceptance, or is refused by a foreign key; no generated row can go with
+                     F1 intact · rows declared in witness.sql are counted apart and reported by line
 laws:     M2 F1
-source:   expected · INVARIANTS M2 ("removing any planted row breaks F1")
+source:   expected · INVARIANTS M2 ("removing any generated row breaks F1")
 note:     counter-example: an Account row planted for the nullable Customer.AccountId, against ARCH §5 step 2; deleting
           it leaves every answer unchanged.
 ```
@@ -279,18 +339,18 @@ action:   for all mutants, and for the tree: the budgets check
 expect:   outcome    the tree passes; each mutant fails, naming the file, its lines and its budget
 laws:     M4
 source:   expected · INVARIANTS M4; ARCH §3
-note:     counter-example: a check on the total alone (≈1,500), which lets facsimile.ps1 reach 600 lines while sql/
+note:     counter-example: a check on the total alone (≈1,600), which lets facsimile.ps1 reach 600 lines while sql/
           shrinks.
 ```
 
 ### INV-M4-02 · no code outside the budget table
 ```case
 kind:     process
-setup:    generator: mutants adding facsimile/helpers.ps1 (dot-sourced by facsimile.ps1) · sql/extra.sql · a 16th
+setup:    generator: mutants adding facsimile/helpers.ps1 (dot-sourced by facsimile.ps1) · sql/extra.sql · a 21st
           vocabulary row · one vocabulary row holding two patterns
 action:   for all mutants: the budgets check
-expect:   outcome    each refused: an unlisted code file outside tests/ and cases/; the vocabulary counted in rows and
-                     patterns, not lines
+expect:   outcome    each refused: an unlisted code file outside tests/ and cases/; the vocabulary counted in rows (budget
+                     20) and patterns, not lines
 laws:     M4 M1
 source:   expected · ARCH §3, §9.5
 note:     counter-example: logic moved into an unlisted file, or vocabulary.psd1 measured in lines, so one long row
@@ -334,8 +394,9 @@ note:     counter-example: `sqlpackage /Action:Publish /Profile:options.publish.
 kind:     process
 setup:    generator: every corpus fixture × {base cache miss, hit} × {Strict, --permissive, --program}
 action:   for all runs: prove with the step trace on
-expect:   files      every copy's steps read restore · plant · witness · accept · identity · publish head · …; a publish
-                     of schema.<env>.dacpac appears only into fx_<hash12>_base, before its BACKUP
+expect:   files      every copy's steps read restore · plant · trust state · witness · hash · accept · identity · publish
+                     head · …; a publish of schema.<env>.dacpac appears only into an fx_base_<hash12>_<rand4>, before its
+                     BACKUP
 laws:     S2 S5
 source:   expected · INVARIANTS S2; ARCH §5 ("the base is never re-published after planting")
 note:     counter-example: the Permissive arm re-publishing schema.<env>.dacpac over the planted copy instead of
@@ -384,31 +445,49 @@ note:     counter-example: QA planted on top of Dev's copy to save a restore, th
 ### INV-S6-01 · a kill at any step leaves only reapable things
 ```case
 kind:     process
-setup:    generator: the step trace of a prove (base create, base publish, referenceData, BACKUP, RESTORE, plant,
-          witness, accept, identity, publish head, residue script, permissive restore, silence) and of an up;
-          Stop-Process -Force after each step
+setup:    generator: the step trace of a prove (base create, base publish, referenceData, BACKUP, RESTORE, plant, trust
+          state, witness, hash, accept, identity, publish head, residue script, permissive restore, silence) and of an
+          up; Stop-Process -Force after each step
 action:   for all kill points: list the instance's databases and the files under LocalDB's data folder and the
           repository; run facsimile down
-expect:   files      before down: only fx_ databases and .facsimile/ files are new · after down: zero fx_ databases,
-                     their .mdf and .ldf gone · every other database untouched
+expect:   files      before down: only databases in the tool's registry and .facsimile/ files are new · after down: zero
+                     registered proof copies, their .mdf and .ldf gone · fx_local kept · every database absent from the
+                     registry untouched
 laws:     S6 S1
 source:   expected · INVARIANTS S6
 note:     counter-example: a BACKUP written to LocalDB's default backup folder, outside .facsimile/ and so never cleared
-          by `down --all`; or a scratch database not named fx_.
+          by `down --all`; or a scratch database created before it is registered, so a kill in that gap orphans it.
 ```
 
-### INV-S6-02 · down drops databases that are busy or half-made
+### INV-S6-02 · down drops proof copies that are busy or half-made
 ```case
 kind:     process
-setup:    generator: fx_ databases in each state {idle, held by an open sqlcmd session, RESTORING after a killed
-          restore, SINGLE_USER held by another session, OFFLINE}
+setup:    generator: registered proof copies in each state {idle, held by an open sqlcmd session, RESTORING after a
+          killed restore, SINGLE_USER held by another session, OFFLINE}
 action:   for all states: facsimile down, twice
-expect:   files      zero fx_ databases after the first run
-          stdout     both runs: ok down · .facsimile/out/down.json · exit 0
+expect:   files      zero registered proof copies after the first run · fx_local untouched
+          stdout     both runs: DONE down · <n> proof copies dropped · .facsimile/out/down.json · exit 0
 laws:     S6
 source:   expected · INVARIANTS S6; TWIN_SUCCESSION Appendix B (SINGLE_USER WITH ROLLBACK IMMEDIATE before DROP)
 note:     counter-example: a DROP without SINGLE_USER WITH ROLLBACK IMMEDIATE, which waits forever on the open session;
           a RESTORING database cannot be set SINGLE_USER and must be dropped directly.
+```
+
+### INV-S6-03 · down and down --all drop only what the registry lists
+```case
+kind:     process
+setup:    generator: instance states holding, in any combination: registered proof copies · fx_local with a
+          hand-written row · a person's fx_mine and FX_Reports · a well-formed fx_x_Dev_ab12 made by another clone of
+          the repository (absent from this registry)
+action:   for all states: facsimile down; then facsimile down --all
+expect:   files      after down: every registered proof copy gone · fx_local, its hand-written row and the caches kept ·
+                     after down --all: fx_local gone and .facsimile/ caches cleared · fx_mine, FX_Reports and
+                     fx_x_Dev_ab12 untouched by both
+          stdout     DONE down · … · .facsimile/out/down.json · exit 0, for both
+laws:     S6 S1 T3
+source:   expected · INVARIANTS S6 ("a database not in the registry is never dropped, whatever its name"), T3; ARCH §8
+          (down, down --all)
+note:     counter-example: a `down` that drops `fx_%` by name, which takes a colleague's copy and a person's fx_mine.
 ```
 
 ## H · Honesty
@@ -418,11 +497,12 @@ note:     counter-example: a DROP without SINGLE_USER WITH ROLLBACK IMMEDIATE, w
 kind:     process
 setup:    generator: every `process` and `corpus` case in the catalog, with its own setup and action
 action:   for all cases: run; capture stdout, the exit code and the files written
-expect:   stdout     exactly one line, parsing as a verdict, a stop, or `ok` for a verb that does not prove
+expect:   stdout     exactly one line, parsing as `VERDICT …` for `prove`, or `STOP <kind> …`, or `DONE <verb> …` for a
+                     verb that does not prove
           files      the named file exists and its `outcome` equals the line
           exit       equal to the line's `exit n`
 laws:     H1 A1 A3
-source:   expected · INVARIANTS H1
+source:   expected · INVARIANTS H1; ARCH §6
 note:     counter-example: a `WARNING:` line before the outcome (two lines), or exit 0 with a stop in the file after a
           caught exception.
 ```
@@ -433,27 +513,33 @@ kind:     process
 setup:    generator: the kill points of INV-S6-01 × {Ctrl+C, Stop-Process -Force, LocalDB stopped mid-publish} × {an
           earlier verdict.Dev.json present, absent}
 action:   for all combinations: interrupt `facsimile prove Dev` at that point
-expect:   files      verdict.Dev.json absent, or byte-identical to the file before the run · no temporary or truncated
-                     JSON under proofs/
-          stdout     no verdict line
+expect:   outcome    Ctrl+C: stop interrupted · "The run was interrupted at <step>. `facsimile down` removes its copies;
+                     re-run." · exit 9 · LocalDB stopped: a stop (toolchain, or unclassified when the publish output
+                     is all it has) · Stop-Process -Force: no outcome at all
+          files      verdict.Dev.json absent, byte-identical to the file before the run, or holding the stop; never a
+                     verdict from the interrupted run · no temporary or truncated JSON under proofs/
+          stdout     never a VERDICT line
 laws:     H1 S6
-source:   expected · INVARIANTS H1 ("killing the process mid-run leaves no file claiming a verdict")
-note:     counter-example: `outcome: clean` written as soon as the publish succeeds, before §5 step 9's silence check
-          has finished.
+source:   expected · INVARIANTS H1 ("killing the process mid-run leaves no file claiming a verdict"); ARCH §6
+          (interrupted)
+note:     counter-example: `outcome: clean` written as soon as the publish succeeds, before §5 step 11's silence
+          check has finished.
 ```
 
 ### INV-H1-03 · an unexpected failure is still a stop
 ```case
 kind:     process
 setup:    generator: one injected fault at each shell boundary: a native tool exits non-zero with output no rule
-          knows · a tool prints nothing · an unreadable answers file · a full disk when the verdict is written
+          knows, during the publish and outside it · a tool prints nothing · an unreadable answers file · a full disk
+          when the verdict is written
 action:   for all faults: run the verb that crosses that boundary
-expect:   outcome    a stop from the closed list, in one line, with exit 4, 5, 6, 7 or 9
-          stdout     never a PowerShell error record or stack trace; never exit 1
+expect:   outcome    the stop a rule names where one does (a publish with output no rule knows, or none: stop
+                     unclassified · exit 9; an unreadable answers file: stop answers-invalid · exit 5); every other fault:
+                     stop internal · "Unexpected failure at <step> (<type>). Nothing claims a verdict." · exit 9
+          stdout     one STOP line; never a PowerShell error record or stack trace; never exit 1, which is usage's alone
 laws:     H1 H2 A3
-source:   expected · INVARIANTS H1, H2
-note:     ARCH §6 has no stop for a failure outside the publish (gap reported); counter-example: an uncaught `throw`
-          ending in exit 1 and a red ErrorRecord.
+source:   expected · INVARIANTS H1, H2; ARCH §6 (internal)
+note:     counter-example: an uncaught `throw` ending in exit 1 and a red ErrorRecord.
 ```
 
 ### INV-H7-01 · every verdict carries every stamp
@@ -462,26 +548,47 @@ kind:     process
 setup:    generator: every verdict a full corpus run produces, including `assumed`, --permissive, --program and
           witness-free verdicts
 action:   for all verdicts: validate against the stamp schema
-expect:   files      non-empty: tool version · sqlpackage version · server version and edition · hashes of options,
-                     schema, answers, witness and delta · the answers' login and measuredAt
+expect:   files      non-empty: tool version · sqlpackage/DacFx version · LocalDB (or server) version and edition · head
+                     commit and merge-base commit · the server and database the answers were read from · hashes of the
+                     effective options, schema.<env>.dacpac, the answers' content, witness.sql, delta.<env>.sql and
+                     delta.pr.sql · the answers' login and measuredAt
 laws:     H7
 source:   expected · INVARIANTS H7
 note:     counter-example: the witness hash left out when there is no witness.sql, so "no witnesses" and "stamp missing"
           look alike; it must be the hash of a declared empty value.
 ```
 
-### INV-H7-02 · each stamped input moves the identity hash
+### INV-H7-02 · each stamped input moves the identity hash; the login and the time do not
 ```case
 kind:     process
 setup:    generator: from one verdict, exactly one change of: an option value · an index name in the schema · one
-          count, or only measuredAt, in the answers · a byte of witness.sql · whitespace in the delta · a byte of
-          core.ps1 · the sqlpackage version
+          count in the answers · a byte of witness.sql · whitespace in delta.<env>.sql · a line of delta.pr.sql · the
+          head commit · the merge-base commit · a byte of core.ps1 · the sqlpackage version · the LocalDB version; then,
+          separately, only the answers' measuredAt, or only their login
 action:   for all changes: prove again
-expect:   files      the identity hash differs for every change, and is equal when nothing changed
-laws:     H7 D1
-source:   expected · INVARIANTS H7
-note:     counter-example: an identity over (verdict class, delta hash) alone, or a tool version read from a hand-bumped
-          constant, so an edited core.ps1 keeps the old identity.
+expect:   files      the identity hash differs for every input change · equal when only measuredAt or only the login
+                     changed, and when nothing changed
+laws:     H7 D1 F7
+source:   expected · INVARIANTS H7 ("the login and the time are stamps but not inputs")
+note:     counter-example: an answers hash over the whole file, so a re-read of unchanged data (a new measuredAt) breaks
+          F7's proof sharing; or a tool version read from a hand-bumped constant, so an edited core.ps1 keeps the old
+          identity.
+```
+
+### INV-H6-01 · constraint validation runs after the post-deploy, on the pinned engine
+```case
+kind:     sql
+env:      pg · Category 2 rows (the lane) · Product 2 rows, one with CategoryId 9
+action:   publish head (adds FK_Product_Category; its post-deploy seeds Category (9, N'wTools', 1) and PRINTs a marker)
+          onto a restored copy under the effective options; read the publish output and sys.foreign_keys
+expect:   trace      the marker PRINT precedes "Checking existing data against newly created constraints" · the
+                     WITH CHECK CHECK batch runs outside the transacted portion
+          copy       FK_Product_Category present and trusted (is_not_trusted = 0); the publish succeeded
+laws:     H6 E2
+source:   verify · the order was observed 2026-10-18 on sqlpackage 170.5.96 (ARCH §4, §5 step 10); this case pins it per
+          engine version and is re-run on every pin bump
+note:     If validation ran before the post-deploy, the publish would block Msg 547 on FK_Product_Category, and ARCH
+          §4's seeded-parent rule (a seeded lookup counts) and H6's phase order would both be revised with that receipt.
 ```
 
 ## E · Evolution
@@ -529,37 +636,41 @@ kind:     process
 setup:    generator: committed verdicts whose sqlpackageVersion is missing · empty · equal to the pin · different from
           the pin
 action:   for all verdicts: the PR gate's proof check
-expect:   outcome    missing or empty: invalid, refused · different: notChecked must include the engine version ·
-                     equal: valid
+expect:   outcome    missing or empty: invalid, refused · different: notChecked must include engine-version · equal:
+                     valid
 laws:     E2 H4 H7
 source:   expected · INVARIANTS E2 ("a verdict without a version stamp is invalid"), H4
 note:     counter-example: a comparison of major versions only (170 = 170), where the pin is a full build number.
 ```
 
-### INV-E3-01 · a schema PR needs fresh proofs for every readable environment
+### INV-E3-01 · a schema PR needs fresh, complete proofs for every readable environment
 ```case
 kind:     process
 setup:    generator: PR diffs touching {a table, a view, the pre-deploy, the post-deploy, a `:r` include, the
-          refactorlog, the .sqlproj, docs only} × proofs {absent, fresh, Dev only, predating the last schema edit}
+          refactorlog, the .sqlproj, docs only} × proofs {absent, fresh, Dev only, predating the last schema edit,
+          lacking schema.<env>.dacpac, lacking delta.pr.sql}
 action:   for all pairs: the PR gate
-expect:   outcome    accepted iff no schema file is touched, or proofs are present and fresh for every readable
-                     environment; each refusal names the environment and the reason (missing or stale)
+expect:   outcome    accepted iff no schema file is touched, or proofs are present, complete and fresh for every readable
+                     environment; each refusal names the environment and the reason (missing, incomplete or stale)
 laws:     E3
-source:   expected · INVARIANTS E3
+source:   expected · INVARIANTS E3; ARCH §8 (what one change commits)
 note:     counter-example: "schema PR" detected by `Tables/**` alone, so a post-deploy change merges without proofs.
 ```
 
-### INV-E3-02 · staleness is computed, not declared
+### INV-E3-02 · staleness and server identity are computed, not declared
 ```case
 kind:     process
-setup:    generator: proofs whose answers' deltaHash was hand-edited to the new delta's hash · proofs whose commit was
-          rebased after the schema edit · proofs that are honestly fresh
+setup:    generator: proofs whose answers' deltaHash was hand-edited to the new delta's hash · proofs whose head commit
+          predates the last schema edit · answers naming a server other than the configured environment's · proofs
+          that are honestly fresh
 action:   for all cases: the PR gate
-expect:   outcome    refused whenever the questions of the CI-derived delta differ from the questions the answers'
-                     probe texts answer; the honest proofs pass
+expect:   outcome    stale (the CI-derived delta hash or head commit differs from the answers' stamps, or the CI-derived
+                     delta asks a question no probe text in the answers answers): refused as stop stale-answers · a
+                     server mismatch: refused as stop answers-invalid · the honest proofs pass
 laws:     E3 H7
-source:   expected · INVARIANTS E3; ARCH §8 (answers stamped with delta hash and probe text)
-note:     counter-example: staleness judged by commit order, or by trusting the deltaHash field; both pass a
+source:   expected · INVARIANTS E3; ARCH §6 (stale-answers, answers-invalid), §8 (answers stamped with server,
+          database, login, time, head commit, delta hash and probe text)
+note:     counter-example: staleness judged by commit order alone, or by trusting the deltaHash field; both pass a
           hand-patched file.
 ```
 
@@ -589,16 +700,18 @@ source:   expected · INVARIANTS E4 ("all problems are reported in one pass")
 note:     counter-example: a fail-fast parser that reports only the first fault, so five faults take five runs.
 ```
 
-### INV-E4-03 · a secret only as an env: reference, and never echoed
+### INV-E4-03 · a secret only as an env: or file: reference, and never echoed
 ```case
 kind:     pure
-input:    generator: every string leaf × values {`env:FX_X`, `env:`, `env:1bad`, `Password=hunter2`,
-          `Server=x;User Id=sa;Pwd=hunter2`, `file:secret.txt`}
+input:    generator: every string leaf × values {`env:FX_X`, `env:`, `env:1bad`, `file:secrets/dev.txt`, `file:`,
+          `Password=hunter2`, `Server=x;User Id=sa;Pwd=hunter2`}
 action:   for all pairs: Read-FxConfig
-expect:   outcome    accepted only for `env:FX_X` (and for plain values that are not secrets); every refusal names its
-                     path; no message, and no file, contains hunter2
+expect:   outcome    accepted only for `env:FX_X` and `file:secrets/dev.txt` (and for plain values that are not
+                     secrets); every refusal is stop config naming its path · exit 6; no message, and no file, contains
+                     hunter2
 laws:     E4 H3
-source:   expected · INVARIANTS E4; the Twin also took `file:` (THE_TWIN §7), the facsimile takes `env:` alone
+source:   expected · ARCH §2 row 2 and §8 (the Twin's D9: `env:` and `file:` references); INVARIANTS E4's text names
+          `env:` alone
 note:     counter-example: a refusal that quotes the value ("'hunter2' is an inline secret"), which writes the secret
           into the stop file.
 ```
@@ -611,10 +724,11 @@ kind:     process
 setup:    generator: every `process` and `corpus` case × {`powershell.exe -File`, `pwsh -File`}, stdout redirected to a
           file
 action:   for all runs: read stdout's bytes
-expect:   stdout     one line matching `^(verdict|stop|ok) .+ · \S+ · exit (0|3|4|5|6|7|9)$`, ending in one newline;
-                     the path is relative to the repository and exists
+expect:   stdout     one line matching `^(VERDICT (clean|blocked [a-z]+|refused-at-build)|STOP [a-z-]+|DONE [a-z]+)
+                     · .+ · \S+ · exit (0|1|3|4|5|6|7|9)$`, ending in one newline; the path is relative to the
+                     repository and exists; a multi-environment prove names verdicts.json
 laws:     A1
-source:   expected · INVARIANTS A1
+source:   expected · INVARIANTS A1; ARCH §6
 note:     counter-example: sqlpackage's or MSBuild's own output inherited by stdout from a native call that was not
           captured, adding hundreds of lines.
 ```
@@ -664,10 +778,12 @@ kind:     process
 setup:    generator: one fixture per stop kind and per verdict class (the CLI and A5 cases in 70-process.md supply
           them)
 action:   for all fixtures: run; read the process exit code
-expect:   exit       unreachable, no-access → 4 · missing-object, stale-answers, authored-script, check-witness,
-                     computed-witness, planter-needs-row, acceptance, identity, in-flight → 5 · config, toolchain,
+expect:   exit       usage → 1 · unreachable, no-access, probe-failed → 4 · missing-object, stale-answers,
+                     answers-invalid, authored-script, check-witness, computed-witness, planter-needs-row,
+                     witness-failed, witness-not-synthetic, acceptance, identity, in-flight → 5 · config, toolchain,
                      platform, options-unknown → 6 · build-failed → 7 · unknown-statement, unclassified, cdc,
-                     base-unpublishable → 9 · clean → 0 · every blocked, and refused-at-build → 3
+                     base-unpublishable, identifier-unsafe, interrupted, internal → 9 · clean → 0 · every blocked, and
+                     refused-at-build → 3
 laws:     A3
 source:   expected · INVARIANTS A3; ARCH §6
 note:     counter-example: acceptance mapped to 9 ("a principal should look"), so the agent never tries the fix it can
@@ -679,13 +795,14 @@ note:     counter-example: acceptance mapped to 9 ("a principal should look"), s
 kind:     process
 setup:    generator: invocation forms {`powershell.exe -File`, `pwsh -File`, `& .\facsimile.ps1` then `$LASTEXITCODE`,
           `powershell.exe -ExecutionPolicy Bypass -File`, `powershell.exe -Command "& .\facsimile.ps1 …"`} × outcomes
-          with exits 0, 3, 5, 6 and 9
+          with exits 0, 1, 3, 5, 6 and 9
 action:   for all pairs: run; read the exit code the caller sees
 expect:   exit       equal to the line's `exit n` for every form PROVING.md documents
 laws:     A3 A1
 source:   verify · how each form passes a script's `exit n` to its caller (about_PowerShell_exe describes -File and
           -Command differently)
-note:     counter-example: PROVING.md suggesting `-Command`, where a script's `exit 3` can reach the caller as 1.
+note:     counter-example: PROVING.md suggesting `-Command`, where a script's `exit 3` can reach the caller as 1, which
+          is usage's exit.
 ```
 
 ### INV-A4-01 · every op is provable within 600 lines
@@ -717,8 +834,8 @@ note:     counter-example: a Proof plan in a sibling file the check never opens,
 ### INV-A5-01 · following the instruction moves the outcome
 ```case
 kind:     process
-setup:    generator: every stop kind whose next step is the agent's (exit 5) × every catalog case that raises it; the
-          fix is a scripted application of the printed next step and nothing else
+setup:    generator: every stop kind whose next step is the agent's (exit 1 or 5) × every catalog case that raises it;
+          the fix is a scripted application of the printed next step and nothing else
 action:   for all pairs: run; apply the fix; run again
 expect:   outcome    the second outcome differs from the first: the stop clears, moves to another stop, or reaches a
                      verdict
@@ -749,16 +866,18 @@ note:     counter-example: a planter-needs-row message that omits its reason, so
 kind:     process
 setup:    generator: THE_TWIN §7's verbs mapped to the facsimile's (up → up, seed → up --fresh, status → status, down →
           down, reset → down --all, init → init), run as TwinSchemaLoopTests' sequence (up, up, status, edit, status,
-          up, up) on `pg` with a view, then up --fresh twice
+          up, up) on `pg` with a view, then up --fresh twice, then a hand-written row, down, up, and down --all
 action:   for all steps of the sequence: run it with `facsimile`
-expect:   outcome    converged · Nothing to apply · current · stale (schema) · converged, the new column present ·
-                     Nothing to apply · the view published and data-free · the two --fresh runs give equal content
-                     hashes
+expect:   outcome    done up · converged · done up · Nothing to apply · done status: current · done status: stale (schema)
+                     · done up · converged, the new column present · done up · Nothing to apply · the view published
+                     and data-free · the two --fresh runs give equal content hashes · after down and up, fx_local and
+                     the hand-written row still there · after down --all, no fx_local
 laws:     T3 D4
 source:   expected · parity with TwinSchemaLoopTests "law 1: up materializes, converges, and re-converges after an
           estate edit" and TwinViewLoopTests "A view in the estate: twin up succeeds, base tables mint, the view stays
           published and data-free"
-note:     counter-example: up --fresh planting random suffixes, which loses `twin seed`'s "reproducibly".
+note:     counter-example: up --fresh planting random suffixes, which loses `twin seed`'s "reproducibly"; or a `down`
+          that drops fx_local, which `twin down` never did to the container's data.
 ```
 
 ### INV-T3-02 · no verb needs Docker
@@ -834,16 +953,17 @@ note:     counter-example: replacing the database name everywhere, which also re
 kind:     process
 setup:    generator: options files varying non-guard options (DropObjectsNotInSource, IgnoreColumnOrder,
           GenerateSmartDefaults, ScriptDatabaseOptions, IncludeTransactionalScripts) × `sqlcmd` value sets × {Strict,
-          --permissive}
+          --permissive} × allowOlderLocalDb {false, true}
 action:   for all combinations: prove; read the option set in the verdict and the sqlpackage command lines in the step
           trace
 expect:   record     Strict's set = the captured set, normalized · Permissive's = the captured set with
-                     BlockOnPossibleDataLoss=False and nothing else · no `/p:` on a command line that the capture
-                     lacks
-laws:     F6
-source:   expected · INVARIANTS F6
-note:     counter-example: the shell adding `/p:AllowIncompatiblePlatform=True` (S4's override) or
-          `/p:CreateNewDatabase=True` without recording it.
+                     BlockOnPossibleDataLoss=False and nothing else · no `/p:` on a command line that the capture lacks,
+                     except AllowIncompatiblePlatform=True on copy publishes when allowOlderLocalDb is set, recorded with
+                     the options and flagged older-localdb
+laws:     F6 S4
+source:   expected · INVARIANTS F6; ARCH §8 (allowOlderLocalDb, the one documented exception to F6)
+note:     counter-example: the shell adding `/p:AllowIncompatiblePlatform=True` or `/p:CreateNewDatabase=True` without
+          recording it.
 ```
 
 ### INV-F6-02 · a disabled guard is refused in every spelling, by every verb
@@ -864,10 +984,12 @@ kind:     corpus
 env:      generator: every two-release program in the corpus (make-mandatory, narrow, delete-attribute) over an
           environment that holds R2's violating shape
 change:   R1 = head with an empty model diff, plus its pre-deploy · R2 = the final target · `prove --program R1 R2`
-expect:   questions  derived from R2's head
+expect:   questions  derived from R2's head, plus R1's authored ones
           witnesses  planted before R1 is published
+          outcome    R2's verdict equals the oracle's (R1, R1 again, then R2, published onto a full copy of env) · never
+                     clean from an empty copy
           record     one result per release, on one copy
-laws:     F8
+laws:     F8 F3
 source:   expected · INVARIANTS F8; red-team #2 (a two-release R1 has an empty model diff, so nothing is planted)
 note:     counter-example: questions taken from R1's own delta, which is empty, so nothing is planted and both releases
           come out clean on an empty copy.
@@ -877,10 +999,12 @@ note:     counter-example: questions taken from R1's own delta, which is empty, 
 ```case
 kind:     corpus
 env:      generator: every program whose R1 is a contract release (the column dropped while the model lags)
-change:   prove R1, replay R1, then R2, on one copy
-expect:   record     the replay's non-empty plan reported as the F17 hazard (the column re-created, backfilled from its
-                     default), never as clean
-laws:     F8 H2
+change:   prove R1, replay R1, then R2, on one copy (`prove --program R1 R2`)
+expect:   outcome    the verdict the oracle reaches for the same sequence on a full copy of env; the replay itself
+                     publishes clean
+          record     silence not-silent(the replay's plan re-creates the column, backfilled from its default): the F17
+                     hazard, never a silent clean
+laws:     F8 H2 D6
 source:   expected · the engine behaviour is F17's receipt (a replay of contract-R1 reported `Successfully published
           database` and re-created the column from its default; DB PG_mol_x1); the tool's classification is not yet
           witnessed
