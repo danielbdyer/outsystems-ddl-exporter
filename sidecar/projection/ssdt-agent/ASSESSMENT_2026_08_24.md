@@ -117,7 +117,7 @@ one environment where it works.** Both independent reviews caught it, and sectio
 detail: the tree runs where I tested it, not where the team works. Its proving substrate assumes
 Docker and the F# monorepo; its packaging assumes Claude Code; and it proves changes against the
 small sample database, not the team's real tables. The team works in GitHub Copilot inside Visual
-Studio, on Windows, against their own Azure DevOps repository and their own data, and the tree does
+Studio, on Windows, against their own estate repository and their own data, and the tree does
 not yet reach any of those. This gap decides the verdict, so I state it first and give the reviews'
 account of it in section 6. The weaknesses I found first-hand follow.
 
@@ -184,7 +184,7 @@ assessment most needed, because it is the one my own testing was blind to.
 **The convergence: the tree runs where I tested it, not where the team works.** I proved the
 flagship change in Claude Code, against a Docker SQL Server, using the tree's Claude Code packaging.
 The team has none of those. They work in GitHub Copilot inside Visual Studio, on Windows laptops,
-committing to an Azure DevOps SSDT repository. The tree's substrate is Docker and monorepo
+committing to an estate SSDT repository. The tree's substrate is Docker and monorepo
 throughout: it brings up a named Docker container, runs commands the Windows host does not have,
 works from a directory inside the F# project, and loads its skills through a Claude Code path that
 will not resolve in the team's repository. There is no Windows-native or LocalDB proving path
@@ -211,7 +211,7 @@ relies on does not fire. The team's pipeline engine version is not yet pinned or
 skill files state the trust behavior as fact with no version caveat. If the team's engine behaves
 like the older one, an agent following these skills can produce a green deploy that quietly failed
 to enforce the rule that was asked for — the worst failure this tree exists to prevent — while the
-one reviewer who might catch it is away.
+one reviewer who might catch it is unavailable.
 
 **A second silent-failure risk: the two-release tightening pattern reverts under a concurrent
 unrelated publish.** The safe way to make a column required, on this pipeline, is two releases: the
@@ -262,7 +262,7 @@ the two-release tightening — is strong. Its register makes a pull request a re
 Judged as a body of engineering judgment, it is a serious and unusually honest piece of work.
 
 What is not ready is the path from that judgment to this team, next weekend. The team works in
-GitHub Copilot and Visual Studio, against their own Azure DevOps repository and their own data. The
+GitHub Copilot and Visual Studio, against their own estate repository and their own data. The
 tree runs in Claude Code, against Docker, on the sample database. Until that gap is closed, the team
 cannot use the core mechanism, and a team that cannot prove falls back on stated classifications —
 one of which, constraint trust, is not yet verified on their engine and could produce a silently
@@ -281,8 +281,8 @@ The prerequisites, in the order they gate use:
    is untrusted, do this" step to the foreign-key and constraint records.
 4. The two-release operations given an explicit "hold other Dev publishes during the window"
    instruction, and the estate scrutiny ledgers filled with real row counts.
-5. The reviewer-absence rule followed while the principal is out — two senior reviewers, a proven
-   backup, and the principal's confirmation on return.
+5. The reviewer-absence rule followed while the principal is unavailable — two senior reviewers,
+   a proven backup, and the principal's confirmation afterwards.
 
 Meet those, and the strong method reaches the team intact. Skip them, and the team gets a tool that
 either cannot run, or — worse — runs against the wrong data and the wrong engine while every check
@@ -319,9 +319,9 @@ it is a strong draft aimed at an environment the team does not have.
 5. **The first promotion into QA or UAT.** Those environments were cut over separately and may hold
    schema the Dev model does not expect. The first promotion needs a full schema compare that shows
    only the intended change; anything else is leftover drift and must be reconciled first.
-6. **The principal being out.** The reviewers most likely to face a data-destroying change are the
-   three who are new to SSDT. The absence rule — two senior reviewers, a proven backup, confirmation
-   on return — is the safety net, and it only works if it is followed.
+6. **The principal being unavailable.** The reviewers most likely to face a data-destroying change
+   are the three who are new to SSDT. The absence rule — two senior reviewers, a proven backup,
+   confirmation afterwards — is the safety net, and it only works if it is followed.
 
 ---
 

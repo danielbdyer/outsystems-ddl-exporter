@@ -147,8 +147,8 @@ export MSYS_NO_PATHCONV=1   # keep /Action: + /SourceFile: + /opt/... paths inta
 SessionStart hook installs it and exports this shim already — probe with `sqlpackage /Version`
 before installing by hand. Its version pin lives in `../../estate/toolchain.md`; while that
 ledger row reads UNPINNED, stamp the version actually run into every finding. One worked Windows box, verbatim,
-for contrast: `DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"`, the tool at
-`C:\Users\danny\.dotnet\tools\sqlpackage.exe`, invoked from Git Bash with `MSYS_NO_PATHCONV=1`.
+for contrast: `DOTNET_ROOT="C:/Users/<you>/AppData/Local/Microsoft/dotnet"`, the tool at
+`%USERPROFILE%\.dotnet\tools\sqlpackage.exe`, invoked from Git Bash with `MSYS_NO_PATHCONV=1`.
 (The durable alternative is installing the .NET 8 runtime; then the roll-forward is unnecessary.)
 
 ## sqlcmd lives in the CONTAINER, not on the host (IMPORTANT)

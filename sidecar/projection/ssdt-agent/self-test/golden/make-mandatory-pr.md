@@ -46,7 +46,7 @@ Two of the five `dbo.Customer` rows violate the new rule: Customer 3 (Initech) a
 Ships across two releases so the running application keeps working while the change is in flight.
 Release 1 is a pre-deployment script — backfill, then `ALTER COLUMN Email NVARCHAR(256) NOT NULL` —
 with the table definition still declaring `NULL`, plus the corrected seed. Release 2 is the table
-definition declaring `NOT NULL`. This pipeline (Azure DevOps → Octopus) always publishes with the
+definition declaring `NOT NULL`. This pipeline (CI → deployment tool) always publishes with the
 data-loss guard on and cannot relax it for one deploy, so the tightening is done behind a lagging
 definition rather than as a single declarative change.
 

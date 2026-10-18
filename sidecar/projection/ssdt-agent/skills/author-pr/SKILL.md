@@ -6,8 +6,8 @@ description: Use to turn a proven schema change into the pull request a reviewer
 # The pull request — the template
 
 > **This is the one thing a reviewer reads to decide.** It is the developer speaking to the
-> reviewer; the agent is invisible and never refers to itself. It is plain enough for a global team
-> — a reviewer in Pune or Porto — and exact enough for a DBA. Ten sections, fixed order, each only
+> reviewer; the agent is invisible and never refers to itself. It is plain enough for a reviewer on
+> a global team and exact enough for a DBA. Ten sections, fixed order, each only
 > as deep as the change needs. `THE_DECISION_TREE.md` is the procedure that fills it;
 > `THE_RECORD_FORMS.md` is the register every word obeys; `FINDINGS_AND_CHANGES.md` holds the
 > proofs the shipping shapes rest on.

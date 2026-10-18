@@ -32,7 +32,7 @@ used — "drop this field, it is not needed anymore". No work item supplied — 
   table holds any row.
 
 ## How it ships
-- Two releases, because this pipeline (Azure DevOps → Octopus) always publishes with the data-loss
+- Two releases, because this pipeline (CI → deployment tool) always publishes with the data-loss
   guard `BlockOnPossibleDataLoss` on and cannot turn it off for one deploy. A declarative drop of a
   populated column is refused by the same row-presence guard that blocks a narrowing.
 - **Release 1** — a pre-deploy script drops the default constraint, then the column

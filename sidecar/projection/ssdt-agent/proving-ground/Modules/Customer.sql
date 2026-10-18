@@ -26,7 +26,7 @@
         emails, Strict still blocked it. So on a populated table this is not a clean
         pre-deploy-script-then-schema release.
     The honest remedy on a populated table is the two-release shape — this pipeline
-    (Azure DevOps -> Octopus) always publishes with BlockOnPossibleDataLoss on and cannot
+    (CI -> deployment tool) always publishes with BlockOnPossibleDataLoss on and cannot
     relax it for one change (FINDINGS_AND_CHANGES.md Part 1, the locked-gate axiom):
       Release 1 — a pre-deployment script backfills every NULL and applies the NOT NULL by
           hand, with the model still declaring NULL (so DacFx generates no tightening step);

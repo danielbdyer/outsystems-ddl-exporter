@@ -185,7 +185,7 @@ becomes one plain finding.
 | staged across releases | `Ships across <N> releases so the running application keeps working while the change is in flight.` |
 
 **What the approving dev lead weighs** (replaces "Tier 1–4", the "+1" escalations, and the
-retired principal level — recalibrated 2026-08-28): on this estate every schema change is
+principal level — recalibrated 2026-08-28): on this estate every schema change is
 approved by a dev lead, and only by a dev lead. A developer never approves a schema change —
 not their own, not another developer's. The approver is therefore constant, and the finding no
 longer names a role: it names **what the change asks the lead to weigh**, so the lightest

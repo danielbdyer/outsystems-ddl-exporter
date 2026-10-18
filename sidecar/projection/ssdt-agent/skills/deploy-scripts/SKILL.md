@@ -118,11 +118,11 @@ all-environments-past-it out.
 ```sql
 /*
   [TRANSIENT · one-time · REMOVE AFTER PROD]  OneTime/Release_2025.02_PhoneFix.sql
-  Ticket:        JIRA-1456
+  Ticket:        work item 1456
   What:          One-shot correction of legacy-import phone formats.
   Guard:         idempotent (WHERE PhoneNumber NOT LIKE '+%') — safe to re-run in a lagging env.
   Prod-applied:  <stamp on the prod deploy>
-  Removal:       JIRA-1502 — sweep on the deprecation train once prod-confirmed. Delete file; keep git history.
+  Removal:       work item 1502 — sweep on the deprecation train once prod-confirmed. Delete file; keep git history.
 */
 ```
 

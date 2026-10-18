@@ -3,9 +3,9 @@
 # Database schema changes in this repository
 
 This repository's database schema is managed with SQL Server Data Tools (SSDT). A change is
-authored as an edit to a table definition, built into a dacpac, and deployed through Azure
-DevOps into Octopus. The deployment always runs with the data-loss guard on, and it cannot be
-relaxed for a single deploy.
+authored as an edit to a table definition, built into a dacpac, and deployed through the CI
+pipeline and the deployment tool. The deployment always runs with the data-loss guard on, and
+it cannot be relaxed for a single deploy.
 
 A workflow named ssdt-agent guides these changes. Its full content is vendored in this
 repository under `ssdt-agent/` — the operation skills, the agent roles, the record standard,

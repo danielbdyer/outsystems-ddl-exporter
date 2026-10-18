@@ -12,7 +12,7 @@ description: Use when the developer says "make Email required", "tick the Mandat
 > the model, so it ships as **two releases**, and a dev lead approves this because existing data
 > is affected. Prove before you classify.
 
-> **SHIP terminal: TWO-RELEASE.** This pipeline (Azure DevOps → Octopus) cannot relax
+> **SHIP terminal: TWO-RELEASE.** This pipeline (CI → deployment tool) cannot relax
 > `BlockOnPossibleDataLoss`, so a populated `NULL → NOT NULL` ships as R1 (a pre-deploy backfill +
 > `ALTER … NOT NULL` with the model still declaring `NULL`) then R2 (the model catches up as a
 > no-op). Proven live 2026-08-21; `FINDINGS_AND_CHANGES.md` F7. The old "relax the gate for one

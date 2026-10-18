@@ -110,9 +110,9 @@ ADO-specific notes:
   review's skills, organization-level custom instructions — key off github.com and do not apply
   to an ADO repository. Everything in this bundle is IDE-side and unaffected.
 
-## The Visual Studio 2026 pilot (run before moving anyone)
+## The Visual Studio 2026 trial (run before moving anyone)
 
-One champion laptop, Visual Studio 2026 (Community is fine) installed side-by-side with 2022,
+One developer's machine, Visual Studio 2026 (Community is fine) installed side-by-side with 2022,
 the estate solution open. Thirty minutes:
 
 1. The estate `.sqlproj` opens and builds — 2026 carries only the original (classic) SQL project
@@ -154,7 +154,7 @@ and also writes the `.github/` and `.azuredevops/` files in place at the reposit
 `copilot-check` verifies both. The `packaging` gate runs it in the source repo's CI;
 `ssdt-agent/pipelines/ssdt-agent-check.yml` runs it on ADO.
 
-Bundle fingerprint: `047e6c5dbd9c` — a content hash over the generator and every source
+Bundle fingerprint: `6113fca0bec0` — a content hash over the generator and every source
 file. It changes exactly when regeneration is due, so a stale vendored bundle is detectable at a
 glance.
 

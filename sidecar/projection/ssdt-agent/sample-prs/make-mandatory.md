@@ -35,7 +35,7 @@ supplied — attach one before merge.
   while it holds any row.
 
 ## How it ships
-- Two releases, because this pipeline (Azure DevOps → Octopus) always publishes with the data-loss
+- Two releases, because this pipeline (CI → deployment tool) always publishes with the data-loss
   guard `BlockOnPossibleDataLoss` on and cannot turn it off for one deploy.
 - **Release 1** — a pre-deploy script fills the NULL emails and runs
   `ALTER TABLE dbo.Customer ALTER COLUMN Email NVARCHAR(256) NOT NULL`. The model still declares

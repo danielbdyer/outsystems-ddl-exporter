@@ -10,7 +10,7 @@ description: Use when the developer says "shorten Code to 10 chars", "tighten th
 > On a populated table it is not a clean in-place change: the data-blind guard blocks it regardless
 > of whether every value fits, so it ships as **two releases**. Prove first.
 
-> **SHIP terminal: TWO-RELEASE.** This pipeline (Azure DevOps → Octopus) cannot relax
+> **SHIP terminal: TWO-RELEASE.** This pipeline (CI → deployment tool) cannot relax
 > `BlockOnPossibleDataLoss`, so a populated narrowing ships as R1 (a pre-deploy that reconciles the
 > over-length values + `ALTER COLUMN` narrower, with the model still declaring the wider type) then
 > R2 (the model catches up as a no-op). Proven live 2026-08-21; `FINDINGS_AND_CHANGES.md` F1–F4.

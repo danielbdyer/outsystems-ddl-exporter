@@ -2,7 +2,7 @@
 
 On this estate, every schema change is approved by a **dev lead**, and only by a dev lead.
 A developer never approves a schema change — not their own, not another developer's. There is
-no level above the dev lead: the principal escalation level is retired. What used to be
+no level above the dev lead. What used to be
 routing between levels is now carried **inside the record**: the "what the lead weighs" line
 (`THE_RECORD.md` §5) tells the approving lead how heavy this particular approval is, from the
 lightest additive look to an irreversible removal named explicitly.
@@ -30,8 +30,8 @@ estate to ship at all. An out-of-date row here is a defect, the same as an out-o
 - **The irreversible-change practice** (the strongest weigh-line: data removed, removal
   cannot be undone): before the change ships, take a backup or snapshot that could restore
   the data and prove the restore works, and record the decision in `refusals.md` with its
-  proof. This practice survives the retired principal level because the risk it answers did
-  not retire.
+  proof. This practice needs no separate approval level, because the risk it answers is in
+  the change itself.
 
 ## Writing records for this pool
 

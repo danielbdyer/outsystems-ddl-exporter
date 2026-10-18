@@ -80,8 +80,8 @@ part of the change set, not an afterthought. Proven live; the captured run is
   change, applied in place — the **only** clean single-phase leg, and the lightest to review, since
   an empty table puts no data at risk.
 - **POPULATED table (violations present OR zero violations — it makes no difference)** → the
-  tightening `ALTER` trips the row-presence guard, and this estate's pipeline (Azure DevOps →
-  Octopus, dacpac) **cannot relax `BlockOnPossibleDataLoss` for one deploy**
+  tightening `ALTER` trips the row-presence guard, and this estate's pipeline (CI →
+  deployment tool, dacpac) **cannot relax `BlockOnPossibleDataLoss` for one deploy**
   (`../../../FINDINGS_AND_CHANGES.md` Part 1 — the locked-gate axiom). So it ships as **two
   releases** — the pattern proven live on this branch (F4 narrow, F7 make-mandatory):
   - **Release 1** — a one-time pre-deploy script reconciles the data (backfill the NULLs; shorten

@@ -60,8 +60,8 @@ finding**, because guard behaviour is version-bound). In Claude Code web session
 SessionStart hook installs it and exports the shim; the version pin lives in
 `../estate/toolchain.md` (UNPINNED until the estate pipeline's DacFx version is recorded there).
 On any other box, install it manually as above. One worked Windows box, verbatim, for
-contrast: `DOTNET_ROOT="C:/Users/danny/AppData/Local/Microsoft/dotnet"`, the tool at
-`C:\Users\danny\.dotnet\tools\sqlpackage.exe`, Git Bash with `MSYS_NO_PATHCONV=1`.
+contrast: `DOTNET_ROOT="C:/Users/<you>/AppData/Local/Microsoft/dotnet"`, the tool at
+`%USERPROFILE%\.dotnet\tools\sqlpackage.exe`, Git Bash with `MSYS_NO_PATHCONV=1`.
 (Alternative to the shim: install the .NET 8 runtime — then the env vars are unnecessary.)
 
 ## 1 — Warm the disposable substrate

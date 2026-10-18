@@ -34,7 +34,7 @@ The developer's stated intent for this PBI: shorten the product code to a 10-cha
   still refused while it holds any row.
 
 ## How it ships
-- Two releases, because this pipeline (Azure DevOps → Octopus) always publishes with the data-loss
+- Two releases, because this pipeline (CI → deployment tool) always publishes with the data-loss
   guard `BlockOnPossibleDataLoss` on and cannot turn it off for one deploy.
 - **Release 1** — a pre-deploy script shortens the over-length codes (`LEFT(Code, 10)`) and runs
   `ALTER TABLE dbo.Product ALTER COLUMN Code NVARCHAR(10) NOT NULL`. The model still declares

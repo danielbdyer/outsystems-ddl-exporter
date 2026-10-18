@@ -96,7 +96,7 @@ carry an empirical adjudication from the Twin-proven corpus.
   publish is non-atomic (`prove-on-dacpac` §on-block), yet the solo loop never mandates a
   reset before the "clean Strict re-run" that is the central proof. PROTOCOL closes this
   with per-executor databases; the solo path does not.
-- **F5 Environment assumptions are one developer's box.** `C:/Users/danny/...` paths are the
+- **F5 Environment assumptions are one developer's box.** `C:/Users/<you>/...` paths are the
   normative form in `prove-on-dacpac`, `talk-to-local-sql`, and `proving-ground/README.md`
   (the portable form exists only in PROTOCOL §0); the stated working directory ("repo root")
   is wrong — everything lives under `sidecar/projection/`; `delta.sql` has three different
@@ -466,14 +466,14 @@ flywheel's Loop C (§5).
 ---
 
 **O10. The ADO promotion seam.**
-*Executes CONNECTORS §5 on O3's gates. Achievability: medium (org-external variables).
+*Executes CONNECTORS §5 on O3's gates. Achievability: medium (variables outside the team's control).
 Efficacy: very high at steady state — the reviewer's trust stops depending on the author's
 agent having run the loop, because the pipeline reproduces the proof.*
 
 Scope of done: a PR-validation pipeline in the estate repo that builds the dacpac, brings
 up a Twin, publishes under the production posture, and posts the deploy report + block
 findings as the PR's evidence artifact; promotion gates on the Strict-clean re-run after
-remedy, per CONNECTORS §5. Effort: 1–2 sessions plus org wiring. Risk: ADO agent/runner
+remedy, per CONNECTORS §5. Effort: 1–2 sessions plus estate wiring. Risk: ADO agent/runner
 constraints; the Twin's exit-code vocabulary and `check deploy` verb are the fallbacks.
 
 ---

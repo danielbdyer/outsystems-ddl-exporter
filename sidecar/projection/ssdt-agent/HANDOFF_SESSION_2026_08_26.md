@@ -28,10 +28,9 @@ repository say. They drive most of the work.
 - **The team.** A mixed-experience OutSystems team is taking ownership of its database schema in
   SSDT for the first time. Four named people review pull requests, and no one else does: three
   senior developers who know SQL and OutSystems well but have never used SSDT, and one principal
-  who is fluent in SSDT and who is out of office during the initial cutover window. Principal-level
-  reviews are deputized while they are away — two senior reviewers together, a proven backup, and
-  the principal confirming on return. That rule is recorded in
-  `sidecar/projection/ssdt-agent/estate/reviewers.md`.
+  who is fluent in SSDT. When the principal is unavailable, principal-level reviews are deputized
+  — two senior reviewers together, a proven backup, and the principal confirming afterwards. That
+  rule is recorded in `sidecar/projection/ssdt-agent/estate/reviewers.md`.
 - **The cutover is staged, and Dev goes last.** QA and UAT are already SSDT-managed, each set up by
   its own cutover publish. Dev's trunk switches over next weekend, and only then do changes promote
   through the pipeline, Dev to QA to UAT. Production has not been released to yet.
@@ -39,11 +38,11 @@ repository say. They drive most of the work.
   outside this release train, so their starting schema may differ from what the trunk model expects.
   Script the full delta first and confirm it contains only the intended change; anything else is
   drift left over from the cutover.
-- **The pipeline is Azure DevOps into Octopus, and its data-loss guard is always on.** No change can
-  relax `BlockOnPossibleDataLoss` for a single deploy. That constraint forces every tightening or
-  destructive change on populated data into a two-release shape, and it is the axiom the whole
+- **The pipeline runs CI into the deployment tool, and its data-loss guard is always on.** No change
+  can relax `BlockOnPossibleDataLoss` for a single deploy. That constraint forces every tightening
+  or destructive change on populated data into a two-release shape, and it is the axiom the whole
   authoring machine is built around.
-- **The team develops in GitHub Copilot inside Visual Studio**, on Windows, against the Azure DevOps
+- **The team develops in GitHub Copilot inside Visual Studio**, on Windows, against the estate
   repository. They do not use Claude Code. This matters more than anything else in the assessment.
 - **The environments are named Dev, QA, UAT, and Prod.** There is no environment called "Test",
   though older documents used that name before this session corrected them.
@@ -83,7 +82,7 @@ Grouped by what they accomplish, oldest first.
 4. **`769b0a0` and `9464371` — the assessment.** An outside evaluation of the tree, written into
    `ASSESSMENT_2026_08_24.md`, then revised after two independent agent reviews reported.
 5. **`b105ab6` — the GitHub Copilot packaging and the Windows proving-path runbook.** A second
-   emission target that generates a self-contained `.github/` bundle for the team's Azure DevOps
+   emission target that generates a self-contained `.github/` bundle for the team's estate
    repository, plus `PROVING_PATH_WINDOWS.md`, the runbook for standing up a local SQL Server and
    sqlpackage on a Windows machine.
 6. **`32987fe` — three small defects fixed.** The golden exemplar was re-proved live and re-captured
