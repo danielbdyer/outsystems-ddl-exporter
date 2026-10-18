@@ -1,7 +1,7 @@
 # 60 · Privacy (`PRV-nn`)
 
 *Every P law, attacked. The stand-in environment carries canaries in every table and value class: `CANARY-7f3a9c` in strings, 913577913 in integers, 1913-05-17 in dates.
-A leak scan reads everything the tool writes or prints: answers, deltas, verdicts, witness plans, the copy, the base backup, logs, stdout and stderr. One hit fails the case.
+A leak scan reads everything the tool writes or prints: the committed proofs (`schema.<env>.dacpac`, both deltas, answers, `witness.sql`, `shape.*.json`, verdicts), witness plans, the copy, the base backup, logs, stdout and stderr. One row value found fails the case.
 Logins are as in `50-environments.md` (`fx_full`, `fx_vd`, `fx_dr`); `trace.xel` is an Extended Events capture on the stand-in, filtered to the tool's login.*
 
 ## P1 · Only schema and integers leave
@@ -13,13 +13,21 @@ env:      Dev = pg · every table populated · canaries in every string, integer
           violating rows: Email NULL×1 · Email 'CANARY-7f3a9c@corp.example'×2 · one Order orphan · Product.Code of 12
           characters
 change:   head adds UX_Customer_Email · Product.Code nvarchar(50)→nvarchar(10) · FK_Order_Customer
-action:   facsimile read Dev; facsimile prove Dev; facsimile prove Dev --permissive; facsimile status
-expect:   files      no canary in answers.Dev.json, delta.Dev.sql, verdict.Dev.json, the witness plan, any log under
-                     .facsimile/, or the base backup
+expect:   leg1       facsimile read Dev
+                     outcome  done read · answers.Dev.json written · exit 0
+          leg2       facsimile prove Dev
+                     outcome  verdict blocked guard · Msg 50000/127 · dbo.Product · exit 3
+          leg3       facsimile prove Dev --permissive · facsimile status
+                     outcome  the leg2 verdict, with the Permissive publish's message and hashes recorded · done status ·
+                              exit 0
+          files      no canary in schema.Dev.dacpac, delta.Dev.sql, delta.pr.sql, answers.Dev.json, verdict.Dev.json, the
+                     witness plan, any log under .facsimile/, or the base backup
           copy       no canary in any row of any table
           stdout     no canary on stdout or stderr
 laws:     P1 P5 A1
-source:   expected · INVARIANTS P1 (the canary property)
+source:   expected · INVARIANTS P1 and P5 (the canary property)
+note:     The guard on the populated Product narrowing decides Strict before the unique build and the FK validation run;
+          Permissive then reaches the value-bearing errors, whose text must still not appear (P3).
 ```
 
 ### PRV-02 · integer and date canaries: no answer carries a value
@@ -39,51 +47,55 @@ source:   expected · INVARIANTS P1; v3 donor io/SqlServer.cs Allowlist (MIN and
 ```case
 kind:     sql
 env:      Dev = pg · Status and Category hold canary Codes
-action:   facsimile read Dev; unpack the cached schema.Dev.dacpac
+action:   facsimile read Dev; unpack the committed proofs/<slug>/schema.Dev.dacpac
 expect:   files      the Extract command line sets neither ExtractAllTableData nor TableData; the package has no data
                      part; no canary inside it
 laws:     P1
 source:   expected · Microsoft docs (sqlpackage Extract: ExtractAllTableData defaults to False; TableData names tables
-          whose data is extracted)
+          whose data is extracted); ARCH §8 (the extracted schema is committed, structure only)
 ```
 
-### PRV-04 · a literal inside the environment's own code is schema, and stays out of committed files
+### PRV-04 · a literal inside the environment's own code is schema, and leaves only as schema
 ```case
 kind:     sql
 env:      QA = pg + an environment-only view dbo.vVip (WHERE Email = N'CANARY-7f3a9c@corp.example') + an
           environment-only default on Customer.Region whose literal is the canary
 action:   facsimile read QA; facsimile prove QA   (head adds Customer.Nickname NULL)
-expect:   files      the canary is in schema.QA.dacpac (a cache, never committed); nothing under proofs/<slug>/ holds
-                     it: delta.QA.sql drops the default by name only, and the view is not in the delta
-                     (DropObjectsNotInSource=False)
+expect:   files      the canary is in schema.QA.dacpac, which is committed (ARCH §8): code written into the environment is
+                     schema, which P1 lets leave · no answer, delta, verdict or log holds a row value · delta.QA.sql drops
+                     the default by name only, and the view is not in the delta (DropObjectsNotInSource=False)
           copy       the view's definition holds the canary; no row does
+          record     drift:QA {drops the environment-only default on Customer.Region}
 laws:     P1 P5
-source:   expected · INVARIANTS P1 (the extracted schema may leave); ARCH §8 (caches are never committed)
-note:     P5's canary property must read "no environment row value": code written into the environment is schema,
-          which P1 lets out.
+source:   expected · INVARIANTS P1 (the extracted schema may leave); ARCH §8 (schema.<env>.dacpac is committed)
+note:     P5's property ("a canary value present in the stand-in environment is absent from the copy") must read "no
+          environment row value": a literal in the environment's own code reaches the copy as schema (reported).
 ```
 
-### PRV-05 · committed proofs hold no values
+### PRV-05 · committed proofs hold no row values
 ```case
 kind:     process
 setup:    proofs/<slug>/ as written by PRV-01
-action:   the runner's leak scan over every committed file, plus a structural check of delta.Dev.sql
-expect:   files      no canary; delta.Dev.sql holds no INSERT … VALUES beyond head's own seed text, and no literal
-                     absent from head, the referenceData lanes and the captured options
+action:   the runner's leak scan over every committed file, plus a structural check of both deltas
+expect:   files      no canary in any committed file, schema.Dev.dacpac included (structure only, P1) · delta.Dev.sql and
+                     delta.pr.sql hold no INSERT … VALUES beyond head's own seed text, and no literal absent from head, the
+                     referenceData lanes and the captured options
 laws:     P1 E3
 source:   expected · INVARIANTS P1; ARCH §8 (what one change commits)
 ```
 
-### PRV-06 · a password never leaves
+### PRV-06 · a secret never leaves
 ```case
 kind:     process
-setup:    facsimile.json Dev uses SQL authentication, password env:FX_DEV_PWD = 'CANARY-pw-55e1'
-action:   facsimile read Dev; facsimile prove Dev; facsimile read Dev with a wrong password
-expect:   files      answers stamped with the login name only; the password in no artifact, log or echoed command line
-          outcome    the wrong-password run: stop no-access · "fx_full cannot log in to dev-sql …" · exit 4
-          stdout     no password on stdout or stderr in any run
+setup:    facsimile.json Dev auth "env:FX_DEV_PWD" (the variable holds 'CANARY-pw-55e1'), then auth "file:secrets/dev.pwd"
+          holding the same value
+action:   facsimile read Dev; facsimile prove Dev; facsimile read Dev with a wrong password, under each form
+expect:   files      answers stamped with server, database and login name only; the secret in no artifact, log or echoed
+                     command line, under either reference form
+          outcome    the wrong-password run: stop no-access · "fx_full cannot log in to Estate (Dev). …" · exit 4
+          stdout     no secret on stdout or stderr in any run
 laws:     P1 E4 H7
-source:   expected · INVARIANTS E4 (a secret is accepted only as an env: reference)
+source:   expected · ARCH §8 (a secret only as an env: or file: reference, the Twin's D9)
 ```
 
 ## P2 · Templated probes only
@@ -134,19 +146,30 @@ source:   verify · ARCH §11.5 and §11.8: does the sqlcmd the laptop has (VS-b
           ConstrainedLanguage, pass N'…' identifiers without code-page loss (-f 65001)?
 ```
 
-### PRV-11 · sqlcmd's own syntax inside a name
+### PRV-11 · a line break and a batch separator inside a name: identifier-unsafe, nothing sent
 ```case
 kind:     sql
-env:      Dev = pg + column Customer.[Price$(Tax)] and a column whose name is Note<CR><LF>GO<CR><LF>x, with rows
-action:   facsimile read Dev   (head narrows both)
-expect:   files      trace.xel: Price$(Tax) arrives verbatim (variable substitution off, sqlcmd -x); no batch is split
-                     at the embedded GO
-          outcome    either both are counted whole, or before any probe is sent: stop unknown-statement · "Delta line
-                     <n> names an identifier holding a line break …" · exit 9
+env:      Dev = pg + a Customer column whose name is Note<CR><LF>GO<CR><LF>x, with rows, in the environment and in head
+action:   facsimile read Dev   (head narrows it)
+expect:   outcome    stop identifier-unsafe · "[Note…x] cannot be validated against Dev safely. Nothing was sent." · exit 9
+          files      trace.xel: Extract's session only; no count batch, and no batch split at the embedded GO
+laws:     P2 H3 A3
+source:   expected · ARCH §6 identifier-unsafe; INVARIANTS P2; Microsoft docs (sqlcmd splits batches on any line reading
+          GO, without parsing brackets)
+note:     The name is legal in SQL Server, but it cannot pass through sqlcmd whole, so even validating it is unsafe.
+```
+
+### PRV-41 · sqlcmd variable syntax inside a name: sent verbatim, or identifier-unsafe
+```case
+kind:     sql
+env:      Dev = pg + column Customer.[Price$(Tax)] with rows, in the environment and in head
+action:   facsimile read Dev   (head narrows it)
+expect:   files      trace.xel: [Price$(Tax)] arrives verbatim (variable substitution off, sqlcmd -x)
+          outcome    the column is counted whole; otherwise, before any probe is sent: stop identifier-unsafe ·
+                     "[Price$(Tax)] cannot be validated against Dev safely. Nothing was sent." · exit 9
 laws:     P2 H3
-source:   verify · sqlcmd splits batches on any line reading GO without parsing brackets, and substitutes $(var) unless
-          -x is given (Microsoft docs); whether the tool can send such a name whole is the open part
-note:     ARCH §6 has no stop kind for an identifier the shell cannot send safely; unknown-statement is the nearest.
+source:   verify · sqlcmd substitutes $(var) unless -x is given (Microsoft docs); whether the sqlcmd on the laptop
+          (VS-bundled or go-sqlcmd) honours -x under ConstrainedLanguage is the open part (ARCH §11.5, §11.8)
 ```
 
 ### PRV-12 · a delta naming an object the environment lacks, injection text in the name
@@ -193,9 +216,10 @@ setup:    answers.Dev.json from a read: (a) unchanged; (b) one probe text hand-e
 action:   facsimile prove Dev
 expect:   outcome    (a) each probe text equals its template id instantiated with its recorded bindings, byte for
                      byte, and the proof runs
-                     (b) stop stale-answers · "answers.Dev.json was measured … Re-run facsimile read Dev" · exit 5
+                     (b) stop answers-invalid · "answers.Dev.json does not validate (a probe text is not an instance of its
+                     template). Re-run facsimile read Dev." · exit 5
 laws:     P2 E3 H7
-source:   expected · INVARIANTS P2 ("the probe text sent is recorded and is a template instance")
+source:   expected · INVARIANTS P2 ("the probe text sent is recorded and is a template instance"); ARCH §6 answers-invalid
 ```
 
 ### PRV-16 · the probe and shape templates pass the allowlist lint
@@ -204,49 +228,54 @@ kind:     process
 setup:    sql/probes.sql and sql/shape.sql, then each with one seeded violation
 action:   tests/run-cases.ps1 --lint
 expect:   exit       probes.sql: every template is one SELECT whose outer list holds only COUNT_BIG(*), COUNT(DISTINCT
-                     col), SUM(CASE WHEN … THEN 1 ELSE 0 END), MAX(LEN or DATALENGTH of col) or an integer literal ·
-                     shape.sql: values only as signatures, or as vocabulary behind --vocabulary; every grouped query
-                     has HAVING COUNT_BIG(*) >= @k · both: no name of three or four parts, EXEC, sp_executesql,
-                     INTO, #temp, table hint, CONVERT, CAST or PARSE; every literal is template text or a
-                     schema-derived parameter (width, precision, scale, type, collation). A seeded violation fails
-                     the lint, naming the template and the form
+                     col), SUM(CASE WHEN … THEN 1 ELSE 0 END), MAX(LEN or DATALENGTH of col) or an integer literal; its one
+                     non-template slot is the predicate exception's (a CHECK or filtered-index WHERE copied from the delta,
+                     inside an integer-only wrapper) · shape.sql: values only as class-symbol signatures, or as vocabulary
+                     behind --vocabulary; groups seen fewer than @k times fold into one "other" row (n rows, m signatures)
+                     · both: no name of three or four parts, EXEC, sp_executesql, INTO, #temp, table hint, CONVERT, CAST or
+                     PARSE in template text; every literal is template text or a schema-derived parameter (width,
+                     precision, scale, type, collation). A seeded violation fails the lint, naming the template and the form
 laws:     P2 P3 P6 E1
 source:   expected · v3 donor io/SqlServer.cs Allowlist (origin/claude/v3-build, lines ~765-997; TWIN_SUCCESSION
-          Appendix B)
+          Appendix B); ARCH §4 (the predicate exception)
 note:     Schema-derived literals close the binary-search oracle: nobody can ask "how many Emails sort before 'm'?".
 ```
 
-### PRV-17 · a CHECK predicate the change authored is user text
+### PRV-17 · the predicate exception: a CHECK copied verbatim from the delta, inside an integer-only count
 ```case
 kind:     sql
 env:      Dev = pg · Order 4 rows · Total -5×1
-action:   facsimile read Dev, twice: head adds CK_Order_Total CHECK (Total > 0); then CHECK (Total > 0 AND
-          dbo.fnAudit() = 1)
-expect:   answers    first: CheckFalse(Order,CK_Order_Total)=violating, counted with the predicate re-rendered from
-                     parsed parts (columns of Order, literals, comparison and logical operators, IS NULL, IN lists,
-                     LEN, TRY_CONVERT) · second: CheckFalse(Order,CK_Order_Total)=unmeasured (a function call), no
-                     part of it sent
-          files      trace.xel: the first predicate arrives only as the re-rendered template instance
+action:   facsimile read Dev, twice: head adds (a) CK_Order_Total CHECK (Total > 0) · (b) CK_Order_Text CHECK (StatusText
+          <> N'x; DROP TABLE dbo.[Order]--')
+expect:   answers    (a) CheckFalse(Order,CK_Order_Total)=violating · (b) CheckFalse(Order,CK_Order_Text)=clean
+          files      trace.xel: one integer-returning count per question, whose predicate text equals the delta's generated
+                     DDL byte for byte · (b)'s literal stays a literal: one statement, and dbo.[Order] still exists
 laws:     P2 P3 H2
-source:   verify · ARCH §4 counts CheckFalse with WHERE NOT (predicate), and the predicate is text from head, which P2
-          forbids sending; can a ConstrainedLanguage parser re-render predicates soundly without ScriptDom?
+source:   expected · ARCH §4 (the predicate exception); INVARIANTS P2
+note:     The predicate is model text the deploy itself will evaluate on that data, so carrying it into a count adds no
+          exposure. Only CONVERT, CAST and PARSE are refused (PRV-18), because their errors quote a value.
 ```
 
 ## P3 · Nothing that quotes a value
 
-### PRV-18 · CONVERT, CAST or PARSE in a CHECK predicate: not probed
+### PRV-18 · CONVERT, CAST or PARSE in a CHECK predicate: not probed, recorded unmeasured
 ```case
 kind:     sql
 env:      Dev = pg + Customer.BirthText nvarchar(20) · Customer 6 rows · one BirthText 'CANARY-31/02/1990'
 action:   facsimile read Dev; facsimile prove Dev   (head adds CK_Customer_Birth CHECK (CONVERT(int,
           LEFT(BirthText, 4)) > 1900))
-expect:   answers    CheckFalse(Customer,CK_Customer_Birth)=unmeasured (measured:false, reason CONVERT)
-          files      trace.xel: no CONVERT, CAST or PARSE sent; no error text recorded
-          outcome    prove: stop check-witness · "Write one row into witness.sql that makes CK_Customer_Birth FALSE,
-                     then re-run" · exit 5
-          record     notChecked names the unmeasured constraint
+expect:   leg1       facsimile read Dev
+                     answers  CheckFalse(Customer,CK_Customer_Birth)=unmeasured (reason: CONVERT)
+                     files    trace.xel: no CONVERT, CAST or PARSE sent; no error text recorded
+                     outcome  done read · answers.Dev.json written · exit 0
+          leg2       facsimile prove Dev
+                     outcome  stop check-witness · "Write one row into witness.sql that makes CK_Customer_Birth FALSE, then
+                              re-run." · exit 5
+                     record   the stop's JSON lists CheckFalse(Customer,CK_Customer_Birth) unmeasured; once a witness is
+                              declared, notChecked ∋ declared-not-measured
 laws:     P3 P2 H2
-source:   expected · Microsoft docs (Msg 245 quotes the value that failed to convert)
+source:   expected · ARCH §4 (the predicate exception refuses CONVERT, CAST and PARSE); Microsoft docs (Msg 245 quotes the
+          value that failed to convert)
 ```
 
 ### PRV-19 · TRY_CONVERT counts the unconvertible and the empty
@@ -266,12 +295,15 @@ kind:     sql
 env:      Dev = pg · Customer 6 rows · ContactPhone 'CANARY-7f3a9c'×1 · a second run as fx_vd
 action:   a fault-injection build of sql/probes.sql whose Fits template uses CONVERT(bigint, ContactPhone):
           facsimile read Dev; then the real build as fx_vd (SELECT denied, Msg 229)
-expect:   files      the first run stores its error as {"msg": 245}; the second stores 229; neither stores text (245's
-                     text quotes the canary, 229's names objects and the database)
-          stdout     the stop lines are ARCH §6 templates; no canary and no SQL Server text on stdout or stderr
-laws:     P3 P1 H1
-source:   expected · Microsoft docs (Msg 245 quotes the value); INVARIANTS P3 property
-note:     ARCH §6 has no stop kind for a probe that fails in the environment; PRV-16's lint should make it unreachable.
+expect:   outcome    first run: stop probe-failed · "A count failed on Dev with Msg 245 (text withheld). Re-run facsimile
+                     read Dev; if it repeats, ask the principal." · exit 4 · second run: stop no-access · "fx_vd lacks
+                     SELECT on Estate (Dev). …" · exit 4
+          files      the first run stores {"msg": 245}; the second stores 229; neither stores text (245's text quotes the
+                     canary, 229's names objects and the database)
+          stdout     STOP lines in ARCH §6's templates; no canary and no SQL Server text on stdout or stderr
+laws:     P3 P1 H1 H3
+source:   expected · Microsoft docs (Msg 245 quotes the value); INVARIANTS P3 property; ARCH §6 probe-failed
+note:     PRV-16's lint makes the fault-injected template unshippable; this case proves the stop behind it.
 ```
 
 ### PRV-21 · sqlpackage's own output is not kept
@@ -328,13 +360,15 @@ note:     Read-only is by construction: the owner login sends the same statement
 
 ## P5 · Synthetic witnesses
 
-### PRV-25 · every planted value is marked synthetic
+### PRV-25 · every planted value is generated or repository-defined
 ```case
 kind:     sql
 env:      the copy after planting PRV-01's plan
 action:   scan every planted row
-expect:   copy       every planted string starts with w; email-like columns end @example.invalid; integers are ordinals
-                     or class witnesses; no planted value equals an environment value
+expect:   copy       every planted string carries the w marker where its width and class allow it; every other planted value
+                     is the ordinal, an entry of the planter's fixed per-class table (`''`, a day-first date, a numeric
+                     overflow, a char(1)) or a repository-defined value (a seed's code, a default, a reference-data key) ·
+                     no planted value equals an environment value · no value depends on a column's name
 laws:     P5 D3
 source:   expected · INVARIANTS P5
 ```
@@ -342,49 +376,57 @@ source:   expected · INVARIANTS P5
 ### PRV-26 · reference data on the copy comes from the repository
 ```case
 kind:     corpus
-env:      Dev = pg · Status rows with canary Codes (Dev-only values, absent from the referenceData lanes) · Order 3 rows
+env:      Dev = pg + FK_Order_Status (StatusId NOT NULL → Status.Id) · Status rows with canary Codes (Dev-only values,
+          absent from the referenceData lanes) · Order 3 rows
 change:   head Order.StatusText nvarchar(20)→nvarchar(10)
-expect:   copy       Status holds only the lanes' rows; no canary; presence(Order)'s ancestors reuse lane rows
+expect:   copy       Status holds only the merge-base lanes' rows; no canary · presence(Order)'s ancestor reuses a lane row
+          outcome    verdict blocked guard · Msg 50000/127 · dbo.Order · exit 3
 laws:     P5 P1
-source:   expected · ARCH §5 (the referenceData lanes run on the copy before planting)
+source:   expected · ARCH §5 step 1 (the merge-base referenceData lanes run on the copy before planting); INVARIANTS P5
 ```
 
-### PRV-27 · a real-looking value in witness.sql
+### PRV-27 · a real-looking value in witness.sql stops witness-not-synthetic
 ```case
 kind:     process
-setup:    witness.sql: INSERT dbo.Customer (Name, Email) VALUES (N'wJoe', N'joe.bloggs@corp.example')
+setup:    witness.sql: `-- plants: dbo.Customer` then INSERT dbo.Customer (Name, Email) VALUES (N'wJoe',
+          N'joe.bloggs@corp.example')
 action:   facsimile prove Dev
-expect:   outcome    stop identity · "witness.sql line 1 holds a value without the synthetic marker (w prefix,
-                     @example.invalid). Witness files hold synthetic values only" · exit 5
+expect:   outcome    stop witness-not-synthetic · "witness.sql line 2 carries a literal not marked synthetic. Use a w-prefixed
+                     value or a repository-defined value." · exit 5
+          files      the stop names the line, never the literal
 laws:     P5 P1
-source:   expected · INVARIANTS P5
-note:     witness.sql is committed, so a copied environment value would leave through it. No ARCH §6 kind names this;
-          identity is nearest. A shape needing a real format (a day-first date) keeps the format, not the digits.
+source:   expected · ARCH §5 step 5, §6 witness-not-synthetic; INVARIANTS P5
+note:     witness.sql is committed, so a copied environment value would leave through it. N'wJoe' passes; the address does
+          not. A shape that needs a real format (a day-first date) keeps the format, not the digits.
 ```
 
 ## P6 · Bounded discovery
 
-### PRV-28 · k-suppression at its default
+### PRV-28 · rare signatures are summarized at the default k
 ```case
 kind:     sql
 env:      Dev = pg · Customer 20 rows · Email shapes: first.last@x.y ×11 · name@x.y ×5 · 'first last@x.y' ×4
 action:   facsimile shape Dev dbo.Customer.Email
-expect:   outcome    signature lines a.a@a.a 11 and a@a.a 5; a_a@a.a (4 rows) suppressed; summary rows_total 20
+expect:   outcome    done shape · shape.Dev.dbo.Customer.Email.json written · exit 0
+          files      signature lines a.a@a.a 11 and a@a.a 5 · "other: 4 rows in 1 signature" (a_a@a.a never printed) ·
+                     summary rows_total 20
 laws:     P6
-source:   expected · TWIN_SUCCESSION Appendix D (@k = 5)
+source:   expected · INVARIANTS P6; TWIN_SUCCESSION Appendix D (@k = 5, and the facsimile's fold into "other")
 ```
 
-### PRV-29 · a singleton placeholder is suppressed
+### PRV-29 · a singleton placeholder is summarized, not hidden
 ```case
 kind:     sql
-env:      Dev = pg · Customer 12 rows · Email: 10 addresses · 'N/A'×1 · ''×1
+env:      Dev = pg · Customer 12 rows · Email: 10 addresses of one shape · 'N/A'×1 · ''×1
 action:   facsimile shape Dev dbo.Customer.Email
-expect:   outcome    no A/A line (1 < k); the summary still counts empty 1 and includes N/A in both distinct counts
+expect:   outcome    done shape · shape.Dev.dbo.Customer.Email.json written · exit 0
+          files      signature a.a@a.a 10 · "other: 1 row in 1 signature" (A/A never printed) · the summary counts empty 1
+                     and includes N/A in both distinct counts (confirmation counts are never suppressed)
 laws:     P6
-source:   verify · TWIN_SUCCESSION §6b reports one A/A found by the Appendix D profile, whose @k is 5; either the
-          experiment ran with a lower k or the line overstates. Which k does the remedy discovery need?
-note:     A remedy must handle exactly such rare shapes; the profile may need to say how many rows its suppressed
-          signatures cover.
+source:   expected · INVARIANTS P6; TWIN_SUCCESSION Appendix D (§6b's A/A came from a demonstration run at k = 1 on a
+          six-row table)
+note:     A remedy must handle exactly such rare shapes. "other" tells the author one exists; a confirmation count (how many
+          rows are 'N/A' or blank-like) then sizes it.
 ```
 
 ### PRV-30 · a high-cardinality email column returns no literal
@@ -392,8 +434,8 @@ note:     A remedy must handle exactly such rare shapes; the profile may need to
 kind:     sql
 env:      Dev = pg · Customer 400 rows · 400 distinct canary Emails
 action:   facsimile shape Dev dbo.Customer.Email --vocabulary
-expect:   outcome    signatures and counts only; the vocabulary is refused (400 distinct > 50), naming the count ·
-                     exit 0
+expect:   outcome    done shape · … · exit 0
+          files      signatures and counts only; the vocabulary refused (400 distinct > 50), naming the count
           stdout     no canary
 laws:     P6 P1
 source:   expected · INVARIANTS P6
@@ -403,27 +445,27 @@ source:   expected · INVARIANTS P6
 ```case
 kind:     sql
 env:      Dev = pg · Order 41 rows · StatusText Pending×20 · Shipped×10 · Cancelled×6 · Returned×5 · Product 300
-          rows · LegacyCode first 50 distinct values, then 51, each ≥ 5 times
+          rows · LegacyCode first 50 distinct values, then 51, each seen ≥ 5 times
 action:   facsimile shape Dev dbo.[Order].StatusText, then with --vocabulary; facsimile shape Dev dbo.Product.LegacyCode
           --vocabulary at 50 and at 51 distinct
-expect:   outcome    StatusText: no literal without the flag; with it, the four values · LegacyCode: 50 → the
-                     literals; 51 → none
+expect:   outcome    each run: done shape · … · exit 0
+          files      StatusText: no literal without the flag; with it, the four values · LegacyCode: 50 → the literals;
+                     51 → none
 laws:     P6
 source:   expected · INVARIANTS P6; TWIN_SUCCESSION Appendix D (the Twin's 50-distinct masking pivot)
 ```
 
-### PRV-32 · a small table's PII column passes the 50-distinct test
+### PRV-32 · a small table's PII column passes the 50-distinct test and still shows nothing
 ```case
 kind:     sql
 env:      Dev = pg · Customer 30 rows · 30 distinct canary Emails
 action:   facsimile shape Dev dbo.Customer.Email --vocabulary
-expect:   outcome    no literal value: a vocabulary value is shown only when it occurs at least k times, so 30
-                     singletons show nothing
+expect:   files      no literal value: a vocabulary value is shown only when it is seen at least k times, so 30 singletons
+                     show nothing
           stdout     no canary
 laws:     P6 P1
-source:   expected · INVARIANTS P6 (literals only for vocabularies)
-note:     Read literally, "50 or fewer distinct" returns all 30 addresses from a small Dev table. Applying k to each
-          vocabulary value closes it; the spec does not yet say so.
+source:   expected · INVARIANTS P6 (literals only for 50 or fewer distinct values, each seen at least k times)
+note:     Without the per-value k, "50 or fewer distinct" alone would return all 30 addresses from a small Dev table.
 ```
 
 ### PRV-33 · signatures reveal structure only
@@ -438,14 +480,16 @@ source:   receipt · TWIN_SUCCESSION §6b (the profile surfaced 99/99/9999 and 9
           value)
 ```
 
-### PRV-34 · accented Latin letters pass as characters
+### PRV-34 · accented Latin letters become `x`
 ```case
 kind:     sql
 env:      Dev = pg · Customer 10 rows · Name 'José'×5 · 'Zoë'×5
 action:   facsimile shape Dev dbo.Customer.Name
-expect:   outcome    signatures Aaé 5 and Aaë 5: the accented letter, never the name
-laws:     P6
-source:   expected · TWIN_SUCCESSION Appendix D ("accented letters pass through as themselves")
+expect:   files      signature Aax 10 (runs of ASCII letters collapse; é and ë each become x) · no accented letter and no
+                     name in the output
+laws:     P6 P1
+source:   expected · INVARIANTS P6 (every non-ASCII, non-punctuation character becomes x); TWIN_SUCCESSION Appendix D (the
+          facsimile's shape.sql replaces the demonstration query's pass-through)
 ```
 
 ### PRV-35 · letters outside the Latin alphabet do not pass through as values
@@ -453,12 +497,12 @@ source:   expected · TWIN_SUCCESSION Appendix D ("accented letters pass through
 kind:     sql
 env:      Dev = pg · Customer 17 rows · Name '王小明'×6 · 'Иван'×6 · 'Σοφία'×5
 action:   facsimile shape Dev dbo.Customer.Name
-expect:   outcome    no signature reproduces a name; each non-Latin letter collapses to a letter class
+expect:   files      signatures built only of x, one per character (xxx 6 · xxxx 6 · xxxxx 5) · none of the three names
           stdout     none of the three names
 laws:     P6 P1
-source:   expected · INVARIANTS P6 ("structure only")
-note:     Appendix D's TRANSLATE maps only a-z and A-Z, so these names come back verbatim, and k = 5 does not stop a
-          common name. The SQL needs a class for every letter outside ASCII.
+source:   expected · INVARIANTS P6 (every non-ASCII character becomes the class symbol x)
+note:     The demonstration query's TRANSLATE maps only a-z and A-Z (Appendix D's known limit); shape.sql maps every other
+          non-punctuation character to x. Whether runs of x collapse, as letter runs do, P6 does not say (reported).
 ```
 
 ### PRV-36 · shape requires SELECT
@@ -484,17 +528,18 @@ laws:     P6 M3 P4
 source:   expected · INVARIANTS M3; ARCH §6 (authored-script)
 ```
 
-### PRV-38 · shape output stays out of answers and proofs
+### PRV-38 · shape output is committed beside the answers, never merged into them
 ```case
 kind:     process
 setup:    PRV-31's --vocabulary run
 action:   inspect the files and stdout it produced
-expect:   files      the shape JSON is written outside proofs/<slug>/ and never merged into answers.<env>.json
-          stdout     one line naming the file; no literal and no signature on it
+expect:   files      shape.Dev.dbo.[Order].StatusText.json is committed under proofs/<slug>/ (ARCH §8) and never merged into
+                     answers.Dev.json, which still validates as integers, booleans, identifiers, hashes and timestamps
+          stdout     DONE shape · … · <file> · exit 0; no literal and no signature on it
 laws:     P1 P6 A1
-source:   expected · ARCH §8 (what one change commits)
-note:     P1 says only schema and integers leave; shape's signatures and vocabulary are neither. P1 needs a scope (read
-          and prove) or a carve-out for shape.
+source:   expected · ARCH §8 (what one change commits: shape.*.json)
+note:     P1 says only schema and integers leave; shape's signatures and its bounded vocabulary are neither, yet ARCH §8
+          commits them. P1 needs a carve-out for shape, bounded by P6 (reported).
 ```
 
 ## The answers file and stdout
@@ -505,21 +550,22 @@ kind:     process
 setup:    (a) answers.Dev.json from PRV-01 · (b) the same plus a leaf "sample": "CANARY-7f3a9c@corp.example" · (c) an
           identifier leaf "Customer.CANARY-7f3a9c" naming nothing in schema.Dev.dacpac or the questions
 action:   facsimile prove Dev
-expect:   outcome    (a) validates and proves · (b) and (c) stop stale-answers · "answers.Dev.json does not validate at
-                     <json path>. Re-run facsimile read Dev" · exit 5, naming the path, never the value
+expect:   outcome    (a) validates and proves · (b) and (c) stop answers-invalid · "answers.Dev.json does not validate
+                     (<json path>). Re-run facsimile read Dev." · exit 5, naming the path, never the value
 laws:     P1 E3 H3
-source:   expected · INVARIANTS P1 property
-note:     No ARCH §6 stop names an invalid answers file; stale-answers is the nearest.
+source:   expected · INVARIANTS P1 property; ARCH §6 answers-invalid
 ```
 
 ### PRV-40 · stdout and stderr never carry a value
 ```case
-kind:     corpus
-env:      PRV-01's stand-in, driven to every outcome the corpus reaches: clean, each blocked reason, each stop kind
-change:   PRV-01's changes, plus one change per blocked reason and per stop kind, each over canary-bearing rows
-action:   capture stdout and stderr of every run
-expect:   stdout     one line per run matching <OUTCOME> <reason> · <file> · exit <n>; no canary on stdout or stderr;
-                     a blocked unique shows Msg 1505 and the index, never "The duplicate key value is (…)"
+kind:     process
+setup:    PRV-01's stand-in, and one fixture per outcome the corpus reaches (clean, each blocked reason, each stop kind),
+          each over canary-bearing rows
+action:   run each fixture's verbs, capturing stdout and stderr
+expect:   stdout     one line per run, in ARCH §6's grammar: VERDICT … · <file> · exit <n>, STOP <kind> · <next step> · <file>
+                     · exit <n>, or DONE <verb> · … · <file> · exit 0 · no canary on stdout or stderr · a blocked unique
+                     shows Msg 1505 and the index, never "The duplicate key value is (…)"
 laws:     A1 P1 P3
 source:   expected · INVARIANTS A1
+note:     A sweep over every outcome, not one differential proof, so it is a process case.
 ```

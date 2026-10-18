@@ -184,8 +184,13 @@ keeps the identity, and F7 can share proofs.
 
 ## P — Privacy: nothing but structure and integers leaves an environment
 
-**P1 · Only schema and integers leave.** The only bytes the tool carries out of an environment are
-the extracted schema and integer answers.
+**P1 · Only schema and integers leave.** The only bytes the tool carries out of an environment are:
+- the extracted schema;
+- integer answers;
+- the shape profile's bounded structure: signatures and counts (P6).
+
+The one exception is P6's `--vocabulary` literals, which stay on the machine (`.facsimile/out/`) and
+are never committed.
 *Property:* every `answers.<env>.json` validates against a schema whose leaves are integers,
 booleans, identifiers, hashes and timestamps. Captured row values never appear. A planted canary
 value in a stand-in environment never appears in any artifact.
@@ -221,7 +226,8 @@ the repository. No environment value ever reaches the copy.
 - **Generated values** come from (table, column, ordinal, class). They carry the `w` marker wherever
   the type, the width and the class allow it.
 - **Where the marker cannot fit,** the value comes from the planter's fixed, documented per-class
-  table: an empty string, a day-first date such as `13/04/2001`, a numeric overflow, a `char(1)`.
+  table: an empty string, an ambiguous day-first date such as `03/04/2001` (convertible, but to the
+  wrong date under a month-first format), a numeric overflow, a `char(1)`.
 - **Repository-defined values** are any literal the repository's model defines: a seed's code, a
   default, a key from reference data, a literal inside a CHECK predicate. They are used where a
   question requires equality with one, or where a constraint forces one.

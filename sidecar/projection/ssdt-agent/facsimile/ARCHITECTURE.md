@@ -301,8 +301,9 @@ DONE <verb> · <what happened, e.g. "Nothing to apply"> · <file> · exit 0
 A multi-environment `prove` prints the line of its most severe outcome (stop > blocked > clean) and
 names `verdicts.json`, the index of every per-environment file. Every outcome, `DONE` included,
 writes its JSON:
-- under `proofs/<slug>/` for change-scoped verbs;
-- under `.facsimile/` for machine-scoped verbs (`doctor`, `up`, `down`, `status`).
+- change-scoped verbs write `proofs/<slug>/<verb>.<env>.json`, for example `read.QA.json` or
+  `verdict.QA.json`;
+- machine-scoped verbs (`doctor`, `up`, `down`, `status`, `init`) write `.facsimile/out/<verb>.json`.
 
 **Verdicts** (exit 0 or 3):
 
@@ -319,7 +320,7 @@ writes its JSON:
 | `blocked keylength` | 1946 | 3 |
 | `blocked cdc` | 4928 raised by a generated (main-phase) statement, only on a server that has CDC. A 4711 from a TRUNCATE in an authored script is `blocked authored`, with the `cdc` flag | 3 |
 | `blocked temporal` | 13575, or the system-versioning consistency check's failure (its number is ARCH §11 question 13), raised by a generated `Temporal` statement | 3 |
-| `blocked collation` | 468, when the copy's server collation equals the environment's (otherwise `stop platform`) | 3 |
+| `blocked collation` | 468 raised by a generated (main-phase) statement. A 468 inside an authored batch is `blocked authored` when the copy's server collation equals the environment's, otherwise `stop platform` | 3 |
 | `blocked authored` | **any** error raised inside a pre- or post-deploy batch: the seed's 207, 544, 8672, 2627; a remedy's own `RAISERROR`/`THROW`; a script's 208, 2714, 3726, 13575 | 3 |
 | `refused-at-build` | SQL71516 (a referenced key dropped) | 3 |
 
@@ -367,8 +368,10 @@ acts):
 
 ## 7. Tier and flags
 
-The tier is a pure function of the questions, so it is identical in every environment and on every
-machine:
+The tier is a pure function of the questions. The record carries two tiers:
+- the PR's own tier, from `delta.pr.sql`, which is identical on every machine;
+- each environment's tier, from that environment's delta, which may be higher when the environment
+  lags (`lag:<env>`).
 
 | Tier | Holds when | What it costs |
 |---|---|---|
@@ -452,7 +455,7 @@ the tier cannot be argued with.
 | `delta.<env>.sql` and `delta.pr.sql` | the two deltas |
 | `answers.<env>.json` | stamped with server, database, login, time, head commit, delta hash, and probe text. Its content hash covers answer values only |
 | `witness.sql` | if any |
-| `shape.*.json` | if any |
+| `shape.*.json` | if any: signatures and counts only. `--vocabulary` literals are written to `.facsimile/out/` and are never committed (P1, P6) |
 | `verdict.<env>.json` and `verdicts.json` | the outcomes |
 
 **What is never committed:** `.facsimile/`, meaning the base backups, head builds, the registry and

@@ -1,8 +1,16 @@
 # The planter (`PLT`)
 
-*`Get-FxWitnessPlan` (pure) picks the witnesses; `sql/plant.sql` makes the rows from the copy's catalog. Row n's
-value in a column is a pure function of (table, column, n, type, width) (D3): strings `w<n>`, dates 2000-01-01 + n days,
-keys from ancestors. Presence is ordinal 1, witnesses 2, 3, … in ARCH §4 order. `decision` marks a choice ARCH leaves open.*
+*`Get-FxWitnessPlan` (pure) picks the witnesses; `sql/plant.sql` makes the rows from the copy's catalog. Every planted value is
+generated or repository-defined, never an environment value (P5). A generated value is a pure function of (table, column,
+ordinal, type, width, class) (D3): strings `w<n>` fitted to width, binary `0x77…`, dates 2000-01-01 + n days. Where the `w`
+marker cannot fit, the value comes from the planter's fixed per-class table (`''`, a day-first date, a numeric overflow, a
+`char(1)`). Keys resolved from the copy, period columns and identity values are outside D3 but inside D1.
+A table plants the maximum of its needs, not their sum (M2): a violation row also serves as presence, classes on different
+columns share a row, classes on one column take separate rows, and `dups`, `nulls` and a gapped identity take two rows. Every
+Orphan question links the child to a planted or reference parent, even before the FK exists. Every probe and the planter run
+under `SET LANGUAGE us_english; SET DATEFORMAT ymd`. The planter may suspend a constraint to plant and restores the
+environment's trust state afterwards; `witness.sql` (DML only, in blocks headed `-- plants: <T>` or `-- witness: <question key>`,
+run in FK order) runs inside that envelope. `decision` marks a choice ARCH leaves open.*
 
 ## Types
 
@@ -16,8 +24,8 @@ expect:   answers    HasRows(T)=yes
           copy       T 1 row · Id 1 (engine) · a=1 · b=1 · c=1
 laws:     D3 F1
 source:   expected · ARCH §5 step 2
-note:     Nullable b gets a value, not NULL (ARCH §5.2). There is no distribution: the value is the ordinal n at
-          every integer width (the Twin's σ mint is retired, ARCH §2 #11).
+note:     Nullable b gets a value, not NULL (ARCH §5 step 2). There is no distribution: the value is the ordinal n at
+          every integer width (the Twin's σ mint is retired, ARCH §2 row 11).
 ```
 
 ### PLT-02 · tinyint: the ordinal, wrapping at 256
@@ -36,15 +44,15 @@ note:     decision: row n gets n mod 256, so a non-unique column never overflows
 ### PLT-03 · bit: 1, then 0
 ```case
 kind:     sql
-env:      pg + T (Id int IDENTITY PK · c bit NOT NULL · d bit NULL · Note nvarchar(20) NULL) · T 4 rows · Note NULL×1
-action:   plant · questions HasRows(T) · NotNull(T.Note)
-expect:   answers    HasRows(T)=yes · NotNull(T.Note)=violating
-          witnesses  presence(T) · null(T.Note)
-          copy       row 1 c=1 · d=1 · row 2 c=0 · d=0 · Note NULL
-laws:     D3 F1
+env:      pg + T (Id int IDENTITY PK · c bit NOT NULL · d bit NULL · Note nvarchar(20) NULL) · T 4 rows · Note NULL×2
+action:   plant · questions HasRows(T) · Unique(T,(Note)) (head adds a plain unique index on Note)
+expect:   answers    HasRows(T)=yes · Unique(T,(Note))={nulls}
+          witnesses  dup(T,(Note),nulls): two rows, which also answer HasRows(T)
+          copy       T 2 rows · row 1 c=1 · d=1 · Note NULL · row 2 c=0 · d=0 · Note NULL
+laws:     D3 F1 M2
 source:   expected · ARCH §5 steps 2–3
-note:     Row n gets n mod 2, so the presence row reads 1. A unique bit column holds two planted rows at most
-          (PLT-114).
+note:     Row n gets n mod 2, so the first row reads 1. The nulls class needs two rows (M2), which is how a second row
+          arises in prove. A unique bit column holds two planted rows at most (PLT-114).
 ```
 
 ### PLT-04 · decimal(1,0) and numeric(1,0): one digit
@@ -91,8 +99,8 @@ action:   plant · questions HasRows(T)
 expect:   copy       T 1 row · c='2000-01-02' · d='2000-01-02'
 laws:     D3 D1
 source:   expected · ARCH §5 step 2
-note:     A date cannot carry the `w` prefix. P5's prefix governs strings, and a fixed base keeps D1. Nothing
-          is drawn from a window (the Twin's date distributions are retired, ARCH §2 #16).
+note:     A date cannot carry the `w` marker, so it comes from the planter's fixed base (P5), which keeps D1. Nothing is
+          drawn from a window (the Twin's date distributions are retired, ARCH §2 row 16).
 ```
 
 ### PLT-08 · time(n): n seconds, no fraction
@@ -107,16 +115,20 @@ note:     The fractional digits are zero, so the same value is valid at every pr
           happens. Row n > 86399 wraps modulo a day.
 ```
 
-### PLT-09 · datetime and smalldatetime: base plus n days, at midnight, in ISO 8601
+### PLT-09 · datetime and smalldatetime: base plus n days, at midnight, under the pinned date format
 ```case
 kind:     sql
-env:      pg + T (Id int IDENTITY PK · a datetime NOT NULL · b smalldatetime NULL) · T 2 rows
-action:   plant · questions HasRows(T) · under SET LANGUAGE british in the planter's session
-expect:   copy       T 1 row · a='2000-01-02T00:00:00' · b='2000-01-02T00:00:00' (2 January, not 1 February)
+env:      pg + T (Id int IDENTITY PK · a datetime NOT NULL · b smalldatetime NULL) · T 2 rows · the copy's login
+          defaults to LANGUAGE british (dmy)
+action:   plant · questions HasRows(T)
+expect:   trace      the plant session begins SET LANGUAGE us_english; SET DATEFORMAT ymd, whatever the login's default
+          copy       T 1 row · a='2000-01-02T00:00:00' · b='2000-01-02T00:00:00' (2 January, not 1 February)
 laws:     D3 D1
-source:   expected · Microsoft doc "datetime (Transact-SQL)" (the yyyy-mm-dd form is DATEFORMAT-dependent)
-note:     The planter writes the `T` form because `'2000-01-02'` reads as ydm for datetime under some
-          languages. Midnight avoids datetime's 1/300 s rounding and smalldatetime's minute rounding.
+source:   expected · ARCH §5 step 2 (the language and date-format pin); Microsoft doc "datetime (Transact-SQL)" (the
+          yyyy-mm-dd form is DATEFORMAT-dependent for datetime)
+note:     The planter writes the `T` form, which no DATEFORMAT reinterprets, and pins the session too, so a class witness
+          that depends on the format (PLT-65) reads the same in plant.sql and probes.sql. Midnight avoids datetime's
+          1/300 s rounding and smalldatetime's minute rounding.
 ```
 
 ### PLT-10 · datetime2(n): base plus n days, at every precision
@@ -166,17 +178,17 @@ note:     The planter writes 'w1' and the engine pads it. Equality ignores the p
           class (trailing spaces only) cannot arise from a fixed-width source.
 ```
 
-### PLT-14 · char(1) and nvarchar(1): the bare prefix
+### PLT-14 · char(1) and nvarchar(1): the bare marker
 ```case
 kind:     sql
 env:      pg + T (Id int IDENTITY PK · a char(1) NOT NULL · b nvarchar(1) NULL · Note nvarchar(20) NULL) · T 5 rows · Note NULL×1
 action:   plant · questions HasRows(T) · NotNull(T.Note)
-expect:   witnesses  presence(T) · null(T.Note)
-          copy       row 1 a='w' · b=N'w' · row 2 a='w' · b=N'w'
-laws:     D3 P5
-source:   expected · INVARIANTS P5
-note:     A width-1 string has room only for the prefix, so every planted row is equal in it. That is harmless
-          unless the column is unique (PLT-42 in prove, PLT-114 in `up`).
+expect:   witnesses  null(T.Note), which also answers HasRows(T)
+          copy       T 1 row · a='w' · b=N'w' · Note NULL
+laws:     D3 P5 M2
+source:   expected · INVARIANTS P5 (the per-class table's `char(1)` entry)
+note:     A width-1 string has room for the marker and nothing else, so every planted row is equal in it. That is
+          harmless unless the column is unique (PLT-42 in prove, PLT-114 in `up`).
 ```
 
 ### PLT-15 · varchar(max), nvarchar(max), text, ntext
@@ -191,17 +203,18 @@ note:     text and ntext are deprecated and cannot be compared or indexed, so th
           KeyLength question. The planter treats them as (max) types.
 ```
 
-### PLT-16 · email-like columns: `@example.invalid`
+### PLT-16 · no name routing: an email-like column gets the same literal as any string
 ```case
 kind:     sql
 env:      pg + T (Id int IDENTITY PK · Email nvarchar(256) NULL · WorkEmail varchar(30) NOT NULL
           · EmailFlag bit NOT NULL · Mail nvarchar(10) NULL) · T 2 rows
 action:   plant · questions HasRows(T)
-expect:   copy       T 1 row · Email=N'w1@example.invalid' · WorkEmail='w1@example.invalid' · EmailFlag=1 · Mail=N'w1'
+expect:   copy       T 1 row · Email=N'w1' · WorkEmail='w1' · EmailFlag=1 · Mail=N'w1'
+          plan       no planted value depends on a column's name
 laws:     P5 D3
-source:   expected · INVARIANTS P5
-note:     decision: a string column whose name contains `mail` gets `w<n>@example.invalid` when that fits, else
-          `w<n>`. This is the only name rule left after ARCH §2 #12 retired name routing. Reported.
+source:   expected · INVARIANTS P5 (no name routing); ARCH §2 row 12 (the schema-derived floor's name routing is retired)
+note:     No publish verdict reads whether a value looks like an email address. Renaming a column therefore never changes
+          a planted value.
 ```
 
 ### PLT-17 · binary(n): 0x77, then the ordinal
@@ -234,10 +247,10 @@ kind:     sql
 env:      pg + T (Id uniqueidentifier NOT NULL PK · Ref uniqueidentifier NULL) · T 2 rows
 action:   plant · questions HasRows(T) · twice, on two fresh restores
 expect:   copy       T 1 row · Id='77777777-0000-4000-8000-000000000001' · Ref the same value · identical in both runs
-laws:     D3 D1
-source:   expected · INVARIANTS D1
-note:     The last 12 hex digits are n, and the planter never calls NEWID(). Orphan witnesses use a separate
-          reserved pattern (PLT-76).
+laws:     D3 D1 P5
+source:   expected · INVARIANTS D1, P5
+note:     The marker cannot fit a GUID, so the pattern is the planter's fixed, documented one: the last 12 hex digits are
+          n, and the planter never calls NEWID(). Orphan witnesses use a separate reserved pattern (PLT-76).
 ```
 
 ### PLT-20 · xml, untyped
@@ -420,8 +433,8 @@ expect:   answers    HasRows(T)=yes
                      · T_History 0 rows
 laws:     F1 D1
 source:   expected · skills/op/temporal-new (GENERATED ALWAYS period columns are engine-maintained)
-note:     ValidFrom is the clock at planting, so D1's byte comparison must exclude GENERATED ALWAYS period
-          values. D1 names only "the timestamp field" (reported).
+note:     Period columns are outside D3 and inside D1 (INVARIANTS D3). ValidFrom is the clock at planting, so D1 can only
+          compare it as it compares the timestamp field; D3 does not say how (reported).
 ```
 
 ### PLT-35 · temporal history is planted by UPDATE, never by INSERT
@@ -486,50 +499,50 @@ action:   plant · questions HasRows(Customer) · HasRows(Order) · then identit
 expect:   copy       Customer 1 row · Order 1 row · no INSERT targets a view · vOrderTotals holds 1 row (engine-maintained)
                      · identity plan empty, both views present
 laws:     F2 T1
-source:   expected · THE_TWIN.md §6 (views excluded from the mint but still published; ARCH §2 #10)
+source:   expected · THE_TWIN.md §6 (views excluded from the mint but still published; ARCH §2 row 10)
 ```
 
-### PLT-40 · unique keys on presence columns: the ordinal keeps rows distinct
+### PLT-40 · unique keys on columns no question names: the ordinal keeps witness rows distinct
 ```case
 kind:     sql
 env:      pg + UNIQUE INDEX UX_Product_Name ON Product(Name) · UNIQUE INDEX UX_Product_Code_Filt ON Product(Code)
-          WHERE Code IS NOT NULL · Product 5 rows · CategoryId NULL×2 · Code max LEN 16
-action:   plant · questions HasRows(Product) · NotNull(Product.CategoryId) · Fits(Product.Code→nvarchar(10))
-expect:   answers    NotNull(Product.CategoryId)=violating · Fits(Product.Code→nvarchar(10))={overlen}
-          copy       row 1 Name=N'w1' · row 2 Name=N'w2' · row 3 Name=N'w3' · Codes N'w1', N'w2', N'w3wwwwwwwww' (11 chars)
+          WHERE Code IS NOT NULL · Product 5 rows · one Code over 10 by LEN · one over 10 by trailing spaces only
+action:   plant · questions HasRows(Product) · Fits(Product.Code→nvarchar(10))
+expect:   answers    Fits(Product.Code→nvarchar(10))={overlen, overbytes}
+          copy       Product 2 rows · row 1 Name=N'w1' · Code=N'w1wwwwwwwww' · row 2 Name=N'w2' · Code=N'w2' + 9 spaces
                      · no 2601 or 2627 while planting
 laws:     F1 M2 D3
 source:   expected · ARCH §5 steps 2–3
-note:     A witness row varies only its own column and keeps the ordinal everywhere else, so every other unique
-          key stays distinct.
+note:     Two classes on one column need two rows (M2). Each row varies only its own class cell and keeps its ordinal
+          everywhere else, so every other unique key stays distinct.
 ```
 
 ### PLT-41 · a non-IDENTITY key in a table that already holds rows: MAX(key) + n
 ```case
 kind:     sql
-env:      pg + dbo.Kind (Id int PK, no IDENTITY · Label nvarchar(20) NULL) · referenceData seeds Kind 1–3
-          · Kind in env 3 rows · Label NULL×1
+env:      pg + dbo.Kind (Id int PK, no IDENTITY · Label nvarchar(20) NULL) · the merge-base referenceData lane seeds
+          Kind 1–3 · Kind in env 3 rows · Label NULL×1
 action:   plant · questions HasRows(Kind) · NotNull(Kind.Label)
 expect:   plan       null(Kind.Label) · presence already answered by the lane rows
           copy       Kind 4 rows · lane rows 1–3 unchanged · witness row Id=4 (MAX 3 + n=1) · Label NULL
-laws:     F1 M2
-source:   expected · ARCH §5 step 2 (reuse existing rows)
-note:     decision: the one key that depends on the copy's rows rather than D3's signature alone (reported).
-          Without it, Id=1 would collide with lane row 1 (Msg 2627).
+laws:     F1 M2 D1
+source:   expected · ARCH §5 step 2 (reuse existing rows); INVARIANTS D3 (keys resolved from the copy)
+note:     A key resolved from the copy is outside D3 but inside D1: the same restore gives the same MAX, so every run plants
+          the same Id. Without it, Id=1 would collide with lane row 1 (Msg 2627).
 ```
 
 ### PLT-42 · a unique column too narrow for the planted rows: needs a declared row
 ```case
 kind:     sql
-env:      pg + T (Id int IDENTITY PK · Flag char(1) NOT NULL UNIQUE · Note nvarchar(50) NULL) · T 3 rows · Note NULL×1
-action:   plant · questions HasRows(T) · NotNull(T.Note)
-expect:   plan       presence(T) · null(T.Note)
-          outcome    stop planter-needs-row · "dbo.T (Flag char(1) is unique and has room for one planted value):
-                     write the rows under -- plants: dbo.T" · exit 5
+env:      pg + T (Id int IDENTITY PK · Flag char(1) NOT NULL UNIQUE · Note nvarchar(50) NULL) · T 3 rows · Note NULL×2
+action:   plant · questions HasRows(T) · Unique(T,(Note)) (head adds a plain unique index on Note)
+expect:   plan       dup(T,(Note),nulls): two rows
+          outcome    stop planter-needs-row · "Cannot make a valid row for dbo.T (Flag char(1) is unique and has room for one
+                     planted value). Write the rows into witness.sql under -- plants: dbo.T." · exit 5
 laws:     H3 M2
 source:   expected · ARCH §6 planter-needs-row
-note:     The second row's Flag is also 'w', so the insert fails 2627, which the planter turns into this stop,
-          naming the constraint. bit has room for two planted values, tinyint 256 and decimal(1,0) ten.
+note:     The second row's Flag is also 'w', so the insert fails 2627, which the planter turns into this stop, naming the
+          constraint. bit has room for two planted values, tinyint 256 and decimal(1,0) ten.
 ```
 
 ### PLT-43 · a CHECK the literal satisfies
@@ -665,6 +678,22 @@ note:     A NULL passes MATCH SIMPLE, so it needs no parent. A nullable FK colum
           the planter leaves NULL (with PLT-22's unmintable types).
 ```
 
+### PLT-125 · a nullable FK column with an Orphan question is linked, not left NULL
+```case
+kind:     corpus
+env:      pg · Customer 5 rows, every AccountId resolves · Account 3 rows
+change:   head adds FK_Customer_Account (Customer.AccountId → Account.Id)
+expect:   answers    Orphan(Customer.(AccountId)→Account)=clean · Rows(Customer)=5
+          witnesses  presence(Customer) (+link Account: a planted parent row)
+          copy       Account 1 row · Customer 1 row · AccountId = that Account's Id, not NULL
+          outcome    verdict clean · exit 0
+laws:     F1 F3 M2
+source:   expected · ARCH §5 step 2 (every Orphan question links the child, even before the FK exists; nullable FK columns
+          with no Orphan question get NULL); F9 (a declarative FK add over clean data lands trusted)
+note:     A NULL would pass MATCH SIMPLE as well, but then the copy's WITH CHECK CHECK would validate no real child. A
+          populated, linked child is the state Dev has. Without an Orphan question the column stays NULL (PLT-52).
+```
+
 ### PLT-53 · an FK to a reference-data lookup: reuse, never plant over
 ```case
 kind:     sql
@@ -699,18 +728,19 @@ laws:     M2 F1
 source:   expected · INVARIANTS M2
 ```
 
-### PLT-56 · an FK the change adds is an ancestor edge too
+### PLT-56 · an FK the change adds is linked like an existing one
 ```case
 kind:     corpus
 env:      pg (no FKs) · Order 4 rows, every CustomerId resolves · Customer 5 rows
 change:   head adds FK_Order_Customer (Order.CustomerId → Customer.Id)
-expect:   answers    HasRows(Order)=yes · Orphan(Order.(CustomerId)→Customer)=clean
-          witnesses  presence(Order) (+ancestors Customer)
+expect:   answers    Orphan(Order.(CustomerId)→Customer)=clean · Rows(Order)=4
+          witnesses  presence(Order) (+link Customer: a planted parent row)
           outcome    verdict clean · exit 0
 laws:     F1 F3 M2
-source:   expected · F9 (a declarative FK add is WITH NOCHECK ADD + WITH CHECK CHECK, and lands trusted over clean data)
-note:     The copy has no FK yet, so its catalog alone would leave Order.CustomerId=1 pointing nowhere, an
-          accidental orphan. The planter adds each Orphan question's columns and parent to its FK graph.
+source:   expected · ARCH §5 step 2 (every Orphan question links the child, even though the FK does not exist yet in the
+          base); F9 (a declarative FK add is WITH NOCHECK ADD + WITH CHECK CHECK, and lands trusted over clean data)
+note:     The copy has no FK yet, so its catalog alone would leave Order.CustomerId=1 pointing nowhere: an accidental orphan
+          the environment does not have. The plan takes the link from the Orphan question instead.
 ```
 
 ### PLT-57 · a NOT NULL self-reference: needs a declared row
@@ -732,12 +762,12 @@ kind:     sql
 env:      pg + Dept (Id int PK · HeadId int NOT NULL FK → Person.Id) + Person (Id int PK · DeptId int NOT NULL FK → Dept.Id)
           · Dept 3 rows · Person 8 rows
 action:   plant · questions HasRows(Person)
-expect:   outcome    stop planter-needs-row · "dbo.Person (NOT NULL FK cycle dbo.Person → dbo.Dept → dbo.Person): write
-                     the rows under -- plants: dbo.Person, dbo.Dept" · exit 5
+expect:   outcome    stop planter-needs-row · "Cannot make a valid row for dbo.Person (NOT NULL FK cycle dbo.Person → dbo.Dept
+                     → dbo.Person). Write the rows into witness.sql under -- plants: dbo.Dept and -- plants: dbo.Person." · exit 5
 laws:     H3 A5
 source:   expected · ARCH §6 planter-needs-row
-note:     A cycle through a nullable column is not a cycle here, because that edge gets NULL. DML alone cannot
-          insert a NOT NULL cycle, so declared blocks run with the FKs among their tables disabled (PLT-85).
+note:     A cycle through a nullable column is not a cycle here, because that edge gets NULL. DML alone cannot insert a NOT
+          NULL cycle, so the declared blocks run inside the planter's suspend-and-restore envelope (PLT-85).
 ```
 
 ### PLT-59 · a parent the environment answered empty, under an untrusted FK: the child is planted as an orphan
@@ -746,42 +776,43 @@ kind:     sql
 env:      pg + FK_Order_Customer (NOT NULL) enabled, is_not_trusted=1 · Order 4 rows, every CustomerId absent · Customer 0 rows
 action:   plant · questions HasRows(Order) · HasRows(Customer) · then identity
 expect:   answers    HasRows(Order)=yes · HasRows(Customer)=no · Trust(Order,FK_Order_Customer)=untrusted
-          copy       Customer 0 rows · Order 1 row · CustomerId=1000 (empty parent: 0 + 1000) · FK re-enabled untrusted
-                     · identity plan empty
+          copy       Customer 0 rows · Order 1 row · CustomerId=1000 (empty parent: MAX 0 + 1000) · FK restored enabled and
+                     untrusted · identity plan empty
 laws:     F1 F9
-source:   expected · ARCH §5 step 2 (decision)
-note:     The answers win over the ancestor rule. An enforced-but-untrusted FK lets the environment hold this
-          state, so the planter disables the FK, inserts, and re-enables it without WITH CHECK.
+source:   expected · ARCH §5 step 4 (suspend to plant, then restore the environment's trust state)
+note:     The answers win over the ancestor rule. An enforced-but-untrusted FK lets the environment hold this state, so the
+          planter suspends the FK, inserts, and restores it without WITH CHECK.
 ```
 
-### PLT-60 · a parent answered empty under a trusted FK: the answers contradict each other
+### PLT-60 · a parent answered empty under a trusted FK: the answers contradict the schema
 ```case
 kind:     sql
 env:      pg + FK_Order_Customer (NOT NULL) trusted · answers HasRows(Order)=yes · HasRows(Customer)=no
 action:   plant · questions HasRows(Order) · HasRows(Customer)
-expect:   outcome    stop acceptance · "the copy cannot answer HasRows(Customer) no while dbo.Order holds a row under
-                     trusted FK_Order_Customer: re-run facsimile read <env>" · exit 5
-laws:     F1 H3
-source:   expected · ARCH §11.2 (sys.partitions counts are approximate)
-note:     A trusted FK makes this state impossible, so one of the counts is wrong. The likely cause is a stale
-          sys.partitions count. No stop kind fits exactly; `acceptance` with a re-read is used (reported).
+expect:   outcome    stop answers-invalid · "answers.<env>.json does not validate (HasRows(dbo.Customer)=no contradicts trusted
+                     FK_Order_Customer while dbo.Order holds rows). Re-run facsimile read <env>." · exit 5
+          copy       nothing planted
+laws:     F1 H3 A5
+source:   expected · ARCH §6 answers-invalid (decision); ARCH §11.2 (sys.partitions counts are approximate)
+note:     decision: a trusted FK makes this state impossible, so one count is wrong, most likely a stale sys.partitions row
+          count. Planting the ancestor would end in an acceptance stop whose next step (fix witness.sql) cannot help; a
+          re-read can (A5).
 ```
 
 ## Violation witnesses by class
 
-### PLT-61 · null: the witness row varies one column
+### PLT-61 · null: the witness is a full valid row with one NULL, and it is the presence row too
 ```case
 kind:     sql
 env:      pg · Customer 5 rows · Email NULL×2
 action:   plant · questions HasRows(Customer) · NotNull(Customer.Email)
 expect:   answers    HasRows(Customer)=yes · NotNull(Customer.Email)=violating
-          witnesses  presence(Customer) · null(Customer.Email)
-          copy       row 1 Email=N'w1@example.invalid' · row 2 Email NULL · Name=N'w2' · ContactPhone=N'w2'
-                     · Region=N'w2' · AccountId=2
+          witnesses  null(Customer.Email), which also answers HasRows(Customer)
+          copy       Customer 1 row · Email NULL · Name=N'w1' · ContactPhone=N'w1' · Region=N'w1' · AccountId=1
 laws:     F1 M2 P5 D3
-source:   expected · ARCH §4 NotNull
-note:     A witness row is a full valid row at its own ordinal, except for the one violating cell. pg has no
-          FKs, so AccountId is an ordinary nullable int here.
+source:   expected · ARCH §4 NotNull; ARCH §5 step 2 (a violation row also counts as presence)
+note:     A witness row is a full valid row at its own ordinal, except for the violating cell. pg has no FKs, so AccountId
+          is an ordinary nullable int here. Deleting the row breaks both answers (PLT-107).
 ```
 
 ### PLT-62 · misfit overlen: one character past the target, by LEN
@@ -790,12 +821,12 @@ kind:     sql
 env:      pg · Product 5 rows · Code max LEN 16
 action:   plant · questions HasRows(Product) · Fits(Product.Code→nvarchar(10))
 expect:   answers    Fits(Product.Code→nvarchar(10))={overlen}
-          witnesses  presence(Product) · misfit(Product.Code, overlen)
-          copy       row 1 Code=N'w1' · row 2 Code=N'w2wwwwwwwww' (LEN 11, no trailing space)
+          witnesses  misfit(Product.Code, overlen), which also answers HasRows(Product)
+          copy       Product 1 row · Code=N'w1wwwwwwwww' (LEN 11, no trailing space)
 laws:     F1 M2
 source:   expected · F1 (the narrowing on a populated table: the guard fires first under Strict)
-note:     The value is `w<n>` padded with `w` to the target width + 1. Under Strict the guard decides. The misfit
-          decides Permissive (2628) and the R1 of a program (INVARIANTS F8).
+note:     The value is `w<n>` padded with `w` to the target width + 1. Under Strict the guard decides. The misfit decides
+          Permissive (2628) and the R1 of a program (INVARIANTS F8).
 ```
 
 ### PLT-63 · misfit overbytes: over by trailing spaces only
@@ -804,11 +835,11 @@ kind:     sql
 env:      pg · Product 5 rows · one Code is 'A100' + 12 trailing spaces
 action:   plant · questions HasRows(Product) · Fits(Product.Code→nvarchar(10))
 expect:   answers    Fits(Product.Code→nvarchar(10))={overbytes}
-          copy       row 2 Code=N'w2' + 9 spaces (11 characters, LEN 2)
-laws:     F1
+          copy       Product 1 row · Code=N'w1' + 9 spaces (11 characters, LEN 2)
+laws:     F1 M2
 source:   expected · red-team #10 (a narrowing silently trims trailing spaces, verified)
-note:     LEN ignores trailing spaces, so this row is not overlen. The narrowing trims it without an error, and
-          only the content hash shows the change (TWIN_SUCCESSION §5).
+note:     LEN ignores trailing spaces, so this row is not overlen. The narrowing trims it without an error, and only the
+          before/after hashes show the change (TWN-151).
 ```
 
 ### PLT-64 · misfit nonconvertible
@@ -817,22 +848,41 @@ kind:     sql
 env:      pg + T (Id int IDENTITY PK · c nvarchar(20) NOT NULL) · T 4 rows · one c is 'n/a'
 action:   plant · questions HasRows(T) · Fits(T.c→int)
 expect:   answers    Fits(T.c→int)={nonconvertible}
-          copy       row 1 c=N'1' (PLT-95) · row 2 c=N'w2' (TRY_CONVERT(int, N'w2') IS NULL)
-laws:     F1 P5
+          copy       T 1 row · c=N'w1' (TRY_CONVERT(int, N'w1') IS NULL), which also answers HasRows(T)
+laws:     F1 P5 M2
 source:   expected · ARCH §4 Fits
 ```
 
-### PLT-65 · misfit roundtrip: a day-first date that converts month-first
+### PLT-65 · misfit roundtrip: a day-first date that converts month-first under the pinned date format
 ```case
 kind:     sql
 env:      pg + T (Id int IDENTITY PK · Born varchar(10) NOT NULL) · T 6 rows · formats 99/99/9999 and 9999-99-99
 action:   plant · questions HasRows(T) · Fits(T.Born→date)
 expect:   answers    Fits(T.Born→date)={roundtrip}
-          copy       row 1 Born='2000-01-02' · row 2 Born='02/01/2000' (meant 2 January; converts to 2000-02-01)
-laws:     F1
-source:   expected · TWIN_SUCCESSION §6b (a slash date converting "successfully" month-first)
-note:     The witness converts, so the `w` prefix cannot apply. Whether it converts month-first depends on the
-          session's DATEFORMAT, so probes.sql and plant.sql must pin the same one (reported).
+          trace      probes.sql and plant.sql both run under SET LANGUAGE us_english; SET DATEFORMAT ymd
+          copy       T 1 row · Born='02/01/2000' (meant 2 January; under ymd the four-digit part is the year and the other
+                     two read month-first, so it converts to 2000-02-01)
+laws:     F1 P5
+source:   expected · TWIN_SUCCESSION §6b (a slash date converting "successfully" month-first); Microsoft doc "datetime
+          (Transact-SQL)" (in a numeric date, a four-digit part is the year)
+note:     The witness must convert, so the marker cannot apply: the value is the per-class table's day-first date (P5). P5's
+          example 13/04/2001 reads nonconvertible under ymd (month 13), so this class needs a day of 12 or less (reported).
+```
+
+### PLT-123 · the date-format pin: probes and planter agree whatever the logins' defaults
+```case
+kind:     sql
+env:      pg + T (Id int IDENTITY PK · Born varchar(10) NOT NULL) · T 6 rows · one Born '02/01/2000' · the environment's
+          reader defaults to us_english · the copy's login defaults to LANGUAGE british (dmy)
+action:   read (the Fits(T.Born→date) probe) · plant · accept
+expect:   answers    the environment and the copy both read Fits(T.Born→date)={roundtrip}
+          trace      every probe batch and the plant session begin SET LANGUAGE us_english; SET DATEFORMAT ymd
+          record     notChecked ∋ platform:dateformat when the captured options do not state the Octopus login's language
+                     and date format
+laws:     F1 H4 D1
+source:   expected · ARCH §5 step 2 (the pin, and the platform:dateformat residual)
+note:     Without the pin, the copy's british session would read '02/01/2000' as 2 January while the environment's probe read
+          1 February, and acceptance would compare two different questions.
 ```
 
 ### PLT-66 · misfit roundtrip: scale beyond the target
@@ -841,7 +891,7 @@ kind:     sql
 env:      pg + T (Id int IDENTITY PK · Rate decimal(18,4) NOT NULL) · T 5 rows · one Rate 2.3456
 action:   plant · questions HasRows(T) · Fits(T.Rate→decimal(18,2))
 expect:   answers    Fits(T.Rate→decimal(18,2))={roundtrip}
-          copy       row 1 Rate=1.0000 · row 2 Rate=2.0001 (rounds to 2.00 with no error)
+          copy       T 1 row · Rate=1.0001 (rounds to 1.00 with no error)
 laws:     F1
 source:   expected · TWIN_SUCCESSION §5 (a lossy result shows only in the hash)
 note:     The witness is n plus one unit in the last source scale digit, which the target scale cannot hold.
@@ -853,11 +903,11 @@ kind:     sql
 env:      pg + T (Id int IDENTITY PK · Qty nvarchar(10) NOT NULL) · T 4 rows · Qty ''×1
 action:   plant · questions HasRows(T) · Fits(T.Qty→int)
 expect:   answers    Fits(T.Qty→int)={empty}
-          copy       row 1 Qty=N'1' · row 2 Qty=N''
-laws:     F1
+          copy       T 1 row · Qty=N''
+laws:     F1 P5
 source:   expected · red-team #10 (TRY_CONVERT('') gives 0 for int and 1900-01-01 for date, NULL for decimal and GUID; verified)
-note:     The witness is `''` whatever the target type. The class exists because the outcome differs by target.
-          P5's prefix cannot apply to the empty class.
+note:     The witness is `''` whatever the target type, the per-class table's entry for this class (P5). The class exists
+          because the outcome differs by target.
 ```
 
 ### PLT-68 · misfit overflow: the smallest value past the target
@@ -867,25 +917,25 @@ env:      pg + T (Id int IDENTITY PK · Total decimal(18,2) NOT NULL · Qty int 
           · one Total 12000.00 · one Qty 40000
 action:   plant · questions HasRows(T) · Fits(T.Total→decimal(5,2)) · Fits(T.Qty→smallint)
 expect:   answers    Fits(T.Total→decimal(5,2))={overflow} · Fits(T.Qty→smallint)={overflow}
-          copy       row 1 Total=1.00 · Qty=1 · row 2 Total=1000.00 · Qty=2 · row 3 Total=3.00 · Qty=32768
+          copy       T 1 row · Total=1000.00 · Qty=32768
 laws:     F1 M2
-source:   expected · ARCH §4 Fits
-note:     The value is 10^(p−s) for a decimal target and the target's maximum + 1 for an integer target. Each class
-          row varies one column, so Total's witness is row 2 and Qty's is row 3.
+source:   expected · ARCH §4 Fits; INVARIANTS M2
+note:     The value is 10^(p−s) for a decimal target and the target's maximum + 1 for an integer target. The two classes
+          sit on different columns, so one row carries both (M2: the maximum of the needs).
 ```
 
-### PLT-69 · dup exact: one row equal to the presence row on the key
+### PLT-69 · dup exact: two rows equal on the key
 ```case
 kind:     sql
 env:      pg · Product 5 rows · Code 'DUPE'×2
 action:   plant · questions HasRows(Product) · Unique(Product,(Code))
 expect:   answers    Unique(Product,(Code))={exact}
-          witnesses  presence(Product) · dup(Product,(Code),exact)
-          copy       row 1 Code=N'w1' · row 2 Code=N'w1' · Name=N'w2' · LegacyCode=N'w2'
+          witnesses  dup(Product,(Code),exact): two rows, which also answer HasRows(Product)
+          copy       Product 2 rows · row 1 Code=N'w1' · Name=N'w1' · row 2 Code=N'w1' · Name=N'w2' · LegacyCode=N'w2'
 laws:     F1 M2
 source:   expected · ARCH §4 Unique
-note:     For a composite key, every key column equals the presence row's value. A separate equal pair would
-          add a row that M2 forbids.
+note:     For a composite key, every key column is equal across the pair. The pair is the presence, so no third row is
+          planted (M2).
 ```
 
 ### PLT-70 · dup case: legal under the old collation, a duplicate under the new one
@@ -894,13 +944,14 @@ kind:     corpus
 env:      pg + T (Id int IDENTITY PK · Code nvarchar(20) COLLATE Latin1_General_CS_AS NOT NULL) + UNIQUE INDEX UX_T_Code
           · T 4 rows · Code 'abc' and 'ABC'
 change:   head changes Code's collation to Latin1_General_CI_AS (UX_T_Code is dropped and rebuilt)
-expect:   answers    Unique(T,(Code))={case}, measured under the head collation
-          witnesses  presence(T) · dup(T,(Code),case) → the copy holds N'w1' and N'W1', legal under CS
+expect:   answers    Unique(T,(Code))={case}, counted under the head collation Latin1_General_CI_AS
+          witnesses  dup(T,(Code),case) → the copy holds N'w1' and N'W1', legal under CS, two rows that also answer HasRows(T)
           outcome    verdict blocked unique · Msg 1505 · dbo.T.UX_T_Code · exit 3
 laws:     F1 F3 F9
-source:   expected · red-team #3 (a collation change on a unique column reads rows with no guard, verified)
-note:     The case class can be violating only under a case-insensitive collation. ARCH §4 says "under T's
-          collation" without saying whether that is the environment's or head's (reported).
+source:   expected · red-team #3 (a collation change on a unique column reads rows with no guard, verified); ARCH §4 Unique
+          (duplicates counted under the collation the index will be built with)
+note:     The case class can be violating only under a case-insensitive target collation. The copy keeps the
+          environment's CS collation until head's publish changes it (F9).
 ```
 
 ### PLT-71 · dup accent: a circumflexed `w`
@@ -934,13 +985,12 @@ kind:     corpus
 env:      pg · Customer 5 rows · Email NULL×2
 change:   head adds CREATE UNIQUE INDEX UX_Customer_Email ON Customer(Email)
 expect:   answers    Unique(Customer,(Email))={nulls}
-          witnesses  presence(Customer) · dup(Customer,(Email),nulls)
-          plan       rows 2 and 3 Email NULL · the presence row keeps N'w1@example.invalid'
+          witnesses  dup(Customer,(Email),nulls)
+          plan       Customer 2 rows, both Email NULL; they also answer HasRows(Customer), so no separate presence row
           outcome    verdict blocked unique · Msg 1505 · dbo.Customer.UX_Customer_Email · exit 3
 laws:     F1 F3 M2
-source:   expected · F10 (a second NULL blocks a unique index with Msg 1505)
-note:     This is the only class that needs two witness rows, because the presence row holds a value
-          (ARCH §5.2). M2's "one row per class" is two rows here (reported).
+source:   expected · F10 (a second NULL blocks a unique index with Msg 1505); INVARIANTS M2 (nulls needs two rows)
+note:     Two NULLs are the duplicate, so the class needs two rows. A presence row with a value would add nothing.
 ```
 
 ### PLT-74 · a filtered unique index: NULLs must not count
@@ -962,12 +1012,14 @@ kind:     sql
 env:      pg · Order 4 rows · CustomerId 999 has no Customer · Customer 5 rows
 action:   plant · questions HasRows(Order) · Orphan(Order.(CustomerId)→Customer)
 expect:   answers    Orphan(Order.(CustomerId)→Customer)=violating
-          witnesses  presence(Order) (+ancestors Customer) · orphan(Order.(CustomerId)→Customer)
-          copy       Customer 1 row (Id 1) · Order row 1 CustomerId=1 · row 2 CustomerId=1001, checked absent
-laws:     F1 M2
-source:   expected · ARCH §4 Orphan
-note:     The headroom stops a parent inserted by a post-deploy seed during the proof from adopting the orphan.
-          If MAX + 1000 overflows, the type's maximum is used when absent, else needs-row. The value reads the copy (as PLT-41).
+          witnesses  orphan(Order.(CustomerId)→Customer), which also answers HasRows(Order)
+          copy       Order 1 row · CustomerId=1000 (the copy's MAX(Customer.Id) 0 + 1000), checked absent · no Customer row
+                     planted
+laws:     F1 M2 D1
+source:   expected · ARCH §4 Orphan; INVARIANTS D3 (orphan keys beyond the parent's maximum are resolved from the copy)
+note:     The headroom stops a parent inserted by a post-deploy seed during the proof from adopting the orphan. If MAX + 1000
+          overflows, the type's maximum is used when absent, else needs-row. The orphan row needs no parent, and Customer
+          is not touched, so nothing is planted there.
 ```
 
 ### PLT-76 · orphan, uniqueidentifier key: a reserved absent value
@@ -975,11 +1027,11 @@ note:     The headroom stops a parent inserted by a post-deploy seed during the 
 kind:     sql
 env:      pg + P (Id uniqueidentifier PK DF NEWID()) + C (Id int IDENTITY PK · PRef uniqueidentifier NOT NULL) · C 3 rows, one orphan
 action:   plant · questions HasRows(C) · Orphan(C.(PRef)→P) · twice, on two fresh restores
-expect:   copy       C row 2 PRef='FFFFFFFF-FFFF-4FFF-BFFF-000000000002', checked absent from P · identical in both runs
+expect:   copy       C 1 row · PRef='FFFFFFFF-FFFF-4FFF-BFFF-000000000001', checked absent from P · identical in both runs
 laws:     F1 D1
 source:   expected · INVARIANTS D1
-note:     "Fresh" means absent and deterministic. The orphan pattern differs from the presence pattern (PLT-19),
-          so a planted parent can never satisfy it.
+note:     "Fresh" means absent and deterministic. The orphan pattern differs from the presence pattern (PLT-19), so a
+          planted parent can never satisfy it.
 ```
 
 ### PLT-77 · orphan, composite key: every column past the parents
@@ -987,10 +1039,11 @@ note:     "Fresh" means absent and deterministic. The orphan pattern differs fro
 kind:     sql
 env:      as PLT-51 with the FK not yet in env · ShipmentNote 3 rows, one pair absent from Shipment
 action:   plant · questions HasRows(ShipmentNote) · Orphan(ShipmentNote.(OrderId, LineNumber)→Shipment)
-expect:   copy       Shipment 1 row (1, 1) · ShipmentNote row 1 (1, 1) · row 2 (1001, 1001), both non-NULL
-laws:     F1
+expect:   copy       ShipmentNote 1 row (OrderId 1000, LineNumber 1000), both non-NULL · Shipment 0 rows
+laws:     F1 M2
 source:   expected · ARCH §4 Orphan (MATCH SIMPLE: a NULL in any FK column passes)
-note:     A half-NULL row is never an orphan witness, because MATCH SIMPLE lets it pass.
+note:     A half-NULL row is never an orphan witness, because MATCH SIMPLE lets it pass. The orphan row also answers
+          HasRows(ShipmentNote).
 ```
 
 ### PLT-78 · CheckFalse: always a declared row, so the plan stops first
@@ -1010,15 +1063,16 @@ source:   expected · ARCH §4 CheckFalse
 ```case
 kind:     corpus
 env:      pg · Order 4 rows · one Total -5
-change:   head adds CK_Order_Total CHECK (Total > 0)
-          · witness.sql INSERT dbo.[Order] (CustomerId, StatusId, Total, StatusText) VALUES (1, 1, -1, N'w9')
-expect:   answers    CheckFalse(Order,CK_Order_Total)=violating
-          witnesses  presence(Order) · declared(Order Total = -1)
+change:   head adds CK_Order_Total CHECK (Total > 0) · witness.sql `-- witness: CheckFalse(Order,CK_Order_Total)` then
+          INSERT dbo.[Order] (CustomerId, StatusId, Total, StatusText) VALUES (1, 1, -1, N'w9')
+expect:   answers    CheckFalse(Order,CK_Order_Total)=violating · Rows(Order)=4
+          witnesses  presence(Order) · declared(Order Total = -1), counted apart from the generated rows
           outcome    verdict blocked constraint · Msg 547 · CK_Order_Total · exit 3
-laws:     F1 F3 A5
-source:   expected · F10 (add-check over Total = -5 blocks with Msg 547)
-note:     decision: a need is discharged when the copy's own probe reads violating after witness.sql; ARCH does
-          not say how a declared row meets a need (reported). For an existing untrusted CK, see PLT-89.
+laws:     F1 F3 A5 M2
+source:   expected · F10 (add-check over Total = -5 blocks with Msg 547); ARCH §5 step 5 (a `-- witness:` block discharges
+          the need it names)
+note:     Acceptance then confirms that the copy's own probe reads violating, as the environment's did. For an existing
+          untrusted CK, see PLT-89.
 ```
 
 ### PLT-80 · longkey, nonclustered: just over 1700 bytes
@@ -1027,10 +1081,10 @@ kind:     corpus
 env:      pg + Product.Notes nvarchar(1000) NULL · Product 5 rows · one Notes of 900 characters
 change:   head adds CREATE INDEX IX_Product_Notes ON Product(Notes)
 expect:   answers    KeyLength(Product,IX_Product_Notes)=violating
-          witnesses  presence(Product) · longkey(Product, IX_Product_Notes)
-          plan       row 2 Notes=N'w2' + 849 × 'w' (851 characters, 1702 bytes)
+          witnesses  longkey(Product, IX_Product_Notes), which also answers HasRows(Product)
+          plan       Product 1 row · Notes=N'w1' + 849 × 'w' (851 characters, 1702 bytes)
           outcome    verdict blocked keylength · Msg 1946 · IX_Product_Notes · exit 3
-laws:     F1 F3
+laws:     F1 F3 M2
 source:   expected · red-team #16 (Msg 1945 warns at create time; 1946 fails on an over-limit key, verified)
 note:     The value is the smallest key past the limit. For a multi-column key, the first column wide enough
           carries the excess, and the others keep their ordinal values.
@@ -1042,7 +1096,8 @@ kind:     corpus
 env:      pg + T (Id int NOT NULL · Code varchar(1000) NOT NULL), a heap · T 3 rows · one Code of 950 characters
 change:   head adds CREATE CLUSTERED INDEX CX_T_Code ON T(Code)
 expect:   answers    KeyLength(T,CX_T_Code)=violating
-          plan       row 2 Code='w2' + 899 × 'w' (901 bytes)
+          witnesses  longkey(T, CX_T_Code), which also answers HasRows(T)
+          plan       T 1 row · Code='w1' + 899 × 'w' (901 bytes)
           outcome    verdict blocked keylength · Msg 1946 · CX_T_Code · exit 3
 laws:     F1 F3
 source:   expected · Microsoft doc "Maximum capacity specifications for SQL Server" (900-byte clustered key)
@@ -1063,18 +1118,21 @@ note:     If Gapped=no, presence alone is planted (Id 1). A contiguous 1..n witn
           rebuild from one that keeps ids, so "ids preserved" passes vacuously. The record says so.
 ```
 
-### PLT-83 · declared rows apply after the generated rows
+### PLT-83 · declared blocks run in FK order, after the generated parents they reference
 ```case
 kind:     sql
-env:      pg · Order 4 rows · Customer 5 rows · witness.sql: INSERT dbo.[Order] (CustomerId, StatusId, Total, StatusText)
-          VALUES (1, 2, 5.00, N'w-pinned')
+env:      pg + FK_Order_Customer (CustomerId NOT NULL) · Order 4 rows · Customer 5 rows · witness.sql `-- plants: dbo.[Order]`
+          then INSERT dbo.[Order] (CustomerId, StatusId, Total, StatusText) VALUES (1, 2, 5.00, N'w-pinned')
 action:   plant · questions HasRows(Order) · HasRows(Customer)
-expect:   plan       trace: restore · presence and ancestors · class witnesses · witness.sql · accept
-          copy       Customer 1 row (Id 1) · Order 2 rows · generated row values identical to the run without witness.sql
-laws:     F1 D3 D1
-source:   expected · ARCH §5 step 4
-note:     A declared row can point at a generated row by its value (CustomerId 1), which is why declared rows run
-          last. Pins carry over the Twin's scenario pins (ARCH §2 #17).
+expect:   plan       trace: restore · suspend · presence(Customer) · the `-- plants: dbo.[Order]` block · restore trust state
+                     · accept
+          copy       Customer 1 row (Id 1) · Order exactly the declared row · Customer's values identical to the run
+                     without witness.sql
+laws:     F1 D3 D1 M2
+source:   expected · ARCH §5 step 5 (the blocks run in FK order)
+note:     The block owns Order's rows, so no generated Order row is planted, and the declared row must satisfy every answer
+          for Order. Its CustomerId 1 names the generated parent, which is why it runs after Customer. Pins carry over the
+          Twin's scenario pins (ARCH §2 row 17).
 ```
 
 ### PLT-84 · `-- plants: T` takes a table over entirely
@@ -1082,41 +1140,43 @@ note:     A declared row can point at a generated row by its value (CustomerId 1
 kind:     sql
 env:      pg + CK_Product_Code CHECK (Code LIKE 'ABC%') · Product 5 rows · Name NULL×1
           · witness.sql: `-- plants: dbo.Product` then INSERT (Code, Name, LegacyCode)
-          VALUES (N'ABC1', N'w', N'L'), (N'ABC2', NULL, N'L')
+          VALUES (N'ABCw1', N'w1', N'w1'), (N'ABCw2', NULL, N'w2')
 action:   plant · questions HasRows(Product) · NotNull(Product.Name)
 expect:   plan       presence(Product) and null(Product.Name) declared · nothing generated for Product
           copy       Product exactly the 2 declared rows · acceptance passes
-laws:     F1 A5 M2
-source:   expected · ARCH §6 planter-needs-row (the `-- plants:` header)
-note:     The declared rows must satisfy every answer for Product, because acceptance checks them as it checks
-          generated rows. This case clears PLT-44's stop.
+laws:     F1 A5 M2 P5
+source:   expected · ARCH §5 step 5 (the `-- plants:` header owns T's rows); ARCH §6 planter-needs-row
+note:     The declared rows must satisfy every answer for Product, because acceptance checks them as it checks generated
+          rows. `ABC` is copied from CK_Product_Code's own predicate and the rest carries the marker; decision:
+          witness-not-synthetic accepts such a value (reported). This case clears PLT-44's stop.
 ```
 
-### PLT-85 · a `-- plants:` block runs in its table's ancestor position, with its FKs disabled
+### PLT-85 · a NOT NULL cycle's declared blocks run inside the envelope, in FK order
 ```case
 kind:     sql
-env:      as PLT-58 · witness.sql: `-- plants: dbo.Dept, dbo.Person` then INSERT Dept (1, 1) · INSERT Person (1, 1)
-          + Badge (Id int IDENTITY PK · PersonId int NOT NULL FK → Person.Id) · Badge 6 rows
+env:      as PLT-58 · witness.sql: `-- plants: dbo.Dept` then INSERT Dept (1, 1) · `-- plants: dbo.Person` then INSERT
+          Person (1, 1) · + Badge (Id int IDENTITY PK · PersonId int NOT NULL FK → Person.Id) · Badge 6 rows
 action:   plant · questions HasRows(Person) · HasRows(Badge) · then identity
 expect:   copy       Dept 1 · Person 1 · Badge 1 pointing at Person 1 (the declared row is reused as its ancestor)
-                     · both cycle FKs re-validated WITH CHECK CHECK, trusted as in env · identity plan empty
+                     · both cycle FKs restored to their environment state (enabled, re-validated, trusted) · identity plan empty
 laws:     F1 F2 F9
-source:   expected · ARCH §5 step 4 (decision)
-note:     decision: ARCH §5 runs all of witness.sql after the generated rows. A child needs its declared parent
-          first, and a cycle needs its FKs disabled, so these blocks run earlier (reported).
+source:   expected · ARCH §5 step 5 (the envelope admits a NOT NULL cycle; the blocks run in FK order)
+note:     The cycle has no FK order of its own: the envelope suspends both FKs, runs the two blocks, and restores them.
+          Badge's generated row runs after the block that owns its parent.
 ```
 
-### PLT-86 · several classes on one table: one row each, in a canonical order
+### PLT-86 · several classes on one table: the maximum of the needs, in a canonical order
 ```case
 kind:     sql
 env:      pg · Product 5 rows · Name NULL×1 · one Code over 10 by LEN · one Code over 10 by trailing spaces only
 action:   plant · questions HasRows(Product) · NotNull(Product.Name) · Fits(Product.Code→nvarchar(10))
 expect:   answers    NotNull(Product.Name)=violating · Fits(Product.Code→nvarchar(10))={overlen, overbytes}
-          copy       Product 4 rows · 1 presence · 2 null(Name) · 3 misfit overlen · 4 misfit overbytes
+          copy       Product 2 rows · row 1 Name NULL and Code overlen · row 2 Code overbytes · no separate presence row
 laws:     M2 D1 F1
-source:   expected · INVARIANTS M2
-note:     The order is ARCH §4's row order, then table, column and class order, so ordinals never depend on how
-          the questions arrived (PLT-104).
+source:   expected · INVARIANTS M2 (the maximum of a table's needs, not their sum)
+note:     Classes on different columns share a row; two classes on one column cannot, so Code sets the count at 2. Row k
+          takes the k-th class of each column in ARCH §4's row order, then table, column and class order, so ordinals
+          never depend on how the questions arrived (PLT-104).
 ```
 
 ## Metadata witnesses
@@ -1132,7 +1192,7 @@ laws:     F9 F2
 source:   verify · ARCH §11.1. If Extract drops WITH NOCHECK, the base publish makes the key trusted, and the planter
           adds trust(Order, FK_Order_Customer, untrusted): NOCHECK, then CHECK CONSTRAINT without WITH CHECK.
 note:     The Twin's post-mint gate forced every constraint trusted (THE_TWIN.md §9). The copy reproduces the
-          environment's state instead (ARCH §2 #13). IgnoreWithNocheckOnForeignKeys suggests DacFx models it.
+          environment's state instead (ARCH §2 row 13). IgnoreWithNocheckOnForeignKeys suggests DacFx models it.
 ```
 
 ### PLT-88 · a disabled FK: does Extract carry it, and does the copy keep it?
@@ -1148,19 +1208,21 @@ source:   verify · ARCH §11.1. Red-team #1 shows a disabled FK changes the del
           trust(Order, FK_Order_Customer, disabled).
 ```
 
-### PLT-89 · a witness under an existing enforced constraint: disable, plant, restore the environment's state
+### PLT-89 · a witness under an existing enforced constraint: suspend, plant, restore the environment's state
 ```case
 kind:     sql
 env:      pg + FK_Order_Customer enabled, is_not_trusted=1 · CK_Order_Total CHECK (Total >= 0) enabled, is_not_trusted=1
           · Order 4 rows · one orphan · one Total -5
 action:   plant · questions HasRows(Order) · Orphan(Order.(CustomerId)→Customer) · CheckFalse(Order,CK_Order_Total)
-          · witness.sql INSERT Order Total = -1 · then identity
-expect:   copy       the orphan row and the declared row land · both constraints end enabled, untrusted · identity plan empty
+          · witness.sql `-- witness: CheckFalse(Order,CK_Order_Total)` then INSERT Order Total = -1 · then identity
+expect:   copy       the orphan row (also the presence row) and the declared row land · both constraints end enabled,
+                     untrusted · identity plan empty
           answers    the copy's Orphan and CheckFalse read violating, as env
 laws:     F1 F2 F9
-source:   expected · sample-prs/toggle-trust.md (WITH CHECK CHECK over a violating row fails 547 and stays untrusted)
-note:     decision: the plant step and witness.sql both run with every constraint a question names set NOCHECK,
-          then restore each one's environment state. DML alone could not insert these rows (reported against ARCH §5 step 4).
+source:   expected · ARCH §5 steps 4–5 (the suspend-and-restore envelope); sample-prs/toggle-trust.md (WITH CHECK CHECK over
+          a violating row fails 547 and stays untrusted)
+note:     The generated rows and witness.sql both run inside the envelope: each constraint they would trip is suspended,
+          then restored to its environment state. DML alone could not insert these rows under an enforced constraint.
 ```
 
 ### PLT-90 · a system-named default: is `DF__…` preserved?
@@ -1187,11 +1249,11 @@ action:   plant · accept · questions HasRows ×3 · NotNull(Customer.Email) ·
           · CheckFalse(Order,CK_Order_Total: Total >= 0)
 expect:   answers    env and copy agree cell by cell: NotNull violating · Unique {exact}, so case, accent, trailing and nulls
                      are all no · CheckFalse clean
-          witnesses  presence(Customer) · presence(Product) · presence(Order) · null(Customer.Email) · dup(Product,(Code),exact)
+          witnesses  null(Customer.Email) (also presence) · dup(Product,(Code),exact) (two rows, also presence) · presence(Order)
 laws:     F1 M2
 source:   expected · INVARIANTS F1
-note:     A cell that reads "no" in env must read "no" in the copy. The copy must agree on what is absent as
-          well as on what is present.
+note:     A cell that reads "no" in env must read "no" in the copy. The copy must agree on what is absent as well as on
+          what is present.
 ```
 
 ### PLT-92 · a missing witness stops acceptance
@@ -1211,7 +1273,7 @@ source:   expected · ARCH §6 acceptance
 kind:     sql
 env:      pg · Customer 5 rows · no NULL Email
 action:   plant · accept · questions HasRows(Customer) · NotNull(Customer.Email)
-          · witness.sql INSERT dbo.Customer (Name, Email) VALUES (N'w9', NULL)
+          · witness.sql `-- plants: dbo.Customer` then INSERT dbo.Customer (Name, Email) VALUES (N'w9', NULL)
 expect:   answers    env NotNull(Customer.Email)=clean
           outcome    stop acceptance · "The copy answers NotNull(Customer.Email) yes, but <env> answered no. Fix
                      witness.sql." · exit 5
@@ -1243,9 +1305,10 @@ action:   plant · accept · questions HasRows(T) · Fits(T.a→int) · Fits(T.b
 expect:   answers    every Fits={} in env and in the copy
           copy       a=N'1' · b=N'2000-01-02' · c=N'77777777-0000-4000-8000-000000000001' · d=N'w'
 laws:     F1 D3 P5
-source:   expected · INVARIANTS F1
-note:     decision: a column under a Fits question gets the target type's literal as text, fitted to the narrower
-          width, because 'w1' is nonconvertible. P5's prefix gives way, and D3 reads type as current plus targets (reported).
+source:   expected · INVARIANTS F1, P5 (the marker applies where the type, the width and the class allow it)
+note:     A presence row under a Fits question must convert, so its class does not allow the marker: the column gets the
+          target type's literal as text, fitted to the narrower width. D3's signature reads type as the current type
+          plus every target (reported).
 ```
 
 ### PLT-96 · a presence row that a CK being added would make FALSE: needs a declared row naming the CK
@@ -1265,29 +1328,29 @@ note:     The CK is not in the copy yet, so the insert succeeds. Acceptance then
 ### PLT-97 · rows already in the copy can answer a question: that witness is skipped
 ```case
 kind:     sql
-env:      pg · Status lane rows include N'Cancelled' (9 characters) · env Status the same 3 rows
+env:      pg · the merge-base Status lane includes N'Cancelled' (9 characters) · env Status the same 3 rows
 action:   plant · accept · questions HasRows(Status) · Fits(Status.Code→nvarchar(8))
 expect:   answers    Fits(Status.Code→nvarchar(8))={overlen} in env and in the copy
           plan       presence(Status) and misfit(Status.Code, overlen) · both reported "answered by existing rows"
           copy       Status 3 rows, unchanged · nothing planted
 laws:     F1 M2
-source:   expected · INVARIANTS M2
-note:     plant.sql probes the copy before each item, so the pure plan predicts items but not the rows planted
-          (reported: Get-FxWitnessPlan cannot see reference rows).
+source:   expected · INVARIANTS M2; ARCH §5 step 1 (merge-base lanes on every proof copy)
+note:     plant.sql probes the copy before each item, so the pure plan predicts items but not the rows planted (reported:
+          Get-FxWitnessPlan cannot see reference rows).
 ```
 
 ### PLT-98 · rows already in the copy that disagree with env: stop acceptance
 ```case
 kind:     sql
-env:      pg · env Status holds 3 rows whose Codes are all ≤ 8 characters; the copy's lane seeds N'Cancelled'
+env:      pg · env Status holds 3 rows whose Codes are all ≤ 8 characters; the copy's merge-base lane seeds N'Cancelled'
 action:   plant · accept · questions HasRows(Status) · Fits(Status.Code→nvarchar(8))
 expect:   answers    env Fits={} · copy Fits={overlen}
           outcome    stop acceptance · "The copy answers Fits(Status.Code→nvarchar(8)) overlen yes, but <env>
                      answered no. Fix witness.sql." · exit 5
 laws:     F1 H3
 source:   expected · ARCH §6 acceptance
-note:     The planter never edits reference rows. An agent can, because witness.sql is DML, and the stop says
-          so. The record then shows that env and the lane disagree.
+note:     The planter never edits reference rows. An agent can, because witness.sql is DML, and the stop says so. The record
+          then shows that env and the merge-base lane disagree.
 ```
 
 ## Identity (F2)
@@ -1296,7 +1359,8 @@ note:     The planter never edits reference rows. An agent can, because witness.
 ```case
 kind:     sql
 env:      pg · Customer 5 rows
-action:   plant · witness.sql CREATE INDEX IX_w ON dbo.Customer(Region) · then identity
+action:   plant · witness.sql `-- plants: dbo.Customer` with one valid INSERT, then CREATE INDEX IX_w ON dbo.Customer(Region)
+          · then identity
 expect:   outcome    stop identity · "witness.sql changed the schema (dbo.Customer.IX_w). Witness files are DML
                      only." · exit 5
 laws:     F2 H3 H2
@@ -1307,13 +1371,13 @@ source:   expected · red-team #11 (witness.sql can change the schema); ARCH §6
 ```case
 kind:     sql
 env:      pg · Customer 5 rows · Product 5 rows
-action:   plant · witness.sql with INSERT, UPDATE, DELETE, MERGE and SET IDENTITY_INSERT ON/OFF · then identity
+action:   plant · witness.sql with INSERT, UPDATE, DELETE, MERGE and SET IDENTITY_INSERT ON/OFF, under `-- plants:` and
+          `-- witness:` headers · then identity
 expect:   plan       identity plan empty
           outcome    no stop from identity
 laws:     F2
 source:   expected · INVARIANTS F2
-note:     SET IDENTITY_INSERT is a session option, not schema, and the IDENT_CURRENT it moves is not in the
-          model.
+note:     SET IDENTITY_INSERT is a session option, not schema, and the IDENT_CURRENT it moves is not in the model.
 ```
 
 ### PLT-101 · the plan is empty after planting, the planter's own temporary changes included
@@ -1339,8 +1403,9 @@ action:   prove the same inputs twice, on two fresh restores · hash.sql over ev
 expect:   copy       identical hashes table by table · identical plant traces · identical plant reports
 laws:     D1 S5 D2
 source:   expected · INVARIANTS D1
-note:     GENERATED ALWAYS period values are excluded (PLT-34). Run B starts after run A leaves a blocked,
-          half-applied copy, and still matches it (S5).
+note:     Keys resolved from the copy and identity values are outside D3 but inside D1, so a fresh restore makes them
+          identical too. Period values are the exception D1 compares as its timestamp field (PLT-34). Run B starts after
+          run A leaves a blocked, half-applied copy, and still matches it (S5).
 ```
 
 ### PLT-103 · adding a column changes only that column (D3)
@@ -1348,12 +1413,12 @@ note:     GENERATED ALWAYS period values are excluded (PLT-34). Run B starts aft
 kind:     sql
 env:      schema A = pg · schema B = pg + Customer.Nickname nvarchar(30) NULL · same data shapes · Email NULL×2
 action:   plant under A and under B · questions HasRows(Customer) · NotNull(Customer.Email)
-expect:   copy       every value in every column except Nickname is identical between A and B · B's Nickname is
-                     N'w1' and N'w2'
+expect:   copy       every value in every column except Nickname is identical between A and B · B's one row (the null
+                     witness, also the presence row) has Nickname N'w1'
 laws:     D3 D1
-source:   expected · INVARIANTS D3 (the Twin's S-stable, kept: ARCH §2 #19)
-note:     Each value is keyed by column name and ordinal, never by column position or by a stream shared across
-          columns, so a new column cannot shift another column's values.
+source:   expected · INVARIANTS D3 (the Twin's S-stable, kept: ARCH §2 row 19)
+note:     Each value is keyed by column name and ordinal, never by column position or by a stream shared across columns,
+          so a new column cannot shift another column's values.
 ```
 
 ### PLT-104 · the plan is a pure function, independent of question order
@@ -1362,9 +1427,9 @@ kind:     pure
 input:    questions Q = [Fits(Product.Code→nvarchar(10)), HasRows(Product), NotNull(Product.Name), HasRows(Customer)]
           · answers all yes or violating {overlen} · and the same set in reverse order
 action:   Get-FxWitnessPlan on both orders
-expect:   plan       byte-identical plan text · ordinals Product: 1 presence, 2 null(Name), 3 misfit overlen · Customer: 1 presence
+expect:   plan       byte-identical plan text · Product: row 1 null(Name) and misfit(Code, overlen) · Customer: row 1 presence
 laws:     D1 D3 M2
-source:   expected · INVARIANTS D1
+source:   expected · INVARIANTS D1, M2
 ```
 
 ### PLT-105 · retyping, dropping or reordering a column changes only that column
@@ -1385,27 +1450,27 @@ kind:     sql
 env:      pg + FK_Order_Customer (NOT NULL) · Customer 5 rows · Email NULL×2 · Order 4 rows · Product 'DUPE'×2
 action:   plant · questions HasRows(Customer) · HasRows(Order) · HasRows(Product) · NotNull(Customer.Email)
           · Unique(Product,(Code))
-expect:   plan       predicted 5: Customer 2 (presence, null) · Order 1 (the Customer presence row is its ancestor)
-                     · Product 2 (presence, dup exact)
-          copy       5 rows planted · the report states predicted 5, planted 5, skipped 0 · removing the null or the
+expect:   plan       predicted 4: Customer 1 (null(Email), also presence) · Order 1 (its ancestor is that Customer row)
+                     · Product 2 (dup exact, also presence)
+          copy       4 rows planted · the report states predicted 4, planted 4, skipped 0 · removing the null row or either
                      dup row breaks F1
 laws:     M2 F1
 source:   expected · INVARIANTS M2
-note:     The prediction needs the copy's FK graph and reference rows, which plant.sql knows and
-          Get-FxWitnessPlan does not (PLT-97, reported).
+note:     The prediction needs the copy's FK graph and reference rows, which plant.sql knows and Get-FxWitnessPlan does not
+          (PLT-97, reported).
 ```
 
-### PLT-107 · M2's deletion law and the presence row
+### PLT-107 · M2's deletion law: every generated row is necessary
 ```case
 kind:     sql
-env:      pg · Customer 5 rows · Email NULL×2
-action:   plant · questions HasRows(Customer) · NotNull(Customer.Email) · then delete each planted row in turn and accept
-expect:   copy       2 rows planted (presence, null) · deleting the null row breaks F1 · deleting the presence row does
-                     not (the null row still answers HasRows)
+env:      pg · Customer 5 rows · Email NULL×2 · Product 5 rows · Code 'DUPE'×2
+action:   plant · questions HasRows(Customer) · NotNull(Customer.Email) · HasRows(Product) · Unique(Product,(Code))
+          · then delete each planted row in turn and accept
+expect:   copy       3 rows planted (Customer: the null witness · Product: the dup pair) · deleting any one of them breaks F1
 laws:     M2 F1
-source:   expected · INVARIANTS M2
-note:     Contradiction, reported: M2's formula plants a presence row that its own deletion law calls redundant
-          whenever a one-row witness sits in the same table. The planter keeps the row (witnesses vary it).
+source:   expected · INVARIANTS M2 (a violation row also serves as presence)
+note:     Under the earlier sum rule a separate presence row survived its own deletion. Under the maximum rule no
+          generated row is redundant.
 ```
 
 ## `up` mode
@@ -1413,15 +1478,15 @@ note:     Contradiction, reported: M2's formula plants a presence row that its o
 ### PLT-108 · k rows in every base table
 ```case
 kind:     process
-setup:    facsimile.json `up.rowsPerTable` 3 · the pg project · no fx_local
+setup:    facsimile.json `up.rowsPerTable` 3 · the pg project · no fx_local · up.sql absent
 action:   facsimile up --fresh
 expect:   copy       fx_local: Account, Customer, CustomerAddress, Order, OrderLine and Product hold 3 rows each (ordinals
-                     1–3) · Status and Category hold their lane rows only
-          stdout     one line · exit 0
+                     1–3) · Status and Category hold the head version of their lane rows only
+          stdout     DONE up · … · .facsimile/out/up.json · exit 0
 laws:     T3 S1 A1
-source:   expected · ARCH §8 (`up`: repository schema, reference data, k presence rows per table)
-note:     `up` plants every base table, touched or not, with no questions or answers involved. The data is
-          plain but valid (ARCH §2 #12).
+source:   expected · ARCH §8 (`up`: repository schema, reference data, k presence rows per table, then up.sql)
+note:     `up` plants every base table, touched or not, with no questions or answers involved. The data is plain but valid
+          (ARCH §2 row 12). The reference data is head's, where a proof copy's is the merge-base's.
 ```
 
 ### PLT-109 · FK-consistent: children spread over the existing parents
@@ -1434,7 +1499,7 @@ expect:   copy       Order rows 1–3 → CustomerId 1, 2, 3 · StatusId 1, 2, 3
 laws:     T3 D1
 source:   expected · ARCH §5 step 2 (rules shared with prove)
 note:     Child row n points at parent row ((n−1) mod p)+1 in key order, where p is the parent's row count.
-          Nullable FKs stay NULL as in prove (the Twin's per-parent fan-out is retired, ARCH §2 #16).
+          Nullable FKs stay NULL as in prove (the Twin's per-parent fan-out is retired, ARCH §2 row 16).
 ```
 
 ### PLT-110 · views are skipped in `up`
@@ -1450,24 +1515,25 @@ source:   expected · THE_TWIN.md §6 (views not minted, still published)
 ### PLT-111 · reference data is untouched in `up`
 ```case
 kind:     process
-setup:    the pg project · referenceData lanes seed Status 1–3 and Category 1–3 · k 3
+setup:    the pg project · referenceData lanes seed Status 1–3 and Category 1–3 (head version) · k 3
 action:   facsimile up --fresh · hash Status and Category after the lanes and after planting
 expect:   copy       Status and Category hashes unchanged by planting · no planted row in either table
 laws:     T3 F1
 source:   expected · THE_TWIN.md §6 (the row-carrying kinds are the lane-seeded set, by observation)
-note:     A table that holds rows after the lanes is reference data by observation. No config names it, as in
-          the Twin.
+note:     A table that holds rows after the lanes is reference data by observation. No config names it, as in the Twin.
 ```
 
 ### PLT-112 · `up` is deterministic and convergent
 ```case
 kind:     process
 setup:    the pg project · k 3
-action:   facsimile up --fresh · hash every table · facsimile down · facsimile up --fresh · hash · facsimile up
+action:   facsimile up --fresh · hash every table · facsimile down --all · facsimile up --fresh · hash · facsimile up
 expect:   copy       the two hash sets are identical
-          stdout     the final `up` reports "Nothing to apply." · exit 0
+          stdout     the final `up`: DONE up · Nothing to apply · .facsimile/out/up.json · exit 0
 laws:     D1 D4 T3
 source:   expected · INVARIANTS D4; THE_TWIN.md §3 law 1 (convergence, kept)
+note:     `down --all` drops fx_local and the caches, so the second `up --fresh` starts from nothing; plain `down` would keep
+          fx_local (S6).
 ```
 
 ### PLT-113 · `up` re-converges by restore and plant, never by publishing over planted rows (S2)
@@ -1475,25 +1541,25 @@ source:   expected · INVARIANTS D4; THE_TWIN.md §3 law 1 (convergence, kept)
 kind:     process
 setup:    fx_local from PLT-108 · then the project adds Customer.Nickname nvarchar(30) NULL
 action:   facsimile up · step trace
-expect:   plan       trace: build · base cache miss → publish base · backup · restore fx_local · lanes · plant · no
-                     publish after a plant
+expect:   plan       trace: build · cache miss → publish the repository schema · head referenceData lanes · backup · restore
+                     fx_local · plant · up.sql · never a publish after a plant
           copy       Customer.Nickname N'w1'..N'w3' · every other value identical to before (D3)
 laws:     S2 D4 D3
 source:   expected · red-team #9 (re-publishing the base after planting erases witnesses, verified)
 ```
 
-### PLT-114 · `up` with a unique column too narrow for k: needs a declared row
+### PLT-114 · `up` with a unique column too narrow for k: needs a declared row in up.sql
 ```case
 kind:     process
 setup:    the pg project + T (Id int IDENTITY PK · IsPrimary bit NOT NULL UNIQUE)
           + U (Id int IDENTITY PK · Grade char(1) NOT NULL UNIQUE) · k 3
 action:   facsimile up --fresh
-expect:   outcome    stop planter-needs-row · "dbo.T (IsPrimary bit is unique and has room for two planted values at k 3)"
-                     · JSON also lists dbo.U (Grade char(1) is unique and has room for one) · exit 5
+expect:   outcome    stop planter-needs-row · "Cannot make a valid row for dbo.T (IsPrimary bit is unique and has room for two
+                     planted values at k 3). Write one valid INSERT for dbo.T into up.sql under -- plants: dbo.T." · JSON
+                     also lists dbo.U (Grade char(1) is unique and has room for one) · exit 5
 laws:     H3 A3
-source:   expected · ARCH §6 planter-needs-row
-note:     With the `w` prefix, char(1) fails at k = 2, not k > 2. The file a `-- plants:` block for `up` goes into
-          is not named in ARCH §8 (both reported).
+source:   expected · ARCH §6 planter-needs-row ("into witness.sql (or up.sql)"); ARCH §8 (`up` applies up.sql)
+note:     With the marker, char(1) fails at k = 2, not k > 2.
 ```
 
 ### PLT-115 · prove never publishes the base after a plant (S2)
@@ -1514,7 +1580,8 @@ source:   expected · red-team #9 (re-publishing the base erases witnesses, veri
 kind:     sql
 env:      as PLT-44
 action:   prove
-expect:   stdout     stop planter-needs-row dbo.Product · proofs/<slug>/verdict.Dev.json · exit 5
+expect:   stdout     STOP planter-needs-row · Write one valid INSERT for dbo.Product into witness.sql under -- plants:
+                     dbo.Product · proofs/<slug>/verdict.Dev.json · exit 5
           files      verdict.Dev.json: stop planter-needs-row · table dbo.Product · reason "CK_Product_Code rejects the
                      planted literal" · constraint CK_Product_Code · next "-- plants: dbo.Product"
 laws:     H3 H1 A1 A3
@@ -1524,7 +1591,7 @@ source:   expected · ARCH §6 planter-needs-row
 ### PLT-117 · following the stop clears it (A5)
 ```case
 kind:     sql
-env:      as PLT-44 · then witness.sql gains `-- plants: dbo.Product` with one row whose Code is N'ABC1'
+env:      as PLT-44 · then witness.sql gains `-- plants: dbo.Product` with one valid row whose Code is N'ABCw1'
 action:   prove · apply the instruction · prove again
 expect:   outcome    run 1 stop planter-needs-row · run 2 reaches a verdict or a different stop, never the same one
 laws:     A5 H3
@@ -1544,17 +1611,36 @@ note:     decision: one stop that lists every unplantable table. Otherwise an ag
           This mirrors E4's "all problems in one pass".
 ```
 
-### PLT-119 · a declared row that fails to insert
+### PLT-119 · a declared row that fails to insert stops witness-failed
 ```case
 kind:     sql
-env:      as PLT-44 · witness.sql `-- plants: dbo.Product` with Code N'XYZ1' (violates CK_Product_Code)
+env:      as PLT-44 · witness.sql line 1 `-- plants: dbo.Product` · line 2 INSERT dbo.Product (Code, Name, LegacyCode)
+          VALUES (N'w1', N'w1', N'w1'), which violates CK_Product_Code
 action:   plant
-expect:   outcome    stop planter-needs-row · "dbo.Product (witness.sql line 2 failed: Msg 547, CK_Product_Code): write one
-                     valid INSERT under -- plants: dbo.Product" · exit 5
+expect:   outcome    stop witness-failed · "witness.sql line 2 failed with Msg 547. Fix that row." · exit 5
+          files      the stop records Msg 547 and CK_Product_Code, never the server's text
 laws:     H3 A5 P3
-source:   expected · ARCH §6 planter-needs-row (decision)
-note:     The record keeps the number and the constraint, not the server's text. The text would quote the
-          agent's value, which is harmless here, but one rule applies to every error.
+source:   expected · ARCH §5 step 5 (a failing row stops witness-failed); ARCH §6
+note:     The row carries the marker, so witness-not-synthetic does not fire first (PLT-124). The server text would quote the
+          agent's own value, which is harmless here, but one rule applies to every error.
+```
+
+### PLT-124 · a literal neither marked nor repository-defined stops witness-not-synthetic
+```case
+kind:     sql
+env:      pg · the merge-base Status lane includes N'Cancelled' · Customer 5 rows · Order 4 rows · witness.sql, one variant at
+          a time: (a) `-- plants: dbo.Customer` then INSERT (Name, Email) VALUES (N'Joe Bloggs', N'joe@corp.example')
+          · (b) the same with N'wJoe' and N'w-joe' · (c) `-- plants: dbo.[Order]` then INSERT (CustomerId, StatusId, Total,
+          StatusText) VALUES (1, 3, 5.00, N'Cancelled')
+action:   plant, once per variant
+expect:   outcome    (a) stop witness-not-synthetic · "witness.sql line 2 carries a literal not marked synthetic. Use a
+                     w-prefixed value or a repository-defined value." · exit 5 · (b) no stop · (c) no stop: N'Cancelled'
+                     is a seed code the repository defines
+          files      (a) the stop names the line, never the literal
+laws:     P5 P1 H3 A5
+source:   expected · ARCH §5 step 5; INVARIANTS P5 (repository-defined values are allowed where equality with one matters)
+note:     decision: the check applies to string and binary literals; a number, a date or a bit carries no marker (reported).
+          witness.sql is committed, so a copied environment value would leave through it.
 ```
 
 ### PLT-120 · needs the plan knows of stop before any row is planted
@@ -1570,6 +1656,27 @@ laws:     H1 A5
 source:   expected · ARCH §4 (needs: check, computed, authored)
 note:     Plan-level needs are known without SQL and stop before planting. planter-needs-row can only surface
           once they are met, so A5 always moves forward.
+```
+
+### PLT-127 · a computed column the delta adds: stop computed-witness, then the declared row decides
+```case
+kind:     corpus
+env:      pg · Order 4 rows · one Total 30000000.00
+change:   head adds Order.TotalCents AS CAST(Total * 100 AS int) PERSISTED
+expect:   leg1       no witness.sql
+                     questions  Computed(Order.TotalCents)
+                     answers    Computed(Order.TotalCents)=unmeasured · Rows(Order)=4
+                     outcome    stop computed-witness · "Write one row into witness.sql whose TotalCents expression fails,
+                                then re-run." · exit 5
+          leg2       witness.sql `-- witness: Computed(Order.TotalCents)` then one Order with Total = 30000000.00
+                     witnesses  presence(Order) · declared(Order Total = 30000000.00)
+                     outcome    verdict blocked overflow · Msg 8115 · dbo.Order · exit 3
+                     record     tier T2 · notChecked ∋ declared-not-measured
+laws:     H2 A5 F3 H4
+source:   verify · whether DacFx adds a PERSISTED column in place (computed over every existing row) or rebuilds the
+          table, and whether the failure is Msg 8115. The stop is ARCH §4 Computed and ARCH §6 computed-witness
+note:     leg1 is a designed stop (F3 scope). In leg2 the declared row matches the shape Dev holds, so the oracle agrees; the
+          record says the question was declared, not measured (H2).
 ```
 
 ### PLT-121 · a needs-row is never downgraded
