@@ -189,7 +189,7 @@ Anything else is `Unknown` and stops.
 | `Rebuild` | `CREATE TABLE [s].[tmp_ms_xx_T]` … `INSERT INTO … SELECT … FROM [s].[T]` | rows in T; does every moved column fit; identity gaps? | `HasRows`, plus `Fits` per moved column, plus `gapped` | presence, misfit, `gapped(T)` | — |
 | `Computed` | `ADD [c] AS (…) PERSISTED` on an existing table | any row where the expression fails? | `unmeasured` | **needs:** an agent-written row; recorded `declared-not-measured` | — |
 | `Temporal` | `ADD PERIOD FOR SYSTEM_TIME`; `SET (SYSTEM_VERSIONING = ON …)` with a history table that holds rows | any row whose period end is not after its start, or that overlaps? | invalid-period count | `misfit(T.period, invalid)` | — |
-| `Scan` | non-unique `CREATE INDEX`; an index DROP+CREATE; `ADD [c] … NOT NULL DEFAULT …` (backfill); a clustered PK drop or create | none (data-insensitive) | `Rows(T)` for the `scale` flag | none | — |
+| `Scan` | non-unique `CREATE INDEX`; an index DROP+CREATE; `ADD [c] … NOT NULL DEFAULT …` (backfill); a clustered PK drop or create; a widening or same-family `ALTER COLUMN` (it may rewrite rows) | none (data-insensitive) | `Rows(T)` for the `scale` flag | none | — |
 | `Authored` | a pre- or post-deploy statement in head that is not in the merge-base | what shapes does this script handle? | `shape` verb (discovery), then declared counts | **needs:** declared witnesses, or `-- shapes: none (<reason>)` | — |
 | `SeedDrift` | a post-deploy MERGE seed that changed (an `Authored` subset) | does the environment's lookup disagree with the seed's own rows? | count of rows whose (key, code) disagrees with the seed's VALUES (repository values are sent; only integers return) | `declared(seed drift row)` | — |
 | `Unknown` | any other statement that reads existing rows | — | — | **stop** `unknown-statement` | — |
@@ -255,7 +255,8 @@ The steps run in this order, every time, for each environment:
 4. **Reproduce trust state.** For every constraint the environment holds untrusted or disabled, the
    planter may suspend it to plant, then restores exactly the environment's state (F9). Only the
    planter does this; `witness.sql` stays DML only.
-5. **Apply `witness.sql`:** the text is DML only, holding agent-declared witnesses and pins. The
+5. **Apply `witness.sql`, then `witness.<env>.sql` if it exists** (the declarations that differ per
+   environment): the text is DML only, holding agent-declared witnesses and pins. The
    planter runs it inside the same suspend-and-restore envelope as step 4, so a declared row can be
    inserted under an existing trusted constraint, or in a NOT NULL cycle, and the environment's
    trust state is restored afterwards.
@@ -278,6 +279,9 @@ The steps run in this order, every time, for each environment:
       flipped, recording the hashes before and after.
 11. **After a clean publish:** check silence (D6). Publish head again. The plan must be empty, the
     rows affected zero, and every hash unchanged. Otherwise record `not-silent` with the evidence.
+    If the replay publish itself fails (an unguarded seed raises 2627 the second time, say), that
+    failure **is** the verdict, classified as any publish is. A change that cannot be redeployed is
+    not clean, because Octopus does redeploy.
 12. **For a multi-release program** (`--program R1 R2 …`): the questions come from the final target
     (F8). Prove R1, then R1 again (a non-empty replay is the F17 hazard, recorded), then R2, all on
     one copy.
@@ -454,7 +458,7 @@ the tier cannot be argued with.
 | `schema.<env>.dacpac` | the extracted schema: structure only, no data (P1). Committed so CI and reviewers reproduce the proof without access to the environment |
 | `delta.<env>.sql` and `delta.pr.sql` | the two deltas |
 | `answers.<env>.json` | stamped with server, database, login, time, head commit, delta hash, and probe text. Its content hash covers answer values only |
-| `witness.sql` | if any |
+| `witness.sql` and `witness.<env>.sql` | if any |
 | `shape.*.json` | if any: signatures and counts only. `--vocabulary` literals are written to `.facsimile/out/` and are never committed (P1, P6) |
 | `verdict.<env>.json` and `verdicts.json` | the outcomes |
 
@@ -464,7 +468,8 @@ the tier cannot be argued with.
 ## 9. How every invariant is attended to
 
 1. **Traceability is generated, not hoped for.** `tests/run-cases.ps1 --lint` refuses a catalog in
-   which any of these is missing:
+   which any of these is missing. Until that runner exists, its prototype `tests/catalog_lint.py` does
+   the same, as a step of the ssdt-agent gates workflow:
    - an invariant without two cases;
    - a case without an invariant;
    - a vocabulary row without a `corpus` case;

@@ -17,8 +17,8 @@ expect:   answers    HasRows(Customer)=no
           witnesses  none
           outcome    verdict clean · exit 0
           record     tier T0 · ships one release, in place · effects {adds Customer.MiddleName} · notChecked
-                     {QA, UAT, Prod, IS-refresh}
-laws:     F3 H2 H4
+                     {unread:QA, unread:UAT, unread:Prod, integration-studio} · silence ok
+laws:     F3 H2 H4 D6
 source:   expected · skills/op/add-optional (any table state ships in place)
 ```
 
@@ -33,11 +33,15 @@ expect:   answers    HasRows(Customer)=yes
           witnesses  presence(Customer)
           outcome    verdict clean · exit 0
           copy       MiddleName NULL on the presence row · every other Customer column hash-equal before/after
-          record     tier T0 · ships one release, in place · notChecked {QA, UAT, Prod, IS-refresh}
-laws:     F3 H2 M2 T2
+          record     tier T0 · ships one release, in place · notChecked {unread:QA, unread:UAT, unread:Prod,
+                     integration-studio}
+                     · silence ok
+laws:     F3 H2 M2 T2 D6
 source:   receipt · SamplePr "add-optional: a new nullable column applies clean on a populated table"
-note:     No question, so no violating case: NULL fits every row. Presence is still planted for a populated touched
-          table (M2), which is what lets the copy show that no stored value moved.
+note:     Presence is still planted for a populated touched table (M2), which is what lets the copy show that no stored
+          value moved.
+          n/a violating — the new column holds NULL in every existing row (answered from the delta); nothing can fail.
+          n/a remedy — a nullable add has nothing to reconcile.
 ```
 
 ### OP-add-optional-03 · IgnoreColumnOrder off: a mid-table add becomes a rebuild
@@ -52,8 +56,10 @@ expect:   answers    HasRows(Customer)=yes · Gapped(Customer)=yes
           witnesses  presence(Customer) · gapped(Customer)
           outcome    verdict clean · exit 0
           copy       Customer Id set hash-equal before/after · IDENT_CURRENT(Customer) ≥ MAX(Id)
-          record     tier T2 · ships one release (a table rebuild) · notChecked {QA, UAT, Prod, volume, IS-refresh}
-laws:     F6 F4 F1
+          record     tier T2 · ships one release (a table rebuild) · notChecked {unread:QA, unread:UAT, unread:Prod,
+                     volume, integration-studio}
+                     · silence ok
+laws:     F6 F4 F1 D6
 source:   expected · skills/op/add-optional (named edge: IgnoreColumnOrder=False turns a mid-table insert into a
           rebuild)
 note:     The same edit is T0 under the captured options (-02) and T2 here: the tier comes from the delta the
@@ -71,8 +77,10 @@ action:   facsimile read Dev · facsimile prove Dev
 expect:   answers    HasRows(Customer)=yes · Cdc(Customer)=yes
           outcome    stop cdc · "dbo.Customer is tracked by CDC, and LocalDB has none. This change is
                      principal-led." · exit 9
+          flags      {cdc}
 laws:     H2 H3 A3
-source:   expected · ARCH §6 (cdc) · the premise is red-team #6 (a silently stale capture instance ✓)
+source:   expected · ARCH §6 (cdc: the flag, and the stop on LocalDB) · the premise is red-team #6 (a silently stale
+          capture instance ✓)
 note:     On a CDC server the add publishes clean while the capture instance silently omits MiddleName. The copy
           cannot show that, so the run stops rather than report clean.
 ```
@@ -90,8 +98,8 @@ expect:   answers    HasRows(Customer)=no
           witnesses  none
           outcome    verdict clean · exit 0
           record     tier T1 · ships one release, in place · notChecked
-                     {QA, UAT, Prod, change-over-time, IS-refresh}
-laws:     F3 H2 T2
+                     {unread:QA, unread:UAT, unread:Prod, drift-since-measure, integration-studio} · silence ok
+laws:     F3 H2 T2 D6
 source:   receipt · SamplePr "add-mandatory: a new NOT NULL column with no default blocks a populated table, applies
           when empty"
 ```
@@ -104,14 +112,15 @@ env:      pg · Customer 5 rows
 change:   head Customer + Segment nvarchar(20) NOT NULL CONSTRAINT DF_Customer_Segment DEFAULT (N'Standard') ·
           scripts unchanged
 expect:   answers    HasRows(Customer)=yes
-          questions  none (the default supplies every existing row's value, so nothing is asked of the data)
+          questions  none (Scan: the defaulted NOT NULL add backfills every row and can refuse none) · measures
+                     Rows(Customer)
           witnesses  presence(Customer)
           outcome    verdict clean · exit 0
           copy       Segment = 'Standard' on the presence row · is_nullable 0
           record     tier T0 · ships one release, in place · note "the default stamps every existing row with
-                     'Standard': confirm it is right for them" · notChecked
-                     {QA, UAT, Prod, volume, platform, IS-refresh}
-laws:     F3 H2 T2
+                     'Standard': confirm it is right for them" · silence ok · notChecked
+                     {unread:QA, unread:UAT, unread:Prod, volume, platform:edition, integration-studio}
+laws:     F3 F4 H2 D6 T2
 source:   receipt · SamplePr "add-default: a NOT NULL column with a default applies clean and backfills existing
           rows" · F14
 note:     The default backfills here because the column is new. On an existing column it never does
@@ -149,12 +158,12 @@ expect:   answers    HasRows(Customer)=yes
           witnesses  presence(Customer)
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Customer · exit 3
           record     tier T1 · residue {} · ships one release once the column carries a DEFAULT (-02), else the
-                     three-release fallback (-06) · notChecked {QA, UAT, Prod, change-over-time}
+                     three-release fallback (-06) · notChecked {unread:QA, unread:UAT, unread:Prod, drift-since-measure}
 laws:     F1 F3 H5 T2
 source:   receipt · SamplePr "add-mandatory: a new NOT NULL column with no default blocks a populated table, applies
           when empty"
-note:     HasRows has no value class, so a populated table is the only blocking state and there is no violating
-          case. Unlike the tightening class, a DEFAULT cures it.
+note:     Unlike the tightening class, a DEFAULT cures it (-02).
+          n/a violating — HasRows has no value class; a populated table is the only blocking state.
 ```
 
 ### OP-add-mandatory-05 · the fallback program without declared shapes: the authored-script stop
@@ -191,10 +200,11 @@ expect:   answers    HasRows(Customer)=yes
           questions  HasRows(Customer) · Authored(R1 pre-deploy)
           witnesses  presence(Customer) · declared(AccountId NULL) · declared(AccountId set)
           outcome    verdict clean · exit 0
-          record     tier T3 · ships three releases · R0 clean · R1 clean · R1 replay plan non-empty (ALTER COLUMN
-                     [Segment] … NULL): the F17 hazard, hold other publishes · R2 clean, empty plan · notChecked
-                     {QA, UAT, Prod, volume, change-over-time, IS-refresh}
-laws:     F8 A5 H2
+          record     tier T3 · ships three releases · R0 clean · R1 clean · R2 clean, empty plan · silence R1
+                     not-silent(replay plan: ALTER COLUMN [Segment] … NULL, the F17 hazard; hold other publishes) ·
+                     R2 ok · notChecked {unread:QA, unread:UAT, unread:Prod, volume, drift-since-measure,
+                     integration-studio}
+laws:     F8 A5 H2 D6
 source:   expected · skills/op/add-mandatory (fallback) · the R1/R2 legs are F7's two releases; the replay revert is
           F3's
 ```
@@ -211,8 +221,8 @@ expect:   answers    HasRows(Customer)=yes
           outcome    verdict clean · exit 0
           copy       Segment = '' on the presence row
           record     tier T0 · note "GenerateSmartDefaults stamped '' on every existing row; no one chose that
-                     value" · notChecked {QA, UAT, Prod, IS-refresh}
-laws:     F6 F3
+                     value" · notChecked {unread:QA, unread:UAT, unread:Prod, integration-studio} · silence ok
+laws:     F6 F3 D6
 source:   verify · skills/op/add-mandatory says a smart default silently stamps a value (e.g. ''). Uncertain:
           whether DacFx then omits the guard, and what it stamps into nvarchar. The first run decides.
 note:     The verdict follows the captured options, never a hand-written profile (F6). With GenerateSmartDefaults
@@ -224,13 +234,15 @@ note:     The verdict follows the captured options, never a hand-written profile
 kind:     pure
 tags:     edge
 input:    delta ALTER TABLE [dbo].[Customer] ADD [Segment] NVARCHAR (20) CONSTRAINT [DF_Customer_Segment]
-          DEFAULT (N'Standard') NOT NULL; · questions none · answers HasRows(Customer)=yes · Rows(Customer)=2400000
+          DEFAULT (N'Standard') NOT NULL; · questions none (Scan) · measures Rows(Customer) · answers
+          HasRows(Customer)=yes · Rows(Customer)=2400000
 action:   Get-FxTier
 expect:   record     tier T0 · flags {scale}
-laws:     H4
-source:   expected · skills/op/add-mandatory (>1M rows: the add may run long or block writes)
-note:     Off Enterprise edition the defaulted add writes every row. ARCH §7's scale triggers (an index build, a
-          rebuild, a column alter, a constraint validation) do not name it yet; this case is that trigger's case.
+laws:     H4 F4
+source:   expected · ARCH §4 (Scan: an ADD … NOT NULL DEFAULT backfill) · ARCH §7 (scale: Rows ≥ 1,000,000 under a
+          Scan) · skills/op/add-mandatory (>1M rows: the add may run long or block writes)
+note:     Off Enterprise edition the defaulted add writes every row. The add asks no question, but it is a Scan, so
+          its table's Rows is measured and the flag is raised.
 ```
 
 ### OP-add-mandatory-09 · Prod unread: both worlds, and the read to run before promoting
@@ -242,9 +254,10 @@ change:   head Customer + Segment nvarchar(20) NOT NULL, no default · scripts u
           --assume Prod=worst`
 expect:   questions  HasRows(Customer), from Dev's schema (the nearest read environment)
           witnesses  presence(Customer) in both worlds
-          outcome    verdict blocked guard · Msg 50000/127 · dbo.Customer · assumed · exit 3
-          record     tier T1 · flags {unread:Prod} · Prod line "both worlds block Msg 50000/127 at dbo.Customer;
-                     before promoting, read HasRows(dbo.Customer) on Prod" · notChecked {Prod, change-over-time}
+          outcome    verdict blocked guard · Msg 50000/127 · dbo.Customer · exit 3
+          record     tier T1 · flags {unread:Prod, assumed:Prod} · Prod line "both worlds block Msg 50000/127 at
+                     dbo.Customer; before promoting, read HasRows(dbo.Customer) on Prod" · notChecked {assumed:Prod,
+                     drift-since-measure}
 laws:     H4 H7 F3
 source:   expected · ARCH §8 (--assume) · TWIN_SUCCESSION §6b (a VIEW DEFINITION-only login reads every presence
           guard)
@@ -265,8 +278,8 @@ expect:   answers    HasRows(Customer)=no · NotNull(Customer.Email)=clean
           witnesses  none
           outcome    verdict clean · exit 0
           record     tier T2 · ships one release, in place · notChecked
-                     {QA, UAT, Prod, change-over-time, IS-refresh}
-laws:     F1 F3 H2 T2
+                     {unread:QA, unread:UAT, unread:Prod, drift-since-measure, integration-studio} · silence ok
+laws:     F1 F3 H2 T2 D6
 source:   receipt · SamplePr "make OrderLine.Note mandatory: production publish blocks a populated table, applies
           when empty"
 note:     An empty table cannot be violating. The tier is still T2, because it comes from the delta, not the data
@@ -285,7 +298,8 @@ expect:   answers    HasRows(Customer)=yes · NotNull(Customer.Email)=clean
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Customer · exit 3
           record     tier T2 · residue {} · ships two releases (F4, F7) · note "'' and placeholder values pass NOT
                      NULL while meaning blank: run facsimile shape Dev dbo.Customer.Email before writing R1's
-                     backfill" · notChecked {QA, UAT, Prod, volume, change-over-time, IS-refresh}
+                     backfill" · notChecked {unread:QA, unread:UAT, unread:Prod, volume, drift-since-measure,
+                     integration-studio}
 laws:     F1 F3 H5 T2
 source:   receipt · F7 · SamplePr "make OrderLine.Note mandatory: production publish blocks a populated table,
           applies when empty" (zero NULLs, still refused) · TWIN_SUCCESSION §6b ('' and an 'A/A' placeholder pass
@@ -306,7 +320,7 @@ expect:   answers    HasRows(Customer)=yes · NotNull(Customer.Email)=violating
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Customer · exit 3
           copy       permissive: Msg 515 · Customer.Email · the column stays nullable
           record     tier T2 · residue {} · ships two releases (F4, F7) · notChecked
-                     {QA, UAT, Prod, volume, change-over-time, IS-refresh}
+                     {unread:QA, unread:UAT, unread:Prod, volume, drift-since-measure, integration-studio}
 laws:     F1 F3 F6 H5 M2
 source:   receipt · F7 · SamplePr "make OrderLine.Note mandatory: production publish blocks a populated table,
           applies when empty" (its relaxed publish meets Msg 515 over NULL rows)
@@ -343,10 +357,11 @@ expect:   answers    HasRows(Customer)=yes · NotNull(Customer.Email)=violating
           questions  HasRows(Customer) · NotNull(Customer.Email) · Authored(R1 pre-deploy, seed)
           witnesses  presence(Customer) · null(Customer.Email) · declared(Email '') · declared(Email 'N/A')
           outcome    verdict clean · exit 0
-          record     tier T3 · ships two releases · R1 clean · R1 replay plan non-empty (ALTER COLUMN [Email] …
-                     NULL): the F17 hazard, hold other publishes until R2 · R2 clean, empty plan · notChecked
-                     {QA, UAT, Prod, volume, change-over-time, IS-refresh}
-laws:     F8 F1 A5 H2
+          record     tier T3 · ships two releases · R1 clean · R2 clean, empty plan · silence R1
+                     not-silent(replay plan: ALTER COLUMN [Email] … NULL, the F17 hazard; hold other publishes until
+                     R2) · R2 ok · notChecked {unread:QA, unread:UAT, unread:Prod, volume, drift-since-measure,
+                     integration-studio}
+laws:     F8 F1 A5 H2 D6
 source:   receipt · F7 (mm_2r: R1 lands NOT NULL, R2 is a no-op) · F3 (an R1 replay reverts the column, narrow face)
           · F17 (the lag-window revert)
 note:     R1's own model diff is empty, yet null(Customer.Email) is planted, because the R2 target asks NotNull
@@ -362,13 +377,14 @@ change:   program R1 → R2 as OP-make-mandatory-04, but Data/Seed.sql still wri
           witness.sql declares the NULL shape
 expect:   answers    HasRows(Customer)=yes · NotNull(Customer.Email)=violating
           witnesses  presence(Customer) · null(Customer.Email)
-          outcome    verdict blocked null · Msg 515 · dbo.Customer.Email (post-deploy) · exit 3
-          record     tier T3 · residue {pre-deploy: Email filled and NOT NULL} · note "the corrected seed is part of
-                     R1" · notChecked {QA, UAT, Prod}
+          outcome    verdict blocked authored · Msg 515 · post-deploy · exit 3
+          record     tier T3 · residue {pre-deploy: Email filled and NOT NULL · post-deploy: the seed's NULL write
+                     failed} · note "the corrected seed is part of R1" · notChecked {unread:QA, unread:UAT, unread:Prod}
 laws:     H5 H6 F3
 source:   receipt · F6 (pre-deploy work survives a failed deploy) · FINDINGS Part 5 (pg_mm: the seed must ride with
           the change, Msg 515)
-note:     A Msg 515 in the post-deploy phase is a seed the change failed to correct, never the guard (H5).
+note:     A Msg 515 raised inside the post-deploy batch is the seed's, never the guard and never `blocked null`: any
+          error inside an authored batch is `blocked authored` (H5).
 ```
 
 ### OP-make-mandatory-07 · backfill in the same release as the model change: blocked with zero NULLs left
@@ -397,10 +413,10 @@ env:      Dev: pg · Customer 5 rows · Email NULL×2 (read) · Prod: pg · Cust
 change:   head Customer.Email NULL→NOT NULL · scripts unchanged · proved with `prove Prod --assume Prod=worst`
 expect:   questions  HasRows(Customer) · NotNull(Customer.Email), from Dev's schema
           witnesses  clean world: presence(Customer) · violating world: presence(Customer) · null(Customer.Email)
-          outcome    verdict blocked guard · Msg 50000/127 · dbo.Customer · assumed · exit 3
-          record     tier T2 · flags {unread:Prod} · Prod line "both worlds block Msg 50000/127 at dbo.Customer;
-                     before R1 reaches Prod, count Email IS NULL there: R1's backfill must cover every one" ·
-                     notChecked {Prod, volume, change-over-time}
+          outcome    verdict blocked guard · Msg 50000/127 · dbo.Customer · exit 3
+          record     tier T2 · flags {unread:Prod, assumed:Prod} · Prod line "both worlds block Msg 50000/127 at
+                     dbo.Customer; before R1 reaches Prod, count Email IS NULL there: R1's backfill must cover every
+                     one" · notChecked {assumed:Prod, volume, drift-since-measure}
 laws:     H4 H7 F3
 source:   expected · ARCH §8 (--assume) · TWIN_SUCCESSION §3 step 7 (prove both worlds; record the probe to run)
 ```
@@ -416,10 +432,12 @@ setup:    estate/in-flight.md lists dbo.Customer (make-mandatory, R1 landed in D
 action:   facsimile prove Dev
 expect:   outcome    stop in-flight · "dbo.Customer is in an open two-release window (estate/in-flight.md). Hold
                      this change, or make it the window's next release." · exit 5
+          flags      {in-flight, lag:Dev}
 laws:     H3 A3
 source:   expected · ARCH §6 (in-flight) · the hazard it holds back is F17 (a lagging-model publish reverts on a
           green publish)
-note:     Without the stop this publish is clean and quietly makes Email nullable again.
+note:     Without the stop this publish is clean and quietly makes Email nullable again. The ALTER COLUMN [Email] … NULL
+          is in delta.Dev.sql but not in delta.pr.sql, which is what `lag:Dev` records (Compare-FxDeltas).
 ```
 
 ## make-optional
@@ -434,8 +452,10 @@ expect:   answers    HasRows(CustomerAddress)=no
           questions  none
           witnesses  none
           outcome    verdict clean · exit 0
-          record     tier T0 · ships one release, in place · notChecked {QA, UAT, Prod, IS-refresh}
-laws:     F3 H2
+          record     tier T0 · ships one release, in place · notChecked {unread:QA, unread:UAT, unread:Prod,
+                     integration-studio}
+                     · silence ok
+laws:     F3 H2 D6
 source:   expected · skills/op/make-optional (a loosening is never refused)
 ```
 
@@ -450,11 +470,15 @@ expect:   answers    HasRows(CustomerAddress)=yes
           witnesses  presence(CustomerAddress)
           outcome    verdict clean · exit 0
           copy       Line1 hash-equal before/after · is_nullable 1
-          record     tier T0 · ships one release, in place · notChecked {QA, UAT, Prod, IS-refresh}
-laws:     F3 H2 H4 T2
+          record     tier T0 · ships one release, in place · notChecked {unread:QA, unread:UAT, unread:Prod,
+                     integration-studio, external-consumers, app-behaviour}
+                     · silence ok
+laws:     F3 H2 H4 T2 D6
 source:   receipt · SamplePr "make-optional: relaxing NOT NULL to NULL applies clean on a populated table"
-note:     A loosening has no violating case. Its risk is a consumer that assumed Line1 is never NULL. IS-refresh is
-          the only residual H4's closed set offers for that; external consumers such as SSIS are not in the set.
+note:     The risk is a consumer that assumed Line1 is never NULL: the Integration Studio refresh, SSIS and other
+          readers, and the application's own paths, each a named residual (H4).
+          n/a violating — a loosening reads no value that could fail.
+          n/a remedy — a loosening has nothing to reconcile.
 ```
 
 ### OP-make-optional-03 · `NULL` is not `NOT NULL`, and an unchanged type asks no Fits
@@ -481,8 +505,10 @@ expect:   answers    HasRows(CustomerAddress)=yes
           questions  none (QA's delta has no statement for Line1)
           witnesses  none (QA's delta touches no table)
           outcome    verdict clean · exit 0
-          record     tier T0 · note "QA's delta is empty for this change" · notChecked {Dev, UAT, Prod}
-laws:     F7 F5
+          record     tier T0 · note "QA's delta is empty for this change" · notChecked {unread:Dev, unread:UAT,
+                     unread:Prod}
+                     · silence ok
+laws:     F7 F5 D6
 source:   expected · red-team #1 (proving against main misses the delta each environment receives; drift)
 note:     QA's delta hash differs from Dev's, so QA gets its own proof (F7). Dev's verdict is never copied across.
 ```
@@ -499,8 +525,10 @@ expect:   answers    HasRows(Customer)=no
           questions  none
           witnesses  none
           outcome    verdict clean · exit 0
-          record     tier T0 · ships one release, in place · notChecked {QA, UAT, Prod, IS-refresh}
-laws:     F3 H2
+          record     tier T0 · ships one release, in place · notChecked {unread:QA, unread:UAT, unread:Prod,
+                     integration-studio}
+                     · silence ok
+laws:     F3 H2 D6
 source:   expected · skills/op/widen
 ```
 
@@ -515,10 +543,13 @@ expect:   answers    HasRows(Customer)=yes
           witnesses  presence(Customer)
           outcome    verdict clean · exit 0
           copy       Email hash-equal before/after · max_length 800
-          record     tier T0 · ships one release, in place · notChecked {QA, UAT, Prod, IS-refresh}
-laws:     F3 H2 M2 T2
+          record     tier T0 · ships one release, in place · notChecked {unread:QA, unread:UAT, unread:Prod,
+                     integration-studio}
+                     · silence ok
+laws:     F3 H2 M2 T2 D6
 source:   receipt · SamplePr "widen: enlarging a column applies clean and preserves every value"
-note:     A wider type cannot misfit, so there is no violating case.
+note:     n/a violating — a widening cannot misfit; it reads no value that could fail.
+          n/a remedy — a widening has nothing to reconcile.
 ```
 
 ### OP-widen-03 · a widening raises no Fits question
@@ -545,28 +576,31 @@ change:   head Customer.Email nvarchar(256)→nvarchar(1000) (2000 bytes, past t
 expect:   answers    HasRows(Customer)=yes · KeyLength(Customer, IX_Customer_Email)=clean
           witnesses  presence(Customer)
           outcome    verdict clean · exit 0
-          record     note "warning 1945: IX_Customer_Email's key can exceed 1700 bytes; an insert or update with an
-                     Email over 850 characters will fail Msg 1946" · notChecked {QA, UAT, Prod, change-over-time}
-laws:     F3 H2
+          record     warnings {1945: IX_Customer_Email's key can exceed 1700 bytes} · note "an insert or update with
+                     an Email over 850 characters will fail Msg 1946" · notChecked {unread:QA, unread:UAT,
+                     unread:Prod, app-behaviour}
+                     · silence ok
+laws:     F3 H2 H5 D6
 source:   verify · red-team #16 records 1945 warning now and 1946 failing later (✓). Uncertain: whether DacFx widens
           the indexed column in place (SQL Server allows a same-type widening under an index) or drops and
           re-creates IX_Customer_Email, which adds a KeyLength question and makes the tier T2. Either way the
-          warning must reach the record.
+          warning reaches the record's `warnings`, never the verdict (ARCH §6).
 ```
 
 ### OP-widen-05 · more than a million rows: Rows is read even when nothing is asked
 ```case
 kind:     pure
 tags:     edge
-input:    delta ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (400) NULL; · questions none
-          · answers HasRows(Customer)=yes · Rows(Customer)=1300000
+input:    delta ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (400) NULL; · questions none · measures
+          Rows(Customer) · answers HasRows(Customer)=yes · Rows(Customer)=1300000
 action:   Get-FxTier
 expect:   record     tier T0 · flags {scale}
-laws:     H4
-source:   expected · ARCH §7 (scale: a column alter on a table of 1M rows or more) · skills/op/widen (an older
-          server may rebuild rather than alter metadata)
-note:     The tier is T0 and the flag is still raised, so `read` measures Rows for every touched table, not only for
-          the tables a question names.
+laws:     H4 F4
+source:   verify · ARCH §7 raises scale only under a data-sensitive, Scan, Rebuild or authored-DML statement, and ARCH
+          §4's Scan row does not list a widening ALTER COLUMN, while QST-19 measures it. Uncertain: whether
+          Get-FxQuestions classes a widening as Scan (it may rewrite every row: skills/op/widen says an older server
+          may rebuild rather than alter metadata) or as non-reading (then no flag). The vocabulary decision settles it.
+note:     The tier is T0 either way: the tier comes from the questions, the flag from the statement class and Rows.
 ```
 
 ### OP-widen-06 · QA was already wider: there, this widen is a narrowing
@@ -580,8 +614,9 @@ expect:   answers    HasRows(Customer)=yes · Fits(Customer.Email→nvarchar(400
           questions  HasRows(Customer) · Fits(Customer.Email→nvarchar(400))
           witnesses  presence(Customer)
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Customer · exit 3
-          record     tier T2 · residue {} · note "QA's delta narrows Email 500→400; Dev's widens it" · notChecked
-                     {Dev, UAT, Prod, change-over-time}
+          record     tier T2 · residue {} · flags {lag:QA} · lag:QA {the guarded ALTER COLUMN [Email] NVARCHAR (400):
+                     a narrowing of QA's 500, where delta.pr widens 256} · notChecked {unread:Dev, unread:UAT,
+                     unread:Prod, drift-since-measure}
 laws:     F7 F5 F3 H5
 source:   expected · red-team #1 (each environment receives its own delta; drift) · F1 (a populated narrowing
           blocks)
@@ -601,8 +636,8 @@ expect:   answers    HasRows(Product)=no · Fits(Product.Code→nvarchar(10))={}
           witnesses  none
           outcome    verdict clean · exit 0
           record     tier T2 · ships one release, in place · notChecked
-                     {QA, UAT, Prod, change-over-time, IS-refresh}
-laws:     F1 F3 H2 T2
+                     {unread:QA, unread:UAT, unread:Prod, drift-since-measure, integration-studio} · silence ok
+laws:     F1 F3 H2 T2 D6
 source:   receipt · SamplePr "narrow: over-length data and the row-presence guard block a populated column, applies
           when empty"
 ```
@@ -618,7 +653,7 @@ expect:   answers    HasRows(Product)=yes · Fits(Product.Code→nvarchar(10))={
           witnesses  presence(Product)
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Product · exit 3
           record     tier T2 · residue {} · ships two releases (F4) · notChecked
-                     {QA, UAT, Prod, volume, change-over-time, IS-refresh}
+                     {unread:QA, unread:UAT, unread:Prod, volume, drift-since-measure, integration-studio}
 laws:     F1 F3 H5
 source:   receipt · F1 (the guard is table-has-rows, not does-the-data-fit) · FINDINGS Part 5 (a populated
           narrow-that-fits, NVARCHAR(50)→NVARCHAR(16), still blocked)
@@ -636,7 +671,8 @@ expect:   answers    HasRows(Product)=yes · Fits(Product.Code→nvarchar(10))={
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Product · exit 3
           copy       permissive: Msg 2628 · Product.Code · the column stays nvarchar(50)
           record     tier T2 · residue {} · ships two releases (F4); R1 must decide what the over-length codes
-                     become · notChecked {QA, UAT, Prod, volume, change-over-time, IS-refresh}
+                     become · notChecked {unread:QA, unread:UAT, unread:Prod, volume, drift-since-measure,
+                     integration-studio}
 laws:     F1 F3 F6 H5 T2
 source:   receipt · F1 · SamplePr "narrow: over-length data and the row-presence guard block a populated column,
           applies when empty" (its relaxed publish meets Msg 2628)
@@ -656,7 +692,8 @@ expect:   answers    HasRows(Product)=yes · Fits(Product.Code→nvarchar(10))={
           copy       permissive: published with no error · Product.Code hash differs before/after (the spaces
                      trimmed)
           record     tier T2 · residue {} · ships two releases (F4); R1's ALTER trims these silently, so R1 must say
-                     whether that is wanted · notChecked {QA, UAT, Prod, volume, change-over-time, IS-refresh}
+                     whether that is wanted · notChecked {unread:QA, unread:UAT, unread:Prod, volume,
+                     drift-since-measure, integration-studio}
 laws:     F1 F3 F6 P5
 source:   receipt · red-team #10 (a narrowing silently trims trailing spaces ✓)
 note:     LEN ignores trailing spaces, so an overlen count reads 0 here. Only the overbytes class and the permissive
@@ -675,7 +712,7 @@ expect:   answers    HasRows(Order)=yes · Fits(Order.Total→decimal(8,2))={ove
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Order · exit 3
           copy       permissive: Msg 8115 · Order.Total · the column stays decimal(18,2)
           record     tier T2 · residue {} · ships two releases (F4) · notChecked
-                     {QA, UAT, Prod, volume, change-over-time, IS-refresh}
+                     {unread:QA, unread:UAT, unread:Prod, volume, drift-since-measure, integration-studio}
 laws:     F1 F3 F6 H5
 source:   expected · skills/op/narrow ("reduce the precision") · ARCH §6 (overflow, 8115)
 ```
@@ -692,7 +729,7 @@ expect:   answers    HasRows(OrderLine)=yes · Fits(OrderLine.Amount→decimal(1
           outcome    verdict blocked guard · Msg 50000/127 · dbo.OrderLine · exit 3
           copy       permissive: published with no error · Amount hash differs before/after (12.25 became 12.3)
           record     tier T2 · residue {} · ships two releases (F4); R1 must state the rounding rule · notChecked
-                     {QA, UAT, Prod, volume, change-over-time, IS-refresh}
+                     {unread:QA, unread:UAT, unread:Prod, volume, drift-since-measure, integration-studio}
 laws:     F1 F3 F6
 source:   expected · skills/op/narrow · ARCH §4 (roundtrip: lossy but convertible)
 note:     Nothing fails, so no message reports it; only the roundtrip count and the permissive hash do.
@@ -730,10 +767,10 @@ expect:   answers    HasRows(Product)=yes · Fits(Product.Code→nvarchar(10))={
           questions  HasRows(Product) · Fits(Product.Code→nvarchar(10)) · Authored(R1 pre-deploy, seed)
           witnesses  presence(Product) · misfit(Product.Code, overlen) · declared(Code over 10 characters)
           outcome    verdict clean · exit 0
-          record     tier T3 · ships two releases · R1 clean · R1 replay plan non-empty (ALTER COLUMN [Code]
-                     NVARCHAR (50) NOT NULL): the F17 hazard · R2 clean, empty plan · notChecked
-                     {QA, UAT, Prod, volume, change-over-time, IS-refresh}
-laws:     F8 F1 A5 H2
+          record     tier T3 · ships two releases · R1 clean · R2 clean, empty plan · silence R1
+                     not-silent(replay plan: ALTER COLUMN [Code] NVARCHAR (50) NOT NULL, the F17 hazard) · R2 ok ·
+                     notChecked {unread:QA, unread:UAT, unread:Prod, volume, drift-since-measure, integration-studio}
+laws:     F8 F1 A5 H2 D6
 source:   receipt · F4 (prove_2rel: R1 narrows with the model lagging, R2 is a no-op, stable) · F3 (prove_nvC: a
           publish of R1's model widened the column back)
 note:     The replay is F3's drift seen through the program: R1's pre-deploy lands, and any publish still carrying
@@ -767,12 +804,14 @@ tags:     edge
 env:      pg · Product 5 rows (the pg seed rows) · Code 'STANDARD-SKU-001'×1 (Id 3)
 change:   program R1 → R2 as OP-narrow-08, but Data/Seed.sql still writes 'STANDARD-SKU-001' for Id 3
 expect:   witnesses  presence(Product) · misfit(Product.Code, overlen) · declared(Code over 10 characters)
-          outcome    verdict blocked truncation · Msg 2628 · dbo.Product.Code (post-deploy) · exit 3
-          record     tier T3 · residue {pre-deploy: Code shortened, the column nvarchar(10)} · note "the seed that
-                     feeds the column is part of R1" · notChecked {QA, UAT, Prod}
+          outcome    verdict blocked authored · Msg 2628 · post-deploy · exit 3
+          record     tier T3 · residue {pre-deploy: Code shortened, the column nvarchar(10) · post-deploy: the seed's
+                     write failed} · note "the seed that feeds the column is part of R1" · notChecked {unread:QA,
+                     unread:UAT, unread:Prod}
 laws:     H5 H6 F3
-source:   expected · skills/op/narrow (named: Msg 2628 at the post-deploy seed; sample-prs/narrow.md records the
-          run)
+source:   receipt · sample-prs/narrow.md, What proving showed (the post-deploy seed still writing the 16-character
+          `STANDARD-SKU-001` failed Msg 2628; the pre-deploy's narrowing had already committed)
+note:     A 2628 raised inside the post-deploy batch is the seed's: `blocked authored`, never `blocked truncation` (H5).
 ```
 
 ## retype-implicit
@@ -787,8 +826,10 @@ expect:   answers    HasRows(OrderLine)=no
           questions  none
           witnesses  none
           outcome    verdict clean · exit 0
-          record     tier T0 · ships one release, in place · notChecked {QA, UAT, Prod, IS-refresh}
-laws:     F3 H2
+          record     tier T0 · ships one release, in place · notChecked {unread:QA, unread:UAT, unread:Prod,
+                     integration-studio}
+                     · silence ok
+laws:     F3 H2 D6
 source:   expected · skills/op/retype-implicit
 ```
 
@@ -803,12 +844,15 @@ expect:   answers    HasRows(OrderLine)=yes
           witnesses  presence(OrderLine)
           outcome    verdict clean · exit 0
           copy       LineNumber hash-equal before/after · type bigint
-          record     tier T0 · ships one release, in place · notChecked {QA, UAT, Prod, IS-refresh}
-laws:     F3 H2 T2
+          record     tier T0 · ships one release, in place · notChecked {unread:QA, unread:UAT, unread:Prod,
+                     integration-studio}
+                     · silence ok
+laws:     F3 H2 T2 D6
 source:   receipt · SamplePr "retype-implicit: a widening type change applies clean and preserves every value" ·
           SamplePr "retype-explicit: a lossy narrowing type change blocks a populated column, a widening retype
           applies" (its widening leg)
-note:     Every int fits bigint, so there is no violating case.
+note:     n/a violating — every int fits bigint; no value can fail the widening.
+          n/a remedy — an implicit widening has nothing to reconcile.
 ```
 
 ### OP-retype-implicit-03 · filed as implicit, but the delta narrows
@@ -843,7 +887,7 @@ expect:   answers    HasRows(Product)=yes · Unique(Product,(Code))={case}, coun
           witnesses  presence(Product) · dup(Product,(Code), case)
           outcome    verdict blocked unique · Msg 1505 · UX_Product_Code · exit 3
           record     tier T2 · residue {main: UX_Product_Code dropped, Product.Code altered to nvarchar(50)} ·
-                     notChecked {QA, UAT, Prod, change-over-time}
+                     notChecked {unread:QA, unread:UAT, unread:Prod, drift-since-measure}
 laws:     F9 F1 F3 H6
 source:   expected · red-team #3 (a collation change on a unique column is data-reading DDL with no guard ✓) ·
           red-team #4 (a blocked unique build leaves the index dropped and the column altered ✓)
@@ -861,8 +905,10 @@ expect:   answers    HasRows(OrderLine)=yes
           witnesses  presence(OrderLine)
           outcome    verdict clean · exit 0
           copy       OrderLine Id set hash-equal before/after · type bigint · is_identity 1
-          record     tier T2 · ships one release · notChecked {QA, UAT, Prod, volume, IS-refresh}
-laws:     F4 F3 H2
+          record     tier T2 · ships one release · notChecked {unread:QA, unread:UAT, unread:Prod, volume,
+                     integration-studio}
+                     · silence ok
+laws:     F4 F3 H2 D6
 source:   verify · uncertain: which shape DacFx emits for a type change on a clustered primary-key IDENTITY column:
           a drop and re-add of PK_OrderLine_Id (which asks Unique) or a tmp_ms_xx rebuild (which asks Rebuild).
           Either way the delta asks a question, so the tier is T2, not the T0 the operation's name suggests.
@@ -881,8 +927,8 @@ expect:   answers    HasRows(Product)=no · Fits(Product.Code→int)={}
           witnesses  none
           outcome    verdict clean · exit 0
           record     tier T2 · ships one release, in place · notChecked
-                     {QA, UAT, Prod, change-over-time, IS-refresh}
-laws:     F1 F3 H2
+                     {unread:QA, unread:UAT, unread:Prod, drift-since-measure, integration-studio} · silence ok
+laws:     F1 F3 H2 D6
 source:   expected · skills/_index/tightening-class (the empty table is the only one-release leg)
 ```
 
@@ -897,7 +943,8 @@ expect:   answers    HasRows(Product)=yes · Fits(Product.Weight→int)={}
           witnesses  presence(Product)
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Product · exit 3
           record     tier T2 · residue {} · ships multi-phase (add the new column · convert · drop the old in two
-                     releases) · notChecked {QA, UAT, Prod, volume, change-over-time, IS-refresh}
+                     releases) · notChecked {unread:QA, unread:UAT, unread:Prod, volume, drift-since-measure,
+                     integration-studio}
 laws:     F1 F3 H5
 source:   expected · skills/op/retype-explicit · skills/_index/tightening-class (the guard is data-blind)
 ```
@@ -913,7 +960,7 @@ expect:   answers    HasRows(Product)=yes · Fits(Product.Code→int)={nonconver
           witnesses  presence(Product) · misfit(Product.Code, nonconvertible)
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Product · exit 3
           copy       permissive: Msg 245 · Product.Code · the column stays nvarchar(50)
-          record     tier T2 · residue {} · notChecked {QA, UAT, Prod, change-over-time}
+          record     tier T2 · residue {} · notChecked {unread:QA, unread:UAT, unread:Prod, drift-since-measure}
 laws:     F1 F3 F6 H5
 source:   expected · F12 (pg_retype: TRY_CONVERT(INT, Product.Code) is NULL for all 5; pg_retype2: a bare populated
           retype is refused, SQL72015 + Msg 50000) · ARCH §6 (conversion, 245)
@@ -931,7 +978,7 @@ expect:   answers    HasRows(Order)=yes · Fits(Order.Total→int)={roundtrip}
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Order · exit 3
           copy       permissive: published with no error · Total hash differs before/after (the cents gone)
           record     tier T2 · residue {} · ships multi-phase; the rounding rule is the data owner's · notChecked
-                     {QA, UAT, Prod, volume, change-over-time, IS-refresh}
+                     {unread:QA, unread:UAT, unread:Prod, volume, drift-since-measure, integration-studio}
 laws:     F1 F3 F6
 source:   expected · F12 (pg_retype2: SQL72015 + Msg 50000; every total converts and 2 of 4 lose their cents)
 note:     TRY_CONVERT succeeds on 540.50, so a nonconvertible count reads 0. Only the round-trip comparison and the
@@ -950,13 +997,13 @@ expect:   answers    HasRows(Product)=yes · Fits(Product.Weight→int)={empty}
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Product · exit 3
           copy       permissive: published with no error · the '' row reads 0
           record     tier T2 · residue {} · ships multi-phase; the conversion must say what '' becomes · notChecked
-                     {QA, UAT, Prod, volume, change-over-time, IS-refresh}
+                     {unread:QA, unread:UAT, unread:Prod, volume, drift-since-measure, integration-studio}
 laws:     F1 F3 F6
 source:   expected · red-team #10 (TRY_CONVERT('') gives 0 for int and 1900-01-01 for date, NULL for decimal and
           uniqueidentifier ✓)
 note:     TRY_CONVERT(int, '') is 0, not NULL, so the nonconvertible count misses it. Into date '' becomes
           1900-01-01 just as silently; into decimal or uniqueidentifier it counts as nonconvertible and the
-          permissive arm meets Msg 8114 or Msg 8169. ARCH §6's conversion list (245, 241, 8114) lacks 8169.
+          permissive arm meets Msg 8114 or Msg 8169, both `conversion` in ARCH §6.
 ```
 
 ### OP-retype-explicit-06 · violating: a value over the target range
@@ -970,12 +1017,13 @@ expect:   answers    HasRows(OrderLine)=yes · Fits(OrderLine.LineNumber→tinyi
           witnesses  presence(OrderLine) · misfit(OrderLine.LineNumber, overflow)
           outcome    verdict blocked guard · Msg 50000/127 · dbo.OrderLine · exit 3
           copy       permissive: Msg 220 · OrderLine.LineNumber · the column stays int
-          record     tier T2 · residue {} · notChecked {QA, UAT, Prod, volume, change-over-time, IS-refresh}
+          record     tier T2 · residue {} · notChecked {unread:QA, unread:UAT, unread:Prod, volume,
+                     drift-since-measure, integration-studio}
 laws:     F1 F3 F6 H5 T2
 source:   receipt · SamplePr "retype-explicit: a lossy narrowing type change blocks a populated column, a widening
           retype applies" (Strict: Msg 50000; its relaxed publish: Msg 220)
-note:     ARCH §6 lists 8115 for overflow, but this receipt's number is 220, so the overflow rule needs both or the
-          permissive arm stops unclassified. The widening leg of the same fact is OP-retype-implicit-02.
+note:     The receipt's number is 220, which ARCH §6 maps to overflow alongside 8115 (and 248). The widening leg of the
+          same fact is OP-retype-implicit-02.
 ```
 
 ### OP-retype-explicit-07 · the conversion release without declared shapes: the authored-script stop
@@ -1015,12 +1063,39 @@ expect:   answers    HasRows(Customer)=yes
           copy       the ambiguous witness lands day-first, as declared · the ISO witness converts exactly
           record     tier T3 · ships multi-phase: A adds BirthDate · B converts · C drops BirthText in two releases
                      (OP-delete-attribute-05) · Prod line "the script's precondition check, run before any write,
-                     stands in for unread Prod" · notChecked {QA, UAT, Prod, volume, change-over-time, IS-refresh}
-laws:     A5 H2
+                     stands in for unread Prod" · notChecked {unread:QA, unread:UAT, unread:Prod, volume,
+                     drift-since-measure, integration-studio}
+                     · silence ok
+laws:     A5 H2 D6
 source:   expected · skills/op/retype-explicit · TWIN_SUCCESSION §6b (a slash-date column mixed conventions; a count
           of first parts over 12, not a failure count, found it)
 note:     No Fits class can count this. An ambiguous slash date converts either way, so roundtrip and nonconvertible
           both read 0 for it; only discovery, then confirmation, finds the mixed convention.
+```
+
+### OP-retype-explicit-09 · edge: a text date's conversion depends on the session's language and date format
+```case
+kind:     corpus
+tags:     edge
+env:      pg + Customer.BirthText nvarchar(10) NULL · Customer 6 rows · BirthText 99/99/9999-shaped ×6, two with a
+          first part over 12
+change:   head Customer.BirthText nvarchar(10)→date NULL · scripts unchanged · the captured options carry no language or
+          date format for the Octopus login
+expect:   answers    HasRows(Customer)=yes · Fits(Customer.BirthText→date)={nonconvertible}, counted under SET LANGUAGE
+                     us_english; SET DATEFORMAT ymd
+          questions  HasRows(Customer) · Fits(Customer.BirthText→date)
+          witnesses  presence(Customer) · misfit(Customer.BirthText, nonconvertible): a day-first date from the
+                     planter's fixed table (P5)
+          outcome    verdict blocked guard · Msg 50000/127 · dbo.Customer · exit 3
+          record     tier T2 · residue {} · notChecked {unread:QA, unread:UAT, unread:Prod, platform:dateformat,
+                     drift-since-measure}
+laws:     F1 F3 H4 P5
+source:   verify · ARCH §11.12 (which language and date format the Octopus login runs under) · ARCH §5 step 2 (probes
+          and the planter run under us_english and ymd). Uncertain: how many of the slash dates count nonconvertible
+          under ymd, and whether the deploying session would read them the same way. The guard blocks a populated
+          retype whatever the count (F12), so only the answer's class and the residual depend on the first run.
+note:     The verdict is data-blind here; the record is not. Until the Octopus login's language and date format are in
+          the captured options, every Fits question over a text date carries `platform:dateformat`.
 ```
 
 ## audit-columns
@@ -1036,8 +1111,10 @@ expect:   answers    HasRows(Customer)=no
           questions  none
           witnesses  none
           outcome    verdict clean · exit 0
-          record     tier T0 · ships one release, in place · notChecked {QA, UAT, Prod, IS-refresh}
-laws:     F3 H2
+          record     tier T0 · ships one release, in place · notChecked {unread:QA, unread:UAT, unread:Prod,
+                     integration-studio}
+                     · silence ok
+laws:     F3 H2 D6
 source:   expected · skills/op/audit-columns
 ```
 
@@ -1053,9 +1130,13 @@ expect:   answers    HasRows(Customer)=yes
           witnesses  presence(Customer)
           outcome    verdict clean · exit 0
           copy       the four stamps NULL on the presence row · every other column hash-equal before/after
-          record     tier T0 · ships one release, in place · notChecked {QA, UAT, Prod, IS-refresh}
-laws:     F3 H2
+          record     tier T0 · ships one release, in place · notChecked {unread:QA, unread:UAT, unread:Prod,
+                     integration-studio}
+                     · silence ok
+laws:     F3 H2 D6
 source:   expected · skills/op/audit-columns (nullable stamps add in a single release)
+note:     n/a violating — the new stamps hold their default or NULL in every existing row, answered from the delta
+          (ARCH §4); no existing value is tested, and a NOT NULL stamp with no default asks only HasRows (-04).
 ```
 
 ### OP-audit-columns-03 · populated, NOT NULL with function defaults: every row stamped
@@ -1066,14 +1147,14 @@ env:      pg · Customer 5 rows
 change:   head Customer + the four stamps NOT NULL with DEFAULT (SUSER_SNAME()) / DEFAULT (SYSUTCDATETIME()) ·
           scripts unchanged
 expect:   answers    HasRows(Customer)=yes
-          questions  none
+          questions  none (Scan: the defaulted NOT NULL adds backfill every row) · measures Rows(Customer)
           witnesses  presence(Customer)
           outcome    verdict clean · exit 0
           copy       no stamp NULL on the presence row · CreatedBy is the deploying login
           record     tier T0 · ships one release, in place · note "existing rows carry the deploy time and the
-                     deploying login, not their real history" · notChecked
-                     {QA, UAT, Prod, volume, platform, IS-refresh}
-laws:     F3 H2 D1 T2
+                     deploying login, not their real history" · silence ok · notChecked
+                     {unread:QA, unread:UAT, unread:Prod, volume, platform:edition, integration-studio}
+laws:     F3 F4 H2 D1 D6 T2
 source:   receipt · SamplePr "audit-columns: NOT NULL audit stamps with function defaults apply clean and backfill
           existing rows"
 note:     The verdict must not embed the stamped values: they differ on every run, and D1 compares verdicts byte for
@@ -1091,7 +1172,7 @@ expect:   answers    HasRows(Customer)=yes
           witnesses  presence(Customer)
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Customer · exit 3
           record     tier T1 · residue {} · ships one release once the stamps carry defaults (-03) · notChecked
-                     {QA, UAT, Prod, change-over-time}
+                     {unread:QA, unread:UAT, unread:Prod, drift-since-measure}
 laws:     F3 H5
 source:   expected · the same ADD … NOT NULL with no default that SamplePr "add-mandatory: a new NOT NULL column
           with no default blocks a populated table, applies when empty" records
@@ -1104,8 +1185,8 @@ kind:     corpus
 tags:     remedy
 env:      pg · Customer 5 rows
 change:   head Customer + CreatedOn datetime2(3) NOT NULL, no default · pre-deploy adds CreatedOn NULL if absent,
-          then sets it to SYSUTCDATETIME() where NULL · witness.sql declares no shape (the script fills a column it
-          creates and reads no existing value)
+          then sets it to SYSUTCDATETIME() where NULL · witness.sql: `-- shapes: none (the script fills a column it
+          creates and reads no existing value)`
 expect:   answers    HasRows(Customer)=yes
           questions  HasRows(Customer) · Authored(pre-deploy)
           witnesses  presence(Customer)
@@ -1132,8 +1213,9 @@ expect:   answers    HasRows(Customer)=no
           questions  none
           witnesses  none
           outcome    verdict clean · exit 0
-          record     tier T0 · ships one release, in place · notChecked {QA, UAT, Prod}
-laws:     F3 H2
+          record     tier T0 · ships one release, in place · notChecked {unread:QA, unread:UAT, unread:Prod}
+                     · silence ok
+laws:     F3 H2 D6
 source:   expected · skills/op/add-default
 ```
 
@@ -1149,12 +1231,13 @@ expect:   answers    HasRows(Customer)=yes
           outcome    verdict clean · exit 0
           copy       Region hash-equal before/after (no UPDATE ran)
           record     tier T0 · ships one release, in place · note "existing blanks stay blank: a default fills only
-                     new rows" · notChecked {QA, UAT, Prod}
-laws:     F3 H2
+                     new rows" · notChecked {unread:QA, unread:UAT, unread:Prod} · silence ok
+laws:     F3 H2 D6
 source:   receipt · F10 (an existing NULL stayed NULL; only a fresh insert got the default) · SamplePr
           "drop-default: the add and the drop are both in-place; existing rows never move" (its add leg)
 note:     A default never backfills an existing column; only a new NOT NULL column with a default stamps rows
-          (OP-add-mandatory-02). Adding a default reads nothing, so there is no violating case.
+          (OP-add-mandatory-02).
+          n/a violating — adding a default reads no existing value.
 ```
 
 ### OP-add-default-03 · a DEFAULT constraint is not a claim to check
@@ -1181,11 +1264,12 @@ expect:   answers    HasRows(Customer)=yes
           witnesses  presence(Customer)
           outcome    verdict clean · exit 0
           copy       one default on Region, named DF_Customer_Region · Region hash-equal before/after
-          record     tier T0 · note "the system-named default is dropped and replaced" · notChecked {QA, UAT, Prod}
-laws:     F9 F2 F3
-source:   verify · uncertain: whether Extract keeps a system-generated default name, and whether the copy built from
-          it carries that name (F9) or a fresh one. If a fresh one, the identity check (F2) and the delta's DROP
-          must still agree with the environment's. The first run decides, with ARCH §11.1.
+          record     tier T0 · flags {drift:Dev} · drift:Dev {DF__Customer__Region__<hash>} · note "the system-named
+                     default is dropped and replaced" · notChecked {unread:QA, unread:UAT, unread:Prod} · silence ok
+laws:     F9 F2 F3 D6
+source:   verify · ARCH §11.10: whether Extract keeps a system-generated default name, and whether the copy built
+          from it carries that name (F9) or a fresh one. If a fresh one, the identity check (F2) and the delta's DROP
+          must still agree with the environment's (F5). The first run decides.
 ```
 
 ### OP-add-default-05 · existing blanks wanted filled: the authored-script stop
@@ -1220,12 +1304,13 @@ expect:   answers    HasRows(Customer)=yes
           copy       the NULL witness reads 'Unassigned' · the '' witness keeps '' · second publish: empty plan, the
                      backfill touches 0 rows, Customer hash unchanged
           record     tier T3 · ships one release (the constraint, then an idempotent post-deploy) · note "'' was
-                     left as stored by decision" · notChecked {QA, UAT, Prod, change-over-time}
-laws:     A5 H2
+                     left as stored by decision" · silence ok · notChecked {unread:QA, unread:UAT, unread:Prod,
+                     drift-since-measure}
+laws:     A5 H2 D6
 source:   expected · skills/op/add-default · skills/deploy-scripts (silence is the proof: 0 rows and an identical
-          hash on a redeploy)
-note:     ARCH §5 step 9 checks silence on reference-data hashes. An authored post-deploy that writes an ordinary
-          table needs the same check on that table, or a non-idempotent backfill reads clean.
+          hash on a redeploy) · INVARIANTS D6
+note:     D6 hashes every touched table, not only reference data, and counts rows affected, so a backfill missing its
+          `WHERE Region IS NULL` would read not-silent here.
 ```
 
 ## modify-default
@@ -1241,8 +1326,8 @@ expect:   answers    HasRows(Order)=no
           witnesses  none
           outcome    verdict clean · exit 0
           record     tier T0 · ships one release, in place · effects {modifies DF_Order_StatusText} · notChecked
-                     {QA, UAT, Prod}
-laws:     F3 H2
+                     {unread:QA, unread:UAT, unread:Prod} · silence ok
+laws:     F3 H2 D6
 source:   expected · skills/op/modify-default (a DROP then ADD of the named constraint)
 ```
 
@@ -1258,11 +1343,11 @@ expect:   answers    HasRows(Order)=yes
           outcome    verdict clean · exit 0
           copy       StatusText hash-equal before/after (no UPDATE ran)
           record     tier T0 · ships one release, in place · note "rows written under the old default keep
-                     'Pending'" · notChecked {QA, UAT, Prod}
-laws:     F3 H2 T2
+                     'Pending'" · notChecked {unread:QA, unread:UAT, unread:Prod} · silence ok
+laws:     F3 H2 T2 D6
 source:   receipt · SamplePr "modify-default: changing a default's value applies clean and leaves existing rows
           unchanged" · F10
-note:     A DROP and ADD of a default reads nothing, so there is no violating case.
+note:     n/a violating — a DROP and ADD of a default reads no existing value.
 ```
 
 ### OP-modify-default-03 · Dev's default is named, QA's is system-named: two proofs
@@ -1275,9 +1360,12 @@ change:   head DF_Order_StatusText DEFAULT (N'Pending')→DEFAULT (N'Shipped') �
 setup:    Dev and QA stand-ins · LocalDB 2022
 action:   facsimile read Dev · facsimile read QA · facsimile prove Dev QA
 expect:   files      delta.Dev.sql drops DF_Order_StatusText · delta.QA.sql drops the system-named default ·
-                     verdict.Dev.json and verdict.QA.json, each clean, with different delta hashes
+                     verdict.Dev.json and verdict.QA.json, each clean, with different delta hashes · verdicts.json
+                     indexes both
           outcome    verdict clean · exit 0
-laws:     F7 F9
+          stdout     one line, `VERDICT clean · … · verdicts.json · exit 0` (the most severe of the two)
+          flags      {drift:QA} in verdict.QA.json (the system-named default exists only in QA)
+laws:     F7 F9 A1
 source:   expected · skills/op/modify-default (an unnamed default differs per environment)
 note:     Equal answers do not make one proof: the delta hashes differ, so each environment is proven on its own
           (F7). Whether the QA copy can carry the system name is OP-add-default-04's question.
@@ -1316,8 +1404,8 @@ expect:   answers    HasRows(Product)=no
           witnesses  none
           outcome    verdict clean · exit 0
           record     tier T0 · ships one release, in place · effects {removes DF_Product_LegacyCode} · notChecked
-                     {QA, UAT, Prod}
-laws:     F3 H2
+                     {unread:QA, unread:UAT, unread:Prod} · silence ok
+laws:     F3 H2 D6
 source:   expected · skills/op/drop-default
 ```
 
@@ -1333,11 +1421,11 @@ expect:   answers    HasRows(Product)=yes
           outcome    verdict clean · exit 0
           copy       LegacyCode hash-equal before/after · no default on LegacyCode
           record     tier T0 · ships one release, in place · note "an insert that omits LegacyCode now fails Msg 515
-                     at run time" · notChecked {QA, UAT, Prod}
-laws:     F3 H2 T2
+                     at run time" · notChecked {unread:QA, unread:UAT, unread:Prod, app-behaviour} · silence ok
+laws:     F3 H2 T2 D6
 source:   receipt · SamplePr "drop-default: the add and the drop are both in-place; existing rows never move"
-note:     The deploy cannot show the damage: it lives in the application's insert paths, which H4's closed residual
-          set does not name. A drop reads nothing, so there is no violating case.
+note:     The deploy cannot show the damage: it lives in the application's insert paths, the `app-behaviour` residual.
+          n/a violating — a drop reads no value that could fail.
 ```
 
 ### OP-drop-default-03 · nullable column: omitted values become NULL, nothing fails
@@ -1352,8 +1440,8 @@ expect:   answers    HasRows(Customer)=yes
           outcome    verdict clean · exit 0
           copy       Region hash-equal before/after
           record     tier T0 · ships one release, in place · note "an insert that omits Region now writes NULL, not
-                     'Unassigned'" · notChecked {QA, UAT, Prod}
-laws:     F3 H2
+                     'Unassigned'" · notChecked {unread:QA, unread:UAT, unread:Prod, app-behaviour} · silence ok
+laws:     F3 H2 D6
 source:   expected · skills/op/drop-default (the nullable branch: the meaning of "omitted" changes)
 ```
 
@@ -1367,11 +1455,36 @@ change:   head Product.LegacyCode without DF_Product_LegacyCode · Data/Seed.sql
 expect:   answers    HasRows(Product)=yes
           questions  Authored(post-deploy seed over Product)
           witnesses  presence(Product) · declared(seed Product rows)
-          outcome    verdict blocked null · Msg 515 · dbo.Product.LegacyCode (post-deploy) · exit 3
-          record     tier T3 · residue {main: DF_Product_LegacyCode dropped} · note "the seed is part of the change
-                     set" · notChecked {QA, UAT, Prod}
+          outcome    verdict blocked authored · Msg 515 · post-deploy · exit 3
+          record     tier T3 · residue {main: DF_Product_LegacyCode dropped · post-deploy: the seed's insert of Product
+                     6 failed} · note "the seed is part of the change set" · notChecked {unread:QA, unread:UAT,
+                     unread:Prod}
 laws:     H5 H6 F3
 source:   expected · skills/op/drop-default (named trap: a seed that omitted the column fails on its next new row)
+note:     The 515 is raised inside the post-deploy batch, so it is the seed's (`blocked authored`, H5); the remedy is
+          -05.
+```
+
+### OP-drop-default-05 · remedy: the seed's new row names the column the dropped default used to fill
+```case
+kind:     corpus
+tags:     remedy
+env:      pg · Product 5 rows (the pg seed rows)
+change:   as OP-drop-default-04, but Data/Seed.sql's Product 6 sets LegacyCode explicitly (a repository-defined value)
+expect:   answers    HasRows(Product)=yes
+          questions  Authored(post-deploy seed over Product)
+          leg1       outcome    stop authored-script · "The change runs authored SQL over dbo.Product. Declare in
+                                witness.sql the shapes the seed handles, or `-- shapes: none (<reason>)`." · exit 5
+          leg2       witnesses  presence(Product) · declared(seed Product rows)
+                     outcome    verdict clean · exit 0
+                     copy       Product 6 holds the seed's LegacyCode · Products 1–5 hash-equal before/after
+                     record     tier T3 · ships one release (the drop and the corrected seed together) · effects
+                                {removes DF_Product_LegacyCode} · silence ok · notChecked {unread:QA, unread:UAT,
+                                unread:Prod, app-behaviour}
+laws:     A5 H2 H3 D6
+source:   expected · skills/op/drop-default (the seed that relied on the default is part of the change set) · F15 (the
+          seed's claims bind every atom in the release)
+note:     The application's own inserts that omitted LegacyCode are not in the change set; they stay `app-behaviour`.
 ```
 
 ## delete-attribute
@@ -1388,8 +1501,8 @@ expect:   answers    HasRows(Product)=no
           outcome    verdict clean · exit 0
           record     tier T1 · ships one release, in place · effects
                      {removes Product.LegacyCode, DF_Product_LegacyCode} · notChecked
-                     {QA, UAT, Prod, change-over-time, IS-refresh}
-laws:     F3 H2
+                     {unread:QA, unread:UAT, unread:Prod, drift-since-measure, integration-studio} · silence ok
+laws:     F3 H2 D6
 source:   expected · skills/op/delete-attribute (an empty column drops in place; the approval is never the lightest)
 ```
 
@@ -1404,11 +1517,11 @@ expect:   answers    HasRows(Product)=yes
           witnesses  presence(Product)
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Product · exit 3
           record     tier T1 · residue {} · ships two releases after the application stops using the column ·
-                     notChecked {QA, UAT, Prod, change-over-time, IS-refresh}
+                     notChecked {unread:QA, unread:UAT, unread:Prod, drift-since-measure, integration-studio}
 laws:     F1 F3 H5 T2
 source:   receipt · SamplePr "delete-attribute: removing a populated column is BLOCKED by the data-loss guard; the
           scripted DROP COLUMN is the irreversible step"
-note:     A drop has no value class: a populated table is the only blocking state, so there is no violating case.
+note:     n/a violating — a drop has no value class: a populated table is the only blocking state.
 ```
 
 ### OP-delete-attribute-03 · DROP COLUMN asks presence only
@@ -1446,8 +1559,8 @@ expect:   questions  from the R2 target: HasRows(Product) · Authored(R1 pre-dep
           record     tier T3
 laws:     F8 H3 A3
 source:   expected · skills/op/delete-attribute (R1/R2) · ARCH §6 (authored-script)
-note:     The pre-deploy is DDL and reads no value, so the answer to this stop is a declaration that there is no
-          shape to handle. ARCH does not yet say how witness.sql states that.
+note:     The pre-deploy is DDL and reads no value, so the answer to this stop is `-- shapes: none (<reason>)` in
+          witness.sql (ARCH §6, authored-script).
 ```
 
 ### OP-delete-attribute-05 · the drop's R1, R1 replayed, R2
@@ -1455,16 +1568,17 @@ note:     The pre-deploy is DDL and reads no value, so the answer to this stop i
 kind:     corpus
 tags:     remedy
 env:      pg · Product 5 rows · LegacyCode populated ×5
-change:   as OP-delete-attribute-04 · witness.sql declares no shape (the R1 script reads no value)
+change:   as OP-delete-attribute-04 · witness.sql: `-- shapes: none (the R1 script reads no value)`
 expect:   answers    HasRows(Product)=yes
           questions  HasRows(Product) · Authored(R1 pre-deploy, seed)
           witnesses  presence(Product)
           outcome    verdict clean · exit 0
-          record     tier T3 · ships two releases · R1 clean · R1 replay plan non-empty (ADD [LegacyCode] … DEFAULT
-                     (N'LEGACY') NOT NULL: every row restamped, the original values gone): the F17 hazard · R2
-                     clean, empty plan · effects {removes Product.LegacyCode, DF_Product_LegacyCode} · notChecked
-                     {QA, UAT, Prod, volume, change-over-time, IS-refresh}
-laws:     F8 A5 H2
+          record     tier T3 · ships two releases · R1 clean · R2 clean, empty plan · silence R1 not-silent(replay
+                     plan: ADD [LegacyCode] … DEFAULT (N'LEGACY') NOT NULL, every row restamped and the original
+                     values gone: the F17 hazard) · R2 ok · effects {removes Product.LegacyCode,
+                     DF_Product_LegacyCode} · notChecked {unread:QA, unread:UAT, unread:Prod, volume,
+                     drift-since-measure, integration-studio}
+laws:     F8 A5 H2 D6
 source:   receipt · F17 (a lagging-model publish re-created the dropped column, backfilled from its default) ·
           FINDINGS Part 4 (delete-attribute: two releases, proven 2026-08-21)
 note:     The 4-phase deprecation's first three phases (soft-deprecate, stop writes, verify unused) are
@@ -1479,9 +1593,10 @@ tags:     edge
 env:      pg · Product 5 rows (the pg seed rows) · LegacyCode populated ×5
 change:   program R1 → R2 as OP-delete-attribute-05, but Data/Seed.sql still writes LegacyCode
 expect:   witnesses  presence(Product)
-          outcome    verdict blocked seed · Msg 207 · dbo.Product.LegacyCode (post-deploy) · exit 3
-          record     tier T3 · residue {pre-deploy: DF_Product_LegacyCode and LegacyCode dropped} · note "the
-                     corrected seed is part of R1" · notChecked {QA, UAT, Prod}
+          outcome    verdict blocked authored · Msg 207 · post-deploy · exit 3
+          record     tier T3 · residue {pre-deploy: DF_Product_LegacyCode and LegacyCode dropped · post-deploy: the
+                     seed failed on LegacyCode} · note "the corrected seed is part of R1" · notChecked {unread:QA,
+                     unread:UAT, unread:Prod}
 laws:     H5 H6 F3
 source:   receipt · F15 (b: after a pre-deploy column drop, the seed still naming the column failed with Msg 207 on
           a half-applied release)
@@ -1500,6 +1615,7 @@ action:   facsimile read Dev · facsimile prove Dev
 expect:   answers    HasRows(Product)=yes · Cdc(Product)=yes
           outcome    stop cdc · "dbo.Product is tracked by CDC, and LocalDB has none. This change is principal-led."
                      · exit 9
+          flags      {cdc}
 laws:     H2 H3 A3
 source:   expected · ARCH §6 (cdc) · the premise is red-team #6 (Msg 4928 on sp_rename ✓; a silently stale capture
           instance ✓)
@@ -1537,8 +1653,8 @@ expect:   answers    HasRows(Customer)=no
           witnesses  none
           outcome    verdict clean · exit 0
           record     tier T0 · ships one release, in place · effects {renames Customer.ContactPhone → MobileNumber}
-                     · notChecked {QA, UAT, Prod, IS-refresh}
-laws:     F3 H2
+                     · notChecked {unread:QA, unread:UAT, unread:Prod, integration-studio} · silence ok
+laws:     F3 H2 D6
 source:   expected · skills/_index/identity-and-refactorlog (with the entry the delta is sp_rename)
 ```
 
@@ -1554,13 +1670,14 @@ expect:   answers    HasRows(Customer)=yes
           outcome    verdict clean · exit 0
           copy       MobileNumber hash-equal to ContactPhone before · Customer's object_id unchanged
           record     tier T0 · ships one release, in place · effects {renames Customer.ContactPhone → MobileNumber}
-                     · notChecked {QA, UAT, Prod, IS-refresh}
-laws:     F3 H2
+                     · notChecked {unread:QA, unread:UAT, unread:Prod, integration-studio, external-consumers}
+                     · silence ok
+laws:     F3 H2 D6
 source:   expected · F13 (a refactorlog entry makes the delta sp_rename) · SamplePr "rename-attribute: a bare column
           rename (no refactorlog) is a DROP+ADD blocked by the data-loss guard; EXEC sp_rename preserves every
           value" (sp_rename keeps every value)
-note:     The rename asks the data nothing, so there is no violating case. Every caller of the old name must move;
-          callers outside the database are not in H4's closed set.
+note:     Every caller of the old name must move; callers outside the database are the `external-consumers` residual.
+          n/a violating — sp_rename reads no row, so no value can fail it.
 ```
 
 ### OP-rename-attribute-03 · the record reads rename from the delta
@@ -1591,7 +1708,7 @@ expect:   answers    HasRows(Customer)=yes
           outcome    verdict blocked guard · Msg 50000/127 · dbo.Customer · exit 3
           record     tier T1 · residue {} · effects {removes Customer.ContactPhone, adds Customer.MobileNumber} ·
                      note "not a rename: add the Rename Refactor entry" · notChecked
-                     {QA, UAT, Prod, change-over-time}
+                     {unread:QA, unread:UAT, unread:Prod, drift-since-measure}
 laws:     F1 F3 H5 T2
 source:   receipt · SamplePr "rename-attribute: a bare column rename (no refactorlog) is a DROP+ADD blocked by the
           data-loss guard; EXEC sp_rename preserves every value"
@@ -1610,8 +1727,9 @@ expect:   answers    HasRows(Customer)=no
           outcome    verdict clean · exit 0
           record     tier T1 · effects {removes Customer.ContactPhone, adds Customer.MobileNumber} · note "not a
                      rename: a populated environment blocks, and without the guard it loses every value" ·
-                     notChecked {QA, UAT, Prod, change-over-time, IS-refresh}
-laws:     F3 F7 H2
+                     notChecked {unread:QA, unread:UAT, unread:Prod, drift-since-measure, integration-studio}
+                     · silence ok
+laws:     F3 F7 H2 D6
 source:   expected · skills/_index/identity-and-refactorlog (a missing entry is DROP+ADD whatever the data)
 note:     A clean Dev verdict on an empty table says nothing about QA: each environment gets its own verdict (F7).
 ```
@@ -1625,9 +1743,10 @@ change:   as OP-rename-attribute-01, but Data/Seed.sql still writes ContactPhone
 expect:   answers    HasRows(Customer)=yes
           questions  none
           witnesses  presence(Customer)
-          outcome    verdict blocked seed · Msg 207 · dbo.Customer.ContactPhone (post-deploy) · exit 3
-          record     tier T0 · residue {main: sp_rename applied, MobileNumber holds every value} · note "rename the
-                     seed's column references in the same change" · notChecked {QA, UAT, Prod}
+          outcome    verdict blocked authored · Msg 207 · post-deploy · exit 3
+          record     tier T0 · residue {main: sp_rename applied, MobileNumber holds every value · post-deploy: the
+                     seed failed on ContactPhone} · note "rename the seed's column references in the same change
+                     (-08)" · notChecked {unread:QA, unread:UAT, unread:Prod}
 laws:     H5 H6 F3
 source:   receipt · F15 (b, the rename face: the seed failed identically until its column references were renamed)
 note:     The tier is T0 because the delta asks nothing; the block comes from an unchanged post-deploy script.
@@ -1644,9 +1763,33 @@ action:   facsimile read Dev · facsimile prove Dev
 expect:   answers    HasRows(Customer)=yes · Cdc(Customer)=yes
           outcome    stop cdc · "dbo.Customer is tracked by CDC, and LocalDB has none. This change is
                      principal-led." · exit 9
+          flags      {cdc}
 laws:     H2 H3 A3
 source:   expected · ARCH §6 (cdc) · the premise is red-team #6 (sp_rename of a CDC-tracked column fails Msg 4928 ✓)
 note:     On the real server this clean-looking T0 rename fails with Msg 4928, while the copy would report clean.
+```
+
+### OP-rename-attribute-08 · remedy: the seed's column references renamed in the same change
+```case
+kind:     corpus
+tags:     remedy
+env:      pg · Customer 5 rows (the pg seed rows) · ContactPhone populated ×5
+change:   as OP-rename-attribute-01 · Data/Seed.sql's ContactPhone references renamed to MobileNumber in the same change
+expect:   answers    HasRows(Customer)=yes
+          questions  Authored(post-deploy seed over Customer); the sp_rename reads no row
+          leg1       outcome    stop authored-script · "The change runs authored SQL over dbo.Customer. Declare in
+                                witness.sql the shapes the seed handles, or `-- shapes: none (<reason>)`." · exit 5
+          leg2       witnesses  presence(Customer) · declared(the seed's Customer rows)
+                     outcome    verdict clean · exit 0
+                     copy       MobileNumber holds every value · Customer's object_id unchanged
+                     record     tier T3 · ships one release (the rename and the corrected seed together) · effects
+                                {renames Customer.ContactPhone → MobileNumber} · silence ok · notChecked
+                                {unread:QA, unread:UAT, unread:Prod, integration-studio, external-consumers}
+laws:     A5 H2 D6 F3
+source:   receipt · F15 (b, the rename face: it failed until the seed's six column references were renamed with it) ·
+          sample-prs/compound/rename-then-tighten.md, What proving showed (the seed's references renamed, Release 1
+          published: the single sp_rename, 5 of 5 values preserved)
+note:     The refactorlog renames the schema, not raw column references inside deployment scripts (-06).
 ```
 
 ## identity-swap
@@ -1663,8 +1806,9 @@ expect:   answers    HasRows(Account)=no · Gapped(Account)=no
           outcome    verdict clean · exit 0
           copy       Account.Id is_identity 0
           record     tier T2 · ships one release (a table rebuild) · effects {modifies Account.Id: IDENTITY removed}
-                     · notChecked {QA, UAT, Prod, change-over-time, IS-refresh}
-laws:     F3 H2
+                     · notChecked {unread:QA, unread:UAT, unread:Prod, drift-since-measure, integration-studio}
+                     · silence ok
+laws:     F3 H2 D6
 source:   expected · skills/op/identity-swap (empty, no keys: the rebuild copies nothing; confirm it is a rebuild)
 ```
 
@@ -1681,12 +1825,17 @@ expect:   answers    HasRows(Category)=yes · Gapped(Category)=yes
           copy       acceptance reads Gapped(Category)=yes · Id set hash-equal before/after · is_identity 1 ·
                      IDENT_CURRENT(Category) ≥ MAX(Id)
           record     tier T2 · ships one release (a table rebuild, no incoming key) · effects
-                     {modifies Category.Id: IDENTITY added} · notChecked {QA, UAT, Prod, volume, IS-refresh}
-laws:     F1 F3 M2 H2
-source:   receipt · F12 (pg_idsw_before: the gate allows the rebuild; ids preserved; IDENT_CURRENT = 3)
+                     {modifies Category.Id: IDENTITY added} · notChecked {unread:QA, unread:UAT, unread:Prod, volume,
+                     integration-studio}
+                     · silence ok
+laws:     F1 F3 M2 H2 D6
+source:   expected · F12 (pg_idsw_before: the gate allows the rebuild; ids preserved; IDENT_CURRENT = 3), recorded on
+          contiguous ids 1, 2, 3 only; the gapped fixture here is not yet witnessed live
 note:     F12's ids were 1, 2, 3, which a re-minting rebuild would also have produced. A contiguous-from-1 witness
-          is vacuous, so a gapped environment gets a gapped witness, and acceptance stops if the copy reads
-          Gapped=no (F1).
+          is vacuous, so a gapped environment gets a gapped witness (two rows, which also serve as presence: M2), and
+          acceptance stops if the copy reads Gapped=no (F1).
+          n/a violating — the rebuild copies every value unchanged (no moved column changes type), so no value can
+          refuse it; gaps are reproduced, never violating.
 ```
 
 ### OP-identity-swap-03 · the rebuild's IF EXISTS is not a guard
@@ -1724,9 +1873,9 @@ change:   head Category.Id int→int IDENTITY(1,1) · Data/Seed.sql unchanged: i
 expect:   answers    HasRows(Category)=yes · Gapped(Category)=no
           questions  Rebuild(Category): HasRows(Category) · Gapped(Category)
           witnesses  presence(Category)
-          outcome    verdict blocked seed · Msg 544 · dbo.Category (post-deploy) · exit 3
-          record     tier T2 · residue {main: Category rebuilt, is_identity 1, ids preserved} · notChecked
-                     {QA, UAT, Prod}
+          outcome    verdict blocked authored · Msg 544 · post-deploy · exit 3
+          record     tier T2 · residue {main: Category rebuilt, is_identity 1, ids preserved · post-deploy: the seed's
+                     explicit-id insert failed} · notChecked {unread:QA, unread:UAT, unread:Prod}
 laws:     H5 H6 F3
 source:   receipt · F12 (the seed's explicit-id insert fails Msg 544 until bracketed with SET IDENTITY_INSERT)
 ```
@@ -1745,9 +1894,9 @@ expect:   answers    HasRows(Category)=yes · Gapped(Category)=no
           outcome    verdict clean · exit 0
           copy       is_identity 1 · ids 1, 2, 3 · IDENT_CURRENT(Category) ≥ MAX(Id) · second publish: empty plan,
                      the seed silent
-          record     tier T3 · ships one release (the rebuild and the seed fix together) · notChecked
-                     {QA, UAT, Prod, IS-refresh}
-laws:     A5 H2 F3
+          record     tier T3 · ships one release (the rebuild and the seed fix together) · silence ok · notChecked
+                     {unread:QA, unread:UAT, unread:Prod, integration-studio}
+laws:     A5 H2 F3 D6
 source:   receipt · F12 (the seed fix ships in the same change set; end state is_identity = 1, ids preserved,
           IDENT_CURRENT = 3)
 note:     The first run without the declaration stops authored-script, because the seed changed.
@@ -1769,8 +1918,8 @@ expect:   answers    HasRows(Order)=yes · HasRows(OrderLine)=yes · Gapped(Orde
           copy       Order Id set and whole-row hash equal before/after · 0 orphans · FK_OrderLine_Order present and
                      trusted · is_identity 0
           record     tier T2 · ships one release (a rebuild, the incoming key dropped and re-added) · notChecked
-                     {QA, UAT, Prod, volume, engine-version, IS-refresh}
-laws:     F9 F1 F3 T2
+                     {unread:QA, unread:UAT, unread:Prod, volume, engine-version, integration-studio} · silence ok
+laws:     F9 F1 F3 T2 D6
 source:   verify · SamplePr "identity-swap: removing IDENTITY from Order.Id is a table rebuild — the true outcome
           under the production gate, keys and incoming FK preserved" proves this end state but accepts either path
           to it. Uncertain: whether the Strict publish performs the rebuild with an incoming key (F12's keyless

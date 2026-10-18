@@ -111,7 +111,8 @@ table not mentioned is empty. `Customer 0 rows` states emptiness explicitly when
 
 - `verdict clean · exit 0`
 - `verdict blocked <reason> · Msg <n>[/<state>] · <object> · exit 3`, where the reason is one of: guard,
-  constraint, null, unique, truncation, overflow, conversion, seed, keylength, cdc, collation
+  constraint, null, unique, truncation, overflow, conversion, keylength, cdc, collation, temporal,
+  authored (ARCH §6)
 - `verdict refused-at-build · SQL71516 · <object> · exit 3`
 - `verdict blocked authored · Msg <n> · <pre-deploy\|post-deploy> · exit 3`, for any error raised inside an
   authored batch
