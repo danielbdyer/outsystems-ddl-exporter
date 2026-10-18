@@ -357,7 +357,7 @@ Excellent ASCII art flowcharts exist (e.g., "What Tier Is This?" in 18-Decision-
 3. **Multi-Phase Timeline** (11.md) — Create timeline visualization
 4. **CDC Dual-Instance Pattern** (12.md) — Create state diagram
 
-**Tools:** Mermaid.js (renders in GitHub/Azure DevOps), or static images
+**Tools:** Mermaid.js (renders in GitHub and most git hosts), or static images
 
 **Priority:** 🟢 ENHANCEMENT — Would increase comprehension, not blocking
 
