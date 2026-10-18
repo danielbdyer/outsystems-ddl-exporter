@@ -72,9 +72,9 @@ into your branch first and say so in your pull request.
   - The NuGet cache holds DacFx 162.5.57 and 170.5.96. The 170.5.96 package's `lib/net10.0` has
     `Microsoft.Data.Tools.Schema.SqlTasks.targets` and `Microsoft.Data.Tools.Schema.Tasks.Sql.dll`,
     the build route's targets.
-- **Out of reach from here:** the corporate network, meaning the estate repository, Dev, QA, UAT,
-  the metamodel, Octopus and the team's laptops. An exit that needs any of them is *pending the
-  estate*, never passed and never failed (§6).
+- **Out of reach from here:** the estate's network, meaning the estate repository, Dev, QA, UAT,
+  the metamodel, the deployment tool and the team's laptops. An exit that needs any of them is
+  *pending the estate*, never passed and never failed (§6).
 - **Windows** (LocalDB on `windows-latest`) is proven only in GitHub Actions. After each push, read
   the run with the GitHub tools.
 - **The planning session's spike harness is gone.** Appendix B here and the plan's Appendix E
@@ -188,8 +188,8 @@ become about twenty. Record actual dates in `NEXT.md`, not predictions.
 
 ## 6. Pending the estate, and the questions to send
 
-Report every exit that needs the corporate network as
-`pending: <exit> — <the exact command> — <who runs it>`. Collect the questions for the corporate
+Report every exit that needs the estate's network as
+`pending: <exit> — <the exact command> — <who runs it>`. Collect the questions for the backport
 agent's `STATE.md` under *Waiting on a person* in `NEXT.md`, each with its command:
 
 - S1's laptop half;
@@ -393,7 +393,7 @@ phase('Exit')
 const exit = !args.final ? null : await agent(
   [
     `Milestone ${args.milestone}: for each Exit check in V3_MILESTONES.md, run it here if it can run here, and record pass or fail with the command and its evidence.`,
-    'If it needs the estate, a team laptop, Dev, the metamodel or Octopus, record pending-estate with the exact command a person must run.',
+    'If it needs the estate, a team laptop, Dev, the metamodel or the deployment tool, record pending-estate with the exact command a person must run.',
     `Compare the milestone's work packages and its rows in Appendices A to D with what is on ${args.branch}, and list every gap.`,
     `Rewrite NEXT.md (in flight, next, waiting on a person), add at most one line to DECISIONS.md, commit, and push ${args.branch}.`,
   ].join('\n'),

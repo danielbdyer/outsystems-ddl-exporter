@@ -102,7 +102,7 @@ that moment or to point, in one hop, to what is.
 | **A new joiner, either repository** | `README.md` (150 lines, five minutes) | — | — | — | — | — | — |
 | **A developer on the bottom rung** (agent mode off; the router and the instructions are all that attach) | the router, read by hand | the router | `knowledge/INDEX.md` → the operation → `authoring.md`, read as documents; the verbs typed by hand | — | the verdict | the record | — |
 | **Whoever deploys and refreshes** (the Integration Studio half, per environment) | — | — | — | — | — | the record's after-deploy section for that environment | — |
-| **The SSIS team** (maps a legacy database against the schema each sprint) | — | — | — | — | — | `changelog.json` from the gate, with renames by refactorlog key and both shapes during a two-release window | — |
+| **The SSIS maintainers** (map a legacy database against the schema each sprint) | — | — | — | — | — | `changelog.json` from the gate, with renames by refactorlog key and both shapes during a two-release window | — |
 
 Three things the table makes visible.
 
@@ -168,15 +168,15 @@ Worked means a consumer used it and the evidence is in the tree.
 ### 2.2a Built and not yet exercised, and kept on that understanding
 
 These are good designs with no consumer on record. They are kept because their shape is right,
-and the pilot (companion §16, item 2) is where they earn the other column.
+and the first trial (companion §16, item 2) is where they earn the other column.
 
 - **The Copilot bundle above the router.** `.github/skills/` discovery, the custom agents, and
   `#prompt:` attaching on the team's 2022 build are each listed as unverified by the bundle's own
   `ADOPTION.md`. The router and the path-scoped instructions are the surface that works on every
-  rung; the rest is a design until a champion laptop runs it.
+  rung; the rest is a design until one developer's machine runs it.
 - **The one-door prompt.** `#prompt:ssdt-schema-change` runs intake and authoring in one
   conversation. Personas were already collapsing into phases; v3 finishes it; whether the prompt
-  attaches is the pilot's first check.
+  attaches is the trial's first check.
 - **The ledgers.** Eight append-only tables of 272 lines designed to carry the estate's actual
   state (which operations have shipped, which tables hold how many rows, which windows are
   open). `operations.md` and `in-flight.md` have no rows, by design, until the first change
@@ -226,13 +226,13 @@ and the pilot (companion §16, item 2) is where they earn the other column.
   skill and the proven change as data) need one count to agree.
 - **The self-test rubric.** Six criteria, nine dimensions, golden runs, a 1,046-line prompt
   matrix, hand-scored. The nightly proof lane discharges the regression duty with 41 executable
-  facts. Conversation quality is judged in the pilot, on the team's build, by the people who
+  facts. Conversation quality is judged in the first trial, on the team's build, by the people who
   will use it.
 - **Unverified rungs.** The bundle's own `ADOPTION.md` lists what is not verified: whether
   the team's Visual Studio build discovers `.github/skills/`, whether `#prompt:` attaches on
   2022, whether agent mode reads vendored skills when the solution is not at the repository
   root. The bundle is well-made and has not been run where it matters. v3 does not add a
-  surface until the pilot says which rung the team is on.
+  surface until the trial says which rung the team is on.
 - **Documents that restate counts.** `CLAUDE.md` §8 says restating a count or a feature list is
   a bug, and the same file says there are eight pillars where `DECISIONS.md` says nine, the
   review says 41 operations where the tree has 45, a digest says 351 decisions where there are
@@ -374,7 +374,7 @@ the chain; the cutover governance archives with the cutover; the rest are here.
 | R2 | Every claim has a receipt | A verdict carries the disposable database's name, the generated script's hash, and the timestamp; a record cites them; a finding in `findings.md` names its database. | `Verdict` fields are required; the register lint refuses a "what proving showed" section with no receipt | `Kernel.Tests`; `Budgets.Tests: register` | `FINDINGS_AND_CHANGES.md` (database names as receipts); prose only |
 | R3 | Git is the timeline | There is no run store, no episode store, no lifecycle file; artifacts are named by fingerprint; the pull request is the record of a change. | absence (nothing to mechanize); the manifest has no such file | — | `Episode`/`Lifecycle`/`RunLedger` (deleted) |
 | R4 | Findings are refuted in the open | A finding is overturned only by a dated entry that names the receipt that overturns it; the old entry is struck through, never deleted. | `findings.md` format; a test that no `F<n>` identifier disappears between commits | `Budgets.Tests: "findings are append-only"` | F5 → F9; prose only |
-| R5 | The supported window is stated | .NET: the current LTS only (10 today; 9 is a standard-term release and leaves support in November 2026). SQL Server: 2019 and 2022, and LocalDB of the same versions, with the image pinned by digest, never `latest`. DacFx: the pinned version and the one before it. Visual Studio: the rung the pilot lands on. | `global.json` pins the LTS feature band with `rollForward: latestPatch` (v1 and v2 pin `9.0.314` with roll-forward disabled; the loosening is a decision line); `twin up` and `prove` probe `@@VERSION` and refuse an engine outside the window by name; `Io.Tests` runs on both SQL versions | CI matrix; `ledgers/toolchain.md` | `estate/toolchain.md` names the floating `2022-latest` tag as a risk; the rest is new |
+| R5 | The supported window is stated | .NET: the current LTS only (10 today; 9 is a standard-term release and leaves support in November 2026). SQL Server: 2019 and 2022, and LocalDB of the same versions, with the image pinned by digest, never `latest`. DacFx: the pinned version and the one before it. Visual Studio: the rung the trial lands on. | `global.json` pins the LTS feature band with `rollForward: latestPatch` (v1 and v2 pin `9.0.314` with roll-forward disabled; the loosening is a decision line); `twin up` and `prove` probe `@@VERSION` and refuse an engine outside the window by name; `Io.Tests` runs on both SQL versions | CI matrix; `ledgers/toolchain.md` | `estate/toolchain.md` names the floating `2022-latest` tag as a risk; the rest is new |
 
 ### 4.6 Portability and operability
 
@@ -406,8 +406,8 @@ the chain; the cutover governance archives with the cutover; the rest are here.
 | L7 | Dependencies point one way | `kernel` references the BCL only and no public member of a kernel type returns a `Task`, `ValueTask` or `IAsyncEnumerable` (a banned-symbol list matches symbols, not the state machine an `async` method builds); `io` does not reference `cli`; nothing references `knowledge/` or `ci/`. | NetArchTest (the direction and the no-async rule); `BannedSymbols.txt` | law "dependencies point one way" | `hex-*` lints; `NoUnsafeTimeInCoreAnalyzer`; mechanized |
 | L9 | Tests never retry, never skip | A flaky test is quarantined by name with a dated finding and an owner, or deleted; no retry attribute exists in the tree; no test skips itself in a way that reads as a pass. | no retry package in `ci/packages.allow`; the zero-skip test; the per-substrate report in the matrix; the TRX logger is the default | CI; `Budgets.Tests: "no skips"` | survival rules 3, 4, 12; 209 skips; prose |
 | L10 | CI is fast enough to wait for | The fast lane finishes in five minutes; the fixture lane in twenty; the PR gate in ten; the proof lane in sixty; every job declares `timeout-minutes` and prints its elapsed time. | `timeout-minutes` on every job (today three of the six lanes' jobs declare one, and none of the three required checks do) | CI | not stated; new |
-| L11 | Reading time is budgeted | The README reads in five minutes; the front door in five; an operation in three; the prose a Copilot session must hold to author one change (the router, the one instruction that matched, one operation, one shared file, the record page) fits beside the open file, and the sum is a test. Today that path is 665 lines (router 60 + instruction 23 + the largest operation 131 + the two record pages 451); after the trim it is about 320. | the budgets test computes the path sum with a ceiling the pilot sets | `Budgets.Tests: "one-door path"` | the review's §3.6 ("every hop is a failure point"); the companion budgeted a Claude Code session's reading and not a Copilot session's; new |
-| L12 | Written for the team | Every agent-facing and reviewer-facing file is written for a developer who knows SQL and OutSystems and has never used SSDT; a record is approvable with no term the reviewer must look up. | the banned-terms lint catches the negative half; `shared/vocabulary.md` is the one anchored-explanation page; the pilot's four reviewers judge the rest | `Budgets.Tests: vocabulary`; prose plus a pilot, and the row says so | `THE_RECORD.md` §9 states it as its one sentence; prose |
+| L11 | Reading time is budgeted | The README reads in five minutes; the front door in five; an operation in three; the prose a Copilot session must hold to author one change (the router, the one instruction that matched, one operation, one shared file, the record page) fits beside the open file, and the sum is a test. Today that path is 665 lines (router 60 + instruction 23 + the largest operation 131 + the two record pages 451); after the trim it is about 320. | the budgets test computes the path sum with a ceiling the trial sets | `Budgets.Tests: "one-door path"` | the review's §3.6 ("every hop is a failure point"); the companion budgeted a Claude Code session's reading and not a Copilot session's; new |
+| L12 | Written for the team | Every agent-facing and reviewer-facing file is written for a developer who knows SQL and OutSystems and has never used SSDT; a record is approvable with no term the reviewer must look up. | the banned-terms lint catches the negative half; `shared/vocabulary.md` is the one anchored-explanation page; the trial's four reviewers judge the rest | `Budgets.Tests: vocabulary`; prose plus a trial, and the row says so | `THE_RECORD.md` §9 states it as its one sentence; prose |
 
 ### 4.8 Agent conduct
 
@@ -1187,8 +1187,8 @@ here unchanged. `INDEX.md` is generated.
 
 ## 8. The estate repository's instruction set
 
-Under the two-repository default (the companion's §16, item 9): the team's Azure DevOps
-repository holds the SSDT project and receives a generated bundle. If the operator chooses one
+Under the two-repository default (the companion's §16, item 9): the estate repository holds
+the SSDT project and receives a generated bundle. If the operator chooses one
 repository, the bundle becomes a build output, the ownership table in §8.7 collapses to one
 column, and nothing else in this section changes. The
 bundle is v2's `copilot-package/` with two personas fewer, verbs instead of shell recipes, and
@@ -1202,7 +1202,7 @@ Studio; its rungs are kept because they are honest about what is verified.
 # Database schema changes in this repository
 
 This repository's schema is managed with SSDT. A change is an edit to a table definition,
-built into a dacpac, deployed through Azure DevOps into Octopus with the data-loss guard on.
+built into a dacpac, deployed through the pipeline with the data-loss guard on.
 The guard cannot be relaxed for a single deploy.
 
 ## When to use this
@@ -1315,8 +1315,8 @@ skills and agents and attaches the path-scoped instructions; 18.4 loads agents a
 router and the instructions remain and the tree is read by hand. The bundle's own list of what
 is unverified (whether the team's build discovers `.github/skills/`, whether `#prompt:`
 attaches on 2022, whether agent mode reads vendored files when the solution is not at the root)
-is unchanged and is the pilot's checklist (companion §16, item 2). Nothing in this section
-adds a surface until the pilot says which rung the team is on.
+is unchanged and is the trial's checklist (companion §16, item 2). Nothing in this section
+adds a surface until the trial says which rung the team is on.
 
 ### 8.7 What the estate owns, and the engine never writes
 
@@ -1381,9 +1381,9 @@ can run.
 `estate serve --mcp` would expose the verbs as tools over stdio, generated from the same verb
 table that produces `--help --json` (one tool per verb, `move` excluded), so that the verdict
 becomes a tool call rather than a terminal command. It is about two hundred lines and adds no
-surface to `knowledge/`. It is not in the design until the pilot answers one question: whether
-the team's Visual Studio, with agent mode gated by the Copilot Business policy `ADOPTION.md`
-names, can host an MCP server against an Azure DevOps checkout. Until then the CLI with
+surface to `knowledge/`. It is not in the design until the trial answers one question: whether
+the team's Visual Studio, with agent mode gated by the Copilot policy `ADOPTION.md` names,
+can host an MCP server against the estate's checkout. Until then the CLI with
 `--json` and the frozen exit codes is the tool surface on every rung, including agent mode off.
 §12 carries the question.
 
@@ -1436,7 +1436,7 @@ the source is real Dev, owner-side) → `twin bake` → `knowledge package --ven
 request to the estate. Gate (a pull request on the estate): `gate` → post `gate.json` and
 `changelog.json`. A lane never approves.
 
-**(e) An authoring session with no `estate` binary.** The estate's laptops are corporate
+**(e) An authoring session with no `estate` binary.** The estate's laptops are
 Windows machines that may lack Docker and will lack the tool until it is installed. The
 distribution is a pinned .NET tool (`dotnet tool install --global Estate.Cli --version <pinned>`
 from the feed named in `ledgers/toolchain.md`), and the router says what to do without it, in
@@ -1559,20 +1559,20 @@ index points at the old file for anything earlier.
 ## 12. Risks and open questions for this layer
 
 - **The tool has to reach the laptop.** Everything in `authoring.md` assumes `estate` is on
-  the developer's PATH, and the estate's laptops are corporate Windows machines that may lack
+  the developer's PATH, and the estate's laptops are Windows machines that may lack
   Docker and will lack the tool until someone installs it. §9.6(e) gives the distribution (a
   pinned .NET tool from a named feed) and the degraded path (author, mark provisional, let the
-  gate prove). The risk is the feed: a corporate machine that cannot reach nuget.org needs an
-  internal feed, and standing one up is a decision for the operator alongside the pilot. Until
-  the tool is on one champion laptop, the bundle's best line stands: stop and say so, rather
+  gate prove). The risk is the feed: a team machine that cannot reach nuget.org needs an
+  internal feed, and standing one up is a decision for the operator alongside the trial. Until
+  the tool is on one developer's machine, the bundle's best line stands: stop and say so, rather
   than guess from the SQL text.
 - **The rung is unverified.** Everything in §8 above the router and the instructions depends on
   which Visual Studio build the team runs and what it discovers. The bundle's own `ADOPTION.md`
-  lists the unverified items and this document adds none. The pilot on one champion laptop
+  lists the unverified items and this document adds none. The trial on one developer's machine
   (companion §16, item 2) decides; until then the router, the five instructions and the prompt
   are the surface, and they work on every rung.
 - **MCP on the team's build.** §9.3 is an open question, not a design: whether Visual Studio's
-  agent mode, policy-gated on Copilot Business, can host an MCP server against an Azure DevOps
+  agent mode, gated by the Copilot policy, can host an MCP server against the estate's
   checkout. If not, the verbs are the same verbs on the terminal and the loss is convenience,
   not capability. Cost if yes: about two hundred lines generated from the verb table.
 - **Two repositories drift.** A vendored file edited by hand in the estate repository is
@@ -1626,9 +1626,9 @@ index points at the old file for anything earlier.
   every build so that it can only go down without a decision. A value that cannot name its
   mechanism after a release is either mechanized or removed.
 - **Open questions this document could not settle.** Whether the team's Visual Studio build
-  discovers `.github/skills/` (the pilot). Whether Azure DevOps' Copilot surface reads
+  discovers `.github/skills/` (the trial). Whether Azure DevOps' Copilot surface reads
   `AGENTS.md` (it is generated regardless; it costs nothing). Whether the developers will
-  accept the one business question being asked by a tool rather than a person (the pilot's
+  accept the one business question being asked by a tool rather than a person (the trial's
   conversation cases, judged by the four reviewers). Whether the engine repository and the
   estate repository should merge (companion §16, item 9; this document assumes two).
 
@@ -1679,7 +1679,7 @@ FK Check*, *Refactorlog Cleanup*) stay; only *Naked Rename* is retired, for its 
 | torsor, commuting square, norm, δ, Kleisli, writer, lineage, episode, ledger (the algebra), seam, binding, capability descent, lane descent, plane, estate board, go board, Voice, View, Watch, the register lint (as a script) | nothing; the things are gone; a `Finding` list, a `Delta`, a `Refusal`, `check environments` |
 | skeleton, overlay, pillar 9, operator intent (as a type) | a decision |
 | V2-driver, V2-augmented, R6, the dual track, the fallback ladder, cutover+30 (except in the companion's §14.4) | archived with the cutover |
-| self-test, the rubric, the golden run, the prompt matrix | the proof lane; the pilot |
+| self-test, the rubric, the golden run, the prompt matrix | the proof lane; the trial |
 | perf gate, `Bench.scope`, `PERF_GATE_RECORD`, the baseline | the scale lane; `ledgers/scale-datapoints.md` |
 | `LINT-ALLOW` | nothing; an analyzer suppression carries a justification and is a review comment |
 | the proving ground (in the engine) | the golden project |

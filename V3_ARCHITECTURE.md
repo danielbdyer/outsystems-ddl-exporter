@@ -182,8 +182,8 @@ episode timeline, is a different thing from this business event, and there is no
 was ever run against the real estate.) After the switch there is no upstream to re-derive
 from. The SSDT repository *is* the schema. Every future change is a hand edit to a
 `CREATE TABLE`, made by a mixed-experience OutSystems team, in GitHub Copilot inside Visual
-Studio on Windows, promoted through Azure DevOps into Octopus with `BlockOnPossibleDataLoss`
-permanently on.
+Studio on Windows, promoted through the CI pipeline and the deployment tool with
+`BlockOnPossibleDataLoss` permanently on.
 
 v2 responded with two things that are not projections at all:
 
@@ -263,11 +263,12 @@ assembled from `KICKOFF.md`, `V2_PRODUCTION_CUTOVER.md`, `THE_USE_CASE_ONTOLOGY.
   `IDENTITY_INSERT`, sink-resident progress tables) and *managed DML-only* cloud environments
   (no DDL, the sink mints keys). v2 measured 3.5 million rows in flight at the time of writing
   and sized for ~200 million.
-- **Consumers beyond the app**: an SSIS team that maps a legacy database against the published
-  schema each sprint (their contract is a per-release changelog and the refactorlog, §8.10); Change Data Capture running in production with features that depend on
-  it (a spurious change record is a real defect, which is why "CDC-silence on idempotent
-  redeploy" was v2's highest-stakes guarantee); user identities (`CreatedBy`/`UpdatedBy`) that
-  must be re-keyed per environment.
+- **Consumers beyond the app**: SSIS packages whose maintainers map a legacy database against the
+  published schema each sprint (their contract is a per-release changelog and the refactorlog,
+  §8.10); Change Data Capture running in production with features that depend on it (a spurious
+  change record is a real defect, which is why "CDC-silence on idempotent redeploy" was v2's
+  highest-stakes guarantee); user identities (`CreatedBy`/`UpdatedBy`) that must be re-keyed per
+  environment.
 
 - **The second half of every change.** OutSystems still owns the logical model. After a column
   lands in a database, the application cannot see it until someone opens Integration Studio,
@@ -317,12 +318,11 @@ file calls a named risk. Pinning is an afternoon's work and has been open for th
 
 ### 2.3 The people
 
-Four people review pull requests and no one else does: three senior developers fluent in SQL
-and OutSystems who have never used SSDT, and one principal fluent in SSDT who was out of office
-during the initial cutover window. A dev lead is the one approver class (the principal tier was
-retired on 2026-08-28). The team develops in GitHub Copilot inside Visual Studio on Windows,
-against the Azure DevOps repository. They do not use Claude Code. Their machines may not have
-Docker; the hosted build agents have LocalDB.
+Four people review pull requests and no one else does: developers fluent in SQL and OutSystems,
+most of whom have never used SSDT; SSDT fluency cannot be assumed on any given change. A dev
+lead is the one approver class. The team develops in GitHub Copilot inside Visual Studio on
+Windows, against the estate repository. They do not use Claude Code. Their machines may not
+have Docker; the hosted build agents have LocalDB.
 
 This paragraph is the most important one in the document for sizing. Every layer of prose an
 agent must traverse on a Windows laptop with a modest context budget is a failure point. The
@@ -1790,7 +1790,7 @@ same check locally before pushing. In order:
    and a mismatch is a finding (the machine checks the shape; the human reads the rest).
 5. `changelog.json`: the delta between base and head as data (tables and columns added,
    removed, renamed with their refactorlog keys, and retyped), the release tag, and the open
-   lag windows that touch it. This is the contract the SSIS team maps against each sprint;
+   lag windows that touch it. This is the contract the SSIS maintainers map against each sprint;
    v2 owned it as `ChangeManifest`, and the gate is where it is produced now.
 6. `gate.json` with the verdict, the collision check, and the record diff; exit 0 clean, 3
    blocked (the pull request must carry its two-release shape), 9 collision, else tooling.
@@ -1876,7 +1876,7 @@ register lint fold into `record.md` (one page beside the template, as the review
 | Removed | Lines | Why |
 |---|---:|---|
 | `ENABLEMENT_PROGRAM.md`, `ASSESSMENT_2026_08_24.md`, `ARCHITECTURE_REVIEW_2026_08_28.md`, `PHASE_2_CURRICULUM.md`, `HANDOFF_SESSION_2026_08_26.md`, `ACCELERANT_PLAN.md`, `CONNECTORS.md`, `PROVING_PATH_WINDOWS.md` (`PORTABILITY.md` is kept and moves to `knowledge/`) | ~2,400 | program history; archived with v2; the review itself said this literature "no schema-change session will ever read" |
-| `self-test/` (protocol, 983-line prompt matrix, rubrics, golden runs) | ~2,400 | the nightly proof lane over the sample records discharges the regression duty; conversation quality is judged in the pilot, not by a rubric an agent can game from adjacent files |
+| `self-test/` (protocol, 983-line prompt matrix, rubrics, golden runs) | ~2,400 | the nightly proof lane over the sample records discharges the regression duty; conversation quality is judged in the first trial, not by a rubric an agent can game from adjacent files |
 | 38 of the 50 `sample-prs/` (46 top-level, four compound) | ~2,800 | a gallery where a dozen teach the same shapes; the 45 remain as *data* for the proof lane (§10), not as prose |
 | `scripts/*.mjs` | 1,875 | `prove.mjs` → `estate prove`; `bake.mjs` → `estate twin bake/restore`; `inflight-check.mjs` → `estate check inflight` (~80 lines: it takes the touched tables from the delta, not from regexing the SQL, and normalises schema, brackets and case against `ledgers/in-flight.md`); `ssdt-agent-gates.mjs` → three tests in `Io.Tests` (citations resolve; op count = sample-record count = proof-lane facts; register rules hold on `samples/`); `ssdt-agent-package.mjs` → `estate knowledge package` (generate the Copilot bundle and `.claude/` pointers) |
 | `proving-ground/` as a hand-authored SSDT project | ~1,300 | the golden schema in `tests/Golden/` is the proving ground; `estate emit` produces the project; the Twin fills it |
@@ -1928,13 +1928,13 @@ template for GitHub and Azure DevOps. The degradation ladder (Visual Studio 2026
 discovered skills; 18.4 with agents plus the index; 2022 with prompt files; ask-only) is kept
 because it matches what ships.
 
-The bundle is generated into a *different* repository (the team's Azure DevOps project), so the
+The bundle is generated into a *different* repository (the estate repository), so the
 contract is stated: the bake lane runs `estate knowledge package` on every merge to `main`,
 publishes the bundle as a fingerprinted artifact, and opens a pull request against the estate
 repository when the fingerprint moved. Nobody hand-edits the copy; a drifted copy is a failed
 check, not a mystery.
 
-The pilot the August review put first ("run it on one champion laptop; nothing in the
+The trial the August review put first ("run it on one developer's machine; nothing in the
 packaging is verified on the team's actual build") is still the first thing to do. §16 lists
 it as the operator decision it is.
 
@@ -2036,10 +2036,10 @@ tooling failure. The template `pipelines/ssdt-agent-pr-validation.yml` is the mo
 the same steps with the scripts replaced by verbs.
 
 The PR gate also publishes `changelog.json` (§8.10) as a pipeline artifact on every green run,
-so the SSIS team's per-sprint mapping has a machine-readable source that names renames by
+so the SSIS maintainers' per-sprint mapping has a machine-readable source that names renames by
 refactorlog key. During a two-release window the changelog carries both the shape the model
 declares and the shape the database holds, marked, because for one release they disagree and
-the SSIS team must know which one they are mapping.
+the SSIS maintainers must know which one they are mapping.
 
 ### 10.4 What the lanes do not do
 
@@ -2136,7 +2136,7 @@ lines, trimmed to ~3,400), the six shared skills (750), `FINDINGS_AND_CHANGES.md
 page), the eight ledgers (272 lines, plus `cdc-tracked.md`), `PORTABILITY.md` (94), the PR
 template (87), and the pipeline template. Simplified: three agents (743) → two skills; four
 review skills (495) → one; 50 sample pull requests (3,755) → a dozen; `self-test/` (2,493) → a
-handful of conversation cases in the pilot's notes; the gates and packager (1,052 lines of
+handful of conversation cases in the trial's notes; the gates and packager (1,052 lines of
 JavaScript) → three tests and one verb. Deleted: `skills/operations/` (381, a second index over
 an index), and the nine program documents §9.2 names (~2,500), of which
 `ARCHITECTURE_REVIEW_2026_08_28.md` is read once more (it is v3's brief) and then archived.
@@ -2301,7 +2301,7 @@ produce the schema v1's `model.edge-case.json` describes.
 | 1 | `kernel/`: `Identity`, `SqlType`, `Schema`, `Statement` (verbatim), `Delta`, `Order`, `Decide`, `Evidence`, `Synth`, `Record`. Port v2's kernel tests to C# first (they are the specification; `CatalogDiffTests` alone is 54 facts), then the types, then the functions. Port the decision tables and σ with their property tests, and add σ's golden fixture (v2's minted rows at one seed) so a drifting port fails law 11 on day one; write the twelve laws' kernel halves. | laws 1, 4, 5, 6, 7, 11 (kernel halves); the tightening matrix test from v1 as a table | — |
 | 2 | `io/Render` (verbatim from `ScriptDomBuild`+`Render`) and `io/Emit`; `estate emit`; `estate diff`. | oracle 1 (byte-identity against v2's emitter on the golden); law 3 on the estate | a bundle they can diff against their repository |
 | 3 | `io/Ssdt` (DacFx `TSqlModel` read), `io/SqlServer` (read-side + profiler), `io/Ossys` (if it survives §16's first decision); `estate read`, `estate profile`, `estate decide`. | oracle 3; oracle 4; law 2 | `check drift` becomes possible |
-| 4 | `io/Publish`; `estate prove`. Retire `prove.mjs`. | oracle 2 (the 45 verdicts); laws 8, 9, 10 | **the verdict as a verb** — the pilot can run |
+| 4 | `io/Publish`; `estate prove`. Retire `prove.mjs`. | oracle 2 (the 45 verdicts); laws 8, 9, 10 | **the verdict as a verb** — the trial can run |
 | 5 | `io/Twin` (from `Twin.Runtime`); `estate twin *`. Retire `bake.mjs`, the Twin CLI, `proving-ground/`. | law 11, 12; the Twin's five laws as `Io.Tests` | **the pulled substrate**; the bake lane |
 | 6 | `knowledge/`: fold agents into `authoring.md`/`reviewing.md`; trim ops; `record.md`; `samples/` to a dozen; `estate knowledge package`. Retire the gates/packager scripts; three tests replace the gates. The proof lane moves to v3. The bake lane starts publishing the Copilot bundle to the estate repository by pull request (§9.4). | the proof lane green on v3; the Copilot bundle regenerated byte-identically to the last v2 bundle except for verb names | the Copilot bundle |
 | 7 | `estate check` (drift, environments, outsystems, evidence, inflight); `estate record`; the PR gate template. Retire `inflight-check.mjs`. | the PR gate runs on a real pull request against the estate | **the gate** |
@@ -2333,7 +2333,7 @@ new work lands there.
 v2 keeps running its own CI from the archive until step 6, so at any point before that the
 team's actual workflow (the tree, `prove.mjs`, the Twin CLI) is untouched. Steps 4 and 5 are
 the two that change what the team runs; each ships with the old script kept for one release
-as a fallback that prints a deprecation line. If the pilot (§16) fails on Copilot's
+as a fallback that prints a deprecation line. If the trial (§16) fails on Copilot's
 instruction-following against the new bodies, the fallback is the old bundle, regenerated from
 the archive.
 
@@ -2466,8 +2466,9 @@ as the specification (§6.6).
    package pin starts at 162.5.57, every record re-stamps its engine, and the first act after
    the pin is one real publish with `is_not_trusted` read back. An afternoon on the right
    machine; open for three weeks.
-2. **Run the Visual Studio Copilot pilot on one champion laptop.** Nothing in the packaging has
-   run on the team's actual build; the review called it the riskiest assumption in the system.
+2. **Run the first Visual Studio Copilot trial on one developer's machine.** Nothing in the
+   packaging has run on the team's actual build; the review called it the riskiest assumption in the
+   system.
    *Moves:* whether `knowledge/` is the product's front door or an artifact only a monorepo agent
    reads; which rung of the degradation ladder the team lands on; whether `authoring.md` at one
    skill is followed or ignored by Copilot's skill discovery. *Default assumed:* the 18.4 rung
@@ -2491,7 +2492,7 @@ as the specification (§6.6).
 5. **Who are the dev leads?** `estate/reviewers.md` has two rows that read "fill in at the Dev
    cutover"; its own rule is that at least one available row must exist for the estate to ship;
    no self-approval at any seniority with a pool of four means a lead's own change needs the
-   other lead; and the one SSDT-fluent person was out during the cutover window. *Moves:*
+   other lead; and SSDT fluency cannot be assumed on any given change. *Moves:*
    whether the PR gate (§10.3) is a convenience or the substitute for reviewer expertise. It is
    the latter until the roster is data. *Default assumed:* the gate is load-bearing and the
    register page is written for a reviewer who knows SQL and is new to SSDT.
@@ -2518,7 +2519,7 @@ as the specification (§6.6).
    *Moves:* whether the substrate is distribution-faithful or schema-derived. *Default assumed:*
    the derived floor until the import runs, and the bake lane refuses to label an artifact
    "faithful" until it has.
-9. **One repository or two?** The Copilot bundle is generated into the team's Azure DevOps
+9. **One repository or two?** The Copilot bundle is generated into the estate
    repository. *Moves:* §9.4's packager-by-pull-request contract versus a monorepo where the
    bundle is a build output. *Default assumed:* two repositories and the contract as stated.
 10. **Retire or retain v1 warm.** The standing commitment is "V1 stays warm through cutover+30
@@ -2587,7 +2588,7 @@ as the specification (§6.6).
   design and has no rows; `in-flight.md` has none.
 - Were the 41 nightly facts ever run against a Twin minted from real Dev evidence rather than
   the proving ground's seed? (Item 8.)
-- Does the SSIS team map from the model or from the database during a two-release window? The
+- Do the SSIS maintainers map from the model or from the database during a two-release window? The
   changelog (§8.10) carries both shapes so that either answer works, but the question should be
   asked once.
 
@@ -2856,7 +2857,7 @@ names where the surviving capability lives (§6, §7, §8).
 | `CatalogDiff.fs` (`ChannelDiff<'change>`, nine `AttributeFacet`s, `norm`) | 1,096 | `diff`, `compare`, rename detection, refactorlog, estate, `ChangeManifest`; the only typed change representation in either generation | KEEP-SIMPLIFIED | `Delta` (§7.6), v3's centre; the facet list re-checked for `Description` and `Order`, which a roll-up suspected undiffed |
 | `Episode.fs`; `Lifecycle.fs`; `Ledger.fs` | 279; 193; 124 | the pre-eject provenance timeline | RETIRE-AFTER-EJECT | git is the timeline |
 | `DataObservation` (CDC capture count) | in `Episode.fs` | CDC-silence is the estate's highest-stakes guarantee | KEEP-SIMPLIFIED | law 8's check in the lanes |
-| `ChangeManifest.fs` | 99 | the SSIS team's per-sprint changelog | KEEP-SIMPLIFIED | `changelog.json` from `estate gate` (§8.10) |
+| `ChangeManifest.fs` | 99 | the SSIS maintainers' per-sprint changelog | KEEP-SIMPLIFIED | `changelog.json` from `estate gate` (§8.10) |
 | `Migration.fs` | 249 | the inexpressible-`ALTER` refusal (exit 9) is real; DacFx ships the ALTER | KEEP-SIMPLIFIED | a predicate on `Delta` |
 | `Tolerance.fs` (`ToleratedDivergence`, `@ladder` tags) | 458 | "retiring a variant deletes its tag, so the generator auto-flips the axis" is the honesty mechanism §15.4 copies | KEEP-SIMPLIFIED | a named-divergence list in law 2's test; the tag idea in `LAWS.md`'s generator |
 | `CanaryResidual.fs` | 79 | the canary's diff-after-quotient | KEEP | law 2 |
@@ -2882,7 +2883,7 @@ names where the surviving capability lives (§6, §7, §8).
 | `SsdtDdlEmitter.fs` | 1,552 | per-kind driver plus overlay application | KEEP-SIMPLIFIED | `io/Emit`, ~850 |
 | `SsdtBundle.fs`; `PostDeployEmitter.fs`; `BatchSplitter.fs`; `PhysicalSchemaReader.fs`; `DataStatementArgs.fs` | 78; 75; 182; 178; 147 | the bundle map; the seed is a permanent surface (F15); GO handling; AST-side readback | KEEP | `io/Emit`, `io/Ssdt` |
 | `SqlprojEmitter.fs` | 131 | post-eject the `.sqlproj` is hand-owned; generating it overwrites the team's edits | RETIRE-AFTER-EJECT | nothing |
-| `ApplyRunbookEmitter.fs` | 86 | an operator checklist for a manual apply; Octopus applies | RETIRE-AFTER-EJECT | the record's after-deploy section |
+| `ApplyRunbookEmitter.fs` | 86 | an operator checklist for a manual apply; the deployment tool applies | RETIRE-AFTER-EJECT | the record's after-deploy section |
 | `RefactorLogEmitter.fs`; `RefactorLogRender.fs` | 567; 200 | the only thing that makes a rename keep its data; UUIDv5 keys | KEEP | `io/Emit`; `emit --refactorlog` |
 | `ManifestEmitter.fs` (+ 17 `PredicateName` variants, coverage) | 1,080 | the only consumer of the four advisory passes; reports coverage of an export nobody performs | DELETE | nothing |
 | `SchemaMigrationEmitter.fs` | 451 | the closest v2 gets to "show me what this change does"; DacFx's script is authoritative | KEEP-SIMPLIFIED | the expectation `prove` prints beside DacFx's script |
@@ -2934,7 +2935,7 @@ names where the surviving capability lives (§6, §7, §8).
 | `FidelityCompareRun.fs`; `FidelityProofCache.fs`; `ProofManifest.fs` | 1,110; 200; 201 | proves a transfer moved rows faithfully | RETIRE-AFTER-EJECT | nothing |
 | `Deploy.fs` + `DeployParallelism`/`Feasibility`/`ConnectionString` | 1,303 + 458 | the heart of `prove`; one of two proving mechanisms (§10.2) | KEEP-SIMPLIFIED | `io/Publish`, ~850 |
 | `Preflight.fs` | 856 | the CDC-readiness gate is permanent; the rest is migrate-era | KEEP-SIMPLIFIED | ~200 |
-| `MigrationRun.fs`; `FullExportRun.fs` | 1,000; 326 | Octopus migrates; nothing is exported | RETIRE-AFTER-EJECT | nothing |
+| `MigrationRun.fs`; `FullExportRun.fs` | 1,000; 326 | the deployment tool migrates; nothing is exported | RETIRE-AFTER-EJECT | nothing |
 | `RunSpine.fs`; `Run.fs`; `RunLedger.fs`; `RunHistory.fs`; `RunEnvelope.fs` | 470; 357; 134; 47; 101 | a compiler-checked stage arc for 46 run kinds; v3 has thirteen verbs | DELETE | the pull request is the record |
 | `LifecycleStore.fs`; `EjectRun.fs`; `ApprovalStore.fs`; `ReportRun.fs` | 611; 60; 153; 200 | `seal`, `seal approve`, `report` | RETIRE-AFTER-EJECT | git tags and the changelog |
 | `EventProjection.fs`; `LogSink.fs`; `NoticeSink.fs`; `BenchSink.fs` | 284; 1,104; 73; 75 | NDJSON events for a board; `LogSink.fs` is the ninth-largest file in the repository | DELETE | a progress line |

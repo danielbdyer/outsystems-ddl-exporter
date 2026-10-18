@@ -19,12 +19,12 @@ E the spike code · F the budget by file.
 **Build the lifecycle first, on .NET 10, in eight milestones and one optional wing.** The critical
 path is about thirteen working days with four agent lanes running at once, and about twenty where a
 workflow runs two agents at a time, as on a 4-CPU container. The first useful thing lands on day
-three: one command, read-only, says whether Dev matches the repository at a tag. Prediction lands
-on day five, the Twin on day six (at branch volume; shape volume on day eight), proof on day nine,
-the gate on day eleven, and the after-deploy checks with the status page on day thirteen. The
-knowledge tree and the agent surfaces are rebuilt in a parallel lane that closes with the Copilot
-pilot. The cutover wing (`emit`, `decide`, `move`, and the full OSSYS reader) stays in v2, frozen
-and buildable, until Prod is cut over; then the operator ports it or deletes it.
+three: one command, read-only, says whether Dev matches the repository at a tag. Prediction lands on
+day five, the Twin on day six (at branch volume; shape volume on day eight), proof on day nine, the
+gate on day eleven, and the after-deploy checks with the status page on day thirteen. The knowledge
+tree and the agent surfaces are rebuilt in a parallel lane that closes with the first Copilot trial.
+The cutover wing (`emit`, `decide`, `move`, and the full OSSYS reader) stays in v2, frozen and
+buildable, until Prod is cut over; then the operator ports it or deletes it.
 
 **Few lines, by one rule: read whole, bind late.** Every surface v3 touches already describes
 itself. DacFx models every SQL object as a type with named properties and relationships, and it
@@ -85,7 +85,7 @@ first tests.
 What was *not* measured, and is therefore M1's first work: the same build on `windows-latest` and
 on a team laptop; a project that references `master.dacpac` (the tool folder must then carry the
 system dacpacs); the estate's 300-table project for time; the same read-only calls against Dev
-under the developers' Active Directory group; the profile the Octopus step actually applies; and
+under the developers' directory group; the profile the Octopus step actually applies; and
 the SQL Server version the environments run, which the pinned image must match.
 
 ---
@@ -115,9 +115,9 @@ the SQL Server version the environments run, which the pinned image must match.
    A `Copy` has no public constructor: only `io/Substrate` makes one, for a database it created
    locally and recorded in `.estate/copies.json`, and `copy:<name>` resolves only against that
    registry. Only a `Copy` has a publish method; the Permissive profile can be constructed only for
-   a `Copy`; the probe executor for a named environment accepts only the allowlist. "Only Octopus
-   writes" and "Permissive only on a copy" are compile-time facts with one test each, not rules an
-   agent must remember.
+   a `Copy`; the probe executor for a named environment accepts only the allowlist. "Only the
+   deployment tool writes" and "Permissive only on a copy" are compile-time facts with one test
+   each, not rules an agent must remember.
 
 ### 2.2 The surface register
 
@@ -314,7 +314,7 @@ the calendar to about twenty working days.
 | B · io and SQL | 0.4, 0.7 | 1.1, 1.2, 1.4, 1.6, 1.7 | 2.2, 2.3, 2.5 | 3.4 | 4.1, 4.3, 4.5 | 5.2, 5.4 | 6.1, 6.3 |
 | T · σ and the Twin | 0.3 (with A) | 3.1, 3.2, 3.3 | 3.3 | 3.5 | 3.6, 3.7 | — | — |
 | C · words, corpus, CI | 0.1, 0.5, 0.6 | 1.8, 7.1 | 2.6, 7.2 (`record.md` first) | 7.2 | 4.4 | 5.3, 7.3 | 6.4, 7.4 |
-| Lands | — | drift (day 3) | predict (day 5) | the Twin at branch volume | shape volume (day 8), proof (day 9) | the gate (day 11) | the page, the pilot (day 13) |
+| Lands | — | drift (day 3) | predict (day 5) | the Twin at branch volume | shape volume (day 8), proof (day 9) | the gate (day 11) | the page, the trial (day 13) |
 
 **What lights up when.**
 
@@ -331,7 +331,7 @@ the calendar to about twenty working days.
 | Pull request and gate | the branch policy runs `estate gate`; a developer can run it first | M5 |
 | Review | read the evidence table; `estate gate` to reproduce | M5 |
 | Before the deploy | `estate check drift --at <the tag deployed now>` stops a release into a drifted environment | M6 |
-| Promote | Octopus, unchanged | — |
+| Promote | the deployment tool, unchanged | — |
 | Converged | `estate check drift` as the post-deploy step, or a lead's command | M6 (the verb at M1) |
 | Refreshed; consumers republished | `estate check outsystems` | M6 |
 | In sync, at a glance | the wiki page from `estate check environments --page` | M6 |
@@ -363,8 +363,8 @@ first; and a published tool folder that already builds a classic project.
 | S3 | Do `Script`, `LoadFromDatabase` and a probe run against Dev as the developers' group, and how long does `LoadFromDatabase` take there? | a developer's laptop | `STATE.md`; `estate/ledgers/toolchain.md` | M1 exit 1 |
 | S4 | How long does a restore of a shape-volume Twin take at the estate's size, in the container and in LocalDB? | engine CI; a laptop | a decision line | WP 3.4 |
 | S5 | Which OutSystems 11 metamodel tables and columns hold consumer references and publish times? | Dev's platform database, read-only | `io/Ossys`'s allowlist and SQL | WP 6.1 |
-| S6 | Do the laptops and the hosted agents have the .NET 10 SDK and Docker? | the corporate agent's `STATE.md` | §17 item 7 | building on the estate |
-| S7 | Which profile and which engine does the Octopus step apply? | the Octopus project's settings, read by release engineering | `estate/profiles/pipeline.publish.xml` (options only); the toolchain row | M4 exit 4's meaning; §17 items 1 and 15 |
+| S6 | Do the laptops and the hosted agents have the .NET 10 SDK and Docker? | the backport agent's `STATE.md` | §17 item 7 | building on the estate |
+| S7 | Which profile and which engine does the Octopus step apply? | the Octopus project's settings, read by whoever owns the deployment step | `estate/profiles/pipeline.publish.xml` (options only); the toolchain row | M4 exit 4's meaning; §17 items 1 and 15 |
 | S8 | Which SQL Server version and compatibility level do Dev, QA and UAT run? | each environment, read-only (`SELECT @@VERSION`; `sys.databases.compatibility_level`) | the pinned image's tag and digest in the toolchain row | WP 3.4's pin; §17 item 19 |
 
 **Exit.**
@@ -604,16 +604,16 @@ minutes, and posts the table.
 
 **Watch for.** The hosted image's LocalDB start and the ten-minute budget at the estate's size.
 The branch tier mints in seconds, so the builds and the publishes are the long pole. How the tool
-folder crosses into the corporate network is §17's item 14, and LFS on the estate (item 4) gates
+folder crosses into the estate's network is §17's item 14, and LFS on the estate (item 4) gates
 exit 4 there.
 
 ---
 
 ## 12. M6 — After deploy (days 12–13)
 
-**Outcome.** Before Octopus deploys, one read-only step says whether the environment still
-matches what was last deployed. After it deploys, the same step says whether it converged. After
-someone refreshes the extension in Integration Studio and republishes the consumers in Service
+**Outcome.** Before the deployment tool deploys, one read-only step says whether the environment
+still matches what was last deployed. After it deploys, the same step says whether it converged.
+After someone refreshes the extension in Integration Studio and republishes the consumers in Service
 Studio, one read-only check says so, entity by entity. One generated page in the wiki shows every
 environment at once, and says *in sync* only when all four are true.
 
@@ -657,7 +657,7 @@ last.
 | 7.1 | Citations rewritten: findings by identifier, samples by shape, handbook by title, ledgers by their new path (`knowledge/ledgers/` for the templates the engine seeds; `estate/ledgers/` for the estate's own). | the citation test is green at every commit |
 | 7.2 | `knowledge/`, with `record.md` first (by day 5, because WP 5.1 reads it): then `README.md`, `authoring.md` (S0 to S8, each with its verb), `reviewing.md`, the operations with their `recognize:` blocks (moved from `tests/Golden/patterns/`; the classifier reads whatever files exist), the shared reasoning, `findings.md`, twelve samples, the ledger templates (with `cdc-tracked.md`), the eight handbook chapters. The entry skill's first step is the compound check (R28). The router's rule when `estate` is absent: stop, author the change, open the pull request marked *provisional*, and let the gate prove it (R27). | the knowledge budgets hold (≤ 11,000 lines; ≤ 90 per operation) |
 | 7.3 | `io/Knowledge` and the verb `knowledge package --check`, driven by `knowledge/targets.json`: the Copilot router, five path-scoped instructions, two agents, one prompt, the skills index, the two schema pull-request templates, and the `.claude/` pointers. `knowledge vendor` (WP 5.4) carries the generated bundle to the estate. | `knowledge package --check` is clean; the instruction tests are green (Appendix D) |
-| 7.4 | The pilot: one champion laptop, the vendored bundle, one real change from intent to pull request, and one compound request, which must come back as an ordered list of pull requests with the reason for the order (R28). The rung that held is a decision line. | the decision line exists |
+| 7.4 | The trial: one developer's machine, the vendored bundle, one real change from intent to pull request, and one compound request, which must come back as an ordered list of pull requests with the reason for the order (R28). The rung that held is a decision line. | the decision line exists |
 
 **Exit.** `estate knowledge package --check` is clean; every instruction test is green; the first
 vendoring pull request is merged in the estate; and a new developer, given only the clone, takes a
@@ -686,14 +686,14 @@ same `io/Write`. If no consumer exists, the wing leaves the archive's CI and sta
 
 ---
 
-## 15. The estate side: how v3 reaches the corporate repository
+## 15. The estate side: how v3 reaches the estate
 
-v3 is built in this repository. It is used in the corporate one, where a backported v2 is being
+v3 is built in this repository. It is used in the estate repository, where a backported v2 is being
 extended to the lifecycle today under `LIFECYCLE_BACKPORT_PROMPT.md`. The two meet through the
 requirements, not through code.
 
 1. **Ejected engine, embedded tool.** The engine is built here and ejected from the estate: its
-   source, its tests and its CI never enter the corporate repository. What the estate embeds is the
+   source, its tests and its CI never enter the estate repository. What the estate embeds is the
    published tool folder, two shims and the generated knowledge bundle, committed by one vendoring
    pull request per version. Whether the two repositories should become one is the operator's
    decision (§17 item 13); if they merge, the vendoring step becomes a build output and nothing else
@@ -715,7 +715,7 @@ requirements, not through code.
    is absent and never overwrites (M5's test); the verbs that propose a change to one (`profile`,
    `check cdc`, a new tool version's toolchain row, the line-ending lines) do it as a commit on a
    new branch, for review.
-6. **The corporate agent's `STATE.md`** answers S1, S3, S5, S6, S7 and S8 on its first day. Those
+6. **The backport agent's `STATE.md`** answers S1, S3, S5, S6, S7 and S8 on its first day. Those
    are the facts this repository cannot measure (§1's last paragraph).
 
 ---
@@ -752,23 +752,23 @@ requirements, not through code.
 
 | # | Decision or prerequisite | Owner | Gates | Default assumed, so no milestone waits |
 |---|---|---|---|---|
-| 1 | The engine version of the Octopus publish step, pinned (S7) | release engineering | M1 exit 6's window; M4's meaning | commit DacFx 170.5.96, the current release, on which §1 was re-measured and whose family F9's auto-trust ran on; every receipt stamps it; the ledger row stays `UNPINNED` and every receipt says so |
+| 1 | The engine version of the Octopus publish step, pinned (S7) | whoever owns the deployment step | M1 exit 6's window; M4's meaning | commit DacFx 170.5.96, the current release, on which §1 was re-measured and whose family F9's auto-trust ran on; every receipt stamps it; the ledger row stays `UNPINNED` and every receipt says so |
 | 2 | The environment classification, confirmed by a named lead with a date | the dev leads | vocabulary in the evidence (WP 3.7) | every environment `real`: counts only, and `--vocabulary` refused, until the confirmation is committed |
-| 3 | Read access per cohort, and read on the metamodel's allowlisted tables | the owners of the AD groups | M1 exit 1; M2 exit 2; M6 | developers already read Dev; the leads' metamodel access is requested on day one |
-| 4 | Git LFS enabled on the estate | the Azure DevOps administrator | M5 exit 4 on the estate, and nothing else | the rest of M5 runs on the engine repository and a scratch estate |
-| 5 | The gate registered as a branch policy | the Azure DevOps administrator | M5 exit 1 | the gate is queued by hand on a pull request until then |
+| 3 | Read access per cohort, and read on the metamodel's allowlisted tables | the owners of the directory groups | M1 exit 1; M2 exit 2; M6 | developers already read Dev; the leads' metamodel access is requested on day one |
+| 4 | Git LFS enabled on the estate | the git host's administrator | M5 exit 4 on the estate, and nothing else | the rest of M5 runs on the engine repository and a scratch estate |
+| 5 | The gate registered as a branch policy | the git host's administrator | M5 exit 1 | the gate is queued by hand on a pull request until then |
 | 6 | One dev lead for evidence refreshes and QA and UAT predictions | the operator | M2 exit 2; M3 exit 4 | the operator |
-| 7 | The .NET 10 SDK and Docker on every laptop and hosted agent (S6) | IT; the corporate agent's `STATE.md` | building a `.sqlproj` there, and so every verb that builds | `estate doctor` names a missing SDK with its remedy; without Docker, LocalDB is the substrate and CDC reads *not provable here* |
-| 8 | The Visual Studio Copilot pilot | the operator and one champion | M7's exit | the 18.4 rung (`V3_ARCHITECTURE.md` §16.1, item 2) |
+| 7 | The .NET 10 SDK and Docker on every laptop and hosted agent (S6) | whoever manages the machines; the backport agent's `STATE.md` | building a `.sqlproj` there, and so every verb that builds | `estate doctor` names a missing SDK with its remedy; without Docker, LocalDB is the substrate and CDC reads *not provable here* |
+| 8 | The first Visual Studio Copilot trial | the operator and one developer | M7's exit | the 18.4 rung (`V3_ARCHITECTURE.md` §16.1, item 2) |
 | 9 | The wing: will the reverse leg run, and will anything re-emit from OSSYS | the operator | W; M8 | frozen in the archive; no port |
 | 10 | Which tables CDC captures, per environment | the dev leads | M2's CDC finding; M4's CDC proofs | `check cdc` proposes the ledger on day five; CDC proofs run on the Docker substrate (§1 fact 12) |
 | 11 | Prod's counts before its first release | the operator | the page's Prod row; any prediction for Prod | Prod greyed; `estate profile --env prod --counts` before its first release |
 | 12 | The reviewers roster | the operator | nothing in code; the gate is load-bearing until the roster is data | `V3_ARCHITECTURE.md` §16.1, item 5 |
 | 13 | One repository or two | the operator | the vendor contract | two (§15 item 1) |
-| 14 | How the tool folder crosses into the corporate network | the operator and IT | WP 5.4 on the estate | a person copies the published folder into a pull request |
-| 15 | The profile the Octopus step applies, committed as the estate's one `.publish.xml` (options only) (S7) | release engineering | the meaning of every proof, the drift oracle and law 10 | the proving ground's Pipeline profile, stripped of its connection string; every receipt reads *profile not verified against the Octopus step* |
+| 14 | How the tool folder crosses into the estate's network | the operator and whoever manages the machines | WP 5.4 on the estate | a person copies the published folder into a pull request |
+| 15 | The profile the Octopus step applies, committed as the estate's one `.publish.xml` (options only) (S7) | whoever owns the deployment step | the meaning of every proof, the drift oracle and law 10 | the proving ground's Pipeline profile, stripped of its connection string; every receipt reads *profile not verified against the Octopus step* |
 | 16 | Declared bytes: the estate's `.gitattributes` and `.editorconfig` lines for its SSDT files | the dev leads | M5 exit 5 (R24) | WP 5.4 proposes lines matching what the files carry; the oracle's exactness on Windows waits for the merge |
-| 17 | A service account holding every cohort's read access and the metamodel's, for a self-hosted agent | the owners of the AD groups | the gate predicting QA and UAT itself (the backport prompt's prerequisite 7) | the lead's pasted block is the prediction of record |
+| 17 | A service account holding every cohort's read access and the metamodel's, for a self-hosted agent | the owners of the directory groups | the gate predicting QA and UAT itself (the backport prompt's prerequisite 7) | the lead's pasted block is the prediction of record |
 | 18 | The first real Dev deploy of a declarative foreign key, read back | the team, at their next such change | turns law 10 from a copy's fact into the estate's | `check drift` and the trust probe after that deploy; the result recorded in `knowledge/findings.md` with its receipt |
 | 19 | The SQL Server version and compatibility level the environments run (S8) | the dev leads | the pinned image's tag | SQL Server 2022 (`mcr.microsoft.com/mssql/server:2022-latest`, pinned by digest) until S8 answers |
 
@@ -820,7 +820,7 @@ has no operations. `LoadFromDatabase` runs as that login. The property walk find
 nothing else. The report stays coarse. The profile loads as options. A clean foreign key lands
 trusted, and lands untrusted with validation off. When it is green on both CI operating systems, M0
 has begun, and every measured fact in §1 is a test instead of a sentence. Then send S3, S6, S7 and S8
-to the corporate agent as the first four questions in its `STATE.md`.
+to the backport agent as the first four questions in its `STATE.md`.
 
 ---
 
@@ -845,7 +845,7 @@ the prompt's own check, so the mapping holds for the backport and for v3 alike (
 | R12 | the baseline verified against Dev, and drift carried on every result | M1, M2, M3, M4 | M1 exit 1; WP 3.5; M2 exit 1; M4 exit 1 |
 | R13 | the engine pinned, windowed, stamped; trust read back | M1, M4 | M1 exit 6; M4 exit 4; §17 item 18 |
 | R14 | read-only by construction; a log of the whole run | M1, M2 | M1 exits 1, 8; M2 exit 3 |
-| R15 | only Octopus writes; Permissive only on a copy | M1, M4 | M1 exit 5; M4 exit 5 |
+| R15 | only the deployment tool writes; Permissive only on a copy | M1, M4 | M1 exit 5; M4 exit 5 |
 | R16 | no credentials; refusals explained; the whole chain searched | M1, M2, M5 | M1 exit 7; M2 exits 2, 4; M5 exit 6 |
 | R17 | the gate reproduces from git alone, with the pinned SQL Server image as the one fetch | M5 | M5 exit 1 |
 | R18 | the evidence table; placeholders and banned words refused | M5 | M5 exit 2 |
