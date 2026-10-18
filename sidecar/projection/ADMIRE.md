@@ -529,7 +529,7 @@ Three plausible V2 shapes:
 
 I lean (3) for V2 — gain ubiquitous-language alignment, gain
 type-safety on rationales, keep the "tighten + remediate" expressivity
-V1 needs. **Surface for Danny's call.**
+V1 needs. **Surface for the operator's call.**
 
 **Threshold configuration:**
 

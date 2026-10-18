@@ -88,7 +88,7 @@ let ``AC-X6: eject round-trips through the durable store`` () =
     finally
         if System.IO.File.Exists path then System.IO.File.Delete path
 
-// -- ReportRun (THE_CLI.md §8 / F4) — the migration-team change bundle -------
+// -- ReportRun (THE_CLI.md §8 / F4) — the migration change bundle -------
 
 [<Fact>]
 let ``ReportRun: the change series is one manifest per recorded edge`` () =

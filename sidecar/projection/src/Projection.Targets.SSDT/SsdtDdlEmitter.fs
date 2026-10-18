@@ -5,12 +5,12 @@ open Projection.Core.Passes
 
 /// Π_SSDT-DDL — chapter 4.1.A substantive deliverable. The production-
 /// deployment SSDT DDL emitter (sibling Π) that complements the DACPAC
-/// fast-iteration emitter (chapter 3.x) and feeds the Azure DevOps
+/// fast-iteration emitter (chapter 3.x) and feeds the CI
 /// integration-test promoted lane.
 ///
 /// **V2-driver KPI Phase 2 (per `V2_DRIVER.md`).** This is the first
 /// production-write surface V2 owns under V2-driver mode; the artifact
-/// is the bytes that promote into the operator's existing Azure DevOps
+/// is the bytes that promote into the operator's existing CI
 /// pipeline (per chapter pre-scope §1: `<outDir>/Modules/<Module>/
 /// <Schema>.<Table>.sql`). The canary verifies V2's SSDT directory
 /// against V1's modulo named tolerances; per-environment-per-artifact-
@@ -728,7 +728,7 @@ module SsdtDdlEmitter =
     ///      byte-determinism for V2's production-deployment artifact
     ///      contract. V2 RelativePath MUST be byte-identical regardless
     ///      of host platform; V1's `SsdtEmitter.cs:55-122` hard-codes
-    ///      forward slashes; the SSDT consumer (Azure DevOps + DacFx)
+    ///      forward slashes; the SSDT consumer (CI pipeline + DacFx)
     ///      tolerates only forward slashes in cross-platform manifests.
     ///   Conclusion: `String.Concat` with explicit `/` separator is
     ///   the right primitive; segments are typed (`Name.value m.Name`,

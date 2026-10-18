@@ -39,7 +39,7 @@ flags. So the named outcomes (lift-and-shift dev, golden-data into UAT, legacy p
 become **named flows** the operator writes once and runs trivially.
 
 The data feeding a flow comes from one of three **producers** — `synthetic` (generated from a profile),
-`legacy` (the B→A reverse leg — the logical on-prem model the migration team populated, piped back up
+`legacy` (the B→A reverse leg — the logical on-prem model the migration engineers populated, piped back up
 into the physical cloud; same model, not foreign schema), and `peer` (a same-rendition OutSystems cell, e.g. `cloud-qa`;
 formerly "sibling-cloud"). Writing *up* into a live cloud environment (`cloud-uat`) is **cloud insertion**:
 the `emit(B ⊖ A)` act rendering the model in its physical `OSUSR_*` disposition (A) rather than the
@@ -104,7 +104,7 @@ Each environment carries two permission facets and an address:
 
 - **`access`** — how the target is *reached*:
   - `bundle` — file production: write an SSDT bundle (CREATE files + RefactorLog +
-    pre/post-deploy scripts + data scripts) into `out`, for **Octopus** to apply. MAY
+    pre/post-deploy scripts + data scripts) into `out`, for the deployment tool to apply. MAY
     also carry a `conn` — a live READ connection to the real target database — so a
     bundle place is *also* a reverse-leg read source (schema goes DOWN as files; data
     is read UP live). The `conn` never changes how schema is written (still the bundle).
@@ -118,7 +118,7 @@ Each environment carries two permission facets and an address:
   **one authored `SsKey` model** this place bears (`THE_DATA_PRODUCERS §0/§4.6`):
   - `physical` — the frozen **OSUSR** cloud rendition (**A**, the up-leg sink). A *peer*
     source (the `golden` cloud→cloud move) is physical.
-  - `logical` — the hosted **on-prem** rendition (**B**, the migration team's load target).
+  - `logical` — the hosted **on-prem** rendition (**B**, the migration engineers' load target).
     A *legacy* source (the `reverse` B→A reverse leg, `THE_DATA_PRODUCERS` LE-1) is logical.
   - *absent* — unspecified (the default). The established same-rendition surface never sets
     it; it marks the rendition only where the reverse leg picks source=logical / sink=physical.
@@ -163,7 +163,7 @@ The full worked file is `examples/projection.sample.json` (six environments, ann
     "cloud-qa":    { "access": "direct", "conn": "file:./secrets/cloud-qa.conn",  "rendition": "physical", "archetype": "managed-dml", "grant": "data" },  // peer source + synth sink
     "cloud-uat":   { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "rendition": "physical", "archetype": "managed-dml", "grant": "data", "store": "lifecycle/cloud-uat.json" },  // cloud-insertion sink (R6, DML-only)
 
-    "on-prem-dev": { "access": "bundle", "out": "dist/on-prem-dev", "conn": "file:./secrets/on-prem-dev.conn", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data", "store": "lifecycle/on-prem-dev.json" },  // SSDT → Octopus (write); conn = live read
+    "on-prem-dev": { "access": "bundle", "out": "dist/on-prem-dev", "conn": "file:./secrets/on-prem-dev.conn", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data", "store": "lifecycle/on-prem-dev.json" },  // SSDT → the deployment tool (write); conn = live read
     "on-prem-qa":  { "access": "bundle", "out": "dist/on-prem-qa",  "conn": "file:./secrets/on-prem-qa.conn",  "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" },
     "on-prem-uat": { "access": "bundle", "out": "dist/on-prem-uat", "conn": "file:./secrets/on-prem-uat.conn", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" }  // bundle write + conn = the reverse-leg read source
   },
@@ -236,7 +236,8 @@ permission sets — DDL+DML, DML-only"). It is a property of the **environment**
 - **`access: bundle`** → the **declarative** path. The engine emits the adjusted
   `CREATE TABLE` + the `.refactorlog`; **DacFx computes the schema ALTER at publish**. The
   engine does not hand-emit ALTERs — it owns the *data* movement (pre/post-deploy scripts,
-  measured by CDC), DacFx owns the *schema* computation. The bundle is delivered to Octopus.
+  measured by CDC), DacFx owns the *schema* computation. The bundle is delivered to the
+  deployment tool.
 - **`access: direct`** → a live write. Schema via the same declarative artifact path where
   applicable; data via the CDC-aware MERGE (default) or wipe-and-load (`--fresh`).
 - **`access: docker`** → the ephemeral one-touch DB (deploy + verify), full control.
@@ -259,7 +260,7 @@ seam (`WAVE_6_ONTOLOGY.md` §4) and to gate axis 9 (`THE_USE_CASE_ONTOLOGY.md` �
 
 In the register of `THE_VOICE.md` (stative, agentless, imperative direction):
 
-- **A `bundle` is always-safe file production.** Producing the SSDT bundle for Octopus
+- **A `bundle` is always-safe file production.** Producing the SSDT bundle for the deployment tool
   writes only files; it needs no gate. `projection uat` produces the bundle, full stop.
 - **A `direct` live write previews by default.** `projection golden` states the plan and
   stops: *"Preview only. Re-run with `--go` to apply."* `--go` commits.
@@ -317,7 +318,7 @@ compare <a> <b>               # read-only readiness: schema delta + data dealbre
 seal <flow>                   # eject / freeze: record this published state as a durable episode
 seal approve <version>        # record a policy-version approval decision
 
-report <flow>                 # the change bundle for the on-prem migration team
+report <flow>                 # the change bundle for the on-prem migration engineers
 ```
 
 `check` answers *is it right?* `explain` answers *what would change?* `seal` answers *make
@@ -325,7 +326,7 @@ this permanent / sign it off.* `report` answers *what changed since last time, f
 people downstream?*
 
 **`seal` → episode → `report` is the load-bearing pair.** `report`'s job — "what changed
-since the last time the schema changed," for the on-prem migration team — is computable
+since the last time the schema changed," for the on-prem migration engineers — is computable
 only against a stored prior state. That state is exactly what `seal` records (a snapshot +
 appended refactorlog = an **episode**). So:
 
@@ -389,7 +390,7 @@ Where each of the ten axes (`THE_USE_CASE_ONTOLOGY.md` §4.1) lands in this desi
 | 4. Temporal phase | genesis (`--fresh`) · steady-state (default) · eject (`seal`) |
 | 5. Comparison regime | the **baseline A** — target-now (default) / empty (`--fresh`) / last-seal (`report`) |
 | 6. Environment-lattice | the **environments** block (each a cell; substrate named in the name) |
-| 7. Consumer / terminus | `access`: bundle → Octopus · direct DB · docker; `report` → the migration team |
+| 7. Consumer / terminus | `access`: bundle → the deployment tool · direct DB · docker; `report` → the migration engineers |
 | 8. Ordering | engine-internal (schema before data; FK two-phase; rename before reshape) |
 | 9. Gate / safety | `grant` refusal · `--go` × `PROJECTION_ALLOW_EXECUTE=1` · `--allow-drops` · pre-flight refusals |
 | 10. Measurement & proof | the norm `‖δ‖` surfaced (§9); `check` / `check shape`; `report` |
@@ -400,7 +401,7 @@ Proteins (`THE_USE_CASE_ONTOLOGY.md` §3), each a sentence:
 P-1  Dev lift-and-shift     projection publish --go         (cloud-dev → on-prem-dev, the schema down-leg)
 P-2  QA  lift-and-shift     projection publish-qa --go      (the same schema version, one tier on)
 P-3  UAT with re-key        projection golden --go          (the user re-key lives in the golden flow)
-P-4  Migration-team bundle  report publish                  (the change since the last seal)
+P-4  Migration bundle  report publish                  (the change since the last seal)
 P-5  Idempotent redeploy    projection publish --go         (re-run; B⊖A = 0 ⇒ CDC-silent)
 P-6  In-place migrate       projection publish --go         (same command; A is non-empty)
 P-7  Eject / freeze         seal publish
@@ -433,7 +434,7 @@ This document does not over-promise — the split is:
   the **pre-flight gates** (CDC-tracked sink + data-compat NOT-NULL tightening, refuse exit 9,
   `--allow-cdc` / `--allow-drops` to override); **attribute-level `CatalogDiff` + column-rename
   RefactorLog** (6.A.10 / 6.A.12, incl. the rename ⊥ reshape composition); **`report <flow>`**
-  — the migration-team change bundle (the recorded `ChangeManifest` series from the target's
+  — the migration change bundle (the recorded `ChangeManifest` series from the target's
   durable store, a live `--go` recording into it).
 - **Remaining, by design:**
   - **`from: synthetic --profile` (the Faker source)** — the one genuine net-new feature
@@ -472,7 +473,7 @@ a silent half-result).
 6. **`access` selects the approach; `grant` is a refusal gate** — bundle = declarative
    (DacFx computes the ALTER; engine owns data measured by CDC); `grant: data` vs a schema
    change is a refused type mismatch.
-7. **`seal` → episode → `report`** is the provenance pair; `report` is the migration-team
+7. **`seal` → episode → `report`** is the provenance pair; `report` is the migration
    change bundle, anchored on the last seal.
 8. **The norm `‖δ‖` is surfaced** in preview and report as the minimality proof.
 9. **The surface ships whole; ladder-dependent flows refuse cleanly** until their engine

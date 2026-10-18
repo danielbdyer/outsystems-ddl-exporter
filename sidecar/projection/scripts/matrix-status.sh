@@ -199,7 +199,7 @@ open_count=$(printf '%s\n' "$ladder_tags" | awk '$3=="OpenGap"' | grep -c . || t
   echo "> twin (M23): a failed transfer reverts the sink-minted rows by captured key — executed"
   echo "> (\`--auto-revert\`) or emitted as a precise revert script artifact — \`TransferCanaryTests\`."
   echo "> The atomic \`BEGIN TRAN\` wrapper is BUILT as an opt-in \`--atomic\` (M22) but **scoped to"
-  echo "> LOCAL full-access databases** — production schema ships via ADO/Octopus/SSDT (not"
+  echo "> LOCAL full-access databases** — production schema ships via the SSDT pipeline (not"
   echo "> direct-connect) and the managed cloud is DML-only, so for those targets the compensating"
   echo "> channel (M21/M23) is the arm; the estate-scale giant transaction stays gated on P7b"
   echo "> throughput. **(b) Permissions** — the A2 pre-flight *gates* on"

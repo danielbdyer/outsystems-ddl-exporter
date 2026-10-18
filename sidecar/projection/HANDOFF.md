@@ -843,12 +843,12 @@ To the next agent.
 **Your next move — the honest frontier (operator-named order).** **F3** (coverage corrections — `CoverageFloor`: exhaustive permutation / variety injection / distinct-floor — + the **L2-cov** canary; the "ensure all important values are included even where the source is patchy" quality gate; §3). Then **F6** (professional distribution fitting — a `ShapeHint` evidence axis at π: histograms / fitted families / multimodality — + a richer `sampleNumeric` at σ; the largest; §6). Then **F4** (boundary anonymizing rotation — corpus-row permutation that breaks subject↔row linkage; **needs a named threat model first**; §4). Each ships with its faithfulness-ladder witness in the warm Docker pool beside `SyntheticCanaryTests`; every σ change keeps the `π∘σ≈id` canary green (it is byte-identical when its evidence is absent).
 
 **Scars that BIT this session (heed them — the first cost real time):**
-- **⚠️ THE WORKTREE-PATH TRAP.** The Bash tool's cwd resets to the worktree ROOT (`...\.claude\worktrees\<name>`), where `sidecar/projection` (relative) is YOUR worktree's projection. But an ABSOLUTE `cd /c/Users/.../outsystems-ddl-exporter/sidecar/projection` (WITHOUT the `.claude/worktrees/<name>` segment) silently lands in the **MAIN repo** — a different checkout at a different commit. I spent time chasing "the fsproj is missing the slice files / the build is green but slice-less" before realizing my greps + a baseline build had run against the main repo (HEAD `99f6ff7a`), not the worktree (HEAD `d6f0d4f0`). **ALWAYS `git rev-parse HEAD` to confirm you're in the worktree; use the FULL worktree path** (`/c/Users/danny/code/outsystems-ddl-exporter/sidecar/projection/.claude/worktrees/<name>/sidecar/projection`). The Read tool with full worktree paths was always correct; only the Bash `cd` drifted.
+- **⚠️ THE WORKTREE-PATH TRAP.** The Bash tool's cwd resets to the worktree ROOT (`...\.claude\worktrees\<name>`), where `sidecar/projection` (relative) is YOUR worktree's projection. But an ABSOLUTE `cd /c/Users/.../outsystems-ddl-exporter/sidecar/projection` (WITHOUT the `.claude/worktrees/<name>` segment) silently lands in the **MAIN repo** — a different checkout at a different commit. I spent time chasing "the fsproj is missing the slice files / the build is green but slice-less" before realizing my greps + a baseline build had run against the main repo (HEAD `99f6ff7a`), not the worktree (HEAD `d6f0d4f0`). **ALWAYS `git rev-parse HEAD` to confirm you're in the worktree; use the FULL worktree path** (`/c/Users/<you>/code/outsystems-ddl-exporter/sidecar/projection/.claude/worktrees/<name>/sidecar/projection`). The Read tool with full worktree paths was always correct; only the Bash `cd` drifted.
 - **Bogus global-seed footgun.** `Bogus.Randomizer.Seed` is a STATIC global; a `Bogus.Faker()` with no explicit seed draws from it, so constructing a SECOND faker RESETS the stream for the first (its `Person` would materialize under the wrong seed). The fix in `FakerRealization.realizeRow`: materialize a row's `Bogus.Person` (read its fields) for a (row, locale) group BEFORE constructing any other faker; for fresh-draw generators, construct→draw→discard within one `freshOrValue` call. Dates use a FIXED reference anchor (`refDate`), not `DateTime.Now` (Bogus's default), so the realization is reproducible.
 - **The realize-injection compile order.** `FakerRealization.fs` (compile index 64) is AFTER `TransferRun.fs` (57), so `Transfer.runSynthetic` CANNOT reference `FakerRealization` — the realization is injected as a pure `rows → rows` parameter from `SyntheticLoadRun.fs` (65). Keep it that way (it also keeps Core σ and TransferRun Faker-agnostic). Default callers pass `id` (byte-identical; the canary's contract).
 - **Core `core-sprintf` (sprintf AND String.concat banned).** The coordinate conflict-key uses a `ConflictKey` DU (no concat); the coordinate not-found/ambiguous refusals' `sprintf` carry a per-line `LINT-ALLOW`. Pipeline / Targets / Cli have no such rule (the boundary realization's string work is unmarked, as `FakerRealization` already carries `LINT-ALLOW-FILE`).
 - **A large `Edit` can introduce a stray NUL byte** into a string literal (a `seedOfCell` separator I meant as a space landed as `\0`; it compiled and the tests passed, but `file FakerRealization.fs` reported `data` not `text` and `git diff --stat` flagged it **Bin**). The tell is git treating a source file as binary; the fix is `tr '\000' ' ' < f > f.tmp`. After a big edit to a file with multibyte chars, a quick `git diff --numstat` (a `- -` row = binary) catches it.
-- `dotnet` not on PATH (`export PATH="$PATH:/c/Users/danny/AppData/Local/Microsoft/dotnet"`); build from the worktree projection; **never the pure + Docker pools as one `dotnet test`** (OOM — `scripts/test.sh fast` then `… focus`/`docker`, sequential); Docker tests soft-skip silently (confirm REAL per-test durations in seconds, never the green count).
+- `dotnet` not on PATH (`export PATH="$PATH:/c/Users/<you>/AppData/Local/Microsoft/dotnet"`); build from the worktree projection; **never the pure + Docker pools as one `dotnet test`** (OOM — `scripts/test.sh fast` then `… focus`/`docker`, sequential); Docker tests soft-skip silently (confirm REAL per-test durations in seconds, never the green count).
 
 **State.** Branch `claude/quirky-leakey-4da6cf` — a worktree reset onto `d6f0d4f0` (the 7-slice base, branch `claude/thirsty-fermat-0612fd` / PR #625, off `main` `48af1895`). Three commits atop: `99be701f` (F0c-I/O) + `a853f030` (F-Faker) + `d95f32e8` (the NUL-strip fix) — **committed, NOT pushed** (the operator drives push / PR). Debug+Release 0/0; pure pool PASS (3426 + the F0c-I/O + F-Faker witnesses); Docker focus `Synthetic` 66/66 incl. `canary: pi of sigma approximates id` (real 3s) + `F-Faker … realizes a column through the actual load` (0.97s); **full Docker pool re-run GREEN (769s, no regression)**. Hold the spine: name every refusal, count every crossing, leave the books balanced.
 
@@ -874,7 +874,7 @@ To the next agent.
 **Your next move: F0c-I/O — the operator surface.** Everything above is reachable only programmatically / in tests. F0c-I/O makes the blessed loop real end-to-end: (1) durable WRITE (`CorrectionCodec.serialize` → file); (2) the `synth-correct <profile> --out` propose verb (`CorrectionProposer` → codec → file); (3) `correction: file:<path>` flow wiring threading the blessed `Correction` through the synthetic flow AND calling `FakerRealization.realizePii` between σ and the load. It is the **A44 compiler-guided cascade** — adding a field to `FlowSource`/`FlowRunOpts`/`MovementSpec`/`LoadOpts` ripples through the parse∘render isomorphism + ~16 literal sites; the build is your guide. Witness via `MovementSurfaceTests` (the A44 expressible⇔reachable proof). After F0c-I/O: **F3** (coverage corrections + L2-cov canary — the operator's "ensure all important values are included" ask), **F6** (distribution fitting — a `ShapeHint` π axis + richer `sampleNumeric`; the largest), **F4** (boundary rotation — needs a named threat model).
 
 **Scars that bit this session (heed them):**
-- **`dotnet` is NOT on PATH** (bash or PowerShell). Bash: `export PATH="$PATH:/c/Users/danny/AppData/Local/Microsoft/dotnet"`. PowerShell: call `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe` by full path. Build/test from the worktree root (`...\sidecar\projection`) — the `cwd` drifts; use absolute project paths in PowerShell.
+- **`dotnet` is NOT on PATH** (bash or PowerShell). Bash: `export PATH="$PATH:/c/Users/<you>/AppData/Local/Microsoft/dotnet"`. PowerShell: call `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe` by full path. Build/test from the worktree root (`...\sidecar\projection`) — the `cwd` drifts; use absolute project paths in PowerShell.
 - **`lint-discipline.sh --ci` reports a long-standing ~209-site whole-tree baseline** (Run.fs/ReportRun.fs/EventProjection.fs etc. — pre-existing, none from this work). It is NOT the operative gate (that's the pre-commit scoped scan, which isn't installed in this worktree — run `scripts/install-hooks.sh` if you want it). Do **not** chase the baseline; just ensure your NEW files carry markers. **Core has a `core-sprintf` rule** (Targets don't) — a dynamic `ValidationError` message in Core needs a per-line `LINT-ALLOW: <substantive, ≥30-char, "terminal"/"boundary"-token>` (sprintf AND String.concat are both banned in Core). And **`lint | tail; echo $?` captures tail's exit, not lint's** — verify lint via a direct exit capture.
 - **Bogus determinism**: `Bogus.Person`'s ctor takes a locale string (not a Randomizer). Seed via the global `Bogus.Randomizer.Seed <- System.Random(seed)` immediately before `Bogus.Faker()`, per row (single-threaded realization → deterministic). `f.Person` is one cached coherent individual.
 - **Every σ change must keep the Docker `π∘σ≈id` canary green** — it asserts counts / zero-orphans / categorical-sets (NOT fan-out skew or FK values), and each σ addition (F1/F5a/F5b) is byte-identical when its evidence is absent. Run `scripts/test.sh focus 'Synthetic'` (warm container) after any σ touch.
@@ -918,7 +918,7 @@ CDC / OPEN-3 estate survey** (now runnable — J5 lifted the blocker). Everythin
 here — do not build moat without a fired trigger.** Surface the options to the operator; let them choose.
 
 **Build-discipline scars (unchanged, still bite).** `dotnet` is NOT on the bash/PowerShell PATH on this box (it lives
-at `C:\Users\danny\AppData\Local\Microsoft\dotnet`; `export PATH="$PATH:/c/Users/danny/AppData/Local/Microsoft/dotnet"`
+at `%LOCALAPPDATA%\Microsoft\dotnet`; `export PATH="$PATH:/c/Users/<you>/AppData/Local/Microsoft/dotnet"`
 before `scripts/test.sh`). Never run the pure + Docker pools as one `dotnet test` (OOM). The warm container had been up
 11h this session — a batch of connection / pre-login failures means it died or its memory pool degraded
 (`scripts/warm-sql.sh restart`), NOT a regression (two `TransferCanaryTests` showed stale FAILED from a prior session
@@ -968,7 +968,7 @@ materialized transfer + both schema legs carry full M22/M23/M24 compensation. **
 
 ---
 
-# Handoff addendum — 2026-06-16 (later still), M22 + M23 + the CLI flag-surfacing LANDED — the migrate "we can't go wrong" envelope, scoped to the real topology: the Atomic `BEGIN TRAN` (`--atomic`) is a LOCAL full-access lever (production schema is ADO/Octopus/SSDT, not direct-connect); the data leg got M21's twin (`--auto-revert`, else emit the precise revert script). Both opt-in, both default-off, both canary-green, and both now wired through the A44 control plane (operator-usable + witness-tested)
+# Handoff addendum — 2026-06-16 (later still), M22 + M23 + the CLI flag-surfacing LANDED — the migrate "we can't go wrong" envelope, scoped to the real topology: the Atomic `BEGIN TRAN` (`--atomic`) is a LOCAL full-access lever (production schema ships through the SSDT pipeline, not direct-connect); the data leg got M21's twin (`--auto-revert`, else emit the precise revert script). Both opt-in, both default-off, both canary-green, and both now wired through the A44 control plane (operator-usable + witness-tested)
 
 To the next agent.
 
@@ -980,7 +980,7 @@ toward promise 8 across both legs, and a mid-session topology correction re-scop
 whole deploy and reuses M21's `compensateToSource` to verify A and supply the verdict (M21 is the fallback). The §10
 capability conjunct was validated by the operator's probe (`ATOMIC_ENVELOPE_VALIDATION.md` §4: `ALTER ANY SCHEMA`,
 transactional DDL, ROLLBACK reverts). **TOPOLOGY (do not lose this):** production on-prem schema ships as SSDT material
-via **ADO branches → pipelines → Octopus** — the engine does NOT direct-connect to deploy production schema, so the
+via **the git host's branches → CI pipelines → the deployment tool** — the engine does NOT direct-connect to deploy production schema, so the
 giant-TRAN is **not** a production path. `--atomic` is a **local full-access** lever (dev/test; the `FullRights`
 archetype; the warm container is exactly this). For production the atomicity concern is DATA-only. Witness: the
 `MigrationCanaryTests` M22 canaries — the part-way ALTER that M21 could only NAME as a residual now rolls back CLEANLY
@@ -1056,7 +1056,7 @@ focused test that forces a guaranteed-persistent non-rename residual would pin w
 — a small, real strengthening, not a new dimension.
 
 **Build-discipline scars (unchanged, still bite).** `dotnet` is NOT on the bash PATH (`export
-PATH="$PATH:/c/Users/danny/AppData/Local/Microsoft/dotnet"` before `scripts/test.sh`). F# 9 nullness on. **`static let`
+PATH="$PATH:/c/Users/<you>/AppData/Local/Microsoft/dotnet"` before `scripts/test.sh`). F# 9 nullness on. **`static let`
 cannot follow members in a type** — the M21 canary catalogs are local `let`s inside their test members for this reason
 (FS0960). Adding a `MigrationError` DU case cascades to `Voice.migrationStopDetail` (exhaustive) + the CLI report arm +
 the Voice totality sample list — the single-assembly warnings-as-errors build is the backstop.
@@ -1103,7 +1103,7 @@ axis), a container pool (Docker N≥20 real-wire sweep), or a real divergence be
 dilutes the closed set of falsifiable cells the whole program strengthened. Don't.
 
 **Build-discipline scars (heed them).** `dotnet` is NOT on the bash PATH (`export
-PATH="$PATH:/c/Users/danny/AppData/Local/Microsoft/dotnet"` before `scripts/test.sh`). F# 9 nullness is on. A
+PATH="$PATH:/c/Users/<you>/AppData/Local/Microsoft/dotnet"` before `scripts/test.sh`). F# 9 nullness is on. A
 `bool×bool`→DU collapse keeps the wire byte-identical by projecting to the legacy pair at the codec boundary (the
 `IndexUniqueness` precedent — M4). Adding an identity extended property re-blesses the goldens (`GOLDEN_RECORD=1` +
 a DECISIONS note); confirm the `git diff` is additive-only before blessing.
@@ -1159,8 +1159,8 @@ completion. See `THE_VECTOR_EXECUTION_KICKOFF.md` §10.
 
 **Build-discipline scars (heed them — they bit this session).**
 1. **`dotnet` is NOT on the bash PATH** — `scripts/test.sh` fails its build step unless you `export
-   PATH="$PATH:/c/Users/danny/AppData/Local/Microsoft/dotnet"` first (or build via PowerShell with the full path
-   `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe`).
+   PATH="$PATH:/c/Users/<you>/AppData/Local/Microsoft/dotnet"` first (or build via PowerShell with the full path
+   `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`).
 2. **F# 9 NULLNESS is on** — `JsonNode` indexers yield `JsonNode | null`; narrow with a match before `.GetValue`,
    and assign JSON null per-branch to the nullable setter (don't unify a `null` into a non-null `JsonNode` value).
 3. **Closed-record field removal cascades widely** — M4's `(HasDbConstraint, IsConstraintTrusted)` → `ConstraintState`
@@ -1246,7 +1246,7 @@ cell** (it touches the trust quadrant the Decision axis depends on); regenerate 
    "Server=localhost,11433;User Id=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False"`
    (the warm container). Confirm a **real per-test duration in seconds** via the TRX, never the green count.
 2. **Run bash scripts from the WORKTREE** (the Bash tool resets cwd to the worktree root). `dotnet` is at
-   `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe` (9.0.314; not on bash PATH). Build **Release** too
+   `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe` (9.0.314; not on bash PATH). Build **Release** too
    (FS3511). Never the pure + Docker pools in one `dotnet test` (OOM) — `test.sh fast` / `docker`.
 3. **Run the FULL Docker pool (246/246 is the bar), not just `~Canary`** — a comparison-primitive change ripples
    through every canary (it caught the pre-existing option-C reverse-leg bug in Wave 2). On any `Failed: N>0`, read
@@ -1341,7 +1341,7 @@ unintended changed — investigate before committing.
    (the warm container, up). Confirm a **real per-test duration in seconds** via the TRX, never the green count.
 2. **⚠️ Run bash scripts from the WORKTREE, not the main checkout** (the Bash tool resets cwd to the worktree
    root each call, so a bare `scripts/…` from there is fine; an absolute path into the worktree is safest).
-3. `dotnet` is at `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe` (9.0.314; not on bash PATH). Build
+3. `dotnet` is at `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe` (9.0.314; not on bash PATH). Build
    **Release too** before claiming done (only it catches FS3511). **Never the pure + Docker pools in one
    `dotnet test`** (OOM) — `test.sh fast` / `docker`.
 4. **Run the FULL Docker pool (246/246 is the bar), not just `~Canary`** — a change to a comparison primitive
@@ -1404,12 +1404,12 @@ throughput for trust fidelity at hundreds-of-millions-of-rows scale? It's flagge
    "Server=localhost,11433;User Id=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False"`
    (the warm container, up). Confirm a **real per-test duration in seconds** via the TRX, never the green count.
 2. **⚠️ Run bash scripts from the WORKTREE, not the main checkout.** `cd`-ing to
-   `C:/Users/danny/code/outsystems-ddl-exporter/sidecar/projection` lands in the MAIN checkout (a *different*
+   `C:/Users/<you>/code/outsystems-ddl-exporter/sidecar/projection` lands in the MAIN checkout (a *different*
    branch); `matrix-status.sh` then reads the wrong `Tolerance.fs` and overwrites the main checkout's matrix.
    Run scripts by absolute path into the worktree: `bash "<worktree>/sidecar/projection/scripts/<x>.sh"`. (The
    Bash tool resets cwd to the worktree root each call, so a bare `scripts/...` from there is also fine.)
-3. `dotnet` lives at `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe` (9.0.314; not on bash PATH).
-   Build/test via PowerShell, or `export PATH="/c/Users/danny/AppData/Local/Microsoft/dotnet:$PATH"` for
+3. `dotnet` lives at `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe` (9.0.314; not on bash PATH).
+   Build/test via PowerShell, or `export PATH="/c/Users/<you>/AppData/Local/Microsoft/dotnet:$PATH"` for
    `scripts/test.sh`. **Never the pure + Docker pools in one `dotnet test`** (OOM) — use `test.sh fast` /
    `docker`. Build **Release** too before claiming done (only it catches FS3511).
 4. **Run the FULL pure pool, not a focused subset** — Wave 0 left `MatrixLadderTests."exactly two tolerances are
@@ -1475,7 +1475,7 @@ chapter-close and the PR carries Wave 0 + Wave 1 together.
    (the warm container, currently up). They pass as ~0.4 ms `()` no-ops otherwise — **confirm via per-test
    duration in seconds**, never the green count (survival-rule #12). M1's readback property is exactly such
    a witness.
-2. `dotnet` is at `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe` (9.0.314; not on bash PATH) —
+2. `dotnet` is at `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe` (9.0.314; not on bash PATH) —
    build/test via PowerShell; **never the pure + Docker pools in one `dotnet test`** (OOM). Build in
    **Release too** before claiming done (Wave 0 found a pre-existing FS3511 only Release surfaces; CI runs
    bash gates, not a Release compile).
@@ -1534,7 +1534,7 @@ operator package (`REVERSE_LEG_OPERATOR_PROBE_SHEET.md`, `PHASE_1_REAL_WIRE_HARN
    "Server=localhost,11433;User Id=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False"`
    (the warm container). They pass as 0.4 ms `()` no-ops otherwise — **confirm via per-test TRX
    durations (seconds, not ms)**, never the green count (survival-rule #12).
-2. `dotnet` is at `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe` (not on bash PATH) — build/
+2. `dotnet` is at `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe` (not on bash PATH) — build/
    test via PowerShell; never the pure + Docker pools in one `dotnet test` (CLAUDE.md §4.1).
 3. **The archetype is total-over-the-engine** (closed DU, one `CapabilityProfile.of` site — the
    `ArtifactByKind` discipline); `Grant` becomes a *derived* projection. Named refusals + a witness +
@@ -1590,7 +1590,7 @@ they unblock. The three operator-facing companions are `REVERSE_LEG_OPERATOR_PRO
    `$env:PROJECTION_MSSQL_CONN_STR="Server=localhost,11433;User Id=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False"`
    (the warm container; `scripts/warm-sql.sh conn` prints it) and **confirm via per-test TRX durations
    (seconds, not ms)** — never trust the green count. This is survival-rule #12 in operational form.
-2. **`dotnet` is not on the bash PATH;** it lives at `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe`.
+2. **`dotnet` is not on the bash PATH;** it lives at `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`.
    Use PowerShell to build/test. Pure pools and Docker pools separately (CLAUDE.md §4.1).
 3. **Every refusal named; nothing silent.** Each new gate ships as a named `ValidationError` + a pure
    witness; promote the reserved Skip-stubs rather than writing from zero; DECISIONS entry per slice.
@@ -1663,7 +1663,7 @@ slices).**
   provenance-arm fix, `compare`-verb design slice. Independent — sequence per §5.
 
 **Watch-fors (this session's scars).** `dotnet` isn't on the bash PATH — prefix
-`export PATH="/c/Users/danny/AppData/Local/Microsoft/dotnet:$PATH"`. The Docker gate
+`export PATH="/c/Users/<you>/AppData/Local/Microsoft/dotnet:$PATH"`. The Docker gate
 (`Deploy.Docker.ensureRunning`) probes a **Unix socket** that doesn't exist on
 Windows, so it soft-skips unless `PROJECTION_MSSQL_CONN_STR` is set — point it at the
 warm container (`Server=localhost,11433;User Id=sa;Password=Projection@Strong1;

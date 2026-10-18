@@ -58,7 +58,7 @@ to be retired from `Tolerance.fs`. The generator under-claims; it never over-cla
 > twin (M23): a failed transfer reverts the sink-minted rows by captured key — executed
 > (`--auto-revert`) or emitted as a precise revert script artifact — `TransferCanaryTests`.
 > The atomic `BEGIN TRAN` wrapper is BUILT as an opt-in `--atomic` (M22) but **scoped to
-> LOCAL full-access databases** — production schema ships via ADO/Octopus/SSDT (not
+> LOCAL full-access databases** — production schema ships via the SSDT pipeline (not
 > direct-connect) and the managed cloud is DML-only, so for those targets the compensating
 > channel (M21/M23) is the arm; the estate-scale giant transaction stays gated on P7b
 > throughput. **(b) Permissions** — the A2 pre-flight *gates* on

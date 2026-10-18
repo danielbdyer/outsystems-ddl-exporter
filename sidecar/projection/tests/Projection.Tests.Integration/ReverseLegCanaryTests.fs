@@ -1098,7 +1098,7 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
 
     [<Fact>]
     member this.``B-drift (pinned): a live-B column OUTSIDE the model is silently not moved — the model is the boundary of what crosses`` () =
-        // Extra data the migration team landed outside the model never
+        // Extra data the migration engineers landed outside the model never
         // crosses: the ingest SELECT names only the contract's columns. The
         // leg succeeds and the report is clean — the erasure is named only
         // by the model's own boundary, not per-run. Pinned; flagged in the

@@ -720,7 +720,7 @@ type PlanAction =
     | SealEject of store: string
     | SealApprove of version: string * approver: string * rationale: string option * store: string option
     // report -------------------------------------------------------------
-    /// the migration-team change bundle: the ChangeManifest series read from
+    /// the migration change bundle: the ChangeManifest series read from
     /// the flow's target durable timeline (THE_CLI.md §8 / F4). `outputDir` is
     /// the flow target's bundle `out` folder (when one is configured) — the
     /// directory the full-export that fed this timeline wrote `fidelity.json`

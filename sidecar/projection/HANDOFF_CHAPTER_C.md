@@ -189,7 +189,7 @@ Hold the spine. The Chapter C arc is mechanical wiring against a substrate that 
 
 To the next agent.
 
-You're picking up V2 mid-Chapter-C with a substrate that's almost embarrassingly complete underneath you. Chapter B.4 closed with Phase B's *structural* exit gate green; `projection full-export --config <path>` emits a conforming NDJSON event stream end-to-end; the `LogSink` substrate + `§11` rollup + `Bench.Stats` integration are wired; the actionable-diagnostics enrichment routes `suggestedConfig` payloads to operators on every applicable finding. **Cluster A7 turned out to be already shipped** via slice 5.13.production-wiring-classification + sibling slices on 2026-05-18 — Polly transient retry, the closed-DU `MetadataExtractionError`, the 22-rowset contract check, and the progress callback all exist in `src/Projection.Adapters.OssysSql/{Retry.fs, MetadataExtractionError.fs, MetadataSnapshotRunner.fs}`. Don't re-implement; the parity-matrix amendments are also already in place. **Slice C.1 (tightening axis wiring)** shipped this session and set the template the remaining five slices follow. **Faker stays deferred** per the principal-PO this session, until the corp-network V1 HEAD access opens.
+You're picking up V2 mid-Chapter-C with a substrate that's almost embarrassingly complete underneath you. Chapter B.4 closed with Phase B's *structural* exit gate green; `projection full-export --config <path>` emits a conforming NDJSON event stream end-to-end; the `LogSink` substrate + `§11` rollup + `Bench.Stats` integration are wired; the actionable-diagnostics enrichment routes `suggestedConfig` payloads to operators on every applicable finding. **Cluster A7 turned out to be already shipped** via slice 5.13.production-wiring-classification + sibling slices on 2026-05-18 — Polly transient retry, the closed-DU `MetadataExtractionError`, the 22-rowset contract check, and the progress callback all exist in `src/Projection.Adapters.OssysSql/{Retry.fs, MetadataExtractionError.fs, MetadataSnapshotRunner.fs}`. Don't re-implement; the parity-matrix amendments are also already in place. **Slice C.1 (tightening axis wiring)** shipped this session and set the template the remaining five slices follow. **Faker stays deferred** per the principal-PO this session, until the estate-network V1 HEAD access opens.
 
 Your next slice is **C.2 (special-circumstances axis)** unless the principal-PO redirects. The scope per `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)`: an `Overrides.AllowMissingPrimaryKey : SsKey list` allowlist + a consumer pass that reads it and suppresses the matching diagnostics, plus a consumer pass for the already-parsed `Overrides.CircularDependencies.AllowedCycles`. Two scope decisions the strategic exploration didn't resolve, both worth bringing to the principal-PO at slice open: (a) does `AllowMissingPrimaryKey` get the same logical-or-physical SsKey ref shape `TighteningBinding` uses, or simpler? (b) does the `CircularDependencies` consumer suppress diagnostics outright, or annotate them as accepted? My recommendation: copy the TighteningBinding ref-resolution shape verbatim for (a) — operators get a consistent surface across Chapter C, and the ValidationError code namespace stays uniform. For (b), annotate (don't suppress) — per the slice-6 reshape lesson ("actionability = enrichment + presentation, NOT occlusion"), source defects must remain visible; operator config marks them as *accepted* rather than *invisible*.
 
@@ -265,7 +265,7 @@ If a slice exceeds session capacity, stop at a clean boundary (binder shipped + 
 
 When C.6 ships, the chapter-close ritual runs (8 items per CLAUDE.md). Specifically for Chapter C close, you'll want to:
 
-1. Re-verify Active deferrals (Faker still trigger-met but stays deferred per operator direction; LiveOssysConnection still blocked on corp-network access; the new Chapter-C-deferred items if any).
+1. Re-verify Active deferrals (Faker still trigger-met but stays deferred per operator direction; LiveOssysConnection still blocked on estate-network access; the new Chapter-C-deferred items if any).
 2. Promote any new L3 axioms surfaced by Chapter C (likely L3-X13 for the `Policy` axes' config-binding totality property — every Policy axis the operator configures has a binder + a typed runtime value; the empty-Policy + populated-Policy skeleton-purity property test verifies).
 3. Run the V1-input-envelope walk — Chapter C is config-axis work, not V1↔V2 translation, so the envelope walk applies trivially; the carbon-copy verification continues from chapter B.4.
 4. Per-axis-stakes evaluation against V2_DRIVER — Chapter C primarily advances the **Operator-Intent / Pillar 9** axes; verify the tightening / insertion / selection / emission-folders axes' progress against the table.
@@ -348,7 +348,7 @@ Verify each at the next chapter close per the ritual. See `DECISIONS.md` Active 
 - **Spectre.Console `TtyRenderer` + dual-channel `--json-out` routing micro-chapter** — per §15.3. Trigger: operator reports NDJSON-only stderr as unfriendly for interactive runs.
 - **Static-seed parent-handling behavior** — dispersed from the struck `DynamicDataSection`; surfaces under concrete operator demand as an emitter `Options` parameter.
 - **CSV adapter for `ManualOverride` (`UserMapLoader`)** — Chapter 4.2 deferral; surfaces under concrete operator workflow demand.
-- **Cluster A7 row 34** (Polly transient retry for cloud OSSYS) — ★ CUTOVER-CRITICAL per V1_PARITY_MATRIX. Not blocked on corp-network access; can ship independently with `MockSqlConnection`-driven tests. Recommended candidate for an early Chapter C slice OR a separate hygiene sprint.
+- **Cluster A7 row 34** (Polly transient retry for cloud OSSYS) — ★ CUTOVER-CRITICAL per V1_PARITY_MATRIX. Not blocked on estate-network access; can ship independently with `MockSqlConnection`-driven tests. Recommended candidate for an early Chapter C slice OR a separate hygiene sprint.
 
 ## Phase B exit gate — gate status after chapter B.4 close
 
@@ -366,7 +366,7 @@ Per `V2_PRODUCTION_CUTOVER §8.2`, Phase B's exit criterion has TWO arms; chapte
 | V2 `full-export` runs against live OSSYS and produces functionally-equivalent `osm_model.json` to V1 | ⏳ WAITS on `LiveOssysConnection` |
 | V2 profile probes produce functionally-equivalent Profile data | ⏳ WAITS on `LiveOssysConnection` |
 | ≥1 full end-to-end production dry-run | ⏳ WAITS on operator scheduling |
-| **Functional-equivalence arm OPEN.** | **⏳ waits on corp-network access path.** |
+| **Functional-equivalence arm OPEN.** | **⏳ waits on estate-network access path.** |
 
 ## Test baseline at chapter close
 
@@ -391,7 +391,7 @@ Three open questions surfaced at chapter B.4 close; each is a candidate chapter-
 
 2. **Faker emitter promotion** — trigger structurally met since chapter B.3. Cutover-window priority routed chapter B.4 to CLI; chapter B.5 could be the Faker promotion chapter. Or stay deferred until concrete consumer demand surfaces. Principal-PO call.
 
-3. **Cluster A7 row 34 (Polly transient retry)** — the V1_PARITY_MATRIX's one explicit ★ CUTOVER-CRITICAL row that's NOT blocked on corp-network access. Can ship as a small focused slice with `MockSqlConnection`-driven tests. Sequence ahead of Chapter C, or interleave with C.1?
+3. **Cluster A7 row 34 (Polly transient retry)** — the V1_PARITY_MATRIX's one explicit ★ CUTOVER-CRITICAL row that's NOT blocked on estate-network access. Can ship as a small focused slice with `MockSqlConnection`-driven tests. Sequence ahead of Chapter C, or interleave with C.1?
 
 ## Reading order for the next agent
 
@@ -400,7 +400,7 @@ Three open questions surfaced at chapter B.4 close; each is a candidate chapter-
 3. **`CHAPTER_B_4_OPEN.md`** — the 8-slice plan; all marked DONE; chapter-close-ritual paragraph at the bottom names the 8 items the close ran.
 4. **`DECISIONS 2026-05-20 (slice B.4.7 — full-export CLI)`** + the slice-6.5 + canary-tuning entries — substantive contributions.
 5. **`docs/logging-format.md`** — the contract; now operative end-to-end.
-6. **`V1_PARITY_MATRIX.md` Cluster A7 row 34** — the cutover-critical row not blocked on corp-network.
+6. **`V1_PARITY_MATRIX.md` Cluster A7 row 34** — the cutover-critical row not blocked on estate-network access.
 7. **`AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md §3.4`** — L3-X11 + L3-X12 newly promoted; §10.4 coverage matrix updated.
 
 Chapter B.4 is the substantive contribution: V2 has an operator-touchable CLI subcommand emitting machine-parseable structured events end-to-end; the actionable-diagnostics enrichment routes config-edit suggestions to operators on every applicable finding; the structural arm of Phase B's exit gate closed on schedule; the functional-equivalence arm waits on its named blocker.

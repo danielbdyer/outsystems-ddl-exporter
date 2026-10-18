@@ -54,7 +54,7 @@ V2's purpose: make a high-stakes database cutover **verifiable, reversible, and 
 
 ## The forcing function
 
-A 300-table OutSystems 11 system facing an External Entities cutover. Every Entity swaps 1:1 to external on-prem SQL Server. Four environments (dev / qa / UAT / prod), Azure DevOps PR promotion. **CDC running in production with features depending on it; spurious change records would disrupt those features.** User FKs (CreatedBy / UpdatedBy) need environment-specific remapping. RefactorLog records must survive across schema versions. Repeatable cadence — schema and data evolve continuously.
+A 300-table OutSystems 11 system facing an External Entities cutover. Every Entity swaps 1:1 to external on-prem SQL Server. Four environments (dev / qa / UAT / prod), PR-based promotion. **CDC running in production with features depending on it; spurious change records would disrupt those features.** User FKs (CreatedBy / UpdatedBy) need environment-specific remapping. RefactorLog records must survive across schema versions. Repeatable cadence — schema and data evolve continuously.
 
 If V2's emission is wrong: production data integrity corrupted; CDC-dependent features broken silently; partial cutover leaves hybrid state structurally hard to recover from. **This is what V2 must survive.** The algebra isn't aesthetic; it's the structural condition for the cutover being trustworthy.
 

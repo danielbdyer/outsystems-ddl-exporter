@@ -437,7 +437,7 @@ Per SPINE inference I3 + leverage L4: `RemediationEmitter.emit = dacpacEmitter �
 
 ### U6. Drift detection is not a chapter
 
-Per SPINE leverage L3: `drift = compare (read-side deployed) (project-from-OSSYS source)`. Both halves are Stage 0 deliverables (read-side adapter + comparator). Drift detection ships as a CI cron job — the GitHub Action / Azure DevOps pipeline configuration to run the check on a schedule. **No chapter required.**
+Per SPINE leverage L3: `drift = compare (read-side deployed) (project-from-OSSYS source)`. Both halves are Stage 0 deliverables (read-side adapter + comparator). Drift detection ships as a CI cron job — the GitHub Action / CI pipeline configuration to run the check on a schedule. **No chapter required.**
 
 ### U7. Future emitters cost ~100 LOC each
 

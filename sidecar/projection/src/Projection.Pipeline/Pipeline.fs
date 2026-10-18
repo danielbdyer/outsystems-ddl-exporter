@@ -74,7 +74,7 @@ module Compose =
     /// , string>` containing one `.sql` per kind plus `manifest.json`.
     /// This retires the chapter-3-era `Sql : string` single-blob
     /// dogfood output in favor of the per-table file shape the
-    /// operator's Azure DevOps pipeline consumes.
+    /// operator's CI pipeline consumes.
     type Outputs =
         {
             /// Production-shape SSDT bundle: per-kind `.sql` files

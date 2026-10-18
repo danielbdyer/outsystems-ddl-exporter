@@ -128,11 +128,11 @@ Three questions surfaced at chapter close; each is a candidate chapter-open conv
 
 2. **Faker emitter promotion.** Trigger structurally met since chapter B.3. Chapter B.5 could be the Faker promotion chapter, OR stay deferred until concrete consumer demand surfaces. Principal-PO call.
 
-3. **Cluster A7 row 34 (Polly transient retry for cloud OSSYS).** V1_PARITY_MATRIX's one explicit ★ CUTOVER-CRITICAL row NOT blocked on corp-network access. Can ship as a small focused slice with `MockSqlConnection`-driven tests. Sequence ahead of Chapter C, interleave with C.1, or fold into a hygiene sprint?
+3. **Cluster A7 row 34 (Polly transient retry for cloud OSSYS).** V1_PARITY_MATRIX's one explicit ★ CUTOVER-CRITICAL row NOT blocked on estate-network access. Can ship as a small focused slice with `MockSqlConnection`-driven tests. Sequence ahead of Chapter C, interleave with C.1, or fold into a hygiene sprint?
 
 ## Closing
 
-Chapter B.4 closes Phase B's structural surface. The operator-touchable CLI subcommand emits machine-parseable structured events end-to-end; the actionable-diagnostics enrichment routes config-edit suggestions to operators on every applicable finding; V1 mechanisms (ModuleFilter; MetadataContractOverrides) inherit under the V2 self-containment discipline; the LiveProfiler post-cache-fold dead surfaces retire cleanly. The functional-equivalence arm waits on its named blocker (operator corp-network access); the structural commitments earn the follow-up chapter its confidence.
+Chapter B.4 closes Phase B's structural surface. The operator-touchable CLI subcommand emits machine-parseable structured events end-to-end; the actionable-diagnostics enrichment routes config-edit suggestions to operators on every applicable finding; V1 mechanisms (ModuleFilter; MetadataContractOverrides) inherit under the V2 self-containment discipline; the LiveProfiler post-cache-fold dead surfaces retire cleanly. The functional-equivalence arm waits on its named blocker (operator estate-network access); the structural commitments earn the follow-up chapter its confidence.
 
 Hold the spine. Chapter B.4 compounded — slice 1 set the contract that slice 6 enriched on artifacts and slice 6.5 implemented on events; slices 4 + 5 carbon-copied V1 mechanisms whose wiring slice 7 absorbed; slice 6's reshape lesson seeds Chapter C's tightening axis. Each slice was earned; the chapter ships earned.
 

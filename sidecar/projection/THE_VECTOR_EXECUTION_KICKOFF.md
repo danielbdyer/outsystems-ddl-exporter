@@ -50,7 +50,7 @@
   (`scripts/warm-sql.sh conn` prints it). **Confirm via per-test TRX durations in seconds, never the green count**
   (this is survival-rule #12 in operational form). The keystone (`M1`) and `M3` have Docker-gated witnesses — this
   *will* matter.
-- **`dotnet` is not on the bash PATH** — it lives at `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe`.
+- **`dotnet` is not on the bash PATH** — it lives at `%LOCALAPPDATA%\Microsoft\dotnet\dotnet.exe`.
   Build and test via **PowerShell**.
 - **Never run the pure + Docker pools in one `dotnet test`** — it OOM-kills the host. Use `scripts/test.sh`
   (`fast` / `docker` / `canary` / `focus <name>` / `all`). **CDC test classes use `IsolatedContainerFixture`**

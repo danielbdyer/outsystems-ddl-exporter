@@ -356,7 +356,7 @@ pre-flight consumes the probe).**
 **No single A→B orchestrator exists.** The CLI (`Program.fs`) offers `full-export`, `emit`, `deploy`, `canary`,
 `transfer`, `verify-data`, `policy-diff`, `approve` — **separate verbs**. The operator's A→B requires the
 five-stage order (i) diff → (ii) rename → (iii) deploy → (iv) transfer → (v) verify, manually sequenced via a
-Bash/ADO pipeline. **The rename↔transfer seam:** renames are applied at **project time** (`Pipeline.fs:647-669
+Bash/CI pipeline. **The rename↔transfer seam:** renames are applied at **project time** (`Pipeline.fs:647-669
 applyRenames`, before emitters), and **Transfer never sees them** (`Transfer.fs` / `Program.fs runTransfer` have
 zero RefactorLog references). "Nearly one command" is today **five commands with a seam in the middle.** **Closed
 by Wave 6.D.1.**

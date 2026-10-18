@@ -16,7 +16,7 @@
 
 The migration touches **two databases that are not the same kind of thing**:
 
-1. **The on-prem SQL Server** — the database the migration team owns. It receives the **emitted SSDT
+1. **The on-prem SQL Server** — the database the migration engineers own. It receives the **emitted SSDT
    schema** (`CREATE TABLE` / `ALTER` — full DDL) and hosts a database carrying **the same schema +
    the migrated data** (the `Logical` / **B** rendition). It is the schema home and the verification
    home. We **likely** have `CREATE TABLE` here (operator to verify — probe sheet Part E); the access

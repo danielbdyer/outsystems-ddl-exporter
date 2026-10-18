@@ -76,8 +76,8 @@
     "severity": "major",
     "confidence": "high",
     "v1": "SchemaApplyOptionBinder.cs:16-27 wires a 10-flag direct-apply lane (--apply, --apply-connection-string/-command-timeout/-sql-authentication/-trust-server-certificate/-application-name/-access-token, --apply-safe-script, --apply-static-seeds, --apply-static-seed-mode). `full-export --apply` pushes schema + safe scripts + seeds straight into a target DB in one run.",
-    "v2": "By R6 design, production schema ships as an SSDT/Octopus bundle, NOT direct-connect. Live writes need `--go` + PROJECTION_ALLOW_EXECUTE=1 and are scoped to LOCAL full-access / docker targets only (Program.fs usage :96-99: '--atomic ... LOCAL full-access DBs only \u2014 production schema ships via the SSDT/Octopus pipeline'). Gate refusal = exit 7 (Program.fs:143).",
-    "difference": "The V1 'one-shot full-export --apply to provision a database' workflow is intentionally NOT reproduced for production in V2. Direction is neutral (deliberate R6 posture) but operationally major: any operator/runbook that relied on --apply must switch to the bundle\u2192Octopus deploy path."
+    "v2": "By R6 design, production schema ships as an SSDT bundle for the deployment tool, NOT direct-connect. Live writes need `--go` + PROJECTION_ALLOW_EXECUTE=1 and are scoped to LOCAL full-access / docker targets only (Program.fs usage :96-99: '--atomic ... LOCAL full-access DBs only \u2014 production schema ships via the SSDT deployment pipeline'). Gate refusal = exit 7 (Program.fs:143).",
+    "difference": "The V1 'one-shot full-export --apply to provision a database' workflow is intentionally NOT reproduced for production in V2. Direction is neutral (deliberate R6 posture) but operationally major: any operator/runbook that relied on --apply must switch to the bundle\u2192deployment-tool path."
    },
    {
     "id": "CC-08",

@@ -2,7 +2,7 @@
 
 Append-only log of resolved questions during V2 development. Each entry
 captures the decision, the reasoning, and (where applicable) the axiom or
-theorem it serves. Future readers — including future agents and Danny —
+theorem it serves. Future readers — including future agents and the operator —
 should be able to reconstruct context from this log without spelunking
 commit history.
 
@@ -1135,7 +1135,7 @@ This rule supersedes the original framing as the canonical statement.
 The earlier entry remains for historical context; future agents
 applying the rule should consult this entry first.
 
-**Reasoning / consequences:** The refined rule was Danny's
+**Reasoning / consequences:** The refined rule was the operator's
 formulation in the session-5 review. It is sharper than the original:
 language alignment with native API maximizes readability on each
 side of the seam. F# `Result.bind` / `Result.map` composition stays
@@ -1195,7 +1195,7 @@ unused.
    intervention kinds (FK enforcement, unique enforcement, type
    tightening) land as new variants when admire passes surface them.
 
-2. **Modes collapsed.** Per Danny's observation that V1 only ever
+2. **Modes collapsed.** Per the operator's observation that V1 only ever
    uses `Cautious` mode, `TighteningMode` is removed from V2
    entirely. `NullabilityTighteningConfig` carries
    `NullBudget` + `AllowMandatoryRelaxation` + `Overrides` only — no
@@ -4407,7 +4407,7 @@ subsequent entries fill them in.
 
 ### Posture 1, extended — V2 emits artifacts; deployment is downstream; the canary is upstream
 
-The original Posture 1 stance: **V2 emits artifacts; ADO/Octopus
+The original Posture 1 stance: **V2 emits artifacts; the deployment tool
 deploys to dev/staging/prod; V2 is not in the deployment path.**
 The boundary is structural — V2's job ends when the artifacts are
 written; downstream tooling owns the deploy.
@@ -4419,7 +4419,7 @@ artifacts must apply cleanly against an empty database; if the
 canary fails, the export halts and the artifacts are not published.
 
 The canary is **upstream of publication, not downstream of
-deployment.** The deployment path remains ADO/Octopus territory;
+deployment.** The deployment path remains the deployment tool's territory;
 the canary is the export pipeline's own self-validation. This
 addresses a real failure mode V1 doesn't catch — artifacts that
 look correct in isolation but don't apply cleanly together.
@@ -6751,7 +6751,7 @@ Operational shape:
 
 1. **PR pipeline carries V1's artifact as the production write path.**
    This is the existing V1 surface; no changes.
-2. **V2 emits in parallel.** The PR pipeline (Azure DevOps) invokes
+2. **V2 emits in parallel.** The PR pipeline invokes
    V2 against the same Catalog × Policy × Profile triple V1 received
    and writes V2's artifact bundle alongside V1's.
 3. **Canary asserts V1 ≈ V2 modulo Tolerance.** The Tolerance taxonomy
@@ -10540,7 +10540,7 @@ covering the DACPAC + SqlPackage deploy lane parallel to
 > why it should."
 
 Production deploy path stays SSDT-style (the V1-compatible file
-bundle the operator's Azure DevOps pipeline already consumes).
+bundle the operator's CI pipeline already consumes).
 DacpacEmitter ships as a **dev-tooling sibling-Π emitter** — the
 artifact format that `sqlpackage.exe`, Visual Studio's "Publish DAC
 Package," and `DacServices.Deploy` already speak, so the dev team
@@ -19551,7 +19551,7 @@ The operator-PO chose Path C from the prior session's three-paths offer: registe
 
 The pipeline runs one leg today — Projection (Π) lowering a `Catalog` onto a
 staging SQL Server. The operator wants to freeze that schema, hand it to the
-partner team as usual, and then use the *same* schema to pull rows from
+downstream team as usual, and then use the *same* schema to pull rows from
 staging and load them into a managed OutSystems environment as a temporary,
 pre-eject preview. The original feasibility study framed this as "reverse
 import" (`PRESCOPE_REVERSE_IMPORT.md`).
@@ -20314,7 +20314,7 @@ capability.
 **The organizing thesis.** The engine is *right-by-function* exactly when its structure is **isomorphic to the core moves of change over time** (Add / Remove / Rename / Reshape / Reidentify / Move / Accumulate — `WAVE_6_ONTOLOGY.md` §5). A name is a promise about a function; a test that exercises only the name's *expected* behavior confirms the promise's surface, not its substance — so a wrong implementation that shares the name's surface passes. Two live near-misses from this very wave are the evidence: `applyDiff` returning the stored target (right by name, trivially satisfies the round-trip law, ignores its argument) and "physical column rename" detecting `Column.ColumnName` (right by name, wrong name-space). The structural remedy is the isomorphism + a **discriminating predicate** per entity (the input on which a plausibly-named wrong version diverges — e.g. `applyDiff`'s no-cheat `∃ base'≠source. apply(d,base')≠target(d)`). This recurses the five-axis red-team's method down to each abstraction.
 
 **The premise, corrected (the L1 operational layer — `WAVE_6_ONTOLOGY.md` §2).** This is a **publication-and-provenance engine for an evolving relational model**, not a deployment engine for a live regulated PROD:
-- **Consumers:** an external team's SSIS jobs mapping a *legacy* database into *this* schema's shape (they track the model's evolution over time), the own Dev/QA on-prem databases, and the terminal **eject** (schema freeze → the model stops being OutSystems-derived).
+- **Consumers:** external SSIS jobs mapping a *legacy* database into *this* schema's shape (they track the model's evolution over time), the own Dev/QA on-prem databases, and the terminal **eject** (schema freeze → the model stops being OutSystems-derived).
 - **Flows:** forward-only — cloud→on-prem (Dev, QA), and Dev→UAT with **user re-key** (the `UAT-users` command). **PROD has no application/data yet.** No masking (Dev/QA data).
 - **Cadence:** once a sprint, **demand-driven by the consuming team** — lumpy, not high-frequency.
 - **The why:** OutSystems' own deploy is opaque (*trust me*); this is a parallel SQL-native, repo-tracked, PR-reviewed, *provable* and *ejectable* control plane.
@@ -20330,7 +20330,7 @@ capability.
 
 **Defused (per the premise):** physical names are not reused **and** provenance compares engine-emitted snapshots (true `SsKey`s, not synthesized-from-name) — so endpoint-diff is sufficient; name-reuse ambiguity cannot bite; the synthesized-key bound (`AUDIT` §2.3 / 6.A.7) holds in this estate precisely because names are stable+unique. Path-history matters for *provenance/replay*, not *disambiguation*.
 
-**Decisions owed (named-with-trigger; `WAVE_6_ONTOLOGY.md` §10):** (1) is the prior `.refactorlog` an engine input at emit time or a repo-merge concern (gates 6.F.1); (2) what does the SSIS team consume — dacpac / per-sprint changelog / machine-readable diff (gates 6.F.4); (3) at eject, frozen state + full refactorlog history or state alone (decides P-PROV append-forever vs collapsible).
+**Decisions owed (named-with-trigger; `WAVE_6_ONTOLOGY.md` §10):** (1) is the prior `.refactorlog` an engine input at emit time or a repo-merge concern (gates 6.F.1); (2) what do the SSIS maintainers consume — dacpac / per-sprint changelog / machine-readable diff (gates 6.F.4); (3) at eject, frozen state + full refactorlog history or state alone (decides P-PROV append-forever vs collapsible).
 
 **Grounding the totalities (`WAVE_6_ONTOLOGY.md` §9).** T-I quantifies over the comparison (P-CMP) + the emission functor's partiality (faithful/lossy-warn/refuse); T-V over the channels (P-CH partition + P-ORD ordering); T-VI over the gates (P-GATE completeness = "spanning"). The ontology supplies the entities the totalities range over.
 
@@ -20705,7 +20705,7 @@ Plus **G2** (FK-trust recovered but **not enforced**, `ReadSide.fs:1075`) and th
 
 - **Snapshot⊖snapshot diff loop (`MigrationRun.previewFromStore`).** The morphology's "calculus is latent" finding had a precise locus: `record` *writes* an `Episode`, but no production path *read it back* as state A — `plan`/`preview` took authored catalogs; `--execute` read A live. `previewFromStore path declaration target` now sources A from the durable `LifecycleStore` via `reconstructLatestSchema` (the FTC fold, already witnessed durable in `LifecycleStoreTests`), diffing the new emission B against the prior emission's snapshot. **A missing store is genesis** (A = ∅, all Add, no losses). This commits §10's decision-owed #1: *the prior snapshot IS an engine input at emit time.* CLI: `migrate --to B --store <lifecycle.json>` (vs `--from A --to B` two-model).
 
-- **Positioning (per the operator + handbook ch. 4/6).** The gate authorizes the **declarative** SSDT deploy (CREATE + refactorlog + pre/post-deploy scripts; DacFx computes the ALTER/DROP at publish under Octopus — schema first, then the post-deploy data load). The imperative `migrate --execute` ALTER/DROP remains the dev/verification lens (consumes the same `LossDeclaration` coarsely). The data DELETE-scope gate (P-DEL-SCOPE, the data twin) + the CDC-aware minimal-delta MERGE remain the next slice (post-schema, comparison-basis parameterized: prior-snapshot OR target-reality).
+- **Positioning (per the operator + handbook ch. 4/6).** The gate authorizes the **declarative** SSDT deploy (CREATE + refactorlog + pre/post-deploy scripts; DacFx computes the ALTER/DROP at publish under the deployment tool — schema first, then the post-deploy data load). The imperative `migrate --execute` ALTER/DROP remains the dev/verification lens (consumes the same `LossDeclaration` coarsely). The data DELETE-scope gate (P-DEL-SCOPE, the data twin) + the CDC-aware minimal-delta MERGE remain the next slice (post-schema, comparison-basis parameterized: prior-snapshot OR target-reality).
 
 **Verification.** Full solution builds clean; pure pool green (0 failed). New witnesses: `destructiveLosses spans the FK channel` (P-GATE completeness — the prior gate missed it); `DeclareThese clears the named loss but refuses an undeclared sibling` (granular gate); `previewFromStore` genesis (all Add) + against the reconstructed prior snapshot (same δ as the two-model preview). The bool→`LossDeclaration` test conversion is behavior-preserving (`DeclareNone`≡false, `DeclareAll`≡true), incl. the Docker `MigrationCanaryTests` (compile-verified).
 
@@ -21124,7 +21124,7 @@ So S3's shape: `Preflight.all` becomes the single mandatory composition the verb
 
 Resolved a multi-turn operator co-design of the **data origins that feed cloud insertion** — writing production-like rows *up* into a managed OutSystems environment (`cloud-uat`, a `direct` sink with `grant: data`, DML-only). Captured in the new design doc **`THE_DATA_PRODUCERS.md`** (sibling to `THE_SYNTHETIC_DATA_DESIGN.md` + `PRESCOPE_TRANSFER.md`); this entry is the resolved-questions record.
 
-**1. The producer trinity is the cut.** Three origins feed cloud insertion, distinguished by *what the origin IS* and *which rendition it bears* — all three move the **same `SsKey` model** (none is foreign schema): **`synthetic`** (data generated to match a captured `Profile`, `σ : Profile ⟶ Data` — **BUILT**, `THE_SYNTHETIC_DATA_DESIGN.md`); **`legacy`** (the **B→A reverse leg** — the logical on-prem rendition the migration team populated, piped back up into the physical cloud; the `preview` flow); **`peer`** (a **peer cell at the same (physical) rendition** — e.g. `cloud-qa`; same model, only surrogates differ; the `golden` flow). The `legacy`↔`peer` distinction is the **source's rendition** (logical reverse-leg vs same-rendition physical peer), not foreign-vs-same schema. Identity is reconciled the same way for both (by `SsKey` / business key — it is the same model); `peer` re-keys because surrogates differ across cells, `legacy` reconciles on the reverse leg. *(Item 1's earlier "legacy = foreign schema, identity must be discovered" framing was wrong — see the course correction below.)*
+**1. The producer trinity is the cut.** Three origins feed cloud insertion, distinguished by *what the origin IS* and *which rendition it bears* — all three move the **same `SsKey` model** (none is foreign schema): **`synthetic`** (data generated to match a captured `Profile`, `σ : Profile ⟶ Data` — **BUILT**, `THE_SYNTHETIC_DATA_DESIGN.md`); **`legacy`** (the **B→A reverse leg** — the logical on-prem rendition the migration engineers populated, piped back up into the physical cloud; the `preview` flow); **`peer`** (a **peer cell at the same (physical) rendition** — e.g. `cloud-qa`; same model, only surrogates differ; the `golden` flow). The `legacy`↔`peer` distinction is the **source's rendition** (logical reverse-leg vs same-rendition physical peer), not foreign-vs-same schema. Identity is reconciled the same way for both (by `SsKey` / business key — it is the same model); `peer` re-keys because surrogates differ across cells, `legacy` reconciles on the reverse leg. *(Item 1's earlier "legacy = foreign schema, identity must be discovered" framing was wrong — see the course correction below.)*
 
 **2. `peer` is the concept-shaped name** for what `THE_SYNTHETIC_DATA_DESIGN.md` §1 called **`sibling-cloud`**. Per the domain-first naming discipline (`CLAUDE.md` pillar 8): the load-bearing property — the reason the simpler identity treatment applies — is "a peer cell of the same estate lattice" (`THE_USE_CASE_ONTOLOGY.md` §3 lattice vocabulary). The rename is **propagated this commit** to `THE_SYNTHETIC_DATA_DESIGN.md` §1 + `THE_CLI.md` §1. ("sibling" was the operator's first reach; "peer" + the lattice "cell" framing was chosen over `estate-peer` / `sibling-cell`.)
 
@@ -21136,7 +21136,7 @@ Resolved a multi-turn operator co-design of the **data origins that feed cloud i
 
 **Corpus propagation (this commit).** The crystallized understanding is propagated across the load-bearing surfaces so the corpus is consistent and execute-ready: `THE_USE_CASE_ONTOLOGY.md` (§5.8 — Realization is a *disposition*, not a constant, with A=physical-`OSUSR_*` / B=logical-on-prem; §3 intro disposition reading; P-3 names the cloud→cloud `golden` instance; §6.2 corpus-map row), `WAVE_6_ALGEBRA.md` §1 (A/B-as-dispositions note on the carrier table — the torsor axioms unchanged, A/B are points either way), `WAVE_6_ONTOLOGY.md` (the lattice-cell line gains the disposition reading), `PRESCOPE_TRANSFER.md` §0 (producer trinity + dispositions cross-cut), `TRANSFER_ISOMORPHISM_SUBSTANTIATION.md` §1 (per-producer canary note), `THE_CLI.md` §1 (producer trinity + `golden` annotation), `THE_SYNTHETIC_DATA_DESIGN.md` §1 (the rename). `THE_DATA_PRODUCERS.md` gained §5–§6 (reusable-machinery anchors + per-producer build slices PE-1..3 / LE-1..2 + acceptance) so `legacy` and `peer` are buildable to the depth `synthetic` already holds. `WAVE_6_MORPHOLOGY.md` (a frozen as-is snapshot) and `AXIOMS.md` (the torsor axioms are unchanged) are deliberately untouched.
 
-**Course correction (2026-06-09, later) — `legacy` is the B→A reverse leg, not foreign schema; `rendition` env flag.** The operator corrected two things before any implementation. (a) **`legacy` is NOT foreign schema.** The flow: the cloud schema is exported into the logical model and hosted on-prem (rendition B); the **migration team loads the data into that logical model** (the foreign→logical mapping is *theirs*, upstream of the engine); then the **same model in reverse** pipes the data back up into the physical cloud model (rendition A, the "frozen physical / `OSUSR_*`" version). So `legacy` is a **same-`SsKey`-model logical→physical (B→A) reverse leg** — the engine never sees foreign schema, there is no foreign-ingest milestone and no translation tolerance. The earlier "foreign-schema substrate mapped through" framing (items 1 + 5 above, now corrected inline) was wrong. (b) **The producer-modelling fork is settled as an env-metadata flag `rendition: physical | logical`** (operator chose the flag over `FlowSource` variants; "estate" was rejected as the name). Each environment is marked with the rendition it bears; the flag distinguishes a `peer` source (physical) from a `legacy` source (logical) and tells the engine the move's direction + which rendition to read/emit. (c) A consequence surfaced: **emitting/matching the physical `OSUSR_*` rendition for a cloud sink** is the genuine shared new engine work (the engine targets the logical rendition today, `Realization := Designation`) — tracked as PREFLIGHT M1.5 / `CONFIRMED_BACKLOG` J1 / risk R-5. **Re-corrected this commit:** `THE_DATA_PRODUCERS.md` (rewritten — producer cut by source rendition, the B→A reverse leg, the `rendition` decision §4.6, §5/§6 anchors + slices), `PREFLIGHT_CLOUD_INSERTION.md` (M1=rendition flag, new M1.5, M3=reverse leg, acceptance + risks D-1/R-3/R-5), `CONFIRMED_BACKLOG` §J (J1/J3 + gate), `PRESCOPE_TRANSFER.md` §0, `TRANSFER_ISOMORPHISM_SUBSTANTIATION.md` §1, `THE_CLI.md` §1. **Implementation deferred** until the course-correction is complete across all plans/docs (operator instruction); M2 (the `peer`/`golden` cloud→cloud re-key canary) is the agreed first build slice once it resumes.
+**Course correction (2026-06-09, later) — `legacy` is the B→A reverse leg, not foreign schema; `rendition` env flag.** The operator corrected two things before any implementation. (a) **`legacy` is NOT foreign schema.** The flow: the cloud schema is exported into the logical model and hosted on-prem (rendition B); the **migration engineers load the data into that logical model** (the foreign→logical mapping is *theirs*, upstream of the engine); then the **same model in reverse** pipes the data back up into the physical cloud model (rendition A, the "frozen physical / `OSUSR_*`" version). So `legacy` is a **same-`SsKey`-model logical→physical (B→A) reverse leg** — the engine never sees foreign schema, there is no foreign-ingest milestone and no translation tolerance. The earlier "foreign-schema substrate mapped through" framing (items 1 + 5 above, now corrected inline) was wrong. (b) **The producer-modelling fork is settled as an env-metadata flag `rendition: physical | logical`** (operator chose the flag over `FlowSource` variants; "estate" was rejected as the name). Each environment is marked with the rendition it bears; the flag distinguishes a `peer` source (physical) from a `legacy` source (logical) and tells the engine the move's direction + which rendition to read/emit. (c) A consequence surfaced: **emitting/matching the physical `OSUSR_*` rendition for a cloud sink** is the genuine shared new engine work (the engine targets the logical rendition today, `Realization := Designation`) — tracked as PREFLIGHT M1.5 / `CONFIRMED_BACKLOG` J1 / risk R-5. **Re-corrected this commit:** `THE_DATA_PRODUCERS.md` (rewritten — producer cut by source rendition, the B→A reverse leg, the `rendition` decision §4.6, §5/§6 anchors + slices), `PREFLIGHT_CLOUD_INSERTION.md` (M1=rendition flag, new M1.5, M3=reverse leg, acceptance + risks D-1/R-3/R-5), `CONFIRMED_BACKLOG` §J (J1/J3 + gate), `PRESCOPE_TRANSFER.md` §0, `TRANSFER_ISOMORPHISM_SUBSTANTIATION.md` §1, `THE_CLI.md` §1. **Implementation deferred** until the course-correction is complete across all plans/docs (operator instruction); M2 (the `peer`/`golden` cloud→cloud re-key canary) is the agreed first build slice once it resumes.
 
 No code or events changed — this is design grounding for the cloud-insertion producer layer (the engine machinery exists: `DataOrigin`/`FlowSource`/`Rekey`/`Reconcile`/`Tables` on `MovementSpec`, the Transfer write seam, the P-3 re-key chain). Tree green at entry time.
 
@@ -21156,7 +21156,7 @@ Witnesses: `TransferRefusalTests` `PE-1` ×3 (pure — `wipeTargets` excludes Re
 
 **M3 / LE-2 green.** `TransferCanaryTests` `M3/LE-2` (Docker): authored `legacySourceContract` (logical `[dbo].[Customer].[Email]`) + `legacySinkContract` (physical `[dbo].[OSUSR_XF_CUSTOMER].[CONTACT]`) share kind+attribute SsKeys but differ in BOTH table and column name; seed the logical source, `runWithRenames` up into the empty OSUSR sink, assert `CONTACT` carries the source `EMAIL` data exactly (no foreign tolerances — same model). Full canary class 20/20.
 
-**Load-bearing constraint — SsKeys are name-derived in `ReadSide`** (`kindSsKey`/`attributeSsKey` synthesize from schema.table[.column], `ReadSide.fs:68-75`). So two independently-read DBs (a logical B + a physical A) would produce DISJOINT SsKeys and could not align — the LE-2 fixture therefore uses **authored** contracts with stable SsKeys (the rename-canary precedent), NOT ReadSide reconstruction. Implication for the *real* flow: it must thread stable SsKeys across both renditions — either a **shared authored model** rendered twice (the migration-team case: their model is authored, not discovered — the near-term answer), or **attribute-scope `V2.SsKey` recovery in `ReadSide.buildAttribute`** (only `recoverKindSsKey` exists today, `:992`; the attribute equivalent is the one genuinely-new engine piece, deferred until a live two-DB flow demands it).
+**Load-bearing constraint — SsKeys are name-derived in `ReadSide`** (`kindSsKey`/`attributeSsKey` synthesize from schema.table[.column], `ReadSide.fs:68-75`). So two independently-read DBs (a logical B + a physical A) would produce DISJOINT SsKeys and could not align — the LE-2 fixture therefore uses **authored** contracts with stable SsKeys (the rename-canary precedent), NOT ReadSide reconstruction. Implication for the *real* flow: it must thread stable SsKeys across both renditions — either a **shared authored model** rendered twice (the migration engineers' case: their model is authored, not discovered — the near-term answer), or **attribute-scope `V2.SsKey` recovery in `ReadSide.buildAttribute`** (only `recoverKindSsKey` exists today, `:992`; the attribute equivalent is the one genuinely-new engine piece, deferred until a live two-DB flow demands it).
 
 **Deferred as CLI/config surface (not on the canary path):** **M1** — the `rendition: physical | logical` env flag (`Substrate`/`resolveFlowSpec`); and **M3.b** — routing a `legacy` flow to `runWithRenames` from a shared model rendered in both renditions. Both follow the proven engine capability, exactly as M1's env flag was unneeded for M2's canary. *(Both landed the following slice — see the next entry.)*
 
@@ -21172,7 +21172,7 @@ Four surface slices on the cloud-insertion layer, each a separate green commit. 
 
 **G0b — the P10 user-directory-readability survey probe (report field, totality preserved).** Added `ReadSide.userDirectoryReadability` (modeled on `cdcTrackedTables`): reports whether a platform user-directory table is SELECT-able (`Found`) and whether it exposes an email-shaped key column (`EmailKeyed`) — the FK target `golden`/`preview` re-key against by email. Surfaced as a NEW FIELD `EnvironmentReport.UserDirectory`, **NOT a `Capability` DU variant** — a variant would break the `required ⇔ surveyed` totality (`CapabilitySurveyTotalityTests`, which stays green untouched). Populated in `probeEnvironment` next to the `cdcTrackedTables` call; rendered in `buildSurveyView`. The candidate user-table set is operator-configurable (the probe takes the names; conventional fallback `OSSYS_USER`/`User`/`USERS`). **Residual (OPEN-2):** the real OutSystems user-table identity is instance-specific; the OFFLINE Docker witness (`UserDirectoryProbeTests`) deploys a stand-in and proves the probe SEMANTICS — real-instance validation pairs with OPEN-2.
 
-**M3.b — the `legacy` reverse-leg flow-recognition FACE.** The engine + canary half (LE-2) was proven green by the prior M3/LE-2 entry above (the two-contract `runWithRenames` path IS the mechanism; the prior entry's "M3.b deferred" is now picked up here). This slice adds the operator-facing FACE on top: `Command.reverseLegOf` (pure, tested) recognizes a flow as the B→A reverse leg from the M1 rendition flag — `Some` exactly when a live `logical` source (B) moves to a live `physical` sink (A); resolves the two connection specs. `TransferRun.runReverseLeg` is the thin engine face that delegates to the LE-2-proven `Transfer.runWithRenames` GIVEN the two contracts. **The per-flow runner ARM is deliberately not forced** — it needs the two SsKey-aligned contracts (logical source / physical sink), which the LE-2 canary supplies as authored stable-SsKey contracts; for a real live two-DB flow, ReadSide SsKeys are name-derived (two independent reads do not align), so producing the contracts needs either a shared authored model rendered in both renditions (the migration-team flow) or attribute-scope `V2.SsKey` recovery in `ReadSide.buildAttribute` (the durable, larger piece). The classifier + the engine face are the landed, tested partial; the runner arm is the remaining wiring. Documented in `THE_DATA_PRODUCERS.md` §6 LE-1 + `CONFIRMED_BACKLOG` J3.
+**M3.b — the `legacy` reverse-leg flow-recognition FACE.** The engine + canary half (LE-2) was proven green by the prior M3/LE-2 entry above (the two-contract `runWithRenames` path IS the mechanism; the prior entry's "M3.b deferred" is now picked up here). This slice adds the operator-facing FACE on top: `Command.reverseLegOf` (pure, tested) recognizes a flow as the B→A reverse leg from the M1 rendition flag — `Some` exactly when a live `logical` source (B) moves to a live `physical` sink (A); resolves the two connection specs. `TransferRun.runReverseLeg` is the thin engine face that delegates to the LE-2-proven `Transfer.runWithRenames` GIVEN the two contracts. **The per-flow runner ARM is deliberately not forced** — it needs the two SsKey-aligned contracts (logical source / physical sink), which the LE-2 canary supplies as authored stable-SsKey contracts; for a real live two-DB flow, ReadSide SsKeys are name-derived (two independent reads do not align), so producing the contracts needs either a shared authored model rendered in both renditions (the migration engineers' flow) or attribute-scope `V2.SsKey` recovery in `ReadSide.buildAttribute` (the durable, larger piece). The classifier + the engine face are the landed, tested partial; the runner arm is the remaining wiring. Documented in `THE_DATA_PRODUCERS.md` §6 LE-1 + `CONFIRMED_BACKLOG` J3.
 
 No existing test was weakened; no refusal's exit code or precedence was changed. Pure pool green; the G0b Docker witness green against the warm container. Status surfaces updated: `PREFLIGHT_CLOUD_INSERTION.md` M1 / M3 / M4 (all ✅); `CONFIRMED_BACKLOG` J1/J3/J4.
 
@@ -23532,7 +23532,7 @@ operator").
 ## 2026-06-15 (later) — Database archetype as a config disposition (direction recorded; operator-prompted)
 
 The operator named a distinction the docs had blurred: there are **two classes of target database**,
-not one. **(1) On-prem SQL Server** — the migration team's own instance, which receives the emitted
+not one. **(1) On-prem SQL Server** — the migration engineers' own instance, which receives the emitted
 SSDT schema (`CREATE TABLE` / `ALTER`) AND hosts a database with the same schema + the migrated data
 (the `Logical` / B rendition); likely full DDL rights (operator to verify). **(2) Managed cloud SQL**
 — the J5-settled DML-only sink (`Physical` / A rendition; no ALTER / IDENTITY_INSERT / CREATE TABLE).
@@ -24516,14 +24516,14 @@ TRAN` and the permissions-content axis stay §10 deferred-with-trigger.
 
 ---
 
-## 2026-06-16 (later still) — M22: the Atomic `BEGIN TRAN` envelope, scoped to LOCAL full-access databases (production schema is ADO/Octopus/SSDT-deployed, not direct-connect); OPT-IN `--atomic`, M21 as its fallback
+## 2026-06-16 (later still) — M22: the Atomic `BEGIN TRAN` envelope, scoped to LOCAL full-access databases (production schema is CI/deployment-tool/SSDT-deployed, not direct-connect); OPT-IN `--atomic`, M21 as its fallback
 
 **This entry is written BEFORE the code, per the load-bearing-commitment rule (a §10 deferral is standing law; breaking
 it requires the amendment first).** The §10 "live atomic `BEGIN TRAN` wrapper" deferral — open since THE VECTOR Wave 2
 — is hereby fired **for the local full-access case only**, behind an opt-in flag.
 
 **Topology clarification (operator, 2026-06-16) — this re-scopes the envelope.** Production on-prem schema is NOT
-direct-connect-deployed: it ships as **SSDT material through ADO branches + pipelines + Octopus Deploy**. So the engine
+direct-connect-deployed: it ships as **SSDT material through the git host's branches, pipelines and the deployment tool**. So the engine
 must NOT direct-connect to deploy production schema, and a giant-`BEGIN TRAN`-over-direct-DDL is **not** the production
 path. Consequences: **(a)** for *production* environments the engine's atomicity concern is **data-only** (schema is
 out-of-band); **(b)** the full **schema+data atomic** direct-connect outcome is a **LOCAL database** feature — dev/test
@@ -24538,7 +24538,7 @@ and `OBJECT_ID(...)=NULL` after `ROLLBACK`. That capability is exactly what a lo
 envelope is sound there. The operator authorized the build.
 
 **Why opt-in, not default.** Even locally, a transaction over a large load holds locks for its window; and the envelope
-is meaningless against the two *non-local* targets (production = Octopus/SSDT schema; managed cloud = DML-only). So
+is meaningless against the two *non-local* targets (production = deployment-tool/SSDT schema; managed cloud = DML-only). So
 `--atomic` is **expressible-but-not-default** (A44): reachable, opted into for local full-access runs, never forced.
 This keeps "IR grows under evidence" honest — the capability evidence fired for the full-access class; the envelope is
 scoped to exactly that class.
@@ -25228,13 +25228,13 @@ nullability tightening is ever wanted back, un-filter the one line in `fromConfi
 
 **Context (operator).** "The file bundle WRITE is correct for the publish flows. However the reverse
 leg should allow direct connection READS because it's possible. This is a tension I'd like to resolve."
-An on-prem environment is a real database: schema goes DOWN to it as an SSDT file bundle (Octopus
+An on-prem environment is a real database: schema goes DOWN to it as an SSDT file bundle (the deployment tool
 applies), and data is read UP from it live (the reverse leg). The old `access` facet conflated the two
 — `bundle` (file write, no conn) XOR `direct` (live conn) — forcing a choice; a reverse-leg source must
 be `Access.Direct` (`dataOriginOfSource`), so a bundle env could not be read.
 
 **Decision — decouple WRITE from READ.** `Access.Bundle of out: string` → `Bundle of out: string *
-readConn: ConnectionRef option`. A bundle place WRITES the SSDT bundle to `out` (publish → Octopus,
+readConn: ConnectionRef option`. A bundle place WRITES the SSDT bundle to `out` (publish → the deployment tool,
 unchanged); its optional `conn` is a live READ connection, so the real database is a reverse-leg source
 / `compare` operand. `access` governs the write; `conn` the read. The write path is untouched.
 
@@ -27781,7 +27781,7 @@ a named divergence diagnostic when they disagree). That is a larger, separate ch
 type-resolution architecture: `OssysTranslation.parseSemanticTypeWithStorage` currently prefers
 deployed storage ONLY for `bt*` reference attributes, and generalizing it to ordinary scalars needs
 the divergence-diagnostic pass and a deliberate "which scalars" decision. It is SPLIT OUT as a
-follow-up (WP-4b). The email/phone ANSI-island deviation (C3) that Danny flagged is fully closed by
+follow-up (WP-4b). The email/phone ANSI-island deviation (C3) that the operator flagged is fully closed by
 this commit on its own — the logical mapping now equals platform reality, so the specific
 "deployed-NVARCHAR-vs-VARCHAR-logical" conflict no longer arises for email/phone.
 
@@ -27888,7 +27888,7 @@ and WP-4b together close register C3 + the ordinary-scalar half of C1.
 
 ## 2026-07-16 — WP-1c(i): the `allowCrossSchema` binder default flips to `false` (V1 parity); the three eject-regime decisions are locked in
 
-**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-1c / register E2/E3. The operator (Danny) settled
+**Context.** `SSDT_HANDOFF_REVIEW_PACKET.md` §10 WP-1c / register E2/E3. The operator settled
 the three open FK-regime decisions the packet §6 flagged as "decisions to bless":
 1. **Orphan handling — V1-strict WITHHOLD.** When the profiler finds orphan rows, the FK is withheld
    entirely (`allowNoCheckCreation = false`) — "no tightening without proof"; the operator remediates
@@ -30475,7 +30475,7 @@ review before "configure and go":
 ## 2026-07-24 — Generic bridge retargeting: a foreign key retargets THROUGH a bridge attribute as a DecisionOverlay decision (not a source-IR lift) · fail-closed · opt-in · signoff-gated
 
 The generic form of "retarget an FK to resolve through a bridge table's business key instead of its
-original parent's primary key" (a proprietary UserProfile case is one config instance). Built
+original parent's primary key" (a UserProfile case is one config instance). Built
 generic-at-the-base, specialized-at-config: the engine bakes in no table, no bridge, no identity
 source — those enter as `overrides.bridgeRetargets` config (and, later, injected evidence).
 
@@ -30542,7 +30542,7 @@ source — those enter as `overrides.bridgeRetargets` config (and, later, inject
   homogeneous fold — no boxing across heterogeneous carriers, per the `Binding.fs` rejected-registry
   rationale. That is the shape the "satisfy this feature space through the TransformRegistry as
   plugins" ask dissolves into: a closed set of declared override archetypes, each landing in its
-  plane's fold, selected + parameterized by config, specialized (the proprietary UserProfile/Graph
+  plane's fold, selected + parameterized by config, specialized (the UserProfile/Graph
   specifics) purely at the config + injected-evidence layer — never in the generic engine.
 
 ---

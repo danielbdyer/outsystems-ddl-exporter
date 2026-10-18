@@ -34,7 +34,7 @@ type EmitError =
     /// emitters (Static / MigrationDependencies / Bootstrap) so the
     /// operator diagnostic surfaces the configuration-level mismatch
     /// (e.g., a kind appearing both in `Modality.Static` AND in the
-    /// migration team's pickup channel under `AllRemaining`).
+    /// migration engineers' pickup channel under `AllRemaining`).
     | OverlappingEmitterCoverage of SsKey * emitters: string list
     /// NM-45 — `Lifecycle.netDiff` / `Episode.netSchemaDiff` fold
     /// `CatalogDiff.compose` (the partial groupoid `⊕`) across an evolution

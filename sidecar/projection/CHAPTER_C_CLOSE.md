@@ -80,7 +80,7 @@ The operator gets one specific diagnosis per malformed entry; the test surface s
 
 Per the chapter-close ritual operating discipline (`CLAUDE.md`):
 
-1. **Active deferrals scan** ✓ — No silent-trigger fires. Faker emitter promotion remains trigger-met-awaiting-PO-decision (carried from chapter B.4 close). LiveOssysConnection cluster (multi-env + UAT-users + user-reflow strategy + extraction-time-knobs) stays blocked on corp-network access. Spectre TtyRenderer + data-twin verb deferrals stand. No new deferrals required from chapter C's work — every slice cashed out within the chapter.
+1. **Active deferrals scan** ✓ — No silent-trigger fires. Faker emitter promotion remains trigger-met-awaiting-PO-decision (carried from chapter B.4 close). LiveOssysConnection cluster (multi-env + UAT-users + user-reflow strategy + extraction-time-knobs) stays blocked on estate-network access. Spectre TtyRenderer + data-twin verb deferrals stand. No new deferrals required from chapter C's work — every slice cashed out within the chapter.
 2. **Contract-vs-implementation walk** ✓ — Every section of the `DECISIONS 2026-05-19 (chapter B.4 mid-chapter strategic exploration)` 6-slice plan has a corresponding binder + typed runtime overlay + tests + threading through `runWithConfig`. The "Per-axis status" table from that DECISIONS entry inverts:
    - Axis 4 (Tighten attributes) gap → wired (C.1)
    - Axis 5 (Special circumstances) gap → wired (C.2)
@@ -129,7 +129,7 @@ Five questions surfaced at chapter close; each is a candidate chapter-open conve
 
 3. **L3 axiom promotion cycle.** Two candidates (L3-CC-AcceptanceAnnotation + L3-CC-ApplyLayerLocality) earned through chapter C's pattern repetition. Next L3 audit dispatch (per the verifiability-triangle audit cadence discipline) would promote both. Trigger shape: annual refresh, or chapter-close L3 step (per CLAUDE.md operating-disciplines table).
 
-4. **`LiveOssysConnection` cluster.** Blocked on operator corp-network access. When access opens, the cluster (live OSSYS path + multi-env + UAT-users + user-reflow strategy + extraction-time knobs) lands as a follow-up chapter and closes Phase B's functional-equivalence arm.
+4. **`LiveOssysConnection` cluster.** Blocked on operator estate-network access. When access opens, the cluster (live OSSYS path + multi-env + UAT-users + user-reflow strategy + extraction-time knobs) lands as a follow-up chapter and closes Phase B's functional-equivalence arm.
 
 5. **Tag-group DU expansion + per-emitter filtering.** If operator-pull surfaces for richer toggling (CDC group; per-emitter mute via TransformGroup), the structural slice that lands the closed-DU expansion + emitter-side filter is concrete and small (~3-5 days).
 

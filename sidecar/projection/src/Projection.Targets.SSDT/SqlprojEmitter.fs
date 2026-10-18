@@ -5,7 +5,7 @@ open System.Xml
 
 /// Π_Sqlproj — the SDK-style `Microsoft.Build.Sql` `.sqlproj` that turns V2's
 /// emitted SSDT bundle into a cross-platform `dotnet build`-able project
-/// producing a `.dacpac` (the operator's Azure DevOps / `sqlpackage` deploy
+/// producing a `.dacpac` (the operator's CI / `sqlpackage` deploy
 /// surface). SDK-style (not classic SSDT) so it builds on Linux CI with
 /// `dotnet build`, no Visual Studio / Windows-only MSBuild targets.
 ///

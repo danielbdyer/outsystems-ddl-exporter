@@ -4,7 +4,7 @@ namespace Projection.Pipeline
 open System.Text.Json.Nodes
 open Projection.Core
 
-// THE_CLI.md §8 / F4 — the migration-team change bundle. `report <flow>` reads
+// THE_CLI.md §8 / F4 — the migration change bundle. `report <flow>` reads
 // the flow's target durable timeline (its `store`) and renders the recorded
 // `ChangeManifest` series: what changed since the last sealed schema episode,
 // each edge's norm `‖δ‖` surfaced as the minimality proof. The substrate is

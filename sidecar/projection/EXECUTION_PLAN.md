@@ -1204,7 +1204,7 @@ acceptance witnesses, and survey-gating are in
 #### 6.F — Publication & Provenance (premise-driven; source: `WAVE_6_ONTOLOGY.md`)
 
 *The 2026-06-01 reasoning session pinned the operator's concrete premise (`WAVE_6_ONTOLOGY.md` §2): this is a
-**publication-and-provenance engine for an evolving relational model**, consumed by an external team's SSIS jobs
+**publication-and-provenance engine for an evolving relational model**, consumed by external SSIS jobs
 and terminating in a schema-freeze **eject** — not a deployment engine for a live regulated PROD (PROD has no
 data yet). The deploy artifact is the **declarative SSDT triple** — adjusted CREATE TABLE + refactorlog
 appended-against-prior + pre/post-deployment data scripts — with DacFx computing the schema ALTER at publish
@@ -1265,12 +1265,12 @@ sub-wave is the buildable projection of those moves (`WAVE_6_ONTOLOGY.md` §5).*
   **~M each.**
 
 ##### 6.F.4 — The published-model + provenance surface (the SSIS consumer / the eject)
-- **Gap:** the external SSIS team consumes the *evolving relational model* to keep their legacy→our-shape
+- **Gap:** the external SSIS maintainers consume the *evolving relational model* to keep their legacy→our-shape
   mappings current; the eject freezes it. There is no consumer-facing rendering of "the model now + what changed
   this sprint" distinct from the deploy artifact (`WAVE_6_ONTOLOGY.md` P-IF / §2 / decision owed #2).
 - **First slice (gated on decision owed #2):** a consumer-facing projection of `CatalogDiff` — at minimum a
   per-sprint changelog (the moves §5, human-readable) alongside the dacpac; optionally a machine-readable diff
-  the SSIS team can drive mappings from.
+  the SSIS maintainers can drive mappings from.
 - **Acceptance:** `` ``provenance: the published model + per-sprint move changelog regenerate from the diff`` ``. **~M.**
 
 **Premise re-prioritization (per `WAVE_6_ONTOLOGY.md` §10).** This premise reorders the audit's generic critical
@@ -1282,7 +1282,7 @@ deploy artifact is the declarative triple; DacFx computes the schema ALTER). **H
 data-compat + rekey under the ordering/partition laws (`WAVE_6_ONTOLOGY.md` P-ORD/P-CH), *not* PROD
 permission/atomicity. **Decisions owed** (resolve before the dependent slice opens; full text in
 `WAVE_6_ONTOLOGY.md` §10): (1) is the prior `.refactorlog` an engine input or a repo-merge concern (gates 6.F.1);
-(2) what does the SSIS team consume — dacpac / changelog / machine-diff (gates 6.F.4); (3) at eject, is the
+(2) what do the SSIS maintainers consume — dacpac / changelog / machine-diff (gates 6.F.4); (3) at eject, is the
 deliverable the frozen state + full refactorlog history, or the state alone (decides P-PROV append-forever vs
 collapsible).
 

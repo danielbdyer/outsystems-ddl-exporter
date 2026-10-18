@@ -158,7 +158,7 @@ regression into the masterwork. The full method is Appendix A.
 
 Start from the premise, because the premise forces everything. The engine is a **publication-and-provenance
 engine for an evolving relational model**, sourced today from an OutSystems estate, publishing schema and data to
-on-prem SQL Server and to an external team's SSIS jobs, accumulating an exact replayable provenance of every
+on-prem SQL Server and to external SSIS jobs, accumulating an exact replayable provenance of every
 change, and **terminating one day at an eject** — after which there is no upstream to re-derive from.
 
 That last clause is the whole reason for the engine's character. OutSystems' own deployment is opaque and
