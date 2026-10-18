@@ -41,7 +41,7 @@ mechanism and every case in `cases/` passes. "Least" is enforced, not hoped for:
 - every line must be necessary to at least one case (the necessity law M1, checked by deletion);
 - every file has a line budget (M4).
 
-The whole edition is budgeted at **about 1,500 lines**, PowerShell and T-SQL together. That is
+The whole edition is budgeted at **about 1,600 lines**, PowerShell and T-SQL together. That is
 roughly 1% of what the Twin stood on (about 5,000 lines of F# over a 114,000-line kernel).
 
 **Ultra-powered** means the power comes from leverage, not from lines:
@@ -72,9 +72,9 @@ scripts and the workflows. Every row is backed by a case in `cases/80-twin-parit
 | # | Twin responsibility | Disposition | The facsimile's form |
 |---:|---|---|---|
 | 1 | Docker container lifecycle (`ensureRunning`, ports, `sa`) | replaced | LocalDB instance; `doctor` |
-| 2 | `twin.json` closed config: unknown key refused by path; no inline secrets (D9); located refusals | **kept** | `facsimile.json`, same laws (E4) |
+| 2 | `twin.json` closed config: unknown key refused by path; no inline secrets (D9, `env:` and `file:` references); located refusals | **kept** | `facsimile.json`, same laws (E4), both reference forms |
 | 3 | Estate globs (tables, schemas) | replaced | the project file, built by MSBuild or `dotnet build` |
-| 4 | Static lanes applied verbatim | **kept** | `referenceData` lanes, run on the copy before planting |
+| 4 | Static lanes applied verbatim | **kept** | `referenceData` lanes: the merge-base version on every proof copy, the head version for `up` |
 | 5 | DacFx publish of the estate | **kept** | sqlpackage, with the effective pipeline options |
 | 6 | Fingerprint convergence ("Nothing to apply") | **kept** for `up` | D4 |
 | 7 | Clean slate (null deferred FKs, child-first wipe, reseed) | replaced | every proof restores a fresh base cache (S5); nothing is wiped |
@@ -87,17 +87,17 @@ scripts and the workflows. Every row is backed by a case in `cases/80-twin-parit
 | 14 | Evidence tiers: import, derive, verify (shape and rich) | retired | `answers.<env>.json` (counts) plus the `shape` verb (discovery) |
 | 15 | Corrections and Faker realization; `twin classify` (PII) | retired | no real value ever reaches the copy (P1, P5), so there is nothing to mask |
 | 16 | Scenarios: weights, `between` windows, `perParent` | retired | none: a distribution never flips a verdict |
-| 17 | Scenario pins (exact rows) | **kept** | `witness.sql`, declared rows |
-| 18 | `twin check` (π∘σ≈id, byte-identical re-mint, zero orphans) | replaced | acceptance re-measure (F1) plus schema identity (F2) plus determinism (D1) |
+| 17 | Scenario pins (exact rows) | **kept** | `witness.sql` (proofs) and `up.sql` (the daily database), declared DML rows |
+| 18 | `twin check` (π∘σ≈id, byte-identical re-mint, zero orphans) | replaced | acceptance re-measure (F1), schema identity (F2), determinism (D1), and before/after hashes of every touched table (the Twin's value-preservation digests, kept) |
 | 19 | S-stable (a schema edit re-mints only the touched columns) | **kept** | ordinal-addressed literals (D3) |
 | 20 | T1 determinism | **kept** | D1 |
 | 21 | `twin bake` (image) and `bake.mjs` (.bacpac artifact) | retired | content-keyed base caches; nothing is distributed |
-| 22 | `twin up / seed / status / down / reset / init` | **kept by meaning** | `facsimile up / up --fresh / status / down / down --all / init` (T3) |
+| 22 | `twin up / seed / status / down / reset / init` | **kept by meaning** | `facsimile up / up --fresh / status / down / down --all / init` (T3). `down` keeps `fx_local` and its hand-written rows, as `twin down` kept its container's data; `down --all` removes it, as `twin reset` did |
 | 23 | The scale lane (`twin.scale.json`, timing at 181k and 1.18M rows) | retired | the `scale` flag from row counts, and a named residual; real timing needs a full-size server (out of scope) |
 | 24 | The nightly proof lane (`SamplePr*Tests`, about 50 facts) | **kept as the corpus** | the differential corpus, nightly and on every PR (T2) |
 | 25 | `talk-to-local-sql` detection ladder (Twin → warm container → stop) | replaced | `doctor`: LocalDB, or a configured server for CI and the sandbox |
 | 26 | `prove.mjs` (build → delta → Strict → classify) | absorbed, then retired | its classifier and delta signals become the pure core |
-| 27 | `inflight-check.mjs` (the lag-window hold) | **kept**, ported | the `in-flight` stop, read from `estate/in-flight.md` |
+| 27 | `inflight-check.mjs` (the lag-window hold) | **kept**, ported | the `in-flight` stop, keyed on the tables of each environment's delta (not on changed files). Its exemption (a PR that also edits the ledger warns rather than stops) and its unreadable-ledger refusal (`stop config`) are kept |
 | 28 | `ssdt-agent-proof-lane.yml` | replaced | `facsimile-corpus.yml` |
 | 29 | `ssdt-agent-bake.yml` | retired | — |
 | 30 | `pipelines/ssdt-agent-pr-validation.yml` (proves against an empty database) | replaced | `facsimile prove` in CI from the committed answers (fixes the inversion) |
@@ -114,156 +114,255 @@ scripts and the workflows. Every row is backed by a case in `cases/80-twin-parit
                the environment: read-only, touched exactly twice
      ┌───────────────────────────────────────────────────────────────────────┐
      │ 1  Extract  → schema.<env>.dacpac          needs VIEW DEFINITION        │
-     │ 4  Count    → answers.<env>.json           needs SELECT; "has rows?"    │
-     │                                            needs only VIEW DEFINITION   │
+     │ 4  Count    → answers.<env>.json           needs SELECT; Rows needs     │
+     │                                            only VIEW DEFINITION         │
      └───────────────────────────────────────────────────────────────────────┘
-   project ── build ──► head.dacpac ─┐
-                                     ├─ 2  Script offline ──► delta.<env>.sql
-   schema.<env>.dacpac ──────────────┘
-   delta ──────────────── 3  Questions   (pure, vocabulary) ──► questions
-   questions + answers ─────── Tier      (pure) ──► tier, flags
-   questions + answers ─────── Plan      (pure) ──► witness plan
-   LocalDB ── 5  copy:  publish schema · referenceData lanes · cache .bak
-                        restore · plant(plan, witness.sql)
+   project ── build ──► head.dacpac ─┬─ 2  Script offline vs schema.<env> ──► delta.<env>.sql
+   merge-base ── build ─► base.dacpac┴─ 2′ Script offline vs base.dacpac  ──► delta.pr.sql
+   delta.<env> + the env catalog ── 3  Questions (pure, vocabulary) ──► questions
+   delta.<env> vs delta.pr ──────────── Lag      (pure) ──► lag/drift operations
+   questions + answers ─────────────── Tier     (pure) ──► tier, flags
+   questions + answers ─────────────── Plan     (pure) ──► witness plan
+   LocalDB ── 5  copy:  publish schema.<env> · base referenceData lanes · cache .bak
+                        restore · plant(plan, witness.sql) · hash touched tables
                         accept: re-count == answers · identity: schema plan empty
-          ── 6  prove:  publish head with effective options ──► output text
-   output + delta ──────────── Outcome   (pure) ──► verdict | stop
-   verdict + the rest ──────── Record    (pure) ──► verdict.<env>.json ──► author-pr
+          ── 6  prove:  publish head with effective options ──► output text · re-hash
+   output + delta ──────────── Outcome  (pure) ──► verdict | stop
+   verdict + the rest ──────── Record   (pure) ──► verdict.<env>.json ──► author-pr
 ```
 
 **A pure core with a thin shell.** Every invariant that can be stated over text and tables lives in
-seven pure PowerShell functions, which are CLM-safe and do no I/O:
+eight pure PowerShell functions, which are CLM-safe and do no I/O:
 
 | Function | In → out |
 |---|---|
-| `Get-FxQuestions` | delta text, vocabulary → questions, or `stop unknown-statement` |
-| `Get-FxTier` | questions, answers → tier and flags |
-| `Get-FxWitnessPlan` | questions, answers → plan items, plus *needs* (check, computed, authored) |
+| `Get-FxQuestions` | the delta text, the environment's column catalog (parsed from `schema.<env>.dacpac`'s `model.xml`: type, length, precision, scale, nullability, collation, defaults, constraints, trust), and the vocabulary → questions plus `measures` (the touched tables whose `Rows` are counted, for presence and `scale`), or `stop unknown-statement` |
+| `Compare-FxDeltas` | `delta.<env>`, `delta.pr` → the operations the environment receives beyond this PR (`lag`), and the environment-only objects the deploy drops (`drift`) |
+| `Get-FxTier` | questions, answers, measures, the in-flight ledger rows, the config (`read: none`, `allowOlderLocalDb`) and the lag/drift result → tier and flags |
+| `Get-FxWitnessPlan` | questions, answers, the environment catalog → the plan: per table, which needs (presence, each violation class, links, ancestors, trust state) and the rows they require, plus the *needs* only a person can meet (check, computed, authored). Keys and reused reference rows are resolved at plant time against the copy, and `plant.sql` reports the resolved plan |
 | `Test-FxAcceptance` | questions, environment answers, copy answers → ok, or `stop acceptance` |
-| `Get-FxOutcome` | publish output, delta → verdict, or `stop unclassified` |
-| `Get-FxRecord` | verdict, questions, answers, delta → record fields for the ten-section PR |
-| `Read-FxConfig` | JSON text → config, or `stop config` naming the JSON path |
+| `Get-FxOutcome` | the publish output and the delta → verdict, or `stop unclassified` |
+| `Get-FxRecord` | verdict, questions, answers, deltas, hashes → record fields for the ten-section PR |
+| `Read-FxConfig` | JSON text → config, or `stop config` naming every bad JSON path in one pass |
 
 Pure cases (`kind: pure`) run these in milliseconds with no SQL Server. The shell only calls
-Microsoft-signed tools: `sqlpackage`, `SqlLocalDB`, MSBuild via `vswhere`, and `sqlcmd`. It runs
-the T-SQL files and writes files.
+Microsoft-signed tools (`sqlpackage`, `SqlLocalDB`, MSBuild via `vswhere`, `sqlcmd`), runs the
+T-SQL files, and writes files. The floor is Windows PowerShell 5.1 in ConstrainedLanguage mode.
 
 **Files and budgets** (vendored into the SSDT repository as `facsimile/`):
 
 | File | Role | Budget (lines) |
 |---|---|---:|
 | `facsimile.ps1` | the shell: verbs, I/O, exit codes, one-line stdout | 400 |
-| `core.ps1` | the seven pure functions | 350 |
-| `vocabulary.psd1` | the question table (data) | 15 rows |
-| `sql/probes.sql` | one templated count per question kind and value class | 200 |
-| `sql/plant.sql` | presence rows with FK ancestors, plus one procedure per witness kind | 250 |
+| `core.ps1` | the eight pure functions | 380 |
+| `vocabulary.psd1` | the question table (data) | 20 rows |
+| `sql/probes.sql` | one templated count per question kind and value class | 220 |
+| `sql/plant.sql` | presence rows with FK links and ancestors, plus one procedure per witness kind | 260 |
 | `sql/catalog.sql` | the copy's catalog as one result set, for the planter | 60 |
-| `sql/shape.sql` | the value-free discovery profile | 50 |
+| `sql/shape.sql` | the value-free discovery profile | 70 |
 | `sql/hash.sql` | an order-independent content hash (NULL distinct from `''`) | 30 |
-| `tests/run-cases.ps1` | the runner: parses `cases/*.md`, executes by kind | 150 |
-| **Total** | | **≈1,500** |
+| `tests/run-cases.ps1` | the runner and the lint: parses `cases/*.md`, executes by kind | 180 |
+| **Total** | | **≈1,600** |
 
 ## 4. The vocabulary
 
 The vocabulary is the line between what the facsimile proves and what it hands back, kept as data.
-Each row maps a DacFx-generated statement to the question it asks, the count that answers it, and
-the witness that reproduces a "yes".
+Every statement in a delta falls into exactly one of three classes (F4):
+
+- **data-sensitive:** the statement reads existing rows and can fail on their values. It maps to a
+  question.
+- **data-insensitive:** it reads or rewrites rows but cannot fail on their values. It asks no
+  question, but its tables' `Rows` are measured for the `scale` flag.
+- **non-reading:** it touches no existing rows.
+
+Anything else is `Unknown` and stops.
 
 | Kind | Statement DacFx writes (matched per batch) | Question | Count in the environment | Witness on the copy | Value classes |
 |---|---|---|---|---|---|
-| `HasRows` | `IF EXISTS (select top 1 1 from [s].[T])` followed by `RAISERROR (…, 16, 127)` | does T hold a row? | `sys.partitions` rows (VIEW DEFINITION only) | `presence(T)` with FK ancestors | — |
-| `NotNull` | `ALTER TABLE [s].[T] ALTER COLUMN [c] … NOT NULL` | any NULL in c? | `WHERE c IS NULL` | `null(T.c)` | — |
-| `Fits` | `ALTER COLUMN [c] <type>` where the type narrows or changes | anything in c that won't fit? | per value class | `misfit(T.c, class)` | `overlen` (LEN), `overbytes` (trailing spaces only), `nonconvertible`, `roundtrip` (lossy), `empty` (`''` to a non-string type), `overflow` (precision or scale) |
-| `Unique` | `CREATE UNIQUE … INDEX [i] ON [s].[T] (cols)` (optional `WHERE`); `ADD CONSTRAINT … UNIQUE` / `PRIMARY KEY` | any duplicate, under T's collation, within the filter? | duplicate-group count per class | `dup(T, cols, class)` | `exact`, `case`, `accent`, `trailing`, `nulls` (two NULLs in a non-filtered index) |
-| `Orphan` | `WITH CHECK CHECK CONSTRAINT [fk]` where `fk` is a FOREIGN KEY added `WITH NOCHECK` | any child without a parent? | orphan count (MATCH SIMPLE: a NULL in any FK column passes) | `orphan(T.cols→P)` | — |
-| `CheckFalse` | `WITH CHECK CHECK CONSTRAINT [ck]` where `ck` is a CHECK | any row where the rule is FALSE (not UNKNOWN)? | `WHERE NOT (predicate)` | **needs:** an agent-written row in `witness.sql` | — |
+| `HasRows` | `IF EXISTS (select top 1 1 from [s].[T])` followed by `RAISERROR (…, 16, 127)` | does T hold a row? | `sys.partitions` rows (VIEW DEFINITION only) | `presence(T)` with FK links and ancestors | — |
+| `NotNull` | `ALTER TABLE [s].[T] ALTER COLUMN [c] … NOT NULL` where the env catalog says c is nullable | any NULL in c? | `WHERE c IS NULL` | `null(T.c)` | — |
+| `Fits` | `ALTER COLUMN [c] <type>` where the env catalog's type, length, precision, scale or collation differs and the new one is narrower or of another kind | anything in c that won't fit? | per value class | `misfit(T.c, class)` | `overlen` (LEN), `overbytes` (trailing spaces only), `nonconvertible`, `roundtrip` (lossy), `empty` (`''` to a non-string type), `overflow` (precision or scale) |
+| `Unique` | `CREATE UNIQUE … INDEX [i] ON [s].[T] (cols)` (optional `WHERE`); `ADD CONSTRAINT … UNIQUE` / `PRIMARY KEY` | any duplicate, under the collation the index will be built with (head's target collation for each key column), within the filter? | duplicate-group count per class | `dup(T, cols, class)` | `exact`, `case`, `accent`, `trailing`, `nulls` (two NULLs in a non-filtered index) |
+| `Orphan` | `WITH CHECK CHECK CONSTRAINT [x]` where `x` is a FOREIGN KEY | any child without a parent? | orphan count (MATCH SIMPLE: a NULL in any FK column passes) | `orphan(T.cols→P)` | — |
+| `CheckFalse` | `WITH CHECK CHECK CONSTRAINT [x]` where `x` is a CHECK | any row where the rule is FALSE (not UNKNOWN)? | `WHERE NOT (predicate)`, under the predicate exception below; otherwise `unmeasured` | **needs:** an agent-written row in `witness.sql` | — |
 | `KeyLength` | `CREATE … INDEX` whose maximum key exceeds 1700 bytes (900 clustered) | any key value over the limit? | `DATALENGTH` sum over the key | `longkey(T, i)` | — |
-| `Rebuild` | `CREATE TABLE [s].[tmp_ms_xx_T]` … `INSERT INTO … SELECT … FROM [s].[T]` | rows in T; does every moved column fit; identity gaps? | `HasRows` plus `Fits` per moved column, plus `gapped` | presence, misfit, `gapped(T)` | — |
-| `Computed` | `ADD [c] AS (…) PERSISTED` on an existing table | any row where the expression fails? | — | **needs:** an agent-written row | — |
-| `Authored` | any pre- or post-deploy statement that changed against the base | what shapes does this script handle? | `shape` verb (discovery), then declared counts | **needs:** declared witnesses | — |
+| `Rebuild` | `CREATE TABLE [s].[tmp_ms_xx_T]` … `INSERT INTO … SELECT … FROM [s].[T]` | rows in T; does every moved column fit; identity gaps? | `HasRows`, plus `Fits` per moved column, plus `gapped` | presence, misfit, `gapped(T)` | — |
+| `Computed` | `ADD [c] AS (…) PERSISTED` on an existing table | any row where the expression fails? | `unmeasured` | **needs:** an agent-written row; recorded `declared-not-measured` | — |
+| `Temporal` | `ADD PERIOD FOR SYSTEM_TIME`; `SET (SYSTEM_VERSIONING = ON …)` with a history table that holds rows | any row whose period end is not after its start, or that overlaps? | invalid-period count | `misfit(T.period, invalid)` | — |
+| `Scan` | non-unique `CREATE INDEX`; an index DROP+CREATE; `ADD [c] … NOT NULL DEFAULT …` (backfill); a clustered PK drop or create | none (data-insensitive) | `Rows(T)` for the `scale` flag | none | — |
+| `Authored` | a pre- or post-deploy statement in head that is not in the merge-base | what shapes does this script handle? | `shape` verb (discovery), then declared counts | **needs:** declared witnesses, or `-- shapes: none (<reason>)` | — |
+| `SeedDrift` | a post-deploy MERGE seed that changed (an `Authored` subset) | does the environment's lookup disagree with the seed's own rows? | count of rows whose (key, code) disagrees with the seed's VALUES (repository values are sent; only integers return) | `declared(seed drift row)` | — |
 | `Unknown` | any other statement that reads existing rows | — | — | **stop** `unknown-statement` | — |
+
+**Coordinates.** Every question names coordinates (`schema.table.column`). They resolve in this
+order:
+
+1. **Created by this delta.** The question is answered *from the delta*, not by a probe:
+   - a new table is empty;
+   - a new column holds its default, or NULL, in every existing row of its table. So a unique index
+     on a new defaulted column of a table with two or more rows is an `exact` duplicate;
+   - an FK from an existing column to a new table has an orphan for every non-NULL child value,
+     unless a pre- or post-deploy script fills the parent. Constraint validation runs after the
+     post-deploy script (observed 2026-10-18 on sqlpackage 170.5.96; a `verify` case pins it per
+     version), so a seeded lookup counts. Then the question becomes `Authored`.
+2. **Renamed or moved by this delta.** `sp_rename` and `ALTER SCHEMA … TRANSFER` in the same delta
+   map the coordinate to its old name, and the probe uses the old name.
+3. **Present in the environment's catalog.** It is probed.
+4. **Otherwise** the run stops `missing-object` (S3).
+
+**The predicate exception (P2).** A probe is a template. The only non-template text it may carry is
+a predicate copied verbatim from the delta's own generated DDL: a CHECK expression, or a filtered
+index's `WHERE`. That is model text the deploy itself will evaluate on that data. Such a probe:
+- is wrapped so it returns an integer only;
+- is refused, and recorded as `unmeasured`, if the predicate contains `CONVERT`, `CAST` or `PARSE`
+  (P3).
+
+**The doctrine for authored remedies.** A remedy must be written by predicate
+(`WHERE NOT EXISTS (…)`, `WHERE LEN(Code) > 10`), never by a literal value (`WHERE CustomerId = 999`).
+A literal-keyed remedy fixes the rows of one environment only. The facsimile's synthetic witnesses
+expose that by staying unfixed, so a block after an authored remedy prints: "If the remedy names
+specific values, rewrite it by predicate so it is total in every environment."
 
 ## 5. Building the copy
 
 The steps run in this order, every time, for each environment:
 
-1. **Restore** the base cache for `hash(schema.<env>.dacpac, referenceData, effective options)`. On a
-   miss, create it once:
-   - make a fresh `fx_<hash12>_base` database;
+1. **Restore** the base cache. Its key is the hash of `schema.<env>.dacpac`, the merge-base's
+   `referenceData` lanes, the effective options, the tool version, the DacFx version and the LocalDB
+   version (D5). On a miss, create it once, under a cache lock:
+   - make a fresh `fx_base_<hash12>_<rand4>` database;
    - publish `schema.<env>.dacpac` into it;
-   - run the `referenceData` lanes;
+   - run the **merge-base** version of the `referenceData` lanes, so reference data is as the
+     environment holds it before this change;
    - take a `BACKUP`.
 
-   Every proof runs on a new `fx_<slug>_<env>_<rand>` database restored from that backup. Nothing
-   is ever wiped (S5).
-2. **Plant presence:** one valid row per table where `HasRows=yes`, plus its NOT NULL FK ancestors.
-   An ancestor reuses an existing row (reference data) before planting a new one. Nullable columns
-   get non-NULL values, so "populated but clean" stays clean. Nullable FK columns are the exception
-   and get NULL.
-3. **Plant violations:** one row per question answered "violating", per value class.
-4. **Apply `witness.sql`:** DML only. Its rows cover agent-written witnesses and pins.
-5. **Accept:** re-run the same probes against the copy. Every boolean must equal the environment's,
-   including every "no" (F1).
-6. **Check identity:** script `schema.<env>.dacpac` against the copy under the effective options. The
+   Every proof runs on a new `fx_<slug>_<env>_<rand4>` database restored from that backup, recorded
+   in the tool's registry. Nothing is ever wiped (S5).
+2. **Plant presence:** one valid row in every touched table whose environment `Rows > 0` (every
+   touched table's `Rows` is measured), plus its NOT NULL FK ancestors.
+   - A violation row also counts as presence. A table needs the *maximum* of its needs, not their
+     sum: one row by default, two for a `dups` or `nulls` class or a gapped identity.
+   - Every probe and the planter run under `SET LANGUAGE us_english; SET DATEFORMAT ymd`. The
+     Octopus login's language and date format are part of the captured options, or the
+     `platform:dateformat` residual.
+   - An ancestor reuses an existing row (reference data) before planting a new one.
+   - For every `Orphan` question the plan **links** the child's column to a planted or reference
+     parent row, even though the FK does not exist yet in the base. Otherwise the copy would hold
+     orphans the environment doesn't.
+   - Nullable columns get non-NULL values, so "populated but clean" stays clean. Nullable FK
+     columns with no `Orphan` question are the exception and get NULL.
+3. **Plant violations:** one row per (question answered "violating" × value class).
+4. **Reproduce trust state.** For every constraint the environment holds untrusted or disabled, the
+   planter may suspend it to plant, then restores exactly the environment's state (F9). Only the
+   planter does this; `witness.sql` stays DML only.
+5. **Apply `witness.sql`:** the text is DML only, holding agent-declared witnesses and pins. The
+   planter runs it inside the same suspend-and-restore envelope as step 4, so a declared row can be
+   inserted under an existing trusted constraint, or in a NOT NULL cycle, and the environment's
+   trust state is restored afterwards.
+   - **A block** begins `-- plants: <T>` (it owns T's rows) or `-- witness: <question key>` (it
+     discharges that need). The blocks run in FK order.
+   - **A failing row** stops `witness-failed`.
+   - **A literal** that is neither synthetic nor repository-defined stops `witness-not-synthetic`.
+6. **Hash** every touched table and every reference table.
+7. **Accept:** re-run the same probes against the copy. Every boolean must equal the environment's,
+   including every "no" (F1). `unmeasured` questions are excluded and recorded
+   `declared-not-measured`.
+8. **Check identity:** script `schema.<env>.dacpac` against the copy under the effective options. The
    plan must be empty (F2).
-7. **Publish head** under the effective options (Strict), then classify the outcome.
-8. **After a block:**
-   - script head against the copy and record what was left applied, by phase (H6);
-   - with `--permissive`, restore, re-plant, and publish with only `BlockOnPossibleDataLoss` flipped,
-     taking a content hash of every touched table before and after.
-9. **After a clean publish:** check silence. A second plan must be empty and the reference-data
-   hashes unchanged.
-10. **For a multi-release program:** prove R1, then R1 again (a non-empty second plan is the F17
-    hazard), then R2, all on one copy (F8).
+9. **Publish head** under the effective options (Strict), classify the outcome, and re-hash.
+10. **After a block:**
+    - script head against the copy and record what was left applied, by phase (H6). The phases, in the
+      order DacFx runs them: pre-deploy, main (transactional only when `IncludeTransactionalScripts`
+      is on), post-deploy, then constraint validation (`WITH CHECK CHECK`, outside the transaction);
+    - with `--permissive`, restore, re-plant, and publish with only `BlockOnPossibleDataLoss`
+      flipped, recording the hashes before and after.
+11. **After a clean publish:** check silence (D6). Publish head again. The plan must be empty, the
+    rows affected zero, and every hash unchanged. Otherwise record `not-silent` with the evidence.
+12. **For a multi-release program** (`--program R1 R2 …`): the questions come from the final target
+    (F8). Prove R1, then R1 again (a non-empty replay is the F17 hazard, recorded), then R2, all on
+    one copy.
 
-The base is **never re-published after planting** (S2). The copy is never anything but a database
-the tool created (S1).
+The base is **never re-published after planting** (S2). The copy is only ever a database the tool
+created (S1).
 
 ## 6. Outcomes
 
-Every run ends in exactly one outcome (H1). stdout carries one line; the full JSON goes to a file.
+A **proving** verb (`prove`) ends in exactly one verdict or one stop. Every **other** verb ends in
+`done` or a stop (H1).
+
+stdout carries exactly one line (A1):
+
+```
+VERDICT <clean|blocked <reason>|refused-at-build> · <object or message> · <file> · exit <n>
+STOP <kind> · <next step> · <file> · exit <n>
+DONE <verb> · <what happened, e.g. "Nothing to apply"> · <file> · exit 0
+```
+
+A multi-environment `prove` prints the line of its most severe outcome (stop > blocked > clean) and
+names `verdicts.json`, the index of every per-environment file. Every outcome, `DONE` included,
+writes its JSON:
+- under `proofs/<slug>/` for change-scoped verbs;
+- under `.facsimile/` for machine-scoped verbs (`doctor`, `up`, `down`, `status`).
 
 **Verdicts** (exit 0 or 3):
 
 | Verdict | Signal | Exit |
 |---|---|---:|
-| `clean` | `Successfully published database`, every question answered, acceptance and identity passed, no unknown statement | 0 |
-| `blocked guard` | Msg 50000 state 127, in a batch that is a guard batch of the delta | 3 |
+| `clean` | `Successfully published database`, every question answered or declared, acceptance and identity passed, no unknown statement | 0 |
+| `blocked guard` | Msg 50000 state 127, in a failing batch that is a guard batch of the delta. SQL72045 reformats the batch it quotes, so batches are compared token by token (whitespace and bracket-insensitive) | 3 |
 | `blocked constraint` | 547 (FK or CHECK, named) | 3 |
-| `blocked null` | 515 | 3 |
+| `blocked null` | 515; 4901 (a NOT NULL column added without a default to a table with rows); 8111 (a PRIMARY KEY on a nullable column, data-independent) | 3 |
 | `blocked unique` | 1505 (+1750); on insert, 2601 or 2627 | 3 |
-| `blocked truncation` / `overflow` / `conversion` | 2628, 8152 / 8115 / 245, 241, 8114 | 3 |
-| `blocked seed` | 207, 544, 8672 (in the post-deploy phase) | 3 |
+| `blocked truncation` | 2628, 8152 | 3 |
+| `blocked overflow` | 8115, 220, 248 | 3 |
+| `blocked conversion` | 245, 241, 8114, 8169 | 3 |
 | `blocked keylength` | 1946 | 3 |
 | `blocked cdc` | 4928, 4711 (only on a server that has CDC) | 3 |
-| `blocked collation` | 468 | 3 |
+| `blocked collation` | 468, when the copy's server collation equals the environment's (otherwise `stop platform`) | 3 |
+| `blocked authored` | **any** error raised inside a pre- or post-deploy batch: the seed's 207, 544, 8672, 2627; a remedy's own `RAISERROR`/`THROW`; a script's 208, 2714, 3726, 13575 | 3 |
 | `refused-at-build` | SQL71516 (a referenced key dropped) | 3 |
 
-**Stops** (one closed list; each names one next step, addressed to the agent, and the exit code
-says who acts):
+Engine warnings (Msg 1945; SQL72015, SQL72016) never decide a verdict; they are recorded under
+`warnings`.
+
+**Stops** (one closed list; each names one next step, addressed to the agent; the exit code says who
+acts):
 
 | Stop | Exit | Who acts | Next step, as the stop prints it |
 |---|---:|---|---|
-| `unreachable` | 4 | the developer | "Cannot reach <server>. Check the network, or ask someone with access to run `facsimile read <env>`." |
-| `no-access` | 4 | the developer or a lead | "<login> lacks <VIEW DEFINITION \| SELECT> on <db>. Ask a lead to run `facsimile read <env>`, or request the grant." |
-| `missing-object` | 5 | the agent | "<env> has no <object>. It has not received the change that creates it. Prove against what <env> has, or record <env> as Not checked." |
-| `stale-answers` | 5 | the agent | "answers.<env>.json was measured for a different delta. Re-run `facsimile read <env>`." |
-| `authored-script` | 5 | the agent with the developer | "The change runs authored SQL over <columns>. Run `facsimile shape <env> <column>` for each, declare a witness in witness.sql for every shape the script handles, and make the script check its own preconditions." |
+| `usage` | 1 | the agent | "Unknown verb or argument <x>. Usage: <one line>." |
+| `unreachable` | 4 | the developer | "Cannot reach <server> (<timeout\|network>). Check the network, or ask someone with access to run `facsimile read <env>`." |
+| `no-access` | 4 | the developer or a lead | "<login> <cannot log in to \| lacks VIEW DEFINITION \| lacks SELECT on> <db>. Ask a lead to run `facsimile read <env>`, or request the grant." |
+| `probe-failed` | 4 | the developer | "A count failed on <env> with Msg <n> (text withheld). Re-run `facsimile read <env>`; if it repeats, ask the principal." |
+| `missing-object` | 5 | the agent | "<env> has no <object>, and this delta does not create it. Prove against what <env> has, or record <env> as Not checked." |
+| `stale-answers` | 5 | the agent | "answers.<env>.json was measured for a different delta or head. Re-run `facsimile read <env>`." |
+| `answers-invalid` | 5 | the agent | "answers.<env>.json does not validate (<path>), or it names a server other than <env>'s. Re-run `facsimile read <env>`." |
+| `authored-script` | 5 | the agent with the developer | "The change runs authored SQL reading <existing columns>. Run `facsimile shape <env> <column>` for each, then declare a witness in witness.sql for every shape the script handles, or `-- shapes: none (<reason>)`, and make the script check its own preconditions." |
 | `check-witness` | 5 | the agent | "Write one row into witness.sql that makes <CK> FALSE, then re-run." |
 | `computed-witness` | 5 | the agent | "Write one row into witness.sql whose <column> expression fails, then re-run." |
-| `planter-needs-row` | 5 | the agent | "Cannot make a valid row for <T> (<reason>). Write one valid INSERT for <T> into witness.sql under `-- plants: <T>`." |
+| `planter-needs-row` | 5 | the agent | "Cannot make a valid row for <T> (<reason>). Write one valid INSERT for <T> into witness.sql (or up.sql) under `-- plants: <T>`." |
+| `witness-failed` | 5 | the agent | "witness.sql line <n> failed with Msg <m>. Fix that row." |
+| `witness-not-synthetic` | 5 | the agent | "witness.sql line <n> carries a literal not marked synthetic. Use a `w`-prefixed value or a repository-defined value." |
 | `acceptance` | 5 | the agent | "The copy answers <question> <yes\|no>, but <env> answered <no\|yes>. Fix witness.sql." |
 | `identity` | 5 | the agent | "witness.sql changed the schema (<object>). Witness files are DML only." |
-| `in-flight` | 5 | the developer | "<T> is in an open two-release window (estate/in-flight.md). Hold this change, or make it the window's next release." |
-| `config` | 6 | the developer | "facsimile.json: <json path>: <problem>." |
-| `toolchain` | 6 | the developer | "<tool> not found. <how to get it>." |
-| `platform` | 6 | the developer | "LocalDB <v> is older than the project's target <DSP>. Install LocalDB 2022 or later, or set `allowOlderLocalDb` (stamped on every record)." |
-| `options-unknown` | 6 | the principal | "No captured effective options. Capture the Octopus step's options into facsimile/options.publish.xml." |
+| `in-flight` | 5 | the developer | "<T> is in an open two-release window (<in-flight ledger>). Hold this change, or make it the window's next release." |
+| `config` | 6 | the developer | "facsimile.json: <json path>: <problem>." (all problems, one pass) |
+| `toolchain` | 6 | the developer | "<tool> not found, too old, or not responding (LocalDB gave no answer in 180 s after one retry). <how to get it or restart it>." |
+| `platform` | 6 | the developer | "<LocalDB <v> is older than the project's target <DSP> \| tempdb collation <c1> differs from <env>'s <c2> and the script compares #temp columns>. <remedy>." |
+| `options-unknown` | 6 | the principal | "No usable captured effective options (<missing \| BlockOnPossibleDataLoss=False>). Capture the Octopus step's options into the file `options` names." |
 | `build-failed` | 7 | the developer | "The project does not build: <first error>." |
 | `unknown-statement` | 9 | the principal | "Delta line <n> reads rows, but no vocabulary row matches it. Add a row with its case." |
 | `unclassified` | 9 | the principal | "The publish ended with <message> that no rule classifies. Add a rule with its case." |
 | `cdc` | 9 | the principal | "<T> is tracked by CDC, and LocalDB has none. This change is principal-led." |
 | `base-unpublishable` | 9 | the principal | "<env>'s schema does not publish to LocalDB (<feature>). Record it as Not checked." |
+| `identifier-unsafe` | 9 | the principal | "<identifier> cannot be validated against <env> safely. Nothing was sent." |
+| `interrupted` | 9 | the developer | "The run was interrupted at <step>. `facsimile down` removes its copies; re-run." |
+| `internal` | 9 | the principal | "Unexpected failure at <step> (<type>). Nothing claims a verdict." |
+
+**CDC, precisely.** The facts record `is_tracked_by_cdc` for every touched table:
+- a tracked touched table sets the `cdc` flag;
+- on LocalDB it also stops the proof with `cdc`;
+- `blocked cdc` is only ever a verdict on a full SQL Server that has CDC (corpus jobs).
 
 ## 7. Tier and flags
 
@@ -272,66 +371,91 @@ machine:
 
 | Tier | Holds when | What it costs |
 |---|---|---|
-| `T0 additive` | there are no row-reading statements | a clean publish of head onto the copy |
+| `T0 additive` | no data-sensitive statements | a clean publish of head onto the copy |
 | `T1 presence` | the only questions are `HasRows` | one count, from `sys.partitions` |
-| `T2 validation` | any of `NotNull`, `Fits`, `Unique`, `Orphan`, `CheckFalse`, `KeyLength`, `Rebuild`, `Computed` | counts, witnesses, and the proof |
-| `T3 authored` | any `Authored` | look first (shape), then T2 |
+| `T2 validation` | any of `NotNull`, `Fits`, `Unique`, `Orphan`, `CheckFalse`, `KeyLength`, `Rebuild`, `Computed`, `Temporal` | counts, witnesses, and the proof |
+| `T3 authored` | any `Authored` or `SeedDrift` | look first (shape), then T2 |
 
 **Flags:**
-- `scale`: a touched table has 1M rows or more and the delta builds an index, rebuilds a table,
-  alters a column, or validates a constraint on it;
-- `cdc`;
-- `unread:<env>`: environments with no answers, such as Prod;
-- `in-flight`;
-- `older-localdb`.
+
+| Flag | Set when |
+|---|---|
+| `scale` | a touched table has `Rows ≥ 1,000,000`, and the statement on it is data-sensitive, `Scan`, `Rebuild`, or authored DML |
+| `cdc` | a touched table is tracked by CDC |
+| `unread:<env>` | an environment has no answers (such as Prod) |
+| `assumed:<env>` | its verdict came from `--assume` |
+| `lag:<env>` | the environment receives operations beyond this PR (from `Compare-FxDeltas`) |
+| `drift:<env>` | the deploy would drop environment-only objects |
+| `in-flight` | a touched table is in an open two-release window |
+| `older-localdb` | `allowOlderLocalDb` was used |
 
 A tiered risk harness consumes `tier` and `flags` from `verdict.<env>.json` and decides which further
 checks to run. The facsimile assigns the tier from the delta, never from the operation's name, so
 the tier cannot be argued with.
 
-## 8. Verbs and config
+## 8. Verbs, config and files
 
 | Verb | Touches the environment | What it does |
 |---|---|---|
-| `facsimile doctor` | no (optional reachability) | tools, versions, LocalDB vs DSP, language mode, captured options, config |
-| `facsimile read <env>` | yes, twice | extract, script offline, questions, counts. Writes `delta.<env>.sql` and `answers.<env>.json` |
-| `facsimile prove [<env>…]` | no | copy, plant, accept, check identity, publish, classify. Writes `verdict.<env>.json`. CI runs this |
-| `facsimile prove --assume <env>=worst` | no | for an environment with no answers (Prod): proves both worlds, populated-and-clean and populated-and-violating. Records the message the violating world would hit and the probe to run before promoting. The schema comes from the nearest read environment, and the verdict is stamped `assumed` |
-| `facsimile shape <env> <s.t.c>` | yes (SELECT) | the value-free discovery profile for one column |
-| `facsimile up [--fresh]` | no | the daily local database (repository schema, reference data, k presence rows per table), converged |
+| `facsimile doctor [--reach <env>]` | only with `--reach` | tools, versions, LocalDB vs DSP, language mode, captured options, config |
+| `facsimile read <env>` | yes, twice | extract, script offline, questions, counts. Writes `schema.<env>.dacpac`, `delta.<env>.sql`, `delta.pr.sql` and `answers.<env>.json` |
+| `facsimile prove [<env>…] [--permissive] [--program <R1> <R2>…]` | no | copy, plant, accept, check identity, publish, classify. Writes `verdict.<env>.json` and `verdicts.json`. CI runs this |
+| `facsimile prove --assume <env>=worst` | no | for an environment with no answers (Prod), or with `unmeasured` answers: proves both worlds per question (clean, violating), and records the message the violating world would hit and the probe to run before promoting. The schema comes from the nearest read environment, and the verdict is stamped `assumed` |
+| `facsimile shape <env> <s.t.c> [--vocabulary]` | yes (SELECT) | the value-free discovery profile for one column. Writes `shape.<env>.<s.t.c>.json` |
+| `facsimile up [--fresh]` | no | the daily local database `fx_local`: the repository schema, reference data, k presence rows per table, then `up.sql` (declared rows and pins, DML only). Converged |
 | `facsimile status` | no | the facsimile databases, `up` freshness, cached schemas and their age, answer staleness |
-| `facsimile down [--all]` | no | drop the `fx_` databases (`--all` also clears caches) |
+| `facsimile down [--all]` | no | drop this tool's proof copies. `fx_local` and the caches stay; `--all` also drops `fx_local` and clears caches. Never drops a database absent from the tool's registry |
 | `facsimile init` | no | scaffold `facsimile.json` |
 
-`facsimile.json` is a closed schema. An unknown key is refused by its JSON path, and a secret is
-accepted only as an `env:` reference:
+**`facsimile.json`** is a closed schema (E4):
+- an unknown key is refused by its JSON path;
+- every problem is reported in one pass;
+- a secret is accepted only as an `env:` or `file:` reference (the Twin's D9, kept).
 
-```jsonc
+```json
 {
   "project": "Estate.sqlproj",
-  "options": "facsimile/options.publish.xml",     // the captured EFFECTIVE Octopus options
-  "sqlcmd": { "SomeVar": "value" },               // the captured per-pipeline SQLCMD values (non-secret)
-  "referenceData": ["ReferenceData/*.sql"],       // the seed lanes run on every copy (Twin parity #4)
+  "options": "facsimile/options.publish.xml",
+  "sqlcmd": { "SomeVar": "value" },
+  "referenceData": ["ReferenceData/*.sql"],
+  "inFlight": "ledgers/in-flight.md",
   "localdb": "MSSQLLocalDB",
+  "allowOlderLocalDb": false,
   "environments": {
-    "Dev":  { "server": "dev-sql",  "database": "Estate" },
-    "QA":   { "server": "qa-sql",   "database": "Estate" },
-    "UAT":  { "server": "uat-sql",  "database": "Estate" },
+    "Dev":  { "server": "dev-sql",  "database": "Estate", "auth": "integrated" },
+    "QA":   { "server": "qa-sql",   "database": "Estate", "auth": "integrated", "sqlcmd": { "SomeVar": "qa" } },
+    "UAT":  { "server": "uat-sql",  "database": "Estate", "auth": "integrated" },
     "Prod": { "server": "prod-sql", "database": "Estate", "read": "none" }
   },
   "up": { "rowsPerTable": 3 }
 }
 ```
 
-**What one change commits** (`proofs/<branch-slug>/`, written by the tool and reviewed in the PR):
+| Key | Required | Meaning |
+|---|---|---|
+| `project` | yes | the `.sqlproj` to build |
+| `options` | yes | the captured **effective** Octopus options: the profile with every `/p:` override folded in |
+| `sqlcmd` | no | the global SQLCMD values; `environments.<env>.sqlcmd` overrides them per environment |
+| `referenceData` | no | globs of seed lanes, run at the merge-base on every copy and at head for `up` (Twin parity #4) |
+| `inFlight` | no | the in-flight ledger: `estate/in-flight.md` in the source tree, `ledgers/in-flight.md` when vendored |
+| `localdb` | no | the LocalDB instance; default `MSSQLLocalDB` |
+| `allowOlderLocalDb` | no | permits a LocalDB older than the DSP by setting `AllowIncompatiblePlatform=True` **on copy publishes only**. This is the one documented exception to F6, stamped `older-localdb` on every record |
+| `environments` | yes | names matching `[A-Za-z][A-Za-z0-9_-]*`. Each has a `server` and a `database`; an `auth` of `integrated` (the default), `env:VAR` or `file:path` (secret-bearing); an optional `sqlcmd`; and `read: none` for an environment nobody can read |
+| `up.rowsPerTable` | no | k for `up`; default 3 |
 
-- `delta.<env>.sql`;
-- `answers.<env>.json`, stamped with login, time, delta hash and probe text;
-- `witness.sql`, if any;
-- `verdict.<env>.json`.
+**What one change commits** (`proofs/<branch-slug>/`, written by the tool, reviewed in the PR):
 
-**What is never committed:** the caches under `.facsimile/`, meaning schema dacpacs, base backups,
-and head builds.
+| File | Contents |
+|---|---|
+| `schema.<env>.dacpac` | the extracted schema: structure only, no data (P1). Committed so CI and reviewers reproduce the proof without access to the environment |
+| `delta.<env>.sql` and `delta.pr.sql` | the two deltas |
+| `answers.<env>.json` | stamped with server, database, login, time, head commit, delta hash, and probe text. Its content hash covers answer values only |
+| `witness.sql` | if any |
+| `shape.*.json` | if any |
+| `verdict.<env>.json` and `verdicts.json` | the outcomes |
+
+**What is never committed:** `.facsimile/`, meaning the base backups, head builds, the registry and
+`up`'s fingerprint.
 
 ## 9. How every invariant is attended to
 
@@ -342,8 +466,9 @@ and head builds.
    - a vocabulary row without a `corpus` case;
    - a stop kind without a case;
    - a Twin responsibility without a parity or retirement case;
-   - an operation without its four standard cases (empty, populated-clean, populated-violating per
-     class, authored remedy where one applies).
+   - an operation without its standard situations (`empty`, `clean`, `violating:<class>`, `remedy`,
+     `edge`), unless a case's `note: n/a <tag> — <reason>` excuses one;
+   - a TWN case that does not name its ARCH §2 row as `row <n>` in its title or note.
 2. **The differential oracle.** For every `corpus` case the runner builds two things from one fixture:
    the stand-in environment, and a full copy of it. It requires
    `verdict(facsimile(env)) == verdict(publish(head → copy of env))`. A hand-written expectation can

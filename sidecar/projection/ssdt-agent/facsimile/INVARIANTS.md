@@ -35,14 +35,26 @@ deliberately missing or extra.
 `verdict(facsimile(env)) = verdict(publish(head → full copy of env))`. The verdict class, the
 message number and the named object must all match.
 *Mechanism:* F1 + F2 + F6, and the fact that the guards are existence-sensitive.
-*Property:* the runner executes both arms for every `corpus` case. Disagreement fails the case
-whatever the hand-written expectation says.
+*Property:* the runner executes both arms for every `corpus` case that reaches a verdict.
+Disagreement fails the case whatever the hand-written expectation says.
+*Scope:*
+- **Designed stops.** A case whose facsimile outcome is a designed stop (`cdc`, `platform`,
+  `base-unpublishable`, `check-witness`, `computed-witness`, `authored-script`) asserts the stop. The
+  oracle's verdict is recorded for information only.
+- **Literal-keyed remedies.** An authored remedy keyed to a literal value is not total. The
+  facsimile's synthetic witness stays unfixed and blocks while the oracle publishes clean. That
+  disagreement is the *intended* finding, and the case asserts the doctrine line (ARCH §4).
 
-**F4 · Question totality.** Every statement in the delta that reads existing rows maps to exactly
-one vocabulary row, or the run stops `unknown-statement`. No row-reading statement is silently
+**F4 · Question totality.** Every statement in the delta falls into exactly one class (ARCH §4):
+- **data-sensitive,** which maps to exactly one question kind;
+- **data-insensitive,** a `Scan`: no question, but its tables' `Rows` are measured;
+- **non-reading.**
+
+A statement in no class stops `unknown-statement`. Nothing that reads existing rows is silently
 ignored.
-*Mechanism:* `Get-FxQuestions` classifies every batch as row-reading or not. A row-reading batch
-with no match is a stop.
+*Mechanism:* `Get-FxQuestions` classifies every batch. It reads the delta together with the
+environment's column catalog, so a narrowing is told from a widening and a NULL→NOT NULL from a
+restated NOT NULL.
 *Property:* every statement shape DacFx emits in the corpus (scanned from the generated deltas) is
 either matched or produces the stop. A synthetic unknown shape always stops.
 
@@ -90,8 +102,9 @@ environment.
 
 ## H — Honesty: what the tool says is true
 
-**H1 · Two outcomes.** Every invocation ends in exactly one of a verdict or a stop, with exactly one
-stdout line and one JSON file. There is no third outcome: no warning-only exit, no partial success.
+**H1 · Two outcomes.** A proving invocation (`prove`) ends in exactly one verdict or one stop. Every
+other verb ends in exactly one `done` or one stop. Either way there is exactly one stdout line and
+one JSON file (ARCH §6). There is no third outcome: no warning-only exit, no partial success.
 *Property:* every case's outcome parses as exactly one of the two. Killing the process mid-run
 leaves no file claiming a verdict.
 
@@ -104,28 +117,53 @@ leaves no file claiming a verdict.
 
 Anything less is a stop.
 *Property:* every one of those conditions, falsified alone, turns `clean` into a named stop.
+`unmeasured` questions count as answered only when a declared witness covers them, and then the
+record carries `declared-not-measured`.
 
 **H3 · Actionable stop.** Every stop names one next step, addressed to the agent, citing the file,
 table, column or command concerned (ARCH §6). It is never a bare error.
 *Property:* for every stop kind, the message matches its template with every placeholder filled.
 
-**H4 · Explicit residuals.** Every verdict carries a non-empty `notChecked` list, drawn from a
-closed set of residuals: unread environments, volume and timing, CDC, workload, platform
-differences, change over time, the engine version, and the Integration Studio refresh. A residual
-that does not apply is omitted, never left blank. A verdict with nothing to say still says what it
-did not check.
+**H4 · Explicit residuals.** Every verdict carries a non-empty `notChecked` list, drawn from this
+closed set of tokens:
+
+| Token | What was not checked |
+|---|---|
+| `unread:<env>` | an environment with no answers |
+| `assumed:<env>` | an environment whose verdict came from `--assume` |
+| `volume` | timing, transaction-log size, CommandTimeout, and locks at volume |
+| `cdc` | change data capture |
+| `workload` | index usage and plans |
+| `platform:<what>` | a difference between the copy's platform and the environment's |
+| `drift-since-measure` | data changed between measurement and promotion |
+| `engine-version` | the Octopus DacFx version |
+| `integration-studio` | the external entity refresh |
+| `external-consumers` | SSIS and other readers |
+| `app-behaviour` | application insert paths |
+| `declared-not-measured` | a question answered only by a declared witness |
+| `tooling` | a break-glass merge |
+
+A residual that does not apply is omitted, never left blank. A verdict with nothing to say still
+says what it did not check.
 *Property:* every verdict's `notChecked` is non-empty and drawn from the closed set.
 
 **H5 · Classification by evidence.** A block is attributed to the data-loss guard only when the
-failing batch quoted in SQL72045 is a guard batch of this delta (`RAISERROR … 16, 127`). Any other
-Msg 50000 is reported as the authored script that raised it. An unknown message number or shape is
+failing batch quoted in SQL72045 matches a guard batch of this delta (`RAISERROR … 16, 127`),
+compared token by token because SQL72045 reformats what it quotes. Any error raised inside a pre- or
+post-deploy batch, whatever its number (a counterfeit 50000, a THROW, 207, 208, 2714, 3726, 13575),
+is `blocked authored`. An unknown message number or shape in the generated main phase is
 `stop unclassified`, never `clean`.
 *Property:* a counterfeit `RAISERROR('…',16,127)` in a pre-deploy is classified as the authored
 script, not the guard. An unknown number stops.
 
 **H6 · Residue after a block.** After any block, the verdict records what the publish left applied,
-by phase (pre-deploy, main, validation, post-deploy). It is read by scripting head against the
-copy.
+by phase, in the order DacFx runs them:
+1. pre-deploy;
+2. main (transactional only with `IncludeTransactionalScripts`);
+3. post-deploy;
+4. constraint validation (`WITH CHECK CHECK`, outside the transaction, observed after post-deploy).
+
+It is read by scripting head against the copy.
 *Property:* a 1505 unique build leaves the index dropped and the column altered (receipt, red team
 #4), and the residue lists both. A 547 at `WITH CHECK CHECK` lists every other applied change and
 the untrusted constraint.
@@ -134,11 +172,15 @@ the untrusted constraint.
 - the tool version;
 - the sqlpackage/DacFx version;
 - the LocalDB (or server) version and edition;
-- hashes of the effective options, the extracted schema, the answers, `witness.sql` and the delta;
+- the head commit and the merge-base commit;
+- the server and database the answers were read from;
+- hashes of the effective options, the extracted schema, the answers' *content*, `witness.sql` and
+  both deltas;
 - the login and time the answers were measured.
 
-*Property:* every verdict contains every stamp. Changing any stamped input changes the verdict's
-identity hash.
+*Property:* every verdict contains every stamp. Changing any **input** changes the verdict's
+identity hash. The login and the time are stamps but not inputs, so a re-read of unchanged data
+keeps the identity, and F7 can share proofs.
 
 ## P — Privacy: nothing but structure and integers leaves an environment
 
@@ -150,8 +192,14 @@ value in a stand-in environment never appears in any artifact.
 
 **P2 · Templated probes only.** Every statement sent to an environment comes from
 `sql/probes.sql` (or `sql/shape.sql`). Identifiers are validated against the environment with
-`OBJECT_ID` or `COL_LENGTH`, then bracket-quoted. No agent-written or user-written text is ever
-executed in an environment.
+`OBJECT_ID` or `COL_LENGTH`, then bracket-quoted. An identifier that cannot be validated safely
+stops `identifier-unsafe`, and nothing is sent. No agent-written text is ever executed in an
+environment.
+
+The one exception is ARCH §4's **predicate exception.** A CHECK expression or a filtered-index
+`WHERE`, copied verbatim from the delta's generated DDL, may be carried inside an integer-returning
+count. If it contains `CONVERT`, `CAST` or `PARSE` it is refused, and the question is recorded
+`unmeasured`.
 *Property:* an injection attempt through a table, column or predicate name either validates as a
 real identifier or stops. The probe text sent is recorded and is a template instance.
 
@@ -162,23 +210,40 @@ only its number.
 error for a forced failure contains a number only.
 
 **P4 · Read-only by construction.** Environment connections carry `ApplicationIntent=ReadOnly`, and
-the tool sends no DML or DDL to an environment. Its only environment statements are Extract,
-Script, and the probe SELECTs.
+the tool sends no DML or DDL to an environment. Its only environment traffic is DacFx's Extract
+(metadata reads) and the probe SELECTs. The delta is scripted offline, so Script sends nothing.
 *Property:* run against a stand-in environment under a login with no write permission, every verb
-succeeds. A trace of statements sent contains only SELECT and Extract/Script metadata reads, plus
-the single `xp_instance_regread` that DacFx's Script sends.
+succeeds. A trace of statements sent contains only SELECT and Extract's metadata reads. Whether
+Extract also sends `xp_instance_regread`, as Script does, is a `verify` case.
 
-**P5 · Synthetic witnesses.** Every planted value is synthetic and recognizably so: string witnesses
-carry the `w` prefix, and email-like columns use `@example.invalid`. No environment value reaches
-the copy.
+**P5 · Synthetic witnesses.** Every planted value is either generated by the planter or defined by
+the repository. No environment value ever reaches the copy.
+- **Generated values** come from (table, column, ordinal, class). They carry the `w` marker wherever
+  the type, the width and the class allow it.
+- **Where the marker cannot fit,** the value comes from the planter's fixed, documented per-class
+  table: an empty string, a day-first date such as `13/04/2001`, a numeric overflow, a `char(1)`.
+- **Repository-defined values** are used where a question requires equality with one: a seed's
+  code, a default, a key from reference data.
 *Property:* a canary value present in the stand-in environment is absent from the copy.
 
 **P6 · Bounded discovery.** The `shape` verb returns structure only: signatures, lengths, counts,
-and distinct-as-collated vs distinct-binary. A signature seen fewer than k times is suppressed
-(default k = 5). Literal values are returned only for columns with 50 or fewer distinct values, and
-only with `--vocabulary`.
-*Property:* `shape` on a high-cardinality email column returns no literal value. A singleton
-signature is suppressed. `--vocabulary` on a 4-value status column returns the four values.
+and distinct-as-collated vs distinct-binary.
+- **Every character becomes a class symbol.** ASCII letters become `a`/`A`, digits `9`, spaces `_`,
+  and every other non-punctuation character `x`, so no non-Latin text passes through verbatim.
+- **Rare signatures are summarized, not hidden.** A signature seen fewer than k times (default 5)
+  is folded into "other: n rows in m signatures", so the reader knows a rare shape exists without
+  seeing it.
+- **Literal values are bounded.** They are returned only with `--vocabulary`, only for a column with
+  50 or fewer distinct values, and only for values each seen at least k times.
+- **Confirmation counts are not suppressed.** They are integers.
+
+*Property:*
+- `shape` on a high-cardinality email column returns no literal;
+- a non-Latin name column returns class symbols only;
+- a singleton signature appears only inside "other";
+- `--vocabulary` on a 4-value status column with every value seen 5 or more times returns the four
+  values;
+- a 3-row table's name column returns none.
 
 ## S — Safety of the copy itself
 
@@ -192,10 +257,18 @@ happens only after restore.
 *Property:* the pipeline's step trace never shows a base publish after a plant. (Receipt, red team
 #9: a re-publish erases witnesses.)
 
-**S3 · A missing object is a stop, never zero.** If a question names an object the environment does
-not have, the run stops `missing-object`. It never reads that answer as "empty".
-*Property:* an environment lacking a column named by the delta produces the stop, not
-`populated=false`.
+**S3 · A missing object is a stop, never zero.** Coordinates resolve in ARCH §4's order:
+1. created by this delta, so answered from the delta;
+2. renamed or moved by it, so probed under the old name;
+3. present in the environment, so probed.
+
+A coordinate that is none of these stops `missing-object`. It is never read as "empty".
+*Property:*
+- an answers file reused against an environment lacking a column it names produces the stop, not
+  `populated=false`;
+- a unique index on a column the same delta adds is answered from the delta (its default) and
+  never stops;
+- a constraint on a column renamed earlier in the delta is probed under the old name.
 
 **S4 · Platform.** The LocalDB major version must be at least the project's DSP. Otherwise the run
 stops `platform`, unless `allowOlderLocalDb` is set, in which case every verdict is stamped
@@ -207,10 +280,14 @@ between proofs, environments or cases.
 *Property:* proving the same fixture after a dirty previous run (a block leaves residue) gives an
 identical verdict.
 
-**S6 · Reapable.** `down` removes every `fx_` database. A crash leaves only `fx_` databases and
-cache files, all reapable.
-*Property:* after a killed run, `down` leaves zero `fx_` databases. Nothing else on the instance is
-touched.
+**S6 · Reapable.** The tool keeps a registry of the databases it created. `down` removes every
+registered proof copy and keeps `fx_local`. `down --all` also removes `fx_local` and the caches. A
+crash leaves only registered databases and cache files, all reapable. A database not in the
+registry is never dropped, whatever its name.
+*Property:*
+- after a killed run, `down` leaves zero registered proof copies;
+- a person's own database named `fx_mine` survives `down --all`;
+- nothing else on the instance is touched.
 
 ## D — Determinism and statelessness
 
@@ -223,19 +300,45 @@ verdict, apart from the timestamp field.
 changes run time and nothing else.
 *Property:* a case run with a warm cache and with no cache gives identical verdicts.
 
-**D3 · S-stable planting.** A planted value is a pure function of (table, column, ordinal, type,
-width). Adding, removing or retyping one column changes only that column's planted values.
-*Property:* plan two schemas that differ in one column. Every other column's values are identical.
+**D3 · S-stable planting.** A generated literal is a pure function of (table, column, ordinal,
+type, width, value class). Adding, removing or retyping one column changes only that column's
+planted values.
+
+The values that depend on the copy are outside D3 but inside D1:
+- keys resolved from the copy (reused parents, orphan keys beyond the parent's maximum);
+- system-generated period columns;
+- identity values.
+
+*Property:* plan two schemas that differ in one column. Every other column's generated literals are
+identical.
 
 **D4 · Convergent `up`.** After `up`, a second `up` with unchanged inputs does nothing ("Nothing to
 apply."). Any input change makes `up` re-converge.
 *Property:* `up`, `up` is a no-op. A schema edit followed by `up` re-converges. A reference-data
 edit followed by `up` re-converges.
 
-**D5 · Cache soundness.** A cache key is the hash of every input that shaped the cache, so a changed
-input always misses.
-*Property:* each input of the base cache (schema, reference data, options) is changed in isolation,
-and each change misses.
+**D5 · Cache soundness.** A cache key is the hash of every input that shaped the cache:
+- the schema;
+- the merge-base reference data;
+- the effective options;
+- the tool version;
+- the DacFx version;
+- the LocalDB version.
+
+A changed input always misses. Two runs missing the same key at once do not collide (a lock, and
+unique names).
+*Property:* each input is changed in isolation, and each change misses. Two concurrent misses
+produce one cache and two valid proofs.
+
+**D6 · Silence.** A change that published clean, published again onto the same copy, is silent:
+- the plan is empty;
+- the rows affected are zero (a guarded MERGE writes nothing);
+- the hash of every touched and reference table is unchanged.
+
+Otherwise the record carries `not-silent` with the evidence. This is the Twin's and v2's
+CDC-silence guarantee, kept at the copy's grain.
+*Property:* every clean corpus case is replayed. A deliberately unguarded MERGE, an R1 replay, and a
+same-value rewrite (caught by rows-affected, not by the hash) each produce `not-silent`.
 
 ## M — Minimality: lean by law
 
@@ -244,11 +347,15 @@ least one case fail.
 *Mechanism:* the mutation pass (ARCH §9.4).
 *Property:* for each item, delete it, run the suite, and require at least one failure.
 
-**M2 · Witness minimality.** Outside `up`, the planted set is the minimal set satisfying F1: one
-presence row per populated touched table, plus its required FK ancestors, plus one row per
-(violating question × class).
-*Property:* the planted row count equals the plan's predicted count, and removing any planted row
-breaks F1.
+**M2 · Witness minimality.** Outside `up`, the *generated* planted set is the minimal set satisfying
+F1. For each populated touched table, it plants the maximum of that table's needs, not their sum.
+A violation row also serves as presence. A `dups` or `nulls` class, or a gapped identity, needs two
+rows. Each table also gets its required FK ancestors and links.
+
+Rows declared in `witness.sql` are added on top. They are counted and reported separately, never
+mistaken for generated minimality.
+*Property:* the generated row count equals the count in the resolved plan `plant.sql` reports.
+Removing any generated row breaks F1. The declared rows appear in the record by line.
 
 **M3 · Two touches.** `read` makes exactly two round-trips per environment: one Extract and one
 batched count. `prove` makes none.
@@ -270,9 +377,15 @@ green on the new version first. Every verdict is stamped with the version (H7).
 *Property:* the corpus workflow runs on the pin bump PR, and a verdict without a version stamp is
 invalid.
 
-**E3 · Proof memory.** Every schema-changing PR commits `proofs/<slug>/` containing its delta,
-answers, witnesses and verdict. CI refuses a schema PR whose answers are missing or keyed to a
-different delta hash.
+**E3 · Proof memory.** Every schema-changing PR commits `proofs/<slug>/` (ARCH §8) containing:
+- the extracted schema;
+- both deltas;
+- the answers;
+- the witnesses;
+- the verdicts.
+
+CI refuses a schema PR whose answers are missing, or keyed to a different delta hash or head
+commit, or which name a server other than the configured environment's.
 *Property:* a PR with a schema edit and no proofs fails. A PR whose proofs predate its last schema
 edit fails as stale.
 
@@ -284,9 +397,14 @@ are each refused, all named.
 
 ## A — Agent ergonomics: a weak agent on the weakest surface succeeds
 
-**A1 · One line, one file.** stdout is exactly one line, `<OUTCOME> <reason> · <file> · exit <n>`.
-The JSON goes to the named file, and progress goes to stderr.
-*Property:* every case's stdout matches the grammar.
+**A1 · One line, one file.** stdout is exactly one line in ARCH §6's grammar:
+- `VERDICT …`;
+- `STOP <kind> …`;
+- `DONE <verb> …`.
+
+Each line ends `· <file> · exit <n>`. The JSON goes to the named file, and progress goes to stderr.
+*Property:* every case's stdout matches the grammar. A multi-environment `prove` prints its most
+severe outcome and names `verdicts.json`.
 
 **A2 · ConstrainedLanguage-safe.** Every verb runs under PowerShell ConstrainedLanguage mode. It
 uses no `Add-Type`, no arbitrary .NET methods, and no COM.
@@ -320,7 +438,10 @@ and the four loop tests) reproduces under the facsimile with the same verdict.
 
 **T3 · Workflow continuity.** `up`, `up --fresh`, `status`, `down`, `down --all` and `init` keep the
 meaning `twin up / seed / status / down / reset / init` had for the team. Converge, reproduce,
-report and remove all work without Docker.
+report and remove all work without Docker:
+- `down` keeps `fx_local` and its hand-written rows, as `twin down` kept the container's data;
+- `down --all` removes them, as `twin reset` did;
+- `up.sql` carries the pins that `twin.json` scenarios carried.
 *Property:* each Twin verb's acceptance (THE_TWIN.md §7) is restated as a facsimile case and passes.
 
 **T4 · Side by side.** During the G4 window, every schema PR records both the Twin's verdict and the
