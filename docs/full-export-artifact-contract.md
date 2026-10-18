@@ -337,7 +337,7 @@ Use the repository’s edge-case fixtures to validate an SSDT project end-to-end
 
 Regardless of mode, the recommended flow is: publish the DACPAC (which runs static
 seeds via post-deployment), execute the dynamic data replay, and only fall back to a
-constraint-free publish if corporate policy requires it.
+constraint-free publish if the deployment policy requires it.
 
 4. Compare the deployed schema against the fixture manifest (`tests/Fixtures/emission/edge-case/manifest.json`)
    to confirm the SSDT project and seed scripts align with the documented contract.

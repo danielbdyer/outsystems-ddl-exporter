@@ -327,7 +327,7 @@ it is a strong draft aimed at an environment the team does not have.
 
 ## 9. What would raise confidence further, in rough priority
 
-- Stand up a proving path on a real corporate machine — Windows, Visual Studio, a LocalDB or local
+- Stand up a proving path on a real team machine — Windows, Visual Studio, a LocalDB or local
   SQL Server pointed at a restored copy of the real Dev database — and run ten real changes through
   it end to end before the week. This is the highest-value work available, because it closes the
   prerequisite that gates everything else.

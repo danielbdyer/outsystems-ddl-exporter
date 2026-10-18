@@ -6853,7 +6853,7 @@ For changes to the playbook's organization:
 ### Voice and Tone
 
 - **Direct and practical** — Get to the point
-- **Warm but professional** — Not corporate, not casual
+- **Warm but professional** — Not stiff, not casual
 - **Confident but honest** — State what we know; admit what we don't
 - **Teaching-oriented** — Explain why, not just what
 

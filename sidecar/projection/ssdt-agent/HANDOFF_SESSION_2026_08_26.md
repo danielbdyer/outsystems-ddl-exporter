@@ -212,7 +212,7 @@ documents in `sidecar/projection/`, `sidecar/projection/scripts/warm-sql.sh`, th
 under the ssdt-agent tree, and `PROVING_PATH_WINDOWS.md`. This work should be researched thoroughly
 before a line of the design is written.
 
-**The prerequisites the assessment named, which belong to the owner's corporate machine.** Stand up
+**The prerequisites the assessment named, which belong to the owner's Windows machine.** Stand up
 the Windows proving path against a restored copy of real Dev data; pin the pipeline's DacFx version
 in the toolchain ledger and confirm the constraint-trust behavior once against a real publish; port
 the Copilot packaging onto a real Visual Studio build and confirm which features that build actually
