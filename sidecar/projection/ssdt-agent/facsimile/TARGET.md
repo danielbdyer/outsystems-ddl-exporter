@@ -15,7 +15,7 @@ CLI-first, and the same executable also runs as a stdio MCP server (`facsimile m
 **Language and surface are two separate choices.**
 - **The language** is C# (or PowerShell, the fallback in Appendix A). It decides how the core is
   built and kept.
-- **The surface** is a terminal command (always) and MCP (where the organization allows it). It
+- **The surface** is a terminal command (always) and MCP (enabled in this organization). It
   decides how Copilot calls the tool.
 
 They were conflated earlier; they are independent. MCP is never the floor, because GitHub's "MCP
@@ -40,7 +40,15 @@ obligation", and the reason does not depend on taste. Two more reasons follow:
 - **The suite runs as ordinary tests.** The 1,123 cases become xUnit theories that run in Visual
   Studio's Test Explorer.
 
-**The gate.** C# holds only if three facts hold on a real team laptop. All three come from the
+**The gate is settled (2026-10-18, by the operator).** The team already builds and runs C#, and
+already runs MCP servers in Copilot. That establishes all three conditions below: .NET is present,
+NuGet restores, and the organization's MCP policy is enabled. The realization is C#, and MCP mode is a
+first-class surface. The CLI remains for CI, scripts and people, and as the floor if a machine's
+MCP setup breaks. Appendix A stays only as the record of the alternative.
+
+The conditions, kept for any new machine or team:
+
+C# holds only if three facts hold on a real team laptop. All three come from the
 extended laptop check (`../../../../TWIN_SUCCESSION.md` Appendix C):
 
 | Fact | How it is read | If it fails |
@@ -380,10 +388,10 @@ Each milestone ends with every case of its scope green, the budgets checked, a c
 | Need | Before | Why |
 |---|---|---|
 | Nothing | M-a to M-d | they run entirely in this sandbox |
-| The laptop check results, including the .NET lines | M-e | it confirms the realization, or switches to Appendix A |
+| `sqllocaldb versions` from one team laptop | M-e | LocalDB must be 16.x (2022) or later for a Sql160 project. This is a setup ticket, not a design question. DacFx runs in-process, so sqlpackage is not needed on laptops at all |
 | The Octopus step's effective options and DacFx version | trusting any verdict on the real estate | not needed to build anything |
 | Whether there is an Azure Artifacts feed | M-f | distribution |
-| Whether the MCP policy is enabled | M-f | optional |
+| ~~Whether the MCP policy is enabled~~ | — | settled: enabled |
 
 ## 12. Risks
 
