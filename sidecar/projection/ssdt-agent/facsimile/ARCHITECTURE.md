@@ -41,7 +41,8 @@ mechanism and every case in `cases/` passes. "Least" is enforced, not hoped for:
 - every line must be necessary to at least one case (the necessity law M1, checked by deletion);
 - every file has a line budget (M4).
 
-The whole edition is budgeted at **about 1,600 lines**, PowerShell and T-SQL together. That is
+The whole edition is budgeted at **under 2,000 lines** of production code, C# and T-SQL together
+(`TARGET.md` §6; about 1,600 in the PowerShell fallback). That is
 roughly 1% of what the Twin stood on (about 5,000 lines of F# over a 114,000-line kernel).
 
 **Ultra-powered** means the power comes from leverage, not from lines:
@@ -132,7 +133,8 @@ scripts and the workflows. Every row is backed by a case in `cases/80-twin-parit
 ```
 
 **A pure core with a thin shell.** Every invariant that can be stated over text and tables lives in
-eight pure PowerShell functions, which are CLM-safe and do no I/O:
+eight pure functions that do no I/O. These are their logical names, which the cases use. `TARGET.md` §3
+maps each to its C# member (`Get-FxQuestions` is `Questions.Derive`):
 
 | Function | In → out |
 |---|---|
@@ -147,22 +149,17 @@ eight pure PowerShell functions, which are CLM-safe and do no I/O:
 
 Pure cases (`kind: pure`) run these in milliseconds with no SQL Server. The shell only calls
 Microsoft-signed tools (`sqlpackage`, `SqlLocalDB`, MSBuild via `vswhere`, `sqlcmd`), runs the
-T-SQL files, and writes files. The floor is Windows PowerShell 5.1 in ConstrainedLanguage mode.
+T-SQL files, and writes files. The realization's floor, the weakest machine it must run on, is
+`TARGET.md` §1.
 
-**Files and budgets** (vendored into the SSDT repository as `facsimile/`):
+**Files and budgets.** The realization (C# on .NET, with a PowerShell fallback), its layout, its
+dependencies and its line budgets are specified in `TARGET.md`:
+- §1 the realization and its gate;
+- §2 the layout;
+- §6 the budgets: production code under 2,000 lines;
+- Appendix A the PowerShell form, about 1,600 lines.
 
-| File | Role | Budget (lines) |
-|---|---|---:|
-| `facsimile.ps1` | the shell: verbs, I/O, exit codes, one-line stdout | 400 |
-| `core.ps1` | the eight pure functions | 380 |
-| `vocabulary.psd1` | the question table (data) | 20 rows |
-| `sql/probes.sql` | one templated count per question kind and value class | 220 |
-| `sql/plant.sql` | presence rows with FK links and ancestors, plus one procedure per witness kind | 260 |
-| `sql/catalog.sql` | the copy's catalog as one result set, for the planter | 60 |
-| `sql/shape.sql` | the value-free discovery profile | 70 |
-| `sql/hash.sql` | an order-independent content hash (NULL distinct from `''`) | 30 |
-| `tests/run-cases.ps1` | the runner and the lint: parses `cases/*.md`, executes by kind | 180 |
-| **Total** | | **≈1,600** |
+This document stays realization-neutral.
 
 ## 4. The vocabulary
 
@@ -467,7 +464,7 @@ the tier cannot be argued with.
 
 ## 9. How every invariant is attended to
 
-1. **Traceability is generated, not hoped for.** `tests/run-cases.ps1 --lint` refuses a catalog in
+1. **Traceability is generated, not hoped for.** The test project's lint (`TARGET.md` §7) refuses a catalog in
    which any of these is missing. Until that runner exists, its prototype `tests/catalog_lint.py` does
    the same, as a step of the ssdt-agent gates workflow:
    - an invariant without two cases;
@@ -536,7 +533,8 @@ case is updated with the receipt.
    cache design.)
 7. Do the planter's literals satisfy the estate's real CHECK constraints often enough, or is
    `planter-needs-row` frequent?
-8. Does every probe and the planter run under ConstrainedLanguage mode as written?
+8. Do the tool, its probes and its planter run under the laptop's application-control policy? That
+   is the `TARGET.md` §1 gate: WDAC, AppLocker, and ConstrainedLanguage for the fallback.
 9. Does constraint validation (`WITH CHECK CHECK`) run after the post-deploy script on DacFx 162.x,
    as observed on 170.5.96? It decides whether a post-deploy-seeded lookup satisfies a new FK.
 10. Do system-named defaults (`DF__…`) and other system-named constraints keep their names through

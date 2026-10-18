@@ -627,6 +627,12 @@ foreach ($tool in 'sqlpackage', 'sqlcmd', 'msbuild') {
     $found = Get-Command $tool -ErrorAction SilentlyContinue
     if ($found) { "${tool}: $($found.Source)" } else { "${tool}: not on PATH" }
 }
+"--- .NET (decides the facsimile's realization: TARGET.md section 1)"
+if (Get-Command dotnet -ErrorAction SilentlyContinue) {
+    "SDKs:";     & dotnet --list-sdks
+    "Runtimes:"; & dotnet --list-runtimes
+    "NuGet sources:"; & dotnet nuget list source
+} else { "dotnet:               not on PATH" }
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 if (Test-Path $vswhere) {
     foreach ($vs in (& $vswhere -all -property installationPath)) {
@@ -649,6 +655,10 @@ How to read the output:
 | No LocalDB version at 16.x or above (2019 is 15.x; 2022 is 16.x; 2025 is 17.x) | It cannot host a Sql160 project under the pipeline profile | Request the SqlLocalDB 2022 MSI (needs admin), or use `AllowIncompatiblePlatform=True` on local copies only, stamped in every record |
 | No `sqlpackage` on PATH and no bundled copy | — | Request the pinned sqlpackage zip through an Azure DevOps Artifacts feed |
 | `AppLocker exes: True` | An unsigned exe in the repository folder would be blocked | Confirms the decision not to ship an exe |
+| `SDKs:` lists 8.0 or later, and `Runtimes:` lists `Microsoft.NETCore.App 8.x` or later | .NET is present | The facsimile's C# realization can run (TARGET.md §1, gate 1) |
+| `dotnet: not on PATH`, or nothing at 8.0 or later | No usable .NET | Install the .NET SDK (often possible without admin), or use the PowerShell realization |
+| `NuGet sources:` lists an Azure Artifacts feed or nuget.org | Packages can be restored | Gate 3 holds; the tool can be distributed as a `dotnet` tool |
+| `WDAC user mode: 2` | Code integrity is enforced | Unsigned assemblies may be blocked even under `dotnet`: ask IT about signing internal tools, or use the PowerShell realization (gate 2) |
 
 ## Appendix D — The shape profile (discovery for one column)
 

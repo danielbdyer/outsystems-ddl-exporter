@@ -1,7 +1,7 @@
 # The case catalog: grammar, notation and families
 
 *The facsimile is specified by these cases before it is built. Every case is written in one fixed
-grammar, so that `tests/run-cases.ps1` can execute the catalog directly: the spec **is** the test
+grammar, so that the test project (`../TARGET.md` §7) can execute the catalog directly: the spec **is** the test
 suite. Read `../ARCHITECTURE.md` (§4 questions, §5 the copy, §6 outcomes, §7 tier) and
 `../INVARIANTS.md` first. This file defines only how a case is written.*
 

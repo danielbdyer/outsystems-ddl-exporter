@@ -26,7 +26,9 @@ stays in service until the facsimile reaches parity (G3) and has run beside it f
 4. **`INVARIANTS.md`:** the laws, each with its mechanism and the property its cases test.
 5. **`cases/README.md`:** the grammar every case is written in, so the catalog runs as the test
    suite.
-6. **`cases/90-traceability.md`:** which cases witness which law, operation, question kind, stop and
+6. **`TARGET.md`:** how it is built: C# on .NET as a CLI with an MCP mode (with a PowerShell
+   fallback), the layout, the dependencies, the coding style, the NFRs, and the order of work.
+7. **`cases/90-traceability.md`:** which cases witness which law, operation, question kind, stop and
    Twin responsibility, plus the open `verify` questions.
 
 The reasoning that led here, with its evidence, is `../../../../TWIN_SUCCESSION.md` at the repository

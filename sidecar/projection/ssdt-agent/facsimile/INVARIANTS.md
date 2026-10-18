@@ -8,7 +8,7 @@
 - *the **property** its cases test.*
 
 *The cases live in `cases/`. `cases/90-traceability.md` maps every law to its cases, and
-`tests/run-cases.ps1 --lint` refuses a law with fewer than two.*
+the test project's lint (`TARGET.md` §7) refuses a law with fewer than two.*
 
 *Vocabulary from `ARCHITECTURE.md` (§4 questions, §6 outcomes) is used without restating it.*
 
@@ -369,7 +369,7 @@ batched count. `prove` makes none.
 *Property:* a connection trace for `read` shows two sessions. One for `prove` shows zero
 environment sessions.
 
-**M4 · Budgets.** Each file stays within its line budget in ARCH §3.
+**M4 · Budgets.** Each file stays within its line budget in `TARGET.md` §6.
 *Property:* a line-count check in CI.
 
 ## E — Evolution: the tool grows only through reviewed rows and cases
@@ -413,9 +413,16 @@ Each line ends `· <file> · exit <n>`. The JSON goes to the named file, and pro
 *Property:* every case's stdout matches the grammar. A multi-environment `prove` prints its most
 severe outcome and names `verdicts.json`.
 
-**A2 · ConstrainedLanguage-safe.** Every verb runs under PowerShell ConstrainedLanguage mode. It
-uses no `Add-Type`, no arbitrary .NET methods, and no COM.
-*Property:* CI runs the suite with `__PSLockdownPolicy` set to force ConstrainedLanguage.
+**A2 · Runs under the laptop's application-control policy.** Every verb runs on a team laptop as
+the laptop check measures it, without elevation.
+- **The C# realization** is a framework-dependent assembly loaded by the Microsoft-signed `dotnet`
+  host. It starts no unsigned `.exe`, and carries no native code beyond SqlClient's own.
+- **The PowerShell fallback** runs under ConstrainedLanguage mode: no `Add-Type`, no arbitrary .NET
+  methods, no COM.
+*Property:*
+- the Windows CI job runs the tool as a standard user, through `dotnet` only;
+- under the fallback, CI runs the suite with `__PSLockdownPolicy` forcing ConstrainedLanguage;
+- the laptop check confirms both on a real machine (manual).
 
 **A3 · Stable exits.** Exit codes mean who acts: 0 clean · 3 a finding · 4 can't reach ·
 5 needs input · 6 machine not ready · 7 doesn't build · 9 needs the principal.
