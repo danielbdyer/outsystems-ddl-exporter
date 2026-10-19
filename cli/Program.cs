@@ -20,16 +20,25 @@ public static class Program
     public static int Main(string[] args)
     {
         Telemetry.OptOut();
-        (CultureInfo.DefaultThreadCurrentCulture, CultureInfo.DefaultThreadCurrentUICulture) = (CultureInfo.InvariantCulture, CultureInfo.InvariantCulture);
+        (CultureInfo.DefaultThreadCurrentCulture, CultureInfo.DefaultThreadCurrentUICulture) =
+            (CultureInfo.InvariantCulture, CultureInfo.InvariantCulture);
         using var interruption = Interruption.Listen();
         return Run(args, Console.OpenStandardOutput(), () => Checkout.Here(Contract.Version), Contract.Verbs, interruption);
     }
 
-    /// <summary>Answers <paramref name="args"/> on <paramref name="output"/>, as Markdown or, with --json, as one JSON object, for the checkout of the working directory; returns the exit code.</summary>
-    public static int Run(IReadOnlyList<string> args, Stream output) => Run(args, output, () => Checkout.Here(Contract.Version), Contract.Verbs);
+    /// <summary>
+    /// Answers <paramref name="args"/> on <paramref name="output"/>, as Markdown or, with --json, as one JSON object, for the checkout of
+    /// the working directory; returns the exit code.
+    /// </summary>
+    public static int Run(IReadOnlyList<string> args, Stream output) =>
+        Run(args, output, () => Checkout.Here(Contract.Version), Contract.Verbs);
 
-    /// <summary>Answers <paramref name="args"/> on <paramref name="output"/> for the SSDT repository checkout <paramref name="here"/>; returns the exit code.</summary>
-    public static int Run(IReadOnlyList<string> args, Stream output, Checkout here) => Run(args, output, () => Result.Ok(here), Contract.Verbs);
+    /// <summary>
+    /// Answers <paramref name="args"/> on <paramref name="output"/> for the SSDT repository checkout <paramref name="here"/>; returns the
+    /// exit code.
+    /// </summary>
+    public static int Run(IReadOnlyList<string> args, Stream output, Checkout here) =>
+        Run(args, output, () => Result.Ok(here), Contract.Verbs);
 
     /// <summary>A run inside another process (a test's): no signal reaches it, and --timeout alone interrupts it.</summary>
     internal static int Run(IReadOnlyList<string> args, Stream output, Func<Result<Checkout>> here, IReadOnlyList<Verb> verbs)
@@ -38,27 +47,33 @@ public static class Program
         return Run(args, output, here, verbs, interruption);
     }
 
-    /// <summary>--timeout &lt;seconds&gt; among the arguments, as a duration; null when absent; arguments.timeout for a value that is missing or is not a whole number of seconds from 1 to 86400.</summary>
+    /// <summary>
+    /// --timeout &lt;seconds&gt; among the arguments, as a duration; null when absent; arguments.timeout for a value that is missing or is
+    /// not a whole number of seconds from 1 to 86400.
+    /// </summary>
     public static Result<TimeSpan?> Timeout(IReadOnlyList<string> args)
     {
         var at = args.ToList().IndexOf("--timeout");
         return at < 0 ? Result.Ok<TimeSpan?>(null)
-            : at + 1 < args.Count && int.TryParse(args[at + 1], NumberStyles.None, CultureInfo.InvariantCulture, out var seconds) && seconds is >= 1 and <= 86400 ? TimeSpan.FromSeconds(seconds)
-            : new Error("arguments.timeout", "--timeout takes a whole number of seconds from 1 to 86400.", "Write the timeout in seconds, such as --timeout 600.");
+            : at + 1 < args.Count && int.TryParse(args[at + 1], NumberStyles.None, CultureInfo.InvariantCulture, out var seconds)
+                && seconds is >= 1 and <= 86400 ? TimeSpan.FromSeconds(seconds)
+            : new Error("arguments.timeout", "--timeout takes a whole number of seconds from 1 to 86400.",
+                "Write the timeout in seconds, such as --timeout 600.");
     }
 
     /// <summary>
     /// Answers <paramref name="args"/> from <paramref name="verbs"/> for the checkout <paramref name="here"/> gives, asked for only when a
     /// verb's body runs; returns the exit code. The global switches are --json, --summary and --timeout <seconds>. A verb's body runs with
-    /// the run's query log begun, and its answer is cut to the default form (Render.Cut), the whole answer written to the run's
-    /// answer.json when anything was left out. The whole command runs inside one catch: the checkout, the --help renderers, the verb's
-    /// body, the rendering and the write. A run the interruption stopped (a signal, or --timeout) is answered as interrupted at exit 130,
-    /// once the verb has released its locks and ended the programs it started. Any other exception there is answered as internal.unexpected
-    /// at its category's exit (Contract.Unexpected), its message withheld when the run read a named environment's connection or other
-    /// reference (SqlServer.Reads), and that exit is returned even when writing that answer fails as well, since standard output is then all
-    /// the answer had.
+    /// the run's query log begun, and its answer is cut to the default form (Render.Cut), the whole answer written to the run's answer.json
+    /// when anything was left out. The whole command runs inside one catch: the checkout, the --help renderers, the verb's body, the
+    /// rendering and the write. A run the interruption stopped (a signal, or --timeout) is answered as interrupted at exit 130, once the
+    /// verb has released its locks and ended the programs it started. Any other exception there is answered as internal.unexpected at its
+    /// category's exit (Contract.Unexpected), its message withheld when the run read a named environment's connection or other reference
+    /// (SqlServer.Reads), and that exit is returned even when writing that answer fails as well, since standard output is then all the
+    /// answer had.
     /// </summary>
-    private static int Run(IReadOnlyList<string> args, Stream output, Func<Result<Checkout>> here, IReadOnlyList<Verb> verbs, Interruption interruption)
+    private static int Run(
+        IReadOnlyList<string> args, Stream output, Func<Result<Checkout>> here, IReadOnlyList<Verb> verbs, Interruption interruption)
     {
         var clock = Stopwatch.StartNew();
         using var invariant = InvariantCulture.Enter();
@@ -88,7 +103,9 @@ public static class Program
             var stopped = Contract.Exits.Single(e => e.Name == "interrupted");
             var command = word.Length == 0 ? "dbchange" : "dbchange " + word;
             var answer = Contract.Answer(verb?.Output ?? "dbchange.envelope/1", Outcome.Of(stopped), stopped.Code,
-                command + " stopped after " + (interruption.Cause ?? "an interruption") + ": it ended the programs it had started and released its locks.", []);
+                command + " stopped after " + (interruption.Cause ?? "an interruption")
+                    + ": it ended the programs it had started and released its locks.",
+                []);
             try
             {
                 Write.Text(output, Rendered(answer with { ElapsedMs = clock.ElapsedMilliseconds }, json));
@@ -104,7 +121,9 @@ public static class Program
         {
             try
             {
-                Write.Text(output, Rendered(Contract.Unexpected(verb, word, e, withheld: reads.NamedEnvironment) with { ElapsedMs = clock.ElapsedMilliseconds }, json));
+                Write.Text(output, Rendered(
+                    Contract.Unexpected(verb, word, e, withheld: reads.NamedEnvironment) with { ElapsedMs = clock.ElapsedMilliseconds },
+                    json));
             }
             catch (Exception)
             {
@@ -121,7 +140,8 @@ public static class Program
     /// answer.json, which the cut answer names as full. A write the file system refuses leaves full null and adds the note
     /// run.full-unwritten, so the answer on standard output says so instead of being lost.
     /// </summary>
-    private static Envelope Answered(Verb verb, Func<Result<Checkout>> here, IReadOnlyList<string> words, TimeSpan? timeout, Interruption interruption, bool summary)
+    private static Envelope Answered(
+        Verb verb, Func<Result<Checkout>> here, IReadOnlyList<string> words, TimeSpan? timeout, Interruption interruption, bool summary)
     {
         if (timeout is { } after)
         {
@@ -139,7 +159,10 @@ public static class Program
         }
 
         var run = SqlServer.QueryLog.Start(checkout.Root);
-        var answer = verb.Body(checkout, run, words) with { Log = run.Written ? Path.GetRelativePath(checkout.Root, run.Path).Replace('\\', '/') : null };
+        var answer = verb.Body(checkout, run, words) with
+        {
+            Log = run.Written ? Path.GetRelativePath(checkout.Root, run.Path).Replace('\\', '/') : null,
+        };
         var shown = Render.Cut(answer, summary);
         if (!shown.Truncated)
         {
@@ -151,11 +174,22 @@ public static class Program
             _ => shown with { Full = named },
             error => shown with
             {
-                Findings = [.. shown.Findings, Finding.Note("run.full-unwritten", named, "The answer was cut to its first entries, and the whole answer could not be written to " + named + ": " + error.Message)],
+                Findings =
+                [
+                    .. shown.Findings,
+                    Finding.Note(
+                        "run.full-unwritten",
+                        named,
+                        "The answer was cut to its first entries, and the whole answer could not be written to " + named + ": "
+                            + error.Message),
+                ],
             });
     }
 
-    /// <summary>The arguments less the global switches --json and --summary, and less --timeout with its value, which every verb takes and none reads.</summary>
+    /// <summary>
+    /// The arguments less the global switches --json and --summary, and less --timeout with its value, which every verb takes and none
+    /// reads.
+    /// </summary>
     private static string[] Words(IReadOnlyList<string> args)
     {
         var words = new List<string>();
@@ -176,12 +210,15 @@ public static class Program
 
     private static string Rendered(Envelope answer, bool json) => json ? Render.JsonText(Render.Json(answer)) : Render.Markdown(answer);
 
-    /// <summary>The calling thread's cultures set to the invariant one for a command (VALUES.md D2), and the caller's restored when it ends.</summary>
+    /// <summary>
+    /// The calling thread's cultures set to the invariant one for a command (VALUES.md D2), and the caller's restored when it ends.
+    /// </summary>
     private sealed class InvariantCulture : IDisposable
     {
         private readonly (CultureInfo Culture, CultureInfo Ui) was = (CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture);
 
-        private InvariantCulture() => (CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture) = (CultureInfo.InvariantCulture, CultureInfo.InvariantCulture);
+        private InvariantCulture() =>
+            (CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture) = (CultureInfo.InvariantCulture, CultureInfo.InvariantCulture);
 
         public static InvariantCulture Enter() => new();
 

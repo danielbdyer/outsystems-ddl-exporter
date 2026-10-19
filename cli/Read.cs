@@ -11,24 +11,35 @@ namespace DbChange.Cli;
 
 public static partial class Verbs
 {
-    /// <summary>What read adds to the envelope: the target read, its fingerprint, how many elements it holds, and its elements, a list that can be long.</summary>
+    /// <summary>
+    /// What read adds to the envelope: the target read, its fingerprint, how many elements it holds, and its elements, a list that can be
+    /// long.
+    /// </summary>
     public static JsonObject ReadContent => new()
     {
-        ["read"] = Render.Record(new() { ["from"] = Render.Text(), ["fingerprint"] = Render.Fingerprint(), ["count"] = Count(), ["elements"] = Render.Long(Render.Record(new()
+        ["read"] = Render.Record(new()
         {
-            ["key"] = Render.Text(),
-            ["properties"] = new JsonObject { ["type"] = "object", ["additionalProperties"] = Values() },
-            ["relationships"] = new JsonObject { ["type"] = "object", ["additionalProperties"] = Render.List(Render.Text()) },
-        })) }),
+            ["from"] = Render.Text(), ["fingerprint"] = Render.Fingerprint(), ["count"] = Count(),
+            ["elements"] = Render.Long(Render.Record(new()
+            {
+                ["key"] = Render.Text(),
+                ["properties"] = new JsonObject { ["type"] = "object", ["additionalProperties"] = Values() },
+                ["relationships"] = new JsonObject { ["type"] = "object", ["additionalProperties"] = Render.List(Render.Text()) },
+            })),
+        }),
     };
 
     /// <summary>A count of what the whole answer holds, which stands whether or not the list was cut.</summary>
     internal static JsonObject Count() => new() { ["type"] = "integer", ["minimum"] = 0 };
 
-    /// <summary>dbchange read --from &lt;target&gt; [--project &lt;path&gt;]: a ref built at its commit, a package or a database, read whole (V3_ARCHITECTURE.md §8.1).</summary>
+    /// <summary>
+    /// dbchange read --from &lt;target&gt; [--project &lt;path&gt;]: a ref built at its commit, a package or a database, read whole
+    /// (V3_ARCHITECTURE.md §8.1).
+    /// </summary>
     public static Envelope Read(Checkout here, SqlServer.QueryLog log, IReadOnlyList<string> words)
     {
-        if (Contract.Flags(words, ["--from"], ["--project"], []).Bind(flags => SqlServer.Target(flags["--from"], "--from").Map(from => (Flags: flags, From: from)))
+        if (Contract.Flags(words, ["--from"], ["--project"], [])
+            .Bind(flags => SqlServer.Target(flags["--from"], "--from").Map(from => (Flags: flags, From: from)))
             .Failed(out var asked, out var error))
         {
             return Contract.Failed(Of("read"), error, Standing.Committed);
@@ -42,16 +53,24 @@ public static partial class Verbs
 
         var (fingerprint, printer) = (Fingerprint.Of(source.Model.Elements), new Printer());
         var elements = Render.Array(source.Model.Elements.Select(printer.Json));
-        return Contract.Answer(Of("read").Output, Of("read").Outcome("done"), 0, source.Target + ": " + source.Model.Elements.Count + " elements, fingerprint " + Render.Digest(fingerprint),
+        return Contract.Answer(Of("read").Output, Of("read").Outcome("done"), 0,
+            source.Target + ": " + source.Model.Elements.Count + " elements, fingerprint " + Render.Digest(fingerprint),
             [.. source.Notes, .. printer.Findings], read.Stamp, content: new JsonObject
             {
-                ["read"] = new JsonObject { ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(fingerprint), ["count"] = source.Model.Elements.Count, ["elements"] = elements },
+                ["read"] = new JsonObject
+                {
+                    ["from"] = source.Target.ToString(), ["fingerprint"] = Render.Digest(fingerprint),
+                    ["count"] = source.Model.Elements.Count, ["elements"] = elements,
+                },
             });
     }
 
-    /// <summary>A case-only pair as a note: the collation reads the two spellings as one name, and DacFx plans nothing for the difference.</summary>
+    /// <summary>
+    /// A case-only pair as a note: the collation reads the two spellings as one name, and DacFx plans nothing for the difference.
+    /// </summary>
     internal static Finding CaseOnly(string code, Rename pair, Collation collation) => Finding.Note(code, pair.After.ToString(),
-        pair.Before + " and " + pair.After + " differ in letter case alone, which " + collation.Name + " reads as one name; DacFx plans nothing for it.");
+        pair.Before + " and " + pair.After + " differ in letter case alone, which " + collation.Name
+            + " reads as one name; DacFx plans nothing for it.");
 
     /// <summary>
     /// The writer of the values an answer prints, and the findings printing raises (decision 2.27): a script is written through
@@ -70,13 +89,19 @@ public static partial class Verbs
         public JsonObject Json(Element element) => new()
         {
             ["key"] = element.Key.ToString(),
-            ["properties"] = new JsonObject(element.Properties.Select(p => KeyValuePair.Create(p.Name, Json(element.Key, p.Name, p.Value)))),
-            ["relationships"] = new JsonObject(element.Relationships.Select(r => KeyValuePair.Create<string, JsonNode?>(r.Name, Render.Array(r.Targets.Select(t => (JsonNode?)t.Key.ToString()))))),
+            ["properties"] = new JsonObject(element.Properties.Select(p =>
+                KeyValuePair.Create(p.Name, Json(element.Key, p.Name, p.Value)))),
+            ["relationships"] = new JsonObject(element.Relationships.Select(r =>
+                KeyValuePair.Create<string, JsonNode?>(r.Name, Render.Array(r.Targets.Select(t => (JsonNode?)t.Key.ToString()))))),
         };
 
-        /// <summary>A value of <paramref name="property"/> of the element keyed <paramref name="key"/> as JSON: a boolean, an integer, a string, an enumeration as Type.Member, a script as printed, or null.</summary>
+        /// <summary>
+        /// A value of <paramref name="property"/> of the element keyed <paramref name="key"/> as JSON: a boolean, an integer, a string, an
+        /// enumeration as Type.Member, a script as printed, or null.
+        /// </summary>
         public JsonNode? Json(ElementKey key, string property, Value? value) =>
-            value?.Match<JsonNode?>(b => b, n => n, s => s, (type, member) => type + "." + member, script => Printed(key, property, script), () => null);
+            value?.Match<JsonNode?>(
+                b => b, n => n, s => s, (type, member) => type + "." + member, script => Printed(key, property, script), () => null);
 
         private string Printed(ElementKey key, string property, string script)
         {
@@ -85,14 +110,17 @@ public static partial class Verbs
                 case PrintedScript.Printed printed:
                     foreach (var form in printed.Forms.Where(form => warned.Add((key.ToString(), form))))
                     {
-                        findings.Add(Finding.Warning("schema.password-literal", key.ToString(), key + " sets a password with a literal in " + form.Syntax + "; this output leaves the value out.",
+                        findings.Add(Finding.Warning("schema.password-literal", key.ToString(),
+                            key + " sets a password with a literal in " + form.Syntax + "; this output leaves the value out.",
                             "Replace the literal with a SQLCMD variable the Octopus step supplies, so the repository holds no password."));
                     }
 
                     return printed.Text;
                 case PrintedScript.Unparsed unparsed:
-                    findings.Add(Finding.Note("schema.text-unparsed", key.ToString(), key + ": its " + property + " is left out of this output, because ScriptDom could not parse it at line "
-                        + unparsed.Line.ToString(CultureInfo.InvariantCulture) + ", column " + unparsed.Column.ToString(CultureInfo.InvariantCulture) + " to look for a password."));
+                    findings.Add(Finding.Note("schema.text-unparsed", key.ToString(), key + ": its " + property
+                        + " is left out of this output, because ScriptDom could not parse it at line "
+                        + unparsed.Line.ToString(CultureInfo.InvariantCulture) + ", column "
+                        + unparsed.Column.ToString(CultureInfo.InvariantCulture) + " to look for a password."));
                     return SchemaText.LeftOut;
                 default:
                     throw new UnreachableException();

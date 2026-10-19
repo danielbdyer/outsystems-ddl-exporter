@@ -13,7 +13,10 @@ public static class Render
 {
     public const string Usage = "dbchange <verb> [arguments] [--json] [--summary] | dbchange --help [--json] | dbchange --version";
 
-    /// <summary>How many entries of each long list, lines and warnings the default answer holds (VALUES.md O11); the whole answer is in the run's answer.json.</summary>
+    /// <summary>
+    /// How many entries of each long list, lines and warnings the default answer holds (VALUES.md O11); the whole answer is in the run's
+    /// answer.json.
+    /// </summary>
     public const int Shown = 50;
 
     private const string SchemaId = "^dbchange\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$";
@@ -25,7 +28,8 @@ public static class Render
     private static readonly string LogPattern = "^" + Regex.Escape(Io.LocalState.Name) + "/runs/[^/]+/queries\\.log$";
 
     /// <summary>How a content schema marks a list that can be long, so Cut finds it: the default answer holds its first entries.</summary>
-    private const string LongList = "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list";
+    private const string LongList =
+        "a list that can be long: the default answer holds its first entries, and the run's answer.json the whole list";
 
     public static JsonObject Help() => new()
     {
@@ -35,19 +39,28 @@ public static class Render
         ["verbs"] = Array(Contract.Verbs.Select(v => new JsonObject
         {
             ["name"] = v.Name, ["summary"] = v.Summary, ["built"] = v.Built, ["output"] = v.Output,
-            ["outcomes"] = Array(v.Answers.Select(o => new JsonObject { ["outcome"] = o.Word, ["exits"] = Array(o.Exits.Select(e => (JsonNode?)e)), ["meaning"] = o.Meaning })),
+            ["outcomes"] = Array(v.Answers.Select(o => new JsonObject
+            {
+                ["outcome"] = o.Word, ["exits"] = Array(o.Exits.Select(e => (JsonNode?)e)), ["meaning"] = o.Meaning,
+            })),
         })),
-        ["exits"] = Array(Contract.Exits.Select(e => new JsonObject { ["code"] = e.Code, ["name"] = e.Name, ["meaning"] = e.Meaning, ["remedy"] = e.Remedy })),
+        ["exits"] = Array(Contract.Exits.Select(e => new JsonObject
+        {
+            ["code"] = e.Code, ["name"] = e.Name, ["meaning"] = e.Meaning, ["remedy"] = e.Remedy,
+        })),
         ["schemas"] = new JsonObject(Schemas().Select(s => KeyValuePair.Create<string, JsonNode?>(s.Id, s.Schema))),
     };
 
     public static string HelpMarkdown() => string.Join('\n', (string[])
     [
         "# dbchange " + Contract.Version, "", "Usage: `" + Usage + "`", "", "| Verb | Answers | Outcomes | Built |", "|---|---|---|---|",
-        .. Contract.Verbs.Select(v => "| `" + v.Name + "` | " + v.Summary + " | " + string.Join(", ", v.Answers.Select(o => o.Word + " (exit " + string.Join(" or ", o.Exits.Select(e => e.ToString(CultureInfo.InvariantCulture))) + ")"))
+        .. Contract.Verbs.Select(v => "| `" + v.Name + "` | " + v.Summary + " | "
+            + string.Join(", ", v.Answers.Select(o =>
+                o.Word + " (exit " + string.Join(" or ", o.Exits.Select(e => e.ToString(CultureInfo.InvariantCulture))) + ")"))
             + " | " + (v.Built ? "yes" : "no") + " |"),
         "", "| Exit | Name | Meaning | Remedy |", "|---:|---|---|---|",
-        .. Contract.Exits.Select(e => "| " + e.Code.ToString(CultureInfo.InvariantCulture) + " | " + e.Name + " | " + e.Meaning + " | " + e.Remedy + " |"),
+        .. Contract.Exits.Select(e =>
+            "| " + e.Code.ToString(CultureInfo.InvariantCulture) + " | " + e.Name + " | " + e.Meaning + " | " + e.Remedy + " |"),
         "",
     ]);
 
@@ -64,16 +77,21 @@ public static class Render
             ["exit"] = answer.Exit,
             ["message"] = answer.Message,
             ["blockedBy"] = Blocked(answer.BlockedBy),
-            ["findings"] = Array(answer.Findings.Select(f => new JsonObject { ["code"] = f.Code, ["severity"] = Word(f.Severity), ["subject"] = f.Subject, ["message"] = f.Message, ["remedy"] = f.Remedy })),
+            ["findings"] = Array(answer.Findings.Select(f => new JsonObject
+            {
+                ["code"] = f.Code, ["severity"] = Word(f.Severity), ["subject"] = f.Subject, ["message"] = f.Message, ["remedy"] = f.Remedy,
+            })),
             ["version"] = answer.Stamp is null ? null : Contract.Version,
             ["dacfx"] = answer.Stamp?.DacFx.ToString(),
             ["pin"] = answer.Stamp?.Pin?.ToString(),
             ["server"] = Json(answer.Stamp?.Server),
             ["provenance"] = answer.Provenance is { } p ? new JsonObject
             {
-                ["change"] = Digest(p.Change), ["schema"] = Digest(p.Schema), ["existingData"] = p.ExistingData is { } data ? Digest(data) : null, ["dacfx"] = p.DacFx.ToString(),
+                ["change"] = Digest(p.Change), ["schema"] = Digest(p.Schema),
+                ["existingData"] = p.ExistingData is { } data ? Digest(data) : null, ["dacfx"] = p.DacFx.ToString(),
                 ["server"] = Json(p.Server), ["publishProfile"] = Digest(p.PublishProfile), ["target"] = p.Target.ToString(),
-                ["at"] = p.At.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture), ["lacking"] = Array(p.Lacking.Select(i => (JsonNode?)Input(i))),
+                ["at"] = p.At.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
+                ["lacking"] = Array(p.Lacking.Select(i => (JsonNode?)Input(i))),
             } : null,
             ["truncated"] = answer.Truncated,
             ["full"] = answer.Full,
@@ -97,14 +115,21 @@ public static class Render
     public static string Markdown(Envelope answer) => string.Concat((string[])
     [
         .. answer.Lines.Count == 0 ? [Printable(answer.Message) + "\n"] : answer.Lines.Select(line => Printable(line) + "\n"),
-        .. answer.Findings.Select(f => "\n- " + Word(f.Severity) + " `" + Printable(f.Code) + "` " + Printable(f.Subject) + (f.Message == answer.Message ? "." : ": " + Printable(f.Message))
+        .. answer.Findings.Select(f => "\n- " + Word(f.Severity) + " `" + Printable(f.Code) + "` " + Printable(f.Subject)
+            + (f.Message == answer.Message ? "." : ": " + Printable(f.Message))
             + (f.Remedy is null ? "" : " Remedy: " + Printable(f.Remedy)) + "\n"),
         .. answer.Truncated
-            ? new[] { "\n… " + answer.LeftOut.ToString("N0", CultureInfo.InvariantCulture) + " more; the whole answer " + (answer.Full is { } full ? "is in " + Printable(full) : "was not written") + ".\n" }
+            ? new[]
+            {
+                "\n… " + answer.LeftOut.ToString("N0", CultureInfo.InvariantCulture) + " more; the whole answer "
+                    + (answer.Full is { } full ? "is in " + Printable(full) : "was not written") + ".\n",
+            }
             : [],
     ]);
 
-    /// <summary>A list that can be long, as a content schema marks it: the default answer holds its first <see cref="Shown"/> entries.</summary>
+    /// <summary>
+    /// A list that can be long, as a content schema marks it: the default answer holds its first <see cref="Shown"/> entries.
+    /// </summary>
     internal static JsonObject Long(JsonObject items)
     {
         var list = List(items);
@@ -124,7 +149,8 @@ public static class Render
         var keep = summary ? 0 : Shown;
         var content = (JsonObject?)answer.Content?.DeepClone();
         var left = 0;
-        foreach (var added in content is null ? [] : Contract.Verbs.FirstOrDefault(v => v.Output == answer.Schema)?.Content ?? new JsonObject())
+        foreach (var added in content is null ? []
+            : Contract.Verbs.FirstOrDefault(v => v.Output == answer.Schema)?.Content ?? new JsonObject())
         {
             left += Cut(content![added.Key], (JsonObject)added.Value!, keep);
         }
@@ -135,7 +161,10 @@ public static class Render
         return answer with { Content = content, Findings = findings, Lines = [.. answer.Lines.Take(keep)], LeftOut = left };
     }
 
-    /// <summary>The entries left out of each long list under <paramref name="schema"/> in <paramref name="json"/>, cut in place to its first <paramref name="keep"/>.</summary>
+    /// <summary>
+    /// The entries left out of each long list under <paramref name="schema"/> in <paramref name="json"/>, cut in place to its first
+    /// <paramref name="keep"/>.
+    /// </summary>
     private static int Cut(JsonNode? json, JsonObject schema, int keep)
     {
         if (schema["anyOf"] is JsonArray branches)
@@ -219,17 +248,26 @@ public static class Render
     /// <summary>A fingerprint as the envelope writes it: sha256: and its 64 hex digits.</summary>
     public static string Digest(Fingerprint fingerprint) => "sha256:" + fingerprint;
 
-    /// <summary>The schemas the contract generates, by id: the envelope, the help and each verb's; each is committed under cli/schemas/ as <see cref="SchemaFile"/> names it.</summary>
+    /// <summary>
+    /// The schemas the contract generates, by id: the envelope, the help and each verb's; each is committed under cli/schemas/ as <see
+    /// cref="SchemaFile"/> names it.
+    /// </summary>
     public static IReadOnlyList<(string Id, JsonObject Schema)> Schemas() =>
     [
-        ("dbchange.envelope/1", EnvelopeSchema("dbchange.envelope/1", "What every verb writes with --json: schema, outcome, exit, message, blockedBy, findings, version, dacfx, pin, server, provenance, truncated, full.", null)),
+        ("dbchange.envelope/1", EnvelopeSchema("dbchange.envelope/1",
+            "What every verb writes with --json: schema, outcome, exit, message, blockedBy, findings, version, dacfx, pin, server,"
+                + " provenance, truncated, full.",
+            null)),
         ("dbchange.help/1", HelpSchema()),
-        .. Contract.Verbs.Where(v => v.Content is not null).Select(v => (v.Output, EnvelopeSchema(v.Output, "What dbchange " + v.Name + " --json writes: the envelope, and " + string.Join(" and ", v.Content!.Select(p => p.Key)) + ".", v))),
+        .. Contract.Verbs.Where(v => v.Content is not null).Select(v => (v.Output, EnvelopeSchema(v.Output,
+            "What dbchange " + v.Name + " --json writes: the envelope, and " + string.Join(" and ", v.Content!.Select(p => p.Key)) + ".",
+            v))),
     ];
 
     public static string SchemaFile(string id) => id.Replace('/', '.') + ".schema.json";
 
-    private static JsonObject HelpSchema() => Document("dbchange.help/1", "What dbchange --help --json writes: the verb table, the exit table and the schemas.", new()
+    private static JsonObject HelpSchema() => Document(
+        "dbchange.help/1", "What dbchange --help --json writes: the verb table, the exit table and the schemas.", new()
     {
         ["schema"] = new JsonObject { ["const"] = "dbchange.help/1" },
         ["version"] = Text(),
@@ -240,7 +278,10 @@ public static class Render
             ["summary"] = Text(),
             ["built"] = new JsonObject { ["type"] = "boolean" },
             ["output"] = Pattern(SchemaId),
-            ["outcomes"] = List(Record(new() { ["outcome"] = Text(), ["exits"] = List(Enum(Contract.Exits.Select(e => (JsonNode?)e.Code))), ["meaning"] = Text() })),
+            ["outcomes"] = List(Record(new()
+            {
+                ["outcome"] = Text(), ["exits"] = List(Enum(Contract.Exits.Select(e => (JsonNode?)e.Code))), ["meaning"] = Text(),
+            })),
         })),
         ["exits"] = List(Record(new()
         {
@@ -259,8 +300,10 @@ public static class Render
     /// </summary>
     private static JsonObject EnvelopeSchema(string id, string description, Verb? verb)
     {
-        // An outcome word and the exits it may take: each verb row's words with their exits, and each failure exit's name at that exit, where 0 is no failure.
-        var outcomes = (verb is null ? Contract.Verbs : [verb]).SelectMany(v => v.Answers.Select(o => (Word: o.Word, Exits: o.Exits.AsEnumerable())))
+        // An outcome word and the exits it may take: each verb row's words with their exits, and each failure exit's name at that exit,
+        // where 0 is no failure.
+        var outcomes = (verb is null ? Contract.Verbs : [verb])
+            .SelectMany(v => v.Answers.Select(o => (Word: o.Word, Exits: o.Exits.AsEnumerable())))
             .Concat(Contract.Exits.Where(e => e.Code != 0).Select(e => (Word: e.Name, Exits: (IEnumerable<int>)[e.Code])))
             .GroupBy(o => o.Word, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal)
             .Select(g => (Word: g.Key, Exits: g.SelectMany(o => o.Exits).Distinct().Order().ToList())).ToList();
@@ -292,21 +335,27 @@ public static class Render
         envelope["additionalProperties"] = verb is null;
 
         // Blocked (§4 row 15) names what blocked it, BlockOnPossibleDataLoss or a constraint violation, at exit 3 and at no other.
-        var blocked = If(Where("exit", new JsonObject { ["const"] = Contract.Exits.Single(e => e.Name == "blocked").Code }), Where("blockedBy", BlockedBys()));
+        var blocked = If(
+            Where("exit", new JsonObject { ["const"] = Contract.Exits.Single(e => e.Name == "blocked").Code }),
+            Where("blockedBy", BlockedBys()));
         blocked["else"] = Where("blockedBy", new JsonObject { ["type"] = "null" });
         envelope["allOf"] = new JsonArray(
         [
             // Every error carries a remedy: an exit that requires one names at least one finding, each with its remedy.
-            If(Where("exit", Enum(Contract.Exits.Where(e => e.RemedyRequired).Select(e => (JsonNode?)e.Code))), Where("findings", new JsonObject { ["minItems"] = 1, ["items"] = Where("remedy", Text()) })),
+            If(
+                Where("exit", Enum(Contract.Exits.Where(e => e.RemedyRequired).Select(e => (JsonNode?)e.Code))),
+                Where("findings", new JsonObject { ["minItems"] = 1, ["items"] = Where("remedy", Text()) })),
             blocked,
             // Each outcome word ties to the exits it may take.
-            .. outcomes.Select(o => If(Where("outcome", new JsonObject { ["const"] = o.Word }), Where("exit", Enum(o.Exits.Select(e => (JsonNode?)e))))),
+            .. outcomes.Select(o =>
+                If(Where("outcome", new JsonObject { ["const"] = o.Word }), Where("exit", Enum(o.Exits.Select(e => (JsonNode?)e))))),
             // An answer that names its whole file was cut; an answer that was not cut names none.
             If(Where("full", new JsonObject { ["type"] = "string" }), Where("truncated", new JsonObject { ["const"] = true })),
             If(Where("truncated", new JsonObject { ["const"] = false }), Where("full", new JsonObject { ["type"] = "null" })),
         ]);
 
-        // The kernel's Finding: its code in the one code pattern, its severity one of the three words, and, on every error, a remedy, which the kernel requires by construction and the schema states.
+        // The kernel's Finding: its code in the one code pattern, its severity one of the three words, and, on every error, a remedy,
+        // which the kernel requires by construction and the schema states.
         var finding = Record(new()
         {
             ["code"] = Pattern(ErrorCode.Pattern),
@@ -317,20 +366,29 @@ public static class Render
         });
         finding["if"] = Where("severity", new JsonObject { ["const"] = Word(Severity.Error) });
         finding["then"] = Where("remedy", Text());
-        // The kernel's Provenance: the inputs a claim stands on, the target and when, and the inputs it lacks; an input is null exactly when lacking names it.
+        // The kernel's Provenance: the inputs a claim stands on, the target and when, and the inputs it lacks; an input is null exactly
+        // when lacking names it.
         var provenance = Record(new()
         {
-            ["change"] = Fingerprint(), ["schema"] = Fingerprint(), ["existingData"] = Nullable(Fingerprint()), ["dacfx"] = Pattern(DacFxVersion), ["server"] = Nullable(Ref("server")),
-            ["publishProfile"] = Fingerprint(), ["target"] = Text(), ["at"] = new JsonObject { ["type"] = "string", ["format"] = "date-time" },
-            ["lacking"] = new JsonObject { ["type"] = "array", ["uniqueItems"] = true, ["items"] = Enum(System.Enum.GetValues<Provenance.Input>().Select(i => (JsonNode?)Input(i))) },
+            ["change"] = Fingerprint(), ["schema"] = Fingerprint(), ["existingData"] = Nullable(Fingerprint()),
+            ["dacfx"] = Pattern(DacFxVersion), ["server"] = Nullable(Ref("server")), ["publishProfile"] = Fingerprint(),
+            ["target"] = Text(), ["at"] = new JsonObject { ["type"] = "string", ["format"] = "date-time" },
+            ["lacking"] = new JsonObject
+            {
+                ["type"] = "array", ["uniqueItems"] = true,
+                ["items"] = Enum(System.Enum.GetValues<Provenance.Input>().Select(i => (JsonNode?)Input(i))),
+            },
         });
-        provenance["allOf"] = new JsonArray([.. ((Provenance.Input[])[Provenance.Input.ExistingData, Provenance.Input.Server]).Select(Lacks)]);
+        provenance["allOf"] =
+            new JsonArray([.. ((Provenance.Input[])[Provenance.Input.ExistingData, Provenance.Input.Server]).Select(Lacks)]);
         envelope["$defs"] = new JsonObject
         {
-            // The kernel's Server: the product version SQL Server reports, the database's compatibility level, and the image's digest for a copy on the dbchange-sql container.
+            // The kernel's Server: the product version SQL Server reports, the database's compatibility level, and the image's digest for a
+            // copy on the dbchange-sql container.
             ["server"] = Record(new()
             {
-                ["version"] = Pattern("^[0-9]{1,5}(\\.[0-9]{1,5}){3}$"), ["compatibilityLevel"] = new JsonObject { ["type"] = "integer" }, ["image"] = Nullable(Fingerprint()),
+                ["version"] = Pattern("^[0-9]{1,5}(\\.[0-9]{1,5}){3}$"), ["compatibilityLevel"] = new JsonObject { ["type"] = "integer" },
+                ["image"] = Nullable(Fingerprint()),
             }),
             ["provenance"] = provenance,
             ["finding"] = finding,
@@ -344,7 +402,9 @@ public static class Render
     /// <summary>The rule that a provenance's input is null exactly when its lacking names it.</summary>
     private static JsonObject Lacks(Provenance.Input input)
     {
-        var rule = If(Where("lacking", new JsonObject { ["contains"] = new JsonObject { ["const"] = Input(input) } }), Where(Input(input), new JsonObject { ["type"] = "null" }));
+        var rule = If(
+            Where("lacking", new JsonObject { ["contains"] = new JsonObject { ["const"] = Input(input) } }),
+            Where(Input(input), new JsonObject { ["type"] = "null" }));
         rule["else"] = Where(Input(input), new JsonObject { ["not"] = new JsonObject { ["type"] = "null" } });
         return rule;
     }
@@ -352,24 +412,32 @@ public static class Render
     /// <summary>A server as the envelope writes it, or null.</summary>
     private static JsonObject? Json(Server? server) => server is null ? null : new JsonObject
     {
-        ["version"] = server.Version, ["compatibilityLevel"] = server.CompatibilityLevel, ["image"] = server.Image is { } image ? Digest(image) : null,
+        ["version"] = server.Version, ["compatibilityLevel"] = server.CompatibilityLevel,
+        ["image"] = server.Image is { } image ? Digest(image) : null,
     };
 
     private static JsonObject Document(string id, string description, JsonObject properties) => new(
     [
         new("$schema", "https://json-schema.org/draft/2020-12/schema"), new("title", id), new("description", description),
-        new("$comment", "Generated from cli/Contract.cs by Render.Schemas: regenerate with DBCHANGE_BLESS=1 dotnet test --filter Category=fast; never edit by hand."),
+        new("$comment", "Generated from cli/Contract.cs by Render.Schemas: regenerate with DBCHANGE_BLESS=1 dotnet test"
+            + " --filter Category=fast; never edit by hand."),
         .. Record(properties).Select(p => KeyValuePair.Create(p.Key, p.Value?.DeepClone())),
     ]);
 
     internal static JsonObject Record(JsonObject properties) =>
-        new() { ["type"] = "object", ["additionalProperties"] = false, ["required"] = Array(properties.Select(p => JsonValue.Create(p.Key))), ["properties"] = properties };
+        new()
+        {
+            ["type"] = "object", ["additionalProperties"] = false, ["required"] = Array(properties.Select(p => JsonValue.Create(p.Key))),
+            ["properties"] = properties,
+        };
 
-    private static JsonObject Where(string property, JsonObject schema) => new() { ["properties"] = new JsonObject { [property] = schema } };
+    private static JsonObject Where(string property, JsonObject schema) =>
+        new() { ["properties"] = new JsonObject { [property] = schema } };
     private static JsonObject If(JsonObject condition, JsonObject then) => new() { ["if"] = condition, ["then"] = then };
     internal static JsonObject List(JsonObject items) => new() { ["type"] = "array", ["items"] = items };
     internal static JsonObject Enum(IEnumerable<JsonNode?> values) => new() { ["enum"] = Array(values) };
-    internal static JsonObject Nullable(JsonObject schema) => new() { ["anyOf"] = new JsonArray(new JsonObject { ["type"] = "null" }, schema) };
+    internal static JsonObject Nullable(JsonObject schema) =>
+        new() { ["anyOf"] = new JsonArray(new JsonObject { ["type"] = "null" }, schema) };
     private static JsonObject Ref(string definition) => new() { ["$ref"] = "#/$defs/" + definition };
     internal static JsonObject Text() => new() { ["type"] = "string", ["minLength"] = 1 };
     internal static JsonObject Pattern(string pattern) => new() { ["type"] = "string", ["pattern"] = pattern };
@@ -398,7 +466,9 @@ public static class Render
 
     private static JsonObject BlockedBys() => Enum(System.Enum.GetValues<BlockedBy>().Select(b => (JsonNode?)Word(b)));
 
-    /// <summary>A provenance's input as the envelope names it, camel-cased: change, schema, existingData, dacFx, server, publishProfile.</summary>
+    /// <summary>
+    /// A provenance's input as the envelope names it, camel-cased: change, schema, existingData, dacFx, server, publishProfile.
+    /// </summary>
     private static string Input(Provenance.Input input) => input switch
     {
         Provenance.Input.DacFx => "dacfx",
