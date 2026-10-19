@@ -27,6 +27,19 @@ internal static class TSql
         return LineEndings.Lf(script).Trim();
     }
 
+    /// <summary>A predicate the model writes, a check's expression or an index's filter, as ScriptDom reads it; null when it does not
+    /// parse.</summary>
+    internal static BooleanExpression? Predicate(string text) =>
+        Parser().ParseBooleanExpression(new StringReader(text), out var errors) is { } parsed && errors.Count == 0 ? parsed : null;
+
+    /// <summary>A scalar expression the model writes, a default's, as ScriptDom reads it; null when it does not parse.</summary>
+    internal static ScalarExpression? Scalar(string text) =>
+        Parser().ParseExpression(new StringReader(text), out var errors) is { } parsed && errors.Count == 0 ? parsed : null;
+
+    /// <summary>A data type written as a declaration writes it, nvarchar(max) or decimal(18,2); null when it does not parse.</summary>
+    internal static DataTypeReference? DataType(string text) =>
+        Parser().ParseScalarDataType(new StringReader(text), out var errors) is { } parsed && errors.Count == 0 ? parsed : null;
+
     /// <summary>
     /// The parts of an object's name of one to four parts, unquoted as ScriptDom reads them ([a]]b] is a]b); null when the text is no such
     /// name.

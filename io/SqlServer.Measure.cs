@@ -11,14 +11,14 @@ public static partial class SqlServer
 {
     /// <summary>
     /// An aggregate query the allowlist admitted (VALUES.md P2): one statement, as ScriptDom writes it back, so what runs is what was
-    /// checked, with no comment and no batch separator; the site it measures; and the tables it reads by name. Only Of makes one, and Of
-    /// is internal to io (DECISIONS.md, 2026-09-25), so only io's builders (WP 2.3) make one for a named environment and no verb or
-    /// file hands one text; Measure runs nothing else.
+    /// checked, with no comment and no batch separator; the site it measures; the tables it reads by name; and the session it runs under,
+    /// which io's builders (WP 2.3) give and a query read from text lacks. Only Of makes one, and Of is internal to io (DECISIONS.md,
+    /// 2026-09-25), so only io's builders make one for a named environment and no verb or file hands one text; Measure runs nothing else.
     /// </summary>
     public sealed class AggregateQuery
     {
-        private AggregateQuery(TSqlStatement statement, string site) =>
-            (Statement, Site, Tables) = (TSql.Text(statement), site, TSql.TablesNamed(statement));
+        private AggregateQuery(TSqlStatement statement, string site, Session? session) =>
+            (Statement, Site, Tables, Session) = (TSql.Text(statement), site, TSql.TablesNamed(statement), session);
 
         public string Statement { get; }
 
@@ -29,16 +29,52 @@ public static partial class SqlServer
         /// </summary>
         internal IReadOnlyList<string> Tables { get; }
 
+        /// <summary>The session Measure sets before the query, or null for a query read from text, which runs under the login's
+        /// own.</summary>
+        public Session? Session { get; }
+
         internal static Result<AggregateQuery> Of(string text, string site) =>
-            Allowlist.Admitted(text).Map(statement => new AggregateQuery(statement, site));
+            Allowlist.Admitted(text).Map(statement => new AggregateQuery(statement, site, null));
 
         /// <summary>
-        /// An aggregate query built as a ScriptDom tree, checked as the tree, and run as the text ScriptDom writes it back as.
+        /// An aggregate query built as a ScriptDom tree, checked as the tree, and run as the text ScriptDom writes it back as, under the
+        /// session given.
         /// </summary>
-        internal static Result<AggregateQuery> Of(TSqlStatement tree, string site) =>
-            Allowlist.Admitted(tree, site).Map(statement => new AggregateQuery(statement, site));
+        internal static Result<AggregateQuery> Of(TSqlStatement tree, string site, Session? session = null) =>
+            Allowlist.Admitted(tree, site).Map(statement => new AggregateQuery(statement, site, session));
 
         public override string ToString() => Site + ": " + Statement;
+    }
+
+    /// <summary>The order SET DATEFORMAT reads a date's month, day and year in.</summary>
+    public enum DateFormat
+    {
+        Mdy,
+        Dmy,
+        Ymd,
+        Ydm,
+        Myd,
+        Dym,
+    }
+
+    /// <summary>
+    /// The session an aggregate query io's builders make runs under (WP 2.3): its SET LANGUAGE and SET DATEFORMAT, which decide how
+    /// TRY_CONVERT reads a date written as a string and how a date is written as one, so a Fits count depends on them as ALTER COLUMN does
+    /// under the Octopus login. That login's own pair is unknown until spike S7 reports it, so <see cref="Assumed"/>, us_english and mdy,
+    /// is committed, and every answer counted under a session carries <see cref="Note"/>. Measure sends the two values as parameters.
+    /// </summary>
+    public sealed record Session(string Language, DateFormat DateFormat)
+    {
+        /// <summary>The Octopus login's language and date order as assumed until S7: us_english, and mdy, us_english's own.</summary>
+        public static readonly Session Assumed = new("us_english", DateFormat.Mdy);
+
+        /// <summary>The date order as SET DATEFORMAT spells it: mdy, dmy and the rest.</summary>
+        internal string Order => DateFormat.ToString().ToLowerInvariant();
+
+        /// <summary>The note an answer counted under this session carries: neither value is verified against the Octopus step.</summary>
+        public Finding Note => Finding.Note("session.unverified", "the aggregate queries' session",
+            "Every aggregate query ran under SET LANGUAGE " + Language + " and SET DATEFORMAT " + Order + ", the language and date order "
+            + "assumed for the Octopus login until spike S7 reports its own; they are not verified against the Octopus step.");
     }
 
     /// <summary>
@@ -123,18 +159,26 @@ public static partial class SqlServer
     /// <summary>
     /// One admitted aggregate query against the target (WP 1.4), through the one statement path, read back as integers and logged
     /// with its row count. A statement SQL Server refuses on the open connection is measured as failed, by its number, and one past
-    /// its timeout as timed out; a connection that fails, or an identity refused, is an error.
+    /// its timeout as timed out; a connection that fails, or an identity refused, is an error. A query with a session runs after its SET
+    /// LANGUAGE and SET DATEFORMAT, in the same batch on the same connection, the two values sent as parameters, which the log declares.
     /// </summary>
     public static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log) =>
         Measure(target, query, log, AggregateQueryTimeout);
 
     internal static Result<Measurement> Measure(Database target, AggregateQuery query, QueryLog log, TimeSpan timeout) =>
-        NoSynonym(target, query, log).Bind(_ => Query(target, new Statement(query.Site, query.Statement) { Timeout = timeout }, log,
+        NoSynonym(target, query, log).Bind(_ => Query(target, Sent(query) with { Timeout = timeout }, log,
             rows => Result.All(rows.Select(row => Result.All(row.Select(Integer)).Map(values => Row.Of([.. values]))))
                 .Map(read => (Measurement)new Measurement.Answered(query.Site, SortedArray.Of(read))),
             failed => Result.Ok<Measurement>(failed.TimedOut ? new Measurement.TimedOut(query.Site, timeout)
                 : new Measurement.Raised(query.Site, failed.Number, failed.Message))))
         .Bind(measured => measured);
+
+    /// <summary>The statement Measure sends for a query: the query alone, or its session's two SET statements and then the query.</summary>
+    private static Statement Sent(AggregateQuery query) => query.Session is not { } session ? new Statement(query.Site, query.Statement)
+        : new Statement(query.Site, "SET LANGUAGE @language;\nSET DATEFORMAT @dateformat;\n" + query.Statement)
+        {
+            Parameters = [("@language", session.Language), ("@dateformat", session.Order)],
+        };
 
     /// <summary>
     /// The query, when no table it reads by name is a synonym on the target (DECISIONS.md, 2026-09-25): a synonym can stand for a table

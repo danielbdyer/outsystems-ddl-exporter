@@ -32,6 +32,8 @@
     <!-- The kernel's hand-built sample changes, which SampleChangeTests holds to the built golden project. -->
     <Compile Include="../Kernel.Tests/KernelProperties.cs" Link="Kernel/KernelProperties.cs" />
     <Compile Include="../Kernel.Tests/SampleChanges.cs" Link="Kernel/SampleChanges.cs" />
+    <!-- The models the Facsimile's cases write, which the aggregate queries' tests change and plant as the kernel's tests change them. -->
+    <Compile Include="../Kernel.Tests/Model.cs" Link="Kernel/Model.cs" />
     <!-- The tests' program runs through io/Command: a program that does not run, or overruns, fails the test naming it. -->
     <Compile Include="../Budgets.Tests/Programs.cs" Link="Programs.cs" />
     <!-- The ways to every error, which Register.Errors reads for the register and "no output contains Password=" plants a password in. -->

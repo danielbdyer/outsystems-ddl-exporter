@@ -55,10 +55,13 @@ public sealed class AllowlistTests
             "four-part", "two statements", "a forbidden function inside an allowed one", "disguised by comments",
             "bucket boundary read from the data", "a join boundary read from the data", "a cross join boundary",
             "a derived table's column as a length's boundary", "a correlated EXISTS boundary", "written as an equality of their difference",
-            "a value computed in a derived table's select list", "a value computed in the select list of IN's subquery"];
+            "a value computed in a derived table's select list", "a value computed in the select list of IN's subquery",
+            "SUM of a column named rows of a table outside the catalog", "SUM of sys.partitions' rows beside a table outside the catalog",
+            "SUM of a column of sys.partitions other than rows", "SUM of the rows column of a catalog view other than sys.partitions"];
         string[] admitted = ["COUNT of every row", "COUNT_BIG of every row", "COUNT of DISTINCT", "COUNT_BIG of DISTINCT", "SUM of CASE",
             "MIN over LEN", "MAX over LEN",
-            "MIN over DATALENGTH", "MAX over DATALENGTH", "CASE WHEN EXISTS", "an integer literal"];
+            "MIN over DATALENGTH", "MAX over DATALENGTH", "CASE WHEN EXISTS", "an integer literal",
+            "SUM of sys.partitions' rows, TableEmpty read from the catalog"];
 
         Assert.DoesNotContain(refused, form => !Cases.Any(c => !c.Admitted && c.Label.Contains(form, StringComparison.Ordinal)));
         Assert.DoesNotContain(admitted, form => !Cases.Any(c => c.Admitted && c.Label.Contains(form, StringComparison.Ordinal)));
