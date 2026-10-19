@@ -71,6 +71,8 @@ One row per test that holds a row of `VALUES.md`, from its `[Trait("Value", …)
 | L1 | Every text the help prints is in the register | `DbChange.Budgets.Tests.Register.TestNames.Every_text_the_help_prints_is_in_the_register` |
 | L2 | A hand written document restates no count the build computes | `DbChange.Budgets.Tests.NoRestatedCounts.A_hand_written_document_restates_no_count_the_build_computes` |
 | L3 | Each budget holds its ceiling | `DbChange.Budgets.Tests.Budgets.Each_budget_holds_its_ceiling` |
+| L3 | Each file of a group holds the group's line ceiling | `DbChange.Budgets.Tests.Budgets.Each_file_of_a_group_holds_the_group_s_line_ceiling` |
+| L3 | Every line of a file of a group holds the width ceiling | `DbChange.Budgets.Tests.Budgets.Every_line_of_a_file_of_a_group_holds_the_width_ceiling` |
 | L3 | The code together holds its ceiling | `DbChange.Budgets.Tests.Budgets.The_code_together_holds_its_ceiling` |
 | L3 | Every hand written file holds its budget | `DbChange.Budgets.Tests.Manifest.Every_hand_written_file_holds_its_budget` |
 | L4 | Every markdown file outside the archive and every ci file is a row | `DbChange.Budgets.Tests.Manifest.Every_markdown_file_outside_the_archive_and_every_ci_file_is_a_row` |

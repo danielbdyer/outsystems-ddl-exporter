@@ -12,7 +12,9 @@ namespace DbChange.Budgets.Tests;
 /// </summary>
 internal static class TestTraits
 {
-    /// <summary>One test method: its project (Kernel.Tests, Io.Tests, Budgets.Tests), its class's full name, its name and its traits, in order.</summary>
+    /// <summary>
+    /// One test method: its project (Kernel.Tests, Io.Tests, Budgets.Tests), its class's full name, its name and its traits, in order.
+    /// </summary>
     public sealed record Test(string Project, string Class, string Method, IReadOnlyList<(string Name, string Value)> Traits)
     {
         public string FullName => Class + "." + Method;
@@ -23,13 +25,16 @@ internal static class TestTraits
         /// <summary>The method's name as LAWS.md prints it: _s_ as a possessive, and each other underscore a space.</summary>
         public string English => Method.Replace("_s_", "'s_", StringComparison.Ordinal).Replace('_', ' ');
 
-        /// <summary>The method's name as words: lower case, letters and digits only, one space between, so a name and its English form compare.</summary>
+        /// <summary>
+        /// The method's name as words: lower case, letters and digits only, one space between, so a name and its English form compare.
+        /// </summary>
         public string Words => TestTraits.Words(Method);
     }
 
     private static readonly Regex Comment = new(@"^[ \t]*//", RegexOptions.CultureInvariant);
     private static readonly Regex Namespace = new(@"^namespace ([\w.]+);", RegexOptions.CultureInvariant);
-    private static readonly Regex Class = new(@"^(?:(?:public|internal|private|sealed|static|abstract|partial|file)[ \t]+)*class[ \t]+(\w+)", RegexOptions.CultureInvariant);
+    private static readonly Regex Class =
+        new(@"^(?:(?:public|internal|private|sealed|static|abstract|partial|file)[ \t]+)*class[ \t]+(\w+)", RegexOptions.CultureInvariant);
     private static readonly Regex Trait = new(@"\[Trait\(""(\w+)"", ""([^""]+)""\)\]", RegexOptions.CultureInvariant);
     private static readonly Regex Marked = new(@"^\s*\[(?:Fact|Theory)\b", RegexOptions.CultureInvariant);
     private static readonly Regex Method = new(@"^[ \t]*public (?:async )?[\w<>.]+ (\w+)\(", RegexOptions.CultureInvariant);
@@ -38,13 +43,17 @@ internal static class TestTraits
     public static IReadOnlyList<Test> All { get; } = Read();
 
     /// <summary>A name as its words: lower case, letters and digits only, one space between.</summary>
-    public static string Words(string name) => string.Join(' ', Regex.Split(name.ToLowerInvariant(), @"[^\p{Ll}\p{Nd}]+", RegexOptions.CultureInvariant).Where(w => w.Length > 0));
+    public static string Words(string name) =>
+        string.Join(' ', Regex.Split(name.ToLowerInvariant(), @"[^\p{Ll}\p{Nd}]+", RegexOptions.CultureInvariant).Where(w => w.Length > 0));
 
     private static List<Test> Read() => [.. Repository.Files
-        .Where(f => f.StartsWith("tests/", StringComparison.Ordinal) && !f.StartsWith("tests/Golden/", StringComparison.Ordinal) && f.EndsWith(".cs", StringComparison.Ordinal))
+        .Where(f => f.StartsWith("tests/", StringComparison.Ordinal) && !f.StartsWith("tests/Golden/", StringComparison.Ordinal)
+            && f.EndsWith(".cs", StringComparison.Ordinal))
         .SelectMany(file => In(file.Split('/')[1], Repository.Lines(file)))];
 
-    /// <summary>The test methods a source file's lines declare, each with the traits above it, whatever the method's return type is written as.</summary>
+    /// <summary>
+    /// The test methods a source file's lines declare, each with the traits above it, whatever the method's return type is written as.
+    /// </summary>
     public static IEnumerable<Test> In(string project, IEnumerable<string> lines)
     {
         var (space, type, marked) = ("", "", false);

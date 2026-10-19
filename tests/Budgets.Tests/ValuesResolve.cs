@@ -11,8 +11,8 @@ namespace DbChange.Budgets.Tests;
 
 /// <summary>
 /// Every row of VALUES.md names where it is held (DECISIONS.md, 2026-09-25). Each clause of a Where (clauses split at ';' outside
-/// backticks) names a test that declares the row with [Trait("Value", "&lt;row&gt;")] (a class, or <c>Kernel.Tests: "its English name"</c>),
-/// a file or directory, a verb this build has (<c>dbchange doctor</c>) or a job of .github/workflows/dbchange.yml; or says
+/// backticks) names a test that declares the row with [Trait("Value", "&lt;row&gt;")] (a class, or <c>Kernel.Tests: "its English
+/// name"</c>), a file or directory, a verb this build has (<c>dbchange doctor</c>) or a job of .github/workflows/dbchange.yml; or says
 /// <c>not held yet: WP &lt;n&gt;.&lt;m&gt;</c>, accepted while M&lt;n&gt; is not complete (<see cref="Documents.Complete(int)"/>), or
 /// <c>not held yet: the cutover tools</c>, accepted until M8 starts; or says <c>prose only</c>, which is printed and capped. A test the
 /// clause names that exists drops its <c>not held yet</c>. <c>pending M&lt;n&gt;</c> and <c>pending W</c> are retired phrases and fail.
@@ -39,15 +39,19 @@ public sealed class ValuesResolve(ITestOutputHelper output)
     [Trait("Category", "fast")]
     public void Every_value_names_where_it_is_held()
     {
-        var rows = Repository.Lines("VALUES.md").Where(l => Row.IsMatch(l)).Select(l => l.Trim('|').Split('|').Select(c => c.Trim()).ToArray()).ToList();
+        var rows = Repository.Lines("VALUES.md").Where(l => Row.IsMatch(l))
+            .Select(l => l.Trim('|').Split('|').Select(c => c.Trim()).ToArray()).ToList();
         var proseOnly = rows.Where(r => r[^1].Contains("prose only", StringComparison.Ordinal)).Select(r => r[0]).ToList();
         var declared = TestTraits.All.SelectMany(t => t.Values("Value")).ToHashSet(StringComparer.Ordinal);
-        output.WriteLine("VALUES.md rows held by prose only: " + proseOnly.Count.ToString(CultureInfo.InvariantCulture) + " (" + string.Join(", ", proseOnly) + ")");
+        output.WriteLine("VALUES.md rows held by prose only: " + proseOnly.Count.ToString(CultureInfo.InvariantCulture) + " ("
+            + string.Join(", ", proseOnly) + ")");
         output.WriteLine("VALUES.md rows no test declares: " + string.Join(", ", rows.Select(r => r[0]).Where(r => !declared.Contains(r))));
 
         Assert.All(rows, r => Assert.Equal(5, r.Length));
-        Assert.Empty(rows.SelectMany(r => Clause.Split(r[^1]).SelectMany(c => Unresolved(r[0], c, Documents.Complete)).Select(p => "VALUES.md " + r[0] + ": " + p)));
-        Assert.True(proseOnly.Count <= ProseOnlyCeiling, "more VALUES.md rows are held by prose only than the ceiling of " + ProseOnlyCeiling.ToString(CultureInfo.InvariantCulture) + "; add a mechanism, or raise the ceiling with a DECISIONS.md line");
+        Assert.Empty(rows.SelectMany(r =>
+            Clause.Split(r[^1]).SelectMany(c => Unresolved(r[0], c, Documents.Complete)).Select(p => "VALUES.md " + r[0] + ": " + p)));
+        Assert.True(proseOnly.Count <= ProseOnlyCeiling, "more VALUES.md rows are held by prose only than the ceiling of "
+            + ProseOnlyCeiling.ToString(CultureInfo.InvariantCulture) + "; add a mechanism, or raise the ceiling with a DECISIONS.md line");
     }
 
     [Fact]
@@ -56,7 +60,9 @@ public sealed class ValuesResolve(ITestOutputHelper output)
     {
         var rows = Documents.Values.ToHashSet(StringComparer.Ordinal);
 
-        Assert.Empty(TestTraits.All.SelectMany(t => t.Values("Value").Where(v => !rows.Contains(v)).Select(v => t.FullName + " declares Value " + v + ", which is no row of VALUES.md")));
+        Assert.Empty(TestTraits.All.SelectMany(t =>
+            t.Values("Value").Where(v => !rows.Contains(v))
+            .Select(v => t.FullName + " declares Value " + v + ", which is no row of VALUES.md")));
     }
 
     [Theory]
@@ -76,7 +82,8 @@ public sealed class ValuesResolve(ITestOutputHelper output)
     [InlineData("A5", "the author rule, prose only", true)]
     [InlineData("L4", "`Budgets.Tests: Manifest` — pending M1", false)]
     [InlineData("D1", "law 1, its emit form — pending W", false)]
-    public void A_clause_resolves_when_it_names_a_test_that_declares_the_row_or_a_file_a_built_verb_or_a_job_that_holds_it(string row, string clause, bool resolves) =>
+    public void A_clause_resolves_when_it_names_a_test_that_declares_the_row_or_a_file_a_built_verb_or_a_job_that_holds_it(string row,
+        string clause, bool resolves) =>
         Assert.Equal(resolves, !Clause.Split(clause).SelectMany(c => Unresolved(row, c, Documents.Complete)).Any());
 
     [Theory]
@@ -87,15 +94,20 @@ public sealed class ValuesResolve(ITestOutputHelper output)
     [InlineData("law 1, its emit form — not held yet: the cutover tools", true, false)]
     [InlineData("`Budgets.Tests: Manifest` — not held yet: WP 2.5", false, false)]
     [InlineData("`Kernel.Tests: \"classify says provisional first\"` — not held yet: WP 2.9", false, false)]
-    public void A_clause_not_held_yet_resolves_while_its_work_package_s_milestone_is_incomplete(string clause, bool complete, bool resolves) =>
+    public void A_clause_not_held_yet_resolves_while_its_work_package_s_milestone_is_incomplete(string clause, bool complete,
+        bool resolves) =>
         Assert.Equal(resolves, !Unresolved("A1", clause, _ => complete).Any());
 
-    /// <summary>What a clause of <paramref name="row"/> fails to resolve, as the reason, under <paramref name="complete"/> saying which milestones are; nothing when it resolves.</summary>
+    /// <summary>
+    /// What a clause of <paramref name="row"/> fails to resolve, as the reason, under <paramref name="complete"/> saying which milestones
+    /// are; nothing when it resolves.
+    /// </summary>
     private static IEnumerable<string> Unresolved(string row, string clause, Func<int, bool> complete)
     {
         if (Retired.IsMatch(clause))
         {
-            yield return "'" + clause + "' says pending, a retired phrase; write not held yet: WP <n>.<m>, or not held yet: the cutover tools";
+            yield return "'" + clause
+                + "' says pending, a retired phrase; write not held yet: WP <n>.<m>, or not held yet: the cutover tools";
             yield break;
         }
 
@@ -103,11 +115,13 @@ public sealed class ValuesResolve(ITestOutputHelper output)
         if (NotHeldYet.Match(clause) is { Success: true } later)
         {
             var (accepted, what) = later.Groups[1].Success
-                ? (Documents.WorkPackages.Contains((Number(later, 1), Number(later, 2))) && !complete(Number(later, 1)), "WP " + later.Groups[1].Value + "." + later.Groups[2].Value)
+                ? (Documents.WorkPackages.Contains((Number(later, 1), Number(later, 2))) && !complete(Number(later, 1)),
+                    "WP " + later.Groups[1].Value + "." + later.Groups[2].Value)
                 : (!Documents.Started(Documents.OneTool, complete), "the cutover tools");
             if (!accepted)
             {
-                yield return "'" + clause + "' waits on " + what + ", which the plan does not list or whose milestone is complete; name the test that holds it";
+                yield return "'" + clause + "' waits on " + what
+                    + ", which the plan does not list or whose milestone is complete; name the test that holds it";
             }
 
             foreach (var built in names.Where(n => IsTestName(n) && Tests(n).Any()))
@@ -134,7 +148,10 @@ public sealed class ValuesResolve(ITestOutputHelper output)
         }
     }
 
-    /// <summary>Why a backticked name resolves nothing for <paramref name="row"/>: a test that does not declare it, or a name that is no test, file or built verb.</summary>
+    /// <summary>
+    /// Why a backticked name resolves nothing for <paramref name="row"/>: a test that does not declare it, or a name that is no test, file
+    /// or built verb.
+    /// </summary>
     private static IEnumerable<string> Unresolved(string row, string name)
     {
         if (IsTestName(name))
@@ -171,7 +188,8 @@ public sealed class ValuesResolve(ITestOutputHelper output)
         var test = Test.Match(name);
         return test.Success
             ? TestTraits.All.Where(t => t.Project == test.Groups[1].Value
-                && (test.Groups[2].Success ? t.Words == TestTraits.Words(test.Groups[2].Value) : ("." + t.Class).EndsWith("." + test.Groups[3].Value, StringComparison.Ordinal)))
+                && (test.Groups[2].Success ? t.Words == TestTraits.Words(test.Groups[2].Value)
+                    : ("." + t.Class).EndsWith("." + test.Groups[3].Value, StringComparison.Ordinal)))
             : TestTraits.All.Where(t => t.Class.EndsWith("." + name, StringComparison.Ordinal));
     }
 

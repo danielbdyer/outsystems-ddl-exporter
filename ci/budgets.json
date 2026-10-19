@@ -1,20 +1,38 @@
 {
-  "about": "Line ceilings the Budgets test enforces, from V3_MILESTONES.md Appendix F. A budget counts the physical lines of every file its include globs match, minus its exclude globs and neverCounted. A ceiling rises only with a DECISIONS.md line in the same pull request. planned, plannedFiles and plannedByMilestone are the plan's figures: data to compare against, never a failure.",
+  "about": "Line ceilings the Budgets test enforces. A package ceiling is the package's lines as measured on 2026-10-19, after the reflow of the code to 140 characters a line and the splits, plus twice the lines V3_MILESTONES.md Appendix F still plans for M2 to M7, rounded up to the next hundred (DECISIONS.md, 2026-10-19); the corpus keeps its 3,000. A budget counts the physical lines of every file its include globs match, minus its exclude globs and neverCounted. A ceiling rises only with a DECISIONS.md line in the same pull request. planned, plannedFiles and plannedByMilestone are the plan's figures: data to compare against, never a failure.",
   "neverCounted": ["**/bin/**", "**/obj/**"],
+  "eachFile": {
+    "about": "Ceilings on each C# file on its own, beside the package budgets (the operator's ruling of 2026-10-19: a package ceiling may rise, the lines per file hold). A file of one of the groups below holds its group's ceiling in physical lines, counted as the package budgets count them, and, where the group carries a widthCeiling, every line of it holds that: its length in characters as a .NET string counts them, a trailing carriage return not counted. The width binds the code alone, and the tests are held to their lines (the operator's ruling of 2026-10-19). A file over its ceiling is split into partial files; a line over the width is broken without changing what it means. These ceilings rise only with a DECISIONS.md line in the same pull request.",
+    "groups": {
+      "code": {
+        "about": "every C# file of the three packages: 500 lines a file, 140 characters a line.",
+        "include": ["kernel/**/*.cs", "io/**/*.cs", "cli/**/*.cs"],
+        "exclude": [],
+        "ceiling": 500,
+        "widthCeiling": 140
+      },
+      "tests": {
+        "about": "every C# file of every test project: 800 lines a file and no width ceiling; the corpus under tests/Golden/ is data and has neither ceiling.",
+        "include": ["tests/**/*.cs"],
+        "exclude": ["tests/Golden/**"],
+        "ceiling": 800
+      }
+    }
+  },
   "code": {
-    "about": "C# in the three packages together; tests are budgeted separately.",
+    "about": "C# in the three packages together; tests are budgeted separately. The ceiling is the sum of the three package ceilings. The planned figures are M3 as re-cut, which the operator confirmed on 2026-10-19 (V3_MILESTONES.md section 17 item 20); before the re-cut M3 planned 4,840.",
     "budgets": ["kernel", "io", "cli"],
-    "ceiling": 14900,
-    "planned": 13970,
-    "plannedByMilestone": { "M0": 1120, "M1": 2560, "M2": 1880, "M3": 4840, "M4": 790, "M5": 1440, "M6": 880, "M7": 460 }
+    "ceiling": 25900,
+    "planned": 11400,
+    "plannedByMilestone": { "M0": 1120, "M1": 2560, "M2": 1880, "M3": 2270, "M4": 790, "M5": 1440, "M6": 880, "M7": 460 }
   },
   "budgets": {
     "kernel": {
       "about": "code: the pure kernel. plannedFiles names files within kernel/, matched by file name.",
       "include": ["kernel/**/*.cs"],
       "exclude": [],
-      "ceiling": 6800,
-      "planned": 6460,
+      "ceiling": 9000,
+      "planned": 4440,
       "plannedFiles": [
         { "files": ["SortedArray.cs", "Result.cs", "Error.cs", "Name.cs", "Fingerprint.cs"], "what": null, "lines": 410, "milestones": ["M0"] },
         { "files": ["Receipt.cs"], "what": "the five inputs, Engine", "lines": 180, "milestones": ["M0"] },
@@ -26,8 +44,7 @@
         { "files": ["Classify.cs"], "what": "renames of three kinds, shapes from recognize:", "lines": 450, "milestones": ["M2"] },
         { "files": ["Schema.cs"], "what": null, "lines": 520, "milestones": ["M3"] },
         { "files": ["Order.cs"], "what": null, "lines": 180, "milestones": ["M3"] },
-        { "files": ["Evidence.cs"], "what": "standing sites, confirmed provenance", "lines": 720, "milestones": ["M3"] },
-        { "files": ["Synth.cs"], "what": null, "lines": 1800, "milestones": ["M3"] },
+        { "files": ["Witness.cs"], "what": "the existing-data tier's plan", "lines": 500, "milestones": ["M3"] },
         { "files": ["PullRequestDescription.cs", "Locks.cs"], "what": null, "lines": 570, "milestones": ["M5"] },
         { "files": ["Platform.cs", "Page.cs"], "what": "table classes, in sync", "lines": 350, "milestones": ["M6"] }
       ]
@@ -36,8 +53,8 @@
       "about": "code: everything that touches SQL Server, DacFx, git and files. plannedFiles names files within io/, matched by file name; LocalServer.cs and Json.cs each appear twice, once per milestone that grows them.",
       "include": ["io/**/*.cs"],
       "exclude": [],
-      "ceiling": 6400,
-      "planned": 5980,
+      "ceiling": 13500,
+      "planned": 5480,
       "plannedFiles": [
         { "files": ["Write.cs", "Json.cs"], "what": "and the telemetry opt-out", "lines": 250, "milestones": ["M0"] },
         { "files": ["Ssdt.cs"], "what": "build, load, read into elements with scripts and refactorlog, refactorlog read", "lines": 400, "milestones": ["M1"] },
@@ -45,7 +62,7 @@
         { "files": ["LocalServer.cs"], "what": "minimal: create, register, drop", "lines": 60, "milestones": ["M1"] },
         { "files": ["Profiles.cs", "Git.cs", "Doctor.cs"], "what": "Profiles.cs: options only; SQLCMD sensitivity", "lines": 440, "milestones": ["M1"] },
         { "files": ["AggregateQueries.cs", "Predict.cs"], "what": "and the BlockOnPossibleDataLoss reader, the machine block's parser", "lines": 690, "milestones": ["M2"] },
-        { "files": ["LocalServer.cs", "SyntheticCopy.cs", "Realize.cs", "Profile.cs"], "what": "LocalServer.cs completed", "lines": 1450, "milestones": ["M3"] },
+        { "files": ["LocalServer.cs", "SyntheticCopy.cs", "Profile.cs"], "what": "LocalServer.cs completed; the copy build's eight steps; a column's value-free shape and row tiers", "lines": 950, "milestones": ["M3"] },
         { "files": ["Prove.cs", "RefactorLog.cs"], "what": null, "lines": 550, "milestones": ["M4"] },
         { "files": ["Gate.cs", "Vendor.cs", "Json.cs"], "what": "Json.cs additions", "lines": 670, "milestones": ["M5"] },
         { "files": ["Ossys.cs"], "what": "the allowlist; and the page's commit and deployments.md", "lines": 370, "milestones": ["M6"] },
@@ -56,13 +73,13 @@
       "about": "code: the dbchange executable. The dispatcher, the verb table and the renderers first, then one file per verb at about a hundred lines, so plannedFiles carries no file names.",
       "include": ["cli/**/*.cs"],
       "exclude": [],
-      "ceiling": 1700,
-      "planned": 1530,
+      "ceiling": 3400,
+      "planned": 1480,
       "plannedFiles": [
         { "files": [], "what": "the dispatcher, the verb table and the renderers", "lines": 280, "milestones": ["M0"] },
         { "files": [], "what": "one file per verb", "lines": 320, "milestones": ["M1"] },
         { "files": [], "what": "one file per verb", "lines": 220, "milestones": ["M2"] },
-        { "files": [], "what": "one file per verb", "lines": 170, "milestones": ["M3"] },
+        { "files": [], "what": "one file per verb", "lines": 120, "milestones": ["M3"] },
         { "files": [], "what": "one file per verb", "lines": 120, "milestones": ["M4"] },
         { "files": [], "what": "one file per verb", "lines": 200, "milestones": ["M5"] },
         { "files": [], "what": "one file per verb", "lines": 160, "milestones": ["M6"] },
@@ -73,7 +90,7 @@
       "about": "C# in every test project; the corpus under tests/Golden/ is data and has its own budget.",
       "include": ["tests/**/*.cs"],
       "exclude": ["tests/Golden/**"],
-      "ceiling": 20000,
+      "ceiling": 41300,
       "planned": 20000,
       "plannedByMilestone": { "M0": 2491, "M1": 5302, "M2": 1984, "M3": 3510, "M4": 2441, "M5": 1831, "M6": 1068, "M7": 1373 }
     },

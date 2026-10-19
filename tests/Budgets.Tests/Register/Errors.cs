@@ -23,9 +23,10 @@ public sealed class Errors
     /// <summary>Words that lead a description or a hedge, never a move: an article, a pronoun, an auxiliary, a condition.</summary>
     private static readonly HashSet<string> NoMove = new(StringComparer.OrdinalIgnoreCase)
     {
-        "a", "an", "the", "this", "that", "these", "those", "it", "its", "i", "we", "you", "your", "our", "my", "they", "their", "there", "here",
-        "please", "can", "could", "should", "would", "must", "may", "might", "will", "shall", "is", "are", "was", "were", "be", "been", "do", "does",
-        "did", "has", "have", "had", "not", "no", "nothing", "none", "cannot", "unable", "error", "failed", "if", "when", "because", "since", "maybe", "perhaps",
+        "a", "an", "the", "this", "that", "these", "those", "it", "its", "i", "we", "you", "your", "our", "my", "they", "their",
+        "there", "here", "please", "can", "could", "should", "would", "must", "may", "might", "will", "shall", "is", "are", "was",
+        "were", "be", "been", "do", "does", "did", "has", "have", "had", "not", "no", "nothing", "none", "cannot", "unable", "error",
+        "failed", "if", "when", "because", "since", "maybe", "perhaps",
     };
 
     private static readonly Regex RunsDbChange = new(@"\b[Rr]un dbchange (\S+)", RegexOptions.CultureInvariant);
@@ -63,8 +64,10 @@ public sealed class Errors
         Assert.Contains("environments.literal-connection", written);
         Assert.Contains("arguments.unknown-check", written);   // the cli's own, in cli/Check.cs
         Assert.Contains("element.", written);   // the start of a composed code: element.property-name, element.relationship-name
-        Assert.DoesNotContain(written, code => code.EndsWith('.') ? !driven.Any(d => d.StartsWith(code, StringComparison.Ordinal)) : !driven.Contains(code));
-        Assert.DoesNotContain(driven, code => !written.Contains(code) && !written.Any(start => start.EndsWith('.') && code.StartsWith(start, StringComparison.Ordinal)));
+        Assert.DoesNotContain(written, code => code.EndsWith('.') ? !driven.Any(d => d.StartsWith(code, StringComparison.Ordinal))
+            : !driven.Contains(code));
+        Assert.DoesNotContain(driven, code => !written.Contains(code)
+            && !written.Any(start => start.EndsWith('.') && code.StartsWith(start, StringComparison.Ordinal)));
     }
 
     /// <summary>
@@ -99,15 +102,20 @@ public sealed class Errors
             .Where(p => p.Remedy is not null).Select(p => (p.Item.Name, Remedy: p.Remedy!)).ToList();
 
         Assert.NotEmpty(remedies);
-        Assert.Empty(remedies.Where(r => Flaw(r.Remedy) is not null).Select(r => r.Name + ": the remedy " + Flaw(r.Remedy) + ": " + r.Remedy));
+        Assert.Empty(remedies.Where(r => Flaw(r.Remedy) is not null)
+            .Select(r => r.Name + ": the remedy " + Flaw(r.Remedy) + ": " + r.Remedy));
         Assert.Empty(remedies.SelectMany(r => Prose.Findings(r.Remedy).Select(f => r.Name + ": " + f)));
     }
 
-    /// <summary>The scan reads a code from a construction that names the type and from a target-typed one (finding D6), and reads no code from a string that is none.</summary>
+    /// <summary>
+    /// The scan reads a code from a construction that names the type and from a target-typed one (finding D6), and reads no code from a
+    /// string that is none.
+    /// </summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("return new Error(\"environments.missing\", \"No environments file.\", \"Commit it.\");", "environments.missing")]
-    [InlineData("private static Error Malformed(string at) => new(\"environments.malformed\", at, \"Write it.\");", "environments.malformed")]
+    [InlineData("private static Error Malformed(string at) => new(\"environments.malformed\", at, \"Write it.\");",
+        "environments.malformed")]
     [InlineData("new Error(ErrorCode.Text(category) + \".\", m, r)", null)]
     [InlineData("new(\"dbchange.doctor/1\", outcome, 0, message, [])", null)]
     [InlineData("new(\"done\", [0], \"the message is the tool's version\")", null)]
