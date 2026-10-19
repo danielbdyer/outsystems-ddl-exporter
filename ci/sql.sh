@@ -28,7 +28,8 @@ value() { if [ -f "$env" ]; then sed -n "s/^$1=//p" "$env" | tr -d '\r'; fi; }
 root() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi; }
 running() { pgrep -u mssql -x sqlservr >/dev/null 2>&1; }
 # The installed mssql-server's version, empty where none is installed (a package removed with its configuration kept is none).
-installed() { dpkg-query -W -f '${Status} ${Version}' mssql-server 2>/dev/null | sed -n 's/^install ok installed //p'; }
+# dpkg-query exits 1 for a package it does not know, which pipefail would carry into `had="$(installed)"` and errexit end silently.
+installed() { { dpkg-query -W -f '${Status} ${Version}' mssql-server 2>/dev/null || true; } | sed -n 's/^install ok installed //p'; }
 
 # One up at a time per machine, so two runs never make two passwords for one server: the lock is a file created
 # exclusively (noclobber here, CreateNew in ci/sql.ps1). A lock older than ten minutes was left by a killed run.
