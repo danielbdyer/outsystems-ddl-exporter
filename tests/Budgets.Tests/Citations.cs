@@ -33,7 +33,7 @@ public sealed class Citations
 
     /// <summary>
     /// Path-shaped spans that are not this repository's: the SSDT repository's files (<c>dbchange/…</c> and
-    /// <c>tools/dbchange/</c>), the corporate agent's <c>STATE.md</c>, a branch (<c>claude/…</c>, <c>wp/…</c>), and
+    /// <c>tools/dbchange/</c>), the backport agent's <c>STATE.md</c>, a branch (<c>claude/…</c>, <c>wp/…</c>), and
     /// <c>try/finally</c>, which is C#. Each is a prefix; nothing else is skipped.
     /// </summary>
     private static readonly string[] Elsewhere = ["dbchange/", "tools/dbchange/", "STATE.md", "claude/", "wp/", "try/finally"];

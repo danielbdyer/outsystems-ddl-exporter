@@ -13,14 +13,14 @@ namespace DbChange.Kernel.Tests;
 /// </summary>
 public sealed class ServerNameTests
 {
-    private const string Machine = "DANNY-PC";
+    private const string Machine = "DEV-PC";
 
     /// <summary>A data source in each form SqlClient reads: a protocol or none, a host by name or address or this machine, then a port or an instance or neither, in any case and spacing.</summary>
     private static readonly Gen<string> DataSource = Gen.Select(
         Gen.OneOf(Gen.Const(""), Gen.Const("tcp:"), Gen.Const("TCP:"), Gen.Const("np:"), Gen.Const("lpc:"), Gen.Const("admin:")),
         Gen.OneOf(
             Gen.Char["abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-"].Array[1, 20].Select(cs => new string(cs)),
-            Gen.OneOf(Gen.Const("localhost"), Gen.Const("127.0.0.1"), Gen.Const("[::1]"), Gen.Const("."), Gen.Const("(local)"), Gen.Const(Machine), Gen.Const("danny-pc"))),
+            Gen.OneOf(Gen.Const("localhost"), Gen.Const("127.0.0.1"), Gen.Const("[::1]"), Gen.Const("."), Gen.Const("(local)"), Gen.Const(Machine), Gen.Const("dev-pc"))),
         Gen.OneOf(Gen.Const(""), Gen.Int[1, 65535].Select(port => "," + port), Gen.Int[1, 65535].Select(port => ", " + port),
             Gen.Char["abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"].Array[1, 16].Select(cs => "\\" + new string(cs))))
         .Select((protocol, host, rest) => protocol + host + rest);
@@ -49,7 +49,7 @@ public sealed class ServerNameTests
     [InlineData("np:\\\\DEV-SQL\\pipe\\sql\\query", "dev-sql\\pipe\\sql\\query", "dev-sql")]
     [InlineData("(localdb)\\MSSQLLocalDB", "(localdb)\\mssqllocaldb", "(localdb)")]
     [InlineData(Machine + "\\SQLEXPRESS", "localhost\\sqlexpress", "localhost")]
-    [InlineData("tcp:danny-pc", "localhost", "localhost")]
+    [InlineData("tcp:dev-pc", "localhost", "localhost")]
     [InlineData("[::ffff:192.0.2.10],1433", "::ffff:192.0.2.10,1433", "::ffff:192.0.2.10")]
     public void A_data_source_is_spelled_as_the_registry_rows_already_carry_it(string dataSource, string spelled, string host)
     {

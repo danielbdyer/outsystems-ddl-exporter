@@ -260,7 +260,7 @@ public sealed class TargetTests : IDisposable
 
     /// <summary>
     /// dbchange adds no TLS keyword to a named environment's connection: the reference's own Encrypt and HostNameInCertificate reach the
-    /// server as written, so a corporate certificate check holds, and a reference that names none gets none, so SqlClient's default,
+    /// server as written, so a certificate check against the server's own name holds, and a reference that names none gets none, so SqlClient's default,
     /// a certificate the machine trusts, applies. Only the local local server's connection trusts its self-signed certificate.
     /// </summary>
     [Theory]

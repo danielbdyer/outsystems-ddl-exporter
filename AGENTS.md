@@ -1,7 +1,7 @@
 # AGENTS.md — working in this repository
 
 This repository builds `dbchange`, which tells a developer whether a schema change in the SSDT
-repository of an OutSystems system blocks or applies on each environment before Octopus deploys it: one CLI (its verbs
+repository of an OutSystems system blocks or applies on each environment before the deployment tool deploys it: one CLI (its verbs
 listed by `dbchange --help --json`, and from M8 in `cli/VERBS.md`, generated from it) and, from M7,
 `knowledge/`, the files a developer's Copilot session reads in the SSDT repository. Read this
 file, then `NEXT.md`, then the README of the package being changed. Nothing else is required.

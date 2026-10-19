@@ -287,7 +287,7 @@
       "path": "tests/Golden/dbchange/ledgers/toolchain.md",
       "kind": "hand",
       "owner": "ssdt",
-      "reader": ["dbchange doctor", "dbchange check drift", "release engineering"],
+      "reader": ["dbchange doctor", "dbchange check drift", "whoever owns the deployment step"],
       "moment": ["every claim's provenance", "a new dbchange version", "the Octopus step's DacFx changing"],
       "budget": 15,
       "generator": null,

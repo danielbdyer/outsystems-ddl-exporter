@@ -4,7 +4,7 @@
 a schema change blocks or applies on each environment and why, proves the change on a disposable
 copy by letting DacFx publish it under the pipeline's own profile, and writes the pull request
 description a dev lead reads to approve the change. It works on the SSDT project that carries the
-OutSystems applications' external entities; Octopus still deploys.
+OutSystems applications' external entities; the deployment tool still deploys.
 
 ## The verbs
 

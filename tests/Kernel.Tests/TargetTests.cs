@@ -22,7 +22,7 @@ public sealed class TargetTests
     [Trait("Category", "fast")]
     [InlineData("env:dev", "environment", "dev")]
     [InlineData("env:uat-2", "environment", "uat-2")]
-    [InlineData("copy:dbchange_danny_pc_4242_0a1b2c3d", "registered copy", "dbchange_danny_pc_4242_0a1b2c3d")]
+    [InlineData("copy:dbchange_dev_pc_4242_0a1b2c3d", "registered copy", "dbchange_dev_pc_4242_0a1b2c3d")]
     [InlineData("synthetic-copy", "synthetic copy", "")]
     [InlineData("ref:main", "git ref", "main")]
     [InlineData("ref:origin/release/2026.09", "git ref", "origin/release/2026.09")]
@@ -90,7 +90,7 @@ public sealed class TargetTests
 
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("DANNY-PC", 4242, 0x0a1b2c3du, "dbchange_danny_pc_4242_0a1b2c3d")]
+    [InlineData("DEV-PC", 4242, 0x0a1b2c3du, "dbchange_dev_pc_4242_0a1b2c3d")]
     [InlineData("runner.corp.example", 7, 0xffffffffu, "dbchange_runner_corp_example_7_ffffffff")]
     [InlineData("ÉTÉ", 1, 0u, "dbchange__t__1_00000000")]
     [InlineData("", 0, 1u, "dbchange___0_00000001")]

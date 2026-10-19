@@ -32,8 +32,8 @@ Updated 2026-09-25 by #704, during the pre-M2 pass the operator asked for.
 ## Waiting on others
 - S5, a lead with read access to Dev's platform database: which `ossys_` tables and columns hold
   consumer references and publish times.
-- S6, IT: whether the team laptops and the hosted agents have the .NET 10 SDK and Docker, and
+- S6, whoever manages the machines: whether the team laptops and the hosted agents have the .NET 10 SDK and Docker, and
   whether the Octopus workers have the .NET 10 runtime.
-- S7, release engineering: the publish profile, the DacFx version, and the login's language and
+- S7, whoever owns the deployment step: the publish profile, the DacFx version, and the login's language and
   DATEFORMAT that the Octopus step applies.
 - S8, the dev leads: Dev's, QA's and UAT's SQL Server version, compatibility level, RCSI and collation.

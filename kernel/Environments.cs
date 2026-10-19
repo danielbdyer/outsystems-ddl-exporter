@@ -95,7 +95,7 @@ public sealed record NamedEnvironment : IComparable<NamedEnvironment>
 
     public Classification Classification { get; }
 
-    /// <summary>The groups that may read the environment, such as the Active Directory groups of its leads.</summary>
+    /// <summary>The groups that may read the environment, such as the directory groups of its leads.</summary>
     public SortedArray<string> ReaderGroups { get; }
 
     public SecretReference Connection { get; }
