@@ -24,7 +24,10 @@ public sealed class ContractTests
 {
     public static TheoryData<string> Answers => new(Contract.Verbs.Select(v => v.Name).Concat(["no-such-verb", ""]));
 
-    /// <summary>The help as the built dbchange prints it validates against its schema and says which verbs this build has: the four of M1 and --version.</summary>
+    /// <summary>
+    /// The help as the built dbchange prints it validates against its schema and says which verbs this build has: the four of M1 and
+    /// --version.
+    /// </summary>
     [Fact]
     [Trait("Category", "build")]
     public void Help_json_validates_against_its_committed_schema_and_says_which_verbs_this_build_has()
@@ -35,9 +38,11 @@ public sealed class ContractTests
         Assert.DoesNotContain('\r', output);
         var help = JsonNode.Parse(output)!;
         VerbAnswer.Valid("dbchange.help.1.schema.json", help);
-        Assert.Equal(["doctor", "read", "diff", "check", "--version"], help["verbs"]!.AsArray().Where(v => (bool)v!["built"]!).Select(v => (string)v!["name"]!));
+        Assert.Equal(["doctor", "read", "diff", "check", "--version"],
+            help["verbs"]!.AsArray().Where(v => (bool)v!["built"]!).Select(v => (string)v!["name"]!));
         help["exits"]![0]!["code"] = 8;
-        Assert.False(VerbAnswer.Evaluate("dbchange.help.1.schema.json", help).IsValid, "the schema admits an exit code the table does not have");
+        Assert.False(VerbAnswer.Evaluate("dbchange.help.1.schema.json", help).IsValid,
+            "the schema admits an exit code the table does not have");
     }
 
     [Fact]
@@ -54,10 +59,12 @@ public sealed class ContractTests
             }
         }
 
-        Assert.Equal(generated.Keys.Order(StringComparer.Ordinal), Directory.GetFiles(directory).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        Assert.Equal(generated.Keys.Order(StringComparer.Ordinal),
+            Directory.GetFiles(directory).Select(Path.GetFileName).Order(StringComparer.Ordinal));
         foreach (var (file, text) in generated)
         {
-            Assert.True(text == File.ReadAllText(Path.Combine(directory, file)), $"cli/schemas/{file} is stale: regenerate with DBCHANGE_BLESS=1 dotnet test --filter Category=fast");
+            Assert.True(text == File.ReadAllText(Path.Combine(directory, file)),
+                $"cli/schemas/{file} is stale: regenerate with DBCHANGE_BLESS=1 dotnet test --filter Category=fast");
         }
     }
 
@@ -106,15 +113,20 @@ public sealed class ContractTests
     [Trait("Category", "fast")]
     public void The_schemas_admit_exactly_the_codes_the_kernel_s_pattern_admits_a_hyphenated_category_included()
     {
-        var answer = Render.Json(Contract.Failed(Contract.Verbs.Single(v => v.Name == "read"), new Kernel.Error("local-server.missing", "No SQL Server answers for copies.", "Run ci/sql.sh up.")));
+        var answer = Render.Json(
+            Contract.Failed(Contract.Verbs.Single(v => v.Name == "read"),
+            new Kernel.Error("local-server.missing", "No SQL Server answers for copies.", "Run ci/sql.sh up.")));
         VerbAnswer.Valid("dbchange.read.1.schema.json", answer);
         VerbAnswer.Valid("dbchange.envelope.1.schema.json", answer);
 
         var pattern = new Regex(ErrorCode.Pattern, RegexOptions.CultureInvariant);
         var word = Gen.Char["a0z9"].Array[1, 3].Select(cs => new string(cs)).Array[1, 2].Select(pieces => string.Join('-', pieces));
         var code = word.Array[2, 3].Select(words => string.Join('.', words));
-        var nearMiss = Gen.Select(code, Gen.Int[0, 12], Gen.Char[".-A \n_"]).Select((text, at, mark) => text.Insert(at % (text.Length + 1), mark.ToString()));
-        Gen.OneOf(code, nearMiss).Sample(text => pattern.IsMatch(text) == VerbAnswer.Evaluate("dbchange.envelope.1.schema.json", Answer(Finds(0, "note", code: text))).IsValid);
+        var nearMiss = Gen.Select(code, Gen.Int[0, 12], Gen.Char[".-A \n_"])
+            .Select((text, at, mark) => text.Insert(at % (text.Length + 1), mark.ToString()));
+        Gen.OneOf(code, nearMiss)
+            .Sample(text => pattern.IsMatch(text) == VerbAnswer.Evaluate("dbchange.envelope.1.schema.json",
+            Answer(Finds(0, "note", code: text))).IsValid);
         Assert.Throws<ArgumentException>(() => new Kernel.Error("nowhere.failed", "Failed.", "Do the other thing."));
     }
 
@@ -132,9 +144,11 @@ public sealed class ContractTests
         Package(dacpac, "CREATE TABLE dbo.Customer (Id INT NOT NULL, [ ] INT NULL, [a\tb] INT NULL);");
         Package(bare, "CREATE TABLE dbo.Customer (Id INT NOT NULL);");
 
-        var (exit, answer) = Answered(["read", "--from", "dacpac:" + dacpac, "--json"], new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version));
+        var (exit, answer) = Answered(["read", "--from", "dacpac:" + dacpac, "--json"],
+            new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version));
         using var diff = new MemoryStream();
-        var diffExit = Cli.Program.Run(["diff", "--from", "dacpac:" + bare, "--to", "dacpac:" + dacpac], diff, new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version));
+        var diffExit = Cli.Program.Run(["diff", "--from", "dacpac:" + bare, "--to", "dacpac:" + dacpac], diff,
+            new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version));
 
         Assert.Equal(0, exit);
         VerbAnswer.Valid("dbchange.read.1.schema.json", answer);
@@ -150,7 +164,8 @@ public sealed class ContractTests
 
     /// <summary>
     /// S26 of the pre-M2 review, VALUES.md D2 at its mechanism: a command runs under the invariant culture whatever the caller's thread
-    /// culture is, and the caller's is as it was once the command ends; Main also sets the invariant culture for every thread a command starts.
+    /// culture is, and the caller's is as it was once the command ends; Main also sets the invariant culture for every thread a command
+    /// starts.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -159,12 +174,20 @@ public sealed class ContractTests
     {
         var (during, was) = ((CultureInfo?)null, CultureInfo.CurrentCulture);
         var doctor = Contract.Verbs.Single(v => v.Name == "doctor");
-        var probe = doctor with { Body = (_, _, _) => { during = CultureInfo.CurrentCulture; return Contract.Answer(doctor.Output, doctor.Outcome("ready"), 0, "ready", []); } };
+        var probe = doctor with
+        {
+            Body = (_, _, _) =>
+            {
+                during = CultureInfo.CurrentCulture;
+                return Contract.Answer(doctor.Output, doctor.Outcome("ready"), 0, "ready", []);
+            },
+        };
         CultureInfo.CurrentCulture = new CultureInfo("tr-TR");
         try
         {
             using var output = new MemoryStream();
-            Cli.Program.Run(["doctor", "--json"], output, () => new Checkout(Repository.Root, Repository.Root, null, Contract.Version), [probe]);
+            Cli.Program.Run(["doctor", "--json"], output, () => new Checkout(Repository.Root, Repository.Root, null, Contract.Version),
+                [probe]);
 
             Assert.Equal(CultureInfo.InvariantCulture, during);
             Assert.Equal("tr-TR", CultureInfo.CurrentCulture.Name);
@@ -177,7 +200,8 @@ public sealed class ContractTests
 
     /// <summary>
     /// VALUES.md D2 at the answer: read of a package and diff of two, run in this process under tr-TR, de-DE and the invariant culture,
-    /// write the same bytes. The package holds a decimal default, a date, and a column named ilk, whose upper case differs under Turkish rules.
+    /// write the same bytes. The package holds a decimal default, a date, and a column named ilk, whose upper case differs under Turkish
+    /// rules.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -186,8 +210,10 @@ public sealed class ContractTests
     {
         using var scratch = ScratchFolder.Temporary("cultures");
         var (before, after) = (scratch.Under("before.dacpac"), scratch.Under("after.dacpac"));
-        Package(before, "CREATE TABLE dbo.Invoice (Id INT NOT NULL, Price DECIMAL(10, 2) NOT NULL DEFAULT 1.5, Issued DATE NULL, [ilk] INT NULL);");
-        Package(after, "CREATE TABLE dbo.Invoice (Id INT NOT NULL, Price DECIMAL(12, 3) NOT NULL DEFAULT 1.5, Issued DATE NULL, [ILK] INT NULL, Total DECIMAL(10, 2) NULL);");
+        Package(before, "CREATE TABLE dbo.Invoice (Id INT NOT NULL, Price DECIMAL(10, 2) NOT NULL DEFAULT 1.5, Issued DATE NULL, [ilk] INT "
+            + "NULL);");
+        Package(after, "CREATE TABLE dbo.Invoice (Id INT NOT NULL, Price DECIMAL(12, 3) NOT NULL DEFAULT 1.5, Issued DATE NULL, [ILK] INT "
+            + "NULL, Total DECIMAL(10, 2) NULL);");
         var answers = new List<(string Culture, byte[] Read, byte[] Diff)>();
         foreach (var culture in (CultureInfo[])[CultureInfo.InvariantCulture, new("tr-TR"), new("de-DE")])
         {
@@ -197,8 +223,10 @@ public sealed class ContractTests
             {
                 using var read = new MemoryStream();
                 using var diff = new MemoryStream();
-                Assert.Equal(0, Cli.Program.Run(["read", "--from", "dacpac:" + before, "--json"], read, new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version)));
-                Assert.Equal(0, Cli.Program.Run(["diff", "--from", "dacpac:" + before, "--to", "dacpac:" + after, "--json"], diff, new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version)));
+                Assert.Equal(0, Cli.Program.Run(["read", "--from", "dacpac:" + before, "--json"], read,
+                    new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version)));
+                Assert.Equal(0, Cli.Program.Run(["diff", "--from", "dacpac:" + before, "--to", "dacpac:" + after, "--json"], diff,
+                    new Checkout(scratch.Path, scratch.Path, null, Cli.Contract.Version)));
                 answers.Add((culture.Name, Timeless(read.ToArray()), Timeless(diff.ToArray())));
             }
             finally
@@ -207,7 +235,9 @@ public sealed class ContractTests
             }
         }
 
-        Assert.All(answers, a => Assert.True(a.Read.SequenceEqual(answers[0].Read) && a.Diff.SequenceEqual(answers[0].Diff), "the answer under " + a.Culture + " differs from the invariant culture's"));
+        Assert.All(answers, a =>
+            Assert.True(a.Read.SequenceEqual(answers[0].Read) && a.Diff.SequenceEqual(answers[0].Diff), "the answer under " + a.Culture
+            + " differs from the invariant culture's"));
         var diffed = Encoding.UTF8.GetString(answers[0].Diff);
         Assert.Contains("[ilk]", diffed, StringComparison.Ordinal);
         Assert.Contains("[Total]", diffed, StringComparison.Ordinal);
@@ -225,7 +255,8 @@ public sealed class ContractTests
     {
         var read = Contract.Verbs.Single(v => v.Name == "read");
         var answer = Contract.Answer(read.Output, read.Outcome("done"), 0, "Length 300 → 256 for café.",
-            [Finding.Warning("drift.column", "Column [dbo].[Customer].[a\u001Bb‮c]", "line one\nline two \uD800 end", "Run dbchange diff\u0009now.")]);
+            [Finding.Warning("drift.column", "Column [dbo].[Customer].[a\u001Bb‮c]", "line one\nline two \uD800 end",
+                "Run dbchange diff\u0009now.")]);
 
         using var output = new MemoryStream();
         Write.Text(output, Render.Markdown(answer));
@@ -239,7 +270,9 @@ public sealed class ContractTests
         Assert.DoesNotContain(markdown, c => c is '\u001B' or '‮' or '\uD800' or '\t');
     }
 
-    /// <summary>JSON escapes a bidirectional control as ‮, which System.Text.Json's own encoder writes raw, and a parser restores the character.</summary>
+    /// <summary>
+    /// JSON escapes a bidirectional control as ‮, which System.Text.Json's own encoder writes raw, and a parser restores the character.
+    /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Json_escapes_a_bidirectional_control_and_a_parser_restores_it()
@@ -257,7 +290,8 @@ public sealed class ContractTests
     /// <summary>A package DacFx builds from the scripts, under the path given.</summary>
     private static void Package(string dacpac, params string[] scripts)
     {
-        using var model = new Microsoft.SqlServer.Dac.Model.TSqlModel(Microsoft.SqlServer.Dac.Model.SqlServerVersion.Sql160, new Microsoft.SqlServer.Dac.Model.TSqlModelOptions());
+        using var model = new Microsoft.SqlServer.Dac.Model.TSqlModel(Microsoft.SqlServer.Dac.Model.SqlServerVersion.Sql160,
+            new Microsoft.SqlServer.Dac.Model.TSqlModelOptions());
         foreach (var script in scripts)
         {
             model.AddObjects(script);
@@ -266,20 +300,25 @@ public sealed class ContractTests
         Microsoft.SqlServer.Dac.DacPackageExtensions.BuildPackage(dacpac, model, new Microsoft.SqlServer.Dac.PackageMetadata());
     }
 
-    /// <summary>The elements a read's answer holds: in the answer itself, or in the run's answer.json when the answer was cut to its first entries.</summary>
+    /// <summary>
+    /// The elements a read's answer holds: in the answer itself, or in the run's answer.json when the answer was cut to its first entries.
+    /// </summary>
     private static JsonArray Elements(JsonNode answer, string root) =>
-        ((string?)answer["full"] is { } full ? JsonNode.Parse(File.ReadAllText(Path.Combine(root, full)))! : answer)["read"]!["elements"]!.AsArray();
+        ((string?)answer["full"] is { } full ? JsonNode.Parse(File.ReadAllText(Path.Combine(root, full)))!
+            : answer)["read"]!["elements"]!.AsArray();
 
     /// <summary>
     /// An exception no verb expected answers with an envelope: exit 6, one finding internal.unexpected naming the exception's type, and its
-    /// message kept when the command read no named environment. A checkout with no working directory makes read throw ArgumentNullException.
+    /// message kept when the command read no named environment. A checkout with no working directory makes read throw
+    /// ArgumentNullException.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Value", "S2")]
     public void An_unexpected_exception_answers_exit_6_with_a_finding_naming_its_type_and_its_message()
     {
-        var (exit, answer) = Answered(["read", "--from", "dacpac:none.dacpac", "--json"], new Checkout(Repository.Root, null!, null, Cli.Contract.Version));
+        var (exit, answer) = Answered(["read", "--from", "dacpac:none.dacpac", "--json"],
+            new Checkout(Repository.Root, null!, null, Cli.Contract.Version));
 
         Assert.Equal(6, exit);
         VerbAnswer.Valid("dbchange.read.1.schema.json", answer);
@@ -290,8 +329,8 @@ public sealed class ContractTests
 
     /// <summary>
     /// The withholding rule is keyed to what the run read, not to how the arguments are spelled: check drift naming env:dev or a copy, in a
-    /// checkout with no root, throws ArgumentNullException before it reads any environment's connection, so the message is dbchange's own and
-    /// is kept.
+    /// checkout with no root, throws ArgumentNullException before it reads any environment's connection, so the message is dbchange's own
+    /// and is kept.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -299,7 +338,8 @@ public sealed class ContractTests
     [InlineData("copy:dbchange_host_1_0a1b2c3d")]
     public void An_unexpected_exception_keeps_its_message_when_the_command_names_a_database_but_read_no_environment(string target)
     {
-        var (exit, answer) = Answered(["check", "drift", "--target", target, "--at", "main", "--json"], new Checkout(null!, Repository.Root, null, Cli.Contract.Version));
+        var (exit, answer) = Answered(["check", "drift", "--target", target, "--at", "main", "--json"],
+            new Checkout(null!, Repository.Root, null, Cli.Contract.Version));
 
         Assert.Equal(6, exit);
         VerbAnswer.Valid("dbchange.check.1.schema.json", answer);
@@ -309,8 +349,9 @@ public sealed class ContractTests
 
     /// <summary>
     /// VALUES.md X2 at the top-level catch, for M2's predict and M6's check environments, which read environments without an env: argument:
-    /// a verb that resolves env:dev (through EnvironmentDatabase.Of) or a copy (through R15's read of dev's connection in io/LocalServer) and then throws has
-    /// its exception's message withheld, its type alone printed; one that resolves a git ref reads no environment and keeps the message.
+    /// a verb that resolves env:dev (through EnvironmentDatabase.Of) or a copy (through R15's read of dev's connection in io/LocalServer)
+    /// and then throws has its exception's message withheld, its type alone printed; one that resolves a git ref reads no environment and
+    /// keeps the message.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -318,13 +359,17 @@ public sealed class ContractTests
     [InlineData("env:dev", true)]
     [InlineData("copy:dbchange_host_1_0a1b2c3d", true)]
     [InlineData("ref:main", false)]
-    public void An_unexpected_exception_withholds_its_message_when_the_run_read_a_named_environment_with_no_env_argument(string target, bool withheld)
+    public void An_unexpected_exception_withholds_its_message_when_the_run_read_a_named_environment_with_no_env_argument(string target,
+        bool withheld)
     {
         var planted = PlantedValue.Unique();
         using var root = ScratchFolder.Temporary("withheld");
-        root.File("dev.connection", "Server=tcp:192.0.2.10,1433;Initial Catalog=Estate;User ID=estate;Password=" + PlantedValue.PasswordText);
+        root.File("dev.connection", "Server=tcp:192.0.2.10,1433;Initial Catalog=Estate;User ID=estate;Password="
+            + PlantedValue.PasswordText);
         EnvironmentsJson.Dev("file:dev.connection", "192.0.2.10").WriteTo(root.Path);
-        root.File(".dbchange/copies.json", "{ \"copies\": [ { \"name\": \"dbchange_host_1_0a1b2c3d\", \"server\": \"localhost,11433\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-25T00:00:00Z\" } ] }");
+        root.File(".dbchange/copies.json",
+            "{ \"copies\": [ { \"name\": \"dbchange_host_1_0a1b2c3d\", \"server\": \"localhost,11433\", \"host\": \"host\", \"pid\": 1, "
+            + "\"created\": \"2026-09-25T00:00:00Z\" } ] }");
         var check = Contract.Verbs.Single(v => v.Name == "check") with
         {
             Body = (here, _, _) =>
@@ -335,7 +380,8 @@ public sealed class ContractTests
         };
 
         using var output = new MemoryStream();
-        var exit = Cli.Program.Run(["check", "environments", "--json"], output, () => new Checkout(root.Path, root.Path, null, Cli.Contract.Version), [check]);
+        var exit = Cli.Program.Run(["check", "environments", "--json"], output, () =>
+            new Checkout(root.Path, root.Path, null, Cli.Contract.Version), [check]);
         var answer = JsonNode.Parse(output.ToArray())!;
 
         Assert.Equal(6, exit);
@@ -381,7 +427,8 @@ public sealed class ContractTests
     public void Standard_output_refusing_the_answer_exits_6(int refusedWrites)
     {
         using var output = new RefusingStream(refusedWrites);
-        var exit = Cli.Program.Run(["no-such-verb", "--json"], output, () => new Checkout(Repository.Root, Repository.Root, null, Cli.Contract.Version), Contract.Verbs);
+        var exit = Cli.Program.Run(["no-such-verb", "--json"], output, () =>
+            new Checkout(Repository.Root, Repository.Root, null, Cli.Contract.Version), Contract.Verbs);
 
         Assert.Equal(6, exit);
         if (refusedWrites == 1)
@@ -396,7 +443,10 @@ public sealed class ContractTests
         }
     }
 
-    /// <summary>A stream that throws IOException on its first <paramref name="refused"/> writes, as standard output does once its reader has gone, and keeps what it accepts after.</summary>
+    /// <summary>
+    /// A stream that throws IOException on its first <paramref name="refused"/> writes, as standard output does once its reader has gone,
+    /// and keeps what it accepts after.
+    /// </summary>
     private sealed class RefusingStream(int refused) : MemoryStream
     {
         private int refusals;
@@ -438,7 +488,10 @@ public sealed class ContractTests
         }
     }
 
-    /// <summary>WP 1.7: each verb this build has that adds to the envelope writes its own schema, the envelope and what the verb adds, committed under cli/schemas/.</summary>
+    /// <summary>
+    /// WP 1.7: each verb this build has that adds to the envelope writes its own schema, the envelope and what the verb adds, committed
+    /// under cli/schemas/.
+    /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Each_built_verb_has_its_own_schema_and_its_error_answer_validates_against_it()
@@ -448,15 +501,18 @@ public sealed class ContractTests
         Assert.NotEmpty(built);
         foreach (var verb in built)
         {
-            Assert.True(File.Exists(Path.Combine(Repository.Root, "cli", "schemas", Render.SchemaFile(verb.Output))), verb.Output + " has no schema under cli/schemas/");
+            Assert.True(File.Exists(Path.Combine(Repository.Root, "cli", "schemas", Render.SchemaFile(verb.Output))), verb.Output
+                + " has no schema under cli/schemas/");
             using var output = new MemoryStream();
-            var exit = Cli.Program.Run([verb.Name, "--no-such-flag", "--json"], output, new Checkout(Repository.Root, Repository.Root, null, Cli.Contract.Version));
+            var exit = Cli.Program.Run([verb.Name, "--no-such-flag", "--json"], output,
+                new Checkout(Repository.Root, Repository.Root, null, Cli.Contract.Version));
             var answer = JsonNode.Parse(output.ToArray())!;
             Assert.Equal(1, exit);
             VerbAnswer.Valid(Render.SchemaFile(verb.Output), answer);
             Assert.All(verb.Content!, added => Assert.Null(answer[added.Key]));
             answer[verb.Content!.First().Key] = new JsonObject();
-            Assert.False(VerbAnswer.Evaluate(Render.SchemaFile(verb.Output), answer).IsValid, verb.Output + " admits what the verb adds in a shape it never writes");
+            Assert.False(VerbAnswer.Evaluate(Render.SchemaFile(verb.Output), answer).IsValid, verb.Output
+                + " admits what the verb adds in a shape it never writes");
         }
     }
 
@@ -475,7 +531,8 @@ public sealed class ContractTests
         var (admitted, refused) = EnvelopePairs[rule];
 
         VerbAnswer.Valid("dbchange.envelope.1.schema.json", Answer(admitted));
-        Assert.False(VerbAnswer.Evaluate("dbchange.envelope.1.schema.json", Answer(refused)).IsValid, "the envelope schema admits an answer that breaks: " + rule);
+        Assert.False(VerbAnswer.Evaluate("dbchange.envelope.1.schema.json", Answer(refused)).IsValid,
+            "the envelope schema admits an answer that breaks: " + rule);
     }
 
     /// <summary>
@@ -496,26 +553,35 @@ public sealed class ContractTests
 
         Assert.Equal(written, (string?)json["blockedBy"]);
         VerbAnswer.Valid("dbchange.envelope.1.schema.json", json);
-        Assert.Throws<ArgumentException>("blockedBy", () => new Envelope("dbchange.prove/1", blocked, 3, "Msg 50000: rows were detected.", []));
-        Assert.Throws<ArgumentException>("blockedBy", () => new Envelope("dbchange.version/1", new Outcome("done", [0], "done"), 0, "dbchange 3.0.0", [], blockedBy));
+        Assert.Throws<ArgumentException>("blockedBy", () =>
+            new Envelope("dbchange.prove/1", blocked, 3, "Msg 50000: rows were detected.", []));
+        Assert.Throws<ArgumentException>("blockedBy", () =>
+            new Envelope("dbchange.version/1", new Outcome("done", [0], "done"), 0, "dbchange 3.0.0", [], blockedBy));
         json["blockedBy"] = null;
         Assert.False(VerbAnswer.Evaluate("dbchange.envelope.1.schema.json", json).IsValid, "the schema admits exit 3 naming nothing");
     }
 
-    /// <summary>An outcome's word and its exit are one decision: check drift's in-sync is exit 0 and differs exit 5, and an answer that pairs them otherwise cannot be constructed.</summary>
+    /// <summary>
+    /// An outcome's word and its exit are one decision: check drift's in-sync is exit 0 and differs exit 5, and an answer that pairs them
+    /// otherwise cannot be constructed.
+    /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     public void An_answer_whose_exit_its_outcome_does_not_list_cannot_be_constructed()
     {
         var check = Contract.Verbs.Single(v => v.Name == "check");
 
-        Assert.Throws<ArgumentException>("exit", () => new Envelope(check.Output, check.Outcome("in-sync"), 5, "env:dev is in sync with ref:main.", []));
+        Assert.Throws<ArgumentException>("exit", () =>
+            new Envelope(check.Output, check.Outcome("in-sync"), 5, "env:dev is in sync with ref:main.", []));
         Assert.Equal(5, new Envelope(check.Output, check.Outcome("differs"), 5, "env:dev differs from ref:main.", []).Exit);
         Assert.Equal([0, 5], Contract.Verbs.Single(v => v.Name == "diff").Outcome("differs").Exits);
         Assert.Throws<InvalidOperationException>(() => check.Outcome("done"));
     }
 
-    /// <summary>A verb the contract names and this build has no body for, and a check this build lacks, answer verb.not-built at exit 6 naming the verb and no milestone.</summary>
+    /// <summary>
+    /// A verb the contract names and this build has no body for, and a check this build lacks, answer verb.not-built at exit 6 naming the
+    /// verb and no milestone.
+    /// </summary>
     [Theory]
     [Trait("Category", "fast")]
     [Trait("Value", "S2")]
@@ -523,7 +589,8 @@ public sealed class ContractTests
     [InlineData("check outsystems")]
     public void A_verb_this_build_does_not_have_answers_exit_6_with_verb_not_built_naming_the_verb(string verb)
     {
-        var (exit, answer) = Answered([.. verb.Split(' '), "--json"], new Checkout(Repository.Root, Repository.Root, null, Cli.Contract.Version));
+        var (exit, answer) = Answered([.. verb.Split(' '), "--json"],
+            new Checkout(Repository.Root, Repository.Root, null, Cli.Contract.Version));
 
         Assert.Equal(6, exit);
         VerbAnswer.Valid("dbchange.envelope.1.schema.json", answer);
@@ -533,7 +600,10 @@ public sealed class ContractTests
         Assert.DoesNotMatch(@"\bM\d\b", answer.ToJsonString());
     }
 
-    /// <summary>WP 1.7's doctor on a bare machine (M0 exit 3): DEGRADED, exit 6, one finding of severity error with its remedy per missing item, and no milestone claimed.</summary>
+    /// <summary>
+    /// WP 1.7's doctor on a bare machine (M0 exit 3): DEGRADED, exit 6, one finding of severity error with its remedy per missing item, and
+    /// no milestone claimed.
+    /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Value", "A2")]
@@ -541,7 +611,9 @@ public sealed class ContractTests
     public void Doctor_on_a_bare_machine_prints_DEGRADED_with_a_remedy_per_missing_item()
     {
         using var bare = ScratchFolder.Temporary("bare");
-        var doctor = Doctor.Run(new Doctor.Machine(new Checkout(bare.Path, bare.Path, null, Contract.Version), bare.Path, null, bare.Under("no-sql.env"), Environment.Version), (c, _) => new Ran.NotFound(c.Program, "not installed"));
+        var doctor = Doctor.Run(
+            new Doctor.Machine(new Checkout(bare.Path, bare.Path, null, Contract.Version), bare.Path, null, bare.Under("no-sql.env"),
+            Environment.Version), (c, _) => new Ran.NotFound(c.Program, "not installed"));
 
         var json = Render.Json(Verbs.Doctor(doctor));
 
@@ -550,22 +622,29 @@ public sealed class ContractTests
         Assert.Equal((6, "degraded"), ((int)json["exit"]!, (string?)json["outcome"]));
         var line = (string)json["message"]!;
         Assert.StartsWith("dbchange doctor DEGRADED | sdk=", line, StringComparison.Ordinal);
-        Assert.Contains(" | dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED) | ", line, StringComparison.Ordinal);
+        Assert.Contains(" | dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED) | ", line,
+            StringComparison.Ordinal);
         Assert.DoesNotMatch(@"\bM\d\b", line);
-        var findings = json["findings"]!.AsArray().Select(f => ((string)f!["code"]!, (string)f["severity"]!, (string?)f["remedy"])).ToList();
-        Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.git", "doctor.local-server", "doctor.lfs"], findings.Select(f => f.Item1));
+        var findings = json["findings"]!.AsArray().Select(f => ((string)f!["code"]!, (string)f["severity"]!, (string?)f["remedy"]))
+            .ToList();
+        Assert.Equal(["doctor.sdk", "doctor.tool", "doctor.build", "doctor.git", "doctor.local-server", "doctor.lfs"],
+            findings.Select(f => f.Item1));
         Assert.Equal(checks.Where(c => c.Remedy is not null).Select(c => c.Remedy), findings.Select(f => f.Item3));
         Assert.All(findings, f => Assert.Equal("error", f.Item2));
         Assert.Equal(checks.Select(c => c.Item.Name), json["prerequisites"]!.AsArray().Select(c => (string)c!["item"]!));
     }
 
-    /// <summary>WP 1.7's doctor with every item present: READY and exit 0, naming the SDK and runtime, the tool and its DacFx against the ledger, the build route, the local server and LFS.</summary>
+    /// <summary>
+    /// WP 1.7's doctor with every item present: READY and exit 0, naming the SDK and runtime, the tool and its DacFx against the ledger,
+    /// the build route, the local server and LFS.
+    /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Doctor_with_every_item_present_prints_READY_and_exits_0()
     {
         using var machine = ScratchFolder.Temporary("ready");
-        foreach (var file in (string[])["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll", "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"])
+        foreach (var file in (string[])["Microsoft.Data.Tools.Schema.SqlTasks.targets", "refasm/.NETFramework/v4.7.2/mscorlib.dll",
+            "refasm/.NETFramework/v4.7.2/RedistList/FrameworkList.xml"])
         {
             machine.File(file, "");
         }
@@ -585,18 +664,24 @@ public sealed class ContractTests
             _ => new Ran.NotFound(command.Program, "not installed"),
         };
 
-        var answer = Verbs.Doctor(Doctor.Run(new Doctor.Machine(new Checkout(machine.Path, machine.Path, null, Contract.Version), machine.Path, null, machine.Under("sql.env"), Environment.Version), answers));
+        var answer = Verbs.Doctor(
+            Doctor.Run(new Doctor.Machine(new Checkout(machine.Path, machine.Path, null, Contract.Version), machine.Path, null,
+            machine.Under("sql.env"), Environment.Version), answers));
 
         var json = Render.Json(answer);
         VerbAnswer.Valid("dbchange.doctor.1.schema.json", json);
         Assert.Equal((0, "ready"), (answer.Exit, answer.Outcome.Word));
-        Assert.Equal("dbchange doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED) | build=dotnet with the tool folder's targets"
+        Assert.Equal("dbchange doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx="
+            + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED) | build=dotnet with the tool folder's targets"
             + " | git=2.31.1 | local-server=dbchange-sql container (localhost,11433) | image=present | lfs=git-lfs/3.4.0", answer.Message);
         Assert.Empty(answer.Findings);
-        Assert.Equal((DacFx.Version.Match(v => v.ToString(), e => e.Message), "UNPINNED", null), ((string?)json["dacfx"], (string?)json["pin"], json["server"]));
+        Assert.Equal((DacFx.Version.Match(v => v.ToString(), e => e.Message), "UNPINNED", null),
+            ((string?)json["dacfx"], (string?)json["pin"], json["server"]));
     }
 
-    /// <summary>The first call in Main is Telemetry.OptOut, and no static initializer runs ahead of it; what OptOut sets is TelemetryTests'.</summary>
+    /// <summary>
+    /// The first call in Main is Telemetry.OptOut, and no static initializer runs ahead of it; what OptOut sets is TelemetryTests'.
+    /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Value", "X5")]
@@ -607,7 +692,8 @@ public sealed class ContractTests
         var first = Array.FindIndex(il, b => b != 0x00);    // past the nops a debug build emits
 
         Assert.Equal(0x28, il[first]);                      // call
-        Assert.Equal(typeof(Telemetry).GetMethod(nameof(Telemetry.OptOut)), main.Module.ResolveMethod(BinaryPrimitives.ReadInt32LittleEndian(il.AsSpan(first + 1))));
+        Assert.Equal(typeof(Telemetry).GetMethod(nameof(Telemetry.OptOut)),
+            main.Module.ResolveMethod(BinaryPrimitives.ReadInt32LittleEndian(il.AsSpan(first + 1))));
         Assert.Null(typeof(Cli.Program).TypeInitializer);   // no static initializer runs ahead of Main
     }
 
@@ -623,34 +709,47 @@ public sealed class ContractTests
         {
             ["exit is a code of the frozen table"] = (WithOutcome("build-failed", 7), a => a["exit"] = 8),
             ["outcome is a word of a verb's set or a failure exit's name"] = (WithOutcome("in-sync", 0), WithOutcome("converged", 0)),
-            ["outcome ties to its exits: a failure's name at its exit alone"] = (WithOutcome("unreachable", 4), WithOutcome("unreachable", 6)),
+            ["outcome ties to its exits: a failure's name at its exit alone"] =
+                (WithOutcome("unreachable", 4), WithOutcome("unreachable", 6)),
             ["outcome ties to its exits: differs at 0 or 5 and at no other"] = (WithOutcome("differs", 5), WithOutcome("differs", 6)),
             ["outcome ties to its exits: in-sync at 0 alone"] = (WithOutcome("in-sync", 0), WithOutcome("in-sync", 5)),
             ["outcome ties to its exits: ready at 0 and degraded at 6"] = (WithOutcome("degraded", 6), WithOutcome("ready", 6)),
             ["the message is present"] = (a => a["message"] = "dbchange 3.0.0", a => a["message"] = ""),
             ["exit 3 names what blocked it"] = (WithBlocked("block-on-possible-data-loss"), WithBlocked(null)),
-            ["what blocked it is BlockOnPossibleDataLoss or a constraint violation"] = (WithBlocked("constraint-violation"), WithBlocked("guard")),
+            ["what blocked it is BlockOnPossibleDataLoss or a constraint violation"] =
+                (WithBlocked("constraint-violation"), WithBlocked("guard")),
             ["no other exit names what blocked it"] = (_ => { }, a => a["blockedBy"] = "block-on-possible-data-loss"),
             ["an answer says what blocked it, as null when the data did not block"] = (_ => { }, a => a.Remove("blockedBy")),
             ["a finding's severity is error, warning or note"] = (Finds(1, "note", remedy: null), Finds(1, "warn", remedy: null)),
             ["a finding of severity error carries a remedy"] = (Finds(1, "warning", remedy: null), Finds(1, "error", remedy: null)),
-            ["a finding's code is in the one code pattern"] = (Finds(1, "note", code: "local-server.missing"), Finds(1, "note", code: "Local-Server.missing")),
-            ["an answer that names its whole file was cut"] = (WithCut(true, ".dbchange/runs/20260925T101502Z-4242-0a1b/answer.json"), WithCut(false, ".dbchange/runs/20260925T101502Z-4242-0a1b/answer.json")),
+            ["a finding's code is in the one code pattern"] =
+                (Finds(1, "note", code: "local-server.missing"), Finds(1, "note", code: "Local-Server.missing")),
+            ["an answer that names its whole file was cut"] =
+                (WithCut(true, ".dbchange/runs/20260925T101502Z-4242-0a1b/answer.json"),
+                WithCut(false, ".dbchange/runs/20260925T101502Z-4242-0a1b/answer.json")),
             ["an answer that was not cut names no file"] = (WithCut(false, null), WithCut(true, ".dbchange/runs/x/queries.log")),
-            ["the whole file is the run's answer.json"] = (WithCut(true, ".dbchange/runs/20260925T101502Z-4242-0a1b/answer.json"), WithCut(true, "answer.json")),
-            ["the log is the run's queries.log"] = (a => a["log"] = ".dbchange/runs/20260925T101502Z-4242-0a1b/queries.log", a => a["log"] = ".dbchange/runs/20260925T101502Z-4242-0a1b/answer.json"),
+            ["the whole file is the run's answer.json"] =
+                (WithCut(true, ".dbchange/runs/20260925T101502Z-4242-0a1b/answer.json"), WithCut(true, "answer.json")),
+            ["the log is the run's queries.log"] =
+                (a => a["log"] = ".dbchange/runs/20260925T101502Z-4242-0a1b/queries.log",
+                a => a["log"] = ".dbchange/runs/20260925T101502Z-4242-0a1b/answer.json"),
             ["an answer names its log, as null when the run sent no statement"] = (a => a["log"] = null, a => a.Remove("log")),
             ["the time taken is a whole number of milliseconds, 0 or more"] = (a => a["elapsedMs"] = 1250, a => a["elapsedMs"] = -1),
             ["an answer names the time taken"] = (_ => { }, a => a.Remove("elapsedMs")),
             ["a provenance's at is a date-time"] = (WithProvenance(_ => { }), WithProvenance(p => p["at"] = "yesterday")),
-            ["a provenance's existing data is null exactly when it lacks it"] = (WithProvenance(p => (p["existingData"], p["lacking"]) = ("sha256:" + new string('3', 64), new JsonArray())),
+            ["a provenance's existing data is null exactly when it lacks it"] =
+                (WithProvenance(p => (p["existingData"], p["lacking"]) = ("sha256:" + new string('3', 64), new JsonArray())),
                 WithProvenance(p => p["existingData"] = "sha256:" + new string('3', 64))),
-            ["a provenance's server is null exactly when it lacks it"] = (WithProvenance(p => p["server"] = null, "existingData", "server"), WithProvenance(p => p["server"] = null)),
+            ["a provenance's server is null exactly when it lacks it"] =
+                (WithProvenance(p => p["server"] = null, "existingData", "server"), WithProvenance(p => p["server"] = null)),
             ["a provenance lacks only an input it can lack"] = (WithProvenance(_ => { }), WithProvenance(_ => { }, "existingData", "seed")),
-            ["the server names the image by its digest"] = (WithProvenance(_ => { }), WithProvenance(p => p["server"]!["image"] = "16.0.4295.3")),
-            ["the server's version is SQL Server's product version"] = (WithStamp(s => s["server"]!["version"] = "15.0.4430.1"), WithStamp(s => s["server"]!["version"] = "SQL Server 2022")),
+            ["the server names the image by its digest"] =
+                (WithProvenance(_ => { }), WithProvenance(p => p["server"]!["image"] = "16.0.4295.3")),
+            ["the server's version is SQL Server's product version"] =
+                (WithStamp(s => s["server"]!["version"] = "15.0.4430.1"), WithStamp(s => s["server"]!["version"] = "SQL Server 2022")),
             ["the stamp's DacFx is a release version"] = (WithStamp(s => s["dacfx"] = "170.5.96.0"), WithStamp(s => s["dacfx"] = "latest")),
-            ["the stamp's pin is UNPINNED or a release version"] = (WithStamp(s => s["pin"] = "170.5.96"), WithStamp(s => s["pin"] = "unpinned")),
+            ["the stamp's pin is UNPINNED or a release version"] =
+                (WithStamp(s => s["pin"] = "170.5.96"), WithStamp(s => s["pin"] = "unpinned")),
         };
 
         // Instruction architecture §9.1: a remedy is required for severity error and for exits 2, 4, 6 and 9.
@@ -658,11 +757,13 @@ public sealed class ContractTests
         {
             var code = exit.ToString(CultureInfo.InvariantCulture);
             pairs["exit " + code + " names a finding"] = (Finds(exit, "error", "dbchange doctor"), Finds(exit, severity: null));
-            pairs["exit " + code + " gives every finding a remedy"] = (Finds(exit, "warning", "dbchange doctor"), Finds(exit, "warning", remedy: null));
+            pairs["exit " + code + " gives every finding a remedy"] =
+                (Finds(exit, "warning", "dbchange doctor"), Finds(exit, "warning", remedy: null));
         }
 
         // Milestones §3: a provenance names each input a claim stands on, the target and when, and what it lacks.
-        foreach (var field in (string[])["change", "schema", "existingData", "dacfx", "server", "publishProfile", "target", "at", "lacking"])
+        foreach (var field in (string[])["change", "schema", "existingData", "dacfx", "server", "publishProfile", "target", "at",
+            "lacking"])
         {
             pairs["a provenance carries its " + field] = (WithProvenance(_ => { }), WithProvenance(p => p.Remove(field)));
         }
@@ -674,12 +775,15 @@ public sealed class ContractTests
         }
 
         // The envelope writes a fingerprint as sha256: and the digest's 64 lowercase hex digits, and nothing else.
-        (string Name, string Text)[] malformed = [("63 digits", "sha256:" + new string('a', 63)), ("upper case", "sha256:" + new string('A', 64)), ("another algorithm", "md5:" + new string('a', 64)), ("no algorithm", new string('a', 64))];
+        (string Name, string Text)[] malformed =
+            [("63 digits", "sha256:" + new string('a', 63)), ("upper case", "sha256:" + new string('A', 64)),
+            ("another algorithm", "md5:" + new string('a', 64)), ("no algorithm", new string('a', 64))];
         foreach (var field in (string[])["change", "schema", "publishProfile"])
         {
             foreach (var (name, text) in malformed)
             {
-                pairs["a provenance's " + field + " is a sha256 fingerprint, not " + name] = (WithProvenance(_ => { }), WithProvenance(p => p[field] = text));
+                pairs["a provenance's " + field + " is a sha256 fingerprint, not " + name] =
+                    (WithProvenance(_ => { }), WithProvenance(p => p[field] = text));
             }
         }
 
@@ -688,7 +792,8 @@ public sealed class ContractTests
 
     /// <summary>An answer with its time taken set aside, the one field that differs from run to run.</summary>
     private static byte[] Timeless(byte[] answer) =>
-        Encoding.UTF8.GetBytes(Regex.Replace(Encoding.UTF8.GetString(answer), "\"elapsedMs\": [0-9]+", "\"elapsedMs\": 0", RegexOptions.CultureInvariant));
+        Encoding.UTF8.GetBytes(
+            Regex.Replace(Encoding.UTF8.GetString(answer), "\"elapsedMs\": [0-9]+", "\"elapsedMs\": 0", RegexOptions.CultureInvariant));
 
     /// <summary>The answer dbchange writes to --version --json, then changed.</summary>
     private static JsonNode Answer(Action<JsonObject> change)
@@ -700,7 +805,10 @@ public sealed class ContractTests
         return answer;
     }
 
-    /// <summary>An answer whose outcome reads as <paramref name="word"/> at <paramref name="exit"/>, with a finding carrying a remedy where the exit requires one.</summary>
+    /// <summary>
+    /// An answer whose outcome reads as <paramref name="word"/> at <paramref name="exit"/>, with a finding carrying a remedy where the exit
+    /// requires one.
+    /// </summary>
     private static Action<JsonObject> WithOutcome(string word, int exit) => answer =>
     {
         Finds(exit, exit is 2 or 4 or 6 or 9 ? "error" : null, "dbchange doctor")(answer);
@@ -722,11 +830,19 @@ public sealed class ContractTests
         answer["full"] = full;
     };
 
-    /// <summary>An answer at <paramref name="exit"/> with one finding of <paramref name="severity"/> and <paramref name="code"/>, or with none when the severity is null; the outcome follows the exit.</summary>
-    private static Action<JsonObject> Finds(int exit, string? severity, string? remedy = null, string code = "block-on-possible-data-loss.rows-present") => answer =>
+    /// <summary>
+    /// An answer at <paramref name="exit"/> with one finding of <paramref name="severity"/> and <paramref name="code"/>, or with none when
+    /// the severity is null; the outcome follows the exit.
+    /// </summary>
+    private static Action<JsonObject> Finds(
+        int exit, string? severity, string? remedy = null, string code = "block-on-possible-data-loss.rows-present") => answer =>
     {
         answer["exit"] = exit;
-        answer["outcome"] = exit switch { 0 => "done", 1 => "bad-arguments", 2 => "unparsed-input", 4 => "unreachable", 6 => "configuration-refused", 7 => "build-failed", 9 => "refused-by-name", var other => (string?)answer["outcome"] ?? "done" };
+        answer["outcome"] = exit switch
+        {
+            0 => "done", 1 => "bad-arguments", 2 => "unparsed-input", 4 => "unreachable", 6 => "configuration-refused", 7 => "build-failed",
+            9 => "refused-by-name", var other => (string?)answer["outcome"] ?? "done",
+        };
         answer["findings"] = severity is null ? new JsonArray() : new JsonArray(new JsonObject
         {
             ["code"] = code, ["severity"] = severity, ["subject"] = "dbo.Customer.Email",
@@ -752,20 +868,25 @@ public sealed class ContractTests
     {
         var provenance = new JsonObject
         {
-            ["change"] = "sha256:" + new string('1', 64), ["schema"] = "sha256:" + new string('2', 64), ["existingData"] = null, ["dacfx"] = "170.5.96",
-            ["server"] = Server(), ["publishProfile"] = "sha256:" + new string('4', 64), ["target"] = "copy:dbchange_host_4242_0a1b2c3d", ["at"] = "2026-09-25T10:15:44Z",
+            ["change"] = "sha256:" + new string('1', 64), ["schema"] = "sha256:" + new string('2', 64), ["existingData"] = null,
+            ["dacfx"] = "170.5.96", ["server"] = Server(), ["publishProfile"] = "sha256:" + new string('4', 64),
+            ["target"] = "copy:dbchange_host_4242_0a1b2c3d", ["at"] = "2026-09-25T10:15:44Z",
             ["lacking"] = new JsonArray([.. (lacking.Length == 0 ? ["existingData"] : lacking).Select(input => (JsonNode?)input)]),
         };
         change(provenance);
         answer["provenance"] = provenance;
     };
 
-    private static JsonObject Server() => new() { ["version"] = "16.0.4295.3", ["compatibilityLevel"] = 160, ["image"] = "sha256:" + new string('5', 64) };
+    private static JsonObject Server() =>
+        new() { ["version"] = "16.0.4295.3", ["compatibilityLevel"] = 160, ["image"] = "sha256:" + new string('5', 64) };
 
-    /// <summary>Runs the built dbchange, as a process, and returns its exit code and standard output alone, which its JSON answer is.</summary>
+    /// <summary>
+    /// Runs the built dbchange, as a process, and returns its exit code and standard output alone, which its JSON answer is.
+    /// </summary>
     private static (int Exit, string Output) Run(params string[] arguments)
     {
-        var ran = new Command(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet", [Path.Combine(AppContext.BaseDirectory, "dbchange.dll"), .. arguments], Programs.Default).Finish();
+        var ran = new Command(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet",
+            [Path.Combine(AppContext.BaseDirectory, "dbchange.dll"), .. arguments], Programs.Default).Finish();
         return (ran.Code, ran.Output);
     }
 }

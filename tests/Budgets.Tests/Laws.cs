@@ -30,7 +30,9 @@ public sealed class Laws
 
         Assert.NotEmpty(written);
         Assert.All(written, w => Assert.True(w.First.SequenceEqual(w.Second), w.Name + " wrote LAWS.md differently on a second run"));
-        Assert.All(written, w => Assert.True(w.First.SequenceEqual(committed), "LAWS.md is stale against " + w.Name + ": run it and commit LAWS.md\n" + Encoding.UTF8.GetString(w.First)));
+        Assert.All(written, w =>
+            Assert.True(w.First.SequenceEqual(committed), "LAWS.md is stale against " + w.Name + ": run it and commit LAWS.md\n"
+            + Encoding.UTF8.GetString(w.First)));
         var text = Encoding.UTF8.GetString(committed);
         Assert.Matches(Manifest.Banner, text.Split('\n')[0]);
         Assert.DoesNotContain('\r', text);
@@ -46,25 +48,35 @@ public sealed class Laws
 
         Assert.Equal(kinds.Length, sections.Length);
         var listed = sections.SelectMany((s, i) => Rows(s).Select(r => kinds[i] + "\t" + r)).Order(StringComparer.Ordinal);
-        var declared = TestTraits.All.SelectMany(t => t.Traits.Where(tr => kinds.Contains(tr.Name)).Select(tr => tr.Name + "\t" + tr.Value + "\t" + t.English + "\t" + t.FullName)).Order(StringComparer.Ordinal);
+        var declared = TestTraits.All.SelectMany(t =>
+            t.Traits.Where(tr => kinds.Contains(tr.Name)).Select(tr => tr.Name + "\t" + tr.Value + "\t" + t.English + "\t" + t.FullName))
+            .Order(StringComparer.Ordinal);
         Assert.Equal(declared, listed);
         var declaredValues = TestTraits.All.SelectMany(t => t.Values("Value")).ToHashSet(StringComparer.Ordinal);
-        Assert.Equal(Documents.Values.Where(v => !declaredValues.Contains(v)).Order(StringComparer.Ordinal), Named(sections[1], "Rows of `VALUES.md` no test declares: ").Order(StringComparer.Ordinal));
-        Assert.Equal(Documents.EveryExit.Where(e => !Documents.DeclaredExits.Contains(e)).Order(StringComparer.Ordinal), Named(sections[2], "Exits no test declares, which a person or a CI job runs: ").Order(StringComparer.Ordinal));
+        Assert.Equal(Documents.Values.Where(v => !declaredValues.Contains(v)).Order(StringComparer.Ordinal),
+            Named(sections[1], "Rows of `VALUES.md` no test declares: ").Order(StringComparer.Ordinal));
+        Assert.Equal(Documents.EveryExit.Where(e => !Documents.DeclaredExits.Contains(e)).Order(StringComparer.Ordinal),
+            Named(sections[2], "Exits no test declares, which a person or a CI job runs: ").Order(StringComparer.Ordinal));
     }
 
     /// <summary>A section's table rows as value, English name and full name, tab-separated.</summary>
     private static IEnumerable<string> Rows(string section) =>
-        section.Split('\n').Select(l => TableRow.Match(l)).Where(m => m.Success).Select(m => m.Groups[1].Value + "\t" + m.Groups[2].Value + "\t" + m.Groups[3].Value);
+        section.Split('\n').Select(l => TableRow.Match(l)).Where(m => m.Success)
+            .Select(m => m.Groups[1].Value + "\t" + m.Groups[2].Value + "\t" + m.Groups[3].Value);
 
-    /// <summary>What the section's line opening with <paramref name="prefix"/> names, comma-separated and ending in a full stop; nothing for none.</summary>
+    /// <summary>
+    /// What the section's line opening with <paramref name="prefix"/> names, comma-separated and ending in a full stop; nothing for none.
+    /// </summary>
     private static IEnumerable<string> Named(string section, string prefix)
     {
         var named = section.Split('\n').Single(l => l.StartsWith(prefix, StringComparison.Ordinal))[prefix.Length..].TrimEnd('.');
         return named == "none" ? [] : named.Split(", ");
     }
 
-    /// <summary>Each generator this machine can run: ci/laws.ps1 through pwsh, and ci/laws.sh through bash (on Windows, Git's own bash, never another on the PATH).</summary>
+    /// <summary>
+    /// Each generator this machine can run: ci/laws.ps1 through pwsh, and ci/laws.sh through bash (on Windows, Git's own bash, never
+    /// another on the PATH).
+    /// </summary>
     private static IEnumerable<(string Name, Func<byte[]> Write)> Generators()
     {
         if (Runs("pwsh", "-NoProfile", "-Command", "exit 0"))
@@ -95,11 +107,16 @@ public sealed class Laws
         }
     }
 
-    /// <summary>Git for Windows' bash, beside the git on the PATH: git --exec-path is &lt;git&gt;/mingw64/libexec/git-core, and bash is &lt;git&gt;/bin/bash.exe.</summary>
+    /// <summary>
+    /// Git for Windows' bash, beside the git on the PATH: git --exec-path is &lt;git&gt;/mingw64/libexec/git-core, and bash is
+    /// &lt;git&gt;/bin/bash.exe.
+    /// </summary>
     private static string? GitBash() =>
         Programs.InRepository("git", "--exec-path").Run() is Ran.Exited { Code: 0 } exited
-            && Path.GetFullPath(Path.Combine(exited.Output.Trim(), "..", "..", "..", "bin", "bash.exe")) is var bash && File.Exists(bash) ? bash : null;
+            && Path.GetFullPath(Path.Combine(exited.Output.Trim(), "..", "..", "..", "bin", "bash.exe")) is var bash && File.Exists(bash)
+                ? bash : null;
 
     /// <summary>Whether the program runs here: one that is not installed (Ran.NotFound) does not.</summary>
-    private static bool Runs(string file, params string[] arguments) => Programs.InRepository(file, arguments).Run() is Ran.Exited { Code: 0 };
+    private static bool Runs(string file, params string[] arguments) => Programs.InRepository(file, arguments).Run()
+        is Ran.Exited { Code: 0 };
 }

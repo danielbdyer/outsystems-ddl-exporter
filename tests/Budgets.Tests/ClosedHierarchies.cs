@@ -27,7 +27,8 @@ public sealed class ClosedHierarchies
                 .Select(c => h + " can be derived from outside: " + c));
         var strays = new[] { typeof(SortedArray).Assembly, typeof(Write).Assembly, typeof(Contract).Assembly }
             .SelectMany(a => a.GetTypes())
-            .SelectMany(t => hierarchies.Where(h => Derives(t, h) && (Definition(t.DeclaringType) != h || !t.IsSealed)).Select(h => t + " derives from " + h + " but is not a sealed type nested in it"));
+            .SelectMany(t => hierarchies.Where(h => Derives(t, h) && (Definition(t.DeclaringType) != h || !t.IsSealed))
+                .Select(h => t + " derives from " + h + " but is not a sealed type nested in it"));
 
         Assert.Contains(typeof(Result<>), hierarchies);
         Assert.Empty(open);

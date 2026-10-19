@@ -15,7 +15,9 @@ public sealed class NoSkips
     // The word is split, and the pattern spells it with a letter class, so this file does not match itself.
     private const string Word = "Sk" + "ip";
 
-    private static readonly Regex Skipping = new(@"\bSk[i]p\s*=|\bSk[i]p\.(?:If|Unless)\b|\bAssert\.Sk[i]p\w*\s*\(|\bSk[i]ppable(?:Fact|Theory)\b", RegexOptions.CultureInvariant);
+    private static readonly Regex Skipping =
+        new(@"\bSk[i]p\s*=|\bSk[i]p\.(?:If|Unless)\b|\bAssert\.Sk[i]p\w*\s*\(|\bSk[i]ppable(?:Fact|Theory)\b",
+        RegexOptions.CultureInvariant);
 
     [Fact]
     [Trait("Category", "fast")]
@@ -25,7 +27,8 @@ public sealed class NoSkips
     {
         var skips = Repository.Files
             .Where(f => f.StartsWith("tests/", StringComparison.Ordinal) && f.EndsWith(".cs", StringComparison.Ordinal))
-            .SelectMany(f => Repository.Lines(f).Select((line, i) => (Where: f + ":" + (i + 1).ToString(CultureInfo.InvariantCulture), Line: line)))
+            .SelectMany(f => Repository.Lines(f)
+                .Select((line, i) => (Where: f + ":" + (i + 1).ToString(CultureInfo.InvariantCulture), Line: line)))
             .Where(x => Skipping.IsMatch(x.Line))
             .Select(x => x.Where + ": " + x.Line.Trim());
 
@@ -69,7 +72,9 @@ public sealed class NoSkips
 
         Assert.NotEmpty(TestTraits.All);
         Assert.Empty(TestTraits.All.Where(t => t.Values("Category").Count() != 1 || !t.Values("Category").All(categories.Contains))
-            .Select(t => t.FullName + " carries " + (t.Values("Category").Any() ? string.Join(" and ", t.Values("Category")) : "no category") + "; a test carries one of fast, fixture and build"));
+            .Select(t => t.FullName + " carries "
+                + (t.Values("Category").Any() ? string.Join(" and ", t.Values("Category")) : "no category")
+                + "; a test carries one of fast, fixture and build"));
     }
 
     [Theory]

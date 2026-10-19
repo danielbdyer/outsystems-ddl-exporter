@@ -23,7 +23,8 @@ public sealed class Decisions
 
         Assert.StartsWith("# ", lines[0], StringComparison.Ordinal);
         Assert.Empty(lines.Select((line, i) => (line, i)).Skip(1).Where(x => !IsDecision(x.line))
-            .Select(x => "DECISIONS.md:" + (x.i + 1).ToString(CultureInfo.InvariantCulture) + " is not <yyyy-mm-dd> · <the decision> · #<pull request>: " + x.line));
+            .Select(x => "DECISIONS.md:" + (x.i + 1).ToString(CultureInfo.InvariantCulture)
+                + " is not <yyyy-mm-dd> · <the decision> · #<pull request>: " + x.line));
     }
 
     [Theory]

@@ -43,11 +43,14 @@ public sealed class Prose
     public void The_register_finds_a_retired_word_or_a_banned_form(string text, string? found) =>
         Assert.Equal(found, Findings(text).Select(f => f.Split('\'')[1]).FirstOrDefault());
 
-    /// <summary>Each finding as line: 'what' is retired; say instead: what to write. Register.Errors reads error messages with it too.</summary>
+    /// <summary>
+    /// Each finding as line: 'what' is retired; say instead: what to write. Register.Errors reads error messages with it too.
+    /// </summary>
     internal static IEnumerable<string> Findings(string text) => Banned
         .SelectMany(b => b.Pattern.Matches(text).Select(m => (m.Index, b.Name, b.Instead)))
         .OrderBy(f => f.Index)
-        .Select(f => (text.AsSpan(0, f.Index).Count('\n') + 1).ToString(CultureInfo.InvariantCulture) + ": '" + f.Name + "' is out of the register; write instead: " + f.Instead);
+        .Select(f => (text.AsSpan(0, f.Index).Count('\n') + 1).ToString(CultureInfo.InvariantCulture) + ": '" + f.Name
+            + "' is out of the register; write instead: " + f.Instead);
 
     private static List<(Regex, string, string)> Read()
     {
@@ -62,7 +65,8 @@ public sealed class Prose
             Instead: (string)f["instead"]!));
         return words
             .Select(w => (
-                new Regex(@"(?<!\w)" + Regex.Escape(w.Term).Replace(@"\ ", @"\s+", StringComparison.Ordinal) + @"(?:s|es)?(?!\w)", RegexOptions.CultureInvariant | (w.Exact ? RegexOptions.None : RegexOptions.IgnoreCase)),
+                new Regex(@"(?<!\w)" + Regex.Escape(w.Term).Replace(@"\ ", @"\s+", StringComparison.Ordinal) + @"(?:s|es)?(?!\w)",
+                    RegexOptions.CultureInvariant | (w.Exact ? RegexOptions.None : RegexOptions.IgnoreCase)),
                 w.Term,
                 w.Instead))
             .Concat(forms)

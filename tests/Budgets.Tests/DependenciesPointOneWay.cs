@@ -25,12 +25,14 @@ public sealed class DependenciesPointOneWay
     public void Io_does_not_depend_on_the_cli_and_the_kernel_on_neither()
     {
         var io = Types.InAssembly(typeof(Write).Assembly).ShouldNot().HaveDependencyOn("DbChange.Cli").GetResult();
-        var kernel = Types.InAssembly(typeof(SortedArray).Assembly).ShouldNot().HaveDependencyOnAny("DbChange.Io", "DbChange.Cli").GetResult();
+        var kernel = Types.InAssembly(typeof(SortedArray).Assembly).ShouldNot().HaveDependencyOnAny("DbChange.Io", "DbChange.Cli")
+            .GetResult();
 
         Assert.True(io.IsSuccessful, "io depends on the CLI: " + string.Join(", ", io.FailingTypeNames ?? []));
         Assert.True(kernel.IsSuccessful, "the kernel depends on io or the CLI: " + string.Join(", ", kernel.FailingTypeNames ?? []));
         Assert.DoesNotContain(typeof(Write).Assembly.GetReferencedAssemblies(), a => a.Name == typeof(Contract).Assembly.GetName().Name);
-        Assert.False(Types.InAssembly(typeof(Contract).Assembly).ShouldNot().HaveDependencyOn("DbChange.Io").GetResult().IsSuccessful);   // the rule goes red the other way
+        // the rule goes red the other way
+        Assert.False(Types.InAssembly(typeof(Contract).Assembly).ShouldNot().HaveDependencyOn("DbChange.Io").GetResult().IsSuccessful);
     }
 
     /// <summary>
@@ -43,10 +45,13 @@ public sealed class DependenciesPointOneWay
     public void The_cli_references_no_DacFx_ScriptDom_or_SqlClient_type()
     {
         var cli = Types.InAssembly(typeof(Contract).Assembly).ShouldNot()
-            .HaveDependencyOnAny("Microsoft.SqlServer.Dac", "Microsoft.SqlServer.Dac.Model", "Microsoft.SqlServer.TransactSql.ScriptDom", "Microsoft.Data.SqlClient").GetResult();
+            .HaveDependencyOnAny("Microsoft.SqlServer.Dac", "Microsoft.SqlServer.Dac.Model", "Microsoft.SqlServer.TransactSql.ScriptDom",
+                "Microsoft.Data.SqlClient").GetResult();
 
         Assert.True(cli.IsSuccessful, "the cli depends on DacFx, ScriptDom or SqlClient: " + string.Join(", ", cli.FailingTypeNames ?? []));
-        Assert.False(Types.InAssembly(typeof(Write).Assembly).ShouldNot().HaveDependencyOn("Microsoft.SqlServer.Dac").GetResult().IsSuccessful);   // the rule goes red on io, which does
+        // the rule goes red on io, which does
+        Assert.False(Types.InAssembly(typeof(Write).Assembly).ShouldNot().HaveDependencyOn("Microsoft.SqlServer.Dac").GetResult()
+            .IsSuccessful);
     }
 
     /// <summary>
@@ -63,18 +68,26 @@ public sealed class DependenciesPointOneWay
         var referenced = References(typeof(Contract).Assembly.Location, typeof(Write).Assembly.GetName().Name!);
 
         Assert.Equal([], referenced.Where(r => !Admitted(r)).Order(StringComparer.Ordinal));
-        Assert.Contains("DbChange.Io.ModelRead.Run", referenced);   // the scan reads member references: the use case read calls is among them
+        // the scan reads member references: the use case read calls is among them
+        Assert.Contains("DbChange.Io.ModelRead.Run", referenced);
     }
 
-    /// <summary>The io types cli may name, each of whose members it may call: the use cases and their answers, and the services Program and the renderers use.</summary>
+    /// <summary>
+    /// The io types cli may name, each of whose members it may call: the use cases and their answers, and the services Program and the
+    /// renderers use.
+    /// </summary>
     private static readonly string[] Whole =
     [
-        "Checkout", "Standing", "ModelRead", "ModelRead+Source", "ModelDiff", "ModelDiff+Answer", "DriftCheck", "DriftCheck+Request", "DriftCheck+Answer",
+        "Checkout", "Standing", "ModelRead", "ModelRead+Source", "ModelDiff", "ModelDiff+Answer", "DriftCheck", "DriftCheck+Request",
+            "DriftCheck+Answer",
         "Doctor+Readiness", "Doctor+Prerequisite", "Doctor+Item", "Ssdt+ModelElements", "SqlServer+QueryLog", "SqlServer+Reads",
         "Write", "Json", "SchemaText", "PrintedScript", "PasswordForm", "Telemetry", "Interruption", "Runner", "Ran",
     ];
 
-    /// <summary>The members cli may call of the io types it may otherwise only name: the target grammar, the doctor's use case and the program runner it is given.</summary>
+    /// <summary>
+    /// The members cli may call of the io types it may otherwise only name: the target grammar, the doctor's use case and the program
+    /// runner it is given.
+    /// </summary>
     private static readonly string[] Members = ["SqlServer", "SqlServer.Target", "Doctor", "Doctor.Run", "Command", "Command.Run", "Ssdt"];
 
     private static bool Admitted(string reference)
@@ -87,8 +100,8 @@ public sealed class DependenciesPointOneWay
     /// <summary>
     /// S28 of the pre-M2 review, VALUES.md X5: neither io nor the cli calls DacServices.EnableTelemetry, a method of three overloads.
     /// dbchange opts out of DacFx's telemetry through the environment variables Telemetry.OptOut sets before DacFx loads, and a call of
-    /// EnableTelemetry in either assembly would turn it back on. Read from each assembly's metadata, which holds a reference to every member
-    /// its IL calls in DacFx.
+    /// EnableTelemetry in either assembly would turn it back on. Read from each assembly's metadata, which holds a reference to every
+    /// member its IL calls in DacFx.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -105,9 +118,9 @@ public sealed class DependenciesPointOneWay
     }
 
     /// <summary>
-    /// Each type of the assembly named <paramref name="referenced"/> that an assembly's metadata references (a TypeRef whose resolution scope is
-    /// that assembly, nested types as Outer+Inner) and each of its members (a MemberRef whose parent is such a type), as Type.Member: what the
-    /// assembly's IL and signatures can reach of it.
+    /// Each type of the assembly named <paramref name="referenced"/> that an assembly's metadata references (a TypeRef whose resolution
+    /// scope is that assembly, nested types as Outer+Inner) and each of its members (a MemberRef whose parent is such a type), as
+    /// Type.Member: what the assembly's IL and signatures can reach of it.
     /// </summary>
     private static IReadOnlySet<string> References(string assembly, string referenced)
     {
@@ -117,7 +130,8 @@ public sealed class DependenciesPointOneWay
         bool FromThere(EntityHandle scope) => scope.Kind switch
         {
             HandleKind.TypeReference => FromThere(metadata.GetTypeReference((TypeReferenceHandle)scope).ResolutionScope),
-            HandleKind.AssemblyReference => metadata.GetString(metadata.GetAssemblyReference((AssemblyReferenceHandle)scope).Name) == referenced,
+            HandleKind.AssemblyReference =>
+                metadata.GetString(metadata.GetAssemblyReference((AssemblyReferenceHandle)scope).Name) == referenced,
             _ => false,
         };
         string Named(TypeReferenceHandle handle)
@@ -142,7 +156,9 @@ public sealed class DependenciesPointOneWay
     public void No_project_reaches_into_the_knowledge_files_or_ci()
     {
         var reaching = Repository.MsBuildFiles
-            .SelectMany(f => Repository.PathsNamedBy(f).Where(p => p.StartsWith("knowledge/", StringComparison.Ordinal) || p.StartsWith("ci/", StringComparison.Ordinal)).Select(p => f + " names " + p));
+            .SelectMany(f => Repository.PathsNamedBy(f)
+                .Where(p => p.StartsWith("knowledge/", StringComparison.Ordinal) || p.StartsWith("ci/", StringComparison.Ordinal))
+                .Select(p => f + " names " + p));
 
         Assert.Empty(reaching);
     }

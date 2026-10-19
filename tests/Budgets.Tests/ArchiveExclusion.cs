@@ -16,10 +16,12 @@ public sealed class ArchiveExclusion
     [Trait("Category", "fast")]
     public void The_archive_stops_MSBuild_s_search_upward_for_every_v3_setting()
     {
-        var packages = Repository.Xml("archive/Directory.Packages.props").Descendants().Where(e => e.Name.LocalName == "ManagePackageVersionsCentrally");
+        var packages = Repository.Xml("archive/Directory.Packages.props").Descendants()
+            .Where(e => e.Name.LocalName == "ManagePackageVersionsCentrally");
         var editor = Repository.Lines("archive/.editorconfig").Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#'));
 
-        Assert.All(Repository.Files.Where(f => f.StartsWith("Directory.", StringComparison.Ordinal) || f == ".editorconfig"), f => Assert.Contains("archive/" + f, Repository.Files));
+        Assert.All(Repository.Files.Where(f => f.StartsWith("Directory.", StringComparison.Ordinal) || f == ".editorconfig"), f =>
+            Assert.Contains("archive/" + f, Repository.Files));
         Assert.Equal(["false"], packages.Select(e => e.Value));
         Assert.Equal("root = true", editor.First());
         Assert.DoesNotContain(Repository.Xml("archive/Directory.Build.props").Descendants(), e => e.Name.LocalName == "Import");
@@ -29,8 +31,10 @@ public sealed class ArchiveExclusion
     [Trait("Category", "fast")]
     public void No_v3_project_reaches_into_the_archive()
     {
-        var reaching = Repository.MsBuildFiles.SelectMany(f => Repository.PathsNamedBy(f).Where(p => p.StartsWith("archive/", StringComparison.Ordinal)).Select(p => f + " names " + p));
-        var inSolution = Repository.Lines("DbChange.sln").Where(l => l.StartsWith("Project(", StringComparison.Ordinal) && l.Contains("archive", StringComparison.OrdinalIgnoreCase));
+        var reaching = Repository.MsBuildFiles.SelectMany(f =>
+            Repository.PathsNamedBy(f).Where(p => p.StartsWith("archive/", StringComparison.Ordinal)).Select(p => f + " names " + p));
+        var inSolution = Repository.Lines("DbChange.sln")
+            .Where(l => l.StartsWith("Project(", StringComparison.Ordinal) && l.Contains("archive", StringComparison.OrdinalIgnoreCase));
 
         Assert.Empty(reaching);
         Assert.Empty(inSolution);
@@ -41,10 +45,13 @@ public sealed class ArchiveExclusion
     public void No_budget_or_document_law_counts_the_archive()
     {
         var budgets = JsonNode.Parse(Repository.Read("ci/budgets.json"))!["budgets"]!.AsObject();
-        var counted = budgets.SelectMany(b => Budgets.Counted(b.Value!)).Where(f => f.Path.StartsWith("archive/", StringComparison.Ordinal));
+        var counted = budgets.SelectMany(b => Budgets.Counted(b.Value!))
+            .Where(f => f.Path.StartsWith("archive/", StringComparison.Ordinal));
 
         Assert.Empty(counted);
         Assert.DoesNotContain(Documents.HandWritten, p => p.StartsWith("archive/", StringComparison.Ordinal));
-        Assert.Contains(Repository.Files, f => f.StartsWith("archive/", StringComparison.Ordinal) && f.EndsWith(".cs", StringComparison.Ordinal));   // there is something to exclude
+        // there is something to exclude
+        Assert.Contains(Repository.Files, f => f.StartsWith("archive/", StringComparison.Ordinal)
+            && f.EndsWith(".cs", StringComparison.Ordinal));
     }
 }
