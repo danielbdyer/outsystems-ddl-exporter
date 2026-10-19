@@ -77,17 +77,25 @@ public sealed class Errors
     [InlineData("nothing installed")]
     [InlineData("sqllocaldb failing")]
     [InlineData("sqllocaldb past its timeout")]
+    [InlineData("sql.env's server accepting no connection")]
+    [InlineData("DBCHANGE_SQL's server accepting no connection")]
     public void Every_remedy_the_doctor_gives_is_one_move_in_the_register(string machine)
     {
         using var bare = ScratchFolder.Temporary("doctor-register");
         Runner run = machine switch
         {
-            "nothing installed" => (c, _) => new Ran.NotFound(c.Program, "not installed"),
-            "sqllocaldb failing" => (c, _) => c.Program == "sqllocaldb" ? new Ran.Exited(1, "", "LocalDB instance \"MSSQLLocalDB\" doesn't exist!") : new Ran.NotFound(c.Program, "not installed"),
-            _ => (c, _) => c.Program == "sqllocaldb" ? new Ran.TimedOut(c.Timeout, "", "") : new Ran.NotFound(c.Program, "not installed"),
+            "sqllocaldb failing" => (c, _) => c.Program == "sqllocaldb"
+                ? new Ran.Exited(1, "", "LocalDB instance \"MSSQLLocalDB\" doesn't exist!") : new Ran.NotFound(c.Program, "not installed"),
+            "sqllocaldb past its timeout" => (c, _) => c.Program == "sqllocaldb"
+                ? new Ran.TimedOut(c.Timeout, "", "") : new Ran.NotFound(c.Program, "not installed"),
+            _ => (c, _) => new Ran.NotFound(c.Program, "not installed"),
         };
+        var sqlEnv = machine.StartsWith("sql.env", StringComparison.Ordinal)
+            ? bare.File("sql.env", "MSSQL_SA_PASSWORD=x\nDBCHANGE_SQL_PORT=11434\n") : bare.Under("no-sql.env");
+        var variable = machine.StartsWith("DBCHANGE_SQL", StringComparison.Ordinal) ? "Server=db-host,1433;Integrated Security=true" : null;
 
-        var remedies = Doctor.Examine(new Doctor.Machine(new Checkout(bare.Path, bare.Path, null, Contract.Version), bare.Path, null, bare.Under("no-sql.env"), Environment.Version), run)
+        var remedies = Doctor.Examine(new Doctor.Machine(new Checkout(bare.Path, bare.Path, null, Contract.Version), bare.Path, variable,
+                sqlEnv, Environment.Version, (_, _, _) => false), run)
             .Where(p => p.Remedy is not null).Select(p => (p.Item.Name, Remedy: p.Remedy!)).ToList();
 
         Assert.NotEmpty(remedies);

@@ -282,6 +282,70 @@ public sealed class DoctorTests : IDisposable
     }
 
     /// <summary>
+    /// A resumed session, or one after ci/sql.sh down: sql.env still names the server, sqlservr is stopped, and nothing accepts a
+    /// connection at its port. The item is missing with the remedy to start it, so the line reads DEGRADED instead of READY; a server
+    /// DBCHANGE_SQL names gets the remedy to start or correct that one. The doctor asks for the port alone and logs in to nothing.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_local_server_accepting_no_connection_at_its_port_is_missing_with_the_remedy_to_start_it()
+    {
+        var asked = new List<(string, int)>();
+        bool Closed(string host, int port, CancellationToken _)
+        {
+            asked.Add((host, port));
+            return false;
+        }
+
+        var stopped = Doctor.Examine(Bare(sqlEnv: SqlEnv(), listens: Closed), Answers(Everything))
+            .Single(c => c.Item == Doctor.Item.LocalServer);
+        var variable = Doctor.Examine(Bare(dbChangeSql: "Server=tcp:DB-Host,1433;Integrated Security=true", listens: Closed),
+            Answers(Everything)).Single(c => c.Item == Doctor.Item.LocalServer);
+
+        Assert.Equal("the SQL Server ~/.dbchange/sql.env names (localhost,11434), accepting no connection on 127.0.0.1,11434 within "
+            + Command.Written(Command.ProbeTimeout), stopped.Found);
+        Assert.Equal("Run ci/sql.sh up, or ci/sql.ps1 up on Windows, then run dbchange doctor.", stopped.Remedy);
+        Assert.Contains("DBCHANGE_SQL", variable.Remedy, StringComparison.Ordinal);
+        Assert.Equal([("127.0.0.1", 11434), ("DB-Host", 1433)], asked);
+        Assert.False(new Doctor.Readiness([stopped]).Ready);
+    }
+
+    /// <summary>
+    /// The doctor reaches a server at the TCP port its data source names, as SqlClient reads it (1433 for a host alone), and does not
+    /// reach one over another transport or a named instance without a port, whose port SQL Server Browser gives.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData(@"Server=tcp:DB-Host,1433", "DB-Host", 1433)]
+    [InlineData(@"Server=127.0.0.1,11434", "127.0.0.1", 11434)]
+    [InlineData(@"Server=db-host", "db-host", 1433)]
+    [InlineData(@"Server=.,1433", "localhost", 1433)]
+    [InlineData(@"Server=db-host\sql2022,51000", "db-host", 51000)]
+    [InlineData(@"Server=db-host\sql2022", null, 0)]
+    [InlineData(@"Server=np:\\db-host\pipe\sql\query", null, 0)]
+    [InlineData(@"Server=lpc:db-host", null, 0)]
+    [InlineData(@"Server=(localdb)\MSSQLLocalDB", null, 0)]
+    public void The_doctor_reaches_the_TCP_port_a_data_source_names_and_no_other_transport(string connection, string? host, int port) =>
+        Assert.Equal(host is null ? null : (host, port), Doctor.Endpoint(connection + ";Integrated Security=true"));
+
+    /// <summary>
+    /// Doctor.Listening on this machine: a loopback port nothing listens on accepts no connection, and one a listener holds does, each
+    /// answered without waiting for the probe timeout.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_closed_loopback_port_accepts_no_connection_and_a_listening_one_does()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        var open = Doctor.Listening("127.0.0.1", port, CancellationToken.None);
+        listener.Stop();
+
+        Assert.Equal((true, false), (open, Doctor.Listening("127.0.0.1", port, CancellationToken.None)));
+    }
+
+    /// <summary>
     /// S15 of the pre-M2 review: the local server is chosen once, by LocalServer.Choice, which the doctor and a copy's resolution both ask,
     /// and LocalDB is asked about (sqllocaldb) only when neither DBCHANGE_SQL nor sql.env gives a server; every copy's resolution once ran
     /// sqllocaldb info first, bounded at twenty seconds.
@@ -335,11 +399,11 @@ public sealed class DoctorTests : IDisposable
     }
 
     /// <summary>A machine holding nothing but the test folder, the repository root: no DBCHANGE_SQL, no sql.env unless given, this
-    /// process's runtime unless given.</summary>
+    /// process's runtime unless given, and a server accepting a connection at every host and port unless given.</summary>
     private Doctor.Machine Bare(string? dbChangeSql = null, string? sqlEnv = null, Version? runtime = null,
-        string? workingDirectory = null) =>
+        string? workingDirectory = null, Func<string, int, CancellationToken, bool>? listens = null) =>
         new(new Checkout(machine.Path, workingDirectory ?? machine.Path, null, Version), machine.Path, dbChangeSql,
-            sqlEnv ?? machine.Under("no-sql.env"), runtime ?? Environment.Version);
+            sqlEnv ?? machine.Under("no-sql.env"), runtime ?? Environment.Version, listens ?? ((_, _, _) => true));
 
     /// <summary>A sql.env as ci/sql.sh writes it, naming the local server's port and password.</summary>
     private string SqlEnv() => machine.File("sql.env", "MSSQL_SA_PASSWORD=" + PlantedValue.Password + "\nDBCHANGE_SQL_PORT=11434\n");

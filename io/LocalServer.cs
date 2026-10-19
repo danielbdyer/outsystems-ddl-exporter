@@ -21,8 +21,9 @@ namespace DbChange.Io;
 /// DBCHANGE_SQL names, else the SQL Server ~/.dbchange/sql.env names, else LocalDB, chosen inside io, so no caller holds its login or
 /// makes a copy anywhere else, and started by ci/sql.sh up or ci/sql.ps1 up, never by io; Create, which names a copy for this host and
 /// process, records it and its server in .dbchange/copies.json and makes its database; Drop, which removes both; and the registry,
-/// against which alone copy: resolves, on the server its row records. A local server on the host an environment names in dbchange/environments.json, by spelling or by address, is
-/// refused before anything connects (R15). Its CREATE and DROP DATABASE go through io/SqlServer.Query, the one statement path.
+/// against which alone copy: resolves, on the server its row records. A local server on the host an environment names in
+/// dbchange/environments.json, by spelling or by address, is refused before anything connects (R15). Its CREATE and DROP DATABASE
+/// go through io/SqlServer.Query, the one statement path.
 /// </summary>
 public static class LocalServer
 {

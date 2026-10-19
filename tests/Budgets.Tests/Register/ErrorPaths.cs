@@ -48,10 +48,13 @@ internal static class ErrorPaths
         new("a DacFx version that is none", "toolchain.dacfx-version", false, (_, _) => Failed(DacFxVersion.Of("v170"))),
         new("a DacFx assembly that carries no version", "toolchain.dacfx-version", false, (_, _) => Failed(DacFx.VersionOf("", null))),
         new("a SQL Server edition that is blank", "server.edition", false, (_, _) => Failed(Server.Of("16.0.4305.5", " ", 160))),
-        new("a SQL Server product version of other than four numbers", "server.product-version", false, (_, _) => Failed(Server.Of("16.0", Express, 160))),
-        new("a compatibility level SQL Server never had", "server.compatibility-level", false, (_, _) => Failed(Server.Of("16.0.4305.5", Express, 165))),
+        new("a SQL Server product version of other than four numbers", "server.product-version", false,
+            (_, _) => Failed(Server.Of("16.0", Express, 160))),
+        new("a compatibility level SQL Server never had", "server.compatibility-level", false,
+            (_, _) => Failed(Server.Of("16.0.4305.5", Express, 165))),
         new("a SQL Server older than the package's platform", "toolchain.server-window", false, (_, _) =>
-            Made(Server.Of("15.0.4382.1", Express, 150)).Refuses(Made(Platform.Of("Sql160"))) ?? throw new InvalidOperationException("the window admitted an older server")),
+            Made(Server.Of("15.0.4382.1", Express, 150)).Refuses(Made(Platform.Of("Sql160")))
+                ?? throw new InvalidOperationException("the window admitted an older server")),
         new("a fingerprint that is none", "fingerprint.malformed", false, (_, _) => Failed(Fingerprint.Parse("0"))),
         new("a DacFx release outside the pin's window", "toolchain.outside-window", false, (_, _) =>
             Made(Pin.Of("170.6.10", "170.5.96")).Rejects(Made(DacFxVersion.Of("170.7.2"))) ?? throw new InvalidOperationException("the window admitted a newer release")),

@@ -541,7 +541,9 @@ public sealed class ContractTests
     public void Doctor_on_a_bare_machine_prints_DEGRADED_with_a_remedy_per_missing_item()
     {
         using var bare = ScratchFolder.Temporary("bare");
-        var doctor = Doctor.Run(new Doctor.Machine(new Checkout(bare.Path, bare.Path, null, Contract.Version), bare.Path, null, bare.Under("no-sql.env"), Environment.Version), (c, _) => new Ran.NotFound(c.Program, "not installed"));
+        var doctor = Doctor.Run(new Doctor.Machine(new Checkout(bare.Path, bare.Path, null, Contract.Version), bare.Path, null,
+                bare.Under("no-sql.env"), Environment.Version, (_, _, _) => false),
+            (c, _) => new Ran.NotFound(c.Program, "not installed"));
 
         var json = Render.Json(Verbs.Doctor(doctor));
 
@@ -582,13 +584,16 @@ public sealed class ContractTests
             _ => new Ran.NotFound(command.Program, "not installed"),
         };
 
-        var answer = Verbs.Doctor(Doctor.Run(new Doctor.Machine(new Checkout(machine.Path, machine.Path, null, Contract.Version), machine.Path, null, machine.Under("sql.env"), Environment.Version), answers));
+        var answer = Verbs.Doctor(Doctor.Run(new Doctor.Machine(new Checkout(machine.Path, machine.Path, null, Contract.Version),
+            machine.Path, null, machine.Under("sql.env"), Environment.Version, (host, port, _) => (host, port) == ("127.0.0.1", 11434)),
+            answers));
 
         var json = Render.Json(answer);
         VerbAnswer.Valid("dbchange.doctor.1.schema.json", json);
         Assert.Equal((0, "ready"), (answer.Exit, answer.Outcome.Word));
         Assert.Equal("dbchange doctor READY | sdk=10.0.402 | runtime=" + Environment.Version + " | tool=published | dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED) | build=dotnet with the tool folder's targets"
-            + " | git=2.31.1 | local-server=the SQL Server ~/.dbchange/sql.env names (localhost,11434) | lfs=git-lfs/3.4.0", answer.Message);
+            + " | git=2.31.1 | local-server=the SQL Server ~/.dbchange/sql.env names (localhost,11434) | lfs=git-lfs/3.4.0",
+            answer.Message);
         Assert.Empty(answer.Findings);
         Assert.Equal((DacFx.Version.Match(v => v.ToString(), e => e.Message), "UNPINNED", null), ((string?)json["dacfx"], (string?)json["pin"], json["server"]));
     }
@@ -645,7 +650,8 @@ public sealed class ContractTests
             ["a provenance's server is null exactly when it lacks it"] = (WithProvenance(p => p["server"] = null, "existingData", "server"), WithProvenance(p => p["server"] = null)),
             ["a provenance lacks only an input it can lack"] = (WithProvenance(_ => { }), WithProvenance(_ => { }, "existingData", "seed")),
             ["the server names its edition"] = (WithProvenance(_ => { }), WithProvenance(p => p["server"]!["edition"] = "")),
-            ["the server names no image"] = (WithProvenance(_ => { }), WithProvenance(p => p["server"]!["image"] = "sha256:" + new string('5', 64))),
+            ["the server names no image"] = (WithProvenance(_ => { }),
+                WithProvenance(p => p["server"]!["image"] = "sha256:" + new string('5', 64))),
             ["the server's version is SQL Server's product version"] = (WithStamp(s => s["server"]!["version"] = "15.0.4430.1"), WithStamp(s => s["server"]!["version"] = "SQL Server 2022")),
             ["the stamp's DacFx is a release version"] = (WithStamp(s => s["dacfx"] = "170.5.96.0"), WithStamp(s => s["dacfx"] = "latest")),
             ["the stamp's pin is UNPINNED or a release version"] = (WithStamp(s => s["pin"] = "170.5.96"), WithStamp(s => s["pin"] = "unpinned")),
@@ -758,7 +764,8 @@ public sealed class ContractTests
         answer["provenance"] = provenance;
     };
 
-    private static JsonObject Server() => new() { ["version"] = "16.0.4305.5", ["edition"] = "Express Edition (64-bit)", ["compatibilityLevel"] = 160 };
+    private static JsonObject Server() =>
+        new() { ["version"] = "16.0.4305.5", ["edition"] = "Express Edition (64-bit)", ["compatibilityLevel"] = 160 };
 
     /// <summary>Runs the built dbchange, as a process, and returns its exit code and standard output alone, which its JSON answer is.</summary>
     private static (int Exit, string Output) Run(params string[] arguments)

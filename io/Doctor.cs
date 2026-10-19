@@ -4,11 +4,13 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading;
 using DbChange.Kernel;
+using Microsoft.Data.SqlClient;
 using Microsoft.SqlServer.Dac;
 
 namespace DbChange.Io;
@@ -50,14 +52,16 @@ public static class Doctor
 
     /// <summary>
     /// What this machine holds, read once: where dbchange runs (the checkout), the folder dbchange runs from, DBCHANGE_SQL, the path of
-    /// ~/.dbchange/sql.env (null where the user's profile folder is unknown), and the runtime.
+    /// ~/.dbchange/sql.env (null where the user's profile folder is unknown), the runtime, and whether something accepts a TCP
+    /// connection at a host and port (<see cref="Listening"/> on this machine).
     /// </summary>
-    public sealed record Machine(Checkout Checkout, string Running, string? DbChangeSql, string? SqlEnv, Version Runtime)
+    public sealed record Machine(Checkout Checkout, string Running, string? DbChangeSql, string? SqlEnv, Version Runtime,
+        Func<string, int, CancellationToken, bool> Listens)
     {
         /// <summary>The machine dbchange runs on, around the checkout cli already read.</summary>
         public static Machine Here(Checkout checkout) =>
             new(checkout, AppContext.BaseDirectory, Environment.GetEnvironmentVariable("DBCHANGE_SQL"),
-                LocalState.UserSqlEnv, Environment.Version);
+                LocalState.UserSqlEnv, Environment.Version, Listening);
     }
 
     /// <summary>An item the doctor examines, one of a closed set, written as the envelope names it (sdk, local-server).</summary>
@@ -306,8 +310,11 @@ public static class Doctor
     /// The local server dbchange would use, in io/LocalServer's order: DBCHANGE_SQL's server; the SQL Server ~/.dbchange/sql.env names,
     /// which ci/sql.sh up installs and starts; LocalDB's default instance, which ci/sql.ps1 up starts. Found names the one chosen and its
     /// host and port, as a copy's registry row records it; with none, the remedy names ci/sql.sh up and DBCHANGE_SQL, and a sqllocaldb
-    /// that did not answer in time is named as such. The doctor reaches no server, so a chosen server that does not answer is named by
-    /// the first verb that connects (server.unreachable, exit 4).
+    /// that did not answer in time is named as such. A server at a TCP port is reached with a connection and no login, so the doctor
+    /// handles no password and stays read-only, and one that accepts none is named with the remedy to start it (DECISIONS.md,
+    /// 2026-10-19). LocalDB, which starts on its first connection, and a server reached by a named pipe or a named instance without a
+    /// port are not reached here; the first verb that connects names one that does not answer (server.unreachable, exit 4). The SQL
+    /// Server version is read when a copy is made, which refuses one outside R5's window (toolchain.server-window).
     /// </summary>
     private static Prerequisite LocalServerChoice(Machine machine, Runner run, CancellationToken cancel)
     {
@@ -315,12 +322,63 @@ public static class Doctor
         return LocalServer.Choice(machine.DbChangeSql, machine.SqlEnv,
                 () => (asked = run(Program("sqllocaldb", "info", "MSSQLLocalDB"), cancel)) is Ran.Exited { Code: 0 })
             .Bind(chosen => LocalServer.ServerName(chosen.Connection).Map(name => (Chosen: chosen, Name: name))).Match(
-            found => new Prerequisite(Item.LocalServer, found.Chosen + " (" + found.Name + ")", null),
+            found => (found.Chosen is LocalServer.Chosen.LocalDb ? null : Endpoint(found.Chosen.Connection)) is not { } at
+                    || machine.Listens(at.Host, at.Port, cancel)
+                ? new Prerequisite(Item.LocalServer, found.Chosen + " (" + found.Name + ")", null)
+                : new Prerequisite(Item.LocalServer, found.Chosen + " (" + found.Name + "), accepting no connection on " + at.Host
+                    + "," + at.Port.ToString(CultureInfo.InvariantCulture) + " within " + Command.Written(Command.ProbeTimeout),
+                    found.Chosen is LocalServer.Chosen.Variable
+                        ? "Start the SQL Server DBCHANGE_SQL names, or correct or unset DBCHANGE_SQL; then run dbchange doctor."
+                        : "Run ci/sql.sh up, or ci/sql.ps1 up on Windows, then run dbchange doctor."),
             error => asked is Ran.TimedOut
                 ? new Prerequisite(Item.LocalServer, "sqllocaldb did not answer in " + Command.Written(Command.ProbeTimeout),
                     "Run sqllocaldb info MSSQLLocalDB by hand to see what it waits for, then run dbchange doctor.")
                 : new Prerequisite(Item.LocalServer, "none: DBCHANGE_SQL is unset, " + (machine.SqlEnv ?? "~/" + LocalState.Name
                     + "/sql.env") + " names no server and LocalDB is not installed", error.Remedy));
+    }
+
+    /// <summary>
+    /// The host and TCP port a connection's data source reaches, as SqlClient reads it: tcp: or no protocol, the port after the comma,
+    /// or 1433 for a host alone. None for a named pipe (np:, \\host\pipe), shared memory (lpc:), LocalDB, or a named instance without a
+    /// port, whose port SQL Server Browser gives.
+    /// </summary>
+    internal static (string Host, int Port)? Endpoint(string connection)
+    {
+        var source = new SqlConnectionStringBuilder(connection).DataSource.Trim();
+        source = source.StartsWith("tcp:", StringComparison.OrdinalIgnoreCase) ? source[4..]
+            : source.StartsWith("admin:", StringComparison.OrdinalIgnoreCase) ? source[6..] : source;
+        if (source.Length == 0 || source.StartsWith('\\') || ((string[])["np:", "lpc:", "(localdb)"]).Any(
+            other => source.StartsWith(other, StringComparison.OrdinalIgnoreCase)))
+        {
+            return null;
+        }
+
+        var (named, port) = source.Split(',', 2) is [var before, var after] ? (before, after.Trim()) : (source, null);
+        var written = named.Split('\\')[0].Trim().Trim('[', ']');
+        var host = written is "" or "." or "(local)" ? "localhost" : written;
+        return port is null ? named.Contains('\\', StringComparison.Ordinal) ? null : (host, 1433)
+            : int.TryParse(port, NumberStyles.None, CultureInfo.InvariantCulture, out var number) && number is > 0 and < 65536
+                ? (host, number) : null;
+    }
+
+    /// <summary>
+    /// Whether something on <paramref name="host"/> accepts a TCP connection at <paramref name="port"/> within
+    /// <see cref="Command.ProbeTimeout"/>. The connection is closed without a byte sent, so no login is tried.
+    /// </summary>
+    internal static bool Listening(string host, int port, CancellationToken cancel)
+    {
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        limit.CancelAfter(Command.ProbeTimeout);
+        try
+        {
+            using var client = new TcpClient();
+            client.ConnectAsync(host, port, limit.Token).AsTask().GetAwaiter().GetResult();
+            return true;
+        }
+        catch (Exception e) when (e is SocketException or OperationCanceledException)
+        {
+            return false;
+        }
     }
 
     private static Command Program(string program, params string[] arguments) => new(program, arguments, Command.ProbeTimeout);
