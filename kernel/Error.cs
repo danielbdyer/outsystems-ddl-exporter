@@ -22,7 +22,8 @@ public sealed record Error
                 nameof(code));
         var word = code[..code.IndexOf('.', StringComparison.Ordinal)];
         Category = ErrorCode.Parse(word) ?? throw new ArgumentException(
-            $"'{code}' names the category '{word}', which ErrorCategory does not hold; add the member and its exit in cli/Contract.cs, or use a category it holds.",
+            $"'{code}' names the category '{word}', which ErrorCategory does not hold;"
+            + " add the member and its exit in cli/Contract.cs, or use a category it holds.",
             nameof(code));
         Message = Present(message, nameof(message));
         Remedy = Present(remedy, nameof(remedy));
@@ -84,7 +85,8 @@ public enum ErrorCategory
     Verb,
 }
 
-/// <summary>The form of an error code, and each category as a code writes it: the one grammar the kernel applies and cli/Render.cs writes into every schema as a finding's code.</summary>
+/// <summary>The form of an error code, and each category as a code writes it: the one grammar the kernel applies and cli/Render.cs writes
+/// into every schema as a finding's code.</summary>
 public static class ErrorCode
 {
     /// <summary>
@@ -100,7 +102,8 @@ public static class ErrorCode
     /// <summary>Whether a text is a code of the one form: what Error and Finding take as a code.</summary>
     public static bool IsCode(string? text) => text is not null && Form.IsMatch(text);
 
-    /// <summary>A category as a code writes it: lowercase, a hyphen between the words of a two-word category (local-server, git-branch).</summary>
+    /// <summary>A category as a code writes it: lowercase, a hyphen between the words of a two-word category (local-server,
+    /// git-branch).</summary>
     // CS8524 (an enum value no member names) is disabled for this switch alone; CS8509, a named member without an arm, stays an error.
 #pragma warning disable CS8524
     public static string Text(ErrorCategory category) => category switch

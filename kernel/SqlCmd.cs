@@ -15,11 +15,13 @@ namespace DbChange.Kernel;
 /// </summary>
 public abstract record SqlCmdVariable : IComparable<SqlCmdVariable>
 {
-    /// <summary>A variable's name as sqlcmd reads one: a letter or '_', then up to 127 letters, digits, '_' and '-'; io/SchemaText reads a placeholder by it too.</summary>
+    /// <summary>A variable's name as sqlcmd reads one: a letter or '_', then up to 127 letters, digits, '_' and '-'; io/SchemaText reads a
+    /// placeholder by it too.</summary>
     public const string NamePattern = "[A-Za-z_][A-Za-z0-9_-]{0,127}";
 
     private static readonly Regex Used = new(@"\$\((?<name>" + NamePattern + @")\)", RegexOptions.CultureInvariant);
-    private static readonly Regex SetVar = new(@"\A[ \t]*:setvar[ \t]+(?<name>" + NamePattern + @")(?:[ \t\r\n]|\z)", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex SetVar = new(@"\A[ \t]*:setvar[ \t]+(?<name>" + NamePattern + @")(?:[ \t\r\n]|\z)",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly string[] Credential = ["password", "passwd", "pwd", "secret", "token", "key", "credential"];
 
     private SqlCmdVariable(SqlCmdName name) => Name = name;
@@ -28,8 +30,10 @@ public abstract record SqlCmdVariable : IComparable<SqlCmdVariable>
 
     public static Result<SqlCmdVariable> Of(string subject, string name, string literal) => SqlCmdName.Of(subject, name).Bind(named =>
         Credential.Any(word => name.Contains(word, StringComparison.OrdinalIgnoreCase))
-            ? new Error("sqlcmd.literal-credential", subject + " gives " + Placeholder(name) + " a literal, and a name shaped like a credential takes a reference.",
-                "Give " + Placeholder(name) + " as env:NAME or file:path in the environment's sqlcmd in dbchange/environments.json, and delete the literal.")
+            ? new Error("sqlcmd.literal-credential",
+                subject + " gives " + Placeholder(name) + " a literal, and a name shaped like a credential takes a reference.",
+                "Give " + Placeholder(name)
+                    + " as env:NAME or file:path in the environment's sqlcmd in dbchange/environments.json, and delete the literal.")
             : Result.Ok<SqlCmdVariable>(new Literal(named, literal)));
 
     public static Result<SqlCmdVariable> Of(string subject, string name, SecretReference reference) =>
@@ -61,21 +65,24 @@ public abstract record SqlCmdVariable : IComparable<SqlCmdVariable>
     public static string Unset(string script, IEnumerable<string> names)
     {
         var unset = names.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return unset.Count == 0 ? script : string.Concat(Lines(script).Where(line => !(SetVar.Match(line) is { Success: true } setVar && unset.Contains(setVar.Groups["name"].Value))));
+        return unset.Count == 0 ? script : string.Concat(Lines(script)
+            .Where(line => !(SetVar.Match(line) is { Success: true } setVar && unset.Contains(setVar.Groups["name"].Value))));
     }
 
     /// <summary>
     /// A script without sqlcmd's own lines, those whose first character other than a space or a tab is ':' (:setvar, :r, :on error,
     /// :connect), so what is left is T-SQL a parser reads; every other line stays as it was, GO included.
     /// </summary>
-    public static string WithoutDirectives(string script) => string.Concat(Lines(script).Where(line => !line.TrimStart(' ', '\t').StartsWith(':')));
+    public static string WithoutDirectives(string script) =>
+        string.Concat(Lines(script).Where(line => !line.TrimStart(' ', '\t').StartsWith(':')));
 
     /// <summary>The literal's text, or the reference to where the value lives.</summary>
     public T Match<T>(Func<string, T> literal, Func<SecretReference, T> reference) =>
         this is Literal l ? literal(l.Text) : this is Referenced r ? reference(r.Reference) : throw new UnreachableException();
 
     /// <summary>By name as sqlcmd reads it, in any case, as the name's equality has it; then by value.</summary>
-    public int CompareTo(SqlCmdVariable? other) => other is null ? 1 : Name.CompareTo(other.Name) is var c and not 0 ? c : string.CompareOrdinal(Sorted(this), Sorted(other));
+    public int CompareTo(SqlCmdVariable? other) =>
+        other is null ? 1 : Name.CompareTo(other.Name) is var c and not 0 ? c : string.CompareOrdinal(Sorted(this), Sorted(other));
 
     public sealed override string ToString() => Placeholder(Name.ToString()) + Match(_ => ", a literal", reference => " from " + reference);
 
@@ -128,5 +135,6 @@ public readonly struct SqlCmdName : IEquatable<SqlCmdName>, IComparable<SqlCmdNa
     /// <summary>Ignoring case, as sqlcmd matches names, so the order agrees with equality.</summary>
     public int CompareTo(SqlCmdName other) => string.Compare(_text, other._text, StringComparison.OrdinalIgnoreCase);
 
-    public override string ToString() => _text ?? throw new InvalidOperationException("default(SqlCmdName) is not a name; make one with SqlCmdName.Of.");
+    public override string ToString() =>
+        _text ?? throw new InvalidOperationException("default(SqlCmdName) is not a name; make one with SqlCmdName.Of.");
 }

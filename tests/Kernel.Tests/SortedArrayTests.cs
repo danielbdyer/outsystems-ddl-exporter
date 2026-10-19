@@ -35,19 +35,20 @@ public sealed class SortedArrayTests
     [Fact]
     [Trait("Category", "fast")]
     public void A_sorted_array_differs_from_one_with_one_element_changed() =>
-        Gen.Select(Words.Where(xs => xs.Length > 0), Gen.Int[0, 7], Gen.Int[0, 2], Words.Where(ws => ws.Length > 0)).Sample((xs, at, change, others) =>
-        {
-            var ys = xs.ToArray();
-            var i = at % ys.Length;
-            var cased = Array.FindIndex(ys[i].ToCharArray(), c => char.ToUpperInvariant(c) != char.ToLowerInvariant(c));
-            ys[i] = (change, cased) switch
+        Gen.Select(Words.Where(xs => xs.Length > 0), Gen.Int[0, 7], Gen.Int[0, 2], Words.Where(ws => ws.Length > 0))
+            .Sample((xs, at, change, others) =>
             {
-                (0, >= 0) => string.Concat(ys[i][..cased], Flip(ys[i][cased]).ToString(), ys[i][(cased + 1)..]),
-                (2, _) when others[0] != ys[i] => others[0],
-                _ => ys[i] + "b",
-            };
-            return SortedArray.Of(xs) != SortedArray.Of(ys) && !SortedArray.Of(xs).Equals((object)SortedArray.Of(ys));
-        });
+                var ys = xs.ToArray();
+                var i = at % ys.Length;
+                var cased = Array.FindIndex(ys[i].ToCharArray(), c => char.ToUpperInvariant(c) != char.ToLowerInvariant(c));
+                ys[i] = (change, cased) switch
+                {
+                    (0, >= 0) => string.Concat(ys[i][..cased], Flip(ys[i][cased]).ToString(), ys[i][(cased + 1)..]),
+                    (2, _) when others[0] != ys[i] => others[0],
+                    _ => ys[i] + "b",
+                };
+                return SortedArray.Of(xs) != SortedArray.Of(ys) && !SortedArray.Of(xs).Equals((object)SortedArray.Of(ys));
+            });
 
     [Theory]
     [Trait("Category", "fast")]

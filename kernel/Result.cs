@@ -46,7 +46,8 @@ public static class Result
 
     public static Result<T> Fail<T>(Error error) => new Result<T>.Failed(error);
 
-    /// <summary>Whether a result failed: its value in <paramref name="value"/> when it did not, its error in <paramref name="error"/> when it did.</summary>
+    /// <summary>Whether a result failed: its value in <paramref name="value"/> when it did not, its error in <paramref name="error"/> when
+    /// it did.</summary>
     public static bool Failed<T>(this Result<T> result, [MaybeNullWhen(true)] out T value, [MaybeNullWhen(false)] out Error error)
     {
         (value, error) = (default, null);

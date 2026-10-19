@@ -15,32 +15,40 @@ namespace DbChange.Kernel.Tests;
 internal static class SampleChanges
 {
     public const string PreDeploy = "PRINT N'Checking the Status table';\n";
-    public const string Seed = "MERGE INTO [dbo].[Status] AS t\nUSING (VALUES (1, N'Active')) AS s ([Id], [Name]) ON t.[Id] = s.[Id]\nWHEN NOT MATCHED THEN INSERT ([Id], [Name]) VALUES (s.[Id], s.[Name]);\n";
+    public const string Seed = "MERGE INTO [dbo].[Status] AS t\nUSING (VALUES (1, N'Active')) AS s ([Id], [Name]) ON t.[Id] = s.[Id]\n"
+        + "WHEN NOT MATCHED THEN INSERT ([Id], [Name]) VALUES (s.[Id], s.[Name]);\n";
 
     public static readonly ElementKey Customer = Key("Table", "dbo", "Customer");
     public static readonly ElementKey Email = Key(Customer, "Column", "Email");
     public static readonly ElementKey EmailIndex = Key(Customer, "Index", "IX_Customer_Email");
-    public static readonly Element EmailEntry = Entry("7f1a2c3e-0b4d-4e5f-8a9b-0c1d2e3f4a5b", "[dbo].[Customer].[Email]", "SqlSimpleColumn", "[dbo].[Customer]", "[EmailAddress]");
-    public static readonly Element TableEntry = Entry("5c4b3a29-1807-4f6e-9d8c-7b6a5f4e3d2c", "[dbo].[Customer]", "SqlTable", "[dbo]", "[Client]");
+    public static readonly Element EmailEntry = Entry("7f1a2c3e-0b4d-4e5f-8a9b-0c1d2e3f4a5b", "[dbo].[Customer].[Email]", "SqlSimpleColumn",
+        "[dbo].[Customer]", "[EmailAddress]");
+    public static readonly Element TableEntry = Entry("5c4b3a29-1807-4f6e-9d8c-7b6a5f4e3d2c", "[dbo].[Customer]", "SqlTable", "[dbo]",
+        "[Client]");
 
     private static readonly ElementKey Dbo = Ok(ElementKey.Of("Schema", Ok(Name.Of("dbo"))));
     private static readonly ElementKey IntType = Key("DataType", "sys", "int");
     private static readonly ElementKey NVarCharType = Key("DataType", "sys", "nvarchar");
-    private static readonly Element OldEntry = Entry("0d1c7b1e-2a3f-4b5c-9d8e-7f6a5b4c3d2e", "[dbo].[Customer].[Mail]", "SqlSimpleColumn", "[dbo].[Customer]", "[Email]");
+    private static readonly Element OldEntry = Entry("0d1c7b1e-2a3f-4b5c-9d8e-7f6a5b4c3d2e", "[dbo].[Customer].[Mail]", "SqlSimpleColumn",
+        "[dbo].[Customer]", "[Email]");
     private static readonly Rename OldRename = Ok(Rename.Of(Key(Customer, "Column", "Mail"), "Email"));
 
     /// <summary>The sample changes the golden project's registry also holds, by its names.</summary>
-    public static readonly string[] Registered = ["make-mandatory", "add-a-nullable-column", "edit-the-post-deploy-seed", "edit-the-pre-deploy-script"];
+    public static readonly string[] Registered = ["make-mandatory", "add-a-nullable-column", "edit-the-post-deploy-seed",
+        "edit-the-pre-deploy-script"];
 
-    public static TheoryData<string> Names => new([.. Registered, "drop a column", "rename a column", "rename a table", "rename a table and a column"]);
+    public static TheoryData<string> Names =>
+        new([.. Registered, "drop a column", "rename a column", "rename a table", "rename a table and a column"]);
 
     /// <summary>A sample change's model before and after, and the renames the refactorlog after it pairs.</summary>
-    public static (SortedArray<Element> Before, SortedArray<Element> After, SortedArray<Rename> Renames) Pair(string sample) => sample switch
+    public static (SortedArray<Element> Before, SortedArray<Element> After, SortedArray<Rename> Renames) Pair(
+        string sample) => sample switch
     {
         "make-mandatory" => (Model(), Model(emailNullable: false), [OldRename]),
         "add-a-nullable-column" => (Model(), Model(nickname: true), [OldRename]),
         "drop a column" => (Model(), Model(notes: false), [OldRename]),
-        "rename a column" => (Model(), Model(email: "EmailAddress", entries: [EmailEntry]), [OldRename, Ok(Rename.Of(Email, "EmailAddress"))]),
+        "rename a column" => (Model(), Model(email: "EmailAddress", entries: [EmailEntry]),
+            [OldRename, Ok(Rename.Of(Email, "EmailAddress"))]),
         "rename a table" => (Model(), Model(table: "Client", entries: [TableEntry]), [OldRename, Ok(Rename.Of(Customer, "Client"))]),
         // The column renamed while its table was still Customer, then the table: SSDT records the column's entry
         // under the table's old name.
@@ -48,7 +56,8 @@ internal static class SampleChanges
             Model(),
             Model(table: "Client", email: "EmailAddress", entries: [EmailEntry, TableEntry]),
             [OldRename, Ok(Rename.Of(Email, "EmailAddress")), Ok(Rename.Of(Customer, "Client"))]),
-        "edit-the-post-deploy-seed" => (Model(), Model(post: Seed.Replace("(1, N'Active')", "(1, N'Active'), (2, N'Closed')", System.StringComparison.Ordinal)), [OldRename]),
+        "edit-the-post-deploy-seed" => (Model(),
+            Model(post: Seed.Replace("(1, N'Active')", "(1, N'Active'), (2, N'Closed')", System.StringComparison.Ordinal)), [OldRename]),
         "edit-the-pre-deploy-script" => (Model(), Model(pre: "PRINT N'Checking the Status and Customer tables';\n"), [OldRename]),
         _ => throw new KeyNotFoundException(sample),
     };
@@ -61,19 +70,22 @@ internal static class SampleChanges
         var t = Key("Table", "dbo", table);
         var id = Key(t, "Column", "Id");
         var mail = Key(t, "Column", email);
-        var columns = new[] { id, mail }.Concat(notes ? [Key(t, "Column", "Notes")] : []).Concat(nickname ? [Key(t, "Column", "Nickname")] : []).ToArray();
+        var columns = new[] { id, mail }.Concat(notes ? [Key(t, "Column", "Notes")] : [])
+            .Concat(nickname ? [Key(t, "Column", "Nickname")] : []).ToArray();
         var elements = new List<Element>
         {
             New(t, [("IsMemoryOptimized", Bool(false))], [("Schema", [Dbo]), ("Columns", columns)]),
             New(id, [("Nullable", Bool(false)), ("IsIdentity", Bool(true))], [("DataType", [IntType])]),
             New(mail, [("Nullable", Bool(emailNullable)), ("Length", Int(256))], [("DataType", [NVarCharType])]),
             New(Key(t, "Index", "IX_Customer_Email"), [("IsClustered", Bool(false))], [("Columns", [mail])]),
-            New(Key("PrimaryKeyConstraint", "dbo", "PK_Customer"), [("IsClustered", Bool(true))], [("DefiningTable", [t]), ("Columns", [id])]),
+            New(Key("PrimaryKeyConstraint", "dbo", "PK_Customer"), [("IsClustered", Bool(true))],
+                [("DefiningTable", [t]), ("Columns", [id])]),
             Element.PreDeploy(pre),
             Element.PostDeploy(post),
             OldEntry,
         };
-        elements.AddRange(columns.Skip(2).Select(c => New(c, [("Nullable", Bool(true)), ("Length", Int(c.Name.Base == "Notes" ? -1 : 40))], [("DataType", [NVarCharType])])));
+        elements.AddRange(columns.Skip(2).Select(c =>
+            New(c, [("Nullable", Bool(true)), ("Length", Int(c.Name.Base == "Notes" ? -1 : 40))], [("DataType", [NVarCharType])])));
         elements.AddRange(entries ?? []);
         return SortedArray.Of(elements);
     }

@@ -19,7 +19,8 @@ public readonly record struct DacFxVersion : IComparable<DacFxVersion>
     public static Result<DacFxVersion> Of(string? text) =>
         text?.Split('.') is { Length: >= 2 and <= 4 } groups && groups.All(group => group.Length > 0 && group.All(char.IsAsciiDigit))
             ? new DacFxVersion(text)
-            : new Error("toolchain.dacfx-version", $"'{text}' is not a DacFx release version.", "Name the DacFx package version, such as 170.5.96.");
+            : new Error("toolchain.dacfx-version", $"'{text}' is not a DacFx release version.",
+                "Name the DacFx package version, such as 170.5.96.");
 
     public int CompareTo(DacFxVersion other)
     {
@@ -35,7 +36,8 @@ public readonly record struct DacFxVersion : IComparable<DacFxVersion>
         return mine.Length.CompareTo(theirs.Length) is var count and not 0 ? count : string.CompareOrdinal(ToString(), other.ToString());
     }
 
-    public override string ToString() => _text ?? throw new InvalidOperationException("default(DacFxVersion) is not a version; make one with DacFxVersion.Of.");
+    public override string ToString() =>
+        _text ?? throw new InvalidOperationException("default(DacFxVersion) is not a version; make one with DacFxVersion.Of.");
 
     /// <summary>Each group without its leading zeros, so a longer group is the larger number.</summary>
     private string[] Groups() => [.. ToString().Split('.').Select(group => group.TrimStart('0'))];
@@ -54,7 +56,8 @@ public abstract record Pin
     {
     }
 
-    /// <summary>A pin from the ledger's release and the release before it: each a DacFx release version, the one before older than the pin.</summary>
+    /// <summary>A pin from the ledger's release and the release before it: each a DacFx release version, the one before older than the
+    /// pin.</summary>
     public static Result<Pin> Of(string release, string? before) => DacFxVersion.Of(release).Bind(pin => before is null
         ? Result.Ok<Pin>(new Pinned(pin, null))
         : DacFxVersion.Of(before).Bind(prior => prior.CompareTo(pin) < 0
@@ -71,13 +74,16 @@ public abstract record Pin
         _ => throw new UnreachableException(),
     };
 
-    /// <summary>The rejection of the committed DacFx outside the window, toolchain.outside-window, or null when the pin admits it.</summary>
+    /// <summary>The rejection of the committed DacFx outside the window, toolchain.outside-window, or null when the pin admits
+    /// it.</summary>
     public Error? Rejects(DacFxVersion committed) => Match(
         _ => null,
         pin => committed == pin.Release || committed == pin.Before ? null : new Error(
             "toolchain.outside-window",
-            $"The committed DacFx, {committed}, is neither the pinned release {pin.Release} nor the release before it{(pin.Before is { } b ? ", " + b : "")}.",
-            $"Rebuild dbchange with ci/publish against DacFx {pin.Release}, or record the Octopus step's new DacFx release in dbchange/ledgers/toolchain.md."));
+            $"The committed DacFx, {committed}, is neither the pinned release {pin.Release}"
+            + $" nor the release before it{(pin.Before is { } b ? ", " + b : "")}.",
+            $"Rebuild dbchange with ci/publish against DacFx {pin.Release},"
+            + " or record the Octopus step's new DacFx release in dbchange/ledgers/toolchain.md."));
 
     /// <summary>No DacFx release pinned: the ledger's row reads UNPINNED, or the SSDT repository commits no ledger.</summary>
     public sealed record Unpinned : Pin
@@ -85,7 +91,8 @@ public abstract record Pin
         public override string ToString() => "UNPINNED";
     }
 
-    /// <summary>The pinned release, and the release immediately before it, which the window also admits; null when the ledger names none.</summary>
+    /// <summary>The pinned release, and the release immediately before it, which the window also admits; null when the ledger names
+    /// none.</summary>
     public sealed record Pinned(DacFxVersion Release, DacFxVersion? Before) : Pin
     {
         public override string ToString() => Release.ToString();

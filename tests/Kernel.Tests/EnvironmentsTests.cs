@@ -8,8 +8,8 @@ using Xunit;
 namespace DbChange.Kernel.Tests;
 
 /// <summary>
-/// dbchange/environments.json as data (WP 1.5, §4 row 14): the environments it names, each once and each with the host its server runs on, a
-/// publish profile's path inside the repository, and the local server it prefers; a reference is env:NAME or file:path and prints as
+/// dbchange/environments.json as data (WP 1.5, §4 row 14): the environments it names, each once and each with the host its server runs on,
+/// a publish profile's path inside the repository, and the local server it prefers; a reference is env:NAME or file:path and prints as
 /// itself, and no connection string passes as a path; an environment is real until a named lead's dated confirmation says synthetic;
 /// and a SQLCMD value is a literal or a reference, read through Match, and a name shaped like a credential never holds a literal.
 /// No error quotes the value it rejected.
@@ -45,7 +45,8 @@ public sealed class EnvironmentsTests
     {
         Secret.Sample(secret =>
         {
-            foreach (var text in (string[])[secret, "Server=db;User ID=sa;Password=" + secret, "file:Server=db;User ID=sa;Password=" + secret, "file:Password=" + secret,
+            foreach (var text in (string[])[secret, "Server=db;User ID=sa;Password=" + secret,
+                "file:Server=db;User ID=sa;Password=" + secret, "file:Password=" + secret,
                 "file:" + secret + ";x", "env:" + secret, "ENV:DBCHANGE_DEV", "env:1" + secret, "file: " + secret, "file:"])
             {
                 var error = Expect.Failed(SecretReference.Of(Where, text), "reference.malformed");
@@ -87,7 +88,8 @@ public sealed class EnvironmentsTests
     public void A_confirmation_is_a_named_lead_and_a_calendar_date_as_written(string? lead, string? on) =>
         Expect.Failed(Confirmation.Of(Where, lead, on), "environments.confirmation");
 
-    /// <summary>The date is data, as the lead committed it: a date after today is taken as written, since nothing here reads a clock.</summary>
+    /// <summary>The date is data, as the lead committed it: a date after today is taken as written, since nothing here reads a
+    /// clock.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_confirmation_dated_after_today_is_taken_as_written() =>
@@ -129,7 +131,8 @@ public sealed class EnvironmentsTests
     [Trait("Category", "fast")]
     public void A_named_environment_sorts_its_reader_groups_and_its_SQLCMD_variables()
     {
-        var environment = Expect.Value(Environment("dev", readerGroups: ["leads", "developers"], sqlCmd: [Literal("Tag", "dev"), Referenced("ServicePassword", "env:DBCHANGE_PW")]));
+        var environment = Expect.Value(Environment("dev", readerGroups: ["leads", "developers"],
+            sqlCmd: [Literal("Tag", "dev"), Referenced("ServicePassword", "env:DBCHANGE_PW")]));
 
         Assert.Equal(["developers", "leads"], environment.ReaderGroups);
         Assert.Equal(["ServicePassword", "Tag"], environment.SqlCmd.Select(v => v.Name.ToString()));
@@ -143,7 +146,8 @@ public sealed class EnvironmentsTests
     [InlineData("dev\n")]
     [InlineData("a-name-longer-than-thirty-two-chars")]
     [InlineData("")]
-    public void An_environment_s_name_env_cannot_carry_is_refused(string name) => Expect.Failed(EnvironmentName.Of(Where, name), "environments.environment-name");
+    public void An_environment_s_name_env_cannot_carry_is_refused(string name) =>
+        Expect.Failed(EnvironmentName.Of(Where, name), "environments.environment-name");
 
     [Theory]
     [Trait("Category", "fast")]
@@ -155,11 +159,13 @@ public sealed class EnvironmentsTests
     [InlineData("dbchange/profiles/pipeline.xml")]
     [InlineData("")]
     [InlineData(null)]
-    public void A_profile_path_outside_the_repository_or_naming_no_publish_profile_is_refused(string? path) => Expect.Failed(PublishProfilePath.Of(Where, path), "environments.profile-path");
+    public void A_profile_path_outside_the_repository_or_naming_no_publish_profile_is_refused(string? path) =>
+        Expect.Failed(PublishProfilePath.Of(Where, path), "environments.profile-path");
 
     /// <summary>
     /// The duplicate check compares neighbours in the sorted variables, so it relies on the order putting two spellings of one name side by
-    /// side: Tag, Version and tag sort Tag, tag, Version under the kernel's case-insensitive order, and Tag, Version, tag under an ordinal one.
+    /// side: Tag, Version and tag sort Tag, tag, Version under the kernel's case-insensitive order, and Tag, Version, tag under an ordinal
+    /// one.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -167,10 +173,12 @@ public sealed class EnvironmentsTests
     {
         Expect.Failed(Environment("dev", readerGroups: ["leads", "leads"]), "environments.reader-groups");
         Expect.Failed(Environment("dev", readerGroups: ["leads", " "]), "environments.reader-groups");
-        Expect.Failed(Environment("dev", sqlCmd: [Literal("Tag", "a"), Literal("Version", "b"), Literal("tag", "c")]), "environments.sqlcmd-repeated");
+        Expect.Failed(Environment("dev", sqlCmd: [Literal("Tag", "a"), Literal("Version", "b"), Literal("tag", "c")]),
+            "environments.sqlcmd-repeated");
     }
 
-    /// <summary>The environments file names each environment once; one environment is found by its name, and another name finds none.</summary>
+    /// <summary>The environments file names each environment once; one environment is found by its name, and another name finds
+    /// none.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void The_environments_file_names_each_environment_once_and_finds_one_by_its_name()
@@ -181,16 +189,20 @@ public sealed class EnvironmentsTests
         Assert.Equal([dev, qa], environments.All);
         Assert.Same(qa, environments.Named(Expect.Value(EnvironmentName.Of(Where, "qa"))));
         Assert.Null(environments.Named(Expect.Value(EnvironmentName.Of(Where, "uat"))));
-        Expect.Failed(Environments.Of("dbchange/environments.json", [dev, qa, Expect.Value(Environment("dev", profile: "dbchange/other.publish.xml"))], null), "environments.environment-name");
+        Expect.Failed(Environments.Of("dbchange/environments.json",
+            [dev, qa, Expect.Value(Environment("dev", profile: "dbchange/other.publish.xml"))], null), "environments.environment-name");
     }
 
-    /// <summary>The profile a copy is planned under when no --profile names one: the one every environment names, else none (cli/Check.cs).</summary>
+    /// <summary>The profile a copy is planned under when no --profile names one: the one every environment names, else none
+    /// (cli/Check.cs).</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void The_shared_profile_is_the_one_path_every_environment_names_and_else_none()
     {
-        var shared = Expect.Value(Environments.Of("dbchange/environments.json", [Expect.Value(Environment("dev")), Expect.Value(Environment("qa"))], null)).SharedProfile;
-        var differing = Expect.Value(Environments.Of("dbchange/environments.json", [Expect.Value(Environment("dev")), Expect.Value(Environment("qa", profile: "dbchange/qa.publish.xml"))], null)).SharedProfile;
+        var shared = Expect.Value(Environments.Of("dbchange/environments.json",
+            [Expect.Value(Environment("dev")), Expect.Value(Environment("qa"))], null)).SharedProfile;
+        var differing = Expect.Value(Environments.Of("dbchange/environments.json",
+            [Expect.Value(Environment("dev")), Expect.Value(Environment("qa", profile: "dbchange/qa.publish.xml"))], null)).SharedProfile;
         var none = Expect.Value(Environments.Of("dbchange/environments.json", [], null)).SharedProfile;
 
         Assert.Equal((Pipeline, null, null), (shared?.ToString(), differing?.ToString(), none?.ToString()));
@@ -204,7 +216,8 @@ public sealed class EnvironmentsTests
     [InlineData("podman", null)]
     [InlineData(null, null)]
     public void The_local_server_the_environments_file_prefers_is_docker_or_localdb(string? text, string? kind) =>
-        Assert.Equal(kind ?? "environments.malformed", LocalServerKind.Of("localServer in dbchange/environments.json", text).Match(k => k.ToString(), error => error.Code));
+        Assert.Equal(kind ?? "environments.malformed",
+            LocalServerKind.Of("localServer in dbchange/environments.json", text).Match(k => k.ToString(), error => error.Code));
 
     [Fact]
     [Trait("Category", "fast")]
@@ -212,30 +225,37 @@ public sealed class EnvironmentsTests
     public void Nothing_a_named_environment_prints_carries_a_literal_or_what_a_reference_names()
     {
         var confirmed = Expect.Value(Confirmation.Of(Where, "the dev lead", "2026-09-20"));
-        var environment = Expect.Value(NamedEnvironment.Of(Where, Expect.Value(EnvironmentName.Of(Where, "dev")), Expect.Value(Host.Of(Where, "dev-sql")), new Classification.Synthetic(confirmed), ["leads"],
-            Reference("env:DBCHANGE_DEV"), Expect.Value(PublishProfilePath.Of(Where, Pipeline)), [Literal("Tag", Planted.Text), Referenced("ServicePassword", "file:.dbchange/dev.password")], null));
+        var environment = Expect.Value(NamedEnvironment.Of(Where, Expect.Value(EnvironmentName.Of(Where, "dev")),
+            Expect.Value(Host.Of(Where, "dev-sql")), new Classification.Synthetic(confirmed), ["leads"], Reference("env:DBCHANGE_DEV"),
+            Expect.Value(PublishProfilePath.Of(Where, Pipeline)),
+            [Literal("Tag", Planted.Text), Referenced("ServicePassword", "file:.dbchange/dev.password")], null));
 
-        var printed = string.Join("\n", environment.ToString(), string.Join(" ", environment.SqlCmd), environment.Classification, environment.Connection);
+        var printed = string.Join("\n", environment.ToString(), string.Join(" ", environment.SqlCmd), environment.Classification,
+            environment.Connection);
 
         Assert.Equal("env:dev (synthetic, confirmed by the dev lead on 2026-09-20)", environment.ToString());
         Assert.Equal("$(ServicePassword) from file:.dbchange/dev.password $(Tag), a literal", string.Join(" ", environment.SqlCmd));
         Planted.AbsentFrom(printed);
     }
 
-    private static Result<NamedEnvironment> Environment(string name, string profile = Pipeline, IEnumerable<string>? readerGroups = null, IEnumerable<SqlCmdVariable>? sqlCmd = null) =>
-        NamedEnvironment.Of(Where, Expect.Value(EnvironmentName.Of(Where, name)), Expect.Value(Host.Of(Where, "dev-sql.corp.example")), new Classification.Real(null), readerGroups ?? [],
-            Reference("env:DBCHANGE_DEV"), Expect.Value(PublishProfilePath.Of(Where, profile)), sqlCmd ?? [], Reference("file:.dbchange/dev-ossys.connection"));
+    private static Result<NamedEnvironment> Environment(string name, string profile = Pipeline, IEnumerable<string>? readerGroups = null,
+        IEnumerable<SqlCmdVariable>? sqlCmd = null) =>
+        NamedEnvironment.Of(Where, Expect.Value(EnvironmentName.Of(Where, name)), Expect.Value(Host.Of(Where, "dev-sql.corp.example")),
+            new Classification.Real(null), readerGroups ?? [], Reference("env:DBCHANGE_DEV"),
+            Expect.Value(PublishProfilePath.Of(Where, profile)), sqlCmd ?? [], Reference("file:.dbchange/dev-ossys.connection"));
 
     private static SecretReference Reference(string text) => Expect.Value(SecretReference.Of(Where, text));
 
     private static SqlCmdVariable Literal(string name, string value) => Expect.Value(SqlCmdVariable.Of(Where, name, value));
 
-    private static SqlCmdVariable Referenced(string name, string reference) => Expect.Value(SqlCmdVariable.Of(Where, name, Reference(reference)));
+    private static SqlCmdVariable Referenced(string name, string reference) =>
+        Expect.Value(SqlCmdVariable.Of(Where, name, Reference(reference)));
 
     /// <summary>What a SQLCMD variable holds, read through its Match: the literal's text, or the reference it is read from.</summary>
     private static string Held(SqlCmdVariable variable) => variable.Match(text => "the literal " + text, reference => "from " + reference);
 
     /// <summary>A classification read through its Match: real or synthetic, and by whom where a lead confirmed it.</summary>
     private static string Classified(Result<Classification> classification) =>
-        Expect.Value(classification).Match(real => "real" + (real.Confirmation is { } by ? " by " + by.Lead : ""), synthetic => "synthetic by " + synthetic.Confirmation.Lead);
+        Expect.Value(classification).Match(real => "real" + (real.Confirmation is { } by ? " by " + by.Lead : ""),
+            synthetic => "synthetic by " + synthetic.Confirmation.Lead);
 }

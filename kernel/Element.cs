@@ -19,7 +19,8 @@ public abstract record Value : IComparable<Value>
     {
     }
 
-    public T Match<T>(Func<bool, T> boolean, Func<long, T> integer, Func<string, T> text, Func<string, string, T> enumeration, Func<string, T> script, Func<T> none) =>
+    public T Match<T>(Func<bool, T> boolean, Func<long, T> integer, Func<string, T> text, Func<string, string, T> enumeration,
+        Func<string, T> script, Func<T> none) =>
         this switch
         {
             Boolean b => boolean(b.IsTrue),
@@ -37,12 +38,14 @@ public abstract record Value : IComparable<Value>
         (Boolean a, Boolean b) => a.IsTrue.CompareTo(b.IsTrue),
         (Integer a, Integer b) => a.Number.CompareTo(b.Number),
         (Text a, Text b) => string.CompareOrdinal(a.Content, b.Content),
-        (Enumeration a, Enumeration b) => string.CompareOrdinal(a.Type, b.Type) is var t and not 0 ? t : string.CompareOrdinal(a.Member, b.Member),
+        (Enumeration a, Enumeration b) =>
+            string.CompareOrdinal(a.Type, b.Type) is var t and not 0 ? t : string.CompareOrdinal(a.Member, b.Member),
         (Script a, Script b) => string.CompareOrdinal(a.Content, b.Content),
         _ => Rank(this).CompareTo(Rank(other)),
     };
 
-    /// <summary>Culture-free: <c>true</c>, <c>-12</c>, <c>'it''s'</c>, <c>SqlDataType.NVarChar</c>, a script as its text quoted, <c>NULL</c>.</summary>
+    /// <summary>Culture-free: <c>true</c>, <c>-12</c>, <c>'it''s'</c>, <c>SqlDataType.NVarChar</c>, a script as its text quoted,
+    /// <c>NULL</c>.</summary>
     public sealed override string ToString() => Match(
         b => b ? "true" : "false",
         n => n.ToString(CultureInfo.InvariantCulture),
@@ -90,7 +93,8 @@ public sealed record ElementKey : IComparable<ElementKey>
 
     public static Result<ElementKey> Of(ElementKey parent, string type, Name name) =>
         (Invalid(type, name) ?? (name.Schema is null ? null : new Error(
-            "element.child-name", $"{name} names a {type} of {parent} in two parts.", "Name an object keyed under its parent by its own one-part name.")))
+            "element.child-name", $"{name} names a {type} of {parent} in two parts.",
+            "Name an object keyed under its parent by its own one-part name.")))
             is { } error ? error : new ElementKey(parent, type, name);
 
     public int CompareTo(ElementKey? other)
@@ -98,7 +102,8 @@ public sealed record ElementKey : IComparable<ElementKey>
         var (mine, theirs) = (Chain(this), other is null ? [] : Chain(other));
         for (var i = 0; i < Math.Min(mine.Length, theirs.Length); i++)
         {
-            if ((mine[i].Name.CompareTo(theirs[i].Name) is var n and not 0 ? n : string.CompareOrdinal(mine[i].Type, theirs[i].Type)) is var c and not 0)
+            if ((mine[i].Name.CompareTo(theirs[i].Name) is var n and not 0 ? n
+                : string.CompareOrdinal(mine[i].Type, theirs[i].Type)) is var c and not 0)
             {
                 return c;
             }
@@ -109,15 +114,19 @@ public sealed record ElementKey : IComparable<ElementKey>
 
     public override string ToString() => Type + " " + Path;
 
-    /// <summary>Whether two keys name one object under <paramref name="collation"/>: the same type at every level, the same depth, and each level's name matching.</summary>
+    /// <summary>Whether two keys name one object under <paramref name="collation"/>: the same type at every level, the same depth, and each
+    /// level's name matching.</summary>
     public bool Matches(ElementKey other, Collation collation)
     {
         var (mine, theirs) = (Chain(this), Chain(other));
-        return mine.Length == theirs.Length && mine.Zip(theirs).All(pair => pair.First.Type == pair.Second.Type && pair.First.Name.Matches(pair.Second.Name, collation));
+        return mine.Length == theirs.Length && mine.Zip(theirs)
+            .All(pair => pair.First.Type == pair.Second.Type && pair.First.Name.Matches(pair.Second.Name, collation));
     }
 
-    /// <summary>Keys as one under <paramref name="collation"/>, for a dictionary or a set: equality by <see cref="Matches"/>, and a hash that agrees with it.</summary>
-    public static IEqualityComparer<ElementKey> Comparer(Collation collation) => collation.IsCaseSensitive ? EqualityComparer<ElementKey>.Default : new IgnoringCase(collation);
+    /// <summary>Keys as one under <paramref name="collation"/>, for a dictionary or a set: equality by <see cref="Matches"/>, and a hash
+    /// that agrees with it.</summary>
+    public static IEqualityComparer<ElementKey> Comparer(Collation collation) =>
+        collation.IsCaseSensitive ? EqualityComparer<ElementKey>.Default : new IgnoringCase(collation);
 
     /// <summary>This key, moved under <paramref name="parent"/> as the rename of an ancestor moves it.</summary>
     internal ElementKey Under(ElementKey? parent) => parent == Parent ? this : new ElementKey(parent, Type, Name);
@@ -144,7 +153,8 @@ public sealed record ElementKey : IComparable<ElementKey>
     }
 
     private static Error? Invalid(string type, Name name) =>
-        string.IsNullOrWhiteSpace(type) ? new Error("element.type-blank", "An element's type is blank.", "Give the DacFx type name, such as Column.")
+        string.IsNullOrWhiteSpace(type)
+            ? new Error("element.type-blank", "An element's type is blank.", "Give the DacFx type name, such as Column.")
         : name == default ? new Error("element.name-missing", $"A {type} has no name.", "Make the name with Name.Of.")
         : null;
 }
@@ -176,7 +186,8 @@ public sealed record Element : IComparable<Element>
     public static Result<Element> Of(ElementKey key, IEnumerable<Property> properties, IEnumerable<Relationship> relationships)
     {
         var (ps, rs) = (SortedArray.Of(properties), SortedArray.Of(relationships.Where(r => r.Targets.Count > 0)));
-        return (Repeated([.. ps.Select(p => p.Name)], key, "property") ?? Repeated([.. rs.Select(r => r.Name)], key, "relationship")) is { } error
+        return (Repeated([.. ps.Select(p => p.Name)], key, "property")
+            ?? Repeated([.. rs.Select(r => r.Name)], key, "relationship")) is { } error
             ? error
             : new Element(key, ps, rs);
     }
@@ -187,7 +198,8 @@ public sealed record Element : IComparable<Element>
     /// <summary>The package's post-deploy script, with the text the build inlined as its Text property.</summary>
     public static Element PostDeploy(string text) => Script(PostDeploymentScript, "PostDeploy", text);
 
-    /// <summary>A refactorlog entry: keyed by its operation key, with the properties the file gives it (ElementName, ElementType, ParentElementName, NewName).</summary>
+    /// <summary>A refactorlog entry: keyed by its operation key, with the properties the file gives it (ElementName, ElementType,
+    /// ParentElementName, NewName).</summary>
     public static Result<Element> RefactorLogEntry(string operationKey, IEnumerable<Property> properties) =>
         Name.Of(operationKey).Bind(name => ElementKey.Of(RefactorLogOperation, name)).Bind(key => Of(key, properties, []));
 
@@ -204,7 +216,8 @@ public sealed record Element : IComparable<Element>
 
     private static Error? Repeated(string[] names, ElementKey key, string what) => names
         .Where((name, i) => string.IsNullOrWhiteSpace(name) || (i > 0 && names[i - 1] == name))
-        .Select(name => new Error("element." + what + "-name", $"{key} has a {what} named '{name}' that is blank or repeated.", $"Give each {what} of an element one distinct name."))
+        .Select(name => new Error("element." + what + "-name", $"{key} has a {what} named '{name}' that is blank or repeated.",
+            $"Give each {what} of an element one distinct name."))
         .FirstOrDefault();
 
     public sealed record Property(string Name, Value Value) : IComparable<Property>
@@ -220,10 +233,12 @@ public sealed record Element : IComparable<Element>
         /// order, so two reads of one relationship agree while DacFx gives its targets in one order, which the golden package's committed
         /// fingerprint in ModelElementsTests holds across reads and across Linux and Windows.
         /// </summary>
-        public static Relationship Of(string name, IEnumerable<ElementKey> targets) => new(name, SortedArray.Of(targets.Select((key, i) => new Target(i, key))));
+        public static Relationship Of(string name, IEnumerable<ElementKey> targets) =>
+            new(name, SortedArray.Of(targets.Select((key, i) => new Target(i, key))));
 
         public int CompareTo(Relationship? other) =>
-            other is null ? 1 : string.CompareOrdinal(Name, other.Name) is var c and not 0 ? c : SortedArray.Compare(Targets, other.Targets);
+            other is null ? 1 : string.CompareOrdinal(Name, other.Name) is var c and not 0 ? c
+                : SortedArray.Compare(Targets, other.Targets);
 
         /// <summary>One target of a relationship: its position in DacFx's order, and its key.</summary>
         public sealed record Target(int Position, ElementKey Key) : IComparable<Target>

@@ -55,14 +55,16 @@ public readonly struct SortedArray<T> : IReadOnlyList<T>, IEquatable<SortedArray
     }
 }
 
-/// <summary>Builds a <see cref="SortedArray{T}"/>: <c>SortedArray.Of(a, b)</c>, <c>SortedArray.Of(items)</c>, or a collection expression.</summary>
+/// <summary>Builds a <see cref="SortedArray{T}"/>: <c>SortedArray.Of(a, b)</c>, <c>SortedArray.Of(items)</c>, or a collection
+/// expression.</summary>
 public static class SortedArray
 {
     public static SortedArray<T> Of<T>(params ReadOnlySpan<T> items) where T : IComparable<T> => Sorted(items.ToArray());
 
     public static SortedArray<T> Of<T>(IEnumerable<T> items) where T : IComparable<T> => Sorted(items.ToArray());
 
-    /// <summary>Two sorted arrays in lexicographic order, the shorter first when one begins the other: how a record holding sorted arrays sorts.</summary>
+    /// <summary>Two sorted arrays in lexicographic order, the shorter first when one begins the other: how a record holding sorted arrays
+    /// sorts.</summary>
     internal static int Compare<T>(SortedArray<T> mine, SortedArray<T> theirs) where T : IComparable<T>
     {
         for (var i = 0; i < Math.Min(mine.Count, theirs.Count); i++)

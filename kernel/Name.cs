@@ -78,10 +78,12 @@ public readonly record struct Collation : IComparable<Collation>
 
     private readonly string? _name;
 
-    private Collation(string name, bool caseSensitive, bool accentSensitive) => (_name, IsCaseSensitive, IsAccentSensitive) = (name, caseSensitive, accentSensitive);
+    private Collation(string name, bool caseSensitive, bool accentSensitive) =>
+        (_name, IsCaseSensitive, IsAccentSensitive) = (name, caseSensitive, accentSensitive);
 
     /// <summary>The collation's name as SQL Server spells it, such as SQL_Latin1_General_CP1_CI_AS.</summary>
-    public string Name => _name ?? throw new InvalidOperationException("default(Collation) is not a collation; make one with Collation.Of.");
+    public string Name =>
+        _name ?? throw new InvalidOperationException("default(Collation) is not a collation; make one with Collation.Of.");
 
     public bool IsCaseSensitive { get; }
 
@@ -98,13 +100,15 @@ public readonly record struct Collation : IComparable<Collation>
     public static Result<Collation> Of(string? name)
     {
         var tokens = name is null ? [] : name.Split('_');
-        var wellFormed = name is { Length: > 0 and <= 128 } && Array.TrueForAll(name.ToCharArray(), c => char.IsAsciiLetterOrDigit(c) || c == '_');
+        var wellFormed = name is { Length: > 0 and <= 128 }
+            && Array.TrueForAll(name.ToCharArray(), c => char.IsAsciiLetterOrDigit(c) || c == '_');
         var binary = Array.Exists(tokens, t => t is "BIN" or "BIN2");
         var caseRule = binary || Array.Exists(tokens, t => t == "CS") ? true : Array.Exists(tokens, t => t == "CI") ? false : (bool?)null;
         var accentRule = binary || Array.Exists(tokens, t => t == "AS") ? true : Array.Exists(tokens, t => t == "AI") ? false : caseRule;
         return wellFormed && caseRule is { } sensitive && accentRule is { } accents
             ? new Collation(name!, sensitive, accents)
-            : new Error("model.collation", "'" + name + "' is not a SQL Server collation name that says whether names compare with case (_CS, _CI, _BIN or _BIN2).",
+            : new Error("model.collation",
+                "'" + name + "' is not a SQL Server collation name that says whether names compare with case (_CS, _CI, _BIN or _BIN2).",
                 "Report the model's source: a model's DatabaseOptions.Collation names the collation its objects compare under.");
     }
 

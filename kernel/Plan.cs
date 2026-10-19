@@ -17,11 +17,13 @@ public sealed record DeployReport(SortedArray<PlanOperation> Operations, SortedA
     /// <summary>Whether the plan holds no operation.</summary>
     public bool IsEmpty => Operations.Count == 0;
 
-    /// <summary>The operation whose item cites <paramref name="alert"/> as one of its data issues; null for an alert none cites, and for one with no id (a DataMotion).</summary>
+    /// <summary>The operation whose item cites <paramref name="alert"/> as one of its data issues; null for an alert none cites, and for
+    /// one with no id (a DataMotion).</summary>
     public PlanOperation? Operation(PlanAlert alert) => alert.Id is { } id ? Operations.FirstOrDefault(o => o.Issues.Contains(id)) : null;
 }
 
-/// <summary>One operation of a deploy plan: what DacFx does, to which element, and the ids of the report's data issues the operation raises.</summary>
+/// <summary>One operation of a deploy plan: what DacFx does, to which element, and the ids of the report's data issues the operation
+/// raises.</summary>
 public sealed record PlanOperation(PlanOperationKind Kind, ElementKey Key, SortedArray<int> Issues) : IComparable<PlanOperation>
 {
     /// <summary>By key, then kind, then issues, so an element's operations sit together.</summary>
@@ -45,10 +47,12 @@ public abstract record PlanOperationKind : IComparable<PlanOperationKind>
     /// <summary>DacFx's name for the operation, as the deploy report writes it.</summary>
     public string Name { get; }
 
-    /// <summary>The name as dbchange writes it in a finding's code and in JSON: create, alter, table-rebuild, unbind-schemabinding; unlisted for a name outside the list.</summary>
+    /// <summary>The name as dbchange writes it in a finding's code and in JSON: create, alter, table-rebuild, unbind-schemabinding;
+    /// unlisted for a name outside the list.</summary>
     public string Word => this is Unlisted ? "unlisted" : Words.Hyphenated(Name);
 
-    /// <summary>Whether DacFx adds the operation for an object that depends on one the plan changes (a refresh, an unbind or a rebind), which is no difference of its own.</summary>
+    /// <summary>Whether DacFx adds the operation for an object that depends on one the plan changes (a refresh, an unbind or a rebind),
+    /// which is no difference of its own.</summary>
     public bool IsConsequence => this is Refresh or UnbindSchemabinding or RebindSchemabinding;
 
     /// <summary>The kind the report's name gives, or <see cref="Unlisted"/> for a name outside the list.</summary>
@@ -76,7 +80,8 @@ public abstract record PlanOperationKind : IComparable<PlanOperationKind>
 
     public sealed record Drop() : PlanOperationKind("Drop");
 
-    /// <summary>A table dropped and created again with its rows copied, as when a column is inserted between others under IgnoreColumnOrder False.</summary>
+    /// <summary>A table dropped and created again with its rows copied, as when a column is inserted between others under IgnoreColumnOrder
+    /// False.</summary>
     public sealed record TableRebuild() : PlanOperationKind("TableRebuild");
 
     /// <summary>An object renamed through a refactorlog entry (sp_rename), the new name as the item's name.</summary>
@@ -93,7 +98,8 @@ public abstract record PlanOperationKind : IComparable<PlanOperationKind>
     public sealed record Unlisted(string Operation) : PlanOperationKind(Operation);
 }
 
-/// <summary>An alert of a deploy report about the data: its kind, the id an operation's item cites it by (a DataIssue has one, a DataMotion none), and DacFx's text, which names types and objects and never a row.</summary>
+/// <summary>An alert of a deploy report about the data: its kind, the id an operation's item cites it by (a DataIssue has one, a DataMotion
+/// none), and DacFx's text, which names types and objects and never a row.</summary>
 public sealed record PlanAlert(PlanAlertKind Kind, int? Id, string Text) : IComparable<PlanAlert>
 {
     public int CompareTo(PlanAlert? other) =>
@@ -105,7 +111,8 @@ public sealed record PlanAlert(PlanAlertKind Kind, int? Id, string Text) : IComp
 
 /// <summary>
 /// The kind of a deploy report's alert, by the name DacFx gives it (its PlanReportBuilder.HighlightAction enumeration): DataIssue, data a
-/// change can lose; DataMotion, rows a table rebuild copies; DropClusteredIndex and CreateClusteredIndex. Any other name is <see cref="Unlisted"/>.
+/// change can lose; DataMotion, rows a table rebuild copies; DropClusteredIndex and CreateClusteredIndex. Any other name is
+/// <see cref="Unlisted"/>.
 /// </summary>
 public abstract record PlanAlertKind : IComparable<PlanAlertKind>
 {
@@ -114,7 +121,8 @@ public abstract record PlanAlertKind : IComparable<PlanAlertKind>
     /// <summary>DacFx's name for the alert, as the deploy report writes it.</summary>
     public string Name { get; }
 
-    /// <summary>The name as dbchange writes it in a finding's code: data-issue, data-motion, drop-clustered-index; unlisted for a name outside the list.</summary>
+    /// <summary>The name as dbchange writes it in a finding's code: data-issue, data-motion, drop-clustered-index; unlisted for a name
+    /// outside the list.</summary>
     public string Word => this is Unlisted ? "unlisted" : Words.Hyphenated(Name);
 
     public static PlanAlertKind Of(string name) => name switch
@@ -150,7 +158,8 @@ public abstract record PlanAlertKind : IComparable<PlanAlertKind>
 /// </summary>
 public abstract record Drift
 {
-    /// <summary>The property of a computed column that SQL Server keeps as it normalized the text, so a database's differs from its package's where the schemas agree (DF-8).</summary>
+    /// <summary>The property of a computed column that SQL Server keeps as it normalized the text, so a database's differs from its
+    /// package's where the schemas agree (DF-8).</summary>
     private const string Normalized = "Expression";
 
     private Drift()
@@ -177,12 +186,14 @@ public abstract record Drift
             return new InSync();
         }
 
-        var tables = plan.Operations.Where(o => o.Kind is PlanOperationKind.Alter or PlanOperationKind.TableRebuild && o.Key.Type == "Table").Select(o => o.Key)
+        var tables = plan.Operations
+            .Where(o => o.Kind is PlanOperationKind.Alter or PlanOperationKind.TableRebuild && o.Key.Type == "Table").Select(o => o.Key)
             .ToHashSet(ElementKey.Comparer(collation));
         return Change.Between(target, package, [], collation).Map(change => (Drift)new Differs(plan, ColumnsUnder(change, tables)));
     }
 
-    /// <summary>What of a change concerns a column of one of the tables: each such column created, dropped or matched in letter case alone, and each altered, less its Expression.</summary>
+    /// <summary>What of a change concerns a column of one of the tables: each such column created, dropped or matched in letter case alone,
+    /// and each altered, less its Expression.</summary>
     private static Change ColumnsUnder(Change change, IReadOnlySet<ElementKey> tables)
     {
         bool Under(ElementKey key) => key.Type == "Column" && key.Parent is { } table && tables.Contains(table);
@@ -190,7 +201,8 @@ public abstract record Drift
             SortedArray.Of(change.Created.Where(e => Under(e.Key))),
             SortedArray.Of(change.Dropped.Where(e => Under(e.Key))),
             [],
-            SortedArray.Of(change.Altered.Where(a => Under(a.Key)).Select(a => a with { Properties = SortedArray.Of(a.Properties.Where(p => p.Name != Normalized)) })
+            SortedArray.Of(change.Altered.Where(a => Under(a.Key))
+                .Select(a => a with { Properties = SortedArray.Of(a.Properties.Where(p => p.Name != Normalized)) })
                 .Where(a => a.Properties.Count + a.Relationships.Count > 0)),
             SortedArray.Of(change.CaseOnlyRenamed.Where(r => Under(r.After))));
     }
@@ -198,7 +210,8 @@ public abstract record Drift
     /// <summary>The deploy plan against the target is empty.</summary>
     public sealed record InSync : Drift;
 
-    /// <summary>The deploy plan holds operations: its deploy report, and the columns that differ under each table it alters or rebuilds, from the target to the package.</summary>
+    /// <summary>The deploy plan holds operations: its deploy report, and the columns that differ under each table it alters or rebuilds,
+    /// from the target to the package.</summary>
     public sealed record Differs(DeployReport Report, Change Columns) : Drift;
 }
 
@@ -214,9 +227,11 @@ public readonly record struct Platform
 
     /// <summary>The platform DacFx names <paramref name="name"/>, or model.platform for a name of other than letters and digits.</summary>
     public static Result<Platform> Of(string? name) => name is { Length: > 0 } && name.All(char.IsAsciiLetterOrDigit) ? new Platform(name)
-        : new Error("model.platform", "'" + name + "' is no DacFx platform name, such as Sql160.", "Report the package's source with this error; DacFx names each platform it knows.");
+        : new Error("model.platform", "'" + name + "' is no DacFx platform name, such as Sql160.",
+            "Report the package's source with this error; DacFx names each platform it knows.");
 
-    public override string ToString() => _name ?? throw new InvalidOperationException("default(Platform) is not a platform; make one with Platform.Of.");
+    public override string ToString() =>
+        _name ?? throw new InvalidOperationException("default(Platform) is not a platform; make one with Platform.Of.");
 }
 
 /// <summary>How dbchange writes one of DacFx's names in a code or in JSON.</summary>

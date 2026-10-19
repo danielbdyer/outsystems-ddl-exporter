@@ -26,7 +26,8 @@ public sealed record Finding
     private Finding(string code, Severity severity, string subject, string message, string? remedy)
     {
         Code = ErrorCode.IsCode(code) ? code
-            : throw new ArgumentException($"'{code}' is not a finding code: a category and a detail in lowercase words, such as drift.alter.", nameof(code));
+            : throw new ArgumentException(
+                $"'{code}' is not a finding code: a category and a detail in lowercase words, such as drift.alter.", nameof(code));
         Severity = severity;
         Subject = Present(subject, nameof(subject));
         Message = Present(message, nameof(message));
@@ -49,7 +50,8 @@ public sealed record Finding
     public static Finding Error(string code, string subject, string message, string remedy) =>
         new(code, Severity.Error, subject, message, Present(remedy, nameof(remedy)));
 
-    public static Finding Warning(string code, string subject, string message, string? remedy = null) => new(code, Severity.Warning, subject, message, remedy);
+    public static Finding Warning(string code, string subject, string message, string? remedy = null) =>
+        new(code, Severity.Warning, subject, message, remedy);
 
     public static Finding Note(string code, string subject, string message) => new(code, Severity.Note, subject, message, null);
 

@@ -73,9 +73,11 @@ public sealed class ChangeTests
     public void A_case_only_rename_is_a_note_under_a_case_insensitive_collation_and_a_drop_and_a_create_under_a_case_sensitive_one() =>
         Flips.Sample(f =>
         {
-            var (insensitive, sensitive) = (Ok(Change.Between(f.Before, f.After, [], CaseInsensitive)), Ok(Change.Between(f.Before, f.After, [], Collation.CaseSensitive)));
+            var (insensitive, sensitive) = (Ok(Change.Between(f.Before, f.After, [], CaseInsensitive)),
+                Ok(Change.Between(f.Before, f.After, [], Collation.CaseSensitive)));
             var moved = f.Before.Where(e => e.Key == f.Flip.Before || Beneath(e.Key, f.Flip.Before)).ToList();
-            var referrers = f.Before.Where(e => !moved.Contains(e) && e.Relationships.Any(r => r.Targets.Any(t => moved.Any(m => m.Key == t.Key)))).Select(e => e.Key).ToHashSet();
+            var referrers = f.Before.Where(e => !moved.Contains(e)
+                && e.Relationships.Any(r => r.Targets.Any(t => moved.Any(m => m.Key == t.Key)))).Select(e => e.Key).ToHashSet();
 
             Assert.True(insensitive.IsEmpty, "under a case-insensitive collation the flip is a change: " + insensitive);
             Assert.Equal([f.Flip], insensitive.CaseOnlyRenamed);
@@ -83,18 +85,22 @@ public sealed class ChangeTests
             Assert.Equal(moved.Count, sensitive.Created.Count);
             Assert.Empty(sensitive.Renamed);
             Assert.Empty(sensitive.CaseOnlyRenamed);
-            Assert.All(sensitive.Altered, a => Assert.True(a.Properties.Count == 0 && referrers.Contains(a.Key), a.Key + " is altered by other than a reference to the flipped element"));
+            Assert.All(sensitive.Altered, a => Assert.True(a.Properties.Count == 0 && referrers.Contains(a.Key),
+                a.Key + " is altered by other than a reference to the flipped element"));
             Assert.NotEqual(Fingerprint.Of(f.Before), Fingerprint.Of(f.After));
             Assert.Equal(Mirror(insensitive), Ok(Change.Between(f.After, f.Before, [], CaseInsensitive)));
         }, print: f => f.Flip.ToString(), iter: 500);
 
-    /// <summary>The mirror property under a case-insensitive collation, over case-distinct sets: the case-only pairs invert with the rest.</summary>
+    /// <summary>The mirror property under a case-insensitive collation, over case-distinct sets: the case-only pairs invert with the
+    /// rest.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void The_change_between_case_distinct_models_under_a_case_insensitive_collation_mirrors_back() =>
-        Gen.Select(CaseDistinctSets, CaseDistinctSets).Sample((a, b) => Mirror(Ok(Change.Between(a, b, [], CaseInsensitive))) == Ok(Change.Between(b, a, [], CaseInsensitive)));
+        Gen.Select(CaseDistinctSets, CaseDistinctSets)
+            .Sample((a, b) => Mirror(Ok(Change.Between(a, b, [], CaseInsensitive))) == Ok(Change.Between(b, a, [], CaseInsensitive)));
 
-    /// <summary>A model holding two keys that differ in letter case alone is refused under a case-insensitive collation, which reads them as one name, and read under a case-sensitive one.</summary>
+    /// <summary>A model holding two keys that differ in letter case alone is refused under a case-insensitive collation, which reads them
+    /// as one name, and read under a case-sensitive one.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void Two_elements_whose_keys_differ_in_case_alone_are_one_key_under_a_case_insensitive_collation()
@@ -130,7 +136,8 @@ public sealed class ChangeTests
     public void A_collation_name_with_no_case_rule_is_refused(string? name) => Expect.Failed(Collation.Of(name), "model.collation");
 
     /// <summary>Whether <paramref name="key"/> lies under <paramref name="ancestor"/>.</summary>
-    private static bool Beneath(ElementKey key, ElementKey ancestor) => key.Parent is { } parent && (parent == ancestor || Beneath(parent, ancestor));
+    private static bool Beneath(ElementKey key, ElementKey ancestor) =>
+        key.Parent is { } parent && (parent == ancestor || Beneath(parent, ancestor));
 
     [Fact]
     [Trait("Category", "fast")]
@@ -143,7 +150,8 @@ public sealed class ChangeTests
         Assert.Contains("Column [dbo].[Customer].[Email]", line, StringComparison.Ordinal);
         Assert.Contains("Column [dbo].[Customer].[EmailAddress]", line, StringComparison.Ordinal);
         Assert.Contains("\"EmailAddress\"", JsonSerializer.Serialize(rename), StringComparison.Ordinal);
-        Assert.All(Between("rename a table and a column").Renamed, r => Assert.Contains(r.After.ToString(), $"{r}", StringComparison.Ordinal));
+        Assert.All(Between("rename a table and a column").Renamed,
+            r => Assert.Contains(r.After.ToString(), $"{r}", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -200,10 +208,12 @@ public sealed class ChangeTests
     public void Renaming_a_column_then_its_table_is_two_renames_though_the_column_s_entry_names_the_table_s_old_key()
     {
         var client = Key("Table", "dbo", "Client");
-        SortedArray<Rename> renames = [new Rename(SampleChanges.Customer, client), new Rename(SampleChanges.Email, Key(client, "Column", "EmailAddress"))];
+        SortedArray<Rename> renames = [new Rename(SampleChanges.Customer, client),
+            new Rename(SampleChanges.Email, Key(client, "Column", "EmailAddress"))];
         var (before, after, entries) = SampleChanges.Pair("rename a table and a column");
 
-        Assert.Equal(new Change([SampleChanges.EmailEntry, SampleChanges.TableEntry], [], renames, []), Between("rename a table and a column"));
+        Assert.Equal(new Change([SampleChanges.EmailEntry, SampleChanges.TableEntry], [], renames, []),
+            Between("rename a table and a column"));
         Assert.Equal(
             new Change([], [SampleChanges.EmailEntry, SampleChanges.TableEntry], Inverted(renames), []),
             Ok(Change.Between(after, before, Inverted(entries))));
@@ -247,7 +257,8 @@ public sealed class ChangeTests
 
     // A failing renaming, printed as its models' keys and its entries in the order they were made.
     private static string Print(Renaming r) =>
-        string.Join(", ", r.Before.Select(e => e.Key)) + " => " + string.Join(", ", r.After.Select(e => e.Key)) + " by " + string.Join("; ", r.Entries);
+        string.Join(", ", r.Before.Select(e => e.Key)) + " => " + string.Join(", ", r.After.Select(e => e.Key)) + " by "
+            + string.Join("; ", r.Entries);
 
     private static Change Between(string sample)
     {
@@ -266,7 +277,8 @@ public sealed class ChangeTests
     // The one change a script edit makes: its Text, before and after, and nothing else.
     private static Change Script(string type, string edit)
     {
-        var (before, after, _) = SampleChanges.Pair(type == Element.PreDeploymentScript ? "edit-the-pre-deploy-script" : "edit-the-post-deploy-seed");
+        var (before, after, _) =
+            SampleChanges.Pair(type == Element.PreDeploymentScript ? "edit-the-pre-deploy-script" : "edit-the-post-deploy-seed");
         var (was, now) = (before.Single(e => e.Key.Type == type), after.Single(e => e.Key.Type == type));
         Assert.Contains(edit, ((Value.Script)now["Text"]!).Content, StringComparison.Ordinal);
         return Altered(was.Key, [new Change.Property("Text", was["Text"], now["Text"])]);

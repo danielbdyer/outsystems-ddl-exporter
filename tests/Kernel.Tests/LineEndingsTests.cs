@@ -5,7 +5,8 @@ using Xunit;
 
 namespace DbChange.Kernel.Tests;
 
-/// <summary>kernel/LineEndings: CRLF and a lone CR become LF, and nothing else changes, so a fingerprint sees one text whatever wrote its line breaks.</summary>
+/// <summary>kernel/LineEndings: CRLF and a lone CR become LF, and nothing else changes, so a fingerprint sees one text whatever wrote its
+/// line breaks.</summary>
 public sealed class LineEndingsTests
 {
     [Theory]
@@ -26,7 +27,8 @@ public sealed class LineEndingsTests
             var lf = LineEndings.Lf(text);
             var breaks = text.Count(c => c == '\n') + text.Count(c => c == '\r') - text.Split("\r\n").Length + 1;
             return !lf.Contains('\r', StringComparison.Ordinal)
-                && lf.Replace("\n", "", StringComparison.Ordinal) == text.Replace("\r", "", StringComparison.Ordinal).Replace("\n", "", StringComparison.Ordinal)
+                && lf.Replace("\n", "", StringComparison.Ordinal) == text.Replace("\r", "", StringComparison.Ordinal)
+                    .Replace("\n", "", StringComparison.Ordinal)
                 && lf.Count(c => c == '\n') == breaks
                 && LineEndings.Lf(lf) == lf;
         });

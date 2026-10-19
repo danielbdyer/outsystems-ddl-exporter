@@ -7,11 +7,11 @@ using System.Text.RegularExpressions;
 namespace DbChange.Kernel;
 
 /// <summary>
-/// Where a verb reads or writes, as an argument names it (V3_MILESTONES.md WP 1.4): env:&lt;name&gt;, an environment dbchange/environments.json
-/// names; copy:&lt;name&gt;, a copy .dbchange/copies.json holds; synthetic-copy, the synthetic copy; ref:&lt;git ref&gt;, the project at a ref;
-/// and dacpac:&lt;path&gt;, a package. The first three are databases and the last two are packages. The cases are closed, and each
-/// prints as the argument that names it. A literal connection string where a target goes is refused in io, which reads SqlClient's
-/// grammar.
+/// Where a verb reads or writes, as an argument names it (V3_MILESTONES.md WP 1.4): env:&lt;name&gt;, an environment
+/// dbchange/environments.json names; copy:&lt;name&gt;, a copy .dbchange/copies.json holds; synthetic-copy, the synthetic copy; ref:&lt;git
+/// ref&gt;, the project at a ref; and dacpac:&lt;path&gt;, a package. The first three are databases and the last two are packages. The
+/// cases are closed, and each prints as the argument that names it. A literal connection string where a target goes is refused in io, which
+/// reads SqlClient's grammar.
 /// </summary>
 public abstract record Target : IComparable<Target>
 {
@@ -20,20 +20,23 @@ public abstract record Target : IComparable<Target>
     }
 
     /// <summary>
-    /// The target <paramref name="text"/> names, read for the argument <paramref name="subject"/>: copy: before a name dbchange never gives a
-    /// copy is copy.unregistered; any other text in no form of the grammar, env: before a name no environment can have included, is
+    /// The target <paramref name="text"/> names, read for the argument <paramref name="subject"/>: copy: before a name dbchange never gives
+    /// a copy is copy.unregistered; any other text in no form of the grammar, env: before a name no environment can have included, is
     /// target.unknown. Neither quotes the text.
     /// </summary>
     public static Result<Target> Parse(string text, string subject) =>
         text == "synthetic-copy" ? new SyntheticCopy()
-        : After(text, "env:") is { } name && EnvironmentName.Of(subject, name) is Result<EnvironmentName>.Ok(var environment) ? new Environment(environment)
+        : After(text, "env:") is { } name && EnvironmentName.Of(subject, name) is Result<EnvironmentName>.Ok(var environment)
+            ? new Environment(environment)
         : After(text, "copy:") is { } copy ? CopyName.Of(subject, copy).Map(Target (made) => new RegisteredCopy(made))
         : After(text, "ref:") is { } reference && Kernel.GitRef.Of(subject, reference) is Result<Kernel.GitRef>.Ok(var at) ? new GitRef(at)
         : After(text, "dacpac:") is { Length: > 0 } path && !path.Any(char.IsControl) ? new Dacpac(path)
-        : new Error("target.unknown", "The value of " + subject + " is none of env:<name>, copy:<name>, synthetic-copy, ref:<git ref> and dacpac:<path>.",
+        : new Error("target.unknown",
+            "The value of " + subject + " is none of env:<name>, copy:<name>, synthetic-copy, ref:<git ref> and dacpac:<path>.",
             "Write the target in one of those forms, such as env:dev or ref:main.");
 
-    public T Match<T>(Func<Environment, T> environment, Func<RegisteredCopy, T> registeredCopy, Func<T> syntheticCopy, Func<GitRef, T> gitRef, Func<Dacpac, T> dacpac) => this switch
+    public T Match<T>(Func<Environment, T> environment, Func<RegisteredCopy, T> registeredCopy, Func<T> syntheticCopy,
+        Func<GitRef, T> gitRef, Func<Dacpac, T> dacpac) => this switch
     {
         Environment e => environment(e),
         RegisteredCopy c => registeredCopy(c),
@@ -46,9 +49,11 @@ public abstract record Target : IComparable<Target>
     /// <summary>Ordinally, by the argument that names it.</summary>
     public int CompareTo(Target? other) => string.CompareOrdinal(ToString(), other?.ToString());
 
-    public sealed override string ToString() => Match(e => "env:" + e.Name, c => "copy:" + c.Name, () => "synthetic-copy", r => "ref:" + r.Ref, d => "dacpac:" + d.Path);
+    public sealed override string ToString() =>
+        Match(e => "env:" + e.Name, c => "copy:" + c.Name, () => "synthetic-copy", r => "ref:" + r.Ref, d => "dacpac:" + d.Path);
 
-    private static string? After(string text, string prefix) => text.StartsWith(prefix, StringComparison.Ordinal) ? text[prefix.Length..] : null;
+    private static string? After(string text, string prefix) =>
+        text.StartsWith(prefix, StringComparison.Ordinal) ? text[prefix.Length..] : null;
 
     /// <summary>An environment dbchange/environments.json names, read only.</summary>
     public sealed record Environment(EnvironmentName Name) : Target;
@@ -78,26 +83,31 @@ public readonly record struct EnvironmentName : IComparable<EnvironmentName>
 
     private EnvironmentName(string text) => _text = text;
 
-    /// <summary>The name <paramref name="text"/> gives, or environments.environment-name led by <paramref name="subject"/>, the text unquoted.</summary>
-    public static Result<EnvironmentName> Of(string subject, string? text) => text is not null && Grammar.IsMatch(text) ? new EnvironmentName(text)
-        : new Error("environments.environment-name", subject + " names an environment in other than 1 to 32 lowercase letters, digits and hyphens.",
+    /// <summary>The name <paramref name="text"/> gives, or environments.environment-name led by <paramref name="subject"/>, the text
+    /// unquoted.</summary>
+    public static Result<EnvironmentName> Of(string subject, string? text) =>
+        text is not null && Grammar.IsMatch(text) ? new EnvironmentName(text)
+        : new Error("environments.environment-name",
+            subject + " names an environment in other than 1 to 32 lowercase letters, digits and hyphens.",
             "Rename it with lowercase letters, digits and hyphens from a letter, such as dev or uat.");
 
     /// <summary>Ordinally.</summary>
     public int CompareTo(EnvironmentName other) => string.CompareOrdinal(_text, other._text);
 
-    public override string ToString() => _text ?? throw new InvalidOperationException("default(EnvironmentName) is not a name; make one with EnvironmentName.Of.");
+    public override string ToString() =>
+        _text ?? throw new InvalidOperationException("default(EnvironmentName) is not a name; make one with EnvironmentName.Of.");
 }
 
 /// <summary>
-/// A copy's database name, as dbchange makes one and copy: names one (DECISIONS.md, 2026-09-25): dbchange_&lt;host&gt;_&lt;pid&gt;_&lt;hex&gt;, the
-/// name of the machine that made it in lowercase letters, digits and '_' (1 to 40), the id of the process that made it, and eight
-/// hexadecimal digits. The machine and the process let a later run drop the copies of a process that ended on this machine. The one
-/// grammar of the name. default(CopyName) is not a name.
+/// A copy's database name, as dbchange makes one and copy: names one (DECISIONS.md, 2026-09-25):
+/// dbchange_&lt;host&gt;_&lt;pid&gt;_&lt;hex&gt;, the name of the machine that made it in lowercase letters, digits and '_' (1 to 40), the
+/// id of the process that made it, and eight hexadecimal digits. The machine and the process let a later run drop the copies of a process
+/// that ended on this machine. The one grammar of the name. default(CopyName) is not a name.
 /// </summary>
 public readonly record struct CopyName : IComparable<CopyName>
 {
-    private static readonly Regex Grammar = new(@"\Adbchange_(?<machine>[a-z0-9_]{1,40})_(?<pid>0|[1-9][0-9]{0,9})_[0-9a-f]{8}\z", RegexOptions.CultureInvariant);
+    private static readonly Regex Grammar = new(@"\Adbchange_(?<machine>[a-z0-9_]{1,40})_(?<pid>0|[1-9][0-9]{0,9})_[0-9a-f]{8}\z",
+        RegexOptions.CultureInvariant);
 
     private readonly string? _text;
 
@@ -109,12 +119,16 @@ public readonly record struct CopyName : IComparable<CopyName>
     /// <summary>The id of the process that made the copy.</summary>
     public int Pid { get; }
 
-    /// <summary>The name <paramref name="text"/> gives, or copy.unregistered led by <paramref name="subject"/>, the text unquoted: .dbchange/copies.json holds no copy by a name dbchange never gives one.</summary>
+    /// <summary>The name <paramref name="text"/> gives, or copy.unregistered led by <paramref name="subject"/>, the text unquoted:
+    /// .dbchange/copies.json holds no copy by a name dbchange never gives one.</summary>
     public static Result<CopyName> Of(string subject, string? text) =>
-        text is not null && Grammar.Match(text) is { Success: true } match && int.TryParse(match.Groups["pid"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var pid)
+        text is not null && Grammar.Match(text) is { Success: true } match
+            && int.TryParse(match.Groups["pid"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var pid)
             ? new CopyName(text, match.Groups["machine"].Value, pid)
-            : new Error("copy.unregistered", subject + " names a copy by a name dbchange never gives one, so .dbchange/copies.json holds no copy by it;"
-                + " dbchange names a copy dbchange_<host>_<pid>_<hex>, for the machine and the process that made it, in lowercase letters, digits and '_'.",
+            : new Error("copy.unregistered",
+                subject + " names a copy by a name dbchange never gives one, so .dbchange/copies.json holds no copy by it;"
+                + " dbchange names a copy dbchange_<host>_<pid>_<hex>, for the machine and the process that made it,"
+                + " in lowercase letters, digits and '_'.",
                 "Name a copy that .dbchange/copies.json holds on this machine.");
 
     /// <summary>
@@ -126,7 +140,8 @@ public readonly record struct CopyName : IComparable<CopyName>
     public static CopyName Make(string machineName, int pid, uint suffix)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(pid);
-        var machine = new string([.. machineName.ToLowerInvariant().Select(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') ? c : '_').Take(40)]);
+        var machine = new string([.. machineName.ToLowerInvariant()
+            .Select(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') ? c : '_').Take(40)]);
         machine = machine.Length == 0 ? "_" : machine;
         return new CopyName(string.Create(CultureInfo.InvariantCulture, $"dbchange_{machine}_{pid}_{suffix:x8}"), machine, pid);
     }
@@ -134,7 +149,8 @@ public readonly record struct CopyName : IComparable<CopyName>
     /// <summary>Ordinally.</summary>
     public int CompareTo(CopyName other) => string.CompareOrdinal(_text, other._text);
 
-    public override string ToString() => _text ?? throw new InvalidOperationException("default(CopyName) is not a name; make one with CopyName.Of or CopyName.Make.");
+    public override string ToString() =>
+        _text ?? throw new InvalidOperationException("default(CopyName) is not a name; make one with CopyName.Of or CopyName.Make.");
 }
 
 /// <summary>
@@ -148,12 +164,15 @@ public readonly record struct GitRef : IComparable<GitRef>
     private GitRef(string text) => _text = text;
 
     /// <summary>The ref <paramref name="text"/> gives, or ref.malformed led by <paramref name="subject"/>.</summary>
-    public static Result<GitRef> Of(string subject, string? text) => text is { Length: > 0 } && !text.StartsWith('-') && !text.Any(char.IsControl) ? new GitRef(text)
-        : new Error("ref.malformed", subject + " is no git ref: a ref is not empty, does not begin with '-', and holds no control character.",
+    public static Result<GitRef> Of(string subject, string? text) =>
+        text is { Length: > 0 } && !text.StartsWith('-') && !text.Any(char.IsControl) ? new GitRef(text)
+        : new Error("ref.malformed",
+            subject + " is no git ref: a ref is not empty, does not begin with '-', and holds no control character.",
             "Name a branch, a tag or a commit, such as main or v2.9.0.");
 
     /// <summary>Ordinally.</summary>
     public int CompareTo(GitRef other) => string.CompareOrdinal(_text, other._text);
 
-    public override string ToString() => _text ?? throw new InvalidOperationException("default(GitRef) is not a ref; make one with GitRef.Of.");
+    public override string ToString() =>
+        _text ?? throw new InvalidOperationException("default(GitRef) is not a ref; make one with GitRef.Of.");
 }

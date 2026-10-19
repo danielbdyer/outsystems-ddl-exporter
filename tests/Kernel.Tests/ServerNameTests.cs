@@ -15,12 +15,14 @@ public sealed class ServerNameTests
 {
     private const string Machine = "DEV-PC";
 
-    /// <summary>A data source in each form SqlClient reads: a protocol or none, a host by name or address or this machine, then a port or an instance or neither, in any case and spacing.</summary>
+    /// <summary>A data source in each form SqlClient reads: a protocol or none, a host by name or address or this machine, then a port or
+    /// an instance or neither, in any case and spacing.</summary>
     private static readonly Gen<string> DataSource = Gen.Select(
         Gen.OneOf(Gen.Const(""), Gen.Const("tcp:"), Gen.Const("TCP:"), Gen.Const("np:"), Gen.Const("lpc:"), Gen.Const("admin:")),
         Gen.OneOf(
             Gen.Char["abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-"].Array[1, 20].Select(cs => new string(cs)),
-            Gen.OneOf(Gen.Const("localhost"), Gen.Const("127.0.0.1"), Gen.Const("[::1]"), Gen.Const("."), Gen.Const("(local)"), Gen.Const(Machine), Gen.Const("dev-pc"))),
+            Gen.OneOf(Gen.Const("localhost"), Gen.Const("127.0.0.1"), Gen.Const("[::1]"), Gen.Const("."), Gen.Const("(local)"),
+                Gen.Const(Machine), Gen.Const("dev-pc"))),
         Gen.OneOf(Gen.Const(""), Gen.Int[1, 65535].Select(port => "," + port), Gen.Int[1, 65535].Select(port => ", " + port),
             Gen.Char["abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"].Array[1, 16].Select(cs => "\\" + new string(cs))))
         .Select((protocol, host, rest) => protocol + host + rest);
@@ -30,12 +32,16 @@ public sealed class ServerNameTests
     public void A_server_name_read_from_its_own_spelling_is_itself()
     {
         DataSource.Sample(source => ServerName.Of(source, Machine) is var name && ServerName.Of(name.ToString(), Machine) == name,
-            print: source => source + " is spelled " + ServerName.Of(source, Machine) + ", which reads as " + ServerName.Of(ServerName.Of(source, Machine).ToString(), Machine));
-        Assert.Equal(ServerName.Of("(localdb)\\mssqllocaldb", Machine), ServerName.Of(ServerName.Of("(LocalDB)\\MSSQLLocalDB", Machine).ToString(), Machine));
-        Assert.Equal(ServerName.Of("dev-sql\\pipe\\sql\\query", Machine), ServerName.Of(ServerName.Of("np:\\\\DEV-SQL\\pipe\\sql\\query", Machine).ToString(), Machine));
+            print: source => source + " is spelled " + ServerName.Of(source, Machine) + ", which reads as "
+                + ServerName.Of(ServerName.Of(source, Machine).ToString(), Machine));
+        Assert.Equal(ServerName.Of("(localdb)\\mssqllocaldb", Machine),
+            ServerName.Of(ServerName.Of("(LocalDB)\\MSSQLLocalDB", Machine).ToString(), Machine));
+        Assert.Equal(ServerName.Of("dev-sql\\pipe\\sql\\query", Machine),
+            ServerName.Of(ServerName.Of("np:\\\\DEV-SQL\\pipe\\sql\\query", Machine).ToString(), Machine));
     }
 
-    /// <summary>The spellings .dbchange/copies.json rows and R15 used before the kernel held the type (io/Substrate.cs and io/SqlServer.cs at ffaf717c), each pinned.</summary>
+    /// <summary>The spellings .dbchange/copies.json rows and R15 used before the kernel held the type (io/Substrate.cs and io/SqlServer.cs
+    /// at ffaf717c), each pinned.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("127.0.0.1,11433", "localhost,11433", "localhost")]
@@ -69,7 +75,8 @@ public sealed class ServerNameTests
         Assert.Equal(Host.LocalDb, ServerName.Of("(localdb)\\v11.0", Machine).Host);
     }
 
-    /// <summary>A host as dbchange/environments.json names an environment's: the host alone, since a port, an instance, a protocol or white space belongs to a connection's data source.</summary>
+    /// <summary>A host as dbchange/environments.json names an environment's: the host alone, since a port, an instance, a protocol or white
+    /// space belongs to a connection's data source.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("DEV-SQL.corp.example", "dev-sql.corp.example")]
@@ -116,8 +123,10 @@ public sealed class ServerNameTests
     [Trait("Category", "fast")]
     public void Server_names_order_as_their_spellings_do_ordinally()
     {
-        var names = new[] { "tcp:dev-sql,1433", "(localdb)\\MSSQLLocalDB", "127.0.0.1,11433", "prod-sql" }.Select(source => ServerName.Of(source, Machine));
+        var names = new[] { "tcp:dev-sql,1433", "(localdb)\\MSSQLLocalDB", "127.0.0.1,11433", "prod-sql" }
+            .Select(source => ServerName.Of(source, Machine));
 
-        Assert.Equal(["(localdb)\\mssqllocaldb", "dev-sql,1433", "localhost,11433", "prod-sql"], SortedArray.Of(names).Select(n => n.ToString()));
+        Assert.Equal(["(localdb)\\mssqllocaldb", "dev-sql,1433", "localhost,11433", "prod-sql"],
+            SortedArray.Of(names).Select(n => n.ToString()));
     }
 }
