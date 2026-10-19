@@ -27,7 +27,8 @@ public sealed class LineEndingsTests
             var lf = LineEndings.Lf(text);
             var breaks = text.Count(c => c == '\n') + text.Count(c => c == '\r') - text.Split("\r\n").Length + 1;
             return !lf.Contains('\r', StringComparison.Ordinal)
-                && lf.Replace("\n", "", StringComparison.Ordinal) == text.Replace("\r", "", StringComparison.Ordinal).Replace("\n", "", StringComparison.Ordinal)
+                && lf.Replace("\n", "", StringComparison.Ordinal) == text.Replace("\r", "", StringComparison.Ordinal)
+                    .Replace("\n", "", StringComparison.Ordinal)
                 && lf.Count(c => c == '\n') == breaks
                 && LineEndings.Lf(lf) == lf;
         });

@@ -7,9 +7,12 @@ public sealed class DacFxMessageTests
 {
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("Error SQL71501: [dbo].[V] has an unresolved reference to object [dbo].[Missing].", DacFxMessageType.Error, 71501, "[dbo].[V] has an unresolved reference to object [dbo].[Missing].")]
-    [InlineData("Warning SQL71502: Procedure: [dbo].[P] has an unresolved reference.", DacFxMessageType.Warning, 71502, "Procedure: [dbo].[P] has an unresolved reference.")]
-    [InlineData("Error SQL0: Property BlockOnPossibleDataLoss has an invalid value: maybe.", DacFxMessageType.Error, 0, "Property BlockOnPossibleDataLoss has an invalid value: maybe.")]
+    [InlineData("Error SQL71501: [dbo].[V] has an unresolved reference to object [dbo].[Missing].", DacFxMessageType.Error, 71501,
+        "[dbo].[V] has an unresolved reference to object [dbo].[Missing].")]
+    [InlineData("Warning SQL71502: Procedure: [dbo].[P] has an unresolved reference.", DacFxMessageType.Warning, 71502,
+        "Procedure: [dbo].[P] has an unresolved reference.")]
+    [InlineData("Error SQL0: Property BlockOnPossibleDataLoss has an invalid value: maybe.", DacFxMessageType.Error, 0,
+        "Property BlockOnPossibleDataLoss has an invalid value: maybe.")]
     public void A_line_DacFx_writes_parses_to_its_type_prefix_number_and_text(string line, DacFxMessageType type, int number, string text)
     {
         var message = Assert.IsType<DacFxMessage>(DacFxMessage.Parse(line));
@@ -33,9 +36,12 @@ public sealed class DacFxMessageTests
     [Trait("Category", "fast")]
     public void A_message_quoting_a_SQL_Server_error_carries_its_number()
     {
-        var message = DacFxMessage.Parse("Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 2627, Level 14, State 1, Line 1 Violation of PRIMARY KEY constraint 'PK_Customer'.");
+        var message = DacFxMessage.Parse("Error SQL72014: Core Microsoft SqlClient Data Provider: Msg 2627, Level 14, State 1, Line 1"
+            + " Violation of PRIMARY KEY constraint 'PK_Customer'.");
 
         Assert.Equal(2627, message?.SqlServerNumber);
-        Assert.Equal(50000, new DacFxMessage(DacFxMessageType.Error, "SQL", 72014, "Msg 50000, Level 16, State 127, Line 6 Rows were detected.", null).SqlServerNumber);
+        Assert.Equal(50000,
+            new DacFxMessage(DacFxMessageType.Error, "SQL", 72014, "Msg 50000, Level 16, State 127, Line 6 Rows were detected.", null)
+                .SqlServerNumber);
     }
 }

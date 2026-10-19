@@ -39,7 +39,8 @@ public sealed class NameTests
     public void A_name_rejects_an_empty_part_and_a_part_past_128_code_units_in_either_place()
     {
         Gen.Char['a', 'z'].Array[129, 300].Select(cs => new string(cs)).Sample(overlong =>
-            Code(Name.Of(overlong)) == "name.too-long" && Code(Name.Of(overlong, "Customer")) == "name.too-long" && Code(Name.Of("dbo", overlong)) == "name.too-long");
+            Code(Name.Of(overlong)) == "name.too-long" && Code(Name.Of(overlong, "Customer")) == "name.too-long"
+                && Code(Name.Of("dbo", overlong)) == "name.too-long");
         Expect.Failed(Name.Of(new string('x', 129)), "name.too-long");
         Expect.Failed(Name.Of(""), "name.blank");
         Expect.Failed(Name.Of("", "Customer"), "name.blank");

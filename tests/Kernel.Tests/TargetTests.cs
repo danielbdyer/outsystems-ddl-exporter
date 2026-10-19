@@ -34,8 +34,8 @@ public sealed class TargetTests
         var target = Expect.Value(Target.Parse(text, Subject));
 
         Assert.Equal((form, named), target.Match(
-            environment => ("environment", environment.Name.ToString()), copy => ("registered copy", copy.Name.ToString()), () => ("synthetic copy", ""),
-            reference => ("git ref", reference.Ref.ToString()), package => ("package", package.Path)));
+            environment => ("environment", environment.Name.ToString()), copy => ("registered copy", copy.Name.ToString()),
+            () => ("synthetic copy", ""), reference => ("git ref", reference.Ref.ToString()), package => ("package", package.Path)));
         Assert.Equal(text, target.ToString());
         Assert.Equal(target, Expect.Value(Target.Parse(target.ToString(), Subject)));
     }
@@ -45,7 +45,8 @@ public sealed class TargetTests
     [Fact]
     [Trait("Category", "fast")]
     public void An_env_target_is_read_exactly_when_its_name_is_an_environment_s_name() =>
-        NameLike.Sample(name => (Target.Parse("env:" + name, Subject) is Result<Target>.Ok) == (EnvironmentName.Of("environments." + name, name) is Result<EnvironmentName>.Ok),
+        NameLike.Sample(name => (Target.Parse("env:" + name, Subject) is Result<Target>.Ok)
+            == (EnvironmentName.Of("environments." + name, name) is Result<EnvironmentName>.Ok),
             print: name => "env:" + name);
 
     [Theory]
@@ -64,7 +65,8 @@ public sealed class TargetTests
     [InlineData("dacpac:x\n.dacpac")]
     [InlineData("")]
     public void A_text_in_no_form_of_the_grammar_is_target_unknown(string text) =>
-        Assert.StartsWith("The value of " + Subject + " is none of", Expect.Failed(Target.Parse(text, Subject), "target.unknown").Message, StringComparison.Ordinal);
+        Assert.StartsWith("The value of " + Subject + " is none of", Expect.Failed(Target.Parse(text, Subject), "target.unknown").Message,
+            StringComparison.Ordinal);
 
     /// <summary>An argument can hold anything a caller pastes, so no refusal of the grammar quotes it.</summary>
     [Theory]
@@ -98,7 +100,8 @@ public sealed class TargetTests
     [InlineData("runner.corp.example", 7, 0xffffffffu, "dbchange_runner_corp_example_7_ffffffff")]
     [InlineData("ÉTÉ", 1, 0u, "dbchange__t__1_00000000")]
     [InlineData("", 0, 1u, "dbchange___0_00000001")]
-    [InlineData("a-machine-name-longer-than-forty-characters-in-all", 2, 2u, "dbchange_a_machine_name_longer_than_forty_charact_2_00000002")]
+    [InlineData("a-machine-name-longer-than-forty-characters-in-all", 2, 2u,
+        "dbchange_a_machine_name_longer_than_forty_charact_2_00000002")]
     public void A_copy_is_named_for_its_machine_in_lower_case_and_its_process(string machine, int pid, uint suffix, string name) =>
         Assert.Equal(name, CopyName.Make(machine, pid, suffix).ToString());
 
@@ -122,7 +125,8 @@ public sealed class TargetTests
 
         Assert.StartsWith(Subject + " names a copy", error.Message, StringComparison.Ordinal);
         Assert.Contains(".dbchange/copies.json", error.Message, StringComparison.Ordinal);
-        Assert.All(new[] { text }.Where(t => t.Length > 0), t => Assert.DoesNotContain(t, error.Message + error.Remedy, StringComparison.Ordinal));
+        Assert.All(new[] { text }.Where(t => t.Length > 0),
+            t => Assert.DoesNotContain(t, error.Message + error.Remedy, StringComparison.Ordinal));
     }
 
     [Theory]
@@ -132,7 +136,8 @@ public sealed class TargetTests
     [InlineData("main\u0000")]
     [InlineData("")]
     [InlineData(null)]
-    public void A_git_ref_git_would_read_as_an_option_or_that_holds_a_control_character_is_refused(string? text) => Expect.Failed(GitRef.Of("--at", text), "ref.malformed");
+    public void A_git_ref_git_would_read_as_an_option_or_that_holds_a_control_character_is_refused(string? text) =>
+        Expect.Failed(GitRef.Of("--at", text), "ref.malformed");
 
     [Fact]
     [Trait("Category", "fast")]

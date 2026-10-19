@@ -111,7 +111,8 @@ public sealed class ElementTests
             Assert.NotEqual<Value>(Text("1"), Int(1));
             Assert.Equal(
                 new[] { "NULL", "false", "true", "-1234567", "'it''s'", "SqlDataType.NVarChar", "'SELECT 1;'" },
-                SortedArray.Of<Value>(new Value.Script("SELECT 1;"), new Value.Enumeration("SqlDataType", "NVarChar"), Text("it's"), Int(-1234567), Bool(true), Bool(false), new Value.Null())
+                SortedArray.Of<Value>(new Value.Script("SELECT 1;"), new Value.Enumeration("SqlDataType", "NVarChar"), Text("it's"),
+                    Int(-1234567), Bool(true), Bool(false), new Value.Null())
                     .Select(v => v.ToString()));
             Assert.NotEqual<Value>(Text("(0)"), new Value.Script("(0)"));
         }
@@ -164,7 +165,8 @@ public sealed class ElementTests
 
         Assert.Equal("element.property-name", Code(Element.Of(t, [one, one with { Value = Bool(false) }], [])));
         Assert.Equal("element.property-name", Code(Element.Of(t, [new Element.Property(" ", Bool(true))], [])));
-        Assert.Equal("element.relationship-name", Code(Element.Of(t, [], [Element.Relationship.Of("Columns", [t]), Element.Relationship.Of("Columns", [t, t])])));
+        Assert.Equal("element.relationship-name",
+            Code(Element.Of(t, [], [Element.Relationship.Of("Columns", [t]), Element.Relationship.Of("Columns", [t, t])])));
         Assert.Equal("element.type-blank", Code(ElementKey.Of(" ", Ok(Name.Of("T")))));
         Assert.Equal("element.name-missing", Code(ElementKey.Of("Table", default)));
         Assert.Equal("element.child-name", Code(ElementKey.Of(t, "Column", Ok(Name.Of("dbo", "c")))));
@@ -176,7 +178,8 @@ public sealed class ElementTests
     [Trait("Category", "fast")]
     public void The_deploy_scripts_and_a_refactorlog_entry_are_elements_of_their_own_types()
     {
-        var entry = Ok(Element.RefactorLogEntry("7f1a2c3e-0b4d-4e5f-8a9b-0c1d2e3f4a5b", [new Element.Property("NewName", Text("[EmailAddress]"))]));
+        var entry = Ok(Element.RefactorLogEntry("7f1a2c3e-0b4d-4e5f-8a9b-0c1d2e3f4a5b",
+            [new Element.Property("NewName", Text("[EmailAddress]"))]));
 
         Assert.NotEqual(Element.PreDeploy("PRINT 1;"), Element.PostDeploy("PRINT 1;"));
         Assert.Equal("RefactorLogOperation [7f1a2c3e-0b4d-4e5f-8a9b-0c1d2e3f4a5b]", entry.Key.ToString());

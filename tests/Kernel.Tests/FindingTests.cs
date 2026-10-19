@@ -28,14 +28,16 @@ public sealed class FindingTests
 
         var finding = Finding.Of(error, "the machine");
 
-        Assert.Equal((Severity.Error, "sdk.missing", "the machine", error.Message, error.Remedy), (finding.Severity, finding.Code, finding.Subject, finding.Message, finding.Remedy));
+        Assert.Equal((Severity.Error, "sdk.missing", "the machine", error.Message, error.Remedy),
+            (finding.Severity, finding.Code, finding.Subject, finding.Message, finding.Remedy));
     }
 
     [Fact]
     [Trait("Category", "fast")]
     public void A_warning_may_carry_a_remedy_or_none_and_a_note_carries_none()
     {
-        var warned = Finding.Warning("drift.alter", "Table [dbo].[Customer]", "The deploy plan would alter it.", "Run dbchange diff to see each property.");
+        var warned = Finding.Warning("drift.alter", "Table [dbo].[Customer]", "The deploy plan would alter it.",
+            "Run dbchange diff to see each property.");
         var bare = Finding.Warning("drift.column", "Column [dbo].[Customer].[Email]", "Length 300 → 256.");
         var noted = Finding.Note("toolchain.unpinned", "dbchange/ledgers/toolchain.md", "The ledger pins no DacFx release.");
 
@@ -55,7 +57,8 @@ public sealed class FindingTests
     {
         Assert.Throws<ArgumentException>("code", () => Finding.Warning(code, "Table [dbo].[Customer]", "The deploy plan would alter it."));
         Assert.Throws<ArgumentException>("code", () => Finding.Note(code, "Table [dbo].[Customer]", "The deploy plan would alter it."));
-        Assert.Throws<ArgumentException>("code", () => Finding.Error(code, "Table [dbo].[Customer]", "The deploy plan would alter it.", "Run dbchange diff."));
+        Assert.Throws<ArgumentException>("code",
+            () => Finding.Error(code, "Table [dbo].[Customer]", "The deploy plan would alter it.", "Run dbchange diff."));
     }
 
     [Fact]

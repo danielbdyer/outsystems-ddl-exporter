@@ -21,7 +21,8 @@ public sealed class ProvenanceTests
     [Trait("Category", "fast")]
     public void A_drift_claim_holds_the_deploy_report_as_its_change_and_the_target_s_elements_as_its_schema()
     {
-        var (schema, report, profile) = (Fingerprint.Of("the target's elements"), Fingerprint.Of("the deploy report"), Fingerprint.Of("the profile"));
+        var (schema, report, profile) = (Fingerprint.Of("the target's elements"), Fingerprint.Of("the deploy report"),
+            Fingerprint.Of("the profile"));
 
         var drift = Provenance.Drift(schema, report, Version("170.5.96"), null, profile, Dev, At);
 
@@ -34,7 +35,8 @@ public sealed class ProvenanceTests
     [Trait("Category", "fast")]
     public void A_claim_lacks_its_existing_data_and_its_server_where_each_is_null_and_nothing_once_both_are_given()
     {
-        var onDev = Provenance.Drift(Fingerprint.Of("schema"), Fingerprint.Of("report"), Version("170.5.96"), null, Fingerprint.Of("profile"), Dev, At);
+        var onDev = Provenance.Drift(Fingerprint.Of("schema"), Fingerprint.Of("report"), Version("170.5.96"), null,
+            Fingerprint.Of("profile"), Dev, At);
         var onCopy = onDev with { Server = Server("16.0.4295.3", 160, Digest) };
 
         Assert.Equal(new[] { Provenance.Input.ExistingData, Provenance.Input.Server }, onDev.Lacking);
@@ -66,7 +68,8 @@ public sealed class ProvenanceTests
     [InlineData("16.0.4295.3", 160, "sha512:4402d880dd4c34bfa7d8705e56a86cd6c88da80a1f6bbbe741f999e76264a090", "server.image-digest")]
     [InlineData("16.0.4295.3", 160, "sha256:4402D880DD4C34BFA7D8705E56A86CD6C88DA80A1F6BBBE741F999E76264A090", "server.image-digest")]
     [InlineData("16.0.4295.3", 160, "4402d880dd4c34bfa7d8705e56a86cd6c88da80a1f6bbbe741f999e76264a090", "server.image-digest")]
-    public void A_server_is_refused_for_a_version_of_other_than_four_numbers_a_level_SQL_Server_never_had_or_a_malformed_digest(string version, int level, string? image, string code) =>
+    public void A_server_is_refused_for_a_version_of_other_than_four_numbers_a_level_SQL_Server_never_had_or_a_malformed_digest(
+        string version, int level, string? image, string code) =>
         Assert.Equal(code, Assert.IsType<Result<Server>.Failed>(Kernel.Server.Of(version, level, image)).Error.Code);
 
     [Fact]
@@ -137,7 +140,8 @@ public sealed class ProvenanceTests
     [InlineData("latest", null, "toolchain.dacfx-version")]
     [InlineData("170.5.96", "the one before", "toolchain.dacfx-version")]
     [Trait("Value", "R1")]
-    public void A_ledger_row_is_rejected_for_a_text_that_is_no_version_or_a_release_before_that_is_not_older_than_the_pin(string release, string? before, string? code) =>
+    public void A_ledger_row_is_rejected_for_a_text_that_is_no_version_or_a_release_before_that_is_not_older_than_the_pin(string release,
+        string? before, string? code) =>
         Assert.Equal(code, (Pin.Of(release, before) as Result<Pin>.Failed)?.Error.Code);
 
     /// <summary>
@@ -148,12 +152,14 @@ public sealed class ProvenanceTests
     [Trait("Category", "fast")]
     public void DacFx_versions_order_group_by_group_as_numbers_and_agree_with_equality()
     {
-        var group = Gen.Select(Gen.OneOf(Gen.Int[0, 3], Gen.Int[0, int.MaxValue]), Gen.Bool);   // a number, and whether a zero is written before it
+        // a number, and whether a zero is written before it
+        var group = Gen.Select(Gen.OneOf(Gen.Int[0, 3], Gen.Int[0, int.MaxValue]), Gen.Bool);
         var version = group.Array[2, 4];
         Gen.Select(version, version).Sample((a, b) =>
         {
             var (x, y) = (Version(Written(a)), Version(Written(b)));
-            var numbers = new System.Version(string.Join('.', a.Select(g => g.Item1))).CompareTo(new System.Version(string.Join('.', b.Select(g => g.Item1))));
+            var numbers = new System.Version(string.Join('.', a.Select(g => g.Item1)))
+                .CompareTo(new System.Version(string.Join('.', b.Select(g => g.Item1))));
             return (numbers == 0 || Math.Sign(x.CompareTo(y)) == Math.Sign(numbers))
                 && (x.CompareTo(y) == 0) == (x == y) && Math.Sign(x.CompareTo(y)) == -Math.Sign(y.CompareTo(x));
         });
@@ -170,5 +176,6 @@ public sealed class ProvenanceTests
 
     private static DacFxVersion Version(string text) => Assert.IsType<Result<DacFxVersion>.Ok>(DacFxVersion.Of(text)).Value;
 
-    private static Server Server(string version, int level, string? image) => Assert.IsType<Result<Server>.Ok>(Kernel.Server.Of(version, level, image)).Value;
+    private static Server Server(string version, int level, string? image) =>
+        Assert.IsType<Result<Server>.Ok>(Kernel.Server.Of(version, level, image)).Value;
 }
