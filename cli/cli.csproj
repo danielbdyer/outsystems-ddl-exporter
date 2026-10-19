@@ -20,11 +20,15 @@
     <InternalsVisibleTo Include="DbChange.Io.Tests" />
   </ItemGroup>
   <!--
-    The reference assemblies a classic .sqlproj build needs (mscorlib.dll and FrameworkList.xml), downloaded by restore and never
-    referenced; ci/publish copies them into dist/dbchange/refasm/. Central package management cannot pin a PackageDownload,
-    so its exact version is here, and ci/publish reads it from this line.
+    The reference assemblies a classic .sqlproj build needs (mscorlib.dll and FrameworkList.xml), and the SQL Server 2022 (160)
+    master.dacpac and msdb.dacpac a project's ArtifactReference names through $(DacPacRootPath), downloaded by restore and never
+    referenced; ci/publish copies them into dist/dbchange/refasm/ and dist/dbchange/Extensions/Microsoft/SQLDB/Extensions/SqlServer/160/
+    SqlSchemas/. Central package management cannot pin a PackageDownload, so each exact version is here, and ci/publish reads it from
+    its line.
   -->
   <ItemGroup>
     <PackageDownload Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="[1.0.3]" />
+    <PackageDownload Include="Microsoft.SqlServer.Dacpacs.Master" Version="[160.2.8]" />
+    <PackageDownload Include="Microsoft.SqlServer.Dacpacs.Msdb" Version="[160.1.4]" />
   </ItemGroup>
 </Project>

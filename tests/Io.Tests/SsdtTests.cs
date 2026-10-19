@@ -61,6 +61,25 @@ public sealed class SsdtTests(PublishedTool tool) : IDisposable
         Assert.DoesNotContain(Directory.GetDirectories(Path.GetDirectoryName(project)!), d => Path.GetFileName(d) is "bin" or "obj");
     }
 
+    /// <summary>DF-5: SSDT's reference to a system database names master.dacpac or msdb.dacpac under $(DacPacRootPath), which the
+    /// SqlTasks targets set to the tool folder under NetCoreBuild; the folder carries both for SQL Server 2022 (160), so the views
+    /// that read master.sys.databases and msdb.dbo.sysjobs resolve, and the package records both references.</summary>
+    [Fact]
+    [Trait("Category", "build")]
+    public void A_project_that_references_master_dacpac_and_msdb_dacpac_builds_against_the_published_tool_folder()
+    {
+        var project = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Golden())!)!, "classic-master", "ClassicMaster.sqlproj");
+
+        var dacpac = Ok(Ssdt.Build(project, tool.Folder, Output));
+
+        using var package = ZipFile.OpenRead(dacpac.Path);
+        var model = ToolFolderTests.Text(package, "model.xml");
+        Assert.Contains("master.dacpac", model, StringComparison.Ordinal);
+        Assert.Contains("msdb.dacpac", model, StringComparison.Ordinal);
+        Assert.Contains("Name=\"[dbo].[Databases]\"", model, StringComparison.Ordinal);
+        Assert.Contains("Name=\"[dbo].[Jobs]\"", model, StringComparison.Ordinal);
+    }
+
     [Fact]
     [Trait("Category", "fast")]
     public void A_project_with_a_pre_deploy_script_builds_both_deploy_scripts_in_and_Open_reads_them_the_model_and_the_rename()
