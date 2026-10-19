@@ -22,14 +22,14 @@ does not prove · §7 keeping it true.
 
 ---
 
-## 0. Where v3 stands (2026-10-19, at `2a87f39`)
+## 0. Where v3 stands (2026-10-19, at `2a87f39`, with the operator's rulings of that day)
 
 | Milestone | State | What proves it | What waits, and on whom |
 |---|---|---|---|
 | M0 Foundation | built (#704) | exits 1, 3 and 4 by tests declaring `Exit` M0.1, M0.3 and M0.4 (`LAWS.md`) | exit 2 (the archived solutions' counts) is recorded in #704; no test repeats it |
-| M1 Read | built (#704) | exits 2 to 8 by tests declaring `Exit` M1.2 to M1.8 | exit 1: the laptop check against Dev (spikes S1 and S3), the operator's |
-| M2 Predict | not started | — | the operator's go (`NEXT.md`); first the code the rulings of 2026-09-25 call for |
-| M3 Synthetic copy | not started | — | §17 item 20 of `V3_MILESTONES.md` (the re-cut); WPs 3.1 and 3.4, and WP 3.5's first step, start now |
+| M1 Read | built (#704) | exits 2 to 8 by tests declaring `Exit` M1.2 to M1.8 | exit 1: the laptop check against Dev (spikes S1 and S3), the operator's, with the commands in `NEXT.md` |
+| M2 Predict | started 2026-10-19 on the operator's go, with WP 2.1's first slice | — | no person; WP 2.2 waits on spike S2 run with the second DacFx release |
+| M3 Synthetic copy | not started; its re-cut confirmed by the operator on 2026-10-19 (§17 item 20 of `V3_MILESTONES.md`) | — | no person; WPs 3.1 and 3.4 first, then WP 3.8 and WP 3.5 |
 | M4 to M7 | not started | — | their predecessors (`V3_MILESTONES.md` §5) |
 
 **CI on `2a87f39` is green in all eleven checks** across six workflow runs:
@@ -51,8 +51,7 @@ finding against one of them, and a publish decides it (§7).
 
 **The tally.** `dotnet test tests/Budgets.Tests/Budgets.Tests.csproj --filter
 "FullyQualifiedName~ParityResolves"` prints how many rows are held, partly held, not held yet,
-waiting on the cutover tools, and retired. On 2026-10-19, with this file: 21 held, 22 partly held,
-75 not held yet, 3 waiting on the cutover tools, 6 retired.
+waiting on the cutover tools, and retired. On 2026-10-19, after the operator's rulings of that day: 21 held, 22 partly held, 75 not held yet, 3 waiting on the cutover tools, 6 retired.
 
 ---
 
@@ -295,19 +294,20 @@ v3 is complete when every row above is held, retired, or waits only on the cutov
 exit of M0 to M7 that can run here is green. What remains, in the order the work can move:
 
 **Now, needing no person.**
-1. The pre-M2 code the rulings of 2026-09-25 call for (`NEXT.md`, *Next, before M2*).
+1. Done: the pre-M2 code the rulings of 2026-09-25 call for is in the code; round two's finding DF-5 and a test for an environment that names no host remain (`NEXT.md`, *Next*).
 2. Spikes in CI: S2 (the check forms and the vocabulary's statement shapes on both DacFx releases),
    S4 (CREATE, RESTORE and DROP timed in LocalDB 16.x), and S9 to S11 (trust state through a schema
    read; constraint validation after the post-deploy script on 162.x; system-named constraints
    through a publish).
 3. WP 3.1 (`Schema`, `Order`), WP 3.4 (`LocalServer` completed) and WP 3.5's first step (the base
-   built, published and backed up), which both versions of M3 share.
+   built, published and backed up), then WP 3.8 (`Witness`), now that the re-cut is confirmed.
 4. Lane C's WP 7.1 (citations rewritten), which waits on nothing.
 
-**When the operator decides.** M2 starts on the operator's go, and with it PAR-016, 020, 021, 023,
-119, 132, 201 and 215. §17 item 20 settles M3: confirmed, WP 3.8 is built and PAR-030 to 034 and 148
-follow; overturned, WP 3.2 and WP 3.3 are built and PAR-035 and 036 turn instead. Items 23 and 24
-settle the agent's next-step code and the value-free shape on a real environment.
+**Decided by the operator, 2026-10-19.** M2 has started, and with it PAR-016, 020, 021, 023, 119, 132, 201 and 215
+can turn. §17 item 20 confirmed the re-cut of M3: WP 3.8 is built and PAR-030 to 034 and 148 follow; PAR-035 and 036
+wait on the re-cut's trigger. Item 23 gives the agent's next step exit 8 `needs-input`, when a change first raises
+one; item 24 lets WP 3.7 read a column's value-free shape from an environment classified real. Neither M2 nor M3
+waits on the operator.
 
 **Then, milestone by milestone.**
 

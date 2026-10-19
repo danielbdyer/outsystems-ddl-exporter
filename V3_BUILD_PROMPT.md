@@ -80,9 +80,8 @@ design documents stand.
 - **The Facsimile (2026-10-19).** The Twin's successor is specified test-first at
   `archive/v2/ssdt-agent/facsimile/`, and its `HANDOFF.md` is the letter to the session that
   brings it into v3. The plan carries it (`V3_MILESTONES.md` §3.1, §4 rows 16 and 19 to 22, §8 to
-  §10), and M3 is re-cut around its planter, pending the operator (§17 item 20): until the operator
-  confirms or overturns the re-cut, build WPs 3.1, 3.4 and 3.5's first step, which both versions
-  share, and hold WPs 3.2, 3.3 and 3.8. Read the handoff before WP 2.1, WP 2.6, any WP of M3, and M4. The
+  §10), and M3 is re-cut around its planter, which the operator confirmed on 2026-10-19 (§17 item
+  20): build WPs 3.1, 3.4, 3.5 and 3.8, and hold WPs 3.2 and 3.3 until the re-cut's trigger fires. Read the handoff before WP 2.1, WP 2.6, any WP of M3, and M4. The
   operator's settled decisions are in §17; do not reopen them.
 
 ---
