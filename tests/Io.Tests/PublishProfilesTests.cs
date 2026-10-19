@@ -146,6 +146,20 @@ public sealed class PublishProfilesTests : IDisposable
         Assert.Contains(at, error.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>R15 compares the local server with every environment's host, so an environment that names none is refused by its place in
+    /// the file, with the remedy that gives it one.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void An_environment_that_names_no_host_is_refused_as_environments_host_by_its_place()
+    {
+        var error = Failed(EnvironmentsFile.Read(RepositoryAt(
+            "{ \"environments\": { \"dev\": { \"connection\": \"env:A\", \"profile\": \"dbchange/p.publish.xml\" } } }", raw: true)));
+
+        Assert.Equal("environments.host", error.Code);
+        Assert.StartsWith("environments.dev in dbchange/environments.json names no host", error.Message, StringComparison.Ordinal);
+        Assert.StartsWith("Give environments.dev in dbchange/environments.json its host", error.Remedy, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// N11 of the pre-M2 review, measured on DacFx 170.5.96: DacDeployOptions.SqlCommandVariableValues matches a name ignoring case, so a
     /// value the environment gives under another spelling than the profile's replaces the profile's instead of standing beside it, and
