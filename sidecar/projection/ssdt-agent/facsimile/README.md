@@ -13,11 +13,15 @@ synthetic row for every "yes" in a LocalDB copy of that schema, and lets DacFx p
 onto it. What happens is the verdict. The Twin tried to resemble the data; the facsimile only needs
 to agree with it.
 
-**State:** specified test-first, not yet implemented (gate G0 of `ARCHITECTURE.md` §10). The Twin
+**State:** specified test-first, not yet implemented (gate G0 of `ARCHITECTURE.md` §10). Its home is
+v3, in C# (settled 2026-10-18). The Twin
 stays in service until the facsimile reaches parity (G3) and has run beside it for one release cycle
 (G4).
 
 ## Read in this order
+
+Bringing this into v3 (`origin/claude/v3-build`)? Start with **`HANDOFF.md`**: what is settled,
+where each part lands in v3, and the one decision to put to the operator first.
 
 1. **`ARCHITECTURE.md` §0–§1:** the essence, and what "minimum viable code" means here.
 2. **`ARCHITECTURE.md` §2:** everything the Twin does today, and what becomes of each part.

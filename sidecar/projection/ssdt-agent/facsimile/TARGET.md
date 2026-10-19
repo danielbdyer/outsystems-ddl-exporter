@@ -388,7 +388,7 @@ Each milestone ends with every case of its scope green, the budgets checked, a c
 | Need | Before | Why |
 |---|---|---|
 | Nothing | M-a to M-d | they run entirely in this sandbox |
-| `sqllocaldb versions` from one team laptop | M-e | LocalDB must be 16.x (2022) or later for a Sql160 project. This is a setup ticket, not a design question. DacFx runs in-process, so sqlpackage is not needed on laptops at all |
+| ~~`sqllocaldb versions` from one team laptop~~ | — | settled 2026-10-19: 16.x (SQL Server 2022), which meets a Sql160 project (S4). DacFx runs in-process, so sqlpackage is not needed on laptops at all |
 | The Octopus step's effective options and DacFx version | trusting any verdict on the real estate | not needed to build anything |
 | Whether there is an Azure Artifacts feed | M-f | distribution |
 | ~~Whether the MCP policy is enabled~~ | — | settled: enabled |

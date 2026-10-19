@@ -459,7 +459,7 @@ into branch policy.
 | Twin (`sidecar/projection/src/Twin.*`) and the F# sidecar | Archive: tag the source repository, add an "archived, unmaintained" banner, never vendor. Its laws remain good engineering; they are not on the proof path |
 | The Twin's broader promise ("a local database full of realistic data") | Consciously dropped. OutSystems apps run on the platform against real environments, so realistic local data is not on the proof path. If ever needed again, it is a separate project |
 | `ssdt-agent/scripts/*.mjs` | `prove.mjs` is the donor for `prove.ps1` (build detection, delta signals, exit vocabulary). The rest goes |
-| `origin/claude/v3-build` (`dbchange`) | Tag `v3-donor`, then close. It is a sound design the team could not keep. Appendix B lists the parts worth lifting if the C# path is ever taken |
+| `origin/claude/v3-build` (`dbchange`) | *Superseded 2026-10-19: the C# gate passed, and v3 is the facsimile's home (`sidecar/projection/ssdt-agent/facsimile/HANDOFF.md`).* Originally: tag `v3-donor`, then close. Appendix B lists the parts worth lifting |
 | `ssdt-playbook/` | Move to the ADO wiki as human curriculum. Skills stop citing it |
 
 ## 10. The handoff
