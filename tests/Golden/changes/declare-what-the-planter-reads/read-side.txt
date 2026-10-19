@@ -1,0 +1,115 @@
+# The facts v3's Schema.Of and v2's read side (ci/readside.sh) share for the golden project with this
+# change, published under its pipeline profile. Io.Tests' ReadSideTests compares both with these lines.
+# Regenerate: DBCHANGE_READSIDE=$(bash ci/readside.sh) DBCHANGE_BLESS=1 dotnet test tests/Io.Tests
+#   --filter FullyQualifiedName~ReadSideTests
+# Left out, with the reason:
+# - a foreign key's name, parent columns, actions and NOCHECK: v2 names it FK_<table>_<column> and
+#   writes NoAction (ReadSide.fs);
+# - trust: DacFx's model holds none; WP 3.5 reads is_not_trusted from the environment (S9);
+# - the names of checks, uniques and defaults: v2 reads the names SQL Server generates;
+# - identity seed and increment, collation, SPARSE, ROWGUIDCOL, an alias and the exact storage type:
+#   v2 reads none of them;
+# - non-unique indexes, an index's filter and included columns, sequences, triggers' kinds;
+# - system versioning and a computed column's type: v2 reads neither.
+check [dbo].[OrderLine] [Amount]>=(0)
+check [dbo].[Order] [Total]>=(0)
+column [dbo].[Account].[Id] 1 Integer not-null primary-key identity
+column [dbo].[Account].[Name] 2 Text(100) not-null
+column [dbo].[Account].[Region] 3 Text(50) null
+column [dbo].[Category].[Code] 2 Text(30) not-null
+column [dbo].[Category].[Id] 1 Integer not-null primary-key
+column [dbo].[Category].[IsActive] 3 Boolean not-null
+column [dbo].[CustomerAddress].[City] 4 Text(80) null
+column [dbo].[CustomerAddress].[CustomerId] 2 Integer not-null
+column [dbo].[CustomerAddress].[Id] 1 Integer not-null primary-key identity
+column [dbo].[CustomerAddress].[Line1] 3 Text(120) not-null
+column [dbo].[CustomerAddress].[PostalCode] 5 Text(20) null
+column [dbo].[Customer].[AccountId] 6 Integer null
+column [dbo].[Customer].[ContactPhone] 4 Text(40) null
+column [dbo].[Customer].[Email] 3 Text(256) null
+column [dbo].[Customer].[Id] 1 Integer not-null primary-key identity
+column [dbo].[Customer].[Name] 2 Text(100) not-null
+column [dbo].[Customer].[Region] 5 Text(50) null
+column [dbo].[Department].[HeadId] 2 Integer null
+column [dbo].[Department].[Id] 1 Integer not-null primary-key
+column [dbo].[Egg].[HenId] 2 Integer not-null
+column [dbo].[Egg].[Id] 1 Integer not-null primary-key
+column [dbo].[Employee].[DepartmentId] 2 Integer not-null
+column [dbo].[Employee].[Id] 1 Integer not-null primary-key
+column [dbo].[Employee].[ManagerId] 3 Integer null
+column [dbo].[Hen].[EggId] 2 Integer not-null
+column [dbo].[Hen].[Id] 1 Integer not-null primary-key
+column [dbo].[OrderLineNote].[Code] 5 Text(6) not-null
+column [dbo].[OrderLineNote].[Id] 1 Integer not-null primary-key identity
+column [dbo].[OrderLineNote].[LineNumber] 3 Integer not-null
+column [dbo].[OrderLineNote].[Note] 6 Text(max) null
+column [dbo].[OrderLineNote].[Number] 4 Integer not-null
+column [dbo].[OrderLineNote].[OrderId] 2 Integer not-null
+column [dbo].[OrderLineNote].[Stamp] 7 Binary(max) not-null rowversion
+column [dbo].[OrderLine].[Amount] 4 Decimal(18,2) not-null
+column [dbo].[OrderLine].[Id] 1 Integer not-null primary-key identity
+column [dbo].[OrderLine].[LineNumber] 3 Integer not-null
+column [dbo].[OrderLine].[OrderId] 2 Integer not-null
+column [dbo].[Order].[CustomerId] 2 Integer not-null
+column [dbo].[Order].[Id] 1 Integer not-null primary-key identity
+column [dbo].[Order].[StatusId] 3 Integer not-null
+column [dbo].[Order].[StatusText] 5 Text(20) not-null
+column [dbo].[Order].[Total] 4 Decimal(18,2) not-null
+column [dbo].[PriceHistory].[Amount] 2 Decimal(9,2) not-null
+column [dbo].[PriceHistory].[Id] 1 Integer not-null
+column [dbo].[PriceHistory].[ValidFrom] 3 DateTime not-null
+column [dbo].[PriceHistory].[ValidTo] 4 DateTime not-null
+column [dbo].[Price].[Amount] 2 Decimal(9,2) not-null
+column [dbo].[Price].[Id] 1 Integer not-null primary-key
+column [dbo].[Price].[ValidFrom] 3 DateTime not-null
+column [dbo].[Price].[ValidTo] 4 DateTime not-null
+column [dbo].[Product].[CategoryId] 5 Integer null
+column [dbo].[Product].[CodeLength] 6 computed null
+column [dbo].[Product].[Code] 2 Text(50) not-null
+column [dbo].[Product].[Doubled] 7 computed not-null
+column [dbo].[Product].[Id] 1 Integer not-null primary-key identity
+column [dbo].[Product].[LegacyCode] 4 Text(40) not-null
+column [dbo].[Product].[Name] 3 Text(200) null
+column [dbo].[Status].[Code] 2 Text(20) not-null
+column [dbo].[Status].[Id] 1 Integer not-null primary-key
+column [dbo].[Status].[IsActive] 3 Boolean not-null
+computed [dbo].[Product].[CodeLength] virtual len([Code])
+computed [dbo].[Product].[Doubled] persisted [Id]*(2)
+default [dbo].[Category].[IsActive] 1
+default [dbo].[OrderLineNote].[Number] NEXT VALUE FOR [dbo].[NoteNumber]
+default [dbo].[OrderLine].[Amount] 0
+default [dbo].[Order].[StatusText] N'Pending'
+default [dbo].[Order].[Total] 0
+default [dbo].[Product].[LegacyCode] N'LEGACY'
+default [dbo].[Status].[IsActive] 1
+reference [dbo].[CustomerAddress].[CustomerId] -> [dbo].[Customer]
+reference [dbo].[Customer].[AccountId] -> [dbo].[Account]
+reference [dbo].[Department].[HeadId] -> [dbo].[Employee]
+reference [dbo].[Egg].[HenId] -> [dbo].[Hen]
+reference [dbo].[Employee].[DepartmentId] -> [dbo].[Department]
+reference [dbo].[Employee].[ManagerId] -> [dbo].[Employee]
+reference [dbo].[Hen].[EggId] -> [dbo].[Egg]
+reference [dbo].[OrderLineNote].[LineNumber] -> [dbo].[OrderLine]
+reference [dbo].[OrderLineNote].[OrderId] -> [dbo].[OrderLine]
+reference [dbo].[OrderLine].[OrderId] -> [dbo].[Order]
+reference [dbo].[Order].[StatusId] -> [dbo].[Status]
+reference [dbo].[Product].[CategoryId] -> [dbo].[Category]
+table [dbo].[Account]
+table [dbo].[Category]
+table [dbo].[CustomerAddress]
+table [dbo].[Customer]
+table [dbo].[Department]
+table [dbo].[Egg]
+table [dbo].[Employee]
+table [dbo].[Hen]
+table [dbo].[OrderLineNote]
+table [dbo].[OrderLine]
+table [dbo].[Order]
+table [dbo].[PriceHistory]
+table [dbo].[Price]
+table [dbo].[Product]
+table [dbo].[Status]
+trigger [dbo].[Account] trg_Account_Audit enabled
+unique [dbo].[OrderLine] (OrderId, LineNumber desc)
+unique [dbo].[Product] (LegacyCode)
+unique [dbo].[Status] (Code)
