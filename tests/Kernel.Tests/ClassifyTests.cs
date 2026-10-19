@@ -77,6 +77,30 @@ public sealed class ClassifyTests
         Assert.Equal("provisional: create-entity", created.Summary);
     }
 
+    /// <summary>A table whose columns stay but stand in another order, which DacFx plans as a rebuild of the table, and an index whose key
+    /// gains a created column or puts its columns in another order, which DacFx drops and creates again, are each an altered entry of its
+    /// own that no block here recognizes, not part of the created column's entry and not no change.</summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void An_alteration_that_reorders_its_targets_or_gains_a_created_element_it_does_not_hold_is_an_entry_of_its_own()
+    {
+        var reordered = Model.Of(
+                "Customer.Id int NOT NULL", "Customer.Phone nvarchar(40) NULL", "Customer.Name nvarchar(100) NOT NULL",
+                "Customer.Region nvarchar(50) NULL", "Address.Id int NOT NULL", "Address.Line1 nvarchar(120) NOT NULL")
+            .PrimaryKey("PK_Customer", "Customer", "Id").PrimaryKey("PK_Address", "Address", "Id");
+        var indexed = Base.Index("IX_C", "Customer", ["Id", "Name"]);
+
+        var moved = Classified(Base, reordered);
+        var extended = Classified(indexed, Base.With("Customer.Tier int NULL").Index("IX_C", "Customer", ["Id", "Name", "Tier"]));
+        var swapped = Classified(indexed, Base.Index("IX_C", "Customer", ["Name", "Id"]));
+
+        Assert.Equal(["unclassified change: prove it, altered Table [dbo].[Customer]"], moved.Lines);
+        Assert.Equal("provisional: unclassified change: prove it", moved.Summary);
+        Assert.Equal(["add-optional Column [dbo].[Customer].[Tier]", "unclassified change: prove it, altered Index [dbo].[Customer].[IX_C]"],
+            extended.Lines);
+        Assert.Equal(["unclassified change: prove it, altered Index [dbo].[Customer].[IX_C]"], swapped.Lines);
+    }
+
     /// <summary>A clause that matches an alteration accounts for every property the alteration changes, so 50 to 100 is widen, 50 to max is
     /// widen by its second clause, max to 50 is narrow, and a column made longer and NOT NULL at once matches no block.</summary>
     [Theory]

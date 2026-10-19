@@ -79,7 +79,7 @@ public sealed record ChangeClassification(SortedArray<ChangeClassification.Recog
     [
         .. Operations.Select(o => o.Operation + " " + o.Subject),
         .. Steps.Select(s => "pre-deploy step " + s.Subject),
-        .. Unclassified.Select(u => "unclassified change: prove it, " + u.Kind + " " + u.Subject),
+        .. Unclassified.Select(u => "unclassified change: prove it, " + u.Kind.Word() + " " + u.Subject),
         .. Found.Where(r => r.Finding.Code != Classify.UnclassifiedCode)
             .Select(r => (r.Finding.Severity == Severity.Error ? "error " : "warning ") + r.Finding.Code + " " + r.Finding.Subject),
     ];
@@ -96,10 +96,10 @@ public sealed record ChangeClassification(SortedArray<ChangeClassification.Recog
     }
 
     /// <summary>An entry of the change: its kind (created, dropped, renamed or altered) and the element.</summary>
-    public sealed record Entry(string Kind, ElementKey Subject) : IComparable<Entry>
+    public sealed record Entry(ChangeKind Kind, ElementKey Subject) : IComparable<Entry>
     {
         public int CompareTo(Entry? other) =>
-            other is null ? 1 : Subject.CompareTo(other.Subject) is var s and not 0 ? s : string.CompareOrdinal(Kind, other.Kind);
+            other is null ? 1 : Subject.CompareTo(other.Subject) is var s and not 0 ? s : Kind.CompareTo(other.Kind);
     }
 
     /// <summary>A finding, sorted errors first, then by subject, code and message.</summary>
@@ -144,12 +144,15 @@ public static class Classify
     /// The classification of <paramref name="change"/>, from <paramref name="before"/> to <paramref name="after"/>. Its entries are the
     /// elements created, dropped and renamed and the elements altered, refactorlog entries aside; an element stands in the entry of a
     /// created or dropped element it is keyed under or stands on (a column in its table's, a key in its table's, a default in its
-    /// column's), and so does an alteration that only names elements the change creates or drops in place of others (a table's Columns
-    /// when a column is created). First the renames made by typing are paired and refused: a dropped and a created column of one type at
-    /// one ordinal of one table, a dropped and a created table with the same columns in order, and a table of one name dropped from one
-    /// schema and created in another. Then each pre-deploy script entry is a step, a data-modifying one when its statements modify rows;
-    /// each other entry is the operation of every block that recognizes it, or unclassified. On a table CDC tracks, a column created,
-    /// dropped or renamed, and a rebuild in the plan, are refused; a check the change creates or alters that is written with IN is named.
+    /// column's), and so does an alteration that only adds or removes elements the change creates or drops under the altered element,
+    /// the other targets in their order (a table's Columns when a column is created), or that moves the element onto one the change
+    /// creates (a key whose table is dropped and created under another name); columns put in another order, or an index whose key gains
+    /// a column, is an altered entry. First the renames made by typing are paired and refused: a dropped and a created column of one type
+    /// at one ordinal of one table, a dropped and a created table with the same columns in order, and a table of one name dropped from
+    /// one schema and created in another. Then each pre-deploy script entry is a step, a data-modifying one when its statements modify
+    /// rows; each other entry is the operation of every block that recognizes it, or unclassified. On a table CDC tracks, a column
+    /// created, dropped or renamed, and a rebuild in the plan, are refused; a check the change creates or alters that is written with IN
+    /// is named.
     /// </summary>
     public static ChangeClassification Of(SortedArray<Element> before, SortedArray<Element> after, Change change,
         SortedArray<Pattern> patterns, Inputs inputs)
@@ -157,17 +160,17 @@ public static class Classify
         var (was, now) = (Keyed(before), Keyed(after));
         var created = Rooted(change.Created);
         var dropped = Rooted(change.Dropped);
-        var entries = created.Where(c => c.Key == c.Value).Select(c => new ChangeClassification.Entry("created", c.Key))
-            .Concat(dropped.Where(d => d.Key == d.Value).Select(d => new ChangeClassification.Entry("dropped", d.Key)))
-            .Concat(change.Renamed.Select(r => new ChangeClassification.Entry("renamed", r.After)))
+        var entries = created.Where(c => c.Key == c.Value).Select(c => new ChangeClassification.Entry(ChangeKind.Created, c.Key))
+            .Concat(dropped.Where(d => d.Key == d.Value).Select(d => new ChangeClassification.Entry(ChangeKind.Dropped, d.Key)))
+            .Concat(change.Renamed.Select(r => new ChangeClassification.Entry(ChangeKind.Renamed, r.After)))
             .Concat(change.Altered.Where(a => !InPlaceOf(a, change, created, dropped))
-                .Select(a => new ChangeClassification.Entry("altered", a.Key)))
+                .Select(a => new ChangeClassification.Entry(ChangeKind.Altered, a.Key)))
             .ToList();
 
         var raised = new List<Finding>();
         var claimed = Renames(entries, was, now, change, inputs.Collation, raised);
         var steps = entries.Where(e => !claimed.Contains(e) && e.Subject.Type == Element.PreDeploymentScript).ToList();
-        if (steps.Any(s => s.Kind != "dropped"))
+        if (steps.Any(s => s.Kind != ChangeKind.Dropped))
         {
             raised.AddRange(inputs.PreDeploy.OfType<ScriptStatement.ModifiesRows>().Distinct().Select(m => Finding.Warning(
                 "classify.data-modifying-step", steps[0].Subject.ToString(),
@@ -182,8 +185,9 @@ public static class Classify
         {
             var (element, alteration) = entry.Kind switch
             {
-                "dropped" => (was.GetValueOrDefault(entry.Subject), (Change.Alteration?)null),
-                "altered" => (now.GetValueOrDefault(entry.Subject), (Change.Alteration?)change.Altered.First(a => a.Key == entry.Subject)),
+                ChangeKind.Dropped => (was.GetValueOrDefault(entry.Subject), (Change.Alteration?)null),
+                ChangeKind.Altered =>
+                    (now.GetValueOrDefault(entry.Subject), (Change.Alteration?)change.Altered.First(a => a.Key == entry.Subject)),
                 _ => (now.GetValueOrDefault(entry.Subject), (Change.Alteration?)null),
             };
             var by = element is null ? [] : patterns.Where(p => p.Recognizes(entry.Kind, element, alteration)).ToList();
@@ -192,8 +196,8 @@ public static class Classify
             {
                 unclassified.Add(entry);
                 raised.Add(Finding.Warning(UnclassifiedCode, entry.Subject.ToString(),
-                    "The change " + entry.Kind + " " + entry.Subject + ", which no operation's recognize: block recognizes: an unclassified"
-                        + " change.",
+                    "The change " + entry.Kind.Word() + " " + entry.Subject + ", which no operation's recognize: block recognizes: an"
+                        + " unclassified change.",
                     "Prove the change on a copy with dbchange prove."));
             }
         }
@@ -212,7 +216,7 @@ public static class Classify
         Dictionary<ElementKey, Element> was, Dictionary<ElementKey, Element> now, Change change, Collation collation, List<Finding> raised)
     {
         var claimed = new HashSet<ChangeClassification.Entry>();
-        ChangeClassification.Entry[] Of(string kind, string type) => [.. entries.Where(e => e.Kind == kind && e.Subject.Type == type)];
+        ChangeClassification.Entry[] Of(ChangeKind kind, string type) => [.. entries.Where(e => e.Kind == kind && e.Subject.Type == type)];
         void Pair(ChangeClassification.Entry[] gone, ChangeClassification.Entry[] come, Func<ElementKey, ElementKey, bool> alike,
             Func<ElementKey, ElementKey, Error> refusal)
         {
@@ -226,7 +230,7 @@ public static class Classify
             }
         }
 
-        Pair(Of("dropped", "Column"), Of("created", "Column"), (d, c) => d.Parent is { } table && c.Parent is { } host
+        Pair(Of(ChangeKind.Dropped, "Column"), Of(ChangeKind.Created, "Column"), (d, c) => d.Parent is { } table && c.Parent is { } host
                 && change.KeyBefore(host) == table && Ordinal(was, d) is { } at && at == Ordinal(now, c)
                 && TypeOf(was, d) is { } type && type == TypeOf(now, c),
             (d, c) => new Error("rename.column-without-entry",
@@ -235,7 +239,7 @@ public static class Classify
                     + ", and the refactorlog holds no entry renaming one to the other: without it DacFx drops the column and adds an"
                     + " empty one, and every value the column holds is lost.",
                 "Run dbchange diff --refactorlog to write the entry that renames " + d.Path + " to " + Own(c) + ", then classify again."));
-        Pair(Of("dropped", "Table"), Of("created", "Table"), (d, c) => d.Name.Schema != c.Name.Schema
+        Pair(Of(ChangeKind.Dropped, "Table"), Of(ChangeKind.Created, "Table"), (d, c) => d.Name.Schema != c.Name.Schema
                 && string.Equals(d.Name.Base, c.Name.Base, collation.Comparison),
             (d, c) => new Error("rename.schema-move-without-entry",
                 d + " is dropped and " + c + " is created, one table's name in the schema [" + c.Name.Schema + "], and the refactorlog"
@@ -243,7 +247,7 @@ public static class Classify
                     + " the old table or are lost with it.",
                 "Run dbchange diff --refactorlog to write the entry that moves " + d.Path + " into [" + c.Name.Schema + "], then classify"
                     + " again."));
-        Pair(Of("dropped", "Table"), Of("created", "Table"), (d, c) => Columns(was, d) is { Count: > 0 } columns
+        Pair(Of(ChangeKind.Dropped, "Table"), Of(ChangeKind.Created, "Table"), (d, c) => Columns(was, d) is { Count: > 0 } columns
                 && columns.SequenceEqual(Columns(now, c)),
             (d, c) => new Error("rename.table-without-entry",
                 d + " is dropped and " + c + " is created with the same columns, and the refactorlog holds no entry renaming one to the"
@@ -323,17 +327,31 @@ public static class Classify
         return roots;
     }
 
-    /// <summary>Whether an alteration only names, in place of elements the before model held, elements the change creates or drops, as a
-    /// table's Columns does when a column is created, and so stands in their entry.</summary>
+    /// <summary>
+    /// Whether an alteration only adds or removes, in each relationship it changes, elements the change creates or drops that are keyed
+    /// under the altered element, and keeps the order of the targets that stay, as a table's Columns does when a column is created: it
+    /// then stands in their entry. An element moved from an element the change drops onto one it creates, as a key is when its table is
+    /// dropped and created under another name, stands in their entry when every target it gains is created and every one it loses is
+    /// dropped. Columns put in another order, or an index whose key gains a created column, is an alteration of its own, which DacFx plans
+    /// as a rebuild of the table or of the index.
+    /// </summary>
     private static bool InPlaceOf(Change.Alteration alteration, Change change, Dictionary<ElementKey, ElementKey> created,
-        Dictionary<ElementKey, ElementKey> dropped) =>
-        alteration.Properties.Count == 0 && alteration.Relationships.All(r =>
+        Dictionary<ElementKey, ElementKey> dropped)
+    {
+        var owner = (Before: change.KeyBefore(alteration.Key), After: alteration.Key);
+        var moved = alteration.Relationships.Any(r => On.Contains(r.Name)
+            && r.Before.Any(t => dropped.ContainsKey(t.Key)) && r.After.Any(t => created.ContainsKey(t.Key)));
+        return alteration.Properties.Count == 0 && alteration.Relationships.All(r =>
         {
-            var (gone, come) = (r.Before.Select(t => t.Key).ToHashSet(), r.After.Select(t => t.Key).ToList());
-            var held = come.Select(change.KeyBefore).ToHashSet();
-            return gone.Where(k => !held.Contains(k)).All(dropped.ContainsKey)
-                && come.Where(k => !gone.Contains(change.KeyBefore(k))).All(created.ContainsKey);
+            var (before, after) = (r.Before.Select(t => t.Key).ToList(), r.After.Select(t => t.Key).ToList());
+            var stays = after.Where(k => !created.ContainsKey(k)).Select(change.KeyBefore).ToList();
+            var stayed = before.Where(k => !dropped.ContainsKey(k)).ToList();
+            return moved ? stays.All(stayed.Contains) && stayed.All(stays.Contains)
+                : stays.SequenceEqual(stayed)
+                    && after.Where(created.ContainsKey).All(k => k.Parent == owner.After)
+                    && before.Where(dropped.ContainsKey).All(k => k.Parent == owner.Before);
         });
+    }
 
     /// <summary>An element's own name, its last part, as a refactorlog entry's NewName writes it: [MobileNumber].</summary>
     private static string Own(ElementKey key) => "[" + key.Name.Base.Replace("]", "]]", StringComparison.Ordinal) + "]";
