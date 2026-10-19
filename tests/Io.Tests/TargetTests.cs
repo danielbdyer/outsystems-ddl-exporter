@@ -15,9 +15,9 @@ namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/SqlServer's targets and connections (V3_MILESTONES.md WP 1.4; VALUES.md X1, X2): the target grammar as a closed type; env:
-/// resolved against dbchange/environments.json and copy: against .dbchange/copies.json alone, on the server its row records; R15 by spelling
-/// and by address, failing closed on what it cannot read; a connection reference resolved to the caller's integrated identity unless it
-/// names another; and no error or printed value carrying what a reference resolves to.
+/// resolved against dbchange/environments.json and copy: against .dbchange/copies.json alone, on the server its row records; R15 by
+/// spelling and by address, failing closed on what it cannot read; a connection reference resolved to the caller's integrated identity
+/// unless it names another; and no error or printed value carrying what a reference resolves to.
 /// </summary>
 public sealed class TargetTests : IDisposable
 {
@@ -36,7 +36,8 @@ public sealed class TargetTests : IDisposable
         }
     }
 
-    /// <summary>VALUES.md X1: a literal connection string given where a target goes is refused as one, and nothing of it is quoted.</summary>
+    /// <summary>VALUES.md X1: a literal connection string given where a target goes is refused as one, and nothing of it is
+    /// quoted.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [Trait("Value", "X1")]
@@ -59,12 +60,14 @@ public sealed class TargetTests : IDisposable
     [Trait("Exit", "M1.5")]
     public void A_copy_the_registry_does_not_hold_is_refused()
     {
-        var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("copy:dbchange_nowhere_1_00000000", "--target")), scratch.Path), "copy.unregistered");
+        var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("copy:dbchange_nowhere_1_00000000", "--target")), scratch.Path),
+            "copy.unregistered");
 
         Assert.Contains("copy:dbchange_nowhere_1_00000000", error.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>copy: before a name no copy dbchange makes can carry names a copy the registry does not hold, so it is refused as one, and the name is quoted nowhere.</summary>
+    /// <summary>copy: before a name no copy dbchange makes can carry names a copy the registry does not hold, so it is refused as one, and
+    /// the name is quoted nowhere.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [Trait("Exit", "M1.5")]
@@ -80,13 +83,14 @@ public sealed class TargetTests : IDisposable
 
         Assert.Contains("--target", error.Message, StringComparison.Ordinal);
         Assert.Contains(".dbchange/copies.json", error.Message, StringComparison.Ordinal);
-        Assert.All(new[] { text["copy:".Length..].Trim() }.Where(name => name.Length > 0), name => Assert.DoesNotContain(name, error.Message + error.Remedy, StringComparison.Ordinal));
+        Assert.All(new[] { text["copy:".Length..].Trim() }.Where(name => name.Length > 0),
+            name => Assert.DoesNotContain(name, error.Message + error.Remedy, StringComparison.Ordinal));
     }
 
     /// <summary>
-    /// R15: a local server on the host an environment names in dbchange/environments.json is refused, before anything connects, the environment's
-    /// reference agreeing with that host, whether or not it names a database; a reference that names no server names SqlClient's local
-    /// default instance. The refusal names the environment and quotes neither connection.
+    /// R15: a local server on the host an environment names in dbchange/environments.json is refused, before anything connects, the
+    /// environment's reference agreeing with that host, whether or not it names a database; a reference that names no server names
+    /// SqlClient's local default instance. The refusal names the environment and quotes neither connection.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -101,9 +105,15 @@ public sealed class TargetTests : IDisposable
     [InlineData("Initial Catalog=Dev;Integrated Security=true", "localhost", "localhost,1")]
     public void A_local_server_on_the_host_an_environment_names_is_refused(string reference, string host, string server)
     {
-        var root = RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", reference + ";User ID=reader;Password=" + Planted), host));
+        var root = RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", reference + ";User ID=reader;Password=" + Planted),
+            host));
 
-        var error = Failed(LocalServer.Create(root, "Server=" + server + ";Initial Catalog=master;User ID=sa;Password=" + Planted + ";TrustServerCertificate=True;Connect Timeout=2", SqlServer.QueryLog.Start(root)), "copy.named-host");
+        var error = Failed(
+            LocalServer.Create(root,
+                "Server=" + server + ";Initial Catalog=master;User ID=sa;Password=" + Planted
+                    + ";TrustServerCertificate=True;Connect Timeout=2",
+                SqlServer.QueryLog.Start(root)),
+            "copy.named-host");
 
         Assert.Contains("env:dev", error.Message, StringComparison.Ordinal);
         Planted.AbsentFrom(error);
@@ -118,7 +128,8 @@ public sealed class TargetTests : IDisposable
     [Trait("Category", "fast")]
     public void A_local_server_on_the_host_of_an_environment_whose_reference_resolves_to_nothing_here_is_refused()
     {
-        var root = RepositoryAt(new EnvironmentsJson(new Dictionary<string, EnvironmentsJson.Environment> { ["dev"] = Unresolved("localhost"), ["uat"] = Unresolved("dev-sql") }));
+        var root = RepositoryAt(new EnvironmentsJson(new Dictionary<string, EnvironmentsJson.Environment> {
+            ["dev"] = Unresolved("localhost"), ["uat"] = Unresolved("dev-sql") }));
 
         var local = Failed(LocalServer.Unnamed(EnvironmentsAt(root), root, Server("localhost,11433"), Resolver), "copy.named-host");
         var aliased = Failed(LocalServer.Unnamed(EnvironmentsAt(root), root, Server("192.0.2.10,1433"), Resolver), "copy.named-host");
@@ -138,9 +149,13 @@ public sealed class TargetTests : IDisposable
     [InlineData("no environments file", "environments.missing")]
     public void A_local_server_whose_environments_cannot_be_read_is_refused_before_anything_connects(string how, string code)
     {
-        var root = how == "no environments file" ? scratch.Folder("no-environments-file") : RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=dev-sql;Nonsense " + Planted + " = 1")));
+        var root = how == "no environments file" ? scratch.Folder("no-environments-file")
+            : RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=dev-sql;Nonsense " + Planted + " = 1")));
 
-        var error = Failed(LocalServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2", SqlServer.QueryLog.Start(root)), code);
+        var error = Failed(
+            LocalServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2",
+                SqlServer.QueryLog.Start(root)),
+            code);
 
         Assert.Equal(how != "no environments file", error.Message.StartsWith("env:dev's connection", StringComparison.Ordinal));
         Planted.AbsentFrom(error);
@@ -156,9 +171,14 @@ public sealed class TargetTests : IDisposable
     [Trait("Category", "fast")]
     public void A_reference_to_a_server_on_another_host_than_the_environments_file_names_is_refused_by_the_environment()
     {
-        var root = RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=prod-sql.corp.example,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted), "dev-sql"));
+        var root = RepositoryAt(EnvironmentsJson.Dev(
+            "file:" + Written("dev.connection", "Server=prod-sql.corp.example,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted),
+            "dev-sql"));
 
-        var error = Failed(LocalServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2", SqlServer.QueryLog.Start(root)), "environments.host");
+        var error = Failed(
+            LocalServer.Create(root, "Server=127.0.0.1,1;Initial Catalog=master;User ID=sa;Password=" + Planted + ";Connect Timeout=2",
+                SqlServer.QueryLog.Start(root)),
+            "environments.host");
 
         Assert.StartsWith("env:dev's connection", error.Message, StringComparison.Ordinal);
         Assert.Contains("dev-sql", error.Message, StringComparison.Ordinal);
@@ -193,7 +213,8 @@ public sealed class TargetTests : IDisposable
         Assert.Contains("env:dev", error.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>A local server whose host shares no address and no spelling with any environment's host is cleared, the environment's reference resolving here or not.</summary>
+    /// <summary>A local server whose host shares no address and no spelling with any environment's host is cleared, the environment's
+    /// reference resolving here or not.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("Server=prod-sql.corp.example;Initial Catalog=Prod", "prod-sql.corp.example", "localhost,11433")]
@@ -202,7 +223,8 @@ public sealed class TargetTests : IDisposable
     [InlineData("", "prod-sql.corp.example", "localhost,11433")]
     public void A_local_server_on_a_host_no_environment_names_is_cleared(string reference, string host, string server)
     {
-        var root = RepositoryAt(reference.Length == 0 ? EnvironmentsJson.Of("dev", Unresolved(host)) : EnvironmentsJson.Dev("file:" + Written("dev.connection", reference), host));
+        var root = RepositoryAt(reference.Length == 0 ? EnvironmentsJson.Of("dev", Unresolved(host))
+            : EnvironmentsJson.Dev("file:" + Written("dev.connection", reference), host));
 
         Assert.Equal(Server(server), Value(LocalServer.Unnamed(EnvironmentsAt(root), root, Server(server), Resolver)));
     }
@@ -218,20 +240,35 @@ public sealed class TargetTests : IDisposable
     public void A_copy_resolves_only_on_the_server_its_row_records_and_never_on_a_named_host()
     {
         var name = CopyName.Make("host", 1, 0x0a1b2c3d);
-        var clear = Registry(RepositoryAt(new EnvironmentsJson(new Dictionary<string, EnvironmentsJson.Environment>())), name, "localhost,11433");
-        var named = Registry(RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=127.0.0.1,1433;Initial Catalog=Dev"), "localhost")), name, "localhost,11433");
+        var clear = Registry(RepositoryAt(new EnvironmentsJson(new Dictionary<string, EnvironmentsJson.Environment>())), name,
+            "localhost,11433");
+        var named = Registry(
+            RepositoryAt(EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=127.0.0.1,1433;Initial Catalog=Dev"),
+                "localhost")),
+            name, "localhost,11433");
 
-        var there = Value(LocalServer.Registered(clear, name, Io.EnvironmentsFile.Read(clear), () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
-        var elsewhere = Failed(LocalServer.Registered(clear, name, Io.EnvironmentsFile.Read(clear), () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver), "copy.unregistered");
-        var onNamedHost = Failed(LocalServer.Registered(named, name, Io.EnvironmentsFile.Read(named), () => throw new Xunit.Sdk.XunitException("the local server was chosen before R15 read the row's server"), Resolver), "copy.named-host");
+        var there = Value(LocalServer.Registered(clear, name, Io.EnvironmentsFile.Read(clear),
+            () => "Server=tcp:127.0.0.1,11433;User ID=sa;Password=" + Planted, Resolver));
+        var elsewhere = Failed(
+            LocalServer.Registered(clear, name, Io.EnvironmentsFile.Read(clear),
+                () => "Server=(localdb)\\MSSQLLocalDB;Integrated Security=true", Resolver),
+            "copy.unregistered");
+        var onNamedHost = Failed(
+            LocalServer.Registered(named, name, Io.EnvironmentsFile.Read(named),
+                () => throw new Xunit.Sdk.XunitException("the local server was chosen before R15 read the row's server"), Resolver),
+            "copy.named-host");
 
-        Assert.Equal(("copy:" + name, "localhost,11433"), (there.Target.ToString(), LocalServer.ServerName(null, Written("sql.env", "DBCHANGE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false).Match(n => n.ToString(), r => r.Code)));
+        Assert.Equal(("copy:" + name, "localhost,11433"),
+            (there.Target.ToString(),
+                LocalServer.ServerName(null, Written("sql.env", "DBCHANGE_SQL_PORT=11433\nMSSQL_SA_PASSWORD=" + Planted), false)
+                    .Match(n => n.ToString(), r => r.Code)));
         Assert.Contains("copy:" + name, elsewhere.Message, StringComparison.Ordinal);
         Planted.AbsentFrom(elsewhere);
         Planted.AbsentFrom(onNamedHost);
     }
 
-    /// <summary>The caller's integrated identity by default; SQL authentication where the reference names it; and an EnvironmentDatabase prints as its environment alone.</summary>
+    /// <summary>The caller's integrated identity by default; SQL authentication where the reference names it; and an EnvironmentDatabase
+    /// prints as its environment alone.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("Server=dev-sql;Initial Catalog=Dev", true)]
@@ -244,7 +281,8 @@ public sealed class TargetTests : IDisposable
         {
             var root = RepositoryAt(EnvironmentsJson.Of("qa", new("env:" + variable)));
 
-            var named = Assert.IsType<SqlServer.EnvironmentDatabase>(Value(SqlServer.Resolve(Value(SqlServer.Target("env:qa", "--target")), root)));
+            var named = Assert.IsType<SqlServer.EnvironmentDatabase>(Value(SqlServer.Resolve(Value(SqlServer.Target("env:qa", "--target")),
+                root)));
 
             var resolved = new SqlConnectionStringBuilder(named.Connection);
             Assert.Equal((integrated, "Dev"), (resolved.IntegratedSecurity, resolved.InitialCatalog));
@@ -260,21 +298,28 @@ public sealed class TargetTests : IDisposable
 
     /// <summary>
     /// dbchange adds no TLS keyword to a named environment's connection: the reference's own Encrypt and HostNameInCertificate reach the
-    /// server as written, so a certificate check against the server's own name holds, and a reference that names none gets none, so SqlClient's default,
-    /// a certificate the machine trusts, applies. Only the local local server's connection trusts its self-signed certificate.
+    /// server as written, so a certificate check against the server's own name holds, and a reference that names none gets none, so
+    /// SqlClient's default, a certificate the machine trusts, applies. Only the local local server's connection trusts its self-signed
+    /// certificate.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
-    [InlineData("Server=dev-sql;Initial Catalog=Dev;Encrypt=Strict;HostNameInCertificate=dev-sql.corp.example", "Strict", "dev-sql.corp.example")]
+    [InlineData("Server=dev-sql;Initial Catalog=Dev;Encrypt=Strict;HostNameInCertificate=dev-sql.corp.example", "Strict",
+        "dev-sql.corp.example")]
     [InlineData("Server=dev-sql;Initial Catalog=Dev", null, null)]
-    public void A_reference_reaches_the_server_with_its_own_TLS_keywords_and_no_other(string connection, string? encrypt, string? hostNameInCertificate)
+    public void A_reference_reaches_the_server_with_its_own_TLS_keywords_and_no_other(string connection, string? encrypt,
+        string? hostNameInCertificate)
     {
         var root = RepositoryAt(EnvironmentsJson.Of("qa", new("file:" + Written("qa.connection", connection))));
 
-        var resolved = new SqlConnectionStringBuilder(Value(SqlServer.Resolve(Value(SqlServer.Target("env:qa", "--target")), root)).Connection);
+        var resolved = new SqlConnectionStringBuilder(Value(SqlServer.Resolve(Value(SqlServer.Target("env:qa", "--target")),
+            root)).Connection);
 
-        Assert.Equal((encrypt, hostNameInCertificate), (resolved.ShouldSerialize("Encrypt") ? resolved.Encrypt.ToString() : null, resolved.ShouldSerialize("Host Name In Certificate") ? resolved.HostNameInCertificate : null));
-        Assert.False(resolved.ShouldSerialize("Trust Server Certificate"), "dbchange set TrustServerCertificate on a named environment's connection");
+        Assert.Equal((encrypt, hostNameInCertificate),
+            (resolved.ShouldSerialize("Encrypt") ? resolved.Encrypt.ToString() : null,
+                resolved.ShouldSerialize("Host Name In Certificate") ? resolved.HostNameInCertificate : null));
+        Assert.False(resolved.ShouldSerialize("Trust Server Certificate"),
+            "dbchange set TrustServerCertificate on a named environment's connection");
     }
 
     /// <summary>
@@ -301,7 +346,8 @@ public sealed class TargetTests : IDisposable
         });
     }
 
-    /// <summary>A reference that resolves to nothing, or to no connection string that names its database, is refused by the reference, and quotes nothing it read.</summary>
+    /// <summary>A reference that resolves to nothing, or to no connection string that names its database, is refused by the reference, and
+    /// quotes nothing it read.</summary>
     [Theory]
     [Trait("Category", "fast")]
     [InlineData("env", "connection.unresolved")]
@@ -344,14 +390,15 @@ public sealed class TargetTests : IDisposable
         var root = RepositoryAt(EnvironmentsJson.Dev("file:" + scratch.Path.Replace('\\', '/') + "/" + name));
 
         Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), root), "connection.unresolved");
-        Assert.Equal(Server("localhost,11433"), Value(LocalServer.Unnamed(EnvironmentsAt(root), root, Server("localhost,11433"), Resolver)));
+        Assert.Equal(Server("localhost,11433"),
+            Value(LocalServer.Unnamed(EnvironmentsAt(root), root, Server("localhost,11433"), Resolver)));
     }
 
     /// <summary>
-    /// kernel/Environments.cs documents a file: reference as naming a file outside git, and dbchange's own files, those of its principals among them, sit under
-    /// .dbchange/, which .gitignore lists. A connection file git tracks, or one git does not ignore, which the next git add would commit,
-    /// is refused by the environment and the reference, before the file is read, and quotes nothing it holds; one git ignores, or one in
-    /// no git repository while the repository root is in one, resolves.
+    /// kernel/Environments.cs documents a file: reference as naming a file outside git, and dbchange's own files, those of its principals
+    /// among them, sit under .dbchange/, which .gitignore lists. A connection file git tracks, or one git does not ignore, which the next
+    /// git add would commit, is refused by the environment and the reference, before the file is read, and quotes nothing it holds; one git
+    /// ignores, or one in no git repository while the repository root is in one, resolves.
     /// </summary>
     [Theory]
     [Trait("Category", "fast")]
@@ -360,12 +407,14 @@ public sealed class TargetTests : IDisposable
     [InlineData("dbchange/dev.connection", "written", "reference.not-ignored")]
     [InlineData(".dbchange/dev.connection", "written", null)]
     [InlineData("outside every repository", "written", null)]
-    public void A_connection_file_git_tracks_or_does_not_ignore_is_refused_and_one_git_ignores_resolves(string file, string how, string? code)
+    public void A_connection_file_git_tracks_or_does_not_ignore_is_refused_and_one_git_ignores_resolves(string file, string how,
+        string? code)
     {
         using var repository = new Scratch();
         var connection = "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted;
         var reference = file == "outside every repository" ? Written("dev.connection", connection) : file;
-        repository.Commit("the estate", (".gitignore", ".dbchange/\n"), ("dbchange/environments.json", EnvironmentsJson.Dev("file:" + reference).Json()));
+        repository.Commit("the estate", (".gitignore", ".dbchange/\n"),
+            ("dbchange/environments.json", EnvironmentsJson.Dev("file:" + reference).Json()));
         if (file != "outside every repository")
         {
             repository.Write((file, connection));
@@ -410,10 +459,12 @@ public sealed class TargetTests : IDisposable
     [InlineData("dbchange/secrets/DEV~1.CON", "reference.tracked")]
     [InlineData(".dbchange/link/dev.connection", "reference.tracked")]
     [InlineData("dbchange/secrets/dev.connection::$DATA", "reference.unlisted")]
-    public void A_connection_file_git_tracks_is_refused_under_each_spelling_that_opens_it_though_gitignore_lists_it(string reference, string code)
+    public void A_connection_file_git_tracks_is_refused_under_each_spelling_that_opens_it_though_gitignore_lists_it(string reference,
+        string code)
     {
         using var repository = new Scratch();
-        repository.Commit("the estate", (".gitignore", ".dbchange/\nestate/secrets/\n*.connection\n"), ("dbchange/environments.json", EnvironmentsJson.Dev("file:" + reference).Json()));
+        repository.Commit("the estate", (".gitignore", ".dbchange/\nestate/secrets/\n*.connection\n"),
+            ("dbchange/environments.json", EnvironmentsJson.Dev("file:" + reference).Json()));
         repository.Write(("dbchange/secrets/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
         OwnerOnly(Path.Combine(repository.Root, "dbchange", "secrets", "dev.connection"));
         repository.Git("add", "--force", "--", "dbchange/secrets/dev.connection");
@@ -421,9 +472,11 @@ public sealed class TargetTests : IDisposable
         using var link = reference == ".dbchange/link/dev.connection" ? Linked(repository.Root) : null;
 
         var opens = File.Exists(Path.Combine(repository.Root, reference));
-        var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), repository.Root), opens ? code : "connection.unresolved");
+        var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), repository.Root),
+            opens ? code : "connection.unresolved");
 
-        Assert.True(opens || !OperatingSystem.IsWindows() || reference.Contains('~', StringComparison.Ordinal), reference + " opens no file on Windows");
+        Assert.True(opens || !OperatingSystem.IsWindows() || reference.Contains('~', StringComparison.Ordinal),
+            reference + " opens no file on Windows");
         Planted.AbsentFrom(error);
     }
 
@@ -437,7 +490,8 @@ public sealed class TargetTests : IDisposable
     public void A_connection_file_git_does_not_ignore_is_refused_when_GIT_CEILING_DIRECTORIES_stops_the_search_below_its_repository()
     {
         using var repository = new Scratch();
-        repository.Commit("the estate", (".gitignore", ".dbchange/\n"), ("dbchange/environments.json", EnvironmentsJson.Dev("file:dbchange/secrets/uat.txt").Json()));
+        repository.Commit("the estate", (".gitignore", ".dbchange/\n"),
+            ("dbchange/environments.json", EnvironmentsJson.Dev("file:dbchange/secrets/uat.txt").Json()));
         repository.Write(("dbchange/secrets/uat.txt", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
         OwnerOnly(Path.Combine(repository.Root, "dbchange", "secrets", "uat.txt"));
         var ceiling = Environment.GetEnvironmentVariable("GIT_CEILING_DIRECTORIES");
@@ -465,13 +519,17 @@ public sealed class TargetTests : IDisposable
     public void A_connection_file_in_a_folder_git_cannot_search_is_refused_as_git_failed()
     {
         using var repository = new Scratch();
-        repository.Commit("the estate", (".gitignore", ".dbchange/\n"), ("dbchange/environments.json", EnvironmentsJson.Dev("file:dbchange/broken/dev.connection").Json()));
-        repository.Write(("dbchange/broken/.git", "gitdir: nowhere\n"), ("dbchange/broken/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
+        repository.Commit("the estate", (".gitignore", ".dbchange/\n"),
+            ("dbchange/environments.json", EnvironmentsJson.Dev("file:dbchange/broken/dev.connection").Json()));
+        repository.Write(("dbchange/broken/.git", "gitdir: nowhere\n"),
+            ("dbchange/broken/dev.connection", "Server=dev-sql;Initial Catalog=Dev;User ID=reader;Password=" + Planted));
         OwnerOnly(Path.Combine(repository.Root, "dbchange", "broken", "dev.connection"));
 
         var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), repository.Root), "git.failed");
 
-        Assert.StartsWith("env:dev's connection, file:dbchange/broken/dev.connection, cannot be checked against git: git rev-parse failed: ", error.Message, StringComparison.Ordinal);
+        Assert.StartsWith(
+            "env:dev's connection, file:dbchange/broken/dev.connection, cannot be checked against git: git rev-parse failed: ",
+            error.Message, StringComparison.Ordinal);
         Planted.AbsentFrom(error);
     }
 
@@ -491,13 +549,16 @@ public sealed class TargetTests : IDisposable
     [InlineData("folder", "reference.unlistable")]
     [InlineData("file", "reference.unreadable")]
     [InlineData("attributes", "reference.inaccessible")]
-    public void A_connection_file_this_identity_cannot_list_or_read_is_refused_and_leaves_no_environment_uncompared(string denied, string code)
+    public void A_connection_file_this_identity_cannot_list_or_read_is_refused_and_leaves_no_environment_uncompared(string denied,
+        string code)
     {
         scratch.Folder("locked");
-        var file = Written(Path.Combine("locked", "dev.connection"), "Server=127.0.0.1,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted);
+        var file = Written(Path.Combine("locked", "dev.connection"),
+            "Server=127.0.0.1,1433;Initial Catalog=Dev;User ID=reader;Password=" + Planted);
         var root = RepositoryAt(EnvironmentsJson.Dev("file:" + file));
 
-        var use = () => (SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), root), LocalServer.Unnamed(EnvironmentsAt(root), root, Server("localhost,11433"), Resolver));
+        var use = () => (SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), root),
+            LocalServer.Unnamed(EnvironmentsAt(root), root, Server("localhost,11433"), Resolver));
         var (resolved, unnamed) = denied switch
         {
             "folder" => ErrorPaths.Denied(scratch.Under("locked"), use),
@@ -511,12 +572,14 @@ public sealed class TargetTests : IDisposable
         Assert.Equal(error, Failed(unnamed));
     }
 
-    /// <summary>A repository root in no git repository leaves git unable to say whether it would commit a connection file, so the reference is refused, saying so, and the file is not read.</summary>
+    /// <summary>A repository root in no git repository leaves git unable to say whether it would commit a connection file, so the reference
+    /// is refused, saying so, and the file is not read.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_connection_file_of_a_repository_root_in_no_git_repository_is_refused_saying_git_cannot_check_it()
     {
-        var root = EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=dev-sql;Initial Catalog=Dev;Password=" + Planted)).WriteTo(scratch.Folder("no-repository"));
+        var root = EnvironmentsJson.Dev("file:" + Written("dev.connection", "Server=dev-sql;Initial Catalog=Dev;Password=" + Planted))
+            .WriteTo(scratch.Folder("no-repository"));
 
         var error = Failed(SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), root), "reference.no-repository");
 
@@ -540,15 +603,19 @@ public sealed class TargetTests : IDisposable
             File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
         }
 
-        var resolved = SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")), RepositoryAt(EnvironmentsJson.Dev("file:" + file)));
+        var resolved = SqlServer.Resolve(Value(SqlServer.Target("env:dev", "--target")),
+            RepositoryAt(EnvironmentsJson.Dev("file:" + file)));
 
-        Assert.Equal(OperatingSystem.IsWindows() ? null : "reference.readable-by-others", resolved.Match<string?>(_ => null, error => error.Code));
+        Assert.Equal(OperatingSystem.IsWindows() ? null : "reference.readable-by-others",
+            resolved.Match<string?>(_ => null, error => error.Code));
         resolved.Match(_ => 0, error =>
         {
             Planted.AbsentFrom(error);
             return 0;
         });
-        Assert.Equal(["reference.readable-by-others", "reference.readable-by-others", null], ((int[])[0b110_100_000, 0b110_000_100, 0b110_000_000])   // modes 0640, 0604, 0600
+        // modes 0640, 0604, 0600
+        Assert.Equal(["reference.readable-by-others", "reference.readable-by-others", null],
+            ((int[])[0b110_100_000, 0b110_000_100, 0b110_000_000])
             .Select(mode => SqlServer.ReadableByOthers("env:dev's connection, file:" + file + ",", (UnixFileMode)mode)?.Code));
     }
 
@@ -587,19 +654,23 @@ public sealed class TargetTests : IDisposable
     [InlineData(2628, false, "server.failed")]
     public void A_named_environment_s_error_is_withheld_and_a_copy_s_is_kept(int number, bool opened, string code)
     {
-        var root = RepositoryAt(EnvironmentsJson.Of("qa", new("file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa"), "qa-sql")));
+        var root = RepositoryAt(EnvironmentsJson.Of("qa",
+            new("file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa"), "qa-sql")));
         var named = Value(SqlServer.Resolve(Value(SqlServer.Target("env:qa", "--target")), root));
         var copy = new SqlServer.Copy(CopyName.Make("host", 1, 0x0a1b2c3d), "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
         var message = "Conversion failed when converting the nvarchar value '" + Planted + "' to data type int.";
 
-        var (fromNamed, fromCopy) = (named.ErrorOf(number, message, fatal: false, opened), copy.ErrorOf(number, message, fatal: false, opened));
+        var (fromNamed, fromCopy) = (named.ErrorOf(number, message, fatal: false, opened),
+            copy.ErrorOf(number, message, fatal: false, opened));
 
         Assert.Equal((code, ErrorCategory.Server, code), (fromNamed.Code, fromNamed.Category, fromCopy.Code));
         Assert.StartsWith("env:qa ", fromNamed.Message, StringComparison.Ordinal);
-        Assert.Contains(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Msg {number}"), fromNamed.Message, StringComparison.Ordinal);
+        Assert.Contains(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Msg {number}"), fromNamed.Message,
+            StringComparison.Ordinal);
         Planted.AbsentFrom(fromNamed);
         Assert.DoesNotContain(Planted.Text, fromCopy.Remedy, StringComparison.Ordinal);
-        Assert.Equal(code == "server.denied", fromNamed.Message.Contains("a lead's prediction will appear on the pull request", StringComparison.Ordinal));
+        Assert.Equal(code == "server.denied",
+            fromNamed.Message.Contains("a lead's prediction will appear on the pull request", StringComparison.Ordinal));
         Assert.Equal(code == "server.failed", fromCopy.Message.Contains(Planted.Text, StringComparison.Ordinal));
     }
 
@@ -614,22 +685,26 @@ public sealed class TargetTests : IDisposable
     [InlineData("copy:dbchange_host_1_0a1b2c3d")]
     public void A_DacFx_failure_with_no_SQL_Server_error_inside_is_dacfx_failed_quoting_its_SQL7_codes(string target)
     {
-        var root = RepositoryAt(EnvironmentsJson.Of("qa", new("file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa"), "qa-sql")));
+        var root = RepositoryAt(EnvironmentsJson.Of("qa",
+            new("file:" + Written("qa.connection", "Server=qa-sql;Initial Catalog=Qa"), "qa-sql")));
         SqlServer.Database database = target == "env:qa"
             ? Value(SqlServer.Resolve(Value(SqlServer.Target(target, "--target")), root))
             : new SqlServer.Copy(CopyName.Make("host", 1, 0x0a1b2c3d), "Server=localhost,11433;User ID=sa;Password=" + Planted, root);
         var failure = Assert.IsType<Microsoft.SqlServer.Dac.DacServicesException>(Record.Exception(() =>
         {
-            using var model = new Microsoft.SqlServer.Dac.Model.TSqlModel(Microsoft.SqlServer.Dac.Model.SqlServerVersion.Sql160, new Microsoft.SqlServer.Dac.Model.TSqlModelOptions());
+            using var model = new Microsoft.SqlServer.Dac.Model.TSqlModel(Microsoft.SqlServer.Dac.Model.SqlServerVersion.Sql160,
+                new Microsoft.SqlServer.Dac.Model.TSqlModelOptions());
             model.AddObjects("CREATE VIEW dbo.V AS SELECT Id FROM dbo.Missing;");
-            Microsoft.SqlServer.Dac.DacPackageExtensions.BuildPackage(scratch.Under("unresolved.dacpac"), model, new Microsoft.SqlServer.Dac.PackageMetadata());
+            Microsoft.SqlServer.Dac.DacPackageExtensions.BuildPackage(scratch.Under("unresolved.dacpac"), model,
+                new Microsoft.SqlServer.Dac.PackageMetadata());
         }));
 
         var error = DacFx.Failed(database, failure);
 
         Assert.Equal(3, failure.Messages.Count(m => m.Prefix + m.Number == "SQL71501"));
         Assert.Equal("dacfx.failed", error.Code);
-        Assert.StartsWith("DacFx failed against " + target + " with no SQL Server error inside: Error SQL71501: ", error.Message, StringComparison.Ordinal);
+        Assert.StartsWith("DacFx failed against " + target + " with no SQL Server error inside: Error SQL71501: ", error.Message,
+            StringComparison.Ordinal);
         Assert.Equal(3, error.Message.Split("SQL71501").Length - 1);
         Assert.Contains("[dbo].[V] has an unresolved reference to object [dbo].[Missing].", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain('\n', error.Message);
@@ -646,13 +721,15 @@ public sealed class TargetTests : IDisposable
     {
         var root = RepositoryAt(new EnvironmentsJson(new Dictionary<string, EnvironmentsJson.Environment>()));
         var port = ClosedPort();
-        var server = Value(LocalServer.Server(null, Written("sql.env", "MSSQL_SA_PASSWORD=" + Planted + "\nDBCHANGE_SQL_PORT=" + port + "\n"), localDb: false));
+        var server = Value(LocalServer.Server(null,
+            Written("sql.env", "MSSQL_SA_PASSWORD=" + Planted + "\nDBCHANGE_SQL_PORT=" + port + "\n"), localDb: false));
 
         var error = Failed(LocalServer.Create(root, server, SqlServer.QueryLog.Start(root)), "server.unreachable");
 
         Assert.Contains("ci/sql.sh up", error.Remedy, StringComparison.Ordinal);
         Planted.AbsentFrom(error);
-        Assert.Empty(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(root, ".dbchange", "copies.json")))!["copies"]!.AsArray());
+        Assert.Empty(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(root, ".dbchange", "copies.json")))!["copies"]!
+            .AsArray());
     }
 
     /// <summary>A loopback port nothing listens on: bound and released, so a connection to it is refused at once.</summary>
@@ -668,7 +745,8 @@ public sealed class TargetTests : IDisposable
     /// <summary>A server as this machine reads its data source.</summary>
     private static ServerName Server(string dataSource) => ServerName.Of(dataSource, Environment.MachineName);
 
-    /// <summary>DNS as these tests have it: dev-sql and its FQDN at one TEST-NET address, prod-sql at another, a name of this machine at loopback, and nothing else.</summary>
+    /// <summary>DNS as these tests have it: dev-sql and its FQDN at one TEST-NET address, prod-sql at another, a name of this machine at
+    /// loopback, and nothing else.</summary>
     private static IPAddress[] Resolver(string host) => host switch
     {
         "dev-sql" or "dev-sql.corp.example" => [IPAddress.Parse("192.0.2.10")],
@@ -678,7 +756,8 @@ public sealed class TargetTests : IDisposable
     };
 
     /// <summary>An environment on the host given whose connection is a variable no process sets, so it resolves to nothing here.</summary>
-    private static EnvironmentsJson.Environment Unresolved(string host) => new("env:DBCHANGE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(), host);
+    private static EnvironmentsJson.Environment Unresolved(string host) =>
+        new("env:DBCHANGE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(), host);
 
     /// <summary>The environments file, read.</summary>
     private static Environments EnvironmentsAt(string root) => Value(Io.EnvironmentsFile.Read(root));
@@ -688,11 +767,13 @@ public sealed class TargetTests : IDisposable
     {
         Directory.CreateDirectory(Path.Combine(root, ".dbchange"));
         File.WriteAllText(Path.Combine(root, ".dbchange", "copies.json"),
-            "{ \"copies\": [ { \"name\": \"" + name + "\", \"server\": \"" + server + "\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-24T00:00:00Z\" } ] }");
+            "{ \"copies\": [ { \"name\": \"" + name + "\", \"server\": \"" + server
+                + "\", \"host\": \"host\", \"pid\": 1, \"created\": \"2026-09-24T00:00:00Z\" } ] }");
         return root;
     }
 
-    /// <summary>On Linux and macOS, the file's mode set to 0600, so its owner alone reads it, as a connection file must be; Windows keeps no such mode.</summary>
+    /// <summary>On Linux and macOS, the file's mode set to 0600, so its owner alone reads it, as a connection file must be; Windows keeps
+    /// no such mode.</summary>
     private static void OwnerOnly(string file)
     {
         if (!OperatingSystem.IsWindows())
@@ -705,7 +786,8 @@ public sealed class TargetTests : IDisposable
     /// .dbchange/link/dev.connection in the repository, opening dbchange/secrets/dev.connection. On Windows .dbchange/link is a directory
     /// junction to dbchange/secrets/, made by cmd's mklink /J, since File.CreateSymbolicLink needs Developer Mode or an administrator's
     /// rights there; what is returned removes the junction alone, since Directory.Delete's recursive delete cannot remove a junction
-    /// without those rights either. On Linux and macOS .dbchange/link/dev.connection is a symbolic link to the file, and nothing is returned.
+    /// without those rights either. On Linux and macOS .dbchange/link/dev.connection is a symbolic link to the file, and nothing is
+    /// returned.
     /// </summary>
     private static IDisposable? Linked(string root)
     {
@@ -757,6 +839,9 @@ public sealed class TargetTests : IDisposable
         return scratch.Under(file).Replace('\\', '/');
     }
 
-    /// <summary>A repository root in a git repository of its own, holding the environments file given; the connection files stay outside it.</summary>
-    private string RepositoryAt(EnvironmentsJson environmentsFile) => environmentsFile.WriteTo(Directory.CreateDirectory(Path.Combine(repository.Value.Root, "repository-" + Guid.NewGuid().ToString("N")[..8])).FullName);
+    /// <summary>A repository root in a git repository of its own, holding the environments file given; the connection files stay outside
+    /// it.</summary>
+    private string RepositoryAt(EnvironmentsJson environmentsFile) =>
+        environmentsFile.WriteTo(Directory.CreateDirectory(Path.Combine(repository.Value.Root,
+            "repository-" + Guid.NewGuid().ToString("N")[..8])).FullName);
 }

@@ -23,7 +23,8 @@ namespace DbChange.Io.Tests;
 /// </summary>
 internal static class DbChangeProcess
 {
-    /// <summary>Arguments: a mode and its argument; or the repository and the ref, then, to build, the project from the repository's root, the tool folder and the build root.</summary>
+    /// <summary>Arguments: a mode and its argument; or the repository and the ref, then, to build, the project from the repository's root,
+    /// the tool folder and the build root.</summary>
     public static int Main(string[] arguments)
     {
         Console.OutputEncoding = new UTF8Encoding(false);
@@ -48,7 +49,8 @@ internal static class DbChangeProcess
                 Thread.Sleep(TimeSpan.FromSeconds(int.Parse(seconds, CultureInfo.InvariantCulture)));
                 return 0;
             case ["spawn"]:
-                using (var child = Process.Start(new ProcessStartInfo("dotnet", [typeof(DbChangeProcess).Assembly.Location, "sleep", "60"]))!)
+                using (var child = Process.Start(new ProcessStartInfo("dotnet",
+                    [typeof(DbChangeProcess).Assembly.Location, "sleep", "60"]))!)
                 {
                     Console.WriteLine(child.Id.ToString(CultureInfo.InvariantCulture));
                     Console.Out.Flush();
@@ -72,8 +74,11 @@ internal static class DbChangeProcess
                 return 0;
             case ["telemetry"]:
                 _ = LocalState.UserSqlEnv;   // the first touch of an io type, and nothing has called Telemetry.OptOut
-                Console.WriteLine((Environment.GetEnvironmentVariable("DACFX_TELEMETRY_OPTOUT") ?? "<unset>") + " " + (Environment.GetEnvironmentVariable("DOTNET_CLI_TELEMETRY_OPTOUT") ?? "<unset>") + " "
-                    + (AppDomain.CurrentDomain.GetAssemblies().Any(a => a.GetName().Name!.StartsWith("Microsoft.SqlServer.Dac", StringComparison.Ordinal)) ? "dacfx-loaded" : "dacfx-not-loaded"));
+                Console.WriteLine((Environment.GetEnvironmentVariable("DACFX_TELEMETRY_OPTOUT") ?? "<unset>") + " "
+                    + (Environment.GetEnvironmentVariable("DOTNET_CLI_TELEMETRY_OPTOUT") ?? "<unset>") + " "
+                    + (AppDomain.CurrentDomain.GetAssemblies()
+                        .Any(a => a.GetName().Name!.StartsWith("Microsoft.SqlServer.Dac", StringComparison.Ordinal))
+                        ? "dacfx-loaded" : "dacfx-not-loaded"));
                 return 0;
             default:
                 return Run(arguments);
@@ -85,9 +90,11 @@ internal static class DbChangeProcess
     /// milliseconds apart. Only when every one has taken its worktree, so every sweep of the round is over and every holder
     /// still runs, are they let on to build. For each ref: its worktree, the milliseconds At took, its package or "".
     /// </summary>
-    public static List<(Git.Worktree At, long Took, string Dacpac)> AtOnce(string repository, IReadOnlyList<string> references, long gap, params string[] build)
+    public static List<(Git.Worktree At, long Took, string Dacpac)> AtOnce(string repository, IReadOnlyList<string> references, long gap,
+        params string[] build)
     {
-        var processes = references.Select(reference => Start([repository, reference, .. build])).Select(process => (Process: process, Errors: process.StandardError.ReadToEndAsync())).ToList();
+        var processes = references.Select(reference => Start([repository, reference, .. build]))
+            .Select(process => (Process: process, Errors: process.StandardError.ReadToEndAsync())).ToList();
         try
         {
             foreach (var (process, errors) in processes)
@@ -105,7 +112,8 @@ internal static class DbChangeProcess
                 process.StandardInput.WriteLine();
             }
 
-            var taken = processes.Select(p => (Path: p.Process.StandardOutput.ReadLine(), Took: p.Process.StandardOutput.ReadLine())).ToList();
+            var taken = processes.Select(p => (Path: p.Process.StandardOutput.ReadLine(), Took: p.Process.StandardOutput.ReadLine()))
+                .ToList();
             foreach (var (process, _) in processes.Where((_, i) => taken[i].Took is not null))   // one that ended early awaits no line
             {
                 process.StandardInput.WriteLine();
@@ -115,8 +123,11 @@ internal static class DbChangeProcess
             {
                 var (p, reference, (path, took)) = run;
                 var built = p.Process.StandardOutput.ReadToEnd().Trim();
-                Assert.True(p.Process.WaitForExit(TimeSpan.FromMinutes(3)), "the dbchange process at " + reference + " overran three minutes");
-                Assert.True(p.Process.ExitCode == 0, "the dbchange process at " + reference + ", released " + gap + " ms after the one before, exited " + p.Process.ExitCode + ":\n" + path + "\n" + built + "\n" + p.Errors.Result);
+                Assert.True(p.Process.WaitForExit(TimeSpan.FromMinutes(3)),
+                    "the dbchange process at " + reference + " overran three minutes");
+                Assert.True(p.Process.ExitCode == 0,
+                    "the dbchange process at " + reference + ", released " + gap + " ms after the one before, exited " + p.Process.ExitCode
+                        + ":\n" + path + "\n" + built + "\n" + p.Errors.Result);
                 return (new Git.Worktree(path!, reference), long.Parse(took!, CultureInfo.InvariantCulture), built);
             }).ToList();
         }
@@ -135,7 +146,8 @@ internal static class DbChangeProcess
     /// This assembly started as a program with its input, output and errors redirected and its input kept open, for a test that
     /// drives it line by line or holds it until it kills it; io's Command closes a program's input by design, so this stays a raw Process.
     /// </summary>
-    public static Process Start(params string[] arguments) => Process.Start(new ProcessStartInfo("dotnet", [typeof(DbChangeProcess).Assembly.Location, .. arguments])
+    public static Process Start(params string[] arguments) =>
+        Process.Start(new ProcessStartInfo("dotnet", [typeof(DbChangeProcess).Assembly.Location, .. arguments])
     {
         RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8,
     })!;
@@ -146,14 +158,17 @@ internal static class DbChangeProcess
         Console.ReadLine();
         var clock = Stopwatch.StartNew();
         var taken = Git.At(arguments[0], arguments[1]);
-        Console.WriteLine(taken.Match(at => at.Path + "\n" + clock.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture), error => Printed(error) + "\n-1"));
+        Console.WriteLine(taken.Match(at => at.Path + "\n" + clock.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture),
+            error => Printed(error) + "\n-1"));
         Console.ReadLine();
-        var built = taken.Bind(at => arguments.Length < 5 ? Result.Ok("") : Ssdt.Build(at, arguments[2], arguments[3], arguments[4]).Map(dacpac => dacpac.Path));
+        var built = taken.Bind(at => arguments.Length < 5 ? Result.Ok("")
+            : Ssdt.Build(at, arguments[2], arguments[3], arguments[4]).Map(dacpac => dacpac.Path));
         Console.WriteLine(built.Match(dacpac => dacpac, Printed));
         return built is Result<string>.Ok ? 0 : 1;
     }
 
-    /// <summary>The count of 'o' on standard output and of 'e' on standard error, the two written at once, so a reader that takes one stream at a time stalls.</summary>
+    /// <summary>The count of 'o' on standard output and of 'e' on standard error, the two written at once, so a reader that takes one
+    /// stream at a time stalls.</summary>
     private static void Flood(int count)
     {
         var errors = new Thread(() =>

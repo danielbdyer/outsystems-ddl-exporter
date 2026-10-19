@@ -21,7 +21,8 @@ internal sealed partial class ScratchFolder : IDisposable
     /// <summary>The full path of <paramref name="relative"/> under the folder.</summary>
     public string Under(string relative) => System.IO.Path.Combine(Path, relative);
 
-    /// <summary>A file at <paramref name="relative"/> under the folder, its folders made, holding <paramref name="text"/>; its full path.</summary>
+    /// <summary>A file at <paramref name="relative"/> under the folder, its folders made, holding <paramref name="text"/>; its full
+    /// path.</summary>
     public string File(string relative, string text)
     {
         var path = Under(relative);

@@ -26,7 +26,8 @@ public sealed class AnswerSizeTests : IDisposable
     /// <summary>
     /// A change of 3,000 altered columns, built in memory and rendered as diff's answer: the Markdown holds the first entries and ends
     /// with the line naming the whole answer's file; the JSON's altered list holds the first entries, its counts the whole change, and
-    /// truncated true; the file full names parses, holds every entry and says truncated false; --summary holds no entry and the same counts.
+    /// truncated true; the file full names parses, holds every entry and says truncated false; --summary holds no entry and the same
+    /// counts.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -51,7 +52,8 @@ public sealed class AnswerSizeTests : IDisposable
         Assert.Matches("^\\.dbchange/runs/[^/]+/answer\\.json$", full);
         var whole = JsonNode.Parse(File.ReadAllText(root.Under(full)))!;
         VerbAnswer.Valid("dbchange.diff.1.schema.json", whole);
-        Assert.Equal((Columns, false, (string?)null), (whole["diff"]!["change"]!["altered"]!.AsArray().Count, (bool)whole["truncated"]!, (string?)whole["full"]));
+        Assert.Equal((Columns, false, (string?)null),
+            (whole["diff"]!["change"]!["altered"]!.AsArray().Count, (bool)whole["truncated"]!, (string?)whole["full"]));
 
         var summarised = JsonNode.Parse(summary)!;
         VerbAnswer.Valid("dbchange.diff.1.schema.json", summarised);
@@ -59,23 +61,31 @@ public sealed class AnswerSizeTests : IDisposable
         Assert.Equal((Columns, true), ((int)summarised["diff"]!["counts"]!["altered"]!, (bool)summarised["truncated"]!));
     }
 
-    /// <summary>dbchange diff run in this process with a body that answers the large change, from a checkout under the scratch folder.</summary>
+    /// <summary>dbchange diff run in this process with a body that answers the large change, from a checkout under the scratch
+    /// folder.</summary>
     private (int Exit, string Output) Run(string[] arguments)
     {
-        var diff = Contract.Verbs.Single(v => v.Name == "diff") with { Body = (_, _, _) => Verbs.Diff(new ModelDiff.Answer(Side("dacpac:before.dacpac"), Side("dacpac:after.dacpac"), Large(), Collation.CaseSensitive), false, new Stamp(Ok(DacFx.Version))) };
+        var diff = Contract.Verbs.Single(v => v.Name == "diff") with { Body = (_, _, _) => Verbs.Diff(
+            new ModelDiff.Answer(Side("dacpac:before.dacpac"), Side("dacpac:after.dacpac"), Large(), Collation.CaseSensitive), false,
+            new Stamp(Ok(DacFx.Version))) };
         using var output = new MemoryStream();
         var exit = Cli.Program.Run(arguments, output, () => new Checkout(root.Path, root.Path, null, Cli.Contract.Version), [diff]);
         return (exit, Encoding.UTF8.GetString(output.ToArray()));
     }
 
-    private static ModelRead.Source Side(string target) => new(Expect.Value(SqlServer.Target(target, "--from")), new Ssdt.ModelElements([], []), null, false);
+    private static ModelRead.Source Side(string target) =>
+        new(Expect.Value(SqlServer.Target(target, "--from")), new Ssdt.ModelElements([], []), null, false);
 
     /// <summary>One column of each of 3,000 tables, its Length altered from 300 to 256.</summary>
     private static Change Large() => new([], [], [], SortedArray.Of(Enumerable.Range(0, Columns).Select(i =>
         new Change.Alteration(
-            Expect.Value(ElementKey.Of(Expect.Value(ElementKey.Of("Table", Expect.Value(Name.Of("dbo", "T" + i.ToString("D4", System.Globalization.CultureInfo.InvariantCulture))))), "Column", Expect.Value(Name.Of("C")))),
+            Expect.Value(ElementKey.Of(
+                Expect.Value(ElementKey.Of("Table",
+                    Expect.Value(Name.Of("dbo", "T" + i.ToString("D4", System.Globalization.CultureInfo.InvariantCulture))))),
+                "Column", Expect.Value(Name.Of("C")))),
             [new Change.Property("Length", new Value.Integer(300), new Value.Integer(256))],
             []))));
 
-    private static T Ok<T>(Result<T> result) => result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
+    private static T Ok<T>(Result<T> result) =>
+        result.Match(value => value, error => throw new Xunit.Sdk.XunitException(error.Code + ": " + error.Message));
 }

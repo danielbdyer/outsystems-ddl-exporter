@@ -29,26 +29,32 @@ public sealed class VerbExitTests : IDisposable
     public void A_literal_connection_string_as_a_target_is_exit_6_and_printed_nowhere(string verb)
     {
         var asked = verb.Split(' ');
-        var (exit, answer, printed) = VerbAnswer.Printing(Here, [.. asked, "Server=db;User ID=sa;Password=" + PlantedValue.PasswordText, .. asked[0] == "check" ? ["--at", "main"] : Array.Empty<string>()]);
+        var (exit, answer, printed) = VerbAnswer.Printing(Here,
+            [.. asked, "Server=db;User ID=sa;Password=" + PlantedValue.PasswordText,
+                .. asked[0] == "check" ? ["--at", "main"] : Array.Empty<string>()]);
 
         Assert.Equal((6, "connection.literal"), (exit, (string?)answer["findings"]![0]!["code"]));
         PlantedValue.Password.AbsentFrom(printed);
         Assert.DoesNotContain("Server=db", printed, StringComparison.Ordinal);
     }
 
-    /// <summary>M1 exit 6 through the verb: a ledger whose pin the committed DacFx is neither, nor the release before, is exit 6 before anything connects, the stamp naming both.</summary>
+    /// <summary>M1 exit 6 through the verb: a ledger whose pin the committed DacFx is neither, nor the release before, is exit 6 before
+    /// anything connects, the stamp naming both.</summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Value", "R1")]
     [Trait("Exit", "M1.6")]
     public void The_committed_DacFx_outside_the_ledger_s_window_is_exit_6_before_anything_connects()
     {
-        root.File("dbchange/ledgers/toolchain.md", "| Date | dbchange | Pinned DacFx | Release before |\n|---|---|---|---|\n| 2026-09-25 | 3.0.0 | " + DoctorTests.Near(2) + " | " + DoctorTests.Near(1) + " |\n");
+        root.File("dbchange/ledgers/toolchain.md",
+            "| Date | dbchange | Pinned DacFx | Release before |\n|---|---|---|---|\n| 2026-09-25 | 3.0.0 | " + DoctorTests.Near(2) + " | "
+                + DoctorTests.Near(1) + " |\n");
 
         var (exit, answer) = VerbAnswer.Of(Here, "check", "drift", "--target", "copy:dbchange_nowhere_1_00000000", "--at", "main");
 
         Assert.Equal((6, "toolchain.outside-window"), (exit, (string?)answer["findings"]![0]!["code"]));
-        Assert.Equal((DoctorTests.PinnedDacFx, DoctorTests.Near(2), null), ((string?)answer["dacfx"], (string?)answer["pin"], answer["server"]));
+        Assert.Equal((DoctorTests.PinnedDacFx, DoctorTests.Near(2), null),
+            ((string?)answer["dacfx"], (string?)answer["pin"], answer["server"]));
     }
 
     /// <summary>
@@ -64,8 +70,10 @@ public sealed class VerbExitTests : IDisposable
     [Trait("Exit", "M1.5")]
     public void A_copy_the_registry_does_not_hold_or_one_on_a_named_environment_s_host_is_exit_9(string copy, string code)
     {
-        EnvironmentsJson.Dev("env:DBCHANGE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(), host: "localhost").WriteTo(root.Path);
-        root.File(".dbchange/copies.json", "{ \"copies\": [ { \"name\": \"dbchange_host_1_0a1b2c3d\", \"server\": \"localhost,11433\", \"machine\": \"host\", \"pid\": 1, \"created\": \"2026-09-24T00:00:00Z\" } ] }");
+        EnvironmentsJson.Dev("env:DBCHANGE_UNSET_" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(), host: "localhost")
+            .WriteTo(root.Path);
+        root.File(".dbchange/copies.json",
+            "{ \"copies\": [ { \"name\": \"dbchange_host_1_0a1b2c3d\", \"server\": \"localhost,11433\", \"machine\": \"host\", \"pid\": 1, \"created\": \"2026-09-24T00:00:00Z\" } ] }");
 
         var (exit, answer) = VerbAnswer.Of(Here, "check", "drift", "--target", "copy:" + copy, "--at", "main");
 

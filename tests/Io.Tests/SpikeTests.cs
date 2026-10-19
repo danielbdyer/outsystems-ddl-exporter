@@ -31,8 +31,10 @@ public sealed class SpikeTests(PublishedGoldenProject project) : IClassFixture<P
     {
         using var dacpac = ZipFile.OpenRead(project.Base);
 
-        Assert.Superset(new HashSet<string>(["model.xml", "refactor.xml", "predeploy.sql", "postdeploy.sql"]), dacpac.Entries.Select(e => e.FullName).ToHashSet());
-        Assert.Contains("MERGE dbo.Customer AS target", ToolFolderTests.Text(dacpac, "postdeploy.sql"), StringComparison.Ordinal);   // Data/Seed.sql, inlined from its :r
+        Assert.Superset(new HashSet<string>(["model.xml", "refactor.xml", "predeploy.sql", "postdeploy.sql"]),
+            dacpac.Entries.Select(e => e.FullName).ToHashSet());
+        // Data/Seed.sql, inlined from its :r
+        Assert.Contains("MERGE dbo.Customer AS target", ToolFolderTests.Text(dacpac, "postdeploy.sql"), StringComparison.Ordinal);
         Assert.Contains("Pre-deploy: no backfill active.", ToolFolderTests.Text(dacpac, "predeploy.sql"), StringComparison.Ordinal);
     }
 
@@ -60,7 +62,9 @@ public sealed class SpikeTests(PublishedGoldenProject project) : IClassFixture<P
         Assert.Empty(errors);
         new Sql160ScriptGenerator().GenerateScript(Assert.Single(checks), out var predicate);
         Assert.Contains("[dbo].[Customer]", predicate, StringComparison.Ordinal);
-        Assert.Equal(1, await SqlServerFixture.ScalarAsync(project.Reader.ConnectionString, "SELECT CASE WHEN EXISTS (" + predicate + ") THEN 1 ELSE 0 END;"));
+        Assert.Equal(1,
+            await SqlServerFixture.ScalarAsync(project.Reader.ConnectionString,
+                "SELECT CASE WHEN EXISTS (" + predicate + ") THEN 1 ELSE 0 END;"));
     }
 
     [Fact]
@@ -101,7 +105,8 @@ public sealed class SpikeTests(PublishedGoldenProject project) : IClassFixture<P
 
         var operation = Assert.Single(report.Descendants(Report + "Operation"));
         var item = Assert.Single(operation.Elements(Report + "Item"));
-        Assert.Equal(("Alter", "[dbo].[Customer]", "SqlTable"), ((string?)operation.Attribute("Name"), (string?)item.Attribute("Value"), (string?)item.Attribute("Type")));
+        Assert.Equal(("Alter", "[dbo].[Customer]", "SqlTable"),
+            ((string?)operation.Attribute("Name"), (string?)item.Attribute("Value"), (string?)item.Attribute("Type")));
         Assert.Empty(report.Descendants(Report + "Alert"));
     }
 
@@ -113,7 +118,8 @@ public sealed class SpikeTests(PublishedGoldenProject project) : IClassFixture<P
         var options = profile.DeployOptions;
 
         Assert.True(string.IsNullOrEmpty(profile.TargetConnectionString) && string.IsNullOrEmpty(profile.TargetDatabaseName));
-        Assert.Equal((true, false, true, false), (options.BlockOnPossibleDataLoss, options.GenerateSmartDefaults, options.IgnoreColumnOrder, options.DropObjectsNotInSource));
+        Assert.Equal((true, false, true, false),
+            (options.BlockOnPossibleDataLoss, options.GenerateSmartDefaults, options.IgnoreColumnOrder, options.DropObjectsNotInSource));
         Assert.Equal(["pipeline.publish.xml"], Directory.GetFiles(Path.GetDirectoryName(project.Profile)!).Select(Path.GetFileName));
     }
 
@@ -123,26 +129,32 @@ public sealed class SpikeTests(PublishedGoldenProject project) : IClassFixture<P
     {
         var notTrusted = await Task.WhenAll(
             Task.Run(() => NotTrustedAfterPublishing(new DacDeployOptions { BlockOnPossibleDataLoss = true })),
-            Task.Run(() => NotTrustedAfterPublishing(new DacDeployOptions { BlockOnPossibleDataLoss = true, ScriptNewConstraintValidation = false })));
+            Task.Run(() => NotTrustedAfterPublishing(new DacDeployOptions { BlockOnPossibleDataLoss = true,
+                ScriptNewConstraintValidation = false })));
 
         Assert.Equal([0, 1], notTrusted);
     }
 
-    /// <summary>A fresh copy: the base, published and seeded; then the head declaring Customer.AccountId's key to Account, under the options given.</summary>
+    /// <summary>A fresh copy: the base, published and seeded; then the head declaring Customer.AccountId's key to Account, under the
+    /// options given.</summary>
     private async Task<int> NotTrustedAfterPublishing(DacDeployOptions options)
     {
         await using var copy = await SqlServerFixture.RegisterAsync();
         GoldenProject.Publish(project.Base, copy, project.Pipeline);
-        Assert.True(await SqlServerFixture.ScalarAsync(copy.ConnectionString, "SELECT COUNT(*) FROM dbo.Customer WHERE AccountId IS NOT NULL;") > 0, "the child table is not populated");
+        Assert.True(
+            await SqlServerFixture.ScalarAsync(copy.ConnectionString, "SELECT COUNT(*) FROM dbo.Customer WHERE AccountId IS NOT NULL;") > 0,
+            "the child table is not populated");
 
         GoldenProject.Publish(project.ForeignKey, copy, options);
-        return await SqlServerFixture.ScalarAsync(copy.ConnectionString, "SELECT CAST(is_not_trusted AS int) FROM sys.foreign_keys WHERE name = N'FK_Customer_Account_AccountId';");
+        return await SqlServerFixture.ScalarAsync(copy.ConnectionString,
+            "SELECT CAST(is_not_trusted AS int) FROM sys.foreign_keys WHERE name = N'FK_Customer_Account_AccountId';");
     }
 
     private static List<string> Tables(TSqlModel model) =>
         [.. model.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass).Select(t => t.Name.ToString()).Order(StringComparer.Ordinal)];
 
-    /// <summary>One read of every entry in <c>ModelTypeClass.Properties</c>, no code per property: every column of every table, base against head.</summary>
+    /// <summary>One read of every entry in <c>ModelTypeClass.Properties</c>, no code per property: every column of every table, base
+    /// against head.</summary>
     private static IEnumerable<(string Column, string Property, object? Before, object? After)> Changes(TSqlModel before, TSqlModel after)
     {
         var heads = after.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass).SelectMany(t => t.GetReferenced(Table.Columns))
@@ -154,12 +166,14 @@ public sealed class SpikeTests(PublishedGoldenProject project) : IClassFixture<P
                select (column.Name.ToString(), property.Name, pair.Before, pair.After);
     }
 
-    /// <summary>DacFx's BlockOnPossibleDataLoss check, IF EXISTS (…) RAISERROR (…, 16, 127); the script's other IF EXISTS blocks check database options.</summary>
+    /// <summary>DacFx's BlockOnPossibleDataLoss check, IF EXISTS (…) RAISERROR (…, 16, 127); the script's other IF EXISTS blocks check
+    /// database options.</summary>
     private sealed class BlockOnPossibleDataLossChecks(List<QueryExpression> found) : TSqlFragmentVisitor
     {
         public override void ExplicitVisit(IfStatement node)
         {
-            if (node.Predicate is ExistsPredicate exists && node.ThenStatement is RaiseErrorStatement { ThirdParameter: IntegerLiteral { Value: "127" } })
+            if (node.Predicate is ExistsPredicate exists
+                && node.ThenStatement is RaiseErrorStatement { ThirdParameter: IntegerLiteral { Value: "127" } })
             {
                 found.Add(exists.Subquery.QueryExpression);
             }
@@ -212,7 +226,8 @@ public sealed class PublishedGoldenProject : IAsyncLifetime
         }
     }
 
-    /// <summary>DacServices.Script of a package, loaded from a stream, against the copy, as the read-only principal, under the pipeline profile's options only.</summary>
+    /// <summary>DacServices.Script of a package, loaded from a stream, against the copy, as the read-only principal, under the pipeline
+    /// profile's options only.</summary>
     public (string Script, XDocument Report) Plan(string dacpac)
     {
         using var stream = File.OpenRead(dacpac);

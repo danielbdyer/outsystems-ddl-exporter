@@ -18,9 +18,12 @@ public sealed class MeasurementTests
     [Trait("Category", "fast")]
     public void Two_measurements_of_equal_rows_are_equal_and_of_different_rows_are_not()
     {
-        var first = new SqlServer.Measurement.Answered("dbo.Customer.Email Fits", SortedArray.Of(SqlServer.Row.Of(3, null), SqlServer.Row.Of(1, 2)));
-        var again = new SqlServer.Measurement.Answered("dbo.Customer.Email Fits", SortedArray.Of((IEnumerable<SqlServer.Row>)[SqlServer.Row.Of(1, 2), SqlServer.Row.Of(3, null)]));
-        var other = new SqlServer.Measurement.Answered("dbo.Customer.Email Fits", SortedArray.Of(SqlServer.Row.Of(1, 2), SqlServer.Row.Of(3, 0)));
+        var first = new SqlServer.Measurement.Answered("dbo.Customer.Email Fits",
+            SortedArray.Of(SqlServer.Row.Of(3, null), SqlServer.Row.Of(1, 2)));
+        var again = new SqlServer.Measurement.Answered("dbo.Customer.Email Fits",
+            SortedArray.Of((IEnumerable<SqlServer.Row>)[SqlServer.Row.Of(1, 2), SqlServer.Row.Of(3, null)]));
+        var other = new SqlServer.Measurement.Answered("dbo.Customer.Email Fits",
+            SortedArray.Of(SqlServer.Row.Of(1, 2), SqlServer.Row.Of(3, 0)));
 
         Assert.Equal(first, again);
         Assert.Equal(first.GetHashCode(), again.GetHashCode());
@@ -40,13 +43,14 @@ public sealed class MeasurementTests
         ];
 
         Assert.Equal(["rows answered 1 row", "conversion failed with Msg 245", "scan ran past 30 s"], measured.Select(m => m.Match(
-            answered => answered.Site + " answered " + answered.Rows.Count + " row", failed => failed.Site + " failed with Msg " + failed.Number,
+            answered => answered.Site + " answered " + answered.Rows.Count + " row",
+            failed => failed.Site + " failed with Msg " + failed.Number,
             timedOut => timedOut.Site + " ran past " + timedOut.After.TotalSeconds + " s")));
     }
 
     /// <summary>
-    /// N12 of the pre-M2 review: an aggregate query's answer of a type the allowlist never yields is internal.answer-type, naming the type and
-    /// withholding the value; it once escaped the adapter as an exception. An integer of any width reads as a long.
+    /// N12 of the pre-M2 review: an aggregate query's answer of a type the allowlist never yields is internal.answer-type, naming the type
+    /// and withholding the value; it once escaped the adapter as an exception. An integer of any width reads as a long.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]

@@ -25,7 +25,8 @@ public sealed class GitTests : IDisposable
 
     public void Dispose() => scratch.Dispose();
 
-    /// <summary>A worktree is reused while it stands at its commit unchanged: an ignored file in it survives, a changed file makes it afresh.</summary>
+    /// <summary>A worktree is reused while it stands at its commit unchanged: an ignored file in it survives, a changed file makes it
+    /// afresh.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void At_checks_a_ref_out_detached_in_the_worktree_its_commit_names_and_reuses_it_until_a_file_in_it_changes()
@@ -51,10 +52,12 @@ public sealed class GitTests : IDisposable
         Assert.False(File.Exists(marker), "a changed worktree was reused instead of made afresh");
         Assert.Equal("HEAD", scratch.GitAt(at.Path, "rev-parse", "--abbrev-ref", "HEAD"));
         Assert.Equal(2, scratch.Worktrees().Count);
-        Failed(Ssdt.Build(at, Path.Combine(scratch.Root, "a.sqlproj"), scratch.Root, scratch.Root), "build.no-project");   // a ref's project is named from its root
+        // a ref's project is named from its root
+        Failed(Ssdt.Build(at, Path.Combine(scratch.Root, "a.sqlproj"), scratch.Root, scratch.Root), "build.no-project");
     }
 
-    /// <summary>A worktree left standing at another commit, as a checkout in it leaves it, is removed and made again at the ref's commit.</summary>
+    /// <summary>A worktree left standing at another commit, as a checkout in it leaves it, is removed and made again at the ref's
+    /// commit.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void At_replaces_a_worktree_that_stands_at_another_commit()
@@ -73,7 +76,8 @@ public sealed class GitTests : IDisposable
 
     /// <summary>
     /// A stale worktree git cannot remove: on Windows a file under it held open by another program, elsewhere a folder under it whose
-    /// contents its owner may not delete. At names the folder to delete by hand instead of building a worktree that stands at the wrong commit.
+    /// contents its owner may not delete. At names the folder to delete by hand instead of building a worktree that stands at the wrong
+    /// commit.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -82,7 +86,8 @@ public sealed class GitTests : IDisposable
         var commit = scratch.Commit("first", ("a.sql", "SELECT 1;\n"), ("held/b.sql", "SELECT 2;\n"));
         var at = Ok(Git.At(scratch.Root, commit));
         File.WriteAllText(Path.Combine(at.Path, "a.sql"), "SELECT 3;\n");   // changed, so the worktree is made afresh
-        using var open = OperatingSystem.IsWindows() ? new FileStream(Path.Combine(at.Path, "held", "b.sql"), FileMode.Open, FileAccess.Read, FileShare.None) : null;
+        using var open = OperatingSystem.IsWindows()
+            ? new FileStream(Path.Combine(at.Path, "held", "b.sql"), FileMode.Open, FileAccess.Read, FileShare.None) : null;
         if (!OperatingSystem.IsWindows())
         {
             File.SetUnixFileMode(Path.Combine(at.Path, "held"), UnixFileMode.UserRead | UnixFileMode.UserExecute);
@@ -92,14 +97,16 @@ public sealed class GitTests : IDisposable
         {
             var error = Failed(Git.At(scratch.Root, commit), "git.failed");
 
-            Assert.Contains(at.Path + " is not at " + commit + " unchanged, and git cannot remove it.", error.Message, StringComparison.Ordinal);
+            Assert.Contains(at.Path + " is not at " + commit + " unchanged, and git cannot remove it.", error.Message,
+                StringComparison.Ordinal);
             Assert.Contains("delete the folder", error.Remedy, StringComparison.Ordinal);
         }
         finally
         {
             if (!OperatingSystem.IsWindows())
             {
-                File.SetUnixFileMode(Path.Combine(at.Path, "held"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                File.SetUnixFileMode(Path.Combine(at.Path, "held"),
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             }
         }
     }
@@ -119,8 +126,9 @@ public sealed class GitTests : IDisposable
     }
 
     /// <summary>
-    /// A worktree's users hold .dbchange/worktrees/&lt;commit&gt;.lock shared while they run: another dbchange process took one worktree and has
-    /// exited, this process holds the other, and the sweep removes the first with its lock file and keeps the second, reading no process id.
+    /// A worktree's users hold .dbchange/worktrees/&lt;commit&gt;.lock shared while they run: another dbchange process took one worktree
+    /// and has exited, this process holds the other, and the sweep removes the first with its lock file and keeps the second, reading no
+    /// process id.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -157,7 +165,8 @@ public sealed class GitTests : IDisposable
         Assert.Empty(Ok(await sweep));
     }
 
-    /// <summary>Git for Windows refuses a path past 260 characters unless core.longpaths is on, which every command io/Git runs sets; the commit is made with plumbing so the scratch checkout never holds the path itself.</summary>
+    /// <summary>Git for Windows refuses a path past 260 characters unless core.longpaths is on, which every command io/Git runs sets; the
+    /// commit is made with plumbing so the scratch checkout never holds the path itself.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_commit_holding_a_path_longer_than_260_characters_checks_out()
@@ -183,7 +192,8 @@ public sealed class GitTests : IDisposable
         var fork = scratch.Commit("fork", ("README.md", "dbchange\n"), ("dbo/Tables/Customer.sql", "c\n"), ("dbo/Tables/Order.sql", "o\n"));
         scratch.Git("switch", "-q", "-c", "feature");
         scratch.Git("mv", "dbo/Tables/Order.sql", "dbo/Tables/Orders.sql");
-        var feature = scratch.Commit("feature", ("dbo/Tables/Customer.sql", "c2\n"), ("dbo/Tables/Café.sql", "é\n"), ("a.md", "a\n"), ("Z.md", "z\n"));
+        var feature = scratch.Commit("feature", ("dbo/Tables/Customer.sql", "c2\n"), ("dbo/Tables/Café.sql", "é\n"), ("a.md", "a\n"),
+            ("Z.md", "z\n"));
         scratch.Git("switch", "-q", "main");
         scratch.Commit("main moves on", ("README.md", "estate, later\n"));
 
@@ -192,7 +202,8 @@ public sealed class GitTests : IDisposable
             ["Z.md", "a.md", "dbo/Tables/Café.sql", "dbo/Tables/Customer.sql", "dbo/Tables/Order.sql", "dbo/Tables/Orders.sql"],
             Ok(Git.ChangedPaths(Path.Combine(scratch.Root, "dbo"), fork, "feature")));
         Assert.Equal(
-            ["README.md", "Z.md", "a.md", "dbo/Tables/Café.sql", "dbo/Tables/Customer.sql", "dbo/Tables/Order.sql", "dbo/Tables/Orders.sql"],
+            ["README.md", "Z.md", "a.md", "dbo/Tables/Café.sql", "dbo/Tables/Customer.sql", "dbo/Tables/Order.sql",
+                "dbo/Tables/Orders.sql"],
             Ok(Git.ChangedPaths(scratch.Root, "main", feature)));
     }
 
@@ -231,18 +242,24 @@ public sealed class GitTests : IDisposable
         var origin = scratch.Origin();
         var head = scratch.Commit("the estate", ("dbchange/evidence.shape.json", "{}\n"), ("README.md", "dbchange\n"));
         scratch.Git("push", "-q", "origin", "main");
-        scratch.Write(("dbchange/evidence.shape.json", "{ \"sites\": [] }\n"), ("dbchange/ledgers/row-tiers.md", "| table | tier |\n"), ("README.md", "estate, edited\n"));
+        scratch.Write(("dbchange/evidence.shape.json", "{ \"sites\": [] }\n"), ("dbchange/ledgers/row-tiers.md", "| table | tier |\n"),
+            ("README.md", "estate, edited\n"));
         scratch.Git("add", "README.md");   // the caller's own staged change stays theirs
 
-        var pushed = Ok(Git.CommitAndPush(scratch.Root, ["dbchange/evidence.shape.json", "dbchange/ledgers/row-tiers.md"], "profile: dev's evidence", "dbchange/evidence-dev"));
+        var pushed = Ok(Git.CommitAndPush(scratch.Root, ["dbchange/evidence.shape.json", "dbchange/ledgers/row-tiers.md"],
+            "profile: dev's evidence", "dbchange/evidence-dev"));
 
         Assert.Equal("dbchange/evidence-dev", pushed.Branch);
-        Assert.Equal(["refs/heads/dbchange/evidence-dev " + pushed.Commit, "refs/heads/main " + head], scratch.GitAt(origin, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads").Split('\n'));
-        Assert.Equal(["dbchange/evidence.shape.json", "dbchange/ledgers/row-tiers.md"], scratch.GitAt(origin, "diff-tree", "-r", "--name-only", "--no-commit-id", head, pushed.Commit).Split('\n'));
-        Assert.Equal(head + "\nDbChange Test\nprofile: dev's evidence", scratch.GitAt(origin, "log", "-1", "--format=%P%n%an%n%B", pushed.Commit));
+        Assert.Equal(["refs/heads/dbchange/evidence-dev " + pushed.Commit, "refs/heads/main " + head],
+            scratch.GitAt(origin, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads").Split('\n'));
+        Assert.Equal(["dbchange/evidence.shape.json", "dbchange/ledgers/row-tiers.md"],
+            scratch.GitAt(origin, "diff-tree", "-r", "--name-only", "--no-commit-id", head, pushed.Commit).Split('\n'));
+        Assert.Equal(head + "\nDbChange Test\nprofile: dev's evidence",
+            scratch.GitAt(origin, "log", "-1", "--format=%P%n%an%n%B", pushed.Commit));
         Assert.Equal("{ \"sites\": [] }", scratch.GitAt(origin, "show", pushed.Commit + ":dbchange/evidence.shape.json"));
         Assert.Equal(("refs/heads/main", head), (scratch.Git("symbolic-ref", "HEAD"), scratch.Git("rev-parse", "HEAD")));
-        Assert.Equal(["M  README.md", " M dbchange/evidence.shape.json", "?? dbchange/ledgers/"], scratch.Git("status", "--porcelain").Split('\n'));
+        Assert.Equal(["M  README.md", " M dbchange/evidence.shape.json", "?? dbchange/ledgers/"],
+            scratch.Git("status", "--porcelain").Split('\n'));
         Assert.Empty(Directory.GetFiles(new LocalState(scratch.Root).Temporary));   // the commit's own index is gone
     }
 
@@ -270,7 +287,8 @@ public sealed class GitTests : IDisposable
         Assert.Equal("", scratch.Git("diff", "--cached", "--name-only"));
     }
 
-    /// <summary>The origin's pre-receive hook refuses the branch: git push --porcelain reports [remote rejected] with the hook's reason, and the local branch is deleted.</summary>
+    /// <summary>The origin's pre-receive hook refuses the branch: git push --porcelain reports [remote rejected] with the hook's reason,
+    /// and the local branch is deleted.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_push_a_server_hook_refuses_is_origin_rejected_quoting_the_hook_and_leaves_no_branch()
@@ -286,7 +304,8 @@ public sealed class GitTests : IDisposable
         scratch.Commit("the estate", ("dbchange/evidence.shape.json", "{}\n"));
         scratch.Write(("dbchange/evidence.shape.json", "{ }\n"));
 
-        var rejected = Failed(Git.CommitAndPush(scratch.Root, ["dbchange/evidence.shape.json"], "evidence", "dbchange/evidence"), "origin.rejected");
+        var rejected = Failed(Git.CommitAndPush(scratch.Root, ["dbchange/evidence.shape.json"], "evidence", "dbchange/evidence"),
+            "origin.rejected");
 
         Assert.Contains("pre-receive hook declined", rejected.Message, StringComparison.Ordinal);
         Assert.Equal("", scratch.Git("branch", "--list", "dbchange/evidence"));
@@ -300,7 +319,8 @@ public sealed class GitTests : IDisposable
         scratch.Commit("the estate", ("dbchange/evidence.shape.json", "{}\n"));
         scratch.Write(("dbchange/evidence.shape.json", "{ }\n"));
 
-        var error = Failed(Git.CommitAndPush(scratch.Root, ["dbchange/evidence.shape.json"], "evidence", "dbchange/evidence"), "git.no-origin");
+        var error = Failed(Git.CommitAndPush(scratch.Root, ["dbchange/evidence.shape.json"], "evidence", "dbchange/evidence"),
+            "git.no-origin");
 
         Assert.Contains("git remote add origin", error.Remedy, StringComparison.Ordinal);
         Assert.Equal("", scratch.Git("branch", "--list", "dbchange/evidence"));
@@ -320,12 +340,15 @@ public sealed class GitTests : IDisposable
         scratch.Write(("dbchange/evidence.shape.json", "{ }\n"));
         string[] paths = ["dbchange/evidence.shape.json"];
         Ran Stale(Command c, CancellationToken t) => c.Arguments.Contains("ls-remote") ? new Ran.Exited(2, "", "")
-            : c.Arguments.Contains("push") ? new Ran.Exited(1, "To origin\n!\tHEAD:refs/heads/dbchange/evidence\t[rejected] (stale info)\nDone\n", "")
+            : c.Arguments.Contains("push")
+            ? new Ran.Exited(1, "To origin\n!\tHEAD:refs/heads/dbchange/evidence\t[rejected] (stale info)\nDone\n", "")
             : Command.Run(c, t);
-        Ran Interrupted(Command c, CancellationToken t) => c.Arguments.Contains("push") ? throw new OperationCanceledException() : Command.Run(c, t);
+        Ran Interrupted(Command c, CancellationToken t) =>
+            c.Arguments.Contains("push") ? throw new OperationCanceledException() : Command.Run(c, t);
 
         var gained = Failed(Git.CommitAndPush(scratch.Root, paths, "evidence", "dbchange/evidence", Stale), "git-branch.exists");
-        Assert.Throws<OperationCanceledException>(() => Git.CommitAndPush(scratch.Root, paths, "evidence", "dbchange/evidence", Interrupted));
+        Assert.Throws<OperationCanceledException>(() => Git.CommitAndPush(scratch.Root, paths, "evidence", "dbchange/evidence",
+            Interrupted));
 
         Assert.Contains("appeared there while dbchange pushed", gained.Message, StringComparison.Ordinal);
         Assert.Equal("", scratch.Git("branch", "--list", "dbchange/evidence"));
@@ -341,7 +364,8 @@ public sealed class GitTests : IDisposable
         Failed(Git.ChangedPaths(Path.Combine(scratch.Root, "no-such-folder"), "main", "HEAD"), "git.not-a-repository");
 
         Assert.Contains("'no-such-tag'", unresolved.Message, StringComparison.Ordinal);
-        Assert.False(Directory.Exists(Path.Combine(scratch.Root, ".dbchange", "worktrees")) && Directory.EnumerateDirectories(Path.Combine(scratch.Root, ".dbchange", "worktrees")).Any());
+        Assert.False(Directory.Exists(Path.Combine(scratch.Root, ".dbchange", "worktrees"))
+            && Directory.EnumerateDirectories(Path.Combine(scratch.Root, ".dbchange", "worktrees")).Any());
     }
 
     /// <summary>
@@ -354,7 +378,8 @@ public sealed class GitTests : IDisposable
     public void A_git_that_fails_to_resolve_a_ref_is_git_failed_quoting_git_or_naming_the_exit_code_when_git_wrote_nothing()
     {
         scratch.Commit("main", ("a.sql", "SELECT 1;\n"));
-        Ran Old(Command c, CancellationToken t) => c.Arguments.Contains("--verify") ? new Ran.Exited(129, "", "error: unknown option `end-of-options'\n") : Command.Run(c, t);
+        Ran Old(Command c, CancellationToken t) =>
+            c.Arguments.Contains("--verify") ? new Ran.Exited(129, "", "error: unknown option `end-of-options'\n") : Command.Run(c, t);
         Ran Killed(Command c, CancellationToken t) => c.Arguments.Contains("--verify") ? new Ran.Exited(137, "", "") : Command.Run(c, t);
 
         var old = Failed(Git.At(scratch.Root, "main", Old));
@@ -377,19 +402,22 @@ public sealed class GitTests : IDisposable
         scratch.Commit("the estate", ("dbchange/evidence.shape.json", "{}\n"));
         scratch.Write(("dbchange/evidence.shape.json", "{ }\n"));
         Ran NoIdentity(Command c, CancellationToken t) => c.Arguments.Contains("commit-tree")
-            ? new Ran.Exited(128, "", "Author identity unknown\n\n*** Please tell me who you are.\n\nRun\n\n  git config --global user.email \"you@example.com\"\n")
+            ? new Ran.Exited(128, "",
+                "Author identity unknown\n\n*** Please tell me who you are.\n\nRun\n\n  git config --global user.email \"you@example.com\"\n")
             : Command.Run(c, t);
 
-        var error = Failed(Git.CommitAndPush(scratch.Root, ["dbchange/evidence.shape.json"], "evidence", "dbchange/evidence", NoIdentity), "git.no-identity");
+        var error = Failed(Git.CommitAndPush(scratch.Root, ["dbchange/evidence.shape.json"], "evidence", "dbchange/evidence", NoIdentity),
+            "git.no-identity");
 
-        Assert.Equal("git commit-tree needs a committer's name and email, and git has none configured for " + scratch.Root + ".", error.Message);
+        Assert.Equal("git commit-tree needs a committer's name and email, and git has none configured for " + scratch.Root + ".",
+            error.Message);
         Assert.Contains("git config user.name", error.Remedy, StringComparison.Ordinal);
         Assert.Equal("", scratch.Git("branch", "--list", "dbchange/evidence"));
     }
 
     /// <summary>
-    /// N14 of the pre-M2 review: a git that times out inside a worktree dbchange keeps is git.timed-out, and the worktree stays. Git.At once
-    /// read any failure there as a worktree that is not current, removed it and made it again, and the new one met the same failure.
+    /// N14 of the pre-M2 review: a git that times out inside a worktree dbchange keeps is git.timed-out, and the worktree stays. Git.At
+    /// once read any failure there as a worktree that is not current, removed it and made it again, and the new one met the same failure.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
@@ -397,7 +425,8 @@ public sealed class GitTests : IDisposable
     {
         var commit = scratch.Commit("first", ("a.sql", "SELECT 1;\n"));
         var worktree = Ok(Git.At(scratch.Root, commit)).Path;
-        Ran Stalls(Command c, CancellationToken t) => c.Arguments.Contains(worktree) && c.Arguments.Contains("rev-parse") ? new Ran.TimedOut(c.Timeout, "", "") : Command.Run(c, t);
+        Ran Stalls(Command c, CancellationToken t) =>
+            c.Arguments.Contains(worktree) && c.Arguments.Contains("rev-parse") ? new Ran.TimedOut(c.Timeout, "", "") : Command.Run(c, t);
 
         Failed(Git.At(scratch.Root, commit, Stalls), "git.timed-out");
 
@@ -427,27 +456,31 @@ public sealed class GitTests : IDisposable
         scratch.Commit("the estate", ("dbchange/evidence.shape.json", "{}\n"));
         Ran Missing(Command c, CancellationToken t) => new Ran.NotFound(c.Program, "'git' is on no folder of the PATH.");
         Ran Hangs(Command c, CancellationToken t) => new Ran.TimedOut(c.Timeout, "", "");
-        Ran OriginHangs(Command c, CancellationToken t) => c.Arguments.Contains("ls-remote") ? new Ran.TimedOut(c.Timeout, "", "") : Command.Run(c, t);
+        Ran OriginHangs(Command c, CancellationToken t) =>
+            c.Arguments.Contains("ls-remote") ? new Ran.TimedOut(c.Timeout, "", "") : Command.Run(c, t);
 
         Failed(Git.At(scratch.Root, "HEAD", Missing), "git.missing");
         var hung = Failed(Git.At(scratch.Root, "HEAD", Hangs), "git.timed-out");
-        var unreachable = Failed(Git.CommitAndPush(scratch.Root, ["dbchange/evidence.shape.json"], "evidence", "dbchange/evidence", OriginHangs), "origin.unreachable");
+        var unreachable = Failed(
+            Git.CommitAndPush(scratch.Root, ["dbchange/evidence.shape.json"], "evidence", "dbchange/evidence", OriginHangs),
+            "origin.unreachable");
 
         Assert.Contains("5 minutes", hung.Message, StringComparison.Ordinal);
         Assert.Contains("did not answer in 5 minutes", unreachable.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// The command io/Git builds removes every variable the installed git lists as repository-local (git rev-parse --local-env-vars: GIT_DIR,
-    /// GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY, GIT_CONFIG_PARAMETERS and the rest), GIT_CEILING_DIRECTORIES, GIT_NAMESPACE, every GIT_TRACE
-    /// variable the process holds, and the two gettext reads, and sets LC_ALL=C; every command runs with core.longpaths on and withholds
-    /// DBCHANGE_SQL. The list is compared with git's own, so a git that names a new variable fails this test.
+    /// The command io/Git builds removes every variable the installed git lists as repository-local (git rev-parse --local-env-vars:
+    /// GIT_DIR, GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY, GIT_CONFIG_PARAMETERS and the rest), GIT_CEILING_DIRECTORIES, GIT_NAMESPACE, every
+    /// GIT_TRACE variable the process holds, and the two gettext reads, and sets LC_ALL=C; every command runs with core.longpaths on and
+    /// withholds DBCHANGE_SQL. The list is compared with git's own, so a git that names a new variable fails this test.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     public void The_command_Git_builds_removes_every_variable_git_rev_parse_local_env_vars_lists_and_every_GIT_TRACE_variable()
     {
-        var listed = scratch.Git("rev-parse", "--local-env-vars").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var listed = scratch.Git("rev-parse", "--local-env-vars")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         Command? built = null;
         Ran Records(Command c, CancellationToken t)
         {
@@ -467,8 +500,11 @@ public sealed class GitTests : IDisposable
 
         Assert.NotNull(built);
         Assert.NotEmpty(listed);
-        Assert.All(listed.Concat(["GIT_CEILING_DIRECTORIES", "GIT_NAMESPACE", "GIT_TRACE_PROBE", "LANGUAGE", "LC_MESSAGES", "DBCHANGE_SQL"]), variable => Assert.True(built.Environment.TryGetValue(variable, out var value) && value is null, variable + " reaches git"));
-        Assert.Equal(("C", "0", "1"), (built.Environment["LC_ALL"], built.Environment["GIT_TERMINAL_PROMPT"], built.Environment["GIT_LFS_SKIP_SMUDGE"]));
+        Assert.All(
+            listed.Concat(["GIT_CEILING_DIRECTORIES", "GIT_NAMESPACE", "GIT_TRACE_PROBE", "LANGUAGE", "LC_MESSAGES", "DBCHANGE_SQL"]),
+            variable => Assert.True(built.Environment.TryGetValue(variable, out var value) && value is null, variable + " reaches git"));
+        Assert.Equal(("C", "0", "1"),
+            (built.Environment["LC_ALL"], built.Environment["GIT_TERMINAL_PROMPT"], built.Environment["GIT_LFS_SKIP_SMUDGE"]));
         Assert.Equal(["-c", "core.longpaths=true", "-C", scratch.Root, "rev-parse", "--show-toplevel"], built.Arguments);
         Assert.Equal(("git", Git.Timeout), (built.Program, built.Timeout));
     }
@@ -517,7 +553,9 @@ public sealed class GitTests : IDisposable
         Assert.Contains("LC_ALL=C", variables);
         Assert.Contains("GIT_TERMINAL_PROMPT=0", variables);
         Assert.Contains("GIT_LFS_SKIP_SMUDGE=1", variables);
-        Assert.DoesNotContain(variables, line => line.StartsWith("LANGUAGE=", StringComparison.OrdinalIgnoreCase) || line.StartsWith("LC_MESSAGES=", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(variables,
+            line => line.StartsWith("LANGUAGE=", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("LC_MESSAGES=", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>Expect.Value and Expect.Failed under the names the classes that read a ref's worktree beside this one use.</summary>
@@ -586,14 +624,16 @@ public sealed class RefBuildTests(PublishedTool tool) : IDisposable
     /// MSBuild searches upward from a project for Directory.Build.props, Directory.Build.targets, Directory.Packages.props and
     /// Directory.Build.rsp, and from .dbchange/worktrees/&lt;commit&gt;/ that search reaches the enclosing checkout's root (fact 4 of the
     /// specification): a committed tree with no such files, and a working tree whose Directory.Build.props imports a file that does not
-    /// exist, built at the commit, builds the commit's project alone. Without the stop files .dbchange/worktrees/ carries, the build fails with MSB4019.
+    /// exist, built at the commit, builds the commit's project alone. Without the stop files .dbchange/worktrees/ carries, the build fails
+    /// with MSB4019.
     /// </summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_ref_s_build_reads_its_own_Directory_Build_props_alone_and_never_the_enclosing_checkout_s()
     {
         var golden = Path.Combine(Repository.Root, "tests", "Golden");
-        foreach (var file in (string[])[Project, "classic-minimal/ClassicMinimal.refactorlog", "classic-minimal/Script.PostDeployment.sql", "classic-minimal/dbo/Tables/Customer.sql"])
+        foreach (var file in (string[])[Project, "classic-minimal/ClassicMinimal.refactorlog", "classic-minimal/Script.PostDeployment.sql",
+            "classic-minimal/dbo/Tables/Customer.sql"])
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(scratch.Root, file))!);
             File.Copy(Path.Combine(golden, file), Path.Combine(scratch.Root, file));
@@ -607,13 +647,15 @@ public sealed class RefBuildTests(PublishedTool tool) : IDisposable
         Assert.Equal(["[dbo].[Customer].[GivenName]", "[dbo].[Customer].[Id]"], Columns(dacpac.Path));
     }
 
-    /// <summary>One round of dbchange processes, one per commit in the order released, a gap apart; each commit's worktree stands at it when all have exited.</summary>
+    /// <summary>One round of dbchange processes, one per commit in the order released, a gap apart; each commit's worktree stands at it
+    /// when all have exited.</summary>
     private List<(Git.Worktree At, long Took, string Dacpac)> Round(string[] commits, long gap, params string[] build)
     {
         var taken = DbChangeProcess.AtOnce(scratch.Root, commits, gap, build);
         foreach (var (at, _, _) in taken)
         {
-            Assert.True(File.Exists(Path.Combine(at.Path, Project)), "released " + gap + " ms apart, " + at.Path + " was swept from under the dbchange process that took it");
+            Assert.True(File.Exists(Path.Combine(at.Path, Project)),
+                "released " + gap + " ms apart, " + at.Path + " was swept from under the dbchange process that took it");
             Assert.Equal(at.Commit, scratch.GitAt(at.Path, "rev-parse", "HEAD"));
         }
 
@@ -624,7 +666,9 @@ public sealed class RefBuildTests(PublishedTool tool) : IDisposable
     private (string Before, string After) ClassicMinimal()
     {
         var golden = Path.Combine(Repository.Root, "tests", "Golden");
-        foreach (var file in (string[])["Directory.Build.props", "Directory.Packages.props", Project, "classic-minimal/ClassicMinimal.refactorlog", "classic-minimal/Script.PostDeployment.sql", "classic-minimal/dbo/Tables/Customer.sql"])
+        foreach (var file in (string[])["Directory.Build.props", "Directory.Packages.props", Project,
+            "classic-minimal/ClassicMinimal.refactorlog", "classic-minimal/Script.PostDeployment.sql",
+            "classic-minimal/dbo/Tables/Customer.sql"])
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(scratch.Root, file))!);
             File.Copy(Path.Combine(golden, file), Path.Combine(scratch.Root, file));
@@ -642,8 +686,11 @@ public sealed class RefBuildTests(PublishedTool tool) : IDisposable
     private void SharedNothing(string before, string after, (Git.Worktree At, string Dacpac)[] built)
     {
         Assert.Equal([before, after], built.Select(b => b.At.Commit));
-        Assert.Equal([Path.Combine(scratch.Root, ".dbchange", "worktrees", before), Path.Combine(scratch.Root, ".dbchange", "worktrees", after)], built.Select(b => b.At.Path));
-        Assert.Equal([Path.Combine(Output, before), Path.Combine(Output, after)], built.Select(b => Path.GetDirectoryName(Path.GetDirectoryName(b.Dacpac))));
+        Assert.Equal(
+            [Path.Combine(scratch.Root, ".dbchange", "worktrees", before), Path.Combine(scratch.Root, ".dbchange", "worktrees", after)],
+            built.Select(b => b.At.Path));
+        Assert.Equal([Path.Combine(Output, before), Path.Combine(Output, after)],
+            built.Select(b => Path.GetDirectoryName(Path.GetDirectoryName(b.Dacpac))));
         Assert.Equal(["[dbo].[Customer].[GivenName]", "[dbo].[Customer].[Id]"], Columns(built[0].Dacpac));
         Assert.Equal(["[dbo].[Customer].[Email]", "[dbo].[Customer].[GivenName]", "[dbo].[Customer].[Id]"], Columns(built[1].Dacpac));
         foreach (var (mine, theirs) in ((int[])[0, 1]).Select(i => (built[i], built[1 - i])))
@@ -663,7 +710,8 @@ public sealed class RefBuildTests(PublishedTool tool) : IDisposable
     private static List<string> Columns(string dacpac)
     {
         using var package = GitTests.Ok(Ssdt.Open(dacpac));
-        return package.Model.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass).SelectMany(t => t.GetReferenced(Table.Columns)).Select(c => c.Name.ToString()).Order(StringComparer.Ordinal).ToList();
+        return package.Model.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass).SelectMany(t => t.GetReferenced(Table.Columns))
+            .Select(c => c.Name.ToString()).Order(StringComparer.Ordinal).ToList();
     }
 
     /// <summary>Every file under a folder, its bytes read as Latin-1 so any path it records can be searched for.</summary>
@@ -688,7 +736,8 @@ internal sealed class Scratch : IDisposable
         Run(Parent, "init", "-q", "--initial-branch=main", root);
         Root = Path.GetFullPath(Run(root, "rev-parse", "--show-toplevel"));
         Assert.Equal(root, Root, ignoreCase: true);   // git found this repository, and no other
-        foreach (var (key, value) in ((string, string)[])[("user.name", "DbChange Test"), ("user.email", "dbchange-test@example.invalid"), ("commit.gpgsign", "false"), ("core.autocrlf", "false")])
+        foreach (var (key, value) in ((string, string)[])[("user.name", "DbChange Test"), ("user.email", "dbchange-test@example.invalid"),
+            ("commit.gpgsign", "false"), ("core.autocrlf", "false")])
         {
             Git("config", key, value);
         }
@@ -741,7 +790,8 @@ internal sealed class Scratch : IDisposable
     }
 
     /// <summary>The worktrees git records for the repository, as git list's porcelain names them.</summary>
-    public List<string> Worktrees() => Git("worktree", "list", "--porcelain").Split('\n').Where(l => l.StartsWith("worktree ", StringComparison.Ordinal)).ToList();
+    public List<string> Worktrees() =>
+        Git("worktree", "list", "--porcelain").Split('\n').Where(l => l.StartsWith("worktree ", StringComparison.Ordinal)).ToList();
 
     public void Dispose()
     {

@@ -11,7 +11,8 @@ internal static class Expect
 {
     /// <summary>The value; fails naming the error's code and message.</summary>
     public static T Value<T>(Result<T> result) =>
-        result.Match(value => value, error => throw new XunitException("failed where a value was due: " + error.Code + ": " + error.Message));
+        result.Match(value => value,
+            error => throw new XunitException("failed where a value was due: " + error.Code + ": " + error.Message));
 
     /// <summary>The error; fails naming the value.</summary>
     public static Error Failed<T>(Result<T> result) =>
@@ -21,6 +22,7 @@ internal static class Expect
     public static Error Failed<T>(Result<T> result, string code)
     {
         var error = Failed(result);
-        return error.Code == code ? error : throw new XunitException("the error is " + error.Code + " where " + code + " was due: " + error.Message);
+        return error.Code == code ? error
+            : throw new XunitException("the error is " + error.Code + " where " + code + " was due: " + error.Message);
     }
 }

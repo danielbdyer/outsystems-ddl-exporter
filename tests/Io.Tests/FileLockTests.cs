@@ -89,7 +89,8 @@ public sealed class FileLockTests : IDisposable
         Assert.Throws<OperationCanceledException>(() => FileLock.Take(Lock, TimeSpan.FromMinutes(1), cancel.Token));
 
         canceller.Join();
-        Assert.True(clock.Elapsed - cancelledAt < TimeSpan.FromSeconds(1), "the wait threw " + (clock.Elapsed - cancelledAt) + " after its token was cancelled");
+        Assert.True(clock.Elapsed - cancelledAt < TimeSpan.FromSeconds(1),
+            "the wait threw " + (clock.Elapsed - cancelledAt) + " after its token was cancelled");
         held.Dispose();
         using var taken = Value(FileLock.Take(Lock, TimeSpan.Zero));   // the cancelled wait left the lock free to take
     }
@@ -118,7 +119,8 @@ public sealed class FileLockTests : IDisposable
     [Trait("Category", "fast")]
     public void With_file_locking_turned_off_FileLock_refuses_on_Linux_and_macOS_and_still_excludes_on_Windows()
     {
-        var start = new ProcessStartInfo("dotnet", [typeof(DbChangeProcess).Assembly.Location, "lock", Lock]) { RedirectStandardInput = true, RedirectStandardOutput = true };
+        var start = new ProcessStartInfo("dotnet",
+            [typeof(DbChangeProcess).Assembly.Location, "lock", Lock]) { RedirectStandardInput = true, RedirectStandardOutput = true };
         start.Environment["DOTNET_SYSTEM_IO_DISABLEFILELOCKING"] = "1";
         using var holder = Process.Start(start)!;
         try

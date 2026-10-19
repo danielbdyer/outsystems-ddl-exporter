@@ -20,7 +20,8 @@ namespace DbChange.Io.Tests;
 /// </summary>
 public sealed class CapabilityTests
 {
-    private const BindingFlags Declared = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
+    private const BindingFlags Declared =
+        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
 
     /// <summary>
     /// Each forbidden use, one per line, with the compiler error that refuses it: no Publish or Permissive on a named environment or on
@@ -35,7 +36,8 @@ public sealed class CapabilityTests
         ("_ = ((SqlServer.Database)named).Publish(dacpac, strict);", "CS1061"),
         ("_ = named.Permissive(strict);", "CS1061"),
         ("_ = PublishProfile.Permissive.Of(strict);", "CS0117"),
-        ("_ = new SqlServer.Copy(" + string.Join(", ", Enumerable.Repeat("default!", CopyConstructor().GetParameters().Length)) + ");", "CS1729"),
+        ("_ = new SqlServer.Copy(" + string.Join(", ", Enumerable.Repeat("default!", CopyConstructor().GetParameters().Length)) + ");",
+            "CS1729"),
         ("_ = SqlServer.AggregateQuery.Of(\"SELECT COUNT(*) FROM dbo.Customer;\", \"planted\");", "CS0117"),
         ("_ = DacFx.Publish(named, null!, strict);", "CS1503"),
     ];
@@ -73,19 +75,24 @@ public sealed class CapabilityTests
         var of = typeof(PublishProfile.Permissive).GetMethod("Of", BindingFlags.NonPublic | BindingFlags.Static)!;
 
         Assert.Equal(["DbChange.Io.SqlServer+Copy.Permissive"], Callers(of).Select(Named));
-        Assert.Equal(typeof(PublishProfile.Strict), typeof(DacFx).GetMethod(nameof(DacFx.Plan), BindingFlags.NonPublic | BindingFlags.Static)!.GetParameters().Single(p => typeof(PublishProfile).IsAssignableFrom(p.ParameterType)).ParameterType);
+        Assert.Equal(typeof(PublishProfile.Strict),
+            typeof(DacFx).GetMethod(nameof(DacFx.Plan), BindingFlags.NonPublic | BindingFlags.Static)!.GetParameters()
+                .Single(p => typeof(PublishProfile).IsAssignableFrom(p.ParameterType)).ParameterType);
         foreach (var type in (Type[])[typeof(SqlServer.EnvironmentDatabase), typeof(SqlServer.Database)])
         {
             var members = type.GetMembers(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
             Assert.DoesNotContain(members, m => m.Name is "Publish" or "Permissive");
-            Assert.DoesNotContain(members.OfType<MethodInfo>(), m => Touches(m.ReturnType) || m.GetParameters().Any(p => Touches(p.ParameterType)));
+            Assert.DoesNotContain(members.OfType<MethodInfo>(),
+                m => Touches(m.ReturnType) || m.GetParameters().Any(p => Touches(p.ParameterType)));
             Assert.DoesNotContain(members.OfType<PropertyInfo>(), p => Touches(p.PropertyType));
         }
 
-        Assert.True(typeof(SqlServer.EnvironmentDatabase).IsSealed && typeof(SqlServer.Copy).IsSealed && !typeof(SqlServer.Copy).IsAssignableFrom(typeof(SqlServer.EnvironmentDatabase)));
+        Assert.True(typeof(SqlServer.EnvironmentDatabase).IsSealed && typeof(SqlServer.Copy).IsSealed
+            && !typeof(SqlServer.Copy).IsAssignableFrom(typeof(SqlServer.EnvironmentDatabase)));
     }
 
-    /// <summary>A Copy is made in io/LocalServer alone: its constructor is not public, and only LocalServer's methods, its lambdas included, call it.</summary>
+    /// <summary>A Copy is made in io/LocalServer alone: its constructor is not public, and only LocalServer's methods, its lambdas
+    /// included, call it.</summary>
     [Fact]
     [Trait("Category", "fast")]
     [Trait("Law", "a named environment cannot be written")]
@@ -116,15 +123,19 @@ public sealed class CapabilityTests
         var made = typeof(PublishProfile.Permissive).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();
 
         Assert.True(made.IsPrivate && of.IsAssembly);
-        Assert.Equal(["DbChange.Budgets.Tests", "DbChange.Io.Tests"], typeof(PublishProfile).Assembly.GetCustomAttributes<InternalsVisibleToAttribute>().Select(a => a.AssemblyName).Order(StringComparer.Ordinal));
+        Assert.Equal(["DbChange.Budgets.Tests", "DbChange.Io.Tests"],
+            typeof(PublishProfile).Assembly.GetCustomAttributes<InternalsVisibleToAttribute>().Select(a => a.AssemblyName)
+                .Order(StringComparer.Ordinal));
         Assert.Equal(["DbChange.Io.PublishProfile+Permissive.Of"], Callers(made).Select(Named));
         Assert.NotEmpty(Callers(of));
         Assert.Empty(Callers(of).Where(caller => !Within(caller.DeclaringType, "Copy")).Select(Named));
     }
 
-    private static ConstructorInfo CopyConstructor() => typeof(SqlServer.Copy).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();
+    private static ConstructorInfo CopyConstructor() =>
+        typeof(SqlServer.Copy).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single();
 
-    /// <summary>The planted file around the uses: a Copy made by LocalServer.Create and published to, Strict then Permissive, then a method the uses stand in.</summary>
+    /// <summary>The planted file around the uses: a Copy made by LocalServer.Create and published to, Strict then Permissive, then a method
+    /// the uses stand in.</summary>
     private static readonly string[] Before =
     [
         "using DbChange.Io;", "using DbChange.Kernel;", "", "namespace Planted;", "", "public static class Uses", "{",
@@ -135,7 +146,8 @@ public sealed class CapabilityTests
 
     private static readonly string[] After = ["    }", "}", ""];
 
-    /// <summary>A library referencing the io and kernel assemblies this test runs against, restored without a lock file, so CI's locked restore has nothing to check.</summary>
+    /// <summary>A library referencing the io and kernel assemblies this test runs against, restored without a lock file, so CI's locked
+    /// restore has nothing to check.</summary>
     private static string Project() => string.Join('\n',
         "<Project Sdk=\"Microsoft.NET.Sdk\">",
         "  <PropertyGroup>",
@@ -154,14 +166,17 @@ public sealed class CapabilityTests
     private static bool Touches(Type type) => typeof(PublishProfile).IsAssignableFrom(type) || type == typeof(SqlServer.Copy)
         || type.GenericTypeArguments.Any(Touches);
 
-    /// <summary>Each method and constructor io compiles, compiler-made ones included, whose IL holds <paramref name="callee"/>'s metadata token.</summary>
+    /// <summary>Each method and constructor io compiles, compiler-made ones included, whose IL holds <paramref name="callee"/>'s metadata
+    /// token.</summary>
     private static IEnumerable<MethodBase> Callers(MethodBase callee) => typeof(SqlServer).Assembly.GetTypes()
         .SelectMany(t => t.GetMethods(Declared).Cast<MethodBase>().Concat(t.GetConstructors(Declared)))
         .Where(m => m.GetMethodBody()?.GetILAsByteArray() is { } il && Calls(il, callee.MetadataToken));
 
-    /// <summary>Whether IL holds a call, callvirt, newobj, ldftn or ldvirtftn of the member whose metadata token is <paramref name="token"/>: the token after its opcode, never the same four bytes elsewhere.</summary>
+    /// <summary>Whether IL holds a call, callvirt, newobj, ldftn or ldvirtftn of the member whose metadata token is
+    /// <paramref name="token"/>: the token after its opcode, never the same four bytes elsewhere.</summary>
     private static bool Calls(byte[] il, int token) => Enumerable.Range(1, Math.Max(0, il.Length - 4)).Any(i =>
-        il.AsSpan(i, 4).SequenceEqual(BitConverter.GetBytes(token)) && (il[i - 1] is 0x28 or 0x6F or 0x73 || (i >= 2 && il[i - 2] == 0xFE && il[i - 1] is 0x06 or 0x07)));
+        il.AsSpan(i, 4).SequenceEqual(BitConverter.GetBytes(token))
+            && (il[i - 1] is 0x28 or 0x6F or 0x73 || (i >= 2 && il[i - 2] == 0xFE && il[i - 1] is 0x06 or 0x07)));
 
     private static bool Within(Type? type, string name) => type is not null && (type.Name == name || Within(type.DeclaringType, name));
 

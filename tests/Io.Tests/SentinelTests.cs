@@ -35,7 +35,8 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         var dacpac = Value(Ssdt.Build(ClassicMinimal(), tool.Folder, scratch.Under("build"))).Path;
         Assert.ThrowsAny<SocketException>(() => Dns.GetHostEntry("sentinel.invalid"));
 
-        var copy = Value(LocalServer.Create(SqlServerFixture.RepositoryRoot(scratch.Path), await SqlServerFixture.ServerAsync(), SqlServer.QueryLog.Start(scratch.Path)));
+        var copy = Value(LocalServer.Create(SqlServerFixture.RepositoryRoot(scratch.Path), await SqlServerFixture.ServerAsync(),
+            SqlServer.QueryLog.Start(scratch.Path)));
         try
         {
             var permissive = copy.Permissive(strict);
@@ -44,7 +45,9 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
                 Value(copy.Publish(dacpac, profile, SqlServer.QueryLog.Start(scratch.Path)));
             }
 
-            Assert.Equal(1, await SqlServerFixture.ScalarAsync(copy.Connection, "SELECT COUNT(*) FROM sys.tables WHERE SCHEMA_NAME(schema_id) = N'dbo' AND name = N'Customer';"));
+            Assert.Equal(1,
+                await SqlServerFixture.ScalarAsync(copy.Connection,
+                    "SELECT COUNT(*) FROM sys.tables WHERE SCHEMA_NAME(schema_id) = N'dbo' AND name = N'Customer';"));
             Assert.False(await SqlServerFixture.ExistsAsync(elsewhere), "the profile's TargetDatabaseName, " + elsewhere + ", was created");
         }
         finally
@@ -59,7 +62,8 @@ public sealed class SentinelTests(PublishedTool tool) : IDisposable
         var profile = XDocument.Load(GoldenProject.Profile);
         var properties = profile.Root!.Elements().First(e => e.Name.LocalName == "PropertyGroup");
         properties.Add(
-            new XElement(properties.Name.Namespace + "TargetConnectionString", "Data Source=sentinel.invalid;Initial Catalog=" + elsewhere + ";Integrated Security=True"),
+            new XElement(properties.Name.Namespace + "TargetConnectionString",
+                "Data Source=sentinel.invalid;Initial Catalog=" + elsewhere + ";Integrated Security=True"),
             new XElement(properties.Name.Namespace + "TargetDatabaseName", elsewhere));
         var file = scratch.Under("sentinel.publish.xml");
         profile.Save(file);

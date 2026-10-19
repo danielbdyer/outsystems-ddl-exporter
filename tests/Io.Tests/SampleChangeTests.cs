@@ -34,14 +34,17 @@ public sealed class SampleChangeTests
         Assert.Equal(inMemory, Shape(Expect.Value(Change.Between(built.Elements, head.Elements, head.Renames)), keys));
     }
 
-    /// <summary>A change as the keys it touches among <paramref name="keys"/>: created, dropped, renamed, and altered with the names of what altered.</summary>
+    /// <summary>A change as the keys it touches among <paramref name="keys"/>: created, dropped, renamed, and altered with the names of
+    /// what altered.</summary>
     private static List<string> Shape(Change change, IReadOnlySet<ElementKey> keys) =>
     [
         .. change.Created.Where(e => keys.Contains(e.Key)).Select(e => "created " + e.Key)
             .Concat(change.Dropped.Where(e => keys.Contains(e.Key)).Select(e => "dropped " + e.Key))
-            .Concat(change.Renamed.Where(r => keys.Contains(r.Before) || keys.Contains(r.After)).Select(r => "renamed " + r.Before + " to " + r.After))
+            .Concat(change.Renamed.Where(r => keys.Contains(r.Before) || keys.Contains(r.After))
+                .Select(r => "renamed " + r.Before + " to " + r.After))
             .Concat(change.Altered.Where(a => keys.Contains(a.Key))
-                .Select(a => "altered " + a.Key + ": " + string.Join(", ", a.Properties.Select(p => p.Name).Concat(a.Relationships.Select(r => r.Name)))))
+                .Select(a => "altered " + a.Key + ": "
+                    + string.Join(", ", a.Properties.Select(p => p.Name).Concat(a.Relationships.Select(r => r.Name)))))
             .Order(StringComparer.Ordinal),
     ];
 }
