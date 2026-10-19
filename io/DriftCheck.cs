@@ -16,20 +16,26 @@ namespace DbChange.Io;
 /// </summary>
 public static class DriftCheck
 {
-    /// <summary>What check drift is asked: the target, the ref, the profile the caller names for a copy, and the project, where the repository holds several.</summary>
+    /// <summary>
+    /// What check drift is asked: the target, the ref, the profile the caller names for a copy, and the project, where the repository holds
+    /// several.
+    /// </summary>
     public sealed record Request(Target Target, GitRef At, string? Profile, string? Project);
 
     /// <summary>
     /// What check drift answers: the target and the ref; the ref's commit; the drift; the collation the target's names compare under; the
     /// provenance of the claim; the profile the plan ran under; and the notes the profile, the package, the two models and the plan raised.
     /// </summary>
-    public sealed record Answer(Target Target, GitRef At, string Commit, Drift Drift, Collation Collation, Provenance Provenance, string Profile, IReadOnlyList<Finding> Notes);
+    public sealed record Answer(Target Target, GitRef At, string Commit, Drift Drift, Collation Collation, Provenance Provenance,
+        string Profile, IReadOnlyList<Finding> Notes);
 
     /// <summary>check drift, the database read by io/DacFx.Extract.</summary>
-    public static Stamped<Answer> Run(Checkout checkout, Request request, SqlServer.QueryLog log) => Run(checkout, request, log, database => DacFx.Extract(database));
+    public static Stamped<Answer> Run(Checkout checkout, Request request, SqlServer.QueryLog log) =>
+        Run(checkout, request, log, database => DacFx.Extract(database));
 
     /// <summary>check drift, the database read by <paramref name="extract"/>, as a test gives it.</summary>
-    internal static Stamped<Answer> Run(Checkout checkout, Request request, SqlServer.QueryLog log, Func<SqlServer.Database, Result<Ssdt.Package>> extract)
+    internal static Stamped<Answer> Run(Checkout checkout, Request request, SqlServer.QueryLog log,
+        Func<SqlServer.Database, Result<Ssdt.Package>> extract)
     {
         var standing = Standing.Of(checkout);
         if (standing.Result is Result<Pin>.Failed { Error: var refused })
@@ -40,9 +46,11 @@ public static class DriftCheck
         var stamp = standing.Stamp!;
         var environmentsFile = EnvironmentsFile.Read(checkout.Root);
         var reached = SqlServer.Resolve(request.Target, environmentsFile, checkout.Root)
-            .Bind(database => Profile(checkout.Root, database, environmentsFile, request.Profile).Map(profile => (Database: database, Profile: profile)))
+            .Bind(database => Profile(checkout.Root, database, environmentsFile, request.Profile)
+                .Map(profile => (Database: database, Profile: profile)))
             .Bind(chosen => SqlServer.Reach(chosen.Database, log).Map(readable => (chosen.Database, chosen.Profile, Readable: readable)))
-            .Bind(chosen => (chosen.Database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, log).Map(server => (Server?)server) : Result.Ok<Server?>(null))
+            .Bind(chosen => (chosen.Database is SqlServer.Copy copy ? SqlServer.ServerOf(copy, log).Map(server => (Server?)server)
+                : Result.Ok<Server?>(null))
                 .Map(server => (chosen.Database, chosen.Profile, chosen.Readable, Server: server)));
         if (reached.Failed(out var target, out var unreached))
         {
@@ -68,28 +76,40 @@ public static class DriftCheck
     }
 
     /// <summary>The plan of the ref's package against the extracted database, the drift it shows, and the claim's provenance.</summary>
-    private static Result<Answer> Decided(Request request, string commit, Ssdt.Package package, Ssdt.Package extracted, SqlServer.Readable readable, PublishProfile.Strict profile,
+    private static Result<Answer> Decided(Request request, string commit, Ssdt.Package package, Ssdt.Package extracted,
+        SqlServer.Readable readable, PublishProfile.Strict profile,
         IReadOnlyList<SqlCmdValue> values, Stamp stamp) =>
-        package.Elements.Bind(source => extracted.Elements.Bind(target => DacFx.Plan(package, extracted, readable.Database.Catalog, profile, values).Bind(plan =>
-            Ssdt.CollationOf(target.Elements).Bind(collation => Drift.Of(plan.Report, target.Elements, source.Elements, collation).Map(drift =>
+        package.Elements.Bind(source => extracted.Elements.Bind(target =>
+            DacFx.Plan(package, extracted, readable.Database.Catalog, profile, values).Bind(plan =>
+            Ssdt.CollationOf(target.Elements).Bind(collation =>
+            Drift.Of(plan.Report, target.Elements, source.Elements, collation).Map(drift =>
                 new Answer(request.Target, request.At, commit, drift, collation,
-                    Provenance.Drift(Fingerprint.Of(target.Elements), Fingerprint.Of(plan.Report), stamp.DacFx, stamp.Server, profile.Fingerprint, request.Target, DateTimeOffset.UtcNow),
+                    Provenance.Drift(Fingerprint.Of(target.Elements), Fingerprint.Of(plan.Report), stamp.DacFx, stamp.Server,
+                        profile.Fingerprint, request.Target, DateTimeOffset.UtcNow),
                     profile.Source,
-                    [.. profile.Notes, .. Notes(package), .. source.Notes(package.Source), .. target.Notes(request.Target.ToString()), .. readable.Notes, .. plan.Notes]))))));
-
-    /// <summary>What the ref's package says that a plan package to package leaves out: a pre-plan script, which a live deploy runs and this plan does not.</summary>
-    private static IEnumerable<Finding> Notes(Ssdt.Package package) => package.PrePlan is null ? [] : [Finding.Note("package.pre-plan-script", package.Source,
-        "The package carries a pre-plan script; DacFx runs it against a live target before planning, and dbchange plans package to package, so it does not run here.")];
+                    [.. profile.Notes, .. Notes(package), .. source.Notes(package.Source), .. target.Notes(request.Target.ToString()),
+                        .. readable.Notes, .. plan.Notes]))))));
 
     /// <summary>
-    /// The pipeline's profile for the database: a named environment's own; for a copy, the one the caller names, from the repository root, else
-    /// the one profile every environment of the environments file names.
+    /// What the ref's package says that a plan package to package leaves out: a pre-plan script, which a live deploy runs and this plan
+    /// does not.
     /// </summary>
-    private static Result<PublishProfile.Strict> Profile(string root, SqlServer.Database database, Result<Environments> environmentsFile, string? named) =>
+    private static IEnumerable<Finding> Notes(Ssdt.Package package) =>
+        package.PrePlan is null ? [] : [Finding.Note("package.pre-plan-script", package.Source,
+        "The package carries a pre-plan script; DacFx runs it against a live target before planning, and dbchange plans package to "
+            + "package, so it does not run here.")];
+
+    /// <summary>
+    /// The pipeline's profile for the database: a named environment's own; for a copy, the one the caller names, from the repository root,
+    /// else the one profile every environment of the environments file names.
+    /// </summary>
+    private static Result<PublishProfile.Strict> Profile(string root, SqlServer.Database database,
+        Result<Environments> environmentsFile, string? named) =>
         database is SqlServer.EnvironmentDatabase environment ? PublishProfiles.Of(environment.Environment, root)
         : named is not null ? PublishProfiles.Load(Path.GetFullPath(Path.Combine(root, named)))
         : environmentsFile.Bind(environments => environments.SharedProfile is { } shared
             ? PublishProfiles.Load(Path.GetFullPath(Path.Combine(root, shared.ToString())))
-            : new Error("arguments.missing-flag", database + " is a copy, and " + EnvironmentsFile.Json + " names no one profile its environments share.",
+            : new Error("arguments.missing-flag",
+                database + " is a copy, and " + EnvironmentsFile.Json + " names no one profile its environments share.",
                 "Name the profile to plan under with dbchange check drift --profile <the pipeline's .publish.xml>."));
 }

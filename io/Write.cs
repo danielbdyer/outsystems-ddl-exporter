@@ -94,35 +94,55 @@ public static class Write
         writer.Write(text);
     }
 
-    /// <summary>Whether an exception is one the file system reports about a path, which becomes file.unwritable, rather than a defect in the caller.</summary>
+    /// <summary>
+    /// Whether an exception is one the file system reports about a path, which becomes file.unwritable, rather than a defect in the caller.
+    /// </summary>
     internal static bool FileSystemFailure(Exception e) => e is IOException or UnauthorizedAccessException or NotSupportedException;
 
-    /// <summary>Whether an IOException says another process holds the file: on Windows a sharing or lock violation, on Linux and macOS flock's EWOULDBLOCK.</summary>
+    /// <summary>
+    /// Whether an IOException says another process holds the file: on Windows a sharing or lock violation, on Linux and macOS flock's
+    /// EWOULDBLOCK.
+    /// </summary>
     internal static bool SharingViolation(IOException e) => OperatingSystem.IsWindows()
         ? e.HResult is unchecked((int)0x80070020) or unchecked((int)0x80070021)
         : e.HResult is 11 or 35;
 
-    /// <summary>file.unwritable for <paramref name="path"/>, its cause read from the exception the file system raised, with the remedy for that cause.</summary>
+    /// <summary>
+    /// file.unwritable for <paramref name="path"/>, its cause read from the exception the file system raised, with the remedy for that
+    /// cause.
+    /// </summary>
     internal static Error Unwritable(string path, Exception cause)
     {
         var (what, remedy) = cause switch
         {
-            IOException io when DiskFull(io) => ("the disk is full", "Free space on the disk that holds " + path + ", then run the command again."),
-            IOException io when SharingViolation(io) => ("another program holds it open", "Close the program that holds " + path + " open, then run the command again."),
-            IOException io when FileInTheWay(io) => ("a file stands where a folder should be", "Move the file that stands where the folder of " + path + " should be, then run the command again."),
-            UnauthorizedAccessException => ("this identity may not write it, or it is read-only", "Grant this identity write access to " + path + ", or clear its read-only attribute, then run the command again."),
+            IOException io when DiskFull(io) =>
+                ("the disk is full", "Free space on the disk that holds " + path + ", then run the command again."),
+            IOException io when SharingViolation(io) =>
+                ("another program holds it open", "Close the program that holds " + path + " open, then run the command again."),
+            IOException io when FileInTheWay(io) =>
+                ("a file stands where a folder should be",
+                    "Move the file that stands where the folder of " + path + " should be, then run the command again."),
+            UnauthorizedAccessException =>
+                ("this identity may not write it, or it is read-only",
+                    "Grant this identity write access to " + path + ", or clear its read-only attribute, then run the command again."),
             _ => (cause.Message.TrimEnd('.'), "Fix what the operating system reports for " + path + ", then run the command again."),
         };
         return new Error("file.unwritable", path + " cannot be written: " + what + ".", remedy);
     }
 
     /// <summary>ERROR_DISK_FULL or ERROR_HANDLE_DISK_FULL on Windows; ENOSPC elsewhere.</summary>
-    private static bool DiskFull(IOException e) => OperatingSystem.IsWindows() ? e.HResult is unchecked((int)0x80070070) or unchecked((int)0x80070027) : e.HResult == 28;
+    private static bool DiskFull(IOException e) =>
+        OperatingSystem.IsWindows() ? e.HResult is unchecked((int)0x80070070) or unchecked((int)0x80070027) : e.HResult == 28;
 
-    /// <summary>ERROR_ALREADY_EXISTS on Windows, which CreateDirectory raises for a file of the folder's name; ENOTDIR or EEXIST elsewhere.</summary>
-    private static bool FileInTheWay(IOException e) => OperatingSystem.IsWindows() ? e.HResult == unchecked((int)0x800700B7) : e.HResult is 20 or 17;
+    /// <summary>
+    /// ERROR_ALREADY_EXISTS on Windows, which CreateDirectory raises for a file of the folder's name; ENOTDIR or EEXIST elsewhere.
+    /// </summary>
+    private static bool FileInTheWay(IOException e) =>
+        OperatingSystem.IsWindows() ? e.HResult == unchecked((int)0x800700B7) : e.HResult is 20 or 17;
 
-    /// <summary>Whether the file on disk declares CRLF: its first line ends in CRLF, read as UTF-16 when it opens with that byte-order mark.</summary>
+    /// <summary>
+    /// Whether the file on disk declares CRLF: its first line ends in CRLF, read as UTF-16 when it opens with that byte-order mark.
+    /// </summary>
     private static bool UsesCrlf(string path)
     {
         if (!File.Exists(path))
@@ -203,8 +223,8 @@ public static class Write
     }
 
     /// <summary>
-    /// A file dbchange made for itself deleted: a failed write's temporary file, a commit's temporary index, a gone worktree's holders' lock.
-    /// One the file system will not release (a scanner holds it) is left, and the result being reported stays the one reported.
+    /// A file dbchange made for itself deleted: a failed write's temporary file, a commit's temporary index, a gone worktree's holders'
+    /// lock. One the file system will not release (a scanner holds it) is left, and the result being reported stays the one reported.
     /// </summary>
     internal static void Discard(string path)
     {

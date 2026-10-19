@@ -25,16 +25,21 @@ public static class SchemaText
 
     private static readonly Regex Directive = new(@"^[ \t]*:", RegexOptions.CultureInvariant);
 
-    private static readonly Regex Connect = new(@"^([ \t]*:connect\b.*?\s-P\s+)(\S+)", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly Regex Connect = new(@"^([ \t]*:connect\b.*?\s-P\s+)(\S+)",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     private static readonly Regex Variable = new(@"\$\(" + SqlCmdVariable.NamePattern + @"\)", RegexOptions.CultureInvariant);
 
-    private static readonly Regex VariableLiteral = new(@"\A(?:N?['""])?\$\(" + SqlCmdVariable.NamePattern + @"\)['""]?\z", RegexOptions.CultureInvariant);
+    private static readonly Regex VariableLiteral = new(@"\A(?:N?['""])?\$\(" + SqlCmdVariable.NamePattern + @"\)['""]?\z",
+        RegexOptions.CultureInvariant);
 
     private static readonly Regex Secretive = new(@"password|pwd|secret", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
-    /// <summary>The stored procedures that take a password: each with the form, the positions of its password parameters and their names.</summary>
-    private static readonly Dictionary<string, (PasswordForm Form, int[] Positions, string[] Names)> Procedures = new(StringComparer.OrdinalIgnoreCase)
+    /// <summary>
+    /// The stored procedures that take a password: each with the form, the positions of its password parameters and their names.
+    /// </summary>
+    private static readonly Dictionary<string, (PasswordForm Form, int[] Positions, string[] Names)> Procedures =
+        new(StringComparer.OrdinalIgnoreCase)
     {
         ["sp_password"] = (PasswordForm.SpPassword, [0, 1], ["@old", "@new"]),
         ["sp_addlogin"] = (PasswordForm.SpAddLogin, [1], ["@passwd"]),
@@ -50,14 +55,17 @@ public static class SchemaText
     public static PrintedScript Print(string text)
     {
         var (masked, connects) = Masked(text);
-        var attempts = new List<(Func<TSqlParser, TextReader, (TSqlFragment? Fragment, IList<ParseError> Errors)> Parse, bool QuotedIdentifiers, bool VariablesAsLiterals)>
+        var attempts = new List<(Func<TSqlParser, TextReader, (TSqlFragment? Fragment, IList<ParseError> Errors)> Parse,
+            bool QuotedIdentifiers, bool VariablesAsLiterals)>
         {
-            (Script, true, false), (Script, false, false), (Script, true, true), (Script, false, true), (Expression, true, false), (Expression, true, true), (Predicate, true, false),
+            (Script, true, false), (Script, false, false), (Script, true, true), (Script, false, true),
+            (Expression, true, false), (Expression, true, true), (Predicate, true, false),
         };
         ParseError? first = null;
         foreach (var (parse, quotedIdentifiers, variablesAsLiterals) in attempts)
         {
-            var (fragment, errors) = parse(TSql.Parser(quotedIdentifiers), new StringReader(variablesAsLiterals ? Quoted(masked) : Lettered(masked)));
+            var (fragment, errors) = parse(TSql.Parser(quotedIdentifiers),
+                new StringReader(variablesAsLiterals ? Quoted(masked) : Lettered(masked)));
             if (errors.Count == 0 && fragment is not null)
             {
                 return Printed(text, fragment, connects);
@@ -69,13 +77,18 @@ public static class SchemaText
         return new PrintedScript.Unparsed(first?.Line ?? 1, first?.Column ?? 1);
     }
 
-    private static (TSqlFragment? Fragment, IList<ParseError> Errors) Script(TSqlParser parser, TextReader reader) => (parser.Parse(reader, out var errors), errors);
+    private static (TSqlFragment? Fragment, IList<ParseError> Errors) Script(TSqlParser parser, TextReader reader) =>
+        (parser.Parse(reader, out var errors), errors);
 
-    private static (TSqlFragment? Fragment, IList<ParseError> Errors) Expression(TSqlParser parser, TextReader reader) => (parser.ParseExpression(reader, out var errors), errors);
+    private static (TSqlFragment? Fragment, IList<ParseError> Errors) Expression(TSqlParser parser, TextReader reader) =>
+        (parser.ParseExpression(reader, out var errors), errors);
 
-    private static (TSqlFragment? Fragment, IList<ParseError> Errors) Predicate(TSqlParser parser, TextReader reader) => (parser.ParseBooleanExpression(reader, out var errors), errors);
+    private static (TSqlFragment? Fragment, IList<ParseError> Errors) Predicate(TSqlParser parser, TextReader reader) =>
+        (parser.ParseBooleanExpression(reader, out var errors), errors);
 
-    /// <summary>The text with each literal a form sets replaced, from the last forward so earlier offsets hold, then each :connect line's -P value.</summary>
+    /// <summary>
+    /// The text with each literal a form sets replaced, from the last forward so earlier offsets hold, then each :connect line's -P value.
+    /// </summary>
     private static PrintedScript Printed(string text, TSqlFragment fragment, IReadOnlyList<int> connects)
     {
         var found = new Passwords(text);
@@ -101,7 +114,9 @@ public static class SchemaText
         return new PrintedScript.Printed(string.Join('\n', lines), SortedArray.Of(forms));
     }
 
-    /// <summary>Each SQLCMD directive line (:setvar, :r, :on error, :connect) as spaces of the same length, and the indexes of the :connect lines.</summary>
+    /// <summary>
+    /// Each SQLCMD directive line (:setvar, :r, :on error, :connect) as spaces of the same length, and the indexes of the :connect lines.
+    /// </summary>
     private static (string Masked, IReadOnlyList<int> Connects) Masked(string text)
     {
         var lines = text.Split('\n');
@@ -122,15 +137,23 @@ public static class SchemaText
         return (string.Join('\n', lines), connects);
     }
 
-    /// <summary>Each $(Name) as letters of the same length, an identifier where the variable stands bare and part of the text inside quotes.</summary>
+    /// <summary>
+    /// Each $(Name) as letters of the same length, an identifier where the variable stands bare and part of the text inside quotes.
+    /// </summary>
     private static string Lettered(string text) => Variable.Replace(text, m => new string('x', m.Length));
 
-    /// <summary>Each $(Name) as a string literal of the same length, so a variable standing where a literal must stand parses; inside quotes, letters.</summary>
+    /// <summary>
+    /// Each $(Name) as a string literal of the same length, so a variable standing where a literal must stand parses; inside quotes,
+    /// letters.
+    /// </summary>
     private static string Quoted(string text) => Variable.Replace(text, m => m.Index > 0 && text[m.Index - 1] is '\'' or '"' or '['
         ? new string('x', m.Length)
         : "'" + new string('x', m.Length - 2) + "'");
 
-    /// <summary>Every string literal a password form sets, with the form, over the parsed text; a literal that is a SQLCMD variable in the text as given is skipped.</summary>
+    /// <summary>
+    /// Every string literal a password form sets, with the form, over the parsed text; a literal that is a SQLCMD variable in the text as
+    /// given is skipped.
+    /// </summary>
     private sealed class Passwords(string text) : TSqlFragmentVisitor
     {
         public List<Literal> Literals { get; } = [];
@@ -236,7 +259,8 @@ public static class SchemaText
         public override void ExplicitVisit(CreateSymmetricKeyStatement node)
         {
             Found(PasswordForm.CreateSymmetricKey, [
-                .. node.KeyOptions.Select(o => o switch { KeySourceKeyOption k => k.PassPhrase, IdentityValueKeyOption i => i.IdentityPhrase, _ => null }),
+                .. node.KeyOptions.Select(o =>
+                    o switch { KeySourceKeyOption k => k.PassPhrase, IdentityValueKeyOption i => i.IdentityPhrase, _ => null }),
                 .. node.EncryptingMechanisms.Select(Password)]);
             base.ExplicitVisit(node);
         }
@@ -283,10 +307,14 @@ public static class SchemaText
             base.ExplicitVisit(node);
         }
 
-        /// <summary>RESTORE keeps PASSWORD and MEDIAPASSWORD for backups made with them; BACKUP lost both in SQL Server 2012, and the 2022 grammar reads neither, so such a script is left out whole as unparsed.</summary>
+        /// <summary>
+        /// RESTORE keeps PASSWORD and MEDIAPASSWORD for backups made with them; BACKUP lost both in SQL Server 2012, and the 2022 grammar
+        /// reads neither, so such a script is left out whole as unparsed.
+        /// </summary>
         public override void ExplicitVisit(RestoreStatement node)
         {
-            Found(PasswordForm.Restore, [.. node.Options.Where(o => o.OptionKind is RestoreOptionKind.Password or RestoreOptionKind.MediaPassword)
+            Found(PasswordForm.Restore,
+                [.. node.Options.Where(o => o.OptionKind is RestoreOptionKind.Password or RestoreOptionKind.MediaPassword)
                 .Select(o => (o as ScalarExpressionRestoreOption)?.Value as Literal)]);
             base.ExplicitVisit(node);
         }
@@ -314,11 +342,15 @@ public static class SchemaText
                     var positional = parameters.Where(p => p.Variable is null).ToList();
                     Found(known.Form, [
                         .. known.Positions.Where(i => i < positional.Count).Select(i => positional[i].ParameterValue as Literal),
-                        .. parameters.Where(p => p.Variable is not null && known.Names.Contains(p.Variable.Name, StringComparer.OrdinalIgnoreCase)).Select(p => p.ParameterValue as Literal)]);
+                        .. parameters.Where(p =>
+                            p.Variable is not null && known.Names.Contains(p.Variable.Name, StringComparer.OrdinalIgnoreCase))
+                            .Select(p => p.ParameterValue as Literal)]);
                 }
                 else
                 {
-                    Found(PasswordForm.VariableOrParameter, [.. parameters.Where(p => p.Variable is not null && Secretive.IsMatch(p.Variable.Name)).Select(p => p.ParameterValue as Literal)]);
+                    Found(PasswordForm.VariableOrParameter,
+                        [.. parameters.Where(p => p.Variable is not null && Secretive.IsMatch(p.Variable.Name))
+                            .Select(p => p.ParameterValue as Literal)]);
                 }
             }
 
@@ -335,7 +367,10 @@ public static class SchemaText
             base.ExplicitVisit(node);
         }
 
-        /// <summary>A procedure's or a function's parameter, a variable of its own kind to the visitor: its default is the literal the reviewers found.</summary>
+        /// <summary>
+        /// A procedure's or a function's parameter, a variable of its own kind to the visitor: its default is the literal the reviewers
+        /// found.
+        /// </summary>
         public override void ExplicitVisit(ProcedureParameter node)
         {
             if (Secretive.IsMatch(node.VariableName.Value))
@@ -364,17 +399,26 @@ public static class SchemaText
         })]);
 
         private void ApplicationRole(PasswordForm form, IEnumerable<ApplicationRoleOption> options) =>
-            Found(form, [.. options.Where(o => o.OptionKind == ApplicationRoleOptionKind.Password).Select(o => o.Value?.ValueExpression as Literal)]);
+            Found(form, [.. options.Where(o => o.OptionKind == ApplicationRoleOptionKind.Password)
+                .Select(o => o.Value?.ValueExpression as Literal)]);
 
         private void ExternalDataSource(IEnumerable<ExternalDataSourceOption> options) => Found(PasswordForm.CreateExternalDataSource,
-            [.. options.OfType<ExternalDataSourceLiteralOrIdentifierOption>().Where(o => o.OptionKind == ExternalDataSourceOptionKind.ConnectionOptions).Select(o => o.Value?.ValueExpression as Literal)]);
+            [.. options.OfType<ExternalDataSourceLiteralOrIdentifierOption>()
+                .Where(o => o.OptionKind == ExternalDataSourceOptionKind.ConnectionOptions)
+                .Select(o => o.Value?.ValueExpression as Literal)]);
 
-        /// <summary>A mechanism's password: the literal of a PASSWORD mechanism, or the string a certificate or key is given WITH PASSWORD (a signature is a binary literal).</summary>
-        private static Literal? Password(CryptoMechanism? mechanism) => mechanism?.PasswordOrSignature is { LiteralType: LiteralType.String } password ? password : null;
+        /// <summary>
+        /// A mechanism's password: the literal of a PASSWORD mechanism, or the string a certificate or key is given WITH PASSWORD (a
+        /// signature is a binary literal).
+        /// </summary>
+        private static Literal? Password(CryptoMechanism? mechanism) =>
+            mechanism?.PasswordOrSignature is { LiteralType: LiteralType.String } password ? password : null;
 
         private void Found(PasswordForm form, params Literal?[] literals)
         {
-            var set = literals.OfType<Literal>().Where(l => l.LiteralType == LiteralType.String && !VariableLiteral.IsMatch(text.Substring(l.StartOffset, l.FragmentLength))).ToList();
+            var set = literals.OfType<Literal>()
+                .Where(l => l.LiteralType == LiteralType.String
+                    && !VariableLiteral.IsMatch(text.Substring(l.StartOffset, l.FragmentLength))).ToList();
             if (set.Count > 0)
             {
                 Literals.AddRange(set);
@@ -384,7 +428,10 @@ public static class SchemaText
     }
 }
 
-/// <summary>Schema text as the printer leaves it, closed: printed with each password value left out and the forms named, or unparsed, with where ScriptDom's parse stopped.</summary>
+/// <summary>
+/// Schema text as the printer leaves it, closed: printed with each password value left out and the forms named, or unparsed, with where
+/// ScriptDom's parse stopped.
+/// </summary>
 public abstract record PrintedScript
 {
     private PrintedScript()
@@ -394,6 +441,8 @@ public abstract record PrintedScript
     /// <summary>The text printed, each value a form set replaced by SchemaText.LeftOut, and the forms found, each once.</summary>
     public sealed record Printed(string Text, SortedArray<PasswordForm> Forms) : PrintedScript;
 
-    /// <summary>Text ScriptDom cannot parse, so a password in it cannot be found; the line and column its parse stopped at, one-based.</summary>
+    /// <summary>
+    /// Text ScriptDom cannot parse, so a password in it cannot be found; the line and column its parse stopped at, one-based.
+    /// </summary>
     public sealed record Unparsed(int Line, int Column) : PrintedScript;
 }

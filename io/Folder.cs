@@ -3,7 +3,9 @@ using System.IO;
 
 namespace DbChange.Io;
 
-/// <summary>The upward search three modules once wrote by hand: the nearest folder at or above a start folder that holds what the caller looks for.</summary>
+/// <summary>
+/// The upward search three modules once wrote by hand: the nearest folder at or above a start folder that holds what the caller looks for.
+/// </summary>
 internal static class Folder
 {
     /// <summary>

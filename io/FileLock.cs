@@ -66,13 +66,15 @@ public sealed class FileLock : IDisposable
             {
                 if (waiting.Elapsed >= timeout)
                 {
-                    return new Error("lock.timed-out", full + " is held by another dbchange process, and this one waited " + Command.Written(timeout) + " for it.",
+                    return new Error("lock.timed-out",
+                        full + " is held by another dbchange process, and this one waited " + Command.Written(timeout) + " for it.",
                         "Wait for the other dbchange process to finish, or end it; its lock is released when it ends.");
                 }
 
                 if (interrupted.Token.WaitHandle.WaitOne(Poll))
                 {
-                    throw new OperationCanceledException("The run was interrupted while waiting for " + full + ".", cancel.IsCancellationRequested ? cancel : Interruption.RunToken);
+                    throw new OperationCanceledException("The run was interrupted while waiting for " + full + ".",
+                        cancel.IsCancellationRequested ? cancel : Interruption.RunToken);
                 }
             }
             catch (Exception e) when (Write.FileSystemFailure(e))
@@ -82,12 +84,17 @@ public sealed class FileLock : IDisposable
         }
     }
 
-    /// <summary>The refusal of a lock on Linux and macOS while the runtime's file locking is off; Windows never gives it, so the register's driver takes it from here.</summary>
+    /// <summary>
+    /// The refusal of a lock on Linux and macOS while the runtime's file locking is off; Windows never gives it, so the register's driver
+    /// takes it from here.
+    /// </summary>
     public static Error Unsupported => new Error("lock.unsupported",
-        "File locking is turned off in this process (DOTNET_SYSTEM_IO_DISABLEFILELOCKING), so two dbchange processes could change " + LocalState.Name + "/ at once.",
+        "File locking is turned off in this process (DOTNET_SYSTEM_IO_DISABLEFILELOCKING), so two dbchange processes could change "
+            + LocalState.Name + "/ at once.",
         "Unset DOTNET_SYSTEM_IO_DISABLEFILELOCKING for dbchange, then run it again.");
 
     private static bool LockingOff() =>
         (AppContext.TryGetSwitch("System.IO.DisableFileLocking", out var off) && off)
-        || Environment.GetEnvironmentVariable("DOTNET_SYSTEM_IO_DISABLEFILELOCKING") is { } set && (set == "1" || set.Equals("true", StringComparison.OrdinalIgnoreCase));
+        || Environment.GetEnvironmentVariable("DOTNET_SYSTEM_IO_DISABLEFILELOCKING") is { } set
+            && (set == "1" || set.Equals("true", StringComparison.OrdinalIgnoreCase));
 }

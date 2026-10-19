@@ -50,7 +50,9 @@ public static class LocalServer
     {
         try
         {
-            return [IPAddress.Loopback, IPAddress.IPv6Loopback, .. NetworkInterface.GetAllNetworkInterfaces().SelectMany(n => n.GetIPProperties().UnicastAddresses).Select(u => Plain(u.Address))];
+            return [IPAddress.Loopback, IPAddress.IPv6Loopback,
+                .. NetworkInterface.GetAllNetworkInterfaces().SelectMany(n => n.GetIPProperties().UnicastAddresses)
+                .Select(u => Plain(u.Address))];
         }
         catch (NetworkInformationException)
         {
@@ -58,11 +60,17 @@ public static class LocalServer
         }
     });
 
-    /// <summary>The local server, from the sources given, as the registry records it and R15 compares it (localhost,11433); nothing of its login.</summary>
-    public static Result<Kernel.ServerName> ServerName(string? dbChangeSql, string? sqlEnv, bool localDb) => Server(dbChangeSql, sqlEnv, localDb).Bind(ServerName);
+    /// <summary>
+    /// The local server, from the sources given, as the registry records it and R15 compares it (localhost,11433); nothing of its login.
+    /// </summary>
+    public static Result<Kernel.ServerName> ServerName(string? dbChangeSql, string? sqlEnv, bool localDb) =>
+        Server(dbChangeSql, sqlEnv, localDb).Bind(ServerName);
 
-    /// <summary>A copy on this machine's local server, refused on a named environment's host (R15); its CREATE DATABASE goes to the run's log.</summary>
-    public static Result<SqlServer.Copy> Create(string repositoryRoot, SqlServer.QueryLog log) => Server().Bind(server => Create(repositoryRoot, server, log));
+    /// <summary>
+    /// A copy on this machine's local server, refused on a named environment's host (R15); its CREATE DATABASE goes to the run's log.
+    /// </summary>
+    public static Result<SqlServer.Copy> Create(string repositoryRoot, SqlServer.QueryLog log) =>
+        Server().Bind(server => Create(repositoryRoot, server, log));
 
     /// <summary>
     /// The copy's database dropped, its sessions ended first, then its row; a database already gone is no error. The DROP DATABASE goes
@@ -71,7 +79,8 @@ public static class LocalServer
     public static Result<CopyName> Drop(SqlServer.Copy copy, SqlServer.QueryLog log)
     {
         SqlConnection.ClearPool(new SqlConnection(copy.Connection));
-        return Run(copy, "DROP DATABASE", Unmake, log).Bind(_ => Change(copy.Root, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())])).Map(_ => copy.Name);
+        return Run(copy, "DROP DATABASE", Unmake, log)
+            .Bind(_ => Change(copy.Root, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())])).Map(_ => copy.Name);
     }
 
     /// <summary>
@@ -84,8 +93,10 @@ public static class LocalServer
     public static string? Image(SqlServer.Database target) => Image(target, Command.Run);
 
     internal static string? Image(SqlServer.Database target, Runner run) =>
-        target is SqlServer.Copy copy && ServerName(copy.Connection) is Result<Kernel.ServerName>.Ok { Value: { Host: var host } server } && host == Host.Localhost
-            && Running(run) is { } running && running.Ports.Any(port => Kernel.ServerName.Of("127.0.0.1," + port, Environment.MachineName) == server)
+        target is SqlServer.Copy copy && ServerName(copy.Connection) is Result<Kernel.ServerName>.Ok { Value: { Host: var host } server }
+            && host == Host.Localhost
+            && Running(run) is { } running
+            && running.Ports.Any(port => Kernel.ServerName.Of("127.0.0.1," + port, Environment.MachineName) == server)
             ? running.Digest : null;
 
     /// <summary>
@@ -104,7 +115,8 @@ public static class LocalServer
 
         try
         {
-            IReadOnlyList<string> published = [.. JsonNode.Parse(ports)?["1433/tcp"]?.AsArray().Select(binding => (string?)binding?["HostPort"]).OfType<string>() ?? []];
+            IReadOnlyList<string> published = [.. JsonNode.Parse(ports)?["1433/tcp"]?.AsArray()
+                .Select(binding => (string?)binding?["HostPort"]).OfType<string>() ?? []];
             return Docker(run, ["image", "inspect", "--format", "{{json .RepoDigests}}", id]) is { } digests
                 && JsonNode.Parse(digests)?.AsArray().Select(d => ((string?)d)?.Split('@', 2)).OfType<string[]>()
                     .Where(d => d.Length == 2 && d[1].StartsWith("sha256:", StringComparison.Ordinal)).ToList() is { } pulled
@@ -117,15 +129,22 @@ public static class LocalServer
         }
     }
 
-    /// <summary>What docker writes when it exits 0 within the doctor's program timeout; null when it is absent, does not answer or fails.</summary>
+    /// <summary>
+    /// What docker writes when it exits 0 within the doctor's program timeout; null when it is absent, does not answer or fails.
+    /// </summary>
     private static string? Docker(Runner run, IReadOnlyList<string> arguments) =>
-        run(new Command("docker", arguments, Command.ProbeTimeout), CancellationToken.None) is Ran.Exited { Code: 0, Output: var output } ? output : null;
+        run(new Command("docker", arguments, Command.ProbeTimeout), CancellationToken.None) is Ran.Exited { Code: 0, Output: var output }
+            ? output : null;
 
     /// <summary>The container ci/sql.sh and ci/sql.ps1 run the local server in.</summary>
     public const string Container = "dbchange-sql";
 
-    /// <summary>The repository of the pinned image (Doctor.SqlServerImage without its tag and digest), whose registry digest is preferred where an image was pulled from several.</summary>
-    private static readonly string PinnedRepository = Doctor.SqlServerImage.Split('@')[0] is var reference ? reference[..reference.LastIndexOf(':')] : "";
+    /// <summary>
+    /// The repository of the pinned image (Doctor.SqlServerImage without its tag and digest), whose registry digest is preferred where an
+    /// image was pulled from several.
+    /// </summary>
+    private static readonly string PinnedRepository = Doctor.SqlServerImage.Split('@')[0] is var reference
+        ? reference[..reference.LastIndexOf(':')] : "";
 
     /// <summary>
     /// The local server this machine would use, as it was chosen: the one DBCHANGE_SQL names; the dbchange-sql container, whose port and
@@ -170,10 +189,12 @@ public static class LocalServer
     }
 
     internal static Result<string> Server() =>
-        Choice(Environment.GetEnvironmentVariable("DBCHANGE_SQL"), LocalState.UserSqlEnv, () => Doctor.LocalDbInstalled(Command.Run)).Map(chosen => chosen.Connection);
+        Choice(Environment.GetEnvironmentVariable("DBCHANGE_SQL"), LocalState.UserSqlEnv, () => Doctor.LocalDbInstalled(Command.Run))
+            .Map(chosen => chosen.Connection);
 
     /// <summary>The local server's connection, as <see cref="Choice"/> chooses it, LocalDB's install given.</summary>
-    internal static Result<string> Server(string? dbChangeSql, string? sqlEnv, bool localDb) => Choice(dbChangeSql, sqlEnv, () => localDb).Map(chosen => chosen.Connection);
+    internal static Result<string> Server(string? dbChangeSql, string? sqlEnv, bool localDb) =>
+        Choice(dbChangeSql, sqlEnv, () => localDb).Map(chosen => chosen.Connection);
 
     /// <summary>
     /// The local server, in the fixture's order: DBCHANGE_SQL, with sql.env not read; the container, when sql.env gives its port and
@@ -182,16 +203,24 @@ public static class LocalServer
     /// </summary>
     internal static Result<Chosen> Choice(string? dbChangeSql, string? sqlEnv, Func<bool> localDbInstalled) =>
         !string.IsNullOrEmpty(dbChangeSql) ? new Chosen.Variable(dbChangeSql)
-        : Settings(sqlEnv).Bind(env => env.GetValueOrDefault("MSSQL_SA_PASSWORD") is { Length: > 0 } password && env.GetValueOrDefault("DBCHANGE_SQL_PORT") is { Length: > 0 } port
+        : Settings(sqlEnv).Bind(env =>
+            env.GetValueOrDefault("MSSQL_SA_PASSWORD") is { Length: > 0 } password
+            && env.GetValueOrDefault("DBCHANGE_SQL_PORT") is { Length: > 0 } port
                 ? new Chosen.Container(ConnectionString.Container(port, password))
             : localDbInstalled() ? new Chosen.LocalDb()
-            : Result.Fail<Chosen>(new Error("local-server.missing", "No local server: DBCHANGE_SQL is unset, " + (sqlEnv ?? "~/" + LocalState.Name + "/sql.env") + " gives no container's port and password, and LocalDB is not installed.",
+            : Result.Fail<Chosen>(new Error("local-server.missing",
+                "No local server: DBCHANGE_SQL is unset, " + (sqlEnv ?? "~/" + LocalState.Name + "/sql.env")
+                + " gives no container's port and password, and LocalDB is not installed.",
                 "Start Docker and run ci/sql.sh up, or ci/sql.ps1 up on Windows, or set DBCHANGE_SQL; then run dbchange doctor.")));
 
-    /// <summary>sql.env's settings, one KEY=value per line as ci/sql.sh writes them; none where the file is absent, or where the user's profile folder is unknown (LocalState.UserSqlEnv null).</summary>
+    /// <summary>
+    /// sql.env's settings, one KEY=value per line as ci/sql.sh writes them; none where the file is absent, or where the user's profile
+    /// folder is unknown (LocalState.UserSqlEnv null).
+    /// </summary>
     private static Result<Dictionary<string, string>> Settings(string? sqlEnv)
     {
-        const string rewrite = "Run ci/sql.sh down, then ci/sql.sh up (ci/sql.ps1 on Windows), which writes the file again; then run dbchange doctor.";
+        const string rewrite =
+            "Run ci/sql.sh down, then ci/sql.sh up (ci/sql.ps1 on Windows), which writes the file again; then run dbchange doctor.";
         string[] lines;
         try
         {
@@ -214,68 +243,95 @@ public static class LocalServer
     /// that does not answer.
     /// </summary>
     internal static Result<Kernel.ServerName> ServerName(string server) =>
-        ConnectionString.Parse("DBCHANGE_SQL", server, "Correct DBCHANGE_SQL, or unset it; then run dbchange doctor.").Map(ConnectionString.ServerOf);
+        ConnectionString.Parse("DBCHANGE_SQL", server, "Correct DBCHANGE_SQL, or unset it; then run dbchange doctor.")
+            .Map(ConnectionString.ServerOf);
 
     /// <summary>
     /// A copy on the server given, refused on a named environment's host (R15 against dbchange/environments.json, read here once); recorded
     /// with its server before its database is made, so a crash leaves a row to follow.
     /// </summary>
-    internal static Result<SqlServer.Copy> Create(string repositoryRoot, string server, SqlServer.QueryLog log, Func<string, IPAddress[]>? resolve = null) =>
-        ServerName(server).Bind(name => EnvironmentsFile.Read(repositoryRoot).Bind(environments => Unnamed(environments, repositoryRoot, name, resolve ?? Resolved))).Bind(name =>
+    internal static Result<SqlServer.Copy> Create(string repositoryRoot, string server, SqlServer.QueryLog log,
+        Func<string, IPAddress[]>? resolve = null) =>
+        ServerName(server).Bind(name => EnvironmentsFile.Read(repositoryRoot)
+            .Bind(environments => Unnamed(environments, repositoryRoot, name, resolve ?? Resolved))).Bind(name =>
         {
-            var copy = new SqlServer.Copy(CopyName.Make(Environment.MachineName, Environment.ProcessId, BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, repositoryRoot);
+            var copy = new SqlServer.Copy(CopyName.Make(Environment.MachineName, Environment.ProcessId,
+                BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4))), server, repositoryRoot);
             var row = new JsonObject
             {
-                ["name"] = copy.Name.ToString(), ["server"] = name.ToString(), ["machine"] = copy.Name.Machine, ["pid"] = Environment.ProcessId,
+                ["name"] = copy.Name.ToString(), ["server"] = name.ToString(), ["machine"] = copy.Name.Machine,
+                ["pid"] = Environment.ProcessId,
                 ["created"] = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
             };
             return Change(repositoryRoot, rows => [.. rows, row]).Bind(_ => Run(copy, "CREATE DATABASE", Make, log).Match(
                 made => Result.Ok(made),
-                error => Change(repositoryRoot, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())]).Bind(_ => Result.Fail<SqlServer.Copy>(error))));
+                error => Change(repositoryRoot, rows => [.. rows.Where(r => (string?)r["name"] != copy.Name.ToString())])
+                    .Bind(_ => Result.Fail<SqlServer.Copy>(error))));
         });
 
     /// <summary>
-    /// copy: resolved against .dbchange/copies.json alone: the row holding the name, on a server R15 clears against the environments file as the verb
-    /// read it, which the local server this machine names must still be. A name the registry does not hold is refused before the
-    /// environments file is consulted.
+    /// copy: resolved against .dbchange/copies.json alone: the row holding the name, on a server R15 clears against the environments file
+    /// as the verb read it, which the local server this machine names must still be. A name the registry does not hold is refused before
+    /// the environments file is consulted.
     /// </summary>
-    internal static Result<SqlServer.Copy> Registered(string repositoryRoot, CopyName name, Result<Environments> environmentsFile) => Registered(repositoryRoot, name, environmentsFile, Server, Resolved);
+    internal static Result<SqlServer.Copy> Registered(string repositoryRoot, CopyName name, Result<Environments> environmentsFile) =>
+        Registered(repositoryRoot, name, environmentsFile, Server, Resolved);
 
-    internal static Result<SqlServer.Copy> Registered(string repositoryRoot, CopyName name, Result<Environments> environmentsFile, Func<Result<string>> chosen, Func<string, IPAddress[]> resolve) =>
+    internal static Result<SqlServer.Copy> Registered(string repositoryRoot, CopyName name, Result<Environments> environmentsFile,
+        Func<Result<string>> chosen, Func<string, IPAddress[]> resolve) =>
         Rows(repositoryRoot).Bind(rows => rows.FirstOrDefault(r => (string?)r["name"] == name.ToString()) is not { } row
-            ? new Error("copy.unregistered", new Target.RegisteredCopy(name) + " is no copy " + LocalState.CopiesName + " holds, and copy: names only a database dbchange made and recorded there.",
+            ? new Error("copy.unregistered",
+                new Target.RegisteredCopy(name) + " is no copy " + LocalState.CopiesName
+                + " holds, and copy: names only a database dbchange made and recorded there.",
                 "Name a copy that " + LocalState.CopiesName + " holds on this machine.")
-            : environmentsFile.Bind(environments => Unnamed(environments, repositoryRoot, Kernel.ServerName.Of((string)row["server"]!, Environment.MachineName), resolve)).Bind(made => chosen().Bind(server => ServerName(server).Bind(now => now == made
+            : environmentsFile.Bind(environments =>
+                Unnamed(environments, repositoryRoot, Kernel.ServerName.Of((string)row["server"]!, Environment.MachineName), resolve))
+                .Bind(made => chosen().Bind(server => ServerName(server).Bind(now => now == made
                 ? Result.Ok(new SqlServer.Copy(name, server, repositoryRoot))
-                : new Error("copy.unregistered", new Target.RegisteredCopy(name) + " was made on another server than the local server this machine names now, so " + LocalState.CopiesName + " holds no such copy here.",
+                : new Error("copy.unregistered",
+                    new Target.RegisteredCopy(name) + " was made on another server than the local server this machine names now, so "
+                    + LocalState.CopiesName + " holds no such copy here.",
                     "Set DBCHANGE_SQL back to the server that made the copy, or make a new copy on this one.")))));
 
     /// <summary>
-    /// R15: the server's host is none an environment of the environments file names as its host (DECISIONS.md, 2026-09-25), compared by spelling,
-    /// then by address; this machine is every loopback address and each of its own. Every environment is compared, its reference
-    /// resolving on this machine or not. Where a reference does resolve, its server must be on the host the environments file names, since R15
-    /// compares that host (environments.host); a reference SqlClient reads no connection string from, or whose file cannot be examined, is an
-    /// error, R15 failing closed.
+    /// R15: the server's host is none an environment of the environments file names as its host (DECISIONS.md, 2026-09-25), compared by
+    /// spelling, then by address; this machine is every loopback address and each of its own. Every environment is compared, its reference
+    /// resolving on this machine or not. Where a reference does resolve, its server must be on the host the environments file names, since
+    /// R15 compares that host (environments.host); a reference SqlClient reads no connection string from, or whose file cannot be examined,
+    /// is an error, R15 failing closed.
     /// </summary>
-    internal static Result<Kernel.ServerName> Unnamed(Environments environments, string repositoryRoot, Kernel.ServerName server, Func<string, IPAddress[]> resolve) =>
-        Result.All(environments.All.Select(environment => SqlServer.DataSource(environment, repositoryRoot).Bind(source => source is { } read && read.Host != environment.Host
-            ? new Error("environments.host", SqlServer.EnvironmentDatabase.Subject(environment) + " names a server on another host than " + environment.Host + ", the host "
-                + EnvironmentsFile.Json + " gives " + environment.Target + ", and dbchange makes no copy on the host the environments file gives.",
-                "Write " + environment.Target + "'s host in " + EnvironmentsFile.Json + " as its connection string spells the server, or correct the connection string.")
+    internal static Result<Kernel.ServerName> Unnamed(Environments environments, string repositoryRoot, Kernel.ServerName server,
+        Func<string, IPAddress[]> resolve) =>
+        Result.All(environments.All.Select(environment =>
+            SqlServer.DataSource(environment, repositoryRoot).Bind(source => source is { } read && read.Host != environment.Host
+            ? new Error("environments.host",
+                SqlServer.EnvironmentDatabase.Subject(environment) + " names a server on another host than " + environment.Host
+                + ", the host " + EnvironmentsFile.Json + " gives " + environment.Target
+                + ", and dbchange makes no copy on the host the environments file gives.",
+                "Write " + environment.Target + "'s host in " + EnvironmentsFile.Json
+                    + " as its connection string spells the server, or correct the connection string.")
             : Result.Ok(environment))))
         .Bind(compared =>
         {
             var addresses = new Lazy<HashSet<IPAddress>>(() => Addresses(server.Host, resolve));
-            return compared.Where(e => e.Host == server.Host).Concat(compared.Where(e => e.Host != server.Host && Addresses(e.Host, resolve).Overlaps(addresses.Value))).FirstOrDefault() is { } named
-                ? new Error("copy.named-host", "The local server is on " + named.Host + ", the host " + named.Target + " runs on, and a copy is made only where no named environment lives.",
+            return compared.Where(e => e.Host == server.Host)
+                .Concat(compared.Where(e => e.Host != server.Host && Addresses(e.Host, resolve).Overlaps(addresses.Value)))
+                .FirstOrDefault() is { } named
+                ? new Error("copy.named-host",
+                    "The local server is on " + named.Host + ", the host " + named.Target
+                    + " runs on, and a copy is made only where no named environment lives.",
                     "Point DBCHANGE_SQL at a local SQL Server, or unset it and run ci/sql.sh up (ci/sql.ps1 up on Windows).")
                 : Result.Ok(server);
         });
 
-    /// <summary>A host's addresses: this machine's, for a host spelled as this machine or LocalDB or resolving to any of this machine's; else what it resolves to.</summary>
+    /// <summary>
+    /// A host's addresses: this machine's, for a host spelled as this machine or LocalDB or resolving to any of this machine's; else what
+    /// it resolves to.
+    /// </summary>
     private static HashSet<IPAddress> Addresses(Host host, Func<string, IPAddress[]> resolve)
     {
-        HashSet<IPAddress> found = [.. (host == Host.Localhost || host == Host.LocalDb ? [IPAddress.Loopback] : IPAddress.TryParse(host.ToString(), out var literal) ? [literal] : resolve(host.ToString())).Select(Plain)];
+        HashSet<IPAddress> found = [.. (host == Host.Localhost || host == Host.LocalDb ? [IPAddress.Loopback]
+            : IPAddress.TryParse(host.ToString(), out var literal) ? [literal] : resolve(host.ToString())).Select(Plain)];
         return found.Any(a => IPAddress.IsLoopback(a) || Local.Value.Contains(a)) ? [.. found, .. Local.Value] : found;
     }
 
@@ -298,7 +354,8 @@ public static class LocalServer
 
     /// <summary>
     /// A statement about the copy's database, through the one statement path (io/SqlServer.Query): run against master on its server, on
-    /// a connection of its own outside SqlClient's pool, with the copy's name as @name, waiting up to <see cref="DatabaseStatementTimeout"/>.
+    /// a connection of its own outside SqlClient's pool, with the copy's name as @name, waiting up to
+    /// <see cref="DatabaseStatementTimeout"/>.
     /// </summary>
     private static Result<SqlServer.Copy> Run(SqlServer.Copy copy, string site, string statement, SqlServer.QueryLog log) =>
         SqlServer.Query(copy, new SqlServer.Statement(site, statement)
@@ -306,7 +363,10 @@ public static class LocalServer
             Timeout = DatabaseStatementTimeout, Catalog = "master", Pooled = false, Parameters = [("@name", copy.Name.ToString())],
         }, log, _ => copy);
 
-    /// <summary>The registry's rows, none when it is absent, each naming its copy and the server it was made on. A write replaces the file whole, so a reader sees the rows before a change or after it.</summary>
+    /// <summary>
+    /// The registry's rows, none when it is absent, each naming its copy and the server it was made on. A write replaces the file whole, so
+    /// a reader sees the rows before a change or after it.
+    /// </summary>
     private static Result<List<JsonObject>> Rows(string repositoryRoot)
     {
         var path = new LocalState(repositoryRoot).Copies;
@@ -314,18 +374,22 @@ public static class LocalServer
         {
             return !File.Exists(path) ? new List<JsonObject>()
                 : JsonNode.Parse(File.ReadAllText(path))?["copies"] is JsonArray rows
-                    && rows.All(r => r is JsonObject o && o["name"]?.GetValueKind() == JsonValueKind.String && o["server"]?.GetValueKind() == JsonValueKind.String)
+                    && rows.All(r => r is JsonObject o
+                        && o["name"]?.GetValueKind() == JsonValueKind.String && o["server"]?.GetValueKind() == JsonValueKind.String)
                     ? rows.Select(r => (JsonObject)r!.DeepClone()).ToList()
                     : throw new JsonException("not the registry");
         }
         catch (Exception e) when (e is JsonException or InvalidOperationException or IOException or UnauthorizedAccessException)
         {
-            return new Error("registry.unreadable", LocalState.CopiesName + " under " + repositoryRoot + " is not the registry dbchange writes; its text is withheld.",
+            return new Error("registry.unreadable",
+                LocalState.CopiesName + " under " + repositoryRoot + " is not the registry dbchange writes; its text is withheld.",
                 "Drop the copies it lists with DROP DATABASE, then delete " + LocalState.CopiesName + ".");
         }
     }
 
-    /// <summary>The registry changed under a lock this process alone holds while it reads, changes and writes the file back through io/Write.</summary>
+    /// <summary>
+    /// The registry changed under a lock this process alone holds while it reads, changes and writes the file back through io/Write.
+    /// </summary>
     private static Result<List<JsonObject>> Change(string repositoryRoot, Func<List<JsonObject>, List<JsonObject>> change)
     {
         var state = new LocalState(repositoryRoot);
@@ -333,7 +397,9 @@ public static class LocalServer
         {
             using (held)
             {
-                return Rows(repositoryRoot).Map(change).Bind(rows => Write.Text(state.Copies, Json.Text(new JsonObject { ["copies"] = new JsonArray([.. rows]) })).Map(_ => rows));
+                return Rows(repositoryRoot).Map(change)
+                    .Bind(rows => Write.Text(state.Copies, Json.Text(new JsonObject { ["copies"] = new JsonArray([.. rows]) }))
+                        .Map(_ => rows));
             }
         });
     }
@@ -341,6 +407,9 @@ public static class LocalServer
     /// <summary>How long a registry change waits for another dbchange process's: a change takes milliseconds.</summary>
     private static readonly TimeSpan RegistryTimeout = TimeSpan.FromMinutes(1);
 
-    /// <summary>The registry's lock file, taken for this process alone through io/FileLock; another holder is waited out for <see cref="RegistryTimeout"/>.</summary>
+    /// <summary>
+    /// The registry's lock file, taken for this process alone through io/FileLock; another holder is waited out for
+    /// <see cref="RegistryTimeout"/>.
+    /// </summary>
     private static Result<FileLock> Held(string path) => FileLock.Take(path, RegistryTimeout);
 }

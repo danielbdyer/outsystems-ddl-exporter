@@ -7,16 +7,16 @@ using DbChange.Kernel;
 namespace DbChange.Io;
 
 /// <summary>
-/// Every path under .dbchange/, the folder dbchange keeps beside the SSDT repository's checkout, named once (R7): worktrees and their holders' locks,
-/// builds, runs, the copy registry and its lock, and the temporary folder, all under one root per run, the repository root
+/// Every path under .dbchange/, the folder dbchange keeps beside the SSDT repository's checkout, named once (R7): worktrees and their
+/// holders' locks, builds, runs, the copy registry and its lock, and the temporary folder, all under one root per run, the repository root
 /// (cli's Checkout.Root). <see cref="Made"/> creates a folder here and, with it, .dbchange/.gitignore holding "*", so the folder ignores
 /// itself in a repository whose .gitignore does not name it (git status lists nothing under it, and check-ignore names the file); when
 /// the folder is the worktrees', it also writes the stop files a ref's build needs: an empty Directory.Build.props, Directory.Build.targets
 /// and Directory.Packages.props and an empty Directory.Build.rsp, since MSBuild searches upward from a project for each of them and would
 /// otherwise reach the enclosing checkout's, so a ref builds with its own MSBuild settings alone. global.json gets no stop file: it chooses
 /// the SDK, which is the machine's toolchain, and a ref that commits its own uses it. <see cref="UserSqlEnv"/> is the one file outside a
-/// checkout, ~/.dbchange/sql.env, which ci/sql.sh and ci/sql.ps1 write; it is null where the user's profile folder is unknown (HOME unset in a
-/// container or a service), and the local server treats it as absent.
+/// checkout, ~/.dbchange/sql.env, which ci/sql.sh and ci/sql.ps1 write; it is null where the user's profile folder is unknown (HOME unset
+/// in a container or a service), and the local server treats it as absent.
 /// </summary>
 public sealed record LocalState(string Root)
 {
@@ -26,7 +26,8 @@ public sealed record LocalState(string Root)
     public const string CopiesName = Name + "/copies.json";
 
     private static readonly (string File, string Text)[] StopFiles =
-        [("Directory.Build.props", "<Project />\n"), ("Directory.Build.targets", "<Project />\n"), ("Directory.Packages.props", "<Project />\n"), ("Directory.Build.rsp", "")];
+        [("Directory.Build.props", "<Project />\n"), ("Directory.Build.targets", "<Project />\n"),
+            ("Directory.Packages.props", "<Project />\n"), ("Directory.Build.rsp", "")];
 
     public string Folder => Path.Combine(Root, Name);
 
@@ -47,12 +48,16 @@ public sealed record LocalState(string Root)
 
     public string Temporary => Path.Combine(Folder, "tmp");
 
-    public static string? UserSqlEnv => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) is { Length: > 0 } profile ? Path.Combine(profile, Name, "sql.env") : null;
+    public static string? UserSqlEnv =>
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) is { Length: > 0 } profile
+        ? Path.Combine(profile, Name, "sql.env") : null;
 
     /// <summary>A ref's worktree, by its commit.</summary>
     public string Worktree(string commit) => Path.Combine(Worktrees, commit);
 
-    /// <summary>The lock every dbchange process using a worktree holds shared, and a sweep must take exclusively before it removes the worktree.</summary>
+    /// <summary>
+    /// The lock every dbchange process using a worktree holds shared, and a sweep must take exclusively before it removes the worktree.
+    /// </summary>
     public string WorktreeHolders(string commit) => Path.Combine(Worktrees, commit + ".lock");
 
     /// <summary>A build's folder, by the commit or by the inputs' fingerprint.</summary>
@@ -82,7 +87,8 @@ public sealed record LocalState(string Root)
 
         if (Path.GetDirectoryName(Path.GetFullPath(folder)) == Path.GetFullPath(Runs))
         {
-            foreach (var old in new DirectoryInfo(Runs).GetDirectories().Select(d => d.FullName).Order(StringComparer.Ordinal).SkipLast(KeptRuns))
+            foreach (var old in new DirectoryInfo(Runs).GetDirectories().Select(d => d.FullName)
+                .Order(StringComparer.Ordinal).SkipLast(KeptRuns))
             {
                 Discard(old);
             }
