@@ -16,6 +16,7 @@ using DbChange.Kernel;
 using DbChange.Tests;
 using Json.Schema;
 using Xunit;
+using Outcome = DbChange.Cli.Outcome;
 
 namespace DbChange.Budgets.Tests;
 

@@ -80,6 +80,10 @@ internal static class ErrorPaths
         new("a precondition on a column the environment lacks and the change does not create", "plan.missing-object", false, (_, _) =>
             Failed(Coordinates.Of(new Precondition(Table.Name, [Made(Name.Of("Nickname"))], new PreconditionKind.NotNull()),
                 new Change([], [], [], []), []))),
+        new("a site whose table the existing data holds no state for", "plan.uncounted", false, (_, _) =>
+            Failed(DbChange.Kernel.Outcome.Predict(new ExistingData([]),
+                [new BlockOnPossibleDataLossSite(Table.Name, "ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (256) NOT NULL;")],
+                [], []))),
 
         new("DBCHANGE_TOOL naming no tool folder", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), Bare(scratch), scratch))),
         new("no tool folder anywhere", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), null, scratch))),
