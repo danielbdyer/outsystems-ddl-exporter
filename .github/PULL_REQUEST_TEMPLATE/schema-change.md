@@ -1,7 +1,7 @@
 <!--
   SCHEMA CHANGE PULL REQUEST — the record for a database change.
 
-  Source of truth: sidecar/projection/ssdt-agent/skills/author-pr/SKILL.md (this file mirrors it;
+  Source of truth: archive/v2/ssdt-agent/skills/author-pr/SKILL.md (this file mirrors it;
   if they disagree, the skill wins — fix this file in the same commit).
 
   Use this template for any change to a .sqlproj: table definitions, pre/post-deployment scripts,
@@ -34,7 +34,7 @@
      "Ships across N releases so the running application keeps working while the change is in flight." -->
 - <!-- Added scrutiny, if any — one line each, or "None.":
      CDC-tracked table (capture instance frozen to current columns) · production row counts may block
-     writes or run long (schedule a window) · first time this operation runs on this estate. -->
+     writes or run long (schedule a window) · first time this operation runs on these environments. -->
 
 ## Changes
 

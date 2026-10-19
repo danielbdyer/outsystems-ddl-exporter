@@ -1,0 +1,39 @@
+{
+  "localServer": "docker",
+  "environments": {
+    "dev": {
+      "host": "dev-sql.corp.example",
+      "classification": "synthetic",
+      "confirmedBy": "the dev lead",
+      "confirmedOn": "2026-09-20",
+      "readerGroups": ["developers", "leads"],
+      "connection": "env:DBCHANGE_DEV",
+      "profile": "project/profiles/pipeline.publish.xml",
+      "sqlcmd": {
+        "EnvironmentTag": { "literal": "dev", "sensitive": false },
+        "ServiceAccountPassword": "env:DBCHANGE_DEV_SERVICE_PASSWORD"
+      },
+      "metamodel": "file:.dbchange/principals/dev-ossys.connection"
+    },
+    "qa": {
+      "host": "qa-sql.corp.example",
+      "readerGroups": ["leads"],
+      "connection": "env:DBCHANGE_QA",
+      "profile": "project/profiles/pipeline.publish.xml"
+    },
+    "uat": {
+      "host": "uat-sql.corp.example",
+      "classification": "real",
+      "readerGroups": ["leads"],
+      "connection": "file:.dbchange/principals/uat.connection",
+      "profile": "project/profiles/pipeline.publish.xml",
+      "metamodel": "env:DBCHANGE_UAT_OSSYS"
+    },
+    "prod": {
+      "host": "prod-sql.corp.example",
+      "classification": "real",
+      "connection": "env:DBCHANGE_PROD",
+      "profile": "project/profiles/pipeline.publish.xml"
+    }
+  }
+}

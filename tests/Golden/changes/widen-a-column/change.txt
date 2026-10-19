@@ -1,0 +1,1 @@
+Column [dbo].[Product].[Code]: Length 50 → 100

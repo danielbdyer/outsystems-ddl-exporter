@@ -1,0 +1,15 @@
+=== Modules/OrderStatusText.sql
+--- -- Intentionally no schema object. The column lives in Modules/Order.sql.
++++ CREATE ROLE AppReader;
++++ GO
++++ CREATE ROLE AppWriter;
++++ GO
++++ GRANT SELECT ON dbo.Account TO AppReader;
++++ GO
++++ GRANT SELECT ON dbo.Account TO AppWriter;
++++ GO
++++ GRANT INSERT ON dbo.Account TO AppWriter;
++++ GO
++++ GRANT VIEW DEFINITION TO AppReader;
++++ GO
++++ GRANT VIEW DEFINITION TO AppWriter;

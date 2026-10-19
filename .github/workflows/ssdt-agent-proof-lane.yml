@@ -19,12 +19,12 @@ on:
   workflow_dispatch: {}
   pull_request:
     paths:
-      - "sidecar/projection/ssdt-agent/sample-prs/**"
-      - "sidecar/projection/ssdt-agent/proving-ground/**"
-      - "sidecar/projection/src/Twin.Core/**"
-      - "sidecar/projection/src/Twin.Runtime/**"
-      - "sidecar/projection/src/Twin.Cli/**"
-      - "sidecar/projection/tests/Twin.Tests.Integration/**"
+      - "archive/v2/ssdt-agent/sample-prs/**"
+      - "archive/v2/ssdt-agent/proving-ground/**"
+      - "archive/v2/src/Twin.Core/**"
+      - "archive/v2/src/Twin.Runtime/**"
+      - "archive/v2/src/Twin.Cli/**"
+      - "archive/v2/tests/Twin.Tests.Integration/**"
       - ".github/workflows/ssdt-agent-proof-lane.yml"
 
 jobs:
@@ -36,9 +36,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          global-json-file: global.json
+          global-json-file: archive/v2/global.json
       - name: Run the proof corpus (Debug, own containers)
-        working-directory: sidecar/projection
+        working-directory: archive/v2
         run: >
           dotnet test tests/Twin.Tests.Integration/Twin.Tests.Integration.fsproj
           --filter "FullyQualifiedName~SamplePr|FullyQualifiedName~TwinViewLoopTests"

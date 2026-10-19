@@ -1,0 +1,11 @@
+# The frozen exit table: a code is added here in the change that adds it to cli/Contract.cs; no line is ever removed, renamed or renumbered.
+0 done
+1 bad-arguments
+2 unparsed-input
+3 blocked
+4 unreachable
+5 differs
+6 configuration-refused
+7 build-failed
+9 refused-by-name
+130 interrupted

@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "dbchange.help/1",
+  "description": "What dbchange --help --json writes: the verb table, the exit table and the schemas.",
+  "$comment": "Generated from cli/Contract.cs by Render.Schemas: regenerate with DBCHANGE_BLESS=1 dotnet test --filter Category=fast; never edit by hand.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "usage",
+    "verbs",
+    "exits",
+    "schemas"
+  ],
+  "properties": {
+    "schema": {
+      "const": "dbchange.help/1"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "usage": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verbs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "summary",
+          "built",
+          "output",
+          "outcomes"
+        ],
+        "properties": {
+          "name": {
+            "enum": [
+              "doctor",
+              "read",
+              "diff",
+              "classify",
+              "predict",
+              "profile",
+              "synthetic-copy",
+              "prove",
+              "describe",
+              "gate",
+              "check",
+              "knowledge",
+              "--version"
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "built": {
+            "type": "boolean"
+          },
+          "output": {
+            "type": "string",
+            "pattern": "^dbchange\\.[a-z]+(-[a-z]+)*/[1-9][0-9]*$"
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "outcome",
+                "exits",
+                "meaning"
+              ],
+              "properties": {
+                "outcome": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "exits": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      0,
+                      1,
+                      2,
+                      3,
+                      4,
+                      5,
+                      6,
+                      7,
+                      9,
+                      130
+                    ]
+                  }
+                },
+                "meaning": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "exits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "name",
+          "meaning",
+          "remedy"
+        ],
+        "properties": {
+          "code": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              9,
+              130
+            ]
+          },
+          "name": {
+            "enum": [
+              "done",
+              "bad-arguments",
+              "unparsed-input",
+              "blocked",
+              "unreachable",
+              "differs",
+              "configuration-refused",
+              "build-failed",
+              "refused-by-name",
+              "interrupted"
+            ]
+          },
+          "meaning": {
+            "type": "string",
+            "minLength": 1
+          },
+          "remedy": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "schemas": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    }
+  }
+}

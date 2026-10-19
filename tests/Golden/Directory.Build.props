@@ -1,0 +1,3 @@
+<Project>
+  <!-- tests/Golden/ holds dbchange-shaped projects: this file stops MSBuild's upward search, so the engine's build settings never reach them. -->
+</Project>

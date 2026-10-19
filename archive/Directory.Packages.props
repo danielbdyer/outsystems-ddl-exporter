@@ -1,0 +1,6 @@
+<Project>
+  <!-- Stops the walk up: v1 and v2 pin their own package versions; v3's central versions do not reach them. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

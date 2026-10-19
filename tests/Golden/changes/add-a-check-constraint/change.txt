@@ -1,0 +1,1 @@
+created CheckConstraint [dbo].[CK_Product_Code]

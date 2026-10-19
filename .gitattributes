@@ -1,0 +1,10 @@
+# Text is LF everywhere v3 writes it. archive/ keeps whatever the checkout did before the move.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.png binary
+*.dll binary
+*.dacpac binary
+*.bacpac binary
+*.nupkg binary
+archive/** !text !eol

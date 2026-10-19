@@ -1,7 +1,7 @@
 name: analyzers-projection
 
 # MOVE M15 (THE VECTOR, Wave 0 fitness) — promotes the custom
-# FSharp.Analyzers.SDK analyzer gate (`sidecar/projection/scripts/run-analyzers.sh`)
+# FSharp.Analyzers.SDK analyzer gate (`archive/v2/scripts/run-analyzers.sh`)
 # from opt-in/off-CI to a PR-blocking guardrail, mirroring the structure of
 # `lint-projection.yml` and `verifiability-projection.yml`.
 #
@@ -14,7 +14,7 @@ name: analyzers-projection
 #
 # Unlike the two sibling guardrails (pure bash, no toolchain), this gate runs
 # `dotnet`, so it sets up the SDK explicitly:
-#   - .NET 9 (9.0.314) matches `sidecar/projection/global.json`'s pinned SDK
+#   - .NET 9 (9.0.314) matches `archive/v2/global.json`'s pinned SDK
 #     (rollForward: disable), so the build uses the same compiler as local dev.
 #   - .NET 8 is also installed because the analyzer assembly + the
 #     `fsharp-analyzers` 0.30.0 tool target net8.0 (see
@@ -35,7 +35,7 @@ on:
   # a REQUIRED status check on `main`: a path-filtered workflow that is skipped
   # leaves its required check pending forever and blocks the merge. With no
   # filter the check always reports — and passes trivially when
-  # `sidecar/projection/Projection.Core` is unchanged (the analyzer finds
+  # `archive/v2/Projection.Core` is unchanged (the analyzer finds
   # nothing new), so it only ever blocks a real determinism-spine violation.
   # (This gate runs `dotnet`, ~3 min; the trade for guaranteed blocking.)
   pull_request:
@@ -44,7 +44,7 @@ on:
       - main
       - master
     paths:
-      - 'sidecar/projection/**'
+      - 'archive/v2/**'
 
 jobs:
   analyzers:
@@ -63,5 +63,5 @@ jobs:
 
       - name: Run run-analyzers.sh
         run: |
-          chmod +x sidecar/projection/scripts/run-analyzers.sh
-          sidecar/projection/scripts/run-analyzers.sh
+          chmod +x archive/v2/scripts/run-analyzers.sh
+          archive/v2/scripts/run-analyzers.sh

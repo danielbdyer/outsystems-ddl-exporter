@@ -1,0 +1,2 @@
+created RefactorLogOperation [6d1c1b5e-3f0a-4c2e-9b7d-2a4f8e6c0d13]
+renamed Column [dbo].[Customer].[ContactPhone] to Column [dbo].[Customer].[MobileNumber]

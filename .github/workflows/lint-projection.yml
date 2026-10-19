@@ -3,9 +3,9 @@ name: lint-projection
 # Defense-in-depth for the V2 sidecar's lint-discipline guardrail.
 #
 # The pre-commit hook
-# (`sidecar/projection/scripts/git-hooks/pre-commit`) catches
+# (`archive/v2/scripts/git-hooks/pre-commit`) catches
 # violations locally before commit. This workflow re-runs the
-# `lint-discipline.sh` script on PRs that touch `sidecar/projection/`,
+# `lint-discipline.sh` script on PRs that touch `archive/v2/`,
 # blocking merges when violations slip past local hooks.
 #
 # Per the FP strict-mode discipline (`DECISIONS 2026-05-09`), every
@@ -20,7 +20,7 @@ on:
   # a REQUIRED status check on `main`: a path-filtered workflow that is skipped
   # leaves its required check pending forever and blocks the merge (GitHub's
   # "skipped but required" behavior). With no filter the check always reports —
-  # and it passes trivially when `sidecar/projection/` is unchanged (the scan
+  # and it passes trivially when `archive/v2/` is unchanged (the scan
   # finds nothing new), so it only ever blocks a real projection-lint violation.
   pull_request:
   push:
@@ -28,7 +28,7 @@ on:
       - main
       - master
     paths:
-      - 'sidecar/projection/**'
+      - 'archive/v2/**'
 
 jobs:
   lint-discipline:
@@ -40,5 +40,5 @@ jobs:
 
       - name: Run lint-discipline.sh
         run: |
-          chmod +x sidecar/projection/scripts/lint-discipline.sh
-          sidecar/projection/scripts/lint-discipline.sh --ci
+          chmod +x archive/v2/scripts/lint-discipline.sh
+          archive/v2/scripts/lint-discipline.sh --ci

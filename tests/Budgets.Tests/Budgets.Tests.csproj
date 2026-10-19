@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The repository's own laws: budgets, manifest, dependency direction, banned symbols. -->
+  <PropertyGroup>
+    <AssemblyName>DbChange.Budgets.Tests</AssemblyName>
+    <RootNamespace>DbChange.Budgets.Tests</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Cultures on: DacFx builds no model in globalization-invariant mode, and Register.Errors builds one to reach the errors of io/Ssdt.ReadModel. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <PackageReference Include="CsCheck" />
+    <PackageReference Include="NetArchTest.Rules" />
+    <PackageReference Include="JsonSchema.Net" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../kernel/kernel.csproj" />
+    <ProjectReference Include="../../io/io.csproj" />
+    <ProjectReference Include="../../cli/cli.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The test primitives every project shares (DECISIONS.md, 2026-09-25), and the half of ScratchFolder that knows the repository. -->
+    <Compile Include="../Shared/*.cs" LinkBase="Shared" />
+    <Compile Include="../Shared/Io/*.cs" LinkBase="Shared/Io" />
+  </ItemGroup>
+</Project>

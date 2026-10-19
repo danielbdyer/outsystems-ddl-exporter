@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Pure: the BCL and System.Collections.Immutable only. No package reference; no I/O, clock, randomness or Task (BannedSymbols.txt). -->
+  <PropertyGroup>
+    <AssemblyName>DbChange.Kernel</AssemblyName>
+    <RootNamespace>DbChange.Kernel</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <DbChangeBannedSymbols>$(MSBuildThisFileDirectory)BannedSymbols.txt</DbChangeBannedSymbols>
+  </PropertyGroup>
+</Project>

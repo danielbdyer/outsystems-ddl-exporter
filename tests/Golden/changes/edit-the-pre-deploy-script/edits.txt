@@ -1,0 +1,3 @@
+=== Script.PreDeployment.sql
+--- PRINT 'Pre-deploy: no backfill active.
++++ PRINT 'Pre-deploy: still no backfill active.
