@@ -2,8 +2,8 @@
 
 **To start a session with this prompt, paste:**
 
-> Use a workflow to build v3 to completion. Follow `V3_BUILD_PROMPT.md` (on `main` once pull
-> request #703 merges; until then on branch `claude/v3-architecture-design-sl95mx`).
+> Use a workflow to continue v3 to completion. Follow `V3_PARITY.md`, then `V3_BUILD_PROMPT.md`, on
+> branch `claude/v3-architecture-design-sl95mx` until pull request #705 merges and on `main` after.
 
 That sentence is the operator's opt-in to multi-agent orchestration. Everything below is for the
 session that receives it.
@@ -13,7 +13,7 @@ session that receives it.
 ## 0. The job, in one breath
 
 Build v3, the lifecycle engine `V3_MILESTONES.md` specifies, on .NET 10 in this repository,
-milestone by milestone from M0 to M7. Run one workflow per wave of work packages, stay in the loop
+milestone by milestone to M7, from where `NEXT.md` says it stands: M0 and M1 are built. Run one workflow per wave of work packages, stay in the loop
 between waves, and keep the state in the repository, never in a workflow's memory. You are done when
 every exit that can run here is green on your branch and in CI, and every exit that needs the
 estate is recorded with the command a person must run. M8 and the wing (W) wait for the operator.
@@ -23,23 +23,21 @@ The plan is complete and has been reviewed adversarially: execute it, do not re-
 
 ## 1. Read, in this order
 
-1. `NEXT.md`, if it exists. It is the live state and overrides anything below about where you are.
-   It does not exist until M0 lands; until then you are at the start of M0.
-2. `V3_MILESTONES.md`: §0; §1 (the measured facts; do not re-derive them); §3.1 (the
+1. `NEXT.md`: the live state, which overrides anything below about where you are.
+2. `V3_PARITY.md`: where v3 stands with its proof (§0), the ledger of what v2 does and where v3
+   holds it (§2 to §4), and the order of the remaining work (§5).
+3. `V3_MILESTONES.md`: §0; §1 (the measured facts; do not re-derive them); §3.1 (the
    Facsimile, and what it changes); §4 (what the plan changes in the design documents); §5 (the milestones and the lanes table, which is the build
    order); the milestone you are on (its work packages and its exits); Appendix F (the budgets).
-3. For the work package at hand, and only for it: the sections of `V3_ARCHITECTURE.md` it cites
+4. For the work package at hand, and only for it: the sections of `V3_ARCHITECTURE.md` it cites
    (§6.6 for the C# encoding, §7 for the types in F# notation, §8 for the verbs, §13 for the
    laws), of `V3_INSTRUCTION_ARCHITECTURE.md` (§4 values, §6 drafts, §9 the agentic interface,
    §10 the tests), and the requirements of `LIFECYCLE_BACKPORT_PROMPT.md` its exits name.
-4. For a port: the v2 files the work package names, under `sidecar/projection/src/` (under
-   `archive/v2/src/` after M0), and their tests. v2 is the specification.
+5. For a port: the v2 files the work package names, under `archive/v2/src/`, and their tests. v2 is
+   the specification, and the ledger rows the work package turns cite the lines that prove it.
 
 Where `V3_MILESTONES.md` §4 says it changes a design document, the plan wins. Everywhere else the
 design documents stand.
-
-If pull request #703 is not merged when you start, merge `origin/claude/v3-architecture-design-sl95mx`
-into your branch first and say so in your pull request.
 
 ---
 
@@ -60,14 +58,14 @@ into your branch first and say so in your pull request.
 - **The container** (this repository's cloud sessions, as of 2026-09-23):
   - 4 CPUs, so a workflow runs at most two agents at once; 15 GB of memory; about 24 GB of free
     disk. The checkout is about 110 MB, so worktrees are cheap.
-  - `.claude/hooks/session-start.sh` installs .NET SDK 9.0.314, the version in
-    `sidecar/projection/global.json`. The .NET 10 SDK installs beside it with
+  - The session's start hook installs .NET SDK 9.0.314, the version `archive/v2/global.json` names;
+    v3's own hooks (WP 0.5) wait on the operator (`NEXT.md`). The .NET 10 SDK installs beside it with
     `curl -sSfL https://builds.dotnet.microsoft.com/dotnet/scripts/v1/dotnet-install.sh | bash -s -- --channel 10.0 --install-dir ~/.dotnet`
     (10.0.401 on 2026-09-23). Do that before building anything; WP 0.5's hook takes it over.
   - Docker is present and pulls `mcr.microsoft.com/mssql/server:2022-latest` from the Microsoft
-    registry. A container started with `MSSQL_AGENT_ENABLED=true` runs change data capture. Today's
-    hook starts a warm SQL Server on port 11433 through `sidecar/projection/scripts/warm-sql.sh`. If
-    `docker ps` fails, re-run the hook before concluding anything; Docker comes back in seconds.
+    registry. A container started with `MSSQL_AGENT_ENABLED=true` runs change data capture.
+    `ci/sql.sh up` starts the shared SQL Server container the fixture tests use. If `docker ps`
+    fails, re-run the start hook before concluding anything; Docker comes back in seconds.
   - `api.nuget.org` and `builds.dotnet.microsoft.com` are reachable.
   - The NuGet cache holds DacFx 162.5.57 and 170.5.96. The 170.5.96 package's `lib/net10.0` has
     `Microsoft.Data.Tools.Schema.SqlTasks.targets` and `Microsoft.Data.Tools.Schema.Tasks.Sql.dll`,
@@ -101,17 +99,20 @@ into your branch first and say so in your pull request.
 3. **Budgets are the brake.** `ci/budgets.json` carries the plan's Appendix F from M0. A work
    package that cannot meet its exit under its ceiling stops and asks for one decision line.
 4. **Safety and privacy are not negotiable.**
-   - The probe allowlist is exactly as WP 1.4 states it.
+   - The aggregate-query allowlist is exactly as WP 1.4 states it.
    - A `Copy` exists only through the registry.
    - A profile contributes deploy options and SQLCMD values only.
-   - A failed probe against an environment classified real reports its error number only.
-   - No real data appears anywhere. Tests use minted rows or hand-written synthetic ones.
+   - A failed aggregate query against an environment classified real reports its error number only.
+   - No real data appears anywhere. Tests use planted or hand-written synthetic rows.
    - No credential appears in any output.
-5. **The kernel is pure.** It keeps the banned-symbol list in WP 0.2, and σ takes its generator and
-   its week as parameters.
+5. **The kernel is pure.** It keeps the banned-symbol list in WP 0.2. The planter (WP 3.8) takes no
+   random source and no clock; σ, if §17 item 20 brings it back (WP 3.3), takes its generator and its
+   week as parameters.
 6. **The write budget.**
    - No new documents.
    - `NEXT.md` is rewritten after each wave, never appended to.
+   - `V3_PARITY.md`'s rows change only with the test that holds them, in the same commit: the last
+     cell names the test, law, value or exit, and `ParityResolves` checks it.
    - `DECISIONS.md` gets at most one line per decision.
    - `V3_MILESTONES.md` is corrected only to keep it true, one paragraph at a time, each correction
      with a decision line.
@@ -133,7 +134,8 @@ into your branch first and say so in your pull request.
 ## 4. The loop
 
 ```
-until M7's exits are green here, or pending only on the estate:
+until M7's exits are green here, or pending only on the estate, and every row of V3_PARITY.md
+is held, retired, or waits only on the cutover tools:
     read NEXT.md and the current milestone
     form the next wave (the rule below); do single-path work inline
     run the wave workflow (Appendix A) with args { milestone, branch, final, wps }
@@ -150,14 +152,13 @@ until M7's exits are green here, or pending only on the estate:
   - WP 0.1: the archive move touches every path, so do it alone and first.
   - WP 0.2: the skeleton everything else builds on.
   - Any merge conflict the integrator could not resolve.
-- **The first waves:**
-  - M0: 0.1 inline, then 0.2 inline, then {0.3, 0.4, 0.5}, then {0.6, 0.7}.
-  - M1: {1.1, 1.3, 1.8}, then {1.2, 1.5, 1.6}, then {1.4}, then {1.7}, and then M1's exit
-    (`final: true`).
-  - After that, derive waves the same way.
+- **The next waves:** M0 and M1 are built. Take the work `V3_PARITY.md` §5 lists as needing no
+  person first (the pre-M2 code; spikes S2, S4 and S9 to S11; WPs 3.1, 3.4 and 3.5's first step;
+  WP 7.1), then each milestone as the operator allows it, deriving waves by the rule above.
 - **Effort, per work package:**
   - `max` for the kernel types (0.3), the contract (0.4), the executor and allowlist (1.4), profiles
-    and credentials (1.5), the claims (2.1), the probes (2.3), σ (3.3), the proof (4.1), and the
+    and credentials (1.5), the preconditions (2.1), the aggregate queries (2.3), the planter (3.8),
+    the copy build (3.5), the proof (4.1), and the
     record and the gate (5.1, 5.2).
   - `low` for citation rewrites and moves (7.1).
   - The session default everywhere else.
@@ -171,20 +172,14 @@ until M7's exits are green here, or pending only on the estate:
 
 ---
 
-## 5. Before the first wave
+## 5. Before the next wave
 
 1. Install the .NET 10 SDK (§2) and confirm it: `dotnet --list-sdks` shows a `10.0` SDK.
-2. Confirm Docker: `docker ps` answers, and `docker pull mcr.microsoft.com/mssql/server:2022-latest`
-   succeeds.
-3. Read the plan's WP 0.1 closely. It carries WP 0.5's settings and hooks in the same push, because
-   today's hooks read paths the archive move relocates.
-
-The gaps found while this prompt was first written are fixed in the plan itself:
-- WP 0.1: the hooks travel with the move, and the `.claude` pointers are removed until M7.
-- WP 0.5: the hook installs the .NET 10 SDK and starts Docker in remote sessions.
-- WP 0.6: the root documents are excluded from the prose tests.
-- WP 0.7: the shared SQL Server fixture.
-- §4 rows 10 and 16: .NET 10 throughout, and Docker as the substrate.
+2. Confirm the local server: `docker ps` answers and `ci/sql.sh up` starts the shared container,
+   or the fixture tests run against LocalDB on Windows.
+3. Run the fast lane, `dotnet test DbChange.sln --filter "Category=fast|Category=build"`, and read
+   the tally `ParityResolves` prints: it is where the parity work stands.
+4. Read `V3_PARITY.md` §5 for the order of the work, and `NEXT.md` for what waits on a person.
 
 What remains open is in the plan's §17, each item with the default that lets work proceed.
 
@@ -220,11 +215,12 @@ this repository reaches it any other way.
     systems;
   - every other exit is recorded as pending, with its command.
 - Every budget is under its ceiling.
-- These are green, as the plan's Appendix C restates them: laws 2′, 3′, 5′ and 6 to 12, and laws P
-  and T.
+- These are green, as the plan's Appendix C restates them: laws 2′, 3′, 5′, 6 to 10, 11′ and 12′,
+  and laws F, P and T.
+- Every row of `V3_PARITY.md` is held, retired, or waits only on the cutover tools.
 - The instruction architecture's tests are green.
-- `dist/estate/` publishes, and `estate knowledge vendor --to <a scratch estate>` produces the
-  vendoring pull request's content.
+- `dist/dbchange/` publishes, and `dbchange knowledge vendor --to <a scratch SSDT repository>`
+  produces the vendoring pull request's content.
 - `NEXT.md` lists only *Waiting on a person*.
 - The build pull request is ready for the operator, and is merged when they say so.
 
@@ -237,6 +233,7 @@ MILESTONE  M<n>, wave <k>
 LANDED     <work package> — <commit> — <the test that pins it>
 HELD       <work package> — <why> — <next step>
 PENDING    <exit> — <command> — <who>
+PARITY     held <n> · partly held <n> · not held yet <n> · retired <n> · cutover tools <n>
 CI         ubuntu <green | red> · windows <green | red> — <run link>
 NEXT       <the next wave>
 ```
@@ -262,7 +259,7 @@ export const meta = {
 }
 
 // args: { milestone: 'M1', branch: '<designated branch>', final: false,
-//         wps: [ { id: '1.4', title: 'io/SqlServer and a minimal io/Substrate', lenses: ['spec', 'safety'], effort: 'max' } ] }
+//         wps: [ { id: '3.4', title: 'io/LocalServer, completed', lenses: ['spec', 'safety'], effort: 'max' } ] }
 
 const WP_RESULT = {
   type: 'object',

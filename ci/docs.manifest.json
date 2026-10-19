@@ -143,6 +143,16 @@
       "ancestor": []
     },
     {
+      "path": "V3_PARITY.md",
+      "kind": "hand",
+      "owner": "tool",
+      "reader": ["the operator", "the build session"],
+      "moment": ["until M8"],
+      "budget": 358,
+      "generator": null,
+      "ancestor": []
+    },
+    {
       "path": ".github/PULL_REQUEST_TEMPLATE/schema-change.md",
       "kind": "hand",
       "owner": "tool",

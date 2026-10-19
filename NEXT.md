@@ -1,6 +1,6 @@
 # Next — rewritten by the session that finishes something; never appended
 Updated 2026-10-19 by #705, which brings v3's build (#704), the Facsimile (#706) and the vocabulary sweep (#707)
-onto one branch and writes the Facsimile into the plan (`V3_MILESTONES.md` §3.1).
+onto one branch, writes the Facsimile into the plan (`V3_MILESTONES.md` §3.1) and opens the parity ledger (`V3_PARITY.md`).
 
 ## The operator's actions
 - Confirm or overturn the re-cut of M3 (`V3_MILESTONES.md` §9, §17 item 20): the existing-data tier planted by the
@@ -23,8 +23,8 @@ onto one branch and writes the Facsimile into the plan (`V3_MILESTONES.md` §3.1
 - The code the rulings of 2026-09-25 call for: the provenance record's per-claim constructors, `AggregateQuery.Of`
   internal with synonyms refused, a server host per environment, check drift reusing a built dacpac with one database
   read, and the Extended Events test extended to a drifted check drift and `read --from env:dev`.
-- Spikes: S2 before WP 2.2 (it also tests the Facsimile's statement shapes on both DacFx releases); S4 before
-  WP 3.4 (a copy's CREATE, RESTORE and DROP timed in LocalDB 16.x and in the container); S9 to S11 in CI.
+- `V3_PARITY.md` §5 orders the work that needs no person: spikes S2, S4 and S9 to S11 in CI, WPs 3.1, 3.4 and
+  3.5's first step, and WP 7.1. Each ledger row cites v2's proof; `ParityResolves` prints where they stand.
 - Then M2, from WP 2.1 and WP 2.4, once the operator allows it; WP 2.6 moves the Facsimile's case catalog to
   `tests/Cases/` (not held yet: WP 2.6). Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's
   page cells, the vendoring verb's two names, R18's exit, who writes deployments.md, and the gate's wiki cells.
