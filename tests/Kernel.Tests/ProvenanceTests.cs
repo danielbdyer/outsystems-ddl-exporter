@@ -152,8 +152,8 @@ public sealed class ProvenanceTests
     [Trait("Category", "fast")]
     public void DacFx_versions_order_group_by_group_as_numbers_and_agree_with_equality()
     {
-        // a number, and whether a zero is written before it
-        var group = Gen.Select(Gen.OneOf(Gen.Int[0, 3], Gen.Int[0, int.MaxValue]), Gen.Bool);
+        var group = Gen.Select(Gen.OneOf(Gen.Int[0, 3], Gen.Int[0, int.MaxValue]),
+            Gen.Bool);   // a number, and whether a zero is written before it
         var version = group.Array[2, 4];
         Gen.Select(version, version).Sample((a, b) =>
         {
