@@ -95,6 +95,25 @@ internal static partial class ErrorPaths
             Failed(DbChange.Kernel.Outcome.Predict(new ExistingData([]),
                 [new BlockOnPossibleDataLossSite(Table.Name, "ALTER TABLE [dbo].[Customer] ALTER COLUMN [Email] NVARCHAR (256) NOT NULL;")],
                 [], []))),
+        new("a column renamed by typing, with no refactorlog entry", "rename.column-without-entry", false, (_, _) =>
+            Refusal(["CREATE TABLE dbo.Customer (Id INT NOT NULL, Phone NVARCHAR(40) NULL);"],
+                ["CREATE TABLE dbo.Customer (Id INT NOT NULL, Mobile NVARCHAR(40) NULL);"])),
+        new("a table renamed by typing, with no refactorlog entry", "rename.table-without-entry", false, (_, _) =>
+            Refusal(["CREATE TABLE dbo.Customer (Id INT NOT NULL);"], ["CREATE TABLE dbo.Client (Id INT NOT NULL);"])),
+        new("a table moved to another schema by typing, with no refactorlog entry", "rename.schema-move-without-entry", false, (_, _) =>
+            Refusal(["CREATE TABLE dbo.Customer (Id INT NOT NULL);"],
+                ["CREATE SCHEMA sales;", "CREATE TABLE sales.Customer (Id INT NOT NULL);"])),
+        new("a column created on a table CDC tracks", "cdc.column-list", false, (_, _) =>
+            Refusal(["CREATE TABLE dbo.Customer (Id INT NOT NULL);"], ["CREATE TABLE dbo.Customer (Id INT NOT NULL, Tier INT NULL);"],
+                Classify.Inputs.None with { CdcTracked = [Table.Name] })),
+        new("a rebuild of a table CDC tracks in the environment's plan", "cdc.table-rebuild", false, (_, _) =>
+            Refusal(["CREATE TABLE dbo.Customer (Id INT NOT NULL);"], ["CREATE TABLE dbo.Customer (Id INT NOT NULL);"],
+                Classify.Inputs.None with { CdcTracked = [Table.Name], Plan = [new ScriptStatement.Rebuilds(Table.Name)] })),
+        new("a recognize: block with a clause of no known kind", "pattern.malformed", false, (_, _) =>
+            Failed(Pattern.Parse("add-optional", "recognize:\n  match: frobbed Column\n  ships: one release\n"))),
+        new("an operation's file this identity cannot read", "pattern.unreadable", false, (scratch, _) =>
+            Denied(Written(scratch, "patterns/add-optional.md", "# add-optional\n"),
+                () => Failed(Patterns.Read(Path.Combine(scratch, "patterns"))))),
 
         new("DBCHANGE_TOOL naming no tool folder", "tool.missing", false, (scratch, _) =>
             Failed(Ssdt.Tool(Bare(scratch), Bare(scratch), scratch))),

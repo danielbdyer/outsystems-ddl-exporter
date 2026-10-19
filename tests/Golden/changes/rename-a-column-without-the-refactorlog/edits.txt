@@ -1,0 +1,3 @@
+=== Modules/Customer.sql
+--- ContactPhone    NVARCHAR(40)    NULL,
++++ MobileNumber    NVARCHAR(40)    NULL,

@@ -1,0 +1,7 @@
+unclassified change: prove it, created Role [AppReader]
+unclassified change: prove it, created Role [AppWriter]
+unclassified change: prove it, created Permission [DatabaseOptions].[Grant.ViewDefinition.Database].[AppReader].[dbo]
+unclassified change: prove it, created Permission [DatabaseOptions].[Grant.ViewDefinition.Database].[AppWriter].[dbo]
+unclassified change: prove it, created Permission [dbo].[Account].[Grant.Insert.Object].[AppWriter].[dbo]
+unclassified change: prove it, created Permission [dbo].[Account].[Grant.Select.Object].[AppReader].[dbo]
+unclassified change: prove it, created Permission [dbo].[Account].[Grant.Select.Object].[AppWriter].[dbo]

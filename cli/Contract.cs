@@ -219,7 +219,9 @@ public static class Contract
             "Run dbchange doctor, or correct the file the finding names.", true),
         new(7, "build-failed", "The build failed; the findings carry the build's errors.",
             "Fix each error at the file and line the finding names, then build again.", false),
-        new(9, "refused-by-name", "Refused by name: a named environment, an unregistered copy or a lock; the refusal's code is printed.",
+        new(9, "refused-by-name", "Refused by name: a named environment, an unregistered copy, a lock, or a change no publish can show"
+                + " to be safe (a rename without its refactorlog entry, a column-list change or a rebuild of a table CDC tracks); the"
+                + " refusal's code is printed.",
             "Do what the finding's remedy says.", true),
         new(130, "interrupted", "Interrupted (Ctrl-C or --timeout); the cleanup ran and the state is as before.", "Run the verb again.",
             false),
@@ -235,7 +237,9 @@ public static class Contract
     /// kernel finds the error, and so are a failure DacFx reports with no SQL Server error inside it, such as a package whose target
     /// platform the server is not, a verb this build lacks, and a defect in dbchange itself. A target of no known form is a bad argument,
     /// as is a flag or a verb dbchange does not know; a server that does not answer or refuses the identity is exit 4; a copy the registry
-    /// does not hold, a local server on a named host, and an aggregate query the allowlist refuses are refused by name.
+    /// does not hold, a local server on a named host, and an aggregate query the allowlist refuses are refused by name, as are Classify's
+    /// refusals: a rename without its refactorlog entry, and a column-list change or a rebuild of a table CDC tracks. An operation's
+    /// recognize: block that breaks the grammar is configuration (exit 6), as the environments file is.
     /// </summary>
     // CS8524 (an enum value no member names) is disabled for this switch alone; CS8509, a named member without an arm, stays an error.
 #pragma warning disable CS8524
@@ -266,6 +270,7 @@ public static class Contract
         ErrorCategory.Toolchain => 6,
         ErrorCategory.DacFx => 6,
         ErrorCategory.Plan => 6,
+        ErrorCategory.Pattern => 6,
         ErrorCategory.File => 6,
         ErrorCategory.Verb => 6,
         ErrorCategory.Internal => 6,
@@ -274,6 +279,8 @@ public static class Contract
         ErrorCategory.GitBranch => 9,
         ErrorCategory.Copy => 9,
         ErrorCategory.AggregateQuery => 9,
+        ErrorCategory.Rename => 9,
+        ErrorCategory.Cdc => 9,
     };
 #pragma warning restore CS8524
 
