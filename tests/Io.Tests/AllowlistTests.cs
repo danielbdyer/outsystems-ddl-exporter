@@ -8,6 +8,7 @@ using DbChange.Kernel;
 using DbChange.Tests;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Xunit;
+using ColumnType = Microsoft.SqlServer.TransactSql.ScriptDom.ColumnType;
 
 namespace DbChange.Io.Tests;
 

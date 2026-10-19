@@ -67,6 +67,8 @@ internal static class ErrorPaths
         new("a model with two elements on one key", "model.duplicate-key", false, (_, _) =>
             Failed(Change.Between(SortedArray.Of(Made(Element.Of(Table, [], [])), Made(Element.Of(Table, [new("Nullable", new Value.Null())], []))), [], []))),
         new("a collation name with no case rule", "model.collation", false, (_, _) => Failed(Collation.Of("Latin1_General"))),
+        new("a column with no data type, as a computed column has none", "model.unresolved", false, (_, _) =>
+            Failed(DbChange.Kernel.ColumnType.Of(Made(Element.Of(Made(ElementKey.Of(Table, "Column", Made(Name.Of("Twice")))), [], []))))),
 
         new("DBCHANGE_TOOL naming no tool folder", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), Bare(scratch), scratch))),
         new("no tool folder anywhere", "tool.missing", false, (scratch, _) => Failed(Ssdt.Tool(Bare(scratch), null, scratch))),
