@@ -14,10 +14,10 @@ From M8, `cli/VERBS.md` is generated from it and never edited by hand.
 
 ## Try it in five minutes
 
-1. `dbchange doctor` names the .NET SDK, the DacFx pin, the local server (Docker or LocalDB) and
-   Git LFS, each with a remedy when it is missing.
+1. `dbchange doctor` names the .NET SDK, the DacFx pin, the local server (SQL Server Express or
+   LocalDB) and Git LFS, each with a remedy when it is missing.
 2. `dbchange synthetic-copy up` builds the repository's schema, publishes it to the local server
-   (SQL Server in Docker from the pinned image, or LocalDB where Docker is absent), generates rows
+   (SQL Server 2022 Express from `ci/sql.sh up` on Linux, LocalDB on Windows), generates rows
    from the committed evidence, and caches the result by fingerprint under `.dbchange/`. A second run
    starts from that cache.
 3. `dbchange prove --project tests/Golden/project/SampleCatalog.sqlproj --target synthetic-copy`
@@ -29,14 +29,14 @@ Each step works once its milestone is built (`doctor` at M1, `synthetic-copy up`
 M4); `NEXT.md` says where the build is. From a clone, `dotnet run --project cli -- doctor` runs the
 verb without the session hook.
 
-At run time `dbchange` opens no network connection except to the SQL Server it is given. The one
-fetch is Docker pulling the pinned SQL Server image when it is absent. The CLI turns off DacFx's
-and the .NET SDK's telemetry in its own process.
+At run time `dbchange` opens no network connection except to the SQL Server it is given, and fetches
+nothing; `ci/sql.sh up` installs SQL Server Express from packages.microsoft.com before. The CLI turns
+off DacFx's and the .NET SDK's telemetry in its own process.
 
 ## Where things are
 
 - `kernel/` — the domain as types and pure functions: no I/O, no clock, no randomness.
-- `io/` — everything that touches SQL Server, DacFx, git, Docker or a file.
+- `io/` — everything that touches SQL Server, DacFx, git or a file.
 - `cli/` — the `dbchange` executable: the verb table, the dispatcher, the renderers.
 - `tests/` — `Kernel.Tests`, `Io.Tests` (its fixture tests need SQL Server) and `Budgets.Tests`
   (the repository's own rules); the corpus under `tests/Golden/`.

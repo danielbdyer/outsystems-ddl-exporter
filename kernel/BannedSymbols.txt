@@ -12,7 +12,7 @@ T:System.Security.Cryptography.RandomNumberGenerator;the kernel is deterministic
 T:System.Diagnostics.Stopwatch;the kernel has no clock
 T:System.Environment;the kernel reads no machine state
 T:System.Console;the kernel writes nothing: cli renders the answer
-T:System.Diagnostics.Process;the kernel starts no program: io/ runs git, dotnet and docker
+T:System.Diagnostics.Process;the kernel starts no program: io/ runs git, dotnet and sqllocaldb
 P:System.Globalization.CultureInfo.CurrentCulture;the kernel is culture-invariant: use CultureInfo.InvariantCulture or ordinal comparison
 T:System.Threading.Tasks.Task;the kernel is synchronous: effects and their scheduling live in io/
 T:System.Threading.Tasks.Task`1;the kernel is synchronous: effects and their scheduling live in io/

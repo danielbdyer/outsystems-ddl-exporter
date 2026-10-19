@@ -14,7 +14,7 @@ namespace DbChange.Io.Tests;
 
 /// <summary>
 /// io/Doctor (WP 1.7): read-only checks of the SDK and the runtime, git, the tool folder and its DacFx against the toolchain ledger, the
-/// build route, the local server dbchange would use and its image, and Git LFS, with a remedy for each item missing, on a machine the test
+/// build route, the local server dbchange would use, and Git LFS, with a remedy for each item missing, on a machine the test
 /// describes and with programs a stand-in runner answers; and R13's window, the committed DacFx against a sample ledger's row.
 /// </summary>
 public sealed class DoctorTests : IDisposable
@@ -31,8 +31,7 @@ public sealed class DoctorTests : IDisposable
     /// <summary>The programs a machine with every item present answers.</summary>
     private static Dictionary<string, (int Exit, string Output)> Everything => new()
     {
-        ["dotnet --list-sdks"] = (0, "9.0.314 [x]\n10.0.402 [x]\n"), ["docker info"] = (0, "29.5.3\n"),
-        ["docker image"] = (0, "sha256:5b0916c7af8c\n"), ["docker container"] = (0, Doctor.SqlServerImage + "\n"),
+        ["dotnet --list-sdks"] = (0, "9.0.314 [x]\n10.0.402 [x]\n"), ["sqllocaldb info"] = (0, "MSSQLLocalDB\n"),
         ["git --version"] = (0, "git version 2.31.1.windows.1\n"), ["git lfs"] = (0, "git-lfs/3.4.0 (GitHub; windows amd64)\n"),
     };
 
@@ -44,7 +43,7 @@ public sealed class DoctorTests : IDisposable
     {
         var checks = Doctor.Examine(Bare(), Nothing);   // no global.json, no tool folder, no sql.env, and nothing installed
 
-        Assert.Equal(["sdk", "runtime", "tool", "dacfx", "build", "git", "local-server", "image", "lfs"], checks.Select(c => c.Item.Name));
+        Assert.Equal(["sdk", "runtime", "tool", "dacfx", "build", "git", "local-server", "lfs"], checks.Select(c => c.Item.Name));
         Assert.Equal(["sdk", "tool", "build", "git", "local-server", "lfs"],
             checks.Where(c => c.Remedy is not null).Select(c => c.Item.Name));
         Assert.All(checks, c => Assert.False(string.IsNullOrWhiteSpace(c.Found)));
@@ -66,7 +65,7 @@ public sealed class DoctorTests : IDisposable
                 "dacfx=" + DacFx.Version.Match(v => v.ToString(), e => e.Message) + " (UNPINNED)",
                 "build=dotnet with the tool folder's targets", "git=2.31.1",
                 // the loopback address as SqlServer.Host spells it
-                "local-server=dbchange-sql container (localhost,11433)", "image=present", "lfs=git-lfs/3.4.0"],
+                "local-server=the SQL Server ~/.dbchange/sql.env names (localhost,11434)", "lfs=git-lfs/3.4.0"],
             checks.Select(c => c.Item + "=" + c.Found));
     }
 
@@ -175,7 +174,7 @@ public sealed class DoctorTests : IDisposable
     }
 
     /// <summary>A program that does not answer in twenty seconds is named as such, never as absent, since the remedy differs: dotnet, git
-    /// and docker each.</summary>
+    /// and sqllocaldb each.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void A_program_the_doctor_runs_that_does_not_answer_in_time_is_named_as_such_and_not_as_absent()
@@ -184,7 +183,7 @@ public sealed class DoctorTests : IDisposable
 
         Assert.Equal("dotnet did not answer in 20 seconds", checks["sdk"].Found);
         Assert.Equal("git did not answer in 20 seconds", checks["git"].Found);
-        Assert.Contains("Restart Docker", checks["local-server"].Remedy, StringComparison.Ordinal);
+        Assert.Equal("sqllocaldb did not answer in 20 seconds", checks["local-server"].Found);
         Assert.DoesNotContain("absent", checks["sdk"].Found + checks["git"].Found + checks["local-server"].Found, StringComparison.Ordinal);
     }
 
@@ -234,20 +233,23 @@ public sealed class DoctorTests : IDisposable
         Assert.Contains("ci/publish.sh", tool.Remedy, StringComparison.Ordinal);
     }
 
+    /// <summary>DECISIONS.md, 2026-10-19: neither DBCHANGE_SQL nor sql.env names a server, so LocalDB is the local server, found by
+    /// sqllocaldb and named as copies record it; the doctor runs no docker, since v3 runs SQL Server in no container.</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Without_Docker_LocalDB_is_the_local_server_and_no_image_is_needed()
+    public void Where_neither_DBCHANGE_SQL_nor_sql_env_names_a_server_LocalDB_is_the_local_server_and_no_docker_runs()
     {
-        var checks = Doctor.Examine(Bare(),
-            Answers(new() { ["docker info"] = (1, "Cannot connect to the Docker daemon"), ["sqllocaldb info"] = (0, "MSSQLLocalDB\n") }))
-            .ToDictionary(c => c.Item.Name);
+        Ran NeverDocker(Command c, CancellationToken t) =>
+            c.Program == "docker" ? throw new Xunit.Sdk.XunitException(c + " ran") : Answers(Everything)(c, t);
 
-        Assert.Equal(("LocalDB MSSQLLocalDB, CDC not provable here", null), (checks["local-server"].Found, checks["local-server"].Remedy));
-        Assert.Equal(("not needed without Docker", null), (checks["image"].Found, checks["image"].Remedy));
+        var checks = Doctor.Examine(Bare(), NeverDocker).ToDictionary(c => c.Item.Name);
+
+        Assert.Equal(("LocalDB MSSQLLocalDB (" + Value(LocalServer.ServerName(null, null, localDb: true)) + ")", null),
+            (checks["local-server"].Found, checks["local-server"].Remedy));
+        Assert.DoesNotContain("image", checks.Keys);
     }
 
-    /// <summary>DBCHANGE_SQL names the local server first, in io/LocalServer's order: no docker or sqllocaldb runs, and the image is not
-    /// needed.</summary>
+    /// <summary>DBCHANGE_SQL names the local server first, in io/LocalServer's order: no sqllocaldb runs.</summary>
     [Fact]
     [Trait("Category", "fast")]
     public void The_local_server_is_the_one_dbchange_would_use_DBCHANGE_SQL_first()
@@ -261,26 +263,86 @@ public sealed class DoctorTests : IDisposable
             .ToDictionary(c => c.Item.Name);
 
         Assert.Equal(("DBCHANGE_SQL (db-host,1433)", null), (checks["local-server"].Found, checks["local-server"].Remedy));
-        Assert.Equal(("not needed: DBCHANGE_SQL names the server", null), (checks["image"].Found, checks["image"].Remedy));
         PlantedValue.Password.AbsentFrom(string.Join(" ", checks.Values.Select(c => c.Found + c.Remedy)));
     }
 
+    /// <summary>With no local server, the remedy names the scripts that start one, ci/sql.sh up and ci/sql.ps1 up, and DBCHANGE_SQL;
+    /// io itself starts none (DECISIONS.md, 2026-10-19).</summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Docker_installed_with_its_daemon_stopped_says_to_start_Docker_and_Docker_absent_says_to_install_it()
+    public void With_no_local_server_the_remedy_names_ci_sql_up_and_DBCHANGE_SQL()
     {
-        var stopped = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (1, "") })).Single(c => c.Item == Doctor.Item.LocalServer);
-        var absent = Doctor.Examine(Bare(), Nothing).Single(c => c.Item == Doctor.Item.LocalServer);
-        var noContainer = Doctor.Examine(Bare(), Answers(Everything)).Single(c => c.Item == Doctor.Item.LocalServer);
-        var daemonDown = Doctor.Examine(Bare(sqlEnv: SqlEnv()), Answers(new() { ["docker info"] = (1, "") }))
-            .Single(c => c.Item == Doctor.Item.LocalServer);
+        var none = Doctor.Examine(Bare(), Nothing).Single(c => c.Item == Doctor.Item.LocalServer);
 
-        Assert.Contains("start Docker Desktop", stopped.Remedy, StringComparison.Ordinal);
-        Assert.DoesNotContain("Install Docker", stopped.Remedy, StringComparison.Ordinal);
-        Assert.Contains("Install Docker", absent.Remedy, StringComparison.Ordinal);
-        Assert.Contains("ci/sql.sh up", noContainer.Remedy, StringComparison.Ordinal);
-        Assert.Equal("dbchange-sql container (localhost,11433)", daemonDown.Found);
-        Assert.Contains("start Docker Desktop", daemonDown.Remedy, StringComparison.Ordinal);
+        Assert.StartsWith("none: DBCHANGE_SQL is unset, ", none.Found, StringComparison.Ordinal);
+        Assert.Contains("ci/sql.sh up", none.Remedy, StringComparison.Ordinal);
+        Assert.Contains("ci/sql.ps1 up", none.Remedy, StringComparison.Ordinal);
+        Assert.Contains("DBCHANGE_SQL", none.Remedy, StringComparison.Ordinal);
+        Assert.DoesNotContain("Docker", none.Found + none.Remedy, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A resumed session, or one after ci/sql.sh down: sql.env still names the server, sqlservr is stopped, and nothing accepts a
+    /// connection at its port. The item is missing with the remedy to start it, so the line reads DEGRADED instead of READY; a server
+    /// DBCHANGE_SQL names gets the remedy to start or correct that one. The doctor asks for the port alone and logs in to nothing.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_local_server_accepting_no_connection_at_its_port_is_missing_with_the_remedy_to_start_it()
+    {
+        var asked = new List<(string, int)>();
+        bool Closed(string host, int port, CancellationToken _)
+        {
+            asked.Add((host, port));
+            return false;
+        }
+
+        var stopped = Doctor.Examine(Bare(sqlEnv: SqlEnv(), listens: Closed), Answers(Everything))
+            .Single(c => c.Item == Doctor.Item.LocalServer);
+        var variable = Doctor.Examine(Bare(dbChangeSql: "Server=tcp:DB-Host,1433;Integrated Security=true", listens: Closed),
+            Answers(Everything)).Single(c => c.Item == Doctor.Item.LocalServer);
+
+        Assert.Equal("the SQL Server ~/.dbchange/sql.env names (localhost,11434), accepting no connection on 127.0.0.1,11434 within "
+            + Command.Written(Command.ProbeTimeout), stopped.Found);
+        Assert.Equal("Run ci/sql.sh up, or ci/sql.ps1 up on Windows, then run dbchange doctor.", stopped.Remedy);
+        Assert.Contains("DBCHANGE_SQL", variable.Remedy, StringComparison.Ordinal);
+        Assert.Equal([("127.0.0.1", 11434), ("DB-Host", 1433)], asked);
+        Assert.False(new Doctor.Readiness([stopped]).Ready);
+    }
+
+    /// <summary>
+    /// The doctor reaches a server at the TCP port its data source names, as SqlClient reads it (1433 for a host alone), and does not
+    /// reach one over another transport or a named instance without a port, whose port SQL Server Browser gives.
+    /// </summary>
+    [Theory]
+    [Trait("Category", "fast")]
+    [InlineData(@"Server=tcp:DB-Host,1433", "DB-Host", 1433)]
+    [InlineData(@"Server=127.0.0.1,11434", "127.0.0.1", 11434)]
+    [InlineData(@"Server=db-host", "db-host", 1433)]
+    [InlineData(@"Server=.,1433", "localhost", 1433)]
+    [InlineData(@"Server=db-host\sql2022,51000", "db-host", 51000)]
+    [InlineData(@"Server=db-host\sql2022", null, 0)]
+    [InlineData(@"Server=np:\\db-host\pipe\sql\query", null, 0)]
+    [InlineData(@"Server=lpc:db-host", null, 0)]
+    [InlineData(@"Server=(localdb)\MSSQLLocalDB", null, 0)]
+    public void The_doctor_reaches_the_TCP_port_a_data_source_names_and_no_other_transport(string connection, string? host, int port) =>
+        Assert.Equal(host is null ? null : (host, port), Doctor.Endpoint(connection + ";Integrated Security=true"));
+
+    /// <summary>
+    /// Doctor.Listening on this machine: a loopback port nothing listens on accepts no connection, and one a listener holds does, each
+    /// answered without waiting for the probe timeout.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "fast")]
+    public void A_closed_loopback_port_accepts_no_connection_and_a_listening_one_does()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        var open = Doctor.Listening("127.0.0.1", port, CancellationToken.None);
+        listener.Stop();
+
+        Assert.Equal((true, false), (open, Doctor.Listening("127.0.0.1", port, CancellationToken.None)));
     }
 
     /// <summary>
@@ -304,44 +366,28 @@ public sealed class DoctorTests : IDisposable
         var beforeLocalDb = asked;
         var localDb = Value(LocalServer.Choice(null, machine.Under("no-sql.env"), Installed));
 
-        Assert.Equal(("dbchange-sql container", "DBCHANGE_SQL", "LocalDB MSSQLLocalDB"),
+        Assert.Equal(("the SQL Server ~/.dbchange/sql.env names", "DBCHANGE_SQL", "LocalDB MSSQLLocalDB"),
             (container.ToString(), variable.ToString(), localDb.ToString()));
         Assert.Equal((0, 1), (beforeLocalDb, asked));
     }
 
+    /// <summary>
+    /// DECISIONS.md, 2026-10-19: ci/sql.sh installs SQL Server 2022 (16.x) Express natively and runs sqlservr as a process, recording its
+    /// port in ~/.dbchange/sql.env (11434 unless DBCHANGE_SQL_PORT says otherwise); neither script pulls an image or runs docker, and
+    /// ci/sql.ps1 starts LocalDB.
+    /// </summary>
     [Fact]
     [Trait("Category", "fast")]
-    public void Docker_without_the_pinned_image_names_its_pull_and_a_container_running_another_image_says_to_recreate_it()
+    public void The_sql_scripts_start_SQL_Server_2022_Express_on_Linux_and_LocalDB_on_Windows_and_run_no_container()
     {
-        var absent = Doctor.Examine(Bare(), Answers(new() { ["docker info"] = (0, "29.5.3\n"), ["docker image"] = (1, "No such image") }))
-            .Single(c => c.Item == Doctor.Item.Image);
-        var older = "sha256:" + new string('b', 64);
-        Ran Older(Command c, CancellationToken t) => (c.Program, c.Arguments) switch
-        {
-            ("docker", ["container", "inspect", ..]) =>
-                new Ran.Exited(0, "sha256:" + new string('c', 64) + " {\"1433/tcp\":[{\"HostIp\":\"127.0.0.1\",\"HostPort\":\"11433\"}]}\n",
-                    ""),
-            ("docker", ["image", "inspect", _, "{{json .RepoDigests}}", ..]) =>
-                new Ran.Exited(0, "[\"mcr.microsoft.com/mssql/server@" + older + "\"]\n", ""),
-            _ => Answers(Everything)(c, t),
-        };
-        var other = Doctor.Examine(Bare(), Older).Single(c => c.Item == Doctor.Item.Image);
+        var (sh, ps1) = (File.ReadAllText(Path.Combine(Repository.Root, "ci", "sql.sh")),
+            File.ReadAllText(Path.Combine(Repository.Root, "ci", "sql.ps1")));
 
-        Assert.Equal("absent", absent.Found);
-        Assert.Contains("ci/sql.sh up", absent.Remedy, StringComparison.Ordinal);
-        Assert.Contains(Doctor.SqlServerImage, absent.Remedy, StringComparison.Ordinal);
-        Assert.Equal("present, and dbchange-sql runs " + older, other.Found);
-        Assert.Contains("ci/sql.sh down", other.Remedy, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    [Trait("Category", "fast")]
-    public void The_sql_scripts_pin_the_image_the_doctor_checks()
-    {
-        Assert.Matches("^mcr.microsoft.com/mssql/server:2022-latest@sha256:[0-9a-f]{64}$", Doctor.SqlServerImage);
-        Assert.All(["sql.sh", "sql.ps1"],
-            script => Assert.Contains(Doctor.SqlServerImage, File.ReadAllText(Path.Combine(Repository.Root, "ci", script)),
-                StringComparison.Ordinal));
+        Assert.Matches(@"(?m)^version='16\.0\.\d+\.\d+-\d+'$", sh);
+        Assert.Contains("MSSQL_PID=Express", sh, StringComparison.Ordinal);
+        Assert.Contains("${DBCHANGE_SQL_PORT:-11434}", sh, StringComparison.Ordinal);
+        Assert.Contains("sqllocaldb", ps1, StringComparison.Ordinal);
+        Assert.All(new[] { sh, ps1 }, script => Assert.DoesNotMatch(@"(?i)\bdocker\b|mcr\.microsoft\.com", script));
     }
 
     /// <summary>A DacFx release near the committed one: its second group moved by <paramref name="minors"/>, so the rows above hold
@@ -353,14 +399,14 @@ public sealed class DoctorTests : IDisposable
     }
 
     /// <summary>A machine holding nothing but the test folder, the repository root: no DBCHANGE_SQL, no sql.env unless given, this
-    /// process's runtime unless given.</summary>
+    /// process's runtime unless given, and a server accepting a connection at every host and port unless given.</summary>
     private Doctor.Machine Bare(string? dbChangeSql = null, string? sqlEnv = null, Version? runtime = null,
-        string? workingDirectory = null) =>
+        string? workingDirectory = null, Func<string, int, CancellationToken, bool>? listens = null) =>
         new(new Checkout(machine.Path, workingDirectory ?? machine.Path, null, Version), machine.Path, dbChangeSql,
-            sqlEnv ?? machine.Under("no-sql.env"), runtime ?? Environment.Version);
+            sqlEnv ?? machine.Under("no-sql.env"), runtime ?? Environment.Version, listens ?? ((_, _, _) => true));
 
-    /// <summary>A sql.env as ci/sql.sh writes it, naming the container's port and password.</summary>
-    private string SqlEnv() => machine.File("sql.env", "MSSQL_SA_PASSWORD=" + PlantedValue.Password + "\nDBCHANGE_SQL_PORT=11433\n");
+    /// <summary>A sql.env as ci/sql.sh writes it, naming the local server's port and password.</summary>
+    private string SqlEnv() => machine.File("sql.env", "MSSQL_SA_PASSWORD=" + PlantedValue.Password + "\nDBCHANGE_SQL_PORT=11434\n");
 
     /// <summary>The sample toolchain ledger under the machine's repository root, its one row replaced; the file's path.</summary>
     private string Ledger(string rows)

@@ -70,28 +70,31 @@ public sealed record Provenance
 
 /// <summary>
 /// A SQL Server as a claim records it: its product version as SERVERPROPERTY('ProductVersion') gives it, four dot-separated numbers such
-/// as 16.0.4295.3; the database's compatibility level; and, for a copy on the dbchange-sql container, the digest of the image it runs. A
-/// claim transfers from one SQL Server to another of an equal <see cref="Level"/>: the build and the image are not compared (R1).
+/// as 16.0.4305.5; its edition as SERVERPROPERTY('Edition') names it, such as Express Edition (64-bit); and the database's compatibility
+/// level. A claim transfers from one SQL Server to another of an equal <see cref="Level"/>: the build and the edition are not compared
+/// (R1). A server takes a package only at or above the package's platform (<see cref="Refuses"/>, R5).
 /// </summary>
 public sealed record Server
 {
-    private const string Sha256 = "sha256:";
-
     private static readonly Regex ProductVersion = new(@"\A[0-9]{1,5}(\.[0-9]{1,5}){3}\z", RegexOptions.CultureInvariant);
+
+    /// <summary>A platform DacFx names by its version, Sql160 for SQL Server 2022: its major version is the number without its last
+    /// digit.</summary>
+    private static readonly Regex Versioned = new(@"\ASql([1-9][0-9])0\z", RegexOptions.CultureInvariant);
 
     /// <summary>The compatibility levels SQL Server has had, from SQL Server 2000's 80 to SQL Server 2025's 170.</summary>
     private static readonly int[] Levels = [80, 90, 100, 110, 120, 130, 140, 150, 160, 170];
 
-    private Server(string version, int compatibilityLevel, Fingerprint? image) =>
-        (Version, CompatibilityLevel, Image) = (version, compatibilityLevel, image);
+    private Server(string version, string edition, int compatibilityLevel) =>
+        (Version, Edition, CompatibilityLevel) = (version, edition, compatibilityLevel);
 
-    /// <summary>The product version, such as 16.0.4295.3.</summary>
+    /// <summary>The product version, such as 16.0.4305.5.</summary>
     public string Version { get; }
 
-    public int CompatibilityLevel { get; }
+    /// <summary>The edition, such as Express Edition (64-bit) or Developer Edition (64-bit).</summary>
+    public string Edition { get; }
 
-    /// <summary>The digest of the image the server runs in, for a copy on the dbchange-sql container; null anywhere else.</summary>
-    public Fingerprint? Image { get; }
+    public int CompatibilityLevel { get; }
 
     /// <summary>The product version's first number: 16 for SQL Server 2022.</summary>
     public int Major => int.Parse(Version[..Version.IndexOf('.', StringComparison.Ordinal)], CultureInfo.InvariantCulture);
@@ -100,28 +103,42 @@ public sealed record Server
     public ServerLevel Level => new(Major, CompatibilityLevel);
 
     /// <summary>
-    /// A server from what SQL Server reports: server.product-version for a version of other than four numbers, server.compatibility-level
-    /// for a level SQL Server never had, server.image-digest for an image digest other than sha256: and 64 lowercase hex digits.
+    /// A server from what SQL Server reports: server.product-version for a version of other than four numbers, server.edition for an
+    /// edition that is blank or holds a control character, server.compatibility-level for a level SQL Server never had.
     /// </summary>
-    public static Result<Server> Of(string? productVersion, int compatibilityLevel, string? imageDigest) =>
+    public static Result<Server> Of(string? productVersion, string? edition, int compatibilityLevel) =>
         productVersion is null || !ProductVersion.IsMatch(productVersion)
             ? new Error("server.product-version",
                 "'" + productVersion + "' is not a SQL Server product version of four numbers, such as 16.0.4295.3.",
                 "Report the server's SERVERPROPERTY('ProductVersion') with this error; dbchange reads it as SQL Server gives it.")
+        : string.IsNullOrWhiteSpace(edition) || edition.Any(char.IsControl)
+            ? new Error("server.edition", "The server reported no edition dbchange can record.",
+                "Report the server's SERVERPROPERTY('Edition') with this error; dbchange reads it as SQL Server gives it.")
         : !Levels.Contains(compatibilityLevel)
             ? new Error("server.compatibility-level",
                 string.Create(CultureInfo.InvariantCulture, $"{compatibilityLevel} is no compatibility level SQL Server has had."),
                 "Report the database's compatibility_level in sys.databases with this error.")
-        : imageDigest is null ? new Server(productVersion, compatibilityLevel, null)
-        : imageDigest.StartsWith(Sha256, StringComparison.Ordinal)
-            && Fingerprint.Parse(imageDigest[Sha256.Length..]) is Result<Fingerprint>.Ok(var image)
-            ? new Server(productVersion, compatibilityLevel, image)
-        : new Error("server.image-digest", "'" + imageDigest + "' is not an image digest.",
-            "Give the image digest as sha256: and 64 lowercase hex digits.");
+        : new Server(productVersion, edition, compatibilityLevel);
+
+    /// <summary>
+    /// R5's window (DECISIONS.md, 2026-10-19): toolchain.server-window when this server's major version is below the one the package's
+    /// platform names (Sql160 names 16), so SQL Server 2022 and SQL Server 2025 both take a Sql160 package and SQL Server 2019 does not;
+    /// null when the server meets it, or when DacFx names the platform without a version (SqlAzure), which DacFx's own platform check
+    /// compares.
+    /// </summary>
+    public Error? Refuses(Platform package) =>
+        Versioned.Match(package.ToString()) is { Success: true } named
+            && int.Parse(named.Groups[1].Value, CultureInfo.InvariantCulture) is var least && Major < least
+            ? new Error("toolchain.server-window",
+                string.Create(CultureInfo.InvariantCulture,
+                    $"{this} is older than the package's platform, {package}, which needs SQL Server {least} or later."),
+                string.Create(CultureInfo.InvariantCulture, $"Run the local server at SQL Server {least} or later")
+                + " (ci/sql.sh up, or ci/sql.ps1 up on Windows), or set DBCHANGE_SQL to such a server;"
+                + " or set the project's target platform (its DSP) to the server's.")
+            : null;
 
     public override string ToString() =>
-        string.Create(CultureInfo.InvariantCulture, $"SQL Server {Version}, compatibility level {CompatibilityLevel}")
-        + (Image is { } image ? ", image " + Sha256 + image : "");
+        string.Create(CultureInfo.InvariantCulture, $"SQL Server {Version} {Edition}, compatibility level {CompatibilityLevel}");
 }
 
 /// <summary>A SQL Server's major version and a database's compatibility level: what a claim made on one server says about

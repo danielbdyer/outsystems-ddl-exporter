@@ -7,8 +7,7 @@ onto one branch, writes the Facsimile into the plan (`V3_MILESTONES.md` §3.1) a
   Facsimile's planter (WP 3.8), the generator's port and the shape and scale tiers held until a trigger.
 - Decide §17 items 23 (a code for the agent's next step; `8 needs-input` is recommended) and 24 (a column's
   value-free shape, read from an environment classified real). Send S5 to S8, and items 21 and 22, to the people below.
-- At M0, install `.claude/settings.json` and the SessionStart and SessionEnd hooks in `.claude/hooks/`
-  (the permission check refuses an agent editing its own settings); the review page has the commands.
+- At M0, install the SessionStart and SessionEnd hooks in `.claude/hooks/` as `CLAUDE.md` describes them; no agent may edit them.
 - Answer round two of the M1 review (linked in #704's description); a card's option chosen there still takes effect.
 - Move or delete the v2 worktrees under archive/v2/.claude/worktrees (3.6 GB), which Visual Studio and Copilot scan.
 - Run the laptop check against Dev (M1 exit 1, spikes S1 and S3) with the tool folder built at
@@ -25,15 +24,16 @@ onto one branch, writes the Facsimile into the plan (`V3_MILESTONES.md` §3.1) a
   read, and the Extended Events test extended to a drifted check drift and `read --from env:dev`.
 - `V3_PARITY.md` §5 orders the work that needs no person: spikes S2, S4 and S9 to S11 in CI, WPs 3.1, 3.4 and
   3.5's first step, and WP 7.1. Each ledger row cites v2's proof; `ParityResolves` prints where they stand.
+- `kernel/Environments.cs` LocalServerKind parses the unread key `localServer` as `docker` or `localdb`, and
+  `tests/Golden/dbchange/environments.json` writes `docker`; WP 3.4 drops the key from both and from EnvironmentsTests and PublishProfilesTests.
 - Then M2, from WP 2.1 and WP 2.4, once the operator allows it; WP 2.6 moves the Facsimile's case catalog to
   `tests/Cases/` (not held yet: WP 2.6). Before M5 and M6, correct the plan where it contradicts itself: WP 5.2's
   page cells, the vendoring verb's two names, R18's exit, who writes deployments.md, and the gate's wiki cells.
 
 ## Waiting on others
 - S5, a lead who reads Dev's platform database: which `ossys_` tables and columns hold consumer references and publish times.
-- S6, whoever manages the machines: the laptops run LocalDB 16.x and the environments' network has no Docker (the
-  operator, 2026-10-19); open are the .NET 10 SDK on laptops and hosted agents, Docker on hosted agents, the .NET 10
-  runtime on the Octopus workers, and whether a package feed exists for the tool (§17 item 22).
+- S6, whoever manages the machines (laptops run LocalDB 16.x, the environments' network no Docker): open are the .NET 10 SDK
+  on laptops and hosted agents, sudo there for `ci/sql.sh up`, the Octopus workers' .NET 10 runtime, and a package feed (§17 item 22).
 - S7, whoever owns the deployment step: the publish profile, the DacFx version, and the Octopus login's language and DATEFORMAT.
 - S8, the dev leads: Dev's, QA's and UAT's SQL Server version, compatibility level, RCSI and collation.
 - The owners of the directory groups: a login holding only `VIEW DEFINITION` on Prod, and on QA and UAT for any

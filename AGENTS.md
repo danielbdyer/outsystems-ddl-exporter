@@ -10,8 +10,8 @@ file, then `NEXT.md`, then the README of the package being changed. Nothing else
 
 Run `dbchange doctor` and quote its line before claiming a tool, a daemon or a database is missing.
 The line reads `READY` or `DEGRADED` and names the .NET SDK and runtime, the tool folder and its
-DacFx against `dbchange/ledgers/toolchain.md`, the build route, the local server (Docker or LocalDB)
-and Git LFS; every missing item carries a remedy.
+DacFx against `dbchange/ledgers/toolchain.md`, the build route, the local server (`DBCHANGE_SQL`,
+the one `~/.dbchange/sql.env` names, or LocalDB) and Git LFS; every missing item carries a remedy.
 Without the session hook, `dotnet run --project cli -- doctor` runs it.
 
 ## Where truth lives
@@ -38,7 +38,7 @@ Without the session hook, `dotnet run --project cli -- doctor` runs it.
 - `dotnet test DbChange.sln --filter "Category=fast|Category=build"` before every push: no SQL
   Server; the `fast` tests alone run under five minutes.
 - `dotnet test DbChange.sln --filter Category=fixture` when `io/` changed: needs a SQL Server, the
-  container from the pinned image where Docker runs, LocalDB where it does not.
+  2022 Express that `ci/sql.sh up` installs and runs on Linux, or LocalDB (`ci/sql.ps1 up`) on Windows.
 - Every test carries one category: `fixture` when it needs SQL Server, `build` when it runs
   `dotnet build` or `dotnet publish` or starts dbchange as a process, `fast` otherwise. No test
   skips itself, and none retries.
@@ -107,7 +107,7 @@ test names, review pages and pull-request bodies.
 - A red budget test names the ceiling and the file.
 - A red law names the law. The law is right until a decision line says otherwise.
 - The local server not answering (exit 4): `ci/sql.sh up`, or `ci/sql.ps1 up` on Windows, then
-  `dbchange doctor`.
+  `dbchange doctor`. Neither runs SQL Server Agent, so a CDC check runs on a principal's SQL Server.
 - A proof whose verdict disagrees with a recorded finding: the verdict is a new finding with its
   provenance; append it and strike the old one, which stays.
 - A question only the operator can answer: one line in `NEXT.md` naming the question and who

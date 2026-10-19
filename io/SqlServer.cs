@@ -211,14 +211,15 @@ public static partial class SqlServer
 
         /// <summary>
         /// The package at <paramref name="dacpac"/> published to this copy under the profile's options, Strict or this copy's Permissive,
-        /// through io/DacFx.Publish.
+        /// through io/DacFx.Publish, once the copy's SQL Server meets the package's platform (R5's window, Server.Refuses).
         /// </summary>
         public Result<Copy> Publish(string dacpac, PublishProfile profile, QueryLog log) =>
             Reached(this, log).Bind(_ => Ssdt.Open(dacpac).Bind(package =>
         {
             using (package)
             {
-                return DacFx.Publish(this, package, profile).Map(_ => this);
+                return ServerOf(this, log).Bind(server => server.Refuses(package.Platform) is { } refused ? Result.Fail<Copy>(refused)
+                    : DacFx.Publish(this, package, profile).Map(_ => this));
             }
         }));
     }
@@ -275,16 +276,16 @@ public static partial class SqlServer
     public static Result<Readable> Reach(Database target, QueryLog log) => Reached(target, log);
 
     /// <summary>
-    /// A copy's SQL Server (R1), which a claim on the copy records: the product version and the copy's compatibility level, read in one
-    /// statement through <see cref="Query{T}"/>, and the digest of the image the dbchange-sql container runs, which Docker reports
-    /// (LocalServer.Image). A named environment's server is read by S8, and nothing here reads it.
+    /// A copy's SQL Server (R1), which a claim on the copy records: the product version, the edition and the copy's compatibility level,
+    /// read in one statement through <see cref="Query{T}"/>. A named environment's server is read by S8, and nothing here reads it.
     /// </summary>
     public static Result<Server> ServerOf(Copy copy, QueryLog log) =>
         Query(copy, new Statement("SQL Server",
-            "SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128)), compatibility_level "
-                + "FROM sys.databases WHERE database_id = DB_ID();"), log,
-                rows => rows is [[string version, byte level]] ? (Version: version, Level: (int)level) : (Version: (string?)null, Level: 0))
-            .Bind(read => Server.Of(read.Version, read.Level, LocalServer.Image(copy)));
+            "SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128)), CAST(SERVERPROPERTY('Edition') AS nvarchar(128)), "
+                + "compatibility_level FROM sys.databases WHERE database_id = DB_ID();"), log,
+                rows => rows is [[string version, string edition, byte level]] ? (Version: version, Edition: edition, Level: (int)level)
+                    : (Version: (string?)null, Edition: (string?)null, Level: 0))
+            .Bind(read => Server.Of(read.Version, read.Edition, read.Level));
 
     /// <summary>
     /// Whether the target answers this identity with what reading it takes, before DacFx's own retries begin: a connection opens, and

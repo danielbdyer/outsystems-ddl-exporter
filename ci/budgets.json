@@ -33,7 +33,7 @@
       ]
     },
     "io": {
-      "about": "code: everything that touches SQL Server, DacFx, git, Docker and files. plannedFiles names files within io/, matched by file name; LocalServer.cs and Json.cs each appear twice, once per milestone that grows them.",
+      "about": "code: everything that touches SQL Server, DacFx, git and files. plannedFiles names files within io/, matched by file name; LocalServer.cs and Json.cs each appear twice, once per milestone that grows them.",
       "include": ["io/**/*.cs"],
       "exclude": [],
       "ceiling": 6400,

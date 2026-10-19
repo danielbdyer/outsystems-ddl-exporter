@@ -383,12 +383,12 @@ public static class Render
             new JsonArray([.. ((Provenance.Input[])[Provenance.Input.ExistingData, Provenance.Input.Server]).Select(Lacks)]);
         envelope["$defs"] = new JsonObject
         {
-            // The kernel's Server: the product version SQL Server reports, the database's compatibility level, and the image's digest for a
-            // copy on the dbchange-sql container.
+            // The kernel's Server: the product version and the edition SQL Server reports, and the database's compatibility level.
             ["server"] = Record(new()
             {
-                ["version"] = Pattern("^[0-9]{1,5}(\\.[0-9]{1,5}){3}$"), ["compatibilityLevel"] = new JsonObject { ["type"] = "integer" },
-                ["image"] = Nullable(Fingerprint()),
+                ["version"] = Pattern("^[0-9]{1,5}(\\.[0-9]{1,5}){3}$"),
+                ["edition"] = new JsonObject { ["type"] = "string", ["minLength"] = 1 },
+                ["compatibilityLevel"] = new JsonObject { ["type"] = "integer" },
             }),
             ["provenance"] = provenance,
             ["finding"] = finding,
@@ -412,8 +412,7 @@ public static class Render
     /// <summary>A server as the envelope writes it, or null.</summary>
     private static JsonObject? Json(Server? server) => server is null ? null : new JsonObject
     {
-        ["version"] = server.Version, ["compatibilityLevel"] = server.CompatibilityLevel,
-        ["image"] = server.Image is { } image ? Digest(image) : null,
+        ["version"] = server.Version, ["edition"] = server.Edition, ["compatibilityLevel"] = server.CompatibilityLevel,
     };
 
     private static JsonObject Document(string id, string description, JsonObject properties) => new(

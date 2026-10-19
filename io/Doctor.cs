@@ -4,11 +4,13 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading;
 using DbChange.Kernel;
+using Microsoft.Data.SqlClient;
 using Microsoft.SqlServer.Dac;
 
 namespace DbChange.Io;
@@ -16,18 +18,14 @@ namespace DbChange.Io;
 /// <summary>
 /// Can this machine do the work, read-only (V3_ARCHITECTURE.md §8.12): the .NET SDK in the band global.json names and the .NET 10 runtime;
 /// git at 2.24 or later (rev-parse --end-of-options); the committed tool folder and its DacFx against the SSDT repository's toolchain
-/// ledger; the build route; the local server dbchange would use, in LocalServer's order (DBCHANGE_SQL, the dbchange-sql container,
-/// LocalDB), with the Docker-specific cause when none applies; the pinned SQL Server image and the container's; and Git LFS. Each item
+/// ledger; the build route; the local server dbchange would use, in LocalServer's order (DBCHANGE_SQL, the SQL Server
+/// ~/.dbchange/sql.env names, LocalDB); and Git LFS. Each item
 /// missing carries its remedy. Every program runs through io/Command for at most <see cref="Command.ProbeTimeout"/>, and a program that
 /// does not answer in time is named as such, never as absent. The machine is read once (<see cref="Machine.Here"/>) and given to
 /// <see cref="Examine"/>, so a test describes a machine instead of setting variables.
 /// </summary>
 public static class Doctor
 {
-    /// <summary>The local server's image, pinned by tag and digest (§1 fact 12); ci/sql.sh and ci/sql.ps1 run the same one.</summary>
-    public const string SqlServerImage =
-        "mcr.microsoft.com/mssql/server:2022-latest@sha256:4402d880dd4c34bfa7d8705e56a86cd6c88da80a1f6bbbe741f999e76264a090";
-
     /// <summary>
     /// The toolchain ledger, from the repository root: one dated row per dbchange version, with the pinned DacFx or UNPINNED.
     /// </summary>
@@ -54,14 +52,16 @@ public static class Doctor
 
     /// <summary>
     /// What this machine holds, read once: where dbchange runs (the checkout), the folder dbchange runs from, DBCHANGE_SQL, the path of
-    /// ~/.dbchange/sql.env (null where the user's profile folder is unknown), and the runtime.
+    /// ~/.dbchange/sql.env (null where the user's profile folder is unknown), the runtime, and whether something accepts a TCP
+    /// connection at a host and port (<see cref="Listening"/> on this machine).
     /// </summary>
-    public sealed record Machine(Checkout Checkout, string Running, string? DbChangeSql, string? SqlEnv, Version Runtime)
+    public sealed record Machine(Checkout Checkout, string Running, string? DbChangeSql, string? SqlEnv, Version Runtime,
+        Func<string, int, CancellationToken, bool> Listens)
     {
         /// <summary>The machine dbchange runs on, around the checkout cli already read.</summary>
         public static Machine Here(Checkout checkout) =>
             new(checkout, AppContext.BaseDirectory, Environment.GetEnvironmentVariable("DBCHANGE_SQL"),
-                LocalState.UserSqlEnv, Environment.Version);
+                LocalState.UserSqlEnv, Environment.Version, Listening);
     }
 
     /// <summary>An item the doctor examines, one of a closed set, written as the envelope names it (sdk, local-server).</summary>
@@ -74,11 +74,10 @@ public static class Doctor
         public static readonly Item Build = new("build");
         public static readonly Item Git = new("git");
         public static readonly Item LocalServer = new("local-server");
-        public static readonly Item Image = new("image");
         public static readonly Item Lfs = new("lfs");
 
         /// <summary>Every item, in the order the doctor examines them.</summary>
-        public static IReadOnlyList<Item> All { get; } = [Sdk, Runtime, Tool, DacFx, Build, Git, LocalServer, Image, Lfs];
+        public static IReadOnlyList<Item> All { get; } = [Sdk, Runtime, Tool, DacFx, Build, Git, LocalServer, Lfs];
 
         private Item(string name) => Name = name;
 
@@ -110,13 +109,8 @@ public static class Doctor
             new Stamp(dacfx, Toolchain(machine.Checkout.Root, machine.Checkout.Version).Match<Pin?>(pin => pin, _ => null)), _ => null),
             new Readiness(Examine(machine, run, cancel)));
 
-    /// <summary>The pinned image's digest, which the image item compares the dbchange-sql container's image with.</summary>
-    public static string ImageDigest => SqlServerImage[(SqlServerImage.IndexOf('@', StringComparison.Ordinal) + 1)..];
-
     public static IReadOnlyList<Prerequisite> Examine(Machine machine, Runner run, CancellationToken cancel = default)
     {
-        var docker = machine.DbChangeSql is { Length: > 0 } ? null
-            : run(Program("docker", "info", "--format", "{{.ServerVersion}}"), cancel);
         var (sdk, tool) = (Sdk(machine.Checkout.WorkingDirectory, run, cancel), Tool(machine));
         var lfs = run(Program("git", "lfs", "version"), cancel) is Ran.Exited { Code: 0 } said ? said.Output.Trim().Split(' ')[0] : null;
         return
@@ -131,8 +125,7 @@ public static class Doctor
             sdk.Remedy is null && tool.Remedy is null ? new(Item.Build, "dotnet with the tool folder's targets", null)
                 : new(Item.Build, "none", "Install what the sdk and tool items name, then run dbchange doctor."),
             GitVersion(run, cancel),
-            LocalServerChoice(machine, docker, run, cancel),
-            Image(machine, docker, run, cancel),
+            LocalServerChoice(machine, run, cancel),
             lfs is null ? new(Item.Lfs, "absent",
                 "Install Git LFS and run git lfs install; the SSDT repository keeps its tool folder in Git LFS.")
                 : new(Item.Lfs, lfs, null),
@@ -314,54 +307,79 @@ public static class Doctor
     };
 
     /// <summary>
-    /// The local server dbchange would use, in io/LocalServer's order: DBCHANGE_SQL's server; the dbchange-sql container
-    /// ~/.dbchange/sql.env names, which needs Docker answering; LocalDB's default instance. With none, the Docker-specific cause: not
-    /// installed, its daemon not answering, docker info past its timeout, or no sql.env because ci/sql.sh up never ran.
+    /// The local server dbchange would use, in io/LocalServer's order: DBCHANGE_SQL's server; the SQL Server ~/.dbchange/sql.env names,
+    /// which ci/sql.sh up installs and starts; LocalDB's default instance, which ci/sql.ps1 up starts. Found names the one chosen and its
+    /// host and port, as a copy's registry row records it; with none, the remedy names ci/sql.sh up and DBCHANGE_SQL, and a sqllocaldb
+    /// that did not answer in time is named as such. A server at a TCP port is reached with a connection and no login, so the doctor
+    /// handles no password and stays read-only, and one that accepts none is named with the remedy to start it (DECISIONS.md,
+    /// 2026-10-19). LocalDB, which starts on its first connection, and a server reached by a named pipe or a named instance without a
+    /// port are not reached here; the first verb that connects names one that does not answer (server.unreachable, exit 4). The SQL
+    /// Server version is read when a copy is made, which refuses one outside R5's window (toolchain.server-window).
     /// </summary>
-    private static Prerequisite LocalServerChoice(Machine machine, Ran? docker, Runner run, CancellationToken cancel)
+    private static Prerequisite LocalServerChoice(Machine machine, Runner run, CancellationToken cancel)
     {
-        var (dockerAnswers, dockerCause) = docker switch
-        {
-            null => (false, null),
-            Ran.Exited { Code: 0 } => (true, null),
-            Ran.Exited => (false, "Docker does not answer (docker info): start Docker Desktop, or the docker service, "
-                + "then run dbchange doctor."),
-            Ran.TimedOut => (false, "Restart Docker, which did not answer docker info in " + Command.Written(Command.ProbeTimeout)
-                + ", then run dbchange doctor."),
-            _ => (false, "Install Docker, or use SQL Server Express LocalDB on Windows, then run dbchange doctor."),
-        };
-        return LocalServer.Choice(machine.DbChangeSql, machine.SqlEnv, () => LocalDbInstalled(run, cancel))
+        Ran? asked = null;
+        return LocalServer.Choice(machine.DbChangeSql, machine.SqlEnv,
+                () => (asked = run(Program("sqllocaldb", "info", "MSSQLLocalDB"), cancel)) is Ran.Exited { Code: 0 })
             .Bind(chosen => LocalServer.ServerName(chosen.Connection).Map(name => (Chosen: chosen, Name: name))).Match(
-            found => found.Chosen switch
-            {
-                LocalServer.Chosen.LocalDb => new Prerequisite(Item.LocalServer, found.Chosen + ", CDC not provable here", null),
-                LocalServer.Chosen.Container =>
-                    new Prerequisite(Item.LocalServer, found.Chosen + " (" + found.Name + ")", dockerAnswers ? null : dockerCause),
-                _ => new Prerequisite(Item.LocalServer, found.Chosen + " (" + found.Name + ")", null),
-            },
-            error => new Prerequisite(Item.LocalServer,
-                "none: " + (dockerAnswers ? "Docker answers, and " + (machine.SqlEnv ?? "~/.dbchange/sql.env") + " names no container"
-                    : "Docker does not answer") + ", DBCHANGE_SQL is unset and LocalDB is not installed",
-                dockerAnswers ? "Run ci/sql.sh up, or ci/sql.ps1 up on Windows, which creates the " + LocalServer.Container
-                    + " container, then run dbchange doctor." : dockerCause ?? error.Remedy));
+            found => (found.Chosen is LocalServer.Chosen.LocalDb ? null : Endpoint(found.Chosen.Connection)) is not { } at
+                    || machine.Listens(at.Host, at.Port, cancel)
+                ? new Prerequisite(Item.LocalServer, found.Chosen + " (" + found.Name + ")", null)
+                : new Prerequisite(Item.LocalServer, found.Chosen + " (" + found.Name + "), accepting no connection on " + at.Host
+                    + "," + at.Port.ToString(CultureInfo.InvariantCulture) + " within " + Command.Written(Command.ProbeTimeout),
+                    found.Chosen is LocalServer.Chosen.Variable
+                        ? "Start the SQL Server DBCHANGE_SQL names, or correct or unset DBCHANGE_SQL; then run dbchange doctor."
+                        : "Run ci/sql.sh up, or ci/sql.ps1 up on Windows, then run dbchange doctor."),
+            error => asked is Ran.TimedOut
+                ? new Prerequisite(Item.LocalServer, "sqllocaldb did not answer in " + Command.Written(Command.ProbeTimeout),
+                    "Run sqllocaldb info MSSQLLocalDB by hand to see what it waits for, then run dbchange doctor.")
+                : new Prerequisite(Item.LocalServer, "none: DBCHANGE_SQL is unset, " + (machine.SqlEnv ?? "~/" + LocalState.Name
+                    + "/sql.env") + " names no server and LocalDB is not installed", error.Remedy));
     }
 
     /// <summary>
-    /// The pinned image, when Docker is the local server: present or absent; and the dbchange-sql container, when it exists, made from that
-    /// image and no other.
+    /// The host and TCP port a connection's data source reaches, as SqlClient reads it: tcp: or no protocol, the port after the comma,
+    /// or 1433 for a host alone. None for a named pipe (np:, \\host\pipe), shared memory (lpc:), LocalDB, or a named instance without a
+    /// port, whose port SQL Server Browser gives.
     /// </summary>
-    private static Prerequisite Image(Machine machine, Ran? docker, Runner run, CancellationToken cancel) =>
-        machine.DbChangeSql is { Length: > 0 } ? new(Item.Image, "not needed: DBCHANGE_SQL names the server", null)
-        : docker is not Ran.Exited { Code: 0 } ? new(Item.Image, "not needed without Docker", null)
-        : run(Program("docker", "image", "inspect", "--format", "{{.Id}}", SqlServerImage), cancel) is not Ran.Exited { Code: 0 }
-            ? new(Item.Image, "absent", "Run ci/sql.sh up, which pulls it (docker pull " + SqlServerImage + "), then run dbchange doctor.")
-        : LocalServer.Running(run) is { } running && running.Digest != ImageDigest
-            ? new(Item.Image, "present, and " + LocalServer.Container + " runs " + running.Digest,
-                "Run ci/sql.sh down, then ci/sql.sh up (ci/sql.ps1 on Windows), so " + LocalServer.Container
-                + " runs the pinned image, then run dbchange doctor.")
-        : new(Item.Image, "present", null);
+    internal static (string Host, int Port)? Endpoint(string connection)
+    {
+        var source = new SqlConnectionStringBuilder(connection).DataSource.Trim();
+        source = source.StartsWith("tcp:", StringComparison.OrdinalIgnoreCase) ? source[4..]
+            : source.StartsWith("admin:", StringComparison.OrdinalIgnoreCase) ? source[6..] : source;
+        if (source.Length == 0 || source.StartsWith('\\') || ((string[])["np:", "lpc:", "(localdb)"]).Any(
+            other => source.StartsWith(other, StringComparison.OrdinalIgnoreCase)))
+        {
+            return null;
+        }
+
+        var (named, port) = source.Split(',', 2) is [var before, var after] ? (before, after.Trim()) : (source, null);
+        var written = named.Split('\\')[0].Trim().Trim('[', ']');
+        var host = written is "" or "." or "(local)" ? "localhost" : written;
+        return port is null ? named.Contains('\\', StringComparison.Ordinal) ? null : (host, 1433)
+            : int.TryParse(port, NumberStyles.None, CultureInfo.InvariantCulture, out var number) && number is > 0 and < 65536
+                ? (host, number) : null;
+    }
+
+    /// <summary>
+    /// Whether something on <paramref name="host"/> accepts a TCP connection at <paramref name="port"/> within
+    /// <see cref="Command.ProbeTimeout"/>. The connection is closed without a byte sent, so no login is tried.
+    /// </summary>
+    internal static bool Listening(string host, int port, CancellationToken cancel)
+    {
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        limit.CancelAfter(Command.ProbeTimeout);
+        try
+        {
+            using var client = new TcpClient();
+            client.ConnectAsync(host, port, limit.Token).AsTask().GetAwaiter().GetResult();
+            return true;
+        }
+        catch (Exception e) when (e is SocketException or OperationCanceledException)
+        {
+            return false;
+        }
+    }
 
     private static Command Program(string program, params string[] arguments) => new(program, arguments, Command.ProbeTimeout);
-
-    /// <summary>A file's version as major.minor.build, or null for a file that is absent or carries none.</summary>
 }

@@ -13,7 +13,8 @@ namespace DbChange.Io;
 /// the local server's with the copy's database. A text SqlClient reads nothing from is connection.malformed, its text withheld,
 /// since it can hold a password. For TLS, dbchange adds no keyword to a named environment's connection: its reference's own Encrypt,
 /// TrustServerCertificate and HostNameInCertificate reach the server as written, and SqlClient's defaults stand where it names none.
-/// The dbchange-sql container's connection alone trusts the server's certificate, which SQL Server generated for itself.
+/// The connection to the SQL Server ~/.dbchange/sql.env names alone trusts the server's certificate, which SQL Server generated for
+/// itself.
 /// </summary>
 internal static class ConnectionString
 {
@@ -108,10 +109,10 @@ internal static class ConnectionString
         ServerName.Of(connection.DataSource, Environment.MachineName);
 
     /// <summary>
-    /// The dbchange-sql container's connection: SQL Server on the loopback address at the port ~/.dbchange/sql.env gives, as sa, trusting
+    /// The connection to the SQL Server ci/sql.sh up runs: on the loopback address at the port ~/.dbchange/sql.env gives, as sa, trusting
     /// the certificate SQL Server generated for itself.
     /// </summary>
-    internal static string Container(string port, string password) =>
+    internal static string SqlEnv(string port, string password) =>
         new SqlConnectionStringBuilder { DataSource = "127.0.0.1," + port, UserID = "sa", Password = password,
             TrustServerCertificate = true }.ConnectionString;
 }

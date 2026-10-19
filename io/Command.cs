@@ -27,8 +27,8 @@ public delegate Ran Runner(Command command, CancellationToken cancel);
 /// dbchange.dll, the tool folder under the apphost), then in each absolute PATH entry in order, and never in the working directory,
 /// where a checkout could plant one. On Windows a bare name without an extension gains .exe, and a bare .cmd or .bat name is not run,
 /// since cmd.exe re-parses their arguments; on Linux and macOS a file needs an execute bit, as execvp requires. Standard input is closed
-/// at once, so a program that reads it gets end of file; output and errors are read apart, concurrently and as UTF-8, which git, dotnet,
-/// docker and git-lfs write to a pipe whatever the console's code page; the program shares dbchange's console, so a Ctrl-C reaches it too.
+/// at once, so a program that reads it gets end of file; output and errors are read apart, concurrently and as UTF-8, which git, dotnet
+/// and git-lfs write to a pipe whatever the console's code page; the program shares dbchange's console, so a Ctrl-C reaches it too.
 /// Past Timeout the whole process tree is killed and <see cref="Ran.TimedOut"/> carries what was read. When the caller's token or the
 /// run's (<see cref="Interruption"/>) is cancelled, the tree is killed and OperationCanceledException is thrown, also when the program
 /// ended on the same signal; a cleanup command that must run after an interruption sets <see cref="Interruptible"/> false and is bounded
@@ -44,8 +44,8 @@ public sealed record Command(string Program, IReadOnlyList<string> Arguments, Ti
     private static readonly TimeSpan Drain = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// How long a program asked about the machine may take (dotnet --list-sdks, docker info, sqllocaldb info): docker info waits while
-    /// Docker Desktop starts, and dotnet answers in a second. A program that does not answer in time is named as such, never as absent.
+    /// How long a program asked about the machine may take (dotnet --list-sdks, git --version, sqllocaldb info): sqllocaldb waits while
+    /// LocalDB's service starts, and dotnet answers in a second. A program that does not answer in time is named as such, never as absent.
     /// </summary>
     public static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(20);
 
